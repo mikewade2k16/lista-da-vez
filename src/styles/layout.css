@@ -1,0 +1,56 @@
+.shell {
+  min-height: 100vh;
+  padding: 0;
+}
+
+.app-surface {
+  width: 100%;
+}
+
+.app-surface--loading {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+}
+
+.workspace {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.workspace__intro {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.workspace__title {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.workspace__text {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.queue-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0;
+  }
+
+  .queue-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    padding: 12px;
+  }
+}

@@ -1,0 +1,22 @@
+:root {
+  --bg-page: #060a12;
+  --bg-shell: #060a12;
+  --bg-panel: #0d121d;
+  --bg-muted: #121926;
+  --bg-brand: #0d121d;
+  --bg-brand-strong: #060a12;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-inverse: #f7f9fb;
+  --line-soft: #1f2937;
+  --line-strong: #2d3748;
+  --accent-info: #38bdf8;
+  --accent-warning: #fbbf24;
+  --accent-success: #22c55e;
+  --accent-focus: #818cf8;
+  --shadow-shell: 0 28px 60px rgba(0, 0, 0, 0.64);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --radius-shell: 28px;
+  --radius-card: 14px;
+  --radius-soft: 10px;
+}

@@ -1,6 +1,6 @@
 # Fila de Atendimento MVP
 
-Base inicial em HTML + JavaScript modular para evoluir rapido e migrar depois para Nuxt sem reescrever regra de negocio.
+Base inicial em HTML + JavaScript modular. Nesta branch, o projeto tambem passa a expor um bootstrap inicial em Nuxt para iniciar a migracao do frontend sem descartar o MVP atual.
 
 ## Estrutura
 
@@ -58,8 +58,22 @@ Base inicial em HTML + JavaScript modular para evoluir rapido e migrar depois pa
 
 ## Execucao local
 
+- `npm install`
 - `npm run dev`
-- Abrir `http://127.0.0.1:4173`
+- Abrir `http://localhost:3000`
+
+## Modos disponiveis
+
+- `npm run dev`: sobe o shell Nuxt e monta o MVP atual dentro dele no client.
+- `npm run legacy:dev`: sobe o servidor simples atual do MVP sem Nuxt.
+- `npm run build`: build SSR padrao do Nuxt.
+- `npm run generate`: gera saida estatico/prerender do Nuxt.
+
+## Estrategia inicial da migracao
+
+- O MVP atual continua funcional via `src/main.js`.
+- O Nuxt passa a servir como casca de entrada para iniciar a migracao incremental.
+- A proxima etapa e substituir a tela inicial e os componentes atuais por paginas/componentes Vue aos poucos, sem perder regra de negocio.
 
 ## Perfis de teste no header
 

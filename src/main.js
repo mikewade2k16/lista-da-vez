@@ -1320,7 +1320,14 @@ function handleSubmit(event) {
   });
 }
 
-async function bootstrap() {
+let bootstrapPromise = null;
+
+export async function bootstrapLegacyApp() {
+  if (bootstrapPromise) {
+    return bootstrapPromise;
+  }
+
+  bootstrapPromise = (async () => {
   renderApp();
 
   if (!appRoot) {
@@ -1385,6 +1392,11 @@ async function bootstrap() {
       renderApp();
     }
   }, 1000);
+  })();
+
+  return bootstrapPromise;
 }
 
-bootstrap();
+if (typeof window !== "undefined" && !window.__NUXT__) {
+  void bootstrapLegacyApp();
+}

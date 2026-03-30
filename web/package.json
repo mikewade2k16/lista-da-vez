@@ -1,0 +1,18 @@
+{
+  "name": "lista-da-vez-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "dev:3001": "nuxt dev --port 3001",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.11.3",
+    "nuxt": "^4.4.2",
+    "pinia": "^3.0.4"
+  }
+}

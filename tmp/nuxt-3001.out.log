@@ -1,0 +1,1934 @@
+
+> dev:3001
+> npm --prefix web run dev:3001
+
+
+> lista-da-vez-web@0.1.0 dev:3001
+> nuxt dev --port 3001
+
+|
+•  [32mNuxt [1m4.4.2[22m[39m[90m (with [39m[90mNitro [1m2.13.2[22m[39m[90m, Vite [1m7.3.1[22m[39m[90m and Vue [1m3.5.30[22m[39m[90m)[39m
+[get-port] Unable to find an available port (tried 3001 on host "localhost"). Using alternative port 3002.
+
+[32m  ➜ Local:   [39m [36m[4mhttp://localhost:[1m3002[22m/[24m[39m
+[90m  ➜ Network:  use [37m--host[90m to expose[39m
+
+[nuxt] modules:before: 0.085ms
+[nuxt] kit:compatibility: 0.025ms
+[36mi[39m Module [36mpinia[39m took [36m1.27ms[39m to setup.
+[36mi[39m Module [36m@nuxt/devtools[39m took [36m0.1ms[39m to setup.
+[nuxt] pages:routerOptions: 0.08ms
+[36mi[39m Module [36mnuxt:pages[39m took [36m21.71ms[39m to setup.
+[36mi[39m Module [36mnuxt:meta[39m took [36m3.49ms[39m to setup.
+[36mi[39m Module [36mnuxt:components[39m took [36m8.19ms[39m to setup.
+[36mi[39m Module [36mnuxt:compiler[39m took [36m0.33ms[39m to setup.
+[36mi[39m Module [36mnuxt:imports[39m took [36m2.79ms[39m to setup.
+[36mi[39m Module [36mnuxt:nuxt-config-schema[39m took [36m1.63ms[39m to setup.
+[36mi[39m Module [36m@nuxt/telemetry[39m took [36m0.12ms[39m to setup.
+[nuxt] imports:dirs: 0.055ms
+[nuxt] imports:sources: 0.142ms
+[nuxt] imports:context: 0.049ms
+[nuxt] imports:extend: 0.072ms
+[nuxt] builder:generateApp: 0.045ms
+[nuxt] schema:extend: 0.035ms
+[nuxt] schema:resolved: 0.034ms
+[nuxt] modules:done: 32.878ms
+[nuxt] nitro:config: 147.636ms
+[nuxt] nitro:init: 0.113ms
+[nuxt] ready: 0.081ms
+[nuxt] listen: 0.009ms
+[nuxt] prepare:types: 1.395ms
+[nuxt] components:dirs: 0.014ms
+[nuxt] app:resolve: 1.588ms
+[nuxt] pages:extend: 0.083ms
+[nuxt] pages:resolved: 0.066ms
+[nuxt] components:extend: 0.33ms
+[nuxt] app:templates: 29.457ms
+[nuxt] nitro:prepare:types: 0.077ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 6.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 6.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 7.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 7.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 7.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 8.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 8.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 8.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 8.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 8.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 8.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 8.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 8.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 8.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 8.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 8.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 8.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 8.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 7.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 7.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 7.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 7.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 7.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 12.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 13.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 13.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 13.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 14.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 17.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.09ms
+[nuxt] pages:routerOptions: 0.011ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 20.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 8.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 10.43ms
+[nuxt] imports:extend: 0.032ms
+[nuxt] builder:generateApp: 0.013ms
+[nuxt] app:templatesGenerated: 9.973ms
+[nuxt] build:before: 28.517ms
+[nuxt] vite:extend: 3.661ms
+[nuxt] vite:extendConfig: 0.703ms
+[nuxt] vite:configResolved: 0.013ms
+[nuxt] server:devHandler: 0.066ms
+[36mi[39m Re-optimizing dependencies because vite config has changed
+[nuxt] vite:serverCreated: 0.147ms
+[32m√[39m Vite client built in 50ms
+[nuxt] vite:extendConfig: 3.435ms
+[nuxt] vite:configResolved: 0.009ms
+[nuxt] vite:serverCreated: 0.558ms
+[32m√[39m Vite server built in 42ms
+[nuxt] schema:beforeWrite: 0.009ms
+[nuxt] schema:written: 0.019ms
+[nuxt] nitro:build:before: 0.169ms
+[nitro] build:before: 0.411ms
+[nitro] rollup:before: 11.583ms
+[nitro] dev:start: 0.034ms
+[nitro] types:extend: 0.147ms
+[90m[[90mnitro[90m][39m [32m√[39m Nuxt Nitro server built in 879ms
+[nitro] dev:reload: 3.764ms
+[nitro] compiled: 8.912ms
+[nuxt] build:done: 1.054s
+[36mi[39m Vite server warmed up in 2ms
+[36mi[39m Vite client warmed up in 5ms
+[90mD[39m Dev server (internal) initialized in 3104ms
+[90mD[39m > Nitro Start (10ms)
+[nitro-runtime] request: 0.943ms
+[nitro-runtime] render:before: 0.059ms
+[nuxt-app] page:loading:start: 0.097ms
+[43m[30m WARN [39m[49m [Vue warn]: Component C:/Users/Mike/Documents/Projects/fila-atendimento/web/app/pages/index.vue is missing template or render function. at <Index>
+at <RouteProvider>
+at <RouterView>
+at <NuxtPage>
+at <NuxtLayoutProvider>
+at <NuxtLayout>
+at <App>
+at <NuxtRoot>
+[nuxt-app] app:created: 3.087ms
+[nuxt-app] vue:setup: 0.075ms
+[nuxt-app] app:redirected: 4.817ms
+[nuxt-app] app:rendered: 0.386ms
+[nitro-runtime] render:response: 0.027ms
+[nitro-runtime] beforeResponse: 0.047ms
+[nitro-runtime] dev:ssr-logs: 0.026ms
+[nitro-runtime] afterResponse: 0.613ms
+[nitro-runtime] request: 0.086ms
+[nitro-runtime] render:before: 0.025ms
+[nuxt-app] page:loading:start: 0.02ms
+[nuxt-app] app:created: 0.726ms
+[nuxt-app] vue:setup: 0.015ms
+[nuxt-app] app:rendered: 0.132ms
+[nitro-runtime] render:html: 1.39ms
+[nitro-runtime] render:response: 0.056ms
+[nitro-runtime] beforeResponse: 0.103ms
+[nitro-runtime] dev:ssr-logs: 0.024ms
+[nitro-runtime] afterResponse: 0.572ms
+[nitro-runtime] request: 0.121ms
+[nitro-runtime] render:before: 0.024ms
+[nitro-runtime] beforeResponse: 0.022ms
+[nitro-runtime] dev:ssr-logs: 0.013ms
+[nitro-runtime] afterResponse: 0.317ms
+[nitro-runtime] request: 0.079ms
+[nitro-runtime] render:before: 0.02ms
+[nitro-runtime] request: 0.072ms
+[nitro-runtime] render:before: 0.016ms
+[nitro-runtime] request: 0.075ms
+[nitro-runtime] render:before: 0.017ms
+[nitro-runtime] request: 0.057ms
+[nitro-runtime] render:before: 0.015ms
+[nitro-runtime] request: 0.083ms
+[nitro-runtime] render:before: 0.013ms
+[nuxt-app] page:loading:start: 0.04ms
+[nuxt-app] app:created: 0.612ms
+[nuxt-app] vue:setup: 0.01ms
+[nitro-runtime] request: 0.118ms
+[nitro-runtime] render:before: 0.027ms
+[nuxt-app] app:rendered: 0.205ms
+[nitro-runtime] render:response: 0.021ms
+[nitro-runtime] beforeResponse: 0.442ms
+[nitro-runtime] dev:ssr-logs: 0.012ms
+[nitro-runtime] afterResponse: 0.386ms
+[nitro-runtime] request: 0.081ms
+[nitro-runtime] render:before: 0.019ms
+[nuxt-app] page:loading:start: 0.018ms
+[nuxt-app] app:created: 0.641ms
+[nuxt-app] vue:setup: 0.01ms
+[nuxt-app] app:rendered: 0.243ms
+[nitro-runtime] render:response: 0.025ms
+[nitro-runtime] beforeResponse: 0.017ms
+[nitro-runtime] dev:ssr-logs: 0.012ms
+[nitro-runtime] afterResponse: 0.278ms
+[nitro-runtime] request: 0.064ms
+[nitro-runtime] render:before: 0.018ms
+[nuxt-app] page:loading:start: 0.095ms
+[41m[30m ERROR [39m[49m (node:22492) Warning: Label '[nuxt-app] app:created' already exists for console.time()
+(Use [36mnode --trace-warnings ...[39m to show where the warning was created)
+[nuxt-app] app:created: 0.992ms
+[nuxt-app] vue:setup: 0.009ms
+[nuxt-app] vue:setup: 0.016ms
+[41m[30m ERROR [39m[49m (node:22492) Warning: Label '[nuxt-app] page:loading:start' already exists for console.time()
+[41m[30m ERROR [39m[49m (node:22492) Warning: No such label '[nuxt-app] page:loading:start' for console.timeEnd()
+[41m[30m ERROR [39m[49m (node:22492) Warning: No such label '[nuxt-app] app:created' for console.timeEnd()
+[nuxt-app] app:rendered: 0.443ms
+[41m[30m ERROR [39m[49m (node:22492) Warning: Label '[nuxt-app] app:rendered' already exists for console.time()
+[nitro-runtime] render:response: 0.034ms
+[nitro-runtime] render:response : 0.268ms
+[nitro-runtime] beforeResponse: 0.043ms
+[nitro-runtime] beforeResponse : 0.191ms
+[nitro-runtime] dev:ssr-logs: 0.017ms
+[nitro-runtime] afterResponse: 0.279ms
+[nitro-runtime] dev:ssr-logs: 0.009ms
+[nitro-runtime] afterResponse: 0.26ms
+[41m[30m ERROR [39m[49m (node:22492) Warning: No such label '[nuxt-app] app:rendered' for console.timeEnd()
+[nitro-runtime] request: 0.058ms
+[nitro-runtime] render:before: 0.017ms
+[nuxt-app] page:loading:start: 0.014ms
+[nuxt-app] app:created: 0.42ms
+[nuxt-app] vue:setup: 0.009ms
+[nuxt-app] app:rendered: 0.08ms
+[nitro-runtime] render:response: 0.019ms
+[nitro-runtime] beforeResponse: 0.015ms
+[nitro-runtime] dev:ssr-logs: 0.012ms
+[nitro-runtime] afterResponse: 0.224ms
+[nuxt-app] page:loading:start: 0.016ms
+[nuxt-app] app:created: 0.554ms
+[nuxt-app] vue:setup: 0.01ms
+[nuxt-app] app:rendered: 0.087ms
+[nitro-runtime] render:response: 0.018ms
+[nitro-runtime] beforeResponse: 0.014ms
+[nitro-runtime] dev:ssr-logs: 0.029ms
+[nitro-runtime] afterResponse: 0.35ms
+[nuxt-app] page:loading:start: 0.033ms
+[nuxt-app] app:created: 0.792ms
+[nuxt-app] vue:setup: 0.009ms
+[nuxt-app] app:rendered: 0.09ms
+[nitro-runtime] render:response: 0.023ms
+[nitro-runtime] beforeResponse: 0.021ms
+[nitro-runtime] dev:ssr-logs: 0.01ms
+[nitro-runtime] afterResponse: 0.246ms
+[nuxt-app] page:loading:start: 0.053ms
+[nuxt-app] app:created: 0.685ms
+[nuxt-app] vue:setup: 0.011ms
+[nuxt-app] app:rendered: 0.083ms
+[nitro-runtime] render:response: 0.022ms
+[nitro-runtime] beforeResponse: 0.017ms
+[nitro-runtime] dev:ssr-logs: 0.012ms
+[nitro-runtime] afterResponse: 0.254ms
+[nuxt-app] page:loading:start: 0.014ms
+[nuxt-app] app:created: 0.494ms
+[nuxt-app] vue:setup: 0.011ms
+[nuxt-app] app:rendered: 0.063ms
+[nitro-runtime] render:response: 0.019ms
+[nitro-runtime] beforeResponse: 0.015ms
+[nitro-runtime] dev:ssr-logs: 0.015ms
+[nitro-runtime] afterResponse: 0.21ms
+[nuxt] pages:routerOptions: 0.032ms
+[nuxt] components:dirs: 0.02ms
+[nuxt] app:resolve: 2.324ms
+[nuxt] components:extend: 0.174ms
+[nuxt] app:templates: 10.435ms
+[nuxt] nitro:prepare:types: 0.147ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 9.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 9.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 9.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 9.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 10.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 10.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 10.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 11.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 11.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 12.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 12.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 12.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 12.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 13.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 13.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 13.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 14.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 14.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 15.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 15.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 15.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 16.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 16.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 17.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 17.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 17.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 18.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 18.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 17.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 17.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 17.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 17.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 19.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 21.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 21.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 22.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 24.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 29.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 25.91ms
+[nuxt] pages:routerOptions: 0.035ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 33.05ms
+[nuxt] pages:routerOptions: 0.037ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 28.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 33.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 39.86ms
+[nuxt] imports:extend: 0.097ms
+[nuxt] components:dirs: 0.02ms
+[nuxt] app:resolve: 1.458ms
+[nuxt] components:extend: 0.114ms
+[nuxt] app:templates: 11.823ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 0.81ms
+[nuxt] builder:generateApp: 25.728ms
+[36mi[39m [32mpage reload [39m[2mvirtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froute-rules.mjs[22m
+[36mi[39m [32mpage reload [39m[2mvirtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froute-rules.mjs[22m[2m (x2)[22m
+[nuxt] app:templatesGenerated: 58.211ms
+[nuxt] builder:watch : 93.364ms
+[nuxt] builder:watch: 181.918ms
+[nuxt] components:dirs: 0.02ms
+[nuxt] app:resolve: 1.417ms
+[nuxt] components:extend: 0.099ms
+[nuxt] app:templates: 8.968ms
+[nuxt] nitro:prepare:types: 0.071ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 10.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 11.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 11.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 11.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 11.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 12.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 12.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 13.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 16.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 19.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.16ms
+[nuxt] pages:routerOptions: 0.023ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 23.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 8.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 13.11ms
+[nuxt] components:dirs: 0.017ms
+[nuxt] app:resolve: 1.379ms
+[nuxt] components:extend: 0.088ms
+[nuxt] app:templates: 7.572ms
+[nuxt] nitro:prepare:types: 0.066ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 5.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 6.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 7.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 8.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 9.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 10.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 11.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 11.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 11.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 11.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 10.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 11.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 16.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 19.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.41ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] pages:routerOptions: 0.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 52.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.47ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 8.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 13.84ms
+[nuxt] builder:watch: 94.707ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.018ms
+[nuxt] app:resolve: 1.348ms
+[nuxt] components:extend: 0.108ms
+[nuxt] app:templates: 7.934ms
+[nuxt] nitro:prepare:types: 0.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 10.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 11.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 12.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 16.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 19.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.72ms
+[nuxt] pages:routerOptions: 0.031ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 22.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 9.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 13.67ms
+[nuxt] builder:watch: 69.162ms
+[nuxt] pages:routerOptions: 0.02ms
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 1.386ms
+[nuxt] components:extend: 0.121ms
+[nuxt] app:templates: 7.702ms
+[nuxt] nitro:prepare:types: 0.208ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 9.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 10.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 11.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 12.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 13.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 14.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 15.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 15.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 14.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 14.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 14.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 14.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 15.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 15.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 16.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 16.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 17.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 18.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 19.24ms
+[nuxt] pages:routerOptions: 0.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 25.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 9.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 15.55ms
+[nuxt] builder:watch: 71.833ms
+[nuxt] components:dirs: 0.028ms
+[nuxt] app:resolve: 1.65ms
+[nuxt] components:extend: 0.253ms
+[nuxt] app:templates: 16.595ms
+[nuxt] nitro:prepare:types: 0.116ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 7.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 8.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 8.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 9.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 9.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 9.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 10.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 10.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 10.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 11.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 11.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 12.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 12.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 12.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 13.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 13.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 14.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 14.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 15.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 15.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 15.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 15.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 16.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 16.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 17.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 17.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 18.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 16.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 14.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 15.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 15.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 16.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 17.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 18.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 19.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 19.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 21.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 27.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 22.55ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[nuxt] pages:routerOptions: 0.027ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 51.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 7.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 11.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 16.56ms
+[nuxt] builder:watch: 118.266ms
+[nuxt] components:dirs: 0.023ms
+[nuxt] app:resolve: 3.132ms
+[nuxt] components:extend: 0.269ms
+[nuxt] app:templates: 15.955ms
+[nuxt] nitro:prepare:types: 0.147ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 9.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 10.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 11.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 12.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 13.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 13.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 14.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 15.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 16.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 17.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 18.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 18.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 19.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 20.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 21.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 22.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 22.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 23.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 24.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 25.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 25.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 25.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 26.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 27.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 27.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 28.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 29.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 28.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 26.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 26.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 27.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 27.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 30.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 31.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 31.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 32.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 33.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 40.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 35.12ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m[2m (x2)[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] pages:routerOptions: 0.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 61.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 9.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 14.17ms
+[nuxt] builder:watch: 135.25ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.019ms
+[nuxt] app:resolve: 1.474ms
+[nuxt] components:extend: 0.095ms
+[nuxt] app:templates: 11.336ms
+[nuxt] nitro:prepare:types: 0.099ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 6.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 6.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 7.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 7.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 8.47ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 8.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 9.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 9.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 9.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 10.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 10.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 10.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 11.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 11.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 12.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 12.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 13.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 13.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 14.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 14.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 14.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 13.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 12.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 13.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 13.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 14.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 15.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 16.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 16.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 17.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 18.76ms
+[nuxt] pages:routerOptions: 0.026ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 26.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 10.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 15.55ms
+[nuxt] builder:watch: 79.113ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[nuxt] components:dirs: 0.019ms
+[nuxt] app:resolve: 1.304ms
+[nuxt] components:extend: 0.096ms
+[nuxt] app:templates: 22.75ms
+[nuxt] nitro:prepare:types: 0.133ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 6.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 8.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 8.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 9.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 9.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 9.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 10.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 10.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 10.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 11.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 11.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 12.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 12.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 13.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 14.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 14.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 14.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 14.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 13.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 14.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 14.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 16.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 16.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 17.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 17.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 19.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 22.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 20.1ms
+[nuxt] pages:routerOptions: 0.028ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 26.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 13.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 19.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 28.6ms
+[nuxt] builder:watch: 179.71ms
+[nuxt] components:dirs: 0.019ms
+[nuxt] app:resolve: 1.566ms
+[nuxt] components:extend: 0.204ms
+[nuxt] app:templates: 8.957ms
+[nuxt] nitro:prepare:types: 0.112ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 11.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 15.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 16.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 20.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.64ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[nuxt] pages:routerOptions: 0.032ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 48.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 7.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 12.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 17.95ms
+[nuxt] builder:watch: 96.388ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.018ms
+[nuxt] app:resolve: 1.415ms
+[nuxt] components:extend: 0.226ms
+[nuxt] app:templates: 9.768ms
+[nuxt] nitro:prepare:types: 0.147ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 6.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 8.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 8.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 9.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 9.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 10.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 10.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 10.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 10.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 11.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 11.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 11.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 12.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 13.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 12.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 13.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 13.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 14.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 14.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 14.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 13.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 13.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 14.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 14.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 15.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 16.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 16.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 17.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 18.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 22.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 19.22ms
+[nuxt] pages:routerOptions: 0.031ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 25.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 10.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 15.58ms
+[nuxt] builder:watch: 72.754ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] components:dirs: 0.023ms
+[nuxt] app:resolve: 1.246ms
+[nuxt] components:extend: 0.082ms
+[nuxt] app:templates: 10.454ms
+[nuxt] nitro:prepare:types: 0.053ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 3.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 4.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 5.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 6.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 7.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 11.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 12.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 13.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 14.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 15.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 15.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 16.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 16.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 18.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 19.63ms
+[nuxt] pages:routerOptions: 0.044ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 25.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 10ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 15.83ms
+[nuxt] builder:watch: 65.298ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 1.411ms
+[nuxt] components:extend: 0.07ms
+[nuxt] app:templates: 9.043ms
+[nuxt] nitro:prepare:types: 0.056ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 3.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 4.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 5.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 6.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 7.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 8.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 9.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 9.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 9.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 9.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 9.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 10.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 10.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 10.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 11.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 10.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 9.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 9.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 10.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 10.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 11.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 12.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 12.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 13.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 14.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 17.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 15.37ms
+[nuxt] pages:routerOptions: 0.024ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 20.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 8.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 14.63ms
+[nuxt] builder:watch: 63.391ms
+[nuxt] components:dirs: 0.018ms
+[nuxt] app:resolve: 3.573ms
+[nuxt] components:extend: 0.073ms
+[nuxt] app:templates: 9.032ms
+[nuxt] nitro:prepare:types: 0.057ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 3.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 4.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 4.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 5.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 5.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 6.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 7.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 8.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 9.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 10.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 11.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 11.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 12.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 11.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 11.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 12.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 13.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 13.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 14.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 15.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 17.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 15.96ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] pages:routerOptions: 0.025ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 41.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 10.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 15.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 21.25ms
+[nuxt] builder:watch: 92.496ms
+[nuxt] components:dirs: 0.034ms
+[nuxt] app:resolve: 3.228ms
+[nuxt] components:extend: 0.075ms
+[nuxt] app:templates: 8.53ms
+[nuxt] nitro:prepare:types: 0.057ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 9.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 10.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 11.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 12.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 11.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 10.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 11.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 11.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 13.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 14.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 15.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 18.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 16.61ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m[2m (x2)[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[nuxt] pages:routerOptions: 0.046ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 40.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 7.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 11.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 16.46ms
+[nuxt] builder:watch: 88.91ms
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 3.37ms
+[nuxt] components:extend: 0.075ms
+[nuxt] app:templates: 10.889ms
+[nuxt] nitro:prepare:types: 0.134ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 6.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.47ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 8.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 9.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 9.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 9.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 10.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 10.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 10.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 11.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 11.47ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 11.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 12.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 12.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 12.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 12.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 13.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 13.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 12.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 13.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 15.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 17.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 18.21ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m
+[nuxt] pages:routerOptions: 0.029ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 44.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 12.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 15.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 22.73ms
+[nuxt] builder:watch: 99.067ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.019ms
+[nuxt] app:resolve: 1.318ms
+[nuxt] components:extend: 0.083ms
+[nuxt] app:templates: 11.127ms
+[nuxt] nitro:prepare:types: 0.062ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 9.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 10.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 11.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 11.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 12.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 11.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 14.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 15.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 18.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 16.82ms
+[nuxt] pages:routerOptions: 0.022ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 21.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 8.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 11.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 18.13ms
+[nuxt] builder:watch: 82.255ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] components:dirs: 0.018ms
+[nuxt] app:resolve: 1.429ms
+[nuxt] components:extend: 0.085ms
+[nuxt] app:templates: 9.989ms
+[nuxt] nitro:prepare:types: 0.065ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 10.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 10.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 11.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 11.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 11.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 11.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 12.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 12.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 13.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 13.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 12.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 13.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 13.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 15.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 15.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 16.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 20.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.99ms
+[nuxt] pages:routerOptions: 0.031ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 24.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 7.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 11.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 17.09ms
+[nuxt] builder:watch: 87.331ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.019ms
+[nuxt] app:resolve: 1.556ms
+[nuxt] components:extend: 0.15ms
+[nuxt] app:templates: 12.852ms
+[nuxt] nitro:prepare:types: 0.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 3.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 9.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 10.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 10.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 11.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 11.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 11.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 12.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 12.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 12.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 13.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 13.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 14.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 13.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 13.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 14.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 14.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 14.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 15.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 16.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 16.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 17.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 19.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 21.26ms
+[nuxt] pages:routerOptions: 0.029ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 27.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 7.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 12.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 18.46ms
+[nuxt] builder:watch: 85.585ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.029ms
+[nuxt] app:resolve: 1.617ms
+[nuxt] components:extend: 0.098ms
+[nuxt] app:templates: 10.081ms
+[nuxt] nitro:prepare:types: 0.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 6.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 7.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 8.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 8.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 8.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 9.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 9.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 10.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 10.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 10.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 11.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 10.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 11.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 11.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 11.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 12.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 12.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 13.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 13.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 13.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 14.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 14.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 14.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 15.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 15.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 15.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 14.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 14.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 15.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 15.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 16.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 17.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 17.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 18.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 19.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 22.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 20.74ms
+[nuxt] pages:routerOptions: 0.031ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 26.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 11.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 17.87ms
+[nuxt] builder:watch: 87.776ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 1.784ms
+[nuxt] components:extend: 0.474ms
+[nuxt] app:templates: 10.921ms
+[nuxt] nitro:prepare:types: 0.102ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 6.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 7.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 7.6ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 8.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 8.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 9.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 9.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 10.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 10.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 11.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 11.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 11.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 11.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 12.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 12.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 12.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 13.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 13.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 13.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 13.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 14.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 14.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 15.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 15.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 15.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 16.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 15.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 14.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 15.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 15.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 15.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 17.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 18.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 18.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 20.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 24.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 21.42ms
+[nuxt] pages:routerOptions: 0.048ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 29.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 10.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 15.37ms
+[nuxt] builder:watch: 162.266ms
+[nuxt] components:dirs: 0.038ms
+[nuxt] app:resolve: 2.02ms
+[nuxt] components:extend: 0.122ms
+[nuxt] app:templates: 12.156ms
+[nuxt] nitro:prepare:types: 0.056ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 6.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 8.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 10.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 11.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 11.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 11.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 11.67ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 12.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 15.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 16.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 20.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 17.81ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m[2m (x2)[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationProductPicker.vue[22m
+[nuxt] pages:routerOptions: 0.026ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 44.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 73.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 91.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 101.28ms
+[nuxt] builder:watch: 182.245ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 1.289ms
+[nuxt] components:extend: 0.149ms
+[nuxt] app:templates: 7.267ms
+[nuxt] nitro:prepare:types: 0.054ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.53ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 4.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 5.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 6.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 7.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 7.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 7.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 8.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 8.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 9.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 9.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.2ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 10.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 10.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 11.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 11.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 11.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 10.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 10.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 10.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 11.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 11.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 12.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 12.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 13.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 13.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 14.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 17.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 15.51ms
+[nuxt] pages:routerOptions: 0.028ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 21.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 8.72ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 13.46ms
+[nuxt] builder:watch: 64.338ms
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[nuxt] components:dirs: 0.022ms
+[nuxt] app:resolve: 1.518ms
+[nuxt] components:extend: 0.119ms
+[nuxt] app:templates: 31.142ms
+[nuxt] nitro:prepare:types: 0.062ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.46ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 8.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.08ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 11.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.73ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 12.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 11.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 13.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 14.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 15.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 19.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 16.88ms
+[nuxt] pages:routerOptions: 0.032ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 22.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 5.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 8.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 13.14ms
+[nuxt] builder:watch: 92.376ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m
+[nuxt] components:dirs: 0.044ms
+[nuxt] app:resolve: 2.081ms
+[nuxt] components:extend: 0.162ms
+[nuxt] app:templates: 15.145ms
+[nuxt] nitro:prepare:types: 0.071ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 8.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 8.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 8.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 9.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 9.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 9.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 10.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 10.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 11.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 11.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 11.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 11.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 11.47ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 11.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 12.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 11.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 12.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 12.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 13.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 13.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 13.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 13.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 14.11ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 14.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 11.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 11.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 11.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 11.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 12.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 13.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 14.14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 14.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 14.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 15.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 16.67ms
+[nuxt] pages:routerOptions: 0.077ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 24.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 13.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 16.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 21.49ms
+[nuxt] builder:watch: 152.68ms
+[nuxt] components:dirs: 0.029ms
+[nuxt] app:resolve: 2.349ms
+[nuxt] components:extend: 0.116ms
+[nuxt] app:templates: 8.296ms
+[nuxt] nitro:prepare:types: 0.064ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.5ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.64ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 6.99ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 9.15ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 9.55ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 10.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 10.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 10.78ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 10.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 11.12ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 11.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 11.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 12.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 12.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 12.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 12.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 12.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 12.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 12.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 13.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 15.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 15.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 15.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 17.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 20.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 18.26ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m
+[nuxt] pages:routerOptions: 0.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 49.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 37.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 42.45ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 47.5ms
+[nuxt] builder:watch: 127.474ms
+[nuxt] components:dirs: 0.022ms
+[nuxt] app:resolve: 1.54ms
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m[2m (x2)[22m
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[nuxt] components:extend: 0.119ms
+[nuxt] app:templates: 11.061ms
+[nuxt] nitro:prepare:types: 0.072ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 5.71ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 6.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 6.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.29ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 7.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 8.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 9.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 9.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 10.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 10.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 10.69ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 11.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 11.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 11.86ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 12.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 12.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 13.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 13.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 13.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 14.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 14.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 15.3ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 16.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 15.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 14.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 15.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 15.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 15.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 16.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 17.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 17.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 17.84ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 19.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 23.01ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 20.69ms
+[nuxt] pages:routerOptions: 0.027ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 26.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 9.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 14.63ms
+[nuxt] builder:watch: 96.278ms
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 1.346ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m[2m (x2)[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m
+[nuxt] components:extend: 0.124ms
+[nuxt] app:templates: 48.329ms
+[nuxt] nitro:prepare:types: 0.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 4.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 5.27ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 6.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 7.31ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 8.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 8.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 9.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 9.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 9.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 10.04ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 10.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 10.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 11.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 11.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 11.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 11.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 12.25ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 12.61ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 12.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 13.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 13.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 13.85ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 14.24ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 14.59ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 14.92ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 14.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 13.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 14.41ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 14.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 15.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 15.97ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 16.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 16.91ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 17.33ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 18.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 21.94ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 20.15ms
+[nuxt] pages:routerOptions: 0.025ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 25.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 4.82ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 7.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 13.06ms
+[nuxt] builder:watch: 119.259ms
+[36mi[39m [32mhmr update [39m[2m/@id/virtual:nuxt:C%3A%2FUsers%2FMike%2FDocuments%2FProjects%2Ffila-atendimento%2Fweb%2F.nuxt%2Froutes.mjs[22m
+[36mi[39m [32mhmr update [39m[2m/features/operation/components/OperationFinishModal.vue[22m
+[nuxt] components:dirs: 0.021ms
+[nuxt] app:resolve: 1.733ms
+[nuxt] components:extend: 0.127ms
+[nuxt] app:templates: 13.702ms
+[nuxt] nitro:prepare:types: 0.38ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 10.13ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 10.98ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 11.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 11.83ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 12.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 12.42ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 12.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 13.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 13.62ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 14ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 14.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 14.65ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 14.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 15.36ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 16.06ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 16.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 16.68ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 17.09ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 17.49ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 17.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 17.88ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 18.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 18.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 18.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 19.22ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 19.54ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 19.96ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 19.77ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 15.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 15.32ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 15.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 16.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 16.89ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 17.58ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 18.43ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 19.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 26.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 20.44ms
+[nuxt] pages:routerOptions: 0.028ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 29.23ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 8.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 13.21ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 18.26ms
+[nuxt] builder:watch: 122.773ms
+[36mi[39m [32mpage reload [39m[2massets/styles/components.css[22m
+[36mi[39m [32mhmr update [39m[2m/assets/styles/components.css?direct, /assets/styles/components.css[22m
+[nuxt] components:dirs: 0.02ms
+[nuxt] app:resolve: 1.392ms
+[nuxt] components:extend: 0.63ms
+[nuxt] app:templates: 10.685ms
+[nuxt] nitro:prepare:types: 0.068ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp-component.mjs[39m in 3.93ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/app.config.d.ts[39m in 4.34ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mapp.config.mjs[39m in 4.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/build.d.ts[39m in 5.07ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnitro.client.mjs[39m in 5.87ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcss.mjs[39m in 6.39ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mfetch.mjs[39m in 6.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36merror-component.mjs[39m in 7.18ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mglobal-polyfills.mjs[39m in 7.57ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mlayouts.mjs[39m in 7.9ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mmiddleware.mjs[39m in 8.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mnuxt.config.mjs[39m in 8.52ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpaths.mjs[39m in 8.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroot-component.mjs[39m in 9.28ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/modules.d.ts[39m in 9.7ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtest-component-wrapper.mjs[39m in 10.17ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/vue-shim.d.ts[39m in 10.63ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-layouts.d.ts[39m in 11.02ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/builder-env.d.ts[39m in 11.4ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroutes.mjs[39m in 11.81ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mpages.mjs[39m in 11.8ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/middleware.d.ts[39m in 12.03ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-middleware.d.ts[39m in 12.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/layouts.d.ts[39m in 12.66ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead-options.mjs[39m in 13.05ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36munhead.config.mjs[39m in 13.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.d.ts[39m in 13.76ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/components.d.ts[39m in 13.35ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.plugin.mjs[39m in 12.74ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-names.mjs[39m in 13.1ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponents.islands.mjs[39m in 13.51ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mcomponent-chunk.mjs[39m in 13.95ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mroute-rules.mjs[39m in 14.79ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.mjs[39m in 15.37ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mimports.d.ts[39m in 15.75ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/nitro-nuxt.d.ts[39m in 16.16ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/shared-imports.d.ts[39m in 17.26ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/runtime-config.d.ts[39m in 20.19ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/imports.d.ts[39m in 18.44ms
+[nuxt] pages:routerOptions: 0.025ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mrouter.options.mjs[39m in 23.44ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.server.mjs[39m in 6.48ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mplugins.client.mjs[39m in 9.56ms
+[90m[[90mnuxt[90m][39m [36mi[39m Compiled [36mtypes/plugins.d.ts[39m in 16.31ms
+[nuxt] builder:watch: 71.81ms
+
+[1m[36m Nuxt Performance Report[39m[22m
+
+  [1mPhase[22m                       [1mDuration[22m       [1mRSS Delta[22m      [1mHeap Delta[22m
+  [2m────────────────────────────────────────────────────────────────────[22m
+  init                             [32m9ms[39m       [32m+508.0 KB[39m       +568.3 KB  [32m███[39m
+  modules                         [32m72ms[39m         [32m+6.8 MB[39m         -1.8 MB  [32m██████[39m[32m░[39m
+  modules:done                    [32m33ms[39m         [32m+1.3 MB[39m         +3.4 MB  [32m█████[39m
+  nitro:config                   [32m148ms[39m         [32m+1.6 MB[39m        +16.6 MB  [32m███████[39m
+  nitro:createNitro              [32m182ms[39m        [33m+15.1 MB[39m         -5.2 MB  [32m████████[39m[33m░[39m
+  ready                            [32m1ms[39m        [32m+12.0 KB[39m       -134.9 KB  [32m█[39m
+  app:generate                    [32m74ms[39m         [32m+7.3 MB[39m        +11.4 MB  [32m██████[39m[32m░[39m
+  app:templates                   [32m29ms[39m         [32m+4.2 MB[39m         +3.0 MB  [32m█████[39m
+  app:templatesGenerated          [32m10ms[39m         [32m+3.4 MB[39m         +2.0 MB  [32m███[39m
+  build:before                    [32m29ms[39m         [32m+2.6 MB[39m        -18.3 MB  [32m█████[39m
+  build:bundle                   [33m323ms[39m        [33m+30.8 MB[39m        +21.2 MB  [33m████████[39m[33m░░░[39m
+  build:done                      [32m44ms[39m         [32m+3.9 MB[39m         +3.8 MB  [32m█████[39m
+  nitro:build                     [31m1.0s[39m       [31m+118.6 MB[39m        +92.8 MB  [31m██████████[39m[31m░░░░░░░░░░[39m
+  builder:watch                   [32m78ms[39m       [32m+984.0 KB[39m       +384.9 KB  [32m██████[39m
+  app:templates                   [32m10ms[39m            [32m+0 B[39m       +241.1 KB  [32m████[39m
+  builder:watch                   [32m35ms[39m        [32m+28.0 KB[39m       +457.0 KB  [32m█████[39m
+  app:templatesGenerated          [32m33ms[39m         [32m-1.6 MB[39m         +1.6 MB  [32m█████[39m
+  builder:generateApp             [32m14ms[39m       [32m+356.0 KB[39m       +272.3 KB  [32m████[39m
+  app:templates                   [32m12ms[39m       [32m+944.0 KB[39m       -364.8 KB  [32m████[39m
+  app:templates                    [32m9ms[39m            [32m+0 B[39m         +1.1 MB  [32m███[39m
+  builder:watch                   [32m87ms[39m       [32m+928.0 KB[39m       +711.4 KB  [32m██████[39m
+  app:templates                    [32m8ms[39m            [32m+0 B[39m         +1.1 MB  [32m███[39m
+  builder:watch                   [32m61ms[39m       [32m+512.0 KB[39m       -816.0 KB  [32m██████[39m
+  app:templates                    [32m8ms[39m         [32m+4.0 KB[39m         +1.1 MB  [32m███[39m
+  builder:watch                   [32m64ms[39m       [32m+292.0 KB[39m         -1.0 MB  [32m██████[39m
+  app:templates                    [32m8ms[39m        [32m+76.0 KB[39m       +275.2 KB  [32m███[39m
+  builder:watch                  [32m102ms[39m       [32m+360.0 KB[39m       +530.6 KB  [32m███████[39m
+  app:templates                   [32m17ms[39m       [32m+128.0 KB[39m       +323.8 KB  [32m████[39m
+  builder:watch                  [32m119ms[39m         [32m+1.2 MB[39m       +992.1 KB  [32m███████[39m
+  app:templates                   [32m16ms[39m        [32m+96.0 KB[39m       +209.8 KB  [32m████[39m
+  builder:watch                   [32m68ms[39m       [32m+432.0 KB[39m       -445.3 KB  [32m██████[39m
+  app:templates                   [32m11ms[39m        [32m+80.0 KB[39m         +1.1 MB  [32m████[39m
+  builder:watch                  [32m157ms[39m        [33m+42.8 MB[39m         +5.0 MB  [32m███████[39m[33m░░░░[39m
+  app:templates                   [32m23ms[39m        [33m+12.2 MB[39m        -63.9 KB  [32m█████[39m[33m░[39m
+  builder:watch                   [32m87ms[39m       [32m+108.0 KB[39m       +831.8 KB  [32m██████[39m
+  app:templates                    [32m9ms[39m            [32m+0 B[39m       +206.1 KB  [32m███[39m
+  builder:watch                   [32m63ms[39m        [32m+60.0 KB[39m       +204.0 KB  [32m██████[39m
+  app:templates                   [32m10ms[39m        [32m+24.0 KB[39m       +381.5 KB  [32m███[39m
+  builder:watch                   [32m55ms[39m       [32m+164.0 KB[39m       +204.9 KB  [32m██████[39m
+  app:templates                   [32m10ms[39m        [32m+44.0 KB[39m       +278.5 KB  [32m████[39m
+  builder:watch                   [32m54ms[39m       [32m+184.0 KB[39m       -245.5 KB  [32m██████[39m
+  app:templates                    [32m9ms[39m        [32m+28.0 KB[39m       +180.3 KB  [32m███[39m
+  builder:watch                   [32m83ms[39m       [32m-380.0 KB[39m         +2.3 MB  [32m██████[39m
+  app:templates                    [32m9ms[39m        [32m+24.0 KB[39m         +1.0 MB  [32m███[39m
+  builder:watch                   [32m80ms[39m         [32m+1.1 MB[39m       -842.0 KB  [32m██████[39m
+  app:templates                    [32m9ms[39m            [32m+0 B[39m       +159.9 KB  [32m███[39m
+  builder:watch                   [32m88ms[39m         [32m+2.4 MB[39m         +2.6 MB  [32m██████[39m
+  app:templates                   [32m11ms[39m        [32m+76.0 KB[39m         +1.0 MB  [32m████[39m
+  builder:watch                   [32m71ms[39m       [32m+428.0 KB[39m         -1.6 MB  [32m██████[39m
+  app:templates                   [32m11ms[39m        [32m-68.0 KB[39m       +366.9 KB  [32m████[39m
+  builder:watch                   [32m77ms[39m       [32m+532.0 KB[39m       +746.6 KB  [32m██████[39m
+  app:templates                   [32m10ms[39m        [32m+32.0 KB[39m         +1.0 MB  [32m███[39m
+  builder:watch                   [32m73ms[39m       [32m+296.0 KB[39m         -1.2 MB  [32m██████[39m
+  app:templates                   [32m13ms[39m        [32m+36.0 KB[39m         +1.0 MB  [32m████[39m
+  builder:watch                   [32m78ms[39m       [32m+172.0 KB[39m       +941.1 KB  [32m██████[39m
+  app:templates                   [32m10ms[39m        [32m+32.0 KB[39m       +366.6 KB  [32m███[39m
+  builder:watch                  [32m151ms[39m         [32m+6.1 MB[39m       +339.8 KB  [32m███████[39m[32m░[39m
+  app:templates                   [32m11ms[39m       [32m+576.0 KB[39m         +1.0 MB  [32m████[39m
+  builder:watch                  [32m170ms[39m         [32m+1.3 MB[39m         +2.5 MB  [32m███████[39m
+  app:templates                   [32m12ms[39m        [32m+44.0 KB[39m         -2.8 MB  [32m████[39m
+  builder:watch                   [32m57ms[39m        [32m+48.0 KB[39m      -1013.4 KB  [32m██████[39m
+  app:templates                    [32m7ms[39m         [32m+8.0 KB[39m         +1.0 MB  [32m███[39m
+  builder:watch                   [32m61ms[39m        [32m+24.0 KB[39m       +421.7 KB  [32m██████[39m
+  app:templates                   [32m31ms[39m        [32m+12.0 KB[39m       +266.9 KB  [32m█████[39m
+  builder:watch                  [32m138ms[39m        [33m+18.3 MB[39m         +2.1 MB  [32m███████[39m[33m░░[39m
+  app:templates                   [32m15ms[39m         [32m+1.4 MB[39m         +1.2 MB  [32m████[39m
+  builder:watch                  [32m119ms[39m         [32m+1.5 MB[39m         +2.6 MB  [32m███████[39m
+  app:templates                    [32m8ms[39m        [32m+64.0 KB[39m         +1.0 MB  [32m███[39m
+  builder:watch                   [32m85ms[39m         [32m+1.5 MB[39m       -909.0 KB  [32m██████[39m
+  app:templates                   [32m11ms[39m         [32m+4.0 KB[39m         +1.0 MB  [32m████[39m
+  builder:watch                   [32m71ms[39m       [32m+644.0 KB[39m         -2.8 MB  [32m██████[39m
+  app:templates                   [32m48ms[39m       [32m+764.0 KB[39m         +3.7 MB  [32m██████[39m
+  builder:watch                  [32m109ms[39m         [32m+1.7 MB[39m       -264.1 KB  [32m███████[39m
+  app:templates                   [32m14ms[39m         [32m+4.0 KB[39m       +997.0 KB  [32m████[39m
+  builder:watch                   [32m61ms[39m         [32m+1.1 MB[39m         -2.4 MB  [32m██████[39m
+  app:templates                   [32m11ms[39m        [32m+96.0 KB[39m       +236.5 KB  [32m████[39m
+  [2m────────────────────────────────────────────────────────────────────[22m
+  [1mTotal[22m                       [1m252.3min[22m        [1m-47.7 MB[22m       [1m+100.6 MB[22m
+
+[1m Modules[22m
+
+  [2m•[22m nuxt:pages [2m—[22m [2m22ms[22m
+  [2m•[22m nuxt:components [2m—[22m [2m8ms[22m
+
+[1m Bundler Plugins[22m
+
+  [2m•[22m nitro:node-externals [2mresolveId[22m [2m—[22m [31m37ms/file[39m[2m, max 473ms[22m [2m(369 calls)[22m
+  [2m•[22m vite:css [2mtransform[22m [2m—[22m [31m13ms/file[39m[2m, max 69ms[22m [2m(16 calls)[22m
+  [2m•[22m vite:asset-import-meta-url [2mtransform[22m [2m—[22m [31m10ms/file[39m [2m(1 calls)[22m
+  [2m•[22m vite:vue [2mtransform[22m [2m—[22m [33m6ms/file[39m[2m, max 41ms[22m [2m(80 calls)[22m
+  [2m•[22m vite:client-inject [2mtransform[22m [2m—[22m [33m4ms/file[39m[2m, max 340ms[22m [2m(373 calls)[22m
+  [2m•[22m nitro:alias [2mresolveId[22m [2m—[22m [33m4ms/file[39m[2m, max 274ms[22m [2m(557 calls)[22m
+  [2m•[22m vite:import-analysis [2mtransform[22m [2m—[22m [33m3ms/file[39m[2m, max 222ms[22m [2m(373 calls)[22m
+  [2m•[22m vite:esbuild [2mtransform[22m [2m—[22m [2m2ms/file[22m[2m, max 345ms[22m [2m(373 calls)[22m
+  [2m•[22m nuxt:pages-macros-transform [2mtransform[22m [2m—[22m [2m1ms/file[22m[2m, max 4ms[22m [2m(40 calls)[22m
+  [2m•[22m vite:resolve [2mresolveId[22m [2m—[22m [2m1ms/file[22m[2m, max 13ms[22m [2m(1337 calls)[22m
+  [2m•[22m vite:optimized-deps [2mload[22m [2m—[22m [2m1ms/file[22m[2m, max 216ms[22m [2m(209 calls)[22m
+  [2m•[22m impound:trace [2mtransform[22m [2m—[22m [2m1ms/file[22m[2m, max 39ms[22m [2m(209 calls)[22m
+  [2m•[22m nuxt:prehydrate-transform [2mtransform[22m [2m—[22m [2m1ms/file[22m [2m(4 calls)[22m
+  [2m•[22m nuxt:imports-transform [2mtransform[22m [2m—[22m [2m790µs/file[22m[2m, max 15ms[22m [2m(746 calls)[22m
+  [2m•[22m nuxt:import-protection:impound:trace [2mtransform[22m [2m—[22m [2m660µs/file[22m[2m, max 34ms[22m [2m(373 calls)[22m
+
+[1m Details[22m
+
+  [2m•[22m module:nuxt:pages [2m—[22m [2m22ms[22m
+  [2m•[22m module:nuxt:components [2m—[22m [2m8ms[22m
+  [2m•[22m vite:client [2m—[22m [2m51ms[22m
+  [2m•[22m vite:server [2m—[22m [2m42ms[22m
+
+[2m Data dump written to ./.nuxt/perf-report.json[22m
+[2m Trace written to ./.nuxt/perf-trace.json (load in [36mhttps://ui.perfetto.dev[39m)[22m
+

@@ -1,0 +1,132 @@
+id: operation-smoke
+name: Operacao Smoke
+description: Fluxo base da operacao com fila, atendimento fora da vez e fechamento.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 120
+steps:
+  - action: goto
+    name: Abre a pagina de operacao
+    path: /operacao
+
+  - action: clear_storage
+    name: Limpa storage local para iniciar em estado previsivel
+    path: /operacao
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida board principal
+    testid: operation-board
+
+  - action: expect_visible
+    name: Valida barra de consultores
+    testid: operation-consultant-strip
+
+  - action: click
+    name: Coloca Thalles na fila
+    testid: operation-add-to-queue-thalles
+
+  - action: expect_visible
+    name: Confirma Thalles na fila
+    testid: operation-waiting-thalles
+
+  - action: click
+    name: Coloca Erik na fila
+    testid: operation-add-to-queue-erik
+
+  - action: expect_visible
+    name: Confirma Erik na fila
+    testid: operation-waiting-erik
+
+  - action: click
+    name: Inicia Erik fora da vez
+    testid: operation-start-specific-erik
+
+  - action: expect_visible
+    name: Confirma Erik em atendimento
+    testid: operation-service-erik
+
+  - action: click
+    name: Abre o modal de encerramento
+    testid: operation-finish-erik
+
+  - action: expect_visible
+    name: Confirma modal aberto
+    testid: operation-finish-modal
+
+  - action: click
+    name: Marca resultado como nao compra
+    testid: operation-outcome-nao-compra
+
+  - action: click
+    name: Abre seletor de produto visto
+    testid: operation-products-seen-trigger
+
+  - action: fill
+    name: Busca produto visto
+    testid: operation-products-seen-search
+    value: solitario
+
+  - action: click
+    name: Adiciona produto visto
+    testid: operation-products-seen-option-produto-1
+
+  - action: fill
+    name: Preenche nome do cliente
+    testid: operation-customer-name
+    value: Cliente QA
+
+  - action: fill
+    name: Preenche telefone do cliente
+    testid: operation-customer-phone
+    value: 79999990000
+
+  - action: select
+    name: Seleciona motivo da visita
+    testid: operation-visit-reason
+    value: consulta
+
+  - action: select
+    name: Seleciona origem do cliente
+    testid: operation-customer-source
+    value: instagram
+
+  - action: fill
+    name: Preenche motivo do atendimento fora da vez
+    testid: operation-queue-jump-reason
+    value: Cliente retornou direto para validar o fluxo QA.
+
+  - action: fill
+    name: Preenche observacao final
+    testid: operation-notes
+    value: Smoke test executado pelo qa-bot.
+
+  - action: click
+    name: Encerra o atendimento
+    testid: operation-finish-submit
+
+  - action: expect_hidden
+    name: Confirma que o modal fechou
+    testid: operation-finish-modal
+
+  - action: expect_hidden
+    name: Confirma que Erik saiu do atendimento
+    testid: operation-service-erik
+
+  - action: expect_visible
+    name: Confirma que Erik voltou para a fila
+    testid: operation-waiting-erik
+
+  - action: expect_text
+    name: Confirma status de Erik na barra de consultores
+    testid: operation-consultant-erik
+    value: Na fila
+
+  - action: expect_visible
+    name: Confirma toast de sucesso
+    testid: ui-toast-success
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: operation-smoke-final.png

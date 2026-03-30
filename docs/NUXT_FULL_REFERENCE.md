@@ -1,7 +1,7 @@
 # Nexo - Referencia Completa para Migracao Nuxt
 
 Gerado em: 2026-03-19  
-Atualizado em: 2026-03-19  
+Atualizado em: 2026-03-23  
 Fonte: leitura direta do codigo atual do MVP.  
 Objetivo: servir como documento unico para migrar o sistema para Nuxt 3 / Vue 3 sem perder comportamento, regras e contratos do frontend atual.
 
@@ -29,7 +29,7 @@ Esta revisao ja considera os ajustes mais recentes aplicados no MVP:
 
 ### 1.1 Tokens globais
 
-Arquivo: `src/styles/tokens.css`
+Arquivo: `web/app/assets/styles/tokens.css`
 
 ```css
 :root {
@@ -58,7 +58,7 @@ Arquivo: `src/styles/tokens.css`
 
 ### 1.2 Base global
 
-Arquivos: `src/styles/base.css`, `src/styles/components.css`
+Arquivos: `web/app/assets/styles/base.css`, `web/app/assets/styles/components.css`
 
 - Tema atual e escuro.
 - `body` usa gradiente radial + linear.
@@ -69,13 +69,11 @@ Arquivos: `src/styles/base.css`, `src/styles/components.css`
 
 ### 1.3 Modo apresentacao
 
-Arquivo: `src/styles/presentation.css`
+Arquivo: `web/app/assets/styles/presentation.css`
 
 Ativacao:
 
-```html
-<link rel="stylesheet" href="./src/styles/presentation.css">
-```
+No Nuxt atual, a ativacao e feita via `web/nuxt.config.ts` na chave `css`.
 
 Efeitos principais:
 
@@ -274,10 +272,10 @@ Importante:
 
 Arquivos principais:
 
-- `src/components/finish-modal.js`
-- `src/components/catalog-picker.js`
-- `src/main.js`
-- `src/store/app-store.js`
+- `web/app/components/operation/OperationFinishModal.vue`
+- `web/app/components/operation/OperationProductPicker.vue`
+- `web/app/stores/dashboard.ts`
+- `core/domain/app-store.ts`
 
 ### 5.1 Estrutura geral
 
@@ -471,10 +469,10 @@ Quando `settings.testModeEnabled` e `settings.autoFillFinishModal` estao ativos:
 
 Arquivos principais:
 
-- `src/components/admin-reports.js`
-- `src/utils/reports.js`
-- `src/services/report-export.js`
-- `src/main.js`
+- `web/app/components/reports/ReportsWorkspace.vue`
+- `core/utils/reports.ts`
+- `web/app/utils/report-export.ts`
+- `web/app/stores/dashboard.ts`
 
 ### 6.1 Contrato atual de filtros
 
@@ -661,7 +659,7 @@ A busca textual filtra por:
 
 ## 7. Configuracoes
 
-Arquivo principal: `src/components/admin-settings.js`
+Arquivo principal: `web/app/components/settings/SettingsWorkspace.vue`
 
 ### 7.1 Tabs atuais
 
@@ -802,9 +800,9 @@ Esses paineis nao tiveram mudanca estrutural recente de regra de negocio, mas se
 
 Arquivos principais:
 
-- `src/store/app-store.js`
-- `src/services/queue-service.js`
-- `src/data/mock-queue.js`
+- `core/domain/app-store.ts`
+- `web/app/utils/queue-storage.ts`
+- `core/data/mock-queue.ts`
 
 ### 9.1 Campos importantes do estado
 
@@ -1046,7 +1044,7 @@ Guardas do intervalo:
 
 ## 13. Exportacao e relatorio impresso
 
-Arquivo: `src/services/report-export.js`
+Arquivo: `web/app/utils/report-export.ts`
 
 CSV:
 
@@ -1172,18 +1170,17 @@ app/
 
 Se for reconstruir por partes, estes sao os arquivos mais relevantes do estado atual:
 
-- `src/main.js`
-- `src/store/app-store.js`
-- `src/services/queue-service.js`
-- `src/components/finish-modal.js`
-- `src/components/catalog-picker.js`
-- `src/components/admin-reports.js`
-- `src/utils/reports.js`
-- `src/services/report-export.js`
-- `src/components/admin-settings.js`
-- `src/components/consultant-strip.js`
-- `src/styles/tokens.css`
-- `src/styles/base.css`
-- `src/styles/components.css`
-- `src/styles/presentation.css`
-
+- `web/app/stores/dashboard.ts`
+- `core/domain/app-store.ts`
+- `web/app/utils/queue-storage.ts`
+- `web/app/components/operation/OperationFinishModal.vue`
+- `web/app/components/operation/OperationProductPicker.vue`
+- `web/app/components/reports/ReportsWorkspace.vue`
+- `core/utils/reports.ts`
+- `web/app/utils/report-export.ts`
+- `web/app/components/settings/SettingsWorkspace.vue`
+- `web/app/components/operation/OperationConsultantStrip.vue`
+- `web/app/assets/styles/tokens.css`
+- `web/app/assets/styles/base.css`
+- `web/app/assets/styles/components.css`
+- `web/app/assets/styles/presentation.css`

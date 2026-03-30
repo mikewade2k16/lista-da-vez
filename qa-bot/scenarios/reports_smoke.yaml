@@ -1,0 +1,57 @@
+id: reports-smoke
+name: Relatorios Smoke
+description: Verifica carregamento do painel, filtros, exportacao CSV e PDF.
+defaults:
+  timeout_ms: 10000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina de relatorios
+    path: /relatorios
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /relatorios
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel de relatorios carregado
+    testid: reports-panel
+
+  - action: expect_visible
+    name: Valida cards de resumo
+    testid: reports-summary
+
+  - action: expect_visible
+    name: Valida botao de toggle de filtros
+    testid: reports-filter-toggle
+
+  - action: click
+    name: Abre painel de filtros
+    testid: reports-filter-toggle
+
+  - action: click
+    name: Fecha painel de filtros
+    testid: reports-filter-toggle
+
+  - action: expect_visible
+    name: Valida botao de exportar CSV
+    testid: reports-export-csv
+
+  - action: expect_visible
+    name: Valida botao de exportar PDF
+    testid: reports-export-pdf
+
+  - action: click
+    name: Clica em exportar CSV
+    testid: reports-export-csv
+
+  - action: click
+    name: Clica em exportar PDF
+    testid: reports-export-pdf
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: reports-smoke-final.png

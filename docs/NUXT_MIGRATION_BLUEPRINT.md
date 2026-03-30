@@ -66,13 +66,13 @@ Objetivo: este documento descreve **todo o comportamento funcional e tecnico** i
 
 ## 2. Arquitetura atual (MVP)
 
-- UI renderizada por funcoes puras em `src/components` e `src/pages`.
-- Estado centralizado em `src/store/app-store.js`.
-- Persistencia em `localStorage` via `src/services/queue-service.js`.
-- Exportacao de relatorios em `src/services/report-export.js`.
-- Regras analiticas em `src/utils/admin-metrics.js`.
-- Regras de campanhas em `src/utils/campaigns.js`.
-- Filtros de relatorio em `src/utils/reports.js`.
+- UI agora renderizada por paginas, layouts e componentes Vue em `web/app/`.
+- Estado centralizado em `core/domain/app-store.ts`.
+- Persistencia em `localStorage` via `web/app/utils/queue-storage.ts`.
+- Exportacao de relatorios em `web/app/utils/report-export.ts`.
+- Regras analiticas em `core/utils/admin-metrics.ts`.
+- Regras de campanhas em `core/utils/campaigns.ts`.
+- Filtros de relatorio em `core/utils/reports.ts`.
 
 ## 3. Contrato de estado (store)
 
@@ -523,14 +523,14 @@ Fase 2 Nuxt (com backend):
 
 ## 14. Referencias de codigo
 
-- Estado e regras: `src/store/app-store.js`
-- Bootstrap/eventos globais: `src/main.js`
-- Persistencia: `src/services/queue-service.js`
-- Regras de metricas: `src/utils/admin-metrics.js`
-- Regras de campanhas: `src/utils/campaigns.js`
-- Filtros de relatorio: `src/utils/reports.js`
-- Exportacao: `src/services/report-export.js`
-- Tela consolidada multi-loja: `src/components/admin-multistore.js`
+- Estado e regras: `core/domain/app-store.ts`
+- Store Nuxt/Pinia: `web/app/stores/dashboard.ts`
+- Persistencia: `web/app/utils/queue-storage.ts`
+- Regras de metricas: `core/utils/admin-metrics.ts`
+- Regras de campanhas: `core/utils/campaigns.ts`
+- Filtros de relatorio: `core/utils/reports.ts`
+- Exportacao: `web/app/utils/report-export.ts`
+- Tela consolidada multi-loja: `web/app/components/multistore/MultiStoreWorkspace.vue`
 
 ---
 

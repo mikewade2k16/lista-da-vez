@@ -1,15 +1,15 @@
 <script setup>
 import CampaignWorkspace from "~/components/campaigns/CampaignWorkspace.vue";
 import { storeToRefs } from "pinia";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useCampaignsStore } from "~/stores/campaigns";
 
 definePageMeta({
   layout: "dashboard",
   workspaceId: "campanhas"
 });
 
-const dashboard = useDashboardStore();
-const { state } = storeToRefs(dashboard);
+const campaignsStore = useCampaignsStore();
+const { state } = storeToRefs(campaignsStore);
 </script>
 
 <template>

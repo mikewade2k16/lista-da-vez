@@ -1,15 +1,20 @@
 <script setup>
+import { onMounted } from "vue";
 import MultiStoreWorkspace from "~/components/multistore/MultiStoreWorkspace.vue";
 import { storeToRefs } from "pinia";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useMultiStoreStore } from "~/stores/multistore";
 
 definePageMeta({
   layout: "dashboard",
   workspaceId: "multiloja"
 });
 
-const dashboard = useDashboardStore();
-const { state } = storeToRefs(dashboard);
+const multiStore = useMultiStoreStore();
+const { state } = storeToRefs(multiStore);
+
+onMounted(() => {
+  void multiStore.ensureLoaded();
+});
 </script>
 
 <template>

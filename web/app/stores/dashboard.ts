@@ -1,205 +1,145 @@
-import { ref } from "vue";
-import { defineStore } from "pinia";
-import { mockQueueState } from "@core/data/mock-queue";
-import { createAppStore } from "@core/domain/app-store";
-import { cloneValue } from "@core/utils/object";
-import { loadQueueState, saveQueueState } from "~/utils/queue-storage";
+import { defineStore, storeToRefs } from "pinia";
+import { useAppRuntimeStore } from "~/stores/app-runtime";
 
 export const useDashboardStore = defineStore("dashboard", () => {
-  const state = ref(cloneValue(mockQueueState));
-  let runtimeStore = null;
-  let unsubscribe = null;
-  let initialized = false;
-  let persistenceEnabled = false;
-
-  function replaceState(nextState) {
-    state.value = cloneValue(nextState || mockQueueState);
-  }
-
-  function getRuntimeStore() {
-    if (!runtimeStore) {
-      runtimeStore = createAppStore();
-    }
-
-    return runtimeStore;
-  }
-
-  function bindRuntimeStore(store) {
-    if (unsubscribe) {
-      return;
-    }
-
-    unsubscribe = store.subscribe((nextState) => {
-      replaceState(nextState);
-
-      if (import.meta.client && persistenceEnabled) {
-        saveQueueState(nextState);
-      }
-    });
-  }
-
-  async function ensure() {
-    const store = getRuntimeStore();
-
-    if (!initialized) {
-      bindRuntimeStore(store);
-
-      if (import.meta.client) {
-        const hydratedState = await loadQueueState();
-        store.hydrate(hydratedState);
-        persistenceEnabled = true;
-      } else {
-        replaceState(store.getState());
-      }
-
-      initialized = true;
-    } else {
-      replaceState(store.getState());
-    }
-
-    return store;
-  }
-
-  async function withStore(handler) {
-    const store = await ensure();
-
-    if (!store) {
-      return null;
-    }
-
-    const result = await handler(store);
-    replaceState(store.getState());
-    return result;
-  }
+  const runtime = useAppRuntimeStore();
+  const { state } = storeToRefs(runtime);
 
   return {
     state,
-    ensure,
+    ensure: runtime.ensure,
     setWorkspace(workspaceId) {
-      return withStore((store) => store.setWorkspace(workspaceId));
+      return runtime.run("setWorkspace", workspaceId);
     },
-    hydrate(nextState) {
-      const store = getRuntimeStore();
-      bindRuntimeStore(store);
-      store.hydrate(nextState);
-      if (import.meta.client) {
-        persistenceEnabled = true;
-        saveQueueState(store.getState());
-      }
-      initialized = true;
-      replaceState(store.getState());
-      return store.getState();
-    },
+    hydrate: runtime.hydrate,
     setActiveProfile(profileId) {
-      return withStore((store) => store.setActiveProfile(profileId));
+      return runtime.run("setActiveProfile", profileId);
     },
     setActiveStore(storeId) {
-      return withStore((store) => store.setActiveStore(storeId));
+      return runtime.run("setActiveStore", storeId);
     },
     setSelectedConsultant(personId) {
-      return withStore((store) => store.setSelectedConsultant(personId));
+      return runtime.run("setSelectedConsultant", personId);
     },
     setConsultantSimulationAdditionalSales(amount) {
-      return withStore((store) => store.setConsultantSimulationAdditionalSales(amount));
+      return runtime.run("setConsultantSimulationAdditionalSales", amount);
     },
     createStore(payload) {
-      return withStore((store) => store.createStore(payload));
+      return runtime.run("createStore", payload);
     },
     updateStore(storeId, patch) {
-      return withStore((store) => store.updateStore(storeId, patch));
+      return runtime.run("updateStore", storeId, patch);
     },
     archiveStore(storeId) {
-      return withStore((store) => store.archiveStore(storeId));
+      return runtime.run("archiveStore", storeId);
     },
     updateReportFilter(filterId, value) {
-      return withStore((store) => store.updateReportFilter(filterId, value));
+      return runtime.run("updateReportFilter", filterId, value);
     },
     resetReportFilters() {
-      return withStore((store) => store.resetReportFilters());
+      return runtime.run("resetReportFilters");
     },
     createCampaign(payload) {
-      return withStore((store) => store.createCampaign(payload));
+      return runtime.run("createCampaign", payload);
     },
     updateCampaign(campaignId, patch) {
-      return withStore((store) => store.updateCampaign(campaignId, patch));
+      return runtime.run("updateCampaign", campaignId, patch);
     },
     removeCampaign(campaignId) {
-      return withStore((store) => store.removeCampaign(campaignId));
+      return runtime.run("removeCampaign", campaignId);
     },
     updateSetting(settingId, value) {
-      return withStore((store) => store.updateSetting(settingId, value));
+      return runtime.run("updateSetting", settingId, value);
     },
     updateModalConfig(configKey, value) {
-      return withStore((store) => store.updateModalConfig(configKey, value));
+      return runtime.run("updateModalConfig", configKey, value);
     },
     applyOperationTemplate(templateId) {
-      return withStore((store) => store.applyOperationTemplate(templateId));
+      return runtime.run("applyOperationTemplate", templateId);
     },
     addVisitReasonOption(label) {
-      return withStore((store) => store.addVisitReasonOption(label));
+      return runtime.run("addVisitReasonOption", label);
     },
     updateVisitReasonOption(optionId, label) {
-      return withStore((store) => store.updateVisitReasonOption(optionId, label));
+      return runtime.run("updateVisitReasonOption", optionId, label);
     },
     removeVisitReasonOption(optionId) {
-      return withStore((store) => store.removeVisitReasonOption(optionId));
+      return runtime.run("removeVisitReasonOption", optionId);
     },
     addCustomerSourceOption(label) {
-      return withStore((store) => store.addCustomerSourceOption(label));
+      return runtime.run("addCustomerSourceOption", label);
     },
     updateCustomerSourceOption(optionId, label) {
-      return withStore((store) => store.updateCustomerSourceOption(optionId, label));
+      return runtime.run("updateCustomerSourceOption", optionId, label);
     },
     removeCustomerSourceOption(optionId) {
-      return withStore((store) => store.removeCustomerSourceOption(optionId));
+      return runtime.run("removeCustomerSourceOption", optionId);
+    },
+    addQueueJumpReasonOption(label) {
+      return runtime.run("addQueueJumpReasonOption", label);
+    },
+    updateQueueJumpReasonOption(optionId, label) {
+      return runtime.run("updateQueueJumpReasonOption", optionId, label);
+    },
+    removeQueueJumpReasonOption(optionId) {
+      return runtime.run("removeQueueJumpReasonOption", optionId);
+    },
+    addLossReasonOption(label) {
+      return runtime.run("addLossReasonOption", label);
+    },
+    updateLossReasonOption(optionId, label) {
+      return runtime.run("updateLossReasonOption", optionId, label);
+    },
+    removeLossReasonOption(optionId) {
+      return runtime.run("removeLossReasonOption", optionId);
     },
     addProfessionOption(label) {
-      return withStore((store) => store.addProfessionOption(label));
+      return runtime.run("addProfessionOption", label);
     },
     updateProfessionOption(optionId, label) {
-      return withStore((store) => store.updateProfessionOption(optionId, label));
+      return runtime.run("updateProfessionOption", optionId, label);
     },
     removeProfessionOption(optionId) {
-      return withStore((store) => store.removeProfessionOption(optionId));
+      return runtime.run("removeProfessionOption", optionId);
     },
-    addCatalogProduct(name, category, basePrice) {
-      return withStore((store) => store.addCatalogProduct(name, category, basePrice));
+    addCatalogProduct(name, category, basePrice, code) {
+      return runtime.run("addCatalogProduct", name, category, basePrice, code);
     },
     updateCatalogProduct(productId, patch) {
-      return withStore((store) => store.updateCatalogProduct(productId, patch));
+      return runtime.run("updateCatalogProduct", productId, patch);
     },
     removeCatalogProduct(productId) {
-      return withStore((store) => store.removeCatalogProduct(productId));
+      return runtime.run("removeCatalogProduct", productId);
     },
     createConsultantProfile(payload) {
-      return withStore((store) => store.createConsultantProfile(payload));
+      return runtime.run("createConsultantProfile", payload);
     },
     updateConsultantProfile(consultantId, patch) {
-      return withStore((store) => store.updateConsultantProfile(consultantId, patch));
+      return runtime.run("updateConsultantProfile", consultantId, patch);
     },
     archiveConsultantProfile(consultantId) {
-      return withStore((store) => store.archiveConsultantProfile(consultantId));
+      return runtime.run("archiveConsultantProfile", consultantId);
     },
     addToQueue(personId) {
-      return withStore((store) => store.addToQueue(personId));
+      return runtime.run("addToQueue", personId);
     },
     pauseEmployee(personId, reason) {
-      return withStore((store) => store.pauseEmployee(personId, reason));
+      return runtime.run("pauseEmployee", personId, reason);
     },
     resumeEmployee(personId) {
-      return withStore((store) => store.resumeEmployee(personId));
+      return runtime.run("resumeEmployee", personId);
     },
     startService(personId = null) {
-      return withStore((store) => store.startService(personId));
+      return runtime.run("startService", personId);
     },
     openFinishModal(personId) {
-      return withStore((store) => store.openFinishModal(personId));
+      return runtime.run("openFinishModal", personId);
     },
     closeFinishModal() {
-      return withStore((store) => store.closeFinishModal());
+      return runtime.run("closeFinishModal");
     },
     finishService(personId, closureData) {
-      return withStore((store) => store.finishService(personId, closureData));
+      return runtime.run("finishService", personId, closureData);
     }
   };
 });

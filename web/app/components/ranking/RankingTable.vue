@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
-import { formatCurrencyBRL, formatDurationMinutes, formatPercent } from "@core/utils/admin-metrics";
+import { formatCurrencyBRL, formatDurationMinutes, formatPercent } from "~/domain/utils/admin-metrics";
 
 const props = defineProps({
   title: {

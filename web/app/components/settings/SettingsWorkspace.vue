@@ -1,12 +1,14 @@
 <script setup>
 import { computed, ref } from "vue";
-import { canManageConsultants, canManageSettings } from "@core/utils/permissions";
+import AppSelectField from "~/components/ui/AppSelectField.vue";
+import { canManageConsultants, canManageSettings } from "~/domain/utils/permissions";
 import SettingsConsultantManager from "~/components/settings/SettingsConsultantManager.vue";
 import SettingsOperationTemplateManager from "~/components/settings/SettingsOperationTemplateManager.vue";
 import SettingsOptionManager from "~/components/settings/SettingsOptionManager.vue";
 import SettingsProductManager from "~/components/settings/SettingsProductManager.vue";
 import SettingsTabs from "~/components/settings/SettingsTabs.vue";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useConsultantsStore } from "~/stores/consultants";
+import { useSettingsStore } from "~/stores/settings";
 import { useUiStore } from "~/stores/ui";
 
 const tabs = [
@@ -15,9 +17,20 @@ const tabs = [
   { id: "produtos", label: "Produtos", icon: "inventory_2" },
   { id: "consultores", label: "Consultores", icon: "group" },
   { id: "motivos", label: "Motivos", icon: "fact_check" },
+  { id: "motivos-perda", label: "Perdas", icon: "trending_down" },
+  { id: "motivos-fora-da-vez", label: "Fora da vez", icon: "bolt" },
   { id: "origens", label: "Origens", icon: "share_location" },
   { id: "profissoes", label: "Profissoes", icon: "badge" },
   { id: "alertas", label: "Alertas", icon: "notifications_active" }
+];
+const fieldSelectionOptions = [
+  { value: "single", label: "Escolha unica" },
+  { value: "multiple", label: "Multiplas escolhas" }
+];
+const fieldDetailModeOptions = [
+  { value: "off", label: "Sem descricao" },
+  { value: "shared", label: "Uma descricao para a selecao" },
+  { value: "per-item", label: "Uma descricao por opcao" }
 ];
 
 const props = defineProps({
@@ -27,7 +40,8 @@ const props = defineProps({
   }
 });
 
-const dashboard = useDashboardStore();
+const settingsStore = useSettingsStore();
+const consultantsStore = useConsultantsStore();
 const ui = useUiStore();
 const activeTab = ref("operacao");
 
@@ -42,89 +56,173 @@ const activeRole = computed(() => {
 const canEditSettings = computed(() => canManageSettings(activeRole.value));
 const canEditConsultants = computed(() => canManageConsultants(activeRole.value));
 
-function updateNumericSetting(settingId, value) {
-  void dashboard.updateSetting(settingId, Number(value) || 0);
+async function updateNumericSetting(settingId, value) {
+  const result = await settingsStore.updateSetting(settingId, Number(value) || 0);
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel salvar a configuracao.");
+  }
 }
 
-function updateBooleanSetting(settingId, value) {
-  void dashboard.updateSetting(settingId, Boolean(value));
+async function updateBooleanSetting(settingId, value) {
+  const result = await settingsStore.updateSetting(settingId, Boolean(value));
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel salvar a configuracao.");
+  }
 }
 
-function updateModalConfigValue(configKey, value) {
-  void dashboard.updateModalConfig(configKey, value);
+async function updateModalConfigValue(configKey, value) {
+  const result = await settingsStore.updateModalConfig(configKey, value);
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel salvar a configuracao do modal.");
+  }
 }
 
-function applyTemplate(templateId) {
-  void dashboard.applyOperationTemplate(templateId);
+async function applyTemplate(templateId) {
+  const result = await settingsStore.applyOperationTemplate(templateId);
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel aplicar o template.");
+  }
 }
 
-function addOption(group, label) {
+function handleMutationResult(result, successMessage, fallbackErrorMessage) {
+  if (result?.ok === false) {
+    ui.error(result.message || fallbackErrorMessage);
+    return false;
+  }
+
+  if (successMessage) {
+    ui.success(successMessage);
+  }
+
+  return true;
+}
+
+async function addOption(group, label) {
   if (group === "visit-reason") {
-    void dashboard.addVisitReasonOption(label);
+    handleMutationResult(await settingsStore.addVisitReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
     return;
   }
 
   if (group === "customer-source") {
-    void dashboard.addCustomerSourceOption(label);
+    handleMutationResult(await settingsStore.addCustomerSourceOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
     return;
   }
 
-  void dashboard.addProfessionOption(label);
+  if (group === "queue-jump-reason") {
+    handleMutationResult(await settingsStore.addQueueJumpReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
+    return;
+  }
+
+  if (group === "loss-reason") {
+    handleMutationResult(await settingsStore.addLossReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
+    return;
+  }
+
+  handleMutationResult(await settingsStore.addProfessionOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
 }
 
-function updateOption(group, optionId, label) {
+async function updateOption(group, optionId, label) {
   if (group === "visit-reason") {
-    void dashboard.updateVisitReasonOption(optionId, label);
+    handleMutationResult(await settingsStore.updateVisitReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
     return;
   }
 
   if (group === "customer-source") {
-    void dashboard.updateCustomerSourceOption(optionId, label);
+    handleMutationResult(await settingsStore.updateCustomerSourceOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
     return;
   }
 
-  void dashboard.updateProfessionOption(optionId, label);
+  if (group === "queue-jump-reason") {
+    handleMutationResult(await settingsStore.updateQueueJumpReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
+    return;
+  }
+
+  if (group === "loss-reason") {
+    handleMutationResult(await settingsStore.updateLossReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
+    return;
+  }
+
+  handleMutationResult(await settingsStore.updateProfessionOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
 }
 
-function removeOption(group, optionId) {
+async function removeOption(group, optionId) {
   if (group === "visit-reason") {
-    void dashboard.removeVisitReasonOption(optionId);
+    handleMutationResult(await settingsStore.removeVisitReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
     return;
   }
 
   if (group === "customer-source") {
-    void dashboard.removeCustomerSourceOption(optionId);
+    handleMutationResult(await settingsStore.removeCustomerSourceOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
     return;
   }
 
-  void dashboard.removeProfessionOption(optionId);
+  if (group === "queue-jump-reason") {
+    handleMutationResult(await settingsStore.removeQueueJumpReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
+    return;
+  }
+
+  if (group === "loss-reason") {
+    handleMutationResult(await settingsStore.removeLossReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
+    return;
+  }
+
+  handleMutationResult(await settingsStore.removeProfessionOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
 }
 
-function addProduct(payload) {
-  void dashboard.addCatalogProduct(payload.name, payload.category, payload.basePrice);
+async function addProduct(payload) {
+  handleMutationResult(
+    await settingsStore.addCatalogProduct(payload.name, payload.category, payload.basePrice, payload.code),
+    "Produto adicionado.",
+    "Nao foi possivel adicionar o produto."
+  );
 }
 
-function updateProduct(productId, payload) {
-  void dashboard.updateCatalogProduct(productId, payload);
+async function updateProduct(productId, payload) {
+  handleMutationResult(
+    await settingsStore.updateCatalogProduct(productId, payload),
+    "Produto atualizado.",
+    "Nao foi possivel atualizar o produto."
+  );
 }
 
-function removeProduct(productId) {
-  void dashboard.removeCatalogProduct(productId);
+async function removeProduct(productId) {
+  handleMutationResult(
+    await settingsStore.removeCatalogProduct(productId),
+    "Produto removido.",
+    "Nao foi possivel remover o produto."
+  );
 }
 
 async function addConsultant(payload) {
-  const result = await dashboard.createConsultantProfile(payload);
+  const result = await consultantsStore.createConsultantProfile(payload);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel criar consultor.");
     return;
   }
 
-  ui.success("Consultor criado.");
+  const accessEmail = String(result?.access?.email || "").trim();
+  const initialPassword = String(result?.access?.initialPassword || "").trim();
+
+  if (accessEmail && initialPassword) {
+    await ui.prompt({
+      title: "Acesso do consultor criado",
+      message: `Login padrao: ${accessEmail}\nSenha inicial: ${initialPassword}\nOriente o consultor a trocar a senha em Perfil no primeiro acesso.`,
+      inputLabel: "Acesso",
+      initialValue: `${accessEmail} | ${initialPassword}`,
+      confirmLabel: "Fechar"
+    });
+  }
+
+  ui.success("Consultor criado com acesso vinculado.");
 }
 
 async function updateConsultant(consultantId, payload) {
-  const result = await dashboard.updateConsultantProfile(consultantId, payload);
+  const result = await consultantsStore.updateConsultantProfile(consultantId, payload);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel atualizar consultor.");
@@ -145,7 +243,7 @@ async function archiveConsultant(consultantId) {
     return;
   }
 
-  const result = await dashboard.archiveConsultantProfile(consultantId);
+  const result = await consultantsStore.archiveConsultantProfile(consultantId);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel arquivar consultor.");
@@ -177,10 +275,10 @@ async function archiveConsultant(consultantId) {
           <header class="settings-card__header">
             <h3 class="settings-card__title">Limites e timings</h3>
           </header>
-          <label class="settings-field"><span>Atendimentos simultaneos</span><input :value="Number(state.settings.maxConcurrentServices || 10)" type="number" min="1" max="100" :disabled="!canEditSettings" @input="updateNumericSetting('maxConcurrentServices', $event.target.value)"></label>
-          <label class="settings-field"><span>Fechamento rapido (min)</span><input :value="Number(state.settings.timingFastCloseMinutes || 5)" type="number" min="1" max="120" :disabled="!canEditSettings" @input="updateNumericSetting('timingFastCloseMinutes', $event.target.value)"></label>
-          <label class="settings-field"><span>Atendimento demorado (min)</span><input :value="Number(state.settings.timingLongServiceMinutes || 25)" type="number" min="1" max="240" :disabled="!canEditSettings" @input="updateNumericSetting('timingLongServiceMinutes', $event.target.value)"></label>
-          <label class="settings-field"><span>Venda baixa (R$)</span><input :value="Number(state.settings.timingLowSaleAmount || 1200)" type="number" min="1" step="1" :disabled="!canEditSettings" @input="updateNumericSetting('timingLowSaleAmount', $event.target.value)"></label>
+          <label class="settings-field"><span>Atendimentos simultaneos</span><input :value="Number(state.settings.maxConcurrentServices || 10)" type="number" min="1" max="100" :disabled="!canEditSettings" @change="updateNumericSetting('maxConcurrentServices', $event.target.value)"></label>
+          <label class="settings-field"><span>Fechamento rapido (min)</span><input :value="Number(state.settings.timingFastCloseMinutes || 5)" type="number" min="1" max="120" :disabled="!canEditSettings" @change="updateNumericSetting('timingFastCloseMinutes', $event.target.value)"></label>
+          <label class="settings-field"><span>Atendimento demorado (min)</span><input :value="Number(state.settings.timingLongServiceMinutes || 25)" type="number" min="1" max="240" :disabled="!canEditSettings" @change="updateNumericSetting('timingLongServiceMinutes', $event.target.value)"></label>
+          <label class="settings-field"><span>Venda baixa (R$)</span><input :value="Number(state.settings.timingLowSaleAmount || 1200)" type="number" min="1" step="1" :disabled="!canEditSettings" @change="updateNumericSetting('timingLowSaleAmount', $event.target.value)"></label>
           <label class="settings-toggle"><input :checked="Boolean(state.settings.testModeEnabled)" type="checkbox" :disabled="!canEditSettings" @change="updateBooleanSetting('testModeEnabled', $event.target.checked)"><span>Modo teste</span></label>
           <label class="settings-toggle"><input :checked="Boolean(state.settings.autoFillFinishModal)" type="checkbox" :disabled="!canEditSettings" @change="updateBooleanSetting('autoFillFinishModal', $event.target.checked)"><span>Preencher modal automaticamente</span></label>
         </article>
@@ -190,16 +288,18 @@ async function archiveConsultant(consultantId) {
     <div v-if="activeTab === 'modal'" class="settings-grid">
       <article class="settings-card">
         <header class="settings-card__header"><h3 class="settings-card__title">Textos</h3></header>
-        <label class="settings-field"><span>Titulo do modal</span><input :value="state.modalConfig.title" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('title', $event.target.value)"></label>
-        <label class="settings-field"><span>Label da secao de cliente</span><input :value="state.modalConfig.customerSectionLabel" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('customerSectionLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Label observacoes</span><input :value="state.modalConfig.notesLabel" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('notesLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder observacoes</span><input :value="state.modalConfig.notesPlaceholder" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('notesPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label motivo fora da vez</span><input :value="state.modalConfig.queueJumpReasonLabel" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('queueJumpReasonLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder motivo fora da vez</span><input :value="state.modalConfig.queueJumpReasonPlaceholder" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('queueJumpReasonPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label produto visto</span><input :value="state.modalConfig.productSeenLabel" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('productSeenLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder produto visto</span><input :value="state.modalConfig.productSeenPlaceholder" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('productSeenPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label produto fechado</span><input :value="state.modalConfig.productClosedLabel" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('productClosedLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder produto fechado</span><input :value="state.modalConfig.productClosedPlaceholder" type="text" :disabled="!canEditSettings" @input="updateModalConfigValue('productClosedPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Titulo do modal</span><input :value="state.modalConfig.title" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('title', $event.target.value)"></label>
+        <label class="settings-field"><span>Label da secao de cliente</span><input :value="state.modalConfig.customerSectionLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('customerSectionLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Label observacoes</span><input :value="state.modalConfig.notesLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('notesLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder observacoes</span><input :value="state.modalConfig.notesPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('notesPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Label motivo fora da vez</span><input :value="state.modalConfig.queueJumpReasonLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('queueJumpReasonLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder busca motivo fora da vez</span><input :value="state.modalConfig.queueJumpReasonPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('queueJumpReasonPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Label motivo da perda</span><input :value="state.modalConfig.lossReasonLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('lossReasonLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder busca motivo da perda</span><input :value="state.modalConfig.lossReasonPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('lossReasonPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Label produto visto</span><input :value="state.modalConfig.productSeenLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productSeenLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder produto visto</span><input :value="state.modalConfig.productSeenPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productSeenPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Label produto fechado</span><input :value="state.modalConfig.productClosedLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productClosedLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder produto fechado</span><input :value="state.modalConfig.productClosedPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productClosedPlaceholder', $event.target.value)"></label>
       </article>
 
       <article class="settings-card">
@@ -207,8 +307,6 @@ async function archiveConsultant(consultantId) {
         <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showEmailField)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showEmailField', $event.target.checked)"><span>Mostrar email</span></label>
         <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showProfessionField)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showProfessionField', $event.target.checked)"><span>Mostrar profissao</span></label>
         <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showNotesField)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showNotesField', $event.target.checked)"><span>Mostrar observacoes</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showVisitReasonDetails)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showVisitReasonDetails', $event.target.checked)"><span>Detalhe por motivo de visita</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showCustomerSourceDetails)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showCustomerSourceDetails', $event.target.checked)"><span>Detalhe por origem</span></label>
         <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireProduct)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireProduct', $event.target.checked)"><span>Exigir produto</span></label>
         <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireVisitReason)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireVisitReason', $event.target.checked)"><span>Exigir motivo da visita</span></label>
         <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireCustomerSource)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireCustomerSource', $event.target.checked)"><span>Exigir origem do cliente</span></label>
@@ -235,7 +333,30 @@ async function archiveConsultant(consultantId) {
       />
     </div>
 
-    <div v-if="activeTab === 'motivos'">
+    <div v-if="activeTab === 'motivos'" class="settings-grid">
+      <article class="settings-card">
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Comportamento do campo</h3>
+          <p class="settings-card__text">Defina aqui como o campo aparece no modal antes de cadastrar as opcoes.</p>
+        </header>
+        <AppSelectField
+          class="settings-field"
+          label="Selecao"
+          :model-value="state.modalConfig.visitReasonSelectionMode || 'multiple'"
+          :options="fieldSelectionOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('visitReasonSelectionMode', $event)"
+        />
+        <AppSelectField
+          class="settings-field"
+          label="Descricao"
+          :model-value="state.modalConfig.visitReasonDetailMode || 'shared'"
+          :options="fieldDetailModeOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('visitReasonDetailMode', $event)"
+        />
+      </article>
+
       <SettingsOptionManager
         title="Motivo da visita"
         description="Opcoes exibidas no modal de fechamento."
@@ -248,7 +369,79 @@ async function archiveConsultant(consultantId) {
       />
     </div>
 
-    <div v-if="activeTab === 'origens'">
+    <div v-if="activeTab === 'motivos-fora-da-vez'">
+      <SettingsOptionManager
+        title="Motivo fora da vez"
+        description="Opcoes obrigatorias exibidas quando o atendimento for encerrado fora da vez."
+        :items="state.queueJumpReasonOptions || []"
+        add-placeholder="Adicionar novo motivo fora da vez"
+        testid="settings-fora-da-vez"
+        @add="addOption('queue-jump-reason', $event)"
+        @update="(optionId, label) => updateOption('queue-jump-reason', optionId, label)"
+        @remove="removeOption('queue-jump-reason', $event)"
+      />
+    </div>
+
+    <div v-if="activeTab === 'motivos-perda'" class="settings-grid">
+      <article class="settings-card">
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Comportamento do campo</h3>
+          <p class="settings-card__text">Defina aqui como o campo aparece quando o atendimento termina sem venda.</p>
+        </header>
+        <AppSelectField
+          class="settings-field"
+          label="Selecao"
+          :model-value="state.modalConfig.lossReasonSelectionMode || 'single'"
+          :options="fieldSelectionOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('lossReasonSelectionMode', $event)"
+        />
+        <AppSelectField
+          class="settings-field"
+          label="Descricao"
+          :model-value="state.modalConfig.lossReasonDetailMode || 'off'"
+          :options="fieldDetailModeOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('lossReasonDetailMode', $event)"
+        />
+      </article>
+
+      <SettingsOptionManager
+        title="Motivo da perda"
+        description="Opcoes exibidas quando o atendimento termina sem venda."
+        :items="state.lossReasonOptions || []"
+        add-placeholder="Adicionar novo motivo da perda"
+        testid="settings-motivos-perda"
+        @add="addOption('loss-reason', $event)"
+        @update="(optionId, label) => updateOption('loss-reason', optionId, label)"
+        @remove="removeOption('loss-reason', $event)"
+      />
+    </div>
+
+    <div v-if="activeTab === 'origens'" class="settings-grid">
+      <article class="settings-card">
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Comportamento do campo</h3>
+          <p class="settings-card__text">Defina aqui como o campo aparece no modal antes de cadastrar as opcoes.</p>
+        </header>
+        <AppSelectField
+          class="settings-field"
+          label="Selecao"
+          :model-value="state.modalConfig.customerSourceSelectionMode || 'single'"
+          :options="fieldSelectionOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('customerSourceSelectionMode', $event)"
+        />
+        <AppSelectField
+          class="settings-field"
+          label="Descricao"
+          :model-value="state.modalConfig.customerSourceDetailMode || 'shared'"
+          :options="fieldDetailModeOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('customerSourceDetailMode', $event)"
+        />
+      </article>
+
       <SettingsOptionManager
         title="Origem do cliente"
         description="Opcoes exibidas no modal de fechamento."
@@ -285,19 +478,19 @@ async function archiveConsultant(consultantId) {
         </header>
         <label class="settings-field">
           <span>Conversao minima (%)</span>
-          <input :value="Number(state.settings.alertMinConversionRate || 0)" type="number" min="0" max="100" step="1" :disabled="!canEditSettings" @input="updateNumericSetting('alertMinConversionRate', $event.target.value)">
+          <input :value="Number(state.settings.alertMinConversionRate || 0)" type="number" min="0" max="100" step="1" :disabled="!canEditSettings" @change="updateNumericSetting('alertMinConversionRate', $event.target.value)">
         </label>
         <label class="settings-field">
           <span>Fora da vez maximo (%)</span>
-          <input :value="Number(state.settings.alertMaxQueueJumpRate || 0)" type="number" min="0" max="100" step="1" :disabled="!canEditSettings" @input="updateNumericSetting('alertMaxQueueJumpRate', $event.target.value)">
+          <input :value="Number(state.settings.alertMaxQueueJumpRate || 0)" type="number" min="0" max="100" step="1" :disabled="!canEditSettings" @change="updateNumericSetting('alertMaxQueueJumpRate', $event.target.value)">
         </label>
         <label class="settings-field">
           <span>P.A. minimo</span>
-          <input :value="Number(state.settings.alertMinPaScore || 0)" type="number" min="0" step="0.1" :disabled="!canEditSettings" @input="updateNumericSetting('alertMinPaScore', $event.target.value)">
+          <input :value="Number(state.settings.alertMinPaScore || 0)" type="number" min="0" step="0.1" :disabled="!canEditSettings" @change="updateNumericSetting('alertMinPaScore', $event.target.value)">
         </label>
         <label class="settings-field">
           <span>Ticket medio minimo (R$)</span>
-          <input :value="Number(state.settings.alertMinTicketAverage || 0)" type="number" min="0" step="100" :disabled="!canEditSettings" @input="updateNumericSetting('alertMinTicketAverage', $event.target.value)">
+          <input :value="Number(state.settings.alertMinTicketAverage || 0)" type="number" min="0" step="100" :disabled="!canEditSettings" @change="updateNumericSetting('alertMinTicketAverage', $event.target.value)">
         </label>
       </article>
     </div>

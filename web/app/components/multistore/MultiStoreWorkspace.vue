@@ -1,8 +1,9 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
-import { buildOperationalIntelligence, formatCurrencyBRL, formatDurationMinutes, formatPercent } from "@core/utils/admin-metrics";
-import { canManageStores } from "@core/utils/permissions";
-import { useDashboardStore } from "~/stores/dashboard";
+import AppSelectField from "~/components/ui/AppSelectField.vue";
+import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
+import { canManageStores } from "~/domain/utils/permissions";
+import { useMultiStoreStore } from "~/stores/multistore";
 import { useUiStore } from "~/stores/ui";
 
 const props = defineProps({
@@ -12,7 +13,7 @@ const props = defineProps({
   }
 });
 
-const dashboard = useDashboardStore();
+const multiStore = useMultiStoreStore();
 const ui = useUiStore();
 const storeDrafts = ref({});
 const newStore = reactive({
@@ -28,25 +29,6 @@ const newStore = reactive({
   paGoal: ""
 });
 
-function createEmptyScopedData() {
-  return {
-    waitingList: [],
-    activeServices: [],
-    pausedEmployees: [],
-    serviceHistory: [],
-    roster: [],
-    consultantCurrentStatus: {},
-    consultantActivitySessions: []
-  };
-}
-
-function getStoreSnapshot(snapshotByStoreId, storeId) {
-  return {
-    ...createEmptyScopedData(),
-    ...(snapshotByStoreId?.[storeId] || {})
-  };
-}
-
 const activeRole = computed(() => {
   const activeProfile =
     (props.state.profiles || []).find((profile) => profile.id === props.state.activeProfileId) ||
@@ -57,89 +39,29 @@ const activeRole = computed(() => {
 });
 const canEditStores = computed(() => canManageStores(activeRole.value));
 const operationTemplates = computed(() => props.state.operationTemplates || []);
-const snapshotByStoreId = computed(() => ({
-  ...(props.state.storeSnapshots || {}),
-  [props.state.activeStoreId]: {
-    selectedConsultantId: props.state.selectedConsultantId,
-    consultantSimulationAdditionalSales: props.state.consultantSimulationAdditionalSales,
-    waitingList: props.state.waitingList,
-    activeServices: props.state.activeServices,
-    roster: props.state.roster,
-    consultantActivitySessions: props.state.consultantActivitySessions,
-    consultantCurrentStatus: props.state.consultantCurrentStatus,
-    pausedEmployees: props.state.pausedEmployees,
-    serviceHistory: props.state.serviceHistory
-  }
-}));
-const rows = computed(() =>
-  (props.state.stores || [])
-    .map((store) => {
-      const snapshot = getStoreSnapshot(snapshotByStoreId.value, store.id);
-      const history = Array.isArray(snapshot.serviceHistory) ? snapshot.serviceHistory : [];
-      const converted = history.filter((entry) => entry.finishOutcome === "compra" || entry.finishOutcome === "reserva");
-      const soldValue = converted.reduce((sum, entry) => sum + Number(entry.saleAmount || 0), 0);
-      const queueJumpCount = history.filter((entry) => entry.startMode === "queue-jump").length;
-      const intelligence = buildOperationalIntelligence({
-        history,
-        visitReasonOptions: props.state.visitReasonOptions || [],
-        customerSourceOptions: props.state.customerSourceOptions || [],
-        roster: snapshot.roster || [],
-        waitingList: snapshot.waitingList || [],
-        activeServices: snapshot.activeServices || [],
-        pausedEmployees: snapshot.pausedEmployees || [],
-        consultantCurrentStatus: snapshot.consultantCurrentStatus || {},
-        consultantActivitySessions: snapshot.consultantActivitySessions || [],
-        settings: props.state.settings || {}
-      });
-
-      const totalPieces = history.reduce((sum, entry) => {
-        return sum + (Array.isArray(entry.productsClosed) ? entry.productsClosed.length : 0);
-      }, 0);
-      const paScore = history.length ? totalPieces / history.length : 0;
-
-      return {
-        storeId: store.id,
-        storeName: store.name,
-        storeCode: store.code || "-",
-        storeCity: store.city || "-",
-        consultants: (snapshot.roster || []).length,
-        queueCount: (snapshot.waitingList || []).length,
-        activeCount: (snapshot.activeServices || []).length,
-        pausedCount: (snapshot.pausedEmployees || []).length,
-        attendances: history.length,
-        conversionRate: intelligence.conversionRate,
-        soldValue,
-        ticketAverage: intelligence.ticketAverage,
-        paScore,
-        averageQueueWaitMs: intelligence.time.avgQueueWaitMs,
-        queueJumpRate: history.length ? (queueJumpCount / history.length) * 100 : 0,
-        healthScore: intelligence.healthScore,
-        monthlyGoal: store.monthlyGoal || 0,
-        weeklyGoal: store.weeklyGoal || 0,
-        avgTicketGoal: store.avgTicketGoal || 0,
-        conversionGoal: store.conversionGoal || 0,
-        paGoal: store.paGoal || 0,
-        defaultTemplateId: store.defaultTemplateId || ""
-      };
-    })
-    .sort((a, b) => {
-      if (b.soldValue !== a.soldValue) {
-        return b.soldValue - a.soldValue;
-      }
-
-      return b.conversionRate - a.conversionRate;
-    })
-);
-const totalAttendances = computed(() => rows.value.reduce((sum, row) => sum + row.attendances, 0));
-const totalSoldValue = computed(() => rows.value.reduce((sum, row) => sum + row.soldValue, 0));
-const totalQueue = computed(() => rows.value.reduce((sum, row) => sum + row.queueCount, 0));
-const totalActiveServices = computed(() => rows.value.reduce((sum, row) => sum + row.activeCount, 0));
-const averageHealthScore = computed(() =>
-  rows.value.length ? rows.value.reduce((sum, row) => sum + row.healthScore, 0) / rows.value.length : 0
-);
+const templateOptions = computed(() => [
+  { value: "", label: "Template padrao" },
+  ...operationTemplates.value.map((template) => ({
+    value: String(template.id || "").trim(),
+    label: String(template.label || "").trim()
+  }))
+]);
+const overview = computed(() => multiStore.overview || null);
+const rows = computed(() => overview.value?.stores || []);
+const managedStores = computed(() => props.state.managedStores || props.state.stores || []);
+const activeManagedStores = computed(() => managedStores.value.filter((store) => store.isActive !== false));
+const archivedManagedStores = computed(() => managedStores.value.filter((store) => store.isActive === false));
+const summary = computed(() => overview.value?.summary || {
+  activeStores: rows.value.length,
+  totalAttendances: 0,
+  totalSoldValue: 0,
+  totalQueue: 0,
+  totalActiveServices: 0,
+  averageHealthScore: 0
+});
 
 watch(
-  () => props.state.stores,
+  () => managedStores.value,
   (stores) => {
     storeDrafts.value = Object.fromEntries(
       (stores || []).map((store) => [
@@ -162,10 +84,15 @@ watch(
 );
 
 async function saveStore(storeId) {
-  const result = await dashboard.updateStore(storeId, storeDrafts.value[storeId]);
+  const result = await multiStore.updateStore(storeId, storeDrafts.value[storeId]);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel atualizar loja.");
+    return;
+  }
+
+  if (result?.noChange) {
+    ui.info("Nenhuma alteracao para salvar.");
     return;
   }
 
@@ -173,7 +100,7 @@ async function saveStore(storeId) {
 }
 
 async function createStore() {
-  const result = await dashboard.createStore(newStore);
+  const result = await multiStore.createStore(newStore);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel criar loja.");
@@ -191,6 +118,10 @@ async function createStore() {
   newStore.conversionGoal = "";
   newStore.paGoal = "";
   ui.success("Loja criada.");
+
+  if (result?.warningMessage) {
+    ui.info(result.warningMessage);
+  }
 }
 
 async function archiveStore(storeId) {
@@ -204,7 +135,7 @@ async function archiveStore(storeId) {
     return;
   }
 
-  const result = await dashboard.archiveStore(storeId);
+  const result = await multiStore.archiveStore(storeId);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel arquivar loja.");
@@ -212,6 +143,38 @@ async function archiveStore(storeId) {
   }
 
   ui.success("Loja arquivada.");
+}
+
+async function restoreStore(storeId) {
+  const result = await multiStore.restoreStore(storeId);
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel restaurar loja.");
+    return;
+  }
+
+  ui.success("Loja restaurada.");
+}
+
+async function deleteStore(store) {
+  const { confirmed } = await ui.confirm({
+    title: "Excluir loja",
+    message: `A exclusao so funciona para loja sem consultores, acessos e historico operacional. Deseja tentar remover ${store?.name || "esta loja"}?`,
+    confirmLabel: "Excluir"
+  });
+
+  if (!confirmed) {
+    return;
+  }
+
+  const result = await multiStore.deleteStore(store?.id);
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel remover loja.");
+    return;
+  }
+
+  ui.success("Loja removida.");
 }
 </script>
 
@@ -222,13 +185,21 @@ async function archiveStore(storeId) {
       <p class="admin-panel__text">Comparativo operacional para acompanhar performance entre lojas.</p>
     </header>
 
+    <article v-if="multiStore.errorMessage" class="settings-card">
+      <p class="settings-card__text">{{ multiStore.errorMessage }}</p>
+    </article>
+
+    <article v-else-if="multiStore.pending && !multiStore.ready" class="settings-card">
+      <p class="settings-card__text">Carregando consolidado multiloja...</p>
+    </article>
+
     <section class="metric-grid" data-testid="multistore-summary">
-      <article class="metric-card"><span class="metric-card__label">Lojas ativas</span><strong class="metric-card__value">{{ rows.length }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Atendimentos consolidados</span><strong class="metric-card__value">{{ totalAttendances }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Vendas consolidadas</span><strong class="metric-card__value">{{ formatCurrencyBRL(totalSoldValue) }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Fila atual total</span><strong class="metric-card__value">{{ totalQueue }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Em atendimento agora</span><strong class="metric-card__value">{{ totalActiveServices }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Score medio operacional</span><strong class="metric-card__value">{{ Math.round(averageHealthScore) }}</strong></article>
+      <article class="metric-card"><span class="metric-card__label">Lojas ativas</span><strong class="metric-card__value">{{ summary.activeStores }}</strong></article>
+      <article class="metric-card"><span class="metric-card__label">Atendimentos consolidados</span><strong class="metric-card__value">{{ summary.totalAttendances }}</strong></article>
+      <article class="metric-card"><span class="metric-card__label">Vendas consolidadas</span><strong class="metric-card__value">{{ formatCurrencyBRL(summary.totalSoldValue) }}</strong></article>
+      <article class="metric-card"><span class="metric-card__label">Fila atual total</span><strong class="metric-card__value">{{ summary.totalQueue }}</strong></article>
+      <article class="metric-card"><span class="metric-card__label">Em atendimento agora</span><strong class="metric-card__value">{{ summary.totalActiveServices }}</strong></article>
+      <article class="metric-card"><span class="metric-card__label">Score medio operacional</span><strong class="metric-card__value">{{ Math.round(summary.averageHealthScore) }}</strong></article>
     </section>
 
     <article class="insight-card insight-card--wide" data-testid="multistore-comparison-table">
@@ -276,7 +247,7 @@ async function archiveStore(storeId) {
               <td>{{ Math.round(row.healthScore) }}</td>
               <td>
                 <span v-if="row.storeId === state.activeStoreId" class="insight-tag">Ativa</span>
-                <button v-else class="option-row__save" type="button" @click="dashboard.setActiveStore(row.storeId)">Abrir</button>
+                <button v-else class="option-row__save" type="button" @click="multiStore.setActiveStore(row.storeId)">Abrir</button>
               </td>
             </tr>
           </tbody>
@@ -358,7 +329,7 @@ async function archiveStore(storeId) {
                 <div class="meeting-goal-row__track">
                   <div
                     class="meeting-goal-row__fill meeting-goal-row__fill--hit"
-                    :style="{ width: totalAttendances ? `${((row.attendances / totalAttendances) * 100).toFixed(1)}%` : '0%' }"
+                    :style="{ width: summary.totalAttendances ? `${((row.attendances / summary.totalAttendances) * 100).toFixed(1)}%` : '0%' }"
                   ></div>
                 </div>
                 <span class="meeting-goal-row__value meeting-goal-row__value--hit">{{ row.attendances }}</span>
@@ -377,7 +348,7 @@ async function archiveStore(storeId) {
 
       <div class="option-list">
         <form
-          v-for="store in state.stores"
+          v-for="store in activeManagedStores"
           :key="store.id"
           class="multistore-form"
           @submit.prevent="saveStore(store.id)"
@@ -386,10 +357,13 @@ async function archiveStore(storeId) {
             <input v-model="storeDrafts[store.id].name" class="product-row__input" type="text" placeholder="Nome">
             <input v-model="storeDrafts[store.id].code" class="product-row__input" type="text" placeholder="Codigo">
             <input v-model="storeDrafts[store.id].city" class="product-row__input" type="text" placeholder="Cidade">
-            <select v-model="storeDrafts[store.id].defaultTemplateId" class="product-row__input">
-              <option value="">Template padrão</option>
-              <option v-for="t in operationTemplates" :key="t.id" :value="t.id">{{ t.label }}</option>
-            </select>
+            <AppSelectField
+              class="product-row__input"
+              :model-value="storeDrafts[store.id].defaultTemplateId"
+              :options="templateOptions"
+              placeholder="Template padrao"
+              @update:model-value="storeDrafts[store.id].defaultTemplateId = $event"
+            />
           </div>
           <div class="multistore-form__row">
             <label class="multistore-form__field">
@@ -416,8 +390,22 @@ async function archiveStore(storeId) {
           <div class="multistore-form__actions">
             <button class="option-row__save" type="submit">Salvar</button>
             <button class="product-row__remove" type="button" @click="archiveStore(store.id)">Arquivar</button>
+            <button class="product-row__remove" type="button" @click="deleteStore(store)">Excluir</button>
           </div>
         </form>
+      </div>
+
+      <div v-if="archivedManagedStores.length" class="option-list">
+        <article v-for="store in archivedManagedStores" :key="store.id" class="option-row">
+          <div class="option-row__content">
+            <strong>{{ store.name }}</strong>
+            <span class="settings-card__text">{{ store.code || "Sem codigo" }} <template v-if="store.city">• {{ store.city }}</template></span>
+          </div>
+          <div class="multistore-form__actions">
+            <button class="option-row__save" type="button" @click="restoreStore(store.id)">Restaurar</button>
+            <button class="product-row__remove" type="button" @click="deleteStore(store)">Excluir</button>
+          </div>
+        </article>
       </div>
 
       <form class="multistore-form multistore-form--add" @submit.prevent="createStore">
@@ -425,10 +413,13 @@ async function archiveStore(storeId) {
           <input v-model="newStore.name" class="product-add__input" type="text" placeholder="Nome da loja *" data-testid="multistore-new-name">
           <input v-model="newStore.code" class="product-add__input" type="text" placeholder="Codigo curto">
           <input v-model="newStore.city" class="product-add__input" type="text" placeholder="Cidade">
-          <select v-model="newStore.defaultTemplateId" class="product-add__input">
-            <option value="">Template padrão</option>
-            <option v-for="t in operationTemplates" :key="t.id" :value="t.id">{{ t.label }}</option>
-          </select>
+          <AppSelectField
+            class="product-add__input"
+            :model-value="newStore.defaultTemplateId"
+            :options="templateOptions"
+            placeholder="Template padrao"
+            @update:model-value="newStore.defaultTemplateId = $event"
+          />
         </div>
         <div class="multistore-form__row">
           <label class="multistore-form__field">
@@ -463,3 +454,4 @@ async function archiveStore(storeId) {
     </article>
   </section>
 </template>
+

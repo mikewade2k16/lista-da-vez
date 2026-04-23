@@ -11,3 +11,4 @@ qa-bot/.venv/
 qa-bot/artifacts/
 __pycache__/
 *.pyc
+.env.production

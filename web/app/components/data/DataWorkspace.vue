@@ -1,40 +1,42 @@
 <script setup>
 import { computed } from "vue";
-import {
-  buildInsights,
-  buildTimeIntelligence,
-  formatDurationMinutes,
-  formatPercent
-} from "@core/utils/admin-metrics";
+import { formatDurationMinutes, formatPercent } from "~/domain/utils/admin-metrics";
 import InsightHourlyTable from "~/components/data/InsightHourlyTable.vue";
 import InsightTagList from "~/components/data/InsightTagList.vue";
 
 const props = defineProps({
-  state: {
+  report: {
     type: Object,
-    required: true
+    default: null
+  },
+  pending: {
+    type: Boolean,
+    default: false
+  },
+  errorMessage: {
+    type: String,
+    default: ""
   }
 });
 
-const insights = computed(() =>
-  buildInsights({
-    history: props.state.serviceHistory || [],
-    visitReasonOptions: props.state.visitReasonOptions || [],
-    customerSourceOptions: props.state.customerSourceOptions || []
-  })
-);
-const timeIntelligence = computed(() =>
-  buildTimeIntelligence({
-    history: props.state.serviceHistory || [],
-    roster: props.state.roster || [],
-    waitingList: props.state.waitingList || [],
-    activeServices: props.state.activeServices || [],
-    pausedEmployees: props.state.pausedEmployees || [],
-    consultantCurrentStatus: props.state.consultantCurrentStatus || {},
-    consultantActivitySessions: props.state.consultantActivitySessions || [],
-    settings: props.state.settings || {}
-  })
-);
+const timeIntelligence = computed(() => props.report?.timeIntelligence || {
+  quickHighPotentialCount: 0,
+  longLowSaleCount: 0,
+  longNoSaleCount: 0,
+  quickNoSaleCount: 0,
+  avgQueueWaitMs: 0,
+  totalsByStatus: {
+    queue: 0,
+    available: 0,
+    paused: 0,
+    service: 0
+  },
+  consultantsInQueueMs: 0,
+  consultantsPausedMs: 0,
+  consultantsInServiceMs: 0,
+  notUsingQueueRate: 0
+});
+
 const primaryTimeTags = computed(() => [
   {
     label: "Fechou muito rapido",
@@ -102,6 +104,14 @@ const liveTimeTags = computed(() => [
       <p class="admin-panel__text">Painel bruto de produto, motivo, origem, horario e tempo.</p>
     </header>
 
+    <article v-if="errorMessage" class="insight-card">
+      <p class="settings-card__text">{{ errorMessage }}</p>
+    </article>
+
+    <article v-else-if="pending && !report" class="insight-card">
+      <p class="settings-card__text">Carregando dados operacionais da loja ativa...</p>
+    </article>
+
     <div class="insight-grid">
       <article class="insight-card insight-card--wide" data-testid="data-time-intelligence">
         <h3 class="insight-card__title">Inteligencia de tempo</h3>
@@ -125,13 +135,13 @@ const liveTimeTags = computed(() => [
         </div>
       </article>
 
-      <InsightTagList title="Produtos mais vendidos" :items="insights.soldProducts" />
-      <InsightTagList title="Produtos mais procurados" :items="insights.requestedProducts" />
-      <InsightTagList title="Motivos de visita" :items="insights.visitReasons" />
-      <InsightTagList title="Origem do cliente" :items="insights.customerSources" />
-      <InsightTagList title="Profissoes mais atendidas" :items="insights.professions" />
-      <InsightTagList title="Desfecho dos atendimentos" :items="insights.outcomeSummary" />
-      <InsightHourlyTable :items="insights.hourlySales" />
+      <InsightTagList title="Produtos mais vendidos" :items="report?.soldProducts || []" />
+      <InsightTagList title="Produtos mais procurados" :items="report?.requestedProducts || []" />
+      <InsightTagList title="Motivos de visita" :items="report?.visitReasons || []" />
+      <InsightTagList title="Origem do cliente" :items="report?.customerSources || []" />
+      <InsightTagList title="Profissoes mais atendidas" :items="report?.professions || []" />
+      <InsightTagList title="Desfecho dos atendimentos" :items="report?.outcomeSummary || []" />
+      <InsightHourlyTable :items="report?.hourlySales || []" />
     </div>
   </section>
 </template>

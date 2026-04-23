@@ -1,8 +1,9 @@
 <script setup>
 import { computed, reactive, ref, watch } from "vue";
-import { canManageCampaigns } from "@core/utils/permissions";
-import { buildCampaignPerformance, deriveCampaignStatus, normalizeCampaign } from "@core/utils/campaigns";
-import { useDashboardStore } from "~/stores/dashboard";
+import AppSelectField from "~/components/ui/AppSelectField.vue";
+import { canManageCampaigns } from "~/domain/utils/permissions";
+import { buildCampaignPerformance, deriveCampaignStatus, normalizeCampaign } from "~/domain/utils/campaigns";
+import { useCampaignsStore } from "~/stores/campaigns";
 import { useUiStore } from "~/stores/ui";
 
 const props = defineProps({
@@ -12,11 +13,27 @@ const props = defineProps({
   }
 });
 
-const dashboard = useDashboardStore();
+const campaignsStore = useCampaignsStore();
 const ui = useUiStore();
 const drafts = ref({});
 const newCampaign = reactive(normalizeCampaign({}));
 const typeFilter = ref("todas");
+const campaignTypeOptions = [
+  { value: "interna", label: "Interna (corrida / incentivo)" },
+  { value: "comercial", label: "Comercial (marketing / promocao)" }
+];
+const targetOutcomeOptions = [
+  { value: "compra-reserva", label: "Compra ou reserva" },
+  { value: "compra", label: "Compra" },
+  { value: "reserva", label: "Reserva" },
+  { value: "nao-compra", label: "Nao compra" },
+  { value: "qualquer", label: "Qualquer desfecho" }
+];
+const existingCustomerFilterOptions = [
+  { value: "all", label: "Todos" },
+  { value: "yes", label: "Somente sim" },
+  { value: "no", label: "Somente nao" }
+];
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
@@ -68,6 +85,14 @@ const filteredCampaigns = computed(() => {
 const performance = computed(() =>
   buildCampaignPerformance(props.state.campaigns || [], props.state.serviceHistory || [])
 );
+const campaignProductOptions = computed(() =>
+  (props.state.productCatalog || [])
+    .filter((product) => String(product.code || "").trim())
+    .map((product) => ({
+      value: String(product.code || "").trim().toUpperCase(),
+      label: `${product.name} (${String(product.code || "").trim().toUpperCase()})`
+    }))
+);
 
 const STATUS_LABEL = { ativa: "Em andamento", aguardando: "Aguardando", encerrada: "Encerrada", inativa: "Desativada" };
 const STATUS_CLASS = { ativa: "campaign-status--ativa", aguardando: "campaign-status--aguardando", encerrada: "campaign-status--encerrada", inativa: "campaign-status--inativa" };
@@ -79,6 +104,7 @@ function statusOf(campaign) {
 function buildDraft(campaign) {
   return normalizeCampaign({
     ...campaign,
+    productCodes: [...(campaign.productCodes || [])],
     sourceIds: [...(campaign.sourceIds || [])],
     reasonIds: [...(campaign.reasonIds || [])]
   });
@@ -124,7 +150,7 @@ function toggleNewCampaignListValue(field, value) {
 }
 
 async function saveCampaign(campaignId) {
-  const result = await dashboard.updateCampaign(campaignId, normalizeCampaign(drafts.value[campaignId]));
+  const result = await campaignsStore.updateCampaign(campaignId, normalizeCampaign(drafts.value[campaignId]));
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel atualizar campanha.");
@@ -135,7 +161,7 @@ async function saveCampaign(campaignId) {
 }
 
 async function createCampaign() {
-  const result = await dashboard.createCampaign(normalizeCampaign(newCampaign));
+  const result = await campaignsStore.createCampaign(normalizeCampaign(newCampaign));
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel criar campanha.");
@@ -157,7 +183,7 @@ async function removeCampaign(campaignId) {
     return;
   }
 
-  await dashboard.removeCampaign(campaignId);
+  await campaignsStore.removeCampaign(campaignId);
   ui.success("Campanha removida.");
 }
 </script>
@@ -185,7 +211,7 @@ async function removeCampaign(campaignId) {
     <form v-if="canEditCampaigns" class="settings-card campaign-card" data-testid="campaigns-new-form" @submit.prevent="createCampaign">
       <header class="settings-card__header">
         <h3 class="settings-card__title">Nova campanha</h3>
-        <p class="settings-card__text">Cadastro completo da regra comercial.</p>
+        <p class="settings-card__text">Cadastro completo da regra comercial. Produtos vinculados entram automaticamente quando o codigo vendido bater.</p>
       </header>
 
       <div class="campaign-grid">
@@ -193,30 +219,32 @@ async function removeCampaign(campaignId) {
         <label class="settings-field"><span>Descricao</span><input v-model="newCampaign.description" type="text"></label>
         <label class="settings-field">
           <span>Tipo</span>
-          <select :value="newCampaign.campaignType" @change="updateNewCampaignField('campaignType', $event.target.value)">
-            <option value="interna">Interna (corrida / incentivo)</option>
-            <option value="comercial">Comercial (marketing / promocao)</option>
-          </select>
+          <AppSelectField
+            :model-value="newCampaign.campaignType"
+            :options="campaignTypeOptions"
+            placeholder="Selecionar tipo"
+            @update:model-value="updateNewCampaignField('campaignType', $event)"
+          />
         </label>
         <label class="settings-field"><span>Inicio</span><input v-model="newCampaign.startsAt" type="date"></label>
         <label class="settings-field"><span>Fim</span><input v-model="newCampaign.endsAt" type="date"></label>
         <label class="settings-field">
           <span>Desfecho alvo</span>
-          <select :value="newCampaign.targetOutcome" @change="updateNewCampaignField('targetOutcome', $event.target.value)">
-            <option value="compra-reserva">Compra ou reserva</option>
-            <option value="compra">Compra</option>
-            <option value="reserva">Reserva</option>
-            <option value="nao-compra">Nao compra</option>
-            <option value="qualquer">Qualquer desfecho</option>
-          </select>
+          <AppSelectField
+            :model-value="newCampaign.targetOutcome"
+            :options="targetOutcomeOptions"
+            placeholder="Selecionar desfecho"
+            @update:model-value="updateNewCampaignField('targetOutcome', $event)"
+          />
         </label>
         <label class="settings-field">
           <span>Cliente recorrente</span>
-          <select :value="newCampaign.existingCustomerFilter" @change="updateNewCampaignField('existingCustomerFilter', $event.target.value)">
-            <option value="all">Todos</option>
-            <option value="yes">Somente sim</option>
-            <option value="no">Somente nao</option>
-          </select>
+          <AppSelectField
+            :model-value="newCampaign.existingCustomerFilter"
+            :options="existingCustomerFilterOptions"
+            placeholder="Selecionar filtro"
+            @update:model-value="updateNewCampaignField('existingCustomerFilter', $event)"
+          />
         </label>
         <label class="settings-field"><span>Venda minima (R$)</span><input :value="newCampaign.minSaleAmount" type="number" min="0" step="1" @input="updateNewCampaignField('minSaleAmount', $event.target.value)"></label>
         <label class="settings-field"><span>Duracao maxima (min)</span><input :value="newCampaign.maxServiceMinutes" type="number" min="0" step="1" @input="updateNewCampaignField('maxServiceMinutes', $event.target.value)"></label>
@@ -244,6 +272,16 @@ async function removeCampaign(campaignId) {
           <div class="campaign-option-list">
             <label v-for="option in state.visitReasonOptions" :key="option.id" class="settings-toggle">
               <input type="checkbox" :checked="newCampaign.reasonIds.includes(option.id)" @change="toggleNewCampaignListValue('reasonIds', option.id)">
+              <span>{{ option.label }}</span>
+            </label>
+          </div>
+        </div>
+        <div class="settings-field">
+          <span>Produtos alvo por codigo</span>
+          <span v-if="!campaignProductOptions.length" class="settings-card__text">Cadastre codigos em Configuracoes &gt; Produtos para automatizar por item.</span>
+          <div v-else class="campaign-option-list">
+            <label v-for="option in campaignProductOptions" :key="option.value" class="settings-toggle">
+              <input type="checkbox" :checked="newCampaign.productCodes.includes(option.value)" @change="toggleNewCampaignListValue('productCodes', option.value)">
               <span>{{ option.label }}</span>
             </label>
           </div>
@@ -301,30 +339,35 @@ async function removeCampaign(campaignId) {
           <label class="settings-field"><span>Descricao</span><input :value="drafts[campaign.id]?.description || ''" type="text" :disabled="!canEditCampaigns" @input="updateDraftField(campaign.id, 'description', $event.target.value)"></label>
           <label class="settings-field">
             <span>Tipo</span>
-            <select :value="drafts[campaign.id]?.campaignType || 'interna'" :disabled="!canEditCampaigns" @change="updateDraftField(campaign.id, 'campaignType', $event.target.value)">
-              <option value="interna">Interna (corrida / incentivo)</option>
-              <option value="comercial">Comercial (marketing / promocao)</option>
-            </select>
+            <AppSelectField
+              :model-value="drafts[campaign.id]?.campaignType || 'interna'"
+              :options="campaignTypeOptions"
+              :disabled="!canEditCampaigns"
+              placeholder="Selecionar tipo"
+              @update:model-value="updateDraftField(campaign.id, 'campaignType', $event)"
+            />
           </label>
           <label class="settings-field"><span>Inicio</span><input :value="drafts[campaign.id]?.startsAt || ''" type="date" :disabled="!canEditCampaigns" @input="updateDraftField(campaign.id, 'startsAt', $event.target.value)"></label>
           <label class="settings-field"><span>Fim</span><input :value="drafts[campaign.id]?.endsAt || ''" type="date" :disabled="!canEditCampaigns" @input="updateDraftField(campaign.id, 'endsAt', $event.target.value)"></label>
           <label class="settings-field">
             <span>Desfecho alvo</span>
-            <select :value="drafts[campaign.id]?.targetOutcome || 'compra-reserva'" :disabled="!canEditCampaigns" @change="updateDraftField(campaign.id, 'targetOutcome', $event.target.value)">
-              <option value="compra-reserva">Compra ou reserva</option>
-              <option value="compra">Compra</option>
-              <option value="reserva">Reserva</option>
-              <option value="nao-compra">Nao compra</option>
-              <option value="qualquer">Qualquer desfecho</option>
-            </select>
+            <AppSelectField
+              :model-value="drafts[campaign.id]?.targetOutcome || 'compra-reserva'"
+              :options="targetOutcomeOptions"
+              :disabled="!canEditCampaigns"
+              placeholder="Selecionar desfecho"
+              @update:model-value="updateDraftField(campaign.id, 'targetOutcome', $event)"
+            />
           </label>
           <label class="settings-field">
             <span>Cliente recorrente</span>
-            <select :value="drafts[campaign.id]?.existingCustomerFilter || 'all'" :disabled="!canEditCampaigns" @change="updateDraftField(campaign.id, 'existingCustomerFilter', $event.target.value)">
-              <option value="all">Todos</option>
-              <option value="yes">Somente sim</option>
-              <option value="no">Somente nao</option>
-            </select>
+            <AppSelectField
+              :model-value="drafts[campaign.id]?.existingCustomerFilter || 'all'"
+              :options="existingCustomerFilterOptions"
+              :disabled="!canEditCampaigns"
+              placeholder="Selecionar filtro"
+              @update:model-value="updateDraftField(campaign.id, 'existingCustomerFilter', $event)"
+            />
           </label>
           <label class="settings-field"><span>Venda minima (R$)</span><input :value="drafts[campaign.id]?.minSaleAmount || 0" type="number" min="0" step="1" :disabled="!canEditCampaigns" @input="updateDraftField(campaign.id, 'minSaleAmount', $event.target.value)"></label>
           <label class="settings-field"><span>Duracao maxima (min)</span><input :value="drafts[campaign.id]?.maxServiceMinutes || 0" type="number" min="0" step="1" :disabled="!canEditCampaigns" @input="updateDraftField(campaign.id, 'maxServiceMinutes', $event.target.value)"></label>
@@ -352,6 +395,16 @@ async function removeCampaign(campaignId) {
             <div class="campaign-option-list">
               <label v-for="option in state.visitReasonOptions" :key="option.id" class="settings-toggle">
                 <input type="checkbox" :checked="Boolean(drafts[campaign.id]?.reasonIds?.includes(option.id))" :disabled="!canEditCampaigns" @change="toggleDraftListValue(campaign.id, 'reasonIds', option.id)">
+                <span>{{ option.label }}</span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-field">
+            <span>Produtos alvo por codigo</span>
+            <span v-if="!campaignProductOptions.length" class="settings-card__text">Cadastre codigos em Configuracoes &gt; Produtos para automatizar por item.</span>
+            <div v-else class="campaign-option-list">
+              <label v-for="option in campaignProductOptions" :key="option.value" class="settings-toggle">
+                <input type="checkbox" :checked="Boolean(drafts[campaign.id]?.productCodes?.includes(option.value))" :disabled="!canEditCampaigns" @change="toggleDraftListValue(campaign.id, 'productCodes', option.value)">
                 <span>{{ option.label }}</span>
               </label>
             </div>

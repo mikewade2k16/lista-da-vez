@@ -1,5 +1,5 @@
 <script setup>
-import { formatCurrencyBRL } from "@core/utils/admin-metrics";
+import { formatCurrencyBRL } from "~/domain/utils/admin-metrics";
 
 defineProps({
   items: {

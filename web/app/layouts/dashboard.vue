@@ -1,9 +1,11 @@
 <script setup>
 import DashboardHeader from "~/components/dashboard/DashboardHeader.vue";
 import DashboardWorkspaceNav from "~/components/dashboard/DashboardWorkspaceNav.vue";
+import { useContextRealtime } from "~/composables/useContextRealtime";
 import { useDashboardShell } from "~/composables/useDashboardShell";
 
 const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile, setActiveStore } = useDashboardShell();
+useContextRealtime();
 
 function handleProfileChange(profileId) {
   void setActiveProfile(profileId);

@@ -1,17 +1,28 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { formatClock, formatDuration } from "@core/utils/time";
-import { useDashboardStore } from "~/stores/dashboard";
+import OperationActiveServiceCard from "~/features/operation/components/OperationActiveServiceCard.vue";
+import { useOperationsStore } from "~/stores/operations";
+import { useUiStore } from "~/stores/ui";
 
 const props = defineProps({
   state: {
     type: Object,
     required: true
+  },
+  readOnly: {
+    type: Boolean,
+    default: false
+  },
+  integratedMode: {
+    type: Boolean,
+    default: false
   }
 });
 
-const dashboard = useDashboardStore();
-const now = ref(Date.now());
+const operationsStore = useOperationsStore();
+const ui = useUiStore();
+const now = ref(0);
+const isClockReady = ref(false);
 let timerId = null;
 
 const waitingList = computed(() => props.state.waitingList || []);
@@ -19,33 +30,58 @@ const activeServices = computed(() => props.state.activeServices || []);
 const maxConcurrentServices = computed(() => props.state.settings?.maxConcurrentServices || 10);
 const isLimitReached = computed(() => activeServices.value.length >= maxConcurrentServices.value);
 
-function serviceLabel(service) {
-  const skippedCount = service.skippedPeople?.length || 0;
-  const typeLabel = service.startMode === "queue-jump" ? "Fora da vez" : "Na vez";
-
-  return skippedCount > 0
-    ? `${typeLabel}, passou ${skippedCount} ${skippedCount === 1 ? "pessoa" : "pessoas"}`
-    : typeLabel;
-}
-
 function actionHint(index) {
   const skippedCount = index;
   return `Passa na frente de ${skippedCount} ${skippedCount === 1 ? "pessoa" : "pessoas"}`;
 }
 
-function startFirstService() {
-  void dashboard.startService();
+async function startFirstService() {
+  const result = await operationsStore.startService();
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+  }
 }
 
-function startSpecificService(personId) {
-  void dashboard.startService(personId);
+async function startSpecificService(personId) {
+  const result = await operationsStore.startService(personId);
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+  }
 }
 
 function openFinishModal(personId) {
-  void dashboard.openFinishModal(personId);
+  void operationsStore.openFinishModal(personId);
+}
+
+async function assignTask(person) {
+  const { confirmed, value } = await ui.prompt({
+    title: "Direcionar para tarefa",
+    message: `Registre a tarefa ou reuniao para ${person.name}${person.storeName ? ` em ${person.storeName}` : ""}.`,
+    inputLabel: "Motivo",
+    inputPlaceholder: "Ex.: reuniao, apoio no caixa, estoque, suporte",
+    confirmLabel: "Tirar da fila",
+    required: true
+  });
+
+  if (!confirmed || !value) {
+    return;
+  }
+
+  const result = await operationsStore.assignTask(person.id, value, props.integratedMode ? person.storeId : "");
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+    return;
+  }
+
+  ui.success("Consultor direcionado para tarefa.");
 }
 
 onMounted(() => {
+  now.value = Date.now();
+  isClockReady.value = true;
   timerId = window.setInterval(() => {
     now.value = Date.now();
   }, 1000);
@@ -70,7 +106,7 @@ onBeforeUnmount(() => {
   <div class="queue-grid" data-testid="operation-board">
     <section class="queue-column" data-testid="operation-waiting-column">
       <header class="queue-column__header">Lista da vez</header>
-      <div v-if="waitingList.length > 0" class="queue-column__action-bar">
+      <div v-if="waitingList.length > 0 && !props.readOnly && !props.integratedMode" class="queue-column__action-bar">
         <button
           class="column-action column-action--primary"
           type="button"
@@ -95,12 +131,25 @@ onBeforeUnmount(() => {
               {{ person.initials }}
             </span>
             <span class="queue-card__content">
-              <strong class="queue-card__name">{{ person.name }}</strong>
+              <span class="queue-card__headline">
+                <strong class="queue-card__name">{{ person.name }}</strong>
+                <span v-if="props.integratedMode && person.storeName" class="queue-card__store-badge">{{ person.storeName }}</span>
+              </span>
               <span class="queue-card__role">{{ person.role }}</span>
               <span class="queue-card__note">{{ index === 0 ? "Aguardando" : "Aguardando na fila" }}</span>
             </span>
             <div class="queue-card__actions">
-              <span v-if="index === 0" class="queue-card__badge">Na vez</span>
+              <span v-if="(index === 0 && !props.integratedMode) || props.readOnly" class="queue-card__badge">{{ index === 0 ? "Na vez" : "Na fila" }}</span>
+              <template v-else-if="props.integratedMode">
+                <button
+                  class="queue-card__task-btn"
+                  type="button"
+                  :data-testid="`operation-assign-task-${person.id}`"
+                  @click="assignTask(person)"
+                >
+                  Tirar
+                </button>
+              </template>
               <template v-else>
                 <div class="queue-card__action-wrap">
                   <button
@@ -122,7 +171,9 @@ onBeforeUnmount(() => {
         <div v-else class="queue-empty">
           <span class="queue-empty__icon">!</span>
           <strong class="queue-empty__title">Fila vazia</strong>
-          <span class="queue-empty__text">Use a barra de Consultores abaixo para colocar alguem na lista.</span>
+          <span class="queue-empty__text">
+            {{ props.readOnly ? "Acompanhe por aqui quando a operacao da loja iniciar novos atendimentos." : "Use a barra de Consultores abaixo para colocar alguem na lista." }}
+          </span>
         </div>
       </div>
     </section>
@@ -131,39 +182,16 @@ onBeforeUnmount(() => {
       <header class="queue-column__header">Em atendimento</header>
       <div class="queue-column__body queue-column__body--service">
         <template v-if="activeServices.length > 0">
-          <article
+          <OperationActiveServiceCard
             v-for="service in activeServices"
             :key="service.serviceId"
-            class="service-card"
-            :data-testid="`operation-service-${service.id}`"
-          >
-            <div class="service-card__header">
-              <span class="service-card__eyebrow">Atendimento em andamento</span>
-              <span class="queue-card__note">Iniciado as {{ formatClock(service.serviceStartedAt) }}</span>
-              <span class="queue-card__note">ID {{ service.serviceId }}</span>
-            </div>
-            <div class="service-card__body">
-              <span class="queue-card__avatar queue-card__avatar--large" :style="{ '--avatar-accent': service.color }">
-                {{ service.initials }}
-              </span>
-              <div class="service-card__content">
-                <strong class="queue-card__name">{{ service.name }}</strong>
-                <span class="queue-card__role">{{ service.role }}</span>
-                <span class="queue-card__note">{{ serviceLabel(service) }}</span>
-              </div>
-              <strong class="service-card__timer">
-                {{ formatDuration(now - service.serviceStartedAt) }}
-              </strong>
-            </div>
-            <button
-              class="column-action column-action--secondary"
-              type="button"
-              :data-testid="`operation-finish-${service.id}`"
-              @click="openFinishModal(service.id)"
-            >
-              Encerrar atendimento
-            </button>
-          </article>
+            :service="service"
+            :now="now"
+            :clock-ready="isClockReady"
+            :read-only="props.readOnly"
+            :integrated-mode="props.integratedMode"
+            @finish="openFinishModal"
+          />
         </template>
         <div v-else class="queue-empty">
           <span class="queue-empty__icon">...</span>

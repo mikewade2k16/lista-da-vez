@@ -20,6 +20,10 @@ steps:
     testid: operation-board
 
   - action: expect_visible
+    name: Valida painel de campanhas comerciais ativas
+    testid: operation-campaign-brief
+
+  - action: expect_visible
     name: Valida barra de consultores
     testid: operation-consultant-strip
 
@@ -82,20 +86,44 @@ steps:
     testid: operation-customer-phone
     value: 79999990000
 
-  - action: select
-    name: Seleciona motivo da visita
-    testid: operation-visit-reason
-    value: consulta
-
-  - action: select
-    name: Seleciona origem do cliente
-    testid: operation-customer-source
-    value: instagram
+  - action: click
+    name: Abre seletor de motivo da visita
+    testid: operation-visit-reason-trigger
 
   - action: fill
-    name: Preenche motivo do atendimento fora da vez
-    testid: operation-queue-jump-reason
-    value: Cliente retornou direto para validar o fluxo QA.
+    name: Busca motivo da visita
+    testid: operation-visit-reason-search
+    value: consulta
+
+  - action: click
+    name: Seleciona motivo da visita
+    testid: operation-visit-reason-option-consulta
+
+  - action: click
+    name: Abre seletor de origem do cliente
+    testid: operation-customer-source-trigger
+
+  - action: fill
+    name: Busca origem do cliente
+    testid: operation-customer-source-search
+    value: instagram
+
+  - action: click
+    name: Seleciona origem do cliente
+    testid: operation-customer-source-option-instagram
+
+  - action: click
+    name: Abre seletor de motivo fora da vez
+    testid: operation-queue-jump-reason-trigger
+
+  - action: fill
+    name: Busca motivo fora da vez
+    testid: operation-queue-jump-reason-search
+    value: cliente fixo
+
+  - action: click
+    name: Seleciona motivo do atendimento fora da vez
+    testid: operation-queue-jump-reason-option-cliente-fixo
 
   - action: fill
     name: Preenche observacao final

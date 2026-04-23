@@ -26,8 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
   )
   parser.add_argument(
     "--base-url",
-    default="http://localhost:3000",
-    help="URL base do app em teste. Ex.: http://localhost:3000"
+    default="http://localhost:3003",
+    help="URL base do app em teste. Ex.: http://localhost:3003"
   )
   parser.add_argument(
     "--browser",

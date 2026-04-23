@@ -69,6 +69,24 @@ steps:
     name: Tenta enviar duplicado
     testid: settings-motivos-add-btn
 
+  # Aba Fora da vez
+  - action: click
+    name: Navega para aba Fora da vez
+    testid: settings-tab-motivos-fora-da-vez
+
+  - action: expect_visible
+    name: Valida input de adicionar motivo fora da vez
+    testid: settings-fora-da-vez-add-input
+
+  - action: fill
+    name: Preenche novo motivo fora da vez
+    testid: settings-fora-da-vez-add-input
+    value: Motivo fora da vez QA Smoke
+
+  - action: click
+    name: Adiciona o novo motivo fora da vez
+    testid: settings-fora-da-vez-add-btn
+
   # Aba Origens
   - action: click
     name: Navega para aba Origens

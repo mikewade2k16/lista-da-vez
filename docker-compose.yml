@@ -1,0 +1,101 @@
+name: lista-da-vez
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lista_da_vez}
+      POSTGRES_USER: ${POSTGRES_USER:-lista_da_vez}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lista_da_vez_dev}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-lista_da_vez} -d ${POSTGRES_DB:-lista_da_vez}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    environment:
+      APP_NAME: lista-da-vez-api
+      APP_ENV: docker
+      APP_ADDR: :8080
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3003}
+      UPLOADS_DIR: /app/data/uploads
+      DATABASE_URL: postgres://${POSTGRES_USER:-lista_da_vez}:${POSTGRES_PASSWORD:-lista_da_vez_dev}@postgres:5432/${POSTGRES_DB:-lista_da_vez}?sslmode=disable
+      DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
+      DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*,http://[::1]:*}
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-dev-secret-change-me}
+      AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
+      AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
+      AUTH_PASSWORD_RESET_TTL: ${AUTH_PASSWORD_RESET_TTL:-30m}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Lista da Vez}
+      SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
+      SMTP_INSECURE_SKIP_VERIFY: ${SMTP_INSECURE_SKIP_VERIFY:-false}
+      SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
+      AUTH_BCRYPT_COST: ${AUTH_BCRYPT_COST:-10}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - api_uploads:/app/data/uploads
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail --silent http://127.0.0.1:8080/healthz > /dev/null || exit 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      target: dev
+    command: sh -c "node ./scripts/ensure-node-modules.mjs && exec npm run dev"
+    environment:
+      NODE_ENV: development
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-http://localhost:8080}
+      NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE:-http://api:8080}
+      NITRO_HOST: 0.0.0.0
+      PORT: 3003
+      NUXT_DEVTOOLS: ${NUXT_DEVTOOLS:-false}
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+      CHOKIDAR_INTERVAL: ${CHOKIDAR_INTERVAL:-350}
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3003}:3003"
+    volumes:
+      - ./web:/app
+      - web_node_modules:/app/node_modules
+      - web_nuxt:/app/.nuxt
+
+volumes:
+  postgres_data:
+  api_uploads:
+  web_node_modules:
+  web_nuxt:

@@ -1,0 +1,11 @@
+
+[41m[30m ERROR [39m[49m Process exited with non-zero status (4294967295)
+
+    [90mat [39mL._waitForOutput ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/tinyexec/dist/main.mjs:582:92[39m)
+    [90mat [39mprocess.processTicksAndRejections ([36mnode:internal/process/task_queues:103:5[39m)
+    [90mat [39masync Object.run ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/@nuxt/cli/dist/preview-Dpml-raz.mjs:102:3[39m)
+    [90mat [39masync runCommand ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/citty/dist/index.mjs:188:47[39m)
+    [90mat [39masync runCommand ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/citty/dist/index.mjs:185:21[39m)
+    [90mat [39masync runMain ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/citty/dist/index.mjs:285:10[39m) 
+
+

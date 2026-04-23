@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import OperationProductPicker from "~/features/operation/components/OperationProductPicker.vue";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
 
 const props = defineProps({
@@ -11,7 +11,7 @@ const props = defineProps({
   }
 });
 
-const dashboard = useDashboardStore();
+const operationsStore = useOperationsStore();
 const ui = useUiStore();
 
 function createEmptyForm() {
@@ -27,15 +27,27 @@ function createEmptyForm() {
     customerPhone: "",
     customerEmail: "",
     customerProfessionId: "",
-    visitReasonId: "",
+    visitReasonIds: [],
     visitReasonNotInformed: false,
-    visitReasonDetail: "",
-    customerSourceId: "",
+    visitReasonDetails: {},
+    customerSourceIds: [],
     customerSourceNotInformed: false,
-    customerSourceDetail: "",
-    queueJumpReason: "",
+    customerSourceDetails: {},
+    queueJumpReasonId: "",
+    lossReasonIds: [],
+    lossReasonDetails: {},
     notes: ""
   };
+}
+
+function normalizeIdList(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function syncSelectedDetails(itemIds = [], details = {}) {
+  return Object.fromEntries(
+    normalizeIdList(itemIds).map((itemId) => [itemId, String(details?.[itemId] || "")])
+  );
 }
 
 function findOptionByLabel(options, label) {
@@ -61,9 +73,34 @@ function normalizeProducts(items = []) {
 
 function buildInitialForm(state, draft) {
   const currentDraft = draft || {};
-  const selectedVisitReasonId = Array.isArray(currentDraft.visitReasons) ? currentDraft.visitReasons[0] || "" : "";
-  const selectedSourceId = Array.isArray(currentDraft.customerSources) ? currentDraft.customerSources[0] || "" : "";
+  const selectedVisitReasonIds = normalizeIdList(currentDraft.visitReasons);
+  const selectedSourceIds = normalizeIdList(
+    Array.isArray(currentDraft.customerSources)
+      ? currentDraft.customerSources
+      : currentDraft.customerSource
+        ? [currentDraft.customerSource]
+        : []
+  );
   const selectedProfession = findOptionByLabel(state.professionOptions, currentDraft.customerProfession);
+  const selectedQueueJumpReason =
+    (state.queueJumpReasonOptions || []).find((option) => option.id === String(currentDraft.queueJumpReasonId || "")) ||
+    findOptionByLabel(state.queueJumpReasonOptions, currentDraft.queueJumpReason);
+  const selectedLossReasonIds = normalizeIdList(
+    Array.isArray(currentDraft.lossReasons)
+      ? currentDraft.lossReasons
+      : currentDraft.lossReasonId
+        ? [currentDraft.lossReasonId]
+        : []
+  );
+  const selectedLossReason =
+    selectedLossReasonIds[0]
+      ? (state.lossReasonOptions || []).find((option) => option.id === selectedLossReasonIds[0]) || null
+      : findOptionByLabel(state.lossReasonOptions, currentDraft.lossReason);
+  const resolvedLossReasonIds = selectedLossReasonIds.length
+    ? selectedLossReasonIds
+    : selectedLossReason?.id
+      ? [selectedLossReason.id]
+      : [];
 
   return {
     outcome: String(currentDraft.outcome || ""),
@@ -77,13 +114,27 @@ function buildInitialForm(state, draft) {
     customerPhone: String(currentDraft.customerPhone || ""),
     customerEmail: String(currentDraft.customerEmail || ""),
     customerProfessionId: selectedProfession?.id || "",
-    visitReasonId: selectedVisitReasonId,
-    visitReasonNotInformed: Boolean(currentDraft.visitReasonsNotInformed) && !selectedVisitReasonId,
-    visitReasonDetail: selectedVisitReasonId ? String(currentDraft.visitReasonDetails?.[selectedVisitReasonId] || "") : "",
-    customerSourceId: selectedSourceId,
-    customerSourceNotInformed: Boolean(currentDraft.customerSourcesNotInformed) && !selectedSourceId,
-    customerSourceDetail: selectedSourceId ? String(currentDraft.customerSourceDetails?.[selectedSourceId] || "") : "",
-    queueJumpReason: String(currentDraft.queueJumpReason || ""),
+    visitReasonIds: selectedVisitReasonIds,
+    visitReasonNotInformed: Boolean(currentDraft.visitReasonsNotInformed) && selectedVisitReasonIds.length === 0,
+    visitReasonDetails: syncSelectedDetails(selectedVisitReasonIds, currentDraft.visitReasonDetails),
+    customerSourceIds: selectedSourceIds,
+    customerSourceNotInformed: Boolean(currentDraft.customerSourcesNotInformed) && selectedSourceIds.length === 0,
+    customerSourceDetails: syncSelectedDetails(
+      selectedSourceIds,
+      currentDraft.customerSourceDetails && typeof currentDraft.customerSourceDetails === "object"
+        ? currentDraft.customerSourceDetails
+        : selectedSourceIds[0]
+          ? { [selectedSourceIds[0]]: String(currentDraft.customerSourceDetail || "") }
+          : {}
+    ),
+    queueJumpReasonId: selectedQueueJumpReason?.id || "",
+    lossReasonIds: String(currentDraft.outcome || "") === "nao-compra" ? resolvedLossReasonIds : [],
+    lossReasonDetails: syncSelectedDetails(
+      resolvedLossReasonIds,
+      currentDraft.lossReasonDetails && typeof currentDraft.lossReasonDetails === "object"
+        ? currentDraft.lossReasonDetails
+        : {}
+    ),
     notes: String(currentDraft.notes || "")
   };
 }
@@ -100,7 +151,63 @@ function mapOptionToPickerItem(option, meta = "") {
   };
 }
 
+function resolveModalText(value, fallback) {
+  const normalizedValue = String(value || "").trim();
+  return normalizedValue || fallback;
+}
+
 const modalConfig = computed(() => props.state.modalConfig || {});
+const visitReasonSelectionMode = computed(() =>
+  modalConfig.value.visitReasonSelectionMode === "single" ? "single" : "multiple"
+);
+const lossReasonSelectionMode = computed(() =>
+  modalConfig.value.lossReasonSelectionMode === "multiple" ? "multiple" : "single"
+);
+const customerSourceSelectionMode = computed(() =>
+  modalConfig.value.customerSourceSelectionMode === "multiple" ? "multiple" : "single"
+);
+const isVisitReasonMultiple = computed(() => visitReasonSelectionMode.value === "multiple");
+const isLossReasonMultiple = computed(() => lossReasonSelectionMode.value === "multiple");
+const isCustomerSourceMultiple = computed(() => customerSourceSelectionMode.value === "multiple");
+const visitReasonConfiguredDetailMode = computed(() => {
+  const configuredMode = modalConfig.value.visitReasonDetailMode;
+
+  if (["off", "shared", "per-item"].includes(configuredMode)) {
+    return configuredMode;
+  }
+
+  return modalConfig.value.showVisitReasonDetails === false ? "off" : "shared";
+});
+const lossReasonConfiguredDetailMode = computed(() => {
+  const configuredMode = modalConfig.value.lossReasonDetailMode;
+
+  if (["off", "shared", "per-item"].includes(configuredMode)) {
+    return configuredMode;
+  }
+
+  return "off";
+});
+const customerSourceConfiguredDetailMode = computed(() => {
+  const configuredMode = modalConfig.value.customerSourceDetailMode;
+
+  if (["off", "shared", "per-item"].includes(configuredMode)) {
+    return configuredMode;
+  }
+
+  return modalConfig.value.showCustomerSourceDetails === false ? "off" : "shared";
+});
+const visitReasonDetailsEnabled = computed(() => visitReasonConfiguredDetailMode.value !== "off");
+const lossReasonDetailsEnabled = computed(() => lossReasonConfiguredDetailMode.value !== "off");
+const customerSourceDetailsEnabled = computed(() => customerSourceConfiguredDetailMode.value !== "off");
+const visitReasonPickerDetailMode = computed(() =>
+  visitReasonConfiguredDetailMode.value === "per-item" ? "per-item" : "shared"
+);
+const lossReasonPickerDetailMode = computed(() =>
+  lossReasonConfiguredDetailMode.value === "per-item" ? "per-item" : "shared"
+);
+const customerSourcePickerDetailMode = computed(() =>
+  customerSourceConfiguredDetailMode.value === "per-item" ? "per-item" : "shared"
+);
 const service = computed(() =>
   (props.state.activeServices || []).find((item) => item.id === props.state.finishModalPersonId) || null
 );
@@ -120,17 +227,9 @@ const closedProductLabel = computed(() => {
 const selectedProfessionLabel = computed(
   () => props.state.professionOptions.find((option) => option.id === form.customerProfessionId)?.label || ""
 );
-const availableVisitReasons = computed(() =>
-  (props.state.visitReasonOptions || []).filter((option) => {
-    const allowedOutcomes = Array.isArray(option.outcomes) ? option.outcomes : [];
-
-    if (!form.outcome || allowedOutcomes.length === 0) {
-      return true;
-    }
-
-    return allowedOutcomes.includes(form.outcome) || option.id === form.visitReasonId;
-  })
-);
+const selectedVisitReasonIdSet = computed(() => new Set(normalizeIdList(form.visitReasonIds)));
+const selectedLossReasonIdSet = computed(() => new Set(normalizeIdList(form.lossReasonIds)));
+const selectedCustomerSourceIdSet = computed(() => new Set(normalizeIdList(form.customerSourceIds)));
 const closedTotal = computed(() =>
   form.productsClosed.reduce((sum, product) => sum + (Number(product.price) || 0), 0)
 );
@@ -159,9 +258,17 @@ const formQuality = computed(() => {
     customerName: hasText(form.customerName),
     customerPhone: hasText(form.customerPhone),
     product: form.productsSeen.length > 0 || form.productsClosed.length > 0 || form.productsSeenNone,
-    visitReasons: !!(form.visitReasonId || form.visitReasonNotInformed),
-    customerSources: !!(form.customerSourceId || form.customerSourceNotInformed)
+    visitReasons: form.visitReasonIds.length > 0 || form.visitReasonNotInformed,
+    customerSources: form.customerSourceIds.length > 0 || form.customerSourceNotInformed
   };
+
+  if (service.value?.startMode === "queue-jump") {
+    checks.queueJumpReason = Boolean(selectedQueueJumpReasonLabel.value);
+  }
+
+  if (form.outcome === "nao-compra") {
+    checks.lossReason = form.lossReasonIds.length > 0;
+  }
 
   if (modalConfig.value.showEmailField) {
     checks.customerEmail = hasText(form.customerEmail);
@@ -201,17 +308,13 @@ const professionSelectedItems = computed({
   }
 });
 const visitReasonPickerOptions = computed(() =>
-  availableVisitReasons.value.map((option) =>
-    mapOptionToPickerItem(
-      option,
-      Array.isArray(option.outcomes) && option.outcomes.length ? option.outcomes.join(" / ") : ""
-    )
-  )
+  (props.state.visitReasonOptions || []).map((option) => mapOptionToPickerItem(option))
 );
 const visitReasonSelectedItems = computed({
-  get: () => visitReasonPickerOptions.value.filter((option) => option.id === form.visitReasonId),
+  get: () => visitReasonPickerOptions.value.filter((option) => selectedVisitReasonIdSet.value.has(option.id)),
   set: (items) => {
-    form.visitReasonId = items[0]?.id || "";
+    form.visitReasonIds = normalizeIdList(items.map((item) => item.id));
+    form.visitReasonDetails = syncSelectedDetails(form.visitReasonIds, form.visitReasonDetails);
     form.visitReasonNotInformed = false;
   }
 });
@@ -219,10 +322,45 @@ const customerSourcePickerOptions = computed(() =>
   (props.state.customerSourceOptions || []).map((option) => mapOptionToPickerItem(option))
 );
 const customerSourceSelectedItems = computed({
-  get: () => customerSourcePickerOptions.value.filter((option) => option.id === form.customerSourceId),
+  get: () => customerSourcePickerOptions.value.filter((option) => selectedCustomerSourceIdSet.value.has(option.id)),
   set: (items) => {
-    form.customerSourceId = items[0]?.id || "";
+    form.customerSourceIds = normalizeIdList(items.map((item) => item.id));
+    form.customerSourceDetails = syncSelectedDetails(form.customerSourceIds, form.customerSourceDetails);
     form.customerSourceNotInformed = false;
+  }
+});
+const queueJumpReasonPickerOptions = computed(() =>
+  (props.state.queueJumpReasonOptions || []).map((option) => mapOptionToPickerItem(option))
+);
+const lossReasonPickerOptions = computed(() =>
+  (props.state.lossReasonOptions || []).map((option) => mapOptionToPickerItem(option))
+);
+const selectedQueueJumpReasonLabel = computed(
+  () => (props.state.queueJumpReasonOptions || []).find((option) => option.id === form.queueJumpReasonId)?.label || ""
+);
+const selectedLossReasonLabels = computed(() =>
+  lossReasonPickerOptions.value
+    .filter((option) => selectedLossReasonIdSet.value.has(option.id))
+    .map((option) => option.label)
+    .filter(Boolean)
+);
+const selectedLossReasonLabel = computed(() => selectedLossReasonLabels.value[0] || "");
+const selectedLossReasonSummary = computed(() => selectedLossReasonLabels.value.join(", "));
+const queueJumpReasonLabel = computed(() => resolveModalText(modalConfig.value.queueJumpReasonLabel, "Motivo do atendimento fora da vez"));
+const queueJumpReasonPlaceholder = computed(() => resolveModalText(modalConfig.value.queueJumpReasonPlaceholder, "Busque e selecione o motivo fora da vez"));
+const lossReasonLabel = computed(() => resolveModalText(modalConfig.value.lossReasonLabel, "Motivo da perda"));
+const lossReasonPlaceholder = computed(() => resolveModalText(modalConfig.value.lossReasonPlaceholder, "Busque e selecione o motivo da perda"));
+const queueJumpReasonSelectedItems = computed({
+  get: () => queueJumpReasonPickerOptions.value.filter((option) => option.id === form.queueJumpReasonId),
+  set: (items) => {
+    form.queueJumpReasonId = items[0]?.id || "";
+  }
+});
+const lossReasonSelectedItems = computed({
+  get: () => lossReasonPickerOptions.value.filter((option) => selectedLossReasonIdSet.value.has(option.id)),
+  set: (items) => {
+    form.lossReasonIds = normalizeIdList(items.map((item) => item.id));
+    form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, form.lossReasonDetails);
   }
 });
 
@@ -241,9 +379,53 @@ function updateCustomerSourceSelectedItems(items) {
   customerSourceSelectedItems.value = items;
 }
 
+function updateQueueJumpReasonSelectedItems(items) {
+  queueJumpReasonSelectedItems.value = items;
+}
+
+function updateLossReasonSelectedItems(items) {
+  lossReasonSelectedItems.value = items;
+}
+
+function normalizeFormForModalConfig() {
+  if (!isVisitReasonMultiple.value && form.visitReasonIds.length > 1) {
+    form.visitReasonIds = form.visitReasonIds.slice(0, 1);
+  }
+
+  if (!isLossReasonMultiple.value && form.lossReasonIds.length > 1) {
+    form.lossReasonIds = form.lossReasonIds.slice(0, 1);
+  }
+
+  if (!isCustomerSourceMultiple.value && form.customerSourceIds.length > 1) {
+    form.customerSourceIds = form.customerSourceIds.slice(0, 1);
+  }
+
+  form.visitReasonIds = normalizeIdList(form.visitReasonIds);
+  form.lossReasonIds = normalizeIdList(form.lossReasonIds);
+  form.customerSourceIds = normalizeIdList(form.customerSourceIds);
+  form.visitReasonDetails = visitReasonDetailsEnabled.value
+    ? syncSelectedDetails(form.visitReasonIds, form.visitReasonDetails)
+    : {};
+  form.lossReasonDetails = lossReasonDetailsEnabled.value
+    ? syncSelectedDetails(form.lossReasonIds, form.lossReasonDetails)
+    : {};
+  form.customerSourceDetails = customerSourceDetailsEnabled.value
+    ? syncSelectedDetails(form.customerSourceIds, form.customerSourceDetails)
+    : {};
+
+  if (form.visitReasonIds.length) {
+    form.visitReasonNotInformed = false;
+  }
+
+  if (form.customerSourceIds.length) {
+    form.customerSourceNotInformed = false;
+  }
+}
+
 function resetForm() {
   step.value = 1;
   Object.assign(form, createEmptyForm(), buildInitialForm(props.state, draft.value));
+  normalizeFormForModalConfig();
 }
 
 function goToStep1() {
@@ -270,7 +452,7 @@ async function goToStep2() {
 }
 
 function closeModal() {
-  void dashboard.closeFinishModal();
+  void operationsStore.closeFinishModal();
 }
 
 async function submitForm() {
@@ -284,7 +466,7 @@ async function submitForm() {
     return;
   }
 
-  if (modalConfig.value.requireVisitReason && !form.visitReasonId && !form.visitReasonNotInformed) {
+  if (modalConfig.value.requireVisitReason && form.visitReasonIds.length === 0 && !form.visitReasonNotInformed) {
     await ui.alert("Selecione um motivo da visita ou marque 'Nao informado'.");
     return;
   }
@@ -304,17 +486,32 @@ async function submitForm() {
     return;
   }
 
-  if (modalConfig.value.requireCustomerSource && !form.customerSourceId && !form.customerSourceNotInformed) {
+  if (modalConfig.value.requireCustomerSource && form.customerSourceIds.length === 0 && !form.customerSourceNotInformed) {
     await ui.alert("Selecione uma origem do cliente ou marque 'Nao informado'.");
     return;
   }
 
-  if (service.value.startMode === "queue-jump" && !form.queueJumpReason.trim()) {
-    await ui.alert("Preencha o motivo do atendimento fora da vez.");
+  if (service.value.startMode === "queue-jump" && !selectedQueueJumpReasonLabel.value) {
+    if (!queueJumpReasonPickerOptions.value.length) {
+      await ui.alert("Cadastre pelo menos um motivo de atendimento fora da vez em Configuracoes.");
+      return;
+    }
+
+    await ui.alert("Selecione o motivo do atendimento fora da vez.");
     return;
   }
 
-  await dashboard.finishService(service.value.id, {
+  if (form.outcome === "nao-compra" && form.lossReasonIds.length === 0) {
+    if (!lossReasonPickerOptions.value.length) {
+      await ui.alert("Cadastre pelo menos um motivo da perda em Configuracoes.");
+      return;
+    }
+
+    await ui.alert("Selecione o motivo da perda.");
+    return;
+  }
+
+  await operationsStore.finishService(service.value.id, {
     outcome: form.outcome,
     isWindowService: form.isWindowService,
     isGift: isClosedOutcome.value ? form.isGift : false,
@@ -329,18 +526,36 @@ async function submitForm() {
     customerEmail: form.customerEmail.trim(),
     customerProfession: selectedProfessionLabel.value,
     isExistingCustomer: form.isExistingCustomer,
-    visitReasons: form.visitReasonId ? [form.visitReasonId] : [],
+    visitReasons: normalizeIdList(form.visitReasonIds),
     visitReasonsNotInformed: form.visitReasonNotInformed,
-    visitReasonDetails: form.visitReasonId && form.visitReasonDetail.trim()
-      ? { [form.visitReasonId]: form.visitReasonDetail.trim() }
+    visitReasonDetails: visitReasonDetailsEnabled.value
+      ? Object.fromEntries(
+      normalizeIdList(form.visitReasonIds)
+        .map((reasonId) => [reasonId, String(form.visitReasonDetails?.[reasonId] || "").trim()])
+        .filter(([, detail]) => detail)
+      )
       : {},
-    customerSources: form.customerSourceId ? [form.customerSourceId] : [],
+    customerSources: normalizeIdList(form.customerSourceIds),
     customerSourcesNotInformed: form.customerSourceNotInformed,
-    customerSourceDetails: form.customerSourceId && form.customerSourceDetail.trim()
-      ? { [form.customerSourceId]: form.customerSourceDetail.trim() }
+    customerSourceDetails: customerSourceDetailsEnabled.value
+      ? Object.fromEntries(
+      normalizeIdList(form.customerSourceIds)
+        .map((sourceId) => [sourceId, String(form.customerSourceDetails?.[sourceId] || "").trim()])
+        .filter(([, detail]) => detail)
+      )
       : {},
+    lossReasons: form.outcome === "nao-compra" ? normalizeIdList(form.lossReasonIds) : [],
+    lossReasonDetails: lossReasonDetailsEnabled.value && form.outcome === "nao-compra"
+      ? Object.fromEntries(
+      normalizeIdList(form.lossReasonIds)
+        .map((reasonId) => [reasonId, String(form.lossReasonDetails?.[reasonId] || "").trim()])
+        .filter(([, detail]) => detail)
+      )
+      : {},
+    lossReasonId: form.outcome === "nao-compra" ? normalizeIdList(form.lossReasonIds)[0] || "" : "",
+    lossReason: form.outcome === "nao-compra" ? selectedLossReasonSummary.value : "",
     saleAmount: isClosedOutcome.value ? closedTotal.value : 0,
-    queueJumpReason: form.queueJumpReason.trim(),
+    queueJumpReason: service.value.startMode === "queue-jump" ? selectedQueueJumpReasonLabel.value : "",
     notes: form.notes.trim()
   });
   ui.success("Atendimento encerrado.");
@@ -354,31 +569,39 @@ watch(draft, () => {
   resetForm();
 });
 
-watch(() => form.visitReasonId, (nextValue) => {
-  if (nextValue) {
+watch(() => [...form.visitReasonIds], (nextValue) => {
+  if (nextValue.length) {
     form.visitReasonNotInformed = false;
-    return;
   }
 
-  form.visitReasonDetail = "";
-});
+  form.visitReasonDetails = visitReasonDetailsEnabled.value
+    ? syncSelectedDetails(nextValue, form.visitReasonDetails)
+    : {};
+}, { deep: true });
 
-watch(() => form.customerSourceId, (nextValue) => {
-  if (nextValue) {
+watch(() => [...form.customerSourceIds], (nextValue) => {
+  if (nextValue.length) {
     form.customerSourceNotInformed = false;
-    return;
   }
 
-  form.customerSourceDetail = "";
-});
+  form.customerSourceDetails = customerSourceDetailsEnabled.value
+    ? syncSelectedDetails(nextValue, form.customerSourceDetails)
+    : {};
+}, { deep: true });
+
+watch(() => [...form.lossReasonIds], (nextValue) => {
+  form.lossReasonDetails = lossReasonDetailsEnabled.value
+    ? syncSelectedDetails(nextValue, form.lossReasonDetails)
+    : {};
+}, { deep: true });
 
 watch(() => form.visitReasonNotInformed, (nextValue) => {
   if (!nextValue) {
     return;
   }
 
-  form.visitReasonId = "";
-  form.visitReasonDetail = "";
+  form.visitReasonIds = [];
+  form.visitReasonDetails = {};
 });
 
 watch(() => form.customerSourceNotInformed, (nextValue) => {
@@ -386,11 +609,28 @@ watch(() => form.customerSourceNotInformed, (nextValue) => {
     return;
   }
 
-  form.customerSourceId = "";
-  form.customerSourceDetail = "";
+  form.customerSourceIds = [];
+  form.customerSourceDetails = {};
+});
+
+watch([isVisitReasonMultiple, visitReasonDetailsEnabled], () => {
+  normalizeFormForModalConfig();
+});
+
+watch([isLossReasonMultiple, lossReasonDetailsEnabled], () => {
+  normalizeFormForModalConfig();
+});
+
+watch([isCustomerSourceMultiple, customerSourceDetailsEnabled], () => {
+  normalizeFormForModalConfig();
 });
 
 watch(() => form.outcome, (nextValue) => {
+  if (nextValue !== "nao-compra") {
+    form.lossReasonIds = [];
+    form.lossReasonDetails = {};
+  }
+
   if (nextValue === "compra" || nextValue === "reserva") {
     return;
   }
@@ -402,6 +642,7 @@ function handleEscape(event) {
   if (event.key !== "Escape") return;
   if (!service.value) return;
   if (document.querySelector(".product-pick__dropdown.is-open")) return;
+  if (document.querySelector(".product-pick__detail-popover")) return;
   closeModal();
 }
 
@@ -635,7 +876,13 @@ onBeforeUnmount(() => {
                   label="Motivo da visita"
                   :options="visitReasonPickerOptions"
                   :selected-items="visitReasonSelectedItems"
-                  :multiple="false"
+                  :multiple="isVisitReasonMultiple"
+                  :enable-item-details="visitReasonDetailsEnabled"
+                  :item-detail-mode="visitReasonPickerDetailMode"
+                  :item-details="form.visitReasonDetails"
+                  item-detail-label="Descricao"
+                  item-detail-placeholder="Digite a descricao que deseja salvar"
+                  item-detail-testid="operation-visit-reason-detail"
                   :none-selected="form.visitReasonNotInformed"
                   allow-none
                   none-label="Nao informado"
@@ -645,16 +892,9 @@ onBeforeUnmount(() => {
                   empty-selected-label="Nenhum motivo selecionado"
                   testid-prefix="operation-visit-reason"
                   @update:selected-items="updateVisitReasonSelectedItems"
+                  @update:item-details="form.visitReasonDetails = syncSelectedDetails(form.visitReasonIds, $event)"
                   @update:none-selected="form.visitReasonNotInformed = $event"
                 />
-                <input
-                  v-if="modalConfig.showVisitReasonDetails && form.visitReasonId"
-                  v-model="form.visitReasonDetail"
-                  class="finish-form__input"
-                  type="text"
-                  placeholder="Detalhe opcional"
-                  data-testid="operation-visit-reason-detail"
-                >
               </section>
 
               <section class="finish-form__section operation-modal__picker-cell">
@@ -662,7 +902,13 @@ onBeforeUnmount(() => {
                   label="De onde o cliente veio"
                   :options="customerSourcePickerOptions"
                   :selected-items="customerSourceSelectedItems"
-                  :multiple="false"
+                  :multiple="isCustomerSourceMultiple"
+                  :enable-item-details="customerSourceDetailsEnabled"
+                  :item-detail-mode="customerSourcePickerDetailMode"
+                  :item-details="form.customerSourceDetails"
+                  item-detail-label="Descricao"
+                  item-detail-placeholder="Digite a descricao da origem"
+                  item-detail-testid="operation-customer-source-detail"
                   :none-selected="form.customerSourceNotInformed"
                   allow-none
                   none-label="Nao informado"
@@ -672,30 +918,44 @@ onBeforeUnmount(() => {
                   empty-selected-label="Nenhuma origem selecionada"
                   testid-prefix="operation-customer-source"
                   @update:selected-items="updateCustomerSourceSelectedItems"
+                  @update:item-details="form.customerSourceDetails = syncSelectedDetails(form.customerSourceIds, $event)"
                   @update:none-selected="form.customerSourceNotInformed = $event"
                 />
-                <input
-                  v-if="modalConfig.showCustomerSourceDetails && form.customerSourceId"
-                  v-model="form.customerSourceDetail"
-                  class="finish-form__input"
-                  type="text"
-                  placeholder="Detalhe opcional"
-                  data-testid="operation-customer-source-detail"
-                >
               </section>
             </div>
 
-            <section v-if="service.startMode === 'queue-jump'" class="finish-form__section">
-              <label class="finish-form__label" for="queue-jump-reason">
-                {{ modalConfig.queueJumpReasonLabel }}
-              </label>
-              <textarea
-                id="queue-jump-reason"
-                v-model="form.queueJumpReason"
-                class="finish-form__textarea"
-                rows="2"
-                :placeholder="modalConfig.queueJumpReasonPlaceholder"
-                data-testid="operation-queue-jump-reason"
+            <section v-if="service.startMode === 'queue-jump'" class="finish-form__section operation-modal__picker-cell">
+              <OperationProductPicker
+                :label="queueJumpReasonLabel"
+                :options="queueJumpReasonPickerOptions"
+                :selected-items="queueJumpReasonSelectedItems"
+                :multiple="false"
+                trigger-label="Selecionar motivo"
+                :search-placeholder="queueJumpReasonPlaceholder"
+                empty-selected-label="Nenhum motivo selecionado"
+                testid-prefix="operation-queue-jump-reason"
+                @update:selected-items="updateQueueJumpReasonSelectedItems"
+              />
+            </section>
+
+            <section v-if="form.outcome === 'nao-compra'" class="finish-form__section operation-modal__picker-cell">
+              <OperationProductPicker
+                :label="lossReasonLabel"
+                :options="lossReasonPickerOptions"
+                :selected-items="lossReasonSelectedItems"
+                :multiple="isLossReasonMultiple"
+                :enable-item-details="lossReasonDetailsEnabled"
+                :item-detail-mode="lossReasonPickerDetailMode"
+                :item-details="form.lossReasonDetails"
+                item-detail-label="Descricao"
+                item-detail-placeholder="Digite a descricao do motivo da perda"
+                item-detail-testid="operation-loss-reason-detail"
+                trigger-label="Selecionar motivo"
+                :search-placeholder="lossReasonPlaceholder"
+                empty-selected-label="Nenhum motivo selecionado"
+                testid-prefix="operation-loss-reason"
+                @update:selected-items="updateLossReasonSelectedItems"
+                @update:item-details="form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, $event)"
               />
             </section>
 
@@ -723,6 +983,8 @@ onBeforeUnmount(() => {
                 <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.product }" title="Produto visto"></span>
                 <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.visitReasons }" title="Motivo da visita"></span>
                 <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerSources }" title="Origem do cliente"></span>
+                <span v-if="form.outcome === 'nao-compra'" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.lossReason }" title="Motivo da perda"></span>
+                <span v-if="service.startMode === 'queue-jump'" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.queueJumpReason }" title="Motivo fora da vez"></span>
                 <span v-if="modalConfig.showEmailField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerEmail }" title="Email"></span>
                 <span v-if="modalConfig.showProfessionField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerProfession }" title="Profissao"></span>
                 <span v-if="modalConfig.showNotesField" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.hasNotes }" title="Observacoes"></span>

@@ -1,23 +1,52 @@
-import { fileURLToPath } from "node:url";
-
-const coreDir = fileURLToPath(new URL("../core", import.meta.url));
-const workspaceRoutes = [
-  "/operacao",
-  "/consultor",
-  "/ranking",
-  "/dados",
-  "/inteligencia",
-  "/relatorios",
-  "/campanhas",
-  "/multiloja",
-  "/configuracoes"
-];
+const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === "true";
+const shouldUsePollingWatcher =
+  process.env.CHOKIDAR_USEPOLLING === "true" ||
+  process.env.WATCHPACK_POLLING === "true";
+const watcherIgnorePatterns = ["**/.output/**", "**/dist/**"];
+const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350);
 
 export default defineNuxtConfig({
   compatibilityDate: "2026-03-23",
+  devtools: {
+    enabled: shouldEnableNuxtDevtools
+  },
+  routeRules: {
+    "/": { ssr: false },
+    "/campanhas": { ssr: false },
+    "/configuracoes": { ssr: false },
+    "/consultor": { ssr: false },
+    "/dados": { ssr: false },
+    "/inteligencia": { ssr: false },
+    "/multiloja": { ssr: false },
+    "/operacao/**": { ssr: false },
+    "/perfil": { ssr: false },
+    "/ranking": { ssr: false },
+    "/relatorios": { ssr: false },
+    "/usuarios": { ssr: false }
+  },
   modules: ["@pinia/nuxt"],
-  alias: {
-    "@core": coreDir
+  vite: {
+    server: {
+      watch: shouldUsePollingWatcher
+        ? {
+            ignored: watcherIgnorePatterns,
+            usePolling: true,
+            interval: watcherInterval
+          }
+        : {
+            ignored: watcherIgnorePatterns
+          }
+    }
+  },
+  runtimeConfig: {
+    apiInternalBase:
+      process.env.NUXT_API_INTERNAL_BASE ||
+      process.env.NUXT_PUBLIC_API_BASE ||
+      "http://localhost:8080",
+    public: {
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8080",
+      apiWsBase: process.env.NUXT_PUBLIC_API_WS_BASE || ""
+    }
   },
   css: [
     "~/assets/styles/tokens.css",
@@ -41,11 +70,6 @@ export default defineNuxtConfig({
           href: "https://fonts.googleapis.com/icon?family=Material+Icons+Round"
         }
       ]
-    }
-  },
-  nitro: {
-    prerender: {
-      routes: workspaceRoutes
     }
   }
 });

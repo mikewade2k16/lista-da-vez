@@ -1,16 +1,20 @@
 <script setup>
 import { computed } from "vue";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
 
 const props = defineProps({
   state: {
     type: Object,
     required: true
+  },
+  integratedMode: {
+    type: Boolean,
+    default: false
   }
 });
 
-const dashboard = useDashboardStore();
+const operationsStore = useOperationsStore();
 const ui = useUiStore();
 
 const employees = computed(() => props.state.roster || []);
@@ -36,18 +40,27 @@ function statusFor(employeeId) {
   return "available";
 }
 
-function statusLabel(status) {
+function statusLabel(employeeId) {
+  const status = statusFor(employeeId);
+  const pausedItem = pausedByPersonId.value.get(employeeId);
+
   if (status === "service") return "Em atendimento";
   if (status === "queue") return "Na fila";
-  if (status === "paused") return "Pausado";
+  if (status === "paused") {
+    return String(pausedItem?.kind || "").trim() === "assignment" ? "Em tarefa" : "Pausado";
+  }
   return "Disponivel";
 }
 
-function addToQueue(personId) {
-  void dashboard.addToQueue(personId);
+async function addToQueue(employee) {
+  const result = await operationsStore.addToQueue(employee.id, props.integratedMode ? employee.storeId : "");
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+  }
 }
 
-async function pauseEmployee(personId) {
+async function pauseEmployee(employee) {
   const { confirmed, value } = await ui.prompt({
     title: "Pausar consultor",
     message: "Informe o motivo da pausa para registrar no painel.",
@@ -58,13 +71,49 @@ async function pauseEmployee(personId) {
   });
 
   if (confirmed && value) {
-    await dashboard.pauseEmployee(personId, value);
+    const result = await operationsStore.pauseEmployee(employee.id, value, props.integratedMode ? employee.storeId : "");
+
+    if (result?.ok === false) {
+      ui.error(result.message);
+      return;
+    }
+
     ui.success("Consultor pausado.");
   }
 }
 
-async function resumeEmployee(personId) {
-  await dashboard.resumeEmployee(personId);
+async function assignTask(employee) {
+  const { confirmed, value } = await ui.prompt({
+    title: "Direcionar para tarefa",
+    message: "Registre a tarefa ou reuniao para tirar este consultor da fila temporariamente.",
+    inputLabel: "Motivo",
+    inputPlaceholder: "Ex.: reuniao, apoio no caixa, estoque, suporte",
+    confirmLabel: "Salvar tarefa",
+    required: true
+  });
+
+  if (!confirmed || !value) {
+    return;
+  }
+
+  const result = await operationsStore.assignTask(employee.id, value, props.integratedMode ? employee.storeId : "");
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+    return;
+  }
+
+  ui.success("Consultor direcionado para tarefa.");
+}
+
+async function resumeEmployee(employee) {
+  const result = await operationsStore.resumeEmployee(employee.id, props.integratedMode ? employee.storeId : "");
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+    return;
+  }
+
   ui.success("Consultor retomado.");
 }
 </script>
@@ -88,7 +137,8 @@ async function resumeEmployee(personId) {
         </span>
         <div class="employee__info">
           <span class="employee__name">{{ employee.name }}</span>
-          <span class="employee__status">{{ statusLabel(statusFor(employee.id)) }}</span>
+          <span v-if="integratedMode && employee.storeName" class="employee__store">{{ employee.storeName }}</span>
+          <span class="employee__status">{{ statusLabel(employee.id) }}</span>
           <span v-if="pausedByPersonId.get(employee.id)" class="employee__pause-reason">
             {{ pausedByPersonId.get(employee.id).reason }}
           </span>
@@ -100,16 +150,25 @@ async function resumeEmployee(personId) {
             type="button"
             title="Entrar na fila"
             :data-testid="`operation-add-to-queue-${employee.id}`"
-            @click="addToQueue(employee.id)"
+            @click="addToQueue(employee)"
           >
             <span class="material-icons-round">login</span>
           </button>
           <button
             class="employee__action employee__action--secondary"
             type="button"
+            title="Direcionar para tarefa"
+            :data-testid="`operation-assign-task-${employee.id}`"
+            @click="assignTask(employee)"
+          >
+            <span class="material-icons-round">assignment</span>
+          </button>
+          <button
+            class="employee__action employee__action--secondary"
+            type="button"
             title="Pausar"
             :data-testid="`operation-pause-${employee.id}`"
-            @click="pauseEmployee(employee.id)"
+            @click="pauseEmployee(employee)"
           >
             <span class="material-icons-round">pause</span>
           </button>
@@ -119,9 +178,18 @@ async function resumeEmployee(personId) {
           <button
             class="employee__action employee__action--secondary"
             type="button"
+            title="Direcionar para tarefa"
+            :data-testid="`operation-assign-task-${employee.id}`"
+            @click="assignTask(employee)"
+          >
+            <span class="material-icons-round">assignment</span>
+          </button>
+          <button
+            class="employee__action employee__action--secondary"
+            type="button"
             title="Pausar"
             :data-testid="`operation-pause-${employee.id}`"
-            @click="pauseEmployee(employee.id)"
+            @click="pauseEmployee(employee)"
           >
             <span class="material-icons-round">pause</span>
           </button>
@@ -133,7 +201,7 @@ async function resumeEmployee(personId) {
             type="button"
             title="Retomar"
             :data-testid="`operation-resume-${employee.id}`"
-            @click="resumeEmployee(employee.id)"
+            @click="resumeEmployee(employee)"
           >
             <span class="material-icons-round">play_arrow</span>
           </button>

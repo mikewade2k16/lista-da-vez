@@ -5,6 +5,10 @@ const props = defineProps({
   rows: {
     type: Array,
     default: () => []
+  },
+  total: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -15,7 +19,7 @@ const limitedRows = computed(() => props.rows.slice(0, 200));
   <article class="insight-card insight-card--wide">
     <header class="intel-card__header">
       <h3 class="insight-card__title">Atendimentos filtrados</h3>
-      <span class="insight-tag">{{ rows.length }} registros</span>
+      <span class="insight-tag">{{ total || rows.length }} registros</span>
     </header>
 
     <div class="insight-table-wrap">
@@ -65,7 +69,7 @@ const limitedRows = computed(() => props.rows.slice(0, 200));
       </table>
     </div>
 
-    <p v-if="rows.length > limitedRows.length" class="settings-card__text">
+    <p v-if="(total || rows.length) > limitedRows.length" class="settings-card__text">
       Mostrando os primeiros {{ limitedRows.length }} registros na tela.
     </p>
   </article>

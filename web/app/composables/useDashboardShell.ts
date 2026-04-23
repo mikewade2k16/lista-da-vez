@@ -1,39 +1,42 @@
 import { computed, onMounted, watch } from "vue";
 import { storeToRefs } from "pinia";
-import { getAllowedWorkspaces } from "@core/utils/permissions";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useAuthStore } from "~/stores/auth";
+import { useWorkspaceStore } from "~/stores/workspace";
 import { getWorkspaceLabel, getWorkspacePath } from "~/utils/workspaces";
 
 export function useDashboardState() {
-  const dashboard = useDashboardStore();
-  const { state } = storeToRefs(dashboard);
+  const workspace = useWorkspaceStore();
+  const { state } = storeToRefs(workspace);
 
   return {
-    dashboard,
     state
   };
 }
 
 export function useDashboardShell() {
   const route = useRoute();
-  const { dashboard, state } = useDashboardState();
+  const auth = useAuthStore();
+  const workspace = useWorkspaceStore();
+  const { activeRole, allowedWorkspaces } = storeToRefs(workspace);
+  const { state } = useDashboardState();
 
   const activeWorkspaceId = computed(() =>
     String(route.meta.workspaceId || state.value?.activeWorkspace || "operacao")
   );
-  const activeProfile = computed(() =>
-    state.value.profiles.find((profile) => profile.id === state.value.activeProfileId) || state.value.profiles[0] || null
-  );
-  const activeRole = computed(() => activeProfile.value?.role || "consultant");
-  const allowedWorkspaces = computed(() => getAllowedWorkspaces(activeRole.value));
   const pageLabel = computed(() => getWorkspaceLabel(activeWorkspaceId.value) || "Painel");
 
   useHead(() => ({
-    title: `${pageLabel.value} | ${state.value.brandName}`
+    title: `${pageLabel.value} | ${state.value?.brandName || "Fila Atendimento"}`
   }));
 
   async function syncWorkspaceState() {
-    await dashboard.ensure();
+    await auth.ensureSession();
+
+    if (!auth.isAuthenticated) {
+      return;
+    }
+
+    await workspace.ensure();
     const allowed = allowedWorkspaces.value;
     const fallbackWorkspace = allowed[0] || "operacao";
     const nextWorkspace = allowed.includes(activeWorkspaceId.value) ? activeWorkspaceId.value : fallbackWorkspace;
@@ -44,32 +47,34 @@ export function useDashboardShell() {
     }
 
     if (state.value.activeWorkspace !== nextWorkspace) {
-      await dashboard.setWorkspace(nextWorkspace);
+      await workspace.setWorkspace(nextWorkspace);
     }
   }
 
   onMounted(async () => {
-    await dashboard.ensure();
     await syncWorkspaceState();
   });
 
-  watch([activeWorkspaceId, activeRole], () => {
+  watch([activeWorkspaceId, activeRole, () => auth.isAuthenticated], ([, , isAuthenticated]) => {
     if (import.meta.client) {
+      if (!isAuthenticated) {
+        return;
+      }
+
       void syncWorkspaceState();
     }
   });
 
   return {
-    dashboard,
     state,
     activeWorkspaceId,
     allowedWorkspaces,
     pageLabel,
     setActiveProfile(profileId) {
-      return dashboard.setActiveProfile(profileId);
+      return workspace.setActiveProfile(profileId);
     },
     setActiveStore(storeId) {
-      return dashboard.setActiveStore(storeId);
+      return workspace.setActiveStore(storeId);
     }
   };
 }

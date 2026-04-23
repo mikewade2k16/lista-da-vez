@@ -1,7 +1,11 @@
 <script setup>
+import { useAuthStore } from "~/stores/auth";
+
 definePageMeta({
   layout: false
 });
 
-await navigateTo("/operacao");
+const auth = useAuthStore();
+await auth.ensureSession();
+await navigateTo(auth.isAuthenticated ? auth.homePath : "/auth/login");
 </script>

@@ -1,34 +1,44 @@
 <script setup>
 import { computed } from "vue";
 import {
-  buildOperationalIntelligence,
   formatCurrencyBRL,
   formatDurationMinutes,
   formatPercent
-} from "@core/utils/admin-metrics";
+} from "~/domain/utils/admin-metrics";
 import IntelligenceDiagnosisCard from "~/components/intelligence/IntelligenceDiagnosisCard.vue";
 
 const props = defineProps({
-  state: {
+  report: {
     type: Object,
-    required: true
+    default: null
+  },
+  pending: {
+    type: Boolean,
+    default: false
+  },
+  errorMessage: {
+    type: String,
+    default: ""
   }
 });
 
-const intelligence = computed(() =>
-  buildOperationalIntelligence({
-    history: props.state.serviceHistory || [],
-    visitReasonOptions: props.state.visitReasonOptions || [],
-    customerSourceOptions: props.state.customerSourceOptions || [],
-    roster: props.state.roster || [],
-    waitingList: props.state.waitingList || [],
-    activeServices: props.state.activeServices || [],
-    pausedEmployees: props.state.pausedEmployees || [],
-    consultantCurrentStatus: props.state.consultantCurrentStatus || {},
-    consultantActivitySessions: props.state.consultantActivitySessions || [],
-    settings: props.state.settings || {}
-  })
-);
+const intelligence = computed(() => props.report || {
+  healthScore: 0,
+  severityCounts: {
+    critical: 0,
+    attention: 0,
+    healthy: 0
+  },
+  totalAttendances: 0,
+  diagnosis: [],
+  recommendedActions: [],
+  time: {
+    avgQueueWaitMs: 0,
+    notUsingQueueRate: 0
+  },
+  ticketAverage: 0,
+  conversionRate: 0
+});
 const summaryLevelClass = computed(() => {
   if (intelligence.value.healthScore >= 80) {
     return "healthy";
@@ -67,6 +77,14 @@ const roundedScore = computed(() => Math.round(intelligence.value.healthScore));
       <h2 class="admin-panel__title">Inteligencia operacional</h2>
       <p class="admin-panel__text">Leitura automatica dos dados para apoiar decisao de loja e gestao de equipe.</p>
     </header>
+
+    <article v-if="errorMessage" class="insight-card">
+      <p class="settings-card__text">{{ errorMessage }}</p>
+    </article>
+
+    <article v-else-if="pending && !report" class="insight-card">
+      <p class="settings-card__text">Carregando inteligencia operacional da loja ativa...</p>
+    </article>
 
     <article class="insight-card intel-summary" data-testid="intelligence-score">
       <div :class="`intel-summary__score intel-summary__score--${summaryLevelClass}`">

@@ -1,0 +1,15 @@
+time=2026-03-30T23:24:08.851-03:00 level=INFO msg=api_listening addr=:8086 env=development
+time=2026-03-30T23:24:09.291-03:00 level=INFO msg=http_request request_id=c01998035fe3f7811fd31cfd method=GET path=/healthz status=200 duration=0s
+time=2026-03-30T23:24:09.497-03:00 level=INFO msg=http_request request_id=2018a3d543164e219f89fdfc method=POST path=/v1/auth/login status=200 duration=112.0207ms
+time=2026-03-30T23:25:52.313-03:00 level=INFO msg=http_request request_id=899d58e187d569846a14cdf9 method=GET path=/healthz status=200 duration=0s
+time=2026-03-30T23:25:52.462-03:00 level=INFO msg=http_request request_id=9e4a3663b9b96857c3045c3e method=POST path=/v1/auth/login status=200 duration=99.9742ms
+time=2026-03-30T23:25:52.487-03:00 level=INFO msg=http_request request_id=d12812b7a8040eed12e0392f method=GET path=/v1/me/context status=200 duration=8.1082ms
+time=2026-03-30T23:25:52.499-03:00 level=INFO msg=http_request request_id=11fe8dd94ca0a70c73725799 method=GET path=/v1/consultants status=200 duration=7.4963ms
+time=2026-03-30T23:25:52.535-03:00 level=INFO msg=http_request request_id=7b8165cc382852c86fcb81d7 method=GET path=/v1/operations/snapshot status=200 duration=26.4543ms
+time=2026-03-30T23:25:52.542-03:00 level=INFO msg=http_request request_id=01c343d12131b4672002152e method=POST path=/v1/operations/queue status=200 duration=4.358ms
+time=2026-03-30T23:25:52.558-03:00 level=INFO msg=http_request request_id=3a191ea1f6c17705d9c7edd3 method=POST path=/v1/operations/start status=200 duration=14.0234ms
+time=2026-03-30T23:25:52.578-03:00 level=INFO msg=http_request request_id=270ab9c6df073ade9c11f391 method=POST path=/v1/operations/finish status=200 duration=16.0415ms
+time=2026-03-30T23:25:52.587-03:00 level=INFO msg=http_request request_id=529b4f6766b065e3a44ff32f method=GET path=/v1/operations/snapshot status=200 duration=6.1476ms
+time=2026-03-30T23:29:57.199-03:00 level=INFO msg=http_request request_id=c8fec1c6910b0a736886eec2 method=POST path=/v1/auth/login status=200 duration=79.83ms
+time=2026-03-30T23:29:57.235-03:00 level=INFO msg=http_request request_id=ba48d6459261267da93d507f method=GET path=/v1/me/context status=200 duration=1.8032ms
+time=2026-03-30T23:29:57.241-03:00 level=INFO msg=http_request request_id=b094dfddcfe9641d7efca079 method=GET path=/v1/operations/snapshot status=200 duration=3.8662ms

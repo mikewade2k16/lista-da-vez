@@ -12,6 +12,7 @@ const emit = defineEmits(["add", "update", "remove"]);
 const drafts = ref({});
 const newProduct = reactive({
   name: "",
+  code: "",
   category: "",
   basePrice: ""
 });
@@ -25,6 +26,7 @@ watch(
         product.id,
         {
           name: product.name,
+          code: product.code || "",
           category: product.category || "",
           basePrice: Number(product.basePrice || 0)
         }
@@ -56,6 +58,7 @@ function submitAdd() {
   addError.value = "";
   emit("add", { ...newProduct });
   newProduct.name = "";
+  newProduct.code = "";
   newProduct.category = "";
   newProduct.basePrice = "";
 }
@@ -72,6 +75,7 @@ function submitAdd() {
 
     <div class="product-head">
       <span>Produto</span>
+      <span>Codigo</span>
       <span>Categoria</span>
       <span>Preco base</span>
     </div>
@@ -84,6 +88,7 @@ function submitAdd() {
         class="product-row"
       >
         <input v-if="drafts[product.id]" v-model="drafts[product.id].name" class="product-row__input" type="text" @change="$emit('update', product.id, drafts[product.id])">
+        <input v-if="drafts[product.id]" v-model="drafts[product.id].code" class="product-row__input" type="text" @change="$emit('update', product.id, drafts[product.id])">
         <input v-if="drafts[product.id]" v-model="drafts[product.id].category" class="product-row__input" type="text" @change="$emit('update', product.id, drafts[product.id])">
         <input v-if="drafts[product.id]" v-model="drafts[product.id].basePrice" class="product-row__input" type="number" min="0" step="0.01" @change="$emit('update', product.id, drafts[product.id])">
         <button class="product-row__remove" type="button" @click="$emit('remove', product.id)">Excluir</button>
@@ -92,6 +97,7 @@ function submitAdd() {
 
     <form class="product-add" @submit.prevent="submitAdd">
       <input v-model="newProduct.name" class="product-add__input" type="text" placeholder="Nome do produto" @input="addError = ''">
+      <input v-model="newProduct.code" class="product-add__input" type="text" placeholder="Codigo do produto">
       <input v-model="newProduct.category" class="product-add__input" type="text" placeholder="Categoria">
       <input v-model="newProduct.basePrice" class="product-add__input" type="number" min="0" step="0.01" placeholder="Preco base">
       <button class="product-add__button" type="submit">Adicionar produto</button>

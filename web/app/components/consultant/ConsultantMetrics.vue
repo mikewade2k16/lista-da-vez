@@ -1,5 +1,5 @@
 <script setup>
-import { formatCurrencyBRL, formatDurationMinutes, formatPercent } from "@core/utils/admin-metrics";
+import { formatCurrencyBRL, formatDurationMinutes, formatPercent } from "~/domain/utils/admin-metrics";
 
 defineProps({
   stats: {

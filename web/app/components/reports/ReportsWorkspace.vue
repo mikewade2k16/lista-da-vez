@@ -1,11 +1,12 @@
 <script setup>
 import { computed, ref } from "vue";
-import { buildReportData } from "@core/utils/reports";
+import { buildReportDataFromApi, buildReportRowsFromApi } from "~/domain/utils/reports";
 import { exportReportCsv, exportReportPdf } from "~/utils/report-export";
 import ReportsFilterToolbar from "~/components/reports/ReportsFilterToolbar.vue";
 import ReportsQualityTable from "~/components/reports/ReportsQualityTable.vue";
+import ReportsRecentServicesTable from "~/components/reports/ReportsRecentServicesTable.vue";
 import ReportsResultsTable from "~/components/reports/ReportsResultsTable.vue";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useReportsStore } from "~/stores/reports";
 import { useUiStore } from "~/stores/ui";
 
 const CHART_WIDTH = 480;
@@ -18,7 +19,7 @@ const props = defineProps({
   }
 });
 
-const dashboard = useDashboardStore();
+const reportsStore = useReportsStore();
 const ui = useUiStore();
 const filtersExpanded = ref(false);
 const expandedGroup = ref(null);
@@ -44,13 +45,19 @@ function getInitials(name) {
 }
 
 const report = computed(() =>
-  buildReportData({
-    history: props.state.serviceHistory || [],
-    roster: props.state.roster || [],
+  buildReportDataFromApi({
+    overview: reportsStore.overview,
+    results: reportsStore.results,
     visitReasonOptions: props.state.visitReasonOptions || [],
-    customerSourceOptions: props.state.customerSourceOptions || [],
-    filters: props.state.reportFilters || {}
+    customerSourceOptions: props.state.customerSourceOptions || []
   })
+);
+const recentRows = computed(() =>
+  buildReportRowsFromApi(
+    reportsStore.recentServices?.items || [],
+    props.state.visitReasonOptions || [],
+    props.state.customerSourceOptions || []
+  )
 );
 const outcomeItems = computed(() => {
   const total = report.value.metrics.totalAttendances || 1;
@@ -180,7 +187,7 @@ function toggleGroup(groupId) {
 }
 
 function updateFilter(filterId, value) {
-  void dashboard.updateReportFilter(filterId, value);
+  void reportsStore.updateReportFilter(filterId, value);
 }
 
 function toggleFilterValue(filterId, value) {
@@ -189,7 +196,7 @@ function toggleFilterValue(filterId, value) {
     ? currentValues.filter((item) => item !== value)
     : [...currentValues, value];
 
-  void dashboard.updateReportFilter(filterId, nextValues);
+  void reportsStore.updateReportFilter(filterId, nextValues);
 }
 
 function clearFilter(filterId, filterValue = null) {
@@ -197,15 +204,15 @@ function clearFilter(filterId, filterValue = null) {
     const currentValues = props.state.reportFilters[filterId] || [];
     const nextValues = filterValue ? currentValues.filter((item) => item !== filterValue) : [];
 
-    void dashboard.updateReportFilter(filterId, nextValues);
+    void reportsStore.updateReportFilter(filterId, nextValues);
     return;
   }
 
-  void dashboard.updateReportFilter(filterId, "");
+  void reportsStore.updateReportFilter(filterId, "");
 }
 
 function resetFilters() {
-  void dashboard.resetReportFilters();
+  void reportsStore.resetReportFilters();
 }
 
 function exportCsv() {
@@ -225,6 +232,9 @@ function exportPdf() {
       <h2 class="admin-panel__title">Relatorios operacionais</h2>
       <p class="admin-panel__text">
         Leitura de performance, tempo medio e qualidade de preenchimento do fechamento.
+      </p>
+      <p v-if="reportsStore.activeStoreName" class="admin-panel__text">
+        Loja ativa: {{ reportsStore.activeStoreName }}
       </p>
     </header>
 
@@ -246,136 +256,151 @@ function exportPdf() {
       @export-pdf="exportPdf"
     />
 
-    <section class="metric-grid" data-testid="reports-summary">
-      <article class="metric-card"><span class="metric-card__label">Atendimentos</span><strong class="metric-card__value">{{ report.metrics.totalAttendances }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Conversao</span><strong class="metric-card__value">{{ formatPercent(report.metrics.conversionRate) }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Valor vendido</span><strong class="metric-card__value">{{ report.metrics.soldValueLabel }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Ticket medio</span><strong class="metric-card__value">{{ report.metrics.averageTicketLabel }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Media de atendimento</span><strong class="metric-card__value">{{ report.metrics.averageDurationLabel }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Media de espera</span><strong class="metric-card__value">{{ report.metrics.averageQueueWaitLabel }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Fora da vez</span><strong class="metric-card__value">{{ formatPercent(report.metrics.queueJumpRate) }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Bonus campanhas</span><strong class="metric-card__value">{{ report.metrics.campaignBonusTotalLabel }}</strong></article>
-    </section>
-
-    <div class="report-chart-grid">
-      <article class="insight-card">
-        <header class="intel-card__header">
-          <h3 class="insight-card__title">Desfecho dos atendimentos</h3>
-          <span class="insight-tag">{{ report.metrics.totalAttendances }} total</span>
-        </header>
-        <div v-for="item in outcomeItems" :key="item.label" class="dist-bar-row">
-          <span class="dist-bar-row__label" :style="{ color: item.color }">{{ item.label }}</span>
-          <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: item.width, background: item.color }"></div></div>
-          <span class="dist-bar-row__count">{{ item.count }}</span>
-        </div>
-      </article>
-
-      <article class="insight-card">
-        <header class="intel-card__header"><h3 class="insight-card__title">Atendimentos por hora</h3></header>
-        <span v-if="!report.chartData.hourlyData.length" class="insight-empty">Sem dados para o periodo.</span>
-        <div v-else class="chart-hourly-wrap">
-          <svg :viewBox="`0 0 ${CHART_WIDTH} ${CHART_HEIGHT + 18}`" width="100%">
-            <g v-for="item in hourlyBars" :key="item.hour">
-              <rect :x="item.x" :y="item.y" :width="item.width" :height="item.height" fill="#1e293b" rx="2" />
-              <rect v-if="Number(item.conversionHeight) > 0" :x="item.x" :y="item.conversionY" :width="item.width" :height="item.conversionHeight" fill="#22c55e" rx="2" />
-            </g>
-            <text v-for="item in hourLabels" :key="item.label" :x="item.x" :y="CHART_HEIGHT + 13" font-size="9" fill="#94a3b8" text-anchor="middle">{{ item.label }}</text>
-          </svg>
-          <div class="chart-legend">
-            <span class="chart-legend__item chart-legend__item--base">Atendimentos</span>
-            <span class="chart-legend__item chart-legend__item--success">Conversoes</span>
-          </div>
-        </div>
-      </article>
-    </div>
-
-    <article class="insight-card insight-card--wide">
-      <header class="intel-card__header"><h3 class="insight-card__title">Meta mensal dos consultores</h3></header>
-      <span v-if="!goalRows.length" class="insight-empty">Nenhum consultor com meta definida. Configure metas em Configuracoes &gt; Consultores.</span>
-      <template v-else>
-        <div class="team-goal-summary">
-          <div class="team-goal-summary__header">
-            <span class="metric-card__label">Meta da equipe</span>
-            <span class="metric-card__text">{{ teamGoalSummary.totalSoldLabel }} de {{ teamGoalSummary.totalGoalLabel }}</span>
-          </div>
-          <div class="progress-bar progress-bar--team">
-            <span class="progress-bar__fill" :style="{ '--progress': `${teamGoalSummary.progress.toFixed(1)}%` }"></span>
-          </div>
-        </div>
-
-        <div v-for="item in goalRows" :key="item.consultantId" class="consultant-goal-row">
-          <span class="consultant-goal-row__avatar" :style="{ '--avatar-accent': item.consultantColor }">{{ item.initials }}</span>
-          <div class="consultant-goal-row__body">
-            <div class="consultant-goal-row__header">
-              <strong class="consultant-goal-row__name">{{ item.consultantName }}</strong>
-              <span class="insight-tag">{{ item.attendances }} atend</span>
-              <span v-if="item.monthlyGoal && item.progress >= 100" class="insight-tag insight-tag--success">Meta R$ atingida</span>
-            </div>
-            <template v-if="item.monthlyGoal">
-              <div class="progress-bar">
-                <span class="progress-bar__fill" :style="{ '--progress': `${item.progress.toFixed(1)}%`, background: `linear-gradient(90deg, ${item.consultantColor}88, ${item.consultantColor})` }"></span>
-              </div>
-              <div class="consultant-goal-row__footer">
-                <span class="metric-card__text">{{ item.saleAmountLabel }} vendido</span>
-                <span class="metric-card__text">Meta: {{ item.goalLabel }}</span>
-                <span v-if="item.remaining > 0" class="metric-card__text">Falta: {{ item.remainingLabel }}</span>
-              </div>
-            </template>
-            <div class="consultant-goal-indicators">
-              <span v-if="item.conversionGoal" :class="['consultant-goal-badge', item.conversionHit ? 'consultant-goal-badge--hit' : 'consultant-goal-badge--miss']">
-                Conv. {{ item.conversionRateLabel }} / meta {{ item.conversionGoalLabel }}
-              </span>
-              <span v-if="item.avgTicketGoal" :class="['consultant-goal-badge', item.ticketHit ? 'consultant-goal-badge--hit' : 'consultant-goal-badge--miss']">
-                Ticket {{ item.ticketAverageLabel }} / meta {{ item.avgTicketGoalLabel }}
-              </span>
-              <span v-if="item.paGoal" :class="['consultant-goal-badge', item.paHit ? 'consultant-goal-badge--hit' : 'consultant-goal-badge--miss']">
-                P.A. {{ item.paScoreLabel }} / meta {{ item.paGoalLabel }}
-              </span>
-            </div>
-          </div>
-        </div>
-      </template>
+    <article v-if="reportsStore.errorMessage" class="settings-card">
+      <p class="settings-card__text">{{ reportsStore.errorMessage }}</p>
     </article>
 
-    <div class="report-dist-grid">
-      <article class="insight-card">
-        <header class="intel-card__header"><h3 class="insight-card__title">Produtos fechados</h3></header>
-        <span v-if="!report.chartData.topProductsClosed.length" class="insight-empty">Nenhum produto registrado.</span>
-        <template v-else>
-          <div v-for="item in report.chartData.topProductsClosed" :key="item.label" class="dist-bar-row">
-            <span class="dist-bar-row__label">{{ item.label }}</span>
-            <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: `${((item.count / report.chartData.topProductsClosed[0].count) * 100).toFixed(1)}%` }"></div></div>
-            <span class="dist-bar-row__count">{{ item.count }}</span>
-          </div>
-        </template>
-      </article>
-      <article class="insight-card">
-        <header class="intel-card__header"><h3 class="insight-card__title">Motivos de visita</h3></header>
-        <span v-if="!report.chartData.topVisitReasons.length" class="insight-empty">Nenhum motivo registrado.</span>
-        <template v-else>
-          <div v-for="item in report.chartData.topVisitReasons" :key="item.label" class="dist-bar-row">
-            <span class="dist-bar-row__label">{{ item.label }}</span>
-            <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: `${((item.count / report.chartData.topVisitReasons[0].count) * 100).toFixed(1)}%` }"></div></div>
-            <span class="dist-bar-row__count">{{ item.count }}</span>
-          </div>
-        </template>
-      </article>
-      <article class="insight-card">
-        <header class="intel-card__header"><h3 class="insight-card__title">Origem do cliente</h3></header>
-        <span v-if="!report.chartData.topCustomerSources.length" class="insight-empty">Nenhuma origem registrada.</span>
-        <template v-else>
-          <div v-for="item in report.chartData.topCustomerSources" :key="item.label" class="dist-bar-row">
-            <span class="dist-bar-row__label">{{ item.label }}</span>
-            <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: `${((item.count / report.chartData.topCustomerSources[0].count) * 100).toFixed(1)}%` }"></div></div>
-            <span class="dist-bar-row__count">{{ item.count }}</span>
-          </div>
-        </template>
-      </article>
-    </div>
+    <article v-else-if="reportsStore.pending && !reportsStore.ready" class="settings-card">
+      <p class="settings-card__text">Carregando relatorios da loja ativa...</p>
+    </article>
 
-    <div class="insight-grid">
-      <ReportsQualityTable :quality="report.quality" />
-      <ReportsResultsTable :rows="report.rows" />
-    </div>
+    <template v-if="reportsStore.ready">
+      <section class="metric-grid" data-testid="reports-summary">
+        <article class="metric-card"><span class="metric-card__label">Atendimentos</span><strong class="metric-card__value">{{ report.metrics.totalAttendances }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Conversao</span><strong class="metric-card__value">{{ formatPercent(report.metrics.conversionRate) }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Valor vendido</span><strong class="metric-card__value">{{ report.metrics.soldValueLabel }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Ticket medio</span><strong class="metric-card__value">{{ report.metrics.averageTicketLabel }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Media de atendimento</span><strong class="metric-card__value">{{ report.metrics.averageDurationLabel }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Media de espera</span><strong class="metric-card__value">{{ report.metrics.averageQueueWaitLabel }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Fora da vez</span><strong class="metric-card__value">{{ formatPercent(report.metrics.queueJumpRate) }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Bonus campanhas</span><strong class="metric-card__value">{{ report.metrics.campaignBonusTotalLabel }}</strong></article>
+      </section>
+
+      <div class="report-chart-grid">
+        <article class="insight-card">
+          <header class="intel-card__header">
+            <h3 class="insight-card__title">Desfecho dos atendimentos</h3>
+            <span class="insight-tag">{{ report.metrics.totalAttendances }} total</span>
+          </header>
+          <div v-for="item in outcomeItems" :key="item.label" class="dist-bar-row">
+            <span class="dist-bar-row__label" :style="{ color: item.color }">{{ item.label }}</span>
+            <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: item.width, background: item.color }"></div></div>
+            <span class="dist-bar-row__count">{{ item.count }}</span>
+          </div>
+        </article>
+
+        <article class="insight-card">
+          <header class="intel-card__header"><h3 class="insight-card__title">Atendimentos por hora</h3></header>
+          <span v-if="!report.chartData.hourlyData.length" class="insight-empty">Sem dados para o periodo.</span>
+          <div v-else class="chart-hourly-wrap">
+            <svg :viewBox="`0 0 ${CHART_WIDTH} ${CHART_HEIGHT + 18}`" width="100%">
+              <g v-for="item in hourlyBars" :key="item.hour">
+                <rect :x="item.x" :y="item.y" :width="item.width" :height="item.height" fill="#1e293b" rx="2" />
+                <rect v-if="Number(item.conversionHeight) > 0" :x="item.x" :y="item.conversionY" :width="item.width" :height="item.conversionHeight" fill="#22c55e" rx="2" />
+              </g>
+              <text v-for="item in hourLabels" :key="item.label" :x="item.x" :y="CHART_HEIGHT + 13" font-size="9" fill="#94a3b8" text-anchor="middle">{{ item.label }}</text>
+            </svg>
+            <div class="chart-legend">
+              <span class="chart-legend__item chart-legend__item--base">Atendimentos</span>
+              <span class="chart-legend__item chart-legend__item--success">Conversoes</span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <article class="insight-card insight-card--wide">
+        <header class="intel-card__header"><h3 class="insight-card__title">Meta mensal dos consultores</h3></header>
+        <span v-if="!goalRows.length" class="insight-empty">Nenhum consultor com meta definida. Configure metas em Configuracoes &gt; Consultores.</span>
+        <template v-else>
+          <div class="team-goal-summary">
+            <div class="team-goal-summary__header">
+              <span class="metric-card__label">Meta da equipe</span>
+              <span class="metric-card__text">{{ teamGoalSummary.totalSoldLabel }} de {{ teamGoalSummary.totalGoalLabel }}</span>
+            </div>
+            <div class="progress-bar progress-bar--team">
+              <span class="progress-bar__fill" :style="{ '--progress': `${teamGoalSummary.progress.toFixed(1)}%` }"></span>
+            </div>
+          </div>
+
+          <div v-for="item in goalRows" :key="item.consultantId" class="consultant-goal-row">
+            <span class="consultant-goal-row__avatar" :style="{ '--avatar-accent': item.consultantColor }">{{ item.initials }}</span>
+            <div class="consultant-goal-row__body">
+              <div class="consultant-goal-row__header">
+                <strong class="consultant-goal-row__name">{{ item.consultantName }}</strong>
+                <span class="insight-tag">{{ item.attendances }} atend</span>
+                <span v-if="item.monthlyGoal && item.progress >= 100" class="insight-tag insight-tag--success">Meta R$ atingida</span>
+              </div>
+              <template v-if="item.monthlyGoal">
+                <div class="progress-bar">
+                  <span class="progress-bar__fill" :style="{ '--progress': `${item.progress.toFixed(1)}%`, background: `linear-gradient(90deg, ${item.consultantColor}88, ${item.consultantColor})` }"></span>
+                </div>
+                <div class="consultant-goal-row__footer">
+                  <span class="metric-card__text">{{ item.saleAmountLabel }} vendido</span>
+                  <span class="metric-card__text">Meta: {{ item.goalLabel }}</span>
+                  <span v-if="item.remaining > 0" class="metric-card__text">Falta: {{ item.remainingLabel }}</span>
+                </div>
+              </template>
+              <div class="consultant-goal-indicators">
+                <span v-if="item.conversionGoal" :class="['consultant-goal-badge', item.conversionHit ? 'consultant-goal-badge--hit' : 'consultant-goal-badge--miss']">
+                  Conv. {{ item.conversionRateLabel }} / meta {{ item.conversionGoalLabel }}
+                </span>
+                <span v-if="item.avgTicketGoal" :class="['consultant-goal-badge', item.ticketHit ? 'consultant-goal-badge--hit' : 'consultant-goal-badge--miss']">
+                  Ticket {{ item.ticketAverageLabel }} / meta {{ item.avgTicketGoalLabel }}
+                </span>
+                <span v-if="item.paGoal" :class="['consultant-goal-badge', item.paHit ? 'consultant-goal-badge--hit' : 'consultant-goal-badge--miss']">
+                  P.A. {{ item.paScoreLabel }} / meta {{ item.paGoalLabel }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </article>
+
+      <div class="report-dist-grid">
+        <article class="insight-card">
+          <header class="intel-card__header"><h3 class="insight-card__title">Produtos fechados</h3></header>
+          <span v-if="!report.chartData.topProductsClosed.length" class="insight-empty">Nenhum produto registrado.</span>
+          <template v-else>
+            <div v-for="item in report.chartData.topProductsClosed" :key="item.label" class="dist-bar-row">
+              <span class="dist-bar-row__label">{{ item.label }}</span>
+              <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: `${((item.count / report.chartData.topProductsClosed[0].count) * 100).toFixed(1)}%` }"></div></div>
+              <span class="dist-bar-row__count">{{ item.count }}</span>
+            </div>
+          </template>
+        </article>
+        <article class="insight-card">
+          <header class="intel-card__header"><h3 class="insight-card__title">Motivos de visita</h3></header>
+          <span v-if="!report.chartData.topVisitReasons.length" class="insight-empty">Nenhum motivo registrado.</span>
+          <template v-else>
+            <div v-for="item in report.chartData.topVisitReasons" :key="item.label" class="dist-bar-row">
+              <span class="dist-bar-row__label">{{ item.label }}</span>
+              <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: `${((item.count / report.chartData.topVisitReasons[0].count) * 100).toFixed(1)}%` }"></div></div>
+              <span class="dist-bar-row__count">{{ item.count }}</span>
+            </div>
+          </template>
+        </article>
+        <article class="insight-card">
+          <header class="intel-card__header"><h3 class="insight-card__title">Origem do cliente</h3></header>
+          <span v-if="!report.chartData.topCustomerSources.length" class="insight-empty">Nenhuma origem registrada.</span>
+          <template v-else>
+            <div v-for="item in report.chartData.topCustomerSources" :key="item.label" class="dist-bar-row">
+              <span class="dist-bar-row__label">{{ item.label }}</span>
+              <div class="dist-bar-row__track"><div class="dist-bar-row__fill" :style="{ width: `${((item.count / report.chartData.topCustomerSources[0].count) * 100).toFixed(1)}%` }"></div></div>
+              <span class="dist-bar-row__count">{{ item.count }}</span>
+            </div>
+          </template>
+        </article>
+      </div>
+
+      <div class="insight-grid">
+        <ReportsQualityTable :quality="report.quality" />
+        <ReportsResultsTable :rows="report.rows" :total="report.totalRows" />
+      </div>
+
+      <ReportsRecentServicesTable
+        :rows="recentRows"
+        :total="Number(reportsStore.recentServices?.total || recentRows.length)"
+      />
+    </template>
   </section>
 </template>

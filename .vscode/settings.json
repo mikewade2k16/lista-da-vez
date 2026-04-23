@@ -1,0 +1,24 @@
+{
+  "terminal.integrated.defaultProfile.windows": "Git Bash",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.profiles.windows": {
+    "Git Bash": {
+      "path": "C:\\Program Files\\Git\\bin\\bash.exe"
+    }
+  },
+  "chat.tools.terminal.autoApprove": {
+    "cp": true,
+    "go": true,
+    "docker compose": true,
+    "ping": true,
+    "git remote": true,
+    "rsync": true,
+    "scp": true,
+    "tar": true,
+    "openssl": true,
+    "/^node -e \"const bcrypt = require\\('bcryptjs'\\); console\\.log\\(bcrypt\\.hashSync\\('123123456', 10\\)\\);\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
+}

@@ -1,15 +1,15 @@
 <script setup>
 import ConsultantWorkspace from "~/components/consultant/ConsultantWorkspace.vue";
 import { storeToRefs } from "pinia";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useConsultantsStore } from "~/stores/consultants";
 
 definePageMeta({
   layout: "dashboard",
   workspaceId: "consultor"
 });
 
-const dashboard = useDashboardStore();
-const { state } = storeToRefs(dashboard);
+const consultantsStore = useConsultantsStore();
+const { state } = storeToRefs(consultantsStore);
 </script>
 
 <template>

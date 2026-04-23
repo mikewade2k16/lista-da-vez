@@ -1,42 +1,32 @@
 <script setup>
 import { computed } from "vue";
-import { buildConsultantAlerts, buildRankingRows, formatCurrencyBRL, formatPercent } from "@core/utils/admin-metrics";
+import { formatCurrencyBRL } from "~/domain/utils/admin-metrics";
 import RankingTable from "~/components/ranking/RankingTable.vue";
 
 const props = defineProps({
-  state: {
+  report: {
     type: Object,
-    required: true
+    default: null
+  },
+  pending: {
+    type: Boolean,
+    default: false
+  },
+  errorMessage: {
+    type: String,
+    default: ""
   }
 });
 
-const monthlyRows = computed(() =>
-  buildRankingRows({
-    history: props.state.serviceHistory || [],
-    roster: props.state.roster || [],
-    scope: "month"
-  })
-);
-const dailyRows = computed(() =>
-  buildRankingRows({
-    history: props.state.serviceHistory || [],
-    roster: props.state.roster || [],
-    scope: "today"
-  })
-);
-const alerts = computed(() =>
-  buildConsultantAlerts({
-    roster: props.state.roster || [],
-    history: props.state.serviceHistory || [],
-    settings: props.state.settings || {}
-  })
-);
+const monthlyRows = computed(() => props.report?.monthlyRows || []);
+const dailyRows = computed(() => props.report?.dailyRows || []);
+const alerts = computed(() => props.report?.alerts || []);
 
 const ALERT_LABELS = {
-  conversion: (a) => `Conversão ${a.value.toFixed(1)}% — abaixo do mínimo de ${a.threshold}%`,
-  queueJump: (a) => `Fora da vez ${a.value.toFixed(1)}% — acima do máximo de ${a.threshold}%`,
-  pa: (a) => `P.A. ${a.value.toFixed(2)} — abaixo do mínimo de ${a.threshold}`,
-  ticket: (a) => `Ticket ${formatCurrencyBRL(a.value)} — abaixo do mínimo de ${formatCurrencyBRL(a.threshold)}`
+  conversion: (a) => `Conversao ${a.value.toFixed(1)}% - abaixo do minimo de ${a.threshold}%`,
+  queueJump: (a) => `Fora da vez ${a.value.toFixed(1)}% - acima do maximo de ${a.threshold}%`,
+  pa: (a) => `P.A. ${a.value.toFixed(2)} - abaixo do minimo de ${a.threshold}`,
+  ticket: (a) => `Ticket ${formatCurrencyBRL(a.value)} - abaixo do minimo de ${formatCurrencyBRL(a.threshold)}`
 };
 </script>
 
@@ -47,9 +37,17 @@ const ALERT_LABELS = {
       <p class="admin-panel__text">Comparativo mensal e diario para acompanhar consistencia e bonificacao.</p>
     </header>
 
+    <article v-if="errorMessage" class="insight-card">
+      <p class="settings-card__text">{{ errorMessage }}</p>
+    </article>
+
+    <article v-else-if="pending && !monthlyRows.length && !dailyRows.length" class="insight-card">
+      <p class="settings-card__text">Carregando ranking da loja ativa...</p>
+    </article>
+
     <div v-if="alerts.length" class="alert-list" data-testid="ranking-alerts">
       <div class="alert-list__header">
-        <span class="alert-list__title">Alertas de desempenho — {{ alerts.length }} ocorrência{{ alerts.length > 1 ? 's' : '' }}</span>
+        <span class="alert-list__title">Alertas de desempenho - {{ alerts.length }} ocorrencia{{ alerts.length > 1 ? 's' : '' }}</span>
         <span class="metric-card__text">Configure os limites em Configuracoes &gt; Alertas</span>
       </div>
       <div v-for="(alert, i) in alerts" :key="i" class="alert-item">

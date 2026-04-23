@@ -1,83 +1,106 @@
-# Fila de Atendimento MVP
+# Fila de Atendimento
 
-Repositorio dividido entre `web/` para o Nuxt, `core/` para regras compartilhadas em TypeScript e `back/` para o backend em Go.
+Repositorio principal do produto, com frontend em Nuxt 4 dentro de `web/` e backend em Go dentro de `back/`.
 
 ## Estrutura
 
-- `web/`: app Nuxt 4, stores Pinia, componentes Vue, assets de estilo e servicos de browser.
-- `core/`: dominio, mocks, regras, calculos e utilitarios compartilhados em TypeScript.
-- `back/`: bootstrap do backend em Go para API, auth, websocket e integracao com banco.
-- `docs/`: backlog, blueprint de migracao e referencia funcional.
+- `web/`
+  - app Nuxt 4, stores Pinia, paginas e componentes
+- `back/`
+  - API Go, auth, contexto de tenant/loja, settings, consultores e operacao
+- `docs/`
+  - backlog, arquitetura e referencias funcionais
+- `scripts/dev/`
+  - entrada padrao de desenvolvimento local em Git Bash
 
-## Estado atual da migracao
+## Stack atual
 
-- Todas as areas do painel ja estao em paginas e componentes Nuxt dentro de `web/`.
-- O estado de interface roda em `Pinia`.
-- Os estilos globais do frontend vivem em `web/app/assets/styles/`.
-- O dominio temporario local foi isolado em `core/`.
-- O backend ainda esta em bootstrap, pronto para receber a API em Go.
+- Nuxt `4.4.2`
+- Vue `3.5.30`
+- Pinia `3.0.4`
+- Node `24.11.1`
+- Go `1.24.0`
+- PostgreSQL `16`
 
-## Como evoluir
+## Fluxo oficial
 
-1. Substituir `localStorage` por API real.
-2. Introduzir autenticacao, multi-dispositivo e sincronizacao em tempo real.
-3. Portar regras autoritativas de fila/atendimento/campanhas para o `back/`.
-4. Extrair o modulo da lista da vez para reutilizacao no stack `Nuxt + Go`.
+O projeto agora trabalha em Docker por padrao.
 
-## Areas atuais no MVP
+Comando principal pela raiz:
 
-- `Operacao`: fila, atendimento, pausa e fechamento.
-- `Consultor`: meta mensal, progresso, indicadores e simulador.
-- `Ranking`: comparativo mensal e diario entre consultores.
-- `Dados`: painel bruto de produto, motivo, origem, horario e tempo.
-- `Inteligencia`: leitura automatica dos dados com diagnostico e acoes recomendadas.
-- `Relatorios`: filtros avancados com exportacao CSV/PDF.
-- `Campanhas`: regras comerciais aplicadas no fechamento com auditoria de bonus.
-- `Multi-loja`: operacao por loja + visao consolidada comparativa.
-- `Configuracoes`: administra campos/opcoes do modal, modo teste e catalogo.
-- `Perfis`: troca rapida por dropdown no header (`admin`, `manager`, `consultant`).
+```bash
+npm run dev
+```
 
-## Status e backlog
+Esse fluxo:
 
-- Backlog oficial e historico de entregas: `docs/BACKLOG.md`
-- Documento tecnico completo para migracao Nuxt: `docs/NUXT_MIGRATION_BLUEPRINT.md`
-- Referencia consolidada do Nuxt 4 usada na migracao: `docs/NUXT_FULL_REFERENCE.md`
-- Data da ultima organizacao do backlog: `2026-03-13`
+1. sobe o PostgreSQL em `http://localhost:5432`
+2. sobe a API Go em `http://localhost:8080`
+3. sobe o Nuxt em `http://localhost:3003`
 
-## Execucao local
+No Compose, o `web` roda em modo dev com hot reload.
+Mudancas de UI em `web/` devem atualizar sem rebuild do container.
+Dependencias do frontend em `web/package.json` e `web/package-lock.json` sao sincronizadas automaticamente quando o container `web` sobe.
 
-- Pela raiz:
-- `npm install --prefix web`
+Arquivo opcional para customizar portas e credenciais do Compose:
+
+```bash
+cp .env.docker.example .env
+```
+
+## Scripts principais
+
 - `npm run dev`
-- Abrir `http://localhost:3000`
-- Se quiser manter em `3001`, usar `npm run dev:3001`
-- Direto no frontend:
-- `cd web`
-- `npm install`
-- `npm run dev`
-- ou `npm run dev:3001`
-- Backend:
-- `cd back`
-- `go run ./cmd/api`
-- Healthcheck: `http://localhost:8080/healthz`
+  - sobe stack Docker completa
+- `npm run dev:detach`
+  - sobe stack Docker em background
+- `npm run dev:build`
+  - rebuilda as imagens quando houver mudanca de Dockerfile, imagem base ou dependencia do sistema
+- `npm run dev:logs`
+  - acompanha logs dos containers
+- `npm run dev:ps`
+  - lista os servicos e portas
+- `npm run dev:down`
+  - encerra a stack Docker
+- `npm run dev:down:volumes`
+  - encerra a stack e remove volumes do banco
+- `npm run build`
+  - build do frontend
 
-## Modos disponiveis
+## Fallback local
 
-- Pela raiz:
-- `npm run dev`: sobe o app Nuxt 4 em `web/`.
-- `npm run dev:3001`: sobe o app Nuxt 4 em `http://localhost:3001`.
-- `npm run build`: roda o build do frontend.
-- `npm run generate`: gera a saida estatico/prerender do frontend.
-- Em `web/`:
-- `npm run dev`: sobe o app Nuxt 4.
-- `npm run dev:3001`: sobe o app Nuxt 4 em `3001`.
-- `npm run build`: build SSR padrao do Nuxt.
-- `npm run generate`: gera saida estatico/prerender do Nuxt.
-- Em `back/`:
-- `go run ./cmd/api`: sobe o bootstrap inicial da API Go.
+O fluxo sem Docker continua disponivel so como contingencia:
 
-## Perfis de teste no header
+- `npm run dev:local`
+- `npm run dev:local:db`
+- `npm run dev:local:api`
+- `npm run dev:local:api:status`
+- `npm run dev:local:api:stop`
 
-- `Admin Nexo` (acesso total)
-- `Gerente Loja` (operacao, dados e leitura)
-- `Consultor Loja` (operacao e paineis permitidos)
+## Login demo
+
+- `proprietario@demo.local`
+- `consultor@demo.local`
+- senha: `dev123456`
+
+## Quando rebuildar
+
+- mudancas em `web/Dockerfile`
+- mudancas no backend Go se a imagem da API precisar ser refeita
+- alteracoes de imagem base, dependencia do sistema ou configuracao de build
+
+## Onboarding de usuarios
+
+O onboarding inicial agora funciona por convite:
+
+- admin cria o usuario em `multiloja`
+- a API devolve um link `http://localhost:3003/auth/convite/:token`
+- o usuario define a primeira senha nesse link e entra com sessao real
+
+## Referencias
+
+- guia de backend local: `back/START_LOCAL.md`
+- regras do repositorio: `AGENT.md`
+- backend: `back/README.md`
+- arquitetura do frontend: `docs/NUXT_4_STORE_ARCHITECTURE.md`
+- backlog: `docs/BACKLOG.md`

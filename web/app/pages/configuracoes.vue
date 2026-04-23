@@ -1,15 +1,15 @@
 <script setup>
 import SettingsWorkspace from "~/components/settings/SettingsWorkspace.vue";
 import { storeToRefs } from "pinia";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useSettingsStore } from "~/stores/settings";
 
 definePageMeta({
   layout: "dashboard",
   workspaceId: "configuracoes"
 });
 
-const dashboard = useDashboardStore();
-const { state } = storeToRefs(dashboard);
+const settingsStore = useSettingsStore();
+const { state } = storeToRefs(settingsStore);
 </script>
 
 <template>

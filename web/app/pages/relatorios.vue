@@ -1,15 +1,20 @@
 <script setup>
+import { onMounted } from "vue";
 import ReportsWorkspace from "~/components/reports/ReportsWorkspace.vue";
 import { storeToRefs } from "pinia";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useReportsStore } from "~/stores/reports";
 
 definePageMeta({
   layout: "dashboard",
   workspaceId: "relatorios"
 });
 
-const dashboard = useDashboardStore();
-const { state } = storeToRefs(dashboard);
+const reportsStore = useReportsStore();
+const { state } = storeToRefs(reportsStore);
+
+onMounted(() => {
+  void reportsStore.ensureLoaded();
+});
 </script>
 
 <template>

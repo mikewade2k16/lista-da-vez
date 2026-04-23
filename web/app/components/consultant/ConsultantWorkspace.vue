@@ -1,10 +1,10 @@
 <script setup>
 import { computed } from "vue";
-import { buildConsultantStats } from "@core/utils/admin-metrics";
+import { buildConsultantStats } from "~/domain/utils/admin-metrics";
 import ConsultantMetrics from "~/components/consultant/ConsultantMetrics.vue";
 import ConsultantSelector from "~/components/consultant/ConsultantSelector.vue";
 import ConsultantSimulator from "~/components/consultant/ConsultantSimulator.vue";
-import { useDashboardStore } from "~/stores/dashboard";
+import { useConsultantsStore } from "~/stores/consultants";
 
 const props = defineProps({
   state: {
@@ -13,7 +13,7 @@ const props = defineProps({
   }
 });
 
-const dashboard = useDashboardStore();
+const consultantsStore = useConsultantsStore();
 
 const roster = computed(() => props.state.roster || []);
 const selectedConsultant = computed(() =>
@@ -43,11 +43,11 @@ const goalPercent = computed(() => {
 });
 
 function selectConsultant(consultantId) {
-  void dashboard.setSelectedConsultant(consultantId);
+  void consultantsStore.setSelectedConsultant(consultantId);
 }
 
 function updateSimulation(amount) {
-  void dashboard.setConsultantSimulationAdditionalSales(amount);
+  void consultantsStore.setConsultantSimulationAdditionalSales(amount);
 }
 </script>
 

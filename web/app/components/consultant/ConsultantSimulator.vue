@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from "vue";
-import { formatCurrencyBRL, formatPercent } from "@core/utils/admin-metrics";
+import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
 
 const props = defineProps({
   soldValue: {

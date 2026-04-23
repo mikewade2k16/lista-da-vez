@@ -8,16 +8,64 @@ Esta pagina e o cockpit operacional da fila. Ela concentra a entrada de consulto
 
 - `web/app/pages/operacao/index.vue`: entrada da rota `/operacao`.
 - `web/app/features/operation/components/OperationWorkspace.vue`: composicao principal da pagina.
+- `web/app/features/operation/components/OperationScopeBar.vue`: seletor explicito de loja e de modo da operacao.
 - `web/app/features/operation/components/OperationQueueColumns.vue`: coluna da fila e coluna de atendimentos em andamento.
+- `web/app/features/operation/components/OperationActiveServiceCard.vue`: card reutilizavel de atendimento ativo.
 - `web/app/features/operation/components/OperationConsultantStrip.vue`: barra inferior com todos os consultores.
 - `web/app/features/operation/components/OperationFinishModal.vue`: modal de encerramento do atendimento.
 - `web/app/features/operation/components/OperationProductPicker.vue`: seletor reutilizado para produtos vistos e produtos fechados.
-- `web/app/stores/dashboard.ts`: ponte Pinia para as acoes do dominio.
-- `core/domain/app-store.ts`: regra autoritativa atual da pagina enquanto o backend Go nao entra.
+- `web/app/stores/operations.ts`: store de dominio usado pela pagina.
+- `web/app/utils/runtime-remote.ts`: hidratacao remota da loja ativa, incluindo snapshot operacional.
+- `web/app/stores/dashboard.ts`: facade Pinia temporaria de compatibilidade.
+- `web/app/stores/dashboard/runtime/create-dashboard-runtime.ts`: runtime de compatibilidade usado como camada visual/efemera.
+
+## Fonte de verdade atual
+
+Hoje a operacao funciona assim:
+
+- snapshot e comandos operacionais saem da API Go;
+- o Postgres e a fonte de verdade da fila, atendimentos ativos, pausas, historico e sessoes;
+- o runtime do frontend continua existindo para sustentar compatibilidade de tela, modal e composicao local.
+- comandos `POST` devolvem apenas `ack` minimo; depois disso a UI revalida o snapshot operacional da loja ativa.
+- a pagina tambem abre um WebSocket por loja em `GET /v1/realtime/operations` para receber invalidacoes leves e revalidar o snapshot sem refresh.
+- para `owner` e `platform_admin`, a pagina tambem pode trabalhar em modo integrado multi-loja por `GET /v1/operations/overview`, mantendo o snapshot da loja ativa como fallback e detalhe operacional.
+
+Endpoints atualmente usados pela pagina:
+
+- `GET /v1/operations/snapshot`
+- `GET /v1/operations/overview`
+- `POST /v1/operations/queue`
+- `POST /v1/operations/pause`
+- `POST /v1/operations/resume`
+- `POST /v1/operations/assign-task`
+- `POST /v1/operations/start`
+- `POST /v1/operations/finish`
+- `GET /v1/realtime/operations`
 
 ## Blocos visuais da pagina
 
-### 1. Lista da vez
+### 1. Barra de escopo
+
+Arquivo: `OperationScopeBar.vue`
+
+Responsabilidade:
+- deixar explicito qual loja esta sendo vista;
+- permitir trocar a loja ativa sem depender so do header;
+- permitir que `owner` e `platform_admin` alternem entre `Loja ativa` e `Todas as lojas`;
+- permitir filtro interno por loja quando a visao integrada estiver aberta.
+
+Elementos:
+- select `Loja`
+- select `Modo`
+- select `Filtro por loja`
+
+Comportamento:
+- consultor, gerente e `store_terminal` seguem operando apenas na loja ativa;
+- `owner` e `platform_admin` podem abrir a visao integrada multi-loja;
+- todos os filtros simples dessa barra devem reaproveitar [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue);
+- no modo integrado, a tela continua mostrando o nome da loja em cada card para auditoria visual.
+
+### 2. Lista da vez
 
 Arquivo: `OperationQueueColumns.vue`
 
@@ -36,14 +84,16 @@ Comportamento:
 - se nao houver ninguem na fila, mostra estado vazio;
 - se o limite de atendimentos ativos for atingido, o botao principal e os botoes fora da vez ficam desabilitados;
 - iniciar atendimento fora da vez registra quantas pessoas foram puladas.
+- no modo `Todas as lojas`, esta mesma coluna passa a listar todos os consultores em fila das lojas acessiveis;
+- nesse modo, cada card mostra um badge com a loja e troca a acao de queue-jump pelo botao `Tirar`.
 
-### 2. Em atendimento
+### 3. Em atendimento
 
-Arquivo: `OperationQueueColumns.vue`
+Arquivos: `OperationQueueColumns.vue` e `OperationActiveServiceCard.vue`
 
 Responsabilidade:
 - listar atendimentos ativos;
-- mostrar hora de inicio, ID do atendimento, tipo de entrada e cronometro em tempo real;
+- mostrar hora de inicio, tipo de entrada e cronometro em tempo real;
 - abrir o modal de encerramento.
 
 Elementos:
@@ -55,8 +105,30 @@ Comportamento:
 - se nao houver atendimento ativo, mostra estado vazio;
 - o rotulo do atendimento informa se ele entrou `Na vez` ou `Fora da vez`;
 - quando houve queue jump, o card informa quantas pessoas foram puladas.
+- o card nao exibe mais o ID tecnico nem o titulo redundante da propria coluna, para manter a leitura compacta;
+- no modo `Todas as lojas`, esta mesma coluna passa a listar todos os atendimentos ativos das lojas acessiveis;
+- nesse modo, cada card mostra um badge com a loja para auditoria visual imediata.
 
-### 3. Barra de consultores
+### 4. Visao integrada multi-loja
+
+Arquivos: `OperationWorkspace.vue`, `OperationQueueColumns.vue` e `OperationConsultantStrip.vue`
+
+Responsabilidade:
+- reaproveitar o mesmo layout da operacao da loja ativa;
+- consolidar fila, atendimentos e roster de todas as lojas acessiveis em uma unica tela;
+- mostrar de forma simples qual consultor pertence a qual loja;
+- permitir auditoria rapida sem mudar a estrutura mental da operacao normal.
+
+Comportamento:
+- a pagina continua com as mesmas duas colunas principais e a mesma faixa inferior de consultores;
+- `Lista da vez` mostra todos que estao aguardando, de todas as lojas acessiveis;
+- `Em atendimento` mostra todos os atendimentos ativos, de todas as lojas acessiveis;
+- a barra inferior continua exibindo o roster, agora com badge de loja quando necessario;
+- `owner` e `platform_admin` podem filtrar internamente uma unica loja sem sair do modo integrado;
+- cada card mostra a loja de origem de forma visual;
+- a acao `Tirar para tarefa` registra `assignment`, nao uma pausa comum.
+
+### 5. Barra de consultores
 
 Arquivo: `OperationConsultantStrip.vue`
 
@@ -71,19 +143,22 @@ Estados possiveis por consultor:
 - `queue`: na fila
 - `service`: em atendimento
 - `paused`: pausado
+- `assignment`: em tarefa/reuniao, persistido como pausa tipada
 
 Botoes:
 - `Entrar na fila`
+- `Direcionar para tarefa`
 - `Pausar`
 - `Retomar`
 
 Comportamento:
 - consultor disponivel pode entrar na fila ou ser pausado;
+- consultor disponivel ou na fila pode ser deslocado para tarefa/reuniao;
 - consultor na fila pode ser pausado;
 - consultor pausado mostra o motivo da pausa e pode ser retomado;
 - consultor em atendimento nao recebe acao direta por essa barra.
 
-### 4. Modal de encerramento
+### 6. Modal de encerramento
 
 Arquivo: `OperationFinishModal.vue`
 
@@ -92,6 +167,7 @@ Responsabilidade:
 - registrar produto visto e produto fechado;
 - registrar dados do cliente;
 - registrar motivo da visita, origem, observacoes e motivo de furar fila quando aplicavel;
+- obedecer a configuracao de selecao e descricao definida em /configuracoes para motivos e origens;
 - validar o formulario antes de persistir no store.
 
 Secoes do modal:
@@ -112,26 +188,29 @@ Secoes do modal:
 ### `OperationQueueColumns.vue`
 
 - `Atender primeiro da fila`
-  - acao: `dashboard.startService()`
-  - efeito: remove o primeiro da fila e cria um atendimento ativo com `startMode = queue`
+  - acao: `operationsStore.startService()`
+  - efeito: envia comando HTTP, remove o primeiro da fila e cria um atendimento ativo com `startMode = queue`
 - botao de raio em um card fora da primeira posicao
-  - acao: `dashboard.startService(personId)`
-  - efeito: inicia atendimento fora da vez com `startMode = queue-jump`
+  - acao: `operationsStore.startService(personId)`
+  - efeito: envia comando HTTP e inicia atendimento fora da vez com `startMode = queue-jump`
 - `Encerrar atendimento`
-  - acao: `dashboard.openFinishModal(personId)`
-  - efeito: abre o modal preenchido com um draft inicial
+  - acao: `operationsStore.openFinishModal(personId)`
+  - efeito: abre o modal preenchido com um draft inicial local de compatibilidade
 
 ### `OperationConsultantStrip.vue`
 
 - `Entrar na fila`
-  - acao: `dashboard.addToQueue(personId)`
-  - efeito: inclui o consultor no fim da fila com `queueJoinedAt`
+  - acao: `operationsStore.addToQueue(personId)`
+  - efeito: envia comando HTTP, recebe `ack` minimo e revalida o snapshot; o consultor entra no fim da fila com `queueJoinedAt`
+- `Direcionar para tarefa`
+  - acao: abre prompt da store `ui`, depois chama `operationsStore.assignTask(personId, reason[, storeId])`
+  - efeito: envia comando HTTP, recebe `ack` minimo e revalida o snapshot/overview; tira o consultor da fila quando aplicavel e registra o estado como `assignment`
 - `Pausar`
-  - acao: abre prompt da store `ui`, depois chama `dashboard.pauseEmployee(personId, reason)`
-  - efeito: remove o consultor da fila, se estiver nela, e registra a pausa
+  - acao: abre prompt da store `ui`, depois chama `operationsStore.pauseEmployee(personId, reason)`
+  - efeito: envia comando HTTP, recebe `ack` minimo e revalida o snapshot; remove o consultor da fila, se estiver nela, e registra a pausa
 - `Retomar`
-  - acao: `dashboard.resumeEmployee(personId)`
-  - efeito: remove o estado de pausa e devolve o consultor para a fila
+  - acao: `operationsStore.resumeEmployee(personId)`
+  - efeito: envia comando HTTP, recebe `ack` minimo e revalida o snapshot; remove o estado de pausa e devolve o consultor para a fila
 
 ### `OperationFinishModal.vue`
 
@@ -144,17 +223,17 @@ Secoes do modal:
 - checkbox `Ja era cliente`
   - define `form.isExistingCustomer`
 - produto visto
-  - adiciona itens vistos pelo cliente
+  - adiciona um ou varios itens vistos pelo cliente
 - produto comprado/reservado
   - so aparece em `compra` ou `reserva`
-  - define a base do valor vendido
+  - aceita um ou varios itens e define a base do valor vendido
 - toggle `Nao informado` em motivo e origem
   - limpa a selecao atual e marca o campo como nao informado
 - `Cancelar`
-  - acao: `dashboard.closeFinishModal()`
+  - acao: `operationsStore.closeFinishModal()`
 - `Salvar e encerrar`
-  - acao: `dashboard.finishService(personId, closureData)`
-  - efeito: remove do atendimento ativo, salva historico e devolve consultor para a fila
+  - acao: `operationsStore.finishService(personId, closureData)`
+  - efeito: envia comando HTTP, recebe `ack` minimo e revalida o snapshot; remove do atendimento ativo, salva historico e devolve consultor para a fila
 
 ### `OperationProductPicker.vue`
 
@@ -187,9 +266,48 @@ As validacoes abaixo estao no `submitForm()` de `OperationFinishModal.vue`.
 - se o atendimento foi `queue-jump`, o motivo de furar fila e obrigatorio;
 - o valor da venda nao e digitado manualmente: ele e calculado pela soma dos produtos fechados.
 
+## Contrato recomendado para API/DB do fechamento
+
+Ao integrar o backend Go, trate estes campos como fonte de verdade do fechamento:
+
+- `productsSeen[]`
+- `productsClosed[]`
+- `productsSeenNone`
+- `visitReasons[]`
+- `visitReasonDetails`
+- `visitReasonsNotInformed`
+- `customerSources[]`
+- `customerSourceDetails`
+- `customerSourcesNotInformed`
+- `lossReasons[]`
+- `lossReasonDetails`
+
+Importante:
+
+- `visitReasons[]` nao devem restringir o desfecho do atendimento;
+- a combinacao entre motivo, desfecho e produtos fechados serve para relatorio e inteligencia, nao para travar operacao nem banco.
+- `lossReasons[]` e `lossReasonDetails` devem ser persistidos apenas quando `finishOutcome = nao-compra`.
+- no request de fechamento, o frontend deve omitir campos nao aplicaveis ao desfecho atual; por exemplo, nao enviar `lossReasons*` em `compra`/`reserva`, nem mandar strings/listas vazias sem necessidade.
+
+Campos derivados que podem continuar existindo por compatibilidade e leitura rapida:
+
+- `productSeen`
+- `productClosed`
+- `productDetails`
+- `lossReasonId`
+- `lossReason`
+- `saleAmount`
+
 ## Regras de negocio atuais no dominio
 
-As regras abaixo vivem hoje em `core/domain/app-store.ts`.
+As regras operacionais principais vivem hoje no backend Go em `back/internal/modules/operations/*`.
+
+No frontend, o runtime de compatibilidade em `web/app/stores/dashboard/runtime/create-dashboard-runtime.ts` continua cuidando de:
+
+- `openFinishModal(personId)`
+- `closeFinishModal()`
+- draft inicial do modal
+- detalhes de composicao local da UI
 
 - `addToQueue(personId)`
   - ignora a acao se o consultor nao existir, ja estiver na fila, estiver em atendimento ou pausado
@@ -198,6 +316,11 @@ As regras abaixo vivem hoje em `core/domain/app-store.ts`.
   - ignora a acao se ja estiver pausado
   - nao pausa quem estiver em atendimento
   - remove da fila antes de registrar a pausa
+- `assignTask(personId, reason)`
+  - exige motivo nao vazio
+  - nao desloca quem estiver em atendimento
+  - remove da fila quando aplicavel
+  - registra `kind = assignment` para diferenciar tarefa/reuniao de pausa comum
 - `resumeEmployee(personId)`
   - remove a pausa
   - recoloca o consultor no fim da fila se ele nao estiver em atendimento nem ja estiver aguardando
@@ -218,11 +341,11 @@ As regras abaixo vivem hoje em `core/domain/app-store.ts`.
 
 ## Draft inicial do modal
 
-Ao abrir o modal, a pagina usa `buildRandomFinishModalDraft(...)` do dominio para preencher um rascunho inicial. Isso existe para acelerar o MVP de teste local com `localStorage`.
+Ao abrir o modal, a pagina ainda usa `buildRandomFinishModalDraft(...)` do dominio para preencher um rascunho inicial local. A fila e o historico ja vieram para a API Go, mas esse draft continua como camada de UX/compatibilidade.
 
 Impacto:
 - ajuda a simular preenchimento rapido durante demonstracoes;
-- precisa ser removido ou trocado por defaults reais quando entrarmos em backend Go.
+- pode ser trocado por defaults reais mais a frente, sem alterar o contrato operacional da API.
 
 ## Dependencias de estado usadas pela pagina
 
@@ -240,11 +363,20 @@ Campos mais relevantes lidos de `state`:
 - `customerSourceOptions`
 - `professionOptions`
 
+No modo integrado, a pagina tambem trabalha com:
+
+- `overview.stores`
+- `overview.waitingList`
+- `overview.activeServices`
+- `overview.pausedEmployees`
+- `overview.availableConsultants`
+
 ## Seletores estaveis para automacao
 
 Estes `data-testid` foram adicionados para suportar testes automatizados e um robo generico no futuro.
 
 - `operation-board`
+- `operation-campaign-brief`
 - `operation-waiting-column`
 - `operation-start-first`
 - `operation-waiting-{personId}`
@@ -255,6 +387,7 @@ Estes `data-testid` foram adicionados para suportar testes automatizados e um ro
 - `operation-consultant-strip`
 - `operation-consultant-{personId}`
 - `operation-add-to-queue-{personId}`
+- `operation-assign-task-{personId}`
 - `operation-pause-{personId}`
 - `operation-resume-{personId}`
 - `operation-finish-modal`
@@ -275,14 +408,20 @@ Estes `data-testid` foram adicionados para suportar testes automatizados e um ro
 - `operation-customer-name`
 - `operation-customer-phone`
 - `operation-customer-email`
-- `operation-customer-profession`
-- `operation-visit-reason`
-- `operation-visit-reason-not-informed`
+- `operation-customer-profession-*`
+- `operation-customer-profession-trigger`
+- `operation-customer-profession-search`
+- `operation-visit-reason-*`
+- `operation-visit-reason-trigger`
+- `operation-visit-reason-search`
 - `operation-visit-reason-detail`
-- `operation-customer-source`
-- `operation-customer-source-not-informed`
+- `operation-customer-source-*`
+- `operation-customer-source-trigger`
+- `operation-customer-source-search`
 - `operation-customer-source-detail`
-- `operation-queue-jump-reason`
+- `operation-queue-jump-reason-*`
+- `operation-queue-jump-reason-trigger`
+- `operation-queue-jump-reason-search`
 - `operation-notes`
 - `operation-finish-cancel`
 - `operation-finish-submit`
@@ -326,10 +465,10 @@ Estes `data-testid` foram adicionados para suportar testes automatizados e um ro
 
 ## Lacunas conhecidas para a futura automacao
 
-- o estado ainda depende de `localStorage`, entao cada teste precisa controlar ou limpar a persistencia;
-- o modal hoje recebe um draft aleatorio do dominio, o que exige fixtures previsiveis para testes mais deterministas;
-- ainda nao existem seeds/fixtures oficiais por cenario operacional;
-- quando o backend Go entrar, a fonte de verdade da fila deve sair do front e os testes precisam passar a validar API + websocket.
+- o realtime atual usa invalidacao + re-sync do snapshot; ainda nao existe replay de eventos nem broker externo para multiplas replicas;
+- o modal ainda recebe um draft aleatorio do dominio, o que exige fixtures previsiveis para testes mais deterministas;
+- ainda nao existem seeds/fixtures oficiais por cenario operacional completo;
+- os testes end-to-end da operacao agora devem considerar `frontend + API + Postgres`, e depois evoluir para `frontend + API + websocket`.
 
 ## Comandos Git Bash do qa-bot
 

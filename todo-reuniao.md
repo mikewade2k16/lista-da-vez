@@ -1,6 +1,6 @@
 # Análise de requisitos — diagnóstico vs. codebase atual
 > Checagem rigorosa feita em 23/03/2026. Legenda: ✅ implementado · ⚠️ parcial/ressalva · ❌ falta
-> Bug crítico (múltiplos produtos no histórico) — CORRIGIDO em 23/03/2026
+> Ajuste importante: itens que ainda citam API/banco se referem à fase futura de integração; no escopo atual do frontend local, múltiplos produtos já estão fechados em UI, store e reidratação
 
 ---
 
@@ -11,12 +11,14 @@
   - Campo `visitReasons` (array) gravado no histórico
 
 - ✅ Permitir múltipla escolha nos motivos da visita
-  - Onde: Mesmo lugar acima — o picker aceita múltiplas seleções
-  - Array de IDs enviado e gravado no histórico
+  - Onde: Passo 2 "Cliente" → campo "Motivo da visita"
+  - O picker agora aceita múltiplos motivos e grava `visitReasons[]` no histórico
+  - O comportamento do campo é configurável em /configuracoes → aba Motivos
 
 - ✅ Manter campo de motivo com opção aberta (preenchimento livre)
-  - Onde: Passo 2 → após selecionar um motivo aparece campo "Detalhe opcional"
-  - Ativo apenas se configuração "Mostrar detalhes do motivo" estiver ativada em /configuracoes → aba Modal
+  - Onde: Passo 2 → cada seleção pode receber descrição livre pelo próprio picker
+  - Pode funcionar sem descrição, com uma descrição compartilhada ou com uma descrição por opção
+  - O comportamento é configurável em /configuracoes → abas Motivos e Origens
 
 - ✅ Criar registro de venda não fechada / não convertida
   - Onde: Passo 1 "Atendimento" → opção "Nao compra" no campo "Como terminou"
@@ -24,11 +26,14 @@
 
 - ✅ Permitir múltiplos produtos por atendimento (UI + banco)
   - Onde: Passo 1 → campos "Produto visto pelo cliente" e "Produto comprado/reservado"
-  - BUG CORRIGIDO em 23/03/2026: arrays `productsSeen[]` e `productsClosed[]` agora são gravados no `serviceHistory`
+  - A UI já permite múltiplos itens e a store/localStorage reidratam `productsSeen[]` e `productsClosed[]`
+  - Para backend/banco, o contrato ideal já está claro no frontend: arrays como fonte de verdade + campos derivados legados
+  - A pendência de relatórios agregados ficou separada no item de "Relatório de produtos mais fechados"
 
 - ✅ Vínculo entre motivo da visita e fechamento (compra/reserva/não compra)
-  - Onde: automático — motivos são filtrados por `outcomes` ao abrir o passo 2
-  - Configurável em /configuracoes → aba Motivos (cada motivo pode ter outcomes vinculados)
+  - Onde: analítico — cruzamento entre `visitReasons[]`, `finishOutcome`, `productsSeen[]` e `productsClosed[]`
+  - Objetivo: responder quem veio por qual motivo, se comprou, o que comprou e quais produtos viu
+  - Regra de negócio: todo motivo aceita qualquer desfecho; isso não restringe operação nem banco
 
 - ✅ Indicador de qualidade de preenchimento
   - Onde (leitura): /relatorios → tabela "Qualidade" mostra % completo/excelente/incompleto por consultor
@@ -129,7 +134,8 @@
   - Onde: /relatorios → barra de filtros incluindo filtro por campanha (campaignIds)
 
 - ✅ Relatório de produtos mais fechados
-  - Onde: /dados e /relatorios — contabiliza todos os produtos dos arrays productsClosed[]
+  - Onde: /dados e /relatorios
+  - A agregação agora considera `productsClosed[]` como fonte de verdade, com `productClosed` apenas como fallback legado
 
 - ✅ Relatório de motivos da visita
   - Onde: /dados e /relatorios
@@ -183,10 +189,10 @@
   - Dados históricos acumulados vs. dados em tempo real (live)
   - Tabela horária de vendas (distribuição por hora do dia)
 
-- ✅ Página /multiloja — Gestão multi-loja com métricas consolidadas
-  - Criar, editar, clonar loja
-  - Tabela com todas as lojas: consultores ativos, fila, serviços, conversão, ticket médio, espera, taxa fora da vez
-  - Totalizadores consolidados de todas as lojas
+- ⚠️ Página /multiloja — Gestão multi-loja com métricas consolidadas
+  - Criar e editar loja estão implementados; clonagem de loja ainda não existe como fluxo dedicado
+  - A tabela comparativa atual mostra principalmente consultores, atendimentos, conversão, vendas, ticket, P.A. e score
+  - Totalizadores consolidados de todas as lojas estão implementados
 
 - ✅ Exportação CSV e PDF em /relatorios
   - Onde: barra de filtros → botões "Exportar CSV" e "Exportar PDF"
@@ -204,8 +210,8 @@
 
 ## Sequência recomendada de execução
 
-### Bloco A — Já corrigido
-1. ✅ BUG CORRIGIDO — `productsSeen[]` e `productsClosed[]` agora gravados no histórico
+### Bloco A — Ajuste fechado
+1. ✅ Fechar o relatório de produtos mais fechados para usar todos os itens de `productsClosed[]`
 
 ### Bloco B — Completar Operação (quase pronta)
 2. ✅ Feedback de qualidade em tempo real no modal (passo 2)

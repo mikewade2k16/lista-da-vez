@@ -1,0 +1,54 @@
+id: multistore-smoke
+name: Multi-loja Smoke
+description: Verifica painel consolidado, tabela comparativa, painel gerencial e criacao de loja.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina multi-loja
+    path: /multiloja
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /multiloja
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel multi-loja carregado
+    testid: multistore-panel
+
+  - action: expect_visible
+    name: Valida cards de resumo consolidado
+    testid: multistore-summary
+
+  - action: expect_visible
+    name: Valida tabela comparativa por loja
+    testid: multistore-comparison-table
+
+  - action: expect_visible
+    name: Valida painel de reuniao gerencial
+    testid: multistore-meeting
+
+  - action: expect_visible
+    name: Valida campo de nome da nova loja
+    testid: multistore-new-name
+
+  - action: fill
+    name: Preenche nome da nova loja
+    testid: multistore-new-name
+    value: Loja QA Smoke
+
+  - action: click
+    name: Cria a nova loja
+    testid: multistore-new-submit
+
+  - action: expect_visible
+    name: Confirma toast de sucesso apos criar loja
+    testid: ui-toast-success
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: multistore-smoke-final.png

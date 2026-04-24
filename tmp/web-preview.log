@@ -1,0 +1,127 @@
+
+> lista-da-vez-web@0.1.0 preview
+> nuxt preview --port 3000
+
+[nuxt] modules:before: 0.089ms
+[nuxt] kit:compatibility: 0.022ms
+[36mi[39m Module [36mpinia[39m took [36m1.34ms[39m to setup.
+[36mi[39m Module [36m@nuxt/devtools[39m took [36m259.18ms[39m to setup.
+[nuxt] pages:routerOptions: 0.064ms
+[36mi[39m Module [36mnuxt:pages[39m took [36m678.64ms[39m to setup.
+[36mi[39m Module [36mnuxt:meta[39m took [36m9.72ms[39m to setup.
+[36mi[39m Module [36mnuxt:components[39m took [36m11.43ms[39m to setup.
+[36mi[39m Module [36mnuxt:compiler[39m took [36m0.4ms[39m to setup.
+[36mi[39m Module [36mnuxt:imports[39m took [36m2.87ms[39m to setup.
+[36mi[39m Module [36mnuxt:nuxt-config-schema[39m took [36m0.87ms[39m to setup.
+[36mi[39m Module [36m@nuxt/telemetry[39m took [36m0.24ms[39m to setup.
+[nuxt] imports:dirs: 0.097ms
+[nuxt] imports:sources: 0.282ms
+[nuxt] imports:context: 0.075ms
+[nuxt] imports:extend: 0.119ms
+[nuxt] builder:generateApp: 0.026ms
+[nuxt] schema:extend: 0.044ms
+[nuxt] schema:resolved: 0.094ms
+[nuxt] modules:done: 1.816s
+[nuxt] nitro:config: 260.296ms
+[nuxt] nitro:init: 0.555ms
+|
+|
+| [33m+[39m[33m-[39m[33m-[39m[33m Previewing Nuxt app [39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m+[39m
+| [33m|[39m                                                                        [33m|[39m
+| [33m|[39m  You are previewing a Nuxt app. In production, do not use this CLI.    [33m|[39m
+| [33m|[39m  Instead, run [36mnode server/index.mjs[39m directly.                          [33m|[39m
+| [33m|[39m                                                                        [33m|[39m
+| [33m|[39m  Node.js:           [36mv24.11.1[39m                                           [33m|[39m
+| [33m|[39m  Nitro preset:      [36mnode-server[39m                                        [33m|[39m
+| [33m|[39m  Working directory: [36m.output[39m                                            [33m|[39m
+| [33m|[39m                                                                        [33m|[39m
+| [33m+[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m-[39m[33m+[39m
+|
+—  Running [36mnode server/index.mjs[39m in [36m.output[39m
+
+[nuxt] ready: 0.014ms
+> Load chunks/_/nitro (3ms)
+
+> Nitro Start (2ms)
+[1m[36m Nuxt Build Performance[39m[22m
+Listening on http://[::]:3000
+
+  [1mPhase[22m                       [1mDuration[22m       [1mRSS Delta[22m      [1mHeap Delta[22m
+  [2m────────────────────────────────────────────────────────────────────[22m
+  init                             [32m7ms[39m       [32m+104.0 KB[39m       +479.9 KB  [32m██[39m
+  modules                         [31m4.5s[39m       [32m-788.0 KB[39m         -6.7 MB  [31m██████████[39m[32m░[39m
+  modules:done                    [31m1.8s[39m       [32m+812.0 KB[39m         +6.2 MB  [31m█████████[39m[32m░[39m
+  nitro:config                   [33m260ms[39m       [32m+708.0 KB[39m        +16.6 MB  [33m███████[39m[32m░[39m
+  nitro:createNitro               [31m1.7s[39m        [33m+11.7 MB[39m         -4.9 MB  [31m█████████[39m[33m░░░░░░░░░░[39m
+  ready                          [32m181ms[39m        [32m+64.0 KB[39m        +76.8 KB  [32m██████[39m
+  [2m────────────────────────────────────────────────────────────────────[22m
+  [1mTotal[22m                          [1m17.4s[22m        [1m+51.4 MB[22m        [1m+32.0 MB[22m
+
+[1m Modules[22m
+
+  [2m•[22m nuxt:pages [2m—[22m [31m679ms[39m
+[nitro-runtime] request: 0.686ms
+  [2m•[22m @nuxt/devtools [2m—[22m [33m259ms[39m
+[nitro-runtime] render:before: 0.025ms
+  [2m•[22m nuxt:components [2m—[22m [2m11ms[22m
+> Load chunks/build/server (2ms)
+  [2m•[22m nuxt:meta [2m—[22m [2m10ms[22m
+[nuxt-app] page:loading:start: 0.096ms
+
+[nuxt-app] app:created: 172.721ms
+[1m Details[22m
+[nuxt-app] vue:setup: 0.053ms
+
+[nuxt-app] app:rendered: 0.642ms
+  [2m•[22m module:@nuxt/devtools [2m—[22m [33m259ms[39m
+[nitro-runtime] render:html: 0.029ms
+  [2m•[22m module:nuxt:pages [2m—[22m [31m679ms[39m
+[nitro-runtime] render:response: 0.052ms
+  [2m•[22m module:nuxt:meta [2m—[22m [2m10ms[22m
+[nitro-runtime] beforeResponse: 0.023ms
+  [2m•[22m module:nuxt:components [2m—[22m [2m11ms[22m
+[nitro-runtime] afterResponse: 0.018ms
+
+[2m Data dump written to ./node_modules/.cache/nuxt/.nuxt/perf-report.json[22m
+[2m Trace written to ./node_modules/.cache/nuxt/.nuxt/perf-trace.json (load in [36mhttps://ui.perfetto.dev[39m)[22m
+
+[nitro] close: 0.18ms
+[nuxt] close: 8.376s
+[nitro-runtime] request: 0.191ms
+[nitro-runtime] render:before: 0.037ms
+[nuxt-app] page:loading:start: 0.03ms
+[nuxt-app] app:created: 262.933ms
+[nuxt-app] vue:setup: 0.02ms
+[nuxt-app] app:rendered: 0.102ms
+[nitro-runtime] render:html: 0.029ms
+[nitro-runtime] render:response: 0.056ms
+[nitro-runtime] beforeResponse: 0.045ms
+[nitro-runtime] afterResponse: 0.03ms
+[nitro-runtime] request: 0.112ms
+[nitro-runtime] request: 0.075ms
+[nitro-runtime] request: 0.07ms
+[nitro-runtime] request: 0.058ms
+[nitro-runtime] request: 0.071ms
+[nitro-runtime] request: 0.079ms
+[nitro-runtime] beforeResponse: 0.02ms
+[nitro-runtime] beforeResponse: 0.021ms
+[nitro-runtime] beforeResponse: 0.052ms
+[nitro-runtime] beforeResponse: 0.021ms
+[nitro-runtime] beforeResponse: 0.024ms
+[nitro-runtime] afterResponse: 0.025ms
+[nitro-runtime] afterResponse: 0.021ms
+[nitro-runtime] afterResponse: 0.027ms
+[nitro-runtime] afterResponse: 0.046ms
+[nitro-runtime] afterResponse: 0.024ms
+[nitro-runtime] beforeResponse: 0.023ms
+[nitro-runtime] afterResponse: 0.07ms
+[nitro-runtime] request: 0.21ms
+[nitro-runtime] render:before: 0.049ms
+[nitro-runtime] beforeResponse: 0.031ms
+[nitro-runtime] afterResponse: 0.033ms
+[nitro-runtime] request: 0.701ms
+[nitro-runtime] beforeResponse: 0.034ms
+[nitro-runtime] afterResponse: 0.035ms
+[nitro-runtime] request: 0.081ms
+[nitro-runtime] beforeResponse: 0.035ms
+[nitro-runtime] afterResponse: 0.037ms

@@ -1,7 +1,7 @@
 # Nexo - Referencia Completa para Migracao Nuxt
 
 Gerado em: 2026-03-19  
-Atualizado em: 2026-03-19  
+Atualizado em: 2026-03-30  
 Fonte: leitura direta do codigo atual do MVP.  
 Objetivo: servir como documento unico para migrar o sistema para Nuxt 3 / Vue 3 sem perder comportamento, regras e contratos do frontend atual.
 
@@ -17,7 +17,7 @@ Esta revisao ja considera os ajustes mais recentes aplicados no MVP:
 - Catalogo de profissoes com persistencia e cadastro automatico no encerramento.
 - Modal de encerramento com picker de produtos com busca, multipla selecao, opcao `Nenhum` e cadastro inline de produto nao catalogado.
 - Novo componente reutilizavel de picker de catalogo (`catalog-picker.js`) usado para motivo da visita e origem do cliente.
-- Motivo da visita e origem do cliente agora sao seletores com busca, escolha unica, opcao `Nao informado` e detalhe opcional.
+- Motivo da visita e origem do cliente agora usam o picker reutilizavel com busca, opcao `Nao informado` e detalhe opcional configuravel.
 - Relatorios com filtros em painel recolhido, grupos de filtros por chip, chips ativos removiveis, acoes por icone e qualidade de preenchimento.
 - KPIs de relatorio renomeados para `Media de atendimento` e `Media de espera`.
 - Exportacao CSV/PDF atualizada para incluir preenchimento e os novos labels.
@@ -29,7 +29,7 @@ Esta revisao ja considera os ajustes mais recentes aplicados no MVP:
 
 ### 1.1 Tokens globais
 
-Arquivo: `src/styles/tokens.css`
+Arquivo: `web/app/assets/styles/tokens.css`
 
 ```css
 :root {
@@ -58,7 +58,7 @@ Arquivo: `src/styles/tokens.css`
 
 ### 1.2 Base global
 
-Arquivos: `src/styles/base.css`, `src/styles/components.css`
+Arquivos: `web/app/assets/styles/base.css`, `web/app/assets/styles/components.css`
 
 - Tema atual e escuro.
 - `body` usa gradiente radial + linear.
@@ -69,13 +69,11 @@ Arquivos: `src/styles/base.css`, `src/styles/components.css`
 
 ### 1.3 Modo apresentacao
 
-Arquivo: `src/styles/presentation.css`
+Arquivo: `web/app/assets/styles/presentation.css`
 
 Ativacao:
 
-```html
-<link rel="stylesheet" href="./src/styles/presentation.css">
-```
+No Nuxt atual, a ativacao e feita via `web/nuxt.config.ts` na chave `css`.
 
 Efeitos principais:
 
@@ -274,10 +272,10 @@ Importante:
 
 Arquivos principais:
 
-- `src/components/finish-modal.js`
-- `src/components/catalog-picker.js`
-- `src/main.js`
-- `src/store/app-store.js`
+- `web/app/components/operation/OperationFinishModal.vue`
+- `web/app/components/operation/OperationProductPicker.vue`
+- `web/app/stores/dashboard.ts`
+- `web/app/stores/dashboard/runtime/create-dashboard-runtime.ts`
 
 ### 5.1 Estrutura geral
 
@@ -339,15 +337,16 @@ Comportamento:
 
 #### Observacao critica de migracao
 
-Hoje o submit envia `productsSeen[]` e `productsClosed[]`, mas o historico persistido no store salva apenas:
+Hoje o submit envia `productsSeen[]` e `productsClosed[]`, e o historico persistido mantem os arrays junto com os campos derivados:
 
+- `productsSeen[]` = lista completa de itens vistos;
+- `productsClosed[]` = lista completa de itens fechados;
 - `productSeen` = nome do primeiro item visto;
 - `productClosed` = nome do primeiro item fechado;
 - `productDetails` = `productClosed || productSeen`;
 - `saleAmount` = soma dos `productsClosed`.
 
-Se a migracao quiser preservar 100% do comportamento atual, manter essa regra.
-Se quiser evoluir o dado, isso deve ser tratado como mudanca de produto, nao como simples migracao.
+Para a API/banco, a recomendacao e tratar os arrays como fonte de verdade e manter os campos escalares apenas por compatibilidade.
 
 ### 5.4 Dados do cliente
 
@@ -391,16 +390,21 @@ Campos gerados:
 
 Observacao:
 - a camada de dados continua aceitando arrays (`visitReasons[]`, `customerSources[]`) por compatibilidade;
-- porem a UI atual so permite 0 ou 1 valor em cada grupo.
+- `Motivo da visita` agora aceita multisselecao na UI;
+- `Origem do cliente` pode operar como escolha unica ou multipla via configuracao.
 
-### 5.6 Filtro de motivo por desfecho
+### 5.6 Relacao analitica entre motivo e desfecho
 
-`visitReasonOptions` pode trazer `outcomes[]`.
+Regra de negocio desejada:
 
-Comportamento atual:
+- motivo da visita nao deve restringir `compra`, `reserva` ou `nao-compra`;
+- todo motivo aceita qualquer desfecho;
+- o valor dessa relacao e analitico, para relatorios e inteligencia operacional.
 
-- ao trocar o desfecho, o modal esconde motivos incompativeis;
-- se o motivo selecionado ficar invalido, ele e limpo automaticamente.
+Estado atual do MVP:
+
+- o modal nao restringe motivo por desfecho;
+- se algum payload legado ainda trouxer `outcomes[]`, esse dado deve ser ignorado.
 
 ### 5.7 Motivo fora da vez e observacoes
 
@@ -447,15 +451,19 @@ Shape atual usado em `store.finishService(...)`:
   customerEmail: string
   customerProfession: string
   isExistingCustomer: boolean
-  visitReasons: string[]        // na pratica 0..1 na UI atual
+  visitReasons: string[]        // multisselecao suportada na UI
   visitReasonDetails: Record<string, string>
-  customerSources: string[]     // na pratica 0..1 na UI atual
+  customerSources: string[]     // escolha unica ou multipla conforme configuracao
   customerSourceDetails: Record<string, string>
   saleAmount: number            // soma de productsClosed
   queueJumpReason: string
   notes: string
 }
 ```
+
+Observacao:
+- `productsSeen[]` e `productsClosed[]` sao a fonte de verdade recomendada para API/banco;
+- `productSeen`, `productClosed` e `productDetails` permanecem como campos derivados/legados para compatibilidade.
 
 ### 5.10 Auto-fill de teste
 
@@ -471,10 +479,10 @@ Quando `settings.testModeEnabled` e `settings.autoFillFinishModal` estao ativos:
 
 Arquivos principais:
 
-- `src/components/admin-reports.js`
-- `src/utils/reports.js`
-- `src/services/report-export.js`
-- `src/main.js`
+- `web/app/components/reports/ReportsWorkspace.vue`
+- `web/app/domain/utils/reports.ts`
+- `web/app/utils/report-export.ts`
+- `web/app/stores/dashboard.ts`
 
 ### 6.1 Contrato atual de filtros
 
@@ -661,7 +669,7 @@ A busca textual filtra por:
 
 ## 7. Configuracoes
 
-Arquivo principal: `src/components/admin-settings.js`
+Arquivo principal: `web/app/components/settings/SettingsWorkspace.vue`
 
 ### 7.1 Tabs atuais
 
@@ -802,9 +810,9 @@ Esses paineis nao tiveram mudanca estrutural recente de regra de negocio, mas se
 
 Arquivos principais:
 
-- `src/store/app-store.js`
-- `src/services/queue-service.js`
-- `src/data/mock-queue.js`
+- `web/app/stores/app-runtime.ts`
+- `web/app/stores/dashboard/runtime/create-dashboard-runtime.ts`
+- `web/app/domain/data/mock-queue.ts`
 
 ### 9.1 Campos importantes do estado
 
@@ -845,39 +853,19 @@ Estado atual inclui, entre outros:
 }
 ```
 
-### 9.2 Persistencia em localStorage
+### 9.2 Persistencia atual
 
-Chave:
+Estado atual:
 
-```ts
-"nexo-queue-state"
-```
-
-Persistido:
-
-- perfis;
-- lojas e snapshots;
-- workspace ativo;
-- filtros de relatorio;
-- campanhas;
-- lista de espera;
-- atendimentos ativos;
-- roster;
-- motivos;
-- origens;
-- profissoes;
-- catalogo de produtos;
-- `modalConfig`;
-- sessoes e status de consultor;
-- pausas;
-- `settings`;
-- `serviceHistory`.
-
-Nao persistido:
-
-- `finishModalDraft`
-- `finishModalPersonId`
-- `reportUiState`
+- `auth`, `tenants`, `stores`, `consultants` e `settings` ja usam backend Go + PostgreSQL.
+- `GET /v1/settings` continua entregando um bundle completo para bootstrap da UI.
+- as escritas de `settings` passaram a ser setoriais:
+  - `PATCH /v1/settings/operation`
+  - `PATCH /v1/settings/modal`
+  - `PUT /v1/settings/options/{group}`
+  - `PUT /v1/settings/products`
+- a operacao ainda nao esta no backend; fila, atendimento ativo e historico continuam apenas em memoria via `app-runtime`.
+- `localStorage` deixou de ser usado no codigo ativo do frontend.
 
 ### 9.3 Normalizacao de schema
 
@@ -1046,7 +1034,7 @@ Guardas do intervalo:
 
 ## 13. Exportacao e relatorio impresso
 
-Arquivo: `src/services/report-export.js`
+Arquivo: `web/app/utils/report-export.ts`
 
 CSV:
 
@@ -1131,10 +1119,10 @@ app/
 
 ## 15. Pontos criticos para nao perder na migracao
 
-1. O modal hoje usa manipulacao DOM direta em `main.js`; em Vue isso deve virar estado reativo, sem perder as regras.
+1. O modal ja esta reativo em Vue/Nuxt e precisa manter as mesmas regras quando a operacao migrar para a API.
 2. O picker reutilizavel de catalogo ja existe conceitualmente; vale manter essa abstracao em Vue.
-3. Motivo e origem sao arrays no dominio, mas a UI atual e single-select.
-4. `productsSeen[]` e `productsClosed[]` existem no submit, mas o historico salvo ainda resume tudo para campos string + soma.
+3. Motivo ja opera com multisselecao; origem pode ser single ou multi por configuracao.
+4. `productsSeen[]` e `productsClosed[]` ja persistem no historico e devem seguir como fonte de verdade na API; os campos string sao derivados por compatibilidade.
 5. Ao trocar de loja, o modal deve fechar obrigatoriamente.
 6. Ao sair da pausa, o consultor deve voltar direto para a fila.
 7. `reportUiState` nao e persistido; apenas `reportFilters`.
@@ -1162,8 +1150,7 @@ app/
 
 ### Ainda pendente
 
-- Persistencia backend real.
-- Autenticacao por login real.
+- Persistencia backend real da operacao.
 - Integracao real de produtos via API.
 
 ---
@@ -1172,18 +1159,17 @@ app/
 
 Se for reconstruir por partes, estes sao os arquivos mais relevantes do estado atual:
 
-- `src/main.js`
-- `src/store/app-store.js`
-- `src/services/queue-service.js`
-- `src/components/finish-modal.js`
-- `src/components/catalog-picker.js`
-- `src/components/admin-reports.js`
-- `src/utils/reports.js`
-- `src/services/report-export.js`
-- `src/components/admin-settings.js`
-- `src/components/consultant-strip.js`
-- `src/styles/tokens.css`
-- `src/styles/base.css`
-- `src/styles/components.css`
-- `src/styles/presentation.css`
-
+- `web/app/stores/dashboard.ts`
+- `web/app/stores/dashboard/runtime/create-dashboard-runtime.ts`
+- `web/app/stores/app-runtime.ts`
+- `web/app/components/operation/OperationFinishModal.vue`
+- `web/app/components/operation/OperationProductPicker.vue`
+- `web/app/components/reports/ReportsWorkspace.vue`
+- `web/app/domain/utils/reports.ts`
+- `web/app/utils/report-export.ts`
+- `web/app/components/settings/SettingsWorkspace.vue`
+- `web/app/components/operation/OperationConsultantStrip.vue`
+- `web/app/assets/styles/tokens.css`
+- `web/app/assets/styles/base.css`
+- `web/app/assets/styles/components.css`
+- `web/app/assets/styles/presentation.css`

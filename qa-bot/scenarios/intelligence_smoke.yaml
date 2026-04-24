@@ -1,0 +1,37 @@
+id: intelligence-smoke
+name: Inteligencia Operacional Smoke
+description: Verifica carregamento do score operacional, cards de diagnostico e acoes recomendadas.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina de inteligencia operacional
+    path: /inteligencia
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /inteligencia
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel de inteligencia carregado
+    testid: intelligence-panel
+
+  - action: expect_visible
+    name: Valida card de score operacional
+    testid: intelligence-score
+
+  - action: expect_visible
+    name: Valida grid de diagnostico
+    testid: intelligence-diagnosis
+
+  - action: expect_visible
+    name: Valida secao de contexto rapido e acoes recomendadas
+    testid: intelligence-context
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: intelligence-smoke-final.png

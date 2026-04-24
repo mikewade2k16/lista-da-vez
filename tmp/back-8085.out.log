@@ -1,0 +1,8 @@
+time=2026-03-30T23:21:55.507-03:00 level=INFO msg=api_listening addr=:8085 env=development
+time=2026-03-30T23:21:58.302-03:00 level=INFO msg=http_request request_id=0ec6c66ebefb694038c0f03c method=POST path=/v1/auth/login status=200 duration=146.7755ms
+time=2026-03-30T23:21:58.815-03:00 level=INFO msg=http_request request_id=83ae133d000274a084f0e609 method=GET path=/v1/me/context status=200 duration=10.6103ms
+time=2026-03-30T23:21:58.844-03:00 level=INFO msg=http_request request_id=3f3cb5d578ac42686050e965 method=GET path=/v1/consultants status=200 duration=8.0161ms
+time=2026-03-30T23:21:58.959-03:00 level=INFO msg=http_request request_id=29f0f90af0d5cfd65648c5d0 method=POST path=/v1/operations/queue status=200 duration=95.9795ms
+time=2026-03-30T23:21:58.990-03:00 level=INFO msg=http_request request_id=c663b88cceaa8915703792e6 method=POST path=/v1/operations/start status=200 duration=24.2084ms
+time=2026-03-30T23:21:59.029-03:00 level=INFO msg=http_request request_id=e59206d74d3628654aeb7a69 method=POST path=/v1/operations/finish status=200 duration=31.9828ms
+time=2026-03-30T23:21:59.058-03:00 level=INFO msg=http_request request_id=00de940c5873dc959e8b7093 method=GET path=/v1/operations/snapshot status=200 duration=8.8153ms

@@ -1,0 +1,55 @@
+id: consultant-smoke
+name: Consultor Smoke
+description: Verifica dashboard individual do consultor, selector, metricas e simulador.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina do consultor
+    path: /consultor
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /consultor
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel do consultor carregado
+    testid: consultant-panel
+
+  - action: expect_visible
+    name: Valida selector de consultor visivel
+    testid: consultant-selector
+
+  - action: expect_visible
+    name: Valida cards de metricas visiveis
+    testid: consultant-metrics
+
+  - action: expect_visible
+    name: Valida barra de progresso de meta
+    testid: consultant-progress
+
+  - action: expect_visible
+    name: Valida simulador de fechamento visivel
+    testid: consultant-simulator
+
+  - action: fill
+    name: Preenche valor no simulador
+    testid: consultant-simulator-input
+    value: 1000
+
+  - action: screenshot
+    name: Captura screenshot com simulacao
+    value: consultant-smoke-sim.png
+
+  - action: fill
+    name: Zera valor do simulador
+    testid: consultant-simulator-input
+    value: 0
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: consultant-smoke-final.png

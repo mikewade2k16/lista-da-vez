@@ -1,0 +1,25 @@
+
+[90m[[90mnuxt[90m][39m [43m[30m WARN [39m[49m Failed to parse static properties from plugin [36mnode_modules/nuxt/dist/pages/runtime/plugins/prerender.server[39m. ENOENT: no such file or directory, open 'C:\Users\Mike\Documents\Projects\fila-atendimento\web\node_modules\nuxt\dist\pages\runtime\plugins\prerender.server'
+
+    [90mat [39masync open ([36mnode:internal/fs/promises:642:25[39m)
+    [90mat [39masync Object.readFile ([36mnode:internal/fs/promises:1279:14[39m)
+    [90mat [39masync annotatePlugins ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:8217:44[39m)
+    [90mat [39masync Object.getContents ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:7563:27[39m)
+    [90mat [39masync processTemplate ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:8075:22[39m)
+    [90mat [39masync Promise.allSettled ([36mindex 2[39m)
+    [90mat [39masync generateApp ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:8101:3[39m)
+    [90mat [39masync _applyPromised ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/perfect-debounce/dist/index.mjs:85:9[39m)
+
+
+[90m[[90mnuxt[90m][39m [43m[30m WARN [39m[49m Failed to parse static properties from plugin [36mnode_modules/nuxt/dist/pages/runtime/plugins/prerender.server[39m. ENOENT: no such file or directory, open 'C:\Users\Mike\Documents\Projects\fila-atendimento\web\node_modules\nuxt\dist\pages\runtime\plugins\prerender.server'
+
+    [90mat [39masync open ([36mnode:internal/fs/promises:642:25[39m)
+    [90mat [39masync Object.readFile ([36mnode:internal/fs/promises:1279:14[39m)
+    [90mat [39masync annotatePlugins ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:8217:44[39m)
+    [90mat [39masync Object.getContents ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:7593:26[39m)
+    [90mat [39masync processTemplate ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:8075:22[39m)
+    [90mat [39masync Promise.allSettled ([36mindex 1[39m)
+    [90mat [39masync generateApp ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/nuxt/dist/index.mjs:8101:3[39m)
+    [90mat [39masync _applyPromised ([36m/C:/Users/Mike/Documents/Projects/fila-atendimento/web/node_modules/perfect-debounce/dist/index.mjs:85:9[39m)
+
+^C

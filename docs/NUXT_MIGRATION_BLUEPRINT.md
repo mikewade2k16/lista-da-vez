@@ -66,13 +66,13 @@ Objetivo: este documento descreve **todo o comportamento funcional e tecnico** i
 
 ## 2. Arquitetura atual (MVP)
 
-- UI renderizada por funcoes puras em `src/components` e `src/pages`.
-- Estado centralizado em `src/store/app-store.js`.
-- Persistencia em `localStorage` via `src/services/queue-service.js`.
-- Exportacao de relatorios em `src/services/report-export.js`.
-- Regras analiticas em `src/utils/admin-metrics.js`.
-- Regras de campanhas em `src/utils/campaigns.js`.
-- Filtros de relatorio em `src/utils/reports.js`.
+- UI agora renderizada por paginas, layouts e componentes Vue em `web/app/`.
+- Estado centralizado por stores de dominio + runtime em `web/app/stores/`.
+- `auth`, `consultores` e `settings` ja usam API real; a operacao ainda roda em memoria via `web/app/stores/app-runtime.ts`.
+- Exportacao de relatorios em `web/app/utils/report-export.ts`.
+- Regras analiticas em `web/app/domain/utils/admin-metrics.ts`.
+- Regras de campanhas em `web/app/domain/utils/campaigns.ts`.
+- Filtros de relatorio em `web/app/domain/utils/reports.ts`.
 
 ## 3. Contrato de estado (store)
 
@@ -155,12 +155,11 @@ type StoreScopedState = {
 
 ## 4.1 Bootstrap
 
-1. `createAppStore()` cria estado vazio.
-2. `loadQueueState()` tenta carregar `localStorage`.
-3. `store.hydrate(initialState)` normaliza schema e ativa loja/perfil/workspace.
-4. `store.subscribe(renderApp)` renderiza UI a cada mutacao.
-5. `store.subscribe(saveQueueState)` persiste cada mutacao.
-6. `setInterval(1000)` atualiza telas com timers ao vivo (`operacao`, `dados`, `inteligencia`, `multiloja`).
+1. o Nuxt sobe o shell autenticado.
+2. `auth` carrega sessao e contexto remoto.
+3. `consultants` e `settings` hidratam a loja ativa pela API.
+4. `app-runtime` inicializa a operacao em memoria para a loja ativa.
+5. `setInterval(1000)` atualiza telas com timers ao vivo (`operacao`, `dados`, `inteligencia`, `multiloja`).
 
 ## 4.2 Multi-loja (troca de contexto)
 
@@ -400,25 +399,16 @@ Lista central no `main.js`:
 - `update-campaign`
 - `finish-service-form`
 
-## 9. Persistencia local (localStorage)
+## 9. Persistencia atual
 
-Chave: `nexo-queue-state`.
-
-Campos persistidos:
-
-- metadados de app e perfil
-- stores, activeStoreId, storeSnapshots
-- workspace
-- filtros de relatorio
-- campanhas
-- estado operacional da loja ativa (espelho)
-- configuracoes, catalogo, opcoes
-- historico e sessoes
-
-Compatibilidade:
-
-- normalizacao para entradas antigas
-- `configSchemaVersion` atual: `4`
+- `auth`, `tenants`, `stores`, `consultores` e `settings` ja persistem no backend Go + PostgreSQL.
+- `settings` agora gravam por secao:
+  - `PATCH /v1/settings/operation`
+  - `PATCH /v1/settings/modal`
+  - `PUT /v1/settings/options/{group}`
+  - `PUT /v1/settings/products`
+- a operacao ainda nao usa backend como fonte de verdade; enquanto o modulo `operations` nao entra, ela permanece apenas em memoria no frontend.
+- `localStorage` deixou de ser a origem principal do app e nao existe mais no codigo ativo de `web/app`.
 
 ## 10. Mapa de permissao
 
@@ -481,16 +471,10 @@ app/
 
 ## 11.4 Persistencia na migracao
 
-Fase 1 Nuxt (sem backend):
+Fase atual:
 
-- replicar `loadQueueState`/`saveQueueState` no client.
-- manter schema version e normalizacao.
-
-Fase 2 Nuxt (com backend):
-
-- manter contrato dos payloads do store.
-- trocar somente a origem (API) em `services/api`.
-- manter fallback local para modo offline/teste.
+- `auth`, `consultores` e `settings` ja estao ligados na API real.
+- a proxima troca estrutural e o modulo `operations`, que vai substituir o runtime em memoria por snapshot + comandos HTTP.
 
 ## 11.5 Exportacao de relatorio
 
@@ -499,8 +483,8 @@ Fase 2 Nuxt (com backend):
 
 ## 11.6 SSR e hidratacao
 
-- Store deve inicializar no client para `localStorage`.
-- Em SSR, retornar estado base e hidratar no `onMounted`.
+- Store deve inicializar de forma SSR-safe e serializavel.
+- Em SSR, retornar estado base e hidratar sessao/contexto remoto no client.
 - Evitar acessar `window` fora do client.
 
 ## 12. Checklist de aceite para migracao
@@ -513,24 +497,23 @@ Fase 2 Nuxt (com backend):
 - Multi-loja preservando snapshots ao trocar de loja.
 - Permissoes por perfil restringindo workspaces corretamente.
 - Timers ao vivo atualizando nos workspaces esperados.
-- Persistencia local recuperando estado apos reload.
+- Persistencia remota de auth/consultores/settings consistente entre janelas e apos reload.
 
 ## 13. Itens ainda fora do escopo (nao implementados)
 
-- Backend de persistencia (estado ainda localStorage).
-- Login/autenticacao real.
+- Backend de persistencia para `operations` (fila, atendimento ativo, historico).
 - API real de produtos (catalogo ainda mock).
 
 ## 14. Referencias de codigo
 
-- Estado e regras: `src/store/app-store.js`
-- Bootstrap/eventos globais: `src/main.js`
-- Persistencia: `src/services/queue-service.js`
-- Regras de metricas: `src/utils/admin-metrics.js`
-- Regras de campanhas: `src/utils/campaigns.js`
-- Filtros de relatorio: `src/utils/reports.js`
-- Exportacao: `src/services/report-export.js`
-- Tela consolidada multi-loja: `src/components/admin-multistore.js`
+- Estado e regras: `web/app/stores/dashboard/runtime/create-dashboard-runtime.ts`
+- Store Nuxt/Pinia: `web/app/stores/dashboard.ts`
+- Runtime operacional em memoria: `web/app/stores/app-runtime.ts`
+- Regras de metricas: `web/app/domain/utils/admin-metrics.ts`
+- Regras de campanhas: `web/app/domain/utils/campaigns.ts`
+- Filtros de relatorio: `web/app/domain/utils/reports.ts`
+- Exportacao: `web/app/utils/report-export.ts`
+- Tela consolidada multi-loja: `web/app/components/multistore/MultiStoreWorkspace.vue`
 
 ---
 

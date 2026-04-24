@@ -1,0 +1,29 @@
+id: data-smoke
+name: Dados Operacionais Smoke
+description: Verifica carregamento do painel de dados com inteligencia de tempo e produtos.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina de dados operacionais
+    path: /dados
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /dados
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel de dados carregado
+    testid: data-panel
+
+  - action: expect_visible
+    name: Valida secao de inteligencia de tempo
+    testid: data-time-intelligence
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: data-smoke-final.png

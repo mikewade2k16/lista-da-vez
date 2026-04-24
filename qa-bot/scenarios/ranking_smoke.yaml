@@ -1,0 +1,71 @@
+id: ranking-smoke
+name: Ranking Smoke
+description: Verifica tabelas de ranking mensal e diario, ordenacao por indicadores e painel de alertas.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina de ranking
+    path: /ranking
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /ranking
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel de ranking carregado
+    testid: ranking-panel
+
+  - action: expect_visible
+    name: Valida tabela de ranking mensal
+    testid: ranking-monthly
+
+  - action: expect_visible
+    name: Valida tabela de ranking diario
+    testid: ranking-daily
+
+  # Ordena ranking mensal por diferentes indicadores
+  - action: click
+    name: Ordena ranking mensal por Conversao
+    testid: ranking-monthly-sort-conversionRate
+
+  - action: click
+    name: Ordena ranking mensal por Ticket
+    testid: ranking-monthly-sort-ticketAverage
+
+  - action: click
+    name: Ordena ranking mensal por P.A.
+    testid: ranking-monthly-sort-paScore
+
+  - action: click
+    name: Ordena ranking mensal por Qualidade
+    testid: ranking-monthly-sort-qualityScore
+
+  - action: click
+    name: Ordena ranking mensal por Score 360
+    testid: ranking-monthly-sort-score360
+
+  - action: click
+    name: Ordena ranking mensal por Fora da vez
+    testid: ranking-monthly-sort-queueJumpServices
+
+  - action: click
+    name: Volta ordenacao mensal para Valor
+    testid: ranking-monthly-sort-soldValue
+
+  # Ordena ranking diario tambem
+  - action: click
+    name: Ordena ranking diario por Conversao
+    testid: ranking-daily-sort-conversionRate
+
+  - action: click
+    name: Volta ordenacao diaria para Valor
+    testid: ranking-daily-sort-soldValue
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: ranking-smoke-final.png

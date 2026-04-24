@@ -1,0 +1,159 @@
+name: Deploy VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Git ref para deploy
+        required: false
+        default: main
+        type: string
+      services:
+        description: Servicos para subir separados por espaco
+        required: false
+        default: api web
+        type: string
+      backup_database:
+        description: Gerar backup remoto do postgres antes do deploy
+        required: false
+        default: false
+        type: boolean
+      force_recreate:
+        description: Forcar recreate dos servicos selecionados
+        required: false
+        default: false
+        type: boolean
+      skip_smoke_tests:
+        description: Pular smoke tests publicos
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-lista-atendimento-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: 85.31.62.33
+      DEPLOY_PORT: "22"
+      DEPLOY_USER: deploy
+      DEPLOY_REMOTE_PATH: /home/deploy/lista-atendimento
+      DEPLOY_PUBLIC_BASE_URL: https://lista.whenthelightsdie.com
+    steps:
+      - name: Checkout target ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: Configure SSH access
+        env:
+          DEPLOY_VPS_SSH_KEY: ${{ secrets.DEPLOY_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$DEPLOY_VPS_SSH_KEY" ]]; then
+            echo "Secret DEPLOY_VPS_SSH_KEY ausente." >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_VPS_SSH_KEY" > ~/.ssh/deploy_vps
+          chmod 600 ~/.ssh/deploy_vps
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Backup remote database
+        if: ${{ inputs.backup_database }}
+        id: backup
+        run: |
+          set -euo pipefail
+
+          backup_file="$(ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; mkdir -p '$DEPLOY_REMOTE_PATH/backups' && cd '$DEPLOY_REMOTE_PATH' && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres sh -lc 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"' | gzip > backups/backup_\$(date +%Y%m%d_%H%M%S).sql.gz && latest=\$(ls -t backups | head -n 1) && printf '%s\\n' \"\$PWD/backups/\$latest\"")"
+
+          echo "backup_file=$backup_file" >> "$GITHUB_OUTPUT"
+
+      - name: Sync workspace to VPS
+        run: |
+          set -euo pipefail
+
+          tar -czf - \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='.env.production' \
+            --exclude='node_modules' \
+            --exclude='web/node_modules' \
+            --exclude='web/.nuxt' \
+            --exclude='web/.output' \
+            --exclude='web/dist' \
+            --exclude='back/.logs' \
+            --exclude='qa-bot/.venv' \
+            --exclude='qa-bot/artifacts' \
+            --exclude='tmp' \
+            . | ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "set -euo pipefail; mkdir -p '$DEPLOY_REMOTE_PATH' && find '$DEPLOY_REMOTE_PATH' -mindepth 1 -maxdepth 1 ! -name '.env.production' ! -name 'backups' -exec rm -rf {} + && tar -xzf - -C '$DEPLOY_REMOTE_PATH'"
+
+      - name: Validate remote compose
+        run: |
+          set -euo pipefail
+
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; cd '$DEPLOY_REMOTE_PATH' && docker compose --env-file .env.production -f docker-compose.prod.yml config"
+
+      - name: Deploy selected services
+        run: |
+          set -euo pipefail
+
+          service_args=""
+          if [[ -n "${{ inputs.services }}" ]]; then
+            service_args=" ${{ inputs.services }}"
+          fi
+
+          force_recreate=""
+          if [[ "${{ inputs.force_recreate }}" == "true" ]]; then
+            force_recreate=" --force-recreate"
+          fi
+
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; cd '$DEPLOY_REMOTE_PATH' && docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build${force_recreate}${service_args} && docker compose --env-file .env.production -f docker-compose.prod.yml ps${service_args}"
+
+      - name: Smoke tests
+        if: ${{ !inputs.skip_smoke_tests }}
+        id: smoke
+        run: |
+          set -euo pipefail
+
+          root_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL")"
+          health_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL/healthz")"
+
+          printf 'GET %s => %s\n' "$DEPLOY_PUBLIC_BASE_URL" "$root_status"
+          printf 'GET %s/healthz => %s\n' "$DEPLOY_PUBLIC_BASE_URL" "$health_status"
+
+          [[ "$root_status" == "200" ]]
+          [[ "$health_status" == "200" ]]
+
+          echo "root_status=$root_status" >> "$GITHUB_OUTPUT"
+          echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
+
+      - name: Publish summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Deploy VPS"
+            echo ""
+            echo "- Ref: `${{ inputs.git_ref }}`"
+            echo "- Services: `${{ inputs.services }}`"
+            echo "- Host: `$DEPLOY_HOST`"
+            echo "- Remote path: `$DEPLOY_REMOTE_PATH`"
+
+            if [[ "${{ inputs.backup_database }}" == "true" && -n "${{ steps.backup.outputs.backup_file }}" ]]; then
+              echo "- Backup: `${{ steps.backup.outputs.backup_file }}`"
+            fi
+
+            if [[ "${{ inputs.skip_smoke_tests }}" != "true" ]]; then
+              echo "- Smoke root: `${{ steps.smoke.outputs.root_status }}`"
+              echo "- Smoke healthz: `${{ steps.smoke.outputs.health_status }}`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

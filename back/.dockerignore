@@ -1,0 +1,11 @@
+.git
+.gitignore
+.logs
+tmp
+tmp_api_*.log
+.env
+README.md
+PLAN.md
+START_LOCAL.md
+database
+scripts

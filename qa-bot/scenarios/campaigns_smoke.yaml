@@ -1,0 +1,66 @@
+id: campaigns-smoke
+name: Campanhas Smoke
+description: Verifica carregamento, filtros por tipo, criacao de campanha e exibicao da lista.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina de campanhas
+    path: /campanhas
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /campanhas
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel principal carregado
+    testid: campaigns-panel
+
+  - action: expect_visible
+    name: Valida cards de resumo
+    testid: campaigns-summary
+
+  - action: expect_visible
+    name: Valida botoes de filtro de tipo
+    testid: campaigns-filter-todas
+
+  - action: click
+    name: Filtra somente campanhas internas
+    testid: campaigns-filter-interna
+
+  - action: click
+    name: Filtra somente campanhas comerciais
+    testid: campaigns-filter-comercial
+
+  - action: click
+    name: Volta para exibir todas as campanhas
+    testid: campaigns-filter-todas
+
+  - action: expect_visible
+    name: Valida formulario de nova campanha visivel
+    testid: campaigns-new-form
+
+  - action: fill
+    name: Preenche nome da nova campanha
+    testid: campaigns-new-name
+    value: Campanha QA Smoke
+
+  - action: click
+    name: Cria a campanha
+    testid: campaigns-new-submit
+
+  - action: expect_visible
+    name: Confirma toast de sucesso apos criar
+    testid: ui-toast-success
+
+  - action: expect_visible
+    name: Valida lista de campanhas atualizada
+    testid: campaigns-list
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: campaigns-smoke-final.png

@@ -1,0 +1,133 @@
+id: settings-smoke
+name: Configuracoes Smoke
+description: Verifica todas as abas de configuracoes, adicao de opcoes e ajuste de alertas.
+defaults:
+  timeout_ms: 8000
+  pause_after_step_ms: 150
+
+steps:
+  - action: goto
+    name: Abre pagina de configuracoes
+    path: /configuracoes
+
+  - action: clear_storage
+    name: Limpa storage para estado previsivel
+    path: /configuracoes
+    storage: both
+    reload: true
+
+  - action: expect_visible
+    name: Valida painel de configuracoes carregado
+    testid: settings-panel
+
+  # Aba Operacao (ativa por padrao)
+  - action: expect_visible
+    name: Valida aba Operacao ativa por padrao
+    testid: settings-tab-operacao
+
+  - action: click
+    name: Navega para aba Modal
+    testid: settings-tab-modal
+
+  - action: click
+    name: Navega para aba Produtos
+    testid: settings-tab-produtos
+
+  - action: click
+    name: Navega para aba Consultores
+    testid: settings-tab-consultores
+
+  # Aba Motivos — adicionar e validar duplicidade
+  - action: click
+    name: Navega para aba Motivos
+    testid: settings-tab-motivos
+
+  - action: expect_visible
+    name: Valida input de adicionar motivo
+    testid: settings-motivos-add-input
+
+  - action: fill
+    name: Preenche novo motivo
+    testid: settings-motivos-add-input
+    value: Motivo QA Smoke
+
+  - action: click
+    name: Adiciona o novo motivo
+    testid: settings-motivos-add-btn
+
+  - action: expect_visible
+    name: Confirma toast de sucesso ou ausencia de erro
+    testid: ui-toast-success
+
+  # Testa duplicidade: mesmo nome deve ser bloqueado
+  - action: fill
+    name: Tenta adicionar motivo duplicado
+    testid: settings-motivos-add-input
+    value: Motivo QA Smoke
+
+  - action: click
+    name: Tenta enviar duplicado
+    testid: settings-motivos-add-btn
+
+  # Aba Fora da vez
+  - action: click
+    name: Navega para aba Fora da vez
+    testid: settings-tab-motivos-fora-da-vez
+
+  - action: expect_visible
+    name: Valida input de adicionar motivo fora da vez
+    testid: settings-fora-da-vez-add-input
+
+  - action: fill
+    name: Preenche novo motivo fora da vez
+    testid: settings-fora-da-vez-add-input
+    value: Motivo fora da vez QA Smoke
+
+  - action: click
+    name: Adiciona o novo motivo fora da vez
+    testid: settings-fora-da-vez-add-btn
+
+  # Aba Origens
+  - action: click
+    name: Navega para aba Origens
+    testid: settings-tab-origens
+
+  - action: expect_visible
+    name: Valida input de adicionar origem
+    testid: settings-origens-add-input
+
+  - action: fill
+    name: Preenche nova origem
+    testid: settings-origens-add-input
+    value: Origem QA Smoke
+
+  - action: click
+    name: Adiciona a nova origem
+    testid: settings-origens-add-btn
+
+  # Aba Profissoes
+  - action: click
+    name: Navega para aba Profissoes
+    testid: settings-tab-profissoes
+
+  - action: expect_visible
+    name: Valida input de adicionar profissao
+    testid: settings-profissoes-add-input
+
+  - action: fill
+    name: Preenche nova profissao
+    testid: settings-profissoes-add-input
+    value: Profissao QA Smoke
+
+  - action: click
+    name: Adiciona a nova profissao
+    testid: settings-profissoes-add-btn
+
+  # Aba Alertas
+  - action: click
+    name: Navega para aba Alertas
+    testid: settings-tab-alertas
+
+  - action: screenshot
+    name: Captura screenshot final
+    value: settings-smoke-final.png

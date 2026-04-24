@@ -1,0 +1,74 @@
+.shell {
+  min-height: 100vh;
+  padding: 0;
+}
+
+.app-surface {
+  width: 100%;
+}
+
+.app-surface--loading {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+}
+
+.workspace {
+  width: min(100%, 1300px);
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.workspace-host {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.workspace-host > .queue-grid,
+.workspace-host > .admin-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.workspace__intro {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.workspace__title {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.workspace__text {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.queue-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0;
+  }
+
+  .queue-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    padding: 12px;
+  }
+}

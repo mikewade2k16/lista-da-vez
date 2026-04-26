@@ -31,6 +31,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  allowNoneDetails: {
+    type: Boolean,
+    default: false
+  },
   noneSelected: {
     type: Boolean,
     default: false
@@ -126,6 +130,7 @@ const customCode = ref("");
 const itemDetailEditorId = ref("");
 const itemDetailDraft = ref("");
 const SHARED_DETAIL_KEY = "__shared__";
+const NONE_DETAIL_KEY = "__none__";
 
 const isClosedMode = computed(() => props.mode === "closed");
 const isSharedDetailMode = computed(() => props.itemDetailMode !== "per-item");
@@ -138,6 +143,15 @@ const normalizedItemDetails = computed(() =>
   props.itemDetails && typeof props.itemDetails === "object" ? props.itemDetails : {}
 );
 const selectedCount = computed(() => normalizedSelectedItems.value.length);
+const hasVisualSelection = computed(() => selectedCount.value > 0 || props.noneSelected);
+const canEditSharedDetail = computed(() =>
+  props.enableItemDetails
+  && isSharedDetailMode.value
+  && (
+    (selectedCount.value > 0 && !props.noneSelected)
+    || (props.allowNoneDetails && props.noneSelected && selectedCount.value === 0)
+  )
+);
 const total = computed(() =>
   normalizedSelectedItems.value.reduce((sum, item) => sum + (Number(item.price) || 0), 0)
 );
@@ -147,6 +161,10 @@ const activeDetailItem = computed(() =>
     : normalizedSelectedItems.value.find((item) => item.id === itemDetailEditorId.value) || null
 );
 const sharedDetailValue = computed(() => {
+  if (props.noneSelected && selectedCount.value === 0) {
+    return String(normalizedItemDetails.value?.[NONE_DETAIL_KEY] || "").trim();
+  }
+
   const detailValues = normalizedSelectedItems.value
     .map((item) => String(normalizedItemDetails.value?.[item.id] || "").trim())
     .filter(Boolean);
@@ -161,6 +179,10 @@ const hasSharedDetail = computed(() => sharedDetailValue.value.length > 0);
 const isSharedDetailEditorOpen = computed(() => itemDetailEditorId.value === SHARED_DETAIL_KEY);
 const activeDetailTitle = computed(() => {
   if (isSharedDetailMode.value) {
+    if (props.noneSelected && selectedCount.value === 0) {
+      return props.noneStateLabel || props.noneLabel || props.itemDetailLabel;
+    }
+
     if (selectedCount.value === 1) {
       return normalizedSelectedItems.value[0]?.label || props.itemDetailLabel;
     }
@@ -257,6 +279,11 @@ function emitItemDetails(nextDetails) {
 }
 
 function buildFilteredItemDetails(selectedItems = [], details = normalizedItemDetails.value) {
+  if (props.noneSelected && (!Array.isArray(selectedItems) || selectedItems.length === 0)) {
+    const noneDetail = String(details?.[NONE_DETAIL_KEY] || "").trim();
+    return noneDetail ? { [NONE_DETAIL_KEY]: noneDetail } : {};
+  }
+
   return Object.fromEntries(
     (Array.isArray(selectedItems) ? selectedItems : [])
       .map((item) => String(item?.id || "").trim())
@@ -325,12 +352,14 @@ function toggleNone() {
 
   if (props.noneSelected) {
     emit("update:noneSelected", false);
+    emitItemDetails({});
+    closeItemDetailEditor();
     return;
   }
 
   emitSelectedItems([]);
   emit("update:noneSelected", true);
-  syncItemDetails([]);
+  emitItemDetails({});
   closeItemDetailEditor();
   closeDropdown();
 }
@@ -431,13 +460,21 @@ function saveItemDetail() {
   const trimmedDetail = itemDetailDraft.value.trim();
 
   if (isSharedDetailMode.value) {
-    normalizedSelectedItems.value.forEach((item) => {
+    if (props.noneSelected && selectedCount.value === 0) {
       if (trimmedDetail) {
-        nextDetails[item.id] = trimmedDetail;
+        nextDetails[NONE_DETAIL_KEY] = trimmedDetail;
       } else {
-        delete nextDetails[item.id];
+        delete nextDetails[NONE_DETAIL_KEY];
       }
-    });
+    } else {
+      normalizedSelectedItems.value.forEach((item) => {
+        if (trimmedDetail) {
+          nextDetails[item.id] = trimmedDetail;
+        } else {
+          delete nextDetails[item.id];
+        }
+      });
+    }
   } else {
     const itemId = String(itemDetailEditorId.value || "").trim();
 
@@ -468,7 +505,7 @@ function handleEscape(event) {
 }
 
 watch(() => normalizedSelectedItems.value.map((item) => item.id), (nextIds) => {
-  if (!nextIds.length) {
+  if (!nextIds.length && !props.noneSelected) {
     closeItemDetailEditor();
     return;
   }
@@ -489,7 +526,7 @@ watch(() => props.enableItemDetails, (nextValue) => {
 });
 
 watch(() => props.noneSelected, (nextValue) => {
-  if (nextValue) {
+  if (!nextValue) {
     closeItemDetailEditor();
   }
 });
@@ -516,7 +553,7 @@ onBeforeUnmount(() => {
       </div>
 
       <button
-        v-if="selectedCount > 0 && !noneSelected"
+        v-if="hasVisualSelection"
         class="product-pick__add-btn product-pick__add-btn--header"
         :class="{ 'is-open': dropdownOpen }"
         type="button"
@@ -531,11 +568,11 @@ onBeforeUnmount(() => {
     <div ref="containerRef" class="product-pick">
       <div class="product-pick__inline-row">
         <button
-          v-if="selectedCount === 0"
+          v-if="!hasVisualSelection"
           class="product-pick__add-btn"
           :class="{
             'is-open': dropdownOpen,
-            'product-pick__add-btn--empty': selectedCount === 0
+            'product-pick__add-btn--empty': !hasVisualSelection
           }"
           type="button"
           :aria-expanded="dropdownOpen ? 'true' : 'false'"
@@ -547,9 +584,8 @@ onBeforeUnmount(() => {
         </button>
 
         <button
-          v-if="allowNone && useInlineNoneAction && selectedCount === 0"
+          v-if="allowNone && useInlineNoneAction && !hasVisualSelection"
           class="product-pick__none-btn product-pick__none-btn--icon"
-          :class="{ 'is-active': noneSelected }"
           type="button"
           :title="noneLabel"
           :aria-label="noneLabel"
@@ -559,8 +595,19 @@ onBeforeUnmount(() => {
           <span class="material-icons-round">do_not_disturb_on</span>
         </button>
 
-        <span v-if="noneSelected && selectedCount === 0" class="product-pick__tag product-pick__tag--muted">
-          {{ noneStateLabel || noneLabel }}
+        <span v-if="noneSelected && selectedCount === 0" class="product-pick__tag">
+          <span class="product-pick__tag-content">
+            <span class="product-pick__tag-label">{{ noneStateLabel || noneLabel }}</span>
+          </span>
+          <button
+            type="button"
+            class="product-pick__tag-remove"
+            title="Remover"
+            :data-testid="testidPrefix ? `${testidPrefix}-none-remove` : null"
+            @click="toggleNone"
+          >
+            <span class="material-icons-round">close</span>
+          </button>
         </span>
 
         <span
@@ -598,7 +645,7 @@ onBeforeUnmount(() => {
         </span>
 
         <button
-          v-if="enableItemDetails && isSharedDetailMode && selectedCount > 0 && !noneSelected"
+          v-if="canEditSharedDetail"
           type="button"
           class="product-pick__shared-detail-btn"
           :class="{ 'is-filled': hasSharedDetail, 'is-open': isSharedDetailEditorOpen }"

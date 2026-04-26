@@ -45,6 +45,7 @@ const modalFieldSections = [
       {
         id: "customer-name",
         label: "Nome do cliente",
+        labelKey: "customerNameLabel",
         description: "Campo de texto exibido no topo da secao de cliente.",
         showKey: "showCustomerNameField",
         requiredKey: "requireCustomerNameField",
@@ -54,6 +55,7 @@ const modalFieldSections = [
       {
         id: "customer-phone",
         label: "Telefone",
+        labelKey: "customerPhoneLabel",
         description: "Usado para contato e reaproveitamento do atendimento.",
         showKey: "showCustomerPhoneField",
         requiredKey: "requireCustomerPhoneField",
@@ -62,7 +64,8 @@ const modalFieldSections = [
       },
       {
         id: "customer-email",
-        label: "Email",
+        label: "E-mail",
+        labelKey: "customerEmailLabel",
         description: "Captura complementar para relacionamento.",
         showKey: "showEmailField",
         requiredKey: "requireEmailField",
@@ -70,7 +73,8 @@ const modalFieldSections = [
       },
       {
         id: "customer-profession",
-        label: "Profissao",
+        label: "Profissão",
+        labelKey: "customerProfessionLabel",
         description: "Usa o catalogo configurado na aba de profissoes.",
         showKey: "showProfessionField",
         requiredKey: "requireProfessionField",
@@ -78,13 +82,15 @@ const modalFieldSections = [
       },
       {
         id: "existing-customer",
-        label: "Ja era cliente",
+        label: "Já era cliente",
+        labelKey: "existingCustomerLabel",
         description: "Vai para o passo 2 para apoiar a busca automatica de cadastro do cliente.",
         showKey: "showExistingCustomerField"
       },
       {
         id: "notes",
-        label: "Observacoes",
+        label: "Observações",
+        labelKey: "notesLabel",
         description: "Campo livre para contexto adicional do atendimento.",
         showKey: "showNotesField",
         requiredKey: "requireNotesField",
@@ -101,6 +107,7 @@ const modalFieldSections = [
       {
         id: "product-closed",
         label: "Compra / Reserva",
+        labelKey: "productClosedLabel",
         description: "Aparece primeiro no passo 1 quando o desfecho for compra ou reserva.",
         showKey: "showProductClosedField",
         requiredKey: "requireProductClosedField",
@@ -110,6 +117,7 @@ const modalFieldSections = [
       {
         id: "product-seen",
         label: "Interesses do cliente",
+        labelKey: "productSeenLabel",
         description: "Aparece no passo 1 para mapear os interesses vistos ou desejados.",
         showKey: "showProductSeenField",
         requiredKey: "requireProductSeenField",
@@ -118,7 +126,8 @@ const modalFieldSections = [
       },
       {
         id: "product-seen-notes",
-        label: "Detalhes dos interesses",
+        label: "Observação dos interesses",
+        labelKey: "productSeenNotesLabel",
         description: "Campo complementar para contexto, referencia ou justificativa quando nao houver item.",
         showKey: "showProductSeenNotesField",
         requiredKey: "requireProductSeenNotesField",
@@ -127,6 +136,7 @@ const modalFieldSections = [
       {
         id: "visit-reason",
         label: "Motivo da visita",
+        labelKey: "visitReasonLabel",
         description: "Ajuda a entender a intencao do cliente na chegada.",
         showKey: "showVisitReasonField",
         requiredKey: "requireVisitReason",
@@ -135,6 +145,7 @@ const modalFieldSections = [
       {
         id: "customer-source",
         label: "Origem do cliente",
+        labelKey: "customerSourceLabel",
         description: "Relaciona o atendimento ao canal de entrada.",
         showKey: "showCustomerSourceField",
         requiredKey: "requireCustomerSource",
@@ -151,6 +162,7 @@ const modalFieldSections = [
       {
         id: "queue-jump-reason",
         label: "Motivo fora da vez",
+        labelKey: "queueJumpReasonLabel",
         description: "Exibido quando o atendimento comeca fora da fila.",
         showKey: "showQueueJumpReasonField",
         requiredKey: "requireQueueJumpReasonField",
@@ -159,6 +171,7 @@ const modalFieldSections = [
       {
         id: "loss-reason",
         label: "Motivo da perda",
+        labelKey: "lossReasonLabel",
         description: "Exibido quando o desfecho for nao compra.",
         showKey: "showLossReasonField",
         requiredKey: "requireLossReasonField",
@@ -196,8 +209,8 @@ const modalTextSections = [
     description: "Textos auxiliares de observacoes, perda e fora da vez.",
     defaultOpen: false,
     fields: [
-      { key: "notesLabel", label: "Label observacoes" },
-      { key: "notesPlaceholder", label: "Placeholder observacoes" },
+      { key: "notesLabel", label: "Label observações" },
+      { key: "notesPlaceholder", label: "Placeholder observações" },
       { key: "queueJumpReasonLabel", label: "Label motivo fora da vez" },
       { key: "queueJumpReasonPlaceholder", label: "Placeholder motivo fora da vez" },
       { key: "lossReasonLabel", label: "Label motivo da perda" },
@@ -262,6 +275,15 @@ async function updateModalConfigNumberValue(configKey, value, minimum = 0) {
   return updateModalConfigValue(configKey, normalizedValue);
 }
 
+function getModalTextValue(configKey, fallback = "") {
+  if (!configKey) {
+    return fallback;
+  }
+
+  const configuredValue = String(modalConfigState.value?.[configKey] || "").trim();
+  return configuredValue || fallback;
+}
+
 function getModalBooleanValue(configKey, fallback = false, legacyConfigKey = "") {
   const directValue = modalConfigState.value?.[configKey];
 
@@ -306,6 +328,15 @@ async function handleModalFieldRequiredChange(field, nextValue) {
   }
 
   await updateModalConfigValue(field.requiredKey, nextValue);
+}
+
+async function handleModalFieldLabelChange(field, value) {
+  if (!field.labelKey) {
+    return;
+  }
+
+  const normalizedValue = String(value || "").trim();
+  await updateModalConfigValue(field.labelKey, normalizedValue || field.label);
 }
 
 function getModalFieldSectionSummary(section) {
@@ -604,7 +635,15 @@ async function archiveConsultant(consultantId) {
                 class="settings-modal-field-row"
               >
                 <div class="settings-modal-field-row__copy">
-                  <strong class="settings-modal-field-row__title">{{ field.label }}</strong>
+                  <input
+                    v-if="field.labelKey"
+                    class="settings-modal-field-row__title-input"
+                    :value="getModalTextValue(field.labelKey, field.label)"
+                    type="text"
+                    :disabled="!canEditSettings"
+                    @change="handleModalFieldLabelChange(field, $event.target.value)"
+                  >
+                  <strong v-else class="settings-modal-field-row__title">{{ field.label }}</strong>
                   <span class="settings-modal-field-row__hint">{{ field.description }}</span>
                 </div>
 
@@ -669,7 +708,27 @@ async function archiveConsultant(consultantId) {
           </div>
 
           <label class="settings-field">
-            <span>Minimo de caracteres da justificativa</span>
+            <span>Título dos detalhes</span>
+            <input
+              :value="getModalTextValue('productSeenNotesLabel', 'Observação dos interesses')"
+              type="text"
+              :disabled="!canEditSettings || !getModalBooleanValue('showProductSeenNotesField', true)"
+              @change="updateModalConfigValue('productSeenNotesLabel', $event.target.value)"
+            >
+          </label>
+
+          <label class="settings-field">
+            <span>Placeholder dos detalhes</span>
+            <input
+              :value="getModalTextValue('productSeenNotesPlaceholder', 'Descreva referência, pedido específico, contexto do cliente ou justificativa quando não houver interesse identificado.')"
+              type="text"
+              :disabled="!canEditSettings || !getModalBooleanValue('showProductSeenNotesField', true)"
+              @change="updateModalConfigValue('productSeenNotesPlaceholder', $event.target.value)"
+            >
+          </label>
+
+          <label class="settings-field">
+            <span>Mínimo de caracteres da justificativa</span>
             <input
               :value="Number(modalConfigState.productSeenNotesMinChars || 20)"
               type="number"

@@ -15,6 +15,7 @@ const operationsStore = useOperationsStore();
 const ui = useUiStore();
 const FINISH_MODAL_DRAFT_STORAGE_KEY = "ldv_finish_modal_drafts_v1";
 const FINISH_MODAL_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+const PRODUCT_SEEN_NONE_DETAIL_KEY = "__none__";
 
 function readDraftStorage() {
   if (import.meta.server) {
@@ -395,21 +396,57 @@ const hasRestoredDraft = computed(() =>
 );
 const isClosedOutcome = computed(() => form.outcome === "compra" || form.outcome === "reserva");
 const trimmedProductSeenNotes = computed(() => String(form.productSeenNotes || "").trim());
-const isProductSeenNotesRequired = computed(() =>
-  showProductSeenNotesField.value && (
-    requireProductSeenNotesField.value
-    || (allowProductSeenNone.value && form.productsSeenNone && requireProductSeenNotesWhenNone.value)
+const productSeenNotesLabel = computed(() => resolveModalText(modalConfig.value.productSeenNotesLabel, "Observação dos interesses"));
+const productSeenNotesPlaceholder = computed(() =>
+  resolveModalText(
+    modalConfig.value.productSeenNotesPlaceholder,
+    "Descreva referência, pedido específico, contexto do cliente ou justificativa quando não houver interesse identificado."
   )
+);
+const canUseProductSeenNotes = computed(() =>
+  showProductSeenField.value
+  && showProductSeenNotesField.value
+  && (
+    form.productsSeen.length > 0
+    || (allowProductSeenNone.value && form.productsSeenNone)
+  )
+);
+const isProductSeenNoneSelected = computed(() =>
+  showProductSeenField.value
+  && showProductSeenNotesField.value
+  && allowProductSeenNone.value
+  && form.productsSeenNone
+  && form.productsSeen.length === 0
+);
+const productSeenNotesForPayload = computed(() =>
+  canUseProductSeenNotes.value ? trimmedProductSeenNotes.value : ""
+);
+const isProductSeenNotesRequired = computed(() =>
+  isProductSeenNoneSelected.value && (requireProductSeenNotesField.value || requireProductSeenNotesWhenNone.value)
 );
 const isProductSeenNotesValid = computed(() =>
   !isProductSeenNotesRequired.value || trimmedProductSeenNotes.value.length >= productSeenNotesMinChars.value
 );
 const productSeenNotesHelperText = computed(() => {
-  if (form.productsSeenNone) {
-    return `Quando nao houver interesse selecionado, explique o contexto com pelo menos ${productSeenNotesMinChars.value} caracteres.`;
+  if (isProductSeenNotesRequired.value) {
+    return `Obrigatório quando nenhum interesse for identificado. Informe pelo menos ${productSeenNotesMinChars.value} caracteres.`;
   }
 
-  return "Use este campo para detalhar referencia, gosto, pedido especial ou algo que ainda nao existe em loja.";
+  return "Use este campo para detalhar referência, gosto, pedido especial ou algo que ainda não existe em loja.";
+});
+const productSeenDetailMap = computed(() => {
+  const note = trimmedProductSeenNotes.value;
+
+  if (!canUseProductSeenNotes.value || isProductSeenNoneSelected.value || !note) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    normalizeProducts(form.productsSeen)
+      .map((item) => String(item.id || "").trim())
+      .filter(Boolean)
+      .map((itemId) => [itemId, note])
+  );
 });
 const closedProductLabel = computed(() => {
   const configuredLabel = String(modalConfig.value.productClosedLabel || "").trim();
@@ -599,6 +636,19 @@ const selectedLossReasonLabels = computed(() =>
 );
 const selectedLossReasonLabel = computed(() => selectedLossReasonLabels.value[0] || "");
 const selectedLossReasonSummary = computed(() => selectedLossReasonLabels.value.join(", "));
+const modalTitle = computed(() => resolveModalText(modalConfig.value.title, "Fechar atendimento"));
+const productSeenLabel = computed(() => resolveModalText(modalConfig.value.productSeenLabel, "Interesses do cliente"));
+const productSeenPlaceholder = computed(() => resolveModalText(modalConfig.value.productSeenPlaceholder, "Busque e selecione interesses"));
+const customerSectionLabel = computed(() => resolveModalText(modalConfig.value.customerSectionLabel, "Dados do cliente"));
+const customerNameLabel = computed(() => resolveModalText(modalConfig.value.customerNameLabel, "Nome do cliente"));
+const customerPhoneLabel = computed(() => resolveModalText(modalConfig.value.customerPhoneLabel, "Telefone"));
+const customerEmailLabel = computed(() => resolveModalText(modalConfig.value.customerEmailLabel, "E-mail"));
+const customerProfessionLabel = computed(() => resolveModalText(modalConfig.value.customerProfessionLabel, "Profissão"));
+const existingCustomerLabel = computed(() => resolveModalText(modalConfig.value.existingCustomerLabel, "Já era cliente"));
+const visitReasonLabel = computed(() => resolveModalText(modalConfig.value.visitReasonLabel, "Motivo da visita"));
+const customerSourceLabel = computed(() => resolveModalText(modalConfig.value.customerSourceLabel, "Origem do cliente"));
+const notesLabel = computed(() => resolveModalText(modalConfig.value.notesLabel, "Observações"));
+const notesPlaceholder = computed(() => resolveModalText(modalConfig.value.notesPlaceholder, "Detalhes adicionais do atendimento"));
 const queueJumpReasonLabel = computed(() => resolveModalText(modalConfig.value.queueJumpReasonLabel, "Motivo do atendimento fora da vez"));
 const queueJumpReasonPlaceholder = computed(() => resolveModalText(modalConfig.value.queueJumpReasonPlaceholder, "Busque e selecione o motivo fora da vez"));
 const lossReasonLabel = computed(() => resolveModalText(modalConfig.value.lossReasonLabel, "Motivo da perda"));
@@ -647,7 +697,7 @@ function buildDraftPayload() {
     productsSeen: normalizeProducts(form.productsSeen),
     productsClosed: normalizeProducts(form.productsClosed),
     productsSeenNone: form.productsSeenNone,
-    productSeenNotes: form.productSeenNotes,
+    productSeenNotes: productSeenNotesForPayload.value,
     customerName: form.customerName,
     customerPhone: form.customerPhone,
     customerEmail: form.customerEmail,
@@ -762,12 +812,54 @@ function registerCustomProducts(items = []) {
 
 function updateProductsSeen(items) {
   const nextItems = normalizeProducts(items);
+  const wasNoneSelected = form.productsSeenNone;
   registerCustomProducts(nextItems);
   form.productsSeen = nextItems;
 
   if (nextItems.length > 0) {
     form.productsSeenNone = false;
+    if (wasNoneSelected) {
+      form.productSeenNotes = "";
+    }
+    return;
   }
+
+  form.productSeenNotes = "";
+}
+
+function updateProductsSeenNone(nextValue) {
+  const normalizedValue = Boolean(nextValue);
+
+  if (form.productsSeenNone === normalizedValue) {
+    return;
+  }
+
+  form.productsSeenNone = normalizedValue;
+
+  if (normalizedValue) {
+    form.productsSeen = [];
+    form.productSeenNotes = "";
+    return;
+  }
+
+  form.productSeenNotes = "";
+}
+
+function updateProductSeenDetails(details = {}) {
+  const normalizedDetails = details && typeof details === "object" ? details : {};
+
+  if (isProductSeenNoneSelected.value) {
+    form.productSeenNotes = String(normalizedDetails[PRODUCT_SEEN_NONE_DETAIL_KEY] || "").trim();
+    return;
+  }
+
+  const selectedProductIds = normalizeProducts(form.productsSeen)
+    .map((item) => String(item.id || "").trim())
+    .filter(Boolean);
+
+  form.productSeenNotes = selectedProductIds
+    .map((itemId) => String(normalizedDetails[itemId] || "").trim())
+    .find(Boolean) || "";
 }
 
 function updateProductsClosed(items) {
@@ -806,6 +898,10 @@ function normalizeFormForModalConfig() {
 
   if (form.productsSeen.length) {
     form.productsSeenNone = false;
+  }
+
+  if (!canUseProductSeenNotes.value) {
+    form.productSeenNotes = "";
   }
 
   if (form.visitReasonIds.length) {
@@ -905,7 +1001,7 @@ async function submitForm() {
   }
 
   if (showEmailField.value && requireEmailField.value && !form.customerEmail.trim()) {
-    await ui.alert("Email do cliente e obrigatorio.");
+    await ui.alert("E-mail do cliente é obrigatório.");
     return;
   }
 
@@ -920,7 +1016,7 @@ async function submitForm() {
   }
 
   if (showNotesField.value && requireNotesField.value && !form.notes.trim()) {
-    await ui.alert("Observacoes sao obrigatorias para concluir o atendimento.");
+    await ui.alert("Observações são obrigatórias para concluir o atendimento.");
     return;
   }
 
@@ -947,16 +1043,17 @@ async function submitForm() {
   const currentService = service.value;
   const productSeenSummary = [
     form.productsSeen.length ? form.productsSeen.map((item) => item.name).filter(Boolean).join(", ") : "",
-    trimmedProductSeenNotes.value
+    form.productsSeenNone ? "Nenhum interesse identificado" : "",
+    productSeenNotesForPayload.value
   ].filter(Boolean).join(" | ");
   const result = await operationsStore.finishService(currentService.id, {
     outcome: form.outcome,
-    productSeen: productSeenSummary || (form.productsSeenNone ? "Nenhum interesse identificado" : ""),
+    productSeen: productSeenSummary,
     productClosed: isClosedOutcome.value ? form.productsClosed[0]?.name || "" : "",
     productsSeen: form.productsSeen,
     productsClosed: isClosedOutcome.value ? form.productsClosed : [],
     productsSeenNone: form.productsSeenNone,
-    productSeenNotes: trimmedProductSeenNotes.value,
+    productSeenNotes: productSeenNotesForPayload.value,
     productDetails: (isClosedOutcome.value ? form.productsClosed[0]?.name : "") || productSeenSummary || "",
     customerName: form.customerName.trim(),
     customerPhone: form.customerPhone.trim(),
@@ -1120,7 +1217,7 @@ onBeforeUnmount(() => {
       >
         <div class="finish-modal__header">
           <div>
-            <h2 id="finish-modal-title" class="finish-modal__title">{{ modalConfig.title }}</h2>
+            <h2 id="finish-modal-title" class="finish-modal__title">{{ modalTitle }}</h2>
             <p class="finish-modal__subtitle">{{ service.name }} | ID {{ service.serviceId }}</p>
           </div>
           <div class="finish-modal__header-actions">
@@ -1203,6 +1300,7 @@ onBeforeUnmount(() => {
 
             <OperationProductPicker
               v-if="isClosedOutcome && showProductClosedField"
+              key="products-closed-picker"
               :label="closedProductLabel"
               :helper-text="closedProductHelperText"
               :options="productPickerOptions"
@@ -1218,35 +1316,42 @@ onBeforeUnmount(() => {
 
             <OperationProductPicker
               v-if="showProductSeenField"
-              :label="modalConfig.productSeenLabel || 'Interesses do cliente'"
+              key="products-seen-picker"
+              :label="productSeenLabel"
               helper-text=""
               :options="productPickerOptions"
               :selected-items="form.productsSeen"
               :none-selected="form.productsSeenNone"
-              :search-placeholder="modalConfig.productSeenPlaceholder || 'Busque e selecione interesses'"
+              :search-placeholder="productSeenPlaceholder"
               trigger-label="Selecionar interesse"
               empty-selected-label="Nenhum interesse selecionado"
               :allow-none="allowProductSeenNone"
               none-placement="dropdown"
               none-label="Nenhum interesse identificado"
               none-state-label="Nenhum interesse identificado"
-              allow-custom
+              :enable-item-details="showProductSeenNotesField"
+              item-detail-mode="shared"
+              :item-details="productSeenDetailMap"
+              :item-detail-label="productSeenNotesLabel"
+              :item-detail-placeholder="productSeenNotesPlaceholder"
+              item-detail-testid="operation-product-seen-notes"
               testid-prefix="operation-products-seen"
               @update:selected-items="updateProductsSeen"
-              @update:none-selected="form.productsSeenNone = $event"
+              @update:item-details="updateProductSeenDetails"
+              @update:none-selected="updateProductsSeenNone"
             />
 
-            <section v-if="showProductSeenNotesField" class="finish-form__section">
-              <label class="finish-form__label" for="finish-product-seen-notes">Detalhes dos interesses</label>
+            <section v-if="isProductSeenNoneSelected" class="finish-form__section">
+              <label class="finish-form__label" for="finish-product-seen-notes">{{ productSeenNotesLabel }}</label>
               <textarea
                 id="finish-product-seen-notes"
                 v-model="form.productSeenNotes"
                 class="finish-form__textarea"
                 rows="3"
-                placeholder="Descreva referencia, pedido especifico, contexto do cliente ou justificativa quando nao houver interesse identificado."
+                :placeholder="productSeenNotesPlaceholder"
                 data-testid="operation-product-seen-notes"
               />
-              <div class="finish-form__field-note" :class="{ 'finish-form__field-note--error': !isProductSeenNotesValid }">
+              <div class="finish-form__field-note" :class="{ 'finish-form__field-note--error': isProductSeenNotesRequired && !isProductSeenNotesValid }">
                 <span>{{ productSeenNotesHelperText }}</span>
                 <strong>{{ trimmedProductSeenNotes.length }}/{{ productSeenNotesMinChars }} caracteres</strong>
               </div>
@@ -1287,19 +1392,19 @@ onBeforeUnmount(() => {
 
           <template v-if="step === 2">
             <section v-if="showCustomerSection" class="finish-form__section">
-              <strong class="finish-form__label">{{ modalConfig.customerSectionLabel }}</strong>
+              <strong class="finish-form__label">{{ customerSectionLabel }}</strong>
             </section>
 
             <section v-if="showExistingCustomerField" class="finish-form__section finish-form__grid">
               <label class="modal-checkbox">
                 <input v-model="form.isExistingCustomer" type="checkbox">
-                <span>Ja era cliente</span>
+                <span>{{ existingCustomerLabel }}</span>
               </label>
             </section>
 
             <section class="finish-form__section finish-form__grid finish-form__grid--customer">
               <label v-if="showCustomerNameField" class="finish-form__field">
-                <span class="finish-form__label">Nome do cliente</span>
+                <span class="finish-form__label">{{ customerNameLabel }}</span>
                 <input
                   v-model="form.customerName"
                   class="finish-form__input"
@@ -1309,7 +1414,7 @@ onBeforeUnmount(() => {
                 >
               </label>
               <label v-if="showCustomerPhoneField" class="finish-form__field">
-                <span class="finish-form__label">Telefone</span>
+                <span class="finish-form__label">{{ customerPhoneLabel }}</span>
                 <input
                   v-model="form.customerPhone"
                   class="finish-form__input"
@@ -1320,12 +1425,12 @@ onBeforeUnmount(() => {
                 >
               </label>
               <label v-if="showEmailField" class="finish-form__field">
-                <span class="finish-form__label">Email</span>
+                <span class="finish-form__label">{{ customerEmailLabel }}</span>
                 <input
                   v-model="form.customerEmail"
                   class="finish-form__input"
                   type="email"
-                  placeholder="Email"
+                  placeholder="E-mail"
                   data-testid="operation-customer-email"
                 >
               </label>
@@ -1334,13 +1439,13 @@ onBeforeUnmount(() => {
             <div class="operation-modal__select-grid">
               <section v-if="showProfessionField" class="finish-form__section operation-modal__picker-cell">
                 <OperationProductPicker
-                  label="Profissao"
+                  :label="customerProfessionLabel"
                   :options="professionPickerOptions"
                   :selected-items="professionSelectedItems"
                   :multiple="false"
-                  trigger-label="Selecionar profissao"
-                  search-placeholder="Busque e selecione a profissao"
-                  empty-selected-label="Nenhuma profissao selecionada"
+                  trigger-label="Selecionar profissão"
+                  search-placeholder="Busque e selecione a profissão"
+                  empty-selected-label="Nenhuma profissão selecionada"
                   testid-prefix="operation-customer-profession"
                   @update:selected-items="updateProfessionSelectedItems"
                 />
@@ -1348,7 +1453,7 @@ onBeforeUnmount(() => {
 
               <section v-if="showVisitReasonField" class="finish-form__section operation-modal__picker-cell">
                 <OperationProductPicker
-                  label="Motivo da visita"
+                  :label="visitReasonLabel"
                   :options="visitReasonPickerOptions"
                   :selected-items="visitReasonSelectedItems"
                   :multiple="isVisitReasonMultiple"
@@ -1374,7 +1479,7 @@ onBeforeUnmount(() => {
 
               <section v-if="showCustomerSourceField" class="finish-form__section operation-modal__picker-cell">
                 <OperationProductPicker
-                  label="De onde o cliente veio"
+                  :label="customerSourceLabel"
                   :options="customerSourcePickerOptions"
                   :selected-items="customerSourceSelectedItems"
                   :multiple="isCustomerSourceMultiple"
@@ -1435,13 +1540,13 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-if="showNotesField" class="finish-form__section">
-              <label class="finish-form__label" for="finish-notes">{{ modalConfig.notesLabel }}</label>
+              <label class="finish-form__label" for="finish-notes">{{ notesLabel }}</label>
               <textarea
                 id="finish-notes"
                 v-model="form.notes"
                 class="finish-form__textarea"
                 rows="3"
-                :placeholder="modalConfig.notesPlaceholder"
+                :placeholder="notesPlaceholder"
                 data-testid="operation-notes"
               />
             </section>
@@ -1462,9 +1567,9 @@ onBeforeUnmount(() => {
                 <span v-if="showCustomerSourceField && requireCustomerSourceField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerSources }" title="Origem do cliente"></span>
                 <span v-if="form.outcome === 'nao-compra' && showLossReasonField && requireLossReasonField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.lossReason }" title="Motivo da perda"></span>
                 <span v-if="service.startMode === 'queue-jump' && showQueueJumpReasonField && requireQueueJumpReasonField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.queueJumpReason }" title="Motivo fora da vez"></span>
-                <span v-if="showEmailField && requireEmailField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerEmail }" title="Email"></span>
-                <span v-if="showProfessionField && requireProfessionField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerProfession }" title="Profissao"></span>
-                <span v-if="showNotesField && requireNotesField" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.checks.notes }" title="Observacoes"></span>
+                <span v-if="showEmailField && requireEmailField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerEmail }" title="E-mail"></span>
+                <span v-if="showProfessionField && requireProfessionField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerProfession }" title="Profissão"></span>
+                <span v-if="showNotesField && requireNotesField" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.checks.notes }" title="Observações"></span>
               </div>
               <span class="finish-form__quality-text">
                 {{ formQuality.coreFilledCount }}/{{ formQuality.coreTotal }} obrigatorios · {{ formQuality.levelLabel }}

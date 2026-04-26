@@ -2266,6 +2266,30 @@
   color: var(--text-main);
 }
 
+.settings-modal-field-row__title-input {
+  width: min(100%, 320px);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.settings-modal-field-row__title-input:hover,
+.settings-modal-field-row__title-input:focus {
+  border-color: var(--line-soft);
+  background: #121926;
+  outline: none;
+}
+
+.settings-modal-field-row__title-input:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
 .settings-modal-field-row__hint {
   max-width: 48ch;
   font-size: 0.74rem;

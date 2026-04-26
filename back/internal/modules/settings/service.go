@@ -508,6 +508,33 @@ func applyModalConfigPatch(base ModalConfig, patch ModalConfigPatch) ModalConfig
 	if patch.CustomerSectionLabel != nil {
 		base.CustomerSectionLabel = fallbackString(*patch.CustomerSectionLabel, base.CustomerSectionLabel)
 	}
+	if patch.CustomerNameLabel != nil {
+		base.CustomerNameLabel = fallbackString(*patch.CustomerNameLabel, base.CustomerNameLabel)
+	}
+	if patch.CustomerPhoneLabel != nil {
+		base.CustomerPhoneLabel = fallbackString(*patch.CustomerPhoneLabel, base.CustomerPhoneLabel)
+	}
+	if patch.CustomerEmailLabel != nil {
+		base.CustomerEmailLabel = fallbackString(*patch.CustomerEmailLabel, base.CustomerEmailLabel)
+	}
+	if patch.CustomerProfessionLabel != nil {
+		base.CustomerProfessionLabel = fallbackString(*patch.CustomerProfessionLabel, base.CustomerProfessionLabel)
+	}
+	if patch.ExistingCustomerLabel != nil {
+		base.ExistingCustomerLabel = fallbackString(*patch.ExistingCustomerLabel, base.ExistingCustomerLabel)
+	}
+	if patch.ProductSeenNotesLabel != nil {
+		base.ProductSeenNotesLabel = fallbackString(*patch.ProductSeenNotesLabel, base.ProductSeenNotesLabel)
+	}
+	if patch.ProductSeenNotesPlaceholder != nil {
+		base.ProductSeenNotesPlaceholder = fallbackString(*patch.ProductSeenNotesPlaceholder, base.ProductSeenNotesPlaceholder)
+	}
+	if patch.VisitReasonLabel != nil {
+		base.VisitReasonLabel = fallbackString(*patch.VisitReasonLabel, base.VisitReasonLabel)
+	}
+	if patch.CustomerSourceLabel != nil {
+		base.CustomerSourceLabel = fallbackString(*patch.CustomerSourceLabel, base.CustomerSourceLabel)
+	}
 	if patch.ShowCustomerNameField != nil {
 		base.ShowCustomerNameField = *patch.ShowCustomerNameField
 	}
@@ -724,6 +751,15 @@ func normalizeModalConfig(base ModalConfig, input ModalConfig) ModalConfig {
 	base.LossReasonLabel = fallbackString(input.LossReasonLabel, base.LossReasonLabel)
 	base.LossReasonPlaceholder = fallbackString(input.LossReasonPlaceholder, base.LossReasonPlaceholder)
 	base.CustomerSectionLabel = fallbackString(input.CustomerSectionLabel, base.CustomerSectionLabel)
+	base.CustomerNameLabel = fallbackString(input.CustomerNameLabel, base.CustomerNameLabel)
+	base.CustomerPhoneLabel = fallbackString(input.CustomerPhoneLabel, base.CustomerPhoneLabel)
+	base.CustomerEmailLabel = fallbackString(input.CustomerEmailLabel, base.CustomerEmailLabel)
+	base.CustomerProfessionLabel = fallbackString(input.CustomerProfessionLabel, base.CustomerProfessionLabel)
+	base.ExistingCustomerLabel = fallbackString(input.ExistingCustomerLabel, base.ExistingCustomerLabel)
+	base.ProductSeenNotesLabel = fallbackString(input.ProductSeenNotesLabel, base.ProductSeenNotesLabel)
+	base.ProductSeenNotesPlaceholder = fallbackString(input.ProductSeenNotesPlaceholder, base.ProductSeenNotesPlaceholder)
+	base.VisitReasonLabel = fallbackString(input.VisitReasonLabel, base.VisitReasonLabel)
+	base.CustomerSourceLabel = fallbackString(input.CustomerSourceLabel, base.CustomerSourceLabel)
 	base.ShowCustomerNameField = input.ShowCustomerNameField
 	base.ShowCustomerPhoneField = input.ShowCustomerPhoneField
 	base.ShowEmailField = input.ShowEmailField
@@ -765,6 +801,7 @@ func normalizeModalConfig(base ModalConfig, input ModalConfig) ModalConfig {
 
 func materializeBundleDefaults(bundle Bundle) Bundle {
 	defaults := DefaultBundle(bundle.TenantID, bundle.SelectedOperationTemplateID)
+	bundle.ModalConfig = normalizeModalConfig(defaults.ModalConfig, bundle.ModalConfig)
 
 	if len(bundle.VisitReasonOptions) == 0 {
 		bundle.VisitReasonOptions = cloneOptions(defaults.VisitReasonOptions)

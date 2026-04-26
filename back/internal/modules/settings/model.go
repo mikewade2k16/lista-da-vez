@@ -59,6 +59,15 @@ type ModalConfig struct {
 	LossReasonLabel                 string `json:"lossReasonLabel"`
 	LossReasonPlaceholder           string `json:"lossReasonPlaceholder"`
 	CustomerSectionLabel            string `json:"customerSectionLabel"`
+	CustomerNameLabel               string `json:"customerNameLabel"`
+	CustomerPhoneLabel              string `json:"customerPhoneLabel"`
+	CustomerEmailLabel              string `json:"customerEmailLabel"`
+	CustomerProfessionLabel         string `json:"customerProfessionLabel"`
+	ExistingCustomerLabel           string `json:"existingCustomerLabel"`
+	ProductSeenNotesLabel           string `json:"productSeenNotesLabel"`
+	ProductSeenNotesPlaceholder     string `json:"productSeenNotesPlaceholder"`
+	VisitReasonLabel                string `json:"visitReasonLabel"`
+	CustomerSourceLabel             string `json:"customerSourceLabel"`
 	ShowCustomerNameField           bool   `json:"showCustomerNameField"`
 	ShowCustomerPhoneField          bool   `json:"showCustomerPhoneField"`
 	ShowEmailField                  bool   `json:"showEmailField"`
@@ -110,6 +119,15 @@ type ModalConfigPatch struct {
 	LossReasonLabel                 *string `json:"lossReasonLabel,omitempty"`
 	LossReasonPlaceholder           *string `json:"lossReasonPlaceholder,omitempty"`
 	CustomerSectionLabel            *string `json:"customerSectionLabel,omitempty"`
+	CustomerNameLabel               *string `json:"customerNameLabel,omitempty"`
+	CustomerPhoneLabel              *string `json:"customerPhoneLabel,omitempty"`
+	CustomerEmailLabel              *string `json:"customerEmailLabel,omitempty"`
+	CustomerProfessionLabel         *string `json:"customerProfessionLabel,omitempty"`
+	ExistingCustomerLabel           *string `json:"existingCustomerLabel,omitempty"`
+	ProductSeenNotesLabel           *string `json:"productSeenNotesLabel,omitempty"`
+	ProductSeenNotesPlaceholder     *string `json:"productSeenNotesPlaceholder,omitempty"`
+	VisitReasonLabel                *string `json:"visitReasonLabel,omitempty"`
+	CustomerSourceLabel             *string `json:"customerSourceLabel,omitempty"`
 	ShowCustomerNameField           *bool   `json:"showCustomerNameField,omitempty"`
 	ShowCustomerPhoneField          *bool   `json:"showCustomerPhoneField,omitempty"`
 	ShowEmailField                  *bool   `json:"showEmailField,omitempty"`

@@ -30,7 +30,7 @@ func (service *Service) GetBundle(ctx context.Context, principal auth.Principal)
 		return Bundle{}, ErrForbidden
 	}
 
-	tenantID, err := service.resolveTenantID(principal)
+	tenantID, err := service.resolveTenantID(ctx, principal)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -52,7 +52,7 @@ func (service *Service) SaveBundle(ctx context.Context, principal auth.Principal
 		return MutationAck{}, ErrForbidden
 	}
 
-	tenantID, err := service.resolveTenantID(principal)
+	tenantID, err := service.resolveTenantID(ctx, principal)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -280,29 +280,29 @@ func (service *Service) DeleteProductItem(ctx context.Context, principal auth.Pr
 	return service.finalizeMutation(ctx, ack, nil)
 }
 
-// resolveTenantID extrai o tenant do principal.
-// platform_admin precisa estar com tenant resolvido por algum mecanismo externo
-// (por hora, mesma regra: o tenant vem do principal); o servico nao aceita
-// tenant arbitrario via parametro para evitar grava-lo no escopo errado.
-func (service *Service) resolveTenantID(principal auth.Principal) (string, error) {
+// resolveTenantID extrai o tenant do principal ou, para principals globais
+// como platform_admin, usa o unico tenant acessivel como fallback seguro.
+// Se houver zero ou multiplos tenants acessiveis, o escopo continua ambiguo
+// e a requisicao e recusada para evitar gravacao/leitura no tenant errado.
+func (service *Service) resolveTenantID(ctx context.Context, principal auth.Principal) (string, error) {
 	tenantID := strings.TrimSpace(principal.TenantID)
-	if tenantID == "" {
-		return "", ErrTenantRequired
+	if tenantID != "" {
+		return tenantID, nil
 	}
 
-	return tenantID, nil
+	return service.repository.ResolveDefaultTenantID(ctx, principal)
 }
 
-func (service *Service) resolveWritableTenantID(principal auth.Principal) (string, error) {
+func (service *Service) resolveWritableTenantID(ctx context.Context, principal auth.Principal) (string, error) {
 	if !canEditSettings(principal) {
 		return "", ErrForbidden
 	}
 
-	return service.resolveTenantID(principal)
+	return service.resolveTenantID(ctx, principal)
 }
 
 func (service *Service) loadWritableBundle(ctx context.Context, principal auth.Principal) (string, Bundle, error) {
-	tenantID, err := service.resolveWritableTenantID(principal)
+	tenantID, err := service.resolveWritableTenantID(ctx, principal)
 	if err != nil {
 		return "", Bundle{}, err
 	}

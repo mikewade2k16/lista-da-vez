@@ -9,6 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
 const (
@@ -51,6 +53,78 @@ func (repository *PostgresRepository) TenantExists(ctx context.Context, tenantID
 	}
 
 	return exists, nil
+}
+
+func (repository *PostgresRepository) ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error) {
+	if tenantID := strings.TrimSpace(principal.TenantID); tenantID != "" {
+		return tenantID, nil
+	}
+
+	var (
+		query string
+		args  []any
+	)
+
+	switch principal.Role {
+	case auth.RolePlatformAdmin:
+		query = `
+			select t.id::text
+			from tenants t
+			where t.is_active = true
+			order by t.name asc, t.created_at asc, t.id asc
+			limit 2;
+		`
+	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
+		query = `
+			select distinct t.id::text
+			from tenants t
+			join user_tenant_roles utr on utr.tenant_id = t.id
+			where utr.user_id = $1::uuid
+				and t.is_active = true
+			order by t.id asc
+			limit 2;
+		`
+		args = []any{principal.UserID}
+	default:
+		query = `
+			select distinct t.id::text
+			from tenants t
+			join stores s on s.tenant_id = t.id
+			join user_store_roles usr on usr.store_id = s.id
+			where usr.user_id = $1::uuid
+				and t.is_active = true
+				and s.is_active = true
+			order by t.id asc
+			limit 2;
+		`
+		args = []any{principal.UserID}
+	}
+
+	rows, err := repository.pool.Query(ctx, query, args...)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	tenantIDs := make([]string, 0, 2)
+	for rows.Next() {
+		var tenantID string
+		if err := rows.Scan(&tenantID); err != nil {
+			return "", err
+		}
+
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	if len(tenantIDs) != 1 {
+		return "", ErrTenantRequired
+	}
+
+	return tenantIDs[0], nil
 }
 
 func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID string) (Record, bool, error) {

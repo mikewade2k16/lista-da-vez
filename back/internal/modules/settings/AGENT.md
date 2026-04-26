@@ -53,7 +53,9 @@ de gravacao em settings.
 
 - leitura: qualquer usuario com acesso ao tenant
 - escrita: `owner` e `platform_admin`
-- escopo de gravacao: tenant resolvido pelo principal (`principal.TenantID`)
+- escopo de gravacao: tenant resolvido pelo principal (`principal.TenantID`) ou, para principals globais como `platform_admin`, pelo unico tenant acessivel
+- se um principal global tiver zero ou multiplos tenants acessiveis, `GET /v1/settings` e escritas de settings devem falhar por escopo ambiguo ate a UI/API enviar um tenant ativo explicito
+- regressao a evitar: `platform_admin` normalmente autentica sem `tenantId` no token; o boot do painel ainda precisa carregar `/v1/settings` quando ha exatamente um tenant acessivel
 
 ## Regra de persistencia
 

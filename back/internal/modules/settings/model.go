@@ -3,6 +3,8 @@ package settings
 import (
 	"context"
 	"time"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
 type OptionItem struct {
@@ -253,6 +255,7 @@ type Record struct {
 
 type Repository interface {
 	TenantExists(ctx context.Context, tenantID string) (bool, error)
+	ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error)
 	GetByTenant(ctx context.Context, tenantID string) (Record, bool, error)
 	Upsert(ctx context.Context, record Record) (Record, error)
 	UpsertConfig(ctx context.Context, record Record) (Record, error)

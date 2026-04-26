@@ -576,6 +576,8 @@ Checks funcionais:
 3. validar carregamento do dashboard
 4. validar uma operacao que use API autenticada
 5. validar WebSocket em operacao, se essa tela fizer parte do go-live
+6. validar no DevTools que `GET /v1/settings` retorna `200` apos login, especialmente com usuario `platform_admin`
+7. quando o release tocar settings tenant-wide, confirmar que o usuario global sem `tenantId` no token resolve o unico tenant acessivel ou falha de forma explicita quando houver multiplos tenants
 
 Checks administrativos para o primeiro bootstrap:
 

@@ -19,6 +19,7 @@
     "/^node -e \"const bcrypt = require\\('bcryptjs'\\); console\\.log\\(bcrypt\\.hashSync\\('123123456', 10\\)\\);\"$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "npm --prefix web": true
   }
 }

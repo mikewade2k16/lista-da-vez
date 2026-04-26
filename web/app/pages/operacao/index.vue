@@ -130,22 +130,11 @@ watch(
   { immediate: true }
 );
 
-async function handleScopeChange(nextScope) {
-  const normalizedScope = String(nextScope || "").trim();
-  const nextQuery = { ...route.query };
-
-  if (!canSeeIntegrated.value || normalizedScope !== "all") {
-    delete nextQuery.scope;
-  } else {
-    nextQuery.scope = "all";
+watch(scopeMode, (nextMode) => {
+  if (nextMode !== "all") {
+    integratedStoreId.value = "";
   }
-
-  await router.replace({ query: nextQuery });
-}
-
-async function handleActiveStoreChange(storeId) {
-  await auth.setActiveStore(storeId);
-}
+});
 
 function handleIntegratedStoreChange(storeId) {
   integratedStoreId.value = String(storeId || "").trim();
@@ -172,8 +161,6 @@ function handleIntegratedStoreChange(storeId) {
       :can-see-integrated="canSeeIntegrated"
       :stores="storeOptions"
       :integrated-store-id="integratedStoreId"
-      @scope-change="handleScopeChange"
-      @active-store-change="handleActiveStoreChange"
       @integrated-store-change="handleIntegratedStoreChange"
     />
   </div>

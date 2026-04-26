@@ -8,7 +8,7 @@ Esta pagina e o cockpit operacional da fila. Ela concentra a entrada de consulto
 
 - `web/app/pages/operacao/index.vue`: entrada da rota `/operacao`.
 - `web/app/features/operation/components/OperationWorkspace.vue`: composicao principal da pagina.
-- `web/app/features/operation/components/OperationScopeBar.vue`: seletor explicito de loja e de modo da operacao.
+- `web/app/features/operation/components/OperationScopeBar.vue`: barra unica que concentra aviso de campanha e filtro local da visao integrada.
 - `web/app/features/operation/components/OperationQueueColumns.vue`: coluna da fila e coluna de atendimentos em andamento.
 - `web/app/features/operation/components/OperationActiveServiceCard.vue`: card reutilizavel de atendimento ativo.
 - `web/app/features/operation/components/OperationConsultantStrip.vue`: barra inferior com todos os consultores.
@@ -49,19 +49,22 @@ Endpoints atualmente usados pela pagina:
 Arquivo: `OperationScopeBar.vue`
 
 Responsabilidade:
-- deixar explicito qual loja esta sendo vista;
-- permitir trocar a loja ativa sem depender so do header;
-- permitir que `owner` e `platform_admin` alternem entre `Loja ativa` e `Todas as lojas`;
+- concentrar os avisos compactos do topo da operacao em uma unica barra;
+- reaproveitar o header como fonte de verdade para trocar entre loja especifica e `Todas as lojas`;
+- exibir a campanha comercial ativa na mesma linha quando houver aviso;
 - permitir filtro interno por loja quando a visao integrada estiver aberta.
 
 Elementos:
-- select `Loja`
-- select `Modo`
-- select `Filtro por loja`
+- aviso de campanha ativo
+- select `Filtro`
 
 Comportamento:
-- consultor, gerente e `store_terminal` seguem operando apenas na loja ativa;
-- `owner` e `platform_admin` podem abrir a visao integrada multi-loja;
+- consultor, gerente e `store_terminal` seguem operando apenas na loja ativa definida no header;
+- `owner` e `platform_admin` podem abrir a visao integrada multi-loja pelo select global do header;
+- na propria pagina de operacao, a barra local mostra apenas o que for util no momento;
+- se houver campanha ativa e filtro integrado ao mesmo tempo, ambos aparecem na mesma linha;
+- se nao houver campanha nem filtro, a barra inteira nao e exibida;
+- esse filtro nao troca o escopo global da sessao, apenas afunila a leitura da visao integrada;
 - todos os filtros simples dessa barra devem reaproveitar [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue);
 - no modo integrado, a tela continua mostrando o nome da loja em cada card para auditoria visual.
 

@@ -17,7 +17,12 @@ export function getWebSocketBase(runtimeConfig) {
   const baseURL = configuredBase || getApiBase(runtimeConfig);
   const url = new URL(baseURL);
 
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  if (url.protocol === "http:") {
+    url.protocol = "ws:";
+  } else if (url.protocol === "https:") {
+    url.protocol = "wss:";
+  }
+
   return url.toString();
 }
 

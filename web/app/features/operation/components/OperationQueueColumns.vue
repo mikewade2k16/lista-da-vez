@@ -61,7 +61,7 @@ async function assignTask(person) {
     message: `Registre a tarefa ou reuniao para ${person.name}${person.storeName ? ` em ${person.storeName}` : ""}.`,
     inputLabel: "Motivo",
     inputPlaceholder: "Ex.: reuniao, apoio no caixa, estoque, suporte",
-    confirmLabel: "Tirar da fila",
+    confirmLabel: "Remover da fista da fila",
     required: true
   });
 
@@ -147,7 +147,7 @@ onBeforeUnmount(() => {
                   :data-testid="`operation-assign-task-${person.id}`"
                   @click="assignTask(person)"
                 >
-                  Tirar
+                  Remover da lista
                 </button>
               </template>
               <template v-else>

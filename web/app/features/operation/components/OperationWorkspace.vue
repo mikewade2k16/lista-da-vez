@@ -1,6 +1,5 @@
 <script setup>
 import { computed } from "vue";
-import OperationCampaignBrief from "~/features/operation/components/OperationCampaignBrief.vue";
 import OperationFinishModal from "~/features/operation/components/OperationFinishModal.vue";
 import OperationConsultantStrip from "~/features/operation/components/OperationConsultantStrip.vue";
 import OperationQueueColumns from "~/features/operation/components/OperationQueueColumns.vue";
@@ -35,7 +34,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(["scope-change", "active-store-change", "integrated-store-change"]);
+const emit = defineEmits(["integrated-store-change"]);
 const auth = useAuthStore();
 const canOperate = computed(() => canMutateOperations(auth.role));
 const showIntegratedView = computed(() => props.canSeeIntegrated && props.scopeMode === "all");
@@ -157,16 +156,12 @@ const displayState = computed(() => {
 
 <template>
   <OperationScopeBar
-    :can-see-integrated="canSeeIntegrated"
+    :state="props.state"
     :scope-mode="scopeMode"
     :stores="stores"
-    :active-store-id="props.state.activeStoreId"
     :integrated-store-id="integratedStoreId"
-    @scope-change="emit('scope-change', $event)"
-    @active-store-change="emit('active-store-change', $event)"
     @integrated-store-change="emit('integrated-store-change', $event)"
   />
-  <OperationCampaignBrief :state="props.state" />
   <div v-if="!canOperate" class="insight-card">
     <p class="settings-card__text">Este perfil acompanha a operacao em tempo real, mas nao executa fila, pausas nem encerramentos.</p>
   </div>

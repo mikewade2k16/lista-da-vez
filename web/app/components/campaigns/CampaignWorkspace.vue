@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
 import { canManageCampaigns } from "~/domain/utils/permissions";
 import { buildCampaignPerformance, deriveCampaignStatus, normalizeCampaign } from "~/domain/utils/campaigns";
+import { useAuthStore } from "~/stores/auth";
 import { useCampaignsStore } from "~/stores/campaigns";
 import { useUiStore } from "~/stores/ui";
 
@@ -10,14 +11,36 @@ const props = defineProps({
   state: {
     type: Object,
     required: true
+  },
+  integratedScope: {
+    type: Boolean,
+    default: false
+  },
+  integratedHistory: {
+    type: Array,
+    default: () => []
+  },
+  integratedPending: {
+    type: Boolean,
+    default: false
+  },
+  integratedError: {
+    type: String,
+    default: ""
+  },
+  stores: {
+    type: Array,
+    default: () => []
   }
 });
 
 const campaignsStore = useCampaignsStore();
 const ui = useUiStore();
+const auth = useAuthStore();
 const drafts = ref({});
 const newCampaign = reactive(normalizeCampaign({}));
 const typeFilter = ref("todas");
+const storeScopeFilter = ref("all");
 const campaignTypeOptions = [
   { value: "interna", label: "Interna (corrida / incentivo)" },
   { value: "comercial", label: "Comercial (marketing / promocao)" }
@@ -47,11 +70,43 @@ const activeRole = computed(() => {
 
   return activeProfile?.role || "consultant";
 });
-const canEditCampaigns = computed(() => canManageCampaigns(activeRole.value));
+const canEditCampaigns = computed(() => canManageCampaigns(auth.role, auth.permissionKeys, auth.permissionsResolved));
+const historyEntries = computed(() =>
+  props.integratedScope
+    ? props.integratedHistory || []
+    : props.state.serviceHistory || []
+);
+const storeFilterOptions = computed(() => {
+  const allowedStoreIds = new Set(
+    Array.isArray(props.integratedHistory)
+      ? props.integratedHistory.map((entry) => String(entry?.storeId || "").trim()).filter(Boolean)
+      : []
+  );
+
+  const stores = (props.stores || []).filter((store) => {
+    const storeId = String(store?.id || "").trim();
+    return !props.integratedScope || !allowedStoreIds.size || allowedStoreIds.has(storeId);
+  });
+
+  return [
+    { value: "all", label: "Todas as lojas" },
+    ...stores.map((store) => ({
+      value: String(store.id || "").trim(),
+      label: String(store.name || "").trim()
+    }))
+  ];
+});
+const scopedHistoryEntries = computed(() => {
+  if (!props.integratedScope || storeScopeFilter.value === "all") {
+    return historyEntries.value;
+  }
+
+  return historyEntries.value.filter((entry) => String(entry?.storeId || "").trim() === storeScopeFilter.value);
+});
 const campaignStats = computed(() => {
   const statsByCampaignId = new Map((props.state.campaigns || []).map((campaign) => [campaign.id, { hits: 0, bonus: 0 }]));
 
-  (props.state.serviceHistory || []).forEach((entry) => {
+  scopedHistoryEntries.value.forEach((entry) => {
     const matches = Array.isArray(entry.campaignMatches) ? entry.campaignMatches : [];
 
     matches.forEach((match) => {
@@ -83,8 +138,48 @@ const filteredCampaigns = computed(() => {
   return campaigns.filter((c) => (c.campaignType || "interna") === typeFilter.value);
 });
 const performance = computed(() =>
-  buildCampaignPerformance(props.state.campaigns || [], props.state.serviceHistory || [])
+  buildCampaignPerformance(props.state.campaigns || [], scopedHistoryEntries.value)
 );
+const storePerformanceRows = computed(() => {
+  if (!props.integratedScope) {
+    return [];
+  }
+
+  const rowsByStoreId = new Map();
+
+  historyEntries.value.forEach((entry) => {
+    const storeId = String(entry?.storeId || "").trim();
+    const storeName = String(entry?.storeName || "").trim();
+
+    if (!storeId || (storeScopeFilter.value !== "all" && storeId !== storeScopeFilter.value)) {
+      return;
+    }
+
+    const current = rowsByStoreId.get(storeId) || {
+      storeId,
+      storeName,
+      hits: 0,
+      bonus: 0,
+      attendances: 0
+    };
+
+    current.attendances += 1;
+
+    (Array.isArray(entry?.campaignMatches) ? entry.campaignMatches : []).forEach((match) => {
+      current.hits += 1;
+      current.bonus += Number(match?.bonusValue || 0);
+    });
+
+    rowsByStoreId.set(storeId, current);
+  });
+
+  return [...rowsByStoreId.values()]
+    .map((row) => ({
+      ...row,
+      hitRate: row.attendances > 0 ? (row.hits / row.attendances) * 100 : 0
+    }))
+    .sort((left, right) => right.hits - left.hits);
+});
 const campaignProductOptions = computed(() =>
   (props.state.productCatalog || [])
     .filter((product) => String(product.code || "").trim())
@@ -116,6 +211,22 @@ watch(
     drafts.value = Object.fromEntries((campaigns || []).map((campaign) => [campaign.id, buildDraft(campaign)]));
   },
   { immediate: true, deep: true }
+);
+
+watch(
+  () => [props.integratedScope, storeFilterOptions.value.map((option) => option.value).join("|")],
+  () => {
+    if (!props.integratedScope) {
+      storeScopeFilter.value = "all";
+      return;
+    }
+
+    const exists = storeFilterOptions.value.some((option) => option.value === storeScopeFilter.value);
+    if (!exists) {
+      storeScopeFilter.value = "all";
+    }
+  },
+  { immediate: true }
 );
 
 function updateDraftField(campaignId, field, value) {
@@ -193,7 +304,18 @@ async function removeCampaign(campaignId) {
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Campanhas e regras comerciais</h2>
       <p class="admin-panel__text">Regras aplicadas automaticamente no fechamento para auditoria e bonus.</p>
+      <p v-if="integratedScope" class="admin-panel__text">
+        Escopo consolidado das lojas acessiveis, com filtro local por loja para comparar a tracao das campanhas.
+      </p>
     </header>
+
+    <article v-if="integratedError" class="settings-card">
+      <p class="settings-card__text">{{ integratedError }}</p>
+    </article>
+
+    <article v-else-if="integratedScope && integratedPending && !historyEntries.length" class="settings-card">
+      <p class="settings-card__text">Carregando historico consolidado das campanhas...</p>
+    </article>
 
     <section class="metric-grid metric-grid--tight" data-testid="campaigns-summary">
       <article class="metric-card"><span class="metric-card__label">Campanhas cadastradas</span><strong class="metric-card__value">{{ state.campaigns.length }}</strong></article>
@@ -201,6 +323,52 @@ async function removeCampaign(campaignId) {
       <article class="metric-card"><span class="metric-card__label">Aplicacoes no historico</span><strong class="metric-card__value">{{ totalHits }}</strong></article>
       <article class="metric-card"><span class="metric-card__label">Bonus acumulado</span><strong class="metric-card__value">{{ formatCurrency(totalBonus) }}</strong></article>
     </section>
+
+    <article v-if="integratedScope" class="settings-card">
+      <div class="campaign-grid">
+        <label class="settings-field">
+          <span>Loja</span>
+          <AppSelectField
+            :model-value="storeScopeFilter"
+            :options="storeFilterOptions"
+            placeholder="Filtrar loja"
+            @update:model-value="storeScopeFilter = $event"
+          />
+        </label>
+      </div>
+    </article>
+
+    <article v-if="integratedScope" class="insight-card insight-card--wide">
+      <header class="intel-card__header">
+        <h3 class="insight-card__title">Tracao por loja</h3>
+        <span class="insight-tag">{{ storePerformanceRows.length }} lojas</span>
+      </header>
+      <div class="insight-table-wrap">
+        <table class="insight-table">
+          <thead>
+            <tr>
+              <th>Loja</th>
+              <th>Aplicacoes</th>
+              <th>Bonus</th>
+              <th>Atendimentos no recorte</th>
+              <th>Aproveitamento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!storePerformanceRows.length">
+              <td colspan="5">Nenhuma loja com historico de campanha para o recorte atual.</td>
+            </tr>
+            <tr v-for="row in storePerformanceRows" :key="row.storeId">
+              <td>{{ row.storeName || row.storeId }}</td>
+              <td>{{ row.hits }}</td>
+              <td>{{ formatCurrency(row.bonus) }}</td>
+              <td>{{ row.attendances }}</td>
+              <td>{{ row.hitRate.toFixed(1) }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
 
     <div class="campaign-type-filter">
       <button data-testid="campaigns-filter-todas" :class="['campaign-type-filter__btn', typeFilter === 'todas' && 'is-active']" type="button" @click="typeFilter = 'todas'">Todas</button>

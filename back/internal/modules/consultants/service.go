@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
@@ -27,6 +28,10 @@ func NewService(repository Repository, passwordHasher auth.PasswordHasher, acces
 }
 
 func (service *Service) ListByStore(ctx context.Context, principal auth.Principal, storeID string) ([]ConsultantView, error) {
+	if !canViewConsultants(principal) {
+		return nil, ErrForbidden
+	}
+
 	resolvedStoreID, err := service.resolveStoreID(ctx, principal, storeID)
 	if err != nil {
 		return nil, err
@@ -46,7 +51,7 @@ func (service *Service) ListByStore(ctx context.Context, principal auth.Principa
 }
 
 func (service *Service) Create(ctx context.Context, principal auth.Principal, input CreateInput) (CreateResult, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditConsultants(principal) {
 		return CreateResult{}, ErrForbidden
 	}
 
@@ -91,7 +96,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Update(ctx context.Context, principal auth.Principal, input UpdateInput) (ConsultantView, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditConsultants(principal) {
 		return ConsultantView{}, ErrForbidden
 	}
 
@@ -192,7 +197,7 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Archive(ctx context.Context, principal auth.Principal, consultantID string) error {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditConsultants(principal) {
 		return ErrForbidden
 	}
 
@@ -247,6 +252,25 @@ func (service *Service) ensureStoreAccess(ctx context.Context, principal auth.Pr
 	}
 
 	return ErrForbidden
+}
+
+func canViewConsultants(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionConsultantView) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionSettingsView)
+	}
+
+	return principal.Role == auth.RoleOwner ||
+		principal.Role == auth.RolePlatformAdmin ||
+		principal.Role == auth.RoleStoreTerminal
+}
+
+func canEditConsultants(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionSettingsEdit)
+	}
+
+	return principal.Role == auth.RoleOwner || principal.Role == auth.RolePlatformAdmin
 }
 
 func buildInitials(name string) string {

@@ -20,10 +20,26 @@ export function useDashboardShell() {
   const { activeRole, allowedWorkspaces } = storeToRefs(workspace);
   const { state } = useDashboardState();
 
+  const routeWorkspaceId = computed(() => {
+    if (Object.prototype.hasOwnProperty.call(route.meta, "workspaceId")) {
+      return String(route.meta.workspaceId || "").trim();
+    }
+
+    return null;
+  });
+
   const activeWorkspaceId = computed(() =>
-    String(route.meta.workspaceId || state.value?.activeWorkspace || "operacao")
+    routeWorkspaceId.value === null
+      ? String(state.value?.activeWorkspace || "operacao")
+      : routeWorkspaceId.value
   );
-  const pageLabel = computed(() => getWorkspaceLabel(activeWorkspaceId.value) || "Painel");
+  const pageLabel = computed(() => {
+    if (routeWorkspaceId.value === "") {
+      return String(route.meta.pageLabel || "Painel").trim() || "Painel";
+    }
+
+    return getWorkspaceLabel(activeWorkspaceId.value) || "Painel";
+  });
 
   useHead(() => ({
     title: `${pageLabel.value} | ${state.value?.brandName || "Fila Atendimento"}`
@@ -37,6 +53,11 @@ export function useDashboardShell() {
     }
 
     await workspace.ensure();
+
+    if (routeWorkspaceId.value === "") {
+      return;
+    }
+
     const allowed = allowedWorkspaces.value;
     const fallbackWorkspace = allowed[0] || "operacao";
     const nextWorkspace = allowed.includes(activeWorkspaceId.value) ? activeWorkspaceId.value : fallbackWorkspace;

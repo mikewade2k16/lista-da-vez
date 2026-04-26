@@ -53,7 +53,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 		access := AccessContextFromPrincipal(principal)
-		if !CanMutateOperationsRole(access.Role) {
+		if !canMutateOperations(access) {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
 			return
 		}
@@ -80,7 +80,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 		access := AccessContextFromPrincipal(principal)
-		if !CanMutateOperationsRole(access.Role) {
+		if !canMutateOperations(access) {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
 			return
 		}
@@ -107,7 +107,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 		access := AccessContextFromPrincipal(principal)
-		if !CanMutateOperationsRole(access.Role) {
+		if !canMutateOperations(access) {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
 			return
 		}
@@ -134,7 +134,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 		access := AccessContextFromPrincipal(principal)
-		if !CanMutateOperationsRole(access.Role) {
+		if !canMutateOperations(access) {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
 			return
 		}
@@ -161,7 +161,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 		access := AccessContextFromPrincipal(principal)
-		if !CanMutateOperationsRole(access.Role) {
+		if !canMutateOperations(access) {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
 			return
 		}
@@ -188,7 +188,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 		access := AccessContextFromPrincipal(principal)
-		if !CanMutateOperationsRole(access.Role) {
+		if !canMutateOperations(access) {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
 			return
 		}

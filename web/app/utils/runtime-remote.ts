@@ -221,6 +221,51 @@ export function applyRemoteStoreData(currentState, storeId, settingsBundle, cons
     customerSourceOptions: Array.isArray(settingsBundle?.customerSourceOptions)
       ? normalizeOptions(settingsBundle.customerSourceOptions)
       : cloneOrFallback(currentState.customerSourceOptions, []),
+    pauseReasonOptions: Array.isArray(settingsBundle?.pauseReasonOptions) && settingsBundle.pauseReasonOptions.length
+      ? normalizeOptions(settingsBundle.pauseReasonOptions)
+      : cloneOrFallback(currentState.pauseReasonOptions, []),
+    queueJumpReasonOptions: Array.isArray(settingsBundle?.queueJumpReasonOptions)
+      ? normalizeOptions(settingsBundle.queueJumpReasonOptions)
+      : cloneOrFallback(currentState.queueJumpReasonOptions, []),
+    lossReasonOptions: Array.isArray(settingsBundle?.lossReasonOptions)
+      ? normalizeOptions(settingsBundle.lossReasonOptions)
+      : cloneOrFallback(currentState.lossReasonOptions, []),
+    professionOptions: Array.isArray(settingsBundle?.professionOptions)
+      ? normalizeOptions(settingsBundle.professionOptions)
+      : cloneOrFallback(currentState.professionOptions, []),
+    productCatalog: Array.isArray(settingsBundle?.productCatalog)
+      ? normalizeProducts(settingsBundle.productCatalog)
+      : cloneOrFallback(currentState.productCatalog, [])
+  };
+}
+
+export function applySettingsBundleToState(currentState, storeId, settingsBundle) {
+  const normalizedStoreId = String(storeId || "").trim();
+
+  return {
+    ...cloneOrFallback(currentState, {}),
+    activeStoreId: normalizedStoreId || currentState?.activeStoreId,
+    operationTemplates: Array.isArray(settingsBundle?.operationTemplates)
+      ? cloneOrFallback(settingsBundle.operationTemplates, [])
+      : cloneOrFallback(currentState.operationTemplates, []),
+    selectedOperationTemplateId:
+      String(settingsBundle?.selectedOperationTemplateId || currentState.selectedOperationTemplateId || "").trim(),
+    settings: settingsBundle?.settings
+      ? cloneOrFallback(settingsBundle.settings, {})
+      : cloneOrFallback(currentState.settings, {}),
+    modalConfig: {
+      ...cloneOrFallback(currentState.modalConfig, {}),
+      ...cloneOrFallback(settingsBundle?.modalConfig, {})
+    },
+    visitReasonOptions: Array.isArray(settingsBundle?.visitReasonOptions)
+      ? normalizeOptions(settingsBundle.visitReasonOptions)
+      : cloneOrFallback(currentState.visitReasonOptions, []),
+    customerSourceOptions: Array.isArray(settingsBundle?.customerSourceOptions)
+      ? normalizeOptions(settingsBundle.customerSourceOptions)
+      : cloneOrFallback(currentState.customerSourceOptions, []),
+    pauseReasonOptions: Array.isArray(settingsBundle?.pauseReasonOptions) && settingsBundle.pauseReasonOptions.length
+      ? normalizeOptions(settingsBundle.pauseReasonOptions)
+      : cloneOrFallback(currentState.pauseReasonOptions, []),
     queueJumpReasonOptions: Array.isArray(settingsBundle?.queueJumpReasonOptions)
       ? normalizeOptions(settingsBundle.queueJumpReasonOptions)
       : cloneOrFallback(currentState.queueJumpReasonOptions, []),
@@ -237,17 +282,21 @@ export function applyRemoteStoreData(currentState, storeId, settingsBundle, cons
 }
 
 export function applySettingsBundleToRuntime(runtime, storeId, settingsBundle) {
-  const currentState = runtime.state;
-  const currentSnapshot = currentState.storeSnapshots?.[storeId] || {};
-  const roster =
-    storeId === currentState.activeStoreId
-      ? currentState.roster || []
-      : Array.isArray(currentSnapshot.roster)
-        ? currentSnapshot.roster
-        : [];
-
-  runtime.hydrate(applyRemoteStoreData(currentState, storeId, settingsBundle, roster));
+  runtime.replace(applySettingsBundleToState(runtime.state, storeId, settingsBundle));
   return runtime.state;
+}
+
+export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId) {
+  const normalizedStoreId = String(storeId || "").trim();
+
+  if (!normalizedStoreId) {
+    return null;
+  }
+
+  await runtime.ensure();
+  const settingsBundle = await apiRequest(`/v1/settings`);
+  applySettingsBundleToRuntime(runtime, normalizedStoreId, settingsBundle);
+  return settingsBundle;
 }
 
 export function buildSettingsBundleFromState(state, storeId) {
@@ -258,6 +307,7 @@ export function buildSettingsBundleFromState(state, storeId) {
     modalConfig: cloneOrFallback(state.modalConfig, {}),
     visitReasonOptions: cloneOrFallback(state.visitReasonOptions, []),
     customerSourceOptions: cloneOrFallback(state.customerSourceOptions, []),
+    pauseReasonOptions: cloneOrFallback(state.pauseReasonOptions, []),
     queueJumpReasonOptions: cloneOrFallback(state.queueJumpReasonOptions, []),
     lossReasonOptions: cloneOrFallback(state.lossReasonOptions, []),
     professionOptions: cloneOrFallback(state.professionOptions, []),
@@ -268,7 +318,7 @@ export function buildSettingsBundleFromState(state, storeId) {
 export async function fetchRemoteStoreData(apiRequest, storeId) {
   const storeQuery = encodeURIComponent(String(storeId || "").trim());
   const [settingsBundle, consultantsResponse, operationsSnapshot] = await Promise.all([
-    apiRequest(`/v1/settings?storeId=${storeQuery}`),
+    apiRequest(`/v1/settings`),
     apiRequest(`/v1/consultants?storeId=${storeQuery}`),
     apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`)
   ]);

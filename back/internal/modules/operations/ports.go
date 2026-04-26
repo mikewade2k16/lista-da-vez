@@ -13,10 +13,12 @@ const (
 )
 
 type AccessContext struct {
-	UserID   string
-	TenantID string
-	Role     string
-	StoreIDs []string
+	UserID              string
+	TenantID            string
+	Role                string
+	StoreIDs            []string
+	Permissions         []string
+	PermissionsResolved bool
 }
 
 type StoreScopeFilter struct {

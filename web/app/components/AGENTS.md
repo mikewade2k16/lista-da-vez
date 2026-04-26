@@ -32,11 +32,15 @@ Antes de criar componente novo:
 
 - [CampaignWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/campaigns/CampaignWorkspace.vue)
   Workspace da tela de campanhas. Centraliza CRUD, regras, metas e configuracao comercial.
+  Em `Todas as lojas`, deve consolidar o historico das lojas acessiveis sem mudar o escopo salvo no header e permitir filtro local por loja.
 
 ### `consultant`
 
 - [ConsultantWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantWorkspace.vue)
   Workspace principal do painel do consultor.
+  Em `Todas as lojas`, deve alternar para a visao integrada sem perder o escopo global do header.
+- [ConsultantIntegratedWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantIntegratedWorkspace.vue)
+  Visao consolidada de consultores entre lojas, com filtros por loja, nome, status e meta, alem de comparativo por loja e ranking consolidado.
 - [ConsultantSelector.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantSelector.vue)
   Seletor visual de consultor dentro do painel administrativo/individual.
 - [ConsultantMetrics.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/consultant/ConsultantMetrics.vue)
@@ -48,6 +52,8 @@ Antes de criar componente novo:
 
 - [DashboardHeader.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/dashboard/DashboardHeader.vue)
   Header autenticado com loja ativa, conta atual e acoes de sessao.
+  O select global de loja deve apenas trocar o escopo global salvo na sessao; nao deve empurrar o usuario para `/operacao`.
+  A opcao `Todas as lojas` deve aparecer sempre que a sessao tiver mais de uma loja acessivel; em rotas sem suporte integrado, o header apenas informa isso e preserva a loja ativa como fonte de dados da pagina.
 - [DashboardWorkspaceNav.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/dashboard/DashboardWorkspaceNav.vue)
   Navegacao principal entre workspaces do app.
 
@@ -96,8 +102,18 @@ Antes de criar componente novo:
 
 ### `settings`
 
+Importante: as configuracoes desta tela sao tenant-wide. Nao existe seletor
+interno de loja nesta area, e o seletor de loja do header nao escopa nada
+aqui. Toda alteracao salva vale para todas as lojas do tenant. Se for
+necessario um override por loja para um item especifico no futuro, isso deve
+ser implementado com seletor proprio dentro daquela secao, com aviso visual
+explicito de override por loja.
+
 - [SettingsWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsWorkspace.vue)
-  Workspace principal de configuracoes.
+  Workspace principal de configuracoes. Mostra um banner permanente
+  reforcando o escopo tenant-wide. Os payloads enviados pela
+  `useSettingsStore` nao incluem `storeId` ate que um override por loja seja
+  modelado.
 - [SettingsTabs.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsTabs.vue)
   Navegacao interna por abas de configuracao.
 - [SettingsConsultantManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsConsultantManager.vue)
@@ -105,7 +121,8 @@ Antes de criar componente novo:
 - [SettingsOperationTemplateManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsOperationTemplateManager.vue)
   Aplicacao e gerenciamento de templates operacionais.
 - [SettingsOptionManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsOptionManager.vue)
-  CRUD de catalogos simples como motivos, origens, perdas e profissao.
+  CRUD de catalogos simples como motivos, origens, pausas, fora da vez, perdas e profissao.
+  Tambem concentra a ordenacao manual exibida nos selects operacionais.
 - [SettingsProductManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsProductManager.vue)
   CRUD do catalogo de produtos.
 
@@ -127,9 +144,13 @@ Antes de criar componente novo:
 ### `users`
 
 - [UsersAccessManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/users/UsersAccessManager.vue)
-  Primeira implementacao da grade administrativa reutilizavel para usuarios, com cadastro via `+`, filtros, detalhes e acoes por icone.
+  Grade administrativa reutilizavel para usuarios, com cadastro via `+`, filtros, detalhes em modal editavel e acoes por icone.
+  O inline da grade deve preferir patch local da linha e deixar o websocket reconciliar em segundo plano, sem reabrir o estado de loading da tabela a cada alteracao.
+  Para `platform_admin`, a grade pode liberar manutencao inline de contas `consultant` quando isso for necessario no ambiente de desenvolvimento.
+- [UsersRoleMatrixManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/users/UsersRoleMatrixManager.vue)
+  Editor da matriz padrao por perfil, com visibilidade e capacidade de edicao por workspace.
 - [UsersWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/users/UsersWorkspace.vue)
-  Workspace dedicado da area administrativa de usuarios.
+  Workspace dedicado da area administrativa de usuarios, com abas para usuarios e matriz por perfil.
 
 ## Diretrizes rapidas
 

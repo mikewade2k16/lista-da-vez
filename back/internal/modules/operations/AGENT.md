@@ -97,7 +97,7 @@ Se o host nao quiser realtime, o modulo continua funcionando com publisher noop.
 Regra de resposta:
 
 - `GET /v1/operations/snapshot` devolve o snapshot operacional completo da loja
-- `GET /v1/operations/overview` devolve a visao operacional integrada das lojas acessiveis para `marketing`, `director`, `owner` e `platform_admin`
+- `GET /v1/operations/overview` devolve a visao operacional integrada das lojas acessiveis da sessao autenticada
 - comandos `POST` devolvem apenas `ack` minimo (`ok`, `storeId`, `savedAt`, `action`, `personId`)
 - o frontend deve revalidar o snapshot por `GET /v1/operations/snapshot` apos mutacao bem-sucedida
 - no modo integrado, o frontend deve revalidar `GET /v1/operations/overview` apos mutacao bem-sucedida
@@ -108,7 +108,7 @@ Regra de resposta:
 
 - leitura: `consultant`, `store_terminal`, `manager`, `marketing`, `director`, `owner` e `platform_admin`
 - comando: `consultant`, `manager`, `owner` e `platform_admin`
-- leitura integrada multi-loja: `marketing`, `director`, `owner` e `platform_admin`
+- leitura integrada multi-loja: qualquer sessao com mais de uma loja acessivel
 - sempre validar `store_id` contra o principal autenticado
 
 ## Regra de persistencia
@@ -139,7 +139,7 @@ Hoje este modulo ja sustenta:
 - historico de atendimento
 - sessoes de status
 - hidratacao do frontend no login/troca de loja
-- visao integrada da operacao para usuarios com acesso multi-loja
+- visao integrada da operacao para sessoes com mais de uma loja acessivel
 - cards operacionais com identificacao visual da loja de origem
 
 ## Regra de acoplamento

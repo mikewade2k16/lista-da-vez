@@ -15,7 +15,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     null
   );
   const activeRole = computed(() => auth.role || activeProfile.value?.role || "consultant");
-  const allowedWorkspaces = computed(() => getAllowedWorkspaces(activeRole.value));
+  const allowedWorkspaces = computed(() => getAllowedWorkspaces(activeRole.value, auth.permissionKeys, auth.permissionsResolved));
 
   return {
     state,

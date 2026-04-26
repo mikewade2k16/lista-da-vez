@@ -62,13 +62,16 @@ Toda implementacao nova em `web/` deve:
 - `web/app/stores/users.ts` ja consome papeis e usuarios reais via API para a area de acessos.
 - `web/app/stores/users.ts` ja trabalha com onboarding por convite e link de aceite.
 - `web/app/stores/users.ts` ja expõe o papel `store_terminal` para o acesso fixo da unidade.
+- `web/app/stores/access-control.ts` consome a matriz de acessos por perfil e os overrides individuais de usuario via `/v1/access/*`.
 - `store_terminal` deve permanecer com workspace enxuta, operacao completa da propria loja e acesso apenas a telas seguras de leitura como `consultor`, `ranking`, `dados`, `inteligencia` e `relatorios`.
 - `web/app/components/users/UsersAccessManager.vue` e a referencia atual de grade administrativa sem `<table>`, com filtros locais, colunas configuraveis, detalhes e edicao inline.
+- `web/app/components/users/UsersRoleMatrixManager.vue` concentra a edicao do padrao de visibilidade/edicao por papel dentro da workspace de usuarios.
 - `web/app/stores/consultants.ts` agora cria consultores ja com conta autenticada vinculada.
 - `web/app/composables/useContextRealtime.ts` cuida da sincronizacao administrativa por tenant para atualizar lojas, usuarios e header entre instancias.
 - `web/app/utils/api-client.ts` concentra o client HTTP criado dentro do contexto do store.
 - `web/app/composables/useOperationsRealtime.ts` cuida da assinatura WebSocket da operacao e revalidacao do snapshot em tempo real.
-- `web/app/composables/useOperationsRealtime.ts` agora tambem cuida do modo integrado multi-loja de `/operacao` para `owner` e `platform_admin`.
+- `web/app/composables/useOperationsRealtime.ts` agora tambem cuida do modo integrado multi-loja de `/operacao` quando a sessao tiver mais de uma loja acessivel.
+- mudancas em `settings` devem continuar propagando sem refresh pela combinacao de `context.updated` e `operation.updated` com `settings-updated`.
 - `web/app/utils/runtime-remote.ts` hidrata consultores, settings e operations remotos para a loja ativa.
 - `web/app/stores/dashboard.ts` e apenas uma facade temporaria de compatibilidade.
 - O runtime de compatibilidade foi fatiado em `web/app/stores/dashboard/runtime/shared.ts`, `state.ts`, `status.ts` e `actions/*`.
@@ -117,6 +120,12 @@ Ao criar ou ajustar actions:
   - leitura da loja ativa por snapshot
   - leitura integrada de todas as lojas acessiveis por `overview`
 - a troca entre `Loja ativa` e `Todas as lojas` deve continuar explicita na propria tela de operacao, nao escondida apenas no header.
+- o seletor global do header deve refletir o escopo global salvo na sessao sem redirecionar o usuario para `/operacao`.
+- a opcao `Todas as lojas` no header deve aparecer sempre que a sessao tiver mais de uma loja acessivel, mesmo fora das rotas que suportam leitura integrada.
+- quando `Todas as lojas` estiver ativo e a rota nao suportar leitura integrada, o header deve permanecer em `Todas as lojas` e a pagina continua exibindo o recorte padrao da loja ativa.
+- hoje o seletor global tambem deve filtrar corretamente `/operacao`, `/relatorios`, `/ranking`, `/dados`, `/inteligencia`, `/consultor` e `/campanhas`.
+- `/consultor` em `Todas as lojas` deve consolidar o roster acessivel, comparativos por loja e filtros locais por loja, nome, status e meta.
+- `/campanhas` em `Todas as lojas` deve consolidar o historico das lojas acessiveis e oferecer filtro local por loja sem perder o escopo global salvo no header.
 - para tirar alguem da fila por tarefa ou reuniao, usar `operationsStore.assignTask(...)`; nao reaproveitar pausa generica sem distinguir o tipo.
 - contas `consultant` devem nascer pela gestao de consultores, nao pela tela administrativa de usuarios.
 - a tela `usuarios` nao deve editar, convidar nem inativar contas `consultant`; ali so cabe listar e resetar senha quando necessario.
@@ -146,6 +155,7 @@ No auth:
 - Manter classes CSS semanticas.
 - Reaproveitar componentes existentes antes de criar variacoes paralelas.
 - `AppSelectField.vue` e o seletor simples padrao do app e deve seguir a mesma linguagem visual do `product-pick`.
+- `SettingsOptionManager.vue` e o ponto unico para catalogos ordenaveis simples da area de configuracoes, incluindo `pausas`.
 - Para listagens administrativas reutilizaveis, preferir `AppEntityGrid.vue` em vez de tabelas HTML novas.
 - Quando a listagem precisar de status booleano ou detalhes laterais/modal, compor com `AppToggleSwitch.vue` e `AppDetailDialog.vue` antes de criar widgets paralelos.
 - Quando alterar comportamento de tela importante, atualizar a documentacao correspondente.

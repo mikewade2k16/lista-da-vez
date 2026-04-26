@@ -6,6 +6,7 @@ export const WORKSPACES = [
   { id: "inteligencia", label: "Inteligencia", icon: "psychology", path: "/inteligencia" },
   { id: "relatorios", label: "Relatorios", icon: "description", path: "/relatorios" },
   { id: "campanhas", label: "Campanhas", icon: "campaign", path: "/campanhas" },
+  { id: "clientes", label: "Clientes", icon: "apartment", path: "/clientes" },
   { id: "multiloja", label: "Multi-loja", icon: "store", path: "/multiloja" },
   { id: "usuarios", label: "Usuarios", icon: "group", path: "/usuarios" },
   { id: "configuracoes", label: "Config", icon: "tune", path: "/configuracoes" }

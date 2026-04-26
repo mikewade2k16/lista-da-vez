@@ -1,10 +1,16 @@
 name: Deploy VPS
 
+# Antes de disparar este workflow, revisar a secao
+# "Pendencias para o proximo deploy" em docs/DEPLOY_VPS.md.
+# Releases que tocam schema (ex: migration 0024 que move settings para
+# escopo de tenant) precisam de backup_database=true e validacao manual do
+# backfill em producao antes de liberar acesso.
+
 on:
   workflow_dispatch:
     inputs:
       git_ref:
-        description: Git ref para deploy
+        description: Git ref para deploy (revisar docs/DEPLOY_VPS.md secao "Pendencias para o proximo deploy")
         required: false
         default: main
         type: string
@@ -83,13 +89,19 @@ jobs:
 
           tar -czf - \
             --exclude='.git' \
+            --exclude='.claude' \
+            --exclude='.playwright-mcp' \
             --exclude='.env' \
             --exclude='.env.production' \
+            --exclude='token.txt' \
+            --exclude='token_gen.js' \
+            --exclude='verify.sh' \
             --exclude='node_modules' \
             --exclude='web/node_modules' \
             --exclude='web/.nuxt' \
             --exclude='web/.output' \
             --exclude='web/dist' \
+            --exclude='web/.codex-devserver.*.log' \
             --exclude='back/.logs' \
             --exclude='qa-bot/.venv' \
             --exclude='qa-bot/artifacts' \

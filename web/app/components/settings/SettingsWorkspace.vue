@@ -1,12 +1,14 @@
 <script setup>
 import { computed, ref } from "vue";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
+import AppToggleSwitch from "~/components/ui/AppToggleSwitch.vue";
 import { canManageConsultants, canManageSettings } from "~/domain/utils/permissions";
 import SettingsConsultantManager from "~/components/settings/SettingsConsultantManager.vue";
 import SettingsOperationTemplateManager from "~/components/settings/SettingsOperationTemplateManager.vue";
 import SettingsOptionManager from "~/components/settings/SettingsOptionManager.vue";
 import SettingsProductManager from "~/components/settings/SettingsProductManager.vue";
 import SettingsTabs from "~/components/settings/SettingsTabs.vue";
+import { useAuthStore } from "~/stores/auth";
 import { useConsultantsStore } from "~/stores/consultants";
 import { useSettingsStore } from "~/stores/settings";
 import { useUiStore } from "~/stores/ui";
@@ -17,6 +19,7 @@ const tabs = [
   { id: "produtos", label: "Produtos", icon: "inventory_2" },
   { id: "consultores", label: "Consultores", icon: "group" },
   { id: "motivos", label: "Motivos", icon: "fact_check" },
+  { id: "pausas", label: "Pausas", icon: "pause_circle" },
   { id: "motivos-perda", label: "Perdas", icon: "trending_down" },
   { id: "motivos-fora-da-vez", label: "Fora da vez", icon: "bolt" },
   { id: "origens", label: "Origens", icon: "share_location" },
@@ -32,6 +35,176 @@ const fieldDetailModeOptions = [
   { value: "shared", label: "Uma descricao para a selecao" },
   { value: "per-item", label: "Uma descricao por opcao" }
 ];
+const modalFieldSections = [
+  {
+    id: "customer",
+    title: "Dados do cliente",
+    description: "Campos basicos do passo 2 para identificar e qualificar o cliente.",
+    defaultOpen: true,
+    fields: [
+      {
+        id: "customer-name",
+        label: "Nome do cliente",
+        description: "Campo de texto exibido no topo da secao de cliente.",
+        showKey: "showCustomerNameField",
+        requiredKey: "requireCustomerNameField",
+        requiredDefault: true,
+        legacyRequiredKey: "requireCustomerNamePhone"
+      },
+      {
+        id: "customer-phone",
+        label: "Telefone",
+        description: "Usado para contato e reaproveitamento do atendimento.",
+        showKey: "showCustomerPhoneField",
+        requiredKey: "requireCustomerPhoneField",
+        requiredDefault: true,
+        legacyRequiredKey: "requireCustomerNamePhone"
+      },
+      {
+        id: "customer-email",
+        label: "Email",
+        description: "Captura complementar para relacionamento.",
+        showKey: "showEmailField",
+        requiredKey: "requireEmailField",
+        requiredDefault: false
+      },
+      {
+        id: "customer-profession",
+        label: "Profissao",
+        description: "Usa o catalogo configurado na aba de profissoes.",
+        showKey: "showProfessionField",
+        requiredKey: "requireProfessionField",
+        requiredDefault: false
+      },
+      {
+        id: "existing-customer",
+        label: "Ja era cliente",
+        description: "Vai para o passo 2 para apoiar a busca automatica de cadastro do cliente.",
+        showKey: "showExistingCustomerField"
+      },
+      {
+        id: "notes",
+        label: "Observacoes",
+        description: "Campo livre para contexto adicional do atendimento.",
+        showKey: "showNotesField",
+        requiredKey: "requireNotesField",
+        requiredDefault: false
+      }
+    ]
+  },
+  {
+    id: "journey",
+    title: "Produtos e jornada",
+    description: "Campos principais do atendimento e da origem do cliente.",
+    defaultOpen: true,
+    fields: [
+      {
+        id: "product-closed",
+        label: "Compra / Reserva",
+        description: "Aparece primeiro no passo 1 quando o desfecho for compra ou reserva.",
+        showKey: "showProductClosedField",
+        requiredKey: "requireProductClosedField",
+        requiredDefault: true,
+        legacyRequiredKey: "requireProduct"
+      },
+      {
+        id: "product-seen",
+        label: "Interesses do cliente",
+        description: "Aparece no passo 1 para mapear os interesses vistos ou desejados.",
+        showKey: "showProductSeenField",
+        requiredKey: "requireProductSeenField",
+        requiredDefault: true,
+        legacyRequiredKey: "requireProduct"
+      },
+      {
+        id: "product-seen-notes",
+        label: "Detalhes dos interesses",
+        description: "Campo complementar para contexto, referencia ou justificativa quando nao houver item.",
+        showKey: "showProductSeenNotesField",
+        requiredKey: "requireProductSeenNotesField",
+        requiredDefault: false
+      },
+      {
+        id: "visit-reason",
+        label: "Motivo da visita",
+        description: "Ajuda a entender a intencao do cliente na chegada.",
+        showKey: "showVisitReasonField",
+        requiredKey: "requireVisitReason",
+        requiredDefault: true
+      },
+      {
+        id: "customer-source",
+        label: "Origem do cliente",
+        description: "Relaciona o atendimento ao canal de entrada.",
+        showKey: "showCustomerSourceField",
+        requiredKey: "requireCustomerSource",
+        requiredDefault: true
+      }
+    ]
+  },
+  {
+    id: "conditional",
+    title: "Campos condicionais",
+    description: "Campos que so entram em cenarios especificos de encerramento.",
+    defaultOpen: false,
+    fields: [
+      {
+        id: "queue-jump-reason",
+        label: "Motivo fora da vez",
+        description: "Exibido quando o atendimento comeca fora da fila.",
+        showKey: "showQueueJumpReasonField",
+        requiredKey: "requireQueueJumpReasonField",
+        requiredDefault: true
+      },
+      {
+        id: "loss-reason",
+        label: "Motivo da perda",
+        description: "Exibido quando o desfecho for nao compra.",
+        showKey: "showLossReasonField",
+        requiredKey: "requireLossReasonField",
+        requiredDefault: true
+      }
+    ]
+  }
+];
+const modalTextSections = [
+  {
+    id: "general",
+    title: "Textos gerais",
+    description: "Titulos base do modal e da secao de cliente.",
+    defaultOpen: true,
+    fields: [
+      { key: "title", label: "Titulo do modal" },
+      { key: "customerSectionLabel", label: "Label da secao de cliente" }
+    ]
+  },
+  {
+    id: "products",
+    title: "Textos de produto",
+    description: "Copys exibidas nos blocos de produto visto e produto fechado.",
+    defaultOpen: false,
+    fields: [
+      { key: "productSeenLabel", label: "Label interesses do cliente" },
+      { key: "productSeenPlaceholder", label: "Placeholder interesses do cliente" },
+      { key: "productClosedLabel", label: "Label fechamento (opcional)" },
+      { key: "productClosedPlaceholder", label: "Placeholder compra / reserva" }
+    ]
+  },
+  {
+    id: "support",
+    title: "Textos de apoio",
+    description: "Textos auxiliares de observacoes, perda e fora da vez.",
+    defaultOpen: false,
+    fields: [
+      { key: "notesLabel", label: "Label observacoes" },
+      { key: "notesPlaceholder", label: "Placeholder observacoes" },
+      { key: "queueJumpReasonLabel", label: "Label motivo fora da vez" },
+      { key: "queueJumpReasonPlaceholder", label: "Placeholder motivo fora da vez" },
+      { key: "lossReasonLabel", label: "Label motivo da perda" },
+      { key: "lossReasonPlaceholder", label: "Placeholder motivo da perda" }
+    ]
+  }
+];
 
 const props = defineProps({
   state: {
@@ -43,7 +216,9 @@ const props = defineProps({
 const settingsStore = useSettingsStore();
 const consultantsStore = useConsultantsStore();
 const ui = useUiStore();
+const auth = useAuthStore();
 const activeTab = ref("operacao");
+const modalConfigState = computed(() => props.state.modalConfig || {});
 
 const activeRole = computed(() => {
   const activeProfile =
@@ -53,8 +228,8 @@ const activeRole = computed(() => {
 
   return activeProfile?.role || "consultant";
 });
-const canEditSettings = computed(() => canManageSettings(activeRole.value));
-const canEditConsultants = computed(() => canManageConsultants(activeRole.value));
+const canEditSettings = computed(() => canManageSettings(auth.role, auth.permissionKeys, auth.permissionsResolved));
+const canEditConsultants = computed(() => canManageConsultants(auth.role, auth.permissionKeys, auth.permissionsResolved));
 
 async function updateNumericSetting(settingId, value) {
   const result = await settingsStore.updateSetting(settingId, Number(value) || 0);
@@ -78,6 +253,72 @@ async function updateModalConfigValue(configKey, value) {
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel salvar a configuracao do modal.");
   }
+
+  return result || { ok: true };
+}
+
+async function updateModalConfigNumberValue(configKey, value, minimum = 0) {
+  const normalizedValue = Math.max(minimum, Number(value) || 0);
+  return updateModalConfigValue(configKey, normalizedValue);
+}
+
+function getModalBooleanValue(configKey, fallback = false, legacyConfigKey = "") {
+  const directValue = modalConfigState.value?.[configKey];
+
+  if (typeof directValue === "boolean") {
+    return directValue;
+  }
+
+  if (legacyConfigKey) {
+    const legacyValue = modalConfigState.value?.[legacyConfigKey];
+
+    if (typeof legacyValue === "boolean") {
+      return legacyValue;
+    }
+  }
+
+  return fallback;
+}
+
+function isModalFieldVisible(field) {
+  return getModalBooleanValue(field.showKey, field.showDefault ?? true, field.legacyShowKey || "");
+}
+
+function isModalFieldRequired(field) {
+  if (!field.requiredKey) {
+    return false;
+  }
+
+  return getModalBooleanValue(field.requiredKey, field.requiredDefault ?? false, field.legacyRequiredKey || "");
+}
+
+async function handleModalFieldVisibilityChange(field, nextValue) {
+  await updateModalConfigValue(field.showKey, nextValue);
+
+  if (!nextValue && field.requiredKey) {
+    await updateModalConfigValue(field.requiredKey, false);
+  }
+}
+
+async function handleModalFieldRequiredChange(field, nextValue) {
+  if (!field.requiredKey || !isModalFieldVisible(field)) {
+    return;
+  }
+
+  await updateModalConfigValue(field.requiredKey, nextValue);
+}
+
+function getModalFieldSectionSummary(section) {
+  const visibleCount = section.fields.filter((field) => isModalFieldVisible(field)).length;
+  const requiredCount = section.fields.filter((field) => isModalFieldVisible(field) && isModalFieldRequired(field)).length;
+
+  return `${visibleCount}/${section.fields.length} visiveis · ${requiredCount} obrigatorios`;
+}
+
+function getModalTextSectionSummary(section) {
+  const filledCount = section.fields.filter((field) => String(modalConfigState.value?.[field.key] || "").trim()).length;
+
+  return `${filledCount}/${section.fields.length} preenchidos`;
 }
 
 async function applyTemplate(templateId) {
@@ -112,6 +353,11 @@ async function addOption(group, label) {
     return;
   }
 
+  if (group === "pause-reason") {
+    handleMutationResult(await settingsStore.addPauseReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
+    return;
+  }
+
   if (group === "queue-jump-reason") {
     handleMutationResult(await settingsStore.addQueueJumpReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
     return;
@@ -133,6 +379,11 @@ async function updateOption(group, optionId, label) {
 
   if (group === "customer-source") {
     handleMutationResult(await settingsStore.updateCustomerSourceOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
+    return;
+  }
+
+  if (group === "pause-reason") {
+    handleMutationResult(await settingsStore.updatePauseReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
     return;
   }
 
@@ -160,6 +411,11 @@ async function removeOption(group, optionId) {
     return;
   }
 
+  if (group === "pause-reason") {
+    handleMutationResult(await settingsStore.removePauseReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
+    return;
+  }
+
   if (group === "queue-jump-reason") {
     handleMutationResult(await settingsStore.removeQueueJumpReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
     return;
@@ -171,6 +427,35 @@ async function removeOption(group, optionId) {
   }
 
   handleMutationResult(await settingsStore.removeProfessionOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
+}
+
+async function reorderOption(group, optionIds) {
+  if (group === "visit-reason") {
+    handleMutationResult(await settingsStore.reorderVisitReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  if (group === "customer-source") {
+    handleMutationResult(await settingsStore.reorderCustomerSourceOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  if (group === "pause-reason") {
+    handleMutationResult(await settingsStore.reorderPauseReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  if (group === "queue-jump-reason") {
+    handleMutationResult(await settingsStore.reorderQueueJumpReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  if (group === "loss-reason") {
+    handleMutationResult(await settingsStore.reorderLossReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  handleMutationResult(await settingsStore.reorderProfessionOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
 }
 
 async function addProduct(payload) {
@@ -258,6 +543,10 @@ async function archiveConsultant(consultantId) {
   <section class="admin-panel" data-testid="settings-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Configuracoes</h2>
+      <p class="admin-panel__subtitle settings-tenant-scope-banner">
+        <span class="material-icons-round" aria-hidden="true">domain</span>
+        Estas configuracoes valem para todas as lojas do tenant. Alteracoes feitas aqui afetam toda a operacao.
+      </p>
     </header>
 
     <SettingsTabs :tabs="tabs" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
@@ -285,32 +574,153 @@ async function archiveConsultant(consultantId) {
       </div>
     </div>
 
-    <div v-if="activeTab === 'modal'" class="settings-grid">
+    <div v-if="activeTab === 'modal'" class="settings-grid settings-grid--modal">
       <article class="settings-card">
-        <header class="settings-card__header"><h3 class="settings-card__title">Textos</h3></header>
-        <label class="settings-field"><span>Titulo do modal</span><input :value="state.modalConfig.title" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('title', $event.target.value)"></label>
-        <label class="settings-field"><span>Label da secao de cliente</span><input :value="state.modalConfig.customerSectionLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('customerSectionLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Label observacoes</span><input :value="state.modalConfig.notesLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('notesLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder observacoes</span><input :value="state.modalConfig.notesPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('notesPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label motivo fora da vez</span><input :value="state.modalConfig.queueJumpReasonLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('queueJumpReasonLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder busca motivo fora da vez</span><input :value="state.modalConfig.queueJumpReasonPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('queueJumpReasonPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label motivo da perda</span><input :value="state.modalConfig.lossReasonLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('lossReasonLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder busca motivo da perda</span><input :value="state.modalConfig.lossReasonPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('lossReasonPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label produto visto</span><input :value="state.modalConfig.productSeenLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productSeenLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder produto visto</span><input :value="state.modalConfig.productSeenPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productSeenPlaceholder', $event.target.value)"></label>
-        <label class="settings-field"><span>Label produto fechado</span><input :value="state.modalConfig.productClosedLabel" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productClosedLabel', $event.target.value)"></label>
-        <label class="settings-field"><span>Placeholder produto fechado</span><input :value="state.modalConfig.productClosedPlaceholder" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('productClosedPlaceholder', $event.target.value)"></label>
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Campos e validacoes</h3>
+          <p class="settings-card__text">Cada bloco agora concentra os campos do modal com switches de exibicao e obrigatoriedade.</p>
+        </header>
+
+        <div class="settings-modal-section-list">
+          <details
+            v-for="section in modalFieldSections"
+            :key="section.id"
+            class="settings-collapse"
+            :open="section.defaultOpen"
+          >
+            <summary class="settings-collapse__summary">
+              <div class="settings-collapse__title-wrap">
+                <strong class="settings-collapse__title">{{ section.title }}</strong>
+                <span class="settings-collapse__text">{{ section.description }}</span>
+              </div>
+              <span class="settings-collapse__meta">{{ getModalFieldSectionSummary(section) }}</span>
+              <span class="material-icons-round settings-collapse__icon">expand_more</span>
+            </summary>
+
+            <div class="settings-collapse__body settings-modal-field-list">
+              <article
+                v-for="field in section.fields"
+                :key="field.id"
+                class="settings-modal-field-row"
+              >
+                <div class="settings-modal-field-row__copy">
+                  <strong class="settings-modal-field-row__title">{{ field.label }}</strong>
+                  <span class="settings-modal-field-row__hint">{{ field.description }}</span>
+                </div>
+
+                <div class="settings-modal-field-row__switches">
+                  <div class="settings-modal-field-row__switch">
+                    <span class="settings-modal-field-row__switch-label">Mostrar</span>
+                    <AppToggleSwitch
+                      :model-value="isModalFieldVisible(field)"
+                      :disabled="!canEditSettings"
+                      compact
+                      @change="handleModalFieldVisibilityChange(field, $event)"
+                    />
+                  </div>
+
+                  <div class="settings-modal-field-row__switch">
+                    <span class="settings-modal-field-row__switch-label">Obrigatorio</span>
+                    <AppToggleSwitch
+                      :model-value="isModalFieldRequired(field)"
+                      :disabled="!canEditSettings || !field.requiredKey || !isModalFieldVisible(field)"
+                      compact
+                      @change="handleModalFieldRequiredChange(field, $event)"
+                    />
+                  </div>
+                </div>
+              </article>
+            </div>
+          </details>
+        </div>
       </article>
 
       <article class="settings-card">
-        <header class="settings-card__header"><h3 class="settings-card__title">Campos e validacoes</h3></header>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showEmailField)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showEmailField', $event.target.checked)"><span>Mostrar email</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showProfessionField)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showProfessionField', $event.target.checked)"><span>Mostrar profissao</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.showNotesField)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('showNotesField', $event.target.checked)"><span>Mostrar observacoes</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireProduct)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireProduct', $event.target.checked)"><span>Exigir produto</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireVisitReason)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireVisitReason', $event.target.checked)"><span>Exigir motivo da visita</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireCustomerSource)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireCustomerSource', $event.target.checked)"><span>Exigir origem do cliente</span></label>
-        <label class="settings-toggle"><input :checked="Boolean(state.modalConfig.requireCustomerNamePhone)" type="checkbox" :disabled="!canEditSettings" @change="updateModalConfigValue('requireCustomerNamePhone', $event.target.checked)"><span>Exigir nome e telefone</span></label>
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Regras de interesses</h3>
+          <p class="settings-card__text">Aqui ficam as regras do campo de interesses do cliente e da justificativa quando nao houver item selecionado.</p>
+        </header>
+
+        <div class="settings-modal-rules">
+          <div class="settings-modal-rule">
+            <div class="settings-modal-rule__copy">
+              <strong class="settings-modal-rule__title">Permitir opcao "nenhum"</strong>
+              <span class="settings-modal-rule__hint">Libera no modal a escolha de nenhum interesse identificado para aquele atendimento.</span>
+            </div>
+
+            <AppToggleSwitch
+              :model-value="getModalBooleanValue('allowProductSeenNone', true)"
+              :disabled="!canEditSettings || !getModalBooleanValue('showProductSeenField', true)"
+              @change="updateModalConfigValue('allowProductSeenNone', $event)"
+            />
+          </div>
+
+          <div class="settings-modal-rule">
+            <div class="settings-modal-rule__copy">
+              <strong class="settings-modal-rule__title">Exigir justificativa ao marcar nenhum</strong>
+              <span class="settings-modal-rule__hint">Quando o consultor escolher nenhum interesse, obriga o preenchimento do texto complementar.</span>
+            </div>
+
+            <AppToggleSwitch
+              :model-value="getModalBooleanValue('requireProductSeenNotesWhenNone', true)"
+              :disabled="!canEditSettings || !getModalBooleanValue('showProductSeenNotesField', true) || !getModalBooleanValue('allowProductSeenNone', true)"
+              @change="updateModalConfigValue('requireProductSeenNotesWhenNone', $event)"
+            />
+          </div>
+
+          <label class="settings-field">
+            <span>Minimo de caracteres da justificativa</span>
+            <input
+              :value="Number(modalConfigState.productSeenNotesMinChars || 20)"
+              type="number"
+              min="1"
+              max="500"
+              :disabled="!canEditSettings || !getModalBooleanValue('showProductSeenNotesField', true)"
+              @change="updateModalConfigNumberValue('productSeenNotesMinChars', $event.target.value, 1)"
+            >
+          </label>
+        </div>
+      </article>
+
+      <article class="settings-card">
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Textos do modal</h3>
+          <p class="settings-card__text">Os textos ficam organizados em blocos separados, depois da matriz de switches.</p>
+        </header>
+
+        <div class="settings-modal-section-list">
+          <details
+            v-for="section in modalTextSections"
+            :key="section.id"
+            class="settings-collapse"
+            :open="section.defaultOpen"
+          >
+            <summary class="settings-collapse__summary">
+              <div class="settings-collapse__title-wrap">
+                <strong class="settings-collapse__title">{{ section.title }}</strong>
+                <span class="settings-collapse__text">{{ section.description }}</span>
+              </div>
+              <span class="settings-collapse__meta">{{ getModalTextSectionSummary(section) }}</span>
+              <span class="material-icons-round settings-collapse__icon">expand_more</span>
+            </summary>
+
+            <div class="settings-collapse__body settings-modal-text-grid">
+              <label
+                v-for="field in section.fields"
+                :key="field.key"
+                class="settings-field settings-modal-text-field"
+              >
+                <span>{{ field.label }}</span>
+                <input
+                  :value="modalConfigState[field.key] || ''"
+                  type="text"
+                  :disabled="!canEditSettings"
+                  @change="updateModalConfigValue(field.key, $event.target.value)"
+                >
+              </label>
+            </div>
+          </details>
+        </div>
       </article>
     </div>
 
@@ -361,11 +771,28 @@ async function archiveConsultant(consultantId) {
         title="Motivo da visita"
         description="Opcoes exibidas no modal de fechamento."
         :items="state.visitReasonOptions || []"
+        :disabled="!canEditSettings"
         add-placeholder="Adicionar nova opcao"
         testid="settings-motivos"
         @add="addOption('visit-reason', $event)"
         @update="(optionId, label) => updateOption('visit-reason', optionId, label)"
         @remove="removeOption('visit-reason', $event)"
+        @reorder="reorderOption('visit-reason', $event)"
+      />
+    </div>
+
+    <div v-if="activeTab === 'pausas'">
+      <SettingsOptionManager
+        title="Motivos de pausa"
+        description="Opcoes exibidas ao pausar consultor no painel de operacao."
+        :items="state.pauseReasonOptions || []"
+        :disabled="!canEditSettings"
+        add-placeholder="Adicionar novo motivo de pausa"
+        testid="settings-pausas"
+        @add="addOption('pause-reason', $event)"
+        @update="(optionId, label) => updateOption('pause-reason', optionId, label)"
+        @remove="removeOption('pause-reason', $event)"
+        @reorder="reorderOption('pause-reason', $event)"
       />
     </div>
 
@@ -374,11 +801,13 @@ async function archiveConsultant(consultantId) {
         title="Motivo fora da vez"
         description="Opcoes obrigatorias exibidas quando o atendimento for encerrado fora da vez."
         :items="state.queueJumpReasonOptions || []"
+        :disabled="!canEditSettings"
         add-placeholder="Adicionar novo motivo fora da vez"
         testid="settings-fora-da-vez"
         @add="addOption('queue-jump-reason', $event)"
         @update="(optionId, label) => updateOption('queue-jump-reason', optionId, label)"
         @remove="removeOption('queue-jump-reason', $event)"
+        @reorder="reorderOption('queue-jump-reason', $event)"
       />
     </div>
 
@@ -410,11 +839,13 @@ async function archiveConsultant(consultantId) {
         title="Motivo da perda"
         description="Opcoes exibidas quando o atendimento termina sem venda."
         :items="state.lossReasonOptions || []"
+        :disabled="!canEditSettings"
         add-placeholder="Adicionar novo motivo da perda"
         testid="settings-motivos-perda"
         @add="addOption('loss-reason', $event)"
         @update="(optionId, label) => updateOption('loss-reason', optionId, label)"
         @remove="removeOption('loss-reason', $event)"
+        @reorder="reorderOption('loss-reason', $event)"
       />
     </div>
 
@@ -446,11 +877,13 @@ async function archiveConsultant(consultantId) {
         title="Origem do cliente"
         description="Opcoes exibidas no modal de fechamento."
         :items="state.customerSourceOptions || []"
+        :disabled="!canEditSettings"
         add-placeholder="Adicionar nova opcao"
         testid="settings-origens"
         @add="addOption('customer-source', $event)"
         @update="(optionId, label) => updateOption('customer-source', optionId, label)"
         @remove="removeOption('customer-source', $event)"
+        @reorder="reorderOption('customer-source', $event)"
       />
     </div>
 
@@ -459,11 +892,13 @@ async function archiveConsultant(consultantId) {
         title="Profissoes"
         description="Lista usada no modal. Se nao existir, tambem pode cadastrar na hora no fechamento."
         :items="state.professionOptions || []"
+        :disabled="!canEditSettings"
         add-placeholder="Adicionar nova profissao"
         testid="settings-profissoes"
         @add="addOption('profession', $event)"
         @update="(optionId, label) => updateOption('profession', optionId, label)"
         @remove="removeOption('profession', $event)"
+        @reorder="reorderOption('profession', $event)"
       />
     </div>
 

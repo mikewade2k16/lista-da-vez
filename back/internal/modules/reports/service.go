@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
@@ -39,6 +40,12 @@ type Service struct {
 	storeFinder StoreFinder
 }
 
+type reportScope struct {
+	StoreID   string
+	TenantID  string
+	StoreName string
+}
+
 func NewService(repository Repository, storeFinder StoreFinder) *Service {
 	return &Service{
 		repository:  repository,
@@ -47,13 +54,17 @@ func NewService(repository Repository, storeFinder StoreFinder) *Service {
 }
 
 func (service *Service) Overview(ctx context.Context, principal auth.Principal, filters Filters) (OverviewResponse, error) {
-	store, normalized, history, err := service.loadEntries(ctx, principal, filters)
+	if !canViewReports(principal) {
+		return OverviewResponse{}, stores.ErrForbidden
+	}
+
+	scope, normalized, history, err := service.loadEntries(ctx, principal, filters)
 	if err != nil {
 		return OverviewResponse{}, err
 	}
 
 	return OverviewResponse{
-		StoreID:   store.ID,
+		StoreID:   scope.StoreID,
 		Filters:   normalized,
 		Metrics:   buildMetrics(history),
 		Quality:   buildQuality(history),
@@ -62,7 +73,11 @@ func (service *Service) Overview(ctx context.Context, principal auth.Principal, 
 }
 
 func (service *Service) Results(ctx context.Context, principal auth.Principal, filters Filters) (ResultsResponse, error) {
-	store, normalized, history, err := service.loadEntries(ctx, principal, filters)
+	if !canViewReports(principal) {
+		return ResultsResponse{}, stores.ErrForbidden
+	}
+
+	scope, normalized, history, err := service.loadEntries(ctx, principal, filters)
 	if err != nil {
 		return ResultsResponse{}, err
 	}
@@ -72,7 +87,7 @@ func (service *Service) Results(ctx context.Context, principal auth.Principal, f
 	pageRows := paginateRows(rows, normalized.Page, normalized.PageSize)
 
 	return ResultsResponse{
-		StoreID:  store.ID,
+		StoreID:  scope.StoreID,
 		Filters:  normalized,
 		Page:     normalized.Page,
 		PageSize: normalized.PageSize,
@@ -82,11 +97,15 @@ func (service *Service) Results(ctx context.Context, principal auth.Principal, f
 }
 
 func (service *Service) RecentServices(ctx context.Context, principal auth.Principal, filters Filters) (RecentServicesResponse, error) {
+	if !canViewReports(principal) {
+		return RecentServicesResponse{}, stores.ErrForbidden
+	}
+
 	if filters.PageSize <= 0 {
 		filters.PageSize = defaultRecentSize
 	}
 
-	store, normalized, history, err := service.loadEntries(ctx, principal, filters)
+	scope, normalized, history, err := service.loadEntries(ctx, principal, filters)
 	if err != nil {
 		return RecentServicesResponse{}, err
 	}
@@ -96,7 +115,7 @@ func (service *Service) RecentServices(ctx context.Context, principal auth.Princ
 	pageRows := paginateRows(rows, normalized.Page, normalized.PageSize)
 
 	return RecentServicesResponse{
-		StoreID:  store.ID,
+		StoreID:  scope.StoreID,
 		Filters:  normalized,
 		Page:     normalized.Page,
 		PageSize: normalized.PageSize,
@@ -106,13 +125,24 @@ func (service *Service) RecentServices(ctx context.Context, principal auth.Princ
 }
 
 func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.Principal, filters Filters) (MultiStoreOverviewResponse, error) {
+	if !canViewReports(principal) {
+		return MultiStoreOverviewResponse{}, stores.ErrForbidden
+	}
+
 	normalized, repositoryInput, err := normalizeFilters(filters)
 	if err != nil {
 		return MultiStoreOverviewResponse{}, err
 	}
 
+	resolvedTenantID := firstNonEmpty(normalized.TenantID, principal.TenantID)
+	if resolvedTenantID == "" {
+		return MultiStoreOverviewResponse{}, ErrStoreRequired
+	}
+
+	normalized.TenantID = resolvedTenantID
+
 	storeRows, err := service.storeFinder.ListAccessible(ctx, principal, stores.ListInput{
-		TenantID: normalized.TenantID,
+		TenantID: resolvedTenantID,
 	})
 	if err != nil {
 		return MultiStoreOverviewResponse{}, err
@@ -226,35 +256,88 @@ func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.P
 	}
 
 	return MultiStoreOverviewResponse{
-		TenantID: firstNonEmpty(normalized.TenantID, principal.TenantID),
+		TenantID: resolvedTenantID,
 		Filters:  normalized,
 		Summary:  summary,
 		Stores:   rows,
 	}, nil
 }
 
+func canViewReports(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionReportsView)
+	}
+
+	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner || principal.Role == auth.RoleStoreTerminal
+}
+
 func (service *Service) loadEntries(
 	ctx context.Context,
 	principal auth.Principal,
 	filters Filters,
-) (stores.StoreView, Filters, []operations.ServiceHistoryEntry, error) {
+) (reportScope, Filters, []operations.ServiceHistoryEntry, error) {
 	normalized, repositoryFilters, err := normalizeFilters(filters)
 	if err != nil {
-		return stores.StoreView{}, Filters{}, nil, err
+		return reportScope{}, Filters{}, nil, err
 	}
 
 	if normalized.StoreID == "" {
-		return stores.StoreView{}, Filters{}, nil, ErrStoreRequired
+		resolvedTenantID := firstNonEmpty(normalized.TenantID, principal.TenantID)
+		if resolvedTenantID == "" {
+			return reportScope{}, Filters{}, nil, ErrStoreRequired
+		}
+
+		storeRows, err := service.storeFinder.ListAccessible(ctx, principal, stores.ListInput{
+			TenantID: resolvedTenantID,
+		})
+		if err != nil {
+			return reportScope{}, Filters{}, nil, err
+		}
+
+		storeLookup := make(map[string]stores.StoreView, len(storeRows))
+		storeIDs := make([]string, 0, len(storeRows))
+		for _, store := range storeRows {
+			storeLookup[store.ID] = store
+			storeIDs = append(storeIDs, store.ID)
+		}
+
+		history, err := service.repository.ListHistoryByStores(ctx, storeIDs, repositoryFilters)
+		if err != nil {
+			return reportScope{}, Filters{}, nil, err
+		}
+
+		for index := range history {
+			if strings.TrimSpace(history[index].StoreName) != "" {
+				continue
+			}
+
+			store, ok := storeLookup[strings.TrimSpace(history[index].StoreID)]
+			if ok {
+				history[index].StoreName = store.Name
+			}
+		}
+
+		filtered := filterHistory(history, normalized)
+		sort.SliceStable(filtered, func(i, j int) bool {
+			if filtered[i].FinishedAt == filtered[j].FinishedAt {
+				return filtered[i].ServiceID > filtered[j].ServiceID
+			}
+
+			return filtered[i].FinishedAt > filtered[j].FinishedAt
+		})
+
+		normalized.TenantID = resolvedTenantID
+		return reportScope{TenantID: resolvedTenantID}, normalized, filtered, nil
 	}
 
 	store, err := service.storeFinder.FindAccessible(ctx, principal, normalized.StoreID)
 	if err != nil {
-		return stores.StoreView{}, Filters{}, nil, err
+		return reportScope{}, Filters{}, nil, err
 	}
 
 	history, err := service.repository.ListHistory(ctx, store.ID, repositoryFilters)
 	if err != nil {
-		return stores.StoreView{}, Filters{}, nil, err
+		return reportScope{}, Filters{}, nil, err
 	}
 
 	for index := range history {
@@ -272,7 +355,11 @@ func (service *Service) loadEntries(
 		return filtered[i].FinishedAt > filtered[j].FinishedAt
 	})
 
-	return store, normalized, filtered, nil
+	return reportScope{
+		StoreID:   store.ID,
+		TenantID:  store.TenantID,
+		StoreName: store.Name,
+	}, normalized, filtered, nil
 }
 
 func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {

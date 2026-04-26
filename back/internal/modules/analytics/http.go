@@ -18,7 +18,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		response, err := service.Ranking(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		response, err := service.Ranking(
+			r.Context(),
+			principal,
+			strings.TrimSpace(r.URL.Query().Get("storeId")),
+			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+		)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -34,7 +39,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		response, err := service.Data(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		response, err := service.Data(
+			r.Context(),
+			principal,
+			strings.TrimSpace(r.URL.Query().Get("storeId")),
+			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+		)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -50,7 +60,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		response, err := service.Intelligence(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		response, err := service.Intelligence(
+			r.Context(),
+			principal,
+			strings.TrimSpace(r.URL.Query().Get("storeId")),
+			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+		)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -62,12 +77,14 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, ErrForbidden):
+		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
 	case errors.Is(err, stores.ErrForbidden):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
 	case errors.Is(err, stores.ErrStoreNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "store_not_found", "Loja nao encontrada.")
-	case errors.Is(err, ErrStoreRequired):
-		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Informe a loja para carregar o analytics.")
+	case errors.Is(err, ErrStoreRequired), errors.Is(err, ErrScopeRequired):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Informe a loja ou o tenant para carregar o analytics.")
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar o analytics.")
 	}

@@ -14,17 +14,40 @@ var defaultOperationTemplates = []OperationTemplate{
 			TimingLowSaleAmount:      1200,
 		},
 		ModalConfig: ModalConfig{
-			ShowEmailField:              true,
-			ShowProfessionField:         true,
-			ShowNotesField:              true,
-			VisitReasonSelectionMode:    "multiple",
-			VisitReasonDetailMode:       "shared",
-			CustomerSourceSelectionMode: "single",
-			CustomerSourceDetailMode:    "shared",
-			RequireProduct:              true,
-			RequireVisitReason:          true,
-			RequireCustomerSource:       true,
-			RequireCustomerNamePhone:    true,
+			ShowCustomerNameField:           true,
+			ShowCustomerPhoneField:          true,
+			ShowEmailField:                  true,
+			ShowProfessionField:             true,
+			ShowNotesField:                  true,
+			ShowProductSeenField:            true,
+			ShowProductSeenNotesField:       true,
+			ShowProductClosedField:          true,
+			ShowVisitReasonField:            true,
+			ShowCustomerSourceField:         true,
+			ShowExistingCustomerField:       true,
+			ShowQueueJumpReasonField:        true,
+			ShowLossReasonField:             true,
+			AllowProductSeenNone:            true,
+			VisitReasonSelectionMode:        "multiple",
+			VisitReasonDetailMode:           "shared",
+			CustomerSourceSelectionMode:     "single",
+			CustomerSourceDetailMode:        "shared",
+			RequireCustomerNameField:        true,
+			RequireCustomerPhoneField:       true,
+			RequireEmailField:               false,
+			RequireProfessionField:          false,
+			RequireNotesField:               false,
+			RequireProduct:                  true,
+			RequireProductSeenField:         true,
+			RequireProductSeenNotesField:    false,
+			RequireProductClosedField:       true,
+			RequireVisitReason:              true,
+			RequireCustomerSource:           true,
+			RequireCustomerNamePhone:        true,
+			RequireProductSeenNotesWhenNone: true,
+			ProductSeenNotesMinChars:        20,
+			RequireQueueJumpReasonField:     true,
+			RequireLossReasonField:          true,
 		},
 		VisitReasonOptions: []OptionItem{
 			{ID: "aniversario-casamento", Label: "Aniversario de casamento"},
@@ -54,17 +77,40 @@ var defaultOperationTemplates = []OperationTemplate{
 			TimingLowSaleAmount:      1500,
 		},
 		ModalConfig: ModalConfig{
-			ShowEmailField:              true,
-			ShowProfessionField:         true,
-			ShowNotesField:              true,
-			VisitReasonSelectionMode:    "multiple",
-			VisitReasonDetailMode:       "shared",
-			CustomerSourceSelectionMode: "single",
-			CustomerSourceDetailMode:    "shared",
-			RequireProduct:              true,
-			RequireVisitReason:          true,
-			RequireCustomerSource:       true,
-			RequireCustomerNamePhone:    true,
+			ShowCustomerNameField:           true,
+			ShowCustomerPhoneField:          true,
+			ShowEmailField:                  true,
+			ShowProfessionField:             true,
+			ShowNotesField:                  true,
+			ShowProductSeenField:            true,
+			ShowProductSeenNotesField:       true,
+			ShowProductClosedField:          true,
+			ShowVisitReasonField:            true,
+			ShowCustomerSourceField:         true,
+			ShowExistingCustomerField:       true,
+			ShowQueueJumpReasonField:        true,
+			ShowLossReasonField:             true,
+			AllowProductSeenNone:            true,
+			VisitReasonSelectionMode:        "multiple",
+			VisitReasonDetailMode:           "shared",
+			CustomerSourceSelectionMode:     "single",
+			CustomerSourceDetailMode:        "shared",
+			RequireCustomerNameField:        true,
+			RequireCustomerPhoneField:       true,
+			RequireEmailField:               false,
+			RequireProfessionField:          false,
+			RequireNotesField:               false,
+			RequireProduct:                  true,
+			RequireProductSeenField:         true,
+			RequireProductSeenNotesField:    false,
+			RequireProductClosedField:       true,
+			RequireVisitReason:              true,
+			RequireCustomerSource:           true,
+			RequireCustomerNamePhone:        true,
+			RequireProductSeenNotesWhenNone: true,
+			ProductSeenNotesMinChars:        20,
+			RequireQueueJumpReasonField:     true,
+			RequireLossReasonField:          true,
 		},
 		VisitReasonOptions: []OptionItem{
 			{ID: "aniversario-casamento", Label: "Aniversario de casamento"},
@@ -90,17 +136,40 @@ var defaultOperationTemplates = []OperationTemplate{
 			TimingLowSaleAmount:      900,
 		},
 		ModalConfig: ModalConfig{
-			ShowEmailField:              false,
-			ShowProfessionField:         false,
-			ShowNotesField:              false,
-			VisitReasonSelectionMode:    "multiple",
-			VisitReasonDetailMode:       "off",
-			CustomerSourceSelectionMode: "single",
-			CustomerSourceDetailMode:    "off",
-			RequireProduct:              true,
-			RequireVisitReason:          true,
-			RequireCustomerSource:       false,
-			RequireCustomerNamePhone:    true,
+			ShowCustomerNameField:           true,
+			ShowCustomerPhoneField:          true,
+			ShowEmailField:                  false,
+			ShowProfessionField:             false,
+			ShowNotesField:                  false,
+			ShowProductSeenField:            true,
+			ShowProductSeenNotesField:       true,
+			ShowProductClosedField:          true,
+			ShowVisitReasonField:            true,
+			ShowCustomerSourceField:         true,
+			ShowExistingCustomerField:       true,
+			ShowQueueJumpReasonField:        true,
+			ShowLossReasonField:             true,
+			AllowProductSeenNone:            true,
+			VisitReasonSelectionMode:        "multiple",
+			VisitReasonDetailMode:           "off",
+			CustomerSourceSelectionMode:     "single",
+			CustomerSourceDetailMode:        "off",
+			RequireCustomerNameField:        true,
+			RequireCustomerPhoneField:       true,
+			RequireEmailField:               false,
+			RequireProfessionField:          false,
+			RequireNotesField:               false,
+			RequireProduct:                  true,
+			RequireProductSeenField:         true,
+			RequireProductSeenNotesField:    false,
+			RequireProductClosedField:       true,
+			RequireVisitReason:              true,
+			RequireCustomerSource:           false,
+			RequireCustomerNamePhone:        true,
+			RequireProductSeenNotesWhenNone: true,
+			ProductSeenNotesMinChars:        20,
+			RequireQueueJumpReasonField:     true,
+			RequireLossReasonField:          true,
 		},
 		VisitReasonOptions: []OptionItem{
 			{ID: "presente", Label: "Presente"},
@@ -115,11 +184,11 @@ var defaultOperationTemplates = []OperationTemplate{
 	},
 }
 
-func DefaultBundle(storeID string, selectedTemplateID string) Bundle {
+func DefaultBundle(tenantID string, selectedTemplateID string) Bundle {
 	template := resolveTemplate(selectedTemplateID)
 
 	return Bundle{
-		StoreID:                     storeID,
+		TenantID:                    tenantID,
 		OperationTemplates:          DefaultOperationTemplates(),
 		SelectedOperationTemplateID: template.ID,
 		Settings: AppSettings{
@@ -137,6 +206,7 @@ func DefaultBundle(storeID string, selectedTemplateID string) Bundle {
 		ModalConfig:            mergeModalConfig(defaultBaseModalConfig(), template.ModalConfig),
 		VisitReasonOptions:     cloneOptions(template.VisitReasonOptions),
 		CustomerSourceOptions:  cloneOptions(template.CustomerSourceOptions),
+		PauseReasonOptions:     defaultPauseReasonOptions(),
 		QueueJumpReasonOptions: defaultQueueJumpReasonOptions(),
 		LossReasonOptions:      defaultLossReasonOptions(),
 		ProfessionOptions:      defaultProfessionOptions(),
@@ -173,46 +243,94 @@ func resolveTemplate(templateID string) OperationTemplate {
 
 func defaultBaseModalConfig() ModalConfig {
 	return ModalConfig{
-		Title:                       "Fechar atendimento",
-		ProductSeenLabel:            "Produto visto pelo cliente",
-		ProductSeenPlaceholder:      "Busque e selecione um produto",
-		ProductClosedLabel:          "Produto reservado/comprado",
-		ProductClosedPlaceholder:    "Busque e selecione o produto fechado",
-		NotesLabel:                  "Observacoes",
-		NotesPlaceholder:            "Detalhes adicionais do atendimento",
-		QueueJumpReasonLabel:        "Motivo do atendimento fora da vez",
-		QueueJumpReasonPlaceholder:  "Busque e selecione o motivo fora da vez",
-		LossReasonLabel:             "Motivo da perda",
-		LossReasonPlaceholder:       "Busque e selecione o motivo da perda",
-		CustomerSectionLabel:        "Dados do cliente",
-		ShowEmailField:              true,
-		ShowProfessionField:         true,
-		ShowNotesField:              true,
-		VisitReasonSelectionMode:    "multiple",
-		VisitReasonDetailMode:       "shared",
-		LossReasonSelectionMode:     "single",
-		LossReasonDetailMode:        "off",
-		CustomerSourceSelectionMode: "single",
-		CustomerSourceDetailMode:    "shared",
-		RequireProduct:              true,
-		RequireVisitReason:          true,
-		RequireCustomerSource:       true,
-		RequireCustomerNamePhone:    true,
+		Title:                           "Fechar atendimento",
+		ProductSeenLabel:                "Interesses do cliente",
+		ProductSeenPlaceholder:          "Busque e selecione interesses",
+		ProductClosedLabel:              "",
+		ProductClosedPlaceholder:        "Busque e selecione o produto fechado",
+		NotesLabel:                      "Observacoes",
+		NotesPlaceholder:                "Detalhes adicionais do atendimento",
+		QueueJumpReasonLabel:            "Motivo do atendimento fora da vez",
+		QueueJumpReasonPlaceholder:      "Busque e selecione o motivo fora da vez",
+		LossReasonLabel:                 "Motivo da perda",
+		LossReasonPlaceholder:           "Busque e selecione o motivo da perda",
+		CustomerSectionLabel:            "Dados do cliente",
+		ShowCustomerNameField:           true,
+		ShowCustomerPhoneField:          true,
+		ShowEmailField:                  true,
+		ShowProfessionField:             true,
+		ShowNotesField:                  true,
+		ShowProductSeenField:            true,
+		ShowProductSeenNotesField:       true,
+		ShowProductClosedField:          true,
+		ShowVisitReasonField:            true,
+		ShowCustomerSourceField:         true,
+		ShowExistingCustomerField:       true,
+		ShowQueueJumpReasonField:        true,
+		ShowLossReasonField:             true,
+		AllowProductSeenNone:            true,
+		VisitReasonSelectionMode:        "multiple",
+		VisitReasonDetailMode:           "shared",
+		LossReasonSelectionMode:         "single",
+		LossReasonDetailMode:            "off",
+		CustomerSourceSelectionMode:     "single",
+		CustomerSourceDetailMode:        "shared",
+		RequireCustomerNameField:        true,
+		RequireCustomerPhoneField:       true,
+		RequireEmailField:               false,
+		RequireProfessionField:          false,
+		RequireNotesField:               false,
+		RequireProduct:                  true,
+		RequireProductSeenField:         true,
+		RequireProductSeenNotesField:    false,
+		RequireProductClosedField:       true,
+		RequireVisitReason:              true,
+		RequireCustomerSource:           true,
+		RequireCustomerNamePhone:        true,
+		RequireProductSeenNotesWhenNone: true,
+		ProductSeenNotesMinChars:        20,
+		RequireQueueJumpReasonField:     true,
+		RequireLossReasonField:          true,
 	}
 }
 
 func mergeModalConfig(base ModalConfig, override ModalConfig) ModalConfig {
+	base.ShowCustomerNameField = override.ShowCustomerNameField
+	base.ShowCustomerPhoneField = override.ShowCustomerPhoneField
 	base.ShowEmailField = override.ShowEmailField
 	base.ShowProfessionField = override.ShowProfessionField
 	base.ShowNotesField = override.ShowNotesField
+	base.ShowProductSeenField = override.ShowProductSeenField
+	base.ShowProductSeenNotesField = override.ShowProductSeenNotesField
+	base.ShowProductClosedField = override.ShowProductClosedField
+	base.ShowVisitReasonField = override.ShowVisitReasonField
+	base.ShowCustomerSourceField = override.ShowCustomerSourceField
+	base.ShowExistingCustomerField = override.ShowExistingCustomerField
+	base.ShowQueueJumpReasonField = override.ShowQueueJumpReasonField
+	base.ShowLossReasonField = override.ShowLossReasonField
+	base.AllowProductSeenNone = override.AllowProductSeenNone
 	base.VisitReasonSelectionMode = override.VisitReasonSelectionMode
 	base.VisitReasonDetailMode = override.VisitReasonDetailMode
 	base.CustomerSourceSelectionMode = override.CustomerSourceSelectionMode
 	base.CustomerSourceDetailMode = override.CustomerSourceDetailMode
+	base.RequireCustomerNameField = override.RequireCustomerNameField
+	base.RequireCustomerPhoneField = override.RequireCustomerPhoneField
+	base.RequireEmailField = override.RequireEmailField
+	base.RequireProfessionField = override.RequireProfessionField
+	base.RequireNotesField = override.RequireNotesField
 	base.RequireProduct = override.RequireProduct
+	base.RequireProductSeenField = override.RequireProductSeenField
+	base.RequireProductSeenNotesField = override.RequireProductSeenNotesField
+	base.RequireProductClosedField = override.RequireProductClosedField
 	base.RequireVisitReason = override.RequireVisitReason
 	base.RequireCustomerSource = override.RequireCustomerSource
 	base.RequireCustomerNamePhone = override.RequireCustomerNamePhone
+	base.RequireProductSeenNotesWhenNone = override.RequireProductSeenNotesWhenNone
+	if override.ProductSeenNotesMinChars > 0 {
+		base.ProductSeenNotesMinChars = override.ProductSeenNotesMinChars
+	}
+	base.RequireQueueJumpReasonField = override.RequireQueueJumpReasonField
+	base.RequireLossReasonField = override.RequireLossReasonField
 	return base
 }
 
@@ -238,6 +356,16 @@ func defaultQueueJumpReasonOptions() []OptionItem {
 		{ID: "retirada", Label: "Retirada"},
 		{ID: "cliente-chamado-consultor", Label: "Cliente chamado pelo consultor"},
 		{ID: "atendimento-agendado", Label: "Atendimento agendado"},
+	}
+}
+
+func defaultPauseReasonOptions() []OptionItem {
+	return []OptionItem{
+		{ID: "almoco", Label: "Almoco"},
+		{ID: "atendimento-externo", Label: "Atendimento externo"},
+		{ID: "suporte-interno", Label: "Suporte interno"},
+		{ID: "treinamento", Label: "Treinamento"},
+		{ID: "reuniao", Label: "Reuniao"},
 	}
 }
 

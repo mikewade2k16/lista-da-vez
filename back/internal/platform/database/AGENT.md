@@ -51,6 +51,13 @@ Se a mudanca for de modelagem funcional, ela precisa refletir tambem em:
 - para a operacao integrada multi-loja:
   - a infraestrutura deve permitir leitura previsivel do estado corrente por varias lojas sem duplicar logica de montagem
   - a coluna `kind` em `operation_paused_consultants` deve permanecer tratada como campo funcional do estado corrente
+  - a tabela `store_setting_options` deve aceitar os `kind` funcionais atuais:
+    - `visit_reason`
+    - `customer_source`
+    - `pause_reason`
+    - `queue_jump_reason`
+    - `loss_reason`
+    - `profession`
 
 ## Fonte de verdade humana do banco
 

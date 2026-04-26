@@ -1,6 +1,7 @@
 import {
   cloneOperationTemplates,
   DEFAULT_LOSS_REASON_OPTIONS,
+  DEFAULT_PAUSE_REASON_OPTIONS,
   DEFAULT_QUEUE_JUMP_REASON_OPTIONS,
   DEFAULT_OPERATION_TEMPLATE_ID,
   getOperationTemplateById
@@ -312,15 +313,16 @@ export function createEmptyState() {
     finishModalDraft: null,
     visitReasonOptions: normalizeVisitReasonOptions(defaultTemplate?.visitReasonOptions || []),
     customerSourceOptions: cloneValue(defaultTemplate?.customerSourceOptions || []),
+    pauseReasonOptions: cloneValue(DEFAULT_PAUSE_REASON_OPTIONS),
     queueJumpReasonOptions: cloneValue(DEFAULT_QUEUE_JUMP_REASON_OPTIONS),
     lossReasonOptions: cloneValue(DEFAULT_LOSS_REASON_OPTIONS),
     professionOptions: cloneValue(DEFAULT_PROFESSION_OPTIONS),
     productCatalog: [],
     modalConfig: {
       title: "Fechar atendimento",
-      productSeenLabel: "Produto visto pelo cliente",
-      productSeenPlaceholder: "Busque e selecione um produto",
-      productClosedLabel: "Produto reservado/comprado",
+      productSeenLabel: "Interesses do cliente",
+      productSeenPlaceholder: "Busque e selecione interesses",
+      productClosedLabel: "",
       productClosedPlaceholder: "Busque e selecione o produto fechado",
       notesLabel: "Observacoes",
       notesPlaceholder: "Detalhes adicionais do atendimento",
@@ -329,19 +331,42 @@ export function createEmptyState() {
       lossReasonLabel: "Motivo da perda",
       lossReasonPlaceholder: "Busque e selecione o motivo da perda",
       customerSectionLabel: "Dados do cliente",
+      showCustomerNameField: true,
+      showCustomerPhoneField: true,
       showEmailField: true,
       showProfessionField: true,
       showNotesField: true,
+      showProductSeenField: true,
+      showProductSeenNotesField: true,
+      showProductClosedField: true,
+      showVisitReasonField: true,
+      showCustomerSourceField: true,
+      showExistingCustomerField: true,
+      showQueueJumpReasonField: true,
+      showLossReasonField: true,
+      allowProductSeenNone: true,
       visitReasonSelectionMode: "multiple",
       visitReasonDetailMode: "shared",
       lossReasonSelectionMode: "single",
       lossReasonDetailMode: "off",
       customerSourceSelectionMode: "single",
       customerSourceDetailMode: "shared",
+      requireCustomerNameField: true,
+      requireCustomerPhoneField: true,
+      requireEmailField: false,
+      requireProfessionField: false,
+      requireNotesField: false,
       requireProduct: true,
+      requireProductSeenField: true,
+      requireProductSeenNotesField: false,
+      requireProductClosedField: true,
       requireVisitReason: true,
       requireCustomerSource: true,
-      requireCustomerNamePhone: true
+      requireCustomerNamePhone: true,
+      requireProductSeenNotesWhenNone: true,
+      productSeenNotesMinChars: 20,
+      requireQueueJumpReasonField: true,
+      requireLossReasonField: true
     },
     consultantActivitySessions: scopedState.consultantActivitySessions,
     consultantCurrentStatus: scopedState.consultantCurrentStatus,
@@ -404,6 +429,7 @@ export function buildRandomFinishModalDraft(state, service) {
   const queueJumpReasons = state.queueJumpReasonOptions.length
     ? state.queueJumpReasonOptions
     : DEFAULT_QUEUE_JUMP_REASON_OPTIONS;
+  const pauseReasons = state.pauseReasonOptions.length ? state.pauseReasonOptions : DEFAULT_PAUSE_REASON_OPTIONS;
   const lossReasons = state.lossReasonOptions.length ? state.lossReasonOptions : DEFAULT_LOSS_REASON_OPTIONS;
   const isLossReasonMultiple = state.modalConfig?.lossReasonSelectionMode === "multiple";
   const lossReasonConfiguredDetailMode = ["off", "shared", "per-item"].includes(state.modalConfig?.lossReasonDetailMode)
@@ -450,6 +476,7 @@ export function buildRandomFinishModalDraft(state, service) {
     isGift: outcome === "compra" || outcome === "reserva" ? Math.random() < 0.5 : false,
     isExistingCustomer: Math.random() < 0.5,
     productSeen: seenProduct.name,
+    productSeenNotes: `Cliente demonstrou interesse em ${seenProduct.name.toLowerCase()}.`,
     productClosed: closedProduct ? closedProduct.name : "",
     productsSeen: [seenProductEntry],
     productsClosed: closedProductEntry ? [closedProductEntry] : [],
@@ -473,6 +500,7 @@ export function buildRandomFinishModalDraft(state, service) {
       service.startMode === "queue-jump"
         ? queueJumpReasons[randomInt(0, queueJumpReasons.length - 1)]?.label || ""
         : "",
+    pauseReason: pauseReasons[randomInt(0, pauseReasons.length - 1)]?.label || "",
     notes: "Preenchimento automatico em modo teste."
   };
 }
@@ -533,6 +561,10 @@ export function hydrateState(nextState = {}) {
 
   const resolvedActiveSnapshot =
     normalizedStoreSnapshots[activeStoreId] || normalizedLegacyActiveSnapshot;
+  const sourceFinishModalPersonId = String(sourceState.finishModalPersonId || "").trim();
+  const finishModalPersonId = resolvedActiveSnapshot.activeServices.some((service) => service.id === sourceFinishModalPersonId)
+    ? sourceFinishModalPersonId
+    : null;
   const profiles =
     Array.isArray(sourceState.profiles) && sourceState.profiles.length
       ? sourceState.profiles
@@ -565,7 +597,7 @@ export function hydrateState(nextState = {}) {
     campaigns: Array.isArray(sourceState.campaigns)
       ? sourceState.campaigns.map((item) => normalizeCampaign(item))
       : cloneValue(baseState.campaigns),
-    finishModalDraft: null,
+    finishModalDraft: finishModalPersonId ? cloneValue(sourceState.finishModalDraft || null) : null,
     waitingList: resolvedActiveSnapshot.waitingList,
     activeServices: resolvedActiveSnapshot.activeServices,
     roster: resolvedActiveSnapshot.roster,
@@ -577,6 +609,10 @@ export function hydrateState(nextState = {}) {
       Array.isArray(sourceState.customerSourceOptions) && sourceState.customerSourceOptions.length
         ? sourceState.customerSourceOptions
         : baseState.customerSourceOptions,
+    pauseReasonOptions:
+      Array.isArray(sourceState.pauseReasonOptions) && sourceState.pauseReasonOptions.length
+        ? normalizeSimpleOptions(sourceState.pauseReasonOptions)
+        : baseState.pauseReasonOptions,
     queueJumpReasonOptions:
       Array.isArray(sourceState.queueJumpReasonOptions) && sourceState.queueJumpReasonOptions.length
         ? normalizeSimpleOptions(sourceState.queueJumpReasonOptions)
@@ -612,6 +648,6 @@ export function hydrateState(nextState = {}) {
     },
     serviceHistory: resolvedActiveSnapshot.serviceHistory,
     isReady: true,
-    finishModalPersonId: null
+    finishModalPersonId
   };
 }

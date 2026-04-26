@@ -12,6 +12,7 @@ type Service struct {
 	password           PasswordHasher
 	tokens             TokenManager
 	avatars            AvatarStorage
+	permissions        PermissionResolver
 	notifier           ContextPublisher
 	consultantProfiles ConsultantProfileSync
 }
@@ -24,12 +25,13 @@ type ConsultantProfileSync interface {
 	SyncLinkedProfile(ctx context.Context, userID string, displayName string) error
 }
 
-func NewService(users UserRepository, password PasswordHasher, tokens TokenManager, avatars AvatarStorage, notifier ContextPublisher, consultantProfiles ConsultantProfileSync) *Service {
+func NewService(users UserRepository, password PasswordHasher, tokens TokenManager, avatars AvatarStorage, permissions PermissionResolver, notifier ContextPublisher, consultantProfiles ConsultantProfileSync) *Service {
 	return &Service{
 		users:              users,
 		password:           password,
 		tokens:             tokens,
 		avatars:            avatars,
+		permissions:        permissions,
 		notifier:           notifier,
 		consultantProfiles: consultantProfiles,
 	}
@@ -112,6 +114,15 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 	principal.Role = user.Role
 	principal.TenantID = user.TenantID
 	principal.StoreIDs = append([]string{}, user.StoreIDs...)
+	if service.permissions != nil {
+		permissionKeys, err := service.permissions.ResolveUserPermissions(ctx, user.ID, user.Role)
+		if err != nil {
+			return Principal{}, err
+		}
+
+		principal.Permissions = append([]string{}, permissionKeys...)
+		principal.PermissionsResolved = true
+	}
 
 	return principal, nil
 }

@@ -3,6 +3,24 @@ import { DEFAULT_REPORT_FILTERS, normalizeReportFilters } from "~/domain/utils/r
 import { appendUniqueOption, createOptionId } from "~/stores/dashboard/runtime/shared";
 import { applyOperationTemplateToState } from "~/stores/dashboard/runtime/state";
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function reorderOptionItems(items = [], orderedIds = []) {
+  const sourceItems = Array.isArray(items) ? items : [];
+  const normalizedIds = [...new Set((Array.isArray(orderedIds) ? orderedIds : []).map((itemId) => normalizeText(itemId)).filter(Boolean))];
+
+  if (!sourceItems.length || normalizedIds.length !== sourceItems.length) {
+    return sourceItems;
+  }
+
+  const lookup = new Map(sourceItems.map((item) => [item.id, item]));
+  const nextItems = normalizedIds.map((itemId) => lookup.get(itemId)).filter(Boolean);
+
+  return nextItems.length === sourceItems.length ? nextItems : sourceItems;
+}
+
 export function createSettingsActions({ getState, updateState }) {
   return {
     updateReportFilter(filterId, value) {
@@ -177,6 +195,15 @@ export function createSettingsActions({ getState, updateState }) {
       });
     },
 
+    reorderVisitReasonOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        visitReasonOptions: reorderOptionItems(state.visitReasonOptions, optionIds)
+      });
+    },
+
     addCustomerSourceOption(label) {
       const state = getState();
       const normalized = String(label || "").trim();
@@ -219,6 +246,71 @@ export function createSettingsActions({ getState, updateState }) {
       updateState({
         ...state,
         customerSourceOptions: state.customerSourceOptions.filter((item) => item.id !== optionId)
+      });
+    },
+
+    reorderCustomerSourceOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        customerSourceOptions: reorderOptionItems(state.customerSourceOptions, optionIds)
+      });
+    },
+
+    addPauseReasonOption(label) {
+      const state = getState();
+      const { item, items } = appendUniqueOption(state.pauseReasonOptions, "motivo-pausa", label);
+
+      if (!item || items === state.pauseReasonOptions) {
+        return;
+      }
+
+      updateState({
+        ...state,
+        pauseReasonOptions: items
+      });
+    },
+
+    updatePauseReasonOption(optionId, label) {
+      const state = getState();
+      const normalized = normalizeText(label);
+
+      if (!normalized) {
+        return;
+      }
+
+      const duplicate = state.pauseReasonOptions.find(
+        (item) => item.id !== optionId && normalizeText(item.label).toLowerCase() === normalized.toLowerCase()
+      );
+
+      if (duplicate) {
+        return;
+      }
+
+      updateState({
+        ...state,
+        pauseReasonOptions: state.pauseReasonOptions.map((item) =>
+          item.id === optionId ? { ...item, label: normalized } : item
+        )
+      });
+    },
+
+    removePauseReasonOption(optionId) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        pauseReasonOptions: state.pauseReasonOptions.filter((item) => item.id !== optionId)
+      });
+    },
+
+    reorderPauseReasonOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        pauseReasonOptions: reorderOptionItems(state.pauseReasonOptions, optionIds)
       });
     },
 
@@ -269,6 +361,15 @@ export function createSettingsActions({ getState, updateState }) {
       });
     },
 
+    reorderQueueJumpReasonOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        queueJumpReasonOptions: reorderOptionItems(state.queueJumpReasonOptions, optionIds)
+      });
+    },
+
     addLossReasonOption(label) {
       const state = getState();
       const { item, items } = appendUniqueOption(state.lossReasonOptions, "motivo-perda", label);
@@ -316,6 +417,15 @@ export function createSettingsActions({ getState, updateState }) {
       });
     },
 
+    reorderLossReasonOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        lossReasonOptions: reorderOptionItems(state.lossReasonOptions, optionIds)
+      });
+    },
+
     addProfessionOption(label) {
       const state = getState();
       const { item, items } = appendUniqueOption(state.professionOptions, "profissao", label);
@@ -360,6 +470,15 @@ export function createSettingsActions({ getState, updateState }) {
       updateState({
         ...state,
         professionOptions: state.professionOptions.filter((item) => item.id !== optionId)
+      });
+    },
+
+    reorderProfessionOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        professionOptions: reorderOptionItems(state.professionOptions, optionIds)
       });
     },
 

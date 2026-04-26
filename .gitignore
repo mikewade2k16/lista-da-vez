@@ -12,3 +12,13 @@ qa-bot/artifacts/
 __pycache__/
 *.pyc
 .env.production
+
+# Local assistant/browser artifacts
+.claude/
+.playwright-mcp/
+web/.codex-devserver.*.log
+
+# Local token/debug helpers
+token.txt
+token_gen.js
+verify.sh

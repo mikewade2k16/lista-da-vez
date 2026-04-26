@@ -7,6 +7,10 @@ const props = defineProps({
     type: String,
     required: true
   },
+  helperText: {
+    type: String,
+    default: ""
+  },
   options: {
     type: Array,
     default: () => []
@@ -38,6 +42,10 @@ const props = defineProps({
   noneStateLabel: {
     type: String,
     default: ""
+  },
+  nonePlacement: {
+    type: String,
+    default: "inline"
   },
   searchPlaceholder: {
     type: String,
@@ -115,14 +123,13 @@ const dropdownOpen = ref(false);
 const customOpen = ref(false);
 const searchTerm = ref("");
 const customCode = ref("");
-const customName = ref("");
-const customPrice = ref("");
 const itemDetailEditorId = ref("");
 const itemDetailDraft = ref("");
 const SHARED_DETAIL_KEY = "__shared__";
 
 const isClosedMode = computed(() => props.mode === "closed");
 const isSharedDetailMode = computed(() => props.itemDetailMode !== "per-item");
+const useInlineNoneAction = computed(() => props.nonePlacement !== "dropdown");
 const normalizedOptions = computed(() => (Array.isArray(props.options) ? props.options : []).map(normalizeOption));
 const normalizedSelectedItems = computed(() =>
   (Array.isArray(props.selectedItems) ? props.selectedItems : []).map(normalizeOption)
@@ -269,8 +276,6 @@ function syncItemDetails(selectedItems = [], details = normalizedItemDetails.val
 
 function clearCustomForm() {
   customCode.value = "";
-  customName.value = "";
-  customPrice.value = "";
 }
 
 function closeItemDetailEditor() {
@@ -340,30 +345,18 @@ function selectOption(item) {
 
 function addCustomItem() {
   const code = customCode.value.trim().toUpperCase();
-  const label = customName.value.trim();
-  const parsedPrice = Number(customPrice.value || 0);
 
   if (!code) {
     void ui.alert("Informe o codigo do item.");
     return;
   }
 
-  if (!label) {
-    void ui.alert("Informe o nome do item.");
-    return;
-  }
-
-  if (!Number.isFinite(parsedPrice) || parsedPrice <= 0) {
-    void ui.alert("Informe um valor valido para o item.");
-    return;
-  }
-
   const nextItem = normalizeOption({
     id: `__custom__${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    label,
-    name: label,
+    label: code,
+    name: code,
     code,
-    price: Math.max(0, parsedPrice),
+    price: 0,
     isCustom: true
   });
 
@@ -517,7 +510,10 @@ onBeforeUnmount(() => {
 <template>
   <section class="finish-form__section operation-select-picker">
     <div class="product-pick__header">
-      <label class="finish-form__label">{{ label }}</label>
+      <div class="product-pick__copy">
+        <label class="finish-form__label">{{ label }}</label>
+        <span v-if="helperText" class="product-pick__helper">{{ helperText }}</span>
+      </div>
 
       <button
         v-if="selectedCount > 0 && !noneSelected"
@@ -551,7 +547,7 @@ onBeforeUnmount(() => {
         </button>
 
         <button
-          v-if="allowNone && selectedCount === 0"
+          v-if="allowNone && useInlineNoneAction && selectedCount === 0"
           class="product-pick__none-btn product-pick__none-btn--icon"
           :class="{ 'is-active': noneSelected }"
           type="button"
@@ -691,6 +687,18 @@ onBeforeUnmount(() => {
             </label>
 
             <button
+              v-if="allowNone && !useInlineNoneAction"
+              class="product-pick__option product-pick__option--special"
+              :class="{ 'product-pick__option--active': noneSelected }"
+              type="button"
+              :data-testid="testidPrefix ? `${testidPrefix}-none` : null"
+              @click="toggleNone"
+            >
+              <span class="material-icons-round">do_not_disturb_on</span>
+              <span>{{ noneSelected ? (noneStateLabel || noneLabel) : noneLabel }}</span>
+            </button>
+
+            <button
               v-if="allowCustom"
               class="product-pick__option product-pick__option--special"
               type="button"
@@ -712,26 +720,6 @@ onBeforeUnmount(() => {
                     :data-testid="testidPrefix ? `${testidPrefix}-custom-code` : null"
                   >
                 </div>
-                <div class="product-pick__custom-field product-pick__custom-field--price">
-                  <input
-                    v-model="customPrice"
-                    type="number"
-                    class="finish-form__input"
-                    :placeholder="customPricePlaceholder"
-                    min="0.01"
-                    step="0.01"
-                    :data-testid="testidPrefix ? `${testidPrefix}-custom-price` : null"
-                  >
-                </div>
-                <div class="product-pick__custom-field product-pick__custom-field--name">
-                  <input
-                    v-model="customName"
-                    type="text"
-                    class="finish-form__input"
-                    :placeholder="customNamePlaceholder"
-                    :data-testid="testidPrefix ? `${testidPrefix}-custom-name` : null"
-                  >
-                </div>
               </div>
               <div class="product-pick__custom-actions">
                 <button
@@ -744,6 +732,7 @@ onBeforeUnmount(() => {
                 <button
                   class="column-action column-action--primary"
                   type="button"
+                  :disabled="!customCode.trim()"
                   :data-testid="testidPrefix ? `${testidPrefix}-custom-confirm` : null"
                   @click="addCustomItem"
                 >

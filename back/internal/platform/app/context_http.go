@@ -18,11 +18,13 @@ type meContextResponse struct {
 }
 
 type principalDTO struct {
-	UserID    string    `json:"userId"`
-	Role      auth.Role `json:"role"`
-	TenantID  string    `json:"tenantId,omitempty"`
-	StoreIDs  []string  `json:"storeIds,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	UserID              string    `json:"userId"`
+	Role                auth.Role `json:"role"`
+	TenantID            string    `json:"tenantId,omitempty"`
+	StoreIDs            []string  `json:"storeIds,omitempty"`
+	Permissions         []string  `json:"permissions"`
+	PermissionsResolved bool      `json:"permissionsResolved"`
+	ExpiresAt           time.Time `json:"expiresAt"`
 }
 
 type authenticatedView struct {
@@ -57,7 +59,7 @@ func registerContextRoutes(
 			return
 		}
 
-		tenantViews, err := tenantService.ListAccessible(r.Context(), principal)
+		tenantViews, err := tenantService.ListAccessible(r.Context(), principal, tenants.ListInput{})
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao carregar o contexto de tenant.")
 			return
@@ -72,11 +74,13 @@ func registerContextRoutes(
 		httpapi.WriteJSON(w, http.StatusOK, meContextResponse{
 			User: user,
 			Principal: principalDTO{
-				UserID:    principal.UserID,
-				Role:      principal.Role,
-				TenantID:  principal.TenantID,
-				StoreIDs:  append([]string{}, principal.StoreIDs...),
-				ExpiresAt: principal.ExpiresAt,
+				UserID:              principal.UserID,
+				Role:                principal.Role,
+				TenantID:            principal.TenantID,
+				StoreIDs:            append([]string{}, principal.StoreIDs...),
+				Permissions:         append([]string{}, principal.Permissions...),
+				PermissionsResolved: principal.PermissionsResolved,
+				ExpiresAt:           principal.ExpiresAt,
 			},
 			Context: authenticatedView{
 				ActiveTenantID: tenants.ResolveDefaultActiveTenantID(principal, tenantViews),

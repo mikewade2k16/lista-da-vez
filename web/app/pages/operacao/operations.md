@@ -60,7 +60,7 @@ Elementos:
 
 Comportamento:
 - consultor, gerente e `store_terminal` seguem operando apenas na loja ativa definida no header;
-- `owner` e `platform_admin` podem abrir a visao integrada multi-loja pelo select global do header;
+- qualquer sessao com mais de uma loja acessivel pode abrir a visao integrada multi-loja pelo select global do header;
 - na propria pagina de operacao, a barra local mostra apenas o que for util no momento;
 - se houver campanha ativa e filtro integrado ao mesmo tempo, ambos aparecem na mesma linha;
 - se nao houver campanha nem filtro, a barra inteira nao e exibida;
@@ -127,7 +127,7 @@ Comportamento:
 - `Lista da vez` mostra todos que estao aguardando, de todas as lojas acessiveis;
 - `Em atendimento` mostra todos os atendimentos ativos, de todas as lojas acessiveis;
 - a barra inferior continua exibindo o roster, agora com badge de loja quando necessario;
-- `owner` e `platform_admin` podem filtrar internamente uma unica loja sem sair do modo integrado;
+- qualquer sessao com mais de uma loja acessivel pode filtrar internamente uma unica loja sem sair do modo integrado;
 - cada card mostra a loja de origem de forma visual;
 - a acao `Tirar para tarefa` registra `assignment`, nao uma pausa comum.
 

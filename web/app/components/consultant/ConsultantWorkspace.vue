@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { buildConsultantStats } from "~/domain/utils/admin-metrics";
+import ConsultantIntegratedWorkspace from "~/components/consultant/ConsultantIntegratedWorkspace.vue";
 import ConsultantMetrics from "~/components/consultant/ConsultantMetrics.vue";
 import ConsultantSelector from "~/components/consultant/ConsultantSelector.vue";
 import ConsultantSimulator from "~/components/consultant/ConsultantSimulator.vue";
@@ -10,6 +11,30 @@ const props = defineProps({
   state: {
     type: Object,
     required: true
+  },
+  integratedScope: {
+    type: Boolean,
+    default: false
+  },
+  integratedRoster: {
+    type: Array,
+    default: () => []
+  },
+  integratedRanking: {
+    type: Object,
+    default: null
+  },
+  integratedOverview: {
+    type: Object,
+    default: null
+  },
+  integratedPending: {
+    type: Boolean,
+    default: false
+  },
+  integratedError: {
+    type: String,
+    default: ""
   }
 });
 
@@ -52,7 +77,16 @@ function updateSimulation(amount) {
 </script>
 
 <template>
-  <section class="admin-panel" data-testid="consultant-panel">
+  <ConsultantIntegratedWorkspace
+    v-if="integratedScope"
+    :roster="integratedRoster"
+    :ranking="integratedRanking"
+    :overview="integratedOverview"
+    :pending="integratedPending"
+    :error-message="integratedError"
+  />
+
+  <section v-else class="admin-panel" data-testid="consultant-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Perfil do consultor</h2>
       <p class="admin-panel__text">Meta mensal, desempenho e simulacao de venda.</p>

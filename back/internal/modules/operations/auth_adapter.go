@@ -11,9 +11,11 @@ func AccessContextFromPrincipal(principal auth.Principal) AccessContext {
 	}
 
 	return AccessContext{
-		UserID:   principal.UserID,
-		TenantID: principal.TenantID,
-		Role:     string(principal.Role),
-		StoreIDs: storeIDs,
+		UserID:              principal.UserID,
+		TenantID:            principal.TenantID,
+		Role:                string(principal.Role),
+		StoreIDs:            storeIDs,
+		Permissions:         append([]string{}, principal.Permissions...),
+		PermissionsResolved: principal.PermissionsResolved,
 	}
 }

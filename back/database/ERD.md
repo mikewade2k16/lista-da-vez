@@ -166,19 +166,36 @@ erDiagram
         text loss_reason_label
         text loss_reason_placeholder
         text customer_section_label
+        boolean show_customer_name_field
+        boolean show_customer_phone_field
         boolean show_email_field
         boolean show_profession_field
         boolean show_notes_field
+        boolean show_product_seen_field
+        boolean show_product_closed_field
+        boolean show_visit_reason_field
+        boolean show_customer_source_field
+        boolean show_queue_jump_reason_field
+        boolean show_loss_reason_field
         text visit_reason_selection_mode
         text visit_reason_detail_mode
         text loss_reason_selection_mode
         text loss_reason_detail_mode
         text customer_source_selection_mode
         text customer_source_detail_mode
+        boolean require_customer_name_field
+        boolean require_customer_phone_field
+        boolean require_email_field
+        boolean require_profession_field
+        boolean require_notes_field
         boolean require_product
+        boolean require_product_seen_field
+        boolean require_product_closed_field
         boolean require_visit_reason
         boolean require_customer_source
         boolean require_customer_name_phone
+        boolean require_queue_jump_reason_field
+        boolean require_loss_reason_field
         timestamptz created_at
         timestamptz updated_at
     }
@@ -371,6 +388,7 @@ erDiagram
   - configuracao escalar da loja para a operacao e o modal
 - `store_setting_options`
   - catalogos configuraveis da loja, tipados por `kind`
+  - `kind` atual: `visit_reason`, `customer_source`, `pause_reason`, `queue_jump_reason`, `loss_reason`, `profession`
 - `store_catalog_products`
   - catalogo de produtos configuravel da loja
 - `operation_queue_entries`

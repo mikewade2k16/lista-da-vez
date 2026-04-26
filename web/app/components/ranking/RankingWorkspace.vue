@@ -15,6 +15,10 @@ const props = defineProps({
   errorMessage: {
     type: String,
     default: ""
+  },
+  integratedScope: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -34,7 +38,9 @@ const ALERT_LABELS = {
   <section class="admin-panel" data-testid="ranking-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Ranking de vendedores</h2>
-      <p class="admin-panel__text">Comparativo mensal e diario para acompanhar consistencia e bonificacao.</p>
+      <p class="admin-panel__text">
+        {{ integratedScope ? 'Comparativo mensal e diario consolidado das lojas do tenant ativo.' : 'Comparativo mensal e diario para acompanhar consistencia e bonificacao.' }}
+      </p>
     </header>
 
     <article v-if="errorMessage" class="insight-card">
@@ -42,7 +48,7 @@ const ALERT_LABELS = {
     </article>
 
     <article v-else-if="pending && !monthlyRows.length && !dailyRows.length" class="insight-card">
-      <p class="settings-card__text">Carregando ranking da loja ativa...</p>
+      <p class="settings-card__text">{{ integratedScope ? 'Carregando ranking consolidado...' : 'Carregando ranking da loja ativa...' }}</p>
     </article>
 
     <div v-if="alerts.length" class="alert-list" data-testid="ranking-alerts">

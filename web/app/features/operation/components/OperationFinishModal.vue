@@ -13,16 +13,67 @@ const props = defineProps({
 
 const operationsStore = useOperationsStore();
 const ui = useUiStore();
+const FINISH_MODAL_DRAFT_STORAGE_KEY = "ldv_finish_modal_drafts_v1";
+const FINISH_MODAL_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+
+function readDraftStorage() {
+  if (import.meta.server) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(FINISH_MODAL_DRAFT_STORAGE_KEY) || "{}");
+    return parsed && typeof parsed === "object" && parsed.drafts && typeof parsed.drafts === "object"
+      ? parsed.drafts
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDraftStorage(drafts) {
+  if (import.meta.server) {
+    return;
+  }
+
+  const now = Date.now();
+  const normalizedDrafts = Object.fromEntries(
+    Object.entries(drafts || {}).filter(([, entry]) =>
+      entry && typeof entry === "object" && now - Number(entry.updatedAt || 0) <= FINISH_MODAL_DRAFT_MAX_AGE_MS
+    )
+  );
+
+  if (Object.keys(normalizedDrafts).length === 0) {
+    window.sessionStorage.removeItem(FINISH_MODAL_DRAFT_STORAGE_KEY);
+    return;
+  }
+
+  window.sessionStorage.setItem(FINISH_MODAL_DRAFT_STORAGE_KEY, JSON.stringify({
+    version: 1,
+    drafts: normalizedDrafts
+  }));
+}
+
+function removeStoredDraft(draftKey) {
+  const normalizedKey = String(draftKey || "").trim();
+
+  if (!normalizedKey) {
+    return;
+  }
+
+  const drafts = readDraftStorage();
+  delete drafts[normalizedKey];
+  writeDraftStorage(drafts);
+}
 
 function createEmptyForm() {
   return {
     outcome: "",
-    isWindowService: false,
-    isGift: false,
     isExistingCustomer: false,
     productsSeen: [],
     productsClosed: [],
     productsSeenNone: false,
+    productSeenNotes: "",
     customerName: "",
     customerPhone: "",
     customerEmail: "",
@@ -71,23 +122,52 @@ function normalizeProducts(items = []) {
   }));
 }
 
+function getProductIdentity(product) {
+  const code = String(product?.code || "").trim().toLowerCase();
+  const id = String(product?.id || "").trim().toLowerCase();
+  const name = String(product?.name || product?.label || "").trim().toLowerCase();
+
+  return code ? `code:${code}` : id ? `id:${id}` : name ? `name:${name}` : "";
+}
+
+function mergeProductEntries(...groups) {
+  const seen = new Set();
+  const merged = [];
+
+  groups.flat().forEach((product) => {
+    const normalized = normalizeProducts([product])[0];
+    const identity = getProductIdentity(normalized);
+
+    if (!identity || seen.has(identity)) {
+      return;
+    }
+
+    seen.add(identity);
+    merged.push(normalized);
+  });
+
+  return merged;
+}
+
 function buildInitialForm(state, draft) {
   const currentDraft = draft || {};
-  const selectedVisitReasonIds = normalizeIdList(currentDraft.visitReasons);
+  const selectedVisitReasonIds = normalizeIdList(currentDraft.visitReasonIds || currentDraft.visitReasons);
   const selectedSourceIds = normalizeIdList(
-    Array.isArray(currentDraft.customerSources)
-      ? currentDraft.customerSources
+    Array.isArray(currentDraft.customerSourceIds) || Array.isArray(currentDraft.customerSources)
+      ? currentDraft.customerSourceIds || currentDraft.customerSources
       : currentDraft.customerSource
         ? [currentDraft.customerSource]
         : []
   );
-  const selectedProfession = findOptionByLabel(state.professionOptions, currentDraft.customerProfession);
+  const selectedProfession =
+    (state.professionOptions || []).find((option) => option.id === String(currentDraft.customerProfessionId || "")) ||
+    findOptionByLabel(state.professionOptions, currentDraft.customerProfession);
   const selectedQueueJumpReason =
     (state.queueJumpReasonOptions || []).find((option) => option.id === String(currentDraft.queueJumpReasonId || "")) ||
     findOptionByLabel(state.queueJumpReasonOptions, currentDraft.queueJumpReason);
   const selectedLossReasonIds = normalizeIdList(
-    Array.isArray(currentDraft.lossReasons)
-      ? currentDraft.lossReasons
+    Array.isArray(currentDraft.lossReasonIds) || Array.isArray(currentDraft.lossReasons)
+      ? currentDraft.lossReasonIds || currentDraft.lossReasons
       : currentDraft.lossReasonId
         ? [currentDraft.lossReasonId]
         : []
@@ -104,12 +184,15 @@ function buildInitialForm(state, draft) {
 
   return {
     outcome: String(currentDraft.outcome || ""),
-    isWindowService: Boolean(currentDraft.isWindowService),
-    isGift: Boolean(currentDraft.isGift),
     isExistingCustomer: Boolean(currentDraft.isExistingCustomer),
     productsSeen: normalizeProducts(currentDraft.productsSeen),
     productsClosed: normalizeProducts(currentDraft.productsClosed),
     productsSeenNone: Boolean(currentDraft.productsSeenNone),
+    productSeenNotes: String(
+      currentDraft.productSeenNotes
+      || ((Array.isArray(currentDraft.productsSeen) && currentDraft.productsSeen.length) ? "" : currentDraft.productSeen)
+      || ""
+    ),
     customerName: String(currentDraft.customerName || ""),
     customerPhone: String(currentDraft.customerPhone || ""),
     customerEmail: String(currentDraft.customerEmail || ""),
@@ -143,6 +226,37 @@ function formatCurrency(value) {
   return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function formatPhoneMask(value) {
+  const digits = String(value || "").replace(/\D/g, "").slice(0, 11);
+
+  if (!digits) {
+    return "";
+  }
+
+  if (digits.length <= 2) {
+    return `(${digits}`;
+  }
+
+  if (digits.length <= 6) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  }
+
+  if (digits.length <= 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
+function handleCustomerPhoneInput(event) {
+  const maskedValue = formatPhoneMask(event?.target?.value || form.customerPhone);
+  form.customerPhone = maskedValue;
+
+  if (event?.target) {
+    event.target.value = maskedValue;
+  }
+}
+
 function mapOptionToPickerItem(option, meta = "") {
   return {
     id: String(option?.id || ""),
@@ -156,7 +270,64 @@ function resolveModalText(value, fallback) {
   return normalizedValue || fallback;
 }
 
+function resolveModalBoolean(value, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function resolveModalNumber(value, fallback = 0, minimum = 0) {
+  return Math.max(minimum, Number(value ?? fallback) || fallback || 0);
+}
+
 const modalConfig = computed(() => props.state.modalConfig || {});
+const showCustomerNameField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerNameField, true));
+const showCustomerPhoneField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerPhoneField, true));
+const showEmailField = computed(() => resolveModalBoolean(modalConfig.value.showEmailField, true));
+const showProfessionField = computed(() => resolveModalBoolean(modalConfig.value.showProfessionField, true));
+const showNotesField = computed(() => resolveModalBoolean(modalConfig.value.showNotesField, true));
+const showProductSeenField = computed(() => resolveModalBoolean(modalConfig.value.showProductSeenField, true));
+const showProductSeenNotesField = computed(() => resolveModalBoolean(modalConfig.value.showProductSeenNotesField, true));
+const showProductClosedField = computed(() => resolveModalBoolean(modalConfig.value.showProductClosedField, true));
+const showVisitReasonField = computed(() => resolveModalBoolean(modalConfig.value.showVisitReasonField, true));
+const showCustomerSourceField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerSourceField, true));
+const showExistingCustomerField = computed(() => resolveModalBoolean(modalConfig.value.showExistingCustomerField, true));
+const showQueueJumpReasonField = computed(() => resolveModalBoolean(modalConfig.value.showQueueJumpReasonField, true));
+const showLossReasonField = computed(() => resolveModalBoolean(modalConfig.value.showLossReasonField, true));
+const requireCustomerNameField = computed(() =>
+  resolveModalBoolean(modalConfig.value.requireCustomerNameField, resolveModalBoolean(modalConfig.value.requireCustomerNamePhone, true))
+);
+const requireCustomerPhoneField = computed(() =>
+  resolveModalBoolean(modalConfig.value.requireCustomerPhoneField, resolveModalBoolean(modalConfig.value.requireCustomerNamePhone, true))
+);
+const requireEmailField = computed(() => resolveModalBoolean(modalConfig.value.requireEmailField, false));
+const requireProfessionField = computed(() => resolveModalBoolean(modalConfig.value.requireProfessionField, false));
+const requireNotesField = computed(() => resolveModalBoolean(modalConfig.value.requireNotesField, false));
+const requireProductSeenField = computed(() =>
+  resolveModalBoolean(modalConfig.value.requireProductSeenField, resolveModalBoolean(modalConfig.value.requireProduct, true))
+);
+const requireProductSeenNotesField = computed(() =>
+  resolveModalBoolean(modalConfig.value.requireProductSeenNotesField, false)
+);
+const requireProductClosedField = computed(() =>
+  resolveModalBoolean(modalConfig.value.requireProductClosedField, resolveModalBoolean(modalConfig.value.requireProduct, true))
+);
+const requireVisitReasonField = computed(() => resolveModalBoolean(modalConfig.value.requireVisitReason, true));
+const requireCustomerSourceField = computed(() => resolveModalBoolean(modalConfig.value.requireCustomerSource, true));
+const allowProductSeenNone = computed(() => resolveModalBoolean(modalConfig.value.allowProductSeenNone, true));
+const requireProductSeenNotesWhenNone = computed(() =>
+  resolveModalBoolean(modalConfig.value.requireProductSeenNotesWhenNone, true)
+);
+const productSeenNotesMinChars = computed(() => resolveModalNumber(modalConfig.value.productSeenNotesMinChars, 20, 1));
+const requireQueueJumpReasonField = computed(() => resolveModalBoolean(modalConfig.value.requireQueueJumpReasonField, true));
+const requireLossReasonField = computed(() => resolveModalBoolean(modalConfig.value.requireLossReasonField, true));
+const showCustomerSection = computed(() =>
+  showCustomerNameField.value
+  || showCustomerPhoneField.value
+  || showEmailField.value
+  || showProfessionField.value
+  || showExistingCustomerField.value
+  || showCustomerSourceField.value
+  || showNotesField.value
+);
 const visitReasonSelectionMode = computed(() =>
   modalConfig.value.visitReasonSelectionMode === "single" ? "single" : "multiple"
 );
@@ -212,17 +383,60 @@ const service = computed(() =>
   (props.state.activeServices || []).find((item) => item.id === props.state.finishModalPersonId) || null
 );
 const draft = computed(() => props.state.finishModalDraft || null);
+const serviceDraftKey = computed(() => {
+  const currentService = service.value;
+  const storeId = String(props.state.activeStoreId || "").trim();
+  const serviceId = String(currentService?.serviceId || "").trim();
+
+  return storeId && serviceId ? `${storeId}:${serviceId}` : "";
+});
+const hasRestoredDraft = computed(() =>
+  Boolean(restoredDraftKey.value && restoredDraftKey.value === serviceDraftKey.value)
+);
 const isClosedOutcome = computed(() => form.outcome === "compra" || form.outcome === "reserva");
+const trimmedProductSeenNotes = computed(() => String(form.productSeenNotes || "").trim());
+const isProductSeenNotesRequired = computed(() =>
+  showProductSeenNotesField.value && (
+    requireProductSeenNotesField.value
+    || (allowProductSeenNone.value && form.productsSeenNone && requireProductSeenNotesWhenNone.value)
+  )
+);
+const isProductSeenNotesValid = computed(() =>
+  !isProductSeenNotesRequired.value || trimmedProductSeenNotes.value.length >= productSeenNotesMinChars.value
+);
+const productSeenNotesHelperText = computed(() => {
+  if (form.productsSeenNone) {
+    return `Quando nao houver interesse selecionado, explique o contexto com pelo menos ${productSeenNotesMinChars.value} caracteres.`;
+  }
+
+  return "Use este campo para detalhar referencia, gosto, pedido especial ou algo que ainda nao existe em loja.";
+});
 const closedProductLabel = computed(() => {
+  const configuredLabel = String(modalConfig.value.productClosedLabel || "").trim();
+  if (configuredLabel && !["produto reservado/comprado", "produto fechado"].includes(configuredLabel.toLowerCase())) {
+    return configuredLabel;
+  }
+
   if (form.outcome === "compra") {
-    return "Produto comprado";
+    return "Compra";
   }
 
   if (form.outcome === "reserva") {
-    return "Produto reservado";
+    return "Reserva";
   }
 
-  return "Produto comprado/reservado";
+  return "Fechamento";
+});
+const closedProductHelperText = computed(() => {
+  if (form.outcome === "compra") {
+    return "";
+  }
+
+  if (form.outcome === "reserva") {
+    return "";
+  }
+
+  return "Registre o item fechado quando o atendimento terminar em compra ou reserva.";
 });
 const selectedProfessionLabel = computed(
   () => props.state.professionOptions.find((option) => option.id === form.customerProfessionId)?.label || ""
@@ -236,11 +450,18 @@ const closedTotal = computed(() =>
 
 const formStep1Quality = computed(() => {
   const checks = {
-    outcome: !!form.outcome,
-    productSeen: form.productsSeen.length > 0 || form.productsSeenNone
+    outcome: !!form.outcome
   };
 
-  if (isClosedOutcome.value) {
+  if (showProductSeenField.value && requireProductSeenField.value) {
+    checks.productSeen = form.productsSeen.length > 0 || form.productsSeenNone;
+  }
+
+  if (isProductSeenNotesRequired.value) {
+    checks.productSeenNotes = isProductSeenNotesValid.value;
+  }
+
+  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value) {
     checks.productClosed = form.productsClosed.length > 0;
   }
 
@@ -254,39 +475,68 @@ const formStep1Quality = computed(() => {
 const formQuality = computed(() => {
   const hasText = (v) => String(v || "").trim().length > 0;
 
-  const checks = {
-    customerName: hasText(form.customerName),
-    customerPhone: hasText(form.customerPhone),
-    product: form.productsSeen.length > 0 || form.productsClosed.length > 0 || form.productsSeenNone,
-    visitReasons: form.visitReasonIds.length > 0 || form.visitReasonNotInformed,
-    customerSources: form.customerSourceIds.length > 0 || form.customerSourceNotInformed
-  };
+  const checks = {};
 
-  if (service.value?.startMode === "queue-jump") {
+  if (showCustomerNameField.value && requireCustomerNameField.value) {
+    checks.customerName = hasText(form.customerName);
+  }
+
+  if (showCustomerPhoneField.value && requireCustomerPhoneField.value) {
+    checks.customerPhone = hasText(form.customerPhone);
+  }
+
+  if (showProductSeenField.value && requireProductSeenField.value) {
+    checks.productSeen = form.productsSeen.length > 0 || form.productsSeenNone;
+  }
+
+  if (isProductSeenNotesRequired.value) {
+    checks.productSeenNotes = isProductSeenNotesValid.value;
+  }
+
+  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value) {
+    checks.productClosed = form.productsClosed.length > 0;
+  }
+
+  if (showVisitReasonField.value && requireVisitReasonField.value) {
+    checks.visitReasons = form.visitReasonIds.length > 0 || form.visitReasonNotInformed;
+  }
+
+  if (showCustomerSourceField.value && requireCustomerSourceField.value) {
+    checks.customerSources = form.customerSourceIds.length > 0 || form.customerSourceNotInformed;
+  }
+
+  if (service.value?.startMode === "queue-jump" && showQueueJumpReasonField.value && requireQueueJumpReasonField.value) {
     checks.queueJumpReason = Boolean(selectedQueueJumpReasonLabel.value);
   }
 
-  if (form.outcome === "nao-compra") {
+  if (form.outcome === "nao-compra" && showLossReasonField.value && requireLossReasonField.value) {
     checks.lossReason = form.lossReasonIds.length > 0;
   }
 
-  if (modalConfig.value.showEmailField) {
+  if (showEmailField.value && requireEmailField.value) {
     checks.customerEmail = hasText(form.customerEmail);
   }
 
-  if (modalConfig.value.showProfessionField) {
+  if (showProfessionField.value && requireProfessionField.value) {
     checks.customerProfession = !!form.customerProfessionId;
+  }
+
+  if (showNotesField.value && requireNotesField.value) {
+    checks.notes = hasText(form.notes);
   }
 
   const coreTotal = Object.keys(checks).length;
   const coreFilledCount = Object.values(checks).filter(Boolean).length;
-  const hasNotes = hasText(form.notes) && Boolean(modalConfig.value.showNotesField);
+  const hasNotes = hasText(form.notes) && showNotesField.value;
   const isCoreComplete = coreFilledCount === coreTotal;
   const level = isCoreComplete ? (hasNotes ? "excellent" : "complete") : "incomplete";
   const levelLabels = { excellent: "Excelente", complete: "Completo", incomplete: "Incompleto" };
 
   return { checks, coreFilledCount, coreTotal, hasNotes, isCoreComplete, level, levelLabel: levelLabels[level] };
 });
+const customProducts = ref([]);
+const restoredDraftKey = ref("");
+let isApplyingDraft = false;
 const productCatalogItems = computed(() =>
   (props.state.productCatalog || []).map((product) => ({
     id: String(product.id || ""),
@@ -297,6 +547,9 @@ const productCatalogItems = computed(() =>
     price: Math.max(0, Number(product.basePrice || 0)),
     basePrice: Math.max(0, Number(product.basePrice || 0))
   }))
+);
+const productPickerOptions = computed(() =>
+  mergeProductEntries(productCatalogItems.value, customProducts.value)
 );
 const professionPickerOptions = computed(() =>
   (props.state.professionOptions || []).map((option) => mapOptionToPickerItem(option))
@@ -387,31 +640,173 @@ function updateLossReasonSelectedItems(items) {
   lossReasonSelectedItems.value = items;
 }
 
+function buildDraftPayload() {
+  return {
+    outcome: form.outcome,
+    isExistingCustomer: form.isExistingCustomer,
+    productsSeen: normalizeProducts(form.productsSeen),
+    productsClosed: normalizeProducts(form.productsClosed),
+    productsSeenNone: form.productsSeenNone,
+    productSeenNotes: form.productSeenNotes,
+    customerName: form.customerName,
+    customerPhone: form.customerPhone,
+    customerEmail: form.customerEmail,
+    customerProfessionId: form.customerProfessionId,
+    customerProfession: selectedProfessionLabel.value,
+    visitReasonIds: normalizeIdList(form.visitReasonIds),
+    visitReasons: normalizeIdList(form.visitReasonIds),
+    visitReasonsNotInformed: form.visitReasonNotInformed,
+    visitReasonDetails: { ...form.visitReasonDetails },
+    customerSourceIds: normalizeIdList(form.customerSourceIds),
+    customerSources: normalizeIdList(form.customerSourceIds),
+    customerSourcesNotInformed: form.customerSourceNotInformed,
+    customerSourceDetails: { ...form.customerSourceDetails },
+    queueJumpReasonId: form.queueJumpReasonId,
+    queueJumpReason: selectedQueueJumpReasonLabel.value,
+    lossReasonIds: normalizeIdList(form.lossReasonIds),
+    lossReasons: normalizeIdList(form.lossReasonIds),
+    lossReasonDetails: { ...form.lossReasonDetails },
+    lossReasonId: normalizeIdList(form.lossReasonIds)[0] || "",
+    lossReason: selectedLossReasonSummary.value,
+    notes: form.notes
+  };
+}
+
+function hasDraftContent(payload, products = []) {
+  if (!payload || typeof payload !== "object") {
+    return false;
+  }
+
+  return Boolean(
+    payload.outcome ||
+    payload.isExistingCustomer ||
+    payload.productsSeen?.length ||
+    payload.productsClosed?.length ||
+    payload.productsSeenNone ||
+    payload.productSeenNotes ||
+    payload.customerName ||
+    payload.customerPhone ||
+    payload.customerEmail ||
+    payload.customerProfessionId ||
+    payload.visitReasonIds?.length ||
+    payload.visitReasonsNotInformed ||
+    Object.keys(payload.visitReasonDetails || {}).length ||
+    payload.customerSourceIds?.length ||
+    payload.customerSourcesNotInformed ||
+    Object.keys(payload.customerSourceDetails || {}).length ||
+    payload.queueJumpReasonId ||
+    payload.lossReasonIds?.length ||
+    Object.keys(payload.lossReasonDetails || {}).length ||
+    payload.notes ||
+    products.length
+  );
+}
+
+function loadStoredDraft(currentService) {
+  const key = serviceDraftKey.value;
+
+  if (!key || !currentService) {
+    return null;
+  }
+
+  const stored = readDraftStorage()[key];
+
+  if (!stored || typeof stored !== "object") {
+    return null;
+  }
+
+  if (stored.serviceId !== currentService.serviceId || stored.personId !== currentService.id) {
+    removeStoredDraft(key);
+    return null;
+  }
+
+  return stored;
+}
+
+function saveActiveDraft() {
+  if (isApplyingDraft || !service.value || !serviceDraftKey.value) {
+    return;
+  }
+
+  const payload = buildDraftPayload();
+  const normalizedCustomProducts = normalizeProducts(customProducts.value).filter((product) => product.isCustom);
+
+  if (!hasDraftContent(payload, normalizedCustomProducts)) {
+    removeStoredDraft(serviceDraftKey.value);
+    restoredDraftKey.value = "";
+    return;
+  }
+
+  const drafts = readDraftStorage();
+  drafts[serviceDraftKey.value] = {
+    version: 1,
+    storeId: String(props.state.activeStoreId || "").trim(),
+    serviceId: service.value.serviceId,
+    personId: service.value.id,
+    updatedAt: Date.now(),
+    form: payload,
+    customProducts: normalizedCustomProducts
+  };
+  writeDraftStorage(drafts);
+}
+
+function registerCustomProducts(items = []) {
+  const nextCustomProducts = normalizeProducts(items).filter((product) => product.isCustom);
+
+  if (!nextCustomProducts.length) {
+    return;
+  }
+
+  customProducts.value = mergeProductEntries(customProducts.value, nextCustomProducts);
+}
+
+function updateProductsSeen(items) {
+  const nextItems = normalizeProducts(items);
+  registerCustomProducts(nextItems);
+  form.productsSeen = nextItems;
+
+  if (nextItems.length > 0) {
+    form.productsSeenNone = false;
+  }
+}
+
+function updateProductsClosed(items) {
+  const nextItems = normalizeProducts(items);
+  registerCustomProducts(nextItems);
+  form.productsClosed = nextItems;
+}
+
+function clearCurrentDraft() {
+  const key = serviceDraftKey.value;
+
+  if (key) {
+    removeStoredDraft(key);
+  }
+
+  isApplyingDraft = true;
+  restoredDraftKey.value = "";
+  customProducts.value = [];
+  step.value = 1;
+  Object.assign(form, createEmptyForm());
+  normalizeFormForModalConfig();
+  isApplyingDraft = false;
+}
+
 function normalizeFormForModalConfig() {
-  if (!isVisitReasonMultiple.value && form.visitReasonIds.length > 1) {
-    form.visitReasonIds = form.visitReasonIds.slice(0, 1);
-  }
-
-  if (!isLossReasonMultiple.value && form.lossReasonIds.length > 1) {
-    form.lossReasonIds = form.lossReasonIds.slice(0, 1);
-  }
-
-  if (!isCustomerSourceMultiple.value && form.customerSourceIds.length > 1) {
-    form.customerSourceIds = form.customerSourceIds.slice(0, 1);
-  }
-
   form.visitReasonIds = normalizeIdList(form.visitReasonIds);
   form.lossReasonIds = normalizeIdList(form.lossReasonIds);
   form.customerSourceIds = normalizeIdList(form.customerSourceIds);
-  form.visitReasonDetails = visitReasonDetailsEnabled.value
-    ? syncSelectedDetails(form.visitReasonIds, form.visitReasonDetails)
-    : {};
-  form.lossReasonDetails = lossReasonDetailsEnabled.value
-    ? syncSelectedDetails(form.lossReasonIds, form.lossReasonDetails)
-    : {};
-  form.customerSourceDetails = customerSourceDetailsEnabled.value
-    ? syncSelectedDetails(form.customerSourceIds, form.customerSourceDetails)
-    : {};
+  form.visitReasonDetails = syncSelectedDetails(form.visitReasonIds, form.visitReasonDetails);
+  form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, form.lossReasonDetails);
+  form.customerSourceDetails = syncSelectedDetails(form.customerSourceIds, form.customerSourceDetails);
+
+  if (!allowProductSeenNone.value) {
+    form.productsSeenNone = false;
+  }
+
+  if (form.productsSeen.length) {
+    form.productsSeenNone = false;
+  }
 
   if (form.visitReasonIds.length) {
     form.visitReasonNotInformed = false;
@@ -423,9 +818,17 @@ function normalizeFormForModalConfig() {
 }
 
 function resetForm() {
+  const currentService = service.value;
+  const storedDraft = loadStoredDraft(currentService);
+  const initialDraft = storedDraft?.form || draft.value;
+
+  isApplyingDraft = true;
   step.value = 1;
-  Object.assign(form, createEmptyForm(), buildInitialForm(props.state, draft.value));
+  customProducts.value = mergeProductEntries(storedDraft?.customProducts || [], initialDraft?.customProducts || []);
+  restoredDraftKey.value = storedDraft ? serviceDraftKey.value : "";
+  Object.assign(form, createEmptyForm(), buildInitialForm(props.state, initialDraft));
   normalizeFormForModalConfig();
+  isApplyingDraft = false;
 }
 
 function goToStep1() {
@@ -438,13 +841,18 @@ async function goToStep2() {
     return;
   }
 
-  if (modalConfig.value.requireProduct && form.productsSeen.length === 0 && !form.productsSeenNone) {
-    await ui.alert("Selecione pelo menos um produto visto ou marque 'Nenhum'.");
+  if (showProductSeenField.value && requireProductSeenField.value && form.productsSeen.length === 0 && !form.productsSeenNone) {
+    await ui.alert("Selecione pelo menos um interesse do cliente ou use a opcao de nenhum.");
     return;
   }
 
-  if (isClosedOutcome.value && modalConfig.value.requireProduct && form.productsClosed.length === 0) {
-    await ui.alert("Selecione o produto comprado/reservado.");
+  if (isProductSeenNotesRequired.value && !isProductSeenNotesValid.value) {
+    await ui.alert(`Preencha os detalhes dos interesses com pelo menos ${productSeenNotesMinChars.value} caracteres.`);
+    return;
+  }
+
+  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value && form.productsClosed.length === 0) {
+    await ui.alert("Selecione o item de compra ou reserva.");
     return;
   }
 
@@ -466,32 +874,57 @@ async function submitForm() {
     return;
   }
 
-  if (modalConfig.value.requireVisitReason && form.visitReasonIds.length === 0 && !form.visitReasonNotInformed) {
+  if (showVisitReasonField.value && requireVisitReasonField.value && form.visitReasonIds.length === 0 && !form.visitReasonNotInformed) {
     await ui.alert("Selecione um motivo da visita ou marque 'Nao informado'.");
     return;
   }
 
-  if (modalConfig.value.requireProduct && form.productsSeen.length === 0 && !form.productsSeenNone) {
-    await ui.alert("Selecione pelo menos um produto visto ou marque 'Nenhum'.");
+  if (showProductSeenField.value && requireProductSeenField.value && form.productsSeen.length === 0 && !form.productsSeenNone) {
+    await ui.alert("Selecione pelo menos um interesse do cliente ou use a opcao de nenhum.");
     return;
   }
 
-  if (isClosedOutcome.value && modalConfig.value.requireProduct && form.productsClosed.length === 0) {
-    await ui.alert("Selecione o produto comprado/reservado.");
+  if (isProductSeenNotesRequired.value && !isProductSeenNotesValid.value) {
+    await ui.alert(`Preencha os detalhes dos interesses com pelo menos ${productSeenNotesMinChars.value} caracteres.`);
     return;
   }
 
-  if (modalConfig.value.requireCustomerNamePhone && (!form.customerName.trim() || !form.customerPhone.trim())) {
-    await ui.alert("Nome e telefone do cliente sao obrigatorios.");
+  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value && form.productsClosed.length === 0) {
+    await ui.alert("Selecione o item de compra ou reserva.");
     return;
   }
 
-  if (modalConfig.value.requireCustomerSource && form.customerSourceIds.length === 0 && !form.customerSourceNotInformed) {
+  if (showCustomerNameField.value && requireCustomerNameField.value && !form.customerName.trim()) {
+    await ui.alert("Nome do cliente e obrigatorio.");
+    return;
+  }
+
+  if (showCustomerPhoneField.value && requireCustomerPhoneField.value && !form.customerPhone.trim()) {
+    await ui.alert("Telefone do cliente e obrigatorio.");
+    return;
+  }
+
+  if (showEmailField.value && requireEmailField.value && !form.customerEmail.trim()) {
+    await ui.alert("Email do cliente e obrigatorio.");
+    return;
+  }
+
+  if (showProfessionField.value && requireProfessionField.value && !form.customerProfessionId) {
+    await ui.alert("Selecione a profissao do cliente.");
+    return;
+  }
+
+  if (showCustomerSourceField.value && requireCustomerSourceField.value && form.customerSourceIds.length === 0 && !form.customerSourceNotInformed) {
     await ui.alert("Selecione uma origem do cliente ou marque 'Nao informado'.");
     return;
   }
 
-  if (service.value.startMode === "queue-jump" && !selectedQueueJumpReasonLabel.value) {
+  if (showNotesField.value && requireNotesField.value && !form.notes.trim()) {
+    await ui.alert("Observacoes sao obrigatorias para concluir o atendimento.");
+    return;
+  }
+
+  if (service.value.startMode === "queue-jump" && showQueueJumpReasonField.value && requireQueueJumpReasonField.value && !selectedQueueJumpReasonLabel.value) {
     if (!queueJumpReasonPickerOptions.value.length) {
       await ui.alert("Cadastre pelo menos um motivo de atendimento fora da vez em Configuracoes.");
       return;
@@ -501,7 +934,7 @@ async function submitForm() {
     return;
   }
 
-  if (form.outcome === "nao-compra" && form.lossReasonIds.length === 0) {
+  if (form.outcome === "nao-compra" && showLossReasonField.value && requireLossReasonField.value && form.lossReasonIds.length === 0) {
     if (!lossReasonPickerOptions.value.length) {
       await ui.alert("Cadastre pelo menos um motivo da perda em Configuracoes.");
       return;
@@ -511,16 +944,20 @@ async function submitForm() {
     return;
   }
 
-  await operationsStore.finishService(service.value.id, {
+  const currentService = service.value;
+  const productSeenSummary = [
+    form.productsSeen.length ? form.productsSeen.map((item) => item.name).filter(Boolean).join(", ") : "",
+    trimmedProductSeenNotes.value
+  ].filter(Boolean).join(" | ");
+  const result = await operationsStore.finishService(currentService.id, {
     outcome: form.outcome,
-    isWindowService: form.isWindowService,
-    isGift: isClosedOutcome.value ? form.isGift : false,
-    productSeen: form.productsSeen[0]?.name || "",
+    productSeen: productSeenSummary || (form.productsSeenNone ? "Nenhum interesse identificado" : ""),
     productClosed: isClosedOutcome.value ? form.productsClosed[0]?.name || "" : "",
     productsSeen: form.productsSeen,
     productsClosed: isClosedOutcome.value ? form.productsClosed : [],
     productsSeenNone: form.productsSeenNone,
-    productDetails: (isClosedOutcome.value ? form.productsClosed[0]?.name : "") || form.productsSeen[0]?.name || "",
+    productSeenNotes: trimmedProductSeenNotes.value,
+    productDetails: (isClosedOutcome.value ? form.productsClosed[0]?.name : "") || productSeenSummary || "",
     customerName: form.customerName.trim(),
     customerPhone: form.customerPhone.trim(),
     customerEmail: form.customerEmail.trim(),
@@ -558,15 +995,26 @@ async function submitForm() {
     queueJumpReason: service.value.startMode === "queue-jump" ? selectedQueueJumpReasonLabel.value : "",
     notes: form.notes.trim()
   });
+
+  if (result?.ok === false) {
+    ui.error(result.message || "Nao foi possivel encerrar o atendimento.");
+    return;
+  }
+
+  removeStoredDraft(`${String(props.state.activeStoreId || "").trim()}:${currentService.serviceId}`);
+  restoredDraftKey.value = "";
+  customProducts.value = [];
   ui.success("Atendimento encerrado.");
 }
 
-watch(service, () => {
+watch(serviceDraftKey, () => {
   resetForm();
 }, { immediate: true });
 
 watch(draft, () => {
-  resetForm();
+  if (!hasRestoredDraft.value) {
+    resetForm();
+  }
 });
 
 watch(() => [...form.visitReasonIds], (nextValue) => {
@@ -574,9 +1022,7 @@ watch(() => [...form.visitReasonIds], (nextValue) => {
     form.visitReasonNotInformed = false;
   }
 
-  form.visitReasonDetails = visitReasonDetailsEnabled.value
-    ? syncSelectedDetails(nextValue, form.visitReasonDetails)
-    : {};
+  form.visitReasonDetails = syncSelectedDetails(nextValue, form.visitReasonDetails);
 }, { deep: true });
 
 watch(() => [...form.customerSourceIds], (nextValue) => {
@@ -584,15 +1030,11 @@ watch(() => [...form.customerSourceIds], (nextValue) => {
     form.customerSourceNotInformed = false;
   }
 
-  form.customerSourceDetails = customerSourceDetailsEnabled.value
-    ? syncSelectedDetails(nextValue, form.customerSourceDetails)
-    : {};
+  form.customerSourceDetails = syncSelectedDetails(nextValue, form.customerSourceDetails);
 }, { deep: true });
 
 watch(() => [...form.lossReasonIds], (nextValue) => {
-  form.lossReasonDetails = lossReasonDetailsEnabled.value
-    ? syncSelectedDetails(nextValue, form.lossReasonDetails)
-    : {};
+  form.lossReasonDetails = syncSelectedDetails(nextValue, form.lossReasonDetails);
 }, { deep: true });
 
 watch(() => form.visitReasonNotInformed, (nextValue) => {
@@ -625,18 +1067,24 @@ watch([isCustomerSourceMultiple, customerSourceDetailsEnabled], () => {
   normalizeFormForModalConfig();
 });
 
+watch([allowProductSeenNone, showProductSeenNotesField], () => {
+  normalizeFormForModalConfig();
+});
+
 watch(() => form.outcome, (nextValue) => {
   if (nextValue !== "nao-compra") {
     form.lossReasonIds = [];
     form.lossReasonDetails = {};
   }
-
-  if (nextValue === "compra" || nextValue === "reserva") {
-    return;
-  }
-
-  form.isGift = false;
 });
+
+watch(form, () => {
+  saveActiveDraft();
+}, { deep: true });
+
+watch(customProducts, () => {
+  saveActiveDraft();
+}, { deep: true });
 
 function handleEscape(event) {
   if (event.key !== "Escape") return;
@@ -675,15 +1123,26 @@ onBeforeUnmount(() => {
             <h2 id="finish-modal-title" class="finish-modal__title">{{ modalConfig.title }}</h2>
             <p class="finish-modal__subtitle">{{ service.name }} | ID {{ service.serviceId }}</p>
           </div>
-          <button
-            class="finish-modal__close"
-            type="button"
-            aria-label="Fechar"
-            data-testid="operation-finish-close"
-            @click="closeModal"
-          >
-            X
-          </button>
+          <div class="finish-modal__header-actions">
+            <button
+              v-if="hasRestoredDraft"
+              class="finish-modal__draft-clear"
+              type="button"
+              data-testid="operation-finish-clear-draft"
+              @click="clearCurrentDraft"
+            >
+              Limpar modal
+            </button>
+            <button
+              class="finish-modal__close"
+              type="button"
+              aria-label="Fechar"
+              data-testid="operation-finish-close"
+              @click="closeModal"
+            >
+              X
+            </button>
+          </div>
         </div>
 
         <div class="finish-modal__steps">
@@ -742,58 +1201,66 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <section class="finish-form__section finish-form__grid">
-              <label class="modal-checkbox">
-                <input v-model="form.isWindowService" type="checkbox">
-                <span>Atendimento de vitrine</span>
-              </label>
-              <label v-if="isClosedOutcome" class="modal-checkbox">
-                <input v-model="form.isGift" type="checkbox">
-                <span>Foi para presente</span>
-              </label>
-              <label class="modal-checkbox">
-                <input v-model="form.isExistingCustomer" type="checkbox">
-                <span>Ja era cliente</span>
-              </label>
-            </section>
-
             <OperationProductPicker
-              :label="modalConfig.productSeenLabel || 'Produto visto pelo cliente'"
-              :options="productCatalogItems"
-              :selected-items="form.productsSeen"
-              :none-selected="form.productsSeenNone"
-              :search-placeholder="modalConfig.productSeenPlaceholder || 'Busque e selecione um produto'"
-              trigger-label="Selecionar produto"
-              empty-selected-label="Nenhum produto selecionado"
-              allow-none
-              allow-custom
-              testid-prefix="operation-products-seen"
-              @update:selected-items="form.productsSeen = $event"
-              @update:none-selected="form.productsSeenNone = $event"
-            />
-
-            <OperationProductPicker
-              v-if="isClosedOutcome"
+              v-if="isClosedOutcome && showProductClosedField"
               :label="closedProductLabel"
-              :options="productCatalogItems"
+              :helper-text="closedProductHelperText"
+              :options="productPickerOptions"
               :selected-items="form.productsClosed"
               :search-placeholder="modalConfig.productClosedPlaceholder || 'Busque e selecione o produto fechado'"
-              trigger-label="Selecionar produto"
-              empty-selected-label="Nenhum produto selecionado"
+              trigger-label="Selecionar item"
+              empty-selected-label="Nenhum item selecionado"
               allow-custom
               mode="closed"
               testid-prefix="operation-products-closed"
-              @update:selected-items="form.productsClosed = $event"
+              @update:selected-items="updateProductsClosed"
             />
+
+            <OperationProductPicker
+              v-if="showProductSeenField"
+              :label="modalConfig.productSeenLabel || 'Interesses do cliente'"
+              helper-text=""
+              :options="productPickerOptions"
+              :selected-items="form.productsSeen"
+              :none-selected="form.productsSeenNone"
+              :search-placeholder="modalConfig.productSeenPlaceholder || 'Busque e selecione interesses'"
+              trigger-label="Selecionar interesse"
+              empty-selected-label="Nenhum interesse selecionado"
+              :allow-none="allowProductSeenNone"
+              none-placement="dropdown"
+              none-label="Nenhum interesse identificado"
+              none-state-label="Nenhum interesse identificado"
+              allow-custom
+              testid-prefix="operation-products-seen"
+              @update:selected-items="updateProductsSeen"
+              @update:none-selected="form.productsSeenNone = $event"
+            />
+
+            <section v-if="showProductSeenNotesField" class="finish-form__section">
+              <label class="finish-form__label" for="finish-product-seen-notes">Detalhes dos interesses</label>
+              <textarea
+                id="finish-product-seen-notes"
+                v-model="form.productSeenNotes"
+                class="finish-form__textarea"
+                rows="3"
+                placeholder="Descreva referencia, pedido especifico, contexto do cliente ou justificativa quando nao houver interesse identificado."
+                data-testid="operation-product-seen-notes"
+              />
+              <div class="finish-form__field-note" :class="{ 'finish-form__field-note--error': !isProductSeenNotesValid }">
+                <span>{{ productSeenNotesHelperText }}</span>
+                <strong>{{ trimmedProductSeenNotes.length }}/{{ productSeenNotesMinChars }} caracteres</strong>
+              </div>
+            </section>
 
             <div class="finish-form__quality" :class="formStep1Quality.isComplete ? 'finish-form__quality--complete' : 'finish-form__quality--incomplete'">
               <div class="finish-form__quality-dots">
                 <span class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.outcome }" title="Como terminou"></span>
-                <span class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productSeen }" title="Produto visto"></span>
-                <span v-if="isClosedOutcome" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productClosed }" title="Produto fechado"></span>
+                <span v-if="isClosedOutcome && showProductClosedField && requireProductClosedField" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productClosed }" title="Compra / reserva"></span>
+                <span v-if="showProductSeenField && requireProductSeenField" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productSeen }" title="Interesses do cliente"></span>
+                <span v-if="isProductSeenNotesRequired" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formStep1Quality.checks.productSeenNotes }" title="Detalhes dos interesses"></span>
               </div>
               <span class="finish-form__quality-text">
-                {{ formStep1Quality.filled }}/{{ formStep1Quality.total }} obrigatórios
+                {{ formStep1Quality.filled }}/{{ formStep1Quality.total }} obrigatorios
                 · {{ formStep1Quality.isComplete ? 'Pronto para avançar' : 'Preencha antes de continuar' }}
               </span>
             </div>
@@ -819,45 +1286,53 @@ onBeforeUnmount(() => {
           </template>
 
           <template v-if="step === 2">
-            <section class="finish-form__section">
+            <section v-if="showCustomerSection" class="finish-form__section">
               <strong class="finish-form__label">{{ modalConfig.customerSectionLabel }}</strong>
             </section>
 
+            <section v-if="showExistingCustomerField" class="finish-form__section finish-form__grid">
+              <label class="modal-checkbox">
+                <input v-model="form.isExistingCustomer" type="checkbox">
+                <span>Ja era cliente</span>
+              </label>
+            </section>
+
             <section class="finish-form__section finish-form__grid finish-form__grid--customer">
-              <label class="finish-form__field">
+              <label v-if="showCustomerNameField" class="finish-form__field">
                 <span class="finish-form__label">Nome do cliente</span>
                 <input
                   v-model="form.customerName"
                   class="finish-form__input"
                   type="text"
-                  placeholder="Nome"
+                  placeholder="Nome Completo"
                   data-testid="operation-customer-name"
                 >
               </label>
-              <label class="finish-form__field">
+              <label v-if="showCustomerPhoneField" class="finish-form__field">
                 <span class="finish-form__label">Telefone</span>
                 <input
                   v-model="form.customerPhone"
                   class="finish-form__input"
                   type="tel"
-                  placeholder="Telefone"
+                  placeholder="(11) 99999-9999"
                   data-testid="operation-customer-phone"
+                  @input="handleCustomerPhoneInput"
                 >
               </label>
-              <label v-if="modalConfig.showEmailField" class="finish-form__field">
+              <label v-if="showEmailField" class="finish-form__field">
                 <span class="finish-form__label">Email</span>
                 <input
                   v-model="form.customerEmail"
                   class="finish-form__input"
                   type="email"
-                  placeholder="Email opcional"
+                  placeholder="Email"
                   data-testid="operation-customer-email"
                 >
               </label>
             </section>
 
             <div class="operation-modal__select-grid">
-              <section v-if="modalConfig.showProfessionField" class="finish-form__section operation-modal__picker-cell">
+              <section v-if="showProfessionField" class="finish-form__section operation-modal__picker-cell">
                 <OperationProductPicker
                   label="Profissao"
                   :options="professionPickerOptions"
@@ -871,7 +1346,7 @@ onBeforeUnmount(() => {
                 />
               </section>
 
-              <section class="finish-form__section operation-modal__picker-cell">
+              <section v-if="showVisitReasonField" class="finish-form__section operation-modal__picker-cell">
                 <OperationProductPicker
                   label="Motivo da visita"
                   :options="visitReasonPickerOptions"
@@ -897,7 +1372,7 @@ onBeforeUnmount(() => {
                 />
               </section>
 
-              <section class="finish-form__section operation-modal__picker-cell">
+              <section v-if="showCustomerSourceField" class="finish-form__section operation-modal__picker-cell">
                 <OperationProductPicker
                   label="De onde o cliente veio"
                   :options="customerSourcePickerOptions"
@@ -924,7 +1399,7 @@ onBeforeUnmount(() => {
               </section>
             </div>
 
-            <section v-if="service.startMode === 'queue-jump'" class="finish-form__section operation-modal__picker-cell">
+            <section v-if="service.startMode === 'queue-jump' && showQueueJumpReasonField" class="finish-form__section operation-modal__picker-cell">
               <OperationProductPicker
                 :label="queueJumpReasonLabel"
                 :options="queueJumpReasonPickerOptions"
@@ -938,7 +1413,7 @@ onBeforeUnmount(() => {
               />
             </section>
 
-            <section v-if="form.outcome === 'nao-compra'" class="finish-form__section operation-modal__picker-cell">
+            <section v-if="form.outcome === 'nao-compra' && showLossReasonField" class="finish-form__section operation-modal__picker-cell">
               <OperationProductPicker
                 :label="lossReasonLabel"
                 :options="lossReasonPickerOptions"
@@ -959,7 +1434,7 @@ onBeforeUnmount(() => {
               />
             </section>
 
-            <section v-if="modalConfig.showNotesField" class="finish-form__section">
+            <section v-if="showNotesField" class="finish-form__section">
               <label class="finish-form__label" for="finish-notes">{{ modalConfig.notesLabel }}</label>
               <textarea
                 id="finish-notes"
@@ -971,26 +1446,28 @@ onBeforeUnmount(() => {
               />
             </section>
 
-            <section v-if="isClosedOutcome" class="finish-form__section operation-modal__summary">
+            <section v-if="isClosedOutcome && showProductClosedField" class="finish-form__section operation-modal__summary">
               <span class="finish-form__label">Valor da venda derivado dos produtos fechados</span>
               <strong>{{ formatCurrency(closedTotal) }}</strong>
             </section>
 
             <div class="finish-form__quality" :class="`finish-form__quality--${formQuality.level}`">
               <div class="finish-form__quality-dots">
-                <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerName }" title="Nome"></span>
-                <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerPhone }" title="Telefone"></span>
-                <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.product }" title="Produto visto"></span>
-                <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.visitReasons }" title="Motivo da visita"></span>
-                <span class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerSources }" title="Origem do cliente"></span>
-                <span v-if="form.outcome === 'nao-compra'" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.lossReason }" title="Motivo da perda"></span>
-                <span v-if="service.startMode === 'queue-jump'" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.queueJumpReason }" title="Motivo fora da vez"></span>
-                <span v-if="modalConfig.showEmailField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerEmail }" title="Email"></span>
-                <span v-if="modalConfig.showProfessionField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerProfession }" title="Profissao"></span>
-                <span v-if="modalConfig.showNotesField" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.hasNotes }" title="Observacoes"></span>
+                <span v-if="showCustomerNameField && requireCustomerNameField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerName }" title="Nome"></span>
+                <span v-if="showCustomerPhoneField && requireCustomerPhoneField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerPhone }" title="Telefone"></span>
+                <span v-if="isClosedOutcome && showProductClosedField && requireProductClosedField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.productClosed }" title="Compra / reserva"></span>
+                <span v-if="showProductSeenField && requireProductSeenField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.productSeen }" title="Interesses do cliente"></span>
+                <span v-if="isProductSeenNotesRequired" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.checks.productSeenNotes }" title="Detalhes dos interesses"></span>
+                <span v-if="showVisitReasonField && requireVisitReasonField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.visitReasons }" title="Motivo da visita"></span>
+                <span v-if="showCustomerSourceField && requireCustomerSourceField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerSources }" title="Origem do cliente"></span>
+                <span v-if="form.outcome === 'nao-compra' && showLossReasonField && requireLossReasonField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.lossReason }" title="Motivo da perda"></span>
+                <span v-if="service.startMode === 'queue-jump' && showQueueJumpReasonField && requireQueueJumpReasonField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.queueJumpReason }" title="Motivo fora da vez"></span>
+                <span v-if="showEmailField && requireEmailField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerEmail }" title="Email"></span>
+                <span v-if="showProfessionField && requireProfessionField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerProfession }" title="Profissao"></span>
+                <span v-if="showNotesField && requireNotesField" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.checks.notes }" title="Observacoes"></span>
               </div>
               <span class="finish-form__quality-text">
-                {{ formQuality.coreFilledCount }}/{{ formQuality.coreTotal }} campos · {{ formQuality.levelLabel }}
+                {{ formQuality.coreFilledCount }}/{{ formQuality.coreTotal }} obrigatorios · {{ formQuality.levelLabel }}
               </span>
             </div>
 

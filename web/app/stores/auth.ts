@@ -1,12 +1,14 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { getAllowedWorkspaces, normalizeAppRole } from "~/domain/utils/permissions";
+import { canUseAllStoresScope, getAllowedWorkspaces, normalizeAppRole } from "~/domain/utils/permissions";
 import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { AUTH_TOKEN_COOKIE, createApiRequest, getApiBase, getApiErrorMessage } from "~/utils/api-client";
 import { hydrateRuntimeStoreContext } from "~/utils/runtime-remote";
 import { getWorkspacePath } from "~/utils/workspaces";
 
 const REMEMBERED_LOGIN_STORAGE_KEY = "ldv_remembered_login";
+const STORE_SCOPE_MODE_SINGLE = "single";
+const STORE_SCOPE_MODE_ALL = "all";
 const ROLE_PROFILE_MAP = {
   platform_admin: "perfil-platform-admin",
   owner: "perfil-proprietario",
@@ -57,6 +59,12 @@ function parseRememberedLogin(rawValue) {
   }
 }
 
+function normalizeStoreScopeMode(value) {
+  return String(value || "").trim() === STORE_SCOPE_MODE_ALL
+    ? STORE_SCOPE_MODE_ALL
+    : STORE_SCOPE_MODE_SINGLE;
+}
+
 export const useAuthStore = defineStore("auth", () => {
   const runtimeConfig = useRuntimeConfig();
   const runtime = useAppRuntimeStore();
@@ -70,6 +78,11 @@ export const useAuthStore = defineStore("auth", () => {
     maxAge: 60 * 60 * 24 * 30,
     default: () => null
   });
+  const storeScopeCookie = useCookie("ldv_store_scope_mode", {
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 30,
+    default: () => STORE_SCOPE_MODE_SINGLE
+  });
   const apiRequest = createApiRequest(runtimeConfig, () => accessToken.value);
 
   const user = ref(null);
@@ -78,15 +91,22 @@ export const useAuthStore = defineStore("auth", () => {
   const storeContext = ref([]);
   const activeTenantId = ref("");
   const activeStoreId = ref("");
+  const storeScopeMode = ref(normalizeStoreScopeMode(storeScopeCookie.value));
   const hydrated = ref(false);
   const pending = ref(false);
   const lastError = ref("");
   let ensurePromise = null;
 
   const role = computed(() => normalizeAppRole(principal.value?.role || ""));
+  const permissionKeys = computed(() =>
+    Array.isArray(principal.value?.permissions)
+      ? principal.value.permissions.map((permissionKey) => String(permissionKey || "").trim()).filter(Boolean)
+      : []
+  );
+  const permissionsResolved = computed(() => Boolean(principal.value?.permissionsResolved));
   const isAuthenticated = computed(() => Boolean(accessToken.value && user.value && principal.value));
   const mustChangePassword = computed(() => Boolean(user.value?.mustChangePassword));
-  const allowedWorkspaces = computed(() => getAllowedWorkspaces(role.value));
+  const allowedWorkspaces = computed(() => getAllowedWorkspaces(role.value, permissionKeys.value, permissionsResolved.value));
   const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || "operacao");
   const homePath = computed(() => getWorkspacePath(homeWorkspaceId.value));
   const accessibleStoreIds = computed(() =>
@@ -96,16 +116,32 @@ export const useAuthStore = defineStore("auth", () => {
         ? principal.value.storeIds.map((storeId) => String(storeId || "").trim()).filter(Boolean)
         : []
   );
+  const canUseAllStores = computed(() => canUseAllStoresScope(accessibleStoreIds.value));
+  const isAllStoresScope = computed(() =>
+    canUseAllStores.value && storeScopeMode.value === STORE_SCOPE_MODE_ALL
+  );
+
+  function syncStoreScopeMode(nextMode = storeScopeMode.value) {
+    const normalizedMode = normalizeStoreScopeMode(nextMode);
+    const resolvedMode = canUseAllStores.value ? normalizedMode : STORE_SCOPE_MODE_SINGLE;
+
+    storeScopeMode.value = resolvedMode;
+    storeScopeCookie.value = resolvedMode;
+
+    return resolvedMode;
+  }
 
   function clearSession() {
     accessToken.value = null;
     activeStoreCookie.value = null;
+    storeScopeCookie.value = STORE_SCOPE_MODE_SINGLE;
     user.value = null;
     principal.value = null;
     tenantContext.value = [];
     storeContext.value = [];
     activeTenantId.value = "";
     activeStoreId.value = "";
+    storeScopeMode.value = STORE_SCOPE_MODE_SINGLE;
     lastError.value = "";
   }
 
@@ -173,6 +209,7 @@ export const useAuthStore = defineStore("auth", () => {
       ? preferredActiveStoreId
       : fallbackActiveStoreId;
     activeStoreCookie.value = activeStoreId.value || null;
+    syncStoreScopeMode(storeScopeCookie.value);
     hydrated.value = true;
     lastError.value = "";
     await syncRuntimeAccess();
@@ -392,6 +429,10 @@ export const useAuthStore = defineStore("auth", () => {
     await hydrateRuntimeStoreContext(runtime, apiRequest, normalizedStoreId);
   }
 
+  function setStoreScopeMode(mode) {
+    return syncStoreScopeMode(mode);
+  }
+
   async function updateProfile(payload = {}) {
     await ensureSession();
 
@@ -453,16 +494,21 @@ export const useAuthStore = defineStore("auth", () => {
     storeContext,
     activeTenantId,
     activeStoreId,
+    storeScopeMode,
     hydrated,
     pending,
     lastError,
     role,
+    permissionKeys,
+    permissionsResolved,
     isAuthenticated,
     mustChangePassword,
     allowedWorkspaces,
     homeWorkspaceId,
     homePath,
     accessibleStoreIds,
+    canUseAllStores,
+    isAllStoresScope,
     ensureSession,
     fetchContext,
     fetchMe: fetchContext,
@@ -478,6 +524,7 @@ export const useAuthStore = defineStore("auth", () => {
     clearRememberedLogin,
     syncRuntimeAccess,
     setActiveStore,
+    setStoreScopeMode,
     updateProfile,
     changePassword,
     uploadAvatar

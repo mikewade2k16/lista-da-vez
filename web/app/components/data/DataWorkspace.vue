@@ -16,6 +16,10 @@ const props = defineProps({
   errorMessage: {
     type: String,
     default: ""
+  },
+  integratedScope: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -101,7 +105,9 @@ const liveTimeTags = computed(() => [
   <section class="admin-panel" data-testid="data-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Dados operacionais</h2>
-      <p class="admin-panel__text">Painel bruto de produto, motivo, origem, horario e tempo.</p>
+      <p class="admin-panel__text">
+        {{ integratedScope ? 'Painel consolidado de produto, motivo, origem, horario e tempo das lojas do tenant ativo.' : 'Painel bruto de produto, motivo, origem, horario e tempo.' }}
+      </p>
     </header>
 
     <article v-if="errorMessage" class="insight-card">
@@ -109,7 +115,7 @@ const liveTimeTags = computed(() => [
     </article>
 
     <article v-else-if="pending && !report" class="insight-card">
-      <p class="settings-card__text">Carregando dados operacionais da loja ativa...</p>
+      <p class="settings-card__text">{{ integratedScope ? 'Carregando dados operacionais consolidados...' : 'Carregando dados operacionais da loja ativa...' }}</p>
     </article>
 
     <div class="insight-grid">

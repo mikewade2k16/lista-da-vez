@@ -1,9 +1,11 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useAuthStore } from "~/stores/auth";
+import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { useMultiStoreStore } from "~/stores/multistore";
 import { useUsersStore } from "~/stores/users";
-import { getWebSocketBase } from "~/utils/api-client";
+import { createApiRequest, getWebSocketBase } from "~/utils/api-client";
+import { refreshRuntimeStoreSettings } from "~/utils/runtime-remote";
 
 function buildSocketURL(runtimeConfig, tenantId, accessToken) {
   const url = new URL("/v1/realtime/context", getWebSocketBase(runtimeConfig));
@@ -15,8 +17,10 @@ function buildSocketURL(runtimeConfig, tenantId, accessToken) {
 export function useContextRealtime() {
   const runtimeConfig = useRuntimeConfig();
   const auth = useAuthStore();
+  const runtime = useAppRuntimeStore();
   const multiStore = useMultiStoreStore();
   const usersStore = useUsersStore();
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
 
   const status = ref("idle");
   const lastEvent = ref(null);
@@ -29,6 +33,9 @@ export function useContextRealtime() {
   let intentionallyClosed = false;
   let refreshPromise = null;
   let refreshQueued = false;
+  let settingsRefreshPromise = null;
+  let settingsRefreshQueued = false;
+  let queuedSettingsStoreId = "";
 
   async function refreshContextState() {
     if (refreshPromise) {
@@ -47,7 +54,7 @@ export function useContextRealtime() {
 
         if (auth.role === "platform_admin" || auth.role === "owner") {
           followUps.push(multiStore.refreshManagedStores().catch(() => null));
-          followUps.push(usersStore.refreshUsers().catch(() => null));
+          followUps.push(usersStore.refreshUsers({ silent: true }).catch(() => null));
         }
 
         await Promise.allSettled(followUps);
@@ -61,6 +68,35 @@ export function useContextRealtime() {
     })();
 
     return refreshPromise;
+  }
+
+  async function refreshActiveStoreSettings(storeId = "") {
+    const normalizedStoreId = String(storeId || auth.activeStoreId || runtime.state.activeStoreId || "").trim();
+
+    if (!normalizedStoreId || !auth.isAuthenticated || !auth.accessToken) {
+      return null;
+    }
+
+    if (settingsRefreshPromise) {
+      settingsRefreshQueued = true;
+      queuedSettingsStoreId = normalizedStoreId;
+      return settingsRefreshPromise;
+    }
+
+    settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId)
+      .catch(() => null)
+      .finally(async () => {
+        settingsRefreshPromise = null;
+
+        if (settingsRefreshQueued) {
+          const nextStoreId = queuedSettingsStoreId;
+          settingsRefreshQueued = false;
+          queuedSettingsStoreId = "";
+          await refreshActiveStoreSettings(nextStoreId);
+        }
+      });
+
+    return settingsRefreshPromise;
   }
 
   function clearReconnectTimer() {
@@ -144,6 +180,17 @@ export function useContextRealtime() {
         }
 
         if (String(payload?.tenantId || "").trim() !== String(auth.activeTenantId || "").trim()) {
+          return;
+        }
+
+        if (String(payload?.resource || "").trim() === "settings") {
+          const activeStoreId = String(auth.activeStoreId || runtime.state.activeStoreId || "").trim();
+          const payloadStoreId = String(payload?.resourceId || "").trim();
+
+          if (payloadStoreId && payloadStoreId === activeStoreId) {
+            await refreshActiveStoreSettings(payloadStoreId);
+          }
+
           return;
         }
 

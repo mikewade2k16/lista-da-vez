@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
@@ -39,7 +40,7 @@ func NewService(repository Repository, password auth.PasswordHasher, invites Inv
 }
 
 func (service *Service) ListAccessible(ctx context.Context, principal auth.Principal, input ListInput) ([]UserView, error) {
-	if !canManageUsers(principal.Role) {
+	if !canManageUsers(principal) {
 		return nil, ErrForbidden
 	}
 
@@ -61,7 +62,7 @@ func (service *Service) ListAccessible(ctx context.Context, principal auth.Princ
 }
 
 func (service *Service) Create(ctx context.Context, principal auth.Principal, input CreateInput) (CreateResult, error) {
-	if !canManageUsers(principal.Role) {
+	if !canManageUsers(principal) {
 		return CreateResult{}, ErrForbidden
 	}
 
@@ -77,7 +78,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 	if role == auth.RoleConsultant {
 		return CreateResult{}, ErrConsultantManaged
 	}
-	if password != "" && !canManageUserPasswords(principal.Role) {
+	if password != "" && !canManageUserPasswords(principal) {
 		return CreateResult{}, ErrPasswordForbidden
 	}
 
@@ -153,7 +154,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Update(ctx context.Context, principal auth.Principal, input UpdateInput) (UserView, error) {
-	if !canManageUsers(principal.Role) {
+	if !canManageUsers(principal) {
 		return UserView{}, ErrForbidden
 	}
 
@@ -191,7 +192,7 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 	if input.Role != nil {
 		nextRole = *input.Role
 	}
-	if nextRole == auth.RoleConsultant && !managedConsultant && !(canOverrideConsultantManagement(principal.Role) && strings.TrimSpace(existing.ManagedResourceID) != "") {
+	if nextRole == auth.RoleConsultant && !managedConsultant && !canOverrideConsultantManagement(principal.Role) {
 		return UserView{}, ErrConsultantManaged
 	}
 
@@ -211,7 +212,7 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 		if trimmedPassword == "" {
 			return UserView{}, ErrValidation
 		}
-		if !canManageUserPasswords(principal.Role) {
+		if !canManageUserPasswords(principal) {
 			return UserView{}, ErrPasswordForbidden
 		}
 	}
@@ -257,7 +258,7 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Archive(ctx context.Context, principal auth.Principal, userID string) (UserView, error) {
-	if !canManageUsers(principal.Role) {
+	if !canManageUsers(principal) {
 		return UserView{}, ErrForbidden
 	}
 
@@ -296,7 +297,7 @@ func (service *Service) Archive(ctx context.Context, principal auth.Principal, u
 }
 
 func (service *Service) Invite(ctx context.Context, principal auth.Principal, userID string) (InviteResult, error) {
-	if !canManageUsers(principal.Role) {
+	if !canManageUsers(principal) {
 		return InviteResult{}, ErrForbidden
 	}
 
@@ -348,10 +349,10 @@ func (service *Service) Invite(ctx context.Context, principal auth.Principal, us
 }
 
 func (service *Service) ResetPassword(ctx context.Context, principal auth.Principal, userID string, password string) (ResetPasswordResult, error) {
-	if !canManageUsers(principal.Role) {
+	if !canManageUsers(principal) {
 		return ResetPasswordResult{}, ErrForbidden
 	}
-	if !canManageUserPasswords(principal.Role) {
+	if !canManageUserPasswords(principal) {
 		return ResetPasswordResult{}, ErrPasswordForbidden
 	}
 
@@ -462,12 +463,20 @@ func (service *Service) resolveScopedAccess(ctx context.Context, principal auth.
 	}
 }
 
-func canManageUsers(role auth.Role) bool {
-	return role == auth.RoleOwner || role == auth.RolePlatformAdmin
+func canManageUsers(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionUsersEdit)
+	}
+
+	return principal.Role == auth.RoleOwner || principal.Role == auth.RolePlatformAdmin
 }
 
-func canManageUserPasswords(role auth.Role) bool {
-	return role == auth.RolePlatformAdmin
+func canManageUserPasswords(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionUsersPasswordEdit)
+	}
+
+	return principal.Role == auth.RolePlatformAdmin
 }
 
 func canOverrideConsultantManagement(role auth.Role) bool {

@@ -6,7 +6,16 @@ import AppDetailDialog from "~/components/ui/AppDetailDialog.vue";
 import AppEntityGrid from "~/components/ui/AppEntityGrid.vue";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
 import AppToggleSwitch from "~/components/ui/AppToggleSwitch.vue";
-import { canManageUserPasswords } from "~/domain/utils/permissions";
+import {
+  ADVANCED_ACCESS_DEFINITIONS,
+  WORKSPACE_ACCESS_DEFINITIONS,
+  canManageUserPasswords,
+  getWorkspaceAccessOptions,
+  hasPermission,
+  normalizePermissionKeys,
+  readWorkspaceAccessState
+} from "~/domain/utils/permissions";
+import { useAccessControlStore } from "~/stores/access-control";
 import { useAuthStore } from "~/stores/auth";
 import { useUiStore } from "~/stores/ui";
 import { useUsersStore } from "~/stores/users";
@@ -23,15 +32,35 @@ const ROLE_LABELS = {
   store_terminal: "Usuario de loja"
 };
 
+const ACCESS_STATE_LABELS = {
+  inherit: "Herdar padrao",
+  none: "Sem acesso",
+  view: "Somente ver",
+  edit: "Ver e editar",
+  allow: "Permitir",
+  deny: "Negar"
+};
+
+const PERMISSION_OVERRIDE_OPTIONS = [
+  { value: "inherit", label: "Herdar padrao" },
+  { value: "allow", label: "Permitir" },
+  { value: "deny", label: "Negar" }
+];
+
 const auth = useAuthStore();
 const ui = useUiStore();
 const usersStore = useUsersStore();
+const accessStore = useAccessControlStore();
 
 const createComposerOpen = ref(false);
 const createMode = ref("invite");
 const selectedDetailUser = ref(null);
 const rowDrafts = ref({});
 const rowBusy = reactive({});
+const detailSaving = ref(false);
+const detailAccessError = ref("");
+const detailWorkspaceStates = ref({});
+const detailAdvancedStates = ref({});
 
 const filters = reactive({
   search: "",
@@ -52,8 +81,18 @@ const createDraft = reactive({
   password: ""
 });
 
-const canManagePasswords = computed(() => canManageUserPasswords(auth.role));
-const canOverrideConsultantManaged = computed(() => auth.role === "platform_admin");
+const detailDraft = reactive({
+  displayName: "",
+  email: "",
+  employeeCode: "",
+  role: "manager",
+  tenantId: "",
+  storeId: ALL_STORES_VALUE,
+  active: true
+});
+
+const canManagePasswords = computed(() => canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved));
+const canOverrideConsultantManaged = computed(() => normalizeText(auth.role) === "platform_admin");
 const storeLookup = computed(() => new Map((auth.storeContext || []).map((store) => [String(store.id || "").trim(), store])));
 const tenantLookup = computed(() => new Map((auth.tenantContext || []).map((tenant) => [String(tenant.id || "").trim(), tenant])));
 const clientFilterOptions = computed(() => [
@@ -72,6 +111,13 @@ const statusFilterOptions = [
 const createRoleOptions = computed(() =>
   usersStore.assignableRoles
     .filter((role) => role.id !== "consultant")
+    .map((role) => ({
+      value: role.id,
+      label: getRoleLabel(role.id)
+    }))
+);
+const editableRoleOptions = computed(() =>
+  (canOverrideConsultantManaged.value ? usersStore.assignableRoles : usersStore.assignableRoles.filter((role) => role.id !== "consultant"))
     .map((role) => ({
       value: role.id,
       label: getRoleLabel(role.id)
@@ -164,45 +210,46 @@ const filteredUsers = computed(() => {
     .sort((left, right) => left.displayName.localeCompare(right.displayName, "pt-BR"));
 });
 
-const detailSections = computed(() => {
-  const user = selectedDetailUser.value;
-  if (!user) {
-    return [];
+const selectedDetailUserId = computed(() => normalizeText(selectedDetailUser.value?.id));
+const selectedUserAccess = computed(() => accessStore.getUserAccess(selectedDetailUserId.value));
+const detailLoading = computed(() => Boolean(selectedDetailUser.value) && accessStore.isUserPending(selectedDetailUserId.value));
+const detailAccessReady = computed(() => !detailLoading.value && !detailAccessError.value && accessStore.roleMatrix.length > 0 && Boolean(selectedUserAccess.value));
+const detailRoleLocked = computed(() => Boolean(selectedDetailUser.value) && isDetailLocked(selectedDetailUser.value));
+const detailRoleOptions = computed(() => {
+  if (!selectedDetailUser.value) {
+    return createRoleOptions.value;
   }
 
-  return [
-    {
-      id: "identity",
-      title: "Identidade",
-      fields: [
-        { label: "Nome", value: user.displayName },
-        { label: "Nick", value: buildNickname(user.displayName) },
-        { label: "Email", value: user.email },
-        { label: "Matricula", value: user.employeeCode || "-" }
-      ]
-    },
-    {
-      id: "access",
-      title: "Acesso",
-      fields: [
-        { label: "Perfil", value: getRoleLabel(user.role) },
-        { label: "Loja", value: getStoreLabel(user) },
-        { label: "Status", value: user.active ? "Ativo" : "Inativo" },
-        { label: "Onboarding", value: getOnboardingLabel(user) },
-        { label: "Cargo", value: user.jobTitle || "-" }
-      ]
-    },
-    {
-      id: "meta",
-      title: "Sistema",
-      fields: [
-        { label: "User ID", value: user.id },
-        { label: "Tenant", value: tenantLookup.value.get(normalizeText(user.tenantId))?.name || user.tenantId || "Plataforma" },
-        { label: "Origem", value: isConsultantManaged(user) ? "Consultores" : "Usuarios" }
-      ]
-    }
-  ];
+  return getDetailRoleOptions(selectedDetailUser.value);
 });
+const detailStoreOptions = computed(() => {
+  if (!isStoreScopedRole(detailDraft.role)) {
+    return [{ value: ALL_STORES_VALUE, label: "ALL" }];
+  }
+
+  return getScopedStoreOptions(detailDraft.tenantId);
+});
+const detailBasePermissionKeys = computed(() =>
+  normalizePermissionKeys(accessStore.roleLookup.get(normalizeText(detailDraft.role))?.permissionKeys || [])
+);
+const detailOverridePayload = computed(() => buildDetailOverridePayload(detailBasePermissionKeys.value));
+const detailEffectivePermissionKeys = computed(() => applyPermissionOverrides(detailBasePermissionKeys.value, detailOverridePayload.value));
+const detailWorkspaceRows = computed(() =>
+  WORKSPACE_ACCESS_DEFINITIONS.map((workspaceDefinition) => ({
+    ...workspaceDefinition,
+    baseState: readWorkspaceAccessState(workspaceDefinition, detailBasePermissionKeys.value, "none"),
+    effectiveState: readWorkspaceAccessState(workspaceDefinition, detailEffectivePermissionKeys.value, "none"),
+    overrideState: detailWorkspaceStates.value[workspaceDefinition.id] || "inherit"
+  }))
+);
+const detailAdvancedRows = computed(() =>
+  ADVANCED_ACCESS_DEFINITIONS.map((permissionDefinition) => ({
+    ...permissionDefinition,
+    baseEnabled: hasPermission(detailBasePermissionKeys.value, permissionDefinition.key),
+    effectiveEnabled: hasPermission(detailEffectivePermissionKeys.value, permissionDefinition.key),
+    overrideState: detailAdvancedStates.value[permissionDefinition.key] || "inherit"
+  }))
+);
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -229,8 +276,12 @@ function isConsultantManaged(user) {
   return normalizeText(user?.managedBy) === "consultants" || normalizeText(user?.role) === "consultant";
 }
 
-function isRosterLocked(user) {
+function isInlineLocked(user) {
   return isConsultantManaged(user) && !canOverrideConsultantManaged.value;
+}
+
+function isDetailLocked(user) {
+  return isInlineLocked(user);
 }
 
 function buildNickname(displayName) {
@@ -297,6 +348,25 @@ function getOnboardingTone(user) {
   return "users-access-manager__pill";
 }
 
+function getAccessStateLabel(state) {
+  return ACCESS_STATE_LABELS[normalizeText(state)] || "Sem acesso";
+}
+
+function getAccessStateTone(state) {
+  switch (normalizeText(state)) {
+    case "edit":
+    case "allow":
+      return "users-access-manager__permission-pill users-access-manager__permission-pill--success";
+    case "view":
+      return "users-access-manager__permission-pill users-access-manager__permission-pill--info";
+    case "deny":
+    case "none":
+      return "users-access-manager__permission-pill users-access-manager__permission-pill--danger";
+    default:
+      return "users-access-manager__permission-pill";
+  }
+}
+
 function createRowDraft(user) {
   return {
     displayName: normalizeText(user.displayName),
@@ -306,6 +376,32 @@ function createRowDraft(user) {
     storeId: isStoreScopedRole(user.role) ? normalizeText(user.storeIds?.[0]) : ALL_STORES_VALUE,
     active: Boolean(user.active)
   };
+}
+
+function createDetailDraft(user = null) {
+  return {
+    displayName: normalizeText(user?.displayName),
+    email: normalizeText(user?.email),
+    employeeCode: normalizeText(user?.employeeCode),
+    role: normalizeText(user?.role) || createRoleOptions.value[0]?.value || "manager",
+    tenantId: normalizeText(user?.tenantId || auth.activeTenantId || auth.tenantContext?.[0]?.id),
+    storeId: isStoreScopedRole(user?.role)
+      ? normalizeText(user?.storeIds?.[0])
+      : ALL_STORES_VALUE,
+    active: Boolean(user?.active ?? true)
+  };
+}
+
+function assignDetailDraft(user) {
+  const draft = createDetailDraft(user);
+  detailDraft.displayName = draft.displayName;
+  detailDraft.email = draft.email;
+  detailDraft.employeeCode = draft.employeeCode;
+  detailDraft.role = draft.role;
+  detailDraft.tenantId = draft.tenantId;
+  detailDraft.storeId = draft.storeId;
+  detailDraft.active = draft.active;
+  syncDetailScope();
 }
 
 function getRowDraft(user) {
@@ -333,6 +429,15 @@ function resetCreateDraft() {
   syncCreateScope();
 }
 
+function resetDetailOverrides() {
+  detailWorkspaceStates.value = Object.fromEntries(
+    WORKSPACE_ACCESS_DEFINITIONS.map((workspaceDefinition) => [workspaceDefinition.id, "inherit"])
+  );
+  detailAdvancedStates.value = Object.fromEntries(
+    ADVANCED_ACCESS_DEFINITIONS.map((permissionDefinition) => [permissionDefinition.key, "inherit"])
+  );
+}
+
 function syncCreateScope() {
   if (isStoreScopedRole(createDraft.role)) {
     const scopedStores = getScopedStoreOptions(createDraft.tenantId);
@@ -343,6 +448,18 @@ function syncCreateScope() {
   }
 
   createDraft.storeId = ALL_STORES_VALUE;
+}
+
+function syncDetailScope() {
+  if (isStoreScopedRole(detailDraft.role)) {
+    const scopedStores = getScopedStoreOptions(detailDraft.tenantId);
+    if (!scopedStores.some((option) => option.value === detailDraft.storeId)) {
+      detailDraft.storeId = scopedStores[0]?.value || "";
+    }
+    return;
+  }
+
+  detailDraft.storeId = ALL_STORES_VALUE;
 }
 
 function getScopedStoreOptions(tenantId) {
@@ -356,11 +473,19 @@ function getScopedStoreOptions(tenantId) {
 }
 
 function getRoleSelectOptions(user) {
-  if (isRosterLocked(user)) {
+  if (isInlineLocked(user)) {
     return [{ value: normalizeText(user.role), label: getRoleLabel(user.role) }];
   }
 
-  return createRoleOptions.value;
+  return editableRoleOptions.value;
+}
+
+function getDetailRoleOptions(user) {
+  if (isDetailLocked(user)) {
+    return [{ value: normalizeText(user.role), label: getRoleLabel(user.role) }];
+  }
+
+  return editableRoleOptions.value;
 }
 
 function getStoreSelectOptions(user, draft) {
@@ -370,6 +495,10 @@ function getStoreSelectOptions(user, draft) {
   }
 
   return getScopedStoreOptions(user?.tenantId || auth.activeTenantId);
+}
+
+function findUserById(userId) {
+  return usersStore.users.find((user) => normalizeText(user.id) === normalizeText(userId)) || null;
 }
 
 function clearFilters() {
@@ -428,8 +557,183 @@ function buildUpdatePayload(user) {
   };
 }
 
+function buildDetailUpdatePayload() {
+  return {
+    displayName: normalizeText(detailDraft.displayName),
+    email: normalizeText(detailDraft.email),
+    employeeCode: normalizeText(detailDraft.employeeCode),
+    role: normalizeText(detailDraft.role),
+    tenantId: detailDraft.role === "platform_admin"
+      ? ""
+      : normalizeText(detailDraft.tenantId || selectedDetailUser.value?.tenantId || auth.activeTenantId),
+    storeIds: isStoreScopedRole(detailDraft.role) ? [normalizeText(detailDraft.storeId)].filter(Boolean) : [],
+    active: Boolean(detailDraft.active)
+  };
+}
+
+function getOverrideEffect(overrides, permissionKey) {
+  const normalizedPermissionKey = normalizeText(permissionKey);
+  const match = [...(Array.isArray(overrides) ? overrides : [])]
+    .filter((override) => override?.isActive !== false && normalizeText(override?.permissionKey) === normalizedPermissionKey)
+    .pop();
+
+  return normalizeText(match?.effect);
+}
+
+function syncDetailOverridesFromAccess(accessView) {
+  const nextWorkspaceStates = {};
+  const nextAdvancedStates = {};
+
+  for (const workspaceDefinition of WORKSPACE_ACCESS_DEFINITIONS) {
+    const viewEffect = getOverrideEffect(accessView?.overrides, workspaceDefinition.viewPermission);
+    const editEffect = getOverrideEffect(accessView?.overrides, workspaceDefinition.editPermission);
+
+    if (!viewEffect && !editEffect) {
+      nextWorkspaceStates[workspaceDefinition.id] = "inherit";
+      continue;
+    }
+
+    if (viewEffect === "deny") {
+      nextWorkspaceStates[workspaceDefinition.id] = "none";
+      continue;
+    }
+
+    if (editEffect === "allow") {
+      nextWorkspaceStates[workspaceDefinition.id] = "edit";
+      continue;
+    }
+
+    if (viewEffect === "allow") {
+      nextWorkspaceStates[workspaceDefinition.id] = "view";
+      continue;
+    }
+
+    if (editEffect === "deny") {
+      nextWorkspaceStates[workspaceDefinition.id] = "view";
+      continue;
+    }
+
+    nextWorkspaceStates[workspaceDefinition.id] = "inherit";
+  }
+
+  for (const permissionDefinition of ADVANCED_ACCESS_DEFINITIONS) {
+    const effect = getOverrideEffect(accessView?.overrides, permissionDefinition.key);
+    nextAdvancedStates[permissionDefinition.key] = effect === "allow" || effect === "deny" ? effect : "inherit";
+  }
+
+  detailWorkspaceStates.value = nextWorkspaceStates;
+  detailAdvancedStates.value = nextAdvancedStates;
+}
+
+function buildDetailOverridePayload(basePermissionKeys) {
+  const overrideMap = new Map();
+
+  for (const workspaceDefinition of WORKSPACE_ACCESS_DEFINITIONS) {
+    const selectedState = detailWorkspaceStates.value[workspaceDefinition.id] || "inherit";
+    const baseState = readWorkspaceAccessState(workspaceDefinition, basePermissionKeys, "none");
+
+    if (selectedState === "inherit" || selectedState === baseState) {
+      continue;
+    }
+
+    if (selectedState === "none") {
+      if (workspaceDefinition.viewPermission) {
+        overrideMap.set(workspaceDefinition.viewPermission, {
+          permissionKey: workspaceDefinition.viewPermission,
+          effect: "deny"
+        });
+      }
+      if (workspaceDefinition.editPermission) {
+        overrideMap.set(workspaceDefinition.editPermission, {
+          permissionKey: workspaceDefinition.editPermission,
+          effect: "deny"
+        });
+      }
+      continue;
+    }
+
+    if (selectedState === "view") {
+      if (baseState === "none" && workspaceDefinition.viewPermission) {
+        overrideMap.set(workspaceDefinition.viewPermission, {
+          permissionKey: workspaceDefinition.viewPermission,
+          effect: "allow"
+        });
+      }
+      if (baseState === "edit" && workspaceDefinition.editPermission) {
+        overrideMap.set(workspaceDefinition.editPermission, {
+          permissionKey: workspaceDefinition.editPermission,
+          effect: "deny"
+        });
+      }
+      continue;
+    }
+
+    if (selectedState === "edit") {
+      if (baseState === "none" && workspaceDefinition.viewPermission) {
+        overrideMap.set(workspaceDefinition.viewPermission, {
+          permissionKey: workspaceDefinition.viewPermission,
+          effect: "allow"
+        });
+      }
+      if (workspaceDefinition.editPermission && baseState !== "edit") {
+        overrideMap.set(workspaceDefinition.editPermission, {
+          permissionKey: workspaceDefinition.editPermission,
+          effect: "allow"
+        });
+      }
+    }
+  }
+
+  for (const permissionDefinition of ADVANCED_ACCESS_DEFINITIONS) {
+    const selectedState = detailAdvancedStates.value[permissionDefinition.key] || "inherit";
+    const baseEnabled = hasPermission(basePermissionKeys, permissionDefinition.key);
+
+    if (selectedState === "inherit") {
+      continue;
+    }
+
+    if (selectedState === "allow" && !baseEnabled) {
+      overrideMap.set(permissionDefinition.key, {
+        permissionKey: permissionDefinition.key,
+        effect: "allow"
+      });
+    }
+
+    if (selectedState === "deny" && baseEnabled) {
+      overrideMap.set(permissionDefinition.key, {
+        permissionKey: permissionDefinition.key,
+        effect: "deny"
+      });
+    }
+  }
+
+  return [...overrideMap.values()];
+}
+
+function applyPermissionOverrides(basePermissionKeys, overrides) {
+  const effectivePermissions = new Set(normalizePermissionKeys(basePermissionKeys));
+
+  for (const override of overrides) {
+    const permissionKey = normalizeText(override?.permissionKey);
+    if (!permissionKey) {
+      continue;
+    }
+
+    if (normalizeText(override?.effect) === "allow") {
+      effectivePermissions.add(permissionKey);
+      continue;
+    }
+
+    if (normalizeText(override?.effect) === "deny") {
+      effectivePermissions.delete(permissionKey);
+    }
+  }
+
+  return [...effectivePermissions];
+}
+
 async function saveRow(user, { silent = true } = {}) {
-  if (isRosterLocked(user)) {
+  if (isInlineLocked(user)) {
     ui.info("Esse consultor continua gerenciado pelo roster por enquanto.");
     resetRowDraft(user);
     return;
@@ -490,8 +794,33 @@ async function handleStoreChange(user, nextStoreId) {
   await saveRow(user);
 }
 
+async function refreshDetail(userId) {
+  const nextUser = findUserById(userId);
+  if (nextUser) {
+    selectedDetailUser.value = nextUser;
+  }
+
+  assignDetailDraft(nextUser || selectedDetailUser.value);
+  detailAccessError.value = "";
+
+  await accessStore.ensureRoleMatrix();
+  if (!accessStore.roleMatrix.length && accessStore.errorMessage) {
+    detailAccessError.value = accessStore.errorMessage;
+    resetDetailOverrides();
+    return;
+  }
+
+  try {
+    const accessView = await accessStore.loadUserAccess(userId);
+    syncDetailOverridesFromAccess(accessView);
+  } catch {
+    detailAccessError.value = accessStore.errorMessage || "Nao foi possivel carregar a configuracao de acesso deste usuario.";
+    resetDetailOverrides();
+  }
+}
+
 async function handleArchiveAction(user) {
-  if (isRosterLocked(user)) {
+  if (isInlineLocked(user)) {
     ui.info("Arquive consultores pelo fluxo de roster enquanto o atalho unificado nao entra.");
     return;
   }
@@ -511,6 +840,10 @@ async function handleArchiveAction(user) {
   const draft = getRowDraft(user);
   draft.active = !user.active;
   await saveRow(user, { silent: false });
+
+  if (selectedDetailUserId.value === normalizeText(user.id)) {
+    await refreshDetail(user.id);
+  }
 }
 
 async function handleInviteAction(user) {
@@ -521,6 +854,10 @@ async function handleInviteAction(user) {
   }
 
   await presentInvitation(result?.invitation, "Convite gerado.");
+
+  if (selectedDetailUserId.value === normalizeText(user.id)) {
+    await refreshDetail(user.id);
+  }
 }
 
 async function handleResetPassword(user) {
@@ -550,6 +887,10 @@ async function handleResetPassword(user) {
   }
 
   ui.success("Senha temporaria redefinida.");
+
+  if (selectedDetailUserId.value === normalizeText(user.id)) {
+    await refreshDetail(user.id);
+  }
 }
 
 async function submitCreate() {
@@ -596,16 +937,89 @@ async function submitCreate() {
   await presentInvitation(result?.invitation, "Usuario criado e convidado.");
 }
 
-function openDetails(user) {
+async function openDetails(user) {
   selectedDetailUser.value = user;
+  assignDetailDraft(user);
+  resetDetailOverrides();
+  detailAccessError.value = "";
+
+  await accessStore.ensureRoleMatrix();
+  if (!accessStore.roleMatrix.length && accessStore.errorMessage) {
+    detailAccessError.value = accessStore.errorMessage;
+    return;
+  }
+
+  try {
+    const accessView = await accessStore.loadUserAccess(user.id);
+    syncDetailOverridesFromAccess(accessView);
+  } catch {
+    detailAccessError.value = accessStore.errorMessage || "Nao foi possivel carregar os overrides do usuario.";
+  }
 }
 
 function closeDetails() {
   selectedDetailUser.value = null;
+  detailSaving.value = false;
+  detailAccessError.value = "";
+  resetDetailOverrides();
+}
+
+async function saveDetails() {
+  if (!selectedDetailUser.value || detailSaving.value) {
+    return;
+  }
+
+  if (detailRoleLocked.value) {
+    ui.info("Esse consultor segue bloqueado pelo fluxo de roster.");
+    return;
+  }
+
+  const payload = buildDetailUpdatePayload();
+  if (!payload.displayName || !payload.email) {
+    ui.error("Nome e email sao obrigatorios.");
+    return;
+  }
+
+  if (isStoreScopedRole(payload.role) && payload.storeIds.length === 0) {
+    ui.error("Selecione uma loja valida para esse perfil.");
+    return;
+  }
+
+  detailSaving.value = true;
+
+  const updateResult = await usersStore.updateUser(selectedDetailUser.value.id, payload);
+  if (updateResult?.ok === false) {
+    detailSaving.value = false;
+    ui.error(updateResult.message || "Nao foi possivel salvar o usuario.");
+    return;
+  }
+
+  if (!detailAccessReady.value) {
+    detailSaving.value = false;
+    await refreshDetail(selectedDetailUser.value.id);
+    ui.success("Dados do usuario atualizados.");
+    if (detailAccessError.value) {
+      ui.info("A area de permissoes continua indisponivel enquanto a API de access nao estiver ativa.");
+    }
+    return;
+  }
+
+  const accessResult = await accessStore.saveUserOverrides(selectedDetailUser.value.id, detailOverridePayload.value);
+  detailSaving.value = false;
+
+  if (accessResult?.ok === false) {
+    detailAccessError.value = accessResult.message || "Nao foi possivel salvar os overrides do usuario.";
+    ui.error(accessResult.message || "Nao foi possivel salvar os overrides do usuario.");
+    await refreshDetail(selectedDetailUser.value.id);
+    return;
+  }
+
+  await refreshDetail(selectedDetailUser.value.id);
+  ui.success("Acesso do usuario atualizado.");
 }
 
 function canShowInviteAction(user) {
-  if (isRosterLocked(user)) {
+  if (isInlineLocked(user)) {
     return false;
   }
 
@@ -638,8 +1052,27 @@ watch(
   }
 );
 
+watch(
+  () => detailDraft.role,
+  () => {
+    if (selectedDetailUser.value) {
+      syncDetailScope();
+    }
+  }
+);
+
+watch(
+  () => detailDraft.tenantId,
+  () => {
+    if (selectedDetailUser.value) {
+      syncDetailScope();
+    }
+  }
+);
+
 await usersStore.ensureLoaded();
 resetCreateDraft();
+resetDetailOverrides();
 </script>
 
 <template>
@@ -651,7 +1084,7 @@ resetCreateDraft();
       </button>
 
       <p class="users-access-manager__launcher-hint">
-        Grade compacta para acessos, pronta para reaproveitar o mesmo padrao nas outras areas.
+        Abra o cadastro rapido acima ou edite cada usuario no modal com visibilidade e override do painel.
       </p>
     </div>
 
@@ -744,7 +1177,7 @@ resetCreateDraft();
         </div>
 
         <p class="users-access-manager__hint">
-          Consultores seguem vinculados ao roster. Quando necessario, o admin da plataforma pode corrigir nome, loja, perfil e matricula por aqui.
+          Consultores seguem vinculados ao roster e continuam sendo gerenciados na area de consultores, nao por esta tela.
         </p>
       </form>
     </transition>
@@ -807,7 +1240,7 @@ resetCreateDraft();
       <template #cell-name="{ row }">
         <div class="users-access-manager__identity-cell">
           <input
-            v-if="!isRosterLocked(row)"
+            v-if="!isInlineLocked(row)"
             v-model="getRowDraft(row).displayName"
             class="users-access-manager__inline-input"
             type="text"
@@ -828,7 +1261,7 @@ resetCreateDraft();
 
       <template #cell-email="{ row }">
         <input
-          v-if="!isRosterLocked(row)"
+          v-if="!isInlineLocked(row)"
           v-model="getRowDraft(row).email"
           class="users-access-manager__inline-input"
           type="email"
@@ -842,7 +1275,7 @@ resetCreateDraft();
         <AppToggleSwitch
           compact
           :model-value="getRowDraft(row).active"
-          :disabled="rowBusy[row.id] || isRosterLocked(row)"
+          :disabled="rowBusy[row.id] || isInlineLocked(row)"
           @change="handleStatusChange(row, $event)"
         />
       </template>
@@ -854,7 +1287,7 @@ resetCreateDraft();
           :options="getRoleSelectOptions(row)"
           :show-leading-icon="false"
           compact
-          :disabled="rowBusy[row.id] || isRosterLocked(row)"
+          :disabled="rowBusy[row.id] || isInlineLocked(row)"
           @update:model-value="handleRoleChange(row, $event)"
         />
       </template>
@@ -866,14 +1299,14 @@ resetCreateDraft();
           :options="getStoreSelectOptions(row, getRowDraft(row))"
           :show-leading-icon="false"
           compact
-          :disabled="rowBusy[row.id] || isRosterLocked(row)"
+          :disabled="rowBusy[row.id] || isInlineLocked(row)"
           @update:model-value="handleStoreChange(row, $event)"
         />
       </template>
 
       <template #cell-employeeCode="{ row }">
         <input
-          v-if="!isRosterLocked(row)"
+          v-if="!isInlineLocked(row)"
           v-model="getRowDraft(row).employeeCode"
           class="users-access-manager__inline-input users-access-manager__inline-input--compact"
           type="text"
@@ -929,11 +1362,265 @@ resetCreateDraft();
 
     <AppDetailDialog
       :model-value="Boolean(selectedDetailUser)"
-      :title="selectedDetailUser?.displayName || 'Detalhes do acesso'"
-      :subtitle="selectedDetailUser?.email || ''"
-      :sections="detailSections"
+      :title="selectedDetailUser?.displayName || 'Editar acesso'"
+      :subtitle="selectedDetailUser ? `${getRoleLabel(detailDraft.role)} • ${selectedDetailUser.email}` : ''"
+      :sections="[]"
+      width="min(72rem, calc(100vw - 2rem))"
       @update:model-value="!$event && closeDetails()"
-    />
+    >
+      <div v-if="selectedDetailUser" class="users-access-manager__detail-layout">
+        <article class="settings-card users-access-manager__detail-summary-card">
+          <header class="settings-card__header">
+            <div>
+              <h3 class="settings-card__title">Resumo do acesso</h3>
+              <p class="settings-card__text">Edite os dados do usuario e ajuste o que ele pode ver ou alterar no painel.</p>
+            </div>
+
+            <span :class="getOnboardingTone(selectedDetailUser)">{{ getOnboardingLabel(selectedDetailUser) }}</span>
+          </header>
+
+          <div class="users-access-manager__detail-summary-grid">
+            <article class="users-access-manager__detail-summary-item">
+              <span>Perfil base</span>
+              <strong>{{ getRoleLabel(detailDraft.role) }}</strong>
+            </article>
+
+            <article class="users-access-manager__detail-summary-item">
+              <span>Escopo</span>
+              <strong>{{ isStoreScopedRole(detailDraft.role) ? getStoreName(detailDraft.storeId) : 'ALL' }}</strong>
+            </article>
+
+            <article class="users-access-manager__detail-summary-item">
+              <span>Cliente</span>
+              <strong>{{ tenantLookup.get(normalizeText(detailDraft.tenantId))?.name || detailDraft.tenantId || 'Plataforma' }}</strong>
+            </article>
+
+            <article class="users-access-manager__detail-summary-item">
+              <span>Origem</span>
+              <strong>{{ isConsultantManaged(selectedDetailUser) ? 'Consultores' : 'Usuarios' }}</strong>
+            </article>
+          </div>
+
+          <p v-if="detailRoleLocked" class="users-access-manager__detail-warning">
+            Esse consultor continua gerenciado pelo roster. Nesta tela ele fica somente para consulta e reset de senha, quando permitido.
+          </p>
+
+          <p v-else-if="isConsultantManaged(selectedDetailUser) && canOverrideConsultantManaged" class="users-access-manager__detail-info">
+            Como admin da plataforma, voce pode reposicionar este consultor de loja e ajustar o papel vinculado a ele por aqui.
+          </p>
+        </article>
+
+        <div class="users-access-manager__detail-grid">
+          <article class="settings-card">
+            <header class="settings-card__header">
+              <div>
+                <h3 class="settings-card__title">Dados do usuario</h3>
+                <p class="settings-card__text">Esses campos atualizam a conta usada no login.</p>
+              </div>
+            </header>
+
+            <div class="users-access-manager__detail-form-grid">
+              <label class="settings-field">
+                <span>Nome completo</span>
+                <input v-model="detailDraft.displayName" type="text" :disabled="detailSaving || detailRoleLocked">
+              </label>
+
+              <label class="settings-field">
+                <span>Email</span>
+                <input v-model="detailDraft.email" type="email" :disabled="detailSaving || detailRoleLocked">
+              </label>
+
+              <label class="settings-field">
+                <span>Matricula</span>
+                <input v-model="detailDraft.employeeCode" type="text" :disabled="detailSaving || detailRoleLocked">
+              </label>
+
+              <AppSelectField
+                class="settings-field"
+                label="Perfil"
+                :model-value="detailDraft.role"
+                :options="detailRoleOptions"
+                :disabled="detailSaving || detailRoleLocked"
+                @update:model-value="detailDraft.role = $event"
+              />
+
+              <AppSelectField
+                v-if="auth.role === 'platform_admin'"
+                class="settings-field"
+                label="Cliente"
+                :model-value="detailDraft.tenantId"
+                :options="clientFilterOptions.filter((option) => option.value)"
+                :disabled="detailSaving || detailRoleLocked || detailDraft.role === 'platform_admin'"
+                @update:model-value="detailDraft.tenantId = $event"
+              />
+
+              <AppSelectField
+                class="settings-field"
+                label="Loja"
+                :model-value="detailDraft.storeId"
+                :options="detailStoreOptions"
+                :disabled="detailSaving || detailRoleLocked || !isStoreScopedRole(detailDraft.role)"
+                @update:model-value="detailDraft.storeId = $event"
+              />
+            </div>
+
+            <label class="settings-toggle users-access-manager__detail-toggle">
+              <input v-model="detailDraft.active" type="checkbox" :disabled="detailSaving || detailRoleLocked">
+              <span>Conta ativa</span>
+            </label>
+          </article>
+
+          <article class="settings-card">
+            <header class="settings-card__header">
+              <div>
+                <h3 class="settings-card__title">Acoes rapidas</h3>
+                <p class="settings-card__text">Atalhos para convite, senha temporaria e status da conta.</p>
+              </div>
+            </header>
+
+            <div class="users-access-manager__detail-action-list">
+              <button
+                v-if="canShowInviteAction(selectedDetailUser)"
+                class="users-access-manager__detail-action-btn"
+                type="button"
+                @click="handleInviteAction(selectedDetailUser)"
+              >
+                <Mail :size="15" :stroke-width="2.15" />
+                <span>{{ normalizeText(selectedDetailUser.onboarding?.status) === 'pending' ? 'Copiar convite' : 'Gerar convite' }}</span>
+              </button>
+
+              <button
+                v-if="canManagePasswords && selectedDetailUser.onboarding?.hasPassword"
+                class="users-access-manager__detail-action-btn"
+                type="button"
+                @click="handleResetPassword(selectedDetailUser)"
+              >
+                <KeyRound :size="15" :stroke-width="2.15" />
+                <span>Resetar senha</span>
+              </button>
+
+              <button
+                class="users-access-manager__detail-action-btn"
+                type="button"
+                @click="handleArchiveAction(selectedDetailUser)"
+              >
+                <Archive v-if="selectedDetailUser.active" :size="15" :stroke-width="2.15" />
+                <RotateCcw v-else :size="15" :stroke-width="2.15" />
+                <span>{{ selectedDetailUser.active ? 'Inativar conta' : 'Reativar conta' }}</span>
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <article class="settings-card">
+          <header class="settings-card__header">
+            <div>
+              <h3 class="settings-card__title">Acesso ao painel</h3>
+              <p class="settings-card__text">Cada override abaixo sobrescreve somente esse usuario em cima do papel selecionado.</p>
+            </div>
+          </header>
+
+          <p v-if="detailLoading" class="users-access-manager__detail-loading">Carregando matriz efetiva do usuario...</p>
+
+          <div v-else-if="detailAccessError" class="users-access-manager__detail-error-card">
+            <div>
+              <strong>Permissoes indisponiveis neste ambiente.</strong>
+              <p>{{ detailAccessError }}</p>
+            </div>
+
+            <button
+              class="users-access-manager__detail-retry-btn"
+              type="button"
+              @click="refreshDetail(selectedDetailUser.id)"
+            >
+              Tentar novamente
+            </button>
+          </div>
+
+          <div v-else class="users-access-manager__permission-grid">
+            <div
+              v-for="workspaceRow in detailWorkspaceRows"
+              :key="workspaceRow.id"
+              class="users-access-manager__permission-row"
+            >
+              <div class="users-access-manager__permission-copy">
+                <strong>{{ workspaceRow.label }}</strong>
+                <p>{{ workspaceRow.description }}</p>
+
+                <div class="users-access-manager__permission-meta">
+                  <span :class="getAccessStateTone(workspaceRow.baseState)">Perfil: {{ getAccessStateLabel(workspaceRow.baseState) }}</span>
+                  <span :class="getAccessStateTone(workspaceRow.effectiveState)">Efetivo: {{ getAccessStateLabel(workspaceRow.effectiveState) }}</span>
+                </div>
+              </div>
+
+              <AppSelectField
+                class="users-access-manager__permission-select"
+                label="Override"
+                :model-value="workspaceRow.overrideState"
+                :options="getWorkspaceAccessOptions(workspaceRow, { includeInherit: true })"
+                :disabled="detailSaving || detailRoleLocked || !detailAccessReady"
+                @update:model-value="detailWorkspaceStates[workspaceRow.id] = $event"
+              />
+            </div>
+          </div>
+        </article>
+
+        <article v-if="!detailAccessError" class="settings-card">
+          <header class="settings-card__header">
+            <div>
+              <h3 class="settings-card__title">Permissoes sensiveis</h3>
+              <p class="settings-card__text">Use apenas quando o usuario precisar sair do padrao do tipo.</p>
+            </div>
+          </header>
+
+          <div class="users-access-manager__permission-grid users-access-manager__permission-grid--advanced">
+            <div
+              v-for="permissionRow in detailAdvancedRows"
+              :key="permissionRow.key"
+              class="users-access-manager__permission-row"
+            >
+              <div class="users-access-manager__permission-copy">
+                <strong>{{ permissionRow.label }}</strong>
+                <p>{{ permissionRow.description }}</p>
+
+                <div class="users-access-manager__permission-meta">
+                  <span :class="getAccessStateTone(permissionRow.baseEnabled ? 'allow' : 'none')">
+                    Perfil: {{ permissionRow.baseEnabled ? 'Permitido' : 'Nao permitido' }}
+                  </span>
+                  <span :class="getAccessStateTone(permissionRow.effectiveEnabled ? 'allow' : 'none')">
+                    Efetivo: {{ permissionRow.effectiveEnabled ? 'Permitido' : 'Nao permitido' }}
+                  </span>
+                </div>
+              </div>
+
+              <AppSelectField
+                class="users-access-manager__permission-select"
+                label="Override"
+                :model-value="permissionRow.overrideState"
+                :options="PERMISSION_OVERRIDE_OPTIONS"
+                :disabled="detailSaving || detailRoleLocked || !detailAccessReady"
+                @update:model-value="detailAdvancedStates[permissionRow.key] = $event"
+              />
+            </div>
+          </div>
+        </article>
+
+        <footer class="users-access-manager__detail-footer">
+          <p class="users-access-manager__detail-footer-note">
+            {{ detailAccessError ? 'Os dados do usuario ainda podem ser salvos. A parte de permissoes volta a funcionar quando a API de access estiver ativa.' : 'O acesso efetivo acima ja considera o papel escolhido no modal e os overrides desta edicao.' }}
+          </p>
+
+          <button
+            class="users-access-manager__submit-btn"
+            type="button"
+            :disabled="detailSaving || detailLoading || detailRoleLocked"
+            @click="saveDetails"
+          >
+            {{ detailSaving ? 'Salvando...' : detailAccessError ? 'Salvar dados do usuario' : 'Salvar alteracoes' }}
+          </button>
+        </footer>
+      </div>
+    </AppDetailDialog>
   </section>
 </template>
 
@@ -1122,6 +1809,232 @@ resetCreateDraft();
   font-size: 0.72rem;
 }
 
+.users-access-manager__detail-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.users-access-manager__detail-summary-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.users-access-manager__detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.users-access-manager__detail-summary-item {
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 42, 0.44);
+}
+
+.users-access-manager__detail-summary-item span {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.users-access-manager__detail-summary-item strong {
+  color: #ffffff;
+  font-size: 0.9rem;
+}
+
+.users-access-manager__detail-warning {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  background: rgba(120, 53, 15, 0.22);
+  color: #fde68a;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.users-access-manager__detail-info {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  background: rgba(8, 47, 73, 0.22);
+  color: #bae6fd;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.users-access-manager__detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(18rem, 0.9fr);
+  gap: 1rem;
+}
+
+.users-access-manager__detail-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.users-access-manager__detail-toggle {
+  margin-top: 1rem;
+}
+
+.users-access-manager__detail-action-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.users-access-manager__detail-action-btn {
+  min-height: 2.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0 0.9rem;
+  border-radius: 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 25, 38, 0.92);
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.users-access-manager__detail-loading {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.users-access-manager__detail-error-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  background: rgba(69, 10, 10, 0.2);
+}
+
+.users-access-manager__detail-error-card strong {
+  color: #ffffff;
+  font-size: 0.84rem;
+}
+
+.users-access-manager__detail-error-card p {
+  margin: 0.22rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.users-access-manager__detail-retry-btn {
+  min-height: 2.35rem;
+  padding: 0 0.95rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(18, 25, 38, 0.92);
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.users-access-manager__permission-grid {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.users-access-manager__permission-grid--advanced {
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+}
+
+.users-access-manager__permission-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 13rem);
+  gap: 0.9rem;
+  align-items: start;
+  padding: 0.95rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(15, 23, 42, 0.44);
+}
+
+.users-access-manager__permission-copy {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.users-access-manager__permission-copy strong {
+  color: #ffffff;
+  font-size: 0.84rem;
+}
+
+.users-access-manager__permission-copy p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.users-access-manager__permission-meta {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-top: 0.2rem;
+}
+
+.users-access-manager__permission-select {
+  min-width: 0;
+}
+
+.users-access-manager__permission-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.8rem;
+  padding: 0 0.72rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.users-access-manager__permission-pill--success {
+  background: rgba(34, 197, 94, 0.14);
+  color: #86efac;
+}
+
+.users-access-manager__permission-pill--info {
+  background: rgba(56, 189, 248, 0.14);
+  color: #bae6fd;
+}
+
+.users-access-manager__permission-pill--danger {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fecaca;
+}
+
+.users-access-manager__detail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.users-access-manager__detail-footer-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .users-access-manager__counter {
   display: inline-flex;
   align-items: center;
@@ -1241,6 +2154,10 @@ resetCreateDraft();
   .users-access-manager__create-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .users-access-manager__detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 720px) {
@@ -1248,14 +2165,21 @@ resetCreateDraft();
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .users-access-manager__detail-form-grid,
+  .users-access-manager__permission-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .users-access-manager__create-actions,
-  .users-access-manager__launcher-row {
+  .users-access-manager__launcher-row,
+  .users-access-manager__detail-footer {
     align-items: stretch;
   }
 
   .users-access-manager__submit-btn,
   .users-access-manager__ghost-btn,
-  .users-access-manager__launcher {
+  .users-access-manager__launcher,
+  .users-access-manager__detail-action-btn {
     width: 100%;
     justify-content: center;
   }

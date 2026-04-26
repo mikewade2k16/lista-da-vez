@@ -64,3 +64,5 @@ Ele nao deve cuidar de:
 - consultores nao devem nascer por este modulo; o fluxo correto e `consultants`
 - contas com papel `consultant` e vinculo de roster nao devem ser editadas, convidadas nem inativadas por este modulo
 - para contas de consultor, este modulo pode apenas listar e executar reset administrativo de senha
+- `platform_admin` pode usar override administrativo para manutencao/debug de contas `consultant`, inclusive mudanca de papel por PATCH quando isso for explicitamente necessario
+- esse override administrativo nao cria roster; ele apenas altera o acesso do usuario e deixa o sincronismo do consultor vinculado agir quando houver `consultants.user_id`

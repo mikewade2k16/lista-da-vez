@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
@@ -32,7 +33,7 @@ type StoreFinder interface {
 }
 
 type TenantLister interface {
-	ListAccessible(ctx context.Context, principal auth.Principal) ([]tenants.TenantView, error)
+	ListAccessible(ctx context.Context, principal auth.Principal, input tenants.ListInput) ([]tenants.TenantView, error)
 }
 
 type Service struct {
@@ -86,6 +87,14 @@ func (service *Service) PublishOperationEvent(ctx context.Context, event operati
 	})
 }
 
+func (service *Service) PublishStoreEvent(ctx context.Context, storeID string, action string, savedAt time.Time) {
+	service.PublishOperationEvent(ctx, operations.PublishedEvent{
+		StoreID: strings.TrimSpace(storeID),
+		Action:  strings.TrimSpace(action),
+		SavedAt: savedAt,
+	})
+}
+
 func (service *Service) PublishContextEvent(_ context.Context, tenantID string, resource string, action string, resourceID string, savedAt time.Time) {
 	normalizedTenantID := strings.TrimSpace(tenantID)
 	if normalizedTenantID == "" {
@@ -125,7 +134,12 @@ func (service *Service) HandleOperationSocket(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if !operations.CanAccessOperationsRole(string(principal.Role)) {
+	if principal.PermissionsResolved {
+		if !accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionOperationsView) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
+			return
+		}
+	} else if !operations.CanAccessOperationsRole(string(principal.Role)) {
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
 		return
 	}
@@ -303,7 +317,7 @@ func (service *Service) resolveContextTenantID(ctx context.Context, principal au
 		return principal.TenantID, nil
 	}
 
-	accessibleTenants, err := service.tenantLister.ListAccessible(ctx, principal)
+	accessibleTenants, err := service.tenantLister.ListAccessible(ctx, principal, tenants.ListInput{})
 	if err != nil {
 		return "", err
 	}

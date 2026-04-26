@@ -1,5 +1,6 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import OperationPauseReasonDialog from "~/features/operation/components/OperationPauseReasonDialog.vue";
 import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
 
@@ -23,6 +24,9 @@ const activeServiceIds = computed(() => new Set((props.state.activeServices || [
 const pausedByPersonId = computed(() =>
   new Map((props.state.pausedEmployees || []).map((item) => [item.personId, item]))
 );
+const pauseReasonOptions = computed(() => props.state.pauseReasonOptions || []);
+const pauseDialogEmployee = ref(null);
+const pausePending = ref(false);
 
 function statusFor(employeeId) {
   if (activeServiceIds.value.has(employeeId)) {
@@ -60,25 +64,49 @@ async function addToQueue(employee) {
   }
 }
 
-async function pauseEmployee(employee) {
-  const { confirmed, value } = await ui.prompt({
-    title: "Pausar consultor",
-    message: "Informe o motivo da pausa para registrar no painel.",
-    inputLabel: "Motivo da pausa",
-    inputPlaceholder: "Ex.: almoco, atendimento externo, suporte interno",
-    confirmLabel: "Pausar",
-    required: true
-  });
+function pauseEmployee(employee) {
+  if (!pauseReasonOptions.value.length) {
+    ui.error("Cadastre ao menos um motivo de pausa em Configuracoes > Pausas.");
+    return;
+  }
 
-  if (confirmed && value) {
-    const result = await operationsStore.pauseEmployee(employee.id, value, props.integratedMode ? employee.storeId : "");
+  pauseDialogEmployee.value = employee;
+}
+
+function closePauseDialog() {
+  if (pausePending.value) {
+    return;
+  }
+
+  pauseDialogEmployee.value = null;
+}
+
+async function confirmPauseEmployee(reason) {
+  const employee = pauseDialogEmployee.value;
+  const normalizedReason = String(reason || "").trim();
+
+  if (!employee || !normalizedReason) {
+    return;
+  }
+
+  pausePending.value = true;
+
+  try {
+    const result = await operationsStore.pauseEmployee(
+      employee.id,
+      normalizedReason,
+      props.integratedMode ? employee.storeId : ""
+    );
 
     if (result?.ok === false) {
       ui.error(result.message);
       return;
     }
 
+    pauseDialogEmployee.value = null;
     ui.success("Consultor pausado.");
+  } finally {
+    pausePending.value = false;
   }
 }
 
@@ -208,5 +236,14 @@ async function resumeEmployee(employee) {
         </div>
       </div>
     </div>
+
+    <OperationPauseReasonDialog
+      :open="Boolean(pauseDialogEmployee)"
+      :employee="pauseDialogEmployee"
+      :options="pauseReasonOptions"
+      :pending="pausePending"
+      @close="closePauseDialog"
+      @confirm="confirmPauseEmployee"
+    />
   </footer>
 </template>

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from "vue";
+import { onBeforeUnmount, onMounted, watch } from "vue";
 import { X } from "lucide-vue-next";
 
 const props = defineProps({
@@ -26,9 +26,24 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["update:modelValue"]);
+let previousBodyOverflow = "";
 
 function closeDialog() {
   emit("update:modelValue", false);
+}
+
+function syncBodyScrollLock(isOpen) {
+  if (!import.meta.client) {
+    return;
+  }
+
+  if (isOpen) {
+    previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return;
+  }
+
+  document.body.style.overflow = previousBodyOverflow;
 }
 
 function formatValue(value) {
@@ -53,8 +68,17 @@ onMounted(() => {
   document.addEventListener("keydown", handleEscape);
 });
 
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    syncBodyScrollLock(isOpen);
+  },
+  { immediate: true }
+);
+
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", handleEscape);
+  syncBodyScrollLock(false);
 });
 </script>
 
@@ -129,6 +153,7 @@ onBeforeUnmount(() => {
   z-index: 1;
   max-height: calc(100vh - 2rem);
   overflow: auto;
+  overscroll-behavior: contain;
   border-radius: 1.2rem;
   border: 1px solid var(--line-soft);
   background: linear-gradient(180deg, rgba(13, 18, 29, 0.98), rgba(8, 12, 19, 0.98));

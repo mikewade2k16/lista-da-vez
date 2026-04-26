@@ -5,9 +5,14 @@ import { useAuthStore } from "~/stores/auth";
 import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
 
+// Configuracoes de operacao deixaram de ser por loja: agora sao tenant-wide.
+// Os endpoints continuam aceitando storeId no payload por compatibilidade com
+// clientes antigos, mas o backend ignora esse campo e usa o tenant do principal
+// autenticado. A store envia o payload limpo, sem storeId.
 const OPTION_GROUP_PATHS = {
   visitReasonOptions: "visit-reasons",
   customerSourceOptions: "customer-sources",
+  pauseReasonOptions: "pause-reasons",
   queueJumpReasonOptions: "queue-jump-reasons",
   lossReasonOptions: "loss-reasons",
   professionOptions: "professions"
@@ -24,31 +29,28 @@ export const useSettingsStore = defineStore("settings", () => {
   const { state } = storeToRefs(runtime);
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
 
-  async function resolveActiveStoreId() {
+  async function ensureAuthenticated() {
     await runtime.ensure();
 
     if (auth.isAuthenticated) {
       await auth.ensureSession();
     }
 
-    return String(auth.activeStoreId || runtime.state.activeStoreId || "").trim();
+    return auth.isAuthenticated;
   }
 
-  async function persistOperationSection(storeId) {
+  async function persistOperationSection() {
     await apiRequest("/v1/settings/operation", {
       method: "PATCH",
       body: {
-        storeId,
         selectedOperationTemplateId: String(runtime.state.selectedOperationTemplateId || "").trim(),
         settings: cloneValue(runtime.state.settings || {})
       }
     });
   }
 
-  async function persistOperationPatch(storeId, payload = {}) {
-    const body = {
-      storeId
-    };
+  async function persistOperationPatch(payload = {}) {
+    const body = {};
 
     if (Object.prototype.hasOwnProperty.call(payload, "selectedOperationTemplateId")) {
       const selectedOperationTemplateId = String(payload.selectedOperationTemplateId || "").trim();
@@ -71,17 +73,16 @@ export const useSettingsStore = defineStore("settings", () => {
     });
   }
 
-  async function persistModalSection(storeId) {
+  async function persistModalSection() {
     await apiRequest("/v1/settings/modal", {
       method: "PATCH",
       body: {
-        storeId,
         modalConfig: cloneValue(runtime.state.modalConfig || {})
       }
     });
   }
 
-  async function persistModalPatch(storeId, modalConfig = {}) {
+  async function persistModalPatch(modalConfig = {}) {
     if (!modalConfig || Object.keys(modalConfig).length === 0) {
       return;
     }
@@ -89,13 +90,12 @@ export const useSettingsStore = defineStore("settings", () => {
     await apiRequest("/v1/settings/modal", {
       method: "PATCH",
       body: {
-        storeId,
         modalConfig: cloneValue(modalConfig)
       }
     });
   }
 
-  async function persistOptionSection(storeId, stateKey) {
+  async function persistOptionSection(stateKey) {
     const groupPath = OPTION_GROUP_PATHS[stateKey];
 
     if (!groupPath) {
@@ -105,23 +105,21 @@ export const useSettingsStore = defineStore("settings", () => {
     await apiRequest(`/v1/settings/options/${groupPath}`, {
       method: "PUT",
       body: {
-        storeId,
         items: cloneValue(runtime.state[stateKey] || [])
       }
     });
   }
 
-  async function persistProductSection(storeId) {
+  async function persistProductSection() {
     await apiRequest("/v1/settings/products", {
       method: "PUT",
       body: {
-        storeId,
         items: cloneValue(runtime.state.productCatalog || [])
       }
     });
   }
 
-  async function persistOptionItemCreate(storeId, stateKey, item) {
+  async function persistOptionItemCreate(stateKey, item) {
     const groupPath = OPTION_GROUP_PATHS[stateKey];
 
     if (!groupPath || !item?.id || !item?.label) {
@@ -131,7 +129,6 @@ export const useSettingsStore = defineStore("settings", () => {
     await apiRequest(`/v1/settings/options/${groupPath}`, {
       method: "POST",
       body: {
-        storeId,
         item: {
           id: String(item.id || "").trim(),
           label: String(item.label || "").trim()
@@ -140,7 +137,7 @@ export const useSettingsStore = defineStore("settings", () => {
     });
   }
 
-  async function persistOptionItemUpdate(storeId, stateKey, item) {
+  async function persistOptionItemUpdate(stateKey, item) {
     const groupPath = OPTION_GROUP_PATHS[stateKey];
 
     if (!groupPath || !item?.id || !item?.label) {
@@ -150,25 +147,24 @@ export const useSettingsStore = defineStore("settings", () => {
     await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(item.id || "").trim())}`, {
       method: "PATCH",
       body: {
-        storeId,
         label: String(item.label || "").trim()
       }
     });
   }
 
-  async function persistOptionItemDelete(storeId, stateKey, itemId) {
+  async function persistOptionItemDelete(stateKey, itemId) {
     const groupPath = OPTION_GROUP_PATHS[stateKey];
 
     if (!groupPath || !itemId) {
       return;
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(itemId || "").trim())}?storeId=${encodeURIComponent(storeId)}`, {
+    await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(itemId || "").trim())}`, {
       method: "DELETE"
     });
   }
 
-  async function persistProductItemCreate(storeId, item) {
+  async function persistProductItemCreate(item) {
     if (!item?.id || !item?.name) {
       return;
     }
@@ -176,7 +172,6 @@ export const useSettingsStore = defineStore("settings", () => {
     await apiRequest("/v1/settings/products", {
       method: "POST",
       body: {
-        storeId,
         item: {
           id: String(item.id || "").trim(),
           name: String(item.name || "").trim(),
@@ -188,7 +183,7 @@ export const useSettingsStore = defineStore("settings", () => {
     });
   }
 
-  async function persistProductItemUpdate(storeId, productId, payload) {
+  async function persistProductItemUpdate(productId, payload) {
     if (!productId) {
       return;
     }
@@ -196,7 +191,6 @@ export const useSettingsStore = defineStore("settings", () => {
     await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`, {
       method: "PATCH",
       body: {
-        storeId,
         name: String(payload?.name || "").trim(),
         code: String(payload?.code || "").trim().toUpperCase(),
         category: String(payload?.category || "").trim(),
@@ -205,21 +199,21 @@ export const useSettingsStore = defineStore("settings", () => {
     });
   }
 
-  async function persistProductItemDelete(storeId, productId) {
+  async function persistProductItemDelete(productId) {
     if (!productId) {
       return;
     }
 
-    await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}?storeId=${encodeURIComponent(storeId)}`, {
+    await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`, {
       method: "DELETE"
     });
   }
 
   async function mutateAndPersist(actionName, args = [], persistHandlers = []) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated();
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
@@ -231,7 +225,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
     try {
       for (const persistHandler of persistHandlers) {
-        await persistHandler(storeId);
+        await persistHandler();
       }
 
       return localResult || { ok: true };
@@ -246,31 +240,21 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function mutateAndPersistOptionCreate(actionName, label, stateKey) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated();
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
-    const previousIds = new Set((previousState[stateKey] || []).map((item) => String(item?.id || "").trim()));
     const localResult = await runtime.run(actionName, label);
 
     if (localResult?.ok === false) {
       return localResult;
     }
 
-    const createdItem =
-      (runtime.state[stateKey] || []).find(
-        (item) => !previousIds.has(String(item?.id || "").trim()) && normalizeText(item?.label) === normalizeText(label)
-      ) || null;
-
-    if (!createdItem) {
-      return { ok: false, message: "Nao foi possivel identificar a opcao criada." };
-    }
-
     try {
-      await persistOptionItemCreate(storeId, stateKey, createdItem);
+      await persistOptionSection(stateKey);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -282,10 +266,10 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function mutateAndPersistOptionUpdate(actionName, optionId, label, stateKey) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated();
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
@@ -295,13 +279,8 @@ export const useSettingsStore = defineStore("settings", () => {
       return localResult;
     }
 
-    const updatedItem = (runtime.state[stateKey] || []).find((item) => String(item?.id || "").trim() === String(optionId || "").trim()) || null;
-    if (!updatedItem) {
-      return { ok: false, message: "Nao foi possivel identificar a opcao atualizada." };
-    }
-
     try {
-      await persistOptionItemUpdate(storeId, stateKey, updatedItem);
+      await persistOptionSection(stateKey);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -313,10 +292,10 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function mutateAndPersistOptionDelete(actionName, optionId, stateKey) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated();
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
@@ -327,7 +306,7 @@ export const useSettingsStore = defineStore("settings", () => {
     }
 
     try {
-      await persistOptionItemDelete(storeId, stateKey, optionId);
+      await persistOptionSection(stateKey);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -338,11 +317,17 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
-  async function mutateAndPersistProductCreate(name, category, basePrice, code) {
-    const storeId = await resolveActiveStoreId();
+  async function mutateAndPersistOptionReorder(actionName, optionIds, stateKey) {
+    return mutateAndPersist(actionName, [optionIds], [
+      () => persistOptionSection(stateKey)
+    ]);
+  }
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+  async function mutateAndPersistProductCreate(name, category, basePrice, code) {
+    const isAuthenticated = await ensureAuthenticated();
+
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
@@ -363,7 +348,7 @@ export const useSettingsStore = defineStore("settings", () => {
     }
 
     try {
-      await persistProductItemCreate(storeId, createdItem);
+      await persistProductItemCreate(createdItem);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -375,10 +360,10 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function mutateAndPersistProductUpdate(productId, payload) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated();
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
@@ -394,7 +379,7 @@ export const useSettingsStore = defineStore("settings", () => {
     }
 
     try {
-      await persistProductItemUpdate(storeId, productId, updatedItem);
+      await persistProductItemUpdate(productId, updatedItem);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -406,10 +391,10 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function mutateAndPersistProductDelete(productId) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated();
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: "Sessao indisponivel." };
     }
 
     const previousState = cloneValue(runtime.state);
@@ -420,7 +405,7 @@ export const useSettingsStore = defineStore("settings", () => {
     }
 
     try {
-      await persistProductItemDelete(storeId, productId);
+      await persistProductItemDelete(productId);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -436,7 +421,7 @@ export const useSettingsStore = defineStore("settings", () => {
     ensure: runtime.ensure,
     updateSetting(settingId, value) {
       return mutateAndPersist("updateSetting", [settingId, value], [
-        (storeId) => persistOperationPatch(storeId, {
+        () => persistOperationPatch({
           settings: {
             [settingId]: value
           }
@@ -445,17 +430,17 @@ export const useSettingsStore = defineStore("settings", () => {
     },
     updateModalConfig(configKey, value) {
       return mutateAndPersist("updateModalConfig", [configKey, value], [
-        (storeId) => persistModalPatch(storeId, {
+        () => persistModalPatch({
           [configKey]: value
         })
       ]);
     },
     applyOperationTemplate(templateId) {
       return mutateAndPersist("applyOperationTemplate", [templateId], [
-        (storeId) => persistOperationSection(storeId),
-        (storeId) => persistModalSection(storeId),
-        (storeId) => persistOptionSection(storeId, "visitReasonOptions"),
-        (storeId) => persistOptionSection(storeId, "customerSourceOptions")
+        () => persistOperationSection(),
+        () => persistModalSection(),
+        () => persistOptionSection("visitReasonOptions"),
+        () => persistOptionSection("customerSourceOptions")
       ]);
     },
     addVisitReasonOption(label) {
@@ -467,6 +452,9 @@ export const useSettingsStore = defineStore("settings", () => {
     removeVisitReasonOption(optionId) {
       return mutateAndPersistOptionDelete("removeVisitReasonOption", optionId, "visitReasonOptions");
     },
+    reorderVisitReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderVisitReasonOptions", optionIds, "visitReasonOptions");
+    },
     addCustomerSourceOption(label) {
       return mutateAndPersistOptionCreate("addCustomerSourceOption", label, "customerSourceOptions");
     },
@@ -475,6 +463,21 @@ export const useSettingsStore = defineStore("settings", () => {
     },
     removeCustomerSourceOption(optionId) {
       return mutateAndPersistOptionDelete("removeCustomerSourceOption", optionId, "customerSourceOptions");
+    },
+    reorderCustomerSourceOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderCustomerSourceOptions", optionIds, "customerSourceOptions");
+    },
+    addPauseReasonOption(label) {
+      return mutateAndPersistOptionCreate("addPauseReasonOption", label, "pauseReasonOptions");
+    },
+    updatePauseReasonOption(optionId, label) {
+      return mutateAndPersistOptionUpdate("updatePauseReasonOption", optionId, label, "pauseReasonOptions");
+    },
+    removePauseReasonOption(optionId) {
+      return mutateAndPersistOptionDelete("removePauseReasonOption", optionId, "pauseReasonOptions");
+    },
+    reorderPauseReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderPauseReasonOptions", optionIds, "pauseReasonOptions");
     },
     addQueueJumpReasonOption(label) {
       return mutateAndPersistOptionCreate("addQueueJumpReasonOption", label, "queueJumpReasonOptions");
@@ -485,6 +488,9 @@ export const useSettingsStore = defineStore("settings", () => {
     removeQueueJumpReasonOption(optionId) {
       return mutateAndPersistOptionDelete("removeQueueJumpReasonOption", optionId, "queueJumpReasonOptions");
     },
+    reorderQueueJumpReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderQueueJumpReasonOptions", optionIds, "queueJumpReasonOptions");
+    },
     addLossReasonOption(label) {
       return mutateAndPersistOptionCreate("addLossReasonOption", label, "lossReasonOptions");
     },
@@ -494,6 +500,9 @@ export const useSettingsStore = defineStore("settings", () => {
     removeLossReasonOption(optionId) {
       return mutateAndPersistOptionDelete("removeLossReasonOption", optionId, "lossReasonOptions");
     },
+    reorderLossReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderLossReasonOptions", optionIds, "lossReasonOptions");
+    },
     addProfessionOption(label) {
       return mutateAndPersistOptionCreate("addProfessionOption", label, "professionOptions");
     },
@@ -502,6 +511,9 @@ export const useSettingsStore = defineStore("settings", () => {
     },
     removeProfessionOption(optionId) {
       return mutateAndPersistOptionDelete("removeProfessionOption", optionId, "professionOptions");
+    },
+    reorderProfessionOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderProfessionOptions", optionIds, "professionOptions");
     },
     addCatalogProduct(name, category, basePrice, code) {
       return mutateAndPersistProductCreate(name, category, basePrice, code);

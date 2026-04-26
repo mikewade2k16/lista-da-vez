@@ -1,24 +1,41 @@
 <script setup>
-import { onMounted } from "vue";
+import { computed, watch } from "vue";
 import IntelligenceWorkspace from "~/components/intelligence/IntelligenceWorkspace.vue";
 import { storeToRefs } from "pinia";
+import { canUseAllStoresScope } from "~/domain/utils/permissions";
+import { useAuthStore } from "~/stores/auth";
 import { useAnalyticsStore } from "~/stores/analytics";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "inteligencia"
+  workspaceId: "inteligencia",
+  supportsAllStoresScope: true
 });
 
+const auth = useAuthStore();
 const analyticsStore = useAnalyticsStore();
 const { intelligence, pending, errorMessage } = storeToRefs(analyticsStore);
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
+const { isAllStoresScope } = storeToRefs(auth);
+const integratedScope = computed(() => canSeeIntegrated.value && isAllStoresScope.value);
 
-onMounted(() => {
-  void analyticsStore.ensureIntelligence();
-});
+watch(
+  () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId],
+  () => {
+    analyticsStore.setIntegratedScope(integratedScope.value);
+    void analyticsStore.fetchIntelligence();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
   <div class="workspace-host">
-    <IntelligenceWorkspace :report="intelligence" :pending="pending" :error-message="errorMessage" />
+    <IntelligenceWorkspace
+      :report="intelligence"
+      :pending="pending"
+      :error-message="errorMessage"
+      :integrated-scope="integratedScope"
+    />
   </div>
 </template>

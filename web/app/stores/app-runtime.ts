@@ -84,10 +84,21 @@ export const useAppRuntimeStore = defineStore("app-runtime", () => {
     return store.getState();
   }
 
+  function replace(nextState) {
+    const store = getRuntimeStore();
+    bindRuntimeStore(store);
+    store.replace(nextState);
+
+    initialized = true;
+    replaceState(store.getState());
+    return store.getState();
+  }
+
   return {
     state,
     ensure,
     hydrate,
+    replace,
     run,
     withStore
   };

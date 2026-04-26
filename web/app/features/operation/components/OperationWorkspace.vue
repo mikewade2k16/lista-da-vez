@@ -36,7 +36,7 @@ const props = defineProps({
 
 const emit = defineEmits(["integrated-store-change"]);
 const auth = useAuthStore();
-const canOperate = computed(() => canMutateOperations(auth.role));
+const canOperate = computed(() => canMutateOperations(auth.role, auth.permissionKeys, auth.permissionsResolved));
 const showIntegratedView = computed(() => props.canSeeIntegrated && props.scopeMode === "all");
 
 function shouldIncludeStore(storeId) {

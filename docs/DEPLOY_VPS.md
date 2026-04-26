@@ -513,6 +513,50 @@ O workflow reutiliza exatamente o mesmo fluxo do script local:
 - `docker compose up -d --build`
 - smoke tests em `https://lista.whenthelightsdie.com`
 
+## Pendencias para o proximo deploy
+
+Itens que precisam ser revistos antes de subir o release atual para a VPS.
+Atualizar esta lista a cada release que toca em schema ou regra que precisa
+de tratamento manual no momento do deploy.
+
+### Configuracoes operacionais agora sao tenant-wide
+
+Migration `0024_tenant_operation_settings.sql` cria as tabelas
+`tenant_operation_settings`, `tenant_setting_options` e
+`tenant_catalog_products` e move o escopo de configuracao da operacao de
+loja para tenant. As tabelas legadas `store_operation_settings`,
+`store_setting_options` e `store_catalog_products` continuam no banco
+durante a transicao para servirem de fonte de backfill.
+
+Antes de subir este release:
+
+1. **Backup completo do banco antes da migration 0024.**
+   Use `npm run prod:deploy:vps -- -BackupDatabase` ou rode o backup manual
+   do bloco `Se o release tocar schema, migrations ou dados`.
+2. **Aplicar a migration 0024 no host.**
+   O backfill embutido escolhe a config da loja mais antiga de cada tenant
+   e faz uniao deduplicada das opcoes/produtos. Em ambiente local isso
+   resolve, mas em producao a regra final de uniao precisa ser confirmada
+   por humano.
+3. **Conferir o backfill manualmente em producao antes de liberar acesso.**
+   Para cada tenant, comparar `tenant_setting_options` e
+   `tenant_catalog_products` com o que existia na loja-fonte e nas demais
+   lojas. Se faltar item conhecido, completar manualmente via SQL ou
+   reaplicar via UI.
+4. **Avisar o owner que a UI de Configuracoes virou tenant-wide.**
+   O seletor de loja do header deixou de afetar a area de Configuracoes.
+   A propria tela mostra um banner reforcando isso, mas vale comunicar para
+   evitar duvida no primeiro acesso.
+5. **Nao dropar as tabelas `store_*` nesse deploy.**
+   Elas devem ser mantidas como historico/backfill ate o release seguinte
+   confirmar que o tenant-wide esta estavel.
+
+### Itens recorrentes a checar antes de subir
+
+- conferir migrations pendentes com `go run ./cmd/migrate status`
+- rodar `npm run build` e `go build ./...` localmente antes do deploy
+- registrar nesta secao qualquer release que precise de passo manual extra
+
 ## Validacao pos-deploy
 
 Checks minimos:

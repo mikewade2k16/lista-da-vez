@@ -179,6 +179,49 @@ func TestUpdateAllowsPlatformAdminToEditManagedConsultant(t *testing.T) {
 	}
 }
 
+func TestUpdateAllowsPlatformAdminToPromoteUserToConsultant(t *testing.T) {
+	repository := &serviceTestRepository{
+		user: User{
+			ID:          "user-1",
+			DisplayName: "Gerente",
+			Email:       "gerente@demo.local",
+			Role:        auth.RoleManager,
+			TenantID:    "tenant-1",
+			StoreIDs:    []string{"store-1"},
+			Active:      true,
+			HasPassword: true,
+		},
+		storeScopes: []StoreScope{{ID: "store-2", TenantID: "tenant-1", Active: true}},
+	}
+	service := NewService(repository, serviceTestHasher{}, nil, nil, nil)
+	nextRole := auth.RoleConsultant
+	nextStoreIDs := []string{"store-2"}
+
+	result, err := service.Update(context.Background(), auth.Principal{
+		UserID: "platform-1",
+		Role:   auth.RolePlatformAdmin,
+	}, UpdateInput{
+		ID:       "user-1",
+		Role:     &nextRole,
+		StoreIDs: &nextStoreIDs,
+	})
+	if err != nil {
+		t.Fatalf("expected promotion to consultant to succeed, got %v", err)
+	}
+	if !repository.updateCalled {
+		t.Fatalf("expected repository.Update to be called")
+	}
+	if repository.updatedUser.Role != auth.RoleConsultant {
+		t.Fatalf("expected updated role %q, got %q", auth.RoleConsultant, repository.updatedUser.Role)
+	}
+	if len(repository.updatedUser.StoreIDs) != 1 || repository.updatedUser.StoreIDs[0] != "store-2" {
+		t.Fatalf("expected consultant store scope to be updated, got %#v", repository.updatedUser.StoreIDs)
+	}
+	if result.Role != auth.RoleConsultant {
+		t.Fatalf("expected returned role %q, got %q", auth.RoleConsultant, result.Role)
+	}
+}
+
 func TestArchiveRejectsManagedConsultant(t *testing.T) {
 	repository := &serviceTestRepository{
 		user: User{

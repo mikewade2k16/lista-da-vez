@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
@@ -43,7 +44,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	}
 	consultantRepository := consultants.NewPostgresRepository(pool)
 	consultantProfileSync := consultants.NewProfileSync(consultantRepository)
-	authService := auth.NewService(userStore, hasher, tokenManager, avatarStorage, nil, consultantProfileSync)
+	usersRepository := users.NewPostgresRepository(pool)
+	accessRepository := access.NewPostgresRepository(pool)
+	accessService := access.NewService(accessRepository, newAccessSubjectResolver(usersRepository))
+	authService := auth.NewService(userStore, hasher, tokenManager, avatarStorage, accessService, nil, consultantProfileSync)
 	invitationService := auth.NewInvitationService(userStore, hasher, tokenManager, cfg.WebAppURL, cfg.AuthInviteTTL)
 	passwordResetService := auth.NewPasswordResetService(userStore, userStore, hasher, passwordResetDelivery, cfg.AuthPasswordResetTTL)
 	authMiddleware := auth.NewMiddleware(authService)
@@ -62,14 +66,13 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		cfg.ConsultantDefaultPassword,
 	)
 	settingsRepository := settings.NewPostgresRepository(pool)
-	settingsService := settings.NewService(settingsRepository)
+	settingsService := settings.NewService(settingsRepository, realtimeService)
 	operationsRepository := operations.NewPostgresRepository(pool)
 	operationsService := operations.NewService(operationsRepository, realtimeService, newOperationsStoreScopeAdapter(storeService))
 	reportsRepository := reports.NewPostgresRepository(pool)
 	reportsService := reports.NewService(reportsRepository, storeService)
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, storeService)
-	usersRepository := users.NewPostgresRepository(pool)
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
 
 	mux := http.NewServeMux()
@@ -91,6 +94,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"realtime",
 				"reports",
 				"analytics",
+				"access",
 				"users",
 			},
 			"tenantMode": "owner-is-client",
@@ -107,6 +111,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	realtime.RegisterRoutes(mux, realtimeService)
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)
+	access.RegisterRoutes(mux, accessService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)
 
 	return httpapi.Chain(

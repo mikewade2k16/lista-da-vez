@@ -33,6 +33,7 @@ Esta pasta concentra a interface operacional da fila. Os componentes daqui devem
 
 - [OperationConsultantStrip.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationConsultantStrip.vue)
   Faixa inferior com roster, entrada na fila, pausa, retomada e direcionamento para tarefa.
+  A pausa deve consumir `pauseReasonOptions` do bundle de settings e nao pedir texto livre.
 
 - [OperationCampaignBrief.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationCampaignBrief.vue)
   Alerta enxuto de campanha ativa na operacao, com CTA para a pagina de campanhas.
@@ -42,6 +43,9 @@ Esta pasta concentra a interface operacional da fila. Os componentes daqui devem
 
 - [OperationProductPicker.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationProductPicker.vue)
   Picker pesquisavel reutilizado para produtos, motivos, origens e outros catalogos da operacao.
+
+- [OperationPauseReasonDialog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationPauseReasonDialog.vue)
+  Dialogo de pausa que reaproveita `OperationProductPicker` em modo de selecao unica para motivos de pausa.
 
 - [OperationOverviewBoard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationOverviewBoard.vue)
   Blocos resumidos de leitura operacional e consolidado do modo integrado.

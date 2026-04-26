@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
@@ -56,7 +57,7 @@ func (service *Service) FindAccessible(ctx context.Context, principal auth.Princ
 }
 
 func (service *Service) Create(ctx context.Context, principal auth.Principal, input CreateInput) (StoreView, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditStores(principal) {
 		return StoreView{}, ErrForbidden
 	}
 
@@ -104,7 +105,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Update(ctx context.Context, principal auth.Principal, input UpdateInput) (StoreView, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditStores(principal) {
 		return StoreView{}, ErrForbidden
 	}
 
@@ -188,7 +189,7 @@ func (service *Service) Restore(ctx context.Context, principal auth.Principal, s
 }
 
 func (service *Service) Delete(ctx context.Context, principal auth.Principal, storeID string) (DeleteResult, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditStores(principal) {
 		return DeleteResult{}, ErrForbidden
 	}
 
@@ -296,6 +297,14 @@ func resolveTenantForWrite(principal auth.Principal, requestedTenantID string) (
 	default:
 		return "", ErrForbidden
 	}
+}
+
+func canEditStores(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionMultiStoreEdit)
+	}
+
+	return principal.Role == auth.RoleOwner || principal.Role == auth.RolePlatformAdmin
 }
 
 func maxFloat(value float64, minimum float64) float64 {

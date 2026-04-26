@@ -1,4 +1,4 @@
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
 
 import { useAuthStore } from "~/stores/auth";
@@ -19,6 +19,18 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   const pending = ref(false);
   const ready = ref(false);
   const errorMessage = ref("");
+  const integratedScope = ref(false);
+  const rankingScopeKey = ref("");
+  const dataScopeKey = ref("");
+  const intelligenceScopeKey = ref("");
+
+  const currentScopeKey = computed(() => {
+    if (integratedScope.value) {
+      return `tenant:${normalizeText(auth.activeTenantId)}`;
+    }
+
+    return `store:${normalizeText(auth.activeStoreId)}`;
+  });
 
   function clearState() {
     ranking.value = null;
@@ -26,9 +38,17 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     intelligence.value = null;
     ready.value = false;
     errorMessage.value = "";
+    rankingScopeKey.value = "";
+    dataScopeKey.value = "";
+    intelligenceScopeKey.value = "";
   }
 
-  function buildStoreQuery() {
+  function buildScopeQuery() {
+    if (integratedScope.value) {
+      const tenantId = normalizeText(auth.activeTenantId);
+      return tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+    }
+
     const storeId = normalizeText(auth.activeStoreId);
     return storeId ? `?storeId=${encodeURIComponent(storeId)}` : "";
   }
@@ -36,7 +56,11 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   async function ensureBase() {
     await auth.ensureSession();
 
-    if (!auth.isAuthenticated || !normalizeText(auth.activeStoreId)) {
+    const hasScope = integratedScope.value
+      ? normalizeText(auth.activeTenantId)
+      : normalizeText(auth.activeStoreId);
+
+    if (!auth.isAuthenticated || !hasScope) {
       clearState();
       return false;
     }
@@ -53,7 +77,8 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     errorMessage.value = "";
 
     try {
-      ranking.value = await apiRequest(`/v1/analytics/ranking${buildStoreQuery()}`);
+      ranking.value = await apiRequest(`/v1/analytics/ranking${buildScopeQuery()}`);
+      rankingScopeKey.value = currentScopeKey.value;
       ready.value = true;
       return ranking.value;
     } catch (error) {
@@ -73,7 +98,8 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     errorMessage.value = "";
 
     try {
-      data.value = await apiRequest(`/v1/analytics/data${buildStoreQuery()}`);
+      data.value = await apiRequest(`/v1/analytics/data${buildScopeQuery()}`);
+      dataScopeKey.value = currentScopeKey.value;
       ready.value = true;
       return data.value;
     } catch (error) {
@@ -93,7 +119,8 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     errorMessage.value = "";
 
     try {
-      intelligence.value = await apiRequest(`/v1/analytics/intelligence${buildStoreQuery()}`);
+      intelligence.value = await apiRequest(`/v1/analytics/intelligence${buildScopeQuery()}`);
+      intelligenceScopeKey.value = currentScopeKey.value;
       ready.value = true;
       return intelligence.value;
     } catch (error) {
@@ -105,7 +132,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   }
 
   async function ensureRanking() {
-    if (ranking.value) {
+    if (ranking.value && rankingScopeKey.value === currentScopeKey.value) {
       return ranking.value;
     }
 
@@ -113,7 +140,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   }
 
   async function ensureData() {
-    if (data.value) {
+    if (data.value && dataScopeKey.value === currentScopeKey.value) {
       return data.value;
     }
 
@@ -121,23 +148,42 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   }
 
   async function ensureIntelligence() {
-    if (intelligence.value) {
+    if (intelligence.value && intelligenceScopeKey.value === currentScopeKey.value) {
       return intelligence.value;
     }
 
     return fetchIntelligence();
   }
 
+  function setIntegratedScope(value) {
+    const nextValue = Boolean(value);
+
+    if (integratedScope.value === nextValue) {
+      return;
+    }
+
+    integratedScope.value = nextValue;
+    clearState();
+  }
+
   if (import.meta.client) {
     watch(
-      () => [auth.isAuthenticated, auth.activeStoreId],
-      ([isAuthenticated, activeStoreId], [previousAuthenticated, previousStoreId]) => {
-        if (!isAuthenticated || !normalizeText(activeStoreId)) {
+      () => [auth.isAuthenticated, auth.activeStoreId, auth.activeTenantId, integratedScope.value],
+      ([isAuthenticated, activeStoreId, activeTenantId, isIntegrated], [previousAuthenticated, previousStoreId, previousTenantId, previousIntegrated]) => {
+        const normalizedStoreId = normalizeText(activeStoreId);
+        const normalizedTenantId = normalizeText(activeTenantId);
+
+        if (!isAuthenticated || (isIntegrated ? !normalizedTenantId : !normalizedStoreId)) {
           clearState();
           return;
         }
 
-        if (!previousAuthenticated || previousStoreId !== activeStoreId) {
+        if (
+          !previousAuthenticated ||
+          previousStoreId !== activeStoreId ||
+          previousTenantId !== activeTenantId ||
+          previousIntegrated !== isIntegrated
+        ) {
           clearState();
         }
       }
@@ -151,12 +197,14 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     pending,
     ready,
     errorMessage,
+    integratedScope,
     clearState,
     fetchRanking,
     fetchData,
     fetchIntelligence,
     ensureRanking,
     ensureData,
-    ensureIntelligence
+    ensureIntelligence,
+    setIntegratedScope
   };
 });

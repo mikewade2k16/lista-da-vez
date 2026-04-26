@@ -11,7 +11,13 @@ function normalizeDialogOptions(options, kind) {
     return {
       kind,
       title: kind === "error" ? "Erro" : "Aviso",
-      message: options
+      message: options,
+      confirmLabel: kind === "confirm" ? "Confirmar" : "Fechar",
+      cancelLabel: "Cancelar",
+      inputLabel: "",
+      inputPlaceholder: "",
+      initialValue: "",
+      required: false
     };
   }
 

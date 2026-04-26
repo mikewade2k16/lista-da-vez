@@ -1,24 +1,41 @@
 <script setup>
-import { onMounted } from "vue";
+import { computed, watch } from "vue";
 import RankingWorkspace from "~/components/ranking/RankingWorkspace.vue";
 import { storeToRefs } from "pinia";
+import { canUseAllStoresScope } from "~/domain/utils/permissions";
+import { useAuthStore } from "~/stores/auth";
 import { useAnalyticsStore } from "~/stores/analytics";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "ranking"
+  workspaceId: "ranking",
+  supportsAllStoresScope: true
 });
 
+const auth = useAuthStore();
 const analyticsStore = useAnalyticsStore();
 const { ranking, pending, errorMessage } = storeToRefs(analyticsStore);
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
+const { isAllStoresScope } = storeToRefs(auth);
+const integratedScope = computed(() => canSeeIntegrated.value && isAllStoresScope.value);
 
-onMounted(() => {
-  void analyticsStore.ensureRanking();
-});
+watch(
+  () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId],
+  () => {
+    analyticsStore.setIntegratedScope(integratedScope.value);
+    void analyticsStore.fetchRanking();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
   <div class="workspace-host">
-    <RankingWorkspace :report="ranking" :pending="pending" :error-message="errorMessage" />
+    <RankingWorkspace
+      :report="ranking"
+      :pending="pending"
+      :error-message="errorMessage"
+      :integrated-scope="integratedScope"
+    />
   </div>
 </template>

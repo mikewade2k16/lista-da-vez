@@ -3,6 +3,7 @@ import { computed, reactive, ref, watch } from "vue";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
 import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
 import { canManageStores } from "~/domain/utils/permissions";
+import { useAuthStore } from "~/stores/auth";
 import { useMultiStoreStore } from "~/stores/multistore";
 import { useUiStore } from "~/stores/ui";
 
@@ -15,6 +16,7 @@ const props = defineProps({
 
 const multiStore = useMultiStoreStore();
 const ui = useUiStore();
+const auth = useAuthStore();
 const storeDrafts = ref({});
 const newStore = reactive({
   name: "",
@@ -37,7 +39,7 @@ const activeRole = computed(() => {
 
   return activeProfile?.role || "consultant";
 });
-const canEditStores = computed(() => canManageStores(activeRole.value));
+const canEditStores = computed(() => canManageStores(auth.role, auth.permissionKeys, auth.permissionsResolved));
 const operationTemplates = computed(() => props.state.operationTemplates || []);
 const templateOptions = computed(() => [
   { value: "", label: "Template padrao" },

@@ -10,8 +10,8 @@ Construir uma API Go solida, modular e pronta para evoluir de:
 
 - auth simples no inicio
 - tenant demo no bootstrap
-- HTTP primeiro
-- realtime com websocket depois
+- HTTP como fonte autoritativa
+- realtime com WebSocket para invalidacao leve e sincronizacao de contexto/operacao
 
 Sem precisar redesenhar a base quando o produto virar multi-tenant de verdade.
 
@@ -112,9 +112,11 @@ Hoje existe um `tenant-demo` para destravar a implementacao inicial, mas `tenant
 - `auth`
   - login, token, principal, roles e middleware
 - `tenants`
-  - leitura do escopo de tenant acessivel ao usuario
+  - leitura do escopo de tenant acessivel e ciclo administrativo basico de clientes/grupos
 - `stores`
   - leitura e administracao basica das lojas acessiveis
+- `access`
+  - catalogo de permissoes, matriz padrao por papel e overrides por usuario
 - `consultants`
   - roster administrativo por loja
 - `settings`
@@ -136,6 +138,7 @@ O backend agora deve ser pensado em dois niveis:
 
 - modulos de plataforma/host:
   - `auth`
+  - `access`
   - `tenants`
   - `stores`
   - `users`
@@ -260,9 +263,10 @@ Sempre que um novo modulo nascer, ele deve ganhar seu proprio `AGENT.md`.
 
 ### 5. Frontend Nuxt
 
-- O Nuxt deve integrar primeiro por HTTP.
-- Websocket entra depois, usando os mesmos conceitos de auth, tenant e store definidos no HTTP.
-- Nao desenhar realtime antes de existir identidade, escopo e snapshot inicial consistentes.
+- O Nuxt deve manter HTTP como leitura autoritativa.
+- WebSocket ja existe para invalidacao leve da operacao e do contexto administrativo.
+- Realtime usa os mesmos conceitos de auth, tenant e store definidos no HTTP.
+- O frontend deve sempre partir de identidade, escopo e snapshot inicial consistentes antes de assinar canais realtime.
 
 ### 6. Resiliencia
 

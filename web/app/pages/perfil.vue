@@ -1,12 +1,15 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
 
+import AppPanelButton from "~/components/ui/AppPanelButton.vue";
 import { useAuthStore } from "~/stores/auth";
 import { useUiStore } from "~/stores/ui";
 import { getApiBase, getApiErrorMessage } from "~/utils/api-client";
 
 definePageMeta({
-  layout: "dashboard"
+  layout: "dashboard",
+  workspaceId: "",
+  pageLabel: "Perfil"
 });
 
 const runtimeConfig = useRuntimeConfig();
@@ -145,10 +148,10 @@ async function handleAvatarChange(event) {
           <span v-else class="profile-panel__avatar-fallback">{{ initials || "US" }}</span>
         </div>
 
-        <label class="product-add__button profile-panel__avatar-button">
+        <AppPanelButton as="label" block class="profile-panel__avatar-button" :disabled="avatarPending">
           <input type="file" accept="image/png,image/jpeg,image/webp" hidden @change="handleAvatarChange">
           {{ avatarPending ? "Enviando..." : "Enviar nova foto" }}
-        </label>
+        </AppPanelButton>
       </article>
 
       <article class="settings-card">
@@ -163,9 +166,9 @@ async function handleAvatarChange(event) {
             <input v-model="profileDraft.email" class="product-add__input" type="email" placeholder="Email *">
           </div>
           <div class="multistore-form__actions">
-            <button class="product-add__button" type="submit" :disabled="profilePending">
+            <AppPanelButton type="submit" :disabled="profilePending">
               {{ profilePending ? "Salvando..." : "Salvar perfil" }}
-            </button>
+            </AppPanelButton>
           </div>
         </form>
       </article>
@@ -186,11 +189,17 @@ async function handleAvatarChange(event) {
           <input v-model="passwordDraft.confirmPassword" class="product-add__input" type="password" placeholder="Confirmar nova senha *">
         </div>
         <div class="multistore-form__actions">
-          <button class="product-add__button" type="submit" :disabled="passwordPending">
+          <AppPanelButton type="submit" :disabled="passwordPending">
             {{ passwordPending ? "Atualizando..." : auth.mustChangePassword ? "Definir minha senha" : "Atualizar senha" }}
-          </button>
+          </AppPanelButton>
         </div>
       </form>
     </article>
   </section>
 </template>
+
+<style scoped>
+.profile-panel__avatar-button {
+  margin-top: auto;
+}
+</style>

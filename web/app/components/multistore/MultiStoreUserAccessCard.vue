@@ -32,8 +32,8 @@ const editDraft = reactive({
   active: true
 });
 
-const canEditUsers = computed(() => canManageUsers(auth.role));
-const canManagePasswords = computed(() => canManageUserPasswords(auth.role));
+const canEditUsers = computed(() => canManageUsers(auth.role, auth.permissionKeys, auth.permissionsResolved));
+const canManagePasswords = computed(() => canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved));
 const tenantOptions = computed(() => auth.tenantContext || []);
 const allStoreOptions = computed(() => auth.storeContext || []);
 const roleCatalog = computed(() => usersStore.assignableRoles || []);

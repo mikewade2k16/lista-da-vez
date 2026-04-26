@@ -1,8 +1,10 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { useAuthStore } from "~/stores/auth";
 import { useOperationsStore } from "~/stores/operations";
-import { getWebSocketBase } from "~/utils/api-client";
+import { createApiRequest, getWebSocketBase } from "~/utils/api-client";
+import { refreshRuntimeStoreSettings } from "~/utils/runtime-remote";
 
 function buildSocketURL(runtimeConfig, storeId, accessToken) {
   const url = new URL("/v1/realtime/operations", getWebSocketBase(runtimeConfig));
@@ -26,8 +28,10 @@ function resolveSourceValue(source, fallback = "single") {
 
 export function useOperationsRealtime(options = {}) {
   const runtimeConfig = useRuntimeConfig();
+  const runtime = useAppRuntimeStore();
   const auth = useAuthStore();
   const operationsStore = useOperationsStore();
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
 
   const status = ref("idle");
   const lastEvent = ref(null);
@@ -42,6 +46,9 @@ export function useOperationsRealtime(options = {}) {
   let snapshotRefreshQueued = false;
   let overviewRefreshPromise = null;
   let overviewRefreshQueued = false;
+  let settingsRefreshPromise = null;
+  let settingsRefreshQueued = false;
+  let queuedSettingsStoreId = "";
 
   function desiredStoreIds() {
     if (!auth.isAuthenticated || !auth.accessToken) {
@@ -126,6 +133,35 @@ export function useOperationsRealtime(options = {}) {
       });
 
     return overviewRefreshPromise;
+  }
+
+  async function refreshStoreSettings(storeId) {
+    const normalizedStoreId = String(storeId || auth.activeStoreId || runtime.state.activeStoreId || "").trim();
+
+    if (!normalizedStoreId || !auth.isAuthenticated || !auth.accessToken) {
+      return null;
+    }
+
+    if (settingsRefreshPromise) {
+      settingsRefreshQueued = true;
+      queuedSettingsStoreId = normalizedStoreId;
+      return settingsRefreshPromise;
+    }
+
+    settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId)
+      .catch(() => null)
+      .finally(async () => {
+        settingsRefreshPromise = null;
+
+        if (settingsRefreshQueued) {
+          const nextStoreId = queuedSettingsStoreId;
+          settingsRefreshQueued = false;
+          queuedSettingsStoreId = "";
+          await refreshStoreSettings(nextStoreId);
+        }
+      });
+
+    return settingsRefreshPromise;
   }
 
   function clearReconnectTimer(storeId) {
@@ -225,7 +261,16 @@ export function useOperationsRealtime(options = {}) {
         }
 
         const payloadStoreId = String(payload?.storeId || "").trim();
+        const payloadAction = String(payload?.action || "").trim();
         const mode = String(resolveSourceValue(options.scopeMode, "single") || "single").trim();
+
+        if (payloadAction === "settings-updated") {
+          if (payloadStoreId && payloadStoreId === String(auth.activeStoreId || runtime.state.activeStoreId || "").trim()) {
+            await refreshStoreSettings(payloadStoreId);
+          }
+
+          return;
+        }
 
         if (mode === "all") {
           await refreshOverview();

@@ -94,7 +94,7 @@ export const useUsersStore = defineStore("users", () => {
   const ready = ref(false);
   const errorMessage = ref("");
 
-  const manageable = computed(() => canManageUsers(auth.role));
+  const manageable = computed(() => canManageUsers(auth.role, auth.permissionKeys, auth.permissionsResolved));
   const activeTenantId = computed(() => normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id));
   const availableStores = computed(() =>
     (auth.storeContext || []).filter((store) => !activeTenantId.value || store.tenantId === activeTenantId.value)
@@ -102,6 +102,26 @@ export const useUsersStore = defineStore("users", () => {
   const assignableRoles = computed(() =>
     roleCatalog.value.filter((role) => auth.role === "platform_admin" || role.id !== "platform_admin")
   );
+
+  function upsertLocalUser(user) {
+    const normalizedUser = normalizeUser(user);
+    if (!normalizedUser) {
+      return null;
+    }
+
+    const existingIndex = users.value.findIndex(
+      (currentUser) => normalizeText(currentUser?.id) === normalizeText(normalizedUser.id)
+    );
+
+    if (existingIndex >= 0) {
+      users.value.splice(existingIndex, 1, normalizedUser);
+    } else {
+      users.value = [...users.value, normalizedUser];
+    }
+
+    ready.value = true;
+    return normalizedUser;
+  }
 
   async function ensureRoleCatalog() {
     if (roleCatalog.value.length) {
@@ -131,16 +151,20 @@ export const useUsersStore = defineStore("users", () => {
     return params.toString();
   }
 
-  async function refreshUsers() {
+  async function refreshUsers(options = {}) {
     await auth.ensureSession();
     await ensureRoleCatalog();
+
+    const silent = Boolean(options?.silent);
 
     if (!auth.isAuthenticated || !manageable.value) {
       clearState();
       return [];
     }
 
-    pending.value = true;
+    if (!silent) {
+      pending.value = true;
+    }
     errorMessage.value = "";
 
     try {
@@ -152,7 +176,9 @@ export const useUsersStore = defineStore("users", () => {
       errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar os usuarios.");
       throw error;
     } finally {
-      pending.value = false;
+      if (!silent) {
+        pending.value = false;
+      }
     }
   }
 
@@ -190,7 +216,7 @@ export const useUsersStore = defineStore("users", () => {
     if (role === "consultant") {
       return { ok: false, message: "Consultores devem ser criados na gestao de consultores." };
     }
-    if (password && !canManageUserPasswords(auth.role)) {
+    if (password && !canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved)) {
       return { ok: false, message: "Somente o admin da plataforma pode definir senha manualmente." };
     }
 
@@ -217,7 +243,7 @@ export const useUsersStore = defineStore("users", () => {
         }
       });
 
-      await refreshUsers();
+      upsertLocalUser(response?.user);
       return {
         ok: true,
         user: response.user,
@@ -251,7 +277,7 @@ export const useUsersStore = defineStore("users", () => {
         method: "POST"
       });
 
-      await refreshUsers();
+      upsertLocalUser(response?.user);
       return {
         ok: true,
         user: response.user,
@@ -327,7 +353,7 @@ export const useUsersStore = defineStore("users", () => {
     }
 
     if (nextPassword) {
-      if (!canManageUserPasswords(auth.role)) {
+      if (!canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved)) {
         return { ok: false, message: "Somente o admin da plataforma pode alterar senhas pelo painel." };
       }
       body.password = nextPassword;
@@ -343,7 +369,7 @@ export const useUsersStore = defineStore("users", () => {
         body
       });
 
-      await refreshUsers();
+      upsertLocalUser(response?.user);
       return {
         ok: true,
         user: response.user
@@ -373,7 +399,7 @@ export const useUsersStore = defineStore("users", () => {
         method: "POST"
       });
 
-      await refreshUsers();
+      upsertLocalUser(response?.user);
       return {
         ok: true,
         user: response.user
@@ -392,7 +418,7 @@ export const useUsersStore = defineStore("users", () => {
     if (!auth.isAuthenticated || !manageable.value) {
       return { ok: false, message: "Sem permissao para gerenciar usuarios." };
     }
-    if (!canManageUserPasswords(auth.role)) {
+    if (!canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved)) {
       return { ok: false, message: "Somente o admin da plataforma pode resetar senhas pelo painel." };
     }
 
@@ -404,7 +430,7 @@ export const useUsersStore = defineStore("users", () => {
         }
       });
 
-      await refreshUsers();
+      upsertLocalUser(response?.user);
       return {
         ok: true,
         user: response.user,
@@ -422,7 +448,7 @@ export const useUsersStore = defineStore("users", () => {
     watch(
       () => [auth.isAuthenticated, auth.activeTenantId, auth.role],
       ([isAuthenticated, tenantId, role], [previousAuthenticated, previousTenantId, previousRole]) => {
-        if (!isAuthenticated || !canManageUsers(role)) {
+        if (!isAuthenticated || !canManageUsers(role, auth.permissionKeys, auth.permissionsResolved)) {
           clearState();
           return;
         }

@@ -5,29 +5,29 @@ import { storeToRefs } from "pinia";
 import { useAuthStore } from "~/stores/auth";
 import { useOperationsStore } from "~/stores/operations";
 import { useOperationsRealtime } from "~/composables/useOperationsRealtime";
-import { canAccessMultiStore } from "~/domain/utils/permissions";
+import { canUseAllStoresScope } from "~/domain/utils/permissions";
 import { getApiErrorMessage } from "~/utils/api-client";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "operacao"
+  workspaceId: "operacao",
+  supportsAllStoresScope: true
 });
 
 const auth = useAuthStore();
 const operationsStore = useOperationsStore();
 const loadError = ref("");
 const integratedStoreId = ref("");
-const route = useRoute();
-const router = useRouter();
 const storeOptions = computed(() => auth.storeContext || []);
+const { isAllStoresScope } = storeToRefs(auth);
 
-const canSeeIntegrated = computed(() => canAccessMultiStore(auth.role));
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
 const scopeMode = computed(() => {
   if (!canSeeIntegrated.value) {
     return "single";
   }
 
-  return String(route.query.scope || "").trim() === "all" ? "all" : "single";
+  return isAllStoresScope.value ? "all" : "single";
 });
 
 useOperationsRealtime({ scopeMode });
@@ -98,19 +98,6 @@ watch(
   [scopeMode, () => auth.activeStoreId, () => auth.isAuthenticated],
   () => {
     void loadOperationView();
-  }
-);
-
-watch(
-  canSeeIntegrated,
-  (allowed) => {
-    if (allowed || String(route.query.scope || "").trim() !== "all") {
-      return;
-    }
-
-    const nextQuery = { ...route.query };
-    delete nextQuery.scope;
-    void router.replace({ query: nextQuery });
   }
 );
 

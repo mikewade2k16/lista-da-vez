@@ -9,6 +9,10 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
+// As rotas continuam aceitando os campos legados storeId no payload e na query
+// string para nao quebrar clientes intermediarios, mas o servico ignora esses
+// valores e resolve o tenant pelo principal autenticado. A configuracao agora
+// e tenant-wide: nao existe escopo por loja para esses recursos.
 func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
 	mux.Handle("GET /v1/settings", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
@@ -17,7 +21,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		bundle, err := service.GetBundle(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		bundle, err := service.GetBundle(r.Context(), principal)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -111,7 +115,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		ack, err := service.SaveOptionItem(r.Context(), principal, input.StoreID, optionGroup, input.Item)
+		ack, err := service.SaveOptionItem(r.Context(), principal, optionGroup, input.Item)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -139,7 +143,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		ack, err := service.SaveOptionItem(r.Context(), principal, input.StoreID, optionGroup, OptionItem{
+		ack, err := service.SaveOptionItem(r.Context(), principal, optionGroup, OptionItem{
 			ID:    strings.TrimSpace(r.PathValue("itemId")),
 			Label: input.Label,
 		})
@@ -167,7 +171,6 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		ack, err := service.DeleteOptionItem(
 			r.Context(),
 			principal,
-			strings.TrimSpace(r.URL.Query().Get("storeId")),
 			optionGroup,
 			r.PathValue("itemId"),
 		)
@@ -198,7 +201,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		ack, err := service.SaveOptionSection(r.Context(), principal, input.StoreID, optionGroup, input.Items)
+		ack, err := service.SaveOptionSection(r.Context(), principal, optionGroup, input.Items)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -243,7 +246,6 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		}
 
 		ack, err := service.SaveProductItem(r.Context(), principal, ProductItemInput{
-			StoreID: input.StoreID,
 			Item: ProductItem{
 				ID:        strings.TrimSpace(r.PathValue("itemId")),
 				Name:      input.Name,
@@ -270,7 +272,6 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		ack, err := service.DeleteProductItem(
 			r.Context(),
 			principal,
-			strings.TrimSpace(r.URL.Query().Get("storeId")),
 			r.PathValue("itemId"),
 		)
 		if err != nil {
@@ -310,6 +311,8 @@ func normalizeOptionGroupPath(rawGroup string) (string, error) {
 		return optionKindVisitReason, nil
 	case "customer-sources":
 		return optionKindCustomerSource, nil
+	case "pause-reasons":
+		return optionKindPauseReason, nil
 	case "queue-jump-reasons":
 		return optionKindQueueJump, nil
 	case "loss-reasons":
@@ -325,10 +328,10 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrForbidden):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
-	case errors.Is(err, ErrStoreRequired), errors.Is(err, ErrValidation):
+	case errors.Is(err, ErrTenantRequired), errors.Is(err, ErrValidation):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os dados de configuracao.")
-	case errors.Is(err, ErrStoreNotFound):
-		httpapi.WriteError(w, r, http.StatusNotFound, "store_not_found", "Loja nao encontrada.")
+	case errors.Is(err, ErrTenantNotFound):
+		httpapi.WriteError(w, r, http.StatusNotFound, "tenant_not_found", "Tenant nao encontrado.")
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar as configuracoes.")
 	}

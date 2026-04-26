@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 )
 
 var analyticsLocation = func() *time.Location {
@@ -26,11 +28,18 @@ type Service struct {
 }
 
 type bundle struct {
+	storeID   string
+	tenantID  string
+	history   []operations.ServiceHistoryEntry
+	roster    []operations.ConsultantProfile
+	snapshot  operations.SnapshotState
+	settings  StoreSettings
+	storeView stores.StoreView
+}
+
+type analyticsScope struct {
 	storeID  string
-	history  []operations.ServiceHistoryEntry
-	roster   []operations.ConsultantProfile
-	snapshot operations.SnapshotState
-	settings StoreSettings
+	tenantID string
 }
 
 func NewService(repository Repository, storeFinder StoreFinder) *Service {
@@ -40,60 +49,135 @@ func NewService(repository Repository, storeFinder StoreFinder) *Service {
 	}
 }
 
-func (service *Service) Ranking(ctx context.Context, principal auth.Principal, storeID string) (RankingResponse, error) {
-	data, err := service.loadBundle(ctx, principal, storeID)
+func (service *Service) Ranking(ctx context.Context, principal auth.Principal, storeID string, tenantID string) (RankingResponse, error) {
+	if !canViewRanking(principal) {
+		return RankingResponse{}, ErrForbidden
+	}
+
+	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID)
 	if err != nil {
 		return RankingResponse{}, err
 	}
 
 	return RankingResponse{
-		StoreID:     data.storeID,
-		MonthlyRows: buildRankingRows(data.history, data.roster, "month"),
-		DailyRows:   buildRankingRows(data.history, data.roster, "today"),
-		Alerts:      buildConsultantAlerts(data.history, data.roster, data.settings),
+		StoreID:     scope.storeID,
+		TenantID:    scope.tenantID,
+		MonthlyRows: buildRankingRowsAcrossBundles(bundles, "month"),
+		DailyRows:   buildRankingRowsAcrossBundles(bundles, "today"),
+		Alerts:      buildConsultantAlertsAcrossBundles(bundles),
 	}, nil
 }
 
-func (service *Service) Data(ctx context.Context, principal auth.Principal, storeID string) (DataResponse, error) {
-	data, err := service.loadBundle(ctx, principal, storeID)
+func (service *Service) Data(ctx context.Context, principal auth.Principal, storeID string, tenantID string) (DataResponse, error) {
+	if !canViewData(principal) {
+		return DataResponse{}, ErrForbidden
+	}
+
+	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID)
 	if err != nil {
 		return DataResponse{}, err
 	}
 
-	timeIntelligence := buildTimeIntelligence(data)
+	combinedHistory := combineHistory(bundles)
+	labelSettings := combineSettingsLabels(bundles)
 	return DataResponse{
-		StoreID:           data.storeID,
-		TimeIntelligence:  timeIntelligence,
-		SoldProducts:      buildSoldProducts(data.history),
-		RequestedProducts: buildRequestedProducts(data.history),
-		VisitReasons:      buildVisitReasons(data.history, data.settings.VisitReasonLabels),
-		CustomerSources:   buildCustomerSources(data.history, data.settings.CustomerSourceLabels),
-		Professions:       buildProfessions(data.history),
-		OutcomeSummary:    buildOutcomeSummary(data.history),
-		HourlySales:       buildHourlySales(data.history),
+		StoreID:           scope.storeID,
+		TenantID:          scope.tenantID,
+		TimeIntelligence:  buildCombinedTimeIntelligence(bundles),
+		SoldProducts:      buildSoldProducts(combinedHistory),
+		RequestedProducts: buildRequestedProducts(combinedHistory),
+		VisitReasons:      buildVisitReasons(combinedHistory, labelSettings.VisitReasonLabels),
+		CustomerSources:   buildCustomerSources(combinedHistory, labelSettings.CustomerSourceLabels),
+		Professions:       buildProfessions(combinedHistory),
+		OutcomeSummary:    buildOutcomeSummary(combinedHistory),
+		HourlySales:       buildHourlySales(combinedHistory),
 	}, nil
 }
 
-func (service *Service) Intelligence(ctx context.Context, principal auth.Principal, storeID string) (IntelligenceResponse, error) {
-	data, err := service.loadBundle(ctx, principal, storeID)
+func (service *Service) Intelligence(ctx context.Context, principal auth.Principal, storeID string, tenantID string) (IntelligenceResponse, error) {
+	if !canViewIntelligence(principal) {
+		return IntelligenceResponse{}, ErrForbidden
+	}
+
+	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID)
 	if err != nil {
 		return IntelligenceResponse{}, err
 	}
 
-	return buildOperationalIntelligence(data), nil
+	return buildOperationalIntelligenceSummary(scope.storeID, scope.tenantID, combineHistory(bundles), buildCombinedTimeIntelligence(bundles)), nil
 }
 
-func (service *Service) loadBundle(ctx context.Context, principal auth.Principal, storeID string) (bundle, error) {
+func canViewRanking(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionRankingView)
+	}
+
+	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner || principal.Role == auth.RoleStoreTerminal
+}
+
+func canViewData(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionDataView)
+	}
+
+	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner || principal.Role == auth.RoleStoreTerminal
+}
+
+func canViewIntelligence(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionIntelligenceView)
+	}
+
+	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner || principal.Role == auth.RoleStoreTerminal
+}
+
+func (service *Service) loadBundles(ctx context.Context, principal auth.Principal, storeID string, tenantID string) (analyticsScope, []bundle, error) {
 	normalizedStoreID := strings.TrimSpace(storeID)
-	if normalizedStoreID == "" {
-		return bundle{}, ErrStoreRequired
+	if normalizedStoreID != "" {
+		store, err := service.storeFinder.FindAccessible(ctx, principal, normalizedStoreID)
+		if err != nil {
+			return analyticsScope{}, nil, err
+		}
+
+		storeBundle, err := service.loadStoreBundle(ctx, store)
+		if err != nil {
+			return analyticsScope{}, nil, err
+		}
+
+		return analyticsScope{
+			storeID:  store.ID,
+			tenantID: store.TenantID,
+		}, []bundle{storeBundle}, nil
 	}
 
-	store, err := service.storeFinder.FindAccessible(ctx, principal, normalizedStoreID)
+	resolvedTenantID := firstNonEmpty(tenantID, principal.TenantID)
+	if resolvedTenantID == "" {
+		return analyticsScope{}, nil, ErrScopeRequired
+	}
+
+	storeRows, err := service.storeFinder.ListAccessible(ctx, principal, stores.ListInput{
+		TenantID: resolvedTenantID,
+	})
 	if err != nil {
-		return bundle{}, err
+		return analyticsScope{}, nil, err
 	}
 
+	bundles := make([]bundle, 0, len(storeRows))
+	for _, store := range storeRows {
+		storeBundle, loadErr := service.loadStoreBundle(ctx, store)
+		if loadErr != nil {
+			return analyticsScope{}, nil, loadErr
+		}
+
+		bundles = append(bundles, storeBundle)
+	}
+
+	return analyticsScope{
+		tenantID: resolvedTenantID,
+	}, bundles, nil
+}
+
+func (service *Service) loadStoreBundle(ctx context.Context, store stores.StoreView) (bundle, error) {
 	snapshot, err := service.repository.LoadSnapshot(ctx, store.ID)
 	if err != nil {
 		return bundle{}, err
@@ -110,12 +194,111 @@ func (service *Service) loadBundle(ctx context.Context, principal auth.Principal
 	}
 
 	return bundle{
-		storeID:  store.ID,
-		history:  snapshot.ServiceHistory,
-		roster:   roster,
-		snapshot: snapshot,
-		settings: settings,
+		storeID:   store.ID,
+		tenantID:  store.TenantID,
+		history:   snapshot.ServiceHistory,
+		roster:    roster,
+		snapshot:  snapshot,
+		settings:  settings,
+		storeView: store,
 	}, nil
+}
+
+func buildRankingRowsAcrossBundles(bundles []bundle, scope string) []RankingRow {
+	rows := make([]RankingRow, 0)
+	for _, item := range bundles {
+		storeRows := buildRankingRows(item.history, item.roster, scope)
+		for index := range storeRows {
+			storeRows[index].StoreID = item.storeID
+			storeRows[index].StoreName = item.storeView.Name
+		}
+
+		rows = append(rows, storeRows...)
+	}
+
+	sortRankingRows(rows)
+	return rows
+}
+
+func buildConsultantAlertsAcrossBundles(bundles []bundle) []ConsultantAlert {
+	alerts := make([]ConsultantAlert, 0)
+	for _, item := range bundles {
+		alerts = append(alerts, buildConsultantAlerts(item.history, item.roster, item.settings)...)
+	}
+
+	return alerts
+}
+
+func combineHistory(bundles []bundle) []operations.ServiceHistoryEntry {
+	total := 0
+	for _, item := range bundles {
+		total += len(item.history)
+	}
+
+	history := make([]operations.ServiceHistoryEntry, 0, total)
+	for _, item := range bundles {
+		history = append(history, item.history...)
+	}
+
+	return history
+}
+
+func combineSettingsLabels(bundles []bundle) StoreSettings {
+	combined := StoreSettings{
+		VisitReasonLabels:    map[string]string{},
+		CustomerSourceLabels: map[string]string{},
+	}
+
+	for _, item := range bundles {
+		for optionID, label := range item.settings.VisitReasonLabels {
+			if _, exists := combined.VisitReasonLabels[optionID]; !exists && strings.TrimSpace(label) != "" {
+				combined.VisitReasonLabels[optionID] = strings.TrimSpace(label)
+			}
+		}
+
+		for optionID, label := range item.settings.CustomerSourceLabels {
+			if _, exists := combined.CustomerSourceLabels[optionID]; !exists && strings.TrimSpace(label) != "" {
+				combined.CustomerSourceLabels[optionID] = strings.TrimSpace(label)
+			}
+		}
+	}
+
+	return combined
+}
+
+func buildCombinedTimeIntelligence(bundles []bundle) TimeIntelligence {
+	combined := TimeIntelligence{}
+	totalAttendances := 0
+	totalQueueWaitMs := 0.0
+	totalQueueJumpAttendances := 0.0
+
+	for _, item := range bundles {
+		timeIntelligence := buildTimeIntelligence(item)
+		attendanceCount := len(item.history)
+
+		combined.QuickHighPotentialCount += timeIntelligence.QuickHighPotentialCount
+		combined.LongLowSaleCount += timeIntelligence.LongLowSaleCount
+		combined.LongNoSaleCount += timeIntelligence.LongNoSaleCount
+		combined.QuickNoSaleCount += timeIntelligence.QuickNoSaleCount
+		combined.TotalsByStatus.Available += timeIntelligence.TotalsByStatus.Available
+		combined.TotalsByStatus.Queue += timeIntelligence.TotalsByStatus.Queue
+		combined.TotalsByStatus.Service += timeIntelligence.TotalsByStatus.Service
+		combined.TotalsByStatus.Paused += timeIntelligence.TotalsByStatus.Paused
+		combined.ConsultantsInQueueMs += timeIntelligence.ConsultantsInQueueMs
+		combined.ConsultantsPausedMs += timeIntelligence.ConsultantsPausedMs
+		combined.ConsultantsInServiceMs += timeIntelligence.ConsultantsInServiceMs
+
+		totalAttendances += attendanceCount
+		totalQueueWaitMs += timeIntelligence.AvgQueueWaitMs * float64(attendanceCount)
+		totalQueueJumpAttendances += (timeIntelligence.NotUsingQueueRate / 100) * float64(attendanceCount)
+	}
+
+	if totalAttendances > 0 {
+		combined.AvgQueueWaitMs = totalQueueWaitMs / float64(totalAttendances)
+		combined.NotUsingQueueRate = (totalQueueJumpAttendances / float64(totalAttendances)) * 100
+	}
+
+	return combined
 }
 
 func buildRankingRows(history []operations.ServiceHistoryEntry, roster []operations.ConsultantProfile, scope string) []RankingRow {
@@ -209,6 +392,12 @@ func buildRankingRows(history []operations.ServiceHistoryEntry, roster []operati
 		})
 	}
 
+	sortRankingRows(rows)
+
+	return rows
+}
+
+func sortRankingRows(rows []RankingRow) {
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].SoldValue == rows[j].SoldValue {
 			if rows[i].Conversions == rows[j].Conversions {
@@ -220,8 +409,6 @@ func buildRankingRows(history []operations.ServiceHistoryEntry, roster []operati
 
 		return rows[i].SoldValue > rows[j].SoldValue
 	})
-
-	return rows
 }
 
 func buildConsultantAlerts(history []operations.ServiceHistoryEntry, roster []operations.ConsultantProfile, settings StoreSettings) []ConsultantAlert {
@@ -490,11 +677,15 @@ func buildTimeIntelligence(data bundle) TimeIntelligence {
 }
 
 func buildOperationalIntelligence(data bundle) IntelligenceResponse {
-	totalAttendances := len(data.history)
+	return buildOperationalIntelligenceSummary(data.storeID, data.tenantID, data.history, buildTimeIntelligence(data))
+}
+
+func buildOperationalIntelligenceSummary(storeID string, tenantID string, history []operations.ServiceHistoryEntry, timeIntelligence TimeIntelligence) IntelligenceResponse {
+	totalAttendances := len(history)
 	conversions := 0
 	soldValue := 0.0
 	noSales := 0
-	for _, entry := range data.history {
+	for _, entry := range history {
 		if isSaleOutcome(entry.FinishOutcome) {
 			conversions++
 			soldValue += maxFloat(entry.SaleAmount, 0)
@@ -513,7 +704,6 @@ func buildOperationalIntelligence(data bundle) IntelligenceResponse {
 		ticketAverage = soldValue / float64(conversions)
 	}
 
-	timeIntelligence := buildTimeIntelligence(data)
 	quickNoSaleRate := 0.0
 	longNoSaleRate := 0.0
 	quickCloseRate := 0.0
@@ -623,7 +813,8 @@ func buildOperationalIntelligence(data bundle) IntelligenceResponse {
 	}
 
 	return IntelligenceResponse{
-		StoreID:            data.storeID,
+		StoreID:            storeID,
+		TenantID:           tenantID,
 		TotalAttendances:   totalAttendances,
 		ConversionRate:     conversionRate,
 		TicketAverage:      ticketAverage,

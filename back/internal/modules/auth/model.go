@@ -47,13 +47,15 @@ type UserView struct {
 }
 
 type Principal struct {
-	UserID      string
-	DisplayName string
-	Email       string
-	Role        Role
-	TenantID    string
-	StoreIDs    []string
-	ExpiresAt   time.Time
+	UserID              string
+	DisplayName         string
+	Email               string
+	Role                Role
+	TenantID            string
+	StoreIDs            []string
+	Permissions         []string
+	PermissionsResolved bool
+	ExpiresAt           time.Time
 }
 
 type LoginInput struct {
@@ -173,6 +175,10 @@ type PasswordHasher interface {
 type TokenManager interface {
 	Issue(user User) (SessionView, error)
 	Parse(token string) (Principal, error)
+}
+
+type PermissionResolver interface {
+	ResolveUserPermissions(ctx context.Context, userID string, role Role) ([]string, error)
 }
 
 type PasswordResetDelivery interface {

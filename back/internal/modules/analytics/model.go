@@ -27,11 +27,13 @@ type Repository interface {
 }
 
 type StoreFinder interface {
+	ListAccessible(ctx context.Context, principal auth.Principal, input stores.ListInput) ([]stores.StoreView, error)
 	FindAccessible(ctx context.Context, principal auth.Principal, storeID string) (stores.StoreView, error)
 }
 
 type RankingResponse struct {
 	StoreID     string            `json:"storeId"`
+	TenantID    string            `json:"tenantId,omitempty"`
 	MonthlyRows []RankingRow      `json:"monthlyRows"`
 	DailyRows   []RankingRow      `json:"dailyRows"`
 	Alerts      []ConsultantAlert `json:"alerts"`
@@ -40,6 +42,8 @@ type RankingResponse struct {
 type RankingRow struct {
 	ConsultantID         string  `json:"consultantId"`
 	ConsultantName       string  `json:"consultantName"`
+	StoreID              string  `json:"storeId,omitempty"`
+	StoreName            string  `json:"storeName,omitempty"`
 	SoldValue            float64 `json:"soldValue"`
 	Attendances          int     `json:"attendances"`
 	Conversions          int     `json:"conversions"`
@@ -64,6 +68,7 @@ type ConsultantAlert struct {
 
 type DataResponse struct {
 	StoreID           string           `json:"storeId"`
+	TenantID          string           `json:"tenantId,omitempty"`
 	TimeIntelligence  TimeIntelligence `json:"timeIntelligence"`
 	SoldProducts      []CountRow       `json:"soldProducts"`
 	RequestedProducts []CountRow       `json:"requestedProducts"`
@@ -76,6 +81,7 @@ type DataResponse struct {
 
 type IntelligenceResponse struct {
 	StoreID            string                  `json:"storeId"`
+	TenantID           string                  `json:"tenantId,omitempty"`
 	TotalAttendances   int                     `json:"totalAttendances"`
 	ConversionRate     float64                 `json:"conversionRate"`
 	TicketAverage      float64                 `json:"ticketAverage"`

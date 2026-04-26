@@ -39,6 +39,10 @@ export function createAppStore(initialState = createEmptyState()) {
       updateState(hydrateState(nextState));
     },
 
+    replace(nextState) {
+      updateState(nextState);
+    },
+
     ...createWorkspaceActions(runtimeContext),
     ...createSettingsActions(runtimeContext),
     ...createConsultantActions(runtimeContext),

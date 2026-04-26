@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 )
 
 const (
@@ -63,7 +65,7 @@ func (service *Service) Snapshot(ctx context.Context, access AccessContext, stor
 }
 
 func (service *Service) Overview(ctx context.Context, access AccessContext) (OperationOverview, error) {
-	if !canReadOperations(access.Role) {
+	if !canReadOperations(access) {
 		return OperationOverview{}, ErrForbidden
 	}
 
@@ -647,7 +649,7 @@ func (service *Service) loadSnapshotState(ctx context.Context, storeID string) (
 }
 
 func (service *Service) resolveStoreID(ctx context.Context, access AccessContext, storeID string) (string, error) {
-	if !canReadOperations(access.Role) {
+	if !canReadOperations(access) {
 		return "", ErrForbidden
 	}
 
@@ -678,7 +680,15 @@ func (service *Service) resolveStoreID(ctx context.Context, access AccessContext
 	return "", ErrForbidden
 }
 
-func canReadOperations(role string) bool {
+func canReadOperations(access AccessContext) bool {
+	if access.PermissionsResolved {
+		return accesscontrol.HasPermission(access.Permissions, accesscontrol.PermissionOperationsView)
+	}
+
+	return CanAccessOperationsRole(access.Role)
+}
+
+func CanAccessOperationsRole(role string) bool {
 	switch role {
 	case RoleConsultant, RoleStoreTerminal, RoleManager, RoleMarketing, RoleDirector, RoleOwner, RolePlatformAdmin:
 		return true
@@ -687,7 +697,7 @@ func canReadOperations(role string) bool {
 	}
 }
 
-func canMutateOperations(role string) bool {
+func CanMutateOperationsRole(role string) bool {
 	switch role {
 	case RoleConsultant, RoleStoreTerminal, RoleManager, RoleOwner, RolePlatformAdmin:
 		return true
@@ -696,12 +706,12 @@ func canMutateOperations(role string) bool {
 	}
 }
 
-func CanAccessOperationsRole(role string) bool {
-	return canReadOperations(role)
-}
+func canMutateOperations(access AccessContext) bool {
+	if access.PermissionsResolved {
+		return accesscontrol.HasPermission(access.Permissions, accesscontrol.PermissionOperationsEdit)
+	}
 
-func CanMutateOperationsRole(role string) bool {
-	return canMutateOperations(role)
+	return CanMutateOperationsRole(access.Role)
 }
 
 func buildSnapshotView(storeID string, storeName string, roster []ConsultantProfile, snapshotState SnapshotState) Snapshot {

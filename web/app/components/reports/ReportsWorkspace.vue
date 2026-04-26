@@ -52,6 +52,46 @@ const report = computed(() =>
     customerSourceOptions: props.state.customerSourceOptions || []
   })
 );
+const multiStoreOverview = computed(() => reportsStore.multiStoreOverview || null);
+const multiStoreSummary = computed(() => multiStoreOverview.value?.summary || {
+  activeStores: 0,
+  totalAttendances: 0,
+  totalSoldValue: 0,
+  totalQueue: 0,
+  totalActiveServices: 0,
+  averageHealthScore: 0
+});
+const multiStoreRows = computed(() => multiStoreOverview.value?.stores || []);
+const reportRoster = computed(() => {
+  if (!reportsStore.integratedScope) {
+    return props.state.roster || [];
+  }
+
+  return (report.value.chartData.consultantAgg || []).map((item) => ({
+    id: item.consultantId,
+    name: item.consultantName
+  }));
+});
+const integratedConsultantRows = computed(() =>
+  (report.value.chartData.consultantAgg || [])
+    .map((item) => {
+      const attendances = Number(item.attendances || 0);
+      const conversions = Number(item.conversions || 0);
+      const saleAmount = Number(item.saleAmount || 0);
+      const conversionRate = attendances > 0 ? (conversions / attendances) * 100 : 0;
+
+      return {
+        consultantId: item.consultantId,
+        consultantName: item.consultantName || "-",
+        attendances,
+        conversions,
+        conversionRateLabel: formatPercent(conversionRate),
+        saleAmountLabel: formatCurrency(saleAmount),
+        averageTicketLabel: formatCurrency(conversions > 0 ? saleAmount / conversions : 0)
+      };
+    })
+    .sort((left, right) => right.attendances - left.attendances)
+);
 const recentRows = computed(() =>
   buildReportRowsFromApi(
     reportsStore.recentServices?.items || [],
@@ -233,14 +273,17 @@ function exportPdf() {
       <p class="admin-panel__text">
         Leitura de performance, tempo medio e qualidade de preenchimento do fechamento.
       </p>
-      <p v-if="reportsStore.activeStoreName" class="admin-panel__text">
+      <p v-if="reportsStore.integratedScope" class="admin-panel__text">
+        Escopo: todas as lojas do tenant ativo.
+      </p>
+      <p v-else-if="reportsStore.activeStoreName" class="admin-panel__text">
         Loja ativa: {{ reportsStore.activeStoreName }}
       </p>
     </header>
 
     <ReportsFilterToolbar
       :filters="report.filters"
-      :roster="state.roster || []"
+      :roster="reportRoster"
       :visit-reason-options="state.visitReasonOptions || []"
       :customer-source-options="state.customerSourceOptions || []"
       :campaigns="state.campaigns || []"
@@ -261,10 +304,61 @@ function exportPdf() {
     </article>
 
     <article v-else-if="reportsStore.pending && !reportsStore.ready" class="settings-card">
-      <p class="settings-card__text">Carregando relatorios da loja ativa...</p>
+      <p class="settings-card__text">
+        {{ reportsStore.integratedScope ? 'Carregando relatorio geral...' : 'Carregando relatorios da loja ativa...' }}
+      </p>
     </article>
 
-    <template v-if="reportsStore.ready">
+    <template v-else-if="reportsStore.ready">
+      <section v-if="reportsStore.integratedScope" class="metric-grid" data-testid="reports-multistore-summary">
+        <article class="metric-card"><span class="metric-card__label">Lojas ativas</span><strong class="metric-card__value">{{ multiStoreSummary.activeStores }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Atendimentos consolidados</span><strong class="metric-card__value">{{ multiStoreSummary.totalAttendances }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Vendas consolidadas</span><strong class="metric-card__value">{{ formatCurrency(multiStoreSummary.totalSoldValue) }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Fila atual total</span><strong class="metric-card__value">{{ multiStoreSummary.totalQueue }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Em atendimento agora</span><strong class="metric-card__value">{{ multiStoreSummary.totalActiveServices }}</strong></article>
+        <article class="metric-card"><span class="metric-card__label">Score medio operacional</span><strong class="metric-card__value">{{ Math.round(multiStoreSummary.averageHealthScore) }}</strong></article>
+      </section>
+
+      <article v-if="reportsStore.integratedScope" class="insight-card insight-card--wide" data-testid="reports-multistore-table">
+        <header class="intel-card__header">
+          <h3 class="insight-card__title">Comparativo consolidado por loja</h3>
+          <span class="insight-tag">{{ multiStoreRows.length }} lojas</span>
+        </header>
+        <div class="insight-table-wrap">
+          <table class="insight-table">
+            <thead>
+              <tr>
+                <th>Loja</th>
+                <th>Atendimentos</th>
+                <th>Conversao</th>
+                <th>Vendas</th>
+                <th>Ticket medio</th>
+                <th>Fila</th>
+                <th>Em atendimento</th>
+                <th>P.A.</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!multiStoreRows.length">
+                <td colspan="9">Nenhuma loja disponivel para o tenant ativo.</td>
+              </tr>
+              <tr v-for="row in multiStoreRows" :key="row.storeId">
+                <td>{{ row.storeName }}</td>
+                <td>{{ row.attendances }}</td>
+                <td>{{ formatPercent(row.conversionRate) }}</td>
+                <td>{{ formatCurrency(row.soldValue) }}</td>
+                <td>{{ formatCurrency(row.ticketAverage) }}</td>
+                <td>{{ row.queueCount }}</td>
+                <td>{{ row.activeCount }}</td>
+                <td>{{ row.paScore.toFixed(2) }}</td>
+                <td>{{ Math.round(row.healthScore) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
       <section class="metric-grid" data-testid="reports-summary">
         <article class="metric-card"><span class="metric-card__label">Atendimentos</span><strong class="metric-card__value">{{ report.metrics.totalAttendances }}</strong></article>
         <article class="metric-card"><span class="metric-card__label">Conversao</span><strong class="metric-card__value">{{ formatPercent(report.metrics.conversionRate) }}</strong></article>
@@ -308,7 +402,7 @@ function exportPdf() {
         </article>
       </div>
 
-      <article class="insight-card insight-card--wide">
+      <article v-if="!reportsStore.integratedScope" class="insight-card insight-card--wide">
         <header class="intel-card__header"><h3 class="insight-card__title">Meta mensal dos consultores</h3></header>
         <span v-if="!goalRows.length" class="insight-empty">Nenhum consultor com meta definida. Configure metas em Configuracoes &gt; Consultores.</span>
         <template v-else>
@@ -354,6 +448,40 @@ function exportPdf() {
             </div>
           </div>
         </template>
+      </article>
+
+      <article v-else class="insight-card insight-card--wide">
+        <header class="intel-card__header">
+          <h3 class="insight-card__title">Consultores em destaque no consolidado</h3>
+          <span class="insight-tag">{{ integratedConsultantRows.length }} consultores</span>
+        </header>
+        <div class="insight-table-wrap">
+          <table class="insight-table">
+            <thead>
+              <tr>
+                <th>Consultor</th>
+                <th>Atendimentos</th>
+                <th>Conversoes</th>
+                <th>Conversao</th>
+                <th>Vendas</th>
+                <th>Ticket medio</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="!integratedConsultantRows.length">
+                <td colspan="6">Nenhum consultor encontrado para os filtros selecionados.</td>
+              </tr>
+              <tr v-for="item in integratedConsultantRows" :key="item.consultantId">
+                <td>{{ item.consultantName }}</td>
+                <td>{{ item.attendances }}</td>
+                <td>{{ item.conversions }}</td>
+                <td>{{ item.conversionRateLabel }}</td>
+                <td>{{ item.saleAmountLabel }}</td>
+                <td>{{ item.averageTicketLabel }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </article>
 
       <div class="report-dist-grid">

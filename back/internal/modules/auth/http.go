@@ -67,11 +67,13 @@ type updatePasswordRequest struct {
 }
 
 type principalDTO struct {
-	UserID    string    `json:"userId"`
-	Role      Role      `json:"role"`
-	TenantID  string    `json:"tenantId,omitempty"`
-	StoreIDs  []string  `json:"storeIds,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	UserID              string    `json:"userId"`
+	Role                Role      `json:"role"`
+	TenantID            string    `json:"tenantId,omitempty"`
+	StoreIDs            []string  `json:"storeIds,omitempty"`
+	Permissions         []string  `json:"permissions"`
+	PermissionsResolved bool      `json:"permissionsResolved"`
+	ExpiresAt           time.Time `json:"expiresAt"`
 }
 
 func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *InvitationService, passwordResets *PasswordResetService, middleware *Middleware) {
@@ -189,11 +191,13 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 		httpapi.WriteJSON(w, http.StatusOK, meResponse{
 			User: user,
 			Principal: principalDTO{
-				UserID:    principal.UserID,
-				Role:      principal.Role,
-				TenantID:  principal.TenantID,
-				StoreIDs:  append([]string{}, principal.StoreIDs...),
-				ExpiresAt: principal.ExpiresAt,
+				UserID:              principal.UserID,
+				Role:                principal.Role,
+				TenantID:            principal.TenantID,
+				StoreIDs:            append([]string{}, principal.StoreIDs...),
+				Permissions:         append([]string{}, principal.Permissions...),
+				PermissionsResolved: principal.PermissionsResolved,
+				ExpiresAt:           principal.ExpiresAt,
 			},
 		})
 	})))

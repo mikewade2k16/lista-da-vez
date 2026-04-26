@@ -19,6 +19,10 @@ const props = defineProps({
   errorMessage: {
     type: String,
     default: ""
+  },
+  integratedScope: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -75,7 +79,9 @@ const roundedScore = computed(() => Math.round(intelligence.value.healthScore));
   <section class="admin-panel" data-testid="intelligence-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Inteligencia operacional</h2>
-      <p class="admin-panel__text">Leitura automatica dos dados para apoiar decisao de loja e gestao de equipe.</p>
+      <p class="admin-panel__text">
+        {{ integratedScope ? 'Leitura automatica consolidada para apoiar decisao multi-loja e gestao de equipe.' : 'Leitura automatica dos dados para apoiar decisao de loja e gestao de equipe.' }}
+      </p>
     </header>
 
     <article v-if="errorMessage" class="insight-card">
@@ -83,7 +89,7 @@ const roundedScore = computed(() => Math.round(intelligence.value.healthScore));
     </article>
 
     <article v-else-if="pending && !report" class="insight-card">
-      <p class="settings-card__text">Carregando inteligencia operacional da loja ativa...</p>
+      <p class="settings-card__text">{{ integratedScope ? 'Carregando inteligencia operacional consolidada...' : 'Carregando inteligencia operacional da loja ativa...' }}</p>
     </article>
 
     <article class="insight-card intel-summary" data-testid="intelligence-score">

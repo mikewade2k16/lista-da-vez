@@ -143,13 +143,19 @@ set -euo pipefail
 cd $(Convert-ToBashSingleQuoted $repoDirBash)
 tar -czf - \
     --exclude='.git' \
+    --exclude='.claude' \
+    --exclude='.playwright-mcp' \
     --exclude='.env' \
     --exclude='.env.production' \
+    --exclude='token.txt' \
+    --exclude='token_gen.js' \
+    --exclude='verify.sh' \
     --exclude='node_modules' \
     --exclude='web/node_modules' \
     --exclude='web/.nuxt' \
     --exclude='web/.output' \
     --exclude='web/dist' \
+    --exclude='web/.codex-devserver.*.log' \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \

@@ -23,8 +23,28 @@ type TenantView struct {
 	Active bool   `json:"active"`
 }
 
+type ListInput struct {
+	IncludeInactive bool
+}
+
+type CreateInput struct {
+	Slug     string
+	Name     string
+	IsActive *bool
+}
+
+type UpdateInput struct {
+	ID       string
+	Slug     *string
+	Name     *string
+	IsActive *bool
+}
+
 type Repository interface {
-	ListAccessible(ctx context.Context, principal auth.Principal) ([]Tenant, error)
+	ListAccessible(ctx context.Context, principal auth.Principal, input ListInput) ([]Tenant, error)
+	FindAccessibleByID(ctx context.Context, principal auth.Principal, tenantID string) (Tenant, error)
+	Create(ctx context.Context, tenant Tenant) (Tenant, error)
+	Update(ctx context.Context, tenant Tenant) (Tenant, error)
 }
 
 func (tenant Tenant) View() TenantView {

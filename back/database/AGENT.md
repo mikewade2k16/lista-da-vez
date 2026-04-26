@@ -103,6 +103,18 @@ Estas instrucoes valem para tudo que for banco de dados no backend:
   - consultas precisam continuar baratas por `tenant_id + store_id`
   - o dado devolvido ao frontend deve carregar identificacao visual minima da loja (`store_id`, `store_name`, opcionalmente `store_code`)
   - a tabela `operation_paused_consultants` deve preservar o tipo do afastamento (`pause` vs `assignment`)
+  - a configuracao operacional vive em tabelas `tenant_*` desde a migration `0024_tenant_operation_settings.sql`:
+    - `tenant_operation_settings`
+    - `tenant_setting_options`
+    - `tenant_catalog_products`
+  - a tabela `tenant_setting_options` precisa manter `kind` alinhado com os catalogos vivos da UI:
+    - `visit_reason`
+    - `customer_source`
+    - `pause_reason`
+    - `queue_jump_reason`
+    - `loss_reason`
+    - `profession`
+  - as tabelas legadas `store_operation_settings`, `store_setting_options` e `store_catalog_products` permanecem no banco apenas como fonte de backfill durante a transicao; novas escritas vao para o escopo do tenant
 - quando o historico tiver campos estruturados em JSON, a agregacao deve priorizar a colecao estruturada como fonte de verdade
   - exemplo: `productsClosed[]` antes de `productClosed`
 

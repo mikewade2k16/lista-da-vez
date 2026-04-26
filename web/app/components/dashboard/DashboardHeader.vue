@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { LogOut, User } from "lucide-vue-next";
 import { storeToRefs } from "pinia";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
-import { canAccessMultiStore, getRoleLabel } from "~/domain/utils/permissions";
+import { getRoleLabel } from "~/domain/utils/permissions";
 import { useAuthStore } from "~/stores/auth";
 import { getApiBase } from "~/utils/api-client";
 
@@ -18,7 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(["store-change", "profile-change"]);
 const auth = useAuthStore();
-const { isAuthenticated, user, role, accessibleStoreIds } = storeToRefs(auth);
+const { isAuthenticated, user, role, accessibleStoreIds, canUseAllStores, isAllStoresScope } = storeToRefs(auth);
 const runtimeConfig = useRuntimeConfig();
 const route = useRoute();
 const profileMenuRef = ref(null);
@@ -37,14 +37,6 @@ const activeServicesCount = computed(() => props.state.activeServices?.length ||
 const displayName = computed(() => String(user.value?.displayName || "").trim());
 const profileEmail = computed(() => String(user.value?.email || "").trim());
 const profileRoleLabel = computed(() => getRoleLabel(role.value));
-const canSeeIntegrated = computed(() => canAccessMultiStore(role.value));
-const isIntegratedAllScope = computed(
-  () =>
-    isAuthenticated.value &&
-    canSeeIntegrated.value &&
-    route.path === "/operacao" &&
-    String(route.query.scope || "").trim() === "all"
-);
 const avatarUrl = computed(() => {
   const avatarPath = String(user.value?.avatarPath || "").trim();
   if (!avatarPath) {
@@ -55,20 +47,20 @@ const avatarUrl = computed(() => {
 });
 const profileInitial = computed(() => displayName.value.charAt(0).toUpperCase() || "U");
 const selectedStoreValue = computed(() =>
-  isIntegratedAllScope.value ? ALL_STORES_VALUE : String(props.state.activeStoreId || "").trim()
+  isAllStoresScope.value ? ALL_STORES_VALUE : String(props.state.activeStoreId || "").trim()
 );
 const storeSelectOptions = computed(() => {
   const options = availableStores.value.map((store) => ({
     value: String(store.id || "").trim(),
     label: String(store.name || "").trim(),
-    meta: [String(store.code || "").trim(), String(store.city || "").trim()].filter(Boolean).join(" · ")
+    meta: [String(store.code || "").trim(), String(store.city || "").trim()].filter(Boolean).join(" - ")
   }));
 
-  if (canSeeIntegrated.value) {
+  if (canUseAllStores.value) {
     options.unshift({
       value: ALL_STORES_VALUE,
       label: "Todas as lojas",
-      meta: "Abrir visao integrada"
+      meta: "Mantem o contexto global para comparativo multi-loja"
     });
   }
 
@@ -89,21 +81,12 @@ function handleStoreChange(value) {
   }
 
   if (normalizedValue === ALL_STORES_VALUE) {
-    if (!canSeeIntegrated.value) {
-      return;
-    }
-
-    void navigateTo({ path: "/operacao", query: { scope: "all" } });
+    auth.setStoreScopeMode("all");
     return;
   }
 
+  auth.setStoreScopeMode("single");
   emit("store-change", normalizedValue);
-
-  if (route.path === "/operacao" && String(route.query.scope || "").trim() === "all") {
-    const nextQuery = { ...route.query };
-    delete nextQuery.scope;
-    void navigateTo({ path: route.path, query: nextQuery }, { replace: true });
-  }
 }
 
 function handleProfileChange(value) {

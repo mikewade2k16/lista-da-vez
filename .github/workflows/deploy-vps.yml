@@ -155,17 +155,17 @@ jobs:
           {
             echo "## Deploy VPS"
             echo ""
-            echo "- Ref: `${{ inputs.git_ref }}`"
-            echo "- Services: `${{ inputs.services }}`"
-            echo "- Host: `$DEPLOY_HOST`"
-            echo "- Remote path: `$DEPLOY_REMOTE_PATH`"
+            echo "- Ref: \`${{ inputs.git_ref }}\`"
+            echo "- Services: \`${{ inputs.services }}\`"
+            echo "- Host: \`$DEPLOY_HOST\`"
+            echo "- Remote path: \`$DEPLOY_REMOTE_PATH\`"
 
             if [[ "${{ inputs.backup_database }}" == "true" && -n "${{ steps.backup.outputs.backup_file }}" ]]; then
-              echo "- Backup: `${{ steps.backup.outputs.backup_file }}`"
+              echo "- Backup: \`${{ steps.backup.outputs.backup_file }}\`"
             fi
 
             if [[ "${{ inputs.skip_smoke_tests }}" != "true" ]]; then
-              echo "- Smoke root: `${{ steps.smoke.outputs.root_status }}`"
-              echo "- Smoke healthz: `${{ steps.smoke.outputs.health_status }}`"
+              echo "- Smoke root: \`${{ steps.smoke.outputs.root_status }}\`"
+              echo "- Smoke healthz: \`${{ steps.smoke.outputs.health_status }}\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"

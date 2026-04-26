@@ -935,7 +935,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			$56,
 			$57,
 			$58,
-			$59
+			$59,
+			$60
 		)
 		on conflict (tenant_id) do update
 		set

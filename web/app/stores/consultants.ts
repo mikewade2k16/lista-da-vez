@@ -141,7 +141,7 @@ export const useConsultantsStore = defineStore("consultants", () => {
       return null;
     }
 
-    return hydrateRuntimeStoreContext(runtime, apiRequest, storeId);
+    return hydrateRuntimeStoreContext(runtime, apiRequest, storeId, activeTenantId.value);
   }
 
   function clearIntegratedView() {
@@ -261,7 +261,7 @@ export const useConsultantsStore = defineStore("consultants", () => {
         }
       });
 
-      await hydrateRuntimeStoreContext(runtime, apiRequest, storeId);
+      await hydrateRuntimeStoreContext(runtime, apiRequest, storeId, activeTenantId.value);
       return {
         ok: true,
         consultant: response?.consultant || null,
@@ -288,7 +288,7 @@ export const useConsultantsStore = defineStore("consultants", () => {
         body: normalizeConsultantPayload(payload)
       });
 
-      await hydrateRuntimeStoreContext(runtime, apiRequest, storeId);
+      await hydrateRuntimeStoreContext(runtime, apiRequest, storeId, activeTenantId.value);
       return { ok: true };
     } catch (error) {
       return {
@@ -315,7 +315,7 @@ export const useConsultantsStore = defineStore("consultants", () => {
         method: "POST"
       });
 
-      await hydrateRuntimeStoreContext(runtime, apiRequest, storeId);
+      await hydrateRuntimeStoreContext(runtime, apiRequest, storeId, activeTenantId.value);
       return { ok: true };
     } catch (error) {
       return {

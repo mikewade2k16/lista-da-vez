@@ -22,6 +22,17 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function appendTenantQuery(path, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+
+  if (!normalizedTenantId) {
+    return path;
+  }
+
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}tenantId=${encodeURIComponent(normalizedTenantId)}`;
+}
+
 export const useSettingsStore = defineStore("settings", () => {
   const runtimeConfig = useRuntimeConfig();
   const runtime = useAppRuntimeStore();
@@ -39,8 +50,12 @@ export const useSettingsStore = defineStore("settings", () => {
     return auth.isAuthenticated;
   }
 
+  function settingsPath(path) {
+    return appendTenantQuery(path, auth.activeTenantId || auth.tenantContext?.[0]?.id);
+  }
+
   async function persistOperationSection() {
-    await apiRequest("/v1/settings/operation", {
+    await apiRequest(settingsPath("/v1/settings/operation"), {
       method: "PATCH",
       body: {
         selectedOperationTemplateId: String(runtime.state.selectedOperationTemplateId || "").trim(),
@@ -67,14 +82,14 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest("/v1/settings/operation", {
+    await apiRequest(settingsPath("/v1/settings/operation"), {
       method: "PATCH",
       body
     });
   }
 
   async function persistModalSection() {
-    await apiRequest("/v1/settings/modal", {
+    await apiRequest(settingsPath("/v1/settings/modal"), {
       method: "PATCH",
       body: {
         modalConfig: cloneValue(runtime.state.modalConfig || {})
@@ -87,7 +102,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest("/v1/settings/modal", {
+    await apiRequest(settingsPath("/v1/settings/modal"), {
       method: "PATCH",
       body: {
         modalConfig: cloneValue(modalConfig)
@@ -102,7 +117,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}`, {
+    await apiRequest(settingsPath(`/v1/settings/options/${groupPath}`), {
       method: "PUT",
       body: {
         items: cloneValue(runtime.state[stateKey] || [])
@@ -111,7 +126,7 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function persistProductSection() {
-    await apiRequest("/v1/settings/products", {
+    await apiRequest(settingsPath("/v1/settings/products"), {
       method: "PUT",
       body: {
         items: cloneValue(runtime.state.productCatalog || [])
@@ -126,7 +141,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}`, {
+    await apiRequest(settingsPath(`/v1/settings/options/${groupPath}`), {
       method: "POST",
       body: {
         item: {
@@ -144,7 +159,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(item.id || "").trim())}`, {
+    await apiRequest(settingsPath(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(item.id || "").trim())}`), {
       method: "PATCH",
       body: {
         label: String(item.label || "").trim()
@@ -159,7 +174,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(itemId || "").trim())}`, {
+    await apiRequest(settingsPath(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(itemId || "").trim())}`), {
       method: "DELETE"
     });
   }
@@ -169,7 +184,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest("/v1/settings/products", {
+    await apiRequest(settingsPath("/v1/settings/products"), {
       method: "POST",
       body: {
         item: {
@@ -188,7 +203,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`, {
+    await apiRequest(settingsPath(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`), {
       method: "PATCH",
       body: {
         name: String(payload?.name || "").trim(),
@@ -204,7 +219,7 @@ export const useSettingsStore = defineStore("settings", () => {
       return;
     }
 
-    await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`, {
+    await apiRequest(settingsPath(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`), {
       method: "DELETE"
     });
   }

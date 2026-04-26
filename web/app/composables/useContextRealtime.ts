@@ -83,7 +83,7 @@ export function useContextRealtime() {
       return settingsRefreshPromise;
     }
 
-    settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId)
+    settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId, auth.activeTenantId)
       .catch(() => null)
       .finally(async () => {
         settingsRefreshPromise = null;
@@ -185,10 +185,10 @@ export function useContextRealtime() {
 
         if (String(payload?.resource || "").trim() === "settings") {
           const activeStoreId = String(auth.activeStoreId || runtime.state.activeStoreId || "").trim();
-          const payloadStoreId = String(payload?.resourceId || "").trim();
+          const payloadTenantId = String(payload?.resourceId || payload?.tenantId || "").trim();
 
-          if (payloadStoreId && payloadStoreId === activeStoreId) {
-            await refreshActiveStoreSettings(payloadStoreId);
+          if (!payloadTenantId || payloadTenantId === String(auth.activeTenantId || "").trim()) {
+            await refreshActiveStoreSettings(activeStoreId);
           }
 
           return;

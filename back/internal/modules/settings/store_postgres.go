@@ -55,6 +55,68 @@ func (repository *PostgresRepository) TenantExists(ctx context.Context, tenantID
 	return exists, nil
 }
 
+func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, principal auth.Principal, tenantID string) (bool, error) {
+	normalizedTenantID := strings.TrimSpace(tenantID)
+	if normalizedTenantID == "" {
+		return false, nil
+	}
+
+	if principalTenantID := strings.TrimSpace(principal.TenantID); principalTenantID != "" {
+		return principalTenantID == normalizedTenantID, nil
+	}
+
+	var (
+		query string
+		args  []any
+	)
+
+	switch principal.Role {
+	case auth.RolePlatformAdmin:
+		query = `
+			select exists(
+				select 1
+				from tenants t
+				where t.id::text = $1
+					and t.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID}
+	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
+		query = `
+			select exists(
+				select 1
+				from tenants t
+				join user_tenant_roles utr on utr.tenant_id = t.id
+				where t.id::text = $1
+					and utr.user_id::text = $2
+					and t.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID, strings.TrimSpace(principal.UserID)}
+	default:
+		query = `
+			select exists(
+				select 1
+				from tenants t
+				join stores s on s.tenant_id = t.id
+				join user_store_roles usr on usr.store_id = s.id
+				where t.id::text = $1
+					and usr.user_id::text = $2
+					and t.is_active = true
+					and s.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID, strings.TrimSpace(principal.UserID)}
+	}
+
+	var allowed bool
+	if err := repository.pool.QueryRow(ctx, query, args...).Scan(&allowed); err != nil {
+		return false, err
+	}
+
+	return allowed, nil
+}
+
 func (repository *PostgresRepository) ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error) {
 	if tenantID := strings.TrimSpace(principal.TenantID); tenantID != "" {
 		return tenantID, nil

@@ -11,11 +11,20 @@ import (
 type fakeRepository struct {
 	defaultTenantID string
 	resolveErr      error
+	accessible      map[string]bool
 	records         map[string]Record
 }
 
 func (repository *fakeRepository) TenantExists(context.Context, string) (bool, error) {
 	return true, nil
+}
+
+func (repository *fakeRepository) CanAccessTenant(_ context.Context, _ auth.Principal, tenantID string) (bool, error) {
+	if repository.accessible == nil {
+		return true, nil
+	}
+
+	return repository.accessible[tenantID], nil
 }
 
 func (repository *fakeRepository) ResolveDefaultTenantID(context.Context, auth.Principal) (string, error) {
@@ -83,7 +92,7 @@ func TestGetBundleResolvesDefaultTenantForGlobalPrincipal(t *testing.T) {
 	bundle, err := service.GetBundle(context.Background(), auth.Principal{
 		UserID: "user-1",
 		Role:   auth.RolePlatformAdmin,
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("GetBundle returned error: %v", err)
 	}
@@ -102,7 +111,36 @@ func TestGetBundleRejectsAmbiguousGlobalPrincipal(t *testing.T) {
 	if _, err := service.GetBundle(context.Background(), auth.Principal{
 		UserID: "user-1",
 		Role:   auth.RolePlatformAdmin,
-	}); err != ErrTenantRequired {
+	}, ""); err != ErrTenantRequired {
 		t.Fatalf("expected ErrTenantRequired, got %v", err)
+	}
+}
+
+func TestGetBundleUsesRequestedTenantForGlobalPrincipal(t *testing.T) {
+	service := NewService(&fakeRepository{
+		resolveErr: ErrTenantRequired,
+		accessible: map[string]bool{
+			"tenant-2": true,
+		},
+		records: map[string]Record{
+			"tenant-2": {
+				TenantID:                    "tenant-2",
+				SelectedOperationTemplateID: defaultTemplateID,
+				Settings:                    DefaultBundle("tenant-2", defaultTemplateID).Settings,
+				ModalConfig:                 DefaultBundle("tenant-2", defaultTemplateID).ModalConfig,
+			},
+		},
+	}, nil)
+
+	bundle, err := service.GetBundle(context.Background(), auth.Principal{
+		UserID: "user-1",
+		Role:   auth.RolePlatformAdmin,
+	}, "tenant-2")
+	if err != nil {
+		t.Fatalf("GetBundle returned error: %v", err)
+	}
+
+	if bundle.TenantID != "tenant-2" {
+		t.Fatalf("expected tenant-2, got %q", bundle.TenantID)
 	}
 }

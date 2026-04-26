@@ -255,6 +255,7 @@ type Record struct {
 
 type Repository interface {
 	TenantExists(ctx context.Context, tenantID string) (bool, error)
+	CanAccessTenant(ctx context.Context, principal auth.Principal, tenantID string) (bool, error)
 	ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error)
 	GetByTenant(ctx context.Context, tenantID string) (Record, bool, error)
 	Upsert(ctx context.Context, record Record) (Record, error)

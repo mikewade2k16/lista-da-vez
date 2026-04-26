@@ -71,8 +71,9 @@ Toda implementacao nova em `web/` deve:
 - `web/app/utils/api-client.ts` concentra o client HTTP criado dentro do contexto do store.
 - `web/app/composables/useOperationsRealtime.ts` cuida da assinatura WebSocket da operacao e revalidacao do snapshot em tempo real.
 - `web/app/composables/useOperationsRealtime.ts` agora tambem cuida do modo integrado multi-loja de `/operacao` quando a sessao tiver mais de uma loja acessivel.
-- mudancas em `settings` devem continuar propagando sem refresh pela combinacao de `context.updated` e `operation.updated` com `settings-updated`.
+- mudancas em `settings` devem continuar propagando sem refresh via `context.updated` com `resource=settings` e `resourceId={tenantId}`.
 - `web/app/utils/runtime-remote.ts` hidrata consultores, settings e operations remotos para a loja ativa.
+- toda chamada a `hydrateRuntimeStoreContext`, `refreshRuntimeStoreSettings` ou `fetchRemoteStoreData` deve repassar o `tenantId` (ex.: `auth.activeTenantId`); sem ele a query `tenantId` some e usuarios `platform_admin` com mais de um tenant acessivel recebem 400 `validation_error` em `/v1/settings`.
 - `web/app/stores/dashboard.ts` e apenas uma facade temporaria de compatibilidade.
 - O runtime de compatibilidade foi fatiado em `web/app/stores/dashboard/runtime/shared.ts`, `state.ts`, `status.ts` e `actions/*`.
 - Se precisar tocar esse runtime, editar o menor modulo responsavel e nao voltar a concentrar regra em `create-dashboard-runtime.ts`.

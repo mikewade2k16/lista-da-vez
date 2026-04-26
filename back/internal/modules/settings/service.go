@@ -25,12 +25,12 @@ func NewService(repository Repository, notifier RealtimePublisher) *Service {
 	return &Service{repository: repository, notifier: notifier}
 }
 
-func (service *Service) GetBundle(ctx context.Context, principal auth.Principal) (Bundle, error) {
+func (service *Service) GetBundle(ctx context.Context, principal auth.Principal, requestedTenantID string) (Bundle, error) {
 	if !canViewSettings(principal) {
 		return Bundle{}, ErrForbidden
 	}
 
-	tenantID, err := service.resolveTenantID(ctx, principal)
+	tenantID, err := service.resolveTenantID(ctx, principal, requestedTenantID)
 	if err != nil {
 		return Bundle{}, err
 	}
@@ -52,7 +52,7 @@ func (service *Service) SaveBundle(ctx context.Context, principal auth.Principal
 		return MutationAck{}, ErrForbidden
 	}
 
-	tenantID, err := service.resolveTenantID(ctx, principal)
+	tenantID, err := service.resolveTenantID(ctx, principal, input.TenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -73,7 +73,7 @@ func (service *Service) SaveBundle(ctx context.Context, principal auth.Principal
 }
 
 func (service *Service) SaveOperationSection(ctx context.Context, principal auth.Principal, input OperationSectionInput) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, input.TenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -94,7 +94,7 @@ func (service *Service) SaveOperationSection(ctx context.Context, principal auth
 }
 
 func (service *Service) SaveModalSection(ctx context.Context, principal auth.Principal, input ModalSectionInput) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, input.TenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -107,8 +107,8 @@ func (service *Service) SaveModalSection(ctx context.Context, principal auth.Pri
 	return service.finalizeMutation(ctx, ack, err)
 }
 
-func (service *Service) SaveOptionSection(ctx context.Context, principal auth.Principal, optionGroup string, items []OptionItem) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+func (service *Service) SaveOptionSection(ctx context.Context, principal auth.Principal, optionGroup string, input OptionSectionInput) (MutationAck, error) {
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, input.TenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -118,7 +118,7 @@ func (service *Service) SaveOptionSection(ctx context.Context, principal auth.Pr
 		return MutationAck{}, err
 	}
 
-	nextItems := normalizeOptions(items, currentItems)
+	nextItems := normalizeOptions(input.Items, currentItems)
 
 	switch optionGroup {
 	case optionKindVisitReason, optionKindCustomerSource, optionKindPauseReason,
@@ -141,8 +141,8 @@ func (service *Service) SaveOptionSection(ctx context.Context, principal auth.Pr
 	return service.finalizeMutation(ctx, ack, nil)
 }
 
-func (service *Service) SaveOptionItem(ctx context.Context, principal auth.Principal, optionGroup string, item OptionItem) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+func (service *Service) SaveOptionItem(ctx context.Context, principal auth.Principal, optionGroup string, item OptionItem, requestedTenantID string) (MutationAck, error) {
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, requestedTenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -171,8 +171,8 @@ func (service *Service) SaveOptionItem(ctx context.Context, principal auth.Princ
 	return service.finalizeMutation(ctx, ack, nil)
 }
 
-func (service *Service) DeleteOptionItem(ctx context.Context, principal auth.Principal, optionGroup string, optionID string) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+func (service *Service) DeleteOptionItem(ctx context.Context, principal auth.Principal, optionGroup string, optionID string, requestedTenantID string) (MutationAck, error) {
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, requestedTenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -207,7 +207,7 @@ func (service *Service) DeleteOptionItem(ctx context.Context, principal auth.Pri
 }
 
 func (service *Service) SaveProductSection(ctx context.Context, principal auth.Principal, input ProductSectionInput) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, input.TenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -227,7 +227,7 @@ func (service *Service) SaveProductSection(ctx context.Context, principal auth.P
 }
 
 func (service *Service) SaveProductItem(ctx context.Context, principal auth.Principal, input ProductItemInput) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, input.TenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -251,8 +251,8 @@ func (service *Service) SaveProductItem(ctx context.Context, principal auth.Prin
 	return service.finalizeMutation(ctx, ack, nil)
 }
 
-func (service *Service) DeleteProductItem(ctx context.Context, principal auth.Principal, productID string) (MutationAck, error) {
-	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal)
+func (service *Service) DeleteProductItem(ctx context.Context, principal auth.Principal, productID string, requestedTenantID string) (MutationAck, error) {
+	tenantID, currentBundle, err := service.loadWritableBundle(ctx, principal, requestedTenantID)
 	if err != nil {
 		return MutationAck{}, err
 	}
@@ -280,11 +280,28 @@ func (service *Service) DeleteProductItem(ctx context.Context, principal auth.Pr
 	return service.finalizeMutation(ctx, ack, nil)
 }
 
-// resolveTenantID extrai o tenant do principal ou, para principals globais
-// como platform_admin, usa o unico tenant acessivel como fallback seguro.
-// Se houver zero ou multiplos tenants acessiveis, o escopo continua ambiguo
-// e a requisicao e recusada para evitar gravacao/leitura no tenant errado.
-func (service *Service) resolveTenantID(ctx context.Context, principal auth.Principal) (string, error) {
+// resolveTenantID usa um tenant explicito quando a UI envia activeTenantId.
+// Sem tenant explicito, principals globais ainda usam apenas o fallback seguro
+// de tenant unico; zero ou multiplos tenants acessiveis seguem ambiguos.
+func (service *Service) resolveTenantID(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, error) {
+	requestedTenantID = strings.TrimSpace(requestedTenantID)
+	if requestedTenantID != "" {
+		if tenantID := strings.TrimSpace(principal.TenantID); tenantID != "" && tenantID != requestedTenantID {
+			return "", ErrForbidden
+		}
+
+		allowed, err := service.repository.CanAccessTenant(ctx, principal, requestedTenantID)
+		if err != nil {
+			return "", err
+		}
+
+		if !allowed {
+			return "", ErrForbidden
+		}
+
+		return requestedTenantID, nil
+	}
+
 	tenantID := strings.TrimSpace(principal.TenantID)
 	if tenantID != "" {
 		return tenantID, nil
@@ -293,16 +310,16 @@ func (service *Service) resolveTenantID(ctx context.Context, principal auth.Prin
 	return service.repository.ResolveDefaultTenantID(ctx, principal)
 }
 
-func (service *Service) resolveWritableTenantID(ctx context.Context, principal auth.Principal) (string, error) {
+func (service *Service) resolveWritableTenantID(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, error) {
 	if !canEditSettings(principal) {
 		return "", ErrForbidden
 	}
 
-	return service.resolveTenantID(ctx, principal)
+	return service.resolveTenantID(ctx, principal, requestedTenantID)
 }
 
-func (service *Service) loadWritableBundle(ctx context.Context, principal auth.Principal) (string, Bundle, error) {
-	tenantID, err := service.resolveWritableTenantID(ctx, principal)
+func (service *Service) loadWritableBundle(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, Bundle, error) {
+	tenantID, err := service.resolveWritableTenantID(ctx, principal, requestedTenantID)
 	if err != nil {
 		return "", Bundle{}, err
 	}

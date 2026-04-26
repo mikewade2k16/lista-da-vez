@@ -148,7 +148,7 @@ export function useOperationsRealtime(options = {}) {
       return settingsRefreshPromise;
     }
 
-    settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId)
+    settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId, auth.activeTenantId)
       .catch(() => null)
       .finally(async () => {
         settingsRefreshPromise = null;

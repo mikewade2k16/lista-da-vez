@@ -96,7 +96,7 @@ export const useOperationsStore = defineStore("operations", () => {
       return null;
     }
 
-    return hydrateRuntimeStoreContext(runtime, apiRequest, storeId);
+    return hydrateRuntimeStoreContext(runtime, apiRequest, storeId, auth.activeTenantId);
   }
 
   async function refreshOperationSnapshot(storeId, options = {}) {

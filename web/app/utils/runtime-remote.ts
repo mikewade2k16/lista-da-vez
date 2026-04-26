@@ -26,6 +26,31 @@ function normalizeProducts(products = []) {
   })).filter((product) => product.id && product.name);
 }
 
+function withTenantQuery(path, tenantId) {
+  const normalizedTenantId = String(tenantId || "").trim();
+
+  if (!normalizedTenantId) {
+    return path;
+  }
+
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}tenantId=${encodeURIComponent(normalizedTenantId)}`;
+}
+
+function resolveTenantIdForStore(state, storeId, fallbackTenantId = "") {
+  const normalizedFallback = String(fallbackTenantId || "").trim();
+
+  if (normalizedFallback) {
+    return normalizedFallback;
+  }
+
+  const normalizedStoreId = String(storeId || "").trim();
+  const store = (Array.isArray(state?.stores) ? state.stores : [])
+    .find((item) => String(item?.id || "").trim() === normalizedStoreId);
+
+  return String(store?.tenantId || "").trim();
+}
+
 function normalizeConsultants(consultants = []) {
   return (Array.isArray(consultants) ? consultants : []).map((consultant) => ({
     id: String(consultant?.id || "").trim(),
@@ -286,7 +311,7 @@ export function applySettingsBundleToRuntime(runtime, storeId, settingsBundle) {
   return runtime.state;
 }
 
-export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId) {
+export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId, tenantId = "") {
   const normalizedStoreId = String(storeId || "").trim();
 
   if (!normalizedStoreId) {
@@ -294,7 +319,8 @@ export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId) 
   }
 
   await runtime.ensure();
-  const settingsBundle = await apiRequest(`/v1/settings`);
+  const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreId, tenantId);
+  const settingsBundle = await apiRequest(withTenantQuery("/v1/settings", resolvedTenantId));
   applySettingsBundleToRuntime(runtime, normalizedStoreId, settingsBundle);
   return settingsBundle;
 }
@@ -315,10 +341,10 @@ export function buildSettingsBundleFromState(state, storeId) {
   };
 }
 
-export async function fetchRemoteStoreData(apiRequest, storeId) {
+export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = "") {
   const storeQuery = encodeURIComponent(String(storeId || "").trim());
   const [settingsBundle, consultantsResponse, operationsSnapshot] = await Promise.all([
-    apiRequest(`/v1/settings`),
+    apiRequest(withTenantQuery("/v1/settings", tenantId)),
     apiRequest(`/v1/consultants?storeId=${storeQuery}`),
     apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`)
   ]);
@@ -330,7 +356,7 @@ export async function fetchRemoteStoreData(apiRequest, storeId) {
   };
 }
 
-export async function hydrateRuntimeStoreContext(runtime, apiRequest, storeId) {
+export async function hydrateRuntimeStoreContext(runtime, apiRequest, storeId, tenantId = "") {
   const normalizedStoreID = String(storeId || "").trim();
 
   if (!normalizedStoreID) {
@@ -339,7 +365,8 @@ export async function hydrateRuntimeStoreContext(runtime, apiRequest, storeId) {
 
   await runtime.ensure();
 
-  const remoteData = await fetchRemoteStoreData(apiRequest, normalizedStoreID);
+  const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreID, tenantId);
+  const remoteData = await fetchRemoteStoreData(apiRequest, normalizedStoreID, resolvedTenantId);
   runtime.hydrate(
     applyRemoteStoreData(
       runtime.state,

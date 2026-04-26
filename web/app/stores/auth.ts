@@ -178,7 +178,7 @@ export const useAuthStore = defineStore("auth", () => {
     activeStoreId.value = desiredStoreId || "";
 
     if (desiredStoreId && accessToken.value) {
-      await hydrateRuntimeStoreContext(runtime, apiRequest, desiredStoreId);
+      await hydrateRuntimeStoreContext(runtime, apiRequest, desiredStoreId, activeTenantId.value);
     }
   }
 
@@ -426,7 +426,7 @@ export const useAuthStore = defineStore("auth", () => {
       await runtime.run("setActiveStore", normalizedStoreId);
     }
 
-    await hydrateRuntimeStoreContext(runtime, apiRequest, normalizedStoreId);
+    await hydrateRuntimeStoreContext(runtime, apiRequest, normalizedStoreId, activeTenantId.value);
   }
 
   function setStoreScopeMode(mode) {

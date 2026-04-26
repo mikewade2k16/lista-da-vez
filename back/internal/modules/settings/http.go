@@ -2,6 +2,7 @@ package settings
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -9,10 +10,9 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
-// As rotas continuam aceitando os campos legados storeId no payload e na query
-// string para nao quebrar clientes intermediarios, mas o servico ignora esses
-// valores e resolve o tenant pelo principal autenticado. A configuracao agora
-// e tenant-wide: nao existe escopo por loja para esses recursos.
+// As rotas continuam aceitando storeId legado, mas a configuracao agora e
+// tenant-wide. Para usuarios globais, a UI deve enviar tenantId do contexto
+// ativo na query ou no payload; o servico valida o acesso antes de ler/gravar.
 func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
 	mux.Handle("GET /v1/settings", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
@@ -21,7 +21,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		bundle, err := service.GetBundle(r.Context(), principal)
+		bundle, err := service.GetBundle(r.Context(), principal, requestTenantID(r))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -42,6 +42,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		bundle.TenantID = firstNonEmpty(bundle.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveBundle(r.Context(), principal, bundle)
 		if err != nil {
@@ -64,6 +65,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveOperationSection(r.Context(), principal, input)
 		if err != nil {
@@ -86,6 +88,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveModalSection(r.Context(), principal, input)
 		if err != nil {
@@ -108,6 +111,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		optionGroup, err := normalizeOptionGroupPath(r.PathValue("group"))
 		if err != nil {
@@ -115,7 +119,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		ack, err := service.SaveOptionItem(r.Context(), principal, optionGroup, input.Item)
+		ack, err := service.SaveOptionItem(r.Context(), principal, optionGroup, input.Item, input.TenantID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -136,6 +140,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		optionGroup, err := normalizeOptionGroupPath(r.PathValue("group"))
 		if err != nil {
@@ -146,7 +151,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		ack, err := service.SaveOptionItem(r.Context(), principal, optionGroup, OptionItem{
 			ID:    strings.TrimSpace(r.PathValue("itemId")),
 			Label: input.Label,
-		})
+		}, input.TenantID)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -173,6 +178,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			principal,
 			optionGroup,
 			r.PathValue("itemId"),
+			requestTenantID(r),
 		)
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -194,6 +200,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		optionGroup, err := normalizeOptionGroupPath(r.PathValue("group"))
 		if err != nil {
@@ -201,7 +208,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		ack, err := service.SaveOptionSection(r.Context(), principal, optionGroup, input.Items)
+		ack, err := service.SaveOptionSection(r.Context(), principal, optionGroup, input)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -222,6 +229,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveProductItem(r.Context(), principal, input)
 		if err != nil {
@@ -244,8 +252,10 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveProductItem(r.Context(), principal, ProductItemInput{
+			TenantID: input.TenantID,
 			Item: ProductItem{
 				ID:        strings.TrimSpace(r.PathValue("itemId")),
 				Name:      input.Name,
@@ -273,6 +283,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			r.Context(),
 			principal,
 			r.PathValue("itemId"),
+			requestTenantID(r),
 		)
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -294,6 +305,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveProductSection(r.Context(), principal, input)
 		if err != nil {
@@ -303,6 +315,20 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		httpapi.WriteJSON(w, http.StatusOK, ack)
 	})))
+}
+
+func requestTenantID(r *http.Request) string {
+	return strings.TrimSpace(r.URL.Query().Get("tenantId"))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if normalized := strings.TrimSpace(value); normalized != "" {
+			return normalized
+		}
+	}
+
+	return ""
 }
 
 func normalizeOptionGroupPath(rawGroup string) (string, error) {
@@ -325,10 +351,19 @@ func normalizeOptionGroupPath(rawGroup string) (string, error) {
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
+	slog.Warn("settings_http_error",
+		slog.String("path", r.URL.Path),
+		slog.String("method", r.Method),
+		slog.String("tenantQuery", r.URL.Query().Get("tenantId")),
+		slog.String("requestId", httpapi.RequestIDFromContext(r.Context())),
+		slog.Any("error", err))
+
 	switch {
 	case errors.Is(err, ErrForbidden):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
-	case errors.Is(err, ErrTenantRequired), errors.Is(err, ErrValidation):
+	case errors.Is(err, ErrTenantRequired):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "tenant_required", "Tenant ativo nao identificado para a sessao. Informe tenantId.")
+	case errors.Is(err, ErrValidation):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os dados de configuracao.")
 	case errors.Is(err, ErrTenantNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "tenant_not_found", "Tenant nao encontrado.")

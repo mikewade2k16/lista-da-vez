@@ -45,17 +45,19 @@ Ele nao deve cuidar de:
 - `PUT /v1/settings/products`
 
 Os endpoints continuam aceitando `storeId` no payload e na query string para
-nao quebrar clientes legados, mas o backend ignora esse valor e resolve o
-tenant pelo principal autenticado. Nunca usar `storeId` para escolher escopo
-de gravacao em settings.
+nao quebrar clientes legados, mas o backend ignora esse valor. Clientes devem
+enviar `tenantId` do contexto ativo quando o principal for global. Nunca usar
+`storeId` para escolher escopo de gravacao em settings.
 
 ## Regras de escopo
 
 - leitura: qualquer usuario com acesso ao tenant
 - escrita: `owner` e `platform_admin`
-- escopo de gravacao: tenant resolvido pelo principal (`principal.TenantID`) ou, para principals globais como `platform_admin`, pelo unico tenant acessivel
-- se um principal global tiver zero ou multiplos tenants acessiveis, `GET /v1/settings` e escritas de settings devem falhar por escopo ambiguo ate a UI/API enviar um tenant ativo explicito
-- regressao a evitar: `platform_admin` normalmente autentica sem `tenantId` no token; o boot do painel ainda precisa carregar `/v1/settings` quando ha exatamente um tenant acessivel
+- escopo de leitura/gravacao: `tenantId` explicito validado contra o acesso do principal, ou `principal.TenantID` quando o usuario ja for tenant-scoped
+- para principals globais como `platform_admin`, a UI deve chamar `/v1/settings?tenantId={activeTenantId}` e enviar esse mesmo query param nas escritas
+- se um principal global omitir `tenantId`, o fallback so pode resolver automaticamente quando existir exatamente um tenant acessivel; zero ou multiplos tenants devem falhar por escopo ambiguo
+- regressao a evitar: `platform_admin` normalmente autentica sem `tenantId` no token; o boot do painel precisa carregar `/v1/me/context`, usar `activeTenantId` e entao chamar `/v1/settings?tenantId={activeTenantId}`
+- a hidratacao automatica do runtime no login (em `web/app/utils/runtime-remote.ts`: `hydrateRuntimeStoreContext`, `refreshRuntimeStoreSettings`, `fetchRemoteStoreData`) tambem precisa receber `auth.activeTenantId`; do contrario o `tenantId` derivado do `runtime.state.stores` pode estar vazio e o backend cai em `ErrTenantRequired` (HTTP 400 `validation_error` "Verifique os dados de configuracao")
 
 ## Regra de persistencia
 

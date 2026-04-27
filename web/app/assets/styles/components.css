@@ -641,6 +641,18 @@
   text-transform: uppercase;
 }
 
+.queue-card__badge--button {
+  border: 1px solid rgba(129, 140, 248, 0.28);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.queue-card__badge--button:hover {
+  background: rgba(129, 140, 248, 0.24);
+  border-color: rgba(129, 140, 248, 0.44);
+  color: #c7d2fe;
+}
+
 .queue-card__actions {
   display: grid;
   justify-items: end;

@@ -31,6 +31,8 @@ const (
 	PermissionUsersEdit         = "workspace.usuarios.edit"
 	PermissionSettingsView      = "workspace.configuracoes.view"
 	PermissionSettingsEdit      = "workspace.configuracoes.edit"
+	PermissionFeedbackView      = "workspace.feedback.view"
+	PermissionFeedbackEdit      = "workspace.feedback.edit"
 	PermissionUsersPasswordEdit = "users.password.manage"
 	PermissionRoleMatrixEdit    = "access.role_defaults.manage"
 )

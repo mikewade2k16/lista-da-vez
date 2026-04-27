@@ -25,6 +25,8 @@ var permissionCatalog = []PermissionDefinition{
 	{Key: PermissionUsersEdit, Scope: ScopeTenant, Description: "Editar usuarios e overrides de acesso pelo painel."},
 	{Key: PermissionSettingsView, Scope: ScopeTenant, Description: "Visualizar a workspace Configuracoes."},
 	{Key: PermissionSettingsEdit, Scope: ScopeTenant, Description: "Editar configuracoes operacionais."},
+	{Key: PermissionFeedbackView, Scope: ScopeTenant, Description: "Visualizar a workspace Feedback."},
+	{Key: PermissionFeedbackEdit, Scope: ScopeTenant, Description: "Editar feedback e notas administrativas."},
 	{Key: PermissionUsersPasswordEdit, Scope: ScopePlatform, Description: "Redefinir senha administrativa pelo painel."},
 	{Key: PermissionRoleMatrixEdit, Scope: ScopePlatform, Description: "Editar o acesso padrao por papel."},
 }
@@ -46,6 +48,8 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 	auth.RoleManager: {
 		PermissionOperationsView,
 		PermissionOperationsEdit,
+		PermissionFeedbackView,
+		PermissionFeedbackEdit,
 	},
 	auth.RoleMarketing: {
 		PermissionOperationsView,
@@ -73,6 +77,8 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 		PermissionUsersEdit,
 		PermissionSettingsView,
 		PermissionSettingsEdit,
+		PermissionFeedbackView,
+		PermissionFeedbackEdit,
 	},
 	auth.RolePlatformAdmin: {
 		PermissionOperationsView,
@@ -92,6 +98,8 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 		PermissionUsersEdit,
 		PermissionSettingsView,
 		PermissionSettingsEdit,
+		PermissionFeedbackView,
+		PermissionFeedbackEdit,
 		PermissionUsersPasswordEdit,
 		PermissionRoleMatrixEdit,
 	},

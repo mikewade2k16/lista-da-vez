@@ -126,6 +126,16 @@ explicito de override por loja.
 - [SettingsProductManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsProductManager.vue)
   CRUD do catalogo de produtos.
 
+### `feedback`
+
+- [FeedbackFormModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/feedback/FeedbackFormModal.vue)
+  Modal flutuante para usuarios enviarem sugestoes, duvidas ou reportarem problemas.
+  Acessivel via botao flutuante no layout do dashboard. Qualquer usuario autenticado pode enviar feedback.
+- [FeedbackWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/feedback/FeedbackWorkspace.vue)
+  Workspace administrativo para visualizar, filtrar e responder feedbacks.
+  Permitir filtros por tipo (sugestao, duvida, problema) e status (aberto, em analise, resolvido, fechado).
+  Acessivel apenas para owner, manager e platform_admin.
+
 ### `ui`
 
 - [AppDialogHost.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppDialogHost.vue)
@@ -135,7 +145,24 @@ explicito de override por loja.
 - [AppEntityGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppEntityGrid.vue)
   Grade CSS-grid reutilizavel para listagens administrativas com busca, filtros e colunas configuraveis.
 - [AppToastStack.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppToastStack.vue)
-  Host global das notificacoes/toasts.
+  Host global das notificacoes/toasts. Renderiza automaticamente via Teleport. Suporta tres tipos: `success`, `error` e `info`.
+  
+  **Animacoes:**
+  - Entrada: slide suave da direita com fade in (0.4s)
+  - Ícones se desenhando: checkmark (sucesso), X (erro) ou fade in (info) com efeito de escala e rotacao (0.4s + 0.5s)
+  - Barra de progresso: anima diminuindo de 100% a 0% (duração: 4s para sucesso/info, 5.5s para erro)
+  - Reposicionamento: quando um toast sai, os demais sobem com animacao fluida (0.4s cubic-bezier)
+  - Saida: slide e fade para direita (0.3s)
+  
+  **Uso:**
+  ```javascript
+  const ui = useUiStore();
+  ui.success("Operacao concluida!", "Sucesso");  // Desaparece em 4s
+  ui.error("Algo deu errado", "Erro");            // Desaparece em 5.5s  
+  ui.info("Informacao importante", "Info");       // Desaparece em 4s
+  ```
+  
+  O componente e automaticamente adicionado no layout e gerencia a pilha de notificacoes. Toasts são descartáveis pelo usuario (botão fechar).
 - [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue)
   Select reutilizavel para filtros e escolhas simples de uma opcao, com dropdown custom no padrao visual do `product-pick`.
 - [AppToggleSwitch.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppToggleSwitch.vue)

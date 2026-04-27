@@ -320,6 +320,21 @@ erDiagram
         timestamptz created_at
     }
 
+    USER_FEEDBACK {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text user_name
+        text kind
+        text status
+        text subject
+        text body
+        text admin_note
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     TENANTS ||--o{ STORES : owns
     USERS ||--o| USER_PLATFORM_ROLES : has
     USERS ||--o{ USER_TENANT_ROLES : has
@@ -350,6 +365,9 @@ erDiagram
     CONSULTANTS ||--o{ OPERATION_CURRENT_STATUS : current_status
     CONSULTANTS ||--o{ OPERATION_STATUS_SESSIONS : status_sessions
     CONSULTANTS ||--o{ OPERATION_SERVICE_HISTORY : closes
+    TENANTS ||--o{ USER_FEEDBACK : receives
+    STORES ||--o{ USER_FEEDBACK : scopes
+    USERS ||--o{ USER_FEEDBACK : submits
 ```
 
 ## Leitura rapida

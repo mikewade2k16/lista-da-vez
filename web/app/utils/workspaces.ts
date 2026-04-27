@@ -9,7 +9,8 @@ export const WORKSPACES = [
   { id: "clientes", label: "Clientes", icon: "apartment", path: "/clientes" },
   { id: "multiloja", label: "Multi-loja", icon: "store", path: "/multiloja" },
   { id: "usuarios", label: "Usuarios", icon: "group", path: "/usuarios" },
-  { id: "configuracoes", label: "Config", icon: "tune", path: "/configuracoes" }
+  { id: "configuracoes", label: "Config", icon: "tune", path: "/configuracoes" },
+  { id: "feedback", label: "Feedback", icon: "chat_bubble", path: "/feedback" }
 ];
 
 const workspaceById = new Map(WORKSPACES.map((workspace) => [workspace.id, workspace]));

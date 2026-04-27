@@ -11,6 +11,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/reports"
@@ -73,6 +74,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	reportsService := reports.NewService(reportsRepository, storeService)
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, storeService)
+	feedbackRepository := feedback.NewPostgresRepository(pool)
+	feedbackService := feedback.NewService(feedbackRepository)
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
 
 	mux := http.NewServeMux()
@@ -95,6 +98,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"reports",
 				"analytics",
 				"access",
+				"feedback",
 				"users",
 			},
 			"tenantMode": "owner-is-client",
@@ -112,6 +116,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)
 	access.RegisterRoutes(mux, accessService, authMiddleware)
+	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)
 
 	return httpapi.Chain(

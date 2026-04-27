@@ -68,7 +68,7 @@ export const useUiStore = defineStore("ui", () => {
     if (import.meta.client && duration > 0) {
       const timerId = window.setTimeout(() => {
         dismissToast(toastId);
-      }, duration);
+      }, duration + 300);
       toastTimers.set(toastId, timerId);
     }
 

@@ -16,6 +16,7 @@ export default defineNuxtConfig({
     "/configuracoes": { ssr: false },
     "/consultor": { ssr: false },
     "/dados": { ssr: false },
+    "/feedback": { ssr: false },
     "/inteligencia": { ssr: false },
     "/multiloja": { ssr: false },
     "/operacao/**": { ssr: false },

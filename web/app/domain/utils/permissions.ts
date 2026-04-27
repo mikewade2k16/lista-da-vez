@@ -90,6 +90,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     description: "Templates, catalogos e parametros operacionais.",
     viewPermission: "workspace.configuracoes.view",
     editPermission: "workspace.configuracoes.edit"
+  },
+  {
+    id: "feedback",
+    label: "Feedback",
+    description: "Sugestoes, duvidas e problemas dos usuarios.",
+    viewPermission: "workspace.feedback.view",
+    editPermission: "workspace.feedback.edit"
   }
 ];
 
@@ -107,14 +114,14 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
 ];
 
 const ROLE_WORKSPACES = {
-  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes"],
-  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes"],
+  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes", "feedback"],
+  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes", "feedback"],
   marketing: ["operacao"],
   director: ["operacao"],
-  manager: ["operacao"],
+  manager: ["operacao", "feedback"],
   store_terminal: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios"],
   consultant: ["operacao"],
-  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes"]
+  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes", "feedback"]
 };
 
 export function normalizeAppRole(role) {

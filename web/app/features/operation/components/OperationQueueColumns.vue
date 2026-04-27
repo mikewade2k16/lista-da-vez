@@ -40,6 +40,8 @@ async function startFirstService() {
 
   if (result?.ok === false) {
     ui.error(result.message);
+  } else {
+    ui.success("Atendimento iniciado!");
   }
 }
 
@@ -48,6 +50,8 @@ async function startSpecificService(personId) {
 
   if (result?.ok === false) {
     ui.error(result.message);
+  } else {
+    ui.success("Atendimento iniciado!");
   }
 }
 
@@ -139,7 +143,18 @@ onBeforeUnmount(() => {
               <span class="queue-card__note">{{ index === 0 ? "Aguardando" : "Aguardando na fila" }}</span>
             </span>
             <div class="queue-card__actions">
-              <span v-if="(index === 0 && !props.integratedMode) || props.readOnly" class="queue-card__badge">{{ index === 0 ? "Na vez" : "Na fila" }}</span>
+              <template v-if="(index === 0 && !props.integratedMode) || props.readOnly">
+                <button
+                  v-if="index === 0 && !props.readOnly"
+                  class="queue-card__badge queue-card__badge--button"
+                  type="button"
+                  :data-testid="`operation-start-next-${person.id}`"
+                  @click="startFirstService"
+                >
+                  Na vez
+                </button>
+                <span v-else class="queue-card__badge">{{ index === 0 ? "Na vez" : "Na fila" }}</span>
+              </template>
               <template v-else-if="props.integratedMode">
                 <button
                   class="queue-card__task-btn"

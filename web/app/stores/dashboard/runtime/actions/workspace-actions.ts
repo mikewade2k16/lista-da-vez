@@ -26,7 +26,7 @@ export function createWorkspaceActions({ getState, updateState }) {
         ...state,
         activeProfileId: profileId,
         activeWorkspace,
-        finishModalPersonId: null,
+        finishModalServiceId: null,
         finishModalDraft: null
       });
     },
@@ -58,7 +58,7 @@ export function createWorkspaceActions({ getState, updateState }) {
           [storeId]: targetSnapshot
         },
         ...targetSnapshot,
-        finishModalPersonId: null,
+        finishModalServiceId: null,
         finishModalDraft: null
       });
     },
@@ -195,7 +195,7 @@ export function createWorkspaceActions({ getState, updateState }) {
           [nextActiveStoreId]: nextSnapshot
         },
         ...nextSnapshot,
-        finishModalPersonId: null,
+        finishModalServiceId: null,
         finishModalDraft: null
       });
 

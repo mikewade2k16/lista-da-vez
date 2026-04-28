@@ -7,6 +7,8 @@ import AppToastStack from "~/components/ui/AppToastStack.vue";
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
-  <AppDialogHost />
-  <AppToastStack />
+  <ClientOnly>
+    <AppDialogHost />
+    <AppToastStack />
+  </ClientOnly>
 </template>

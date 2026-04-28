@@ -64,6 +64,32 @@ function normalizeDetailMap(value) {
   }, {});
 }
 
+const SERVER_CLOCK_OFFSET_STORAGE_KEY = "ldv_server_clock_offset_ms";
+
+function readStoredServerClockOffset() {
+  if (import.meta.server) {
+    return 0;
+  }
+
+  const parsed = Number(window.sessionStorage.getItem(SERVER_CLOCK_OFFSET_STORAGE_KEY) || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function writeStoredServerClockOffset(offsetMs) {
+  if (import.meta.server) {
+    return;
+  }
+
+  const normalizedOffset = Number(offsetMs || 0) || 0;
+
+  if (!normalizedOffset) {
+    window.sessionStorage.removeItem(SERVER_CLOCK_OFFSET_STORAGE_KEY);
+    return;
+  }
+
+  window.sessionStorage.setItem(SERVER_CLOCK_OFFSET_STORAGE_KEY, String(normalizedOffset));
+}
+
 export const useOperationsStore = defineStore("operations", () => {
   const runtimeConfig = useRuntimeConfig();
   const runtime = useAppRuntimeStore();
@@ -79,6 +105,46 @@ export const useOperationsStore = defineStore("operations", () => {
   const overviewPending = ref(false);
   const overviewError = ref("");
 
+  function applyServerClockOffset(offsetMs) {
+    const normalizedOffset = Number(offsetMs || 0) || 0;
+    const currentOffset = Number(runtime.state?.serverClockOffsetMs || 0) || 0;
+
+    if (normalizedOffset === currentOffset) {
+      writeStoredServerClockOffset(normalizedOffset);
+      return normalizedOffset;
+    }
+
+    runtime.replace({
+      ...runtime.state,
+      serverClockOffsetMs: normalizedOffset
+    });
+    writeStoredServerClockOffset(normalizedOffset);
+    return normalizedOffset;
+  }
+
+  function syncStoredServerClockOffset() {
+    const currentOffset = Number(runtime.state?.serverClockOffsetMs || 0) || 0;
+    if (currentOffset) {
+      return currentOffset;
+    }
+
+    const storedOffset = readStoredServerClockOffset();
+    if (!storedOffset) {
+      return 0;
+    }
+
+    return applyServerClockOffset(storedOffset);
+  }
+
+  function captureServerClockOffset(savedAt) {
+    const serverTimestamp = Date.parse(String(savedAt || "").trim());
+    if (!Number.isFinite(serverTimestamp)) {
+      return Number(runtime.state?.serverClockOffsetMs || 0) || 0;
+    }
+
+    return applyServerClockOffset(serverTimestamp - Date.now());
+  }
+
   async function resolveActiveStoreId() {
     await runtime.ensure();
 
@@ -90,6 +156,7 @@ export const useOperationsStore = defineStore("operations", () => {
   }
 
   async function refreshActiveStore() {
+    syncStoredServerClockOffset();
     const storeId = await resolveActiveStoreId();
 
     if (!storeId || !auth.isAuthenticated) {
@@ -100,6 +167,7 @@ export const useOperationsStore = defineStore("operations", () => {
   }
 
   async function refreshOperationSnapshot(storeId, options = {}) {
+    syncStoredServerClockOffset();
     const normalizedStoreId = String(storeId || "").trim();
 
     if (!normalizedStoreId || !auth.isAuthenticated) {
@@ -117,6 +185,7 @@ export const useOperationsStore = defineStore("operations", () => {
   }
 
   async function refreshOverview() {
+    syncStoredServerClockOffset();
     if (!auth.isAuthenticated) {
       overview.value = null;
       overviewError.value = "";
@@ -145,6 +214,7 @@ export const useOperationsStore = defineStore("operations", () => {
   }
 
   async function runCommand(path, body = {}, options = {}) {
+    syncStoredServerClockOffset();
     const storeId = String(options?.storeId || "").trim() || await resolveActiveStoreId();
 
     if (!storeId || !auth.isAuthenticated) {
@@ -161,6 +231,8 @@ export const useOperationsStore = defineStore("operations", () => {
           ...body
         }
       });
+
+      captureServerClockOffset(response?.savedAt);
 
       if (response?.snapshot) {
         runtime.hydrate(
@@ -237,13 +309,19 @@ export const useOperationsStore = defineStore("operations", () => {
     startService(personId = null) {
       return runCommand("/v1/operations/start", { personId: personId || "" });
     },
-    openFinishModal(personId) {
-      return runtime.run("openFinishModal", personId);
+    openFinishModal(serviceId) {
+      return runtime.run("openFinishModal", serviceId);
     },
     closeFinishModal() {
       return runtime.run("closeFinishModal");
     },
-    async finishService(personId, closureData) {
+    startParallelService(personId, storeId = "") {
+      return runCommand("/v1/operations/services/parallel", { personId }, {
+        storeId,
+        refreshOverview: Boolean(storeId)
+      });
+    },
+    async finishService(serviceId, closureData, options = {}) {
       const normalizedProductsSeen = normalizeProductEntries(closureData?.productsSeen);
       const normalizedProductsClosed = normalizeProductEntries(closureData?.productsClosed);
       const outcome = normalizeText(closureData?.outcome);
@@ -267,14 +345,16 @@ export const useOperationsStore = defineStore("operations", () => {
       const customerProfession = normalizeText(closureData?.customerProfession);
       const queueJumpReason = normalizeText(closureData?.queueJumpReason);
       const notes = normalizeText(closureData?.notes);
-      const activeService = (runtime.state.activeServices || []).find((item) => item.id === personId) || null;
+      const serviceContext = options?.service && typeof options.service === "object" ? options.service : null;
+      const activeService = serviceContext || (runtime.state.activeServices || []).find((item) => item.serviceId === serviceId) || null;
+      const targetStoreId = normalizeText(options?.storeId || activeService?.storeId) || runtime.state.activeStoreId;
       const activeStore =
-        (runtime.state.stores || []).find((store) => store.id === runtime.state.activeStoreId) || null;
+        (runtime.state.stores || []).find((store) => store.id === targetStoreId) || null;
       const campaignSeed = activeService
         ? {
             serviceId: activeService.serviceId,
-            storeId: runtime.state.activeStoreId,
-            storeName: activeStore?.name || "",
+            storeId: targetStoreId,
+            storeName: normalizeText(options?.storeName || activeService?.storeName || activeStore?.name),
             personId: activeService.id,
             personName: activeService.name,
             startedAt: activeService.serviceStartedAt,
@@ -325,7 +405,7 @@ export const useOperationsStore = defineStore("operations", () => {
         Number(closureData?.campaignBonusTotal ?? campaignResult.totalBonus ?? 0) || 0
       );
       const finishPayload = {
-        personId,
+        serviceId,
         outcome
       };
 
@@ -444,7 +524,11 @@ export const useOperationsStore = defineStore("operations", () => {
       const result = await runCommand(
         "/v1/operations/finish",
         finishPayload,
-        { resetFinishModal: true }
+        {
+          storeId: targetStoreId,
+          resetFinishModal: true,
+          refreshOverview: Boolean(targetStoreId)
+        }
       );
 
       if (result.ok !== false) {

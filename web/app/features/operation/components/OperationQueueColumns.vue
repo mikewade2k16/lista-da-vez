@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { buildNickname } from "~/domain/utils/person-display";
 import OperationActiveServiceCard from "~/features/operation/components/OperationActiveServiceCard.vue";
 import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
@@ -24,15 +25,110 @@ const ui = useUiStore();
 const now = ref(0);
 const isClockReady = ref(false);
 let timerId = null;
+const CLOCK_REFRESH_MS = 250;
 
 const waitingList = computed(() => props.state.waitingList || []);
 const activeServices = computed(() => props.state.activeServices || []);
+const serviceHistory = computed(() => props.state.serviceHistory || []);
+const serverClockOffsetMs = computed(() => Number(props.state?.serverClockOffsetMs || 0) || 0);
+const adjustedNow = computed(() => now.value + serverClockOffsetMs.value);
 const maxConcurrentServices = computed(() => props.state.settings?.maxConcurrentServices || 10);
+const maxConcurrentPerConsultant = computed(() => props.state.settings?.maxConcurrentServicesPerConsultant || 1);
 const isLimitReached = computed(() => activeServices.value.length >= maxConcurrentServices.value);
+
+function isSameSequentialGroup(targetService, candidate) {
+  const targetGroupId = String(targetService?.parallelGroupId || "").trim();
+  const targetServiceId = String(targetService?.serviceId || "").trim();
+
+  if (targetGroupId) {
+    return String(candidate?.parallelGroupId || "").trim() === targetGroupId;
+  }
+
+  const siblingServiceIds = Array.isArray(candidate?.siblingServiceIds) ? candidate.siblingServiceIds : [];
+  return siblingServiceIds.includes(targetServiceId);
+}
+
+function deriveSequentialServiceFinishedAt(targetService, groupedServices) {
+  const targetStartedAt = Number(targetService?.serviceStartedAt || 0) || 0;
+  let nextStartedAt = 0;
+
+  const consider = (candidateStartedAt) => {
+    const normalizedStartedAt = Number(candidateStartedAt || 0) || 0;
+    if (normalizedStartedAt <= targetStartedAt) {
+      return;
+    }
+    if (!nextStartedAt || normalizedStartedAt < nextStartedAt) {
+      nextStartedAt = normalizedStartedAt;
+    }
+  };
+
+  groupedServices.forEach((service) => {
+    if (String(service?.serviceId || "").trim() === String(targetService?.serviceId || "").trim()) {
+      return;
+    }
+    if (!isSameSequentialGroup(targetService, service)) {
+      return;
+    }
+    consider(service?.serviceStartedAt);
+  });
+
+  serviceHistory.value.forEach((entry) => {
+    if (String(entry?.personId || "").trim() !== String(targetService?.id || "").trim()) {
+      return;
+    }
+    if (!isSameSequentialGroup(targetService, entry)) {
+      return;
+    }
+    consider(entry?.startedAt);
+  });
+
+  return nextStartedAt || 0;
+}
+
+const servicesGroupedByConsultant = computed(() => {
+  const grouped = new Map();
+  activeServices.value.forEach((service) => {
+    if (!grouped.has(service.id)) {
+      grouped.set(service.id, []);
+    }
+    grouped.get(service.id).push(service);
+  });
+
+  grouped.forEach((services, consultantId) => {
+    const sortedServices = [...services].sort((left, right) => {
+      const leftSequence = Number(left.parallelStartIndex || 0);
+      const rightSequence = Number(right.parallelStartIndex || 0);
+
+      if (leftSequence > 0 && rightSequence > 0 && leftSequence !== rightSequence) {
+        return leftSequence - rightSequence;
+      }
+
+      if (left.serviceStartedAt !== right.serviceStartedAt) {
+        return Number(left.serviceStartedAt || 0) - Number(right.serviceStartedAt || 0);
+      }
+
+      return String(left.serviceId || "").localeCompare(String(right.serviceId || ""));
+    });
+
+    grouped.set(
+      consultantId,
+      sortedServices.map((service) => ({
+        ...service,
+        effectiveFinishedAt: deriveSequentialServiceFinishedAt(service, sortedServices)
+      }))
+    );
+  });
+
+  return grouped;
+});
 
 function actionHint(index) {
   const skippedCount = index;
   return `Passa na frente de ${skippedCount} ${skippedCount === 1 ? "pessoa" : "pessoas"}`;
+}
+
+function displayName(person) {
+  return buildNickname(person?.name || "");
 }
 
 async function startFirstService() {
@@ -55,14 +151,27 @@ async function startSpecificService(personId) {
   }
 }
 
-function openFinishModal(personId) {
-  void operationsStore.openFinishModal(personId);
+function openFinishModal(serviceId) {
+  void operationsStore.openFinishModal(serviceId);
+}
+
+async function startParallelService(personId) {
+  const consultant = props.state.roster?.find((item) => item.id === personId);
+  const consultantName = displayName(consultant) || "Consultor";
+  const result = await operationsStore.startParallelService(personId, consultant?.storeId || "");
+
+  if (result?.ok === false) {
+    ui.error(result.message);
+  } else {
+    const parallelCount = (activeServices.value.filter((item) => item.id === personId).length || 0) + 1;
+    ui.success(`Abrindo ${parallelCount}o atendimento em aberto de ${consultantName}`);
+  }
 }
 
 async function assignTask(person) {
   const { confirmed, value } = await ui.prompt({
     title: "Direcionar para tarefa",
-    message: `Registre a tarefa ou reuniao para ${person.name}${person.storeName ? ` em ${person.storeName}` : ""}.`,
+    message: `Registre a tarefa ou reuniao para ${displayName(person)}${person.storeName ? ` em ${person.storeName}` : ""}.`,
     inputLabel: "Motivo",
     inputPlaceholder: "Ex.: reuniao, apoio no caixa, estoque, suporte",
     confirmLabel: "Remover da fista da fila",
@@ -88,7 +197,11 @@ onMounted(() => {
   isClockReady.value = true;
   timerId = window.setInterval(() => {
     now.value = Date.now();
-  }, 1000);
+  }, CLOCK_REFRESH_MS);
+});
+
+watch(activeServices, () => {
+  now.value = Date.now();
 });
 
 onBeforeUnmount(() => {
@@ -136,7 +249,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="queue-card__content">
               <span class="queue-card__headline">
-                <strong class="queue-card__name">{{ person.name }}</strong>
+                <strong class="queue-card__name">{{ displayName(person) }}</strong>
                 <span v-if="props.integratedMode && person.storeName" class="queue-card__store-badge">{{ person.storeName }}</span>
               </span>
               <span class="queue-card__role">{{ person.role }}</span>
@@ -197,16 +310,23 @@ onBeforeUnmount(() => {
       <header class="queue-column__header">Em atendimento</header>
       <div class="queue-column__body queue-column__body--service">
         <template v-if="activeServices.length > 0">
-          <OperationActiveServiceCard
-            v-for="service in activeServices"
-            :key="service.serviceId"
-            :service="service"
-            :now="now"
-            :clock-ready="isClockReady"
-            :read-only="props.readOnly"
-            :integrated-mode="props.integratedMode"
-            @finish="openFinishModal"
-          />
+          <div
+            v-for="[consultantId, services] in servicesGroupedByConsultant"
+            :key="consultantId"
+            class="service-group"
+          >
+            <OperationActiveServiceCard
+              :services="services"
+              :now="adjustedNow"
+              :clock-ready="isClockReady"
+              :server-clock-offset-ms="serverClockOffsetMs"
+              :read-only="props.readOnly"
+              :integrated-mode="props.integratedMode"
+              :max-concurrent-per-consultant="maxConcurrentPerConsultant"
+              @finish="openFinishModal"
+              @start-parallel="startParallelService"
+            />
+          </div>
         </template>
         <div v-else class="queue-empty">
           <span class="queue-empty__icon">...</span>

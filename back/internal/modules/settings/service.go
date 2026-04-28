@@ -424,6 +424,13 @@ func (service *Service) normalizeBundle(tenantID string, input Bundle) Bundle {
 
 func normalizeAppSettings(input AppSettings, fallback AppSettings) AppSettings {
 	fallback.MaxConcurrentServices = maxInt(input.MaxConcurrentServices, 1)
+	maxConcurrent := fallback.MaxConcurrentServices
+	// Validate: per-consultant limit can't exceed store limit
+	perConsultant := maxInt(input.MaxConcurrentServicesPerConsultant, 1)
+	if perConsultant > maxConcurrent {
+		perConsultant = maxConcurrent
+	}
+	fallback.MaxConcurrentServicesPerConsultant = perConsultant
 	fallback.TimingFastCloseMinutes = maxInt(input.TimingFastCloseMinutes, 1)
 	fallback.TimingLongServiceMinutes = maxInt(input.TimingLongServiceMinutes, 1)
 	fallback.TimingLowSaleAmount = maxFloat(input.TimingLowSaleAmount, 0)
@@ -439,6 +446,14 @@ func normalizeAppSettings(input AppSettings, fallback AppSettings) AppSettings {
 func applyAppSettingsPatch(base AppSettings, patch AppSettingsPatch) AppSettings {
 	if patch.MaxConcurrentServices != nil {
 		base.MaxConcurrentServices = maxInt(*patch.MaxConcurrentServices, 1)
+	}
+	if patch.MaxConcurrentServicesPerConsultant != nil {
+		perConsultant := maxInt(*patch.MaxConcurrentServicesPerConsultant, 1)
+		// Validate: per-consultant limit can't exceed store limit
+		if perConsultant > base.MaxConcurrentServices {
+			perConsultant = base.MaxConcurrentServices
+		}
+		base.MaxConcurrentServicesPerConsultant = perConsultant
 	}
 	if patch.TimingFastCloseMinutes != nil {
 		base.TimingFastCloseMinutes = maxInt(*patch.TimingFastCloseMinutes, 1)

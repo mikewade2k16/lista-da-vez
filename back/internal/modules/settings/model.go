@@ -21,29 +21,31 @@ type ProductItem struct {
 }
 
 type AppSettings struct {
-	MaxConcurrentServices    int     `json:"maxConcurrentServices"`
-	TimingFastCloseMinutes   int     `json:"timingFastCloseMinutes"`
-	TimingLongServiceMinutes int     `json:"timingLongServiceMinutes"`
-	TimingLowSaleAmount      float64 `json:"timingLowSaleAmount"`
-	TestModeEnabled          bool    `json:"testModeEnabled"`
-	AutoFillFinishModal      bool    `json:"autoFillFinishModal"`
-	AlertMinConversionRate   float64 `json:"alertMinConversionRate"`
-	AlertMaxQueueJumpRate    float64 `json:"alertMaxQueueJumpRate"`
-	AlertMinPaScore          float64 `json:"alertMinPaScore"`
-	AlertMinTicketAverage    float64 `json:"alertMinTicketAverage"`
+	MaxConcurrentServices            int     `json:"maxConcurrentServices"`
+	MaxConcurrentServicesPerConsultant int    `json:"maxConcurrentServicesPerConsultant"`
+	TimingFastCloseMinutes           int     `json:"timingFastCloseMinutes"`
+	TimingLongServiceMinutes         int     `json:"timingLongServiceMinutes"`
+	TimingLowSaleAmount              float64 `json:"timingLowSaleAmount"`
+	TestModeEnabled                  bool    `json:"testModeEnabled"`
+	AutoFillFinishModal              bool    `json:"autoFillFinishModal"`
+	AlertMinConversionRate           float64 `json:"alertMinConversionRate"`
+	AlertMaxQueueJumpRate            float64 `json:"alertMaxQueueJumpRate"`
+	AlertMinPaScore                  float64 `json:"alertMinPaScore"`
+	AlertMinTicketAverage            float64 `json:"alertMinTicketAverage"`
 }
 
 type AppSettingsPatch struct {
-	MaxConcurrentServices    *int     `json:"maxConcurrentServices,omitempty"`
-	TimingFastCloseMinutes   *int     `json:"timingFastCloseMinutes,omitempty"`
-	TimingLongServiceMinutes *int     `json:"timingLongServiceMinutes,omitempty"`
-	TimingLowSaleAmount      *float64 `json:"timingLowSaleAmount,omitempty"`
-	TestModeEnabled          *bool    `json:"testModeEnabled,omitempty"`
-	AutoFillFinishModal      *bool    `json:"autoFillFinishModal,omitempty"`
-	AlertMinConversionRate   *float64 `json:"alertMinConversionRate,omitempty"`
-	AlertMaxQueueJumpRate    *float64 `json:"alertMaxQueueJumpRate,omitempty"`
-	AlertMinPaScore          *float64 `json:"alertMinPaScore,omitempty"`
-	AlertMinTicketAverage    *float64 `json:"alertMinTicketAverage,omitempty"`
+	MaxConcurrentServices            *int     `json:"maxConcurrentServices,omitempty"`
+	MaxConcurrentServicesPerConsultant *int   `json:"maxConcurrentServicesPerConsultant,omitempty"`
+	TimingFastCloseMinutes           *int     `json:"timingFastCloseMinutes,omitempty"`
+	TimingLongServiceMinutes         *int     `json:"timingLongServiceMinutes,omitempty"`
+	TimingLowSaleAmount              *float64 `json:"timingLowSaleAmount,omitempty"`
+	TestModeEnabled                  *bool    `json:"testModeEnabled,omitempty"`
+	AutoFillFinishModal              *bool    `json:"autoFillFinishModal,omitempty"`
+	AlertMinConversionRate           *float64 `json:"alertMinConversionRate,omitempty"`
+	AlertMaxQueueJumpRate            *float64 `json:"alertMaxQueueJumpRate,omitempty"`
+	AlertMinPaScore                  *float64 `json:"alertMinPaScore,omitempty"`
+	AlertMinTicketAverage            *float64 `json:"alertMinTicketAverage,omitempty"`
 }
 
 type ModalConfig struct {

@@ -81,6 +81,35 @@ func (repository *PostgresRepository) ListAllRolePermissions(ctx context.Context
 	return grants, nil
 }
 
+func (repository *PostgresRepository) ListActiveTenantIDs(ctx context.Context) ([]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select id::text
+		from tenants
+		where is_active = true
+		order by name asc;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tenantIDs := make([]string, 0)
+	for rows.Next() {
+		var tenantID string
+		if err := rows.Scan(&tenantID); err != nil {
+			return nil, err
+		}
+
+		tenantIDs = append(tenantIDs, strings.TrimSpace(tenantID))
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tenantIDs, nil
+}
+
 func (repository *PostgresRepository) ReplaceRolePermissions(ctx context.Context, role auth.Role, permissionKeys []string) error {
 	keys := RecognizedPermissionKeys(permissionKeys)
 	tx, err := repository.pool.Begin(ctx)

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
+import { buildNickname } from "~/domain/utils/person-display";
 import OperationPauseReasonDialog from "~/features/operation/components/OperationPauseReasonDialog.vue";
 import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
@@ -54,6 +55,10 @@ function statusLabel(employeeId) {
     return String(pausedItem?.kind || "").trim() === "assignment" ? "Em tarefa" : "Pausado";
   }
   return "Disponivel";
+}
+
+function displayName(employee) {
+  return buildNickname(employee?.name || "");
 }
 
 async function addToQueue(employee) {
@@ -150,7 +155,6 @@ async function resumeEmployee(employee) {
   <footer class="employee-strip" data-testid="operation-consultant-strip">
     <div class="employee-strip__header">
       <strong class="employee-strip__title">Consultores</strong>
-      <span class="employee-strip__text">Entrar na fila, pausar e retomar ficam por aqui</span>
     </div>
     <div class="employee-strip__list">
       <div
@@ -164,7 +168,7 @@ async function resumeEmployee(employee) {
           {{ employee.initials }}
         </span>
         <div class="employee__info">
-          <span class="employee__name">{{ employee.name }}</span>
+          <span class="employee__name">{{ displayName(employee) }}</span>
           <span v-if="integratedMode && employee.storeName" class="employee__store">{{ employee.storeName }}</span>
           <span class="employee__status">{{ statusLabel(employee.id) }}</span>
           <span v-if="pausedByPersonId.get(employee.id)" class="employee__pause-reason">

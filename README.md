@@ -38,6 +38,11 @@ Esse fluxo:
 2. sobe a API Go em `http://localhost:8080`
 3. sobe o Nuxt em `http://localhost:3003`
 
+Ao subir o container `api`, a imagem executa `migrate up` antes de iniciar o servidor.
+Se o volume do banco vier de uma stack mais antiga e voce suspeitar de drift de schema,
+recrie a API ou rode `docker compose exec api migrate up` para reaplicar o estado esperado
+antes de depurar erros em `/v1/settings` ou `/v1/operations`.
+
 No Compose, o `web` roda em modo dev com hot reload.
 Mudancas de UI em `web/` devem atualizar sem rebuild do container.
 Dependencias do frontend em `web/package.json` e `web/package-lock.json` sao sincronizadas automaticamente quando o container `web` sobe.
@@ -82,6 +87,14 @@ O fluxo sem Docker continua disponivel so como contingencia:
 - `proprietario@demo.local`
 - `consultor@demo.local`
 - senha: `dev123456`
+
+Para o root local da plataforma no seed MVP use:
+
+- `mikewade2k16@gmail.com`
+- senha: `Mvp@2026!`
+
+Em Docker dev, a migration `0033_seed_dev_platform_admin_password.sql` reestabelece essa senha no `platform_admin` local.
+Ela e pulada em producao.
 
 ## Quando rebuildar
 

@@ -1,6 +1,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useAuthStore } from "~/stores/auth";
+import { useAccessControlStore } from "~/stores/access-control";
 import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { useMultiStoreStore } from "~/stores/multistore";
 import { useUsersStore } from "~/stores/users";
@@ -17,6 +18,7 @@ function buildSocketURL(runtimeConfig, tenantId, accessToken) {
 export function useContextRealtime() {
   const runtimeConfig = useRuntimeConfig();
   const auth = useAuthStore();
+	const accessControl = useAccessControlStore();
   const runtime = useAppRuntimeStore();
   const multiStore = useMultiStoreStore();
   const usersStore = useUsersStore();
@@ -195,6 +197,10 @@ export function useContextRealtime() {
         }
 
         await refreshContextState();
+
+				if (["access", "user"].includes(String(payload?.resource || "").trim())) {
+					await accessControl.refreshRealtimeState();
+				}
       } catch {
         return;
       }

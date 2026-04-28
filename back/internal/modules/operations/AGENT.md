@@ -128,6 +128,17 @@ Regra de resposta:
 - comandos nao devem devolver o snapshot inteiro da loja; isso aumenta payload, confunde debug e mistura leitura com mutacao
 - o modulo ja esta integrado ao Nuxt via `web/app/stores/operations.ts` e `web/app/utils/runtime-remote.ts`
 
+## Alertas recentes do fluxo
+
+- o nome legado `atendimento paralelo` continua aparecendo em partes do codigo, mas a regra operacional esperada e permitir mais de um atendimento em aberto para o mesmo consultor, mantendo encerramento individual posterior por `serviceId`
+- cada atendimento em aberto precisa manter cronometro, historico e fechamento proprios; o consultor so volta para a fila ao encerrar o ultimo atendimento ativo dele
+- `POST /v1/operations/finish` e identificado por `serviceId`; qualquer cache ou draft do frontend precisa ser invalidado se esse `serviceId` nao existir mais no snapshot atual
+- incidente recente: o erro de encerramento reportado passou a aparecer quando o modal foi reaberto com draft restaurado; o frontend agora invalida rascunho stale por `storeId + serviceId + serviceStartedAt` antes de reaproveitar ou submeter esse payload
+- atendimentos abertos `na sequencia` precisam herdar do primeiro atendimento do grupo `queueJoinedAt`, `queueWaitMs`, `queuePositionAtStart` e `skippedPeople`; perder esses metadados no backend volta a quebrar o insert em `operation_service_history` ou distorce o historico
+- a duracao efetiva de um atendimento em aberto na sequencia nao vai ate o momento do fechamento manual quando ja existe um proximo atendimento do mesmo grupo; ela deve ser truncada no `startedAt` do proximo `serviceId` do grupo
+- no modo integrado, mutacoes e fechamento precisam usar a `storeId` do proprio servico; depender apenas de `activeStoreId` reintroduz erro silencioso em `Todas as lojas`
+- houve incidente de ambiente com a API cerca de 4,5s a frente do navegador/host; enquanto esse skew existir, os timestamps persistidos no backend continuam corretos para auditoria, mas a UI precisa compensar `savedAt -> Date.now()` para o cronometro nao parecer atrasado ao iniciar atendimento
+
 ## Estado atual
 
 Hoje este modulo ja sustenta:

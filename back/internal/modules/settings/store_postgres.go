@@ -195,6 +195,7 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 			tenant_id::text,
 			selected_operation_template_id,
 			max_concurrent_services,
+			coalesce(max_concurrent_services_per_consultant, 1) as max_concurrent_services_per_consultant,
 			timing_fast_close_minutes,
 			timing_long_service_minutes,
 			timing_low_sale_amount,
@@ -827,6 +828,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			tenant_id,
 			selected_operation_template_id,
 			max_concurrent_services,
+			max_concurrent_services_per_consultant,
 			timing_fast_close_minutes,
 			timing_long_service_minutes,
 			timing_low_sale_amount,
@@ -963,12 +965,14 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			$66,
 			$67,
 			$68,
-			$69
+			$69,
+			$70
 		)
 		on conflict (tenant_id) do update
 		set
 			selected_operation_template_id = excluded.selected_operation_template_id,
 			max_concurrent_services = excluded.max_concurrent_services,
+			max_concurrent_services_per_consultant = excluded.max_concurrent_services_per_consultant,
 			timing_fast_close_minutes = excluded.timing_fast_close_minutes,
 			timing_long_service_minutes = excluded.timing_long_service_minutes,
 			timing_low_sale_amount = excluded.timing_low_sale_amount,
@@ -1040,6 +1044,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			tenant_id::text,
 			selected_operation_template_id,
 			max_concurrent_services,
+			max_concurrent_services_per_consultant,
 			timing_fast_close_minutes,
 			timing_long_service_minutes,
 			timing_low_sale_amount,
@@ -1112,6 +1117,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 		record.TenantID,
 		record.SelectedOperationTemplateID,
 		record.Settings.MaxConcurrentServices,
+		record.Settings.MaxConcurrentServicesPerConsultant,
 		record.Settings.TimingFastCloseMinutes,
 		record.Settings.TimingLongServiceMinutes,
 		record.Settings.TimingLowSaleAmount,
@@ -1187,6 +1193,7 @@ func scanConfigRow(row pgx.Row) (Record, error) {
 		&record.TenantID,
 		&record.SelectedOperationTemplateID,
 		&record.Settings.MaxConcurrentServices,
+		&record.Settings.MaxConcurrentServicesPerConsultant,
 		&record.Settings.TimingFastCloseMinutes,
 		&record.Settings.TimingLongServiceMinutes,
 		&record.Settings.TimingLowSaleAmount,

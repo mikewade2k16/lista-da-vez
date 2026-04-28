@@ -243,9 +243,21 @@ const activeRole = computed(() => {
 });
 const canEditSettings = computed(() => canManageSettings(auth.role, auth.permissionKeys, auth.permissionsResolved));
 const canEditConsultants = computed(() => canManageConsultants(auth.role, auth.permissionKeys, auth.permissionsResolved));
+const maxParallelPerConsultantLimit = computed(() =>
+  Math.min(5, Math.max(1, Number(props.state.settings?.maxConcurrentServices || 1) || 1))
+);
 
 async function updateNumericSetting(settingId, value) {
-  const result = await settingsStore.updateSetting(settingId, Number(value) || 0);
+  const numericValue = Number(value);
+
+  if (settingId === "maxConcurrentServicesPerConsultant") {
+    if (!Number.isFinite(numericValue) || numericValue < 1 || numericValue > maxParallelPerConsultantLimit.value) {
+      ui.error(`Atendimentos em aberto por consultor deve ficar entre 1 e ${maxParallelPerConsultantLimit.value}.`);
+      return;
+    }
+  }
+
+  const result = await settingsStore.updateSetting(settingId, Number.isFinite(numericValue) ? numericValue : 0);
 
   if (result?.ok === false) {
     ui.error(result.message || "Nao foi possivel salvar a configuracao.");
@@ -596,6 +608,8 @@ async function archiveConsultant(consultantId) {
             <h3 class="settings-card__title">Limites e timings</h3>
           </header>
           <label class="settings-field"><span>Atendimentos simultaneos</span><input :value="Number(state.settings.maxConcurrentServices || 10)" type="number" min="1" max="100" :disabled="!canEditSettings" @change="updateNumericSetting('maxConcurrentServices', $event.target.value)"></label>
+          <label class="settings-field"><span>Atendimentos em aberto por consultor</span><input :value="Number(state.settings.maxConcurrentServicesPerConsultant || 1)" type="number" min="1" :max="maxParallelPerConsultantLimit" :disabled="!canEditSettings" @change="updateNumericSetting('maxConcurrentServicesPerConsultant', $event.target.value)"></label>
+          <p class="settings-card__text">Quantos atendimentos cada consultor pode manter em aberto antes de encerrar os anteriores. Limite atual: 1 a {{ maxParallelPerConsultantLimit }}.</p>
           <label class="settings-field"><span>Fechamento rapido (min)</span><input :value="Number(state.settings.timingFastCloseMinutes || 5)" type="number" min="1" max="120" :disabled="!canEditSettings" @change="updateNumericSetting('timingFastCloseMinutes', $event.target.value)"></label>
           <label class="settings-field"><span>Atendimento demorado (min)</span><input :value="Number(state.settings.timingLongServiceMinutes || 25)" type="number" min="1" max="240" :disabled="!canEditSettings" @change="updateNumericSetting('timingLongServiceMinutes', $event.target.value)"></label>
           <label class="settings-field"><span>Venda baixa (R$)</span><input :value="Number(state.settings.timingLowSaleAmount || 1200)" type="number" min="1" step="1" :disabled="!canEditSettings" @change="updateNumericSetting('timingLowSaleAmount', $event.target.value)"></label>

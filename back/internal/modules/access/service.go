@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
@@ -10,6 +11,11 @@ import (
 type Service struct {
 	repository      Repository
 	subjectResolver SubjectResolver
+	notifier        ContextPublisher
+}
+
+type ContextPublisher interface {
+	PublishContextEvent(ctx context.Context, tenantID string, resource string, action string, resourceID string, savedAt time.Time)
 }
 
 func NewService(repository Repository, subjectResolver SubjectResolver) *Service {
@@ -17,6 +23,10 @@ func NewService(repository Repository, subjectResolver SubjectResolver) *Service
 		repository:      repository,
 		subjectResolver: subjectResolver,
 	}
+}
+
+func (service *Service) SetContextPublisher(notifier ContextPublisher) {
+	service.notifier = notifier
 }
 
 func (service *Service) ResolveUserPermissions(ctx context.Context, userID string, role auth.Role) ([]string, error) {
@@ -85,6 +95,8 @@ func (service *Service) UpdateRolePermissions(ctx context.Context, principal aut
 		return RoleMatrixEntry{}, err
 	}
 
+	service.publishRoleMatrixUpdate(ctx, role)
+
 	for _, definition := range auth.RoleCatalog() {
 		if definition.ID != role {
 			continue
@@ -138,6 +150,8 @@ func (service *Service) UpdateUserOverrides(ctx context.Context, principal auth.
 	if _, err := service.repository.ReplaceUserOverrides(ctx, subject.UserID, normalizedOverrides, principal.UserID); err != nil {
 		return UserAccessView{}, err
 	}
+
+	service.publishContextEvent(ctx, subject.TenantID, "user-overrides-updated", subject.UserID)
 
 	return service.buildUserAccessView(ctx, subject)
 }
@@ -230,4 +244,46 @@ func canEditRoleMatrix(principal auth.Principal) bool {
 	}
 
 	return principal.Role == auth.RolePlatformAdmin
+}
+
+func (service *Service) publishRoleMatrixUpdate(ctx context.Context, role auth.Role) {
+	if service.notifier == nil {
+		return
+	}
+
+	tenantIDs, err := service.repository.ListActiveTenantIDs(ctx)
+	if err != nil {
+		return
+	}
+
+	service.publishContextEvents(ctx, tenantIDs, "role-defaults-updated", string(role))
+}
+
+func (service *Service) publishContextEvents(ctx context.Context, tenantIDs []string, action string, resourceID string) {
+	seenTenantIDs := make(map[string]struct{}, len(tenantIDs))
+	for _, tenantID := range tenantIDs {
+		normalizedTenantID := strings.TrimSpace(tenantID)
+		if normalizedTenantID == "" {
+			continue
+		}
+		if _, seen := seenTenantIDs[normalizedTenantID]; seen {
+			continue
+		}
+
+		seenTenantIDs[normalizedTenantID] = struct{}{}
+		service.publishContextEvent(ctx, normalizedTenantID, action, resourceID)
+	}
+}
+
+func (service *Service) publishContextEvent(ctx context.Context, tenantID string, action string, resourceID string) {
+	if service.notifier == nil {
+		return
+	}
+
+	normalizedTenantID := strings.TrimSpace(tenantID)
+	if normalizedTenantID == "" {
+		return
+	}
+
+	service.notifier.PublishContextEvent(ctx, normalizedTenantID, "access", strings.TrimSpace(action), strings.TrimSpace(resourceID), time.Now().UTC())
 }

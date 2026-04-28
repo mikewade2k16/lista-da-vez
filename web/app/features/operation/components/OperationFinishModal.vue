@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { buildNickname } from "~/domain/utils/person-display";
 import OperationProductPicker from "~/features/operation/components/OperationProductPicker.vue";
 import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
@@ -16,6 +17,10 @@ const ui = useUiStore();
 const FINISH_MODAL_DRAFT_STORAGE_KEY = "ldv_finish_modal_drafts_v1";
 const FINISH_MODAL_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const PRODUCT_SEEN_NONE_DETAIL_KEY = "__none__";
+
+function serviceDisplayName(service) {
+  return buildNickname(service?.name || "");
+}
 
 function readDraftStorage() {
   if (import.meta.server) {
@@ -381,9 +386,15 @@ const customerSourcePickerDetailMode = computed(() =>
   customerSourceConfiguredDetailMode.value === "per-item" ? "per-item" : "shared"
 );
 const service = computed(() =>
-  (props.state.activeServices || []).find((item) => item.id === props.state.finishModalPersonId) || null
+  (props.state.activeServices || []).find((item) => item.serviceId === props.state.finishModalServiceId) || null
 );
 const draft = computed(() => props.state.finishModalDraft || null);
+const requestedServiceDraftKey = computed(() => {
+  const storeId = String(props.state.activeStoreId || "").trim();
+  const serviceId = String(props.state.finishModalServiceId || "").trim();
+
+  return storeId && serviceId ? `${storeId}:${serviceId}` : "";
+});
 const serviceDraftKey = computed(() => {
   const currentService = service.value;
   const storeId = String(props.state.activeStoreId || "").trim();
@@ -754,6 +765,8 @@ function hasDraftContent(payload, products = []) {
 
 function loadStoredDraft(currentService) {
   const key = serviceDraftKey.value;
+  const currentStoreId = String(props.state.activeStoreId || "").trim();
+  const currentStartedAt = Number(currentService?.serviceStartedAt || 0);
 
   if (!key || !currentService) {
     return null;
@@ -765,7 +778,12 @@ function loadStoredDraft(currentService) {
     return null;
   }
 
-  if (stored.serviceId !== currentService.serviceId || stored.personId !== currentService.id) {
+  if (
+    stored.storeId !== currentStoreId
+    || stored.serviceId !== currentService.serviceId
+    || stored.personId !== currentService.id
+    || Number(stored.serviceStartedAt || 0) !== currentStartedAt
+  ) {
     removeStoredDraft(key);
     return null;
   }
@@ -793,6 +811,7 @@ function saveActiveDraft() {
     storeId: String(props.state.activeStoreId || "").trim(),
     serviceId: service.value.serviceId,
     personId: service.value.id,
+    serviceStartedAt: Number(service.value.serviceStartedAt || 0),
     updatedAt: Date.now(),
     form: payload,
     customProducts: normalizedCustomProducts
@@ -1046,7 +1065,7 @@ async function submitForm() {
     form.productsSeenNone ? "Nenhum interesse identificado" : "",
     productSeenNotesForPayload.value
   ].filter(Boolean).join(" | ");
-  const result = await operationsStore.finishService(currentService.id, {
+  const result = await operationsStore.finishService(currentService.serviceId, {
     outcome: form.outcome,
     productSeen: productSeenSummary,
     productClosed: isClosedOutcome.value ? form.productsClosed[0]?.name || "" : "",
@@ -1091,6 +1110,10 @@ async function submitForm() {
     saleAmount: isClosedOutcome.value ? closedTotal.value : 0,
     queueJumpReason: service.value.startMode === "queue-jump" ? selectedQueueJumpReasonLabel.value : "",
     notes: form.notes.trim()
+  }, {
+    service: currentService,
+    storeId: currentService.storeId,
+    storeName: currentService.storeName
   });
 
   if (result?.ok === false) {
@@ -1107,6 +1130,17 @@ async function submitForm() {
 watch(serviceDraftKey, () => {
   resetForm();
 }, { immediate: true });
+
+watch([requestedServiceDraftKey, service], ([draftKey, currentService]) => {
+  if (!draftKey || currentService) {
+    return;
+  }
+
+  removeStoredDraft(draftKey);
+  restoredDraftKey.value = "";
+  customProducts.value = [];
+  void operationsStore.closeFinishModal();
+});
 
 watch(draft, () => {
   if (!hasRestoredDraft.value) {
@@ -1218,7 +1252,7 @@ onBeforeUnmount(() => {
         <div class="finish-modal__header">
           <div>
             <h2 id="finish-modal-title" class="finish-modal__title">{{ modalTitle }}</h2>
-            <p class="finish-modal__subtitle">{{ service.name }} | ID {{ service.serviceId }}</p>
+            <p class="finish-modal__subtitle">{{ serviceDisplayName(service) }} | ID {{ service.serviceId }}</p>
           </div>
           <div class="finish-modal__header-actions">
             <button

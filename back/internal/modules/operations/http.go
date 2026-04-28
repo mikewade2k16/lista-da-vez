@@ -181,6 +181,33 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, ack)
 	})))
 
+	mux.Handle("POST /v1/operations/services/parallel", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		access := AccessContextFromPrincipal(principal)
+		if !canMutateOperations(access) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
+			return
+		}
+
+		var input StartParallelCommandInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+
+		ack, err := service.StartParallel(r.Context(), access, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
+
 	mux.Handle("POST /v1/operations/finish", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {

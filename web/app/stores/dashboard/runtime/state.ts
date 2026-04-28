@@ -139,7 +139,11 @@ export function normalizeActiveServicesList(rawActiveServices, timestamp) {
     queueWaitMs: Number(service.queueWaitMs || 0),
     startMode: service.startMode || "queue",
     queuePositionAtStart: Number(service.queuePositionAtStart || index + 1),
-    skippedPeople: Array.isArray(service.skippedPeople) ? service.skippedPeople : []
+    skippedPeople: Array.isArray(service.skippedPeople) ? service.skippedPeople : [],
+    parallelGroupId: String(service.parallelGroupId || ""),
+    parallelStartIndex: typeof service.parallelStartIndex === "number" ? service.parallelStartIndex : null,
+    startOffsetMs: Number(service.startOffsetMs || 0),
+    siblingServiceIds: Array.isArray(service.siblingServiceIds) ? service.siblingServiceIds : []
   }));
 }
 
@@ -291,6 +295,7 @@ export function createEmptyState() {
   return {
     isReady: false,
     configSchemaVersion: 4,
+    serverClockOffsetMs: 0,
     brandName: "Omni",
     pageTitle: "Fila de atendimento",
     profiles: cloneValue(DEFAULT_PROFILES),
@@ -382,6 +387,7 @@ export function createEmptyState() {
     pausedEmployees: scopedState.pausedEmployees,
     settings: {
       maxConcurrentServices: Number(defaultTemplate?.settings?.maxConcurrentServices || 10),
+      maxConcurrentServicesPerConsultant: Number(defaultTemplate?.settings?.maxConcurrentServicesPerConsultant || 1),
       timingFastCloseMinutes: Number(defaultTemplate?.settings?.timingFastCloseMinutes || 5),
       timingLongServiceMinutes: Number(defaultTemplate?.settings?.timingLongServiceMinutes || 25),
       timingLowSaleAmount: Number(defaultTemplate?.settings?.timingLowSaleAmount || 1200),
@@ -393,7 +399,7 @@ export function createEmptyState() {
       alertMinTicketAverage: 0
     },
     serviceHistory: scopedState.serviceHistory,
-    finishModalPersonId: null
+    finishModalServiceId: null
   };
 }
 
@@ -570,10 +576,14 @@ export function hydrateState(nextState = {}) {
 
   const resolvedActiveSnapshot =
     normalizedStoreSnapshots[activeStoreId] || normalizedLegacyActiveSnapshot;
-  const sourceFinishModalPersonId = String(sourceState.finishModalPersonId || "").trim();
-  const finishModalPersonId = resolvedActiveSnapshot.activeServices.some((service) => service.id === sourceFinishModalPersonId)
-    ? sourceFinishModalPersonId
+  const sourceFinishModalIdentifier = String(
+    sourceState.finishModalServiceId || sourceState.finishModalPersonId || ""
+  ).trim();
+  const resolvedFinishModalService = sourceFinishModalIdentifier
+    ? resolvedActiveSnapshot.activeServices.find((service) => service.serviceId === sourceFinishModalIdentifier) ||
+      resolvedActiveSnapshot.activeServices.find((service) => service.id === sourceFinishModalIdentifier)
     : null;
+  const finishModalServiceId = resolvedFinishModalService?.serviceId || null;
   const profiles =
     Array.isArray(sourceState.profiles) && sourceState.profiles.length
       ? sourceState.profiles
@@ -591,6 +601,7 @@ export function hydrateState(nextState = {}) {
     ...baseState,
     ...sourceState,
     configSchemaVersion: baseState.configSchemaVersion,
+    serverClockOffsetMs: Number(sourceState.serverClockOffsetMs || 0) || 0,
     profiles,
     activeProfileId,
     stores,
@@ -606,7 +617,7 @@ export function hydrateState(nextState = {}) {
     campaigns: Array.isArray(sourceState.campaigns)
       ? sourceState.campaigns.map((item) => normalizeCampaign(item))
       : cloneValue(baseState.campaigns),
-    finishModalDraft: finishModalPersonId ? cloneValue(sourceState.finishModalDraft || null) : null,
+    finishModalDraft: finishModalServiceId ? cloneValue(sourceState.finishModalDraft || null) : null,
     waitingList: resolvedActiveSnapshot.waitingList,
     activeServices: resolvedActiveSnapshot.activeServices,
     roster: resolvedActiveSnapshot.roster,
@@ -657,6 +668,6 @@ export function hydrateState(nextState = {}) {
     },
     serviceHistory: resolvedActiveSnapshot.serviceHistory,
     isReady: true,
-    finishModalPersonId
+    finishModalServiceId
   };
 }

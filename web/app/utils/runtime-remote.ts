@@ -37,6 +37,10 @@ function withTenantQuery(path, tenantId) {
   return `${path}${separator}tenantId=${encodeURIComponent(normalizedTenantId)}`;
 }
 
+function hasResolvedTenantId(value) {
+  return String(value || "").trim().length > 0;
+}
+
 function resolveTenantIdForStore(state, storeId, fallbackTenantId = "") {
   const normalizedFallback = String(fallbackTenantId || "").trim();
 
@@ -199,7 +203,7 @@ export function applyOperationSnapshotToState(currentState, storeId, operationSn
     ...(normalizedStoreId === currentState?.activeStoreId ? nextScopedState : {}),
     ...(options?.resetFinishModal
       ? {
-          finishModalPersonId: null,
+          finishModalServiceId: null,
           finishModalDraft: null
         }
       : {})
@@ -320,6 +324,11 @@ export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId, 
 
   await runtime.ensure();
   const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreId, tenantId);
+
+  if (!hasResolvedTenantId(resolvedTenantId)) {
+    return null;
+  }
+
   const settingsBundle = await apiRequest(withTenantQuery("/v1/settings", resolvedTenantId));
   applySettingsBundleToRuntime(runtime, normalizedStoreId, settingsBundle);
   return settingsBundle;
@@ -343,8 +352,11 @@ export function buildSettingsBundleFromState(state, storeId) {
 
 export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = "") {
   const storeQuery = encodeURIComponent(String(storeId || "").trim());
+  const normalizedTenantId = String(tenantId || "").trim();
   const [settingsBundle, consultantsResponse, operationsSnapshot] = await Promise.all([
-    apiRequest(withTenantQuery("/v1/settings", tenantId)),
+    hasResolvedTenantId(normalizedTenantId)
+      ? apiRequest(withTenantQuery("/v1/settings", normalizedTenantId))
+      : Promise.resolve(null),
     apiRequest(`/v1/consultants?storeId=${storeQuery}`),
     apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`)
   ]);

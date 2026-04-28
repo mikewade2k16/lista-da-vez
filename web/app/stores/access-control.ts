@@ -232,6 +232,29 @@ export const useAccessControlStore = defineStore("access-control", () => {
     return Boolean(pendingUserIds.value[String(userId || "").trim()]);
   }
 
+  async function refreshRealtimeState() {
+    await auth.ensureSession();
+    if (!auth.isAuthenticated) {
+      clearState();
+      return;
+    }
+
+    const refreshes = [];
+    if (roleMatrix.value.length || permissions.value.length) {
+      refreshes.push(refreshRoleMatrix().catch(() => []));
+    }
+
+    for (const userId of Object.keys(userAccessById.value).map((entry) => String(entry || "").trim()).filter(Boolean)) {
+      refreshes.push(loadUserAccess(userId).catch(() => null));
+    }
+
+    if (!refreshes.length) {
+      return;
+    }
+
+    await Promise.allSettled(refreshes);
+  }
+
   return {
     permissions,
     roleMatrix,
@@ -245,6 +268,7 @@ export const useAccessControlStore = defineStore("access-control", () => {
     saveRolePermissions,
     saveUserOverrides,
     getUserAccess,
-    isUserPending
+    isUserPending,
+		refreshRealtimeState
   };
 });

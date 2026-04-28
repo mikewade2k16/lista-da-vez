@@ -75,6 +75,11 @@ npm run dev -- --port 3001
 - `consultor@demo.local`
 - senha: `dev123456`
 
+Root local da plataforma no seed MVP:
+
+- `mikewade2k16@gmail.com`
+- senha: `Mvp@2026!`
+
 ## 5. Convites locais
 
 Para o onboarding por convite funcionar certo fora do Docker, garanta:

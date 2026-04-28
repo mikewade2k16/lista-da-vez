@@ -20,6 +20,8 @@
       "approve": true,
       "matchCommandLine": true
     },
-    "npm --prefix web": true
+    "npm --prefix web": true,
+    "npx nuxi": true,
+    "npx tsc": true
   }
 }

@@ -69,6 +69,7 @@ Toda implementacao nova em `web/` deve:
 - `web/app/components/users/UsersRoleMatrixManager.vue` concentra a edicao do padrao de visibilidade/edicao por papel dentro da workspace de usuarios.
 - `web/app/stores/consultants.ts` agora cria consultores ja com conta autenticada vinculada.
 - `web/app/composables/useContextRealtime.ts` cuida da sincronizacao administrativa por tenant para atualizar lojas, usuarios e header entre instancias.
+- `web/app/composables/useContextRealtime.ts` tambem precisa revalidar `web/app/stores/access-control.ts` quando chegar `context.updated` com `resource=access` ou `resource=user`, senao a workspace de Usuarios e acessos fica stale ate reload.
 - `web/app/utils/api-client.ts` concentra o client HTTP criado dentro do contexto do store.
 - `web/app/composables/useOperationsRealtime.ts` cuida da assinatura WebSocket da operacao e revalidacao do snapshot em tempo real.
 - `web/app/composables/useOperationsRealtime.ts` agora tambem cuida do modo integrado multi-loja de `/operacao` quando a sessao tiver mais de uma loja acessivel.

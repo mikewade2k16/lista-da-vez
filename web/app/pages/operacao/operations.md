@@ -359,7 +359,7 @@ Campos mais relevantes lidos de `state`:
 - `pausedEmployees`
 - `settings.maxConcurrentServices`
 - `modalConfig`
-- `finishModalPersonId`
+- `finishModalServiceId`
 - `finishModalDraft`
 - `productCatalog`
 - `visitReasonOptions`

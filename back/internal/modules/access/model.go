@@ -94,6 +94,7 @@ type UserAccessView struct {
 type Repository interface {
 	ListRolePermissions(ctx context.Context, role auth.Role) ([]string, error)
 	ListAllRolePermissions(ctx context.Context) ([]RoleGrant, error)
+	ListActiveTenantIDs(ctx context.Context) ([]string, error)
 	ReplaceRolePermissions(ctx context.Context, role auth.Role, permissionKeys []string) error
 	ListUserOverrides(ctx context.Context, userID string) ([]UserOverride, error)
 	ReplaceUserOverrides(ctx context.Context, userID string, overrides []UserOverride, createdByUserID string) ([]UserOverride, error)

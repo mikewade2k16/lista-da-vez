@@ -21,6 +21,30 @@ function reorderOptionItems(items = [], orderedIds = []) {
   return nextItems.length === sourceItems.length ? nextItems : sourceItems;
 }
 
+function normalizeSettingsUpdate(settings, settingId, value) {
+  const nextSettings = {
+    ...settings,
+    [settingId]: value
+  };
+
+  if (!["maxConcurrentServices", "maxConcurrentServicesPerConsultant"].includes(settingId)) {
+    return nextSettings;
+  }
+
+  const maxConcurrentServices = Math.max(1, Number(nextSettings.maxConcurrentServices || 1) || 1);
+  const perConsultantLimit = Math.min(
+    5,
+    maxConcurrentServices,
+    Math.max(1, Number(nextSettings.maxConcurrentServicesPerConsultant || 1) || 1)
+  );
+
+  return {
+    ...nextSettings,
+    maxConcurrentServices,
+    maxConcurrentServicesPerConsultant: perConsultantLimit
+  };
+}
+
 export function createSettingsActions({ getState, updateState }) {
   return {
     updateReportFilter(filterId, value) {
@@ -121,10 +145,7 @@ export function createSettingsActions({ getState, updateState }) {
 
       updateState({
         ...state,
-        settings: {
-          ...state.settings,
-          [settingId]: value
-        }
+        settings: normalizeSettingsUpdate(state.settings, settingId, value)
       });
     },
 

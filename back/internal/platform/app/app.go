@@ -57,6 +57,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	realtimeHub := realtime.NewHub()
 	realtimeService := realtime.NewService(authService, nil, tenantService, cfg.CORSAllowedOrigins, realtimeHub)
 	authService.SetContextPublisher(realtimeService)
+	accessService.SetContextPublisher(realtimeService)
 	storeRepository := stores.NewPostgresRepository(pool)
 	storeService := stores.NewService(storeRepository, realtimeService)
 	realtimeService.SetStoreFinder(storeService)

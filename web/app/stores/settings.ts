@@ -50,8 +50,12 @@ export const useSettingsStore = defineStore("settings", () => {
     return auth.isAuthenticated;
   }
 
+  function resolveTenantId() {
+    return String(auth.activeTenantId || auth.tenantContext?.[0]?.id || "").trim();
+  }
+
   function settingsPath(path) {
-    return appendTenantQuery(path, auth.activeTenantId || auth.tenantContext?.[0]?.id);
+    return appendTenantQuery(path, resolveTenantId());
   }
 
   async function persistOperationSection() {
@@ -229,6 +233,10 @@ export const useSettingsStore = defineStore("settings", () => {
 
     if (!isAuthenticated) {
       return { ok: false, message: "Sessao indisponivel." };
+    }
+
+    if (!resolveTenantId()) {
+      return { ok: false, message: "Tenant ativo nao identificado para a sessao." };
     }
 
     const previousState = cloneValue(runtime.state);

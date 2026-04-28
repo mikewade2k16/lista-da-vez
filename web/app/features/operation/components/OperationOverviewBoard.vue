@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import { buildNickname } from "~/domain/utils/person-display";
 import { formatClock, formatDuration } from "~/domain/utils/time";
 import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
@@ -24,6 +25,9 @@ const operationsStore = useOperationsStore();
 const ui = useUiStore();
 const now = ref(0);
 let timerId = null;
+const CLOCK_REFRESH_MS = 250;
+const serverClockOffsetMs = computed(() => Number(operationsStore.state?.serverClockOffsetMs || 0) || 0);
+const adjustedNow = computed(() => now.value + serverClockOffsetMs.value);
 
 function shouldIncludeStore(storeId) {
   const filterStoreId = String(props.filterStoreId || "").trim();
@@ -42,6 +46,54 @@ const activeServices = computed(() =>
   (Array.isArray(props.overview?.activeServices) ? props.overview.activeServices : []).filter((item) => shouldIncludeStore(item.storeId))
 );
 
+function isSameSequentialGroup(targetService, candidate) {
+  const targetGroupId = String(targetService?.parallelGroupId || "").trim();
+  const targetServiceId = String(targetService?.serviceId || "").trim();
+
+  if (targetGroupId) {
+    return String(candidate?.parallelGroupId || "").trim() === targetGroupId;
+  }
+
+  const siblingServiceIds = Array.isArray(candidate?.siblingServiceIds) ? candidate.siblingServiceIds : [];
+  return siblingServiceIds.includes(targetServiceId);
+}
+
+function deriveSequentialServiceFinishedAt(targetService) {
+  const targetStartedAt = Number(targetService?.serviceStartedAt || 0) || 0;
+  let nextStartedAt = 0;
+
+  activeServices.value.forEach((service) => {
+    if (String(service?.serviceId || "").trim() === String(targetService?.serviceId || "").trim()) {
+      return;
+    }
+    if (String(service?.personId || "").trim() !== String(targetService?.personId || "").trim()) {
+      return;
+    }
+    if (!isSameSequentialGroup(targetService, service)) {
+      return;
+    }
+
+    const candidateStartedAt = Number(service?.serviceStartedAt || 0) || 0;
+    if (candidateStartedAt <= targetStartedAt) {
+      return;
+    }
+    if (!nextStartedAt || candidateStartedAt < nextStartedAt) {
+      nextStartedAt = candidateStartedAt;
+    }
+  });
+
+  return nextStartedAt || 0;
+}
+
+function formatServiceDuration(service) {
+  const effectiveFinishedAt = deriveSequentialServiceFinishedAt(service);
+  const finishedAt = effectiveFinishedAt > 0 ? effectiveFinishedAt : adjustedNow.value;
+  return formatDuration(
+    Math.max(0, finishedAt - Number(service?.serviceStartedAt || 0)),
+    { roundUpPartialSecond: effectiveFinishedAt === 0 }
+  );
+}
+
 const pausedEmployees = computed(() =>
   (Array.isArray(props.overview?.pausedEmployees) ? props.overview.pausedEmployees : []).filter((item) => shouldIncludeStore(item.storeId))
 );
@@ -54,10 +106,14 @@ function pauseLabel(person) {
   return String(person?.pauseKind || "").trim() === "assignment" ? "Em tarefa" : "Pausado";
 }
 
+function displayName(person) {
+  return buildNickname(person?.name || "");
+}
+
 async function assignTask(person) {
   const { confirmed, value } = await ui.prompt({
     title: "Enviar para tarefa",
-    message: `Registre a tarefa ou reuniao para ${person.name} em ${person.storeName}.`,
+    message: `Registre a tarefa ou reuniao para ${displayName(person)} em ${person.storeName}.`,
     inputLabel: "Motivo",
     inputPlaceholder: "Ex.: reuniao, apoio no caixa, conferencia de estoque",
     confirmLabel: "Salvar tarefa",
@@ -91,7 +147,11 @@ onMounted(() => {
   now.value = Date.now();
   timerId = window.setInterval(() => {
     now.value = Date.now();
-  }, 1000);
+  }, CLOCK_REFRESH_MS);
+});
+
+watch(activeServices, () => {
+  now.value = Date.now();
 });
 
 onBeforeUnmount(() => {
@@ -141,14 +201,14 @@ onBeforeUnmount(() => {
             <div class="operation-overview__person">
               <span class="queue-card__avatar" :style="{ '--avatar-accent': service.color }">{{ service.initials }}</span>
               <div class="operation-overview__person-copy">
-                <strong>{{ service.name }}</strong>
+                <strong>{{ displayName(service) }}</strong>
                 <span>{{ service.role }}</span>
               </div>
             </div>
             <div class="operation-overview__details">
               <span>{{ service.startMode === "queue-jump" ? "Fora da vez" : "Na vez" }}</span>
-              <span>Inicio {{ formatClock(service.serviceStartedAt) }}</span>
-              <strong>{{ formatDuration(now - service.serviceStartedAt) }}</strong>
+              <span>Inicio {{ formatClock(Math.max(0, Number(service.serviceStartedAt || 0) - serverClockOffsetMs)) }}</span>
+              <strong>{{ formatServiceDuration(service) }}</strong>
             </div>
           </article>
           <div v-if="!activeServices.length" class="queue-empty">
@@ -176,7 +236,7 @@ onBeforeUnmount(() => {
             <div class="operation-overview__person">
               <span class="queue-card__avatar" :style="{ '--avatar-accent': person.color }">{{ person.initials }}</span>
               <div class="operation-overview__person-copy">
-                <strong>{{ person.name }}</strong>
+                <strong>{{ displayName(person) }}</strong>
                 <span>{{ person.role }}</span>
               </div>
             </div>
@@ -217,7 +277,7 @@ onBeforeUnmount(() => {
             <div class="operation-overview__person">
               <span class="queue-card__avatar" :style="{ '--avatar-accent': person.color }">{{ person.initials }}</span>
               <div class="operation-overview__person-copy">
-                <strong>{{ person.name }}</strong>
+                <strong>{{ displayName(person) }}</strong>
                 <span>{{ person.role }}</span>
               </div>
             </div>
@@ -259,7 +319,7 @@ onBeforeUnmount(() => {
             <div class="operation-overview__person">
               <span class="queue-card__avatar" :style="{ '--avatar-accent': person.color }">{{ person.initials }}</span>
               <div class="operation-overview__person-copy">
-                <strong>{{ person.name }}</strong>
+                <strong>{{ displayName(person) }}</strong>
                 <span>{{ person.role }}</span>
               </div>
             </div>

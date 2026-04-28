@@ -78,7 +78,11 @@ function mapIntegratedActiveItem(person) {
     queueWaitMs: Number(person?.queueWaitMs || 0) || 0,
     queuePositionAtStart: Math.max(1, Number(person?.queuePosition || 1) || 1),
     startMode: String(person?.startMode || "queue").trim() || "queue",
-    skippedPeople: Array.isArray(person?.skippedPeople) ? person.skippedPeople : []
+    skippedPeople: Array.isArray(person?.skippedPeople) ? person.skippedPeople : [],
+    parallelGroupId: String(person?.parallelGroupId || "").trim(),
+    parallelStartIndex: typeof person?.parallelStartIndex === "number" ? person.parallelStartIndex : null,
+    siblingServiceIds: Array.isArray(person?.siblingServiceIds) ? person.siblingServiceIds : [],
+    startOffsetMs: Number(person?.startOffsetMs || 0) || 0
   };
 }
 
@@ -167,5 +171,5 @@ const displayState = computed(() => {
   </div>
   <OperationQueueColumns :state="displayState" :read-only="!canOperate" :integrated-mode="showIntegratedView" />
   <OperationConsultantStrip v-if="canOperate" :state="displayState" :integrated-mode="showIntegratedView" />
-  <OperationFinishModal :state="props.state" />
+  <OperationFinishModal :state="displayState" />
 </template>

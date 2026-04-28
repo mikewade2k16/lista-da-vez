@@ -2,7 +2,6 @@
 import { ref } from "vue";
 import DashboardHeader from "~/components/dashboard/DashboardHeader.vue";
 import DashboardWorkspaceNav from "~/components/dashboard/DashboardWorkspaceNav.vue";
-import AppToastStack from "~/components/ui/AppToastStack.vue";
 import FeedbackFormModal from "~/components/feedback/FeedbackFormModal.vue";
 import { useContextRealtime } from "~/composables/useContextRealtime";
 import { useDashboardShell } from "~/composables/useDashboardShell";
@@ -23,7 +22,6 @@ function handleStoreChange(storeId) {
 
 <template>
   <main class="shell">
-    <AppToastStack />
     <section class="app-surface">
       <DashboardHeader
         :state="state"

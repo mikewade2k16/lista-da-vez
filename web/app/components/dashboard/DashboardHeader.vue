@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-header__bar {
-  width: min(100%, 1240px);
+  width: min(100%, 1400px);
   gap: 1rem;
   padding: 0.85rem 1rem;
 }

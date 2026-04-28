@@ -43,3 +43,5 @@ Ele nao deve cuidar de:
 O catalogo cobre workspaces (`operacao`, `consultor`, `ranking`, `dados`, `inteligencia`, `relatorios`, `campanhas`, `clientes`, `multiloja`, `usuarios`, `configuracoes`) e acoes administrativas de plataforma (`users.password.manage`, `access.role_defaults.manage`).
 
 WebSocket ainda nao usa permissoes `realtime.*` no catalogo Go atual; a conexao operacional valida `workspace.operacao.view` quando o principal ja vem com permissoes resolvidas.
+
+Alteracoes em grants padrao por papel e overrides por usuario precisam publicar `context.updated` com `resource = access` no canal de contexto do tenant, para que outras sessoes revalidem `GET /v1/me/context` e a UI administrativa de acessos sem depender de reload manual.

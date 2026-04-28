@@ -38,6 +38,11 @@ Agora o auth ja usa PostgreSQL real para `users`, `user_platform_roles`, `user_t
 - `platform_admin`
   - escopo de plataforma para times internos/dev
 
+Observacao de modelagem:
+
+- `platform_admin` continua sendo o root global da plataforma e o ponto de acesso total entre clientes
+- um tenant de desenvolvimento como `Omni` pode existir como cliente comum para teste, mas nao substitui o papel global de `platform_admin`
+
 ## Estrutura atual
 
 - `cmd/api`
@@ -129,6 +134,14 @@ Todos os usuarios abaixo usam a senha `dev123456`:
 - `marketing@demo.local`
 - `proprietario@demo.local`
 - `plataforma@demo.local`
+
+Para o seed MVP atual do root de desenvolvimento da plataforma:
+
+- `mikewade2k16@gmail.com`
+- senha: `Mvp@2026!`
+
+No fluxo Docker local, a migration `0033_seed_dev_platform_admin_password.sql` regrava essa senha para o `platform_admin` seedado.
+Ela entra apenas em ambientes nao-producao.
 
 ## Onboarding por convite
 
@@ -250,6 +263,9 @@ O container da API:
 - espera o PostgreSQL ficar saudavel
 - aplica `migrate up`
 - sobe a API em `:8080`
+
+Se aparecer erro SQL em rota nova mesmo com a API saudavel, trate primeiro como drift entre schema e volume local.
+Exemplo real desta base: settings tenant-wide passaram a depender de coluna nova em `tenant_operation_settings`; nesse caso o check correto e confirmar `migrate status` dentro do container e nao criar um novo tenant para mascarar a falta de coluna.
 
 Arquivo opcional para customizacao do Compose:
 

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from "vue";
+import { buildNickname } from "~/domain/utils/person-display";
 import OperationProductPicker from "~/features/operation/components/OperationProductPicker.vue";
 
 const props = defineProps({
@@ -55,6 +56,10 @@ function submitDialog() {
 
   emit("confirm", selectedReason.value.label);
 }
+
+function displayName(employee) {
+  return buildNickname(employee?.name || "");
+}
 </script>
 
 <template>
@@ -87,7 +92,7 @@ function submitDialog() {
 
         <form class="ui-dialog__body" @submit.prevent="submitDialog">
           <p class="ui-dialog__message">
-            Escolha o motivo da pausa para registrar no painel{{ employee?.name ? ` de ${employee.name}` : "" }}.
+            Escolha o motivo da pausa para registrar no painel{{ employee?.name ? ` de ${displayName(employee)}` : "" }}.
           </p>
 
           <OperationProductPicker

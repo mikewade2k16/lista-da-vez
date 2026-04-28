@@ -47,9 +47,13 @@ type ActiveService struct {
 	ServiceStartedAt     int64           `json:"serviceStartedAt"`
 	QueueJoinedAt        int64           `json:"queueJoinedAt"`
 	QueueWaitMs          int64           `json:"queueWaitMs"`
-	QueuePositionAtStart int             `json:"queuePositionAtStart"`
+	QueuePositionAtStart *int            `json:"queuePositionAtStart,omitempty"`
 	StartMode            string          `json:"startMode"`
 	SkippedPeople        []SkippedPerson `json:"skippedPeople"`
+	ParallelGroupID      string          `json:"parallelGroupId,omitempty"`
+	ParallelStartIndex   *int            `json:"parallelStartIndex,omitempty"`
+	SiblingServiceIDs    []string        `json:"siblingServiceIds"`
+	StartOffsetMs        int64           `json:"startOffsetMs"`
 }
 
 type PausedEmployee struct {
@@ -91,10 +95,14 @@ type ServiceHistoryEntry struct {
 	DurationMs                 int64             `json:"durationMs"`
 	FinishOutcome              string            `json:"finishOutcome"`
 	StartMode                  string            `json:"startMode"`
-	QueuePositionAtStart       int               `json:"queuePositionAtStart"`
+	QueuePositionAtStart       *int              `json:"queuePositionAtStart,omitempty"`
 	QueueWaitMs                int64             `json:"queueWaitMs"`
 	SkippedPeople              []SkippedPerson   `json:"skippedPeople"`
 	SkippedCount               int               `json:"skippedCount"`
+	ParallelGroupID            string            `json:"parallelGroupId,omitempty"`
+	ParallelStartIndex         *int              `json:"parallelStartIndex,omitempty"`
+	SiblingServiceIDs          []string          `json:"siblingServiceIds"`
+	StartOffsetMs              int64             `json:"startOffsetMs"`
 	IsWindowService            bool              `json:"isWindowService"`
 	IsGift                     bool              `json:"isGift"`
 	ProductSeen                string            `json:"productSeen"`
@@ -162,9 +170,13 @@ type ActiveServiceState struct {
 	ServiceStartedAt     int64
 	QueueJoinedAt        int64
 	QueueWaitMs          int64
-	QueuePositionAtStart int
+	QueuePositionAtStart *int
 	StartMode            string
 	SkippedPeople        []SkippedPerson
+	ParallelGroupID      string
+	ParallelStartIndex   *int
+	SiblingServiceIDs    []string
+	StartOffsetMs        int64
 }
 
 type PausedStateItem struct {
@@ -186,26 +198,31 @@ type OperationOverviewStore struct {
 }
 
 type OperationOverviewPerson struct {
-	StoreID          string  `json:"storeId"`
-	StoreName        string  `json:"storeName"`
-	StoreCode        string  `json:"storeCode,omitempty"`
-	PersonID         string  `json:"personId"`
-	Name             string  `json:"name"`
-	Role             string  `json:"role"`
-	Initials         string  `json:"initials"`
-	Color            string  `json:"color"`
-	MonthlyGoal      float64 `json:"monthlyGoal,omitempty"`
-	CommissionRate   float64 `json:"commissionRate,omitempty"`
-	Status           string  `json:"status"`
-	StatusStartedAt  int64   `json:"statusStartedAt"`
-	QueueJoinedAt    int64   `json:"queueJoinedAt,omitempty"`
-	QueuePosition    int     `json:"queuePosition,omitempty"`
-	ServiceID        string  `json:"serviceId,omitempty"`
-	ServiceStartedAt int64   `json:"serviceStartedAt,omitempty"`
-	QueueWaitMs      int64   `json:"queueWaitMs,omitempty"`
-	StartMode        string  `json:"startMode,omitempty"`
-	PauseReason      string  `json:"pauseReason,omitempty"`
-	PauseKind        string  `json:"pauseKind,omitempty"`
+	StoreID            string          `json:"storeId"`
+	StoreName          string          `json:"storeName"`
+	StoreCode          string          `json:"storeCode,omitempty"`
+	PersonID           string          `json:"personId"`
+	Name               string          `json:"name"`
+	Role               string          `json:"role"`
+	Initials           string          `json:"initials"`
+	Color              string          `json:"color"`
+	MonthlyGoal        float64         `json:"monthlyGoal,omitempty"`
+	CommissionRate     float64         `json:"commissionRate,omitempty"`
+	Status             string          `json:"status"`
+	StatusStartedAt    int64           `json:"statusStartedAt"`
+	QueueJoinedAt      int64           `json:"queueJoinedAt,omitempty"`
+	QueuePosition      int             `json:"queuePosition,omitempty"`
+	ServiceID          string          `json:"serviceId,omitempty"`
+	ServiceStartedAt   int64           `json:"serviceStartedAt,omitempty"`
+	QueueWaitMs        int64           `json:"queueWaitMs,omitempty"`
+	StartMode          string          `json:"startMode,omitempty"`
+	SkippedPeople      []SkippedPerson `json:"skippedPeople,omitempty"`
+	ParallelGroupID    string          `json:"parallelGroupId,omitempty"`
+	ParallelStartIndex *int            `json:"parallelStartIndex,omitempty"`
+	SiblingServiceIDs  []string        `json:"siblingServiceIds,omitempty"`
+	StartOffsetMs      int64           `json:"startOffsetMs,omitempty"`
+	PauseReason        string          `json:"pauseReason,omitempty"`
+	PauseKind          string          `json:"pauseKind,omitempty"`
 }
 
 type OperationOverview struct {
@@ -249,8 +266,14 @@ type StartCommandInput struct {
 	PersonID string `json:"personId"`
 }
 
+type StartParallelCommandInput struct {
+	StoreID  string `json:"storeId"`
+	PersonID string `json:"personId"`
+}
+
 type FinishCommandInput struct {
 	StoreID                    string            `json:"storeId"`
+	ServiceID                  string            `json:"serviceId"`
 	PersonID                   string            `json:"personId"`
 	Outcome                    string            `json:"outcome"`
 	IsWindowService            bool              `json:"isWindowService"`
@@ -287,6 +310,7 @@ type Repository interface {
 	StoreExists(ctx context.Context, storeID string) (bool, error)
 	GetStoreName(ctx context.Context, storeID string) (string, error)
 	GetMaxConcurrentServices(ctx context.Context, storeID string) (int, error)
+	GetMaxConcurrentServicesPerConsultant(ctx context.Context, storeID string) (int, error)
 	ListRoster(ctx context.Context, storeID string) ([]ConsultantProfile, error)
 	LoadSnapshot(ctx context.Context, storeID string) (SnapshotState, error)
 	Persist(ctx context.Context, input PersistInput) error
@@ -304,9 +328,10 @@ type EventPublisher interface {
 }
 
 type MutationAck struct {
-	OK       bool      `json:"ok"`
-	StoreID  string    `json:"storeId"`
-	SavedAt  time.Time `json:"savedAt"`
-	Action   string    `json:"action,omitempty"`
-	PersonID string    `json:"personId,omitempty"`
+	OK        bool      `json:"ok"`
+	StoreID   string    `json:"storeId"`
+	SavedAt   time.Time `json:"savedAt"`
+	Action    string    `json:"action,omitempty"`
+	PersonID  string    `json:"personId,omitempty"`
+	ServiceID string    `json:"serviceId,omitempty"`
 }

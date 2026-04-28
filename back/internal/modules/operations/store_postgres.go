@@ -58,9 +58,15 @@ func (repository *PostgresRepository) GetMaxConcurrentServices(ctx context.Conte
 	var value int
 	err := repository.pool.QueryRow(ctx, `
 		select coalesce((
-			select max_concurrent_services
-			from store_operation_settings
-			where store_id = $1::uuid
+			select tos.max_concurrent_services
+			from stores s
+			join tenant_operation_settings tos on tos.tenant_id = s.tenant_id
+			where s.id = $1::uuid
+			limit 1
+		), (
+			select sos.max_concurrent_services
+			from store_operation_settings sos
+			where sos.store_id = $1::uuid
 			limit 1
 		), 10);
 	`, storeID).Scan(&value)
@@ -70,6 +76,33 @@ func (repository *PostgresRepository) GetMaxConcurrentServices(ctx context.Conte
 
 	if value < 1 {
 		return 10, nil
+	}
+
+	return value, nil
+}
+
+func (repository *PostgresRepository) GetMaxConcurrentServicesPerConsultant(ctx context.Context, storeID string) (int, error) {
+	var value int
+	err := repository.pool.QueryRow(ctx, `
+		select coalesce((
+			select tos.max_concurrent_services_per_consultant
+			from stores s
+			join tenant_operation_settings tos on tos.tenant_id = s.tenant_id
+			where s.id = $1::uuid
+			limit 1
+		), (
+			select sos.max_concurrent_services_per_consultant
+			from store_operation_settings sos
+			where sos.store_id = $1::uuid
+			limit 1
+		), 1);
+	`, storeID).Scan(&value)
+	if err != nil {
+		return 0, err
+	}
+
+	if value < 1 {
+		return 1, nil
 	}
 
 	return value, nil
@@ -245,7 +278,11 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			queue_wait_ms,
 			queue_position_at_start,
 			start_mode,
-			skipped_people_json
+			skipped_people_json,
+			coalesce(parallel_group_id, '') as parallel_group_id,
+			parallel_start_index,
+			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
+			coalesce(start_offset_ms, 0) as start_offset_ms
 		from operation_active_services
 		where store_id = $1::uuid
 		order by service_started_at asc;
@@ -259,6 +296,7 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 	for rows.Next() {
 		var item ActiveServiceState
 		var skippedPeopleRaw []byte
+		var siblingServiceIDsRaw []byte
 		if err := rows.Scan(
 			&item.ConsultantID,
 			&item.ServiceID,
@@ -268,11 +306,16 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			&item.QueuePositionAtStart,
 			&item.StartMode,
 			&skippedPeopleRaw,
+			&item.ParallelGroupID,
+			&item.ParallelStartIndex,
+			&siblingServiceIDsRaw,
+			&item.StartOffsetMs,
 		); err != nil {
 			return nil, err
 		}
 
 		item.SkippedPeople = decodeSkippedPeople(skippedPeopleRaw)
+		item.SiblingServiceIDs = decodeStringSlice(siblingServiceIDsRaw)
 		items = append(items, item)
 	}
 
@@ -396,7 +439,11 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			queue_jump_reason,
 			notes,
 			campaign_matches_json,
-			campaign_bonus_total
+			campaign_bonus_total,
+			coalesce(parallel_group_id, '') as parallel_group_id,
+			parallel_start_index,
+			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
+			coalesce(start_offset_ms, 0) as start_offset_ms
 		from operation_service_history
 		where store_id = $1::uuid
 		order by started_at asc, created_at asc;
@@ -419,6 +466,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		var lossReasonsRaw []byte
 		var lossReasonDetailsRaw []byte
 		var campaignMatchesRaw []byte
+		var siblingServiceIDsRaw []byte
 		if err := rows.Scan(
 			&entry.ServiceID,
 			&entry.StoreID,
@@ -461,6 +509,10 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			&entry.Notes,
 			&campaignMatchesRaw,
 			&entry.CampaignBonusTotal,
+			&entry.ParallelGroupID,
+			&entry.ParallelStartIndex,
+			&siblingServiceIDsRaw,
+			&entry.StartOffsetMs,
 		); err != nil {
 			return nil, err
 		}
@@ -475,6 +527,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		entry.LossReasons = decodeStringSlice(lossReasonsRaw)
 		entry.LossReasonDetails = decodeStringMap(lossReasonDetailsRaw)
 		entry.CampaignMatches = decodeCampaignMatches(campaignMatchesRaw)
+		entry.SiblingServiceIDs = decodeStringSlice(siblingServiceIDsRaw)
 		items = append(items, entry)
 	}
 
@@ -509,6 +562,11 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			return err
 		}
 
+		siblingIDsRaw, err := json.Marshal(item.SiblingServiceIDs)
+		if err != nil {
+			return err
+		}
+
 		if _, err := tx.Exec(ctx, `
 			insert into operation_active_services (
 				store_id,
@@ -519,9 +577,13 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 				queue_wait_ms,
 				queue_position_at_start,
 				start_mode,
-				skipped_people_json
+				skipped_people_json,
+				parallel_group_id,
+				parallel_start_index,
+				sibling_service_ids_json,
+				start_offset_ms
 			)
-			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb);
+			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, $13);
 		`,
 			storeID,
 			item.ConsultantID,
@@ -532,6 +594,10 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			item.QueuePositionAtStart,
 			item.StartMode,
 			string(skippedRaw),
+			item.ParallelGroupID,
+			item.ParallelStartIndex,
+			string(siblingIDsRaw),
+			item.StartOffsetMs,
 		); err != nil {
 			return err
 		}
@@ -636,6 +702,10 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 		if err != nil {
 			return err
 		}
+		siblingServiceIDsRaw, err := json.Marshal(item.SiblingServiceIDs)
+		if err != nil {
+			return err
+		}
 
 		if _, err := tx.Exec(ctx, `
 			insert into operation_service_history (
@@ -679,13 +749,18 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 				queue_jump_reason,
 				notes,
 				campaign_matches_json,
-				campaign_bonus_total
+				campaign_bonus_total,
+				parallel_group_id,
+				parallel_start_index,
+				sibling_service_ids_json,
+				start_offset_ms
 			)
 			values (
 				$1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
 				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb,
 				$21, $22, $23, $24, $25, $26, $27, $28::jsonb, $29::jsonb, $30::jsonb,
-				$31::jsonb, $32::jsonb, $33::jsonb, $34, $35, $36, $37, $38, $39, $40::jsonb, $41
+				$31::jsonb, $32::jsonb, $33::jsonb, $34, $35, $36, $37, $38, $39, $40::jsonb, $41,
+				$42, $43, $44::jsonb, $45
 			)
 			on conflict (store_id, service_id) do nothing;
 		`,
@@ -730,6 +805,10 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			item.Notes,
 			string(campaignMatchesRaw),
 			item.CampaignBonusTotal,
+			item.ParallelGroupID,
+			item.ParallelStartIndex,
+			string(siblingServiceIDsRaw),
+			item.StartOffsetMs,
 		); err != nil {
 			return err
 		}

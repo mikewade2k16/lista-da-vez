@@ -12,72 +12,81 @@
 - [x] Status: **CONCLUÍDO** ⚠️ *Nota: A animação de reposicionamento dos toasts ao desaparecer não foi totalmente resolvida*
 
 ### 2. Atendimento Paralelo - Consultor com múltiplos atendimentos simultâneos
-> **Conceito:** o mesmo consultor pode tocar 2+ clientes ao mesmo tempo, cada atendimento com seu próprio cronômetro e modal de encerramento. Cada atendimento paralelo NÃO consome ninguém da fila (o consultor já está em service); só abre outro cronômetro. O consultor só volta para a fila após encerrar TODOS os atendimentos paralelos. O limite de paralelos é configurado **por loja** (default 1 = comportamento atual).
+> **Conceito:** o mesmo consultor pode manter 2+ atendimentos em aberto, cada um com seu proprio cronometro e modal de encerramento. Na operacao real isso costuma representar atendimentos em sequencia que ficam abertos para fechamento posterior, nao concorrencia real. Cada novo atendimento em aberto NAO consome ninguem da fila (o consultor ja esta em `service`); apenas abre outro `serviceId`. O consultor so volta para a fila apos encerrar TODOS os atendimentos abertos. O limite por consultor hoje e configurado em settings **tenant-wide** (default 1 = comportamento atual).
 
-#### 2.1 Banco de dados (migrations)
-- [ ] Migration `0030_active_services_parallel.sql`: trocar PK de `operation_active_services` de `(store_id, consultant_id)` para `(store_id, service_id)`
-- [ ] Adicionar índice não-único `(store_id, consultant_id)` em `operation_active_services`
-- [ ] Adicionar colunas `parallel_group_id text`, `parallel_start_index integer`, `sibling_service_ids_json jsonb`, `start_offset_ms bigint` em `operation_active_services`
-- [ ] Adicionar as mesmas colunas em `operation_service_history` (preservar para análise)
-- [ ] Atualizar check de `start_mode` para incluir `'parallel'`
-- [ ] Migration `0031_per_consultant_concurrency.sql`: adicionar `max_concurrent_services_per_consultant int not null default 1` em `store_operation_settings`
+#### 2.1 Banco de dados (migrations) ✅
+- [x] Migration `0030_active_services_parallel.sql`: trocar PK de `operation_active_services` de `(store_id, consultant_id)` para `(store_id, service_id)`
+- [x] Adicionar índice não-único `(store_id, consultant_id)` em `operation_active_services`
+- [x] Adicionar colunas `parallel_group_id text`, `parallel_start_index integer`, `sibling_service_ids_json jsonb`, `start_offset_ms bigint` em `operation_active_services`
+- [x] Adicionar as mesmas colunas em `operation_service_history` (preservar para análise)
+- [x] Atualizar check de `start_mode` para incluir `'parallel'`
+- [x] Migration `0032_tenant_per_consultant_concurrency.sql`: adicionar `max_concurrent_services_per_consultant int not null default 1` em `tenant_operation_settings`, com fallback legado para leitura antiga
 
-#### 2.2 Backend - módulo `operations`
-- [ ] `model.go`: adicionar campos paralelo em `ActiveService`, `ActiveServiceState`, `ServiceHistoryEntry`
-- [ ] `model.go`: adicionar `ServiceID` em `FinishCommandInput` e `MutationAck`
-- [ ] `model.go`: novo `StartParallelCommandInput { StoreID, PersonID }` (sem targetIndex)
-- [ ] `service.go`: novo método `StartParallel` — exige consultor já em service, não toca na fila, gera novo `serviceID`, calcula `parallelGroupId`/`parallelStartIndex`/`startOffsetMs`/`siblingServiceIds`
-- [ ] `service.go`: `Start` (fila normal) — bloquear se consultor já em service (mantém regra atual)
-- [ ] `service.go`: validar limite por consultor (`max_concurrent_services_per_consultant`) antes de aceitar paralelo
-- [ ] `service.go`: continuar validando limite por loja (`max_concurrent_services`)
-- [ ] `service.go`: `Finish` passa a localizar atendimento por `ServiceID` (não mais `PersonID`); só retorna consultor para a fila quando o último atendimento ativo dele encerrar
-- [ ] `service.go`: `applyStatusTransitions` deve ignorar transição quando o consultor já está em `service` e ganha mais um paralelo
-- [ ] `store_postgres.go`: ajustar SELECT/INSERT de `operation_active_services` para os novos campos
-- [ ] `store_postgres.go`: ajustar SELECT/INSERT de `operation_service_history` para os novos campos
-- [ ] `store_postgres.go`: novo `GetMaxConcurrentServicesPerConsultant(storeID)`
-- [ ] `http.go`: novo endpoint `POST /api/operations/services/parallel`
-- [ ] `permissions.go`: paralelo herda mesma permissão de `operations:edit`
-- [ ] Atualizar `back/internal/modules/operations/AGENTS.md` (ou criar) com a nova regra
+#### 2.2 Backend - módulo `operations` ✅
+- [x] `model.go`: adicionar campos paralelo em `ActiveService`, `ActiveServiceState`, `ServiceHistoryEntry`
+- [x] `model.go`: adicionar `ServiceID` em `FinishCommandInput` e `MutationAck`
+- [x] `model.go`: novo `StartParallelCommandInput { StoreID, PersonID }` (sem targetIndex)
+- [x] `service.go`: novo método `StartParallel` — exige consultor já em service, não toca na fila, gera novo `serviceID`, calcula `parallelGroupId`/`parallelStartIndex`/`startOffsetMs`/`siblingServiceIds`
+- [x] `service.go`: `Start` (fila normal) — bloquear se consultor já em service (mantém regra atual)
+- [x] `service.go`: validar limite por consultor (`max_concurrent_services_per_consultant`) antes de aceitar paralelo
+- [x] `service.go`: continuar validando limite por loja (`max_concurrent_services`)
+- [x] `service.go`: `Finish` passa a localizar atendimento por `ServiceID` (não mais `PersonID`); só retorna consultor para a fila quando o último atendimento ativo dele encerrar
+- [x] `service.go`: status transitions simplificadas — sem transição ao iniciar 2º paralelo, transição apenas ao encerrar o último
+- [x] `store_postgres.go`: ajustar SELECT/INSERT de `operation_active_services` para os novos campos
+- [x] `store_postgres.go`: ajustar SELECT/INSERT de `operation_service_history` para os novos campos
+- [x] `store_postgres.go`: novo `GetMaxConcurrentServicesPerConsultant(storeID)`
+- [x] `http.go`: novo endpoint `POST /v1/operations/services/parallel`
+- [x] `errors.go`: novos erros (`ErrConsultantNotAvailable`, `ErrConcurrentServiceLimitPerConsultantReached`)
+- [x] Documentação `back/internal/modules/operations/CONCURRENT_SERVICES.md` criada
 
-#### 2.3 Backend - módulo `settings`
-- [ ] `model.go`: adicionar `MaxConcurrentServicesPerConsultant int` em `OperationSettings` e `*int` no patch
-- [ ] `service.go`: validar `>= 1` e `<= max_concurrent_services` (não faz sentido paralelo por consultor maior que limite da loja)
-- [ ] `defaults.go`: default 1 em todos os templates (retrocompatível)
-- [ ] `store_postgres.go`: incluir coluna em todos os SELECT/INSERT/UPDATE
-- [ ] Atualizar `back/internal/modules/settings/AGENTS.md` se existir
+#### 2.3 Backend - módulo `settings` ✅
+- [x] `model.go`: adicionar `MaxConcurrentServicesPerConsultant int` em `AppSettings` e `*int` em `AppSettingsPatch`
+- [x] `service.go`: validar `>= 1` e `<= max_concurrent_services` (não faz sentido paralelo por consultor maior que limite da loja)
+- [x] `defaults.go`: default 1 em todos os 3 templates (retrocompatível)
+- [x] `defaults.go`: propagação do novo campo em `DefaultBundle`
+- [x] `store_postgres.go`: incluir coluna em SELECT (com coalesce), INSERT, UPDATE, RETURNING
+- [x] Validação circular: `normalizeAppSettings` + `applyAppSettingsPatch` validam limite
 
-#### 2.4 Frontend - operação
-- [ ] `OperationActiveServiceCard.vue`: novo botão "+ Iniciar outro atendimento" no rodapé do card (ao lado de "Encerrar"), visível apenas quando consultor não atingiu limite paralelo
-- [ ] `OperationActiveServiceCard.vue`: badge no header indicando "2/3 paralelos" quando há paralelo
-- [ ] `OperationActiveServiceCard.vue`: chip mostrando offset do paralelo (ex.: "iniciado 1m23s após o 1º")
-- [ ] `OperationQueueColumns.vue`: agrupar visualmente cards do mesmo consultor (borda compartilhada ou container)
-- [ ] `OperationQueueColumns.vue`: passar limite paralelo para os cards
-- [ ] `stores/dashboard/runtime/actions/operation-actions.ts`: nova action `startParallelService(personId)`
-- [ ] `stores/dashboard/runtime/actions/operation-actions.ts`: trocar `finishModalPersonId` por `finishModalServiceId` em todo o fluxo
-- [ ] `stores/operations.ts`: novo método de store para `startParallelService` com chamada HTTP
-- [ ] `OperationFinishModal.vue`: chave do draft em `sessionStorage` por `serviceId` (preserva rascunhos individuais)
-- [ ] `OperationFinishModal.vue`: identificar atendimento por `serviceId` no `closeFinishModal`/`finishService`
-- [ ] Toast customizado: "Iniciando 2º atendimento paralelo de {nome}"
-- [ ] Atualizar `web/app/components/AGENTS.md` se houver referência a active services
+#### 2.4 Frontend - operação ✅
+- [x] `OperationActiveServiceCard.vue`: novo botão "+ Iniciar outro atendimento" no rodapé do card (ao lado de "Encerrar"), visível apenas quando consultor não atingiu limite paralelo
+- [x] `OperationActiveServiceCard.vue`: badge no header indicando "2/3 paralelos" quando há paralelo
+- [x] `OperationActiveServiceCard.vue`: chip mostrando offset do paralelo (ex.: "iniciado 1m23s após o 1º")
+- [x] `OperationQueueColumns.vue`: agrupar visualmente cards do mesmo consultor (borda compartilhada ou container)
+- [x] `OperationQueueColumns.vue`: passar limite paralelo para os cards
+- [x] `stores/dashboard/runtime/actions/operation-actions.ts`: nova action `startParallelService(personId)`
+- [x] `stores/dashboard/runtime/actions/operation-actions.ts`: trocar `finishModalPersonId` por `finishModalServiceId` em todo o fluxo
+- [x] `stores/operations.ts`: novo método de store para `startParallelService` com chamada HTTP
+- [x] `OperationFinishModal.vue`: chave do draft em `sessionStorage` por `serviceId` (preserva rascunhos individuais)
+- [x] `OperationFinishModal.vue`: identificar atendimento por `serviceId` no `closeFinishModal`/`finishService`
+- [x] Toast customizado: "Iniciando 2º atendimento paralelo de {nome}"
+- [x] Atualizar `web/app/components/AGENTS.md` se houver referência a active services (não necessário, componentes existentes melhorados)
 
 #### 2.5 Frontend - settings
-- [ ] `SettingsWorkspace.vue`: novo campo "Atendimentos paralelos por consultor" (input numérico 1-5)
-- [ ] Texto de ajuda explicando: "Quantos atendimentos cada consultor pode tocar simultaneamente nesta loja"
-- [ ] Validação client-side: `>= 1` e `<= maxConcurrentServices`
+- [x] `SettingsWorkspace.vue`: novo campo "Atendimentos paralelos por consultor" (input numérico 1-5)
+- [x] Texto de ajuda explicando: "Quantos atendimentos cada consultor pode manter em aberto neste tenant"
+- [x] Validação client-side: `>= 1` e `<= maxConcurrentServices`
+
+#### 2.5.1 Ajustes pós-entrega em aberto
+- [x] Ajustar copy e comportamento visual para comunicar `atendimentos em aberto` / `na sequencia`, sem vender o fluxo como paralelismo real
+- [x] Revisar `OperationActiveServiceCard.vue` e `OperationQueueColumns.vue` para ordenar e rotular os cards pela sequencia de abertura do mesmo consultor
+- [x] Corrigir a reabertura do `OperationFinishModal.vue` quando o draft restaurado de `sessionStorage` for reutilizado; o erro atual de encerramento parece ocorrer nesse cenario
+- [x] Garantir invalidacao de draft stale por `storeId:serviceId` ao reabrir, fechar ou concluir atendimento
+- [ ] Redesenhar o topo do workspace para ganhar altura vertical: remover menu superior de paginas, mover navegacao para sidebar lateral e tirar a informacao de campanha ativa do topo
 
 #### 2.6 Métricas (preparação para futuro relatório)
-- [ ] Garantir que `parallelGroupId`, `parallelStartIndex`, `startOffsetMs`, `siblingServiceIds` cheguem no `ServiceHistoryEntry` no encerramento
+- [x] Garantir que `parallelGroupId`, `parallelStartIndex`, `startOffsetMs`, `siblingServiceIds` cheguem no `ServiceHistoryEntry` no encerramento
 - [ ] Expor agregado `parallelism` no payload do `Snapshot` (consultor X tem N paralelos ativos)
 - [ ] (Futuro) Relatório "Qualidade × Paralelismo" — comparar conversão/ticket médio entre atendimentos solo vs. paralelos
 
 #### 2.7 Testes
-- [ ] Teste backend: consultor com limite 1 não consegue iniciar paralelo
-- [ ] Teste backend: consultor com limite 2 inicia paralelo, gera novo `serviceId`, mantém status `service`
-- [ ] Teste backend: encerrar 1 dos 2 paralelos NÃO devolve consultor para fila
-- [ ] Teste backend: encerrar o último paralelo devolve consultor para fila
-- [ ] Teste backend: limite de loja continua bloqueando quando atingido
-- [ ] Teste backend: `parallelGroupId` é o mesmo para os 2+ paralelos sobrepostos
+- [x] Teste backend: consultor com limite 1 não consegue iniciar paralelo
+- [x] Teste backend: consultor com limite 2 inicia paralelo, gera novo `serviceId`, mantém status `service`
+- [x] Teste backend: encerrar 1 dos 2 paralelos NÃO devolve consultor para fila
+- [x] Teste backend: encerrar o último paralelo devolve consultor para fila
+- [x] Teste backend: limite de loja continua bloqueando quando atingido
+- [x] Teste backend: `parallelGroupId` é o mesmo para os 2+ paralelos sobrepostos
 - [ ] Teste manual UI: golden path (iniciar paralelo, ver 2 cards, encerrar cada um individualmente)
+- [ ] Teste manual UI: reabrir modal com draft restaurado e confirmar encerramento sem `internal_error`
 
 - [ ] Status: **PENDENTE**
 

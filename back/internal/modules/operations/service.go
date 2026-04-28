@@ -12,14 +12,15 @@ import (
 )
 
 const (
-	statusAvailable = "available"
-	statusQueue     = "queue"
-	statusService   = "service"
-	statusPaused    = "paused"
-	startModeQueue  = "queue"
-	startModeJump   = "queue-jump"
-	pauseKindPause  = "pause"
-	pauseKindTask   = "assignment"
+	statusAvailable   = "available"
+	statusQueue       = "queue"
+	statusService     = "service"
+	statusPaused      = "paused"
+	startModeQueue    = "queue"
+	startModeJump     = "queue-jump"
+	startModeParallel = "parallel"
+	pauseKindPause    = "pause"
+	pauseKindTask     = "assignment"
 )
 
 var finishOutcomes = map[string]struct{}{
@@ -136,23 +137,28 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 			}
 
 			overview.ActiveServices = append(overview.ActiveServices, OperationOverviewPerson{
-				StoreID:          storeID,
-				StoreName:        strings.TrimSpace(storeView.Name),
-				StoreCode:        strings.TrimSpace(storeView.Code),
-				PersonID:         person.ID,
-				Name:             person.Name,
-				Role:             person.Role,
-				Initials:         person.Initials,
-				Color:            person.Color,
-				MonthlyGoal:      person.MonthlyGoal,
-				CommissionRate:   person.CommissionRate,
-				Status:           statusService,
-				StatusStartedAt:  snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
-				ServiceID:        item.ServiceID,
-				ServiceStartedAt: item.ServiceStartedAt,
-				QueueJoinedAt:    item.QueueJoinedAt,
-				QueueWaitMs:      item.QueueWaitMs,
-				StartMode:        item.StartMode,
+				StoreID:            storeID,
+				StoreName:          strings.TrimSpace(storeView.Name),
+				StoreCode:          strings.TrimSpace(storeView.Code),
+				PersonID:           person.ID,
+				Name:               person.Name,
+				Role:               person.Role,
+				Initials:           person.Initials,
+				Color:              person.Color,
+				MonthlyGoal:        person.MonthlyGoal,
+				CommissionRate:     person.CommissionRate,
+				Status:             statusService,
+				StatusStartedAt:    snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
+				ServiceID:          item.ServiceID,
+				ServiceStartedAt:   item.ServiceStartedAt,
+				QueueJoinedAt:      item.QueueJoinedAt,
+				QueueWaitMs:        item.QueueWaitMs,
+				StartMode:          item.StartMode,
+				SkippedPeople:      cloneSkippedPeople(item.SkippedPeople),
+				ParallelGroupID:    item.ParallelGroupID,
+				ParallelStartIndex: item.ParallelStartIndex,
+				SiblingServiceIDs:  cloneStringSlice(item.SiblingServiceIDs),
+				StartOffsetMs:      item.StartOffsetMs,
 			})
 		}
 
@@ -455,7 +461,7 @@ func (service *Service) Start(ctx context.Context, access AccessContext, input S
 		ServiceStartedAt:     now,
 		QueueJoinedAt:        nextPerson.QueueJoinedAt,
 		QueueWaitMs:          maxInt64(0, now-nextPerson.QueueJoinedAt),
-		QueuePositionAtStart: targetIndex + 1,
+		QueuePositionAtStart: intPtr(targetIndex + 1),
 		StartMode:            startMode,
 		SkippedPeople:        skippedPeople,
 	})
@@ -469,25 +475,119 @@ func (service *Service) Start(ctx context.Context, access AccessContext, input S
 	return service.persistAndAck(ctx, resolvedStoreID, "start", person.ID, snapshotState, nil)
 }
 
+func (service *Service) StartParallel(ctx context.Context, access AccessContext, input StartParallelCommandInput) (MutationAck, error) {
+	resolvedStoreID, _, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	personID := strings.TrimSpace(input.PersonID)
+	rosterByID := mapRosterByID(roster)
+	if _, ok := rosterByID[personID]; !ok {
+		return MutationAck{}, ErrConsultantNotFound
+	}
+
+	// Check if consultant is currently in service
+	activeIndex := indexOfActiveService(snapshotState.ActiveServices, personID)
+	if activeIndex < 0 {
+		return MutationAck{}, ErrConsultantNotAvailable
+	}
+
+	// Get max concurrent services per consultant
+	maxPerConsultant, err := service.repository.GetMaxConcurrentServicesPerConsultant(ctx, resolvedStoreID)
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	// Count active services for this consultant
+	activeCountForConsultant := countActiveServicesForConsultant(snapshotState.ActiveServices, personID)
+	if activeCountForConsultant >= maxPerConsultant {
+		return MutationAck{}, ErrConcurrentServiceLimitPerConsultantReached
+	}
+
+	// Check store-level limit still applies
+	maxConcurrentServices, err := service.repository.GetMaxConcurrentServices(ctx, resolvedStoreID)
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	if len(snapshotState.ActiveServices) >= maxConcurrentServices {
+		return MutationAck{}, ErrConcurrentServiceLimitReached
+	}
+
+	now := nowUnixMilli()
+
+	// Get existing active services for this consultant to compute parallel metadata
+	anchorService := snapshotState.ActiveServices[activeIndex]
+	siblingServiceIDs := extractServiceIDsForConsultant(snapshotState.ActiveServices, personID)
+	parallelGroupID := deriveParallelGroupID(snapshotState.ActiveServices, personID, now)
+	parallelStartIndex := activeCountForConsultant + 1
+	startOffsetMs := deriveStartOffsetMs(snapshotState.ActiveServices, personID, now)
+	queuePositionAtStart := deriveQueuePositionAtStart(anchorService, snapshotState.ActiveServices, snapshotState.ServiceHistory)
+
+	// Create new parallel service
+	newService := ActiveServiceState{
+		ConsultantID:         personID,
+		ServiceID:            createServiceID(personID, now),
+		ServiceStartedAt:     now,
+		QueueJoinedAt:        anchorService.QueueJoinedAt,
+		QueueWaitMs:          anchorService.QueueWaitMs,
+		QueuePositionAtStart: queuePositionAtStart,
+		StartMode:            "parallel",
+		SkippedPeople:        cloneSkippedPeople(anchorService.SkippedPeople),
+		ParallelGroupID:      parallelGroupID,
+		ParallelStartIndex:   intPtr(parallelStartIndex),
+		SiblingServiceIDs:    siblingServiceIDs,
+		StartOffsetMs:        startOffsetMs,
+	}
+
+	snapshotState.ActiveServices = append(snapshotState.ActiveServices, newService)
+
+	// No status transition: consultant already in 'service' status
+	// (applyStatusTransitions will be a noop since consultant is already in 'service')
+	ack, err := service.persistAndAck(ctx, resolvedStoreID, "start-parallel", personID, snapshotState, nil)
+	if err == nil {
+		ack.ServiceID = newService.ServiceID
+	}
+
+	return ack, err
+}
+
 func (service *Service) Finish(ctx context.Context, access AccessContext, input FinishCommandInput) (MutationAck, error) {
 	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
 	if err != nil {
 		return MutationAck{}, err
 	}
 
-	personID := strings.TrimSpace(input.PersonID)
+	serviceID := strings.TrimSpace(input.ServiceID)
+	if serviceID == "" {
+		// Fallback: try to find by PersonID for backward compatibility
+		personID := strings.TrimSpace(input.PersonID)
+		activeIndex := indexOfActiveService(snapshotState.ActiveServices, personID)
+		if activeIndex >= 0 {
+			serviceID = snapshotState.ActiveServices[activeIndex].ServiceID
+		}
+	}
+
+	if serviceID == "" {
+		return MutationAck{}, ErrValidation
+	}
+
 	if _, ok := finishOutcomes[strings.TrimSpace(input.Outcome)]; !ok {
 		return MutationAck{}, ErrValidation
 	}
 
-	activeIndex := indexOfActiveService(snapshotState.ActiveServices, personID)
+	activeIndex := indexOfActiveServiceByServiceID(snapshotState.ActiveServices, serviceID)
 	if activeIndex < 0 {
-		return service.buildAck(resolvedStoreID, "finish", personID), nil
+		return MutationAck{}, ErrValidation
 	}
 
 	activeService := snapshotState.ActiveServices[activeIndex]
+	personID := activeService.ConsultantID
 	now := nowUnixMilli()
-	snapshotState.ActiveServices = filterActiveServices(snapshotState.ActiveServices, personID)
+	effectiveFinishedAt := deriveSequentialServiceEndAt(activeService, snapshotState.ActiveServices, snapshotState.ServiceHistory, now)
+	queuePositionAtStart := deriveQueuePositionAtStart(activeService, snapshotState.ActiveServices, snapshotState.ServiceHistory)
+	snapshotState.ActiveServices = filterActiveServicesByServiceID(snapshotState.ActiveServices, serviceID)
 
 	rosterByID := mapRosterByID(roster)
 	person, ok := rosterByID[personID]
@@ -495,10 +595,17 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		return MutationAck{}, ErrConsultantNotFound
 	}
 
-	snapshotState.WaitingList = append(snapshotState.WaitingList, QueueStateItem{
-		ConsultantID:  person.ID,
-		QueueJoinedAt: now,
-	})
+	// Check if consultant has any remaining active services
+	remainingServicesCount := countActiveServicesForConsultant(snapshotState.ActiveServices, personID)
+	isLastService := remainingServicesCount == 0
+
+	// Only return to queue and transition status if this was the last active service
+	if isLastService {
+		snapshotState.WaitingList = append(snapshotState.WaitingList, QueueStateItem{
+			ConsultantID:  person.ID,
+			QueueJoinedAt: now,
+		})
+	}
 
 	historyEntry := normalizeHistoryEntry(ServiceHistoryEntry{
 		ServiceID:                  activeService.ServiceID,
@@ -507,14 +614,18 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		PersonID:                   person.ID,
 		PersonName:                 person.Name,
 		StartedAt:                  activeService.ServiceStartedAt,
-		FinishedAt:                 now,
-		DurationMs:                 maxInt64(0, now-activeService.ServiceStartedAt),
+		FinishedAt:                 effectiveFinishedAt,
+		DurationMs:                 maxInt64(0, effectiveFinishedAt-activeService.ServiceStartedAt),
 		FinishOutcome:              strings.TrimSpace(input.Outcome),
 		StartMode:                  activeService.StartMode,
-		QueuePositionAtStart:       activeService.QueuePositionAtStart,
+		QueuePositionAtStart:       queuePositionAtStart,
 		QueueWaitMs:                activeService.QueueWaitMs,
 		SkippedPeople:              cloneSkippedPeople(activeService.SkippedPeople),
 		SkippedCount:               len(activeService.SkippedPeople),
+		ParallelGroupID:            activeService.ParallelGroupID,
+		ParallelStartIndex:         activeService.ParallelStartIndex,
+		SiblingServiceIDs:          cloneStringSlice(activeService.SiblingServiceIDs),
+		StartOffsetMs:              activeService.StartOffsetMs,
 		IsWindowService:            input.IsWindowService,
 		IsGift:                     input.IsGift,
 		ProductSeen:                input.ProductSeen,
@@ -553,12 +664,16 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 	}
 
 	snapshotState.ServiceHistory = append(snapshotState.ServiceHistory, historyEntry)
-	snapshotState.ConsultantActivitySessions, snapshotState.ConsultantCurrentStatus = applyStatusTransitions(
-		snapshotState.ConsultantActivitySessions,
-		snapshotState.ConsultantCurrentStatus,
-		[]transition{{personID: person.ID, nextStatus: statusQueue}},
-		now,
-	)
+
+	// Only transition status if this was the last active service for the consultant
+	if isLastService {
+		snapshotState.ConsultantActivitySessions, snapshotState.ConsultantCurrentStatus = applyStatusTransitions(
+			snapshotState.ConsultantActivitySessions,
+			snapshotState.ConsultantCurrentStatus,
+			[]transition{{personID: person.ID, nextStatus: statusQueue}},
+			now,
+		)
+	}
 
 	return service.persistAndAck(ctx, resolvedStoreID, "finish", person.ID, snapshotState, []ServiceHistoryEntry{historyEntry})
 }
@@ -757,6 +872,10 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			QueuePositionAtStart: item.QueuePositionAtStart,
 			StartMode:            item.StartMode,
 			SkippedPeople:        cloneSkippedPeople(item.SkippedPeople),
+			ParallelGroupID:      strings.TrimSpace(item.ParallelGroupID),
+			ParallelStartIndex:   item.ParallelStartIndex,
+			SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
+			StartOffsetMs:        maxInt64(item.StartOffsetMs, 0),
 		})
 	}
 
@@ -819,6 +938,10 @@ func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshot
 				QueuePositionAtStart: item.QueuePositionAtStart,
 				StartMode:            normalizeStartMode(item.StartMode),
 				SkippedPeople:        cloneSkippedPeople(item.SkippedPeople),
+				ParallelGroupID:      strings.TrimSpace(item.ParallelGroupID),
+				ParallelStartIndex:   item.ParallelStartIndex,
+				SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
+				StartOffsetMs:        maxInt64(item.StartOffsetMs, 0),
 			})
 		}
 	}
@@ -969,6 +1092,9 @@ func normalizeHistoryEntry(entry ServiceHistoryEntry) ServiceHistoryEntry {
 	entry.PersonName = strings.TrimSpace(entry.PersonName)
 	entry.FinishOutcome = normalizeOutcome(entry.FinishOutcome)
 	entry.StartMode = normalizeStartMode(entry.StartMode)
+	entry.ParallelGroupID = strings.TrimSpace(entry.ParallelGroupID)
+	entry.SiblingServiceIDs = normalizeStringSlice(entry.SiblingServiceIDs)
+	entry.StartOffsetMs = maxInt64(entry.StartOffsetMs, 0)
 	entry.ProductSeen = strings.TrimSpace(entry.ProductSeen)
 	entry.ProductClosed = strings.TrimSpace(entry.ProductClosed)
 	entry.ProductDetails = strings.TrimSpace(entry.ProductDetails)
@@ -1057,6 +1183,15 @@ func indexOfActiveService(activeServices []ActiveServiceState, consultantID stri
 	return -1
 }
 
+func indexOfActiveServiceByServiceID(activeServices []ActiveServiceState, serviceID string) int {
+	for index, item := range activeServices {
+		if item.ServiceID == serviceID {
+			return index
+		}
+	}
+	return -1
+}
+
 func filterWaiting(waitingList []QueueStateItem, consultantID string) []QueueStateItem {
 	filtered := make([]QueueStateItem, 0, len(waitingList))
 	for _, item := range waitingList {
@@ -1071,6 +1206,16 @@ func filterActiveServices(activeServices []ActiveServiceState, consultantID stri
 	filtered := make([]ActiveServiceState, 0, len(activeServices))
 	for _, item := range activeServices {
 		if item.ConsultantID != consultantID {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterActiveServicesByServiceID(activeServices []ActiveServiceState, serviceID string) []ActiveServiceState {
+	filtered := make([]ActiveServiceState, 0, len(activeServices))
+	for _, item := range activeServices {
+		if item.ServiceID != serviceID {
 			filtered = append(filtered, item)
 		}
 	}
@@ -1136,6 +1281,17 @@ func cloneSkippedPeople(items []SkippedPerson) []SkippedPerson {
 	return cloned
 }
 
+func cloneStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	cloned := make([]string, 0, len(items))
+	for _, item := range items {
+		cloned = append(cloned, item)
+	}
+	return cloned
+}
+
 func normalizeStringSlice(values []string) []string {
 	seen := map[string]struct{}{}
 	normalized := make([]string, 0, len(values))
@@ -1191,8 +1347,11 @@ func normalizeOutcome(value string) string {
 }
 
 func normalizeStartMode(value string) string {
-	if strings.TrimSpace(value) == startModeJump {
+	switch strings.TrimSpace(value) {
+	case startModeJump:
 		return startModeJump
+	case startModeParallel:
+		return startModeParallel
 	}
 	return startModeQueue
 }
@@ -1240,4 +1399,143 @@ func maxInt64(value int64, minimum int64) int64 {
 
 func nowUnixMilli() int64 {
 	return time.Now().UTC().UnixMilli()
+}
+
+func intPtr(v int) *int {
+	return &v
+}
+
+func countActiveServicesForConsultant(activeServices []ActiveServiceState, consultantID string) int {
+	count := 0
+	for _, service := range activeServices {
+		if service.ConsultantID == consultantID {
+			count++
+		}
+	}
+	return count
+}
+
+func extractServiceIDsForConsultant(activeServices []ActiveServiceState, consultantID string) []string {
+	ids := make([]string, 0)
+	for _, service := range activeServices {
+		if service.ConsultantID == consultantID {
+			ids = append(ids, service.ServiceID)
+		}
+	}
+	return ids
+}
+
+func deriveParallelGroupID(activeServices []ActiveServiceState, consultantID string, now int64) string {
+	// If consultant already has active services, use the first one's parallel group ID
+	for _, service := range activeServices {
+		if service.ConsultantID == consultantID {
+			if service.ParallelGroupID != "" {
+				return service.ParallelGroupID
+			}
+		}
+	}
+	// Otherwise, create a new group ID based on first service's timestamp
+	for _, service := range activeServices {
+		if service.ConsultantID == consultantID {
+			return createServiceID(consultantID, service.ServiceStartedAt)
+		}
+	}
+	// Fallback (shouldn't happen if we validated consultant is in service)
+	return createServiceID(consultantID, now)
+}
+
+func deriveStartOffsetMs(activeServices []ActiveServiceState, consultantID string, now int64) int64 {
+	// Find the earliest started service for this consultant
+	var earliestStartedAt int64 = now
+	for _, service := range activeServices {
+		if service.ConsultantID == consultantID {
+			if service.ServiceStartedAt < earliestStartedAt {
+				earliestStartedAt = service.ServiceStartedAt
+			}
+		}
+	}
+	return maxInt64(0, now-earliestStartedAt)
+}
+
+func deriveQueuePositionAtStart(target ActiveServiceState, activeServices []ActiveServiceState, history []ServiceHistoryEntry) *int {
+	if target.QueuePositionAtStart != nil {
+		return intPtr(*target.QueuePositionAtStart)
+	}
+
+	targetConsultantID := strings.TrimSpace(target.ConsultantID)
+	targetGroupID := strings.TrimSpace(target.ParallelGroupID)
+
+	for _, service := range activeServices {
+		if service.ServiceID == target.ServiceID {
+			continue
+		}
+		if strings.TrimSpace(service.ConsultantID) != targetConsultantID {
+			continue
+		}
+		if targetGroupID != "" && strings.TrimSpace(service.ParallelGroupID) != targetGroupID {
+			continue
+		}
+		if service.QueuePositionAtStart != nil {
+			return intPtr(*service.QueuePositionAtStart)
+		}
+	}
+
+	for _, entry := range history {
+		if strings.TrimSpace(entry.PersonID) != targetConsultantID {
+			continue
+		}
+		if targetGroupID != "" && strings.TrimSpace(entry.ParallelGroupID) != targetGroupID {
+			continue
+		}
+		if entry.QueuePositionAtStart != nil {
+			return intPtr(*entry.QueuePositionAtStart)
+		}
+	}
+
+	return intPtr(1)
+}
+
+func deriveSequentialServiceEndAt(target ActiveServiceState, activeServices []ActiveServiceState, history []ServiceHistoryEntry, fallback int64) int64 {
+	targetConsultantID := strings.TrimSpace(target.ConsultantID)
+	targetGroupID := strings.TrimSpace(target.ParallelGroupID)
+	targetStartedAt := target.ServiceStartedAt
+	nextStartedAt := int64(0)
+
+	consider := func(candidateStartedAt int64) {
+		if candidateStartedAt <= targetStartedAt {
+			return
+		}
+		if nextStartedAt == 0 || candidateStartedAt < nextStartedAt {
+			nextStartedAt = candidateStartedAt
+		}
+	}
+
+	for _, service := range activeServices {
+		if service.ServiceID == target.ServiceID {
+			continue
+		}
+		if strings.TrimSpace(service.ConsultantID) != targetConsultantID {
+			continue
+		}
+		if targetGroupID != "" && strings.TrimSpace(service.ParallelGroupID) != targetGroupID {
+			continue
+		}
+		consider(service.ServiceStartedAt)
+	}
+
+	for _, entry := range history {
+		if strings.TrimSpace(entry.PersonID) != targetConsultantID {
+			continue
+		}
+		if targetGroupID != "" && strings.TrimSpace(entry.ParallelGroupID) != targetGroupID {
+			continue
+		}
+		consider(entry.StartedAt)
+	}
+
+	if nextStartedAt > 0 {
+		return nextStartedAt
+	}
+
+	return maxInt64(fallback, targetStartedAt)
 }

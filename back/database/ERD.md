@@ -402,13 +402,20 @@ erDiagram
 - `consultants`
   - roster administrativo por loja para a operacao
   - no seed MVP cada consultor ja nasce com vinculo 1:1 em `users`
+- `tenant_operation_settings`
+  - fonte de verdade tenant-wide para configuracao operacional
+  - inclui limites como `max_concurrent_services` e `max_concurrent_services_per_consultant`
+- `tenant_setting_options`
+  - catalogos configuraveis tenant-wide para motivos, origens, pausas e correlatos
+- `tenant_catalog_products`
+  - catalogo de produtos tenant-wide consumido pelo modal e pela operacao
 - `store_operation_settings`
-  - configuracao escalar da loja para a operacao e o modal
+  - legado de transicao por loja; deve ser tratado como fallback/backfill, nao como fonte principal de escrita
 - `store_setting_options`
-  - catalogos configuraveis da loja, tipados por `kind`
+  - legado de transicao por loja, tipados por `kind`
   - `kind` atual: `visit_reason`, `customer_source`, `pause_reason`, `queue_jump_reason`, `loss_reason`, `profession`
 - `store_catalog_products`
-  - catalogo de produtos configuravel da loja
+  - legado de transicao por loja para catalogo de produtos
 - `operation_queue_entries`
   - fila corrente por loja
 - `operation_active_services`
@@ -435,6 +442,7 @@ A migration de seed cria:
 ## Observacoes de modelagem
 
 - `settings` deixou de viver em um JSON gigante e foi normalizado por tabela
+- a fonte de verdade atual de configuracao e catalogos fica nas tabelas `tenant_*`; as tabelas `store_*` seguem apenas para compatibilidade e backfill controlado
 - `operations` usa tabelas correntes para snapshot rapido e tabelas append-only para historico
 - `reports` le o historico principalmente por `store_id` + `finished_at`, com indices dedicados para tempo, consultor e desfecho
 - `user_invitations` guarda o token em hash, nunca o token aberto

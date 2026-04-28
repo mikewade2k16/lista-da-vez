@@ -9,6 +9,108 @@ function createServiceId(personId) {
   return `${personId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function deriveQueuePositionAtStart(targetService, activeServices = [], serviceHistory = []) {
+  if (typeof targetService?.queuePositionAtStart === "number" && targetService.queuePositionAtStart > 0) {
+    return targetService.queuePositionAtStart;
+  }
+
+  const targetConsultantId = String(targetService?.id || "").trim();
+  const targetGroupId = String(targetService?.parallelGroupId || "").trim();
+  const targetServiceId = String(targetService?.serviceId || "").trim();
+
+  const hasMatchingGroup = (entry) => {
+    if (targetGroupId) {
+      return String(entry?.parallelGroupId || "").trim() === targetGroupId;
+    }
+
+    const siblingServiceIds = Array.isArray(entry?.siblingServiceIds) ? entry.siblingServiceIds : [];
+    return siblingServiceIds.includes(targetServiceId);
+  };
+
+  const activeMatch = (Array.isArray(activeServices) ? activeServices : []).find((service) => {
+    if (String(service?.serviceId || "").trim() === targetServiceId) {
+      return false;
+    }
+    if (String(service?.id || "").trim() !== targetConsultantId) {
+      return false;
+    }
+    if (!hasMatchingGroup(service)) {
+      return false;
+    }
+    return typeof service?.queuePositionAtStart === "number" && service.queuePositionAtStart > 0;
+  });
+
+  if (typeof activeMatch?.queuePositionAtStart === "number" && activeMatch.queuePositionAtStart > 0) {
+    return activeMatch.queuePositionAtStart;
+  }
+
+  const historyMatch = (Array.isArray(serviceHistory) ? serviceHistory : []).find((entry) => {
+    if (String(entry?.personId || "").trim() !== targetConsultantId) {
+      return false;
+    }
+    if (!hasMatchingGroup(entry)) {
+      return false;
+    }
+    return typeof entry?.queuePositionAtStart === "number" && entry.queuePositionAtStart > 0;
+  });
+
+  return typeof historyMatch?.queuePositionAtStart === "number" && historyMatch.queuePositionAtStart > 0
+    ? historyMatch.queuePositionAtStart
+    : 1;
+}
+
+function deriveSequentialServiceFinishedAt(targetService, activeServices = [], serviceHistory = [], now = Date.now()) {
+  const targetConsultantId = String(targetService?.id || "").trim();
+  const targetGroupId = String(targetService?.parallelGroupId || "").trim();
+  const targetServiceId = String(targetService?.serviceId || "").trim();
+  const targetStartedAt = Number(targetService?.serviceStartedAt || 0) || 0;
+  let nextStartedAt = 0;
+
+  const belongsToSequence = (entry) => {
+    if (targetGroupId) {
+      return String(entry?.parallelGroupId || "").trim() === targetGroupId;
+    }
+
+    const siblingServiceIds = Array.isArray(entry?.siblingServiceIds) ? entry.siblingServiceIds : [];
+    return siblingServiceIds.includes(targetServiceId);
+  };
+
+  const consider = (candidateStartedAt) => {
+    const normalizedStartedAt = Number(candidateStartedAt || 0) || 0;
+    if (normalizedStartedAt <= targetStartedAt) {
+      return;
+    }
+    if (!nextStartedAt || normalizedStartedAt < nextStartedAt) {
+      nextStartedAt = normalizedStartedAt;
+    }
+  };
+
+  (Array.isArray(activeServices) ? activeServices : []).forEach((service) => {
+    if (String(service?.serviceId || "").trim() === targetServiceId) {
+      return;
+    }
+    if (String(service?.id || "").trim() !== targetConsultantId) {
+      return;
+    }
+    if (!belongsToSequence(service)) {
+      return;
+    }
+    consider(service?.serviceStartedAt);
+  });
+
+  (Array.isArray(serviceHistory) ? serviceHistory : []).forEach((entry) => {
+    if (String(entry?.personId || "").trim() !== targetConsultantId) {
+      return;
+    }
+    if (!belongsToSequence(entry)) {
+      return;
+    }
+    consider(entry?.startedAt);
+  });
+
+  return nextStartedAt || Math.max(now, targetStartedAt);
+}
+
 export function createOperationActions({ getState, updateState }) {
   return {
     addToQueue(personId) {
@@ -132,9 +234,47 @@ export function createOperationActions({ getState, updateState }) {
       });
     },
 
-    openFinishModal(personId) {
+    startParallelService(personId) {
       const state = getState();
-      const activeService = state.activeServices.find((item) => item.id === personId);
+      const now = Date.now();
+      const consultant = state.roster.find((item) => item.id === personId);
+      const consultantServices = state.activeServices.filter((item) => item.id === personId);
+      const maxPerConsultant = state.settings.maxConcurrentServicesPerConsultant || 1;
+
+      if (!consultant || consultantServices.length >= maxPerConsultant) {
+        return;
+      }
+
+      const firstService = consultantServices[0];
+      const parallelGroupId = firstService?.parallelGroupId || createServiceId(personId);
+      const parallelStartIndex = consultantServices.length + 1;
+      const startOffsetMs = Math.max(0, now - (firstService?.serviceStartedAt || now));
+      const siblingServiceIds = consultantServices.map((s) => s.serviceId);
+
+      const serviceEntry = {
+        ...consultant,
+        serviceId: createServiceId(personId),
+        serviceStartedAt: now,
+        queueJoinedAt: Number(firstService?.queueJoinedAt || now),
+        queueWaitMs: Number(firstService?.queueWaitMs || 0),
+        queuePositionAtStart: deriveQueuePositionAtStart(firstService || consultant, state.activeServices, state.serviceHistory),
+        startMode: "parallel",
+        skippedPeople: Array.isArray(firstService?.skippedPeople) ? firstService.skippedPeople : [],
+        parallelGroupId,
+        parallelStartIndex,
+        startOffsetMs,
+        siblingServiceIds
+      };
+
+      updateState({
+        ...state,
+        activeServices: [...state.activeServices, serviceEntry]
+      });
+    },
+
+    openFinishModal(serviceId) {
+      const state = getState();
+      const activeService = state.activeServices.find((item) => item.serviceId === serviceId);
 
       if (!activeService) {
         return;
@@ -142,7 +282,7 @@ export function createOperationActions({ getState, updateState }) {
 
       updateState({
         ...state,
-        finishModalPersonId: personId,
+        finishModalServiceId: serviceId,
         finishModalDraft: buildRandomFinishModalDraft(state, activeService)
       });
     },
@@ -152,12 +292,12 @@ export function createOperationActions({ getState, updateState }) {
 
       updateState({
         ...state,
-        finishModalPersonId: null,
+        finishModalServiceId: null,
         finishModalDraft: null
       });
     },
 
-    finishService(personId, closureData) {
+    finishService(serviceId, closureData) {
       const state = getState();
 
       if (!FINISH_OUTCOMES.has(closureData?.outcome)) {
@@ -165,15 +305,17 @@ export function createOperationActions({ getState, updateState }) {
       }
 
       const now = Date.now();
-      const serviceIndex = state.activeServices.findIndex((item) => item.id === personId);
+      const serviceIndex = state.activeServices.findIndex((item) => item.serviceId === serviceId);
 
       if (serviceIndex === -1) {
         return;
       }
 
       const activeService = state.activeServices[serviceIndex];
+      const personId = activeService.id;
       const finishedAt = now;
-      const nextActiveServices = state.activeServices.filter((item) => item.id !== personId);
+      const effectiveFinishedAt = deriveSequentialServiceFinishedAt(activeService, state.activeServices, state.serviceHistory, now);
+      const nextActiveServices = state.activeServices.filter((item) => item.serviceId !== serviceId);
       const activeStore = state.stores.find((store) => store.id === state.activeStoreId) || null;
       const normalizedProfession = String(closureData.customerProfession || "").trim();
       const nextProfessionOptions = normalizedProfession
@@ -186,11 +328,11 @@ export function createOperationActions({ getState, updateState }) {
         personId: activeService.id,
         personName: activeService.name,
         startedAt: activeService.serviceStartedAt,
-        finishedAt,
-        durationMs: finishedAt - activeService.serviceStartedAt,
+        finishedAt: effectiveFinishedAt,
+        durationMs: Math.max(0, effectiveFinishedAt - Number(activeService.serviceStartedAt || 0)),
         finishOutcome: closureData.outcome,
         startMode: activeService.startMode,
-        queuePositionAtStart: activeService.queuePositionAtStart,
+        queuePositionAtStart: deriveQueuePositionAtStart(activeService, state.activeServices, state.serviceHistory),
         queueWaitMs: Number(activeService.queueWaitMs || 0),
         skippedPeople: activeService.skippedPeople,
         skippedCount: activeService.skippedPeople.length,
@@ -228,21 +370,30 @@ export function createOperationActions({ getState, updateState }) {
         campaignBonusTotal: campaignResult.totalBonus
       };
 
+      const remainingConsultantServices = nextActiveServices.filter((item) => item.id === personId);
+      const shouldReturnToQueue = remainingConsultantServices.length === 0;
+      const nextWaitingList = shouldReturnToQueue
+        ? [
+            ...state.waitingList,
+            {
+              ...(state.roster.find((item) => item.id === personId) || activeService),
+              queueJoinedAt: now
+            }
+          ]
+        : state.waitingList;
+      const statusTransitions = shouldReturnToQueue
+        ? [{ personId, nextStatus: "queue" }]
+        : [];
+
       updateState({
         ...state,
-        waitingList: [
-          ...state.waitingList,
-          {
-            ...(state.roster.find((item) => item.id === personId) || activeService),
-            queueJoinedAt: now
-          }
-        ],
+        waitingList: nextWaitingList,
         activeServices: nextActiveServices,
         professionOptions: nextProfessionOptions,
         serviceHistory: [...state.serviceHistory, finalizedHistoryEntry],
-        finishModalPersonId: null,
+        finishModalServiceId: null,
         finishModalDraft: null,
-        ...applyStatusTransitions(state, [{ personId, nextStatus: "queue" }], now)
+        ...applyStatusTransitions(state, statusTransitions, now)
       });
     }
   };

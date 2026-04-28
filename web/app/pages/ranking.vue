@@ -30,7 +30,7 @@ watch(
 </script>
 
 <template>
-  <div class="workspace-host">
+  <div class="page-workspace">
     <RankingWorkspace
       :report="ranking"
       :pending="pending"

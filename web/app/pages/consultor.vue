@@ -53,7 +53,7 @@ watch(
 </script>
 
 <template>
-  <div class="workspace-host">
+  <div class="page-workspace">
     <ConsultantWorkspace
       :state="state"
       :integrated-scope="integratedScope"

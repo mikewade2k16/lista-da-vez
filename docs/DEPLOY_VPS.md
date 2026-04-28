@@ -300,6 +300,7 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
     -o StrictHostKeyChecking=accept-new \
@@ -374,6 +375,7 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
     -o StrictHostKeyChecking=accept-new \
@@ -424,6 +426,7 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
     -o StrictHostKeyChecking=accept-new \
@@ -465,6 +468,7 @@ npm run prod:deploy:vps
 Esse script usa o metodo validado neste ambiente:
 
 - empacota o workspace local por `tar`
+- exclui a pasta local `Controlle10 - ftp` do payload antes do envio
 - limpa o diretorio remoto preservando `.env.production` e `backups`
 - envia o codigo por SSH
 - valida `docker compose`

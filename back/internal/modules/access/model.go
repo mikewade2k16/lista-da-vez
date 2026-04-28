@@ -33,6 +33,8 @@ const (
 	PermissionSettingsEdit      = "workspace.configuracoes.edit"
 	PermissionFeedbackView      = "workspace.feedback.view"
 	PermissionFeedbackEdit      = "workspace.feedback.edit"
+	PermissionERPView           = "workspace.erp.view"
+	PermissionERPEdit           = "workspace.erp.edit"
 	PermissionUsersPasswordEdit = "users.password.manage"
 	PermissionRoleMatrixEdit    = "access.role_defaults.manage"
 )

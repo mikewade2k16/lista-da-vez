@@ -50,6 +50,10 @@ services:
       SMTP_INSECURE_SKIP_VERIFY: ${SMTP_INSECURE_SKIP_VERIFY:-false}
       SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
       AUTH_BCRYPT_COST: ${AUTH_BCRYPT_COST:-10}
+      ERP_SOURCE_DIR: /app/data/erp/source
+      ERP_STORAGE_DIR: /app/data/erp/storage
+      ERP_BOOTSTRAP_ITEM_FILE: ${ERP_BOOTSTRAP_ITEM_FILE:-consolidados/184/item_184_consolidado.md}
+      ERP_ALLOW_MANUAL_SYNC: ${ERP_ALLOW_MANUAL_SYNC:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +61,8 @@ services:
       - "${API_PORT:-8080}:8080"
     volumes:
       - api_uploads:/app/data/uploads
+      - "./Controlle10 - ftp:/app/data/erp/source:ro"
+      - api_erp_storage:/app/data/erp/storage
     healthcheck:
       test:
         [
@@ -97,5 +103,6 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  api_erp_storage:
   web_node_modules:
   web_nuxt:

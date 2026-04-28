@@ -99,6 +99,31 @@
 - [ ] Status: **PENDENTE**
 ---
 
+### 4. ERP - Pagina administrativa atual e dados importados
+- [x] Criar modulo ERP no backend com rotas autenticadas
+- [x] Criar tabelas raw/projecao para produtos, clientes, funcionarios, compras e cancelados
+- [x] Conectar aba Produtos ao banco `erp_item_current`
+- [x] Importar/bootstrap da loja 184 para produtos, clientes, funcionarios, compras e cancelados
+- [x] Exibir dados completos nas abas, sem limitar a codigo/arquivo de origem
+- [x] Exibir cards de status por tipo de dado importado
+- [x] Renomear Pedidos para Compras no front
+- [x] Ajustar busca geral nas grades ERP
+- [x] Ajustar busca especifica por aba: Compra, CPF, ID funcionario e Compra cancelada
+- [x] Corrigir erro 500 da rota de Compras causado por parametros SQL inconsistentes
+- [x] Validar rotas ERP de compras, clientes, funcionarios e cancelados com filtros retornando 200
+- [x] Validar build do front com `npm --prefix web run build`
+- [x] Validar backend com `go test ./...`
+- [ ] Proximo passo: levar os dados do ERP para a Operacao e preparar automacoes
+- [ ] Proximo passo: usar codigo da compra no encerramento para preencher compra, cliente, funcionario e produtos
+- [ ] Status: **PENDENTE PARA INTEGRACAO COM OPERACAO**
+
+### 5. ERP - Filtros analiticos futuros apos automacoes e operacao
+- [ ] Depois das automacoes e depois de levar dados do ERP para a Operacao, criar uma pagina de cruzamento/analise
+- [ ] Adicionar filtros por periodo, ex.: compras do dia X ate o dia Y
+- [ ] Cruzar compras, clientes, funcionarios, cancelamentos e produtos para visoes operacionais
+- [ ] Definir filtros adicionais por cliente/CPF, funcionario, forma de pagamento, SKU, loja/subloja e faixa de valor
+- [ ] Status: **PENDENTE**
+
 ## 📋 ROADMAP DETALHADO
 
 ### Fase 1: Integração ERP

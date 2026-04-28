@@ -19,6 +19,29 @@
   padding: 16px;
 }
 
+/*
+ * page-workspace
+ * Preset padrão para páginas do dashboard.
+ * Flex-column com overflow:hidden — restaura o comportamento
+ * idêntico ao workspace-host (suporta filhos com flex:1 e
+ * overflow-y:auto, além de body scroll natural).
+ * TODAS as páginas usam este wrapper, exceto Operação.
+ */
+.page-workspace {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.page-workspace > .admin-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+/* workspace-host: mantido para a página de Operação */
 .workspace-host {
   width: 100%;
   display: flex;

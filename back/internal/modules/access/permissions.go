@@ -27,6 +27,8 @@ var permissionCatalog = []PermissionDefinition{
 	{Key: PermissionSettingsEdit, Scope: ScopeTenant, Description: "Editar configuracoes operacionais."},
 	{Key: PermissionFeedbackView, Scope: ScopeTenant, Description: "Visualizar a workspace Feedback."},
 	{Key: PermissionFeedbackEdit, Scope: ScopeTenant, Description: "Editar feedback e notas administrativas."},
+	{Key: PermissionERPView, Scope: ScopeTenant, Description: "Visualizar a workspace ERP."},
+	{Key: PermissionERPEdit, Scope: ScopeTenant, Description: "Executar sync manual e administrar a workspace ERP."},
 	{Key: PermissionUsersPasswordEdit, Scope: ScopePlatform, Description: "Redefinir senha administrativa pelo painel."},
 	{Key: PermissionRoleMatrixEdit, Scope: ScopePlatform, Description: "Editar o acesso padrao por papel."},
 }
@@ -48,16 +50,19 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 	auth.RoleManager: {
 		PermissionOperationsView,
 		PermissionOperationsEdit,
+		PermissionERPView,
 		PermissionFeedbackView,
 		PermissionFeedbackEdit,
 	},
 	auth.RoleMarketing: {
 		PermissionOperationsView,
+		PermissionERPView,
 		PermissionCampaignsView,
 		PermissionCampaignsEdit,
 	},
 	auth.RoleDirector: {
 		PermissionOperationsView,
+		PermissionERPView,
 	},
 	auth.RoleOwner: {
 		PermissionOperationsView,
@@ -79,6 +84,8 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 		PermissionSettingsEdit,
 		PermissionFeedbackView,
 		PermissionFeedbackEdit,
+		PermissionERPView,
+		PermissionERPEdit,
 	},
 	auth.RolePlatformAdmin: {
 		PermissionOperationsView,
@@ -100,6 +107,8 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 		PermissionSettingsEdit,
 		PermissionFeedbackView,
 		PermissionFeedbackEdit,
+		PermissionERPView,
+		PermissionERPEdit,
 		PermissionUsersPasswordEdit,
 		PermissionRoleMatrixEdit,
 	},

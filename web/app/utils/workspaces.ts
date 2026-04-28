@@ -7,6 +7,7 @@ export const WORKSPACES = [
   { id: "relatorios", label: "Relatorios", icon: "description", path: "/relatorios" },
   { id: "campanhas", label: "Campanhas", icon: "campaign", path: "/campanhas" },
   { id: "clientes", label: "Clientes", icon: "apartment", path: "/clientes" },
+  { id: "erp", label: "ERP", icon: "inventory_2", path: "/erp" },
   { id: "multiloja", label: "Multi-loja", icon: "store", path: "/multiloja" },
   { id: "usuarios", label: "Usuarios", icon: "group", path: "/usuarios" },
   { id: "configuracoes", label: "Config", icon: "tune", path: "/configuracoes" },

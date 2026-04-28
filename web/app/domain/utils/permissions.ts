@@ -71,6 +71,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: "workspace.clientes.edit"
   },
   {
+    id: "erp",
+    label: "ERP",
+    description: "Sync ERP/FTP, status dos lotes e busca de produtos consolidada.",
+    viewPermission: "workspace.erp.view",
+    editPermission: "workspace.erp.edit"
+  },
+  {
     id: "multiloja",
     label: "Multi-loja",
     description: "Consolidado e administracao de lojas.",
@@ -114,14 +121,14 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
 ];
 
 const ROLE_WORKSPACES = {
-  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes", "feedback"],
-  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes", "feedback"],
-  marketing: ["operacao"],
-  director: ["operacao"],
-  manager: ["operacao", "feedback"],
+  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "feedback"],
+  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "feedback"],
+  marketing: ["operacao", "erp"],
+  director: ["operacao", "erp"],
+  manager: ["operacao", "erp", "feedback"],
   store_terminal: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios"],
   consultant: ["operacao"],
-  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "multiloja", "usuarios", "configuracoes", "feedback"]
+  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "feedback"]
 };
 
 export function normalizeAppRole(role) {

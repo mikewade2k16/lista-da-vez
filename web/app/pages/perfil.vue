@@ -124,6 +124,7 @@ async function handleAvatarChange(event) {
 </script>
 
 <template>
+  <div class="page-workspace">
   <section class="admin-panel profile-panel" data-testid="profile-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Meu perfil</h2>
@@ -196,6 +197,7 @@ async function handleAvatarChange(event) {
       </form>
     </article>
   </section>
+  </div>
 </template>
 
 <style scoped>

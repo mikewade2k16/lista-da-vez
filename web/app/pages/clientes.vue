@@ -17,7 +17,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="workspace-host">
+  <div class="page-workspace">
     <TenantsWorkspace />
   </div>
 </template>

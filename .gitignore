@@ -13,6 +13,9 @@ __pycache__/
 *.pyc
 .env.production
 
+# Local ERP/FTP working data
+Controlle10 - ftp/
+
 # Local assistant/browser artifacts
 .claude/
 .playwright-mcp/

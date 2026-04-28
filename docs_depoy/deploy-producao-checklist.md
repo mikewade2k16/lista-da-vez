@@ -53,6 +53,7 @@ O que faz:
 Por que fazer:
 
 - evita subir algo local por acidente quando voce queria outra branch ou estado
+- a pasta local `Controlle10 - ftp` fica fora de git e fora do payload oficial de deploy
 
 ### 2.3. Rodar o deploy normal
 
@@ -63,12 +64,13 @@ npm run prod:deploy:vps
 O que faz:
 
 1. empacota o workspace local por `tar`
-2. conecta na VPS por SSH
-3. limpa o diretorio remoto preservando `.env.production` e `backups`
-4. envia o codigo atualizado
-5. roda `docker compose config`
-6. sobe `api` e `web` com `up -d --build`
-7. executa smoke tests em `https://lista.whenthelightsdie.com` e `/healthz`
+2. exclui a pasta local `Controlle10 - ftp` do pacote antes do envio
+3. conecta na VPS por SSH
+4. limpa o diretorio remoto preservando `.env.production` e `backups`
+5. envia o codigo atualizado
+6. roda `docker compose config`
+7. sobe `api` e `web` com `up -d --build`
+8. executa smoke tests em `https://lista.whenthelightsdie.com` e `/healthz`
 
 Por que fazer:
 

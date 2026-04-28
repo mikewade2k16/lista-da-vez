@@ -119,10 +119,10 @@ func TestUpdateUserOverridesPublishesContextUpdateForSubjectTenant(t *testing.T)
 	service.SetContextPublisher(publisher)
 
 	_, err := service.UpdateUserOverrides(context.Background(), auth.Principal{
-		UserID: "admin-1",
-		Role:   auth.RoleOwner,
+		UserID:              "admin-1",
+		Role:                auth.RoleOwner,
 		PermissionsResolved: true,
-		Permissions: []string{PermissionUsersEdit},
+		Permissions:         []string{PermissionUsersEdit},
 	}, "user-1", []UserOverride{{
 		PermissionKey: PermissionUsersView,
 		Effect:        EffectAllow,

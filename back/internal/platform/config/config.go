@@ -8,43 +8,74 @@ import (
 )
 
 type Config struct {
-	AppName                   string
-	Env                       string
-	HTTPAddr                  string
-	WebAppURL                 string
-	UploadsDir                string
-	DatabaseURL               string
-	DatabaseMinConns          int
-	DatabaseMaxConns          int
-	CORSAllowedOrigins        []string
-	AuthTokenSecret           string
-	AuthTokenTTL              time.Duration
-	AuthInviteTTL             time.Duration
-	AuthPasswordResetTTL      time.Duration
-	SMTPHost                  string
-	SMTPPort                  int
-	SMTPUsername              string
-	SMTPPassword              string
-	SMTPFromEmail             string
-	SMTPFromName              string
-	SMTPTLSMode               string
-	SMTPInsecureSkipVerify    bool
-	SMTPTimeout               time.Duration
-	BcryptCost                int
-	ConsultantEmailDomain     string
-	ConsultantDefaultPassword string
+	AppName                       string
+	Env                           string
+	HTTPAddr                      string
+	WebAppURL                     string
+	UploadsDir                    string
+	ERPSourceDir                  string
+	ERPStorageDir                 string
+	ERPBootstrapItemFile          string
+	ERPBootstrapCustomerFile      string
+	ERPBootstrapEmployeeFile      string
+	ERPBootstrapOrderFile         string
+	ERPBootstrapOrderCanceledFile string
+	ERPAllowManualSync            bool
+	DatabaseURL                   string
+	DatabaseMinConns              int
+	DatabaseMaxConns              int
+	CORSAllowedOrigins            []string
+	AuthTokenSecret               string
+	AuthTokenTTL                  time.Duration
+	AuthInviteTTL                 time.Duration
+	AuthPasswordResetTTL          time.Duration
+	SMTPHost                      string
+	SMTPPort                      int
+	SMTPUsername                  string
+	SMTPPassword                  string
+	SMTPFromEmail                 string
+	SMTPFromName                  string
+	SMTPTLSMode                   string
+	SMTPInsecureSkipVerify        bool
+	SMTPTimeout                   time.Duration
+	BcryptCost                    int
+	ConsultantEmailDomain         string
+	ConsultantDefaultPassword     string
 }
 
 func Load() Config {
 	return Config{
-		AppName:          getEnv("APP_NAME", "lista-da-vez-api"),
-		Env:              getEnv("APP_ENV", "development"),
-		HTTPAddr:         getEnv("APP_ADDR", ":8080"),
-		WebAppURL:        getEnv("WEB_APP_URL", "http://localhost:3003"),
-		UploadsDir:       getEnv("UPLOADS_DIR", "data/uploads"),
-		DatabaseURL:      getEnv("DATABASE_URL", ""),
-		DatabaseMinConns: getEnvInt("DATABASE_MIN_CONNS", 0),
-		DatabaseMaxConns: getEnvInt("DATABASE_MAX_CONNS", 10),
+		AppName:       getEnv("APP_NAME", "lista-da-vez-api"),
+		Env:           getEnv("APP_ENV", "development"),
+		HTTPAddr:      getEnv("APP_ADDR", ":8080"),
+		WebAppURL:     getEnv("WEB_APP_URL", "http://localhost:3003"),
+		UploadsDir:    getEnv("UPLOADS_DIR", "data/uploads"),
+		ERPSourceDir:  getEnv("ERP_SOURCE_DIR", ""),
+		ERPStorageDir: getEnv("ERP_STORAGE_DIR", "data/erp"),
+		ERPBootstrapItemFile: getEnv(
+			"ERP_BOOTSTRAP_ITEM_FILE",
+			"consolidados/184/item_184_consolidado.md",
+		),
+		ERPBootstrapCustomerFile: getEnv(
+			"ERP_BOOTSTRAP_CUSTOMER_FILE",
+			"consolidados/184/customer_184_consolidado.md",
+		),
+		ERPBootstrapEmployeeFile: getEnv(
+			"ERP_BOOTSTRAP_EMPLOYEE_FILE",
+			"consolidados/184/employee_184_consolidado.md",
+		),
+		ERPBootstrapOrderFile: getEnv(
+			"ERP_BOOTSTRAP_ORDER_FILE",
+			"consolidados/184/order_184_consolidado.md",
+		),
+		ERPBootstrapOrderCanceledFile: getEnv(
+			"ERP_BOOTSTRAP_ORDER_CANCELED_FILE",
+			"consolidados/184/ordercanceled_184_consolidado.md",
+		),
+		ERPAllowManualSync: getEnvBool("ERP_ALLOW_MANUAL_SYNC", false),
+		DatabaseURL:        getEnv("DATABASE_URL", ""),
+		DatabaseMinConns:   getEnvInt("DATABASE_MIN_CONNS", 0),
+		DatabaseMaxConns:   getEnvInt("DATABASE_MAX_CONNS", 10),
 		CORSAllowedOrigins: getEnvCSV(
 			"CORS_ALLOWED_ORIGINS",
 			[]string{

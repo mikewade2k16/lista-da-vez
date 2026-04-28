@@ -335,6 +335,172 @@ erDiagram
         timestamptz updated_at
     }
 
+      ERP_SYNC_RUNS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text store_code
+        text store_cnpj
+        text data_type
+        text mode
+        text source_path
+        text status
+        integer files_seen
+        integer files_imported
+        integer files_skipped
+        integer rows_read
+        integer raw_rows_imported
+        text error_message
+        timestamptz started_at
+        timestamptz finished_at
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
+      ERP_SYNC_FILES {
+        uuid id PK
+        uuid run_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text store_code
+        text store_cnpj
+        text data_type
+        text source_name
+        text source_path
+        text source_kind
+        date source_batch_date
+        text checksum_sha256
+        integer record_count
+        text status
+        timestamptz imported_at
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
+      ERP_ITEM_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text store_code
+        text store_cnpj
+        text source_file_name
+        date source_batch_date
+        integer source_line_number
+        text sku
+        text name
+        text description
+        text supplierreference
+        text brandname
+        text seasonname
+        text category1
+        text category2
+        text category3
+        text size
+        text color
+        text unit
+        text price_raw
+        bigint price_cents
+        text identifier
+        text created_at_raw
+        text updated_at_raw
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz created_at_imported
+      }
+
+      ERP_CUSTOMER_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text cpf
+        text identifier
+        text name
+        text email
+        text tags
+        timestamptz created_at_imported
+      }
+
+      ERP_EMPLOYEE_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text original_id
+        text name
+        text is_active_raw
+        timestamptz created_at_imported
+      }
+
+      ERP_ORDER_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text order_id
+        text sku
+        bigint amount_cents
+        bigint total_amount_cents
+        timestamptz order_date
+        timestamptz created_at_imported
+      }
+
+      ERP_ORDER_CANCELED_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text order_id
+        text sku
+        bigint amount_cents
+        bigint total_amount_cents
+        timestamptz order_date
+        timestamptz created_at_imported
+      }
+
+      ERP_ITEM_CURRENT {
+        uuid tenant_id PK,FK
+        uuid store_id PK,FK
+        text sku PK
+        text identifier
+        text name
+        text description
+        text supplierreference
+        text brandname
+        text seasonname
+        text category1
+        text category2
+        text category3
+        text size
+        text color
+        text unit
+        text price_raw
+        bigint price_cents
+        text source_file_name
+        date source_batch_date
+        integer source_line_number
+        timestamptz source_created_at
+        timestamptz source_updated_at
+        uuid run_id FK
+        uuid file_id FK
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
     TENANTS ||--o{ STORES : owns
     USERS ||--o| USER_PLATFORM_ROLES : has
     USERS ||--o{ USER_TENANT_ROLES : has
@@ -368,6 +534,18 @@ erDiagram
     TENANTS ||--o{ USER_FEEDBACK : receives
     STORES ||--o{ USER_FEEDBACK : scopes
     USERS ||--o{ USER_FEEDBACK : submits
+    TENANTS ||--o{ ERP_SYNC_RUNS : erp_scope
+    STORES ||--o{ ERP_SYNC_RUNS : erp_scope
+    ERP_SYNC_RUNS ||--o{ ERP_SYNC_FILES : batches
+    TENANTS ||--o{ ERP_SYNC_FILES : erp_scope
+    STORES ||--o{ ERP_SYNC_FILES : erp_scope
+    ERP_SYNC_FILES ||--o{ ERP_ITEM_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_CUSTOMER_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_EMPLOYEE_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_ORDER_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_ORDER_CANCELED_RAW : imports
+    TENANTS ||--o{ ERP_ITEM_CURRENT : erp_catalog
+    STORES ||--o{ ERP_ITEM_CURRENT : erp_catalog
 ```
 
 ## Leitura rapida
@@ -418,6 +596,14 @@ erDiagram
   - legado de transicao por loja para catalogo de produtos
 - `operation_queue_entries`
   - fila corrente por loja
+- `erp_sync_runs`
+  - trilha de execucao por tenant/loja/tipo para bootstrap, sync incremental e futuras exportacoes
+- `erp_sync_files`
+  - metadados por lote/arquivo com checksum, status e deduplicacao idempotente
+- `erp_*_raw`
+  - espelho raw do layout FTP por tipo, com metadados de lote e linha de origem
+- `erp_item_current`
+  - projecao rapida e deduplicada por `tenant_id + store_id + sku`, fonte de busca do MVP de produtos
 - `operation_active_services`
   - atendimentos em andamento
 - `operation_paused_consultants`

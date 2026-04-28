@@ -11,6 +11,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/erp"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
@@ -77,6 +78,18 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	analyticsService := analytics.NewService(analyticsRepository, storeService)
 	feedbackRepository := feedback.NewPostgresRepository(pool)
 	feedbackService := feedback.NewService(feedbackRepository)
+	erpRepository := erp.NewPostgresRepository(pool)
+	erpService := erp.NewService(erpRepository, erp.Options{
+		Env:                        cfg.Env,
+		SourceDir:                  cfg.ERPSourceDir,
+		StorageDir:                 cfg.ERPStorageDir,
+		BootstrapItemFile:          cfg.ERPBootstrapItemFile,
+		BootstrapCustomerFile:      cfg.ERPBootstrapCustomerFile,
+		BootstrapEmployeeFile:      cfg.ERPBootstrapEmployeeFile,
+		BootstrapOrderFile:         cfg.ERPBootstrapOrderFile,
+		BootstrapOrderCanceledFile: cfg.ERPBootstrapOrderCanceledFile,
+		AllowManualSync:            cfg.ERPAllowManualSync,
+	})
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
 
 	mux := http.NewServeMux()
@@ -100,6 +113,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"analytics",
 				"access",
 				"feedback",
+				"erp",
 				"users",
 			},
 			"tenantMode": "owner-is-client",
@@ -118,6 +132,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)
 	access.RegisterRoutes(mux, accessService, authMiddleware)
 	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
+	erp.RegisterRoutes(mux, erpService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)
 
 	return httpapi.Chain(

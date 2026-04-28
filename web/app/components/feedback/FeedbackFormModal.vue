@@ -360,22 +360,6 @@ async function handleSubmit() {
   transform: scale(0.98);
 }
 
-@keyframes feedback-modal-fade-enter-active {
-  animation: fadeIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes feedback-modal-fade-leave-active {
-  animation: fadeOut 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-@keyframes feedback-modal-slide-enter-active {
-  animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
-}
-
-@keyframes feedback-modal-slide-leave-active {
-  animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;

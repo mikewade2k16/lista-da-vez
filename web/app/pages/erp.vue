@@ -1,12 +1,12 @@
 <script setup lang="ts">
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "feedback"
+  workspaceId: "erp"
 });
 </script>
 
 <template>
   <div class="page-workspace">
-    <FeedbackWorkspace />
+    <ErpWorkspace />
   </div>
 </template>

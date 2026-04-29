@@ -23,4 +23,4 @@ COPY --from=build /out/migrate /usr/local/bin/migrate
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "migrate up && api"]
+CMD ["sh", "-c", "migrate up && migrate bootstrap-erp-store && api"]

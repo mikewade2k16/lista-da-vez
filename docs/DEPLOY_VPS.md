@@ -351,6 +351,42 @@ Esse comando cria ou atualiza de forma idempotente:
 
 Com isso, o primeiro deploy sobe sem seed demo e com acesso inicial controlado por voce.
 
+### Bootstrap automatico da loja ERP 184
+
+A workspace ERP MVP consulta sempre a loja raiz `184`. Em producao, o migrator pula
+o seed `0036_seed_dev_erp_store_184.sql`, entao o container da API roda um passo
+idempotente no startup: `migrate up && migrate bootstrap-erp-store && api`.
+
+Com `ERP_BOOTSTRAP_STORE_CODE=184`, o deploy cria ou reativa a loja ERP no tenant
+definido por `ERP_BOOTSTRAP_TENANT_SLUG` ou `ERP_BOOTSTRAP_TENANT_ID`. Se nenhum
+dos dois estiver preenchido, o comando usa automaticamente o unico tenant ativo;
+com zero ou multiplos tenants ativos, ele apenas registra skip no log e deixa a API
+subir.
+
+No primeiro go-live, se o `bootstrap-owner` for executado depois que a API ja
+subiu, reinicie a API para rodar o bootstrap ERP:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml restart api
+```
+
+Para conferir:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select t.slug, s.code, s.name, s.is_active
+from stores s
+join tenants t on t.id = s.tenant_id
+where s.code = '184';
+SQL
+```
+
+Se o botao de bootstrap/importacao manual for usado em producao, a pasta dos
+consolidados tambem precisa existir no host configurado por
+`ERP_SOURCE_HOST_DIR` e `ERP_ALLOW_MANUAL_SYNC` precisa estar `true` no
+`.env.production`. Por padrao, o sync manual fica desligado em producao.
+
 ## Integracao do Caddy atual
 
 Depois que os containers deste repo estiverem no ar, adicione o bloco de `lista.whenthelightsdie.com` em `/opt/omnichannel/Caddyfile` e reaplique o proxy do outro projeto:

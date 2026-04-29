@@ -71,6 +71,33 @@ func main() {
 		}
 
 		logger.Info("bootstrap_owner_ok")
+	case "bootstrap-erp-store":
+		result, err := database.BootstrapERPStore(ctx, pool, database.ERPStoreBootstrapInput{
+			TenantID:   os.Getenv("ERP_BOOTSTRAP_TENANT_ID"),
+			TenantSlug: os.Getenv("ERP_BOOTSTRAP_TENANT_SLUG"),
+			StoreCode:  os.Getenv("ERP_BOOTSTRAP_STORE_CODE"),
+			StoreName:  os.Getenv("ERP_BOOTSTRAP_STORE_NAME"),
+			StoreCity:  os.Getenv("ERP_BOOTSTRAP_STORE_CITY"),
+		})
+		if err != nil {
+			logger.Error("erp_store_bootstrap_failed", slog.Any("error", err))
+			os.Exit(1)
+		}
+		if !result.Bootstrapped {
+			logger.Info(
+				"erp_store_bootstrap_skipped",
+				slog.String("reason", result.Reason),
+				slog.String("storeCode", result.StoreCode),
+			)
+			return
+		}
+
+		logger.Info(
+			"erp_store_bootstrap_ok",
+			slog.String("tenantId", result.TenantID),
+			slog.String("storeId", result.StoreID),
+			slog.String("storeCode", result.StoreCode),
+		)
 	case "status":
 		applied, err := database.ListAppliedMigrations(ctx, pool)
 		if err != nil {

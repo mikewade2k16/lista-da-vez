@@ -55,6 +55,19 @@ services:
       AUTH_BCRYPT_COST: ${AUTH_BCRYPT_COST:-10}
       AUTH_CONSULTANT_EMAIL_DOMAIN: ${AUTH_CONSULTANT_EMAIL_DOMAIN}
       AUTH_CONSULTANT_DEFAULT_PASSWORD: ${AUTH_CONSULTANT_DEFAULT_PASSWORD}
+      ERP_SOURCE_DIR: ${ERP_SOURCE_DIR:-/app/data/erp/source}
+      ERP_STORAGE_DIR: ${ERP_STORAGE_DIR:-/app/data/erp/storage}
+      ERP_BOOTSTRAP_ITEM_FILE: ${ERP_BOOTSTRAP_ITEM_FILE:-consolidados/184/item_184_consolidado.md}
+      ERP_BOOTSTRAP_CUSTOMER_FILE: ${ERP_BOOTSTRAP_CUSTOMER_FILE:-consolidados/184/customer_184_consolidado.md}
+      ERP_BOOTSTRAP_EMPLOYEE_FILE: ${ERP_BOOTSTRAP_EMPLOYEE_FILE:-consolidados/184/employee_184_consolidado.md}
+      ERP_BOOTSTRAP_ORDER_FILE: ${ERP_BOOTSTRAP_ORDER_FILE:-consolidados/184/order_184_consolidado.md}
+      ERP_BOOTSTRAP_ORDER_CANCELED_FILE: ${ERP_BOOTSTRAP_ORDER_CANCELED_FILE:-consolidados/184/ordercanceled_184_consolidado.md}
+      ERP_BOOTSTRAP_TENANT_ID: ${ERP_BOOTSTRAP_TENANT_ID:-}
+      ERP_BOOTSTRAP_TENANT_SLUG: ${ERP_BOOTSTRAP_TENANT_SLUG:-}
+      ERP_BOOTSTRAP_STORE_CODE: ${ERP_BOOTSTRAP_STORE_CODE:-184}
+      ERP_BOOTSTRAP_STORE_NAME: ${ERP_BOOTSTRAP_STORE_NAME:-Loja 184}
+      ERP_BOOTSTRAP_STORE_CITY: ${ERP_BOOTSTRAP_STORE_CITY:-}
+      ERP_ALLOW_MANUAL_SYNC: ${ERP_ALLOW_MANUAL_SYNC:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +75,8 @@ services:
       - "127.0.0.1:${API_PORT:-18080}:8080"
     volumes:
       - api_uploads:/app/data/uploads
+      - ${ERP_SOURCE_HOST_DIR:-./erp-source}:/app/data/erp/source:ro
+      - api_erp_storage:/app/data/erp/storage
     healthcheck:
       test:
         [
@@ -105,6 +120,7 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  api_erp_storage:
 
 networks:
   app:

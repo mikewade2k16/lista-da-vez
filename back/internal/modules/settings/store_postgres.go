@@ -17,6 +17,8 @@ const (
 	optionKindVisitReason    = "visit_reason"
 	optionKindCustomerSource = "customer_source"
 	optionKindPauseReason    = "pause_reason"
+	optionKindCancelReason   = "cancel_reason"
+	optionKindStopReason     = "stop_reason"
 	optionKindQueueJump      = "queue_jump_reason"
 	optionKindLossReason     = "loss_reason"
 	optionKindProfession     = "profession"
@@ -199,6 +201,7 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 			timing_fast_close_minutes,
 			timing_long_service_minutes,
 			timing_low_sale_amount,
+			coalesce(service_cancel_window_seconds, 30) as service_cancel_window_seconds,
 			test_mode_enabled,
 			auto_fill_finish_modal,
 			alert_min_conversion_rate,
@@ -226,6 +229,14 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 			product_seen_notes_placeholder,
 			visit_reason_label,
 			customer_source_label,
+			coalesce(cancel_reason_label, '') as cancel_reason_label,
+			coalesce(cancel_reason_placeholder, '') as cancel_reason_placeholder,
+			coalesce(cancel_reason_other_label, '') as cancel_reason_other_label,
+			coalesce(cancel_reason_other_placeholder, '') as cancel_reason_other_placeholder,
+			coalesce(stop_reason_label, '') as stop_reason_label,
+			coalesce(stop_reason_placeholder, '') as stop_reason_placeholder,
+			coalesce(stop_reason_other_label, '') as stop_reason_other_label,
+			coalesce(stop_reason_other_placeholder, '') as stop_reason_other_placeholder,
 			show_customer_name_field,
 			show_customer_phone_field,
 			show_email_field,
@@ -239,6 +250,8 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 			show_existing_customer_field,
 			show_queue_jump_reason_field,
 			show_loss_reason_field,
+			coalesce(show_cancel_reason_field, false) as show_cancel_reason_field,
+			coalesce(show_stop_reason_field, false) as show_stop_reason_field,
 			allow_product_seen_none,
 			visit_reason_selection_mode,
 			visit_reason_detail_mode,
@@ -246,6 +259,8 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 			loss_reason_detail_mode,
 			customer_source_selection_mode,
 			customer_source_detail_mode,
+			coalesce(cancel_reason_input_mode, 'text') as cancel_reason_input_mode,
+			coalesce(stop_reason_input_mode, 'text') as stop_reason_input_mode,
 			require_customer_name_field,
 			require_customer_phone_field,
 			require_email_field,
@@ -262,6 +277,8 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 			product_seen_notes_min_chars,
 			require_queue_jump_reason_field,
 			require_loss_reason_field,
+			coalesce(require_cancel_reason_field, false) as require_cancel_reason_field,
+			coalesce(require_stop_reason_field, false) as require_stop_reason_field,
 			created_at,
 			updated_at
 		from tenant_operation_settings
@@ -291,6 +308,16 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 		return Record{}, false, err
 	}
 
+	cancelReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindCancelReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	stopReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindStopReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
 	queueJumpReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindQueueJump)
 	if err != nil {
 		return Record{}, false, err
@@ -314,6 +341,8 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 	record.VisitReasonOptions = visitReasonOptions
 	record.CustomerSourceOptions = customerSourceOptions
 	record.PauseReasonOptions = pauseReasonOptions
+	record.CancelReasonOptions = cancelReasonOptions
+	record.StopReasonOptions = stopReasonOptions
 	record.QueueJumpReasonOptions = queueJumpReasonOptions
 	record.LossReasonOptions = lossReasonOptions
 	record.ProfessionOptions = professionOptions
@@ -344,6 +373,8 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		{kind: optionKindVisitReason, items: record.VisitReasonOptions},
 		{kind: optionKindCustomerSource, items: record.CustomerSourceOptions},
 		{kind: optionKindPauseReason, items: record.PauseReasonOptions},
+		{kind: optionKindCancelReason, items: record.CancelReasonOptions},
+		{kind: optionKindStopReason, items: record.StopReasonOptions},
 		{kind: optionKindQueueJump, items: record.QueueJumpReasonOptions},
 		{kind: optionKindLossReason, items: record.LossReasonOptions},
 		{kind: optionKindProfession, items: record.ProfessionOptions},
@@ -366,6 +397,8 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 	savedRecord.VisitReasonOptions = cloneOptions(record.VisitReasonOptions)
 	savedRecord.CustomerSourceOptions = cloneOptions(record.CustomerSourceOptions)
 	savedRecord.PauseReasonOptions = cloneOptions(record.PauseReasonOptions)
+	savedRecord.CancelReasonOptions = cloneOptions(record.CancelReasonOptions)
+	savedRecord.StopReasonOptions = cloneOptions(record.StopReasonOptions)
 	savedRecord.QueueJumpReasonOptions = cloneOptions(record.QueueJumpReasonOptions)
 	savedRecord.LossReasonOptions = cloneOptions(record.LossReasonOptions)
 	savedRecord.ProfessionOptions = cloneOptions(record.ProfessionOptions)
@@ -832,6 +865,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			timing_fast_close_minutes,
 			timing_long_service_minutes,
 			timing_low_sale_amount,
+			service_cancel_window_seconds,
 			test_mode_enabled,
 			auto_fill_finish_modal,
 			alert_min_conversion_rate,
@@ -859,6 +893,14 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			product_seen_notes_placeholder,
 			visit_reason_label,
 			customer_source_label,
+			cancel_reason_label,
+			cancel_reason_placeholder,
+			cancel_reason_other_label,
+			cancel_reason_other_placeholder,
+			stop_reason_label,
+			stop_reason_placeholder,
+			stop_reason_other_label,
+			stop_reason_other_placeholder,
 			show_customer_name_field,
 			show_customer_phone_field,
 			show_email_field,
@@ -872,6 +914,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			show_existing_customer_field,
 			show_queue_jump_reason_field,
 			show_loss_reason_field,
+			show_cancel_reason_field,
+			show_stop_reason_field,
 			allow_product_seen_none,
 			visit_reason_selection_mode,
 			visit_reason_detail_mode,
@@ -879,6 +923,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			loss_reason_detail_mode,
 			customer_source_selection_mode,
 			customer_source_detail_mode,
+			cancel_reason_input_mode,
+			stop_reason_input_mode,
 			require_customer_name_field,
 			require_customer_phone_field,
 			require_email_field,
@@ -894,7 +940,9 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			require_product_seen_notes_when_none,
 			product_seen_notes_min_chars,
 			require_queue_jump_reason_field,
-			require_loss_reason_field
+			require_loss_reason_field,
+			require_cancel_reason_field,
+			require_stop_reason_field
 		)
 		values (
 			$1::uuid,
@@ -966,7 +1014,45 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			$67,
 			$68,
 			$69,
-			$70
+			$70,
+			$71,
+			$72,
+			$73,
+			$74,
+			$75,
+			$76,
+			$77,
+			$78,
+			$79,
+			$80,
+			$81,
+			$82,
+			$83,
+			$84,
+			$85,
+			$86,
+			$87,
+			$88,
+			$89,
+			$90,
+			$91,
+			$92,
+			$93,
+			$94,
+			$95,
+			$96,
+			$97,
+			$98,
+			$99,
+			$100,
+			$101,
+			$102,
+			$103,
+			$104,
+			$105,
+			$106,
+			$107,
+			$108
 		)
 		on conflict (tenant_id) do update
 		set
@@ -976,6 +1062,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			timing_fast_close_minutes = excluded.timing_fast_close_minutes,
 			timing_long_service_minutes = excluded.timing_long_service_minutes,
 			timing_low_sale_amount = excluded.timing_low_sale_amount,
+			service_cancel_window_seconds = excluded.service_cancel_window_seconds,
 			test_mode_enabled = excluded.test_mode_enabled,
 			auto_fill_finish_modal = excluded.auto_fill_finish_modal,
 			alert_min_conversion_rate = excluded.alert_min_conversion_rate,
@@ -1003,6 +1090,14 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			product_seen_notes_placeholder = excluded.product_seen_notes_placeholder,
 			visit_reason_label = excluded.visit_reason_label,
 			customer_source_label = excluded.customer_source_label,
+			cancel_reason_label = excluded.cancel_reason_label,
+			cancel_reason_placeholder = excluded.cancel_reason_placeholder,
+			cancel_reason_other_label = excluded.cancel_reason_other_label,
+			cancel_reason_other_placeholder = excluded.cancel_reason_other_placeholder,
+			stop_reason_label = excluded.stop_reason_label,
+			stop_reason_placeholder = excluded.stop_reason_placeholder,
+			stop_reason_other_label = excluded.stop_reason_other_label,
+			stop_reason_other_placeholder = excluded.stop_reason_other_placeholder,
 			show_customer_name_field = excluded.show_customer_name_field,
 			show_customer_phone_field = excluded.show_customer_phone_field,
 			show_email_field = excluded.show_email_field,
@@ -1016,6 +1111,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			show_existing_customer_field = excluded.show_existing_customer_field,
 			show_queue_jump_reason_field = excluded.show_queue_jump_reason_field,
 			show_loss_reason_field = excluded.show_loss_reason_field,
+			show_cancel_reason_field = excluded.show_cancel_reason_field,
+			show_stop_reason_field = excluded.show_stop_reason_field,
 			allow_product_seen_none = excluded.allow_product_seen_none,
 			visit_reason_selection_mode = excluded.visit_reason_selection_mode,
 			visit_reason_detail_mode = excluded.visit_reason_detail_mode,
@@ -1023,6 +1120,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			loss_reason_detail_mode = excluded.loss_reason_detail_mode,
 			customer_source_selection_mode = excluded.customer_source_selection_mode,
 			customer_source_detail_mode = excluded.customer_source_detail_mode,
+			cancel_reason_input_mode = excluded.cancel_reason_input_mode,
+			stop_reason_input_mode = excluded.stop_reason_input_mode,
 			require_customer_name_field = excluded.require_customer_name_field,
 			require_customer_phone_field = excluded.require_customer_phone_field,
 			require_email_field = excluded.require_email_field,
@@ -1039,6 +1138,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			product_seen_notes_min_chars = excluded.product_seen_notes_min_chars,
 			require_queue_jump_reason_field = excluded.require_queue_jump_reason_field,
 			require_loss_reason_field = excluded.require_loss_reason_field,
+			require_cancel_reason_field = excluded.require_cancel_reason_field,
+			require_stop_reason_field = excluded.require_stop_reason_field,
 			updated_at = now()
 		returning
 			tenant_id::text,
@@ -1048,6 +1149,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			timing_fast_close_minutes,
 			timing_long_service_minutes,
 			timing_low_sale_amount,
+			service_cancel_window_seconds,
 			test_mode_enabled,
 			auto_fill_finish_modal,
 			alert_min_conversion_rate,
@@ -1075,6 +1177,14 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			product_seen_notes_placeholder,
 			visit_reason_label,
 			customer_source_label,
+			cancel_reason_label,
+			cancel_reason_placeholder,
+			cancel_reason_other_label,
+			cancel_reason_other_placeholder,
+			stop_reason_label,
+			stop_reason_placeholder,
+			stop_reason_other_label,
+			stop_reason_other_placeholder,
 			show_customer_name_field,
 			show_customer_phone_field,
 			show_email_field,
@@ -1088,6 +1198,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			show_existing_customer_field,
 			show_queue_jump_reason_field,
 			show_loss_reason_field,
+			show_cancel_reason_field,
+			show_stop_reason_field,
 			allow_product_seen_none,
 			visit_reason_selection_mode,
 			visit_reason_detail_mode,
@@ -1095,6 +1207,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			loss_reason_detail_mode,
 			customer_source_selection_mode,
 			customer_source_detail_mode,
+			cancel_reason_input_mode,
+			stop_reason_input_mode,
 			require_customer_name_field,
 			require_customer_phone_field,
 			require_email_field,
@@ -1111,6 +1225,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 			product_seen_notes_min_chars,
 			require_queue_jump_reason_field,
 			require_loss_reason_field,
+			require_cancel_reason_field,
+			require_stop_reason_field,
 			created_at,
 			updated_at;
 	`,
@@ -1121,6 +1237,7 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 		record.Settings.TimingFastCloseMinutes,
 		record.Settings.TimingLongServiceMinutes,
 		record.Settings.TimingLowSaleAmount,
+		record.Settings.ServiceCancelWindowSeconds,
 		record.Settings.TestModeEnabled,
 		record.Settings.AutoFillFinishModal,
 		record.Settings.AlertMinConversionRate,
@@ -1148,6 +1265,14 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 		record.ModalConfig.ProductSeenNotesPlaceholder,
 		record.ModalConfig.VisitReasonLabel,
 		record.ModalConfig.CustomerSourceLabel,
+		record.ModalConfig.CancelReasonLabel,
+		record.ModalConfig.CancelReasonPlaceholder,
+		record.ModalConfig.CancelReasonOtherLabel,
+		record.ModalConfig.CancelReasonOtherPlaceholder,
+		record.ModalConfig.StopReasonLabel,
+		record.ModalConfig.StopReasonPlaceholder,
+		record.ModalConfig.StopReasonOtherLabel,
+		record.ModalConfig.StopReasonOtherPlaceholder,
 		record.ModalConfig.ShowCustomerNameField,
 		record.ModalConfig.ShowCustomerPhoneField,
 		record.ModalConfig.ShowEmailField,
@@ -1161,6 +1286,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 		record.ModalConfig.ShowExistingCustomerField,
 		record.ModalConfig.ShowQueueJumpReasonField,
 		record.ModalConfig.ShowLossReasonField,
+		record.ModalConfig.ShowCancelReasonField,
+		record.ModalConfig.ShowStopReasonField,
 		record.ModalConfig.AllowProductSeenNone,
 		record.ModalConfig.VisitReasonSelectionMode,
 		record.ModalConfig.VisitReasonDetailMode,
@@ -1168,6 +1295,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 		record.ModalConfig.LossReasonDetailMode,
 		record.ModalConfig.CustomerSourceSelectionMode,
 		record.ModalConfig.CustomerSourceDetailMode,
+		record.ModalConfig.CancelReasonInputMode,
+		record.ModalConfig.StopReasonInputMode,
 		record.ModalConfig.RequireCustomerNameField,
 		record.ModalConfig.RequireCustomerPhoneField,
 		record.ModalConfig.RequireEmailField,
@@ -1184,6 +1313,8 @@ func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Re
 		record.ModalConfig.ProductSeenNotesMinChars,
 		record.ModalConfig.RequireQueueJumpReasonField,
 		record.ModalConfig.RequireLossReasonField,
+		record.ModalConfig.RequireCancelReasonField,
+		record.ModalConfig.RequireStopReasonField,
 	))
 }
 
@@ -1197,6 +1328,7 @@ func scanConfigRow(row pgx.Row) (Record, error) {
 		&record.Settings.TimingFastCloseMinutes,
 		&record.Settings.TimingLongServiceMinutes,
 		&record.Settings.TimingLowSaleAmount,
+		&record.Settings.ServiceCancelWindowSeconds,
 		&record.Settings.TestModeEnabled,
 		&record.Settings.AutoFillFinishModal,
 		&record.Settings.AlertMinConversionRate,
@@ -1224,6 +1356,14 @@ func scanConfigRow(row pgx.Row) (Record, error) {
 		&record.ModalConfig.ProductSeenNotesPlaceholder,
 		&record.ModalConfig.VisitReasonLabel,
 		&record.ModalConfig.CustomerSourceLabel,
+		&record.ModalConfig.CancelReasonLabel,
+		&record.ModalConfig.CancelReasonPlaceholder,
+		&record.ModalConfig.CancelReasonOtherLabel,
+		&record.ModalConfig.CancelReasonOtherPlaceholder,
+		&record.ModalConfig.StopReasonLabel,
+		&record.ModalConfig.StopReasonPlaceholder,
+		&record.ModalConfig.StopReasonOtherLabel,
+		&record.ModalConfig.StopReasonOtherPlaceholder,
 		&record.ModalConfig.ShowCustomerNameField,
 		&record.ModalConfig.ShowCustomerPhoneField,
 		&record.ModalConfig.ShowEmailField,
@@ -1237,6 +1377,8 @@ func scanConfigRow(row pgx.Row) (Record, error) {
 		&record.ModalConfig.ShowExistingCustomerField,
 		&record.ModalConfig.ShowQueueJumpReasonField,
 		&record.ModalConfig.ShowLossReasonField,
+		&record.ModalConfig.ShowCancelReasonField,
+		&record.ModalConfig.ShowStopReasonField,
 		&record.ModalConfig.AllowProductSeenNone,
 		&record.ModalConfig.VisitReasonSelectionMode,
 		&record.ModalConfig.VisitReasonDetailMode,
@@ -1244,6 +1386,8 @@ func scanConfigRow(row pgx.Row) (Record, error) {
 		&record.ModalConfig.LossReasonDetailMode,
 		&record.ModalConfig.CustomerSourceSelectionMode,
 		&record.ModalConfig.CustomerSourceDetailMode,
+		&record.ModalConfig.CancelReasonInputMode,
+		&record.ModalConfig.StopReasonInputMode,
 		&record.ModalConfig.RequireCustomerNameField,
 		&record.ModalConfig.RequireCustomerPhoneField,
 		&record.ModalConfig.RequireEmailField,
@@ -1260,6 +1404,8 @@ func scanConfigRow(row pgx.Row) (Record, error) {
 		&record.ModalConfig.ProductSeenNotesMinChars,
 		&record.ModalConfig.RequireQueueJumpReasonField,
 		&record.ModalConfig.RequireLossReasonField,
+		&record.ModalConfig.RequireCancelReasonField,
+		&record.ModalConfig.RequireStopReasonField,
 		&record.CreatedAt,
 		&record.UpdatedAt,
 	)

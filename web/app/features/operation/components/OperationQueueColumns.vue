@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import AppSelectField from "~/components/ui/AppSelectField.vue";
 import { buildNickname } from "~/domain/utils/person-display";
 import OperationActiveServiceCard from "~/features/operation/components/OperationActiveServiceCard.vue";
 import { useOperationsStore } from "~/stores/operations";
@@ -34,7 +35,76 @@ const serverClockOffsetMs = computed(() => Number(props.state?.serverClockOffset
 const adjustedNow = computed(() => now.value + serverClockOffsetMs.value);
 const maxConcurrentServices = computed(() => props.state.settings?.maxConcurrentServices || 10);
 const maxConcurrentPerConsultant = computed(() => props.state.settings?.maxConcurrentServicesPerConsultant || 1);
+const cancelWindowSeconds = computed(() => Number(props.state.settings?.serviceCancelWindowSeconds || 30) || 30);
+const modalConfig = computed(() => props.state.modalConfig || {});
+const cancelReasonOptions = computed(() => Array.isArray(props.state.cancelReasonOptions) ? props.state.cancelReasonOptions : []);
+const stopReasonOptions = computed(() => Array.isArray(props.state.stopReasonOptions) ? props.state.stopReasonOptions : []);
 const isLimitReached = computed(() => activeServices.value.length >= maxConcurrentServices.value);
+const actionModal = ref({
+  open: false,
+  action: "",
+  service: null,
+  reasonId: "",
+  reasonText: "",
+  submitting: false
+});
+
+const actionReasonOptions = computed(() => {
+  const source = actionModal.value.action === "cancel" ? cancelReasonOptions.value : stopReasonOptions.value;
+  return source.map((item) => ({
+    value: String(item?.id || "").trim(),
+    label: String(item?.label || "").trim()
+  })).filter((item) => item.value && item.label);
+});
+
+const actionReasonMode = computed(() => {
+  const rawMode = String(
+    actionModal.value.action === "cancel"
+      ? modalConfig.value?.cancelReasonInputMode
+      : modalConfig.value?.stopReasonInputMode
+  ).trim().toLowerCase();
+
+  const normalized = rawMode === "select-with-other" || rawMode === "select_other" || rawMode === "select-other"
+    ? "select-with-other"
+    : rawMode === "select"
+      ? "select"
+      : "text";
+
+  if (normalized !== "text" && actionReasonOptions.value.length === 0) {
+    return "text";
+  }
+
+  return normalized;
+});
+
+const actionReasonLabel = computed(() => actionModal.value.action === "cancel"
+  ? String(modalConfig.value?.cancelReasonLabel || "Motivo do cancelamento").trim()
+  : String(modalConfig.value?.stopReasonLabel || "Motivo da parada").trim());
+
+const actionReasonPlaceholder = computed(() => actionModal.value.action === "cancel"
+  ? String(modalConfig.value?.cancelReasonPlaceholder || "Informe o motivo do cancelamento").trim()
+  : String(modalConfig.value?.stopReasonPlaceholder || "Informe o motivo da parada").trim());
+
+const actionOtherReasonLabel = computed(() => actionModal.value.action === "cancel"
+  ? String(modalConfig.value?.cancelReasonOtherLabel || "Detalhe do cancelamento").trim()
+  : String(modalConfig.value?.stopReasonOtherLabel || "Detalhe da parada").trim());
+
+const actionOtherReasonPlaceholder = computed(() => actionModal.value.action === "cancel"
+  ? String(modalConfig.value?.cancelReasonOtherPlaceholder || "Explique o motivo").trim()
+  : String(modalConfig.value?.stopReasonOtherPlaceholder || "Explique o motivo").trim());
+
+const actionReasonRequired = computed(() => false);
+
+const showActionReasonField = computed(() => false);
+
+const shouldShowOtherReason = computed(() => false);
+
+const actionModalTitle = computed(() => actionModal.value.action === "cancel" ? "Cancelar atendimento" : "Parar atendimento");
+const actionModalDescription = computed(() => {
+  return actionModal.value.action === "cancel"
+    ? "Esse atendimento sera desfeito e o consultor volta para a posicao que estava na fila."
+    : "O tempo do atendimento ficara pausado. O consultor ainda precisara encerrar o atendimento.";
+});
 
 function isSameSequentialGroup(targetService, candidate) {
   const targetGroupId = String(targetService?.parallelGroupId || "").trim();
@@ -119,7 +189,14 @@ const servicesGroupedByConsultant = computed(() => {
     );
   });
 
-  return grouped;
+  // Ordenar consultores: mais recente (ultimo serviceStartedAt) em cima
+  const sortedEntries = [...grouped.entries()].sort(([, servicesA], [, servicesB]) => {
+    const latestA = servicesA.reduce((max, s) => Math.max(max, Number(s.serviceStartedAt || 0)), 0);
+    const latestB = servicesB.reduce((max, s) => Math.max(max, Number(s.serviceStartedAt || 0)), 0);
+    return latestB - latestA;
+  });
+
+  return new Map(sortedEntries);
 });
 
 function actionHint(index) {
@@ -129,6 +206,66 @@ function actionHint(index) {
 
 function displayName(person) {
   return buildNickname(person?.name || "");
+}
+
+function isWithinCancelWindow(service) {
+  if (!service || Number(service?.stoppedAt || 0) > 0) {
+    return false;
+  }
+
+  const windowMs = Math.max(0, cancelWindowSeconds.value) * 1000;
+  if (!windowMs) {
+    return false;
+  }
+
+  return Math.max(0, adjustedNow.value - Number(service?.serviceStartedAt || 0)) <= windowMs;
+}
+
+function resolveService(serviceOrId) {
+  if (serviceOrId && typeof serviceOrId === "object") {
+    return serviceOrId;
+  }
+
+  const targetId = String(serviceOrId || "").trim();
+  return activeServices.value.find((item) => String(item?.serviceId || "").trim() === targetId) || null;
+}
+
+function closeActionModal() {
+  actionModal.value = {
+    open: false,
+    action: "",
+    service: null,
+    reasonId: "",
+    reasonText: "",
+    submitting: false
+  };
+}
+
+function openActionModal(service, action) {
+  actionModal.value = {
+    open: true,
+    action,
+    service,
+    reasonId: "",
+    reasonText: "",
+    submitting: false
+  };
+}
+
+function resolveActionReason() {
+  if (!showActionReasonField.value) {
+    return "";
+  }
+
+  if (actionReasonMode.value === "text") {
+    return String(actionModal.value.reasonText || "").trim();
+  }
+
+  if (actionReasonMode.value === "select-with-other" && actionModal.value.reasonId === "__other__") {
+    return String(actionModal.value.reasonText || "").trim();
+  }
+
+  return actionReasonOptions.value.find((item) => item.value === actionModal.value.reasonId)?.label || "";
 }
 
 async function startFirstService() {
@@ -151,8 +288,37 @@ async function startSpecificService(personId) {
   }
 }
 
-function openFinishModal(serviceId) {
-  void operationsStore.openFinishModal(serviceId);
+async function openFinishModal(serviceOrId) {
+  const service = resolveService(serviceOrId);
+  if (!service) {
+    return;
+  }
+
+  if (isWithinCancelWindow(service)) {
+    const result = await operationsStore.serviceAction(
+      service.serviceId,
+      "cancel",
+      "",
+      { storeId: service.storeId || "" }
+    );
+    if (result?.ok === false) {
+      ui.error(result.message || "Nao foi possivel cancelar o atendimento.");
+    } else {
+      ui.success("Atendimento cancelado e consultor devolvido para a fila.");
+    }
+    return;
+  }
+
+  void operationsStore.openFinishModal(service.serviceId);
+}
+
+function openStopModal(serviceOrId) {
+  const service = resolveService(serviceOrId);
+  if (!service) {
+    return;
+  }
+
+  openActionModal(service, "stop");
 }
 
 async function startParallelService(personId) {
@@ -166,6 +332,47 @@ async function startParallelService(personId) {
     const parallelCount = (activeServices.value.filter((item) => item.id === personId).length || 0) + 1;
     ui.success(`Abrindo ${parallelCount}o atendimento em aberto de ${consultantName}`);
   }
+}
+
+async function submitActionModal() {
+  if (!actionModal.value.service || !actionModal.value.action || actionModal.value.submitting) {
+    return;
+  }
+
+  const reason = resolveActionReason();
+  if (showActionReasonField.value && actionReasonRequired.value && !reason) {
+    ui.error(`${actionReasonLabel.value || "Justificativa"} e obrigatorio.`);
+    return;
+  }
+
+  actionModal.value = {
+    ...actionModal.value,
+    submitting: true
+  };
+
+  const result = await operationsStore.serviceAction(
+    actionModal.value.service.serviceId,
+    actionModal.value.action,
+    reason,
+    {
+      storeId: actionModal.value.service.storeId || ""
+    }
+  );
+
+  if (result?.ok === false) {
+    actionModal.value = {
+      ...actionModal.value,
+      submitting: false
+    };
+    ui.error(result.message || "Nao foi possivel concluir a acao.");
+    return;
+  }
+
+  const successMessage = actionModal.value.action === "cancel"
+    ? "Atendimento cancelado e consultor devolvido para a fila."
+    : "Atendimento parado com tempo congelado.";
+  closeActionModal();
+  ui.success(successMessage);
 }
 
 async function assignTask(person) {
@@ -221,7 +428,7 @@ onBeforeUnmount(() => {
   </div>
 
   <div class="queue-grid" data-testid="operation-board">
-    <section class="queue-column" data-testid="operation-waiting-column">
+      <section class="queue-column queue-column--waiting" data-testid="operation-waiting-column">
       <header class="queue-column__header">Lista da vez</header>
       <div v-if="waitingList.length > 0 && !props.readOnly && !props.integratedMode" class="queue-column__action-bar">
         <button
@@ -306,7 +513,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="queue-column" data-testid="operation-service-column">
+    <section class="queue-column queue-column--service" data-testid="operation-service-column">
       <header class="queue-column__header">Em atendimento</header>
       <div class="queue-column__body queue-column__body--service">
         <template v-if="activeServices.length > 0">
@@ -323,7 +530,9 @@ onBeforeUnmount(() => {
               :read-only="props.readOnly"
               :integrated-mode="props.integratedMode"
               :max-concurrent-per-consultant="maxConcurrentPerConsultant"
+              :cancel-window-seconds="cancelWindowSeconds"
               @finish="openFinishModal"
+              @stop="openStopModal"
               @start-parallel="startParallelService"
             />
           </div>
@@ -336,4 +545,71 @@ onBeforeUnmount(() => {
       </div>
     </section>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="actionModal.open && actionModal.service"
+      class="modal-backdrop"
+      data-testid="operation-service-action-backdrop"
+      @click.self="closeActionModal"
+    >
+      <div class="finish-modal finish-modal--compact" role="dialog" aria-modal="true" data-testid="operation-service-action-modal">
+        <div class="finish-modal__header">
+          <div>
+            <h2 class="finish-modal__title">{{ actionModalTitle }}</h2>
+            <p class="finish-modal__subtitle">{{ displayName(actionModal.service) }}</p>
+          </div>
+          <div class="finish-modal__header-actions">
+            <button class="finish-modal__close" type="button" aria-label="Fechar" @click="closeActionModal">x</button>
+          </div>
+        </div>
+
+        <div class="service-action-modal__body">
+          <p class="service-action-modal__description">{{ actionModalDescription }}</p>
+
+          <div v-if="showActionReasonField" class="service-action-modal__field">
+            <label v-if="actionReasonMode !== 'text'" class="settings-card__text">{{ actionReasonLabel }}</label>
+            <AppSelectField
+              v-if="actionReasonMode !== 'text'"
+              v-model="actionModal.reasonId"
+              class="settings-field"
+              :options="[
+                ...actionReasonOptions,
+                ...(actionReasonMode === 'select-with-other' ? [{ value: '__other__', label: 'Outro' }] : [])
+              ]"
+              :placeholder="actionReasonPlaceholder"
+              :searchable="actionReasonOptions.length >= 8"
+              :show-leading-icon="false"
+              testid="operation-service-action-reason-select"
+            />
+            <label v-if="shouldShowOtherReason" class="settings-field service-action-modal__textarea-wrap">
+              <span class="settings-card__text">{{ actionReasonMode === 'text' ? actionReasonLabel : actionOtherReasonLabel }}</span>
+              <textarea
+                v-model="actionModal.reasonText"
+                class="service-action-modal__textarea"
+                :placeholder="actionReasonMode === 'text' ? actionReasonPlaceholder : actionOtherReasonPlaceholder"
+                rows="4"
+                data-testid="operation-service-action-reason-text"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="service-action-modal__footer">
+          <button class="column-action column-action--secondary" type="button" @click="closeActionModal">
+            Fechar
+          </button>
+          <button
+            class="column-action column-action--primary"
+            type="button"
+            :disabled="actionModal.submitting"
+            data-testid="operation-service-action-submit"
+            @click="submitActionModal"
+          >
+            {{ actionModal.action === 'cancel' ? 'Confirmar cancelamento' : 'Confirmar parada' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

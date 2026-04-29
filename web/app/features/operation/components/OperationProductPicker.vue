@@ -67,6 +67,30 @@ const props = defineProps({
     type: String,
     default: "Nenhum item encontrado para a busca atual."
   },
+  remoteSearch: {
+    type: Boolean,
+    default: false
+  },
+  remoteSearchLoading: {
+    type: Boolean,
+    default: false
+  },
+  remoteSearchMinChars: {
+    type: Number,
+    default: 3
+  },
+  remoteSearchDebounceMs: {
+    type: Number,
+    default: 280
+  },
+  remoteSearchIdleLabel: {
+    type: String,
+    default: "Digite pelo menos 3 caracteres para buscar."
+  },
+  remoteSearchLoadingLabel: {
+    type: String,
+    default: "Buscando itens..."
+  },
   allowCustom: {
     type: Boolean,
     default: false
@@ -117,7 +141,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(["update:selectedItems", "update:noneSelected", "update:itemDetails"]);
+const emit = defineEmits(["update:selectedItems", "update:noneSelected", "update:itemDetails", "search"]);
 const ui = useUiStore();
 
 const searchInputRef = ref(null);
@@ -131,6 +155,7 @@ const itemDetailEditorId = ref("");
 const itemDetailDraft = ref("");
 const SHARED_DETAIL_KEY = "__shared__";
 const NONE_DETAIL_KEY = "__none__";
+let remoteSearchTimer = null;
 
 const isClosedMode = computed(() => props.mode === "closed");
 const isSharedDetailMode = computed(() => props.itemDetailMode !== "per-item");
@@ -177,6 +202,22 @@ const sharedDetailValue = computed(() => {
 });
 const hasSharedDetail = computed(() => sharedDetailValue.value.length > 0);
 const isSharedDetailEditorOpen = computed(() => itemDetailEditorId.value === SHARED_DETAIL_KEY);
+const remoteSearchMinChars = computed(() => Math.max(1, Number(props.remoteSearchMinChars || 3) || 3));
+const normalizedSearchTerm = computed(() => String(searchTerm.value || "").trim());
+const isRemoteSearchReady = computed(() =>
+  !props.remoteSearch || normalizedSearchTerm.value.length >= remoteSearchMinChars.value
+);
+const emptyResultsLabel = computed(() => {
+  if (props.remoteSearchLoading) {
+    return props.remoteSearchLoadingLabel;
+  }
+
+  if (props.remoteSearch && !isRemoteSearchReady.value) {
+    return props.remoteSearchIdleLabel;
+  }
+
+  return props.emptySearchLabel;
+});
 const activeDetailTitle = computed(() => {
   if (isSharedDetailMode.value) {
     if (props.noneSelected && selectedCount.value === 0) {
@@ -207,6 +248,10 @@ const filteredOptions = computed(() => {
 
   return normalizedOptions.value.filter((item) => {
     if (selectedIds.has(item.id)) {
+      return false;
+    }
+
+    if (props.remoteSearch && !isRemoteSearchReady.value) {
       return false;
     }
 
@@ -253,7 +298,7 @@ function normalizeOption(item) {
     }
   }
 
-  if (isClosedMode.value && price > 0) {
+  if (price > 0) {
     metaParts.push(formatCurrency(price));
   }
 
@@ -305,12 +350,56 @@ function clearCustomForm() {
   customCode.value = "";
 }
 
+function cancelRemoteSearchTimer() {
+  if (remoteSearchTimer) {
+    clearTimeout(remoteSearchTimer);
+    remoteSearchTimer = null;
+  }
+}
+
+function emitSearchTerm(value = "") {
+  emit("search", String(value || "").trim());
+}
+
+function scheduleRemoteSearch(value = "") {
+  if (!props.remoteSearch) {
+    return;
+  }
+
+  cancelRemoteSearchTimer();
+
+  if (!dropdownOpen.value) {
+    emitSearchTerm("");
+    return;
+  }
+
+  const normalizedValue = String(value || "").trim();
+  if (!normalizedValue) {
+    emitSearchTerm("");
+    return;
+  }
+
+  remoteSearchTimer = setTimeout(() => {
+    emitSearchTerm(normalizedValue);
+    remoteSearchTimer = null;
+  }, Math.max(0, Number(props.remoteSearchDebounceMs || 280) || 280));
+}
+
+function handleSearchInput(event) {
+  if (!props.remoteSearch) {
+    return;
+  }
+
+  scheduleRemoteSearch(event?.target?.value || searchTerm.value);
+}
+
 function closeItemDetailEditor() {
   itemDetailEditorId.value = "";
   itemDetailDraft.value = "";
 }
 
 function closeDropdown() {
+  cancelRemoteSearchTimer();
   dropdownOpen.value = false;
   customOpen.value = false;
   searchTerm.value = "";
@@ -535,11 +624,25 @@ watch(() => props.itemDetailMode, () => {
   closeItemDetailEditor();
 });
 
+watch([dropdownOpen, () => props.remoteSearch], ([isOpen, isRemoteEnabled]) => {
+  if (!isRemoteEnabled) {
+    return;
+  }
+
+  if (!isOpen) {
+    cancelRemoteSearchTimer();
+    emitSearchTerm("");
+  } else {
+    scheduleRemoteSearch(searchTerm.value);
+  }
+});
+
 onMounted(() => {
   document.addEventListener("keydown", handleEscape);
 });
 
 onBeforeUnmount(() => {
+  cancelRemoteSearchTimer();
   document.removeEventListener("keydown", handleEscape);
 });
 </script>
@@ -730,6 +833,7 @@ onBeforeUnmount(() => {
                 type="search"
                 :placeholder="searchPlaceholder"
                 :data-testid="testidPrefix ? `${testidPrefix}-search` : null"
+                @input="handleSearchInput"
               >
             </label>
 
@@ -802,7 +906,7 @@ onBeforeUnmount(() => {
               </button>
 
               <div v-if="filteredOptions.length === 0" class="product-pick__empty">
-                {{ emptySearchLabel }}
+                {{ emptyResultsLabel }}
               </div>
             </div>
           </div>

@@ -24,6 +24,7 @@ Ele nao deve cuidar de:
 
 - auth
 - configuracoes do modal e catalogos
+- busca remota de produtos para autocomplete
 - campanhas como fonte de verdade
 - relatorios server-side
 - websocket
@@ -127,6 +128,8 @@ Regra de resposta:
 - o snapshot enviado ao Nuxt deve manter compatibilidade com o shape atual do runtime, para reduzir retrabalho no frontend
 - comandos nao devem devolver o snapshot inteiro da loja; isso aumenta payload, confunde debug e mistura leitura com mutacao
 - o modulo ja esta integrado ao Nuxt via `web/app/stores/operations.ts` e `web/app/utils/runtime-remote.ts`
+- a busca dinamica de produtos do modal deve consumir o modulo `catalog`; `operations` nao deve conhecer tabela ERP nem catalogo manual de settings
+- a source `erp_current` do `catalog` esta tenant-scoped neste momento, porque os dados importados do ERP ainda vivem apenas na loja `184`; a Operacao continua enviando `storeId` para controle de acesso, nao para escolher tabela/coluna
 
 ## Alertas recentes do fluxo
 
@@ -138,6 +141,9 @@ Regra de resposta:
 - a duracao efetiva de um atendimento em aberto na sequencia nao vai ate o momento do fechamento manual quando ja existe um proximo atendimento do mesmo grupo; ela deve ser truncada no `startedAt` do proximo `serviceId` do grupo
 - no modo integrado, mutacoes e fechamento precisam usar a `storeId` do proprio servico; depender apenas de `activeStoreId` reintroduz erro silencioso em `Todas as lojas`
 - houve incidente de ambiente com a API cerca de 4,5s a frente do navegador/host; enquanto esse skew existir, os timestamps persistidos no backend continuam corretos para auditoria, mas a UI precisa compensar `savedAt -> Date.now()` para o cronometro nao parecer atrasado ao iniciar atendimento
+- `POST /v1/operations/finish` com `action=cancel` reinsere o consultor na fila usando o `QueueJoinedAt` original como chave de ordenacao: percorre a fila atual e insere antes da primeira pessoa cujo `QueueJoinedAt` seja maior; isso preserva a ordem relativa corretamente mesmo quando a fila encolheu (ex.: era o 2o, o 1o foi para atendimento, o 10o ficou na fila — volta como 1o porque entrou antes do 10o)
+- `POST /v1/operations/finish` com `action=stop` nao exige `stopReason`; o campo e opcional e gravado se vier preenchido; sem justificativa obrigatoria nos dois modais (cancel e stop)
+- `readJSONLenient` agora carrega o body antes de decodificar e devolve preview do payload + `Content-Type` no campo `details.cause` quando o JSON falha; manter esse comportamento facilita debug de payload mismatch via toast no frontend
 
 ## Estado atual
 

@@ -16,6 +16,9 @@ const (
 	statusQueue       = "queue"
 	statusService     = "service"
 	statusPaused      = "paused"
+	actionFinish      = "finish"
+	actionCancel      = "cancel"
+	actionStop        = "stop"
 	startModeQueue    = "queue"
 	startModeJump     = "queue-jump"
 	startModeParallel = "parallel"
@@ -559,6 +562,11 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		return MutationAck{}, err
 	}
 
+	action := strings.TrimSpace(input.Action)
+	if action == "" {
+		action = actionFinish
+	}
+
 	serviceID := strings.TrimSpace(input.ServiceID)
 	if serviceID == "" {
 		// Fallback: try to find by PersonID for backward compatibility
@@ -573,7 +581,13 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		return MutationAck{}, ErrValidation
 	}
 
-	if _, ok := finishOutcomes[strings.TrimSpace(input.Outcome)]; !ok {
+	if action == actionFinish {
+		if _, ok := finishOutcomes[strings.TrimSpace(input.Outcome)]; !ok {
+			return MutationAck{}, ErrValidation
+		}
+	}
+
+	if action != actionFinish && action != actionCancel && action != actionStop {
 		return MutationAck{}, ErrValidation
 	}
 
@@ -585,7 +599,18 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 	activeService := snapshotState.ActiveServices[activeIndex]
 	personID := activeService.ConsultantID
 	now := nowUnixMilli()
-	effectiveFinishedAt := deriveSequentialServiceEndAt(activeService, snapshotState.ActiveServices, snapshotState.ServiceHistory, now)
+
+	if action == actionStop {
+		snapshotState.ActiveServices[activeIndex].StoppedAt = now
+		snapshotState.ActiveServices[activeIndex].StopReason = strings.TrimSpace(input.StopReason)
+		return service.persistAndAck(ctx, resolvedStoreID, actionStop, personID, snapshotState, nil)
+	}
+
+	effectiveFallback := now
+	if activeService.StoppedAt > 0 {
+		effectiveFallback = activeService.StoppedAt
+	}
+	effectiveFinishedAt := deriveSequentialServiceEndAt(activeService, snapshotState.ActiveServices, snapshotState.ServiceHistory, effectiveFallback)
 	queuePositionAtStart := deriveQueuePositionAtStart(activeService, snapshotState.ActiveServices, snapshotState.ServiceHistory)
 	snapshotState.ActiveServices = filterActiveServicesByServiceID(snapshotState.ActiveServices, serviceID)
 
@@ -599,12 +624,60 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 	remainingServicesCount := countActiveServicesForConsultant(snapshotState.ActiveServices, personID)
 	isLastService := remainingServicesCount == 0
 
+	if action == actionCancel {
+		if isLastService {
+			// Cancel: reinsere o consultor na posicao relativa correta usando dois criterios:
+			// 1o) QueueJoinedAt: quem entrou na fila antes fica na frente.
+			// 2o) QueuePositionAtStart como tiebreaker: quando dois consultores
+			//     entraram no mesmo milissegundo, o que tinha posicao menor (mais a frente)
+			//     na fila original fica na frente.
+			originalJoinedAt := activeService.QueueJoinedAt
+			originalPos := 0
+			if activeService.QueuePositionAtStart != nil {
+				originalPos = *activeService.QueuePositionAtStart // 1-indexed
+			}
+
+			queueEntry := QueueStateItem{
+				ConsultantID:  person.ID,
+				QueueJoinedAt: originalJoinedAt,
+			}
+
+			insertAt := len(snapshotState.WaitingList)
+			for i, entry := range snapshotState.WaitingList {
+				if entry.QueueJoinedAt > originalJoinedAt {
+					insertAt = i
+					break
+				}
+				// Tiebreaker: mesmo QueueJoinedAt, usar posicao original
+				if entry.QueueJoinedAt == originalJoinedAt && originalPos > 0 && i >= originalPos-1 {
+					insertAt = i
+					break
+				}
+			}
+
+			tail := make([]QueueStateItem, len(snapshotState.WaitingList[insertAt:]))
+			copy(tail, snapshotState.WaitingList[insertAt:])
+			snapshotState.WaitingList = append(snapshotState.WaitingList[:insertAt], append([]QueueStateItem{queueEntry}, tail...)...)
+
+			snapshotState.ConsultantActivitySessions, snapshotState.ConsultantCurrentStatus = applyStatusTransitions(
+				snapshotState.ConsultantActivitySessions,
+				snapshotState.ConsultantCurrentStatus,
+				[]transition{{personID: person.ID, nextStatus: statusQueue}},
+				now,
+			)
+		}
+
+		return service.persistAndAck(ctx, resolvedStoreID, actionCancel, person.ID, snapshotState, nil)
+	}
+
+	queueEntry := QueueStateItem{
+		ConsultantID:  person.ID,
+		QueueJoinedAt: now,
+	}
+
 	// Only return to queue and transition status if this was the last active service
 	if isLastService {
-		snapshotState.WaitingList = append(snapshotState.WaitingList, QueueStateItem{
-			ConsultantID:  person.ID,
-			QueueJoinedAt: now,
-		})
+		snapshotState.WaitingList = append(snapshotState.WaitingList, queueEntry)
 	}
 
 	historyEntry := normalizeHistoryEntry(ServiceHistoryEntry{
@@ -651,6 +724,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		SaleAmount:                 maxFloat(input.SaleAmount, 0),
 		CustomerProfession:         input.CustomerProfession,
 		QueueJumpReason:            input.QueueJumpReason,
+		StopReason:                 strings.TrimSpace(activeService.StopReason),
 		Notes:                      input.Notes,
 		CampaignMatches:            normalizeCampaignMatches(input.CampaignMatches),
 		CampaignBonusTotal:         maxFloat(input.CampaignBonusTotal, 0),
@@ -675,7 +749,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		)
 	}
 
-	return service.persistAndAck(ctx, resolvedStoreID, "finish", person.ID, snapshotState, []ServiceHistoryEntry{historyEntry})
+	return service.persistAndAck(ctx, resolvedStoreID, actionFinish, person.ID, snapshotState, []ServiceHistoryEntry{historyEntry})
 }
 
 func (service *Service) buildAck(storeID string, action string, personID string) MutationAck {
@@ -876,6 +950,8 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			ParallelStartIndex:   item.ParallelStartIndex,
 			SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
 			StartOffsetMs:        maxInt64(item.StartOffsetMs, 0),
+			StoppedAt:            maxInt64(item.StoppedAt, 0),
+			StopReason:           strings.TrimSpace(item.StopReason),
 		})
 	}
 
@@ -942,6 +1018,8 @@ func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshot
 				ParallelStartIndex:   item.ParallelStartIndex,
 				SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
 				StartOffsetMs:        maxInt64(item.StartOffsetMs, 0),
+				StoppedAt:            maxInt64(item.StoppedAt, 0),
+				StopReason:           strings.TrimSpace(item.StopReason),
 			})
 		}
 	}

@@ -34,6 +34,7 @@ Endpoints atualmente usados pela pagina:
 
 - `GET /v1/operations/snapshot`
 - `GET /v1/operations/overview`
+- `GET /v1/catalog/products/search`
 - `POST /v1/operations/queue`
 - `POST /v1/operations/pause`
 - `POST /v1/operations/resume`
@@ -168,6 +169,7 @@ Arquivo: `OperationFinishModal.vue`
 Responsabilidade:
 - capturar o resultado do atendimento;
 - registrar produto visto e produto fechado;
+- buscar produtos operacionais por prefixo de `sku`;
 - registrar dados do cliente;
 - registrar motivo da visita, origem, observacoes e motivo de furar fila quando aplicavel;
 - obedecer a configuracao de selecao e descricao definida em /configuracoes para motivos e origens;
@@ -185,6 +187,15 @@ Secoes do modal:
 - motivo do atendimento fora da vez
 - observacoes
 - resumo do valor vendido derivado dos produtos fechados
+
+Regra atual do picker de produtos:
+
+- o modal nao deve mais depender de `settings.productCatalog` como fonte principal
+- a busca remota usa `GET /v1/catalog/products/search`
+- o usuario digita pelo menos 3 digitos do codigo/SKU
+- a fonte atual e `erp_current`
+- na source `erp_current`, a leitura atual do backend e tenant-shared e deduplicada por `sku`, porque os dados ERP importados ainda vivem apenas na loja `184`
+- `Item nao cadastrado` continua existindo como fallback manual
 
 ## Inventario detalhado de botoes e acoes
 
@@ -361,7 +372,7 @@ Campos mais relevantes lidos de `state`:
 - `modalConfig`
 - `finishModalServiceId`
 - `finishModalDraft`
-- `productCatalog`
+- `productCatalog` apenas para compatibilidade administrativa; o picker operacional de produto agora usa `/v1/catalog/products/search`
 - `visitReasonOptions`
 - `customerSourceOptions`
 - `professionOptions`

@@ -1,7 +1,10 @@
 package operations
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -221,8 +224,8 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		}
 
 		var input FinishCommandInput
-		if err := httpapi.ReadJSON(r, &input); err != nil {
-			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+		if err := readJSONLenient(r, &input); err != nil {
+			httpapi.WriteErrorWithDetails(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.", map[string]string{"cause": err.Error()})
 			return
 		}
 
@@ -234,6 +237,34 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		httpapi.WriteJSON(w, http.StatusOK, ack)
 	})))
+}
+
+func readJSONLenient(r *http.Request, dst any) error {
+	if r.Body == nil {
+		return errors.New("request body is required")
+	}
+
+	defer r.Body.Close()
+
+	bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("read body failed: %w (content-type: %s)", err, r.Header.Get("Content-Type"))
+	}
+
+	if len(bodyBytes) == 0 {
+		return fmt.Errorf("empty body (content-type: %s, content-length: %s)", r.Header.Get("Content-Type"), r.Header.Get("Content-Length"))
+	}
+
+	preview := string(bodyBytes)
+	if len(preview) > 500 {
+		preview = preview[:500] + "..."
+	}
+
+	if err := json.Unmarshal(bodyBytes, dst); err != nil {
+		return fmt.Errorf("json decode failed: %w (content-type: %s, body: %q)", err, r.Header.Get("Content-Type"), preview)
+	}
+
+	return nil
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

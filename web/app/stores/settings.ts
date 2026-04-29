@@ -13,6 +13,8 @@ const OPTION_GROUP_PATHS = {
   visitReasonOptions: "visit-reasons",
   customerSourceOptions: "customer-sources",
   pauseReasonOptions: "pause-reasons",
+  cancelReasonOptions: "cancel-reasons",
+  stopReasonOptions: "stop-reasons",
   queueJumpReasonOptions: "queue-jump-reasons",
   lossReasonOptions: "loss-reasons",
   professionOptions: "professions"
@@ -501,6 +503,30 @@ export const useSettingsStore = defineStore("settings", () => {
     },
     reorderPauseReasonOptions(optionIds) {
       return mutateAndPersistOptionReorder("reorderPauseReasonOptions", optionIds, "pauseReasonOptions");
+    },
+    addCancelReasonOption(label) {
+      return mutateAndPersistOptionCreate("addCancelReasonOption", label, "cancelReasonOptions");
+    },
+    updateCancelReasonOption(optionId, label) {
+      return mutateAndPersistOptionUpdate("updateCancelReasonOption", optionId, label, "cancelReasonOptions");
+    },
+    removeCancelReasonOption(optionId) {
+      return mutateAndPersistOptionDelete("removeCancelReasonOption", optionId, "cancelReasonOptions");
+    },
+    reorderCancelReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderCancelReasonOptions", optionIds, "cancelReasonOptions");
+    },
+    addStopReasonOption(label) {
+      return mutateAndPersistOptionCreate("addStopReasonOption", label, "stopReasonOptions");
+    },
+    updateStopReasonOption(optionId, label) {
+      return mutateAndPersistOptionUpdate("updateStopReasonOption", optionId, label, "stopReasonOptions");
+    },
+    removeStopReasonOption(optionId) {
+      return mutateAndPersistOptionDelete("removeStopReasonOption", optionId, "stopReasonOptions");
+    },
+    reorderStopReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder("reorderStopReasonOptions", optionIds, "stopReasonOptions");
     },
     addQueueJumpReasonOption(label) {
       return mutateAndPersistOptionCreate("addQueueJumpReasonOption", label, "queueJumpReasonOptions");

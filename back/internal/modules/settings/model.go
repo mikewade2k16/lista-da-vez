@@ -21,31 +21,33 @@ type ProductItem struct {
 }
 
 type AppSettings struct {
-	MaxConcurrentServices            int     `json:"maxConcurrentServices"`
-	MaxConcurrentServicesPerConsultant int    `json:"maxConcurrentServicesPerConsultant"`
-	TimingFastCloseMinutes           int     `json:"timingFastCloseMinutes"`
-	TimingLongServiceMinutes         int     `json:"timingLongServiceMinutes"`
-	TimingLowSaleAmount              float64 `json:"timingLowSaleAmount"`
-	TestModeEnabled                  bool    `json:"testModeEnabled"`
-	AutoFillFinishModal              bool    `json:"autoFillFinishModal"`
-	AlertMinConversionRate           float64 `json:"alertMinConversionRate"`
-	AlertMaxQueueJumpRate            float64 `json:"alertMaxQueueJumpRate"`
-	AlertMinPaScore                  float64 `json:"alertMinPaScore"`
-	AlertMinTicketAverage            float64 `json:"alertMinTicketAverage"`
+	MaxConcurrentServices              int     `json:"maxConcurrentServices"`
+	MaxConcurrentServicesPerConsultant int     `json:"maxConcurrentServicesPerConsultant"`
+	TimingFastCloseMinutes             int     `json:"timingFastCloseMinutes"`
+	TimingLongServiceMinutes           int     `json:"timingLongServiceMinutes"`
+	TimingLowSaleAmount                float64 `json:"timingLowSaleAmount"`
+	ServiceCancelWindowSeconds         int     `json:"serviceCancelWindowSeconds"`
+	TestModeEnabled                    bool    `json:"testModeEnabled"`
+	AutoFillFinishModal                bool    `json:"autoFillFinishModal"`
+	AlertMinConversionRate             float64 `json:"alertMinConversionRate"`
+	AlertMaxQueueJumpRate              float64 `json:"alertMaxQueueJumpRate"`
+	AlertMinPaScore                    float64 `json:"alertMinPaScore"`
+	AlertMinTicketAverage              float64 `json:"alertMinTicketAverage"`
 }
 
 type AppSettingsPatch struct {
-	MaxConcurrentServices            *int     `json:"maxConcurrentServices,omitempty"`
-	MaxConcurrentServicesPerConsultant *int   `json:"maxConcurrentServicesPerConsultant,omitempty"`
-	TimingFastCloseMinutes           *int     `json:"timingFastCloseMinutes,omitempty"`
-	TimingLongServiceMinutes         *int     `json:"timingLongServiceMinutes,omitempty"`
-	TimingLowSaleAmount              *float64 `json:"timingLowSaleAmount,omitempty"`
-	TestModeEnabled                  *bool    `json:"testModeEnabled,omitempty"`
-	AutoFillFinishModal              *bool    `json:"autoFillFinishModal,omitempty"`
-	AlertMinConversionRate           *float64 `json:"alertMinConversionRate,omitempty"`
-	AlertMaxQueueJumpRate            *float64 `json:"alertMaxQueueJumpRate,omitempty"`
-	AlertMinPaScore                  *float64 `json:"alertMinPaScore,omitempty"`
-	AlertMinTicketAverage            *float64 `json:"alertMinTicketAverage,omitempty"`
+	MaxConcurrentServices              *int     `json:"maxConcurrentServices,omitempty"`
+	MaxConcurrentServicesPerConsultant *int     `json:"maxConcurrentServicesPerConsultant,omitempty"`
+	TimingFastCloseMinutes             *int     `json:"timingFastCloseMinutes,omitempty"`
+	TimingLongServiceMinutes           *int     `json:"timingLongServiceMinutes,omitempty"`
+	TimingLowSaleAmount                *float64 `json:"timingLowSaleAmount,omitempty"`
+	ServiceCancelWindowSeconds         *int     `json:"serviceCancelWindowSeconds,omitempty"`
+	TestModeEnabled                    *bool    `json:"testModeEnabled,omitempty"`
+	AutoFillFinishModal                *bool    `json:"autoFillFinishModal,omitempty"`
+	AlertMinConversionRate             *float64 `json:"alertMinConversionRate,omitempty"`
+	AlertMaxQueueJumpRate              *float64 `json:"alertMaxQueueJumpRate,omitempty"`
+	AlertMinPaScore                    *float64 `json:"alertMinPaScore,omitempty"`
+	AlertMinTicketAverage              *float64 `json:"alertMinTicketAverage,omitempty"`
 }
 
 type ModalConfig struct {
@@ -70,6 +72,14 @@ type ModalConfig struct {
 	ProductSeenNotesPlaceholder     string `json:"productSeenNotesPlaceholder"`
 	VisitReasonLabel                string `json:"visitReasonLabel"`
 	CustomerSourceLabel             string `json:"customerSourceLabel"`
+	CancelReasonLabel               string `json:"cancelReasonLabel"`
+	CancelReasonPlaceholder         string `json:"cancelReasonPlaceholder"`
+	CancelReasonOtherLabel          string `json:"cancelReasonOtherLabel"`
+	CancelReasonOtherPlaceholder    string `json:"cancelReasonOtherPlaceholder"`
+	StopReasonLabel                 string `json:"stopReasonLabel"`
+	StopReasonPlaceholder           string `json:"stopReasonPlaceholder"`
+	StopReasonOtherLabel            string `json:"stopReasonOtherLabel"`
+	StopReasonOtherPlaceholder      string `json:"stopReasonOtherPlaceholder"`
 	ShowCustomerNameField           bool   `json:"showCustomerNameField"`
 	ShowCustomerPhoneField          bool   `json:"showCustomerPhoneField"`
 	ShowEmailField                  bool   `json:"showEmailField"`
@@ -83,6 +93,8 @@ type ModalConfig struct {
 	ShowExistingCustomerField       bool   `json:"showExistingCustomerField"`
 	ShowQueueJumpReasonField        bool   `json:"showQueueJumpReasonField"`
 	ShowLossReasonField             bool   `json:"showLossReasonField"`
+	ShowCancelReasonField           bool   `json:"showCancelReasonField"`
+	ShowStopReasonField             bool   `json:"showStopReasonField"`
 	AllowProductSeenNone            bool   `json:"allowProductSeenNone"`
 	VisitReasonSelectionMode        string `json:"visitReasonSelectionMode"`
 	VisitReasonDetailMode           string `json:"visitReasonDetailMode"`
@@ -90,6 +102,8 @@ type ModalConfig struct {
 	LossReasonDetailMode            string `json:"lossReasonDetailMode"`
 	CustomerSourceSelectionMode     string `json:"customerSourceSelectionMode"`
 	CustomerSourceDetailMode        string `json:"customerSourceDetailMode"`
+	CancelReasonInputMode           string `json:"cancelReasonInputMode"`
+	StopReasonInputMode             string `json:"stopReasonInputMode"`
 	RequireCustomerNameField        bool   `json:"requireCustomerNameField"`
 	RequireCustomerPhoneField       bool   `json:"requireCustomerPhoneField"`
 	RequireEmailField               bool   `json:"requireEmailField"`
@@ -106,6 +120,8 @@ type ModalConfig struct {
 	ProductSeenNotesMinChars        int    `json:"productSeenNotesMinChars"`
 	RequireQueueJumpReasonField     bool   `json:"requireQueueJumpReasonField"`
 	RequireLossReasonField          bool   `json:"requireLossReasonField"`
+	RequireCancelReasonField        bool   `json:"requireCancelReasonField"`
+	RequireStopReasonField          bool   `json:"requireStopReasonField"`
 }
 
 type ModalConfigPatch struct {
@@ -130,6 +146,14 @@ type ModalConfigPatch struct {
 	ProductSeenNotesPlaceholder     *string `json:"productSeenNotesPlaceholder,omitempty"`
 	VisitReasonLabel                *string `json:"visitReasonLabel,omitempty"`
 	CustomerSourceLabel             *string `json:"customerSourceLabel,omitempty"`
+	CancelReasonLabel               *string `json:"cancelReasonLabel,omitempty"`
+	CancelReasonPlaceholder         *string `json:"cancelReasonPlaceholder,omitempty"`
+	CancelReasonOtherLabel          *string `json:"cancelReasonOtherLabel,omitempty"`
+	CancelReasonOtherPlaceholder    *string `json:"cancelReasonOtherPlaceholder,omitempty"`
+	StopReasonLabel                 *string `json:"stopReasonLabel,omitempty"`
+	StopReasonPlaceholder           *string `json:"stopReasonPlaceholder,omitempty"`
+	StopReasonOtherLabel            *string `json:"stopReasonOtherLabel,omitempty"`
+	StopReasonOtherPlaceholder      *string `json:"stopReasonOtherPlaceholder,omitempty"`
 	ShowCustomerNameField           *bool   `json:"showCustomerNameField,omitempty"`
 	ShowCustomerPhoneField          *bool   `json:"showCustomerPhoneField,omitempty"`
 	ShowEmailField                  *bool   `json:"showEmailField,omitempty"`
@@ -143,6 +167,8 @@ type ModalConfigPatch struct {
 	ShowExistingCustomerField       *bool   `json:"showExistingCustomerField,omitempty"`
 	ShowQueueJumpReasonField        *bool   `json:"showQueueJumpReasonField,omitempty"`
 	ShowLossReasonField             *bool   `json:"showLossReasonField,omitempty"`
+	ShowCancelReasonField           *bool   `json:"showCancelReasonField,omitempty"`
+	ShowStopReasonField             *bool   `json:"showStopReasonField,omitempty"`
 	AllowProductSeenNone            *bool   `json:"allowProductSeenNone,omitempty"`
 	VisitReasonSelectionMode        *string `json:"visitReasonSelectionMode,omitempty"`
 	VisitReasonDetailMode           *string `json:"visitReasonDetailMode,omitempty"`
@@ -150,6 +176,8 @@ type ModalConfigPatch struct {
 	LossReasonDetailMode            *string `json:"lossReasonDetailMode,omitempty"`
 	CustomerSourceSelectionMode     *string `json:"customerSourceSelectionMode,omitempty"`
 	CustomerSourceDetailMode        *string `json:"customerSourceDetailMode,omitempty"`
+	CancelReasonInputMode           *string `json:"cancelReasonInputMode,omitempty"`
+	StopReasonInputMode             *string `json:"stopReasonInputMode,omitempty"`
 	RequireCustomerNameField        *bool   `json:"requireCustomerNameField,omitempty"`
 	RequireCustomerPhoneField       *bool   `json:"requireCustomerPhoneField,omitempty"`
 	RequireEmailField               *bool   `json:"requireEmailField,omitempty"`
@@ -166,6 +194,8 @@ type ModalConfigPatch struct {
 	ProductSeenNotesMinChars        *int    `json:"productSeenNotesMinChars,omitempty"`
 	RequireQueueJumpReasonField     *bool   `json:"requireQueueJumpReasonField,omitempty"`
 	RequireLossReasonField          *bool   `json:"requireLossReasonField,omitempty"`
+	RequireCancelReasonField        *bool   `json:"requireCancelReasonField,omitempty"`
+	RequireStopReasonField          *bool   `json:"requireStopReasonField,omitempty"`
 }
 
 type OperationTemplate struct {
@@ -190,6 +220,8 @@ type Bundle struct {
 	VisitReasonOptions          []OptionItem        `json:"visitReasonOptions"`
 	CustomerSourceOptions       []OptionItem        `json:"customerSourceOptions"`
 	PauseReasonOptions          []OptionItem        `json:"pauseReasonOptions"`
+	CancelReasonOptions         []OptionItem        `json:"cancelReasonOptions"`
+	StopReasonOptions           []OptionItem        `json:"stopReasonOptions"`
 	QueueJumpReasonOptions      []OptionItem        `json:"queueJumpReasonOptions"`
 	LossReasonOptions           []OptionItem        `json:"lossReasonOptions"`
 	ProfessionOptions           []OptionItem        `json:"professionOptions"`
@@ -265,6 +297,8 @@ type Record struct {
 	VisitReasonOptions          []OptionItem
 	CustomerSourceOptions       []OptionItem
 	PauseReasonOptions          []OptionItem
+	CancelReasonOptions         []OptionItem
+	StopReasonOptions           []OptionItem
 	QueueJumpReasonOptions      []OptionItem
 	LossReasonOptions           []OptionItem
 	ProfessionOptions           []OptionItem

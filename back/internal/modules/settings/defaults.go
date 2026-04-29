@@ -13,6 +13,7 @@ var defaultOperationTemplates = []OperationTemplate{
 			TimingFastCloseMinutes:             5,
 			TimingLongServiceMinutes:           25,
 			TimingLowSaleAmount:                1200,
+			ServiceCancelWindowSeconds:         30,
 		},
 		ModalConfig: ModalConfig{
 			ShowCustomerNameField:           true,
@@ -28,11 +29,15 @@ var defaultOperationTemplates = []OperationTemplate{
 			ShowExistingCustomerField:       true,
 			ShowQueueJumpReasonField:        true,
 			ShowLossReasonField:             true,
+			ShowCancelReasonField:           true,
+			ShowStopReasonField:             true,
 			AllowProductSeenNone:            true,
 			VisitReasonSelectionMode:        "multiple",
 			VisitReasonDetailMode:           "shared",
 			CustomerSourceSelectionMode:     "single",
 			CustomerSourceDetailMode:        "shared",
+			CancelReasonInputMode:           "text",
+			StopReasonInputMode:             "text",
 			RequireCustomerNameField:        true,
 			RequireCustomerPhoneField:       true,
 			RequireEmailField:               false,
@@ -49,6 +54,8 @@ var defaultOperationTemplates = []OperationTemplate{
 			ProductSeenNotesMinChars:        20,
 			RequireQueueJumpReasonField:     true,
 			RequireLossReasonField:          true,
+			RequireCancelReasonField:        false,
+			RequireStopReasonField:          false,
 		},
 		VisitReasonOptions: []OptionItem{
 			{ID: "aniversario-casamento", Label: "Aniversario de casamento"},
@@ -77,6 +84,7 @@ var defaultOperationTemplates = []OperationTemplate{
 			TimingFastCloseMinutes:             7,
 			TimingLongServiceMinutes:           35,
 			TimingLowSaleAmount:                1500,
+			ServiceCancelWindowSeconds:         30,
 		},
 		ModalConfig: ModalConfig{
 			ShowCustomerNameField:           true,
@@ -92,11 +100,15 @@ var defaultOperationTemplates = []OperationTemplate{
 			ShowExistingCustomerField:       true,
 			ShowQueueJumpReasonField:        true,
 			ShowLossReasonField:             true,
+			ShowCancelReasonField:           true,
+			ShowStopReasonField:             true,
 			AllowProductSeenNone:            true,
 			VisitReasonSelectionMode:        "multiple",
 			VisitReasonDetailMode:           "shared",
 			CustomerSourceSelectionMode:     "single",
 			CustomerSourceDetailMode:        "shared",
+			CancelReasonInputMode:           "text",
+			StopReasonInputMode:             "text",
 			RequireCustomerNameField:        true,
 			RequireCustomerPhoneField:       true,
 			RequireEmailField:               false,
@@ -113,6 +125,8 @@ var defaultOperationTemplates = []OperationTemplate{
 			ProductSeenNotesMinChars:        20,
 			RequireQueueJumpReasonField:     true,
 			RequireLossReasonField:          true,
+			RequireCancelReasonField:        false,
+			RequireStopReasonField:          false,
 		},
 		VisitReasonOptions: []OptionItem{
 			{ID: "aniversario-casamento", Label: "Aniversario de casamento"},
@@ -137,6 +151,7 @@ var defaultOperationTemplates = []OperationTemplate{
 			TimingFastCloseMinutes:             3,
 			TimingLongServiceMinutes:           18,
 			TimingLowSaleAmount:                900,
+			ServiceCancelWindowSeconds:         30,
 		},
 		ModalConfig: ModalConfig{
 			ShowCustomerNameField:           true,
@@ -152,11 +167,15 @@ var defaultOperationTemplates = []OperationTemplate{
 			ShowExistingCustomerField:       true,
 			ShowQueueJumpReasonField:        true,
 			ShowLossReasonField:             true,
+			ShowCancelReasonField:           true,
+			ShowStopReasonField:             true,
 			AllowProductSeenNone:            true,
 			VisitReasonSelectionMode:        "multiple",
 			VisitReasonDetailMode:           "off",
 			CustomerSourceSelectionMode:     "single",
 			CustomerSourceDetailMode:        "off",
+			CancelReasonInputMode:           "text",
+			StopReasonInputMode:             "text",
 			RequireCustomerNameField:        true,
 			RequireCustomerPhoneField:       true,
 			RequireEmailField:               false,
@@ -173,6 +192,8 @@ var defaultOperationTemplates = []OperationTemplate{
 			ProductSeenNotesMinChars:        20,
 			RequireQueueJumpReasonField:     true,
 			RequireLossReasonField:          true,
+			RequireCancelReasonField:        false,
+			RequireStopReasonField:          false,
 		},
 		VisitReasonOptions: []OptionItem{
 			{ID: "presente", Label: "Presente"},
@@ -200,6 +221,7 @@ func DefaultBundle(tenantID string, selectedTemplateID string) Bundle {
 			TimingFastCloseMinutes:             template.Settings.TimingFastCloseMinutes,
 			TimingLongServiceMinutes:           template.Settings.TimingLongServiceMinutes,
 			TimingLowSaleAmount:                template.Settings.TimingLowSaleAmount,
+			ServiceCancelWindowSeconds:         template.Settings.ServiceCancelWindowSeconds,
 			TestModeEnabled:                    false,
 			AutoFillFinishModal:                false,
 			AlertMinConversionRate:             0,
@@ -211,6 +233,8 @@ func DefaultBundle(tenantID string, selectedTemplateID string) Bundle {
 		VisitReasonOptions:     cloneOptions(template.VisitReasonOptions),
 		CustomerSourceOptions:  cloneOptions(template.CustomerSourceOptions),
 		PauseReasonOptions:     defaultPauseReasonOptions(),
+		CancelReasonOptions:    defaultCancelReasonOptions(),
+		StopReasonOptions:      defaultStopReasonOptions(),
 		QueueJumpReasonOptions: defaultQueueJumpReasonOptions(),
 		LossReasonOptions:      defaultLossReasonOptions(),
 		ProfessionOptions:      defaultProfessionOptions(),
@@ -268,6 +292,14 @@ func defaultBaseModalConfig() ModalConfig {
 		ProductSeenNotesPlaceholder:     "Descreva referência, pedido específico, contexto do cliente ou justificativa quando não houver interesse identificado.",
 		VisitReasonLabel:                "Motivo da visita",
 		CustomerSourceLabel:             "Origem do cliente",
+		CancelReasonLabel:               "Motivo do cancelamento",
+		CancelReasonPlaceholder:         "Informe ou selecione o motivo do cancelamento",
+		CancelReasonOtherLabel:          "Detalhe do cancelamento",
+		CancelReasonOtherPlaceholder:    "Explique por que o atendimento foi cancelado",
+		StopReasonLabel:                 "Motivo da parada",
+		StopReasonPlaceholder:           "Informe ou selecione o motivo da parada",
+		StopReasonOtherLabel:            "Detalhe da parada",
+		StopReasonOtherPlaceholder:      "Explique por que o atendimento foi parado",
 		ShowCustomerNameField:           true,
 		ShowCustomerPhoneField:          true,
 		ShowEmailField:                  true,
@@ -281,6 +313,8 @@ func defaultBaseModalConfig() ModalConfig {
 		ShowExistingCustomerField:       true,
 		ShowQueueJumpReasonField:        true,
 		ShowLossReasonField:             true,
+		ShowCancelReasonField:           true,
+		ShowStopReasonField:             true,
 		AllowProductSeenNone:            true,
 		VisitReasonSelectionMode:        "multiple",
 		VisitReasonDetailMode:           "shared",
@@ -288,6 +322,8 @@ func defaultBaseModalConfig() ModalConfig {
 		LossReasonDetailMode:            "off",
 		CustomerSourceSelectionMode:     "single",
 		CustomerSourceDetailMode:        "shared",
+		CancelReasonInputMode:           "text",
+		StopReasonInputMode:             "text",
 		RequireCustomerNameField:        true,
 		RequireCustomerPhoneField:       true,
 		RequireEmailField:               false,
@@ -304,6 +340,8 @@ func defaultBaseModalConfig() ModalConfig {
 		ProductSeenNotesMinChars:        20,
 		RequireQueueJumpReasonField:     true,
 		RequireLossReasonField:          true,
+		RequireCancelReasonField:        false,
+		RequireStopReasonField:          false,
 	}
 }
 
@@ -379,6 +417,24 @@ func defaultPauseReasonOptions() []OptionItem {
 		{ID: "suporte-interno", Label: "Suporte interno"},
 		{ID: "treinamento", Label: "Treinamento"},
 		{ID: "reuniao", Label: "Reuniao"},
+	}
+}
+
+func defaultCancelReasonOptions() []OptionItem {
+	return []OptionItem{
+		{ID: "clique-incorreto", Label: "Clique incorreto"},
+		{ID: "cliente-desistiu-imediato", Label: "Cliente desistiu imediatamente"},
+		{ID: "troca-consultor", Label: "Troca de consultor"},
+		{ID: "ajuste-fila", Label: "Ajuste de fila"},
+	}
+}
+
+func defaultStopReasonOptions() []OptionItem {
+	return []OptionItem{
+		{ID: "cliente-saiu", Label: "Cliente saiu"},
+		{ID: "pausa-consultor", Label: "Pausa do consultor"},
+		{ID: "aguardando-retorno", Label: "Aguardando retorno"},
+		{ID: "encaminhado", Label: "Encaminhado"},
 	}
 }
 

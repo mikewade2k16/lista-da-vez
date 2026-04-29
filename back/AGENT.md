@@ -117,6 +117,8 @@ Hoje existe um `tenant-demo` para destravar a implementacao inicial, mas `tenant
   - leitura e administracao basica das lojas acessiveis
 - `access`
   - catalogo de permissoes, matriz padrao por papel e overrides por usuario
+- `catalog`
+  - busca operacional de catalogo de produtos com fontes trocaveis e contrato estavel
 - `consultants`
   - roster administrativo por loja
 - `settings`

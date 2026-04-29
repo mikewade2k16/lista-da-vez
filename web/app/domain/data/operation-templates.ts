@@ -48,6 +48,7 @@ export const operationTemplates = [
     description: "Equilibrio entre qualidade de atendimento, captura de lead e disciplina de fila.",
     settings: {
       maxConcurrentServices: 10,
+      serviceCancelWindowSeconds: 30,
       timingFastCloseMinutes: 5,
       timingLongServiceMinutes: 25,
       timingLowSaleAmount: 1200
@@ -66,11 +67,15 @@ export const operationTemplates = [
       showExistingCustomerField: true,
       showQueueJumpReasonField: true,
       showLossReasonField: true,
+      showCancelReasonField: true,
+      showStopReasonField: true,
       allowProductSeenNone: true,
       visitReasonSelectionMode: "multiple",
       visitReasonDetailMode: "shared",
       customerSourceSelectionMode: "single",
       customerSourceDetailMode: "shared",
+      cancelReasonInputMode: "text",
+      stopReasonInputMode: "text",
       requireCustomerNameField: true,
       requireCustomerPhoneField: true,
       requireEmailField: false,
@@ -86,7 +91,9 @@ export const operationTemplates = [
       requireProductSeenNotesWhenNone: true,
       productSeenNotesMinChars: 20,
       requireQueueJumpReasonField: true,
-      requireLossReasonField: true
+      requireLossReasonField: true,
+      requireCancelReasonField: false,
+      requireStopReasonField: false
     },
     visitReasonOptions: [
       { id: "aniversario-casamento", label: "Aniversario de casamento" },
@@ -111,6 +118,7 @@ export const operationTemplates = [
     description: "Mais foco em relacao de longo prazo e coleta completa de dados do cliente.",
     settings: {
       maxConcurrentServices: 8,
+      serviceCancelWindowSeconds: 30,
       timingFastCloseMinutes: 7,
       timingLongServiceMinutes: 35,
       timingLowSaleAmount: 1500
@@ -129,11 +137,15 @@ export const operationTemplates = [
       showExistingCustomerField: true,
       showQueueJumpReasonField: true,
       showLossReasonField: true,
+      showCancelReasonField: true,
+      showStopReasonField: true,
       allowProductSeenNone: true,
       visitReasonSelectionMode: "multiple",
       visitReasonDetailMode: "shared",
       customerSourceSelectionMode: "single",
       customerSourceDetailMode: "shared",
+      cancelReasonInputMode: "text",
+      stopReasonInputMode: "text",
       requireCustomerNameField: true,
       requireCustomerPhoneField: true,
       requireEmailField: false,
@@ -149,7 +161,9 @@ export const operationTemplates = [
       requireProductSeenNotesWhenNone: true,
       productSeenNotesMinChars: 20,
       requireQueueJumpReasonField: true,
-      requireLossReasonField: true
+      requireLossReasonField: true,
+      requireCancelReasonField: false,
+      requireStopReasonField: false
     },
     visitReasonOptions: [
       { id: "aniversario-casamento", label: "Aniversario de casamento" },
@@ -170,6 +184,7 @@ export const operationTemplates = [
     description: "Operacao de alto fluxo com fechamento mais objetivo e formulario mais leve.",
     settings: {
       maxConcurrentServices: 12,
+      serviceCancelWindowSeconds: 30,
       timingFastCloseMinutes: 3,
       timingLongServiceMinutes: 18,
       timingLowSaleAmount: 900
@@ -188,11 +203,15 @@ export const operationTemplates = [
       showExistingCustomerField: true,
       showQueueJumpReasonField: true,
       showLossReasonField: true,
+      showCancelReasonField: true,
+      showStopReasonField: true,
       allowProductSeenNone: true,
       visitReasonSelectionMode: "multiple",
       visitReasonDetailMode: "off",
       customerSourceSelectionMode: "single",
       customerSourceDetailMode: "off",
+      cancelReasonInputMode: "text",
+      stopReasonInputMode: "text",
       requireCustomerNameField: true,
       requireCustomerPhoneField: true,
       requireEmailField: false,
@@ -208,7 +227,9 @@ export const operationTemplates = [
       requireProductSeenNotesWhenNone: true,
       productSeenNotesMinChars: 20,
       requireQueueJumpReasonField: true,
-      requireLossReasonField: true
+      requireLossReasonField: true,
+      requireCancelReasonField: false,
+      requireStopReasonField: false
     },
     visitReasonOptions: [
       { id: "presente", label: "Presente" },

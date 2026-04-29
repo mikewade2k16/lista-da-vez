@@ -282,7 +282,9 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			coalesce(parallel_group_id, '') as parallel_group_id,
 			parallel_start_index,
 			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
-			coalesce(start_offset_ms, 0) as start_offset_ms
+			coalesce(start_offset_ms, 0) as start_offset_ms,
+			coalesce(stopped_at, 0) as stopped_at,
+			coalesce(stop_reason, '') as stop_reason
 		from operation_active_services
 		where store_id = $1::uuid
 		order by service_started_at asc;
@@ -310,6 +312,8 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			&item.ParallelStartIndex,
 			&siblingServiceIDsRaw,
 			&item.StartOffsetMs,
+			&item.StoppedAt,
+			&item.StopReason,
 		); err != nil {
 			return nil, err
 		}
@@ -581,9 +585,11 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 				parallel_group_id,
 				parallel_start_index,
 				sibling_service_ids_json,
-				start_offset_ms
+				start_offset_ms,
+				stopped_at,
+				stop_reason
 			)
-			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, $13);
+			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, $13, $14, $15);
 		`,
 			storeID,
 			item.ConsultantID,
@@ -598,6 +604,8 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			item.ParallelStartIndex,
 			string(siblingIDsRaw),
 			item.StartOffsetMs,
+			item.StoppedAt,
+			strings.TrimSpace(item.StopReason),
 		); err != nil {
 			return err
 		}

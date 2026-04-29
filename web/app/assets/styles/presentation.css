@@ -102,7 +102,7 @@ body {
 /* Consultores fixos no rodape */
 .employee-strip {
   flex-shrink: 0;
-  padding: 8px 12px;
+
   margin-top: 6px;
 }
 

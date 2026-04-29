@@ -143,7 +143,9 @@ export function normalizeActiveServicesList(rawActiveServices, timestamp) {
     parallelGroupId: String(service.parallelGroupId || ""),
     parallelStartIndex: typeof service.parallelStartIndex === "number" ? service.parallelStartIndex : null,
     startOffsetMs: Number(service.startOffsetMs || 0),
-    siblingServiceIds: Array.isArray(service.siblingServiceIds) ? service.siblingServiceIds : []
+    siblingServiceIds: Array.isArray(service.siblingServiceIds) ? service.siblingServiceIds : [],
+    stoppedAt: Math.max(0, Number(service.stoppedAt || 0) || 0),
+    stopReason: String(service.stopReason || "").trim()
   }));
 }
 
@@ -319,6 +321,8 @@ export function createEmptyState() {
     visitReasonOptions: normalizeVisitReasonOptions(defaultTemplate?.visitReasonOptions || []),
     customerSourceOptions: cloneValue(defaultTemplate?.customerSourceOptions || []),
     pauseReasonOptions: cloneValue(DEFAULT_PAUSE_REASON_OPTIONS),
+    cancelReasonOptions: [],
+    stopReasonOptions: [],
     queueJumpReasonOptions: cloneValue(DEFAULT_QUEUE_JUMP_REASON_OPTIONS),
     lossReasonOptions: cloneValue(DEFAULT_LOSS_REASON_OPTIONS),
     professionOptions: cloneValue(DEFAULT_PROFESSION_OPTIONS),
@@ -345,6 +349,14 @@ export function createEmptyState() {
       productSeenNotesPlaceholder: "Descreva referência, pedido específico, contexto do cliente ou justificativa quando não houver interesse identificado.",
       visitReasonLabel: "Motivo da visita",
       customerSourceLabel: "Origem do cliente",
+      cancelReasonLabel: "Motivo do cancelamento",
+      cancelReasonPlaceholder: "Informe ou selecione o motivo do cancelamento",
+      cancelReasonOtherLabel: "Detalhe do cancelamento",
+      cancelReasonOtherPlaceholder: "Explique por que o atendimento foi cancelado",
+      stopReasonLabel: "Motivo da parada",
+      stopReasonPlaceholder: "Informe ou selecione o motivo da parada",
+      stopReasonOtherLabel: "Detalhe da parada",
+      stopReasonOtherPlaceholder: "Explique por que o atendimento foi parado",
       showCustomerNameField: true,
       showCustomerPhoneField: true,
       showEmailField: true,
@@ -358,6 +370,8 @@ export function createEmptyState() {
       showExistingCustomerField: true,
       showQueueJumpReasonField: true,
       showLossReasonField: true,
+      showCancelReasonField: true,
+      showStopReasonField: true,
       allowProductSeenNone: true,
       visitReasonSelectionMode: "multiple",
       visitReasonDetailMode: "shared",
@@ -365,6 +379,8 @@ export function createEmptyState() {
       lossReasonDetailMode: "off",
       customerSourceSelectionMode: "single",
       customerSourceDetailMode: "shared",
+      cancelReasonInputMode: "text",
+      stopReasonInputMode: "text",
       requireCustomerNameField: true,
       requireCustomerPhoneField: true,
       requireEmailField: false,
@@ -380,7 +396,9 @@ export function createEmptyState() {
       requireProductSeenNotesWhenNone: true,
       productSeenNotesMinChars: 20,
       requireQueueJumpReasonField: true,
-      requireLossReasonField: true
+      requireLossReasonField: true,
+      requireCancelReasonField: false,
+      requireStopReasonField: false
     },
     consultantActivitySessions: scopedState.consultantActivitySessions,
     consultantCurrentStatus: scopedState.consultantCurrentStatus,
@@ -391,6 +409,7 @@ export function createEmptyState() {
       timingFastCloseMinutes: Number(defaultTemplate?.settings?.timingFastCloseMinutes || 5),
       timingLongServiceMinutes: Number(defaultTemplate?.settings?.timingLongServiceMinutes || 25),
       timingLowSaleAmount: Number(defaultTemplate?.settings?.timingLowSaleAmount || 1200),
+      serviceCancelWindowSeconds: Number(defaultTemplate?.settings?.serviceCancelWindowSeconds || 30),
       testModeEnabled: false,
       autoFillFinishModal: false,
       alertMinConversionRate: 0,
@@ -633,6 +652,14 @@ export function hydrateState(nextState = {}) {
       Array.isArray(sourceState.pauseReasonOptions) && sourceState.pauseReasonOptions.length
         ? normalizeSimpleOptions(sourceState.pauseReasonOptions)
         : baseState.pauseReasonOptions,
+    cancelReasonOptions:
+      Array.isArray(sourceState.cancelReasonOptions)
+        ? normalizeSimpleOptions(sourceState.cancelReasonOptions)
+        : baseState.cancelReasonOptions,
+    stopReasonOptions:
+      Array.isArray(sourceState.stopReasonOptions)
+        ? normalizeSimpleOptions(sourceState.stopReasonOptions)
+        : baseState.stopReasonOptions,
     queueJumpReasonOptions:
       Array.isArray(sourceState.queueJumpReasonOptions) && sourceState.queueJumpReasonOptions.length
         ? normalizeSimpleOptions(sourceState.queueJumpReasonOptions)

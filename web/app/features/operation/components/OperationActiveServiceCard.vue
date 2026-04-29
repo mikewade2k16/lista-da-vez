@@ -31,10 +31,14 @@ const props = defineProps({
   maxConcurrentPerConsultant: {
     type: Number,
     default: 1
+  },
+  cancelWindowSeconds: {
+    type: Number,
+    default: 30
   }
 });
 
-const emit = defineEmits(["finish", "startParallel"]);
+const emit = defineEmits(["finish", "stop", "startParallel"]);
 
 const primaryService = computed(() => props.services?.[0] || null);
 const totalOpenServices = computed(() => props.services?.length || 0);
@@ -54,7 +58,48 @@ function isPrimaryService(service) {
 }
 
 function isFrozenTimer(service) {
-  return Number(service?.effectiveFinishedAt || 0) > 0;
+  return Number(service?.stoppedAt || service?.effectiveFinishedAt || 0) > 0;
+}
+
+function frozenAt(service) {
+  return Number(service?.stoppedAt || service?.effectiveFinishedAt || 0);
+}
+
+function cancelWindowMs() {
+  return Math.max(0, Number(props.cancelWindowSeconds || 0) || 0) * 1000;
+}
+
+function isWithinCancelWindow(service) {
+  if (Number(service?.stoppedAt || 0) > 0) {
+    return false;
+  }
+
+  const windowMs = cancelWindowMs();
+  if (!props.clockReady || windowMs <= 0) {
+    return false;
+  }
+
+  const elapsedMs = Math.max(0, props.now - Number(service?.serviceStartedAt || 0));
+  return elapsedMs <= windowMs;
+}
+
+function cancelProgressStyle(service) {
+  const windowMs = cancelWindowMs();
+  if (!isWithinCancelWindow(service) || windowMs <= 0) {
+    return { width: "0%" };
+  }
+
+  const elapsedMs = Math.max(0, props.now - Number(service?.serviceStartedAt || 0));
+  const remainingRatio = Math.max(0, 1 - (elapsedMs / windowMs));
+  return { width: `${Math.max(0, Math.min(100, remainingRatio * 100))}%` };
+}
+
+function primaryActionLabel(service) {
+  return isWithinCancelWindow(service) ? "Cancelar atendimento" : "Encerrar atendimento";
+}
+
+function isStopped(service) {
+  return Number(service?.stoppedAt || 0) > 0;
 }
 
 function timerLabel(service) {
@@ -66,7 +111,7 @@ function timerLabel(service) {
     Math.max(
       0,
       isFrozenTimer(service)
-        ? Number(service?.effectiveFinishedAt || 0) - Number(service?.serviceStartedAt || 0)
+        ? frozenAt(service) - Number(service?.serviceStartedAt || 0)
         : props.now - Number(service?.serviceStartedAt || 0)
     ),
     { roundUpPartialSecond: !isFrozenTimer(service) }
@@ -97,16 +142,22 @@ const parallelBadge = computed(() => {
 
 function serviceMetaLabel(service) {
   const startedLabel = `Iniciado às ${startedAtLabel(service)}`;
+  // const stopLabel = isStopped(service) ? "Parado" : "Em andamento";
 
-  if (isPrimaryService(service)) {
-    return startedLabel;
-  }
+  // if (isPrimaryService(service)) {
+  //   return `${stopLabel} · ${startedLabel}`;
+  // }
 
-  return `${compactStatusLabel(service)} · ${startedLabel}`;
+  // return `${compactStatusLabel(service)} · ${stopLabel} · ${startedLabel}`;
+  return startedLabel;
 }
 
-function handleFinish(serviceId) {
-  emit("finish", serviceId || "");
+function handleFinish(service) {
+	emit("finish", service || null);
+}
+
+function handleStop(service) {
+	emit("stop", service || null);
 }
 
 function handleStartParallel() {
@@ -148,19 +199,37 @@ function handleStartParallel() {
           </div>
         </div>
 
-        <div v-if="!readOnly && !integratedMode" class="service-card__row-actions">
+        <div
+          v-if="!readOnly && !integratedMode"
+          class="service-card__row-actions"
+          :class="{ 'service-card__row-actions--parallel': canStartParallel && index === services.length - 1 }"
+        >
           <button
-            class="column-action column-action--secondary service-card__action"
-            :class="{ 'service-card__action--full': !(canStartParallel && index === services.length - 1) }"
+            class="column-action column-action--secondary service-card__icon-action service-card__icon-action--stop"
+            type="button"
+            :disabled="isStopped(service)"
+            :data-testid="`operation-stop-${service.serviceId}`"
+            :title="isStopped(service) ? 'Atendimento parado' : 'Parar atendimento'"
+            @click="handleStop(service)"
+          >
+            <span class="material-icons-round">stop_circle</span>
+          </button>
+          <button
+            class="column-action column-action--secondary service-card__action service-card__action-button"
             type="button"
             :data-testid="`operation-finish-${service.serviceId}`"
-            @click="handleFinish(service.serviceId)"
+            @click="handleFinish(service)"
           >
-            Encerrar atendimento
+            <span
+              v-if="isWithinCancelWindow(service)"
+              class="service-card__action-progress"
+              :style="cancelProgressStyle(service)"
+            />
+            <span class="service-card__action-label">{{ primaryActionLabel(service) }}</span>
           </button>
           <button
             v-if="canStartParallel && index === services.length - 1"
-            class="service-card__icon-action"
+            class="column-action column-action--secondary service-card__icon-action"
             type="button"
             :data-testid="`operation-start-parallel-${service.serviceId}`"
             title="Abrir outro atendimento"

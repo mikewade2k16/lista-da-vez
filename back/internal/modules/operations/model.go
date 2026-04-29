@@ -54,6 +54,8 @@ type ActiveService struct {
 	ParallelStartIndex   *int            `json:"parallelStartIndex,omitempty"`
 	SiblingServiceIDs    []string        `json:"siblingServiceIds"`
 	StartOffsetMs        int64           `json:"startOffsetMs"`
+	StoppedAt            int64           `json:"stoppedAt,omitempty"`
+	StopReason           string          `json:"stopReason,omitempty"`
 }
 
 type PausedEmployee struct {
@@ -128,6 +130,8 @@ type ServiceHistoryEntry struct {
 	SaleAmount                 float64           `json:"saleAmount"`
 	CustomerProfession         string            `json:"customerProfession"`
 	QueueJumpReason            string            `json:"queueJumpReason"`
+	CancelReason               string            `json:"cancelReason"`
+	StopReason                 string            `json:"stopReason"`
 	Notes                      string            `json:"notes"`
 	CampaignMatches            []CampaignMatch   `json:"campaignMatches"`
 	CampaignBonusTotal         float64           `json:"campaignBonusTotal"`
@@ -177,6 +181,8 @@ type ActiveServiceState struct {
 	ParallelStartIndex   *int
 	SiblingServiceIDs    []string
 	StartOffsetMs        int64
+	StoppedAt            int64
+	StopReason           string
 }
 
 type PausedStateItem struct {
@@ -275,6 +281,7 @@ type FinishCommandInput struct {
 	StoreID                    string            `json:"storeId"`
 	ServiceID                  string            `json:"serviceId"`
 	PersonID                   string            `json:"personId"`
+	Action                     string            `json:"action"`
 	Outcome                    string            `json:"outcome"`
 	IsWindowService            bool              `json:"isWindowService"`
 	IsGift                     bool              `json:"isGift"`
@@ -301,6 +308,8 @@ type FinishCommandInput struct {
 	SaleAmount                 float64           `json:"saleAmount"`
 	CustomerProfession         string            `json:"customerProfession"`
 	QueueJumpReason            string            `json:"queueJumpReason"`
+	CancelReason               string            `json:"cancelReason"`
+	StopReason                 string            `json:"stopReason"`
 	Notes                      string            `json:"notes"`
 	CampaignMatches            []CampaignMatch   `json:"campaignMatches"`
 	CampaignBonusTotal         float64           `json:"campaignBonusTotal"`

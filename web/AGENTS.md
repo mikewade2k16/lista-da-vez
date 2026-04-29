@@ -113,6 +113,7 @@ Ao criar ou ajustar actions:
 - evitar espalhar persistencia diretamente dentro de componentes;
 - evitar persistencia client-side para fonte de verdade.
 - `operations`, `consultants` e `settings` ja usam a API Go + PostgreSQL como fonte principal.
+- o picker de produtos do modal de `/operacao` deve consumir `GET /v1/catalog/products/search`; `settings.productCatalog` fica apenas como catalogo manual/administrativo e nao como fonte principal dessa busca.
 - `reports` ja usa a API Go como fonte principal para a tela `/relatorios`.
 - `analytics` ja usa a API Go como fonte principal para `/ranking`, `/dados` e `/inteligencia`.
 - `multiloja` ja usa a API Go para CRUD de lojas e gestao de usuarios/acessos.

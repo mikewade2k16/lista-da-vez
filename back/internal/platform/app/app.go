@@ -10,6 +10,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/erp"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
@@ -70,6 +71,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	)
 	settingsRepository := settings.NewPostgresRepository(pool)
 	settingsService := settings.NewService(settingsRepository, realtimeService)
+	catalogRepository := catalog.NewPostgresRepository(pool)
+	catalogService := catalog.NewService(catalogRepository, newCatalogStoreFinderAdapter(storeService))
 	operationsRepository := operations.NewPostgresRepository(pool)
 	operationsService := operations.NewService(operationsRepository, realtimeService, newOperationsStoreScopeAdapter(storeService))
 	reportsRepository := reports.NewPostgresRepository(pool)
@@ -107,6 +110,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"stores",
 				"consultants",
 				"settings",
+				"catalog",
 				"operations",
 				"realtime",
 				"reports",
@@ -126,6 +130,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	stores.RegisterRoutes(mux, storeService, authMiddleware)
 	consultants.RegisterRoutes(mux, consultantService, authMiddleware)
 	settings.RegisterRoutes(mux, settingsService, authMiddleware)
+	catalog.RegisterRoutes(mux, catalogService, authMiddleware)
 	operations.RegisterRoutes(mux, operationsService, authMiddleware)
 	realtime.RegisterRoutes(mux, realtimeService)
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)

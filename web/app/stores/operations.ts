@@ -33,6 +33,15 @@ function normalizeProductEntries(products = []) {
   }).filter((product) => product.id || product.name || product.code);
 }
 
+function normalizeCatalogProductSearchResponse(response, fallback = {}) {
+  return {
+    sourceKey: normalizeText(response?.sourceKey || fallback.sourceKey || "erp_current"),
+    term: normalizeText(response?.term || fallback.term).toUpperCase(),
+    limit: Math.max(1, Number(response?.limit || fallback.limit || 10) || 10),
+    items: normalizeProductEntries(response?.items)
+  };
+}
+
 function normalizeText(value) {
   return String(value || "").trim();
 }
@@ -207,6 +216,39 @@ export const useOperationsStore = defineStore("operations", () => {
     }
   }
 
+  async function searchCatalogProducts(input = {}) {
+    syncStoredServerClockOffset();
+    const normalizedTerm = normalizeText(input?.term).toUpperCase();
+    const normalizedSourceKey = normalizeText(input?.sourceKey || "erp_current") || "erp_current";
+    const normalizedLimit = Math.max(1, Math.min(25, Number(input?.limit || 10) || 10));
+    const storeId = normalizeText(input?.storeId) || await resolveActiveStoreId();
+
+    if (!storeId || !auth.isAuthenticated || normalizedTerm.length < 3) {
+      return normalizeCatalogProductSearchResponse(null, {
+        sourceKey: normalizedSourceKey,
+        term: normalizedTerm,
+        limit: normalizedLimit
+      });
+    }
+
+    const params = new URLSearchParams({
+      storeId,
+      term: normalizedTerm,
+      limit: String(normalizedLimit)
+    });
+
+    if (normalizedSourceKey) {
+      params.set("sourceKey", normalizedSourceKey);
+    }
+
+    const response = await apiRequest(`/v1/catalog/products/search?${params.toString()}`);
+    return normalizeCatalogProductSearchResponse(response, {
+      sourceKey: normalizedSourceKey,
+      term: normalizedTerm,
+      limit: normalizedLimit
+    });
+  }
+
   function clearOverview() {
     overview.value = null;
     overviewPending.value = false;
@@ -272,6 +314,7 @@ export const useOperationsStore = defineStore("operations", () => {
     refreshActiveStore,
     refreshOperationSnapshot,
     refreshOverview,
+    searchCatalogProducts,
     clearOverview,
     overview,
     overviewPending,
@@ -319,6 +362,27 @@ export const useOperationsStore = defineStore("operations", () => {
       return runCommand("/v1/operations/services/parallel", { personId }, {
         storeId,
         refreshOverview: Boolean(storeId)
+      });
+    },
+    serviceAction(serviceId, action, reason = "", options = {}) {
+      const normalizedAction = normalizeText(action).toLowerCase();
+      const payload = {
+        serviceId,
+        action: normalizedAction
+      };
+
+      if (normalizedAction === "stop") {
+        payload.stopReason = normalizeText(reason);
+      }
+
+      if (normalizedAction === "cancel") {
+        payload.cancelReason = normalizeText(reason);
+      }
+
+      return runCommand("/v1/operations/finish", payload, {
+        storeId: normalizeText(options?.storeId),
+        refreshOverview: Boolean(options?.storeId),
+        resetFinishModal: true
       });
     },
     async finishService(serviceId, closureData, options = {}) {

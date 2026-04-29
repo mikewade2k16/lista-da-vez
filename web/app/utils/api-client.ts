@@ -1,7 +1,14 @@
 export const AUTH_TOKEN_COOKIE = "ldv_access_token";
 
 export function getApiErrorMessage(error, fallbackMessage) {
-  return error?.data?.error?.message || error?.message || fallbackMessage;
+  const baseMessage = error?.data?.error?.message || error?.message || fallbackMessage;
+  const detailCause = String(error?.data?.error?.details?.cause || "").trim();
+
+  if (!detailCause) {
+    return baseMessage;
+  }
+
+  return `${baseMessage} (${detailCause})`;
 }
 
 export function getApiBase(runtimeConfig) {
@@ -40,9 +47,25 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
       headers.Authorization = `Bearer ${accessToken}`;
     }
 
+    let processedOptions = { ...options };
+
+    if (
+      options.method === "POST" &&
+      options.body &&
+      typeof options.body === "object" &&
+      !(options.body instanceof FormData) &&
+      !(options.body instanceof Blob) &&
+      !(options.body instanceof ArrayBuffer)
+    ) {
+      processedOptions.body = JSON.stringify(options.body);
+      if (!headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+    }
+
     return $fetch(path, {
       baseURL: getApiBase(runtimeConfig),
-      ...options,
+      ...processedOptions,
       headers
     });
   };

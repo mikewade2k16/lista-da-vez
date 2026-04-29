@@ -335,6 +335,118 @@ export function createSettingsActions({ getState, updateState }) {
       });
     },
 
+    addCancelReasonOption(label) {
+      const state = getState();
+      const { item, items } = appendUniqueOption(state.cancelReasonOptions, "motivo-cancelamento", label);
+
+      if (!item || items === state.cancelReasonOptions) {
+        return;
+      }
+
+      updateState({
+        ...state,
+        cancelReasonOptions: items
+      });
+    },
+
+    updateCancelReasonOption(optionId, label) {
+      const state = getState();
+      const normalized = normalizeText(label);
+
+      if (!normalized) {
+        return;
+      }
+
+      const duplicate = state.cancelReasonOptions.find(
+        (item) => item.id !== optionId && normalizeText(item.label).toLowerCase() === normalized.toLowerCase()
+      );
+
+      if (duplicate) {
+        return;
+      }
+
+      updateState({
+        ...state,
+        cancelReasonOptions: state.cancelReasonOptions.map((item) =>
+          item.id === optionId ? { ...item, label: normalized } : item
+        )
+      });
+    },
+
+    removeCancelReasonOption(optionId) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        cancelReasonOptions: state.cancelReasonOptions.filter((item) => item.id !== optionId)
+      });
+    },
+
+    reorderCancelReasonOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        cancelReasonOptions: reorderOptionItems(state.cancelReasonOptions, optionIds)
+      });
+    },
+
+    addStopReasonOption(label) {
+      const state = getState();
+      const { item, items } = appendUniqueOption(state.stopReasonOptions, "motivo-parada", label);
+
+      if (!item || items === state.stopReasonOptions) {
+        return;
+      }
+
+      updateState({
+        ...state,
+        stopReasonOptions: items
+      });
+    },
+
+    updateStopReasonOption(optionId, label) {
+      const state = getState();
+      const normalized = normalizeText(label);
+
+      if (!normalized) {
+        return;
+      }
+
+      const duplicate = state.stopReasonOptions.find(
+        (item) => item.id !== optionId && normalizeText(item.label).toLowerCase() === normalized.toLowerCase()
+      );
+
+      if (duplicate) {
+        return;
+      }
+
+      updateState({
+        ...state,
+        stopReasonOptions: state.stopReasonOptions.map((item) =>
+          item.id === optionId ? { ...item, label: normalized } : item
+        )
+      });
+    },
+
+    removeStopReasonOption(optionId) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        stopReasonOptions: state.stopReasonOptions.filter((item) => item.id !== optionId)
+      });
+    },
+
+    reorderStopReasonOptions(optionIds) {
+      const state = getState();
+
+      updateState({
+        ...state,
+        stopReasonOptions: reorderOptionItems(state.stopReasonOptions, optionIds)
+      });
+    },
+
     addQueueJumpReasonOption(label) {
       const state = getState();
       const { item, items } = appendUniqueOption(state.queueJumpReasonOptions, "motivo-fora-da-vez", label);

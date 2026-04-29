@@ -28,6 +28,7 @@ Ele nao deve cuidar de:
 - auth
 - campanhas
 - relatorios server-side
+- busca operacional remota de produtos
 
 ## Contrato atual
 
@@ -72,6 +73,7 @@ enviar `tenantId` do contexto ativo quando o principal for global. Nunca usar
 - o `GET /v1/settings` continua entregando um bundle para o Nuxt por conveniencia de leitura
 - a API de escrita deve preferir endpoints por secao em vez de trafegar o bundle inteiro a cada alteracao
 - em listas e catalogos, a escrita deve preferir mutacao por item em vez de substituir a colecao inteira
+- o `catalogo de produtos` daqui continua sendo administrativo/manual; o autocomplete operacional de produtos deve migrar para o modulo `catalog`
 - os grupos atuais de `tenant_setting_options.kind` sao:
   - `visit_reason`
   - `customer_source`

@@ -4,6 +4,7 @@ import { buildNickname } from "~/domain/utils/person-display";
 import OperationProductPicker from "~/features/operation/components/OperationProductPicker.vue";
 import { useOperationsStore } from "~/stores/operations";
 import { useUiStore } from "~/stores/ui";
+import { getApiErrorMessage } from "~/utils/api-client";
 
 const props = defineProps({
   state: {
@@ -17,6 +18,9 @@ const ui = useUiStore();
 const FINISH_MODAL_DRAFT_STORAGE_KEY = "ldv_finish_modal_drafts_v1";
 const FINISH_MODAL_DRAFT_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const PRODUCT_SEEN_NONE_DETAIL_KEY = "__none__";
+const PRODUCT_CATALOG_SOURCE_KEY = "erp_current";
+const PRODUCT_SEARCH_MIN_CHARS = 3;
+const PRODUCT_SEARCH_LIMIT = 12;
 
 function serviceDisplayName(service) {
   return buildNickname(service?.name || "");
@@ -153,6 +157,32 @@ function mergeProductEntries(...groups) {
   });
 
   return merged;
+}
+
+function normalizeProductPickerOptions(items = []) {
+  return normalizeProducts(items).map((item) => ({
+    ...item,
+    label: String(item?.label || item?.name || item?.code || "").trim() || String(item?.code || "").trim(),
+    name: String(item?.name || item?.label || item?.code || "").trim(),
+    code: String(item?.code || "").trim().toUpperCase(),
+    price: Math.max(0, Number(item?.price || 0) || 0)
+  })).filter((item) => item.id || item.name || item.code);
+}
+
+function buildProductSearchEmptyLabel(searchState) {
+  if (String(searchState?.error || "").trim()) {
+    return searchState.error;
+  }
+
+  if (Boolean(searchState?.pending)) {
+    return "Buscando produtos...";
+  }
+
+  if (String(searchState?.term || "").trim().length < PRODUCT_SEARCH_MIN_CHARS) {
+    return `Digite pelo menos ${PRODUCT_SEARCH_MIN_CHARS} digitos do codigo/SKU.`;
+  }
+
+  return "Nenhum produto encontrado para a busca atual.";
 }
 
 function buildInitialForm(state, draft) {
@@ -388,6 +418,7 @@ const customerSourcePickerDetailMode = computed(() =>
 const service = computed(() =>
   (props.state.activeServices || []).find((item) => item.serviceId === props.state.finishModalServiceId) || null
 );
+const productCatalogStoreId = computed(() => String(service.value?.storeId || props.state.activeStoreId || "").trim());
 const draft = computed(() => props.state.finishModalDraft || null);
 const requestedServiceDraftKey = computed(() => {
   const storeId = String(props.state.activeStoreId || "").trim();
@@ -585,20 +616,93 @@ const formQuality = computed(() => {
 const customProducts = ref([]);
 const restoredDraftKey = ref("");
 let isApplyingDraft = false;
-const productCatalogItems = computed(() =>
-  (props.state.productCatalog || []).map((product) => ({
-    id: String(product.id || ""),
-    label: String(product.name || "").trim(),
-    name: String(product.name || "").trim(),
-    category: String(product.category || "").trim(),
-    code: String(product.code || "").trim(),
-    price: Math.max(0, Number(product.basePrice || 0)),
-    basePrice: Math.max(0, Number(product.basePrice || 0))
-  }))
+
+function createProductCatalogSearchState() {
+  const state = reactive({
+    term: "",
+    options: [],
+    pending: false,
+    error: "",
+    requestToken: 0
+  });
+
+  async function search(term) {
+    const normalizedTerm = String(term || "").trim().toUpperCase();
+    state.term = normalizedTerm;
+    state.error = "";
+
+    if (normalizedTerm.length < PRODUCT_SEARCH_MIN_CHARS) {
+      state.requestToken += 1;
+      state.pending = false;
+      state.options = [];
+      return;
+    }
+
+    const normalizedStoreId = String(productCatalogStoreId.value || "").trim();
+    if (!normalizedStoreId) {
+      state.requestToken += 1;
+      state.pending = false;
+      state.options = [];
+      state.error = "Loja ativa indisponivel para buscar produtos.";
+      return;
+    }
+
+    const requestToken = state.requestToken + 1;
+    state.requestToken = requestToken;
+    state.pending = true;
+
+    try {
+      const response = await operationsStore.searchCatalogProducts({
+        storeId: normalizedStoreId,
+        sourceKey: PRODUCT_CATALOG_SOURCE_KEY,
+        term: normalizedTerm,
+        limit: PRODUCT_SEARCH_LIMIT
+      });
+
+      if (requestToken !== state.requestToken) {
+        return;
+      }
+
+      state.options = normalizeProductPickerOptions(response?.items);
+    } catch (error) {
+      if (requestToken !== state.requestToken) {
+        return;
+      }
+
+      state.options = [];
+      state.error = getApiErrorMessage(error, "Nao foi possivel buscar produtos agora.");
+    } finally {
+      if (requestToken === state.requestToken) {
+        state.pending = false;
+      }
+    }
+  }
+
+  function clear() {
+    state.requestToken += 1;
+    state.term = "";
+    state.options = [];
+    state.pending = false;
+    state.error = "";
+  }
+
+  return {
+    state,
+    search,
+    clear
+  };
+}
+
+const productsClosedSearch = createProductCatalogSearchState();
+const productsSeenSearch = createProductCatalogSearchState();
+const productsClosedPickerOptions = computed(() =>
+  mergeProductEntries(productsClosedSearch.state.options, customProducts.value)
 );
-const productPickerOptions = computed(() =>
-  mergeProductEntries(productCatalogItems.value, customProducts.value)
+const productsSeenPickerOptions = computed(() =>
+  mergeProductEntries(productsSeenSearch.state.options, customProducts.value)
 );
+const productsClosedEmptyLabel = computed(() => buildProductSearchEmptyLabel(productsClosedSearch.state));
+const productsSeenEmptyLabel = computed(() => buildProductSearchEmptyLabel(productsSeenSearch.state));
 const professionPickerOptions = computed(() =>
   (props.state.professionOptions || []).map((option) => mapOptionToPickerItem(option))
 );
@@ -649,7 +753,7 @@ const selectedLossReasonLabel = computed(() => selectedLossReasonLabels.value[0]
 const selectedLossReasonSummary = computed(() => selectedLossReasonLabels.value.join(", "));
 const modalTitle = computed(() => resolveModalText(modalConfig.value.title, "Fechar atendimento"));
 const productSeenLabel = computed(() => resolveModalText(modalConfig.value.productSeenLabel, "Interesses do cliente"));
-const productSeenPlaceholder = computed(() => resolveModalText(modalConfig.value.productSeenPlaceholder, "Busque e selecione interesses"));
+const productSeenPlaceholder = computed(() => resolveModalText(modalConfig.value.productSeenPlaceholder, "Digite 3 primeiros digitos do codigo/SKU"));
 const customerSectionLabel = computed(() => resolveModalText(modalConfig.value.customerSectionLabel, "Dados do cliente"));
 const customerNameLabel = computed(() => resolveModalText(modalConfig.value.customerNameLabel, "Nome do cliente"));
 const customerPhoneLabel = computed(() => resolveModalText(modalConfig.value.customerPhoneLabel, "Telefone"));
@@ -897,6 +1001,8 @@ function clearCurrentDraft() {
   isApplyingDraft = true;
   restoredDraftKey.value = "";
   customProducts.value = [];
+  productsClosedSearch.clear();
+  productsSeenSearch.clear();
   step.value = 1;
   Object.assign(form, createEmptyForm());
   normalizeFormForModalConfig();
@@ -939,6 +1045,8 @@ function resetForm() {
 
   isApplyingDraft = true;
   step.value = 1;
+  productsClosedSearch.clear();
+  productsSeenSearch.clear();
   customProducts.value = mergeProductEntries(storedDraft?.customProducts || [], initialDraft?.customProducts || []);
   restoredDraftKey.value = storedDraft ? serviceDraftKey.value : "";
   Object.assign(form, createEmptyForm(), buildInitialForm(props.state, initialDraft));
@@ -1131,6 +1239,11 @@ watch(serviceDraftKey, () => {
   resetForm();
 }, { immediate: true });
 
+watch(productCatalogStoreId, () => {
+  productsClosedSearch.clear();
+  productsSeenSearch.clear();
+});
+
 watch([requestedServiceDraftKey, service], ([draftKey, currentService]) => {
   if (!draftKey || currentService) {
     return;
@@ -1216,6 +1329,15 @@ watch(form, () => {
 watch(customProducts, () => {
   saveActiveDraft();
 }, { deep: true });
+
+watch(() => props.state.finishModalServiceId, (nextValue) => {
+  if (String(nextValue || "").trim()) {
+    return;
+  }
+
+  productsClosedSearch.clear();
+  productsSeenSearch.clear();
+});
 
 function handleEscape(event) {
   if (event.key !== "Escape") return;
@@ -1337,14 +1459,21 @@ onBeforeUnmount(() => {
               key="products-closed-picker"
               :label="closedProductLabel"
               :helper-text="closedProductHelperText"
-              :options="productPickerOptions"
+              :options="productsClosedPickerOptions"
               :selected-items="form.productsClosed"
-              :search-placeholder="modalConfig.productClosedPlaceholder || 'Busque e selecione o produto fechado'"
+              :search-placeholder="modalConfig.productClosedPlaceholder || 'Digite 3 primeiros digitos do codigo/SKU'"
               trigger-label="Selecionar item"
               empty-selected-label="Nenhum item selecionado"
+              :empty-search-label="productsClosedEmptyLabel"
               allow-custom
               mode="closed"
+              remote-search
+              :remote-search-loading="productsClosedSearch.state.pending"
+              :remote-search-min-chars="PRODUCT_SEARCH_MIN_CHARS"
+              remote-search-idle-label="Digite pelo menos 3 digitos do codigo/SKU."
+              remote-search-loading-label="Buscando produtos..."
               testid-prefix="operation-products-closed"
+              @search="productsClosedSearch.search"
               @update:selected-items="updateProductsClosed"
             />
 
@@ -1353,12 +1482,13 @@ onBeforeUnmount(() => {
               key="products-seen-picker"
               :label="productSeenLabel"
               helper-text=""
-              :options="productPickerOptions"
+              :options="productsSeenPickerOptions"
               :selected-items="form.productsSeen"
               :none-selected="form.productsSeenNone"
-              :search-placeholder="productSeenPlaceholder"
+              :search-placeholder="productSeenPlaceholder || 'Digite 3 primeiros digitos do codigo/SKU'"
               trigger-label="Selecionar interesse"
               empty-selected-label="Nenhum interesse selecionado"
+              :empty-search-label="productsSeenEmptyLabel"
               :allow-none="allowProductSeenNone"
               none-placement="dropdown"
               none-label="Nenhum interesse identificado"
@@ -1369,7 +1499,13 @@ onBeforeUnmount(() => {
               :item-detail-label="productSeenNotesLabel"
               :item-detail-placeholder="productSeenNotesPlaceholder"
               item-detail-testid="operation-product-seen-notes"
+              remote-search
+              :remote-search-loading="productsSeenSearch.state.pending"
+              :remote-search-min-chars="PRODUCT_SEARCH_MIN_CHARS"
+              remote-search-idle-label="Digite pelo menos 3 digitos do codigo/SKU."
+              remote-search-loading-label="Buscando produtos..."
               testid-prefix="operation-products-seen"
+              @search="productsSeenSearch.search"
               @update:selected-items="updateProductsSeen"
               @update:item-details="updateProductSeenDetails"
               @update:none-selected="updateProductsSeenNone"

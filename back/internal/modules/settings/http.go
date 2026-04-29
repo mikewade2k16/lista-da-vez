@@ -339,6 +339,10 @@ func normalizeOptionGroupPath(rawGroup string) (string, error) {
 		return optionKindCustomerSource, nil
 	case "pause-reasons":
 		return optionKindPauseReason, nil
+	case "cancel-reasons":
+		return optionKindCancelReason, nil
+	case "stop-reasons":
+		return optionKindStopReason, nil
 	case "queue-jump-reasons":
 		return optionKindQueueJump, nil
 	case "loss-reasons":

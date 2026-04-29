@@ -122,7 +122,7 @@ func (service *Service) SaveOptionSection(ctx context.Context, principal auth.Pr
 
 	switch optionGroup {
 	case optionKindVisitReason, optionKindCustomerSource, optionKindPauseReason,
-		optionKindQueueJump, optionKindLossReason, optionKindProfession:
+		optionKindCancelReason, optionKindStopReason, optionKindQueueJump, optionKindLossReason, optionKindProfession:
 	default:
 		return MutationAck{}, ErrValidation
 	}
@@ -414,6 +414,8 @@ func (service *Service) normalizeBundle(tenantID string, input Bundle) Bundle {
 	base.VisitReasonOptions = normalizeOptions(input.VisitReasonOptions, base.VisitReasonOptions)
 	base.CustomerSourceOptions = normalizeOptions(input.CustomerSourceOptions, base.CustomerSourceOptions)
 	base.PauseReasonOptions = normalizeOptions(input.PauseReasonOptions, base.PauseReasonOptions)
+	base.CancelReasonOptions = normalizeOptions(input.CancelReasonOptions, base.CancelReasonOptions)
+	base.StopReasonOptions = normalizeOptions(input.StopReasonOptions, base.StopReasonOptions)
 	base.QueueJumpReasonOptions = normalizeOptions(input.QueueJumpReasonOptions, base.QueueJumpReasonOptions)
 	base.LossReasonOptions = normalizeOptions(input.LossReasonOptions, base.LossReasonOptions)
 	base.ProfessionOptions = normalizeOptions(input.ProfessionOptions, base.ProfessionOptions)
@@ -434,6 +436,7 @@ func normalizeAppSettings(input AppSettings, fallback AppSettings) AppSettings {
 	fallback.TimingFastCloseMinutes = maxInt(input.TimingFastCloseMinutes, 1)
 	fallback.TimingLongServiceMinutes = maxInt(input.TimingLongServiceMinutes, 1)
 	fallback.TimingLowSaleAmount = maxFloat(input.TimingLowSaleAmount, 0)
+	fallback.ServiceCancelWindowSeconds = maxInt(input.ServiceCancelWindowSeconds, 0)
 	fallback.TestModeEnabled = input.TestModeEnabled
 	fallback.AutoFillFinishModal = input.AutoFillFinishModal
 	fallback.AlertMinConversionRate = maxFloat(input.AlertMinConversionRate, 0)
@@ -463,6 +466,9 @@ func applyAppSettingsPatch(base AppSettings, patch AppSettingsPatch) AppSettings
 	}
 	if patch.TimingLowSaleAmount != nil {
 		base.TimingLowSaleAmount = maxFloat(*patch.TimingLowSaleAmount, 0)
+	}
+	if patch.ServiceCancelWindowSeconds != nil {
+		base.ServiceCancelWindowSeconds = maxInt(*patch.ServiceCancelWindowSeconds, 0)
 	}
 	if patch.TestModeEnabled != nil {
 		base.TestModeEnabled = *patch.TestModeEnabled
@@ -550,6 +556,30 @@ func applyModalConfigPatch(base ModalConfig, patch ModalConfigPatch) ModalConfig
 	if patch.CustomerSourceLabel != nil {
 		base.CustomerSourceLabel = fallbackString(*patch.CustomerSourceLabel, base.CustomerSourceLabel)
 	}
+	if patch.CancelReasonLabel != nil {
+		base.CancelReasonLabel = fallbackString(*patch.CancelReasonLabel, base.CancelReasonLabel)
+	}
+	if patch.CancelReasonPlaceholder != nil {
+		base.CancelReasonPlaceholder = fallbackString(*patch.CancelReasonPlaceholder, base.CancelReasonPlaceholder)
+	}
+	if patch.CancelReasonOtherLabel != nil {
+		base.CancelReasonOtherLabel = fallbackString(*patch.CancelReasonOtherLabel, base.CancelReasonOtherLabel)
+	}
+	if patch.CancelReasonOtherPlaceholder != nil {
+		base.CancelReasonOtherPlaceholder = fallbackString(*patch.CancelReasonOtherPlaceholder, base.CancelReasonOtherPlaceholder)
+	}
+	if patch.StopReasonLabel != nil {
+		base.StopReasonLabel = fallbackString(*patch.StopReasonLabel, base.StopReasonLabel)
+	}
+	if patch.StopReasonPlaceholder != nil {
+		base.StopReasonPlaceholder = fallbackString(*patch.StopReasonPlaceholder, base.StopReasonPlaceholder)
+	}
+	if patch.StopReasonOtherLabel != nil {
+		base.StopReasonOtherLabel = fallbackString(*patch.StopReasonOtherLabel, base.StopReasonOtherLabel)
+	}
+	if patch.StopReasonOtherPlaceholder != nil {
+		base.StopReasonOtherPlaceholder = fallbackString(*patch.StopReasonOtherPlaceholder, base.StopReasonOtherPlaceholder)
+	}
 	if patch.ShowCustomerNameField != nil {
 		base.ShowCustomerNameField = *patch.ShowCustomerNameField
 	}
@@ -589,6 +619,12 @@ func applyModalConfigPatch(base ModalConfig, patch ModalConfigPatch) ModalConfig
 	if patch.ShowLossReasonField != nil {
 		base.ShowLossReasonField = *patch.ShowLossReasonField
 	}
+	if patch.ShowCancelReasonField != nil {
+		base.ShowCancelReasonField = *patch.ShowCancelReasonField
+	}
+	if patch.ShowStopReasonField != nil {
+		base.ShowStopReasonField = *patch.ShowStopReasonField
+	}
 	if patch.AllowProductSeenNone != nil {
 		base.AllowProductSeenNone = *patch.AllowProductSeenNone
 	}
@@ -609,6 +645,12 @@ func applyModalConfigPatch(base ModalConfig, patch ModalConfigPatch) ModalConfig
 	}
 	if patch.CustomerSourceDetailMode != nil {
 		base.CustomerSourceDetailMode = normalizeEnum(*patch.CustomerSourceDetailMode, []string{"off", "shared", "per-item"}, base.CustomerSourceDetailMode)
+	}
+	if patch.CancelReasonInputMode != nil {
+		base.CancelReasonInputMode = normalizeEnum(*patch.CancelReasonInputMode, []string{"text", "select", "select-with-other", "select_other", "select-other"}, base.CancelReasonInputMode)
+	}
+	if patch.StopReasonInputMode != nil {
+		base.StopReasonInputMode = normalizeEnum(*patch.StopReasonInputMode, []string{"text", "select", "select-with-other", "select_other", "select-other"}, base.StopReasonInputMode)
 	}
 	if patch.RequireCustomerNameField != nil {
 		base.RequireCustomerNameField = *patch.RequireCustomerNameField
@@ -658,6 +700,12 @@ func applyModalConfigPatch(base ModalConfig, patch ModalConfigPatch) ModalConfig
 	if patch.RequireLossReasonField != nil {
 		base.RequireLossReasonField = *patch.RequireLossReasonField
 	}
+	if patch.RequireCancelReasonField != nil {
+		base.RequireCancelReasonField = *patch.RequireCancelReasonField
+	}
+	if patch.RequireStopReasonField != nil {
+		base.RequireStopReasonField = *patch.RequireStopReasonField
+	}
 
 	return base
 }
@@ -670,6 +718,8 @@ func recordToBundle(record Record) Bundle {
 	bundle.VisitReasonOptions = cloneOptions(record.VisitReasonOptions)
 	bundle.CustomerSourceOptions = cloneOptions(record.CustomerSourceOptions)
 	bundle.PauseReasonOptions = cloneOptions(record.PauseReasonOptions)
+	bundle.CancelReasonOptions = cloneOptions(record.CancelReasonOptions)
+	bundle.StopReasonOptions = cloneOptions(record.StopReasonOptions)
 	bundle.QueueJumpReasonOptions = cloneOptions(record.QueueJumpReasonOptions)
 	bundle.LossReasonOptions = cloneOptions(record.LossReasonOptions)
 	bundle.ProfessionOptions = cloneOptions(record.ProfessionOptions)
@@ -687,6 +737,8 @@ func bundleToRecord(bundle Bundle) Record {
 		VisitReasonOptions:          cloneOptions(bundle.VisitReasonOptions),
 		CustomerSourceOptions:       cloneOptions(bundle.CustomerSourceOptions),
 		PauseReasonOptions:          cloneOptions(bundle.PauseReasonOptions),
+		CancelReasonOptions:         cloneOptions(bundle.CancelReasonOptions),
+		StopReasonOptions:           cloneOptions(bundle.StopReasonOptions),
 		QueueJumpReasonOptions:      cloneOptions(bundle.QueueJumpReasonOptions),
 		LossReasonOptions:           cloneOptions(bundle.LossReasonOptions),
 		ProfessionOptions:           cloneOptions(bundle.ProfessionOptions),
@@ -775,6 +827,14 @@ func normalizeModalConfig(base ModalConfig, input ModalConfig) ModalConfig {
 	base.ProductSeenNotesPlaceholder = fallbackString(input.ProductSeenNotesPlaceholder, base.ProductSeenNotesPlaceholder)
 	base.VisitReasonLabel = fallbackString(input.VisitReasonLabel, base.VisitReasonLabel)
 	base.CustomerSourceLabel = fallbackString(input.CustomerSourceLabel, base.CustomerSourceLabel)
+	base.CancelReasonLabel = fallbackString(input.CancelReasonLabel, base.CancelReasonLabel)
+	base.CancelReasonPlaceholder = fallbackString(input.CancelReasonPlaceholder, base.CancelReasonPlaceholder)
+	base.CancelReasonOtherLabel = fallbackString(input.CancelReasonOtherLabel, base.CancelReasonOtherLabel)
+	base.CancelReasonOtherPlaceholder = fallbackString(input.CancelReasonOtherPlaceholder, base.CancelReasonOtherPlaceholder)
+	base.StopReasonLabel = fallbackString(input.StopReasonLabel, base.StopReasonLabel)
+	base.StopReasonPlaceholder = fallbackString(input.StopReasonPlaceholder, base.StopReasonPlaceholder)
+	base.StopReasonOtherLabel = fallbackString(input.StopReasonOtherLabel, base.StopReasonOtherLabel)
+	base.StopReasonOtherPlaceholder = fallbackString(input.StopReasonOtherPlaceholder, base.StopReasonOtherPlaceholder)
 	base.ShowCustomerNameField = input.ShowCustomerNameField
 	base.ShowCustomerPhoneField = input.ShowCustomerPhoneField
 	base.ShowEmailField = input.ShowEmailField
@@ -788,6 +848,8 @@ func normalizeModalConfig(base ModalConfig, input ModalConfig) ModalConfig {
 	base.ShowExistingCustomerField = input.ShowExistingCustomerField
 	base.ShowQueueJumpReasonField = input.ShowQueueJumpReasonField
 	base.ShowLossReasonField = input.ShowLossReasonField
+	base.ShowCancelReasonField = input.ShowCancelReasonField
+	base.ShowStopReasonField = input.ShowStopReasonField
 	base.AllowProductSeenNone = input.AllowProductSeenNone
 	base.VisitReasonSelectionMode = normalizeEnum(input.VisitReasonSelectionMode, []string{"single", "multiple"}, base.VisitReasonSelectionMode)
 	base.VisitReasonDetailMode = normalizeEnum(input.VisitReasonDetailMode, []string{"off", "shared", "per-item"}, base.VisitReasonDetailMode)
@@ -795,6 +857,8 @@ func normalizeModalConfig(base ModalConfig, input ModalConfig) ModalConfig {
 	base.LossReasonDetailMode = normalizeEnum(input.LossReasonDetailMode, []string{"off", "shared", "per-item"}, base.LossReasonDetailMode)
 	base.CustomerSourceSelectionMode = normalizeEnum(input.CustomerSourceSelectionMode, []string{"single", "multiple"}, base.CustomerSourceSelectionMode)
 	base.CustomerSourceDetailMode = normalizeEnum(input.CustomerSourceDetailMode, []string{"off", "shared", "per-item"}, base.CustomerSourceDetailMode)
+	base.CancelReasonInputMode = normalizeEnum(input.CancelReasonInputMode, []string{"text", "select", "select-with-other", "select_other", "select-other"}, base.CancelReasonInputMode)
+	base.StopReasonInputMode = normalizeEnum(input.StopReasonInputMode, []string{"text", "select", "select-with-other", "select_other", "select-other"}, base.StopReasonInputMode)
 	base.RequireCustomerNameField = input.RequireCustomerNameField
 	base.RequireCustomerPhoneField = input.RequireCustomerPhoneField
 	base.RequireEmailField = input.RequireEmailField
@@ -811,6 +875,8 @@ func normalizeModalConfig(base ModalConfig, input ModalConfig) ModalConfig {
 	base.ProductSeenNotesMinChars = maxInt(input.ProductSeenNotesMinChars, 1)
 	base.RequireQueueJumpReasonField = input.RequireQueueJumpReasonField
 	base.RequireLossReasonField = input.RequireLossReasonField
+	base.RequireCancelReasonField = input.RequireCancelReasonField
+	base.RequireStopReasonField = input.RequireStopReasonField
 	return base
 }
 
@@ -826,6 +892,12 @@ func materializeBundleDefaults(bundle Bundle) Bundle {
 	}
 	if len(bundle.PauseReasonOptions) == 0 {
 		bundle.PauseReasonOptions = cloneOptions(defaults.PauseReasonOptions)
+	}
+	if len(bundle.CancelReasonOptions) == 0 {
+		bundle.CancelReasonOptions = cloneOptions(defaults.CancelReasonOptions)
+	}
+	if len(bundle.StopReasonOptions) == 0 {
+		bundle.StopReasonOptions = cloneOptions(defaults.StopReasonOptions)
 	}
 	if len(bundle.QueueJumpReasonOptions) == 0 {
 		bundle.QueueJumpReasonOptions = cloneOptions(defaults.QueueJumpReasonOptions)
@@ -851,6 +923,10 @@ func getOptionGroupItems(bundle Bundle, optionGroup string) ([]OptionItem, error
 		return cloneOptions(bundle.CustomerSourceOptions), nil
 	case optionKindPauseReason:
 		return cloneOptions(bundle.PauseReasonOptions), nil
+	case optionKindCancelReason:
+		return cloneOptions(bundle.CancelReasonOptions), nil
+	case optionKindStopReason:
+		return cloneOptions(bundle.StopReasonOptions), nil
 	case optionKindQueueJump:
 		return cloneOptions(bundle.QueueJumpReasonOptions), nil
 	case optionKindLossReason:

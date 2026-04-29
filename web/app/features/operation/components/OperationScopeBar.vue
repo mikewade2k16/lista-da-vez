@@ -128,9 +128,11 @@ function handleIntegratedStoreChange(value) {
   justify-content: space-between;
   gap: 0.9rem;
   padding: 0.85rem 1rem;
-  border: 1px solid rgba(125, 146, 255, 0.18);
-  border-radius: 1rem;
+  /*border: 1px solid rgba(125, 146, 255, 0.18);
   background: rgba(10, 16, 32, 0.72);
+  */
+  border-radius: 1rem;
+  
 }
 
 .operation-scope-bar__campaign {

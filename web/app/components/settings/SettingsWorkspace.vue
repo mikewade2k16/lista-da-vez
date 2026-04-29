@@ -19,6 +19,8 @@ const tabs = [
   { id: "produtos", label: "Produtos", icon: "inventory_2" },
   { id: "consultores", label: "Consultores", icon: "group" },
   { id: "motivos", label: "Motivos", icon: "fact_check" },
+  { id: "cancelamento", label: "Cancelamento", icon: "undo" },
+  { id: "parada", label: "Parada", icon: "pause" },
   { id: "pausas", label: "Pausas", icon: "pause_circle" },
   { id: "motivos-perda", label: "Perdas", icon: "trending_down" },
   { id: "motivos-fora-da-vez", label: "Fora da vez", icon: "bolt" },
@@ -34,6 +36,11 @@ const fieldDetailModeOptions = [
   { value: "off", label: "Sem descricao" },
   { value: "shared", label: "Uma descricao para a selecao" },
   { value: "per-item", label: "Uma descricao por opcao" }
+];
+const reasonInputModeOptions = [
+  { value: "text", label: "Texto livre" },
+  { value: "select", label: "Apenas lista" },
+  { value: "select-with-other", label: "Lista com Outro" }
 ];
 const modalFieldSections = [
   {
@@ -214,7 +221,11 @@ const modalTextSections = [
       { key: "queueJumpReasonLabel", label: "Label motivo fora da vez" },
       { key: "queueJumpReasonPlaceholder", label: "Placeholder motivo fora da vez" },
       { key: "lossReasonLabel", label: "Label motivo da perda" },
-      { key: "lossReasonPlaceholder", label: "Placeholder motivo da perda" }
+      { key: "lossReasonPlaceholder", label: "Placeholder motivo da perda" },
+      { key: "cancelReasonLabel", label: "Label motivo do cancelamento" },
+      { key: "cancelReasonPlaceholder", label: "Placeholder motivo do cancelamento" },
+      { key: "stopReasonLabel", label: "Label motivo da parada" },
+      { key: "stopReasonPlaceholder", label: "Placeholder motivo da parada" }
     ]
   }
 ];
@@ -411,6 +422,16 @@ async function addOption(group, label) {
     return;
   }
 
+  if (group === "cancel-reason") {
+    handleMutationResult(await settingsStore.addCancelReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
+    return;
+  }
+
+  if (group === "stop-reason") {
+    handleMutationResult(await settingsStore.addStopReasonOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
+    return;
+  }
+
   handleMutationResult(await settingsStore.addProfessionOption(label), "Opcao adicionada.", "Nao foi possivel adicionar a opcao.");
 }
 
@@ -437,6 +458,16 @@ async function updateOption(group, optionId, label) {
 
   if (group === "loss-reason") {
     handleMutationResult(await settingsStore.updateLossReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
+    return;
+  }
+
+  if (group === "cancel-reason") {
+    handleMutationResult(await settingsStore.updateCancelReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
+    return;
+  }
+
+  if (group === "stop-reason") {
+    handleMutationResult(await settingsStore.updateStopReasonOption(optionId, label), "Opcao atualizada.", "Nao foi possivel atualizar a opcao.");
     return;
   }
 
@@ -469,6 +500,16 @@ async function removeOption(group, optionId) {
     return;
   }
 
+  if (group === "cancel-reason") {
+    handleMutationResult(await settingsStore.removeCancelReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
+    return;
+  }
+
+  if (group === "stop-reason") {
+    handleMutationResult(await settingsStore.removeStopReasonOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
+    return;
+  }
+
   handleMutationResult(await settingsStore.removeProfessionOption(optionId), "Opcao removida.", "Nao foi possivel remover a opcao.");
 }
 
@@ -495,6 +536,16 @@ async function reorderOption(group, optionIds) {
 
   if (group === "loss-reason") {
     handleMutationResult(await settingsStore.reorderLossReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  if (group === "cancel-reason") {
+    handleMutationResult(await settingsStore.reorderCancelReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
+    return;
+  }
+
+  if (group === "stop-reason") {
+    handleMutationResult(await settingsStore.reorderStopReasonOptions(optionIds), "", "Nao foi possivel atualizar a ordem.");
     return;
   }
 
@@ -613,10 +664,80 @@ async function archiveConsultant(consultantId) {
           <label class="settings-field"><span>Fechamento rapido (min)</span><input :value="Number(state.settings.timingFastCloseMinutes || 5)" type="number" min="1" max="120" :disabled="!canEditSettings" @change="updateNumericSetting('timingFastCloseMinutes', $event.target.value)"></label>
           <label class="settings-field"><span>Atendimento demorado (min)</span><input :value="Number(state.settings.timingLongServiceMinutes || 25)" type="number" min="1" max="240" :disabled="!canEditSettings" @change="updateNumericSetting('timingLongServiceMinutes', $event.target.value)"></label>
           <label class="settings-field"><span>Venda baixa (R$)</span><input :value="Number(state.settings.timingLowSaleAmount || 1200)" type="number" min="1" step="1" :disabled="!canEditSettings" @change="updateNumericSetting('timingLowSaleAmount', $event.target.value)"></label>
+          <label class="settings-field"><span>Janela de cancelamento (seg)</span><input :value="Number(state.settings.serviceCancelWindowSeconds || 30)" type="number" min="0" max="300" :disabled="!canEditSettings" @change="updateNumericSetting('serviceCancelWindowSeconds', $event.target.value)"></label>
+          <p class="settings-card__text">Dentro dessa janela, o botão principal troca para cancelar atendimento e desfaz o início sem encerrar o fluxo completo.</p>
           <label class="settings-toggle"><input :checked="Boolean(state.settings.testModeEnabled)" type="checkbox" :disabled="!canEditSettings" @change="updateBooleanSetting('testModeEnabled', $event.target.checked)"><span>Modo teste</span></label>
           <label class="settings-toggle"><input :checked="Boolean(state.settings.autoFillFinishModal)" type="checkbox" :disabled="!canEditSettings" @change="updateBooleanSetting('autoFillFinishModal', $event.target.checked)"><span>Preencher modal automaticamente</span></label>
         </article>
       </div>
+    </div>
+
+    <div v-if="activeTab === 'cancelamento'" class="settings-grid">
+      <article class="settings-card">
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Campo de cancelamento</h3>
+          <p class="settings-card__text">Define como a justificativa aparece quando o atendimento ainda esta dentro da janela de cancelamento.</p>
+        </header>
+        <AppSelectField
+          class="settings-field"
+          label="Modo do campo"
+          :model-value="state.modalConfig.cancelReasonInputMode || 'text'"
+          :options="reasonInputModeOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('cancelReasonInputMode', $event)"
+        />
+        <label class="settings-field"><span>Label</span><input :value="state.modalConfig.cancelReasonLabel || 'Motivo do cancelamento'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('cancelReasonLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder</span><input :value="state.modalConfig.cancelReasonPlaceholder || 'Informe ou selecione o motivo do cancelamento'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('cancelReasonPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Label do outro</span><input :value="state.modalConfig.cancelReasonOtherLabel || 'Detalhe do cancelamento'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('cancelReasonOtherLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder do outro</span><input :value="state.modalConfig.cancelReasonOtherPlaceholder || 'Explique por que o atendimento foi cancelado'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('cancelReasonOtherPlaceholder', $event.target.value)"></label>
+      </article>
+
+      <SettingsOptionManager
+        title="Motivos de cancelamento"
+        description="Opcoes exibidas quando o campo estiver configurado como lista ou lista com outro."
+        :items="state.cancelReasonOptions || []"
+        :disabled="!canEditSettings"
+        add-placeholder="Adicionar novo motivo de cancelamento"
+        testid="settings-cancel-reasons"
+        @add="addOption('cancel-reason', $event)"
+        @update="(optionId, label) => updateOption('cancel-reason', optionId, label)"
+        @remove="removeOption('cancel-reason', $event)"
+        @reorder="reorderOption('cancel-reason', $event)"
+      />
+    </div>
+
+    <div v-if="activeTab === 'parada'" class="settings-grid">
+      <article class="settings-card">
+        <header class="settings-card__header">
+          <h3 class="settings-card__title">Campo de parada</h3>
+          <p class="settings-card__text">A parada sempre exige justificativa. Aqui voce escolhe apenas como ela sera coletada e exibida.</p>
+        </header>
+        <AppSelectField
+          class="settings-field"
+          label="Modo do campo"
+          :model-value="state.modalConfig.stopReasonInputMode || 'text'"
+          :options="reasonInputModeOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('stopReasonInputMode', $event)"
+        />
+        <label class="settings-field"><span>Label</span><input :value="state.modalConfig.stopReasonLabel || 'Motivo da parada'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('stopReasonLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder</span><input :value="state.modalConfig.stopReasonPlaceholder || 'Informe ou selecione o motivo da parada'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('stopReasonPlaceholder', $event.target.value)"></label>
+        <label class="settings-field"><span>Label do outro</span><input :value="state.modalConfig.stopReasonOtherLabel || 'Detalhe da parada'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('stopReasonOtherLabel', $event.target.value)"></label>
+        <label class="settings-field"><span>Placeholder do outro</span><input :value="state.modalConfig.stopReasonOtherPlaceholder || 'Explique por que o atendimento foi parado'" type="text" :disabled="!canEditSettings" @change="updateModalConfigValue('stopReasonOtherPlaceholder', $event.target.value)"></label>
+      </article>
+
+      <SettingsOptionManager
+        title="Motivos de parada"
+        description="Opcoes exibidas quando a parada estiver configurada como lista ou lista com outro."
+        :items="state.stopReasonOptions || []"
+        :disabled="!canEditSettings"
+        add-placeholder="Adicionar novo motivo de parada"
+        testid="settings-stop-reasons"
+        @add="addOption('stop-reason', $event)"
+        @update="(optionId, label) => updateOption('stop-reason', optionId, label)"
+        @remove="removeOption('stop-reason', $event)"
+        @reorder="reorderOption('stop-reason', $event)"
+      />
     </div>
 
     <div v-if="activeTab === 'modal'" class="settings-grid settings-grid--modal">

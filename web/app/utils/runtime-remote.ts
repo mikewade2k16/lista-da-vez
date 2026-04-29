@@ -253,6 +253,12 @@ export function applyRemoteStoreData(currentState, storeId, settingsBundle, cons
     pauseReasonOptions: Array.isArray(settingsBundle?.pauseReasonOptions) && settingsBundle.pauseReasonOptions.length
       ? normalizeOptions(settingsBundle.pauseReasonOptions)
       : cloneOrFallback(currentState.pauseReasonOptions, []),
+    cancelReasonOptions: Array.isArray(settingsBundle?.cancelReasonOptions)
+      ? normalizeOptions(settingsBundle.cancelReasonOptions)
+      : cloneOrFallback(currentState.cancelReasonOptions, []),
+    stopReasonOptions: Array.isArray(settingsBundle?.stopReasonOptions)
+      ? normalizeOptions(settingsBundle.stopReasonOptions)
+      : cloneOrFallback(currentState.stopReasonOptions, []),
     queueJumpReasonOptions: Array.isArray(settingsBundle?.queueJumpReasonOptions)
       ? normalizeOptions(settingsBundle.queueJumpReasonOptions)
       : cloneOrFallback(currentState.queueJumpReasonOptions, []),
@@ -295,6 +301,12 @@ export function applySettingsBundleToState(currentState, storeId, settingsBundle
     pauseReasonOptions: Array.isArray(settingsBundle?.pauseReasonOptions) && settingsBundle.pauseReasonOptions.length
       ? normalizeOptions(settingsBundle.pauseReasonOptions)
       : cloneOrFallback(currentState.pauseReasonOptions, []),
+    cancelReasonOptions: Array.isArray(settingsBundle?.cancelReasonOptions)
+      ? normalizeOptions(settingsBundle.cancelReasonOptions)
+      : cloneOrFallback(currentState.cancelReasonOptions, []),
+    stopReasonOptions: Array.isArray(settingsBundle?.stopReasonOptions)
+      ? normalizeOptions(settingsBundle.stopReasonOptions)
+      : cloneOrFallback(currentState.stopReasonOptions, []),
     queueJumpReasonOptions: Array.isArray(settingsBundle?.queueJumpReasonOptions)
       ? normalizeOptions(settingsBundle.queueJumpReasonOptions)
       : cloneOrFallback(currentState.queueJumpReasonOptions, []),
@@ -343,6 +355,8 @@ export function buildSettingsBundleFromState(state, storeId) {
     visitReasonOptions: cloneOrFallback(state.visitReasonOptions, []),
     customerSourceOptions: cloneOrFallback(state.customerSourceOptions, []),
     pauseReasonOptions: cloneOrFallback(state.pauseReasonOptions, []),
+    cancelReasonOptions: cloneOrFallback(state.cancelReasonOptions, []),
+    stopReasonOptions: cloneOrFallback(state.stopReasonOptions, []),
     queueJumpReasonOptions: cloneOrFallback(state.queueJumpReasonOptions, []),
     lossReasonOptions: cloneOrFallback(state.lossReasonOptions, []),
     professionOptions: cloneOrFallback(state.professionOptions, []),

@@ -23,6 +23,10 @@ Esta pasta concentra a interface operacional da fila. Os componentes daqui devem
 - para cronometro ativo em tela, nao truncar sempre a duracao para baixo no primeiro segundo; o display ao vivo deve arredondar a fracao positiva para cima, enquanto tempos congelados ou historicos continuam exibidos sem esse arredondamento
 - quando houver skew entre relogio da API e relogio do navegador, os timers da operacao devem usar `serverClockOffsetMs` derivado do `savedAt` das mutacoes bem-sucedidas; comparar `Date.now()` puro com `serviceStartedAt` do backend volta a deixar o cronometro preso em `00:00`
 - em cards `na sequencia`, o tempo exibido do atendimento anterior deve congelar no `serviceStartedAt` do proximo atendimento do mesmo grupo; nao usar sempre `Date.now() - serviceStartedAt`
+- a coluna `Em atendimento` ordena os cards por `serviceStartedAt` mais recente primeiro (descendente); o ultimo atendimento iniciado fica no topo para facilitar o uso da janela curta de cancelamento
+- o modal compacto de `Parar atendimento` / `Cancelar atendimento` vive em [OperationQueueColumns.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationQueueColumns.vue) (`actionModal`), separado do modal completo de encerramento; envia apenas `action=stop|cancel` para `/v1/operations/finish` — sem campo de justificativa
+- os dois modais sao apenas confirmacao com texto explicativo: stop diz que o tempo pausa e que o consultor ainda precisa encerrar; cancel diz que o atendimento sera desfeito e o consultor volta para a posicao original
+- ao cancelar, o backend reinsere o consultor na posicao original da fila (`queuePositionAtStart`); o front nao precisa fazer reordenacao manual apos o snapshot ser revalidado
 
 ## Catalogo atual
 
@@ -48,9 +52,12 @@ Esta pasta concentra a interface operacional da fila. Os componentes daqui devem
 - [OperationFinishModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationFinishModal.vue)
   Modal de encerramento do atendimento, com formulario completo e validacoes operacionais.
   O rascunho local deve ser sempre reconciliado com o `serviceId` ativo antes de submeter o fechamento.
+  Os pickers de produto desse modal devem buscar o catalogo remoto por `sku` via `/v1/catalog/products/search`, mantendo `Item nao cadastrado` apenas como escape manual.
+  Enquanto a source `erp_current` for a origem ativa, o backend trata esse catalogo como compartilhado por tenant; o front continua informando a `storeId` do contexto apenas para autorizacao e consistencia operacional.
 
 - [OperationProductPicker.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationProductPicker.vue)
   Picker pesquisavel reutilizado para produtos, motivos, origens e outros catalogos da operacao.
+  Quando estiver em modo remoto, ele continua generico: emite o termo digitado e deixa a fonte de verdade no store/consumidor.
 
 - [OperationPauseReasonDialog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationPauseReasonDialog.vue)
   Dialogo de pausa que reaproveita `OperationProductPicker` em modo de selecao unica para motivos de pausa.

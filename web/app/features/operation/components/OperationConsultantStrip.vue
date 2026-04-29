@@ -153,9 +153,9 @@ async function resumeEmployee(employee) {
 
 <template>
   <footer class="employee-strip" data-testid="operation-consultant-strip">
-    <div class="employee-strip__header">
+    <!--<div class="employee-strip__header">
       <strong class="employee-strip__title">Consultores</strong>
-    </div>
+    </div>-->
     <div class="employee-strip__list">
       <div
         v-for="employee in employees"

@@ -104,3 +104,32 @@ Known CNPJs observed in 184 consolidated order data:
 - `31327524000115` (sub-store)
 
 Note: commercial names (e.g., Jardins/Riomar/Treze/Garcia) require an explicit mapping table by business confirmation.
+
+## Product Scope Rule (Store 184 Root)
+
+This rule is mandatory for ERP product screens.
+
+- The ERP product panel is always anchored in store code `184` (root scope).
+- Root scope `184` is the source of truth for catalog, imported files, run counters, and product listing.
+- Sub-stores (JAR, RIO, GAR, TRE) are children of the same 184 scope and can only be used as a filter dimension.
+
+### Store Selector Semantics
+
+- The selector exists only to filter records inside the 184 scope.
+- It must not switch the panel away from store 184 scope.
+- It must not contain an option that changes source scope to a non-184 root.
+- Option `184 - Loja 184` should not be shown as a selectable filter value.
+- The default state should represent `all sub-stores under 184`.
+
+### API Contract for This Screen
+
+- Requests for ERP products and related counters must keep `storeCode=184` as fixed scope.
+- Optional filtering by sub-store must be passed as an additional filter field, never replacing root `storeCode`.
+- If no sub-store is selected, API must still return the complete 184 dataset.
+
+### Acceptance Criteria (Local and VPS)
+
+- Local and VPS must show the same behavior for selector options and default value.
+- Opening ERP panel with no sub-store selected must load 184 data (not empty state).
+- Selecting JAR/RIO/GAR/TRE filters within the same 184 dataset.
+- Removing sub-store filter returns to full 184 dataset.

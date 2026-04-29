@@ -11,6 +11,7 @@ import { useUiStore } from "~/stores/ui";
 const auth = useAuthStore();
 const erpStore = useErpStore();
 const ui = useUiStore();
+const ERP_ROOT_STORE_CODE = "184";
 
 const activeTab = ref("produtos");
 const activeBancoTab = ref("geral");
@@ -18,8 +19,6 @@ const searchValue = ref("");
 const recordsSearchValue = ref("");
 const recordsSpecificSearchValue = ref("");
 const identifierPrefixValue = ref("");
-const erpStoreCode = ref("");
-const erpStoreCodeInput = ref("");
 
 const tabs = [
   { id: "produtos", label: "Produtos", icon: "inventory_2" },
@@ -39,12 +38,6 @@ const bancoTabs = [
   { id: "funcionarios", label: "Funcionarios", icon: "badge" },
   { id: "outbox", label: "Outbox", icon: "send" }
 ];
-
-const availableStores = computed(() =>
-  Array.isArray(auth.storeContext)
-    ? (auth.storeContext as Array<{ id: string; code: string; name: string }>).filter((s) => s?.code)
-    : []
-);
 
 type ErpGridColumn = {
   id: string;
@@ -177,13 +170,7 @@ const currentProductCount = computed(() => Number(status.value?.productCurrent |
 const rawItemRows = computed(() => Number(status.value?.rawItemRows || 0));
 const lastRun = computed(() => status.value?.lastRun || null);
 const lastImportedFile = computed(() => status.value?.lastImportedFile || null);
-const resolvedStoreCode = computed(() => erpStoreCode.value || status.value?.store?.storeCode || currentStore.value?.code || "");
-
-const subLojaLabel = computed(() => {
-  if (resolvedStoreCode.value === "184") return "Pérola";
-  if (resolvedStoreCode.value === "905") return "Pérola Ribeirão";
-  return resolvedStoreCode.value ? `Loja ${resolvedStoreCode.value}` : "—";
-});
+const resolvedStoreCode = computed(() => status.value?.store?.storeCode || currentStore.value?.code || ERP_ROOT_STORE_CODE);
 const canSync = computed(() => {
   if (auth.permissionsResolved) {
     return hasPermission(auth.permissionKeys, "workspace.erp.edit");
@@ -330,11 +317,7 @@ function formatPrice(rawValue?: string, cents?: number | null) {
 }
 
 async function loadStatus() {
-  const storeCode = erpStoreCode.value;
-  if (!storeCode) {
-    return;
-  }
-
+  const storeCode = ERP_ROOT_STORE_CODE;
   const result = await erpStore.fetchStatus({ storeCode });
   if (!result.ok && result.message) {
     ui.error(result.message);
@@ -346,10 +329,7 @@ async function loadProducts(payload: { page?: number; pageSize?: number } = {}) 
     return;
   }
 
-  const storeCode = erpStoreCode.value;
-  if (!storeCode) {
-    return;
-  }
+  const storeCode = ERP_ROOT_STORE_CODE;
 
   const result = await erpStore.fetchProducts({
     storeCode,
@@ -368,10 +348,7 @@ async function loadRecords(payload: { page?: number; pageSize?: number } = {}) {
     return;
   }
 
-  const storeCode = erpStoreCode.value;
-  if (!storeCode) {
-    return;
-  }
+  const storeCode = ERP_ROOT_STORE_CODE;
 
   const result = await erpStore.fetchRecords({
     storeCode,
@@ -414,11 +391,7 @@ async function handleRecordsPageSizeChange(nextPageSize: number) {
 }
 
 async function handleBootstrap() {
-  const storeCode = erpStoreCode.value;
-  if (!storeCode) {
-    ui.error("Selecione uma loja antes de iniciar o bootstrap.");
-    return;
-  }
+  const storeCode = ERP_ROOT_STORE_CODE;
 
   const result = await erpStore.bootstrapItems({ storeCode });
   if (!result.ok) {
@@ -431,13 +404,9 @@ async function handleBootstrap() {
 }
 
 async function handleRecordsBootstrap() {
-  const storeCode = erpStoreCode.value;
+  const storeCode = ERP_ROOT_STORE_CODE;
   const dataType = activeRecordsDataType.value;
   const label = recordsLabelByTab[activeTab.value] || "registros";
-  if (!storeCode) {
-    ui.error("Selecione uma loja antes de iniciar o bootstrap.");
-    return;
-  }
   if (!dataType) {
     ui.error("Selecione uma aba ERP valida antes de iniciar o bootstrap.");
     return;
@@ -451,28 +420,6 @@ async function handleRecordsBootstrap() {
 
   ui.success(`Bootstrap ERP de ${label} concluido: ${result.data?.rowsImported || 0} linhas importadas em ${result.data?.filesImported || 0} lotes.`);
   await reloadWorkspace();
-}
-
-function pickStoreCode(code: string) {
-  erpStoreCode.value = code;
-  erpStoreCodeInput.value = code;
-}
-
-function applyManualStoreCode() {
-  const trimmed = erpStoreCodeInput.value.trim();
-  if (trimmed) {
-    erpStoreCode.value = trimmed;
-  }
-}
-
-function resolveInitialStoreCode() {
-  const stores = availableStores.value;
-  const has184 = stores.find((s) => s.code === "184");
-  const fallback = stores[0]?.code || (currentStore.value?.code) || "";
-  const initial = has184?.code || fallback;
-  if (initial) {
-    pickStoreCode(initial);
-  }
 }
 
 watch(
@@ -491,16 +438,11 @@ watch(
       tenantId !== previousTenantId ||
       storeId !== previousStoreId
     ) {
-      resolveInitialStoreCode();
       void reloadWorkspace();
     }
   },
   { immediate: true }
 );
-
-watch(erpStoreCode, () => {
-  void reloadWorkspace();
-});
 
 watch(activeTab, () => {
   if (activeTab.value === "banco") {
@@ -543,7 +485,6 @@ watch(recordsSpecificSearchValue, () => {
 
 onMounted(() => {
   if (auth.isAuthenticated) {
-    resolveInitialStoreCode();
     void reloadWorkspace();
   }
 });
@@ -563,30 +504,7 @@ onMounted(() => {
         <div class="erp-panel__selectors-row">
           <div class="erp-panel__selector-group">
             <label class="erp-panel__store-label">Loja ERP</label>
-            <select
-              v-if="availableStores.length"
-              class="erp-panel__store-select"
-              :value="erpStoreCode"
-              @change="(e) => pickStoreCode((e.target as HTMLSelectElement).value)"
-            >
-              <option value="">Selecionar loja...</option>
-              <option v-for="store in availableStores" :key="store.id" :value="store.code">
-                {{ store.code }} – {{ store.name }}
-              </option>
-            </select>
-            <template v-else>
-              <div class="erp-panel__store-controls">
-                <input
-                  v-model="erpStoreCodeInput"
-                  class="erp-panel__store-input"
-                  placeholder="Código (ex: 184)"
-                  @keydown.enter="applyManualStoreCode"
-                />
-                <button class="erp-panel__toolbar-btn erp-panel__toolbar-btn--ghost" type="button" @click="applyManualStoreCode">
-                  Buscar
-                </button>
-              </div>
-            </template>
+            <div class="erp-panel__store-select" role="status" aria-live="polite">184 – Loja 184 (fixa)</div>
           </div>
         </div>
       </div>
@@ -769,7 +687,7 @@ onMounted(() => {
         bootstrap-busy-label="Sincronizando..."
         :general-search-placeholder="activeRecordsGeneralSearchPlaceholder"
         empty-title="Nenhum registro encontrado"
-        empty-text="Nao ha linhas importadas para este tipo na loja selecionada. Use o bootstrap da aba para carregar o consolidado."
+        empty-text="Nao ha linhas importadas para este tipo no escopo 184. Use o bootstrap da aba para carregar o consolidado."
         :storage-key="`erp-${activeTab}-grid-columns-v3`"
         :testid="`erp-${activeTab}-grid`"
         @update:search-value="recordsSearchValue = $event"

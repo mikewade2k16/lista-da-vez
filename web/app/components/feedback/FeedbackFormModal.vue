@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
-import { X } from "lucide-vue-next";
+import { ImagePlus, X } from "lucide-vue-next";
 import { useFeedbackStore } from "~/stores/feedback";
 import { useUiStore } from "~/stores/ui";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
+import { compressFeedbackImage, formatFeedbackImageSize } from "~/utils/feedback-image";
 
 const props = defineProps({
   modelValue: {
@@ -20,6 +21,8 @@ const ui = useUiStore();
 const kind = ref("");
 const subject = ref("");
 const body = ref("");
+const selectedImage = ref<File | null>(null);
+const selectedImagePreviewUrl = ref("");
 const submitting = ref(false);
 
 let previousBodyOverflow = "";
@@ -38,6 +41,37 @@ function resetForm() {
   kind.value = "";
   subject.value = "";
   body.value = "";
+  clearSelectedImage();
+}
+
+function setSelectedImage(file: File | null) {
+  if (import.meta.client && selectedImagePreviewUrl.value) {
+    URL.revokeObjectURL(selectedImagePreviewUrl.value);
+  }
+
+  selectedImage.value = file;
+  selectedImagePreviewUrl.value = file && import.meta.client ? URL.createObjectURL(file) : "";
+}
+
+function clearSelectedImage() {
+  setSelectedImage(null);
+}
+
+async function handleImageChange(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0] || null;
+  if (!file) {
+    return;
+  }
+
+  try {
+    const compressedImage = await compressFeedbackImage(file);
+    setSelectedImage(compressedImage);
+  } catch (err) {
+    ui.error(err instanceof Error ? err.message : "Nao foi possivel preparar a imagem.");
+  } finally {
+    target.value = "";
+  }
 }
 
 function syncBodyScrollLock(isOpen) {
@@ -78,6 +112,7 @@ watch(
 onBeforeUnmount(() => {
   document.removeEventListener("keydown", handleEscape);
   syncBodyScrollLock(false);
+  clearSelectedImage();
 });
 
 async function handleSubmit() {
@@ -91,7 +126,8 @@ async function handleSubmit() {
     const result = await feedbackStore.submitFeedback({
       kind: kind.value,
       subject: subject.value.trim(),
-      body: body.value.trim()
+      body: body.value.trim(),
+      image: selectedImage.value
     });
 
     if (result.ok) {
@@ -153,6 +189,42 @@ async function handleSubmit() {
                   rows="5"
                   required
                 ></textarea>
+              </div>
+
+              <div class="feedback-form-modal__field">
+                <label class="feedback-form-modal__label">Imagem do problema</label>
+                <div class="feedback-form-modal__upload-card">
+                  <label class="feedback-form-modal__upload-trigger">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      hidden
+                      :disabled="submitting"
+                      @change="handleImageChange"
+                    >
+                    <ImagePlus :size="16" :stroke-width="2.1" />
+                    <span>{{ selectedImage ? "Trocar imagem" : "Adicionar imagem" }}</span>
+                  </label>
+                  <small class="feedback-form-modal__upload-hint">
+                    Opcional. A imagem e compactada antes do envio e apagada 7 dias apos o encerramento do chamado.
+                  </small>
+
+                  <div v-if="selectedImagePreviewUrl" class="feedback-form-modal__upload-preview">
+                    <img :src="selectedImagePreviewUrl" alt="Preview da imagem anexada" class="feedback-form-modal__upload-image">
+                    <div class="feedback-form-modal__upload-copy">
+                      <strong>{{ selectedImage?.name }}</strong>
+                      <span>{{ formatFeedbackImageSize(selectedImage?.size || 0) }}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="feedback-form-modal__upload-remove"
+                      :disabled="submitting"
+                      @click="clearSelectedImage"
+                    >
+                      <X :size="14" :stroke-width="2.2" />
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div class="feedback-form-modal__actions">
@@ -306,6 +378,94 @@ async function handleSubmit() {
   resize: vertical;
   min-height: 110px;
   font-family: inherit;
+}
+
+.feedback-form-modal__upload-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 0.8rem;
+  background: rgba(18, 25, 38, 0.5);
+}
+
+.feedback-form-modal__upload-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  background: rgba(59, 130, 246, 0.12);
+  color: #dbeafe;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feedback-form-modal__upload-hint {
+  color: rgba(203, 213, 225, 0.74);
+  font-size: 0.76rem;
+}
+
+.feedback-form-modal__upload-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  border-radius: 0.75rem;
+  background: rgba(8, 12, 19, 0.6);
+}
+
+.feedback-form-modal__upload-image {
+  width: 4rem;
+  height: 4rem;
+  object-fit: cover;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.feedback-form-modal__upload-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.feedback-form-modal__upload-copy strong,
+.feedback-form-modal__upload-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feedback-form-modal__upload-copy strong {
+  color: #ffffff;
+  font-size: 0.82rem;
+}
+
+.feedback-form-modal__upload-copy span {
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.74rem;
+}
+
+.feedback-form-modal__upload-remove {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(226, 232, 240, 0.78);
+  cursor: pointer;
+}
+
+.feedback-form-modal__upload-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .feedback-form-modal__actions {

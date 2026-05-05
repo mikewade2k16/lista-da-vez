@@ -2,7 +2,6 @@ package settings
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
@@ -26,10 +25,6 @@ const (
 
 type PostgresRepository struct {
 	pool *pgxpool.Pool
-}
-
-type rowQueryer interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 type execQueryer interface {
@@ -192,177 +187,123 @@ func (repository *PostgresRepository) ResolveDefaultTenantID(ctx context.Context
 }
 
 func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID string) (Record, bool, error) {
-	record, err := scanConfigRow(repository.pool.QueryRow(ctx, `
-		select
-			tenant_id::text,
-			selected_operation_template_id,
-			max_concurrent_services,
-			coalesce(max_concurrent_services_per_consultant, 1) as max_concurrent_services_per_consultant,
-			timing_fast_close_minutes,
-			timing_long_service_minutes,
-			timing_low_sale_amount,
-			coalesce(service_cancel_window_seconds, 30) as service_cancel_window_seconds,
-			test_mode_enabled,
-			auto_fill_finish_modal,
-			alert_min_conversion_rate,
-			alert_max_queue_jump_rate,
-			alert_min_pa_score,
-			alert_min_ticket_average,
-			title,
-			product_seen_label,
-			product_seen_placeholder,
-			product_closed_label,
-			product_closed_placeholder,
-			notes_label,
-			notes_placeholder,
-			queue_jump_reason_label,
-			queue_jump_reason_placeholder,
-			loss_reason_label,
-			loss_reason_placeholder,
-			customer_section_label,
-			customer_name_label,
-			customer_phone_label,
-			customer_email_label,
-			customer_profession_label,
-			existing_customer_label,
-			product_seen_notes_label,
-			product_seen_notes_placeholder,
-			visit_reason_label,
-			customer_source_label,
-			coalesce(cancel_reason_label, '') as cancel_reason_label,
-			coalesce(cancel_reason_placeholder, '') as cancel_reason_placeholder,
-			coalesce(cancel_reason_other_label, '') as cancel_reason_other_label,
-			coalesce(cancel_reason_other_placeholder, '') as cancel_reason_other_placeholder,
-			coalesce(stop_reason_label, '') as stop_reason_label,
-			coalesce(stop_reason_placeholder, '') as stop_reason_placeholder,
-			coalesce(stop_reason_other_label, '') as stop_reason_other_label,
-			coalesce(stop_reason_other_placeholder, '') as stop_reason_other_placeholder,
-			show_customer_name_field,
-			show_customer_phone_field,
-			show_email_field,
-			show_profession_field,
-			show_notes_field,
-			show_product_seen_field,
-			show_product_seen_notes_field,
-			show_product_closed_field,
-			show_visit_reason_field,
-			show_customer_source_field,
-			show_existing_customer_field,
-			show_queue_jump_reason_field,
-			show_loss_reason_field,
-			coalesce(show_cancel_reason_field, false) as show_cancel_reason_field,
-			coalesce(show_stop_reason_field, false) as show_stop_reason_field,
-			allow_product_seen_none,
-			visit_reason_selection_mode,
-			visit_reason_detail_mode,
-			loss_reason_selection_mode,
-			loss_reason_detail_mode,
-			customer_source_selection_mode,
-			customer_source_detail_mode,
-			coalesce(cancel_reason_input_mode, 'text') as cancel_reason_input_mode,
-			coalesce(stop_reason_input_mode, 'text') as stop_reason_input_mode,
-			require_customer_name_field,
-			require_customer_phone_field,
-			require_email_field,
-			require_profession_field,
-			require_notes_field,
-			require_product,
-			require_product_seen_field,
-			require_product_seen_notes_field,
-			require_product_closed_field,
-			require_visit_reason,
-			require_customer_source,
-			require_customer_name_phone,
-			require_product_seen_notes_when_none,
-			product_seen_notes_min_chars,
-			require_queue_jump_reason_field,
-			require_loss_reason_field,
-			coalesce(require_cancel_reason_field, false) as require_cancel_reason_field,
-			coalesce(require_stop_reason_field, false) as require_stop_reason_field,
-			created_at,
-			updated_at
-		from tenant_operation_settings
-		where tenant_id = $1::uuid
-		limit 1;
-	`, tenantID))
+	operationSection, found, err := repository.GetOperationSection(ctx, tenantID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Record{}, false, nil
-		}
-
 		return Record{}, false, err
 	}
+	if !found {
+		return Record{}, false, nil
+	}
 
-	visitReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindVisitReason)
+	modalSection, modalFound, err := repository.GetModalSection(ctx, tenantID)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if !modalFound {
+		modalSection = defaultModalSectionRecord(tenantID, operationSection.SelectedOperationTemplateID)
+		modalSection.CreatedAt = operationSection.CreatedAt
+		modalSection.UpdatedAt = operationSection.UpdatedAt
+	}
+
+	visitReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindVisitReason)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	customerSourceOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindCustomerSource)
+	customerSourceOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindCustomerSource)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	pauseReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindPauseReason)
+	pauseReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindPauseReason)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	cancelReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindCancelReason)
+	cancelReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindCancelReason)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	stopReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindStopReason)
+	stopReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindStopReason)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	queueJumpReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindQueueJump)
+	queueJumpReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindQueueJump)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	lossReasonOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindLossReason)
+	lossReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindLossReason)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	professionOptions, err := repository.loadOptionsByKind(ctx, tenantID, optionKindProfession)
+	professionOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindProfession)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	products, err := repository.loadProducts(ctx, tenantID)
+	products, err := repository.GetProductCatalog(ctx, tenantID)
 	if err != nil {
 		return Record{}, false, err
 	}
 
-	record.VisitReasonOptions = visitReasonOptions
-	record.CustomerSourceOptions = customerSourceOptions
-	record.PauseReasonOptions = pauseReasonOptions
-	record.CancelReasonOptions = cancelReasonOptions
-	record.StopReasonOptions = stopReasonOptions
-	record.QueueJumpReasonOptions = queueJumpReasonOptions
-	record.LossReasonOptions = lossReasonOptions
-	record.ProfessionOptions = professionOptions
-	record.ProductCatalog = products
-
-	return record, true, nil
+	return Record{
+		TenantID:                    tenantID,
+		SelectedOperationTemplateID: operationSection.SelectedOperationTemplateID,
+		Settings:                    composeAppSettings(operationSection.CoreSettings, operationSection.AlertSettings),
+		ModalConfig:                 modalSection.ModalConfig,
+		VisitReasonOptions:          visitReasonOptions,
+		CustomerSourceOptions:       customerSourceOptions,
+		PauseReasonOptions:          pauseReasonOptions,
+		CancelReasonOptions:         cancelReasonOptions,
+		StopReasonOptions:           stopReasonOptions,
+		QueueJumpReasonOptions:      queueJumpReasonOptions,
+		LossReasonOptions:           lossReasonOptions,
+		ProfessionOptions:           professionOptions,
+		ProductCatalog:              products,
+		CreatedAt:                   operationSection.CreatedAt,
+		UpdatedAt:                   operationSection.UpdatedAt,
+	}, true, nil
 }
 
+// Upsert salva o bundle completo nas tabelas novas.
+// Fase 9: escrita legada em tenant_operation_settings removida;
+// a linha ancora FK permanece via ensureConfigRow para opcoes e catalogo.
 func (repository *PostgresRepository) Upsert(ctx context.Context, record Record) (Record, error) {
+	coreSettings, alertSettings := splitAppSettings(record.Settings)
+	operationSection := normalizeOperationSectionRecord(OperationSectionRecord{
+		TenantID:                    record.TenantID,
+		SelectedOperationTemplateID: record.SelectedOperationTemplateID,
+		CoreSettings:                coreSettings,
+		AlertSettings:               alertSettings,
+	})
+	modalSection := normalizeModalSectionRecord(ModalSectionRecord{
+		TenantID:                    record.TenantID,
+		SelectedOperationTemplateID: record.SelectedOperationTemplateID,
+		ModalConfig:                 record.ModalConfig,
+	})
+
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return Record{}, err
 	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	if err := upsertAlertSettingsToNew(ctx, tx, record.TenantID, operationSection.AlertSettings); err != nil {
+		return Record{}, err
+	}
+	if err := upsertCoreSettingsToNew(ctx, tx, operationSection); err != nil {
+		return Record{}, err
+	}
+	if err := upsertModalSectionToNew(ctx, tx, modalSection); err != nil {
+		return Record{}, err
+	}
 
-	savedRecord, err := upsertConfigRow(ctx, tx, record)
-	if err != nil {
+	// Garante linha ancora em tenant_operation_settings para FK de opcoes e catalogo.
+	if err := ensureConfigRow(ctx, tx, record.TenantID); err != nil {
 		return Record{}, err
 	}
 
@@ -379,7 +320,6 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		{kind: optionKindLossReason, items: record.LossReasonOptions},
 		{kind: optionKindProfession, items: record.ProfessionOptions},
 	}
-
 	for _, group := range optionGroups {
 		if err := replaceOptionGroupTx(ctx, tx, record.TenantID, group.kind, group.items); err != nil {
 			return Record{}, err
@@ -390,25 +330,31 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		return Record{}, err
 	}
 
+	updatedAt, err := touchConfigRow(ctx, tx, record.TenantID)
+	if err != nil {
+		return Record{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Record{}, err
 	}
 
-	savedRecord.VisitReasonOptions = cloneOptions(record.VisitReasonOptions)
-	savedRecord.CustomerSourceOptions = cloneOptions(record.CustomerSourceOptions)
-	savedRecord.PauseReasonOptions = cloneOptions(record.PauseReasonOptions)
-	savedRecord.CancelReasonOptions = cloneOptions(record.CancelReasonOptions)
-	savedRecord.StopReasonOptions = cloneOptions(record.StopReasonOptions)
-	savedRecord.QueueJumpReasonOptions = cloneOptions(record.QueueJumpReasonOptions)
-	savedRecord.LossReasonOptions = cloneOptions(record.LossReasonOptions)
-	savedRecord.ProfessionOptions = cloneOptions(record.ProfessionOptions)
-	savedRecord.ProductCatalog = cloneProducts(record.ProductCatalog)
-
-	return savedRecord, nil
-}
-
-func (repository *PostgresRepository) UpsertConfig(ctx context.Context, record Record) (Record, error) {
-	return upsertConfigRow(ctx, repository.pool, record)
+	return Record{
+		TenantID:                    operationSection.TenantID,
+		SelectedOperationTemplateID: operationSection.SelectedOperationTemplateID,
+		Settings:                    composeAppSettings(operationSection.CoreSettings, operationSection.AlertSettings),
+		ModalConfig:                 modalSection.ModalConfig,
+		VisitReasonOptions:          cloneOptions(record.VisitReasonOptions),
+		CustomerSourceOptions:       cloneOptions(record.CustomerSourceOptions),
+		PauseReasonOptions:          cloneOptions(record.PauseReasonOptions),
+		CancelReasonOptions:         cloneOptions(record.CancelReasonOptions),
+		StopReasonOptions:           cloneOptions(record.StopReasonOptions),
+		QueueJumpReasonOptions:      cloneOptions(record.QueueJumpReasonOptions),
+		LossReasonOptions:           cloneOptions(record.LossReasonOptions),
+		ProfessionOptions:           cloneOptions(record.ProfessionOptions),
+		ProductCatalog:              cloneProducts(record.ProductCatalog),
+		UpdatedAt:                   updatedAt,
+	}, nil
 }
 
 func (repository *PostgresRepository) ReplaceOptionGroup(ctx context.Context, tenantID string, kind string, options []OptionItem) (time.Time, error) {
@@ -853,565 +799,4 @@ func upsertProductTx(ctx context.Context, tx pgx.Tx, tenantID string, product Pr
 		product.BasePrice,
 	)
 	return err
-}
-
-func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Record, error) {
-	return scanConfigRow(queryer.QueryRow(ctx, `
-		insert into tenant_operation_settings (
-			tenant_id,
-			selected_operation_template_id,
-			max_concurrent_services,
-			max_concurrent_services_per_consultant,
-			timing_fast_close_minutes,
-			timing_long_service_minutes,
-			timing_low_sale_amount,
-			service_cancel_window_seconds,
-			test_mode_enabled,
-			auto_fill_finish_modal,
-			alert_min_conversion_rate,
-			alert_max_queue_jump_rate,
-			alert_min_pa_score,
-			alert_min_ticket_average,
-			title,
-			product_seen_label,
-			product_seen_placeholder,
-			product_closed_label,
-			product_closed_placeholder,
-			notes_label,
-			notes_placeholder,
-			queue_jump_reason_label,
-			queue_jump_reason_placeholder,
-			loss_reason_label,
-			loss_reason_placeholder,
-			customer_section_label,
-			customer_name_label,
-			customer_phone_label,
-			customer_email_label,
-			customer_profession_label,
-			existing_customer_label,
-			product_seen_notes_label,
-			product_seen_notes_placeholder,
-			visit_reason_label,
-			customer_source_label,
-			cancel_reason_label,
-			cancel_reason_placeholder,
-			cancel_reason_other_label,
-			cancel_reason_other_placeholder,
-			stop_reason_label,
-			stop_reason_placeholder,
-			stop_reason_other_label,
-			stop_reason_other_placeholder,
-			show_customer_name_field,
-			show_customer_phone_field,
-			show_email_field,
-			show_profession_field,
-			show_notes_field,
-			show_product_seen_field,
-			show_product_seen_notes_field,
-			show_product_closed_field,
-			show_visit_reason_field,
-			show_customer_source_field,
-			show_existing_customer_field,
-			show_queue_jump_reason_field,
-			show_loss_reason_field,
-			show_cancel_reason_field,
-			show_stop_reason_field,
-			allow_product_seen_none,
-			visit_reason_selection_mode,
-			visit_reason_detail_mode,
-			loss_reason_selection_mode,
-			loss_reason_detail_mode,
-			customer_source_selection_mode,
-			customer_source_detail_mode,
-			cancel_reason_input_mode,
-			stop_reason_input_mode,
-			require_customer_name_field,
-			require_customer_phone_field,
-			require_email_field,
-			require_profession_field,
-			require_notes_field,
-			require_product,
-			require_product_seen_field,
-			require_product_seen_notes_field,
-			require_product_closed_field,
-			require_visit_reason,
-			require_customer_source,
-			require_customer_name_phone,
-			require_product_seen_notes_when_none,
-			product_seen_notes_min_chars,
-			require_queue_jump_reason_field,
-			require_loss_reason_field,
-			require_cancel_reason_field,
-			require_stop_reason_field
-		)
-		values (
-			$1::uuid,
-			$2,
-			$3,
-			$4,
-			$5,
-			$6,
-			$7,
-			$8,
-			$9,
-			$10,
-			$11,
-			$12,
-			$13,
-			$14,
-			$15,
-			$16,
-			$17,
-			$18,
-			$19,
-			$20,
-			$21,
-			$22,
-			$23,
-			$24,
-			$25,
-			$26,
-			$27,
-			$28,
-			$29,
-			$30,
-			$31,
-			$32,
-			$33,
-			$34,
-			$35,
-			$36,
-			$37,
-			$38,
-			$39,
-			$40,
-			$41,
-			$42,
-			$43,
-			$44,
-			$45,
-			$46,
-			$47,
-			$48,
-			$49,
-			$50,
-			$51,
-			$52,
-			$53,
-			$54,
-			$55,
-			$56,
-			$57,
-			$58,
-			$59,
-			$60,
-			$61,
-			$62,
-			$63,
-			$64,
-			$65,
-			$66,
-			$67,
-			$68,
-			$69,
-			$70,
-			$71,
-			$72,
-			$73,
-			$74,
-			$75,
-			$76,
-			$77,
-			$78,
-			$79,
-			$80,
-			$81,
-			$82,
-			$83,
-			$84,
-			$85,
-			$86,
-			$87,
-			$88,
-			$89,
-			$90,
-			$91,
-			$92,
-			$93,
-			$94,
-			$95,
-			$96,
-			$97,
-			$98,
-			$99,
-			$100,
-			$101,
-			$102,
-			$103,
-			$104,
-			$105,
-			$106,
-			$107,
-			$108
-		)
-		on conflict (tenant_id) do update
-		set
-			selected_operation_template_id = excluded.selected_operation_template_id,
-			max_concurrent_services = excluded.max_concurrent_services,
-			max_concurrent_services_per_consultant = excluded.max_concurrent_services_per_consultant,
-			timing_fast_close_minutes = excluded.timing_fast_close_minutes,
-			timing_long_service_minutes = excluded.timing_long_service_minutes,
-			timing_low_sale_amount = excluded.timing_low_sale_amount,
-			service_cancel_window_seconds = excluded.service_cancel_window_seconds,
-			test_mode_enabled = excluded.test_mode_enabled,
-			auto_fill_finish_modal = excluded.auto_fill_finish_modal,
-			alert_min_conversion_rate = excluded.alert_min_conversion_rate,
-			alert_max_queue_jump_rate = excluded.alert_max_queue_jump_rate,
-			alert_min_pa_score = excluded.alert_min_pa_score,
-			alert_min_ticket_average = excluded.alert_min_ticket_average,
-			title = excluded.title,
-			product_seen_label = excluded.product_seen_label,
-			product_seen_placeholder = excluded.product_seen_placeholder,
-			product_closed_label = excluded.product_closed_label,
-			product_closed_placeholder = excluded.product_closed_placeholder,
-			notes_label = excluded.notes_label,
-			notes_placeholder = excluded.notes_placeholder,
-			queue_jump_reason_label = excluded.queue_jump_reason_label,
-			queue_jump_reason_placeholder = excluded.queue_jump_reason_placeholder,
-			loss_reason_label = excluded.loss_reason_label,
-			loss_reason_placeholder = excluded.loss_reason_placeholder,
-			customer_section_label = excluded.customer_section_label,
-			customer_name_label = excluded.customer_name_label,
-			customer_phone_label = excluded.customer_phone_label,
-			customer_email_label = excluded.customer_email_label,
-			customer_profession_label = excluded.customer_profession_label,
-			existing_customer_label = excluded.existing_customer_label,
-			product_seen_notes_label = excluded.product_seen_notes_label,
-			product_seen_notes_placeholder = excluded.product_seen_notes_placeholder,
-			visit_reason_label = excluded.visit_reason_label,
-			customer_source_label = excluded.customer_source_label,
-			cancel_reason_label = excluded.cancel_reason_label,
-			cancel_reason_placeholder = excluded.cancel_reason_placeholder,
-			cancel_reason_other_label = excluded.cancel_reason_other_label,
-			cancel_reason_other_placeholder = excluded.cancel_reason_other_placeholder,
-			stop_reason_label = excluded.stop_reason_label,
-			stop_reason_placeholder = excluded.stop_reason_placeholder,
-			stop_reason_other_label = excluded.stop_reason_other_label,
-			stop_reason_other_placeholder = excluded.stop_reason_other_placeholder,
-			show_customer_name_field = excluded.show_customer_name_field,
-			show_customer_phone_field = excluded.show_customer_phone_field,
-			show_email_field = excluded.show_email_field,
-			show_profession_field = excluded.show_profession_field,
-			show_notes_field = excluded.show_notes_field,
-			show_product_seen_field = excluded.show_product_seen_field,
-			show_product_seen_notes_field = excluded.show_product_seen_notes_field,
-			show_product_closed_field = excluded.show_product_closed_field,
-			show_visit_reason_field = excluded.show_visit_reason_field,
-			show_customer_source_field = excluded.show_customer_source_field,
-			show_existing_customer_field = excluded.show_existing_customer_field,
-			show_queue_jump_reason_field = excluded.show_queue_jump_reason_field,
-			show_loss_reason_field = excluded.show_loss_reason_field,
-			show_cancel_reason_field = excluded.show_cancel_reason_field,
-			show_stop_reason_field = excluded.show_stop_reason_field,
-			allow_product_seen_none = excluded.allow_product_seen_none,
-			visit_reason_selection_mode = excluded.visit_reason_selection_mode,
-			visit_reason_detail_mode = excluded.visit_reason_detail_mode,
-			loss_reason_selection_mode = excluded.loss_reason_selection_mode,
-			loss_reason_detail_mode = excluded.loss_reason_detail_mode,
-			customer_source_selection_mode = excluded.customer_source_selection_mode,
-			customer_source_detail_mode = excluded.customer_source_detail_mode,
-			cancel_reason_input_mode = excluded.cancel_reason_input_mode,
-			stop_reason_input_mode = excluded.stop_reason_input_mode,
-			require_customer_name_field = excluded.require_customer_name_field,
-			require_customer_phone_field = excluded.require_customer_phone_field,
-			require_email_field = excluded.require_email_field,
-			require_profession_field = excluded.require_profession_field,
-			require_notes_field = excluded.require_notes_field,
-			require_product = excluded.require_product,
-			require_product_seen_field = excluded.require_product_seen_field,
-			require_product_seen_notes_field = excluded.require_product_seen_notes_field,
-			require_product_closed_field = excluded.require_product_closed_field,
-			require_visit_reason = excluded.require_visit_reason,
-			require_customer_source = excluded.require_customer_source,
-			require_customer_name_phone = excluded.require_customer_name_phone,
-			require_product_seen_notes_when_none = excluded.require_product_seen_notes_when_none,
-			product_seen_notes_min_chars = excluded.product_seen_notes_min_chars,
-			require_queue_jump_reason_field = excluded.require_queue_jump_reason_field,
-			require_loss_reason_field = excluded.require_loss_reason_field,
-			require_cancel_reason_field = excluded.require_cancel_reason_field,
-			require_stop_reason_field = excluded.require_stop_reason_field,
-			updated_at = now()
-		returning
-			tenant_id::text,
-			selected_operation_template_id,
-			max_concurrent_services,
-			max_concurrent_services_per_consultant,
-			timing_fast_close_minutes,
-			timing_long_service_minutes,
-			timing_low_sale_amount,
-			service_cancel_window_seconds,
-			test_mode_enabled,
-			auto_fill_finish_modal,
-			alert_min_conversion_rate,
-			alert_max_queue_jump_rate,
-			alert_min_pa_score,
-			alert_min_ticket_average,
-			title,
-			product_seen_label,
-			product_seen_placeholder,
-			product_closed_label,
-			product_closed_placeholder,
-			notes_label,
-			notes_placeholder,
-			queue_jump_reason_label,
-			queue_jump_reason_placeholder,
-			loss_reason_label,
-			loss_reason_placeholder,
-			customer_section_label,
-			customer_name_label,
-			customer_phone_label,
-			customer_email_label,
-			customer_profession_label,
-			existing_customer_label,
-			product_seen_notes_label,
-			product_seen_notes_placeholder,
-			visit_reason_label,
-			customer_source_label,
-			cancel_reason_label,
-			cancel_reason_placeholder,
-			cancel_reason_other_label,
-			cancel_reason_other_placeholder,
-			stop_reason_label,
-			stop_reason_placeholder,
-			stop_reason_other_label,
-			stop_reason_other_placeholder,
-			show_customer_name_field,
-			show_customer_phone_field,
-			show_email_field,
-			show_profession_field,
-			show_notes_field,
-			show_product_seen_field,
-			show_product_seen_notes_field,
-			show_product_closed_field,
-			show_visit_reason_field,
-			show_customer_source_field,
-			show_existing_customer_field,
-			show_queue_jump_reason_field,
-			show_loss_reason_field,
-			show_cancel_reason_field,
-			show_stop_reason_field,
-			allow_product_seen_none,
-			visit_reason_selection_mode,
-			visit_reason_detail_mode,
-			loss_reason_selection_mode,
-			loss_reason_detail_mode,
-			customer_source_selection_mode,
-			customer_source_detail_mode,
-			cancel_reason_input_mode,
-			stop_reason_input_mode,
-			require_customer_name_field,
-			require_customer_phone_field,
-			require_email_field,
-			require_profession_field,
-			require_notes_field,
-			require_product,
-			require_product_seen_field,
-			require_product_seen_notes_field,
-			require_product_closed_field,
-			require_visit_reason,
-			require_customer_source,
-			require_customer_name_phone,
-			require_product_seen_notes_when_none,
-			product_seen_notes_min_chars,
-			require_queue_jump_reason_field,
-			require_loss_reason_field,
-			require_cancel_reason_field,
-			require_stop_reason_field,
-			created_at,
-			updated_at;
-	`,
-		record.TenantID,
-		record.SelectedOperationTemplateID,
-		record.Settings.MaxConcurrentServices,
-		record.Settings.MaxConcurrentServicesPerConsultant,
-		record.Settings.TimingFastCloseMinutes,
-		record.Settings.TimingLongServiceMinutes,
-		record.Settings.TimingLowSaleAmount,
-		record.Settings.ServiceCancelWindowSeconds,
-		record.Settings.TestModeEnabled,
-		record.Settings.AutoFillFinishModal,
-		record.Settings.AlertMinConversionRate,
-		record.Settings.AlertMaxQueueJumpRate,
-		record.Settings.AlertMinPaScore,
-		record.Settings.AlertMinTicketAverage,
-		record.ModalConfig.Title,
-		record.ModalConfig.ProductSeenLabel,
-		record.ModalConfig.ProductSeenPlaceholder,
-		record.ModalConfig.ProductClosedLabel,
-		record.ModalConfig.ProductClosedPlaceholder,
-		record.ModalConfig.NotesLabel,
-		record.ModalConfig.NotesPlaceholder,
-		record.ModalConfig.QueueJumpReasonLabel,
-		record.ModalConfig.QueueJumpReasonPlaceholder,
-		record.ModalConfig.LossReasonLabel,
-		record.ModalConfig.LossReasonPlaceholder,
-		record.ModalConfig.CustomerSectionLabel,
-		record.ModalConfig.CustomerNameLabel,
-		record.ModalConfig.CustomerPhoneLabel,
-		record.ModalConfig.CustomerEmailLabel,
-		record.ModalConfig.CustomerProfessionLabel,
-		record.ModalConfig.ExistingCustomerLabel,
-		record.ModalConfig.ProductSeenNotesLabel,
-		record.ModalConfig.ProductSeenNotesPlaceholder,
-		record.ModalConfig.VisitReasonLabel,
-		record.ModalConfig.CustomerSourceLabel,
-		record.ModalConfig.CancelReasonLabel,
-		record.ModalConfig.CancelReasonPlaceholder,
-		record.ModalConfig.CancelReasonOtherLabel,
-		record.ModalConfig.CancelReasonOtherPlaceholder,
-		record.ModalConfig.StopReasonLabel,
-		record.ModalConfig.StopReasonPlaceholder,
-		record.ModalConfig.StopReasonOtherLabel,
-		record.ModalConfig.StopReasonOtherPlaceholder,
-		record.ModalConfig.ShowCustomerNameField,
-		record.ModalConfig.ShowCustomerPhoneField,
-		record.ModalConfig.ShowEmailField,
-		record.ModalConfig.ShowProfessionField,
-		record.ModalConfig.ShowNotesField,
-		record.ModalConfig.ShowProductSeenField,
-		record.ModalConfig.ShowProductSeenNotesField,
-		record.ModalConfig.ShowProductClosedField,
-		record.ModalConfig.ShowVisitReasonField,
-		record.ModalConfig.ShowCustomerSourceField,
-		record.ModalConfig.ShowExistingCustomerField,
-		record.ModalConfig.ShowQueueJumpReasonField,
-		record.ModalConfig.ShowLossReasonField,
-		record.ModalConfig.ShowCancelReasonField,
-		record.ModalConfig.ShowStopReasonField,
-		record.ModalConfig.AllowProductSeenNone,
-		record.ModalConfig.VisitReasonSelectionMode,
-		record.ModalConfig.VisitReasonDetailMode,
-		record.ModalConfig.LossReasonSelectionMode,
-		record.ModalConfig.LossReasonDetailMode,
-		record.ModalConfig.CustomerSourceSelectionMode,
-		record.ModalConfig.CustomerSourceDetailMode,
-		record.ModalConfig.CancelReasonInputMode,
-		record.ModalConfig.StopReasonInputMode,
-		record.ModalConfig.RequireCustomerNameField,
-		record.ModalConfig.RequireCustomerPhoneField,
-		record.ModalConfig.RequireEmailField,
-		record.ModalConfig.RequireProfessionField,
-		record.ModalConfig.RequireNotesField,
-		record.ModalConfig.RequireProduct,
-		record.ModalConfig.RequireProductSeenField,
-		record.ModalConfig.RequireProductSeenNotesField,
-		record.ModalConfig.RequireProductClosedField,
-		record.ModalConfig.RequireVisitReason,
-		record.ModalConfig.RequireCustomerSource,
-		record.ModalConfig.RequireCustomerNamePhone,
-		record.ModalConfig.RequireProductSeenNotesWhenNone,
-		record.ModalConfig.ProductSeenNotesMinChars,
-		record.ModalConfig.RequireQueueJumpReasonField,
-		record.ModalConfig.RequireLossReasonField,
-		record.ModalConfig.RequireCancelReasonField,
-		record.ModalConfig.RequireStopReasonField,
-	))
-}
-
-func scanConfigRow(row pgx.Row) (Record, error) {
-	var record Record
-	err := row.Scan(
-		&record.TenantID,
-		&record.SelectedOperationTemplateID,
-		&record.Settings.MaxConcurrentServices,
-		&record.Settings.MaxConcurrentServicesPerConsultant,
-		&record.Settings.TimingFastCloseMinutes,
-		&record.Settings.TimingLongServiceMinutes,
-		&record.Settings.TimingLowSaleAmount,
-		&record.Settings.ServiceCancelWindowSeconds,
-		&record.Settings.TestModeEnabled,
-		&record.Settings.AutoFillFinishModal,
-		&record.Settings.AlertMinConversionRate,
-		&record.Settings.AlertMaxQueueJumpRate,
-		&record.Settings.AlertMinPaScore,
-		&record.Settings.AlertMinTicketAverage,
-		&record.ModalConfig.Title,
-		&record.ModalConfig.ProductSeenLabel,
-		&record.ModalConfig.ProductSeenPlaceholder,
-		&record.ModalConfig.ProductClosedLabel,
-		&record.ModalConfig.ProductClosedPlaceholder,
-		&record.ModalConfig.NotesLabel,
-		&record.ModalConfig.NotesPlaceholder,
-		&record.ModalConfig.QueueJumpReasonLabel,
-		&record.ModalConfig.QueueJumpReasonPlaceholder,
-		&record.ModalConfig.LossReasonLabel,
-		&record.ModalConfig.LossReasonPlaceholder,
-		&record.ModalConfig.CustomerSectionLabel,
-		&record.ModalConfig.CustomerNameLabel,
-		&record.ModalConfig.CustomerPhoneLabel,
-		&record.ModalConfig.CustomerEmailLabel,
-		&record.ModalConfig.CustomerProfessionLabel,
-		&record.ModalConfig.ExistingCustomerLabel,
-		&record.ModalConfig.ProductSeenNotesLabel,
-		&record.ModalConfig.ProductSeenNotesPlaceholder,
-		&record.ModalConfig.VisitReasonLabel,
-		&record.ModalConfig.CustomerSourceLabel,
-		&record.ModalConfig.CancelReasonLabel,
-		&record.ModalConfig.CancelReasonPlaceholder,
-		&record.ModalConfig.CancelReasonOtherLabel,
-		&record.ModalConfig.CancelReasonOtherPlaceholder,
-		&record.ModalConfig.StopReasonLabel,
-		&record.ModalConfig.StopReasonPlaceholder,
-		&record.ModalConfig.StopReasonOtherLabel,
-		&record.ModalConfig.StopReasonOtherPlaceholder,
-		&record.ModalConfig.ShowCustomerNameField,
-		&record.ModalConfig.ShowCustomerPhoneField,
-		&record.ModalConfig.ShowEmailField,
-		&record.ModalConfig.ShowProfessionField,
-		&record.ModalConfig.ShowNotesField,
-		&record.ModalConfig.ShowProductSeenField,
-		&record.ModalConfig.ShowProductSeenNotesField,
-		&record.ModalConfig.ShowProductClosedField,
-		&record.ModalConfig.ShowVisitReasonField,
-		&record.ModalConfig.ShowCustomerSourceField,
-		&record.ModalConfig.ShowExistingCustomerField,
-		&record.ModalConfig.ShowQueueJumpReasonField,
-		&record.ModalConfig.ShowLossReasonField,
-		&record.ModalConfig.ShowCancelReasonField,
-		&record.ModalConfig.ShowStopReasonField,
-		&record.ModalConfig.AllowProductSeenNone,
-		&record.ModalConfig.VisitReasonSelectionMode,
-		&record.ModalConfig.VisitReasonDetailMode,
-		&record.ModalConfig.LossReasonSelectionMode,
-		&record.ModalConfig.LossReasonDetailMode,
-		&record.ModalConfig.CustomerSourceSelectionMode,
-		&record.ModalConfig.CustomerSourceDetailMode,
-		&record.ModalConfig.CancelReasonInputMode,
-		&record.ModalConfig.StopReasonInputMode,
-		&record.ModalConfig.RequireCustomerNameField,
-		&record.ModalConfig.RequireCustomerPhoneField,
-		&record.ModalConfig.RequireEmailField,
-		&record.ModalConfig.RequireProfessionField,
-		&record.ModalConfig.RequireNotesField,
-		&record.ModalConfig.RequireProduct,
-		&record.ModalConfig.RequireProductSeenField,
-		&record.ModalConfig.RequireProductSeenNotesField,
-		&record.ModalConfig.RequireProductClosedField,
-		&record.ModalConfig.RequireVisitReason,
-		&record.ModalConfig.RequireCustomerSource,
-		&record.ModalConfig.RequireCustomerNamePhone,
-		&record.ModalConfig.RequireProductSeenNotesWhenNone,
-		&record.ModalConfig.ProductSeenNotesMinChars,
-		&record.ModalConfig.RequireQueueJumpReasonField,
-		&record.ModalConfig.RequireLossReasonField,
-		&record.ModalConfig.RequireCancelReasonField,
-		&record.ModalConfig.RequireStopReasonField,
-		&record.CreatedAt,
-		&record.UpdatedAt,
-	)
-	if err != nil {
-		return Record{}, err
-	}
-
-	return record, nil
 }

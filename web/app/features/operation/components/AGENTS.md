@@ -2,72 +2,135 @@
 
 ## Escopo
 
-Estas instrucoes valem para `web/app/features/operation/components`.
+Estas instruções valem para `web/app/features/operation/components/`.
 
-## Objetivo
+## Responsabilidade dos componentes
 
-Esta pasta concentra a interface operacional da fila. Os componentes daqui devem continuar pequenos, orientados a uma responsabilidade clara e reaproveitar os componentes base do app sempre que possivel.
+Este diretório cuida da renderização visual da operação, incluindo:
 
-## Regras da pasta
+- Workspace principal de operação
+- Cards e estado dos consultores
+- Queue visível
+- Alertas operacionais em diversos formatos
+- Modais e diálogos operacionais
 
-- manter a pagina de operacao no mesmo modelo mental entre `Loja ativa` e `Todas as lojas`
-- evitar criar componentes visuais paralelos para select, dropdown e picker
-- para filtros simples, usar [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue)
-- para selecao pesquisavel, multi-select e detalhes, reutilizar [OperationProductPicker.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationProductPicker.vue)
-- cards operacionais devem ser compactos e sem informacao redundante com a coluna onde estao
-- quando um card puder virar unidade reutilizavel, extraia antes de repetir markup inline
-- quando o mesmo consultor tiver mais de um atendimento aberto, a UX deve comunicar `em aberto` ou `na sequencia`, sem sugerir concorrencia real; cada card continua sendo uma unidade fechada por `serviceId`
-- [OperationFinishModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationFinishModal.vue) usa draft em `sessionStorage` por `storeId:serviceId`; ao reabrir, validar que o atendimento ainda existe em `activeServices` antes de reaproveitar o rascunho e descartar cache stale
-- `OperationWorkspace.vue`, `OperationQueueColumns.vue`, `OperationFinishModal.vue` e `OperationOverviewBoard.vue` precisam ler o mesmo contexto operacional quando a tela estiver em `Todas as lojas`; se o modal ou o overview usarem um slice diferente do exibido nos cards, o fluxo de fechamento volta a falhar ou parecer desatualizado
-- o cronometro dos cards e do overview nao pode depender de um tick de `1000ms` puro; usar refresh curto e sincronizar `now` quando `activeServices` muda evita o atraso visual do primeiro segundo apos iniciar atendimento
-- para cronometro ativo em tela, nao truncar sempre a duracao para baixo no primeiro segundo; o display ao vivo deve arredondar a fracao positiva para cima, enquanto tempos congelados ou historicos continuam exibidos sem esse arredondamento
-- quando houver skew entre relogio da API e relogio do navegador, os timers da operacao devem usar `serverClockOffsetMs` derivado do `savedAt` das mutacoes bem-sucedidas; comparar `Date.now()` puro com `serviceStartedAt` do backend volta a deixar o cronometro preso em `00:00`
-- em cards `na sequencia`, o tempo exibido do atendimento anterior deve congelar no `serviceStartedAt` do proximo atendimento do mesmo grupo; nao usar sempre `Date.now() - serviceStartedAt`
-- a coluna `Em atendimento` ordena os cards por `serviceStartedAt` mais recente primeiro (descendente); o ultimo atendimento iniciado fica no topo para facilitar o uso da janela curta de cancelamento
-- o modal compacto de `Parar atendimento` / `Cancelar atendimento` vive em [OperationQueueColumns.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationQueueColumns.vue) (`actionModal`), separado do modal completo de encerramento; envia apenas `action=stop|cancel` para `/v1/operations/finish` — sem campo de justificativa
-- os dois modais sao apenas confirmacao com texto explicativo: stop diz que o tempo pausa e que o consultor ainda precisa encerrar; cancel diz que o atendimento sera desfeito e o consultor volta para a posicao original
-- ao cancelar, o backend reinsere o consultor na posicao original da fila (`queuePositionAtStart`); o front nao precisa fazer reordenacao manual apos o snapshot ser revalidado
+## Arquitetura de alertas (novo em Fase 6)
 
-## Catalogo atual
+### AlertDisplayHost.vue (novo)
 
-- [OperationWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationWorkspace.vue)
-  Composicao principal da pagina de operacao, incluindo barra de escopo, alerta de campanha, colunas e faixa de consultores.
+Componente roteador que orquestra todos os tipos de display de alerta.
 
-- [OperationScopeBar.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationScopeBar.vue)
-  Barra de contexto da operacao com loja, modo e filtro integrado. Usa `AppSelectField`.
+**Props:**
+- `storeId: string` — identifica a loja para filtrar alertas
 
-- [OperationQueueColumns.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationQueueColumns.vue)
-  Renderiza as colunas `Lista da vez` e `Em atendimento`, integra comandos da fila e abre o modal de fechamento.
+**Comportamento:**
+- Consulta `alertsStore.activeAlertsForStore(storeId)`
+- Agrupa alertas por `displayKind`
+- Renderiza cada grupo com o componente correto:
+  - `OperationAlertBanner` para `banner`
+  - `AlertDisplayCornerPopup` para `corner_popup`
+  - `AlertDisplayCenterModal` para `center_modal`
+  - `AlertDisplayFullscreen` para `fullscreen`
+  - Toast system (não este componente) para `toast`
+  - Card badges (não este componente) para `card_badge`
 
-- [OperationActiveServiceCard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationActiveServiceCard.vue)
-  Card dedicado de atendimento ativo. Mantem o bloco compacto, sem ID visivel e sem titulo redundante da coluna.
+**Uso:**
+Substitui a referência direta a `OperationAlertBanner` no `pages/operacao/index.vue`.
 
-- [OperationConsultantStrip.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationConsultantStrip.vue)
-  Faixa inferior com roster, entrada na fila, pausa, retomada e direcionamento para tarefa.
-  A pausa deve consumir `pauseReasonOptions` do bundle de settings e nao pedir texto livre.
+### OperationAlertBanner.vue (refatorado em Fase 6)
 
-- [OperationCampaignBrief.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationCampaignBrief.vue)
-  Alerta enxuto de campanha ativa na operacao, com CTA para a pagina de campanhas.
+Componente de banner persistente no topo da operação.
 
-- [OperationFinishModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationFinishModal.vue)
-  Modal de encerramento do atendimento, com formulario completo e validacoes operacionais.
-  O rascunho local deve ser sempre reconciliado com o `serviceId` ativo antes de submeter o fechamento.
-  Os pickers de produto desse modal devem buscar o catalogo remoto por `sku` via `/v1/catalog/products/search`, mantendo `Item nao cadastrado` apenas como escape manual.
-  Enquanto a source `erp_current` for a origem ativa, o backend trata esse catalogo como compartilhado por tenant; o front continua informando a `storeId` do contexto apenas para autorizacao e consistencia operacional.
+**Props (novo):**
+- `alerts: Array<Record<string, any>>` — array de alertas a exibir
 
-- [OperationProductPicker.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationProductPicker.vue)
-  Picker pesquisavel reutilizado para produtos, motivos, origens e outros catalogos da operacao.
-  Quando estiver em modo remoto, ele continua generico: emite o termo digitado e deixa a fonte de verdade no store/consumidor.
+**Comportamento:**
+- Renderiza cada alerta como um banner empilhado
+- Usa `alert.colorTheme` para determinar a cor (6 variantes)
+- Renderiza `alert.titleTemplate` com substituição de variáveis
+- Para cada alerta, renderiza buttons para cada item em `alert.responseOptions`
+- Ao clicar um botão, chama `respondToAlert(alertId, optionValue)`
 
-- [OperationPauseReasonDialog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationPauseReasonDialog.vue)
-  Dialogo de pausa que reaproveita `OperationProductPicker` em modo de selecao unica para motivos de pausa.
+### AlertDisplayCornerPopup.vue (novo em Fase 6)
 
-- [OperationOverviewBoard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationOverviewBoard.vue)
-  Blocos resumidos de leitura operacional e consolidado do modo integrado.
+Popups flutuantes no canto inferior direito, não-bloqueantes.
 
-## Diretrizes rapidas
+**Props:**
+- `alerts: Array<Record<string, any>>` — array de alertas para exibir
 
-- se a alteracao for em `Em atendimento`, avaliar primeiro [OperationActiveServiceCard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationActiveServiceCard.vue)
-- se a alteracao for em `Lista da vez`, avaliar primeiro [OperationQueueColumns.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationQueueColumns.vue)
-- se a alteracao for em filtros de operacao, usar [AppSelectField.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppSelectField.vue)
-- se a alteracao for em catalogos selecionaveis do modal, usar [OperationProductPicker.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/features/operation/components/OperationProductPicker.vue)
+**Comportamento:**
+- Cada alerta é um card empilhado no canto inferior direito
+- Anima entrada via slideIn (300ms)
+- Mostra apenas alertas não dismissidos
+- Ao clicar, chama `alertsStore.respondToAlert()`
+
+### AlertDisplayCenterModal.vue (novo em Fase 6)
+
+Modal centralizado, blocking, para alertas importantes.
+
+**Props:**
+- `alerts: Array<Record<string, any>>` — mostra apenas o primeiro alerta
+
+**Comportamento:**
+- Renderiza overlay com backdrop
+- Modal centralizado com barra colorida no topo
+- Exibe `titleTemplate` e `bodyTemplate`
+- Renderiza `responseOptions` como botões primários
+
+### AlertDisplayFullscreen.vue (novo em Fase 6)
+
+Display mais agressivo: tela inteira com gradiente de fundo.
+
+**Props:**
+- `alerts: Array<Record<string, any>>` — mostra apenas o primeiro
+
+**Comportamento:**
+- Ocupa tela inteira (`position: fixed; inset: 0`)
+- Fundo gradiente intenso
+- Título XL com emoji de alerta (⚠️)
+- Renderiza `responseOptions` como botões GRANDES
+- SEMPRE `isMandatory` (não fecha sem responder)
+
+## Integração com operacao/index.vue
+
+**Antes:**
+```vue
+<OperationAlertBanner v-if="bannerStoreId" :store-id="bannerStoreId" />
+```
+
+**Depois:**
+```vue
+<AlertDisplayHost v-if="bannerStoreId" :store-id="bannerStoreId" />
+```
+
+## Cores suportadas
+
+- `amber`, `red`, `blue`, `green`, `purple`, `slate`
+- Cada componente implementa mapeamento tema → cor CSS
+
+## Variáveis de template
+
+- `{consultant}` → `alert.consultantName` ou "Consultor"
+- `{elapsed}` → minutos desde `lastTriggeredAt`
+- `{threshold}` → valor do threshold da regra
+
+## Toast system (não renderizado aqui)
+
+Alertas com `displayKind === 'toast'` são controlados por `useContextRealtime.ts`:
+- Filtram por `displayKind === 'toast'`
+- Aparecem como notificações leves
+- Auto-dismiss em 6 segundos
+
+## Permissões
+
+- Alertas respeitam autorização do backend
+- Frontend confia na filtragem feita por `alertsStore.activeAlertsForStore(storeId)`
+
+## Teste esperado
+
+1. Criar regra com `displayKind = banner` → aparece no topo
+2. Criar regra com `displayKind = corner_popup` → flutua no canto
+3. Criar regra com `displayKind = center_modal` → modal blocking
+4. Criar regra com `displayKind = fullscreen` → tela inteira
+5. Responder a alerta → desaparece imediatamente
+6. Aplicar regra via "Salvar e aplicar agora" → alertas em andamento são notificados

@@ -118,8 +118,16 @@ function isSameSequentialGroup(targetService, candidate) {
   return siblingServiceIds.includes(targetServiceId);
 }
 
+function firstPositiveTimestamp(values) {
+  return values
+    .map((value) => Number(value || 0) || 0)
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right)[0] || 0;
+}
+
 function deriveSequentialServiceFinishedAt(targetService, groupedServices) {
   const targetStartedAt = Number(targetService?.serviceStartedAt || 0) || 0;
+  const explicitFinishedAt = Number(targetService?.effectiveFinishedAt || 0) || 0;
   let nextStartedAt = 0;
 
   const consider = (candidateStartedAt) => {
@@ -152,7 +160,7 @@ function deriveSequentialServiceFinishedAt(targetService, groupedServices) {
     consider(entry?.startedAt);
   });
 
-  return nextStartedAt || 0;
+  return firstPositiveTimestamp([explicitFinishedAt, nextStartedAt]);
 }
 
 const servicesGroupedByConsultant = computed(() => {

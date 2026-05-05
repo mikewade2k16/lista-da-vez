@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
@@ -36,6 +37,9 @@ type Service struct {
 	repository         Repository
 	publisher          EventPublisher
 	storeScopeProvider StoreScopeProvider
+	alertCoordinator   AlertCoordinator
+	alertMonitorMu     sync.Mutex
+	alertMonitorSeen   map[string]struct{}
 }
 
 type transition struct {
@@ -56,7 +60,61 @@ func NewService(repository Repository, publisher EventPublisher, storeScopeProvi
 		repository:         repository,
 		publisher:          publisher,
 		storeScopeProvider: storeScopeProvider,
+		alertMonitorSeen:   make(map[string]struct{}),
 	}
+}
+
+func (service *Service) SetAlertCoordinator(coordinator AlertCoordinator) {
+	service.alertCoordinator = coordinator
+}
+
+func (service *Service) ProcessTimedAlerts(ctx context.Context) error {
+	if service.alertCoordinator == nil {
+		return nil
+	}
+
+	storeIDs, err := service.repository.ListStoresWithActiveServices(ctx)
+	if err != nil {
+		return err
+	}
+
+	currentActiveServiceIDs := make(map[string]struct{})
+	for _, rawStoreID := range storeIDs {
+		storeID := strings.TrimSpace(rawStoreID)
+		if storeID == "" {
+			continue
+		}
+
+		_, snapshotState, err := service.loadSnapshotState(ctx, storeID)
+		if err != nil {
+			continue
+		}
+
+		for _, activeService := range snapshotState.ActiveServices {
+			if !shouldMonitorLongOpenAlert(activeService) {
+				continue
+			}
+			serviceID := strings.TrimSpace(activeService.ServiceID)
+			currentActiveServiceIDs[serviceID] = struct{}{}
+		}
+
+		triggerSignals, err := service.buildLongOpenSignals(ctx, storeID, snapshotState, time.Now().UTC())
+		if err != nil {
+			continue
+		}
+
+		triggerSignals = service.filterUnseenTimedAlertSignals(triggerSignals)
+		if len(triggerSignals) == 0 {
+			continue
+		}
+
+		if err := service.alertCoordinator.ReceiveOperationalSignals(ctx, triggerSignals); err == nil {
+			service.markTimedAlertSignals(triggerSignals)
+		}
+	}
+
+	service.pruneTimedAlertSignals(currentActiveServiceIDs)
+	return nil
 }
 
 func (service *Service) Snapshot(ctx context.Context, access AccessContext, storeID string) (Snapshot, error) {
@@ -140,28 +198,32 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 			}
 
 			overview.ActiveServices = append(overview.ActiveServices, OperationOverviewPerson{
-				StoreID:            storeID,
-				StoreName:          strings.TrimSpace(storeView.Name),
-				StoreCode:          strings.TrimSpace(storeView.Code),
-				PersonID:           person.ID,
-				Name:               person.Name,
-				Role:               person.Role,
-				Initials:           person.Initials,
-				Color:              person.Color,
-				MonthlyGoal:        person.MonthlyGoal,
-				CommissionRate:     person.CommissionRate,
-				Status:             statusService,
-				StatusStartedAt:    snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
-				ServiceID:          item.ServiceID,
-				ServiceStartedAt:   item.ServiceStartedAt,
-				QueueJoinedAt:      item.QueueJoinedAt,
-				QueueWaitMs:        item.QueueWaitMs,
-				StartMode:          item.StartMode,
-				SkippedPeople:      cloneSkippedPeople(item.SkippedPeople),
-				ParallelGroupID:    item.ParallelGroupID,
-				ParallelStartIndex: item.ParallelStartIndex,
-				SiblingServiceIDs:  cloneStringSlice(item.SiblingServiceIDs),
-				StartOffsetMs:      item.StartOffsetMs,
+				StoreID:              storeID,
+				StoreName:            strings.TrimSpace(storeView.Name),
+				StoreCode:            strings.TrimSpace(storeView.Code),
+				PersonID:             person.ID,
+				Name:                 person.Name,
+				Role:                 person.Role,
+				Initials:             person.Initials,
+				Color:                person.Color,
+				MonthlyGoal:          person.MonthlyGoal,
+				CommissionRate:       person.CommissionRate,
+				Status:               statusService,
+				StatusStartedAt:      snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
+				ServiceID:            item.ServiceID,
+				ServiceStartedAt:     item.ServiceStartedAt,
+				QueueJoinedAt:        item.QueueJoinedAt,
+				QueueWaitMs:          item.QueueWaitMs,
+				QueuePositionAtStart: item.QueuePositionAtStart,
+				StartMode:            item.StartMode,
+				SkippedPeople:        cloneSkippedPeople(item.SkippedPeople),
+				ParallelGroupID:      item.ParallelGroupID,
+				ParallelStartIndex:   item.ParallelStartIndex,
+				SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
+				StartOffsetMs:        item.StartOffsetMs,
+				StoppedAt:            maxInt64(item.StoppedAt, 0),
+				EffectiveFinishedAt:  deriveActiveServiceFreezeAt(item, snapshotState.ActiveServices, snapshotState.ServiceHistory),
+				StopReason:           strings.TrimSpace(item.StopReason),
 			})
 		}
 
@@ -292,7 +354,7 @@ func (service *Service) AddToQueue(ctx context.Context, access AccessContext, in
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "queue", person.ID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, "queue", person.ID, snapshotState, nil, nil)
 }
 
 func (service *Service) Pause(ctx context.Context, access AccessContext, input PauseCommandInput) (MutationAck, error) {
@@ -357,7 +419,7 @@ func (service *Service) pauseLike(
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, action, personID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, action, personID, snapshotState, nil, nil)
 }
 
 func (service *Service) Resume(ctx context.Context, access AccessContext, input QueueCommandInput) (MutationAck, error) {
@@ -396,7 +458,7 @@ func (service *Service) Resume(ctx context.Context, access AccessContext, input 
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "resume", personID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, "resume", personID, snapshotState, nil, nil)
 }
 
 func (service *Service) Start(ctx context.Context, access AccessContext, input StartCommandInput) (MutationAck, error) {
@@ -475,7 +537,7 @@ func (service *Service) Start(ctx context.Context, access AccessContext, input S
 		now,
 	)
 
-	return service.persistAndAck(ctx, resolvedStoreID, "start", person.ID, snapshotState, nil)
+	return service.persistAndAck(ctx, resolvedStoreID, "start", person.ID, snapshotState, nil, nil)
 }
 
 func (service *Service) StartParallel(ctx context.Context, access AccessContext, input StartParallelCommandInput) (MutationAck, error) {
@@ -548,7 +610,7 @@ func (service *Service) StartParallel(ctx context.Context, access AccessContext,
 
 	// No status transition: consultant already in 'service' status
 	// (applyStatusTransitions will be a noop since consultant is already in 'service')
-	ack, err := service.persistAndAck(ctx, resolvedStoreID, "start-parallel", personID, snapshotState, nil)
+	ack, err := service.persistAndAck(ctx, resolvedStoreID, "start-parallel", personID, snapshotState, nil, nil)
 	if err == nil {
 		ack.ServiceID = newService.ServiceID
 	}
@@ -603,7 +665,17 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 	if action == actionStop {
 		snapshotState.ActiveServices[activeIndex].StoppedAt = now
 		snapshotState.ActiveServices[activeIndex].StopReason = strings.TrimSpace(input.StopReason)
-		return service.persistAndAck(ctx, resolvedStoreID, actionStop, personID, snapshotState, nil)
+		return service.persistAndAck(ctx, resolvedStoreID, actionStop, personID, snapshotState, nil, []OperationalAlertSignal{buildLongOpenResolvedSignal(
+			resolvedStoreID,
+			activeService.ServiceID,
+			personID,
+			time.UnixMilli(now).UTC(),
+			map[string]any{
+				"action":     actionStop,
+				"stoppedAt":  now,
+				"stopReason": strings.TrimSpace(input.StopReason),
+			},
+		)})
 	}
 
 	effectiveFallback := now
@@ -667,7 +739,17 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 			)
 		}
 
-		return service.persistAndAck(ctx, resolvedStoreID, actionCancel, person.ID, snapshotState, nil)
+		return service.persistAndAck(ctx, resolvedStoreID, actionCancel, person.ID, snapshotState, nil, []OperationalAlertSignal{buildLongOpenResolvedSignal(
+			resolvedStoreID,
+			activeService.ServiceID,
+			person.ID,
+			time.UnixMilli(now).UTC(),
+			map[string]any{
+				"action":       actionCancel,
+				"cancelledAt":  now,
+				"cancelReason": strings.TrimSpace(input.CancelReason),
+			},
+		)})
 	}
 
 	queueEntry := QueueStateItem{
@@ -703,6 +785,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		IsGift:                     input.IsGift,
 		ProductSeen:                input.ProductSeen,
 		ProductClosed:              input.ProductClosed,
+		PurchaseCode:               input.PurchaseCode,
 		ProductDetails:             input.ProductDetails,
 		ProductsSeen:               cloneProducts(input.ProductsSeen),
 		ProductsClosed:             cloneProducts(input.ProductsClosed),
@@ -736,6 +819,9 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		historyEntry.LossReasonID = ""
 		historyEntry.LossReason = ""
 	}
+	if historyEntry.FinishOutcome != "compra" {
+		historyEntry.PurchaseCode = ""
+	}
 
 	snapshotState.ServiceHistory = append(snapshotState.ServiceHistory, historyEntry)
 
@@ -749,7 +835,7 @@ func (service *Service) Finish(ctx context.Context, access AccessContext, input 
 		)
 	}
 
-	return service.persistAndAck(ctx, resolvedStoreID, actionFinish, person.ID, snapshotState, []ServiceHistoryEntry{historyEntry})
+	return service.persistAndAck(ctx, resolvedStoreID, actionFinish, person.ID, snapshotState, []ServiceHistoryEntry{historyEntry}, nil)
 }
 
 func (service *Service) buildAck(storeID string, action string, personID string) MutationAck {
@@ -769,6 +855,7 @@ func (service *Service) persistAndAck(
 	personID string,
 	snapshotState SnapshotState,
 	appendedHistory []ServiceHistoryEntry,
+	explicitSignals []OperationalAlertSignal,
 ) (MutationAck, error) {
 	appendedSessions := []ConsultantSession{}
 	if len(snapshotState.ConsultantActivitySessions) > 0 {
@@ -796,8 +883,177 @@ func (service *Service) persistAndAck(
 		PersonID: ack.PersonID,
 		SavedAt:  ack.SavedAt,
 	})
+	service.emitAlertSignals(ctx, ack.StoreID, snapshotState, appendedHistory, explicitSignals)
 
 	return ack, nil
+}
+
+func (service *Service) emitAlertSignals(ctx context.Context, storeID string, snapshotState SnapshotState, appendedHistory []ServiceHistoryEntry, explicitSignals []OperationalAlertSignal) {
+	if service.alertCoordinator == nil || strings.TrimSpace(storeID) == "" {
+		return
+	}
+
+	now := time.Now().UTC()
+	triggerSignals, err := service.buildLongOpenSignals(ctx, storeID, snapshotState, now)
+	signals := make([]OperationalAlertSignal, 0, len(triggerSignals)+len(appendedHistory)+len(explicitSignals))
+	if err == nil {
+		signals = append(signals, triggerSignals...)
+	}
+
+	signals = append(signals, buildLongOpenResolvedSignals(strings.TrimSpace(storeID), appendedHistory, now)...)
+	signals = append(signals, explicitSignals...)
+
+	if len(signals) == 0 {
+		return
+	}
+
+	// Best effort only: alert orchestration cannot block the authoritative operation mutation.
+	_ = service.alertCoordinator.ReceiveOperationalSignals(ctx, signals)
+}
+
+func (service *Service) buildLongOpenSignals(ctx context.Context, storeID string, snapshotState SnapshotState, now time.Time) ([]OperationalAlertSignal, error) {
+	rules, err := service.alertCoordinator.LoadOperationalRules(ctx, storeID)
+	if err != nil || rules.LongOpenServiceMinutes <= 0 {
+		return nil, err
+	}
+
+	threshold := time.Duration(rules.LongOpenServiceMinutes) * time.Minute
+	seenServices := make(map[string]struct{}, len(snapshotState.ActiveServices))
+	signals := make([]OperationalAlertSignal, 0, len(snapshotState.ActiveServices))
+	for _, activeService := range snapshotState.ActiveServices {
+		if !shouldMonitorLongOpenAlert(activeService) {
+			continue
+		}
+		serviceID := strings.TrimSpace(activeService.ServiceID)
+		if _, exists := seenServices[serviceID]; exists {
+			continue
+		}
+		seenServices[serviceID] = struct{}{}
+
+		startedAt := time.UnixMilli(activeService.ServiceStartedAt).UTC()
+		elapsed := now.Sub(startedAt)
+		if elapsed < threshold {
+			continue
+		}
+
+		signals = append(signals, OperationalAlertSignal{
+			StoreID:        strings.TrimSpace(storeID),
+			ServiceID:      serviceID,
+			ConsultantID:   strings.TrimSpace(activeService.ConsultantID),
+			SignalType:     SignalLongOpenServiceTriggered,
+			TriggeredAt:    now,
+			ElapsedMinutes: int(elapsed.Minutes()),
+			TriggerType:    TriggerLongOpenService,
+			Metadata: map[string]any{
+				"serviceStartedAt": activeService.ServiceStartedAt,
+				"queueWaitMs":      activeService.QueueWaitMs,
+				"thresholdMinutes": rules.LongOpenServiceMinutes,
+				"startMode":        strings.TrimSpace(activeService.StartMode),
+			},
+		})
+	}
+
+	return signals, nil
+}
+
+func buildLongOpenResolvedSignals(storeID string, appendedHistory []ServiceHistoryEntry, fallback time.Time) []OperationalAlertSignal {
+	signals := make([]OperationalAlertSignal, 0, len(appendedHistory))
+	for _, historyEntry := range appendedHistory {
+		signal := buildLongOpenResolvedSignal(
+			storeID,
+			historyEntry.ServiceID,
+			historyEntry.PersonID,
+			fallbackResolvedAt(historyEntry.FinishedAt, fallback),
+			map[string]any{
+				"action":        actionFinish,
+				"finishOutcome": strings.TrimSpace(historyEntry.FinishOutcome),
+				"finishedAt":    historyEntry.FinishedAt,
+			},
+		)
+		if signal.ServiceID == "" {
+			continue
+		}
+		signals = append(signals, signal)
+	}
+
+	return signals
+}
+
+func buildLongOpenResolvedSignal(storeID string, serviceID string, consultantID string, triggeredAt time.Time, metadata map[string]any) OperationalAlertSignal {
+	return OperationalAlertSignal{
+		StoreID:      strings.TrimSpace(storeID),
+		ServiceID:    strings.TrimSpace(serviceID),
+		ConsultantID: strings.TrimSpace(consultantID),
+		SignalType:   SignalLongOpenServiceResolved,
+		TriggeredAt:  triggeredAt,
+		Metadata:     metadata,
+	}
+}
+
+func fallbackResolvedAt(finishedAt int64, fallback time.Time) time.Time {
+	if finishedAt > 0 {
+		return time.UnixMilli(finishedAt).UTC()
+	}
+
+	return fallback
+}
+
+func shouldMonitorLongOpenAlert(activeService ActiveServiceState) bool {
+	if strings.TrimSpace(activeService.ServiceID) == "" {
+		return false
+	}
+	if activeService.ServiceStartedAt <= 0 {
+		return false
+	}
+	if activeService.StoppedAt > 0 {
+		return false
+	}
+
+	return true
+}
+
+func (service *Service) filterUnseenTimedAlertSignals(signals []OperationalAlertSignal) []OperationalAlertSignal {
+	service.alertMonitorMu.Lock()
+	defer service.alertMonitorMu.Unlock()
+
+	filtered := make([]OperationalAlertSignal, 0, len(signals))
+	for _, signal := range signals {
+		serviceID := strings.TrimSpace(signal.ServiceID)
+		if serviceID == "" {
+			continue
+		}
+		if _, seen := service.alertMonitorSeen[serviceID]; seen {
+			continue
+		}
+		filtered = append(filtered, signal)
+	}
+
+	return filtered
+}
+
+func (service *Service) markTimedAlertSignals(signals []OperationalAlertSignal) {
+	service.alertMonitorMu.Lock()
+	defer service.alertMonitorMu.Unlock()
+
+	for _, signal := range signals {
+		serviceID := strings.TrimSpace(signal.ServiceID)
+		if serviceID == "" {
+			continue
+		}
+		service.alertMonitorSeen[serviceID] = struct{}{}
+	}
+}
+
+func (service *Service) pruneTimedAlertSignals(currentActiveServiceIDs map[string]struct{}) {
+	service.alertMonitorMu.Lock()
+	defer service.alertMonitorMu.Unlock()
+
+	for serviceID := range service.alertMonitorSeen {
+		if _, ok := currentActiveServiceIDs[serviceID]; ok {
+			continue
+		}
+		delete(service.alertMonitorSeen, serviceID)
+	}
 }
 
 func (service *Service) loadSnapshot(
@@ -951,6 +1207,7 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
 			StartOffsetMs:        maxInt64(item.StartOffsetMs, 0),
 			StoppedAt:            maxInt64(item.StoppedAt, 0),
+			EffectiveFinishedAt:  deriveActiveServiceFreezeAt(item, snapshotState.ActiveServices, snapshotState.ServiceHistory),
 			StopReason:           strings.TrimSpace(item.StopReason),
 		})
 	}
@@ -1175,6 +1432,7 @@ func normalizeHistoryEntry(entry ServiceHistoryEntry) ServiceHistoryEntry {
 	entry.StartOffsetMs = maxInt64(entry.StartOffsetMs, 0)
 	entry.ProductSeen = strings.TrimSpace(entry.ProductSeen)
 	entry.ProductClosed = strings.TrimSpace(entry.ProductClosed)
+	entry.PurchaseCode = strings.TrimSpace(entry.PurchaseCode)
 	entry.ProductDetails = strings.TrimSpace(entry.ProductDetails)
 	entry.ProductsSeen = cloneProducts(entry.ProductsSeen)
 	entry.ProductsClosed = cloneProducts(entry.ProductsClosed)
@@ -1573,20 +1831,22 @@ func deriveQueuePositionAtStart(target ActiveServiceState, activeServices []Acti
 	return intPtr(1)
 }
 
-func deriveSequentialServiceEndAt(target ActiveServiceState, activeServices []ActiveServiceState, history []ServiceHistoryEntry, fallback int64) int64 {
+func deriveActiveServiceFreezeAt(target ActiveServiceState, activeServices []ActiveServiceState, history []ServiceHistoryEntry) int64 {
 	targetConsultantID := strings.TrimSpace(target.ConsultantID)
 	targetGroupID := strings.TrimSpace(target.ParallelGroupID)
 	targetStartedAt := target.ServiceStartedAt
-	nextStartedAt := int64(0)
+	freezeAt := int64(0)
 
 	consider := func(candidateStartedAt int64) {
 		if candidateStartedAt <= targetStartedAt {
 			return
 		}
-		if nextStartedAt == 0 || candidateStartedAt < nextStartedAt {
-			nextStartedAt = candidateStartedAt
+		if freezeAt == 0 || candidateStartedAt < freezeAt {
+			freezeAt = candidateStartedAt
 		}
 	}
+
+	consider(target.StoppedAt)
 
 	for _, service := range activeServices {
 		if service.ServiceID == target.ServiceID {
@@ -1611,9 +1871,105 @@ func deriveSequentialServiceEndAt(target ActiveServiceState, activeServices []Ac
 		consider(entry.StartedAt)
 	}
 
-	if nextStartedAt > 0 {
-		return nextStartedAt
+	return freezeAt
+}
+
+func deriveSequentialServiceEndAt(target ActiveServiceState, activeServices []ActiveServiceState, history []ServiceHistoryEntry, fallback int64) int64 {
+	if freezeAt := deriveActiveServiceFreezeAt(target, activeServices, history); freezeAt > 0 {
+		return freezeAt
 	}
 
-	return maxInt64(fallback, targetStartedAt)
+	return maxInt64(fallback, target.ServiceStartedAt)
+}
+
+func (service *Service) buildLongQueueWaitSignals(ctx context.Context, storeID string, snapshotState SnapshotState, now time.Time) ([]OperationalAlertSignal, error) {
+	// Note: threshold loaded per rule from alerts module in future; MVP uses simple approach
+	signals := make([]OperationalAlertSignal, 0)
+	return signals, nil
+}
+
+func (service *Service) buildLongPauseSignals(ctx context.Context, storeID string, snapshotState SnapshotState, now time.Time) ([]OperationalAlertSignal, error) {
+	// Note: threshold loaded per rule from alerts module in future; MVP uses simple approach
+	signals := make([]OperationalAlertSignal, 0)
+	return signals, nil
+}
+
+func (service *Service) buildIdleStoreSignals(ctx context.Context, storeID string, snapshotState SnapshotState, now time.Time) ([]OperationalAlertSignal, error) {
+	// Note: threshold loaded per rule from alerts module in future; MVP uses simple approach
+	signals := make([]OperationalAlertSignal, 0)
+	return signals, nil
+}
+
+func (service *Service) buildOutsideBusinessHoursSignals(ctx context.Context, storeID string, snapshotState SnapshotState, now time.Time) ([]OperationalAlertSignal, error) {
+	// Note: threshold loaded per rule from alerts module in future; MVP uses simple approach
+	signals := make([]OperationalAlertSignal, 0)
+	return signals, nil
+}
+
+// ScanForRule implements the alerts retroactive scanner without making
+// operations depend on the alerts package.
+func (service *Service) ScanForRule(ctx context.Context, ruleID string, triggerType string, tenantID string, thresholdMinutes int) ([]OperationalAlertSignal, error) {
+	if strings.TrimSpace(triggerType) != TriggerLongOpenService || thresholdMinutes < 1 {
+		return []OperationalAlertSignal{}, nil
+	}
+
+	storeIDs, err := service.repository.ListStoresWithActiveServicesByTenant(ctx, strings.TrimSpace(tenantID))
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	threshold := time.Duration(thresholdMinutes) * time.Minute
+	signals := make([]OperationalAlertSignal, 0)
+	for _, rawStoreID := range storeIDs {
+		storeID := strings.TrimSpace(rawStoreID)
+		if storeID == "" {
+			continue
+		}
+
+		roster, snapshotState, err := service.loadSnapshotState(ctx, storeID)
+		if err != nil {
+			continue
+		}
+
+		consultantNames := make(map[string]string, len(roster))
+		for _, consultant := range roster {
+			consultantNames[strings.TrimSpace(consultant.ID)] = strings.TrimSpace(consultant.Name)
+		}
+
+		for _, activeService := range snapshotState.ActiveServices {
+			if !shouldMonitorLongOpenAlert(activeService) {
+				continue
+			}
+
+			startedAt := time.UnixMilli(activeService.ServiceStartedAt).UTC()
+			elapsed := now.Sub(startedAt)
+			if elapsed < threshold {
+				continue
+			}
+
+			consultantID := strings.TrimSpace(activeService.ConsultantID)
+			serviceID := strings.TrimSpace(activeService.ServiceID)
+			signals = append(signals, OperationalAlertSignal{
+				TenantID:       strings.TrimSpace(tenantID),
+				StoreID:        storeID,
+				ServiceID:      serviceID,
+				ConsultantID:   consultantID,
+				SignalType:     SignalLongOpenServiceTriggered,
+				TriggeredAt:    now,
+				ConsultantName: consultantNames[consultantID],
+				ElapsedMinutes: int(elapsed.Minutes()),
+				TriggerType:    TriggerLongOpenService,
+				Metadata: map[string]any{
+					"ruleDefinitionId": strings.TrimSpace(ruleID),
+					"serviceStartedAt": activeService.ServiceStartedAt,
+					"queueWaitMs":      activeService.QueueWaitMs,
+					"thresholdMinutes": thresholdMinutes,
+					"startMode":        strings.TrimSpace(activeService.StartMode),
+				},
+			})
+		}
+	}
+
+	return signals, nil
 }

@@ -197,6 +197,12 @@ Regra atual do picker de produtos:
 - na source `erp_current`, a leitura atual do backend e tenant-shared e deduplicada por `sku`, porque os dados ERP importados ainda vivem apenas na loja `184`
 - `Item nao cadastrado` continua existindo como fallback manual
 
+Regra atual dos modos do modal:
+
+- `settings.modalConfig.finishFlowMode = legacy` preserva o fluxo atual, incluindo `produto fechado` para compra/reserva
+- `settings.modalConfig.finishFlowMode = erp-reconciliation` muda apenas a etapa 1 de `compra`: esconde `produto fechado`, mostra `codigo da compra` e salva essa referencia para conciliacao ERP posterior
+- `reserva` continua usando o fluxo legado de produto fechado mesmo no modo `erp-reconciliation`, ate a segunda etapa do projeto redefinir esse comportamento
+
 ## Inventario detalhado de botoes e acoes
 
 ### `OperationQueueColumns.vue`

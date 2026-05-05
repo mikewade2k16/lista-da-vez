@@ -11,7 +11,9 @@ export const WORKSPACES = [
   { id: "multiloja", label: "Multi-loja", icon: "store", path: "/multiloja" },
   { id: "usuarios", label: "Usuarios", icon: "group", path: "/usuarios" },
   { id: "configuracoes", label: "Config", icon: "tune", path: "/configuracoes" },
-  { id: "feedback", label: "Feedback", icon: "chat_bubble", path: "/feedback" }
+  { id: "alertas", label: "Alertas", icon: "warning", path: "/alertas" },
+  { id: "feedback", label: "Feedback", icon: "chat_bubble", path: "/feedback" },
+  { id: "banco", label: "Banco", icon: "storage", path: "/banco" }
 ];
 
 const workspaceById = new Map(WORKSPACES.map((workspace) => [workspace.id, workspace]));

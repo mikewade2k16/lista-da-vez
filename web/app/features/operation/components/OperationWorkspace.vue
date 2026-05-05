@@ -76,14 +76,132 @@ function mapIntegratedActiveItem(person) {
     serviceStartedAt: Number(person?.serviceStartedAt || 0) || 0,
     queueJoinedAt: Number(person?.queueJoinedAt || 0) || 0,
     queueWaitMs: Number(person?.queueWaitMs || 0) || 0,
-    queuePositionAtStart: Math.max(1, Number(person?.queuePosition || 1) || 1),
+    queuePositionAtStart: Math.max(1, Number(person?.queuePositionAtStart || person?.queuePosition || 1) || 1),
     startMode: String(person?.startMode || "queue").trim() || "queue",
     skippedPeople: Array.isArray(person?.skippedPeople) ? person.skippedPeople : [],
     parallelGroupId: String(person?.parallelGroupId || "").trim(),
     parallelStartIndex: typeof person?.parallelStartIndex === "number" ? person.parallelStartIndex : null,
     siblingServiceIds: Array.isArray(person?.siblingServiceIds) ? person.siblingServiceIds : [],
-    startOffsetMs: Number(person?.startOffsetMs || 0) || 0
+    startOffsetMs: Number(person?.startOffsetMs || 0) || 0,
+    stoppedAt: Math.max(0, Number(person?.stoppedAt || 0) || 0),
+    effectiveFinishedAt: Math.max(0, Number(person?.effectiveFinishedAt || 0) || 0),
+    stopReason: String(person?.stopReason || "").trim()
   };
+}
+
+function resolveStoreMeta(storeId) {
+  const normalizedStoreId = String(storeId || "").trim();
+  const overviewStore = (Array.isArray(props.overview?.stores) ? props.overview.stores : [])
+    .find((store) => String(store?.storeId || "").trim() === normalizedStoreId);
+  const scopedStore = (Array.isArray(props.stores) ? props.stores : [])
+    .find((store) => String(store?.id || "").trim() === normalizedStoreId);
+
+  return {
+    storeId: normalizedStoreId,
+    storeName: String(overviewStore?.storeName || scopedStore?.name || "").trim(),
+    storeCode: String(overviewStore?.storeCode || scopedStore?.code || "").trim()
+  };
+}
+
+function getScopedSnapshot(storeId) {
+  const normalizedStoreId = String(storeId || "").trim();
+  if (!normalizedStoreId) {
+    return null;
+  }
+
+  if (normalizedStoreId === String(props.state?.activeStoreId || "").trim()) {
+    return props.state;
+  }
+
+  return props.state?.storeSnapshots?.[normalizedStoreId] || null;
+}
+
+function hasTrustedScopedSnapshot(storeId) {
+  const normalizedStoreId = String(storeId || "").trim();
+  const snapshot = getScopedSnapshot(normalizedStoreId);
+
+  if (!snapshot) {
+    return false;
+  }
+
+  return Number(snapshot?._operationSnapshotFetchedAt || 0) > 0;
+}
+
+function mapScopedActiveItem(service, storeMeta) {
+  return {
+    id: String(service?.id || service?.personId || "").trim(),
+    storeId: storeMeta.storeId,
+    storeName: storeMeta.storeName,
+    storeCode: storeMeta.storeCode,
+    name: String(service?.name || "").trim(),
+    role: String(service?.role || "").trim(),
+    initials: String(service?.initials || "").trim(),
+    color: String(service?.color || "").trim(),
+    monthlyGoal: Math.max(0, Number(service?.monthlyGoal || 0) || 0),
+    commissionRate: Math.max(0, Number(service?.commissionRate || 0) || 0),
+    serviceId: String(service?.serviceId || "").trim(),
+    serviceStartedAt: Number(service?.serviceStartedAt || 0) || 0,
+    queueJoinedAt: Number(service?.queueJoinedAt || 0) || 0,
+    queueWaitMs: Number(service?.queueWaitMs || 0) || 0,
+    queuePositionAtStart: Math.max(1, Number(service?.queuePositionAtStart || 1) || 1),
+    startMode: String(service?.startMode || "queue").trim() || "queue",
+    skippedPeople: Array.isArray(service?.skippedPeople) ? service.skippedPeople : [],
+    parallelGroupId: String(service?.parallelGroupId || "").trim(),
+    parallelStartIndex: typeof service?.parallelStartIndex === "number" ? service.parallelStartIndex : null,
+    siblingServiceIds: Array.isArray(service?.siblingServiceIds) ? service.siblingServiceIds : [],
+    startOffsetMs: Number(service?.startOffsetMs || 0) || 0,
+    stoppedAt: Math.max(0, Number(service?.stoppedAt || 0) || 0),
+    effectiveFinishedAt: Math.max(0, Number(service?.effectiveFinishedAt || 0) || 0),
+    stopReason: String(service?.stopReason || "").trim()
+  };
+}
+
+function buildActiveItems(activeSource) {
+  const trustedStoreIds = new Set();
+
+  activeSource.forEach((person) => {
+    const storeId = String(person?.storeId || "").trim();
+    if (shouldIncludeStore(storeId) && hasTrustedScopedSnapshot(storeId)) {
+      trustedStoreIds.add(storeId);
+    }
+  });
+
+  Object.entries(props.state?.storeSnapshots || {}).forEach(([storeId, snapshot]) => {
+    if (
+      shouldIncludeStore(storeId) &&
+      Number(snapshot?._operationSnapshotFetchedAt || 0) > 0 &&
+      Array.isArray(snapshot?.activeServices) &&
+      snapshot.activeServices.length > 0
+    ) {
+      trustedStoreIds.add(storeId);
+    }
+  });
+
+  const activeStoreId = String(props.state?.activeStoreId || "").trim();
+  if (
+    showIntegratedView.value &&
+    shouldIncludeStore(activeStoreId) &&
+    hasTrustedScopedSnapshot(activeStoreId) &&
+    Array.isArray(props.state?.activeServices) &&
+    props.state.activeServices.length > 0
+  ) {
+    trustedStoreIds.add(activeStoreId);
+  }
+
+  const overviewItems = activeSource
+    .filter((person) => !trustedStoreIds.has(String(person?.storeId || "").trim()))
+    .map(mapIntegratedActiveItem);
+
+  const scopedItems = [...trustedStoreIds].flatMap((storeId) => {
+    const snapshot = getScopedSnapshot(storeId);
+    const storeMeta = resolveStoreMeta(storeId);
+
+    return (Array.isArray(snapshot?.activeServices) ? snapshot.activeServices : [])
+      .map((service) => mapScopedActiveItem(service, storeMeta))
+      .filter((service) => service.id && service.serviceId);
+  });
+
+  return [...overviewItems, ...scopedItems];
 }
 
 function mapIntegratedPausedItem(person) {
@@ -138,7 +256,8 @@ const displayState = computed(() => {
 
   const rosterMap = new Map();
   waitingSource.forEach((person) => upsertRosterPerson(rosterMap, person));
-  activeSource.forEach((person) => upsertRosterPerson(rosterMap, person));
+  const activeItems = buildActiveItems(activeSource);
+  activeItems.forEach((person) => upsertRosterPerson(rosterMap, person));
   pausedSource.forEach((person) => upsertRosterPerson(rosterMap, person));
   availableSource.forEach((person) => upsertRosterPerson(rosterMap, person));
 
@@ -151,7 +270,7 @@ const displayState = computed(() => {
   return {
     ...props.state,
     waitingList: waitingSource.map(mapIntegratedWaitingItem),
-    activeServices: activeSource.map(mapIntegratedActiveItem),
+    activeServices: activeItems,
     pausedEmployees: pausedSource.map(mapIntegratedPausedItem),
     roster
   };

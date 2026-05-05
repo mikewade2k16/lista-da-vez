@@ -250,7 +250,7 @@ func DefaultOperationTemplates() []OperationTemplate {
 			Label:                 template.Label,
 			Description:           template.Description,
 			Settings:              template.Settings,
-			ModalConfig:           template.ModalConfig,
+			ModalConfig:           mergeModalConfig(defaultBaseModalConfig(), template.ModalConfig),
 			VisitReasonOptions:    cloneOptions(template.VisitReasonOptions),
 			CustomerSourceOptions: cloneOptions(template.CustomerSourceOptions),
 		})
@@ -260,88 +260,129 @@ func DefaultOperationTemplates() []OperationTemplate {
 }
 
 func resolveTemplate(templateID string) OperationTemplate {
-	for _, template := range defaultOperationTemplates {
-		if template.ID == templateID {
-			return template
-		}
+	if template, found := findOperationTemplate(templateID); found {
+		return template
 	}
 
 	return defaultOperationTemplates[0]
 }
 
+func findOperationTemplate(templateID string) (OperationTemplate, bool) {
+	for _, template := range defaultOperationTemplates {
+		if template.ID == templateID {
+			return template, true
+		}
+	}
+
+	return OperationTemplate{}, false
+}
+
 func defaultBaseModalConfig() ModalConfig {
 	return ModalConfig{
-		Title:                           "Fechar atendimento",
-		ProductSeenLabel:                "Interesses do cliente",
-		ProductSeenPlaceholder:          "Busque e selecione interesses",
-		ProductClosedLabel:              "",
-		ProductClosedPlaceholder:        "Busque e selecione o produto fechado",
-		NotesLabel:                      "Observações",
-		NotesPlaceholder:                "Detalhes adicionais do atendimento",
-		QueueJumpReasonLabel:            "Motivo do atendimento fora da vez",
-		QueueJumpReasonPlaceholder:      "Busque e selecione o motivo fora da vez",
-		LossReasonLabel:                 "Motivo da perda",
-		LossReasonPlaceholder:           "Busque e selecione o motivo da perda",
-		CustomerSectionLabel:            "Dados do cliente",
-		CustomerNameLabel:               "Nome do cliente",
-		CustomerPhoneLabel:              "Telefone",
-		CustomerEmailLabel:              "E-mail",
-		CustomerProfessionLabel:         "Profissão",
-		ExistingCustomerLabel:           "Já era cliente",
-		ProductSeenNotesLabel:           "Observação dos interesses",
-		ProductSeenNotesPlaceholder:     "Descreva referência, pedido específico, contexto do cliente ou justificativa quando não houver interesse identificado.",
-		VisitReasonLabel:                "Motivo da visita",
-		CustomerSourceLabel:             "Origem do cliente",
-		CancelReasonLabel:               "Motivo do cancelamento",
-		CancelReasonPlaceholder:         "Informe ou selecione o motivo do cancelamento",
-		CancelReasonOtherLabel:          "Detalhe do cancelamento",
-		CancelReasonOtherPlaceholder:    "Explique por que o atendimento foi cancelado",
-		StopReasonLabel:                 "Motivo da parada",
-		StopReasonPlaceholder:           "Informe ou selecione o motivo da parada",
-		StopReasonOtherLabel:            "Detalhe da parada",
-		StopReasonOtherPlaceholder:      "Explique por que o atendimento foi parado",
-		ShowCustomerNameField:           true,
-		ShowCustomerPhoneField:          true,
-		ShowEmailField:                  true,
-		ShowProfessionField:             true,
-		ShowNotesField:                  true,
-		ShowProductSeenField:            true,
-		ShowProductSeenNotesField:       true,
-		ShowProductClosedField:          true,
-		ShowVisitReasonField:            true,
-		ShowCustomerSourceField:         true,
-		ShowExistingCustomerField:       true,
-		ShowQueueJumpReasonField:        true,
-		ShowLossReasonField:             true,
-		ShowCancelReasonField:           true,
-		ShowStopReasonField:             true,
-		AllowProductSeenNone:            true,
-		VisitReasonSelectionMode:        "multiple",
-		VisitReasonDetailMode:           "shared",
-		LossReasonSelectionMode:         "single",
-		LossReasonDetailMode:            "off",
-		CustomerSourceSelectionMode:     "single",
-		CustomerSourceDetailMode:        "shared",
-		CancelReasonInputMode:           "text",
-		StopReasonInputMode:             "text",
-		RequireCustomerNameField:        true,
-		RequireCustomerPhoneField:       true,
-		RequireEmailField:               false,
-		RequireProfessionField:          false,
-		RequireNotesField:               false,
-		RequireProduct:                  true,
-		RequireProductSeenField:         true,
-		RequireProductSeenNotesField:    false,
-		RequireProductClosedField:       true,
-		RequireVisitReason:              true,
-		RequireCustomerSource:           true,
-		RequireCustomerNamePhone:        true,
-		RequireProductSeenNotesWhenNone: true,
-		ProductSeenNotesMinChars:        20,
-		RequireQueueJumpReasonField:     true,
-		RequireLossReasonField:          true,
-		RequireCancelReasonField:        false,
-		RequireStopReasonField:          false,
+		Title:                                 "Fechar atendimento",
+		FinishFlowMode:                        "legacy",
+		ProductSeenLabel:                      "Interesses do cliente",
+		ProductSeenPlaceholder:                "Busque e selecione interesses",
+		ProductClosedLabel:                    "",
+		ProductClosedPlaceholder:              "Busque e selecione o produto fechado",
+		PurchaseCodeLabel:                     "Codigo da compra",
+		PurchaseCodePlaceholder:               "Informe o codigo da compra para conciliacao posterior",
+		NotesLabel:                            "Observações",
+		NotesPlaceholder:                      "Detalhes adicionais do atendimento",
+		QueueJumpReasonLabel:                  "Motivo do atendimento fora da vez",
+		QueueJumpReasonPlaceholder:            "Busque e selecione o motivo fora da vez",
+		LossReasonLabel:                       "Motivo da perda",
+		LossReasonPlaceholder:                 "Busque e selecione o motivo da perda",
+		CustomerSectionLabel:                  "Dados do cliente",
+		CustomerNameLabel:                     "Nome do cliente",
+		CustomerPhoneLabel:                    "Telefone",
+		CustomerEmailLabel:                    "E-mail",
+		CustomerProfessionLabel:               "Profissão",
+		ExistingCustomerLabel:                 "Já era cliente",
+		ProductSeenNotesLabel:                 "Observação dos interesses",
+		ProductSeenNotesPlaceholder:           "Descreva referência, pedido específico, contexto do cliente ou justificativa quando não houver interesse identificado.",
+		VisitReasonLabel:                      "Motivo da visita",
+		CustomerSourceLabel:                   "Origem do cliente",
+		CancelReasonLabel:                     "Motivo do cancelamento",
+		CancelReasonPlaceholder:               "Informe ou selecione o motivo do cancelamento",
+		CancelReasonOtherLabel:                "Detalhe do cancelamento",
+		CancelReasonOtherPlaceholder:          "Explique por que o atendimento foi cancelado",
+		StopReasonLabel:                       "Motivo da parada",
+		StopReasonPlaceholder:                 "Informe ou selecione o motivo da parada",
+		StopReasonOtherLabel:                  "Detalhe da parada",
+		StopReasonOtherPlaceholder:            "Explique por que o atendimento foi parado",
+		ShowCustomerNameField:                 true,
+		ShowCustomerPhoneField:                true,
+		ShowEmailField:                        true,
+		ShowProfessionField:                   true,
+		ShowNotesField:                        true,
+		ShowProductSeenField:                  true,
+		ShowProductSeenNotesField:             true,
+		ShowProductClosedField:                true,
+		ShowPurchaseCodeField:                 true,
+		ShowVisitReasonField:                  true,
+		ShowCustomerSourceField:               true,
+		ShowExistingCustomerField:             true,
+		ShowQueueJumpReasonField:              true,
+		ShowLossReasonField:                   true,
+		ShowCancelReasonField:                 true,
+		ShowStopReasonField:                   true,
+		AllowProductSeenNone:                  true,
+		VisitReasonSelectionMode:              "multiple",
+		VisitReasonDetailMode:                 "shared",
+		LossReasonSelectionMode:               "single",
+		LossReasonDetailMode:                  "off",
+		CustomerSourceSelectionMode:           "single",
+		CustomerSourceDetailMode:              "shared",
+		CancelReasonInputMode:                 "text",
+		StopReasonInputMode:                   "text",
+		RequireCustomerNameField:              true,
+		RequireCustomerPhoneField:             true,
+		RequireEmailField:                     false,
+		RequireProfessionField:                false,
+		RequireNotesField:                     false,
+		RequireProduct:                        true,
+		RequireProductSeenField:               true,
+		RequireProductSeenNotesField:          false,
+		RequireProductClosedField:             true,
+		RequirePurchaseCodeField:              true,
+		RequireVisitReason:                    true,
+		RequireCustomerSource:                 true,
+		RequireCustomerNamePhone:              true,
+		RequireCustomerNameJustification:      false,
+		CustomerNameJustificationMinChars:     20,
+		RequireCustomerPhoneJustification:     false,
+		CustomerPhoneJustificationMinChars:    20,
+		RequireEmailJustification:             false,
+		EmailJustificationMinChars:            20,
+		RequireProfessionJustification:        false,
+		ProfessionJustificationMinChars:       20,
+		RequireExistingCustomerJustification:  false,
+		ExistingCustomerJustificationMinChars: 20,
+		RequireNotesJustification:             false,
+		NotesJustificationMinChars:            20,
+		RequireProductSeenJustification:       false,
+		ProductSeenJustificationMinChars:      20,
+		RequireProductSeenNotesJustification:  false,
+		ProductSeenNotesJustificationMinChars: 20,
+		RequireProductClosedJustification:     false,
+		ProductClosedJustificationMinChars:    20,
+		RequirePurchaseCodeJustification:      false,
+		PurchaseCodeJustificationMinChars:     20,
+		RequireVisitReasonJustification:       false,
+		VisitReasonJustificationMinChars:      20,
+		RequireCustomerSourceJustification:    false,
+		CustomerSourceJustificationMinChars:   20,
+		RequireProductSeenNotesWhenNone:       true,
+		ProductSeenNotesMinChars:              20,
+		RequireQueueJumpReasonJustification:   false,
+		QueueJumpReasonJustificationMinChars:  20,
+		RequireLossReasonJustification:        false,
+		LossReasonJustificationMinChars:       20,
+		RequireQueueJumpReasonField:           true,
+		RequireLossReasonField:                true,
+		RequireCancelReasonField:              false,
+		RequireStopReasonField:                false,
 	}
 }
 
@@ -354,12 +395,16 @@ func mergeModalConfig(base ModalConfig, override ModalConfig) ModalConfig {
 	base.ShowProductSeenField = override.ShowProductSeenField
 	base.ShowProductSeenNotesField = override.ShowProductSeenNotesField
 	base.ShowProductClosedField = override.ShowProductClosedField
+	base.ShowPurchaseCodeField = override.ShowPurchaseCodeField
 	base.ShowVisitReasonField = override.ShowVisitReasonField
 	base.ShowCustomerSourceField = override.ShowCustomerSourceField
 	base.ShowExistingCustomerField = override.ShowExistingCustomerField
 	base.ShowQueueJumpReasonField = override.ShowQueueJumpReasonField
 	base.ShowLossReasonField = override.ShowLossReasonField
+	base.ShowCancelReasonField = override.ShowCancelReasonField
+	base.ShowStopReasonField = override.ShowStopReasonField
 	base.AllowProductSeenNone = override.AllowProductSeenNone
+	base.FinishFlowMode = normalizeEnum(override.FinishFlowMode, []string{"legacy", "erp-reconciliation"}, base.FinishFlowMode)
 	base.VisitReasonSelectionMode = override.VisitReasonSelectionMode
 	base.VisitReasonDetailMode = override.VisitReasonDetailMode
 	base.CustomerSourceSelectionMode = override.CustomerSourceSelectionMode
@@ -373,15 +418,74 @@ func mergeModalConfig(base ModalConfig, override ModalConfig) ModalConfig {
 	base.RequireProductSeenField = override.RequireProductSeenField
 	base.RequireProductSeenNotesField = override.RequireProductSeenNotesField
 	base.RequireProductClosedField = override.RequireProductClosedField
+	base.RequirePurchaseCodeField = override.RequirePurchaseCodeField
 	base.RequireVisitReason = override.RequireVisitReason
 	base.RequireCustomerSource = override.RequireCustomerSource
 	base.RequireCustomerNamePhone = override.RequireCustomerNamePhone
+	base.RequireCustomerNameJustification = override.RequireCustomerNameJustification
+	if override.CustomerNameJustificationMinChars > 0 {
+		base.CustomerNameJustificationMinChars = override.CustomerNameJustificationMinChars
+	}
+	base.RequireCustomerPhoneJustification = override.RequireCustomerPhoneJustification
+	if override.CustomerPhoneJustificationMinChars > 0 {
+		base.CustomerPhoneJustificationMinChars = override.CustomerPhoneJustificationMinChars
+	}
+	base.RequireEmailJustification = override.RequireEmailJustification
+	if override.EmailJustificationMinChars > 0 {
+		base.EmailJustificationMinChars = override.EmailJustificationMinChars
+	}
+	base.RequireProfessionJustification = override.RequireProfessionJustification
+	if override.ProfessionJustificationMinChars > 0 {
+		base.ProfessionJustificationMinChars = override.ProfessionJustificationMinChars
+	}
+	base.RequireExistingCustomerJustification = override.RequireExistingCustomerJustification
+	if override.ExistingCustomerJustificationMinChars > 0 {
+		base.ExistingCustomerJustificationMinChars = override.ExistingCustomerJustificationMinChars
+	}
+	base.RequireNotesJustification = override.RequireNotesJustification
+	if override.NotesJustificationMinChars > 0 {
+		base.NotesJustificationMinChars = override.NotesJustificationMinChars
+	}
+	base.RequireProductSeenJustification = override.RequireProductSeenJustification
+	if override.ProductSeenJustificationMinChars > 0 {
+		base.ProductSeenJustificationMinChars = override.ProductSeenJustificationMinChars
+	}
+	base.RequireProductSeenNotesJustification = override.RequireProductSeenNotesJustification
+	if override.ProductSeenNotesJustificationMinChars > 0 {
+		base.ProductSeenNotesJustificationMinChars = override.ProductSeenNotesJustificationMinChars
+	}
+	base.RequireProductClosedJustification = override.RequireProductClosedJustification
+	if override.ProductClosedJustificationMinChars > 0 {
+		base.ProductClosedJustificationMinChars = override.ProductClosedJustificationMinChars
+	}
+	base.RequirePurchaseCodeJustification = override.RequirePurchaseCodeJustification
+	if override.PurchaseCodeJustificationMinChars > 0 {
+		base.PurchaseCodeJustificationMinChars = override.PurchaseCodeJustificationMinChars
+	}
+	base.RequireVisitReasonJustification = override.RequireVisitReasonJustification
+	if override.VisitReasonJustificationMinChars > 0 {
+		base.VisitReasonJustificationMinChars = override.VisitReasonJustificationMinChars
+	}
+	base.RequireCustomerSourceJustification = override.RequireCustomerSourceJustification
+	if override.CustomerSourceJustificationMinChars > 0 {
+		base.CustomerSourceJustificationMinChars = override.CustomerSourceJustificationMinChars
+	}
 	base.RequireProductSeenNotesWhenNone = override.RequireProductSeenNotesWhenNone
 	if override.ProductSeenNotesMinChars > 0 {
 		base.ProductSeenNotesMinChars = override.ProductSeenNotesMinChars
 	}
+	base.RequireQueueJumpReasonJustification = override.RequireQueueJumpReasonJustification
+	if override.QueueJumpReasonJustificationMinChars > 0 {
+		base.QueueJumpReasonJustificationMinChars = override.QueueJumpReasonJustificationMinChars
+	}
+	base.RequireLossReasonJustification = override.RequireLossReasonJustification
+	if override.LossReasonJustificationMinChars > 0 {
+		base.LossReasonJustificationMinChars = override.LossReasonJustificationMinChars
+	}
 	base.RequireQueueJumpReasonField = override.RequireQueueJumpReasonField
 	base.RequireLossReasonField = override.RequireLossReasonField
+	base.RequireCancelReasonField = override.RequireCancelReasonField
+	base.RequireStopReasonField = override.RequireStopReasonField
 	return base
 }
 

@@ -22,6 +22,12 @@
     },
     "npm --prefix web": true,
     "npx nuxi": true,
-    "npx tsc": true
+    "npx tsc": true,
+    "/^cd \"c:/Users/Mike/Documents/Projects/fila-atendimento\" && python3 -c \"\nimport os, sys\n\ncontent = open\\('back/internal/modules/settings/store_postgres_sections\\.go', encoding='utf-8'\\)\\.read\\(\\)\n# Count lines to confirm we have the original\nprint\\('Current lines:', content\\.count\\('\\\\n'\\)\\)\n\"$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "gofmt": true,
+    "npm run build": true
   }
 }

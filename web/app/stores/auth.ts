@@ -95,6 +95,11 @@ export const useAuthStore = defineStore("auth", () => {
   const hydrated = ref(false);
   const pending = ref(false);
   const lastError = ref("");
+  const runtimeSettingsStatus = ref("idle");
+  const runtimeSettingsNotice = ref("");
+  const runtimeSettingsLastError = ref("");
+  const lastLoadedRuntimeSettingsTenantId = ref("");
+  const hasLoadedRuntimeSettings = ref(false);
   let ensurePromise = null;
 
   const role = computed(() => normalizeAppRole(principal.value?.role || ""));
@@ -120,6 +125,47 @@ export const useAuthStore = defineStore("auth", () => {
   const isAllStoresScope = computed(() =>
     canUseAllStores.value && storeScopeMode.value === STORE_SCOPE_MODE_ALL
   );
+  const isRuntimeSettingsDegraded = computed(() => runtimeSettingsStatus.value === "degraded");
+
+  function buildRuntimeSettingsNotice(errorMessage = "") {
+    const suffix = errorMessage ? ` Ultimo erro: ${errorMessage}` : "";
+    return `Configuracoes do tenant indisponiveis no momento. O painel segue aberto em modo degradado com defaults seguros.${suffix}`;
+  }
+
+  function applyRuntimeSettingsStatus(result = {}) {
+    const nextStatus = String(result?.settingsLoadState || "").trim();
+
+    if (!nextStatus) {
+      return;
+    }
+
+    runtimeSettingsStatus.value = nextStatus;
+
+    if (nextStatus === "loaded") {
+      runtimeSettingsNotice.value = "";
+      runtimeSettingsLastError.value = "";
+      hasLoadedRuntimeSettings.value = true;
+      lastLoadedRuntimeSettingsTenantId.value = String(
+        result?.resolvedTenantId || activeTenantId.value || ""
+      ).trim();
+      return;
+    }
+
+    if (nextStatus === "degraded") {
+      runtimeSettingsLastError.value = String(result?.settingsErrorMessage || "").trim();
+      runtimeSettingsNotice.value = buildRuntimeSettingsNotice(runtimeSettingsLastError.value);
+    }
+  }
+
+  function shouldPreserveExistingRuntimeSettings() {
+    const currentTenantId = String(activeTenantId.value || "").trim();
+
+    return Boolean(
+      hasLoadedRuntimeSettings.value &&
+      currentTenantId &&
+      lastLoadedRuntimeSettingsTenantId.value === currentTenantId
+    );
+  }
 
   function syncStoreScopeMode(nextMode = storeScopeMode.value) {
     const normalizedMode = normalizeStoreScopeMode(nextMode);
@@ -143,6 +189,11 @@ export const useAuthStore = defineStore("auth", () => {
     activeStoreId.value = "";
     storeScopeMode.value = STORE_SCOPE_MODE_SINGLE;
     lastError.value = "";
+    runtimeSettingsStatus.value = "idle";
+    runtimeSettingsNotice.value = "";
+    runtimeSettingsLastError.value = "";
+    lastLoadedRuntimeSettingsTenantId.value = "";
+    hasLoadedRuntimeSettings.value = false;
   }
 
   async function syncRuntimeAccess() {
@@ -178,7 +229,16 @@ export const useAuthStore = defineStore("auth", () => {
     activeStoreId.value = desiredStoreId || "";
 
     if (desiredStoreId && accessToken.value) {
-      await hydrateRuntimeStoreContext(runtime, apiRequest, desiredStoreId, activeTenantId.value);
+      const runtimeContext = await hydrateRuntimeStoreContext(
+        runtime,
+        apiRequest,
+        desiredStoreId,
+        activeTenantId.value,
+        {
+          preserveExistingSettings: shouldPreserveExistingRuntimeSettings()
+        }
+      );
+      applyRuntimeSettingsStatus(runtimeContext);
     }
   }
 
@@ -426,7 +486,16 @@ export const useAuthStore = defineStore("auth", () => {
       await runtime.run("setActiveStore", normalizedStoreId);
     }
 
-    await hydrateRuntimeStoreContext(runtime, apiRequest, normalizedStoreId, activeTenantId.value);
+    const runtimeContext = await hydrateRuntimeStoreContext(
+      runtime,
+      apiRequest,
+      normalizedStoreId,
+      activeTenantId.value,
+      {
+        preserveExistingSettings: shouldPreserveExistingRuntimeSettings()
+      }
+    );
+    applyRuntimeSettingsStatus(runtimeContext);
   }
 
   function setStoreScopeMode(mode) {
@@ -498,6 +567,9 @@ export const useAuthStore = defineStore("auth", () => {
     hydrated,
     pending,
     lastError,
+    runtimeSettingsStatus,
+    runtimeSettingsNotice,
+    runtimeSettingsLastError,
     role,
     permissionKeys,
     permissionsResolved,
@@ -509,6 +581,7 @@ export const useAuthStore = defineStore("auth", () => {
     accessibleStoreIds,
     canUseAllStores,
     isAllStoresScope,
+    isRuntimeSettingsDegraded,
     ensureSession,
     fetchContext,
     fetchMe: fetchContext,
@@ -522,6 +595,7 @@ export const useAuthStore = defineStore("auth", () => {
     getRememberedLogin,
     saveRememberedLogin,
     clearRememberedLogin,
+    applyRuntimeSettingsStatus,
     syncRuntimeAccess,
     setActiveStore,
     setStoreScopeMode,

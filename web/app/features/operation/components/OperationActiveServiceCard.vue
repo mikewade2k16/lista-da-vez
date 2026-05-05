@@ -2,6 +2,8 @@
 import { computed } from "vue";
 import { buildNickname } from "~/domain/utils/person-display";
 import { formatClock, formatDuration } from "~/domain/utils/time";
+import { useAlertsStore } from "~/stores/alerts";
+import { alertCardStyle } from "~/utils/alert-colors";
 
 const props = defineProps({
   services: {
@@ -40,7 +42,47 @@ const props = defineProps({
 
 const emit = defineEmits(["finish", "stop", "startParallel"]);
 
+const alertsStore = useAlertsStore();
+
 const primaryService = computed(() => props.services?.[0] || null);
+
+const activeServiceAlert = computed(() => {
+  for (const service of props.services || []) {
+    const serviceId = String(service?.serviceId || "").trim();
+    if (!serviceId) {
+      continue;
+    }
+
+    const alert = alertsStore.alertForService(serviceId);
+    if (alert) {
+      return alert;
+    }
+  }
+
+  return null;
+});
+
+const activeServiceAlertLabel = computed(() => {
+  const alert = activeServiceAlert.value;
+  if (alert?.type === "long_open_service") {
+    const elapsed = dynamicAlertElapsed(alert);
+    if (elapsed) {
+      return `Atendimento em aberto ha ${elapsed}`;
+    }
+  }
+
+  return String(alert?.headline || alert?.body || "Alerta ativo").trim();
+});
+
+const activeServiceAlertTitle = computed(() => {
+  const alert = activeServiceAlert.value;
+  const body = String(alert?.body || "").trim();
+  return body || activeServiceAlertLabel.value;
+});
+
+const activeServiceAlertStyle = computed(() => {
+  return alertCardStyle(activeServiceAlert.value?.colorTheme || "amber");
+});
 const totalOpenServices = computed(() => props.services?.length || 0);
 const consultantDisplayName = computed(() => buildNickname(primaryService.value?.name || ""));
 const primaryStatusLabel = computed(() => compactStatusLabel(primaryService.value));
@@ -57,12 +99,19 @@ function isPrimaryService(service) {
   return String(service?.serviceId || "").trim() === String(primaryService.value?.serviceId || "").trim();
 }
 
+function firstPositiveTimestamp(values) {
+  return values
+    .map((value) => Number(value || 0) || 0)
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right)[0] || 0;
+}
+
 function isFrozenTimer(service) {
-  return Number(service?.stoppedAt || service?.effectiveFinishedAt || 0) > 0;
+  return frozenAt(service) > 0;
 }
 
 function frozenAt(service) {
-  return Number(service?.stoppedAt || service?.effectiveFinishedAt || 0);
+  return firstPositiveTimestamp([service?.effectiveFinishedAt, service?.stoppedAt]);
 }
 
 function cancelWindowMs() {
@@ -140,6 +189,38 @@ const parallelBadge = computed(() => {
   return `${totalOpenServices.value}/${props.maxConcurrentPerConsultant} em aberto`;
 });
 
+function alertStartedAt(alert) {
+  const metadataStartedAt = Number(alert?.metadata?.serviceStartedAt || 0) || 0;
+  if (metadataStartedAt > 0) {
+    return metadataStartedAt;
+  }
+
+  const openedAt = Date.parse(String(alert?.openedAt || alert?.lastTriggeredAt || ""));
+  return Number.isFinite(openedAt) ? openedAt : 0;
+}
+
+function formatAlertElapsed(elapsedMs) {
+  const minutes = Math.max(0, Math.floor(Number(elapsedMs || 0) / 60000));
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0 ? `${hours}h` : `${hours}h${remainingMinutes}m`;
+}
+
+function dynamicAlertElapsed(alert) {
+  const startedAt = alertStartedAt(alert);
+  if (!startedAt) {
+    return "";
+  }
+
+  const referenceNow = props.clockReady && props.now > 0 ? props.now : Date.now();
+  return formatAlertElapsed(referenceNow - startedAt);
+}
+
 function serviceMetaLabel(service) {
   const startedLabel = `Iniciado às ${startedAtLabel(service)}`;
   // const stopLabel = isStopped(service) ? "Parado" : "Em andamento";
@@ -168,6 +249,8 @@ function handleStartParallel() {
 <template>
   <article
     class="service-card"
+    :class="{ 'service-card--alert-active': activeServiceAlert }"
+    :style="activeServiceAlert ? activeServiceAlertStyle : null"
     :data-testid="`operation-service-group-${primaryService?.id || 'consultant'}`"
   >
     <div class="service-card__summary">
@@ -183,7 +266,11 @@ function handleStartParallel() {
         </span>
       </div>
 
-      <span v-if="parallelBadge" class="service-card__badge">{{ parallelBadge }}</span>
+      <span v-if="activeServiceAlert" class="service-card__alert-badge" :title="activeServiceAlertTitle">
+        <span class="material-icons-round" aria-hidden="true">timer</span>
+        <span class="service-card__alert-badge-text">{{ activeServiceAlertLabel }}</span>
+      </span>
+      <span v-else-if="parallelBadge" class="service-card__badge">{{ parallelBadge }}</span>
     </div>
 
     <div class="service-card__services" :style="{ '--service-columns': serviceColumns }">

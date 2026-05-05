@@ -1,9 +1,31 @@
 import { cloneValue } from "~/domain/utils/object";
 import {
+  createEmptyState,
   createEmptyStoreScopedState,
   extractStoreScopedState,
   normalizeStoreScopedState
 } from "~/stores/dashboard/runtime/state";
+
+const SETTINGS_LOAD_STATE_LOADED = "loaded";
+const SETTINGS_LOAD_STATE_DEGRADED = "degraded";
+
+function extractRemoteErrorMessage(error, fallbackMessage = "Nao foi possivel carregar as configuracoes.") {
+  const dataMessage = String(error?.data?.message || error?.response?._data?.message || "").trim();
+  const directMessage = String(error?.message || "").trim();
+  return dataMessage || directMessage || fallbackMessage;
+}
+
+function logSettingsDegraded(eventName, payload = {}) {
+  if (import.meta.server) {
+    return;
+  }
+
+  console.warn("[runtime-settings]", {
+    event: eventName,
+    ...payload,
+    recordedAt: new Date().toISOString()
+  });
+}
 
 function cloneOrFallback(value, fallback) {
   return cloneValue(value === undefined ? fallback : value);
@@ -24,6 +46,21 @@ function normalizeProducts(products = []) {
     category: String(product?.category || "").trim(),
     basePrice: Math.max(0, Number(product?.basePrice || 0) || 0)
   })).filter((product) => product.id && product.name);
+}
+
+function buildFallbackSettingsBundle(currentState, storeId, options = {}) {
+  const normalizedStoreId = String(storeId || "").trim();
+  const fallbackBundle = buildSettingsBundleFromState(createEmptyState(), normalizedStoreId);
+
+  if (!options?.preserveExistingSettings) {
+    return fallbackBundle;
+  }
+
+  return {
+    ...fallbackBundle,
+    ...buildSettingsBundleFromState(currentState || {}, normalizedStoreId),
+    storeId: normalizedStoreId || fallbackBundle.storeId
+  };
 }
 
 function withTenantQuery(path, tenantId) {
@@ -118,7 +155,10 @@ function normalizeOperationSnapshot(snapshot = {}) {
           queueJoinedAt: Math.max(0, Number(item?.queueJoinedAt || 0) || 0),
           queueWaitMs: Math.max(0, Number(item?.queueWaitMs || 0) || 0),
           queuePositionAtStart: Math.max(1, Number(item?.queuePositionAtStart || 1) || 1),
-          skippedPeople: Array.isArray(item?.skippedPeople) ? item.skippedPeople : []
+          skippedPeople: Array.isArray(item?.skippedPeople) ? item.skippedPeople : [],
+          stoppedAt: Math.max(0, Number(item?.stoppedAt || 0) || 0),
+          effectiveFinishedAt: Math.max(0, Number(item?.effectiveFinishedAt || 0) || 0),
+          stopReason: String(item?.stopReason || "").trim()
         }))
       : [],
     pausedEmployees: Array.isArray(snapshot?.pausedEmployees)
@@ -193,14 +233,18 @@ export function applyOperationSnapshotToState(currentState, storeId, operationSn
     storeDescriptor,
     Date.now()
   );
+  const nextScopedStateWithMetadata = {
+    ...nextScopedState,
+    _operationSnapshotFetchedAt: Date.now()
+  };
 
   return {
     ...cloneOrFallback(currentState, {}),
     storeSnapshots: {
       ...cloneOrFallback(currentState?.storeSnapshots, {}),
-      [normalizedStoreId]: nextScopedState
+      [normalizedStoreId]: nextScopedStateWithMetadata
     },
-    ...(normalizedStoreId === currentState?.activeStoreId ? nextScopedState : {}),
+    ...(normalizedStoreId === currentState?.activeStoreId ? nextScopedStateWithMetadata : {}),
     ...(options?.resetFinishModal
       ? {
           finishModalServiceId: null,
@@ -224,13 +268,18 @@ export function applyRemoteStoreData(currentState, storeId, settingsBundle, cons
     storeDescriptor,
     Date.now()
   );
+  const nextSnapshotWithMetadata = {
+    ...nextSnapshot,
+    _operationSnapshotFetchedAt: Date.now()
+  };
 
   return {
     ...cloneOrFallback(currentState, {}),
+    ...nextSnapshotWithMetadata,
     activeStoreId: storeId,
     storeSnapshots: {
       ...cloneOrFallback(currentState.storeSnapshots, {}),
-      [storeId]: nextSnapshot
+      [storeId]: nextSnapshotWithMetadata
     },
     operationTemplates: Array.isArray(settingsBundle?.operationTemplates)
       ? cloneOrFallback(settingsBundle.operationTemplates, [])
@@ -338,17 +387,55 @@ export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId, 
   const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreId, tenantId);
 
   if (!hasResolvedTenantId(resolvedTenantId)) {
-    return null;
+    const settingsErrorMessage = "Tenant ativo nao resolvido para recarregar configuracoes.";
+    logSettingsDegraded("refresh-skipped-missing-tenant", {
+      storeId: normalizedStoreId,
+      tenantId: resolvedTenantId,
+      message: settingsErrorMessage
+    });
+
+    return {
+      storeId: normalizedStoreId,
+      resolvedTenantId,
+      settingsBundle: null,
+      settingsLoadState: SETTINGS_LOAD_STATE_DEGRADED,
+      settingsErrorMessage
+    };
   }
 
-  const settingsBundle = await apiRequest(withTenantQuery("/v1/settings", resolvedTenantId));
-  applySettingsBundleToRuntime(runtime, normalizedStoreId, settingsBundle);
-  return settingsBundle;
+  try {
+    const settingsBundle = await apiRequest(withTenantQuery("/v1/settings", resolvedTenantId));
+    applySettingsBundleToRuntime(runtime, normalizedStoreId, settingsBundle);
+
+    return {
+      storeId: normalizedStoreId,
+      resolvedTenantId,
+      settingsBundle,
+      settingsLoadState: SETTINGS_LOAD_STATE_LOADED,
+      settingsErrorMessage: ""
+    };
+  } catch (error) {
+    const settingsErrorMessage = extractRemoteErrorMessage(error);
+    logSettingsDegraded("refresh-degraded", {
+      storeId: normalizedStoreId,
+      tenantId: resolvedTenantId,
+      message: settingsErrorMessage
+    });
+
+    return {
+      storeId: normalizedStoreId,
+      resolvedTenantId,
+      settingsBundle: null,
+      settingsLoadState: SETTINGS_LOAD_STATE_DEGRADED,
+      settingsErrorMessage
+    };
+  }
 }
 
 export function buildSettingsBundleFromState(state, storeId) {
   return {
     storeId,
+    operationTemplates: cloneOrFallback(state.operationTemplates, []),
     selectedOperationTemplateId: String(state.selectedOperationTemplateId || "").trim(),
     settings: cloneOrFallback(state.settings, {}),
     modalConfig: cloneOrFallback(state.modalConfig, {}),
@@ -365,24 +452,55 @@ export function buildSettingsBundleFromState(state, storeId) {
 }
 
 export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = "") {
-  const storeQuery = encodeURIComponent(String(storeId || "").trim());
+  const normalizedStoreId = String(storeId || "").trim();
+  const storeQuery = encodeURIComponent(normalizedStoreId);
   const normalizedTenantId = String(tenantId || "").trim();
-  const [settingsBundle, consultantsResponse, operationsSnapshot] = await Promise.all([
+  const requestResults = await Promise.allSettled([
     hasResolvedTenantId(normalizedTenantId)
       ? apiRequest(withTenantQuery("/v1/settings", normalizedTenantId))
-      : Promise.resolve(null),
+      : Promise.reject(new Error("Tenant ativo nao resolvido para carregar configuracoes.")),
     apiRequest(`/v1/consultants?storeId=${storeQuery}`),
     apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`)
   ]);
+  const [settingsResult, consultantsResult, operationsSnapshotResult] = requestResults;
+
+  if (consultantsResult.status === "rejected") {
+    throw consultantsResult.reason;
+  }
+
+  if (operationsSnapshotResult.status === "rejected") {
+    throw operationsSnapshotResult.reason;
+  }
+
+  const settingsLoadState =
+    settingsResult.status === "fulfilled"
+      ? SETTINGS_LOAD_STATE_LOADED
+      : SETTINGS_LOAD_STATE_DEGRADED;
+  const settingsErrorMessage =
+    settingsResult.status === "rejected"
+      ? extractRemoteErrorMessage(settingsResult.reason)
+      : "";
+
+  if (settingsLoadState === SETTINGS_LOAD_STATE_DEGRADED) {
+    logSettingsDegraded("bootstrap-degraded", {
+      storeId: normalizedStoreId,
+      tenantId: normalizedTenantId,
+      message: settingsErrorMessage
+    });
+  }
 
   return {
-    settingsBundle,
-    consultants: Array.isArray(consultantsResponse?.consultants) ? consultantsResponse.consultants : [],
-    operationsSnapshot
+    storeId: normalizedStoreId,
+    resolvedTenantId: normalizedTenantId,
+    settingsBundle: settingsResult.status === "fulfilled" ? settingsResult.value : null,
+    consultants: Array.isArray(consultantsResult.value?.consultants) ? consultantsResult.value.consultants : [],
+    operationsSnapshot: operationsSnapshotResult.value,
+    settingsLoadState,
+    settingsErrorMessage
   };
 }
 
-export async function hydrateRuntimeStoreContext(runtime, apiRequest, storeId, tenantId = "") {
+export async function hydrateRuntimeStoreContext(runtime, apiRequest, storeId, tenantId = "", options = {}) {
   const normalizedStoreID = String(storeId || "").trim();
 
   if (!normalizedStoreID) {
@@ -393,15 +511,24 @@ export async function hydrateRuntimeStoreContext(runtime, apiRequest, storeId, t
 
   const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreID, tenantId);
   const remoteData = await fetchRemoteStoreData(apiRequest, normalizedStoreID, resolvedTenantId);
+  const settingsBundle =
+    remoteData.settingsLoadState === SETTINGS_LOAD_STATE_LOADED
+      ? remoteData.settingsBundle
+      : buildFallbackSettingsBundle(runtime.state, normalizedStoreID, {
+          preserveExistingSettings: Boolean(options?.preserveExistingSettings ?? true)
+        });
   runtime.hydrate(
     applyRemoteStoreData(
       runtime.state,
       normalizedStoreID,
-      remoteData.settingsBundle,
+      settingsBundle,
       remoteData.consultants,
       remoteData.operationsSnapshot
     )
   );
 
-  return remoteData;
+  return {
+    ...remoteData,
+    settingsBundle
+  };
 }

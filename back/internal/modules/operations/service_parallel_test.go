@@ -18,6 +18,14 @@ type testOperationsRepository struct {
 	persisted                          []PersistInput
 }
 
+type testStoreScopeProvider struct {
+	stores []StoreScopeView
+}
+
+func (provider testStoreScopeProvider) ListAccessible(context.Context, AccessContext, StoreScopeFilter) ([]StoreScopeView, error) {
+	return append([]StoreScopeView{}, provider.stores...), nil
+}
+
 func (repository *testOperationsRepository) StoreExists(context.Context, string) (bool, error) {
 	return repository.storeExists, nil
 }
@@ -32,6 +40,17 @@ func (repository *testOperationsRepository) GetMaxConcurrentServices(context.Con
 
 func (repository *testOperationsRepository) GetMaxConcurrentServicesPerConsultant(context.Context, string) (int, error) {
 	return repository.maxConcurrentServicesPerConsultant, nil
+}
+
+func (repository *testOperationsRepository) ListStoresWithActiveServices(context.Context) ([]string, error) {
+	if len(repository.snapshot.ActiveServices) == 0 {
+		return nil, nil
+	}
+	return []string{repository.storeID}, nil
+}
+
+func (repository *testOperationsRepository) ListStoresWithActiveServicesByTenant(context.Context, string) ([]string, error) {
+	return repository.ListStoresWithActiveServices(context.Background())
 }
 
 func (repository *testOperationsRepository) ListRoster(context.Context, string) ([]ConsultantProfile, error) {
@@ -272,6 +291,117 @@ func TestFinishPrimaryServiceUsesNextSequentialStartAsEndTime(t *testing.T) {
 	}
 }
 
+func TestSnapshotAndOverviewExposeStoppedServiceTiming(t *testing.T) {
+	consultantID := "consultant-1"
+	repository := newParallelTestRepository(consultantID)
+	startedAt := time.Now().Add(-10 * time.Minute).UTC().UnixMilli()
+	stoppedAt := startedAt + (3 * time.Minute).Milliseconds()
+	repository.snapshot.ActiveServices = []ActiveServiceState{
+		{
+			ConsultantID:     consultantID,
+			ServiceID:        "service-stopped",
+			ServiceStartedAt: startedAt,
+			QueueJoinedAt:    startedAt - 30000,
+			QueueWaitMs:      30000,
+			StartMode:        startModeQueue,
+			StoppedAt:        stoppedAt,
+			StopReason:       "cliente ausente",
+		},
+	}
+	repository.snapshot.ConsultantCurrentStatus = map[string]ConsultantStatus{
+		consultantID: {Status: statusService, StartedAt: startedAt},
+	}
+
+	service := NewService(repository, nil, testStoreScopeProvider{
+		stores: []StoreScopeView{{ID: repository.storeID, Name: repository.storeName}},
+	})
+	snapshot, err := service.Snapshot(context.Background(), testAccessContext(repository.storeID), repository.storeID)
+	if err != nil {
+		t.Fatalf("expected Snapshot to succeed, got %v", err)
+	}
+	projectedService := findActiveServiceView(t, snapshot.ActiveServices, "service-stopped")
+	if projectedService.StoppedAt != stoppedAt {
+		t.Fatalf("expected snapshot stoppedAt=%d, got %d", stoppedAt, projectedService.StoppedAt)
+	}
+	if projectedService.EffectiveFinishedAt != stoppedAt {
+		t.Fatalf("expected snapshot effectiveFinishedAt=%d, got %d", stoppedAt, projectedService.EffectiveFinishedAt)
+	}
+
+	overview, err := service.Overview(context.Background(), testAccessContext(repository.storeID))
+	if err != nil {
+		t.Fatalf("expected Overview to succeed, got %v", err)
+	}
+	if len(overview.ActiveServices) != 1 {
+		t.Fatalf("expected one overview active service, got %d", len(overview.ActiveServices))
+	}
+	if overview.ActiveServices[0].StoppedAt != stoppedAt {
+		t.Fatalf("expected overview stoppedAt=%d, got %d", stoppedAt, overview.ActiveServices[0].StoppedAt)
+	}
+	if overview.ActiveServices[0].EffectiveFinishedAt != stoppedAt {
+		t.Fatalf("expected overview effectiveFinishedAt=%d, got %d", stoppedAt, overview.ActiveServices[0].EffectiveFinishedAt)
+	}
+}
+
+func TestSnapshotAndOverviewExposeSequentialEffectiveFinishedAtFromHistory(t *testing.T) {
+	consultantID := "consultant-1"
+	repository := newParallelTestRepository(consultantID)
+	startedAt := time.Now().Add(-10 * time.Minute).UTC().UnixMilli()
+	nextStartedAt := startedAt + (4 * time.Minute).Milliseconds()
+	repository.snapshot.ActiveServices = []ActiveServiceState{
+		{
+			ConsultantID:       consultantID,
+			ServiceID:          "service-primary",
+			ServiceStartedAt:   startedAt,
+			QueueJoinedAt:      startedAt - 30000,
+			QueueWaitMs:        30000,
+			StartMode:          startModeQueue,
+			ParallelGroupID:    "group-1",
+			ParallelStartIndex: intPtr(1),
+		},
+	}
+	repository.snapshot.ServiceHistory = []ServiceHistoryEntry{
+		{
+			ServiceID:          "service-next",
+			StoreID:            repository.storeID,
+			PersonID:           consultantID,
+			PersonName:         "Ana",
+			StartedAt:          nextStartedAt,
+			FinishedAt:         nextStartedAt + 60000,
+			DurationMs:         60000,
+			FinishOutcome:      "compra",
+			StartMode:          startModeParallel,
+			ParallelGroupID:    "group-1",
+			ParallelStartIndex: intPtr(2),
+		},
+	}
+	repository.snapshot.ConsultantCurrentStatus = map[string]ConsultantStatus{
+		consultantID: {Status: statusService, StartedAt: startedAt},
+	}
+
+	service := NewService(repository, nil, testStoreScopeProvider{
+		stores: []StoreScopeView{{ID: repository.storeID, Name: repository.storeName}},
+	})
+	snapshot, err := service.Snapshot(context.Background(), testAccessContext(repository.storeID), repository.storeID)
+	if err != nil {
+		t.Fatalf("expected Snapshot to succeed, got %v", err)
+	}
+	projectedService := findActiveServiceView(t, snapshot.ActiveServices, "service-primary")
+	if projectedService.EffectiveFinishedAt != nextStartedAt {
+		t.Fatalf("expected snapshot effectiveFinishedAt=%d, got %d", nextStartedAt, projectedService.EffectiveFinishedAt)
+	}
+
+	overview, err := service.Overview(context.Background(), testAccessContext(repository.storeID))
+	if err != nil {
+		t.Fatalf("expected Overview to succeed, got %v", err)
+	}
+	if len(overview.ActiveServices) != 1 {
+		t.Fatalf("expected one overview active service, got %d", len(overview.ActiveServices))
+	}
+	if overview.ActiveServices[0].EffectiveFinishedAt != nextStartedAt {
+		t.Fatalf("expected overview effectiveFinishedAt=%d, got %d", nextStartedAt, overview.ActiveServices[0].EffectiveFinishedAt)
+	}
+}
+
 func TestFinishLastParallelReturnsConsultantToQueue(t *testing.T) {
 	consultantID := "consultant-1"
 	repository := newParallelTestRepository(consultantID)
@@ -462,6 +592,8 @@ func cloneActiveServiceStates(items []ActiveServiceState) []ActiveServiceState {
 			ParallelStartIndex:   cloneOptionalInt(item.ParallelStartIndex),
 			SiblingServiceIDs:    cloneStringSlice(item.SiblingServiceIDs),
 			StartOffsetMs:        item.StartOffsetMs,
+			StoppedAt:            item.StoppedAt,
+			StopReason:           item.StopReason,
 		})
 	}
 	return cloned

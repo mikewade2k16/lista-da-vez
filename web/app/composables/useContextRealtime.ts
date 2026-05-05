@@ -2,6 +2,8 @@ import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useAuthStore } from "~/stores/auth";
 import { useAccessControlStore } from "~/stores/access-control";
+import { useAlertsStore } from "~/stores/alerts";
+import { useUiStore } from "~/stores/ui";
 import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { useMultiStoreStore } from "~/stores/multistore";
 import { useUsersStore } from "~/stores/users";
@@ -19,7 +21,11 @@ export function useContextRealtime() {
   const runtimeConfig = useRuntimeConfig();
   const auth = useAuthStore();
 	const accessControl = useAccessControlStore();
+  const alertsStore = useAlertsStore();
+  const ui = useUiStore();
   const runtime = useAppRuntimeStore();
+
+  const toastedAlertIds = new Set<string>();
   const multiStore = useMultiStoreStore();
   const usersStore = useUsersStore();
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
@@ -86,6 +92,10 @@ export function useContextRealtime() {
     }
 
     settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId, auth.activeTenantId)
+      .then((result) => {
+        auth.applyRuntimeSettingsStatus(result);
+        return result;
+      })
       .catch(() => null)
       .finally(async () => {
         settingsRefreshPromise = null;
@@ -198,9 +208,31 @@ export function useContextRealtime() {
 
         await refreshContextState();
 
-				if (["access", "user"].includes(String(payload?.resource || "").trim())) {
-					await accessControl.refreshRealtimeState();
-				}
+        const resource = String(payload?.resource || "").trim()
+
+        if (["access", "user"].includes(resource)) {
+          await accessControl.refreshRealtimeState()
+        }
+
+        if (resource === "alerts") {
+          await alertsStore.refreshRealtimeState()
+
+          const currentUserId = String(auth.principal?.userId || "").trim()
+          const isConsultant = auth.role === "consultant"
+
+          for (const alert of alertsStore.items) {
+            if (
+              alert.status === "active" &&
+              alert.displayKind === "toast" &&
+              !toastedAlertIds.has(alert.id)
+            ) {
+              if (!isConsultant || !currentUserId || alert.consultantId === currentUserId) {
+                toastedAlertIds.add(alert.id)
+                ui.notify({ type: "info", title: alert.headline || "Atendimento longo", message: alert.body || "", duration: 6000 })
+              }
+            }
+          }
+        }
       } catch {
         return;
       }

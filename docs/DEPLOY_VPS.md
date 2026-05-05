@@ -387,6 +387,148 @@ consolidados tambem precisa existir no host configurado por
 `ERP_SOURCE_HOST_DIR` e `ERP_ALLOW_MANUAL_SYNC` precisa estar `true` no
 `.env.production`. Por padrao, o sync manual fica desligado em producao.
 
+### Carga ERP por dump de banco
+
+Quando os consolidados ja foram importados no Postgres local, nao subir a pasta
+`Controlle10 - ftp` para a VPS. Gere e transfira apenas um dump comprimido das
+tabelas `erp_*`. Em 2026-04-29, os markdowns tinham cerca de 430 MB e o dump
+custom das tabelas ERP ficou com cerca de 111 MB.
+
+Tabelas do dump:
+
+- `erp_sync_runs`
+- `erp_sync_files`
+- `erp_item_raw`
+- `erp_customer_raw`
+- `erp_employee_raw`
+- `erp_order_raw`
+- `erp_order_canceled_raw`
+- `erp_item_current`
+- `erp_export_outbox`
+
+Fluxo usado em producao:
+
+1. Gerar o dump local no container Postgres:
+
+```bash
+mkdir -p tmp
+docker compose --env-file .env.docker exec -T postgres pg_dump \
+  -U lista_da_vez -d lista_da_vez \
+  -Fc --data-only --no-owner --no-privileges \
+  -t public.erp_sync_runs \
+  -t public.erp_sync_files \
+  -t public.erp_item_raw \
+  -t public.erp_customer_raw \
+  -t public.erp_employee_raw \
+  -t public.erp_order_raw \
+  -t public.erp_order_canceled_raw \
+  -t public.erp_item_current \
+  -t public.erp_export_outbox \
+  -f /tmp/erp_data.dump
+docker cp lista-da-vez-postgres-1:/tmp/erp_data.dump ./tmp/erp_data.dump
+```
+
+2. Enviar o dump para a VPS:
+
+```bash
+scp -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
+  ./tmp/erp_data.dump \
+  deploy@85.31.62.33:/home/deploy/lista-atendimento/tmp/erp_data.dump
+```
+
+3. Antes de restaurar, criar backup completo remoto:
+
+```bash
+cd /home/deploy/lista-atendimento
+backup="backups/pre_erp_restore_$(date +%Y%m%d_%H%M%S).sql.gz"
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > "$backup"
+ls -lh "$backup"
+```
+
+4. Confirmar que a loja `184` remota esta alinhada ao dump local.
+   No snapshot de 2026-04-29, o dump local usa:
+
+```text
+tenant_id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+store_id  = bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0184
+storeCode = 184
+```
+
+Se a VPS tiver criado a loja `184` com outro UUID e ela nao tiver referencias em
+outras tabelas, alinhar antes do restore:
+
+```sql
+update stores
+set id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0184'::uuid,
+    updated_at = now()
+where tenant_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid
+  and code = '184';
+```
+
+5. Limpar somente as tabelas ERP e restaurar:
+
+```bash
+cd /home/deploy/lista-atendimento
+container=$(docker compose --env-file .env.production -f docker-compose.prod.yml ps -q postgres)
+docker cp tmp/erp_data.dump "$container:/tmp/erp_data.dump"
+
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  psql -U listaatendimento -d listaatendimento -v ON_ERROR_STOP=1 <<'SQL'
+truncate table
+  erp_export_outbox,
+  erp_item_current,
+  erp_order_canceled_raw,
+  erp_order_raw,
+  erp_employee_raw,
+  erp_customer_raw,
+  erp_item_raw,
+  erp_sync_files,
+  erp_sync_runs;
+SQL
+
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  pg_restore -U listaatendimento -d listaatendimento \
+  --data-only --no-owner --no-privileges \
+  --single-transaction --exit-on-error /tmp/erp_data.dump
+```
+
+6. Validar os contadores:
+
+```sql
+select
+  (select count(*) from erp_sync_runs) as runs,
+  (select count(*) from erp_sync_files) as files,
+  (select count(*) from erp_item_raw) as item_raw,
+  (select count(*) from erp_item_current) as item_current,
+  (select count(*) from erp_customer_raw) as customer_raw,
+  (select count(*) from erp_employee_raw) as employee_raw,
+  (select count(*) from erp_order_raw) as order_raw,
+  (select count(*) from erp_order_canceled_raw) as order_canceled_raw;
+```
+
+Resultado esperado do restore feito em 2026-04-29:
+
+```text
+runs=11
+files=4255
+item_raw=1101126
+item_current=355088
+customer_raw=221764
+employee_raw=10219
+order_raw=376044
+order_canceled_raw=21648
+```
+
+7. Apagar os dumps temporarios depois da validacao:
+
+```bash
+rm -f /home/deploy/lista-atendimento/tmp/erp_data.dump
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  rm -f /tmp/erp_data.dump
+rm -f ./tmp/erp_data.dump
+```
+
 ## Integracao do Caddy atual
 
 Depois que os containers deste repo estiverem no ar, adicione o bloco de `lista.whenthelightsdie.com` em `/opt/omnichannel/Caddyfile` e reaplique o proxy do outro projeto:

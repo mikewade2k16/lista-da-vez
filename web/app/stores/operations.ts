@@ -172,7 +172,9 @@ export const useOperationsStore = defineStore("operations", () => {
       return null;
     }
 
-    return hydrateRuntimeStoreContext(runtime, apiRequest, storeId, auth.activeTenantId);
+    const runtimeContext = await hydrateRuntimeStoreContext(runtime, apiRequest, storeId, auth.activeTenantId);
+    auth.applyRuntimeSettingsStatus(runtimeContext);
+    return runtimeContext;
   }
 
   async function refreshOperationSnapshot(storeId, options = {}) {
@@ -393,6 +395,7 @@ export const useOperationsStore = defineStore("operations", () => {
       const isLossOutcome = outcome === "nao-compra";
       const productSeen = normalizeText(closureData?.productSeen);
       const productClosed = normalizeText(closureData?.productClosed);
+      const purchaseCode = normalizeText(closureData?.purchaseCode);
       const productDetails = normalizeText(closureData?.productDetails);
       const customerName = normalizeText(closureData?.customerName);
       const customerPhone = normalizeText(closureData?.customerPhone);
@@ -434,6 +437,7 @@ export const useOperationsStore = defineStore("operations", () => {
             isGift: isSaleOutcome && Boolean(closureData?.isGift),
             productSeen,
             productClosed: isSaleOutcome ? productClosed : "",
+            purchaseCode: outcome === "compra" ? purchaseCode : "",
             productDetails: isSaleOutcome ? productDetails : "",
             productsSeen: normalizedProductsSeen,
             productsClosed: isSaleOutcome ? normalizedProductsClosed : [],
@@ -535,6 +539,10 @@ export const useOperationsStore = defineStore("operations", () => {
 
       if (isSaleOutcome && productClosed) {
         finishPayload.productClosed = productClosed;
+      }
+
+      if (outcome === "compra" && purchaseCode) {
+        finishPayload.purchaseCode = purchaseCode;
       }
 
       if (isSaleOutcome && productDetails) {

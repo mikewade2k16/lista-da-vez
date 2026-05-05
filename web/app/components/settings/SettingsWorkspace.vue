@@ -28,6 +28,9 @@ const tabs = [
   { id: "profissoes", label: "Profissoes", icon: "badge" },
   { id: "alertas", label: "Alertas", icon: "notifications_active" }
 ];
+// A tela de Parada segue implementada abaixo, mas fica fora do menu por enquanto.
+const hiddenSettingsTabs = new Set(["parada"]);
+const visibleTabs = computed(() => tabs.filter((tab) => !hiddenSettingsTabs.has(tab.id)));
 const fieldSelectionOptions = [
   { value: "single", label: "Escolha unica" },
   { value: "multiple", label: "Multiplas escolhas" }
@@ -42,6 +45,27 @@ const reasonInputModeOptions = [
   { value: "select", label: "Apenas lista" },
   { value: "select-with-other", label: "Lista com Outro" }
 ];
+const modalFinishFlowOptions = [
+  { value: "legacy", label: "Modal atual" },
+  { value: "erp-reconciliation", label: "Modal conciliacao ERP" }
+];
+
+function withFieldJustification(field, baseKey) {
+  const normalizedBaseKey = String(baseKey || "").trim();
+
+  if (!normalizedBaseKey) {
+    return field;
+  }
+
+  const configPrefix = `${normalizedBaseKey.charAt(0).toLowerCase()}${normalizedBaseKey.slice(1)}`;
+
+  return {
+    ...field,
+    justificationRequiredKey: `require${normalizedBaseKey}Justification`,
+    justificationMinCharsKey: `${configPrefix}JustificationMinChars`
+  };
+}
+
 const modalFieldSections = [
   {
     id: "customer",
@@ -49,7 +73,7 @@ const modalFieldSections = [
     description: "Campos basicos do passo 2 para identificar e qualificar o cliente.",
     defaultOpen: true,
     fields: [
-      {
+      withFieldJustification({
         id: "customer-name",
         label: "Nome do cliente",
         labelKey: "customerNameLabel",
@@ -58,8 +82,8 @@ const modalFieldSections = [
         requiredKey: "requireCustomerNameField",
         requiredDefault: true,
         legacyRequiredKey: "requireCustomerNamePhone"
-      },
-      {
+      }, "CustomerName"),
+      withFieldJustification({
         id: "customer-phone",
         label: "Telefone",
         labelKey: "customerPhoneLabel",
@@ -68,8 +92,8 @@ const modalFieldSections = [
         requiredKey: "requireCustomerPhoneField",
         requiredDefault: true,
         legacyRequiredKey: "requireCustomerNamePhone"
-      },
-      {
+      }, "CustomerPhone"),
+      withFieldJustification({
         id: "customer-email",
         label: "E-mail",
         labelKey: "customerEmailLabel",
@@ -77,8 +101,8 @@ const modalFieldSections = [
         showKey: "showEmailField",
         requiredKey: "requireEmailField",
         requiredDefault: false
-      },
-      {
+      }, "Email"),
+      withFieldJustification({
         id: "customer-profession",
         label: "Profissão",
         labelKey: "customerProfessionLabel",
@@ -86,15 +110,15 @@ const modalFieldSections = [
         showKey: "showProfessionField",
         requiredKey: "requireProfessionField",
         requiredDefault: false
-      },
-      {
+      }, "Profession"),
+      withFieldJustification({
         id: "existing-customer",
         label: "Já era cliente",
         labelKey: "existingCustomerLabel",
         description: "Vai para o passo 2 para apoiar a busca automatica de cadastro do cliente.",
         showKey: "showExistingCustomerField"
-      },
-      {
+      }, "ExistingCustomer"),
+      withFieldJustification({
         id: "notes",
         label: "Observações",
         labelKey: "notesLabel",
@@ -102,7 +126,7 @@ const modalFieldSections = [
         showKey: "showNotesField",
         requiredKey: "requireNotesField",
         requiredDefault: false
-      }
+      }, "Notes")
     ]
   },
   {
@@ -111,7 +135,7 @@ const modalFieldSections = [
     description: "Campos principais do atendimento e da origem do cliente.",
     defaultOpen: true,
     fields: [
-      {
+      withFieldJustification({
         id: "product-closed",
         label: "Compra / Reserva",
         labelKey: "productClosedLabel",
@@ -120,8 +144,17 @@ const modalFieldSections = [
         requiredKey: "requireProductClosedField",
         requiredDefault: true,
         legacyRequiredKey: "requireProduct"
-      },
-      {
+      }, "ProductClosed"),
+      withFieldJustification({
+        id: "purchase-code",
+        label: "Codigo da compra",
+        labelKey: "purchaseCodeLabel",
+        description: "No fluxo ERP, aparece apenas para compra e guarda a referencia para conciliacao no dia seguinte.",
+        showKey: "showPurchaseCodeField",
+        requiredKey: "requirePurchaseCodeField",
+        requiredDefault: true
+      }, "PurchaseCode"),
+      withFieldJustification({
         id: "product-seen",
         label: "Interesses do cliente",
         labelKey: "productSeenLabel",
@@ -130,8 +163,8 @@ const modalFieldSections = [
         requiredKey: "requireProductSeenField",
         requiredDefault: true,
         legacyRequiredKey: "requireProduct"
-      },
-      {
+      }, "ProductSeen"),
+      withFieldJustification({
         id: "product-seen-notes",
         label: "Observação dos interesses",
         labelKey: "productSeenNotesLabel",
@@ -139,8 +172,8 @@ const modalFieldSections = [
         showKey: "showProductSeenNotesField",
         requiredKey: "requireProductSeenNotesField",
         requiredDefault: false
-      },
-      {
+      }, "ProductSeenNotes"),
+      withFieldJustification({
         id: "visit-reason",
         label: "Motivo da visita",
         labelKey: "visitReasonLabel",
@@ -148,8 +181,8 @@ const modalFieldSections = [
         showKey: "showVisitReasonField",
         requiredKey: "requireVisitReason",
         requiredDefault: true
-      },
-      {
+      }, "VisitReason"),
+      withFieldJustification({
         id: "customer-source",
         label: "Origem do cliente",
         labelKey: "customerSourceLabel",
@@ -157,7 +190,7 @@ const modalFieldSections = [
         showKey: "showCustomerSourceField",
         requiredKey: "requireCustomerSource",
         requiredDefault: true
-      }
+      }, "CustomerSource")
     ]
   },
   {
@@ -166,7 +199,7 @@ const modalFieldSections = [
     description: "Campos que so entram em cenarios especificos de encerramento.",
     defaultOpen: false,
     fields: [
-      {
+      withFieldJustification({
         id: "queue-jump-reason",
         label: "Motivo fora da vez",
         labelKey: "queueJumpReasonLabel",
@@ -174,8 +207,8 @@ const modalFieldSections = [
         showKey: "showQueueJumpReasonField",
         requiredKey: "requireQueueJumpReasonField",
         requiredDefault: true
-      },
-      {
+      }, "QueueJumpReason"),
+      withFieldJustification({
         id: "loss-reason",
         label: "Motivo da perda",
         labelKey: "lossReasonLabel",
@@ -183,7 +216,7 @@ const modalFieldSections = [
         showKey: "showLossReasonField",
         requiredKey: "requireLossReasonField",
         requiredDefault: true
-      }
+      }, "LossReason")
     ]
   }
 ];
@@ -207,7 +240,8 @@ const modalTextSections = [
       { key: "productSeenLabel", label: "Label interesses do cliente" },
       { key: "productSeenPlaceholder", label: "Placeholder interesses do cliente" },
       { key: "productClosedLabel", label: "Label fechamento (opcional)" },
-      { key: "productClosedPlaceholder", label: "Placeholder compra / reserva" }
+      { key: "productClosedPlaceholder", label: "Placeholder compra / reserva" },
+      { key: "purchaseCodePlaceholder", label: "Placeholder codigo da compra" }
     ]
   },
   {
@@ -241,6 +275,7 @@ const settingsStore = useSettingsStore();
 const consultantsStore = useConsultantsStore();
 const ui = useUiStore();
 const auth = useAuthStore();
+const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || "").trim());
 const activeTab = ref("operacao");
 const modalConfigState = computed(() => props.state.modalConfig || {});
 
@@ -294,8 +329,24 @@ async function updateModalConfigValue(configKey, value) {
 }
 
 async function updateModalConfigNumberValue(configKey, value, minimum = 0) {
-  const normalizedValue = Math.max(minimum, Number(value) || 0);
+  const normalizedValue = Math.max(minimum, Math.trunc(Number(value) || 0));
   return updateModalConfigValue(configKey, normalizedValue);
+}
+
+function getModalNumberValue(configKey, fallback = 0, minimum = 0) {
+  const normalizedFallback = Math.max(minimum, Math.trunc(Number(fallback) || 0));
+
+  if (!configKey) {
+    return normalizedFallback;
+  }
+
+  const numericValue = Math.trunc(Number(modalConfigState.value?.[configKey]));
+
+  if (!Number.isFinite(numericValue) || numericValue < minimum) {
+    return normalizedFallback;
+  }
+
+  return numericValue;
 }
 
 function getModalTextValue(configKey, fallback = "") {
@@ -325,6 +376,11 @@ function getModalBooleanValue(configKey, fallback = false, legacyConfigKey = "")
   return fallback;
 }
 
+function getFinishFlowMode() {
+  const configuredValue = String(modalConfigState.value?.finishFlowMode || "").trim();
+  return configuredValue === "erp-reconciliation" ? "erp-reconciliation" : "legacy";
+}
+
 function isModalFieldVisible(field) {
   return getModalBooleanValue(field.showKey, field.showDefault ?? true, field.legacyShowKey || "");
 }
@@ -343,6 +399,10 @@ async function handleModalFieldVisibilityChange(field, nextValue) {
   if (!nextValue && field.requiredKey) {
     await updateModalConfigValue(field.requiredKey, false);
   }
+
+  if (!nextValue && field.justificationRequiredKey) {
+    await updateModalConfigValue(field.justificationRequiredKey, false);
+  }
 }
 
 async function handleModalFieldRequiredChange(field, nextValue) {
@@ -351,6 +411,26 @@ async function handleModalFieldRequiredChange(field, nextValue) {
   }
 
   await updateModalConfigValue(field.requiredKey, nextValue);
+}
+
+function isModalFieldJustificationRequired(field) {
+  if (!field.justificationRequiredKey) {
+    return false;
+  }
+
+  return getModalBooleanValue(field.justificationRequiredKey, false);
+}
+
+function getModalFieldJustificationMinChars(field) {
+  return getModalNumberValue(field.justificationMinCharsKey, 20, 1);
+}
+
+async function handleModalFieldJustificationChange(field, nextValue) {
+  if (!field.justificationRequiredKey || !isModalFieldVisible(field)) {
+    return;
+  }
+
+  await updateModalConfigValue(field.justificationRequiredKey, nextValue);
 }
 
 async function handleModalFieldLabelChange(field, value) {
@@ -641,9 +721,13 @@ async function archiveConsultant(consultantId) {
         <span class="material-icons-round" aria-hidden="true">domain</span>
         Estas configuracoes valem para todas as lojas do tenant. Alteracoes feitas aqui afetam toda a operacao.
       </p>
+      <p v-if="runtimeSettingsNotice" class="admin-panel__subtitle settings-runtime-warning">
+        <span class="material-icons-round" aria-hidden="true">warning</span>
+        {{ runtimeSettingsNotice }}
+      </p>
     </header>
 
-    <SettingsTabs :tabs="tabs" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
+    <SettingsTabs :tabs="visibleTabs" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
 
     <div v-if="activeTab === 'operacao'">
       <SettingsOperationTemplateManager
@@ -743,8 +827,34 @@ async function archiveConsultant(consultantId) {
     <div v-if="activeTab === 'modal'" class="settings-grid settings-grid--modal">
       <article class="settings-card">
         <header class="settings-card__header">
+          <h3 class="settings-card__title">Fluxo de fechamento</h3>
+          <p class="settings-card__text">Escolha entre o modal atual e o fluxo novo para conciliacao ERP, sem perder compatibilidade com o formulario legado.</p>
+        </header>
+
+        <AppSelectField
+          class="settings-field"
+          label="Modo do modal"
+          :model-value="getFinishFlowMode()"
+          :options="modalFinishFlowOptions"
+          :disabled="!canEditSettings"
+          @update:model-value="updateModalConfigValue('finishFlowMode', $event)"
+        />
+
+        <label class="settings-field">
+          <span>Placeholder do codigo da compra</span>
+          <input
+            :value="getModalTextValue('purchaseCodePlaceholder', 'Informe o codigo da compra para conciliacao posterior')"
+            type="text"
+            :disabled="!canEditSettings || getFinishFlowMode() !== 'erp-reconciliation'"
+            @change="updateModalConfigValue('purchaseCodePlaceholder', $event.target.value)"
+          >
+        </label>
+      </article>
+
+      <article class="settings-card">
+        <header class="settings-card__header">
           <h3 class="settings-card__title">Campos e validacoes</h3>
-          <p class="settings-card__text">Cada bloco agora concentra os campos do modal com switches de exibicao e obrigatoriedade.</p>
+          <p class="settings-card__text">Cada bloco agora concentra os campos do modal com switches de exibicao, obrigatoriedade e justificativa.</p>
         </header>
 
         <div class="settings-modal-section-list">
@@ -802,6 +912,32 @@ async function archiveConsultant(consultantId) {
                       @change="handleModalFieldRequiredChange(field, $event)"
                     />
                   </div>
+
+                  <div class="settings-modal-field-row__switch">
+                    <span class="settings-modal-field-row__switch-label">Justificativa</span>
+                    <AppToggleSwitch
+                      :model-value="isModalFieldJustificationRequired(field)"
+                      :disabled="!canEditSettings || !field.justificationRequiredKey || !isModalFieldVisible(field)"
+                      compact
+                      @change="handleModalFieldJustificationChange(field, $event)"
+                    />
+                  </div>
+
+                  <label
+                    v-if="field.justificationMinCharsKey && isModalFieldJustificationRequired(field)"
+                    class="settings-modal-field-row__switch settings-modal-field-row__switch--number"
+                  >
+                    <span class="settings-modal-field-row__switch-label">Min. sem espacos</span>
+                    <input
+                      class="settings-modal-field-row__number-input"
+                      :value="getModalFieldJustificationMinChars(field)"
+                      type="number"
+                      min="1"
+                      max="500"
+                      :disabled="!canEditSettings || !isModalFieldVisible(field) || !isModalFieldJustificationRequired(field)"
+                      @change="updateModalConfigNumberValue(field.justificationMinCharsKey, $event.target.value, 1)"
+                    >
+                  </label>
                 </div>
               </article>
             </div>
@@ -865,7 +1001,7 @@ async function archiveConsultant(consultantId) {
           <label class="settings-field">
             <span>Mínimo de caracteres da justificativa</span>
             <input
-              :value="Number(modalConfigState.productSeenNotesMinChars || 20)"
+              :value="getModalNumberValue('productSeenNotesMinChars', 20, 1)"
               type="number"
               min="1"
               max="500"
@@ -1125,3 +1261,22 @@ async function archiveConsultant(consultantId) {
     </div>
   </section>
 </template>
+
+<style scoped>
+.settings-runtime-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+}
+
+.settings-runtime-warning .material-icons-round {
+  font-size: 1rem;
+  margin-top: 0.1rem;
+}
+</style>

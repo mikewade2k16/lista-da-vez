@@ -99,11 +99,25 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: "workspace.configuracoes.edit"
   },
   {
+    id: "alertas",
+    label: "Alertas",
+    description: "Incidentes operacionais em realtime, acknowledge e regras do modulo.",
+    viewPermission: "workspace.alertas.view",
+    editPermission: "workspace.alertas.edit"
+  },
+  {
     id: "feedback",
     label: "Feedback",
     description: "Sugestoes, duvidas e problemas dos usuarios.",
     viewPermission: "workspace.feedback.view",
     editPermission: "workspace.feedback.edit"
+  },
+  {
+    id: "banco",
+    label: "Banco",
+    description: "Estrutura do banco de dados — tabelas, campos, relacionamentos e status de migracao.",
+    viewPermission: "",
+    editPermission: ""
   }
 ];
 
@@ -117,18 +131,28 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
     key: "access.role_defaults.manage",
     label: "Editar padrao por perfil",
     description: "Permite editar a matriz padrao de acesso por papel."
+  },
+  {
+    key: "alerts.rules.manage",
+    label: "Editar regras de alertas",
+    description: "Permite alterar thresholds e canais internos do modulo de alertas."
+  },
+  {
+    key: "alerts.actions.manage",
+    label: "Executar acoes de alertas",
+    description: "Permite acknowledge e resolucao manual de alertas operacionais."
   }
 ];
 
 const ROLE_WORKSPACES = {
-  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "feedback"],
-  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "feedback"],
+  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "banco"],
+  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "alertas", "feedback"],
   marketing: ["operacao", "erp"],
   director: ["operacao", "erp"],
-  manager: ["operacao", "erp", "feedback"],
-  store_terminal: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios"],
+  manager: ["operacao", "erp", "alertas", "feedback"],
+  store_terminal: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "alertas"],
   consultant: ["operacao"],
-  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "feedback"]
+  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "alertas", "feedback"]
 };
 
 export function normalizeAppRole(role) {
@@ -221,13 +245,25 @@ export function writeWorkspaceAccessState(workspaceDefinition, permissionKeys, n
 }
 
 export function getAllowedWorkspaces(role, permissionKeys = [], permissionsResolved = false) {
-  if (permissionsResolved) {
-    return WORKSPACE_ACCESS_DEFINITIONS
-      .filter((workspace) => hasPermission(permissionKeys, workspace.viewPermission))
-      .map((workspace) => workspace.id);
+  const normalizedRole = normalizeAppRole(role);
+  const roleDefaults = new Set(ROLE_WORKSPACES[normalizedRole] || ROLE_WORKSPACES.consultant);
+
+  if (!permissionsResolved) {
+    return [...roleDefaults];
   }
 
-  return ROLE_WORKSPACES[normalizeAppRole(role)] || ROLE_WORKSPACES.consultant;
+  // Com permissoes resolvidas via banco:
+  // - workspace COM viewPermission: exige a chave no token (controle fino por usuario)
+  // - workspace SEM viewPermission: segue ROLE_WORKSPACES sem necessidade de migration
+  return WORKSPACE_ACCESS_DEFINITIONS
+    .filter((workspace) => {
+      const viewPermission = String(workspace.viewPermission || "").trim();
+      if (!viewPermission) {
+        return roleDefaults.has(workspace.id);
+      }
+      return hasPermission(permissionKeys, viewPermission);
+    })
+    .map((workspace) => workspace.id);
 }
 
 export function canManageSettings(role, permissionKeys = [], permissionsResolved = false) {

@@ -28,6 +28,8 @@ const pausedByPersonId = computed(() =>
 const pauseReasonOptions = computed(() => props.state.pauseReasonOptions || []);
 const pauseDialogEmployee = ref(null);
 const pausePending = ref(false);
+// Acoes secundarias existem, mas ficam fora da UI enquanto o fluxo esta pausado.
+const showSecondaryEmployeeActions = false;
 
 function statusFor(employeeId) {
   if (activeServiceIds.value.has(employeeId)) {
@@ -187,6 +189,7 @@ async function resumeEmployee(employee) {
             <span class="material-icons-round">login</span>
           </button>
           <button
+            v-if="showSecondaryEmployeeActions"
             class="employee__action employee__action--secondary"
             type="button"
             title="Direcionar para tarefa"
@@ -196,6 +199,7 @@ async function resumeEmployee(employee) {
             <span class="material-icons-round">assignment</span>
           </button>
           <button
+            v-if="showSecondaryEmployeeActions"
             class="employee__action employee__action--secondary"
             type="button"
             title="Pausar"
@@ -208,6 +212,7 @@ async function resumeEmployee(employee) {
 
         <div v-else-if="statusFor(employee.id) === 'queue'" class="employee__actions">
           <button
+            v-if="showSecondaryEmployeeActions"
             class="employee__action employee__action--secondary"
             type="button"
             title="Direcionar para tarefa"
@@ -217,6 +222,7 @@ async function resumeEmployee(employee) {
             <span class="material-icons-round">assignment</span>
           </button>
           <button
+            v-if="showSecondaryEmployeeActions"
             class="employee__action employee__action--secondary"
             type="button"
             title="Pausar"

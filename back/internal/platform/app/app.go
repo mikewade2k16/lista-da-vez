@@ -1,11 +1,14 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/alerts"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
@@ -26,10 +29,14 @@ import (
 )
 
 func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) (http.Handler, error) {
+	const operationsAlertMonitorInterval = 3 * time.Second
+	const feedbackAttachmentCleanupInterval = 6 * time.Hour
+
 	hasher := auth.NewBcryptHasher(cfg.BcryptCost)
 	userStore := auth.NewPostgresUserStore(pool)
 	tokenManager := auth.NewHMACTokenManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL)
 	avatarStorage := auth.NewDiskAvatarStorage(cfg.UploadsDir)
+	feedbackImageStorage := feedback.NewDiskImageStorage(cfg.UploadsDir)
 	passwordResetDelivery, err := auth.BuildPasswordResetDelivery(auth.SMTPPasswordResetDeliveryConfig{
 		AppName:            cfg.AppName,
 		Host:               cfg.SMTPHost,
@@ -73,14 +80,44 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	settingsService := settings.NewService(settingsRepository, realtimeService)
 	catalogRepository := catalog.NewPostgresRepository(pool)
 	catalogService := catalog.NewService(catalogRepository, newCatalogStoreFinderAdapter(storeService))
+	alertsRepository := alerts.NewPostgresRepository(pool)
+	alertsService := alerts.NewService(alertsRepository)
+	alertsService.SetContextPublisher(realtimeService)
 	operationsRepository := operations.NewPostgresRepository(pool)
 	operationsService := operations.NewService(operationsRepository, realtimeService, newOperationsStoreScopeAdapter(storeService))
+	operationsService.SetAlertCoordinator(alertsService)
+	alertsService.SetOperationsScanner(operationsService)
+	go func() {
+		ticker := time.NewTicker(operationsAlertMonitorInterval)
+		defer ticker.Stop()
+
+		for {
+			if err := operationsService.ProcessTimedAlerts(context.Background()); err != nil {
+				logger.Warn("operations_alert_monitor_failed", "error", err)
+			}
+			<-ticker.C
+		}
+	}()
 	reportsRepository := reports.NewPostgresRepository(pool)
 	reportsService := reports.NewService(reportsRepository, storeService)
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, storeService)
 	feedbackRepository := feedback.NewPostgresRepository(pool)
-	feedbackService := feedback.NewService(feedbackRepository)
+	feedbackService := feedback.NewService(feedbackRepository, feedbackImageStorage)
+	go func() {
+		ticker := time.NewTicker(feedbackAttachmentCleanupInterval)
+		defer ticker.Stop()
+
+		for {
+			deletedCount, err := feedbackService.CleanupExpiredAttachments(context.Background())
+			if err != nil {
+				logger.Warn("feedback_attachment_cleanup_failed", "error", err)
+			} else if deletedCount > 0 {
+				logger.Info("feedback_attachment_cleanup_completed", "deleted_count", deletedCount)
+			}
+			<-ticker.C
+		}
+	}()
 	erpRepository := erp.NewPostgresRepository(pool)
 	erpService := erp.NewService(erpRepository, erp.Options{
 		Env:                        cfg.Env,
@@ -115,6 +152,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"realtime",
 				"reports",
 				"analytics",
+				"alerts",
 				"access",
 				"feedback",
 				"erp",
@@ -129,9 +167,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	tenants.RegisterRoutes(mux, tenantService, authMiddleware)
 	stores.RegisterRoutes(mux, storeService, authMiddleware)
 	consultants.RegisterRoutes(mux, consultantService, authMiddleware)
-	settings.RegisterRoutes(mux, settingsService, authMiddleware)
+	settings.RegisterRoutes(mux, settingsService, authMiddleware, cfg.Env)
 	catalog.RegisterRoutes(mux, catalogService, authMiddleware)
 	operations.RegisterRoutes(mux, operationsService, authMiddleware)
+	alerts.RegisterRoutes(mux, alertsService, authMiddleware)
 	realtime.RegisterRoutes(mux, realtimeService)
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)

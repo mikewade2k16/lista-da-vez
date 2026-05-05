@@ -331,9 +331,18 @@ erDiagram
         text subject
         text body
         text admin_note
+        timestamptz user_last_read_at
         timestamptz created_at
         timestamptz updated_at
     }
+
+      FEEDBACK_READ_STATES {
+        uuid feedback_id PK, FK
+        uuid user_id PK, FK
+        timestamptz last_read_at
+        timestamptz created_at
+        timestamptz updated_at
+      }
 
       ERP_SYNC_RUNS {
         uuid id PK

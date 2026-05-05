@@ -38,6 +38,7 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
     const headers = {
       ...(options.headers || {})
     };
+    const normalizedMethod = String(options.method || "GET").toUpperCase();
     const accessToken =
       typeof getAccessToken === "function"
         ? getAccessToken()
@@ -50,7 +51,7 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
     let processedOptions = { ...options };
 
     if (
-      options.method === "POST" &&
+      ["POST", "PUT", "PATCH", "DELETE"].includes(normalizedMethod) &&
       options.body &&
       typeof options.body === "object" &&
       !(options.body instanceof FormData) &&

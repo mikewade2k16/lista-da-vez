@@ -1,9 +1,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import OperationWorkspace from "~/features/operation/components/OperationWorkspace.vue";
+import AlertDisplayHost from "~/features/operation/components/AlertDisplayHost.vue";
 import { storeToRefs } from "pinia";
 import { useAuthStore } from "~/stores/auth";
 import { useOperationsStore } from "~/stores/operations";
+import { useAlertsStore } from "~/stores/alerts";
 import { useOperationsRealtime } from "~/composables/useOperationsRealtime";
 import { canUseAllStoresScope } from "~/domain/utils/permissions";
 import { getApiErrorMessage } from "~/utils/api-client";
@@ -16,6 +18,7 @@ definePageMeta({
 
 const auth = useAuthStore();
 const operationsStore = useOperationsStore();
+const alertsStore = useAlertsStore();
 const loadError = ref("");
 const integratedStoreId = ref("");
 const storeOptions = computed(() => auth.storeContext || []);
@@ -55,6 +58,7 @@ async function loadOperationView() {
 onMounted(async () => {
   await auth.ensureSession();
   await loadOperationView();
+  void alertsStore.refreshAlerts();
 });
 
 const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore);
@@ -123,6 +127,24 @@ watch(scopeMode, (nextMode) => {
   }
 });
 
+const bannerStoreId = computed(() => {
+  if (scopeMode.value === "single") {
+    return String(auth.activeStoreId || "").trim();
+  }
+
+  return String(integratedStoreId.value || "").trim();
+});
+
+watch(
+  () => alertsStore.pendingFinishForServiceId,
+  (serviceId) => {
+    if (serviceId) {
+      operationsStore.openFinishModal(serviceId);
+      alertsStore.pendingFinishForServiceId = null;
+    }
+  }
+);
+
 function handleIntegratedStoreChange(storeId) {
   integratedStoreId.value = String(storeId || "").trim();
 }
@@ -140,15 +162,21 @@ function handleIntegratedStoreChange(storeId) {
         {{ scopeMode === "all" ? "Sincronizando a operacao integrada das lojas acessiveis." : "Sincronizando consultores, fila e atendimento da loja ativa." }}
       </p>
     </div>
-    <OperationWorkspace
-      v-else
-      :state="state"
-      :overview="overview"
-      :scope-mode="scopeMode"
-      :can-see-integrated="canSeeIntegrated"
-      :stores="storeOptions"
-      :integrated-store-id="integratedStoreId"
-      @integrated-store-change="handleIntegratedStoreChange"
-    />
+    <template v-else>
+      <AlertDisplayHost
+        v-if="bannerStoreId"
+        :store-id="bannerStoreId"
+        class="operation-alert-banner-page"
+      />
+      <OperationWorkspace
+        :state="state"
+        :overview="overview"
+        :scope-mode="scopeMode"
+        :can-see-integrated="canSeeIntegrated"
+        :stores="storeOptions"
+        :integrated-store-id="integratedStoreId"
+        @integrated-store-change="handleIntegratedStoreChange"
+      />
+    </template>
   </div>
 </template>

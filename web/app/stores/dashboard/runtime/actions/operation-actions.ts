@@ -64,7 +64,7 @@ function deriveSequentialServiceFinishedAt(targetService, activeServices = [], s
   const targetGroupId = String(targetService?.parallelGroupId || "").trim();
   const targetServiceId = String(targetService?.serviceId || "").trim();
   const targetStartedAt = Number(targetService?.serviceStartedAt || 0) || 0;
-  let nextStartedAt = 0;
+  let finishedAt = 0;
 
   const belongsToSequence = (entry) => {
     if (targetGroupId) {
@@ -80,10 +80,13 @@ function deriveSequentialServiceFinishedAt(targetService, activeServices = [], s
     if (normalizedStartedAt <= targetStartedAt) {
       return;
     }
-    if (!nextStartedAt || normalizedStartedAt < nextStartedAt) {
-      nextStartedAt = normalizedStartedAt;
+    if (!finishedAt || normalizedStartedAt < finishedAt) {
+      finishedAt = normalizedStartedAt;
     }
   };
+
+  consider(targetService?.effectiveFinishedAt);
+  consider(targetService?.stoppedAt);
 
   (Array.isArray(activeServices) ? activeServices : []).forEach((service) => {
     if (String(service?.serviceId || "").trim() === targetServiceId) {
@@ -108,7 +111,7 @@ function deriveSequentialServiceFinishedAt(targetService, activeServices = [], s
     consider(entry?.startedAt);
   });
 
-  return nextStartedAt || Math.max(now, targetStartedAt);
+  return finishedAt || Math.max(now, targetStartedAt);
 }
 
 export function createOperationActions({ getState, updateState }) {

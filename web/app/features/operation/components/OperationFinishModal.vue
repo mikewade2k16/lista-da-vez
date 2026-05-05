@@ -21,6 +21,22 @@ const PRODUCT_SEEN_NONE_DETAIL_KEY = "__none__";
 const PRODUCT_CATALOG_SOURCE_KEY = "erp_current";
 const PRODUCT_SEARCH_MIN_CHARS = 3;
 const PRODUCT_SEARCH_LIMIT = 12;
+const FIELD_JUSTIFICATION_KEYS = [
+  "customerName",
+  "customerPhone",
+  "email",
+  "profession",
+  "existingCustomer",
+  "notes",
+  "productSeen",
+  "productSeenNotes",
+  "productClosed",
+  "purchaseCode",
+  "visitReason",
+  "customerSource",
+  "queueJumpReason",
+  "lossReason"
+];
 
 function serviceDisplayName(service) {
   return buildNickname(service?.name || "");
@@ -76,10 +92,27 @@ function removeStoredDraft(draftKey) {
   writeDraftStorage(drafts);
 }
 
+function createEmptyFieldJustifications() {
+  return Object.fromEntries(FIELD_JUSTIFICATION_KEYS.map((key) => [key, ""]));
+}
+
+function normalizeFieldJustifications(values) {
+  const defaults = createEmptyFieldJustifications();
+
+  if (!values || typeof values !== "object") {
+    return defaults;
+  }
+
+  return Object.fromEntries(
+    FIELD_JUSTIFICATION_KEYS.map((key) => [key, String(values?.[key] || "")])
+  );
+}
+
 function createEmptyForm() {
   return {
     outcome: "",
     isExistingCustomer: false,
+    purchaseCode: "",
     productsSeen: [],
     productsClosed: [],
     productsSeenNone: false,
@@ -97,7 +130,8 @@ function createEmptyForm() {
     queueJumpReasonId: "",
     lossReasonIds: [],
     lossReasonDetails: {},
-    notes: ""
+    notes: "",
+    fieldJustifications: createEmptyFieldJustifications()
   };
 }
 
@@ -221,6 +255,7 @@ function buildInitialForm(state, draft) {
   return {
     outcome: String(currentDraft.outcome || ""),
     isExistingCustomer: Boolean(currentDraft.isExistingCustomer),
+    purchaseCode: String(currentDraft.purchaseCode || ""),
     productsSeen: normalizeProducts(currentDraft.productsSeen),
     productsClosed: normalizeProducts(currentDraft.productsClosed),
     productsSeenNone: Boolean(currentDraft.productsSeenNone),
@@ -254,7 +289,8 @@ function buildInitialForm(state, draft) {
         ? currentDraft.lossReasonDetails
         : {}
     ),
-    notes: String(currentDraft.notes || "")
+    notes: String(currentDraft.notes || ""),
+    fieldJustifications: normalizeFieldJustifications(currentDraft.fieldJustifications)
   };
 }
 
@@ -314,7 +350,19 @@ function resolveModalNumber(value, fallback = 0, minimum = 0) {
   return Math.max(minimum, Number(value ?? fallback) || fallback || 0);
 }
 
+function hasTrimmedText(value) {
+  return String(value || "").trim().length > 0;
+}
+
+function countCharsIgnoringWhitespace(value) {
+  return String(value || "").replace(/\s+/g, "").length;
+}
+
 const modalConfig = computed(() => props.state.modalConfig || {});
+const finishFlowMode = computed(() =>
+  String(modalConfig.value.finishFlowMode || "").trim() === "erp-reconciliation" ? "erp-reconciliation" : "legacy"
+);
+const isERPReconciliationFlow = computed(() => finishFlowMode.value === "erp-reconciliation");
 const showCustomerNameField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerNameField, true));
 const showCustomerPhoneField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerPhoneField, true));
 const showEmailField = computed(() => resolveModalBoolean(modalConfig.value.showEmailField, true));
@@ -323,6 +371,7 @@ const showNotesField = computed(() => resolveModalBoolean(modalConfig.value.show
 const showProductSeenField = computed(() => resolveModalBoolean(modalConfig.value.showProductSeenField, true));
 const showProductSeenNotesField = computed(() => resolveModalBoolean(modalConfig.value.showProductSeenNotesField, true));
 const showProductClosedField = computed(() => resolveModalBoolean(modalConfig.value.showProductClosedField, true));
+const showPurchaseCodeField = computed(() => resolveModalBoolean(modalConfig.value.showPurchaseCodeField, true));
 const showVisitReasonField = computed(() => resolveModalBoolean(modalConfig.value.showVisitReasonField, true));
 const showCustomerSourceField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerSourceField, true));
 const showExistingCustomerField = computed(() => resolveModalBoolean(modalConfig.value.showExistingCustomerField, true));
@@ -345,6 +394,9 @@ const requireProductSeenNotesField = computed(() =>
 );
 const requireProductClosedField = computed(() =>
   resolveModalBoolean(modalConfig.value.requireProductClosedField, resolveModalBoolean(modalConfig.value.requireProduct, true))
+);
+const requirePurchaseCodeField = computed(() =>
+  resolveModalBoolean(modalConfig.value.requirePurchaseCodeField, true)
 );
 const requireVisitReasonField = computed(() => resolveModalBoolean(modalConfig.value.requireVisitReason, true));
 const requireCustomerSourceField = computed(() => resolveModalBoolean(modalConfig.value.requireCustomerSource, true));
@@ -437,6 +489,18 @@ const hasRestoredDraft = computed(() =>
   Boolean(restoredDraftKey.value && restoredDraftKey.value === serviceDraftKey.value)
 );
 const isClosedOutcome = computed(() => form.outcome === "compra" || form.outcome === "reserva");
+const isPurchaseOutcome = computed(() => form.outcome === "compra");
+const shouldUsePurchaseCodeField = computed(() =>
+  isERPReconciliationFlow.value
+  && isPurchaseOutcome.value
+  && showPurchaseCodeField.value
+);
+const shouldUseLegacyClosedProductField = computed(() =>
+  isClosedOutcome.value
+  && showProductClosedField.value
+  && (!isERPReconciliationFlow.value || form.outcome === "reserva")
+);
+const trimmedPurchaseCode = computed(() => String(form.purchaseCode || "").trim());
 const trimmedProductSeenNotes = computed(() => String(form.productSeenNotes || "").trim());
 const productSeenNotesLabel = computed(() => resolveModalText(modalConfig.value.productSeenNotesLabel, "Observação dos interesses"));
 const productSeenNotesPlaceholder = computed(() =>
@@ -517,6 +581,10 @@ const closedProductHelperText = computed(() => {
 
   return "Registre o item fechado quando o atendimento terminar em compra ou reserva.";
 });
+const purchaseCodeLabel = computed(() => resolveModalText(modalConfig.value.purchaseCodeLabel, "Codigo da compra"));
+const purchaseCodePlaceholder = computed(() =>
+  resolveModalText(modalConfig.value.purchaseCodePlaceholder, "Informe o codigo da compra para conciliacao posterior")
+);
 const selectedProfessionLabel = computed(
   () => props.state.professionOptions.find((option) => option.id === form.customerProfessionId)?.label || ""
 );
@@ -540,7 +608,11 @@ const formStep1Quality = computed(() => {
     checks.productSeenNotes = isProductSeenNotesValid.value;
   }
 
-  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value) {
+  if (shouldUsePurchaseCodeField.value && requirePurchaseCodeField.value) {
+    checks.purchaseCode = trimmedPurchaseCode.value.length > 0;
+  }
+
+  if (shouldUseLegacyClosedProductField.value && requireProductClosedField.value) {
     checks.productClosed = form.productsClosed.length > 0;
   }
 
@@ -552,16 +624,14 @@ const formStep1Quality = computed(() => {
 });
 
 const formQuality = computed(() => {
-  const hasText = (v) => String(v || "").trim().length > 0;
-
   const checks = {};
 
   if (showCustomerNameField.value && requireCustomerNameField.value) {
-    checks.customerName = hasText(form.customerName);
+    checks.customerName = hasTrimmedText(form.customerName);
   }
 
   if (showCustomerPhoneField.value && requireCustomerPhoneField.value) {
-    checks.customerPhone = hasText(form.customerPhone);
+    checks.customerPhone = hasTrimmedText(form.customerPhone);
   }
 
   if (showProductSeenField.value && requireProductSeenField.value) {
@@ -572,7 +642,11 @@ const formQuality = computed(() => {
     checks.productSeenNotes = isProductSeenNotesValid.value;
   }
 
-  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value) {
+  if (shouldUsePurchaseCodeField.value && requirePurchaseCodeField.value) {
+    checks.purchaseCode = trimmedPurchaseCode.value.length > 0;
+  }
+
+  if (shouldUseLegacyClosedProductField.value && requireProductClosedField.value) {
     checks.productClosed = form.productsClosed.length > 0;
   }
 
@@ -593,7 +667,7 @@ const formQuality = computed(() => {
   }
 
   if (showEmailField.value && requireEmailField.value) {
-    checks.customerEmail = hasText(form.customerEmail);
+    checks.customerEmail = hasTrimmedText(form.customerEmail);
   }
 
   if (showProfessionField.value && requireProfessionField.value) {
@@ -601,12 +675,12 @@ const formQuality = computed(() => {
   }
 
   if (showNotesField.value && requireNotesField.value) {
-    checks.notes = hasText(form.notes);
+    checks.notes = hasTrimmedText(form.notes);
   }
 
   const coreTotal = Object.keys(checks).length;
   const coreFilledCount = Object.values(checks).filter(Boolean).length;
-  const hasNotes = hasText(form.notes) && showNotesField.value;
+  const hasNotes = hasTrimmedText(form.notes) && showNotesField.value;
   const isCoreComplete = coreFilledCount === coreTotal;
   const level = isCoreComplete ? (hasNotes ? "excellent" : "complete") : "incomplete";
   const levelLabels = { excellent: "Excelente", complete: "Completo", incomplete: "Incompleto" };
@@ -785,6 +859,192 @@ const lossReasonSelectedItems = computed({
 const form = reactive(createEmptyForm());
 const step = ref(1);
 
+function getFieldJustificationValue(key) {
+  return String(form.fieldJustifications?.[key] || "");
+}
+
+function getFieldJustificationCharCount(key) {
+  return countCharsIgnoringWhitespace(getFieldJustificationValue(key));
+}
+
+function isFieldJustificationValid(key, minChars) {
+  return getFieldJustificationCharCount(key) >= minChars;
+}
+
+const step1MissingJustifications = computed(() => {
+  const items = [
+    {
+      key: "purchaseCode",
+      label: purchaseCodeLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.purchaseCodeJustificationMinChars, 20, 1),
+      requiresInput:
+        shouldUsePurchaseCodeField.value
+        && !requirePurchaseCodeField.value
+        && resolveModalBoolean(modalConfig.value.requirePurchaseCodeJustification, false)
+        && !hasTrimmedText(form.purchaseCode)
+    },
+    {
+      key: "productClosed",
+      label: closedProductLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.productClosedJustificationMinChars, 20, 1),
+      requiresInput:
+        shouldUseLegacyClosedProductField.value
+        && !requireProductClosedField.value
+        && resolveModalBoolean(modalConfig.value.requireProductClosedJustification, false)
+        && form.productsClosed.length === 0
+    },
+    {
+      key: "productSeen",
+      label: productSeenLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.productSeenJustificationMinChars, 20, 1),
+      requiresInput:
+        showProductSeenField.value
+        && !requireProductSeenField.value
+        && resolveModalBoolean(modalConfig.value.requireProductSeenJustification, false)
+        && form.productsSeen.length === 0
+        && !form.productsSeenNone
+    },
+    {
+      key: "productSeenNotes",
+      label: productSeenNotesLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.productSeenNotesJustificationMinChars, 20, 1),
+      requiresInput:
+        canUseProductSeenNotes.value
+        && !isProductSeenNotesRequired.value
+        && resolveModalBoolean(modalConfig.value.requireProductSeenNotesJustification, false)
+        && !hasTrimmedText(form.productSeenNotes)
+    }
+  ];
+
+  return items.filter((item) => item.requiresInput);
+});
+
+const step2MissingJustifications = computed(() => {
+  const items = [
+    {
+      key: "customerName",
+      label: customerNameLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.customerNameJustificationMinChars, 20, 1),
+      requiresInput:
+        showCustomerNameField.value
+        && !requireCustomerNameField.value
+        && resolveModalBoolean(modalConfig.value.requireCustomerNameJustification, false)
+        && !hasTrimmedText(form.customerName)
+    },
+    {
+      key: "customerPhone",
+      label: customerPhoneLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.customerPhoneJustificationMinChars, 20, 1),
+      requiresInput:
+        showCustomerPhoneField.value
+        && !requireCustomerPhoneField.value
+        && resolveModalBoolean(modalConfig.value.requireCustomerPhoneJustification, false)
+        && !hasTrimmedText(form.customerPhone)
+    },
+    {
+      key: "email",
+      label: customerEmailLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.emailJustificationMinChars, 20, 1),
+      requiresInput:
+        showEmailField.value
+        && !requireEmailField.value
+        && resolveModalBoolean(modalConfig.value.requireEmailJustification, false)
+        && !hasTrimmedText(form.customerEmail)
+    },
+    {
+      key: "profession",
+      label: customerProfessionLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.professionJustificationMinChars, 20, 1),
+      requiresInput:
+        showProfessionField.value
+        && !requireProfessionField.value
+        && resolveModalBoolean(modalConfig.value.requireProfessionJustification, false)
+        && !form.customerProfessionId
+    },
+    {
+      key: "visitReason",
+      label: visitReasonLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.visitReasonJustificationMinChars, 20, 1),
+      requiresInput:
+        showVisitReasonField.value
+        && !requireVisitReasonField.value
+        && resolveModalBoolean(modalConfig.value.requireVisitReasonJustification, false)
+        && form.visitReasonIds.length === 0
+        && !form.visitReasonNotInformed
+    },
+    {
+      key: "customerSource",
+      label: customerSourceLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.customerSourceJustificationMinChars, 20, 1),
+      requiresInput:
+        showCustomerSourceField.value
+        && !requireCustomerSourceField.value
+        && resolveModalBoolean(modalConfig.value.requireCustomerSourceJustification, false)
+        && form.customerSourceIds.length === 0
+        && !form.customerSourceNotInformed
+    },
+    {
+      key: "queueJumpReason",
+      label: queueJumpReasonLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.queueJumpReasonJustificationMinChars, 20, 1),
+      requiresInput:
+        service.value?.startMode === "queue-jump"
+        && showQueueJumpReasonField.value
+        && !requireQueueJumpReasonField.value
+        && resolveModalBoolean(modalConfig.value.requireQueueJumpReasonJustification, false)
+        && !hasTrimmedText(selectedQueueJumpReasonLabel.value)
+    },
+    {
+      key: "lossReason",
+      label: lossReasonLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.lossReasonJustificationMinChars, 20, 1),
+      requiresInput:
+        form.outcome === "nao-compra"
+        && showLossReasonField.value
+        && !requireLossReasonField.value
+        && resolveModalBoolean(modalConfig.value.requireLossReasonJustification, false)
+        && form.lossReasonIds.length === 0
+    },
+    {
+      key: "notes",
+      label: notesLabel.value,
+      minChars: resolveModalNumber(modalConfig.value.notesJustificationMinChars, 20, 1),
+      requiresInput:
+        showNotesField.value
+        && !requireNotesField.value
+        && resolveModalBoolean(modalConfig.value.requireNotesJustification, false)
+        && !hasTrimmedText(form.notes)
+    }
+  ];
+
+  return items.filter((item) => item.requiresInput);
+});
+
+const hasInvalidStep1Justifications = computed(() =>
+  step1MissingJustifications.value.some((item) => !isFieldJustificationValid(item.key, item.minChars))
+);
+const hasInvalidStep2Justifications = computed(() =>
+  step2MissingJustifications.value.some((item) => !isFieldJustificationValid(item.key, item.minChars))
+);
+const isStep1Ready = computed(() => formStep1Quality.value.isComplete && !hasInvalidStep1Justifications.value);
+const step2QualityTone = computed(() => (hasInvalidStep2Justifications.value ? "incomplete" : formQuality.value.level));
+const step2QualityLabel = computed(() =>
+  hasInvalidStep2Justifications.value ? "Justificativas pendentes" : formQuality.value.levelLabel
+);
+
+async function validateFieldJustifications(items = []) {
+  const firstInvalid = items.find((item) => !isFieldJustificationValid(item.key, item.minChars));
+
+  if (!firstInvalid) {
+    return true;
+  }
+
+  await ui.alert(
+    `Preencha a justificativa de "${firstInvalid.label}" com pelo menos ${firstInvalid.minChars} caracteres sem contar espaços.`
+  );
+  return false;
+}
+
 function updateProfessionSelectedItems(items) {
   professionSelectedItems.value = items;
 }
@@ -809,6 +1069,7 @@ function buildDraftPayload() {
   return {
     outcome: form.outcome,
     isExistingCustomer: form.isExistingCustomer,
+    purchaseCode: String(form.purchaseCode || "").trim(),
     productsSeen: normalizeProducts(form.productsSeen),
     productsClosed: normalizeProducts(form.productsClosed),
     productsSeenNone: form.productsSeenNone,
@@ -833,7 +1094,8 @@ function buildDraftPayload() {
     lossReasonDetails: { ...form.lossReasonDetails },
     lossReasonId: normalizeIdList(form.lossReasonIds)[0] || "",
     lossReason: selectedLossReasonSummary.value,
-    notes: form.notes
+    notes: form.notes,
+    fieldJustifications: normalizeFieldJustifications(form.fieldJustifications)
   };
 }
 
@@ -845,6 +1107,7 @@ function hasDraftContent(payload, products = []) {
   return Boolean(
     payload.outcome ||
     payload.isExistingCustomer ||
+    payload.purchaseCode ||
     payload.productsSeen?.length ||
     payload.productsClosed?.length ||
     payload.productsSeenNone ||
@@ -862,6 +1125,7 @@ function hasDraftContent(payload, products = []) {
     payload.queueJumpReasonId ||
     payload.lossReasonIds?.length ||
     Object.keys(payload.lossReasonDetails || {}).length ||
+    Object.values(payload.fieldJustifications || {}).some((value) => hasTrimmedText(value)) ||
     payload.notes ||
     products.length
   );
@@ -1017,6 +1281,14 @@ function normalizeFormForModalConfig() {
   form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, form.lossReasonDetails);
   form.customerSourceDetails = syncSelectedDetails(form.customerSourceIds, form.customerSourceDetails);
 
+  if (!shouldUsePurchaseCodeField.value) {
+    form.purchaseCode = "";
+  }
+
+  if (!shouldUseLegacyClosedProductField.value) {
+    form.productsClosed = [];
+  }
+
   if (!allowProductSeenNone.value) {
     form.productsSeenNone = false;
   }
@@ -1074,8 +1346,17 @@ async function goToStep2() {
     return;
   }
 
-  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value && form.productsClosed.length === 0) {
+  if (shouldUsePurchaseCodeField.value && requirePurchaseCodeField.value && !trimmedPurchaseCode.value) {
+    await ui.alert("Informe o codigo da compra para seguir.");
+    return;
+  }
+
+  if (shouldUseLegacyClosedProductField.value && requireProductClosedField.value && form.productsClosed.length === 0) {
     await ui.alert("Selecione o item de compra ou reserva.");
+    return;
+  }
+
+  if (!(await validateFieldJustifications(step1MissingJustifications.value))) {
     return;
   }
 
@@ -1112,7 +1393,12 @@ async function submitForm() {
     return;
   }
 
-  if (isClosedOutcome.value && showProductClosedField.value && requireProductClosedField.value && form.productsClosed.length === 0) {
+  if (shouldUsePurchaseCodeField.value && requirePurchaseCodeField.value && !trimmedPurchaseCode.value) {
+    await ui.alert("Informe o codigo da compra para concluir o atendimento.");
+    return;
+  }
+
+  if (shouldUseLegacyClosedProductField.value && requireProductClosedField.value && form.productsClosed.length === 0) {
     await ui.alert("Selecione o item de compra ou reserva.");
     return;
   }
@@ -1167,7 +1453,15 @@ async function submitForm() {
     return;
   }
 
+  if (!(await validateFieldJustifications([
+    ...step1MissingJustifications.value,
+    ...step2MissingJustifications.value
+  ]))) {
+    return;
+  }
+
   const currentService = service.value;
+  const closedProductsForPayload = shouldUseLegacyClosedProductField.value ? form.productsClosed : [];
   const productSeenSummary = [
     form.productsSeen.length ? form.productsSeen.map((item) => item.name).filter(Boolean).join(", ") : "",
     form.productsSeenNone ? "Nenhum interesse identificado" : "",
@@ -1176,12 +1470,13 @@ async function submitForm() {
   const result = await operationsStore.finishService(currentService.serviceId, {
     outcome: form.outcome,
     productSeen: productSeenSummary,
-    productClosed: isClosedOutcome.value ? form.productsClosed[0]?.name || "" : "",
+    productClosed: closedProductsForPayload[0]?.name || "",
+    purchaseCode: shouldUsePurchaseCodeField.value ? trimmedPurchaseCode.value : "",
     productsSeen: form.productsSeen,
-    productsClosed: isClosedOutcome.value ? form.productsClosed : [],
+    productsClosed: closedProductsForPayload,
     productsSeenNone: form.productsSeenNone,
     productSeenNotes: productSeenNotesForPayload.value,
-    productDetails: (isClosedOutcome.value ? form.productsClosed[0]?.name : "") || productSeenSummary || "",
+    productDetails: (closedProductsForPayload[0]?.name || "") || productSeenSummary || "",
     customerName: form.customerName.trim(),
     customerPhone: form.customerPhone.trim(),
     customerEmail: form.customerEmail.trim(),
@@ -1215,7 +1510,7 @@ async function submitForm() {
       : {},
     lossReasonId: form.outcome === "nao-compra" ? normalizeIdList(form.lossReasonIds)[0] || "" : "",
     lossReason: form.outcome === "nao-compra" ? selectedLossReasonSummary.value : "",
-    saleAmount: isClosedOutcome.value ? closedTotal.value : 0,
+    saleAmount: closedProductsForPayload.length > 0 ? closedTotal.value : 0,
     queueJumpReason: service.value.startMode === "queue-jump" ? selectedQueueJumpReasonLabel.value : "",
     notes: form.notes.trim()
   }, {
@@ -1315,11 +1610,17 @@ watch([allowProductSeenNone, showProductSeenNotesField], () => {
   normalizeFormForModalConfig();
 });
 
+watch([isERPReconciliationFlow, showPurchaseCodeField, showProductClosedField], () => {
+  normalizeFormForModalConfig();
+});
+
 watch(() => form.outcome, (nextValue) => {
   if (nextValue !== "nao-compra") {
     form.lossReasonIds = [];
     form.lossReasonDetails = {};
   }
+
+  normalizeFormForModalConfig();
 });
 
 watch(form, () => {
@@ -1454,8 +1755,21 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
+            <section v-if="shouldUsePurchaseCodeField" class="finish-form__section">
+              <label class="finish-form__field">
+                <span class="finish-form__label">{{ purchaseCodeLabel }}</span>
+                <input
+                  v-model="form.purchaseCode"
+                  class="finish-form__input"
+                  type="text"
+                  :placeholder="purchaseCodePlaceholder"
+                  data-testid="operation-purchase-code"
+                >
+              </label>
+            </section>
+
             <OperationProductPicker
-              v-if="isClosedOutcome && showProductClosedField"
+              v-if="shouldUseLegacyClosedProductField"
               key="products-closed-picker"
               :label="closedProductLabel"
               :helper-text="closedProductHelperText"
@@ -1527,16 +1841,39 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <div class="finish-form__quality" :class="formStep1Quality.isComplete ? 'finish-form__quality--complete' : 'finish-form__quality--incomplete'">
+            <section v-if="step1MissingJustifications.length" class="finish-form__section">
+              <strong class="finish-form__label">Justificativas pendentes</strong>
+              <div class="finish-form__justification-list">
+                <div v-for="item in step1MissingJustifications" :key="item.key" class="finish-form__justification-item">
+                  <label class="finish-form__label" :for="`finish-justification-${item.key}`">Justifique: {{ item.label }}</label>
+                  <textarea
+                    :id="`finish-justification-${item.key}`"
+                    v-model="form.fieldJustifications[item.key]"
+                    class="finish-form__textarea"
+                    rows="3"
+                    :placeholder="`Explique por que ${item.label.toLowerCase()} ficou em branco`"
+                    :data-testid="`operation-justification-${item.key}`"
+                  />
+                  <div class="finish-form__field-note" :class="{ 'finish-form__field-note--error': !isFieldJustificationValid(item.key, item.minChars) }">
+                    <span>Campo opcional sem preenchimento. Informe pelo menos {{ item.minChars }} caracteres sem contar espaços.</span>
+                    <strong>{{ getFieldJustificationCharCount(item.key) }}/{{ item.minChars }} sem espaços</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="finish-form__quality" :class="isStep1Ready ? 'finish-form__quality--complete' : 'finish-form__quality--incomplete'">
               <div class="finish-form__quality-dots">
                 <span class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.outcome }" title="Como terminou"></span>
-                <span v-if="isClosedOutcome && showProductClosedField && requireProductClosedField" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productClosed }" title="Compra / reserva"></span>
+                <span v-if="shouldUsePurchaseCodeField && requirePurchaseCodeField" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.purchaseCode }" title="Codigo da compra"></span>
+                <span v-if="shouldUseLegacyClosedProductField && requireProductClosedField" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productClosed }" title="Compra / reserva"></span>
                 <span v-if="showProductSeenField && requireProductSeenField" class="finish-form__quality-dot" :class="{ 'is-filled': formStep1Quality.checks.productSeen }" title="Interesses do cliente"></span>
                 <span v-if="isProductSeenNotesRequired" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formStep1Quality.checks.productSeenNotes }" title="Detalhes dos interesses"></span>
+                <span v-if="step1MissingJustifications.length" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': !hasInvalidStep1Justifications }" title="Justificativas pendentes"></span>
               </div>
               <span class="finish-form__quality-text">
                 {{ formStep1Quality.filled }}/{{ formStep1Quality.total }} obrigatorios
-                · {{ formStep1Quality.isComplete ? 'Pronto para avançar' : 'Preencha antes de continuar' }}
+                · {{ isStep1Ready ? 'Pronto para avançar' : 'Preencha antes de continuar' }}
               </span>
             </div>
 
@@ -1721,16 +2058,38 @@ onBeforeUnmount(() => {
               />
             </section>
 
-            <section v-if="isClosedOutcome && showProductClosedField" class="finish-form__section operation-modal__summary">
+            <section v-if="step2MissingJustifications.length" class="finish-form__section">
+              <strong class="finish-form__label">Justificativas pendentes</strong>
+              <div class="finish-form__justification-list">
+                <div v-for="item in step2MissingJustifications" :key="item.key" class="finish-form__justification-item">
+                  <label class="finish-form__label" :for="`finish-justification-${item.key}`">Justifique: {{ item.label }}</label>
+                  <textarea
+                    :id="`finish-justification-${item.key}`"
+                    v-model="form.fieldJustifications[item.key]"
+                    class="finish-form__textarea"
+                    rows="3"
+                    :placeholder="`Explique por que ${item.label.toLowerCase()} ficou em branco`"
+                    :data-testid="`operation-justification-${item.key}`"
+                  />
+                  <div class="finish-form__field-note" :class="{ 'finish-form__field-note--error': !isFieldJustificationValid(item.key, item.minChars) }">
+                    <span>Campo opcional sem preenchimento. Informe pelo menos {{ item.minChars }} caracteres sem contar espaços.</span>
+                    <strong>{{ getFieldJustificationCharCount(item.key) }}/{{ item.minChars }} sem espaços</strong>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="shouldUseLegacyClosedProductField" class="finish-form__section operation-modal__summary">
               <span class="finish-form__label">Valor da venda derivado dos produtos fechados</span>
               <strong>{{ formatCurrency(closedTotal) }}</strong>
             </section>
 
-            <div class="finish-form__quality" :class="`finish-form__quality--${formQuality.level}`">
+            <div class="finish-form__quality" :class="`finish-form__quality--${step2QualityTone}`">
               <div class="finish-form__quality-dots">
                 <span v-if="showCustomerNameField && requireCustomerNameField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerName }" title="Nome"></span>
                 <span v-if="showCustomerPhoneField && requireCustomerPhoneField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerPhone }" title="Telefone"></span>
-                <span v-if="isClosedOutcome && showProductClosedField && requireProductClosedField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.productClosed }" title="Compra / reserva"></span>
+                <span v-if="shouldUsePurchaseCodeField && requirePurchaseCodeField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.purchaseCode }" title="Codigo da compra"></span>
+                <span v-if="shouldUseLegacyClosedProductField && requireProductClosedField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.productClosed }" title="Compra / reserva"></span>
                 <span v-if="showProductSeenField && requireProductSeenField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.productSeen }" title="Interesses do cliente"></span>
                 <span v-if="isProductSeenNotesRequired" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.checks.productSeenNotes }" title="Detalhes dos interesses"></span>
                 <span v-if="showVisitReasonField && requireVisitReasonField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.visitReasons }" title="Motivo da visita"></span>
@@ -1740,9 +2099,10 @@ onBeforeUnmount(() => {
                 <span v-if="showEmailField && requireEmailField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerEmail }" title="E-mail"></span>
                 <span v-if="showProfessionField && requireProfessionField" class="finish-form__quality-dot" :class="{ 'is-filled': formQuality.checks.customerProfession }" title="Profissão"></span>
                 <span v-if="showNotesField && requireNotesField" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': formQuality.checks.notes }" title="Observações"></span>
+                <span v-if="step2MissingJustifications.length" class="finish-form__quality-dot finish-form__quality-dot--notes" :class="{ 'is-filled': !hasInvalidStep2Justifications }" title="Justificativas pendentes"></span>
               </div>
               <span class="finish-form__quality-text">
-                {{ formQuality.coreFilledCount }}/{{ formQuality.coreTotal }} obrigatorios · {{ formQuality.levelLabel }}
+                {{ formQuality.coreFilledCount }}/{{ formQuality.coreTotal }} obrigatorios · {{ step2QualityLabel }}
               </span>
             </div>
 
@@ -1769,3 +2129,15 @@ onBeforeUnmount(() => {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.finish-form__justification-list {
+  display: grid;
+  gap: 12px;
+}
+
+.finish-form__justification-item {
+  display: grid;
+  gap: 8px;
+}
+</style>

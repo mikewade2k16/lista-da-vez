@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { LogOut, User } from "lucide-vue-next";
 import { storeToRefs } from "pinia";
 import AppSelectField from "~/components/ui/AppSelectField.vue";
+import FeedbackNotificationsDropdown from "~/components/feedback/FeedbackNotificationsDropdown.vue";
 import { getRoleLabel } from "~/domain/utils/permissions";
 import { useAuthStore } from "~/stores/auth";
 import { getApiBase } from "~/utils/api-client";
@@ -180,6 +181,7 @@ onBeforeUnmount(() => {
           compact
           @update:model-value="handleProfileChange"
         />
+        <FeedbackNotificationsDropdown v-if="isAuthenticated" />
         <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
           <button
             class="dashboard-header__profile-trigger"

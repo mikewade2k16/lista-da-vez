@@ -149,6 +149,10 @@ export function useOperationsRealtime(options = {}) {
     }
 
     settingsRefreshPromise = refreshRuntimeStoreSettings(runtime, apiRequest, normalizedStoreId, auth.activeTenantId)
+      .then((result) => {
+        auth.applyRuntimeSettingsStatus(result);
+        return result;
+      })
       .catch(() => null)
       .finally(async () => {
         settingsRefreshPromise = null;
@@ -273,12 +277,13 @@ export function useOperationsRealtime(options = {}) {
         }
 
         if (mode === "all") {
-          await refreshOverview();
+          const followUps = [refreshOverview()];
 
-          if (payloadStoreId && payloadStoreId === String(auth.activeStoreId || "").trim()) {
-            await refreshSnapshot(payloadStoreId);
+          if (payloadStoreId) {
+            followUps.push(refreshSnapshot(payloadStoreId));
           }
 
+          await Promise.all(followUps);
           return;
         }
 

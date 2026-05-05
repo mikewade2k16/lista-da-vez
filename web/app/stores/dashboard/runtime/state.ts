@@ -1,5 +1,6 @@
 import {
   cloneOperationTemplates,
+  DEFAULT_FIELD_JUSTIFICATION_CONFIG,
   DEFAULT_LOSS_REASON_OPTIONS,
   DEFAULT_PAUSE_REASON_OPTIONS,
   DEFAULT_QUEUE_JUMP_REASON_OPTIONS,
@@ -82,6 +83,7 @@ export function createEmptyStoreScopedState(roster = []) {
 
 export function extractStoreScopedState(sourceState) {
   return {
+    _operationSnapshotFetchedAt: Math.max(0, Number(sourceState._operationSnapshotFetchedAt || 0) || 0),
     selectedConsultantId: sourceState.selectedConsultantId,
     consultantSimulationAdditionalSales: Number(sourceState.consultantSimulationAdditionalSales || 0),
     waitingList: Array.isArray(sourceState.waitingList) ? sourceState.waitingList : [],
@@ -145,6 +147,7 @@ export function normalizeActiveServicesList(rawActiveServices, timestamp) {
     startOffsetMs: Number(service.startOffsetMs || 0),
     siblingServiceIds: Array.isArray(service.siblingServiceIds) ? service.siblingServiceIds : [],
     stoppedAt: Math.max(0, Number(service.stoppedAt || 0) || 0),
+    effectiveFinishedAt: Math.max(0, Number(service.effectiveFinishedAt || 0) || 0),
     stopReason: String(service.stopReason || "").trim()
   }));
 }
@@ -267,6 +270,10 @@ export function normalizeStoreScopedState(rawScopedState, fallbackScopedState, s
   const hasAnyStatus = Object.keys(scopedState.consultantCurrentStatus).length > 0;
 
   return {
+    _operationSnapshotFetchedAt: Math.max(
+      0,
+      Number(rawScopedState?._operationSnapshotFetchedAt || fallback?._operationSnapshotFetchedAt || 0) || 0
+    ),
     ...scopedState,
     consultantCurrentStatus: hasAnyStatus
       ? reconcileConsultantStatuses(scopedState, now)
@@ -329,10 +336,14 @@ export function createEmptyState() {
     productCatalog: [],
     modalConfig: {
       title: "Fechar atendimento",
+      finishFlowMode: "legacy",
+      ...DEFAULT_FIELD_JUSTIFICATION_CONFIG,
       productSeenLabel: "Interesses do cliente",
       productSeenPlaceholder: "Busque e selecione interesses",
       productClosedLabel: "",
       productClosedPlaceholder: "Busque e selecione o produto fechado",
+      purchaseCodeLabel: "Codigo da compra",
+      purchaseCodePlaceholder: "Informe o codigo da compra para conciliacao posterior",
       notesLabel: "Observações",
       notesPlaceholder: "Detalhes adicionais do atendimento",
       queueJumpReasonLabel: "Motivo do atendimento fora da vez",
@@ -365,6 +376,7 @@ export function createEmptyState() {
       showProductSeenField: true,
       showProductSeenNotesField: true,
       showProductClosedField: true,
+      showPurchaseCodeField: true,
       showVisitReasonField: true,
       showCustomerSourceField: true,
       showExistingCustomerField: true,
@@ -390,6 +402,7 @@ export function createEmptyState() {
       requireProductSeenField: true,
       requireProductSeenNotesField: false,
       requireProductClosedField: true,
+      requirePurchaseCodeField: true,
       requireVisitReason: true,
       requireCustomerSource: true,
       requireCustomerNamePhone: true,
@@ -452,10 +465,17 @@ export function buildRandomFinishModalDraft(state, service) {
 
   const outcomes = ["compra", "reserva", "nao-compra"];
   const outcome = outcomes[randomInt(0, outcomes.length - 1)];
+  const finishFlowMode = String(state.modalConfig?.finishFlowMode || "").trim() === "erp-reconciliation"
+    ? "erp-reconciliation"
+    : "legacy";
   const products = state.productCatalog.length ? state.productCatalog : [{ name: "Produto teste", basePrice: 1000 }];
   const seenProduct = products[randomInt(0, products.length - 1)];
   const closedProduct =
-    outcome === "compra" || outcome === "reserva" ? products[randomInt(0, products.length - 1)] : null;
+    finishFlowMode === "erp-reconciliation" && outcome === "compra"
+      ? null
+      : outcome === "compra" || outcome === "reserva"
+        ? products[randomInt(0, products.length - 1)]
+        : null;
   const visitReasonCount = state.visitReasonOptions.length ? 1 : 0;
   const sourceCount = state.customerSourceOptions.length ? 1 : 0;
   const visitReasons = sampleItems(state.visitReasonOptions, visitReasonCount).map((item) => item.id);
@@ -506,6 +526,7 @@ export function buildRandomFinishModalDraft(state, service) {
 
   return {
     outcome,
+    purchaseCode: finishFlowMode === "erp-reconciliation" && outcome === "compra" ? `CP-${Date.now().toString().slice(-6)}` : "",
     isWindowService: Math.random() < 0.3,
     isGift: outcome === "compra" || outcome === "reserva" ? Math.random() < 0.5 : false,
     isExistingCustomer: Math.random() < 0.5,

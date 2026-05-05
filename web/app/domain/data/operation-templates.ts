@@ -2,6 +2,37 @@ import { cloneValue } from "../utils/object";
 
 export const DEFAULT_OPERATION_TEMPLATE_ID = "joalheria-padrao";
 
+export const DEFAULT_FIELD_JUSTIFICATION_CONFIG = {
+  requireCustomerNameJustification: false,
+  customerNameJustificationMinChars: 20,
+  requireCustomerPhoneJustification: false,
+  customerPhoneJustificationMinChars: 20,
+  requireEmailJustification: false,
+  emailJustificationMinChars: 20,
+  requireProfessionJustification: false,
+  professionJustificationMinChars: 20,
+  requireExistingCustomerJustification: false,
+  existingCustomerJustificationMinChars: 20,
+  requireNotesJustification: false,
+  notesJustificationMinChars: 20,
+  requireProductSeenJustification: false,
+  productSeenJustificationMinChars: 20,
+  requireProductSeenNotesJustification: false,
+  productSeenNotesJustificationMinChars: 20,
+  requireProductClosedJustification: false,
+  productClosedJustificationMinChars: 20,
+  requirePurchaseCodeJustification: false,
+  purchaseCodeJustificationMinChars: 20,
+  requireVisitReasonJustification: false,
+  visitReasonJustificationMinChars: 20,
+  requireCustomerSourceJustification: false,
+  customerSourceJustificationMinChars: 20,
+  requireQueueJumpReasonJustification: false,
+  queueJumpReasonJustificationMinChars: 20,
+  requireLossReasonJustification: false,
+  lossReasonJustificationMinChars: 20
+};
+
 const BASE_CUSTOMER_SOURCES = [
   { id: "instagram", label: "Instagram" },
   { id: "trafego-pago", label: "Trafego pago" },
@@ -48,12 +79,15 @@ export const operationTemplates = [
     description: "Equilibrio entre qualidade de atendimento, captura de lead e disciplina de fila.",
     settings: {
       maxConcurrentServices: 10,
+      maxConcurrentServicesPerConsultant: 1,
       serviceCancelWindowSeconds: 30,
       timingFastCloseMinutes: 5,
       timingLongServiceMinutes: 25,
       timingLowSaleAmount: 1200
     },
     modalConfig: {
+      finishFlowMode: "legacy",
+      ...DEFAULT_FIELD_JUSTIFICATION_CONFIG,
       showCustomerNameField: true,
       showCustomerPhoneField: true,
       showEmailField: true,
@@ -62,6 +96,7 @@ export const operationTemplates = [
       showProductSeenField: true,
       showProductSeenNotesField: true,
       showProductClosedField: true,
+      showPurchaseCodeField: true,
       showVisitReasonField: true,
       showCustomerSourceField: true,
       showExistingCustomerField: true,
@@ -85,6 +120,7 @@ export const operationTemplates = [
       requireProductSeenField: true,
       requireProductSeenNotesField: false,
       requireProductClosedField: true,
+      requirePurchaseCodeField: true,
       requireVisitReason: true,
       requireCustomerSource: true,
       requireCustomerNamePhone: true,
@@ -118,12 +154,15 @@ export const operationTemplates = [
     description: "Mais foco em relacao de longo prazo e coleta completa de dados do cliente.",
     settings: {
       maxConcurrentServices: 8,
+      maxConcurrentServicesPerConsultant: 1,
       serviceCancelWindowSeconds: 30,
       timingFastCloseMinutes: 7,
       timingLongServiceMinutes: 35,
       timingLowSaleAmount: 1500
     },
     modalConfig: {
+      finishFlowMode: "legacy",
+      ...DEFAULT_FIELD_JUSTIFICATION_CONFIG,
       showCustomerNameField: true,
       showCustomerPhoneField: true,
       showEmailField: true,
@@ -132,6 +171,7 @@ export const operationTemplates = [
       showProductSeenField: true,
       showProductSeenNotesField: true,
       showProductClosedField: true,
+      showPurchaseCodeField: true,
       showVisitReasonField: true,
       showCustomerSourceField: true,
       showExistingCustomerField: true,
@@ -155,6 +195,7 @@ export const operationTemplates = [
       requireProductSeenField: true,
       requireProductSeenNotesField: false,
       requireProductClosedField: true,
+      requirePurchaseCodeField: true,
       requireVisitReason: true,
       requireCustomerSource: true,
       requireCustomerNamePhone: true,
@@ -184,12 +225,15 @@ export const operationTemplates = [
     description: "Operacao de alto fluxo com fechamento mais objetivo e formulario mais leve.",
     settings: {
       maxConcurrentServices: 12,
+      maxConcurrentServicesPerConsultant: 1,
       serviceCancelWindowSeconds: 30,
       timingFastCloseMinutes: 3,
       timingLongServiceMinutes: 18,
       timingLowSaleAmount: 900
     },
     modalConfig: {
+      finishFlowMode: "legacy",
+      ...DEFAULT_FIELD_JUSTIFICATION_CONFIG,
       showCustomerNameField: true,
       showCustomerPhoneField: true,
       showEmailField: false,
@@ -198,6 +242,7 @@ export const operationTemplates = [
       showProductSeenField: true,
       showProductSeenNotesField: true,
       showProductClosedField: true,
+      showPurchaseCodeField: true,
       showVisitReasonField: true,
       showCustomerSourceField: true,
       showExistingCustomerField: true,
@@ -221,6 +266,7 @@ export const operationTemplates = [
       requireProductSeenField: true,
       requireProductSeenNotesField: false,
       requireProductClosedField: true,
+      requirePurchaseCodeField: true,
       requireVisitReason: true,
       requireCustomerSource: false,
       requireCustomerNamePhone: true,

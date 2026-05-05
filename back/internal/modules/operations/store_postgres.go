@@ -108,6 +108,70 @@ func (repository *PostgresRepository) GetMaxConcurrentServicesPerConsultant(ctx 
 	return value, nil
 }
 
+func (repository *PostgresRepository) ListStoresWithActiveServices(ctx context.Context) ([]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select distinct store_id::text
+		from operation_active_services
+		order by store_id::text asc;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	storeIDs := make([]string, 0)
+	for rows.Next() {
+		var storeID string
+		if err := rows.Scan(&storeID); err != nil {
+			return nil, err
+		}
+		storeID = strings.TrimSpace(storeID)
+		if storeID == "" {
+			continue
+		}
+		storeIDs = append(storeIDs, storeID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return storeIDs, nil
+}
+
+func (repository *PostgresRepository) ListStoresWithActiveServicesByTenant(ctx context.Context, tenantID string) ([]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select distinct oas.store_id::text
+		from operation_active_services oas
+		join stores s on s.id = oas.store_id
+		where s.tenant_id = $1::uuid
+		order by oas.store_id::text asc;
+	`, strings.TrimSpace(tenantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	storeIDs := make([]string, 0)
+	for rows.Next() {
+		var storeID string
+		if err := rows.Scan(&storeID); err != nil {
+			return nil, err
+		}
+		storeID = strings.TrimSpace(storeID)
+		if storeID == "" {
+			continue
+		}
+		storeIDs = append(storeIDs, storeID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return storeIDs, nil
+}
+
 func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID string) ([]ConsultantProfile, error) {
 	rows, err := repository.pool.Query(ctx, `
 		select
@@ -420,6 +484,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			is_gift,
 			product_seen,
 			product_closed,
+			purchase_code,
 			product_details,
 			products_seen_json,
 			products_closed_json,
@@ -489,6 +554,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			&entry.IsGift,
 			&entry.ProductSeen,
 			&entry.ProductClosed,
+			&entry.PurchaseCode,
 			&entry.ProductDetails,
 			&seenProductsRaw,
 			&closedProductsRaw,
@@ -734,6 +800,7 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 				is_gift,
 				product_seen,
 				product_closed,
+				purchase_code,
 				product_details,
 				products_seen_json,
 				products_closed_json,
@@ -765,10 +832,10 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			)
 			values (
 				$1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
-				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb,
-				$21, $22, $23, $24, $25, $26, $27, $28::jsonb, $29::jsonb, $30::jsonb,
-				$31::jsonb, $32::jsonb, $33::jsonb, $34, $35, $36, $37, $38, $39, $40::jsonb, $41,
-				$42, $43, $44::jsonb, $45
+				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, $21::jsonb,
+				$22, $23, $24, $25, $26, $27, $28, $29::jsonb, $30::jsonb, $31::jsonb,
+				$32::jsonb, $33::jsonb, $34::jsonb, $35, $36, $37, $38, $39, $40, $41::jsonb, $42,
+				$43, $44, $45::jsonb, $46
 			)
 			on conflict (store_id, service_id) do nothing;
 		`,
@@ -789,6 +856,7 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			item.IsGift,
 			item.ProductSeen,
 			item.ProductClosed,
+			item.PurchaseCode,
 			item.ProductDetails,
 			string(productsSeenRaw),
 			string(productsClosedRaw),

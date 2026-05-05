@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -13,11 +14,15 @@ import (
 // As rotas continuam aceitando storeId legado, mas a configuracao agora e
 // tenant-wide. Para usuarios globais, a UI deve enviar tenantId do contexto
 // ativo na query ou no payload; o servico valida o acesso antes de ler/gravar.
-func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
+func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware, env string) {
 	mux.Handle("GET /v1/settings", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		if handleDebugSettingsFailure(w, r, env) {
 			return
 		}
 
@@ -91,6 +96,25 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveModalSection(r.Context(), principal, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
+
+	mux.Handle("POST /v1/settings/templates/{templateId}/apply", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		ack, err := service.ApplyOperationTemplate(r.Context(), principal, OperationTemplateApplyInput{
+			TenantID:   requestTenantID(r),
+			TemplateID: strings.TrimSpace(r.PathValue("templateId")),
+		})
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -319,6 +343,46 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 func requestTenantID(r *http.Request) string {
 	return strings.TrimSpace(r.URL.Query().Get("tenantId"))
+}
+
+func handleDebugSettingsFailure(w http.ResponseWriter, r *http.Request, env string) bool {
+	if strings.EqualFold(strings.TrimSpace(env), "production") {
+		return false
+	}
+
+	mode := strings.TrimSpace(r.URL.Query().Get("__debugSettingsFailure"))
+	if mode == "" {
+		cookie, err := r.Cookie("ldv_debug_settings_failure")
+		if err == nil {
+			mode = strings.TrimSpace(cookie.Value)
+		}
+	}
+
+	switch strings.ToLower(mode) {
+	case "":
+		return false
+	case "500":
+		httpapi.WriteError(
+			w,
+			r,
+			http.StatusInternalServerError,
+			"debug_settings_failure",
+			"Falha simulada de settings para smoke local.",
+		)
+		return true
+	case "slow-500":
+		time.Sleep(12 * time.Second)
+		httpapi.WriteError(
+			w,
+			r,
+			http.StatusInternalServerError,
+			"debug_settings_failure",
+			"Falha lenta simulada de settings para smoke local.",
+		)
+		return true
+	default:
+		return false
+	}
 }
 
 func firstNonEmpty(values ...string) string {

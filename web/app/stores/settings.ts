@@ -116,6 +116,18 @@ export const useSettingsStore = defineStore("settings", () => {
     });
   }
 
+  async function persistOperationTemplateApply(templateId) {
+    const normalizedTemplateId = String(templateId || "").trim();
+
+    if (!normalizedTemplateId) {
+      return;
+    }
+
+    await apiRequest(settingsPath(`/v1/settings/templates/${encodeURIComponent(normalizedTemplateId)}/apply`), {
+      method: "POST"
+    });
+  }
+
   async function persistOptionSection(stateKey) {
     const groupPath = OPTION_GROUP_PATHS[stateKey];
 
@@ -271,15 +283,29 @@ export const useSettingsStore = defineStore("settings", () => {
       return { ok: false, message: "Sessao indisponivel." };
     }
 
+    if (!resolveTenantId()) {
+      return { ok: false, message: "Tenant ativo nao identificado para a sessao." };
+    }
+
     const previousState = cloneValue(runtime.state);
+    const previousIds = new Set((previousState[stateKey] || []).map((item) => String(item?.id || "").trim()));
     const localResult = await runtime.run(actionName, label);
 
     if (localResult?.ok === false) {
       return localResult;
     }
 
+    const createdItem =
+      (runtime.state[stateKey] || []).find(
+        (item) => !previousIds.has(String(item?.id || "").trim()) && normalizeText(item?.label) === normalizeText(label)
+      ) || null;
+
+    if (!createdItem) {
+      return localResult || { ok: true };
+    }
+
     try {
-      await persistOptionSection(stateKey);
+      await persistOptionItemCreate(stateKey, createdItem);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -297,6 +323,10 @@ export const useSettingsStore = defineStore("settings", () => {
       return { ok: false, message: "Sessao indisponivel." };
     }
 
+    if (!resolveTenantId()) {
+      return { ok: false, message: "Tenant ativo nao identificado para a sessao." };
+    }
+
     const previousState = cloneValue(runtime.state);
     const localResult = await runtime.run(actionName, optionId, label);
 
@@ -304,8 +334,15 @@ export const useSettingsStore = defineStore("settings", () => {
       return localResult;
     }
 
+    const updatedItem =
+      (runtime.state[stateKey] || []).find((item) => String(item?.id || "").trim() === String(optionId || "").trim()) || null;
+
+    if (!updatedItem) {
+      return localResult || { ok: true };
+    }
+
     try {
-      await persistOptionSection(stateKey);
+      await persistOptionItemUpdate(stateKey, updatedItem);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -323,6 +360,10 @@ export const useSettingsStore = defineStore("settings", () => {
       return { ok: false, message: "Sessao indisponivel." };
     }
 
+    if (!resolveTenantId()) {
+      return { ok: false, message: "Tenant ativo nao identificado para a sessao." };
+    }
+
     const previousState = cloneValue(runtime.state);
     const localResult = await runtime.run(actionName, optionId);
 
@@ -331,7 +372,7 @@ export const useSettingsStore = defineStore("settings", () => {
     }
 
     try {
-      await persistOptionSection(stateKey);
+      await persistOptionItemDelete(stateKey, optionId);
       return localResult || { ok: true };
     } catch (error) {
       runtime.hydrate(previousState);
@@ -462,10 +503,7 @@ export const useSettingsStore = defineStore("settings", () => {
     },
     applyOperationTemplate(templateId) {
       return mutateAndPersist("applyOperationTemplate", [templateId], [
-        () => persistOperationSection(),
-        () => persistModalSection(),
-        () => persistOptionSection("visitReasonOptions"),
-        () => persistOptionSection("customerSourceOptions")
+        () => persistOperationTemplateApply(templateId)
       ]);
     },
     addVisitReasonOption(label) {

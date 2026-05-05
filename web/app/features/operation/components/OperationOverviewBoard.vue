@@ -58,6 +58,13 @@ function isSameSequentialGroup(targetService, candidate) {
   return siblingServiceIds.includes(targetServiceId);
 }
 
+function firstPositiveTimestamp(values) {
+  return values
+    .map((value) => Number(value || 0) || 0)
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right)[0] || 0;
+}
+
 function deriveSequentialServiceFinishedAt(targetService) {
   const targetStartedAt = Number(targetService?.serviceStartedAt || 0) || 0;
   let nextStartedAt = 0;
@@ -86,7 +93,11 @@ function deriveSequentialServiceFinishedAt(targetService) {
 }
 
 function formatServiceDuration(service) {
-  const effectiveFinishedAt = deriveSequentialServiceFinishedAt(service);
+  const effectiveFinishedAt = firstPositiveTimestamp([
+    service?.effectiveFinishedAt,
+    service?.stoppedAt,
+    deriveSequentialServiceFinishedAt(service)
+  ]);
   const finishedAt = effectiveFinishedAt > 0 ? effectiveFinishedAt : adjustedNow.value;
   return formatDuration(
     Math.max(0, finishedAt - Number(service?.serviceStartedAt || 0)),

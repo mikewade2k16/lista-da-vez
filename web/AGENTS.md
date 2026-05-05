@@ -70,9 +70,11 @@ Toda implementacao nova em `web/` deve:
 - `web/app/stores/consultants.ts` agora cria consultores ja com conta autenticada vinculada.
 - `web/app/composables/useContextRealtime.ts` cuida da sincronizacao administrativa por tenant para atualizar lojas, usuarios e header entre instancias.
 - `web/app/composables/useContextRealtime.ts` tambem precisa revalidar `web/app/stores/access-control.ts` quando chegar `context.updated` com `resource=access` ou `resource=user`, senao a workspace de Usuarios e acessos fica stale ate reload.
+- `web/app/composables/useContextRealtime.ts` tambem e o caminho oficial para revalidar `web/app/stores/alerts.ts` quando chegar `context.updated` com `resource=alerts`; a UI de alertas nao deve abrir timer proprio para decidir vencimento de `long_open_service`.
 - `web/app/utils/api-client.ts` concentra o client HTTP criado dentro do contexto do store.
 - `web/app/composables/useOperationsRealtime.ts` cuida da assinatura WebSocket da operacao e revalidacao do snapshot em tempo real.
 - `web/app/composables/useOperationsRealtime.ts` agora tambem cuida do modo integrado multi-loja de `/operacao` quando a sessao tiver mais de uma loja acessivel.
+- os cronometros exibidos em `/operacao` continuam sendo apenas representacao visual do estado atual; a decisao de disparar ou resolver alerta temporal pertence ao backend em `operations`.
 - mudancas em `settings` devem continuar propagando sem refresh via `context.updated` com `resource=settings` e `resourceId={tenantId}`.
 - `web/app/utils/runtime-remote.ts` hidrata consultores, settings e operations remotos para a loja ativa.
 - toda chamada a `hydrateRuntimeStoreContext`, `refreshRuntimeStoreSettings` ou `fetchRemoteStoreData` deve repassar o `tenantId` (ex.: `auth.activeTenantId`); sem ele a query `tenantId` some e usuarios `platform_admin` com mais de um tenant acessivel recebem 400 `validation_error` em `/v1/settings`.

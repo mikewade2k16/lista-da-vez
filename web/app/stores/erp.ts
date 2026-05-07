@@ -105,6 +105,66 @@ interface ErpRawRecordsResponse {
   items: Array<Record<string, unknown>>;
 }
 
+interface ErpSyncRunsResponse {
+  store: ErpStoreScope;
+  dataType?: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: ErpSyncRunSummary[];
+}
+
+interface ErpSyncAutomationSummary {
+  enabled: boolean;
+  interval?: string;
+  hourUtc?: number;
+  dryRunDefault?: boolean;
+}
+
+interface ErpSyncCoverageTotals {
+  totalFiles: number;
+  importedFiles: number;
+  pendingFiles: number;
+}
+
+interface ErpSyncCoverageEntitySummary {
+  dataType: string;
+  remoteFilesTotal: number;
+  importedFiles: number;
+  pendingFiles: number;
+  rowsInBank: number;
+  searchableRows: number;
+  currentRows?: number;
+}
+
+interface ErpSyncCoverageFileSummary {
+  sourceName: string;
+  dataType: string;
+  dataReference: string;
+  modTime?: string;
+  sizeBytes: number;
+  imported: boolean;
+  status: string;
+  recordCount?: number;
+  importedAt?: string;
+  sourceKind?: string;
+}
+
+interface ErpOverviewResponse {
+  store: ErpStoreScope;
+  sourceKind: string;
+  sourcePath?: string;
+  automatic: ErpSyncAutomationSummary;
+  totals: ErpSyncCoverageTotals;
+  fullyImported: boolean;
+  entities: ErpSyncCoverageEntitySummary[];
+  missingFiles: ErpSyncCoverageFileSummary[];
+  agentDocPath?: string;
+  agentDocUrl?: string;
+  lastRun?: ErpSyncRunSummary | null;
+  lastImportedFile?: ErpSyncFileSummary | null;
+}
+
 interface BootstrapResponse {
   ok: boolean;
   runId: string;
@@ -118,6 +178,26 @@ interface BootstrapResponse {
   rowsImported: number;
   startedAt: string;
   finishedAt: string;
+  storeCnpj?: string;
+}
+
+interface IngestResponse {
+  ok: boolean;
+  runId?: string;
+  runIds?: string[];
+  store: ErpStoreScope;
+  dataType?: string;
+  dataTypes?: string[];
+  dryRun: boolean;
+  filesSeen: number;
+  filesImported: number;
+  filesSkipped: number;
+  filesFailed?: Array<{ sourceName: string; message: string }>;
+  rowsRead: number;
+  rowsImported: number;
+  startedAt: string;
+  finishedAt: string;
+  duration: string;
   storeCnpj?: string;
 }
 
@@ -155,17 +235,22 @@ export const useErpStore = defineStore("erp", () => {
   const loadingStatus = ref(false);
   const loadingProducts = ref(false);
   const loadingRecords = ref(false);
+  const loadingRuns = ref(false);
+  const loadingOverview = ref(false);
   const syncing = ref(false);
   const error = ref("");
   const records = ref<Array<Record<string, unknown>>>([]);
   const totalRecords = ref(0);
   const recordsPage = ref(1);
   const recordsPageSize = ref(50);
+  const runs = ref<ErpSyncRunSummary[]>([]);
+  const totalRuns = ref(0);
+  const overview = ref<ErpOverviewResponse | null>(null);
 
   const activeStore = computed(() => {
     const activeStoreId = normalizeText(auth.activeStoreId);
     return (Array.isArray(auth.storeContext) ? auth.storeContext : []).find(
-      (store) => normalizeText(store?.id) === activeStoreId
+      (store: Record<string, unknown>) => normalizeText(store?.id) === activeStoreId
     ) || null;
   });
 
@@ -173,7 +258,9 @@ export const useErpStore = defineStore("erp", () => {
     normalizeText(auth.activeTenantId || activeStore.value?.tenantId || auth.tenantContext?.[0]?.id)
   );
 
-  const activeStoreCode = computed(() => normalizeText(activeStore.value?.code));
+  const activeStoreCode = computed(() =>
+    normalizeText(status.value?.store?.storeCode || overview.value?.store?.storeCode || "")
+  );
 
   async function fetchStatus(payload: { tenantId?: string; storeCode?: string } = {}) {
     try {
@@ -183,16 +270,16 @@ export const useErpStore = defineStore("erp", () => {
 
       const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
-      if (!storeCode) {
-        return { ok: false, message: "Nenhuma loja ativa selecionada para o ERP." };
-      }
 
-      const params = new URLSearchParams({ storeCode });
+      const params = new URLSearchParams();
+      if (storeCode) {
+        params.set("storeCode", storeCode);
+      }
       if (tenantId) {
         params.set("tenantId", tenantId);
       }
 
-      const response = await apiRequest(`/v1/erp/status?${params.toString()}`);
+      const response = await apiRequest(params.size ? `/v1/erp/status?${params.toString()}` : "/v1/erp/status");
       status.value = response as ErpStatusResponse;
       return { ok: true, data: status.value };
     } catch (err) {
@@ -213,17 +300,17 @@ export const useErpStore = defineStore("erp", () => {
 
       const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
-      if (!storeCode) {
-        return { ok: false, message: "Nenhuma loja ativa selecionada para o ERP." };
-      }
 
       const nextPage = Math.max(1, Number(payload.page || page.value || 1) || 1);
       const nextPageSize = Math.max(1, Number(payload.pageSize || pageSize.value || 50) || 50);
       const params = new URLSearchParams({
-        storeCode,
         page: String(nextPage),
         pageSize: String(nextPageSize)
       });
+
+      if (storeCode) {
+        params.set("storeCode", storeCode);
+      }
 
       if (tenantId) {
         params.set("tenantId", tenantId);
@@ -286,9 +373,6 @@ export const useErpStore = defineStore("erp", () => {
 
       const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
-      if (!storeCode) {
-        return { ok: false, message: "Nenhuma loja ativa selecionada para o ERP." };
-      }
 
       const response = await apiRequest("/v1/erp/bootstrap/items", {
         method: "POST",
@@ -318,9 +402,6 @@ export const useErpStore = defineStore("erp", () => {
       const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
       const dataType = normalizeText(payload.dataType).toLowerCase();
-      if (!storeCode) {
-        return { ok: false, message: "Nenhuma loja ativa selecionada para o ERP." };
-      }
       if (!dataType) {
         return { ok: false, message: "Tipo de dado ERP nao informado." };
       }
@@ -362,9 +443,6 @@ export const useErpStore = defineStore("erp", () => {
 
       const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
-      if (!storeCode) {
-        return { ok: false, message: "Nenhuma loja ativa selecionada para o ERP." };
-      }
 
       const dataType = normalizeText(payload.dataType).toLowerCase();
       if (!dataType) {
@@ -374,10 +452,13 @@ export const useErpStore = defineStore("erp", () => {
       const nextPage = Math.max(1, Number(payload.page || recordsPage.value || 1) || 1);
       const nextPageSize = Math.max(1, Number(payload.pageSize || recordsPageSize.value || 50) || 50);
       const params = new URLSearchParams({
-        storeCode,
         page: String(nextPage),
         pageSize: String(nextPageSize)
       });
+
+      if (storeCode) {
+        params.set("storeCode", storeCode);
+      }
 
       if (tenantId) {
         params.set("tenantId", tenantId);
@@ -431,6 +512,177 @@ export const useErpStore = defineStore("erp", () => {
     }
   }
 
+  async function fetchRuns(payload: {
+    tenantId?: string;
+    storeCode?: string;
+    dataType?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}) {
+    try {
+      loadingRuns.value = true;
+      error.value = "";
+      await auth.ensureSession();
+
+      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
+
+      const nextPage = Math.max(1, Number(payload.page || 1) || 1);
+      const nextPageSize = Math.max(1, Number(payload.pageSize || 20) || 20);
+      const params = new URLSearchParams({
+        page: String(nextPage),
+        pageSize: String(nextPageSize)
+      });
+
+      if (storeCode) {
+        params.set("storeCode", storeCode);
+      }
+
+      if (tenantId) {
+        params.set("tenantId", tenantId);
+      }
+
+      const dataType = normalizeText(payload.dataType).toLowerCase();
+      if (dataType) {
+        params.set("dataType", dataType);
+      }
+
+      const response = await apiRequest(`/v1/erp/runs?${params.toString()}`) as ErpSyncRunsResponse;
+      runs.value = Array.isArray(response.items) ? response.items : [];
+      totalRuns.value = Number(response.total || 0) || 0;
+
+      if (response.store && (!status.value || status.value.store.storeId !== response.store.storeId)) {
+        status.value = {
+          ...(status.value || {
+            supportedTypes: [],
+            functionalTypes: [],
+            placeholderTypes: [],
+            productCurrent: 0,
+            rawItemRows: 0,
+            lastRun: null,
+            lastImportedFile: null
+          }),
+          store: response.store
+        };
+      }
+
+      return { ok: true, data: response };
+    } catch (err) {
+      const message = getApiErrorMessage(err, "Erro ao carregar os runs ERP.");
+      error.value = message;
+      return { ok: false, message };
+    } finally {
+      loadingRuns.value = false;
+    }
+  }
+
+  async function fetchOverview(payload: { tenantId?: string; storeCode?: string } = {}) {
+    try {
+      loadingOverview.value = true;
+      error.value = "";
+      await auth.ensureSession();
+
+      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
+
+      const params = new URLSearchParams();
+      if (storeCode) {
+        params.set("storeCode", storeCode);
+      }
+      if (tenantId) {
+        params.set("tenantId", tenantId);
+      }
+
+      const response = await apiRequest(params.size ? `/v1/erp/overview?${params.toString()}` : "/v1/erp/overview") as ErpOverviewResponse;
+      overview.value = response;
+
+      if (response.store && (!status.value || status.value.store.storeId !== response.store.storeId)) {
+        status.value = {
+          ...(status.value || {
+            supportedTypes: [],
+            functionalTypes: [],
+            placeholderTypes: [],
+            productCurrent: 0,
+            rawItemRows: 0,
+            lastRun: null,
+            lastImportedFile: null
+          }),
+          store: response.store,
+          lastRun: response.lastRun || status.value?.lastRun || null,
+          lastImportedFile: response.lastImportedFile || status.value?.lastImportedFile || null
+        };
+      }
+
+      return { ok: true, data: response };
+    } catch (err) {
+      const message = getApiErrorMessage(err, "Erro ao carregar o overview ERP.");
+      error.value = message;
+      return { ok: false, message };
+    } finally {
+      loadingOverview.value = false;
+    }
+  }
+
+  async function syncStore(payload: { tenantId?: string; storeCode?: string; dataType?: string; dryRun?: boolean; maxFiles?: number } = {}) {
+  try {
+    syncing.value = true;
+    error.value = "";
+    await auth.ensureSession();
+
+    const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+    const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
+
+    const response = await apiRequest("/v1/erp/sync", {
+    method: "POST",
+    body: {
+      tenantId,
+      storeCode,
+      dataType: normalizeText(payload.dataType).toLowerCase(),
+      dryRun: Boolean(payload.dryRun),
+      maxFiles: Number(payload.maxFiles || 0) || 0
+    }
+    }) as IngestResponse;
+
+    return { ok: true, data: response };
+  } catch (err) {
+    const message = getApiErrorMessage(err, "Erro ao iniciar a sincronizacao ERP.");
+    error.value = message;
+    return { ok: false, message };
+  } finally {
+    syncing.value = false;
+  }
+  }
+
+  async function backfillStore(payload: { tenantId?: string; storeCode?: string; dataType?: string; dryRun?: boolean; maxFiles?: number } = {}) {
+  try {
+    syncing.value = true;
+    error.value = "";
+    await auth.ensureSession();
+
+    const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+    const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
+
+    const response = await apiRequest("/v1/erp/backfill", {
+    method: "POST",
+    body: {
+      tenantId,
+      storeCode,
+      dataType: normalizeText(payload.dataType).toLowerCase(),
+      dryRun: Boolean(payload.dryRun),
+      maxFiles: Number(payload.maxFiles || 0) || 0
+    }
+    }) as IngestResponse;
+
+    return { ok: true, data: response };
+  } catch (err) {
+    const message = getApiErrorMessage(err, "Erro ao iniciar o backfill ERP.");
+    error.value = message;
+    return { ok: false, message };
+  } finally {
+    syncing.value = false;
+  }
+  }
+
   function reset() {
     productsRequestSeq += 1;
     recordsRequestSeq += 1;
@@ -443,6 +695,9 @@ export const useErpStore = defineStore("erp", () => {
     totalRecords.value = 0;
     recordsPage.value = 1;
     recordsPageSize.value = 50;
+    runs.value = [];
+    totalRuns.value = 0;
+    overview.value = null;
     error.value = "";
   }
 
@@ -455,20 +710,29 @@ export const useErpStore = defineStore("erp", () => {
     loadingStatus,
     loadingProducts,
     loadingRecords,
+    loadingRuns,
+    loadingOverview,
     syncing,
     error,
     records,
     totalRecords,
     recordsPage,
     recordsPageSize,
+    runs,
+    totalRuns,
+    overview,
     activeStore,
     activeTenantId,
     activeStoreCode,
     fetchStatus,
     fetchProducts,
     fetchRecords,
+    fetchRuns,
+    fetchOverview,
     bootstrapItems,
     bootstrapDataType,
+    syncStore,
+    backfillStore,
     reset
   };
 });

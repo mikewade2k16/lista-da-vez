@@ -44,7 +44,6 @@ func (service *Service) List(ctx context.Context, principal auth.Principal, inpu
 	if err != nil {
 		return nil, err
 	}
-
 	storeID, storeIDs, err := resolveStoreScope(principal, input.StoreID)
 	if err != nil {
 		return nil, err
@@ -300,6 +299,9 @@ func (service *Service) ReceiveOperationalSignals(ctx context.Context, signals [
 	}
 
 	inputs := service.operationalSignalsToInputs(signals)
+	if err := service.ensureOperationalSignalRules(ctx, inputs); err != nil {
+		return err
+	}
 
 	mutations, err := service.repository.ProcessOperationalSignals(ctx, inputs)
 	if err != nil {
@@ -321,6 +323,11 @@ func (service *Service) ListRules(ctx context.Context, principal auth.Principal,
 	tenantID, err := resolveTenantScope(principal, input.TenantID)
 	if err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(input.TriggerType) == "" || strings.TrimSpace(input.TriggerType) == TriggerLongOpenService {
+		if err := service.ensureDefaultLongOpenRule(ctx, tenantID); err != nil {
+			return nil, err
+		}
 	}
 
 	rules, err := service.repository.ListRules(ctx, ListRulesInput{
@@ -757,6 +764,93 @@ func cloneMetadata(metadata map[string]any) map[string]any {
 	}
 
 	return cloned
+}
+
+func (service *Service) ensureOperationalSignalRules(ctx context.Context, signals []OperationalSignalInput) error {
+	checkedTenants := make(map[string]struct{}, len(signals))
+	for _, signal := range signals {
+		if strings.TrimSpace(signal.TriggerType) != TriggerLongOpenService {
+			continue
+		}
+
+		tenantID := strings.TrimSpace(signal.TenantID)
+		if tenantID == "" {
+			continue
+		}
+		if _, exists := checkedTenants[tenantID]; exists {
+			continue
+		}
+
+		if err := service.ensureDefaultLongOpenRule(ctx, tenantID); err != nil {
+			return err
+		}
+		checkedTenants[tenantID] = struct{}{}
+	}
+
+	return nil
+}
+
+func (service *Service) ensureDefaultLongOpenRule(ctx context.Context, tenantID string) error {
+	normalizedTenantID := strings.TrimSpace(tenantID)
+	if normalizedTenantID == "" {
+		return nil
+	}
+
+	rules, err := service.repository.LoadActiveRulesForTrigger(ctx, normalizedTenantID, TriggerLongOpenService)
+	if err != nil {
+		return err
+	}
+	if len(rules) > 0 {
+		return nil
+	}
+
+	rulesView, err := service.repository.LoadRules(ctx, normalizedTenantID)
+	if err != nil {
+		return err
+	}
+
+	thresholdMinutes := rulesView.LongOpenServiceMinutes
+	if thresholdMinutes < 1 {
+		thresholdMinutes = defaultLongOpenMinutes
+	}
+
+	_, err = service.repository.CreateRule(ctx, CreateRuleInput{
+		TenantID:               normalizedTenantID,
+		Name:                   "Atendimento longo (padrão)",
+		Description:            "Alerta padrão para atendimentos que excedem o tempo configurado",
+		IsActive:               true,
+		TriggerType:            TriggerLongOpenService,
+		ThresholdMinutes:       thresholdMinutes,
+		Severity:               SeverityCritical,
+		DisplayKind:            DisplayKindBanner,
+		ColorTheme:             ColorThemeAmber,
+		TitleTemplate:          "Atendimento em aberto há {elapsed}",
+		BodyTemplate:           "O atendimento de {consultant} segue aberto acima do tempo configurado.",
+		InteractionKind:        InteractionKindConfirmChoice,
+		ResponseOptions:        defaultLongOpenResponseOptions(),
+		IsMandatory:            false,
+		NotifyDashboard:        rulesView.NotifyDashboard,
+		NotifyOperationContext: rulesView.NotifyOperationContext,
+		NotifyExternal:         rulesView.NotifyExternal,
+		ExternalChannel:        ExternalChannelNone,
+	}, Actor{})
+	if err == nil {
+		return nil
+	}
+
+	rules, reloadErr := service.repository.LoadActiveRulesForTrigger(ctx, normalizedTenantID, TriggerLongOpenService)
+	if reloadErr == nil && len(rules) > 0 {
+		return nil
+	}
+
+	return err
+}
+
+func defaultLongOpenResponseOptions() []ResponseOption {
+	return []ResponseOption{
+		{Value: InteractionResponseStillHappening, Label: "Ainda está acontecendo"},
+		{Value: InteractionResponseForgotten, Label: "Esqueci de fechar"},
+	}
 }
 
 func derefTime(value *time.Time) time.Time {

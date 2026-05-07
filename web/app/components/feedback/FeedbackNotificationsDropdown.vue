@@ -12,6 +12,7 @@ const ui = useUiStore();
 const { allowedWorkspaces, storeContext, user } = storeToRefs(auth);
 const menuRef = ref(null);
 const menuOpen = ref(false);
+const feedbackSyncCursor = ref("");
 let pollingTimer = null;
 
 const ownUserId = computed(() => String(user.value?.id || "").trim());
@@ -20,23 +21,6 @@ const feedbackCollection = computed(() =>
   canManageFeedback.value ? feedbackStore.feedbacks : feedbackStore.myFeedbacks
 );
 const feedbackPath = computed(() => (canManageFeedback.value ? "/feedback" : "/meus-feedbacks"));
-
-const lastFeedbackSyncCursor = computed(() => {
-  const timestamps = feedbackCollection.value
-    .map((feedback) =>
-      Math.max(
-        new Date(feedback.updated_at || feedback.created_at).getTime(),
-        new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-      )
-    )
-    .filter((value) => Number.isFinite(value));
-
-  if (!timestamps.length) {
-    return "";
-  }
-
-  return new Date(Math.max(...timestamps)).toISOString();
-});
 
 function statusLabel(status) {
   const labels = {
@@ -73,6 +57,20 @@ function isUnreadForViewer(feedback, message, readAt) {
   return authorUserId !== ownUserId.value;
 }
 
+function isNewFeedbackUnread(feedback) {
+  if (!canManageFeedback.value) {
+    return false;
+  }
+
+  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime();
+  const createdAt = new Date(feedback.created_at).getTime();
+  if (!Number.isFinite(createdAt) || createdAt <= readAt) {
+    return false;
+  }
+
+  return !(feedbackStore.messagesByFeedbackId[feedback.id] || []).length;
+}
+
 function getLatestUnreadReply(feedback) {
   const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime();
   const messages = feedbackStore.messagesByFeedbackId[feedback.id] || [];
@@ -86,20 +84,28 @@ const notifications = computed(() => {
   return feedbackCollection.value
     .map((feedback) => {
       const latestReply = getLatestUnreadReply(feedback);
+      const unreadNewFeedback = isNewFeedbackUnread(feedback);
 
-      if (!latestReply || feedback.status === "closed") {
+      if ((!latestReply && !unreadNewFeedback) || feedback.status === "closed") {
         return null;
       }
 
+      const createdAt = unreadNewFeedback
+        ? feedback.created_at || feedback.updated_at
+        : latestReply.created_at || feedback.updated_at;
+      const preview = unreadNewFeedback
+        ? feedback.body || ""
+        : latestReply.body || feedback.body || "";
+
       return {
-        id: `${feedback.id}:${latestReply.id}`,
+        id: unreadNewFeedback ? `${feedback.id}:created` : `${feedback.id}:${latestReply.id}`,
         feedbackId: feedback.id,
         title: feedback.subject || "Chamado sem assunto",
         meta: canManageFeedback.value
           ? `${feedback.user_name || "Usuario"} · ${getStoreLabel(feedback.store_id)}`
           : statusLabel(feedback.status),
-        preview: latestReply.body || feedback.body || "",
-        createdAt: latestReply.created_at || feedback.updated_at,
+        preview,
+        createdAt,
         path: `${feedbackPath.value}?id=${encodeURIComponent(feedback.id)}`
       };
     })
@@ -153,11 +159,15 @@ async function loadNotifications() {
   }
 
   const result = canManageFeedback.value
-    ? await feedbackStore.fetchFeedbacks({ since: lastFeedbackSyncCursor.value })
-    : await feedbackStore.fetchMyFeedbacks({ since: lastFeedbackSyncCursor.value });
+    ? await feedbackStore.fetchFeedbacks(feedbackSyncCursor.value ? { since: feedbackSyncCursor.value } : undefined)
+    : await feedbackStore.fetchMyFeedbacks(feedbackSyncCursor.value ? { since: feedbackSyncCursor.value } : undefined);
 
   if (!result.ok) {
     return;
+  }
+
+  if (result.cursor) {
+    feedbackSyncCursor.value = result.cursor;
   }
 
   await feedbackStore.syncMessagesForFeedbacks(
@@ -194,6 +204,7 @@ function handleVisibilityChange() {
 }
 
 watch([ownUserId, canManageFeedback], () => {
+  feedbackSyncCursor.value = "";
   void loadNotifications();
 }, { immediate: true });
 

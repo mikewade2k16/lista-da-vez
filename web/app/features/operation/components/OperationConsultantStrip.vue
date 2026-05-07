@@ -28,7 +28,7 @@ const pausedByPersonId = computed(() =>
 const pauseReasonOptions = computed(() => props.state.pauseReasonOptions || []);
 const pauseDialogEmployee = ref(null);
 const pausePending = ref(false);
-// Acoes secundarias existem, mas ficam fora da UI enquanto o fluxo esta pausado.
+// Mantem tarefa fora da faixa, mas preserva a pausa visivel para o fluxo atual.
 const showSecondaryEmployeeActions = false;
 
 function statusFor(employeeId) {
@@ -199,7 +199,6 @@ async function resumeEmployee(employee) {
             <span class="material-icons-round">assignment</span>
           </button>
           <button
-            v-if="showSecondaryEmployeeActions"
             class="employee__action employee__action--secondary"
             type="button"
             title="Pausar"
@@ -222,7 +221,6 @@ async function resumeEmployee(employee) {
             <span class="material-icons-round">assignment</span>
           </button>
           <button
-            v-if="showSecondaryEmployeeActions"
             class="employee__action employee__action--secondary"
             type="button"
             title="Pausar"

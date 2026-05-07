@@ -108,6 +108,24 @@ export const useFeedbackStore = defineStore("feedback", () => {
     return Number.isFinite(updatedAt) ? updatedAt : 0;
   }
 
+  function getFeedbackSyncTime(feedback: Partial<FeedbackItem>) {
+    const updatedAt = new Date(feedback.updated_at || feedback.created_at || 0).getTime();
+    const readAt = new Date(feedback.user_last_read_at || feedback.created_at || 0).getTime();
+    return Math.max(Number.isFinite(updatedAt) ? updatedAt : 0, Number.isFinite(readAt) ? readAt : 0);
+  }
+
+  function buildFeedbackSyncCursor(feedbacks: Partial<FeedbackItem>[]) {
+    const timestamps = feedbacks
+      .map((feedback) => getFeedbackSyncTime(feedback))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    if (!timestamps.length) {
+      return "";
+    }
+
+    return new Date(Math.max(...timestamps)).toISOString();
+  }
+
   function sortFeedbacks(feedbacks: FeedbackItem[]) {
     return [...feedbacks].sort((left, right) =>
       getFeedbackActivityTime(right) - getFeedbackActivityTime(left)
@@ -295,13 +313,18 @@ export const useFeedbackStore = defineStore("feedback", () => {
 
       const query = params.toString() ? `?${params.toString()}` : "";
       const response = await apiRequest(`/v1/feedback${query}`);
+      const fetchedFeedbacks = response.feedbacks || [];
 
       if (filters?.since) {
-        upsertFeedbacks(response.feedbacks || []);
+        upsertFeedbacks(fetchedFeedbacks);
       } else {
-        items.value = sortFeedbacks(response.feedbacks || []);
+        items.value = sortFeedbacks(fetchedFeedbacks);
       }
-      return { ok: true, data: items.value };
+      return {
+        ok: true,
+        data: items.value,
+        cursor: buildFeedbackSyncCursor(fetchedFeedbacks)
+      };
     } catch (err) {
       const message = getApiErrorMessage(
         err,
@@ -331,13 +354,18 @@ export const useFeedbackStore = defineStore("feedback", () => {
 
       const query = params.toString() ? `?${params.toString()}` : "";
       const response = await apiRequest(`/v1/feedback/me${query}`);
+      const fetchedFeedbacks = response.feedbacks || [];
 
       if (filters?.since) {
-        upsertMyFeedbacks(response.feedbacks || []);
+        upsertMyFeedbacks(fetchedFeedbacks);
       } else {
-        myItems.value = sortFeedbacks(response.feedbacks || []);
+        myItems.value = sortFeedbacks(fetchedFeedbacks);
       }
-      return { ok: true, data: myItems.value };
+      return {
+        ok: true,
+        data: myItems.value,
+        cursor: buildFeedbackSyncCursor(fetchedFeedbacks)
+      };
     } catch (err) {
       const message = getApiErrorMessage(
         err,

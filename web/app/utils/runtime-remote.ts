@@ -451,6 +451,16 @@ export function buildSettingsBundleFromState(state, storeId) {
   };
 }
 
+function getApiErrorStatusCode(error) {
+  const directStatus = Number(error?.statusCode ?? error?.status ?? error?.response?.status);
+
+  return Number.isFinite(directStatus) ? directStatus : 0;
+}
+
+function isConsultantsAccessDenied(error) {
+  return getApiErrorStatusCode(error) === 403;
+}
+
 export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = "") {
   const normalizedStoreId = String(storeId || "").trim();
   const storeQuery = encodeURIComponent(normalizedStoreId);
@@ -464,7 +474,12 @@ export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = "") {
   ]);
   const [settingsResult, consultantsResult, operationsSnapshotResult] = requestResults;
 
-  if (consultantsResult.status === "rejected") {
+  const consultantsLoadState =
+    consultantsResult.status === "rejected" && isConsultantsAccessDenied(consultantsResult.reason)
+      ? "degraded"
+      : "loaded";
+
+  if (consultantsResult.status === "rejected" && consultantsLoadState !== "degraded") {
     throw consultantsResult.reason;
   }
 
@@ -493,10 +508,14 @@ export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = "") {
     storeId: normalizedStoreId,
     resolvedTenantId: normalizedTenantId,
     settingsBundle: settingsResult.status === "fulfilled" ? settingsResult.value : null,
-    consultants: Array.isArray(consultantsResult.value?.consultants) ? consultantsResult.value.consultants : [],
+    consultants:
+      consultantsResult.status === "fulfilled" && Array.isArray(consultantsResult.value?.consultants)
+        ? consultantsResult.value.consultants
+        : [],
     operationsSnapshot: operationsSnapshotResult.value,
     settingsLoadState,
-    settingsErrorMessage
+    settingsErrorMessage,
+    consultantsLoadState
   };
 }
 

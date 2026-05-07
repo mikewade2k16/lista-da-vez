@@ -16,6 +16,7 @@ type serviceTestRepository struct {
 	createdMessage  *FeedbackMessage
 	markReadResult  *Feedback
 	purgedPaths     []string
+	listInput       ListInput
 	updateCallCount int
 	updatedFeedback *Feedback
 
@@ -69,7 +70,8 @@ func (repository *serviceTestRepository) GetByID(_ string) (*Feedback, error) {
 	return repository.feedback, nil
 }
 
-func (repository *serviceTestRepository) List(_ string, _ ListInput) ([]Feedback, error) {
+func (repository *serviceTestRepository) List(_ string, input ListInput) ([]Feedback, error) {
+	repository.listInput = input
 	return repository.feedbacks, repository.listErr
 }
 
@@ -254,6 +256,26 @@ func TestListAllowsResolvedFeedbackViewPermission(t *testing.T) {
 	}
 }
 
+func TestListScopesFeedbacksToPrincipalStores(t *testing.T) {
+	repository := &serviceTestRepository{
+		feedbacks: []Feedback{{ID: "feedback-1", TenantID: "tenant-1", StoreID: "store-1", UserID: "owner-1", Subject: "Assunto"}},
+	}
+	service := NewService(repository, nil)
+
+	_, err := service.List(context.Background(), auth.Principal{
+		UserID:   "viewer-1",
+		TenantID: "tenant-1",
+		Role:     auth.RoleManager,
+		StoreIDs: []string{"store-1"},
+	}, ListInput{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(repository.listInput.StoreIDs) != 1 || repository.listInput.StoreIDs[0] != "store-1" {
+		t.Fatalf("expected list to be scoped to store-1, got %#v", repository.listInput.StoreIDs)
+	}
+}
+
 func TestListMessagesAllowsResolvedFeedbackViewPermission(t *testing.T) {
 	repository := &serviceTestRepository{
 		feedback: &Feedback{ID: "feedback-1", TenantID: "tenant-1", UserID: "owner-1"},
@@ -273,6 +295,24 @@ func TestListMessagesAllowsResolvedFeedbackViewPermission(t *testing.T) {
 	}
 	if len(result) != 1 {
 		t.Fatalf("expected one message, got %d", len(result))
+	}
+}
+
+func TestListMessagesRejectsScopedViewerForDifferentStore(t *testing.T) {
+	repository := &serviceTestRepository{
+		feedback: &Feedback{ID: "feedback-1", TenantID: "tenant-1", StoreID: "store-2", UserID: "owner-1"},
+		messages: []FeedbackMessage{{ID: "message-1", FeedbackID: "feedback-1", Body: "Resposta"}},
+	}
+	service := NewService(repository, nil)
+
+	_, err := service.ListMessages(context.Background(), auth.Principal{
+		UserID:   "viewer-1",
+		TenantID: "tenant-1",
+		Role:     auth.RoleManager,
+		StoreIDs: []string{"store-1"},
+	}, "feedback-1", ListMessagesInput{})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }
 
@@ -302,5 +342,27 @@ func TestUpdateAllowsResolvedFeedbackEditPermission(t *testing.T) {
 	}
 	if result.Status != StatusResolved {
 		t.Fatalf("expected returned status %q, got %q", StatusResolved, result.Status)
+	}
+}
+
+func TestUpdateRejectsScopedEditorForDifferentStore(t *testing.T) {
+	feedback := &Feedback{ID: "feedback-1", TenantID: "tenant-1", StoreID: "store-2", UserID: "owner-1", Status: StatusOpen}
+	repository := &serviceTestRepository{
+		feedback: feedback,
+	}
+	service := NewService(repository, nil)
+	status := StatusResolved
+
+	_, err := service.Update(context.Background(), auth.Principal{
+		UserID:   "editor-1",
+		TenantID: "tenant-1",
+		Role:     auth.RoleManager,
+		StoreIDs: []string{"store-1"},
+	}, "feedback-1", UpdateInput{Status: &status})
+	if !errors.Is(err, ErrForbidden) {
+		t.Fatalf("expected ErrForbidden, got %v", err)
+	}
+	if repository.updateCallCount != 0 {
+		t.Fatalf("expected update not to be called, got %d", repository.updateCallCount)
 	}
 }

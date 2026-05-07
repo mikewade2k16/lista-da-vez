@@ -336,6 +336,39 @@ func TestListUsesAccessibleStoresWhenFilterIsEmpty(t *testing.T) {
 	}
 }
 
+func TestListRulesBootstrapsDefaultLongOpenRuleWhenMissing(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository)
+
+	rules, err := service.ListRules(context.Background(), auth.Principal{
+		Role:     auth.RoleOwner,
+		TenantID: "tenant-1",
+		UserID:   "user-1",
+	}, ListRulesInput{})
+	if err != nil {
+		t.Fatalf("expected ListRules to succeed, got %v", err)
+	}
+	if len(repository.createdRules) != 1 {
+		t.Fatalf("expected one default rule to be created, got %d", len(repository.createdRules))
+	}
+	created := repository.createdRules[0]
+	if created.TenantID != "tenant-1" {
+		t.Fatalf("expected tenant-1, got %q", created.TenantID)
+	}
+	if created.TriggerType != TriggerLongOpenService {
+		t.Fatalf("expected trigger type %q, got %q", TriggerLongOpenService, created.TriggerType)
+	}
+	if created.ThresholdMinutes != defaultLongOpenMinutes {
+		t.Fatalf("expected threshold %d, got %d", defaultLongOpenMinutes, created.ThresholdMinutes)
+	}
+	if len(rules) != 1 {
+		t.Fatalf("expected one rule view, got %d", len(rules))
+	}
+	if rules[0].TriggerType != TriggerLongOpenService {
+		t.Fatalf("expected returned trigger type %q, got %q", TriggerLongOpenService, rules[0].TriggerType)
+	}
+}
+
 func TestUpdateRulesPublishesContextEvent(t *testing.T) {
 	now := time.Now().UTC()
 	repository := &fakeRepository{
@@ -394,6 +427,42 @@ func TestReceiveOperationalSignalsPublishesContextEvents(t *testing.T) {
 	}})
 	if err != nil {
 		t.Fatalf("expected ReceiveOperationalSignals to succeed, got %v", err)
+	}
+	if len(repository.processedSignals) != 1 {
+		t.Fatalf("expected one processed signal, got %d", len(repository.processedSignals))
+	}
+	if len(publisher.resources) != 1 {
+		t.Fatalf("expected one context event, got %d", len(publisher.resources))
+	}
+}
+
+func TestReceiveOperationalSignalsBootstrapsDefaultLongOpenRuleWhenMissing(t *testing.T) {
+	repository := &fakeRepository{
+		signalMutations: []SignalMutation{{
+			TenantID: "tenant-1",
+			AlertID:  "alert-1",
+			Action:   "opened",
+			SavedAt:  time.Now().UTC(),
+		}},
+	}
+	publisher := &fakeContextPublisher{}
+	service := NewService(repository)
+	service.SetContextPublisher(publisher)
+
+	err := service.ReceiveOperationalSignals(context.Background(), []operations.OperationalAlertSignal{{
+		TenantID:     "tenant-1",
+		StoreID:      "store-1",
+		ServiceID:    "service-1",
+		ConsultantID: "consultant-1",
+		SignalType:   operations.SignalLongOpenServiceTriggered,
+		TriggeredAt:  time.Now().UTC(),
+		TriggerType:  operations.TriggerLongOpenService,
+	}})
+	if err != nil {
+		t.Fatalf("expected ReceiveOperationalSignals to succeed, got %v", err)
+	}
+	if len(repository.createdRules) != 1 {
+		t.Fatalf("expected one default rule to be created, got %d", len(repository.createdRules))
 	}
 	if len(repository.processedSignals) != 1 {
 		t.Fatalf("expected one processed signal, got %d", len(repository.processedSignals))

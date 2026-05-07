@@ -13,7 +13,9 @@ type Config struct {
 	HTTPAddr                      string
 	WebAppURL                     string
 	UploadsDir                    string
+	ERPSourceKind                 string
 	ERPSourceDir                  string
+	ERPLocalSourceDir             string
 	ERPStorageDir                 string
 	ERPBootstrapItemFile          string
 	ERPBootstrapCustomerFile      string
@@ -21,6 +23,18 @@ type Config struct {
 	ERPBootstrapOrderFile         string
 	ERPBootstrapOrderCanceledFile string
 	ERPAllowManualSync            bool
+	ERPFTPHost                    string
+	ERPFTPPort                    int
+	ERPFTPUser                    string
+	ERPFTPPassword                string
+	ERPFTPKeyPath                 string
+	ERPFTPRemoteDir               string
+	ERPFTPHostKey                 string
+	ERPRootStoreCode              string
+	ERPSyncInterval               time.Duration
+	ERPSyncHourUTC                int
+	ERPSyncAutomaticEnabled       bool
+	ERPSyncDryRunDefault          bool
 	DatabaseURL                   string
 	DatabaseMinConns              int
 	DatabaseMaxConns              int
@@ -50,7 +64,12 @@ func Load() Config {
 		HTTPAddr:      getEnv("APP_ADDR", ":8080"),
 		WebAppURL:     getEnv("WEB_APP_URL", "http://localhost:3003"),
 		UploadsDir:    getEnv("UPLOADS_DIR", "data/uploads"),
+		ERPSourceKind: getEnv("ERP_SOURCE_KIND", "local"),
 		ERPSourceDir:  getEnv("ERP_SOURCE_DIR", ""),
+		ERPLocalSourceDir: getEnv(
+			"ERP_LOCAL_SOURCE_DIR",
+			getEnv("ERP_SOURCE_DIR", ""),
+		),
 		ERPStorageDir: getEnv("ERP_STORAGE_DIR", "data/erp"),
 		ERPBootstrapItemFile: getEnv(
 			"ERP_BOOTSTRAP_ITEM_FILE",
@@ -72,10 +91,22 @@ func Load() Config {
 			"ERP_BOOTSTRAP_ORDER_CANCELED_FILE",
 			"consolidados/184/ordercanceled_184_consolidado.md",
 		),
-		ERPAllowManualSync: getEnvBool("ERP_ALLOW_MANUAL_SYNC", false),
-		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		DatabaseMinConns:   getEnvInt("DATABASE_MIN_CONNS", 0),
-		DatabaseMaxConns:   getEnvInt("DATABASE_MAX_CONNS", 10),
+		ERPAllowManualSync:      getEnvBool("ERP_ALLOW_MANUAL_SYNC", false),
+		ERPFTPHost:              getEnv("ERP_FTP_HOST", ""),
+		ERPFTPPort:              getEnvInt("ERP_FTP_PORT", 0),
+		ERPFTPUser:              getEnv("ERP_FTP_USER", ""),
+		ERPFTPPassword:          getEnv("ERP_FTP_PASSWORD", ""),
+		ERPFTPKeyPath:           getEnv("ERP_FTP_KEY_PATH", ""),
+		ERPFTPRemoteDir:         getEnv("ERP_FTP_REMOTE_DIR", ""),
+		ERPFTPHostKey:           getEnv("ERP_FTP_HOST_KEY", ""),
+		ERPRootStoreCode:        getEnv("ERP_ROOT_STORE_CODE", getEnv("ERP_BOOTSTRAP_STORE_CODE", "")),
+		ERPSyncInterval:         getEnvDuration("ERP_SYNC_INTERVAL", 24*time.Hour),
+		ERPSyncHourUTC:          getEnvInt("ERP_SYNC_HOUR_UTC", 4),
+		ERPSyncAutomaticEnabled: getEnvBool("ERP_SYNC_AUTOMATIC_ENABLED", false),
+		ERPSyncDryRunDefault:    getEnvBool("ERP_SYNC_DRY_RUN_DEFAULT", false),
+		DatabaseURL:             getEnv("DATABASE_URL", ""),
+		DatabaseMinConns:        getEnvInt("DATABASE_MIN_CONNS", 0),
+		DatabaseMaxConns:        getEnvInt("DATABASE_MAX_CONNS", 10),
 		CORSAllowedOrigins: getEnvCSV(
 			"CORS_ALLOWED_ORIGINS",
 			[]string{

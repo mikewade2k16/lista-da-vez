@@ -2,6 +2,7 @@ package feedback
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 )
 
 type Service struct {
-	repository Repository
+	repository   Repository
 	imageStorage ImageStorage
 }
 
@@ -64,6 +65,9 @@ func (s *Service) List(ctx context.Context, principal auth.Principal, input List
 		return nil, ErrForbidden
 	}
 	input.ViewerUserID = principal.UserID
+	if principal.Role != auth.RolePlatformAdmin && len(principal.StoreIDs) > 0 {
+		input.StoreIDs = normalizeStoreIDs(principal.StoreIDs)
+	}
 
 	feedbacks, err := s.repository.List(principal.TenantID, input)
 	if err != nil {
@@ -203,6 +207,9 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 	if feedback.TenantID != principal.TenantID && principal.Role != auth.RolePlatformAdmin {
 		return nil, ErrForbidden
 	}
+	if !isFeedbackStoreAccessible(principal, feedback.StoreID) {
+		return nil, ErrForbidden
+	}
 
 	if input.Status != nil {
 		nextStatus := strings.TrimSpace(*input.Status)
@@ -300,7 +307,11 @@ func canAccessFeedback(principal auth.Principal, feedback *Feedback) bool {
 		return false
 	}
 
-	return canViewFeedback(principal) || feedback.UserID == principal.UserID
+	if feedback.UserID == principal.UserID {
+		return true
+	}
+
+	return canViewFeedback(principal) && isFeedbackStoreAccessible(principal, feedback.StoreID)
 }
 
 func canReplyToFeedback(principal auth.Principal, feedback *Feedback) bool {
@@ -312,5 +323,40 @@ func canReplyToFeedback(principal auth.Principal, feedback *Feedback) bool {
 		return false
 	}
 
-	return canEditFeedback(principal) || feedback.UserID == principal.UserID
+	if feedback.UserID == principal.UserID {
+		return true
+	}
+
+	return canEditFeedback(principal) && isFeedbackStoreAccessible(principal, feedback.StoreID)
+}
+
+func isFeedbackStoreAccessible(principal auth.Principal, storeID string) bool {
+	if principal.Role == auth.RolePlatformAdmin {
+		return true
+	}
+
+	normalizedStoreIDs := normalizeStoreIDs(principal.StoreIDs)
+	if len(normalizedStoreIDs) == 0 {
+		return true
+	}
+
+	return slices.Contains(normalizedStoreIDs, strings.TrimSpace(storeID))
+}
+
+func normalizeStoreIDs(storeIDs []string) []string {
+	normalized := make([]string, 0, len(storeIDs))
+	seen := make(map[string]struct{}, len(storeIDs))
+	for _, storeID := range storeIDs {
+		trimmed := strings.TrimSpace(storeID)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+
+	return normalized
 }

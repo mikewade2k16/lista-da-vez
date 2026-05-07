@@ -28,6 +28,7 @@ const replyTextarea = ref<HTMLTextAreaElement | null>(null);
 const replyImage = ref<File | null>(null);
 const replyImagePreviewUrl = ref("");
 const syncingStatusFromFeedback = ref(false);
+const feedbackSyncCursor = ref("");
 let feedbackPollingTimer: number | null = null;
 let messagesPollingTimer: number | null = null;
 
@@ -104,23 +105,6 @@ const selectedMessages = computed(() => {
   }
 
   return feedbackStore.messagesByFeedbackId[selectedFeedback.value.id] || [];
-});
-
-const lastFeedbackSyncCursor = computed(() => {
-  const timestamps = feedbackStore.feedbacks
-    .map((feedback) =>
-      Math.max(
-        new Date(feedback.updated_at || feedback.created_at).getTime(),
-        new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-      )
-    )
-    .filter((value) => Number.isFinite(value));
-
-  if (!timestamps.length) {
-    return "";
-  }
-
-  return new Date(Math.max(...timestamps)).toISOString();
 });
 
 const lastSelectedMessageCreatedAt = computed(() => {
@@ -339,10 +323,13 @@ async function loadFeedbacks(options: { since?: string } = {}) {
     return;
   }
 
+  const nextSince = Object.prototype.hasOwnProperty.call(options, "since")
+    ? options.since
+    : feedbackSyncCursor.value;
   const result = await feedbackStore.fetchFeedbacks({
     kind: selectedKindFilter.value,
     status: selectedStatusFilter.value,
-    ...options
+    ...(nextSince ? { since: nextSince } : {})
   });
 
   if (!result.ok) {
@@ -350,16 +337,16 @@ async function loadFeedbacks(options: { since?: string } = {}) {
     return;
   }
 
+  if (result.cursor) {
+    feedbackSyncCursor.value = result.cursor;
+  }
+
   await feedbackStore.syncMessagesForFeedbacks(feedbackStore.feedbacks.map((feedback) => feedback.id));
   syncSelectionFromRoute();
 }
 
 async function loadFeedbackUpdates() {
-  if (!lastFeedbackSyncCursor.value) {
-    return;
-  }
-
-  await loadFeedbacks({ since: lastFeedbackSyncCursor.value });
+  await loadFeedbacks();
 }
 
 function hasUnreadMessages(feedback: { id: string; user_id: string; created_at: string; user_last_read_at: string }) {
@@ -589,6 +576,7 @@ watch(selectedMessages, () => {
 });
 
 watch([selectedKindFilter, selectedStatusFilter], () => {
+  feedbackSyncCursor.value = "";
   void loadFeedbacks();
 });
 

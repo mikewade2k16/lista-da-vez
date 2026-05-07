@@ -16,23 +16,23 @@ const (
 )
 
 type Feedback struct {
-	ID             string
-	TenantID       string
-	StoreID        string
-	UserID         string
-	UserName       string
-	Kind           string
-	Status         string
-	Subject        string
-	Body           string
-	AdminNote      string
-	ImagePath      string
+	ID               string
+	TenantID         string
+	StoreID          string
+	UserID           string
+	UserName         string
+	Kind             string
+	Status           string
+	Subject          string
+	Body             string
+	AdminNote        string
+	ImagePath        string
 	ImageContentType string
-	ImageSizeBytes int
-	ClosedAt       *time.Time
-	UserLastReadAt time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ImageSizeBytes   int
+	ClosedAt         *time.Time
+	UserLastReadAt   time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type FeedbackView struct {
@@ -52,33 +52,33 @@ type FeedbackView struct {
 }
 
 type FeedbackMessage struct {
-	ID           string
-	TenantID     string
-	FeedbackID   string
-	AuthorUserID string
-	AuthorName   string
-	AuthorRole   string
-	Body         string
-	ImagePath    string
+	ID               string
+	TenantID         string
+	FeedbackID       string
+	AuthorUserID     string
+	AuthorName       string
+	AuthorRole       string
+	Body             string
+	ImagePath        string
 	ImageContentType string
-	ImageSizeBytes int
-	ImageExpiresAt *time.Time
-	CreatedAt    time.Time
+	ImageSizeBytes   int
+	ImageExpiresAt   *time.Time
+	CreatedAt        time.Time
 }
 
 type FeedbackMessageView struct {
-	ID           string    `json:"id"`
-	TenantID     string    `json:"tenant_id"`
-	FeedbackID   string    `json:"feedback_id"`
-	AuthorUserID string    `json:"author_user_id"`
-	AuthorName   string    `json:"author_name"`
-	AuthorRole   string    `json:"author_role"`
-	Body         string    `json:"body"`
-	ImageURL     string    `json:"image_url"`
-	ImageContentType string `json:"image_content_type"`
-	ImageSizeBytes int     `json:"image_size_bytes"`
-	ImageExpiresAt *time.Time `json:"image_expires_at,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               string     `json:"id"`
+	TenantID         string     `json:"tenant_id"`
+	FeedbackID       string     `json:"feedback_id"`
+	AuthorUserID     string     `json:"author_user_id"`
+	AuthorName       string     `json:"author_name"`
+	AuthorRole       string     `json:"author_role"`
+	Body             string     `json:"body"`
+	ImageURL         string     `json:"image_url"`
+	ImageContentType string     `json:"image_content_type"`
+	ImageSizeBytes   int        `json:"image_size_bytes"`
+	ImageExpiresAt   *time.Time `json:"image_expires_at,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 func (f *Feedback) ToView() *FeedbackView {
@@ -101,18 +101,18 @@ func (f *Feedback) ToView() *FeedbackView {
 
 func (m *FeedbackMessage) ToView() *FeedbackMessageView {
 	return &FeedbackMessageView{
-		ID:           m.ID,
-		TenantID:     m.TenantID,
-		FeedbackID:   m.FeedbackID,
-		AuthorUserID: m.AuthorUserID,
-		AuthorName:   m.AuthorName,
-		AuthorRole:   m.AuthorRole,
-		Body:         m.Body,
-		ImageURL:     m.ImagePath,
+		ID:               m.ID,
+		TenantID:         m.TenantID,
+		FeedbackID:       m.FeedbackID,
+		AuthorUserID:     m.AuthorUserID,
+		AuthorName:       m.AuthorName,
+		AuthorRole:       m.AuthorRole,
+		Body:             m.Body,
+		ImageURL:         m.ImagePath,
 		ImageContentType: m.ImageContentType,
-		ImageSizeBytes: m.ImageSizeBytes,
-		ImageExpiresAt: m.ImageExpiresAt,
-		CreatedAt:    m.CreatedAt,
+		ImageSizeBytes:   m.ImageSizeBytes,
+		ImageExpiresAt:   m.ImageExpiresAt,
+		CreatedAt:        m.CreatedAt,
 	}
 }
 
@@ -123,9 +123,9 @@ type ImageUpload struct {
 }
 
 type CreateInput struct {
-	Kind    string `json:"kind"`
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
+	Kind    string       `json:"kind"`
+	Subject string       `json:"subject"`
+	Body    string       `json:"body"`
 	Image   *ImageUpload `json:"-"`
 }
 
@@ -135,7 +135,7 @@ type UpdateInput struct {
 }
 
 type CreateMessageInput struct {
-	Body string `json:"body"`
+	Body  string       `json:"body"`
 	Image *ImageUpload `json:"-"`
 }
 
@@ -144,6 +144,7 @@ type ListInput struct {
 	Status       string
 	Since        *time.Time
 	UserID       string
+	StoreIDs     []string
 	ViewerUserID string
 }
 

@@ -54,7 +54,7 @@ const props = withDefaults(defineProps<{
   showIdentifierSearch: true,
   showRefreshAction: true,
   showBootstrapAction: true,
-  bootstrapLabel: "Bootstrap produtos 184",
+  bootstrapLabel: "Bootstrap produtos ERP",
   bootstrapBusyLabel: "Sincronizando...",
   syncing: false,
   canBootstrap: true,

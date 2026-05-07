@@ -231,6 +231,12 @@ func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback,
 		argCount++
 	}
 
+	if normalizedStoreIDs := normalizeFeedbackStoreIDs(input.StoreIDs); len(normalizedStoreIDs) > 0 {
+		query += fmt.Sprintf(" and user_feedback.store_id::text = any($%d::text[])", argCount)
+		args = append(args, normalizedStoreIDs)
+		argCount++
+	}
+
 	if input.Since != nil {
 		if input.ViewerUserID != "" {
 			query += fmt.Sprintf(" and greatest(user_feedback.updated_at, %s) > $%d", readAtExpr, argCount)
@@ -259,6 +265,24 @@ func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback,
 	}
 
 	return feedbacks, rows.Err()
+}
+
+func normalizeFeedbackStoreIDs(storeIDs []string) []string {
+	normalized := make([]string, 0, len(storeIDs))
+	seen := make(map[string]struct{}, len(storeIDs))
+	for _, storeID := range storeIDs {
+		trimmed := strings.TrimSpace(storeID)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+
+	return normalized
 }
 
 func (r *PostgresRepository) MarkRead(feedbackID string, userID string, readAt time.Time) (*Feedback, error) {

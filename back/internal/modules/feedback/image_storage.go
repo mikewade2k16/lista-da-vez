@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	maxFeedbackImageBytes         = 1 * 1024 * 1024
-	maxFeedbackMultipartMemory    = maxFeedbackImageBytes + 256*1024
-	feedbackImageRetention        = 7 * 24 * time.Hour
+	maxFeedbackImageBytes          = 1 * 1024 * 1024
+	maxFeedbackMultipartMemory     = maxFeedbackImageBytes + 256*1024
+	feedbackImageRetention         = 7 * 24 * time.Hour
 	feedbackAttachmentCleanupBatch = 100
 )
 

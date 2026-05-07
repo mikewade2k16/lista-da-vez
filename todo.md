@@ -313,7 +313,7 @@ Substituir scans extensos por leitura segura por nome/DTO nas secoes migradas.
 - [ ] Teste manual UI: golden path (iniciar paralelo, ver 2 cards, encerrar cada um individualmente)
 - [ ] Teste manual UI: reabrir modal com draft restaurado e confirmar encerramento sem `internal_error`
 
-- [ ] Status: **PENDENTE**
+- [ ] Status: **EM ANDAMENTO**
 
 ### esse aqui depende da integração com o ERP, mas é importante ter a visão do que queremos para o futuro
 ### 3. Atendimentos finalizados em Compras - Auto-preenchimento via Código da Venda
@@ -356,21 +356,29 @@ Substituir scans extensos por leitura segura por nome/DTO nas secoes migradas.
 #### 1.1 Importação automática de CSV do ERP via FTP
 - [ ] Configurar acesso ao FTP onde o ERP deposita os arquivos CSV
 - [ ] Definir a pasta específica do FTP que será monitorada
-- [ ] Criar rotina automática para buscar arquivos CSV (por volta de 1h da manhã)
-- [ ] Criar controle para saber quais arquivos/registros já foram importados
-- [ ] Criar leitura dos CSVs gerados pelo ERP
-- [ ] Salvar os dados originais do ERP em uma base/tabela de referência
-- [ ] Criar transformação dos dados do ERP para o formato usado no sistema
-- [ ] Mapear o CSV de item do ERP para produto no banco interno
+- [x] Criar rotina automática para buscar arquivos CSV (por volta de 1h da manhã)
+- [x] Criar controle para saber quais arquivos/registros já foram importados
+- [x] Criar leitura dos CSVs gerados pelo ERP
+- [x] Salvar os dados originais do ERP em uma base/tabela de referência
+- [x] Criar transformação dos dados do ERP para o formato usado no sistema
+- [x] Mapear o CSV de item do ERP para produto no banco interno
 - [ ] Transformar categoria 1, categoria 2 e categoria 3 em um único campo de categorias
 - [ ] Definir formato de categorias (JSON, array ou texto estruturado)
-- [ ] Criar rotina incremental para importar apenas dados novos ou alterados
-- [ ] Criar logs de importação
-- [ ] Registrar falhas de importação
+- [x] Criar rotina incremental para importar apenas dados novos ou alterados
+- [x] Criar logs de importação
+- [x] Registrar falhas de importação
 - [ ] Criar alerta caso FTP esteja inacessível
 - [ ] Criar alerta caso CSV esperado não esteja disponível
 - [ ] Criar alerta caso transformação dos dados falhe
 - [ ] Criar opção de reprocessar manualmente uma importação, se necessário
+
+Observações da execução atual:
+- o parser CSV nativo em Go já cobre `item`, `customer`, `employee`, `order` e `ordercanceled`
+- o backend já expõe `POST /v1/erp/sync` e `POST /v1/erp/backfill`
+- a aba administrativa de sincronização já existe no frontend ERP
+- a origem real foi validada via FTP na pasta `extract_files`, com arquivos `item`, `customer`, `employee`, `order` e `ordercanceled`
+- o scheduler automático do backend já pode disparar ingestão via `ERP_SYNC_AUTOMATIC_ENABLED`, `ERP_SYNC_INTERVAL`, `ERP_SYNC_HOUR_UTC` e `ERP_SYNC_DRY_RUN_DEFAULT`
+- o layout real do FTP usa nomes `storeCode-storeCNPJ-dataType-dataReference.csv`; a ordenação agora cai para `modtime` remoto quando não houver `ExtractedAt` no nome
 
 #### 1.2 Banco intermediário e transformação dos dados do ERP
 - [ ] Definir quais tabelas vão receber os dados brutos vindos do ERP

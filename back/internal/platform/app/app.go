@@ -121,7 +121,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	erpRepository := erp.NewPostgresRepository(pool)
 	erpService := erp.NewService(erpRepository, erp.Options{
 		Env:                        cfg.Env,
-		SourceDir:                  cfg.ERPSourceDir,
+		SourceKind:                 cfg.ERPSourceKind,
+		SourceDir:                  cfg.ERPLocalSourceDir,
 		StorageDir:                 cfg.ERPStorageDir,
 		BootstrapItemFile:          cfg.ERPBootstrapItemFile,
 		BootstrapCustomerFile:      cfg.ERPBootstrapCustomerFile,
@@ -129,7 +130,61 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		BootstrapOrderFile:         cfg.ERPBootstrapOrderFile,
 		BootstrapOrderCanceledFile: cfg.ERPBootstrapOrderCanceledFile,
 		AllowManualSync:            cfg.ERPAllowManualSync,
+		FTPHost:                    cfg.ERPFTPHost,
+		FTPPort:                    cfg.ERPFTPPort,
+		FTPUser:                    cfg.ERPFTPUser,
+		FTPPassword:                cfg.ERPFTPPassword,
+		FTPKeyPath:                 cfg.ERPFTPKeyPath,
+		FTPRemoteDir:               cfg.ERPFTPRemoteDir,
+		FTPHostKey:                 cfg.ERPFTPHostKey,
+		RootStoreCode:              cfg.ERPRootStoreCode,
+		SyncAutomaticEnabled:       cfg.ERPSyncAutomaticEnabled,
+		SyncInterval:               cfg.ERPSyncInterval,
+		SyncHourUTC:                cfg.ERPSyncHourUTC,
+		SyncDryRunDefault:          cfg.ERPSyncDryRunDefault,
 	})
+	if cfg.ERPSyncAutomaticEnabled {
+		logger.Info("erp_sync_scheduler_started",
+			"source_kind", cfg.ERPSourceKind,
+			"interval", cfg.ERPSyncInterval.String(),
+			"hour_utc", cfg.ERPSyncHourUTC,
+			"dry_run", cfg.ERPSyncDryRunDefault,
+		)
+		go func() {
+			for {
+				scheduledFor := nextERPScheduledRun(time.Now().UTC(), cfg.ERPSyncInterval, cfg.ERPSyncHourUTC)
+				wait := time.Until(scheduledFor)
+				if wait > 0 {
+					timer := time.NewTimer(wait)
+					<-timer.C
+				}
+
+				startedAt := time.Now().UTC()
+				results, err := erpService.IngestAllStores(context.Background(), erp.IngestInput{
+					DryRun:      cfg.ERPSyncDryRunDefault,
+					TriggeredBy: erp.SyncTriggeredByCron,
+				})
+				if err != nil {
+					logger.Warn("erp_automatic_sync_failed",
+						"scheduled_for", scheduledFor,
+						"error", err,
+					)
+					continue
+				}
+
+				storeCount, runCount, filesImported, fileFailures, rowsImported := summarizeERPAutomaticResults(results)
+				logger.Info("erp_automatic_sync_completed",
+					"scheduled_for", scheduledFor,
+					"duration", time.Since(startedAt).String(),
+					"stores", storeCount,
+					"runs", runCount,
+					"files_imported", filesImported,
+					"file_failures", fileFailures,
+					"rows_imported", rowsImported,
+				)
+			}
+		}()
+	}
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
 
 	mux := http.NewServeMux()
@@ -186,4 +241,30 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		httpapi.Logging(logger),
 		httpapi.Recover(logger),
 	), nil
+}
+
+func nextERPScheduledRun(now time.Time, interval time.Duration, hourUTC int) time.Time {
+	nowUTC := now.UTC()
+	if interval > 0 && interval < 24*time.Hour {
+		return nowUTC.Add(interval)
+	}
+	if hourUTC < 0 || hourUTC > 23 {
+		hourUTC = 4
+	}
+	next := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), hourUTC, 0, 0, 0, time.UTC)
+	if !next.After(nowUTC) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
+}
+
+func summarizeERPAutomaticResults(results []erp.IngestResult) (storeCount int, runCount int, filesImported int, fileFailures int, rowsImported int) {
+	storeCount = len(results)
+	for _, result := range results {
+		runCount += len(result.RunIDs)
+		filesImported += result.FilesImported
+		fileFailures += len(result.FilesFailed)
+		rowsImported += result.RowsImported
+	}
+	return storeCount, runCount, filesImported, fileFailures, rowsImported
 }

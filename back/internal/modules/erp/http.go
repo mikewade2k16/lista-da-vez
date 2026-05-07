@@ -60,6 +60,49 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, status)
 	})))
 
+	mux.Handle("GET /v1/erp/overview", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		overview, err := service.Overview(
+			r.Context(),
+			principal,
+			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			strings.TrimSpace(r.URL.Query().Get("storeCode")),
+		)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, overview)
+	})))
+
+	mux.Handle("GET /v1/erp/runs", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		query, err := parseRunsQuery(r)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		response, err := service.Runs(r.Context(), principal, query)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	})))
+
 	mux.Handle("GET /v1/erp/products", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
@@ -131,6 +174,54 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		httpapi.WriteJSON(w, http.StatusOK, result)
 	})))
+
+	mux.Handle("POST /v1/erp/sync", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		var input IngestInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+		if strings.TrimSpace(input.TriggeredBy) == "" {
+			input.TriggeredBy = SyncTriggeredByManual
+		}
+
+		result, err := service.IngestStore(r.Context(), principal, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	})))
+
+	mux.Handle("POST /v1/erp/backfill", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		var input IngestInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+		input.TriggeredBy = SyncTriggeredByBackfill
+
+		result, err := service.IngestStore(r.Context(), principal, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	})))
 }
 
 func parseProductQuery(r *http.Request) (ProductQuery, error) {
@@ -178,6 +269,27 @@ func parseRawRecordsQuery(r *http.Request) (RawRecordsQuery, error) {
 	}, nil
 }
 
+func parseRunsQuery(r *http.Request) (RunsQuery, error) {
+	query := r.URL.Query()
+
+	page, err := parseOptionalInt(query.Get("page"))
+	if err != nil {
+		return RunsQuery{}, ErrValidation
+	}
+	pageSize, err := parseOptionalInt(query.Get("pageSize"))
+	if err != nil {
+		return RunsQuery{}, ErrValidation
+	}
+
+	return RunsQuery{
+		TenantID:  strings.TrimSpace(query.Get("tenantId")),
+		StoreCode: strings.TrimSpace(query.Get("storeCode")),
+		DataType:  strings.TrimSpace(query.Get("dataType")),
+		Page:      page,
+		PageSize:  pageSize,
+	}, nil
+}
+
 func parseOptionalInt(raw string) (int, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -192,10 +304,14 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
 	case errors.Is(err, ErrStoreRequired), errors.Is(err, ErrTenantRequired), errors.Is(err, ErrValidation):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os parametros enviados.")
+	case errors.Is(err, ErrUnsupportedDataType):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "unsupported_data_type", "Tipo de dado ERP nao suportado.")
 	case errors.Is(err, ErrStoreNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "store_not_found", "Loja nao encontrada.")
-	case errors.Is(err, ErrSourceNotConfigured), errors.Is(err, ErrSourcePathOutsideRoot):
+	case errors.Is(err, ErrSourceNotConfigured), errors.Is(err, ErrSourcePathOutsideRoot), errors.Is(err, ErrSourceHostKeyRequired):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "source_error", "Origem do bootstrap ERP invalida ou nao configurada.")
+	case errors.As(err, new(*ErrCSVColumnCountMismatch)), errors.As(err, new(*ErrCSVHeaderMismatch)), errors.As(err, new(*ErrCSVRowParse)), errors.As(err, new(*ErrCSVEncoding)), errors.As(err, new(*ErrCSVFilenameInvalid)):
+		httpapi.WriteError(w, r, http.StatusUnprocessableEntity, "csv_error", err.Error())
 	default:
 		slog.Error("erp_request_failed", slog.String("path", r.URL.Path), slog.Any("error", err))
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar o ERP.")

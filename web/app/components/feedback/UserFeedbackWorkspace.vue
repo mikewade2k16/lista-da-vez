@@ -18,6 +18,7 @@ const replyImage = ref<File | null>(null);
 const replyImagePreviewUrl = ref("");
 const replyTextarea = ref(null);
 const messagesViewport = ref<HTMLElement | null>(null);
+const feedbackSyncCursor = ref("");
 let feedbackPollingTimer = null;
 let messagesPollingTimer = null;
 
@@ -40,23 +41,6 @@ const isSelectedFeedbackClosed = computed(() =>
 );
 
 const ownUserId = computed(() => String(user.value?.id || "").trim());
-
-const lastMyFeedbackSyncCursor = computed(() => {
-  const timestamps = feedbackStore.myFeedbacks
-    .map((feedback) =>
-      Math.max(
-        new Date(feedback.updated_at || feedback.created_at).getTime(),
-        new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-      )
-    )
-    .filter((value) => Number.isFinite(value));
-
-  if (!timestamps.length) {
-    return "";
-  }
-
-  return new Date(Math.max(...timestamps)).toISOString();
-});
 
 const lastSelectedMessageCreatedAt = computed(() => {
   const timestamps = selectedMessages.value
@@ -142,10 +126,17 @@ async function loadMyFeedbacks(options = {}) {
     return;
   }
 
-  const result = await feedbackStore.fetchMyFeedbacks(options);
+  const nextSince = Object.prototype.hasOwnProperty.call(options, "since")
+    ? options.since
+    : feedbackSyncCursor.value;
+  const result = await feedbackStore.fetchMyFeedbacks(nextSince ? { ...options, since: nextSince } : options);
   if (!result.ok) {
     ui.error(result.message || "Erro ao carregar seus chamados");
     return;
+  }
+
+  if (result.cursor) {
+    feedbackSyncCursor.value = result.cursor;
   }
 
   await feedbackStore.syncMessagesForFeedbacks(feedbackStore.myFeedbacks.map((feedback) => feedback.id));
@@ -162,13 +153,7 @@ async function loadMyFeedbacks(options = {}) {
 }
 
 async function loadMyFeedbackUpdates() {
-  if (!lastMyFeedbackSyncCursor.value) {
-    return;
-  }
-
-  await loadMyFeedbacks({
-    since: lastMyFeedbackSyncCursor.value
-  });
+  await loadMyFeedbacks();
 }
 
 function hasUnreadMessages(feedback) {

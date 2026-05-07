@@ -809,3 +809,15 @@ func parseOptionalTimestamp(raw string) (*time.Time, error) {
 	}
 	return &parsed, nil
 }
+
+func parseCompactDate(raw string) (*time.Time, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	parsed, err := time.ParseInLocation("20060102", trimmed, time.UTC)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}

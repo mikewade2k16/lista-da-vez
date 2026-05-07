@@ -10,9 +10,14 @@ const (
 	DataTypeOrderCanceled = "ordercanceled"
 
 	SyncModeBootstrapMarkdown = "bootstrap_markdown"
+	SyncModeCSVFTP            = "csv_ftp"
 	SyncStatusRunning         = "running"
 	SyncStatusSucceeded       = "succeeded"
 	SyncStatusFailed          = "failed"
+
+	SyncTriggeredByManual   = "manual"
+	SyncTriggeredByCron     = "cron"
+	SyncTriggeredByBackfill = "backfill"
 
 	defaultPageSize = 50
 	maxPageSize     = 200
@@ -28,6 +33,7 @@ var supportedDataTypes = []string{
 
 type Options struct {
 	Env                        string
+	SourceKind                 string
 	SourceDir                  string
 	StorageDir                 string
 	BootstrapItemFile          string
@@ -36,6 +42,18 @@ type Options struct {
 	BootstrapOrderFile         string
 	BootstrapOrderCanceledFile string
 	AllowManualSync            bool
+	FTPHost                    string
+	FTPPort                    int
+	FTPUser                    string
+	FTPPassword                string
+	FTPKeyPath                 string
+	FTPRemoteDir               string
+	FTPHostKey                 string
+	RootStoreCode              string
+	SyncAutomaticEnabled       bool
+	SyncInterval               time.Duration
+	SyncHourUTC                int
+	SyncDryRunDefault          bool
 }
 
 type StoreScope struct {
@@ -158,6 +176,74 @@ type RawRecordsListResponse struct {
 	Items          []map[string]any `json:"items"`
 }
 
+type RunsQuery struct {
+	TenantID  string `json:"tenantId,omitempty"`
+	StoreCode string `json:"storeCode"`
+	DataType  string `json:"dataType,omitempty"`
+	Page      int    `json:"page,omitempty"`
+	PageSize  int    `json:"pageSize,omitempty"`
+}
+
+type SyncRunsListResponse struct {
+	Store    StoreScope       `json:"store"`
+	DataType string           `json:"dataType,omitempty"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"pageSize"`
+	Total    int              `json:"total"`
+	Items    []SyncRunSummary `json:"items"`
+}
+
+type SyncAutomationSummary struct {
+	Enabled       bool   `json:"enabled"`
+	Interval      string `json:"interval,omitempty"`
+	HourUTC       int    `json:"hourUtc,omitempty"`
+	DryRunDefault bool   `json:"dryRunDefault"`
+}
+
+type SyncCoverageTotals struct {
+	TotalFiles    int `json:"totalFiles"`
+	ImportedFiles int `json:"importedFiles"`
+	PendingFiles  int `json:"pendingFiles"`
+}
+
+type SyncCoverageEntitySummary struct {
+	DataType         string `json:"dataType"`
+	RemoteFilesTotal int    `json:"remoteFilesTotal"`
+	ImportedFiles    int    `json:"importedFiles"`
+	PendingFiles     int    `json:"pendingFiles"`
+	RowsInBank       int    `json:"rowsInBank"`
+	SearchableRows   int    `json:"searchableRows"`
+	CurrentRows      int    `json:"currentRows,omitempty"`
+}
+
+type SyncCoverageFileSummary struct {
+	SourceName    string     `json:"sourceName"`
+	DataType      string     `json:"dataType"`
+	DataReference time.Time  `json:"dataReference"`
+	ModTime       *time.Time `json:"modTime,omitempty"`
+	SizeBytes     int64      `json:"sizeBytes"`
+	Imported      bool       `json:"imported"`
+	Status        string     `json:"status"`
+	RecordCount   int        `json:"recordCount,omitempty"`
+	ImportedAt    *time.Time `json:"importedAt,omitempty"`
+	SourceKind    string     `json:"sourceKind,omitempty"`
+}
+
+type SyncOverviewResponse struct {
+	Store            StoreScope                  `json:"store"`
+	SourceKind       string                      `json:"sourceKind"`
+	SourcePath       string                      `json:"sourcePath,omitempty"`
+	Automatic        SyncAutomationSummary       `json:"automatic"`
+	Totals           SyncCoverageTotals          `json:"totals"`
+	FullyImported    bool                        `json:"fullyImported"`
+	Entities         []SyncCoverageEntitySummary `json:"entities"`
+	MissingFiles     []SyncCoverageFileSummary   `json:"missingFiles"`
+	AgentDocPath     string                      `json:"agentDocPath,omitempty"`
+	AgentDocURL      string                      `json:"agentDocUrl,omitempty"`
+	LastRun          *SyncRunSummary             `json:"lastRun,omitempty"`
+	LastImportedFile *SyncFileSummary            `json:"lastImportedFile,omitempty"`
+}
+
 type ItemBootstrapInput struct {
 	TenantID   string `json:"tenantId,omitempty"`
 	StoreCode  string `json:"storeCode"`
@@ -203,48 +289,106 @@ type BootstrapResult struct {
 	StoreCNPJ     string     `json:"storeCnpj,omitempty"`
 }
 
+type IngestInput struct {
+	TenantID    string `json:"tenantId,omitempty"`
+	StoreCode   string `json:"storeCode"`
+	DataType    string `json:"dataType,omitempty"`
+	DryRun      bool   `json:"dryRun,omitempty"`
+	MaxFiles    int    `json:"maxFiles,omitempty"`
+	TriggeredBy string `json:"triggeredBy,omitempty"`
+}
+
+type FileFailure struct {
+	SourceName string `json:"sourceName"`
+	Message    string `json:"message"`
+}
+
+type IngestResult struct {
+	OK            bool          `json:"ok"`
+	RunID         string        `json:"runId,omitempty"`
+	RunIDs        []string      `json:"runIds,omitempty"`
+	Store         StoreScope    `json:"store"`
+	DataType      string        `json:"dataType,omitempty"`
+	DataTypes     []string      `json:"dataTypes,omitempty"`
+	DryRun        bool          `json:"dryRun"`
+	FilesSeen     int           `json:"filesSeen"`
+	FilesImported int           `json:"filesImported"`
+	FilesSkipped  int           `json:"filesSkipped"`
+	FilesFailed   []FileFailure `json:"filesFailed,omitempty"`
+	RowsRead      int           `json:"rowsRead"`
+	RowsImported  int           `json:"rowsImported"`
+	StartedAt     time.Time     `json:"startedAt"`
+	FinishedAt    time.Time     `json:"finishedAt"`
+	Duration      string        `json:"duration"`
+	StoreCNPJ     string        `json:"storeCnpj,omitempty"`
+}
+
 type itemConsolidatedBatch struct {
-	DataType       string
-	StoreCode      string
-	StoreCNPJ      string
-	SourceFileName string
-	BatchDate      string
-	ProcessedAt    string
-	Rows           []ItemRawRecord
-	ChecksumSHA256 string
+	DataType            string
+	StoreCode           string
+	StoreCNPJ           string
+	SourceFileName      string
+	SourcePath          string
+	SourceKind          string
+	BatchDate           string
+	SourceExtractedAt   *time.Time
+	SourceDataReference *time.Time
+	SourceSizeBytes     int64
+	ErrorMessage        string
+	ProcessedAt         string
+	Rows                []ItemRawRecord
+	ChecksumSHA256      string
 }
 
 type customerConsolidatedBatch struct {
-	DataType       string
-	StoreCode      string
-	StoreCNPJ      string
-	SourceFileName string
-	BatchDate      string
-	ProcessedAt    string
-	Rows           []CustomerRawRecord
-	ChecksumSHA256 string
+	DataType            string
+	StoreCode           string
+	StoreCNPJ           string
+	SourceFileName      string
+	SourcePath          string
+	SourceKind          string
+	BatchDate           string
+	SourceExtractedAt   *time.Time
+	SourceDataReference *time.Time
+	SourceSizeBytes     int64
+	ErrorMessage        string
+	ProcessedAt         string
+	Rows                []CustomerRawRecord
+	ChecksumSHA256      string
 }
 
 type employeeConsolidatedBatch struct {
-	DataType       string
-	StoreCode      string
-	StoreCNPJ      string
-	SourceFileName string
-	BatchDate      string
-	ProcessedAt    string
-	Rows           []EmployeeRawRecord
-	ChecksumSHA256 string
+	DataType            string
+	StoreCode           string
+	StoreCNPJ           string
+	SourceFileName      string
+	SourcePath          string
+	SourceKind          string
+	BatchDate           string
+	SourceExtractedAt   *time.Time
+	SourceDataReference *time.Time
+	SourceSizeBytes     int64
+	ErrorMessage        string
+	ProcessedAt         string
+	Rows                []EmployeeRawRecord
+	ChecksumSHA256      string
 }
 
 type orderConsolidatedBatch struct {
-	DataType       string
-	StoreCode      string
-	StoreCNPJ      string
-	SourceFileName string
-	BatchDate      string
-	ProcessedAt    string
-	Rows           []OrderRawRecord
-	ChecksumSHA256 string
+	DataType            string
+	StoreCode           string
+	StoreCNPJ           string
+	SourceFileName      string
+	SourcePath          string
+	SourceKind          string
+	BatchDate           string
+	SourceExtractedAt   *time.Time
+	SourceDataReference *time.Time
+	SourceSizeBytes     int64
+	ErrorMessage        string
+	ProcessedAt         string
+	Rows                []OrderRawRecord
+	ChecksumSHA256      string
 }
 
 type ItemRawRecord struct {

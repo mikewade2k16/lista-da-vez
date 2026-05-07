@@ -17,6 +17,15 @@ type PostgresRepository struct {
 	pool *pgxpool.Pool
 }
 
+type syncFileImportState struct {
+	SourceName  string
+	DataType    string
+	SourceKind  string
+	Status      string
+	RecordCount int
+	ImportedAt  *time.Time
+}
+
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
@@ -93,6 +102,132 @@ func (repository *PostgresRepository) ResolveStoreScope(ctx context.Context, pri
 	}
 
 	return scope, nil
+}
+
+func (repository *PostgresRepository) ResolveDefaultERPScope(ctx context.Context, principal auth.Principal, requestedTenantID string) (StoreScope, error) {
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if tenantID == "" {
+		resolvedTenantID, err := repository.ResolveDefaultTenantID(ctx, principal)
+		if err != nil {
+			return StoreScope{}, err
+		}
+		tenantID = resolvedTenantID
+	}
+
+	allowed, err := repository.CanAccessTenant(ctx, principal, tenantID)
+	if err != nil {
+		return StoreScope{}, err
+	}
+	if !allowed {
+		return StoreScope{}, ErrForbidden
+	}
+
+	if requiresStoreScopedFilter(principal.Role) && len(principal.StoreIDs) == 0 {
+		return StoreScope{}, ErrForbidden
+	}
+
+	query := `
+		select
+			s.tenant_id::text,
+			s.id::text,
+			s.code,
+			s.name,
+			s.city,
+			coalesce(last_file.store_cnpj, '')
+		from stores s
+		left join lateral (
+			select sf.store_cnpj
+			from erp_sync_files sf
+			where sf.tenant_id = s.tenant_id
+			  and sf.store_id = s.id
+			order by sf.imported_at desc
+			limit 1
+		) last_file on true
+		left join lateral (
+			select
+				count(*)::int as file_count,
+				max(sf.imported_at) as last_imported_at
+			from erp_sync_files sf
+			where sf.tenant_id = s.tenant_id
+			  and sf.store_id = s.id
+		) erp_stats on true
+		where s.tenant_id = $1::uuid
+		  and s.is_active = true
+	`
+	args := []any{tenantID}
+	if requiresStoreScopedFilter(principal.Role) {
+		query += ` and s.id = any($2::uuid[])`
+		args = append(args, principal.StoreIDs)
+	}
+	query += `
+		order by
+			case when coalesce(erp_stats.file_count, 0) > 0 then 0 else 1 end asc,
+			coalesce(erp_stats.file_count, 0) desc,
+			case when s.code ~ '^[0-9]+$' then 0 else 1 end asc,
+			coalesce(erp_stats.last_imported_at, 'epoch'::timestamptz) desc,
+			s.created_at asc,
+			s.id asc
+		limit 1;
+	`
+
+	var scope StoreScope
+	err = repository.pool.QueryRow(ctx, query, args...).Scan(
+		&scope.TenantID,
+		&scope.StoreID,
+		&scope.StoreCode,
+		&scope.StoreName,
+		&scope.StoreCity,
+		&scope.StoreCNPJ,
+	)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return StoreScope{}, ErrStoreNotFound
+		}
+		return StoreScope{}, err
+	}
+
+	return scope, nil
+}
+
+func (repository *PostgresRepository) ListActiveStores(ctx context.Context) ([]StoreScope, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select
+			s.tenant_id::text,
+			s.id::text,
+			s.code,
+			s.name,
+			s.city,
+			''
+		from stores s
+		where s.is_active = true
+		order by s.code asc, s.created_at asc, s.id asc;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stores := make([]StoreScope, 0, 32)
+	for rows.Next() {
+		var store StoreScope
+		if err := rows.Scan(
+			&store.TenantID,
+			&store.StoreID,
+			&store.StoreCode,
+			&store.StoreName,
+			&store.StoreCity,
+			&store.StoreCNPJ,
+		); err != nil {
+			return nil, err
+		}
+		stores = append(stores, store)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return stores, nil
 }
 
 func (repository *PostgresRepository) GetStatus(ctx context.Context, store StoreScope) (StatusResponse, error) {
@@ -172,6 +307,127 @@ func (repository *PostgresRepository) GetStatus(ctx context.Context, store Store
 	}
 
 	return status, nil
+}
+
+func (repository *PostgresRepository) ListSyncRuns(ctx context.Context, store StoreScope, query RunsQuery) (SyncRunsListResponse, error) {
+	offset := (query.Page - 1) * query.PageSize
+	response := SyncRunsListResponse{
+		Store:    store,
+		DataType: query.DataType,
+		Page:     query.Page,
+		PageSize: query.PageSize,
+		Items:    make([]SyncRunSummary, 0, query.PageSize),
+	}
+
+	if err := repository.pool.QueryRow(ctx, `
+		select count(*)
+		from erp_sync_runs
+		where tenant_id = $1::uuid
+		  and store_id = $2::uuid
+		  and ($3 = '' or data_type = $3);
+	`, store.TenantID, store.StoreID, query.DataType).Scan(&response.Total); err != nil {
+		return SyncRunsListResponse{}, err
+	}
+
+	rows, err := repository.pool.Query(ctx, `
+		select
+			id::text,
+			data_type,
+			mode,
+			status,
+			files_seen,
+			files_imported,
+			files_skipped,
+			rows_read,
+			raw_rows_imported,
+			coalesce(source_path, ''),
+			coalesce(error_message, ''),
+			started_at,
+			finished_at,
+			coalesce(store_cnpj, '')
+		from erp_sync_runs
+		where tenant_id = $1::uuid
+		  and store_id = $2::uuid
+		  and ($3 = '' or data_type = $3)
+		order by started_at desc
+		limit $4 offset $5;
+	`, store.TenantID, store.StoreID, query.DataType, query.PageSize, offset)
+	if err != nil {
+		return SyncRunsListResponse{}, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var summary SyncRunSummary
+		if err := rows.Scan(
+			&summary.ID,
+			&summary.DataType,
+			&summary.Mode,
+			&summary.Status,
+			&summary.FilesSeen,
+			&summary.FilesImported,
+			&summary.FilesSkipped,
+			&summary.RowsRead,
+			&summary.RowsImported,
+			&summary.SourcePath,
+			&summary.ErrorMessage,
+			&summary.StartedAt,
+			&summary.FinishedAt,
+			&summary.StoreCNPJ,
+		); err != nil {
+			return SyncRunsListResponse{}, err
+		}
+		response.Items = append(response.Items, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return SyncRunsListResponse{}, err
+	}
+
+	return response, nil
+}
+
+func (repository *PostgresRepository) ListLatestSyncFileStates(ctx context.Context, store StoreScope) (map[string]syncFileImportState, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select distinct on (source_name)
+			source_name,
+			data_type,
+			source_kind,
+			status,
+			record_count,
+			imported_at
+		from erp_sync_files
+		where tenant_id = $1::uuid
+		  and store_id = $2::uuid
+		order by source_name, updated_at desc, imported_at desc, created_at desc;
+	`, store.TenantID, store.StoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	states := make(map[string]syncFileImportState)
+	for rows.Next() {
+		var state syncFileImportState
+		var importedAt time.Time
+		if err := rows.Scan(
+			&state.SourceName,
+			&state.DataType,
+			&state.SourceKind,
+			&state.Status,
+			&state.RecordCount,
+			&importedAt,
+		); err != nil {
+			return nil, err
+		}
+		state.ImportedAt = &importedAt
+		states[state.SourceName] = state
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return states, nil
 }
 
 func (repository *PostgresRepository) ListCurrentItems(ctx context.Context, store StoreScope, query ProductQuery) (ProductListResponse, error) {
@@ -560,7 +816,7 @@ func onlyDigits(value string) string {
 	return builder.String()
 }
 
-func (repository *PostgresRepository) StartSyncRun(ctx context.Context, store StoreScope, dataType string, mode string, sourcePath string) (syncRunStart, error) {
+func (repository *PostgresRepository) StartSyncRun(ctx context.Context, store StoreScope, dataType string, mode string, sourcePath string, triggeredBy string) (syncRunStart, error) {
 	var started syncRunStart
 	err := repository.pool.QueryRow(ctx, `
 		insert into erp_sync_runs (
@@ -570,6 +826,7 @@ func (repository *PostgresRepository) StartSyncRun(ctx context.Context, store St
 			store_cnpj,
 			data_type,
 			mode,
+			triggered_by,
 			source_path,
 			status,
 			started_at,
@@ -584,16 +841,49 @@ func (repository *PostgresRepository) StartSyncRun(ctx context.Context, store St
 			$6,
 			$7,
 			$8,
+			$9,
 			now(),
 			now(),
 			now()
 		)
 		returning id::text, started_at;
-	`, store.TenantID, store.StoreID, store.StoreCode, store.StoreCNPJ, dataType, mode, sourcePath, SyncStatusRunning).Scan(&started.ID, &started.StartedAt)
+	`, store.TenantID, store.StoreID, store.StoreCode, store.StoreCNPJ, dataType, mode, firstNonEmpty(triggeredBy, SyncTriggeredByManual), sourcePath, SyncStatusRunning).Scan(&started.ID, &started.StartedAt)
 	if err != nil {
 		return syncRunStart{}, err
 	}
 	return started, nil
+}
+
+func (repository *PostgresRepository) UpdateSyncRunProgress(ctx context.Context, runID string, filesSeen int, filesImported int, filesSkipped int, rowsRead int, rowsImported int, storeCNPJ string) error {
+	_, err := repository.pool.Exec(ctx, `
+		update erp_sync_runs
+		set
+			files_seen = $2,
+			files_imported = $3,
+			files_skipped = $4,
+			rows_read = $5,
+			raw_rows_imported = $6,
+			store_cnpj = coalesce(nullif($7, ''), store_cnpj),
+			updated_at = now()
+		where id = $1::uuid;
+	`, runID, filesSeen, filesImported, filesSkipped, rowsRead, rowsImported, storeCNPJ)
+	return err
+}
+
+func (repository *PostgresRepository) SyncFileExists(ctx context.Context, store StoreScope, dataType string, sourceName string, checksum string) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from erp_sync_files
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+			  and data_type = $3
+			  and source_name = $4
+			  and checksum_sha256 = $5
+		);
+	`, store.TenantID, store.StoreID, dataType, sourceName, checksum).Scan(&exists)
+	return exists, err
 }
 
 func (repository *PostgresRepository) FinishSyncRun(
@@ -639,17 +929,21 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 	}()
 
 	fileID, inserted, err := repository.insertSyncFile(ctx, tx, insertSyncFileInput{
-		RunID:      input.RunID,
-		Store:      input.Store,
-		DataType:   input.DataType,
-		SourceName: input.Batch.SourceFileName,
-		SourcePath: input.Batch.SourceFileName,
-		SourceKind: SyncModeBootstrapMarkdown,
-		BatchDate:  input.Batch.BatchDate,
-		Checksum:   input.Batch.ChecksumSHA256,
-		Rows:       len(input.Batch.Rows),
-		ImportedAt: input.ImportedAt,
-		StoreCNPJ:  input.Batch.StoreCNPJ,
+		RunID:         input.RunID,
+		Store:         input.Store,
+		DataType:      input.DataType,
+		SourceName:    input.Batch.SourceFileName,
+		SourcePath:    firstNonEmpty(input.Batch.SourcePath, input.Batch.SourceFileName),
+		SourceKind:    firstNonEmpty(input.Batch.SourceKind, SyncModeBootstrapMarkdown),
+		BatchDate:     input.Batch.BatchDate,
+		ExtractedAt:   input.Batch.SourceExtractedAt,
+		DataReference: input.Batch.SourceDataReference,
+		SizeBytes:     input.Batch.SourceSizeBytes,
+		ErrorMessage:  input.Batch.ErrorMessage,
+		Checksum:      input.Batch.ChecksumSHA256,
+		Rows:          len(input.Batch.Rows),
+		ImportedAt:    input.ImportedAt,
+		StoreCNPJ:     input.Batch.StoreCNPJ,
 	})
 	if err != nil {
 		return itemBatchImportResult{}, err
@@ -758,6 +1052,7 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 				price_cents,
 				source_file_name,
 				source_batch_date,
+				source_extracted_at,
 				source_line_number,
 				source_created_at_raw,
 				source_updated_at_raw,
@@ -790,6 +1085,7 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 				raw.price_cents,
 				raw.source_file_name,
 				raw.source_batch_date,
+				sync_file.source_extracted_at,
 				raw.source_line_number,
 				raw.created_at_raw,
 				raw.updated_at_raw,
@@ -800,8 +1096,9 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 				now(),
 				now()
 			from erp_item_raw raw
+			join erp_sync_files sync_file on sync_file.id = raw.file_id
 			where raw.file_id = $1::uuid
-			order by raw.sku, coalesce(raw.updated_at, raw.created_at, raw.source_batch_date::timestamp) desc, raw.source_line_number desc
+			order by raw.sku, coalesce(sync_file.source_extracted_at, raw.updated_at, raw.created_at, raw.source_batch_date::timestamp) desc, raw.source_line_number desc
 			on conflict (tenant_id, store_id, sku)
 			do update
 			set
@@ -823,6 +1120,7 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 				price_cents = excluded.price_cents,
 				source_file_name = excluded.source_file_name,
 				source_batch_date = excluded.source_batch_date,
+				source_extracted_at = excluded.source_extracted_at,
 				source_line_number = excluded.source_line_number,
 				source_created_at_raw = excluded.source_created_at_raw,
 				source_updated_at_raw = excluded.source_updated_at_raw,
@@ -832,11 +1130,11 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 				file_id = excluded.file_id,
 				updated_at = now()
 			where
-				coalesce(excluded.source_updated_at, excluded.source_created_at, excluded.source_batch_date::timestamp, to_timestamp(0)) >
-					coalesce(erp_item_current.source_updated_at, erp_item_current.source_created_at, erp_item_current.source_batch_date::timestamp, to_timestamp(0))
+				coalesce(excluded.source_extracted_at, excluded.source_updated_at, excluded.source_created_at, excluded.source_batch_date::timestamp, to_timestamp(0)) >
+					coalesce(erp_item_current.source_extracted_at, erp_item_current.source_updated_at, erp_item_current.source_created_at, erp_item_current.source_batch_date::timestamp, to_timestamp(0))
 				or (
-					coalesce(excluded.source_updated_at, excluded.source_created_at, excluded.source_batch_date::timestamp, to_timestamp(0)) =
-						coalesce(erp_item_current.source_updated_at, erp_item_current.source_created_at, erp_item_current.source_batch_date::timestamp, to_timestamp(0))
+					coalesce(excluded.source_extracted_at, excluded.source_updated_at, excluded.source_created_at, excluded.source_batch_date::timestamp, to_timestamp(0)) =
+						coalesce(erp_item_current.source_extracted_at, erp_item_current.source_updated_at, erp_item_current.source_created_at, erp_item_current.source_batch_date::timestamp, to_timestamp(0))
 					and excluded.source_line_number >= erp_item_current.source_line_number
 				);
 		`, fileID); err != nil {
@@ -874,17 +1172,21 @@ func (repository *PostgresRepository) ImportCustomerBatch(ctx context.Context, i
 	}()
 
 	fileID, inserted, err := repository.insertSyncFile(ctx, tx, insertSyncFileInput{
-		RunID:      input.RunID,
-		Store:      input.Store,
-		DataType:   input.DataType,
-		SourceName: input.Batch.SourceFileName,
-		SourcePath: input.Batch.SourceFileName,
-		SourceKind: SyncModeBootstrapMarkdown,
-		BatchDate:  input.Batch.BatchDate,
-		Checksum:   input.Batch.ChecksumSHA256,
-		Rows:       len(input.Batch.Rows),
-		ImportedAt: input.ImportedAt,
-		StoreCNPJ:  input.Batch.StoreCNPJ,
+		RunID:         input.RunID,
+		Store:         input.Store,
+		DataType:      input.DataType,
+		SourceName:    input.Batch.SourceFileName,
+		SourcePath:    firstNonEmpty(input.Batch.SourcePath, input.Batch.SourceFileName),
+		SourceKind:    firstNonEmpty(input.Batch.SourceKind, SyncModeBootstrapMarkdown),
+		BatchDate:     input.Batch.BatchDate,
+		ExtractedAt:   input.Batch.SourceExtractedAt,
+		DataReference: input.Batch.SourceDataReference,
+		SizeBytes:     input.Batch.SourceSizeBytes,
+		ErrorMessage:  input.Batch.ErrorMessage,
+		Checksum:      input.Batch.ChecksumSHA256,
+		Rows:          len(input.Batch.Rows),
+		ImportedAt:    input.ImportedAt,
+		StoreCNPJ:     input.Batch.StoreCNPJ,
 	})
 	if err != nil {
 		return itemBatchImportResult{}, err
@@ -946,17 +1248,21 @@ func (repository *PostgresRepository) ImportEmployeeBatch(ctx context.Context, i
 	}()
 
 	fileID, inserted, err := repository.insertSyncFile(ctx, tx, insertSyncFileInput{
-		RunID:      input.RunID,
-		Store:      input.Store,
-		DataType:   input.DataType,
-		SourceName: input.Batch.SourceFileName,
-		SourcePath: input.Batch.SourceFileName,
-		SourceKind: SyncModeBootstrapMarkdown,
-		BatchDate:  input.Batch.BatchDate,
-		Checksum:   input.Batch.ChecksumSHA256,
-		Rows:       len(input.Batch.Rows),
-		ImportedAt: input.ImportedAt,
-		StoreCNPJ:  input.Batch.StoreCNPJ,
+		RunID:         input.RunID,
+		Store:         input.Store,
+		DataType:      input.DataType,
+		SourceName:    input.Batch.SourceFileName,
+		SourcePath:    firstNonEmpty(input.Batch.SourcePath, input.Batch.SourceFileName),
+		SourceKind:    firstNonEmpty(input.Batch.SourceKind, SyncModeBootstrapMarkdown),
+		BatchDate:     input.Batch.BatchDate,
+		ExtractedAt:   input.Batch.SourceExtractedAt,
+		DataReference: input.Batch.SourceDataReference,
+		SizeBytes:     input.Batch.SourceSizeBytes,
+		ErrorMessage:  input.Batch.ErrorMessage,
+		Checksum:      input.Batch.ChecksumSHA256,
+		Rows:          len(input.Batch.Rows),
+		ImportedAt:    input.ImportedAt,
+		StoreCNPJ:     input.Batch.StoreCNPJ,
 	})
 	if err != nil {
 		return itemBatchImportResult{}, err
@@ -1021,17 +1327,21 @@ func (repository *PostgresRepository) ImportOrderBatch(ctx context.Context, inpu
 	}()
 
 	fileID, inserted, err := repository.insertSyncFile(ctx, tx, insertSyncFileInput{
-		RunID:      input.RunID,
-		Store:      input.Store,
-		DataType:   input.DataType,
-		SourceName: input.Batch.SourceFileName,
-		SourcePath: input.Batch.SourceFileName,
-		SourceKind: SyncModeBootstrapMarkdown,
-		BatchDate:  input.Batch.BatchDate,
-		Checksum:   input.Batch.ChecksumSHA256,
-		Rows:       len(input.Batch.Rows),
-		ImportedAt: input.ImportedAt,
-		StoreCNPJ:  input.Batch.StoreCNPJ,
+		RunID:         input.RunID,
+		Store:         input.Store,
+		DataType:      input.DataType,
+		SourceName:    input.Batch.SourceFileName,
+		SourcePath:    firstNonEmpty(input.Batch.SourcePath, input.Batch.SourceFileName),
+		SourceKind:    firstNonEmpty(input.Batch.SourceKind, SyncModeBootstrapMarkdown),
+		BatchDate:     input.Batch.BatchDate,
+		ExtractedAt:   input.Batch.SourceExtractedAt,
+		DataReference: input.Batch.SourceDataReference,
+		SizeBytes:     input.Batch.SourceSizeBytes,
+		ErrorMessage:  input.Batch.ErrorMessage,
+		Checksum:      input.Batch.ChecksumSHA256,
+		Rows:          len(input.Batch.Rows),
+		ImportedAt:    input.ImportedAt,
+		StoreCNPJ:     input.Batch.StoreCNPJ,
 	})
 	if err != nil {
 		return itemBatchImportResult{}, err
@@ -1086,17 +1396,21 @@ func (repository *PostgresRepository) ImportOrderBatch(ctx context.Context, inpu
 }
 
 type insertSyncFileInput struct {
-	RunID      string
-	Store      StoreScope
-	DataType   string
-	SourceName string
-	SourcePath string
-	SourceKind string
-	BatchDate  string
-	Checksum   string
-	Rows       int
-	ImportedAt time.Time
-	StoreCNPJ  string
+	RunID         string
+	Store         StoreScope
+	DataType      string
+	SourceName    string
+	SourcePath    string
+	SourceKind    string
+	BatchDate     string
+	ExtractedAt   *time.Time
+	DataReference *time.Time
+	SizeBytes     int64
+	ErrorMessage  string
+	Checksum      string
+	Rows          int
+	ImportedAt    time.Time
+	StoreCNPJ     string
 }
 
 func (repository *PostgresRepository) insertSyncFile(ctx context.Context, tx pgx.Tx, input insertSyncFileInput) (string, bool, error) {
@@ -1113,6 +1427,10 @@ func (repository *PostgresRepository) insertSyncFile(ctx context.Context, tx pgx
 			source_path,
 			source_kind,
 			source_batch_date,
+			source_extracted_at,
+			source_data_reference,
+			source_size_bytes,
+			error_message,
 			checksum_sha256,
 			record_count,
 			status,
@@ -1132,14 +1450,18 @@ func (repository *PostgresRepository) insertSyncFile(ctx context.Context, tx pgx
 			$10,
 			$11,
 			$12,
-			'pending',
 			$13,
+			$14,
+			$15,
+			$16,
+			'pending',
+			$17,
 			now(),
 			now()
 		)
 		on conflict (tenant_id, store_id, data_type, source_name, checksum_sha256) do nothing
 		returning id::text;
-	`, input.RunID, input.Store.TenantID, input.Store.StoreID, input.Store.StoreCode, input.StoreCNPJ, input.DataType, input.SourceName, input.SourcePath, input.SourceKind, input.BatchDate, input.Checksum, input.Rows, input.ImportedAt).Scan(&fileID)
+	`, input.RunID, input.Store.TenantID, input.Store.StoreID, input.Store.StoreCode, input.StoreCNPJ, input.DataType, input.SourceName, input.SourcePath, input.SourceKind, input.BatchDate, input.ExtractedAt, input.DataReference, nullIfZeroInt64(input.SizeBytes), input.ErrorMessage, input.Checksum, input.Rows, input.ImportedAt).Scan(&fileID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return "", false, nil
@@ -1147,6 +1469,13 @@ func (repository *PostgresRepository) insertSyncFile(ctx context.Context, tx pgx
 		return "", false, err
 	}
 	return fileID, true, nil
+}
+
+func nullIfZeroInt64(value int64) any {
+	if value <= 0 {
+		return nil
+	}
+	return value
 }
 
 func (repository *PostgresRepository) getLastRun(ctx context.Context, store StoreScope, dataType string) (*SyncRunSummary, error) {

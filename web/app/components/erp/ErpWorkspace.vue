@@ -3,6 +3,10 @@ import { computed, onMounted, ref, watch } from "vue";
 
 import SettingsTabs from "~/components/settings/SettingsTabs.vue";
 import ErpProductsTable from "~/components/erp/ErpProductsTable.vue";
+import ErpSyncOverview from "~/components/erp/ErpSyncOverview.vue";
+import ErpSyncRunDetail from "~/components/erp/ErpSyncRunDetail.vue";
+import ErpSyncRunsTable from "~/components/erp/ErpSyncRunsTable.vue";
+import ErpSyncStatus from "~/components/erp/ErpSyncStatus.vue";
 import { hasPermission } from "~/domain/utils/permissions";
 import { useAuthStore } from "~/stores/auth";
 import { useErpStore } from "~/stores/erp";
@@ -11,10 +15,9 @@ import { useUiStore } from "~/stores/ui";
 const auth = useAuthStore();
 const erpStore = useErpStore();
 const ui = useUiStore();
-const ERP_ROOT_STORE_CODE = "184";
-
-const activeTab = ref("produtos");
+const activeTab = ref("sincronizacao");
 const activeBancoTab = ref("geral");
+const selectedSyncRunId = ref("");
 const searchValue = ref("");
 const recordsSearchValue = ref("");
 const recordsSpecificSearchValue = ref("");
@@ -26,7 +29,8 @@ const tabs = [
   { id: "clientes", label: "Clientes", icon: "groups" },
   { id: "cancelados", label: "Cancelados", icon: "event_busy" },
   { id: "funcionarios", label: "Funcionarios", icon: "badge" },
-  { id: "banco", label: "Banco", icon: "storage" }
+  { id: "banco", label: "Banco", icon: "storage" },
+  { id: "sincronizacao", label: "Sincronizacao", icon: "sync" }
 ];
 
 const bancoTabs = [
@@ -146,10 +150,10 @@ const recordsLabelByTab: Record<string, string> = {
   cancelados: "cancelados"
 };
 const recordsBootstrapLabelByTab: Record<string, string> = {
-  clientes: "Bootstrap clientes 184",
-  funcionarios: "Bootstrap funcionarios 184",
-  pedidos: "Bootstrap compras 184",
-  cancelados: "Bootstrap cancelados 184"
+  clientes: "Bootstrap clientes ERP",
+  funcionarios: "Bootstrap funcionarios ERP",
+  pedidos: "Bootstrap compras ERP",
+  cancelados: "Bootstrap cancelados ERP"
 };
 const recordsSpecificSearchByTab: Record<string, { label: string; placeholder: string }> = {
   clientes: { label: "CPF (comeca com)", placeholder: "Ex: 123.456.789-00" },
@@ -164,13 +168,14 @@ const recordsGeneralSearchPlaceholderByTab: Record<string, string> = {
   cancelados: "Busca geral (compra cancelada, cliente, SKU, valor, funcionario...)"
 };
 
-const currentStore = computed(() => erpStore.activeStore);
 const status = computed(() => erpStore.status);
 const currentProductCount = computed(() => Number(status.value?.productCurrent || 0));
 const rawItemRows = computed(() => Number(status.value?.rawItemRows || 0));
 const lastRun = computed(() => status.value?.lastRun || null);
 const lastImportedFile = computed(() => status.value?.lastImportedFile || null);
-const resolvedStoreCode = computed(() => status.value?.store?.storeCode || currentStore.value?.code || ERP_ROOT_STORE_CODE);
+const overview = computed(() => erpStore.overview || null);
+const erpScopeLabel = computed(() => "Sistema completo");
+const erpScopeHint = computed(() => "Escopo consolidado da integração ERP; não segue a subloja operacional do topo.");
 const canSync = computed(() => {
   if (auth.permissionsResolved) {
     return hasPermission(auth.permissionKeys, "workspace.erp.edit");
@@ -180,16 +185,43 @@ const canSync = computed(() => {
 });
 const activeRecordsDataType = computed(() => recordsDataTypeByTab[activeTab.value] || "");
 const activeRecordsColumns = computed(() => recordsColumnsByTab[activeTab.value] || []);
-const activeRecordsBootstrapLabel = computed(() => recordsBootstrapLabelByTab[activeTab.value] || "Bootstrap registros 184");
+const activeRecordsBootstrapLabel = computed(() => recordsBootstrapLabelByTab[activeTab.value] || "Bootstrap registros ERP");
 const activeRecordsSpecificSearch = computed(() => recordsSpecificSearchByTab[activeTab.value] || { label: "Campo especifico", placeholder: "Digite para filtrar" });
 const activeRecordsGeneralSearchPlaceholder = computed(() => recordsGeneralSearchPlaceholderByTab[activeTab.value] || "Busca geral (campos do tipo selecionado)");
 const activeTypeStatus = computed(() => {
   const dataType = activeRecordsDataType.value;
-  return (Array.isArray(status.value?.typeStats) ? status.value.typeStats : []).find((item) => item?.dataType === dataType) || null;
+  return (Array.isArray(status.value?.typeStats) ? status.value.typeStats : []).find((item: Record<string, any>) => item?.dataType === dataType) || null;
 });
 const activeRecordsTotal = computed(() => Number(activeTypeStatus.value?.totalRows || erpStore.totalRecords || 0));
 const activeRecordsLastRun = computed(() => activeTypeStatus.value?.lastRun || null);
 const activeRecordsLastImportedFile = computed(() => activeTypeStatus.value?.lastImportedFile || null);
+const syncRuns = computed(() => {
+  if (Array.isArray(erpStore.runs) && erpStore.runs.length) {
+    return erpStore.runs;
+  }
+
+  const runs: Array<Record<string, any>> = [];
+  const pushUnique = (run?: Record<string, any> | null) => {
+    if (!run?.id || runs.some((item) => item.id === run.id)) {
+      return;
+    }
+    runs.push(run);
+  };
+
+  pushUnique(status.value?.lastRun || null);
+  for (const item of Array.isArray(status.value?.typeStats) ? status.value!.typeStats : []) {
+    pushUnique(item?.lastRun || null);
+  }
+
+  return runs.sort((left, right) => {
+    const leftTime = new Date(left.finishedAt || left.startedAt || 0).getTime();
+    const rightTime = new Date(right.finishedAt || right.startedAt || 0).getTime();
+    return rightTime - leftTime;
+  });
+});
+const selectedSyncRun = computed(() =>
+  syncRuns.value.find((run: Record<string, any>) => run.id === selectedSyncRunId.value) || syncRuns.value[0] || null
+);
 
 const bancoSectionByTab: Record<string, { title: string; text: string; note: string; cards: Array<{ table: string; label: string; desc: string; badge: string }> }> = {
   geral: {
@@ -292,7 +324,7 @@ function formatNumber(value: number | null | undefined) {
   return n.toLocaleString("pt-BR");
 }
 
-// Converts a source filename like "20260413043245_184-cnpj-item-20260406.csv"
+// Converts a source filename like "20260413043245_store-cnpj-item-20260406.csv"
 // into a human-readable date string. Falls back to the raw name.
 function formatSourceFileName(sourceName?: string | null): string {
   if (!sourceName) return "-";
@@ -316,9 +348,30 @@ function formatPrice(rawValue?: string, cents?: number | null) {
   }).format(numericCents / 100);
 }
 
+function productRowKey(row: Record<string, any>) {
+  return `${row.sku}-${row.identifier}`;
+}
+
+function recordsRowKey(row: Record<string, any>, index: number) {
+  return String(row.id || row.order_id || row.original_id || row.identifier || row.cpf || index);
+}
+
 async function loadStatus() {
-  const storeCode = ERP_ROOT_STORE_CODE;
-  const result = await erpStore.fetchStatus({ storeCode });
+  const result = await erpStore.fetchStatus();
+  if (!result.ok && result.message) {
+    ui.error(result.message);
+  }
+}
+
+async function loadRuns() {
+  const result = await erpStore.fetchRuns({ page: 1, pageSize: 20 });
+  if (!result.ok && result.message) {
+    ui.error(result.message);
+  }
+}
+
+async function loadOverview() {
+  const result = await erpStore.fetchOverview();
   if (!result.ok && result.message) {
     ui.error(result.message);
   }
@@ -329,10 +382,7 @@ async function loadProducts(payload: { page?: number; pageSize?: number } = {}) 
     return;
   }
 
-  const storeCode = ERP_ROOT_STORE_CODE;
-
   const result = await erpStore.fetchProducts({
-    storeCode,
     identifierPrefix: identifierPrefixValue.value,
     search: searchValue.value,
     page: payload.page || erpStore.page || 1,
@@ -348,10 +398,7 @@ async function loadRecords(payload: { page?: number; pageSize?: number } = {}) {
     return;
   }
 
-  const storeCode = ERP_ROOT_STORE_CODE;
-
   const result = await erpStore.fetchRecords({
-    storeCode,
     dataType: activeRecordsDataType.value,
     search: recordsSearchValue.value,
     specificSearch: recordsSpecificSearchValue.value,
@@ -373,6 +420,11 @@ async function handlePageSizeChange(nextPageSize: number) {
 
 async function reloadWorkspace() {
   await loadStatus();
+  if (activeTab.value === "sincronizacao") {
+    await loadOverview();
+    await loadRuns();
+    return;
+  }
   if (activeTab.value === "produtos") {
     await loadProducts();
     return;
@@ -391,9 +443,7 @@ async function handleRecordsPageSizeChange(nextPageSize: number) {
 }
 
 async function handleBootstrap() {
-  const storeCode = ERP_ROOT_STORE_CODE;
-
-  const result = await erpStore.bootstrapItems({ storeCode });
+  const result = await erpStore.bootstrapItems();
   if (!result.ok) {
     ui.error(result.message || "Nao foi possivel iniciar o bootstrap do ERP.");
     return;
@@ -404,21 +454,46 @@ async function handleBootstrap() {
 }
 
 async function handleRecordsBootstrap() {
-  const storeCode = ERP_ROOT_STORE_CODE;
   const dataType = activeRecordsDataType.value;
   const label = recordsLabelByTab[activeTab.value] || "registros";
   if (!dataType) {
     ui.error("Selecione uma aba ERP valida antes de iniciar o bootstrap.");
     return;
   }
-
-  const result = await erpStore.bootstrapDataType({ storeCode, dataType });
+  const result = await erpStore.bootstrapDataType({ dataType });
   if (!result.ok) {
     ui.error(result.message || "Nao foi possivel iniciar o bootstrap do ERP.");
     return;
   }
 
   ui.success(`Bootstrap ERP de ${label} concluido: ${result.data?.rowsImported || 0} linhas importadas em ${result.data?.filesImported || 0} lotes.`);
+  await reloadWorkspace();
+}
+
+async function handleSyncNow() {
+  const result = await erpStore.syncStore();
+  if (!result.ok) {
+    ui.error(result.message || "Nao foi possivel iniciar a sincronizacao ERP.");
+    return;
+  }
+
+  ui.success(`Sincronizacao ERP concluida: ${result.data?.rowsImported || 0} linhas importadas em ${result.data?.filesImported || 0} arquivos.`);
+  await reloadWorkspace();
+}
+
+async function handleBackfillSync() {
+  const confirmed = typeof window === "undefined" ? true : window.confirm("Iniciar o backfill retroativo do ERP para o escopo completo do sistema?");
+  if (!confirmed) {
+    return;
+  }
+
+  const result = await erpStore.backfillStore();
+  if (!result.ok) {
+    ui.error(result.message || "Nao foi possivel iniciar o backfill ERP.");
+    return;
+  }
+
+  ui.success(`Backfill ERP concluido: ${result.data?.rowsImported || 0} linhas importadas em ${result.data?.filesImported || 0} arquivos.`);
   await reloadWorkspace();
 }
 
@@ -447,6 +522,11 @@ watch(
 watch(activeTab, () => {
   if (activeTab.value === "banco") {
     activeBancoTab.value = "geral";
+    return;
+  }
+  if (activeTab.value === "sincronizacao") {
+    void loadOverview();
+    void loadRuns();
     return;
   }
   if (activeTab.value === "produtos") {
@@ -483,6 +563,17 @@ watch(recordsSpecificSearchValue, () => {
   }
 });
 
+watch(syncRuns, (runs) => {
+  if (!runs.length) {
+    selectedSyncRunId.value = "";
+    return;
+  }
+
+  if (!runs.some((run: Record<string, any>) => run.id === selectedSyncRunId.value)) {
+    selectedSyncRunId.value = runs[0].id;
+  }
+}, { immediate: true });
+
 onMounted(() => {
   if (auth.isAuthenticated) {
     void reloadWorkspace();
@@ -494,17 +585,18 @@ onMounted(() => {
   <section class="admin-panel erp-panel" data-testid="erp-panel">
     <header class="erp-panel__header">
       <div>
-        <h2 class="erp-panel__title">ERP FTP Store 184 MVP</h2>
+        <h2 class="erp-panel__title">ERP FTP Workspace</h2>
         <p class="erp-panel__text">
-          Produtos funcionais com raw exato do FTP, projeção rápida para busca e trilha de sync por lote.
+          Produtos funcionais com raw exato do FTP, projeção rápida para busca e trilha de sync por lote no escopo ERP completo do sistema.
         </p>
       </div>
 
       <div class="erp-panel__store-selector">
         <div class="erp-panel__selectors-row">
           <div class="erp-panel__selector-group">
-            <label class="erp-panel__store-label">Loja ERP</label>
-            <div class="erp-panel__store-select" role="status" aria-live="polite">184 – Loja 184 (fixa)</div>
+            <label class="erp-panel__store-label">Escopo ERP</label>
+            <div class="erp-panel__store-select" role="status" aria-live="polite">{{ erpScopeLabel }}</div>
+            <small class="erp-panel__store-hint">{{ erpScopeHint }}</small>
           </div>
         </div>
       </div>
@@ -557,7 +649,7 @@ onMounted(() => {
       <ErpProductsTable
         :columns="columns"
         :rows="erpStore.products"
-        :row-key="(row) => `${row.sku}-${row.identifier}`"
+        :row-key="productRowKey"
         :total="erpStore.totalProducts"
         :page="erpStore.page"
         :page-size="erpStore.pageSize"
@@ -573,10 +665,10 @@ onMounted(() => {
         :show-bootstrap-action="canSync"
         :can-bootstrap="canSync"
         :syncing="erpStore.syncing"
-        bootstrap-label="Bootstrap produtos 184"
+        bootstrap-label="Bootstrap produtos ERP"
         bootstrap-busy-label="Sincronizando..."
         empty-title="Nenhum produto no ERP"
-        empty-text="Dispare o bootstrap da loja 184 ou ajuste a busca para preencher a grade administrativa."
+        empty-text="Dispare a sincronizacao ERP ou ajuste a busca para preencher a grade administrativa."
         storage-key="erp-products-grid-columns-v2"
         testid="erp-products-grid"
         @update:search-value="searchValue = $event"
@@ -640,6 +732,35 @@ onMounted(() => {
       </div>
     </section>
 
+    <section v-else-if="activeTab === 'sincronizacao'" class="erp-sync-tab">
+      <ErpSyncStatus
+        :last-run="lastRun"
+        :last-imported-file="lastImportedFile"
+        :syncing="erpStore.syncing"
+        :can-sync="canSync"
+        @refresh="reloadWorkspace"
+        @sync="handleSyncNow"
+        @backfill="handleBackfillSync"
+      />
+
+      <ErpSyncOverview
+        :overview="overview"
+        :loading="erpStore.loadingOverview"
+      />
+
+      <div class="erp-sync-tab__grid">
+        <ErpSyncRunsTable
+          :runs="syncRuns"
+          :selected-run-id="selectedSyncRunId"
+          @select="selectedSyncRunId = $event"
+        />
+        <ErpSyncRunDetail
+          :run="selectedSyncRun"
+          :last-imported-file="lastImportedFile"
+        />
+      </div>
+    </section>
+
     <template v-else>
       <div class="erp-panel__stats">
         <article class="erp-panel__stat-card">
@@ -669,7 +790,7 @@ onMounted(() => {
       <ErpProductsTable
         :columns="activeRecordsColumns"
         :rows="erpStore.records"
-        :row-key="(row, index) => String(row.id || row.order_id || row.original_id || row.identifier || row.cpf || index)"
+        :row-key="recordsRowKey"
         :total="erpStore.totalRecords"
         :page="erpStore.recordsPage"
         :page-size="erpStore.recordsPageSize"
@@ -687,7 +808,7 @@ onMounted(() => {
         bootstrap-busy-label="Sincronizando..."
         :general-search-placeholder="activeRecordsGeneralSearchPlaceholder"
         empty-title="Nenhum registro encontrado"
-        empty-text="Nao ha linhas importadas para este tipo no escopo 184. Use o bootstrap da aba para carregar o consolidado."
+        empty-text="Nao ha linhas importadas para este tipo no escopo consolidado do ERP. Use a sincronizacao da aba para carregar os dados."
         :storage-key="`erp-${activeTab}-grid-columns-v3`"
         :testid="`erp-${activeTab}-grid`"
         @update:search-value="recordsSearchValue = $event"
@@ -751,10 +872,16 @@ onMounted(() => {
 }
 
 .erp-panel__stats,
-.erp-panel__run-meta {
+.erp-panel__run-meta,
+.erp-sync-tab__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.85rem;
+}
+
+.erp-sync-tab {
+  display: grid;
+  gap: 1rem;
 }
 
 .erp-panel__stat-card,
@@ -952,6 +1079,11 @@ onMounted(() => {
   background: rgba(17, 24, 39, 0.92);
   color: var(--text-main);
   font-size: 0.9rem;
+}
+
+.erp-panel__store-hint {
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .erp-panel__store-select--disabled {

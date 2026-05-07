@@ -363,18 +363,18 @@ const finishFlowMode = computed(() =>
   String(modalConfig.value.finishFlowMode || "").trim() === "erp-reconciliation" ? "erp-reconciliation" : "legacy"
 );
 const isERPReconciliationFlow = computed(() => finishFlowMode.value === "erp-reconciliation");
-const showCustomerNameField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerNameField, true));
-const showCustomerPhoneField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerPhoneField, true));
-const showEmailField = computed(() => resolveModalBoolean(modalConfig.value.showEmailField, true));
+const showCustomerNameField = computed(() => !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showCustomerNameField, true));
+const showCustomerPhoneField = computed(() => !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showCustomerPhoneField, true));
+const showEmailField = computed(() => !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showEmailField, true));
 const showProfessionField = computed(() => resolveModalBoolean(modalConfig.value.showProfessionField, true));
 const showNotesField = computed(() => resolveModalBoolean(modalConfig.value.showNotesField, true));
 const showProductSeenField = computed(() => resolveModalBoolean(modalConfig.value.showProductSeenField, true));
 const showProductSeenNotesField = computed(() => resolveModalBoolean(modalConfig.value.showProductSeenNotesField, true));
-const showProductClosedField = computed(() => resolveModalBoolean(modalConfig.value.showProductClosedField, true));
+const showProductClosedField = computed(() => !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showProductClosedField, true));
 const showPurchaseCodeField = computed(() => resolveModalBoolean(modalConfig.value.showPurchaseCodeField, true));
 const showVisitReasonField = computed(() => resolveModalBoolean(modalConfig.value.showVisitReasonField, true));
 const showCustomerSourceField = computed(() => resolveModalBoolean(modalConfig.value.showCustomerSourceField, true));
-const showExistingCustomerField = computed(() => resolveModalBoolean(modalConfig.value.showExistingCustomerField, true));
+const showExistingCustomerField = computed(() => !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showExistingCustomerField, true));
 const showQueueJumpReasonField = computed(() => resolveModalBoolean(modalConfig.value.showQueueJumpReasonField, true));
 const showLossReasonField = computed(() => resolveModalBoolean(modalConfig.value.showLossReasonField, true));
 const requireCustomerNameField = computed(() =>

@@ -111,7 +111,7 @@ function entityLabel(dataType?: string) {
         <article class="erp-sync-overview__hero-card">
           <span>Puxamos tudo do FTP?</span>
           <strong>{{ importStatusLabel }}</strong>
-          <small>{{ formatNumber(overview.totals?.importedFiles) }} de {{ formatNumber(overview.totals?.totalFiles) }} CSVs atuais já estão no banco.</small>
+          <small>{{ formatNumber(overview.totals?.importedFiles) }} de {{ formatNumber(overview.totals?.totalFiles) }} CSVs do lote atual (raiz do FTP) já estão no banco.</small>
         </article>
 
         <article class="erp-sync-overview__hero-card">
@@ -129,7 +129,7 @@ function entityLabel(dataType?: string) {
         <article class="erp-sync-overview__hero-card">
           <span>Pesquisa no painel</span>
           <strong>Disponível</strong>
-          <small>Tudo que já entrou no banco pode ser consultado nas abas do ERP.</small>
+          <small>Sim: além do lote atual do FTP, registros históricos já carregados também aparecem nas abas do ERP.</small>
         </article>
       </div>
 

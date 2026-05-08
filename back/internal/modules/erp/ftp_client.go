@@ -115,26 +115,39 @@ func (source *SFTPSource) List(ctx context.Context, storeCode string) ([]SourceF
 		return nil, err
 	}
 
-	entries, err := source.client.ReadDirContext(ctx, source.options.RemoteDir)
-	if err != nil {
-		return nil, source.wrapError(err)
+	normalizedStoreCode := strings.TrimSpace(storeCode)
+	if !source.options.Recursive {
+		entries, err := source.client.ReadDirContext(ctx, source.options.RemoteDir)
+		if err != nil {
+			return nil, source.wrapError(err)
+		}
+
+		files := make([]SourceFileInfo, 0, len(entries))
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.EqualFold(path.Ext(entry.Name()), ".csv") {
+				continue
+			}
+			meta, parseErr := parseCSVFilename(entry.Name())
+			if parseErr != nil || meta.StoreCode != normalizedStoreCode {
+				continue
+			}
+			files = append(files, SourceFileInfo{
+				Name:    entry.Name(),
+				Size:    entry.Size(),
+				ModTime: entry.ModTime(),
+			})
+		}
+
+		sort.Slice(files, func(left int, right int) bool {
+			return files[left].Name < files[right].Name
+		})
+
+		return files, nil
 	}
 
-	normalizedStoreCode := strings.TrimSpace(storeCode)
-	files := make([]SourceFileInfo, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.EqualFold(path.Ext(entry.Name()), ".csv") {
-			continue
-		}
-		meta, parseErr := parseCSVFilename(entry.Name())
-		if parseErr != nil || meta.StoreCode != normalizedStoreCode {
-			continue
-		}
-		files = append(files, SourceFileInfo{
-			Name:    entry.Name(),
-			Size:    entry.Size(),
-			ModTime: entry.ModTime(),
-		})
+	files := make([]SourceFileInfo, 0, 64)
+	if err := source.walkRemoteTree(ctx, source.options.RemoteDir, "", normalizedStoreCode, &files); err != nil {
+		return nil, err
 	}
 
 	sort.Slice(files, func(left int, right int) bool {
@@ -149,26 +162,39 @@ func (source *FTPSource) List(ctx context.Context, storeCode string) ([]SourceFi
 		return nil, err
 	}
 
-	entries, err := source.client.List(source.options.RemoteDir)
-	if err != nil {
-		return nil, source.wrapError(err)
+	normalizedStoreCode := strings.TrimSpace(storeCode)
+	if !source.options.Recursive {
+		entries, err := source.client.List(source.options.RemoteDir)
+		if err != nil {
+			return nil, source.wrapError(err)
+		}
+
+		files := make([]SourceFileInfo, 0, len(entries))
+		for _, entry := range entries {
+			if entry.IsDir || !strings.EqualFold(path.Ext(entry.Name), ".csv") {
+				continue
+			}
+			meta, parseErr := parseCSVFilename(entry.Name)
+			if parseErr != nil || meta.StoreCode != normalizedStoreCode {
+				continue
+			}
+			files = append(files, SourceFileInfo{
+				Name:    entry.Name,
+				Size:    entry.Size,
+				ModTime: entry.ModTime,
+			})
+		}
+
+		sort.Slice(files, func(left int, right int) bool {
+			return files[left].Name < files[right].Name
+		})
+
+		return files, nil
 	}
 
-	normalizedStoreCode := strings.TrimSpace(storeCode)
-	files := make([]SourceFileInfo, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir || !strings.EqualFold(path.Ext(entry.Name), ".csv") {
-			continue
-		}
-		meta, parseErr := parseCSVFilename(entry.Name)
-		if parseErr != nil || meta.StoreCode != normalizedStoreCode {
-			continue
-		}
-		files = append(files, SourceFileInfo{
-			Name:    entry.Name,
-			Size:    entry.Size,
-			ModTime: entry.ModTime,
-		})
+	files := make([]SourceFileInfo, 0, 64)
+	if err := source.walkRemoteTree(ctx, source.options.RemoteDir, "", normalizedStoreCode, &files); err != nil {
+		return nil, err
 	}
 
 	sort.Slice(files, func(left int, right int) bool {
@@ -264,6 +290,116 @@ func (source *FTPSource) Close() error {
 	err := source.client.Close()
 	source.client = nil
 	return err
+}
+
+func (source *SFTPSource) walkRemoteTree(ctx context.Context, absoluteDir string, relativeDir string, storeCode string, files *[]SourceFileInfo) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	entries, err := source.client.ReadDirContext(ctx, absoluteDir)
+	if err != nil {
+		return source.wrapError(err)
+	}
+
+	for _, entry := range entries {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		name := strings.TrimSpace(entry.Name())
+		if name == "" || name == "." || name == ".." {
+			continue
+		}
+
+		relativePath := name
+		if relativeDir != "" {
+			relativePath = path.Join(relativeDir, name)
+		}
+
+		if entry.IsDir() {
+			if err := source.walkRemoteTree(ctx, path.Join(absoluteDir, name), relativePath, storeCode, files); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if !strings.EqualFold(path.Ext(name), ".csv") {
+			continue
+		}
+
+		meta, parseErr := parseCSVFilename(path.Base(relativePath))
+		if parseErr != nil || meta.StoreCode != storeCode {
+			continue
+		}
+
+		*files = append(*files, SourceFileInfo{
+			Name:    path.Clean(relativePath),
+			Size:    entry.Size(),
+			ModTime: entry.ModTime(),
+		})
+	}
+
+	return nil
+}
+
+func (source *FTPSource) walkRemoteTree(ctx context.Context, absoluteDir string, relativeDir string, storeCode string, files *[]SourceFileInfo) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	entries, err := source.client.List(absoluteDir)
+	if err != nil {
+		return source.wrapError(err)
+	}
+
+	for _, entry := range entries {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		name := strings.TrimSpace(entry.Name)
+		if name == "" || name == "." || name == ".." {
+			continue
+		}
+
+		relativePath := name
+		if relativeDir != "" {
+			relativePath = path.Join(relativeDir, name)
+		}
+
+		if entry.IsDir {
+			if err := source.walkRemoteTree(ctx, path.Join(absoluteDir, name), relativePath, storeCode, files); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if !strings.EqualFold(path.Ext(name), ".csv") {
+			continue
+		}
+
+		meta, parseErr := parseCSVFilename(path.Base(relativePath))
+		if parseErr != nil || meta.StoreCode != storeCode {
+			continue
+		}
+
+		*files = append(*files, SourceFileInfo{
+			Name:    path.Clean(relativePath),
+			Size:    entry.Size,
+			ModTime: entry.ModTime,
+		})
+	}
+
+	return nil
 }
 
 func (source *SFTPSource) ensureConnected(ctx context.Context) error {

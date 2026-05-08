@@ -34,6 +34,7 @@ var supportedDataTypes = []string{
 type Options struct {
 	Env                        string
 	SourceKind                 string
+	SourceRecursive            bool
 	SourceDir                  string
 	StorageDir                 string
 	BootstrapItemFile          string

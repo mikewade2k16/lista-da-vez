@@ -38,6 +38,7 @@ type ftpClientDialer func(ctx context.Context, options SourceOptions, explicitTL
 
 type SourceOptions struct {
 	Kind               string
+	Recursive          bool
 	Environment        string
 	LocalDir           string
 	RemoteDir          string

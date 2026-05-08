@@ -51,6 +51,7 @@ services:
       SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
       AUTH_BCRYPT_COST: ${AUTH_BCRYPT_COST:-10}
       ERP_SOURCE_KIND: ${ERP_SOURCE_KIND:-local}
+      ERP_SOURCE_RECURSIVE: ${ERP_SOURCE_RECURSIVE:-false}
       ERP_SOURCE_DIR: /app/data/erp/source
       ERP_STORAGE_DIR: /app/data/erp/storage
       ERP_BOOTSTRAP_ITEM_FILE: ${ERP_BOOTSTRAP_ITEM_FILE:-consolidados/184/item_184_consolidado.md}

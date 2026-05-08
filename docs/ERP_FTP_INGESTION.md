@@ -34,6 +34,7 @@ Configuração por ambiente:
 - `ERP_FTP_KEY_PATH`
 - `ERP_FTP_REMOTE_DIR`
 - `ERP_FTP_HOST_KEY`
+- `ERP_SOURCE_RECURSIVE` — quando `true`, o FTP varre recursivamente subpastas (ex: `processed/`). Padrão `false`. Veja "Backfill histórico local" abaixo.
 - `ERP_SYNC_AUTOMATIC_ENABLED`
 - `ERP_SYNC_INTERVAL`
 - `ERP_SYNC_HOUR_UTC`
@@ -96,6 +97,56 @@ Validação real em Docker dev para `storeCode=184`:
 Observação operacional importante:
 - `rowsInBank` e `searchableRows` mostram o que já existe no banco hoje, inclusive cargas legadas anteriores
 - a cobertura do overview considera apenas o conjunto remoto atual do FTP, então a pendência pode reabrir quando o FTP publicar um novo lote, mesmo com muitas linhas já persistidas no banco
+
+## Estratégia de duas camadas: backfill histórico + rotina diária
+
+A operação divide-se em dois modos distintos:
+
+### Rotina diária (FTP normal, padrão)
+
+- `ERP_SOURCE_KIND=ftp`
+- `ERP_SOURCE_RECURSIVE=false` (padrão; vê apenas a raiz `extract_files`)
+- O FTP publica um novo lote pequeno (5 arquivos, um por tipo) por dia
+- A automação ou um sync manual captura apenas esse lote
+- Overview típico: 35 arquivos, 0 pendentes após o sync do dia
+
+### Backfill histórico (local, operação única)
+
+O FTP também contém um histórico de anos em `extract_files/processed/` (~4370 arquivos). Para importar esse histórico sem copiar gigabytes para o repo, usamos um compose temporário que monta a pasta local diretamente no container.
+
+**Pré-requisito:** ter os arquivos históricos baixados do FTP em `C:\Users\Mike\Downloads\processed\loja_184` (cópia plana de todos os arquivos da subpasta `processed/`).
+
+**Como executar o backfill:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.erp-local-temp.yml up -d --build --force-recreate api
+# aguardar healthz
+curl http://localhost:8883/v1/erp/overview   # confirmar totalFiles esperado
+curl -X POST http://localhost:8883/v1/erp/sync -H "Authorization: Bearer <token>"
+# sync leva ~6 minutos para o lote completo
+# finalizado quando lastRun.status=success e pendingFiles=0
+```
+
+Após o backfill, restaurar o modo diário normal:
+
+```bash
+ERP_SOURCE_KIND=ftp ERP_SOURCE_RECURSIVE=false ERP_ROOT_STORE_CODE=184 \
+  ERP_FTP_HOST=ftp.aperolajoias.com.br ERP_FTP_PORT=21 \
+  ERP_FTP_USER=desenvolvimento@aperolajoias.com.br \
+  ERP_FTP_PASSWORD='#Since1967' ERP_FTP_REMOTE_DIR=extract_files \
+  docker compose -f docker-compose.yml up -d --build --force-recreate api
+```
+
+**Resultado do backfill de 2026-05-07:**
+- 4370 arquivos históricos da loja 184 cobertos
+- overview final: `4370/4370`, `0` pendentes
+- duração do sync: `6m24s` (HTTP 200 no log da API)
+- caveat: arquivos `item` e `customer` muito antigos usam layout legado (14 colunas em vez de 16, 21 em vez de 22); esses arquivos já tinham cobertura via importações `bootstrap_markdown` anteriores, portanto a cobertura final permaneceu completa mesmo sem reprocessá-los
+
+**Nota sobre o count de pendentes:**
+- O overview compara os nomes dos arquivos da origem com os `source_name` já registrados no banco
+- Antes do backfill local, a loja 184 já tinha 4255 arquivos históricos registrados via `bootstrap_markdown`; por isso só 115 apareciam como pendentes na primeira consulta — não era bug
+- O estado do banco após o backfill: `~7227` registros em `erp_sync_files` para `storeCode=184`
 
 ## Operação local
 

@@ -198,6 +198,10 @@ Em 2026-05-06 tambem foi validado, em Docker dev:
 	- `POST /v1/erp/sync` executado em `2026-05-06 13:08`, importando os `31` CSVs pendentes do FTP atual (`filesImported=31`, `filesSkipped=4`, `rowsImported=9964`)
 	- em `2026-05-07 11:35`, um novo lote publicado no FTP reabriu temporariamente o overview para `30/35` (`5` CSVs pendentes) e a sincronizacao manual pela propria UI `/erp` importou esses `5` arquivos, fechando novamente em `35/35` e `0` pendentes
 	- o lote de `2026-05-07 11:35` entrou como `1` arquivo por tipo, com `item=1007`, `customer=144`, `employee=10`, `order=217` e `ordercanceled=19` linhas importadas
+	- em `2026-05-07` tambem foi validado um modo temporario de backfill historico local via `docker-compose.erp-local-temp.yml`, montando `C:/Users/Mike/Downloads/processed/loja_184` como source `local` sem copiar arquivos para o repositorio
+	- nesse modo local, o inventario historico da loja `184` apareceu como `4370` arquivos no total; o overview inicialmente mostrou apenas `115` pendentes porque `4255` nomes de arquivo ja estavam cobertos por runs antigos persistidos como `bootstrap_markdown`, e o overview considera cobertura por `source_name` ja importado no banco
+	- o sync historico local terminou em `6m24s` com status `200` e o overview final fechou em `4370/4370` e `0` pendentes para a loja `184`
+	- observacao importante: dois runs locais (`item` e `customer`) acusaram mismatch de layout em arquivos antigos (`14` vs `16` colunas em `item`, `21` vs `22` em `customer`), mas esses mesmos arquivos ja estavam marcados como cobertos por imports anteriores; se precisarmos reprocessar todo o historico exclusivamente pelo parser novo, ainda falta suportar esses layouts legados
 
 ## Onde paramos
 

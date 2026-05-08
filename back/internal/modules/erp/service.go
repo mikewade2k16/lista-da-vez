@@ -821,6 +821,7 @@ func (service *Service) newSource() (ErpSource, error) {
 	}
 	return factory(SourceOptions{
 		Kind:               firstNonEmpty(service.options.SourceKind, SourceKindLocal),
+		Recursive:          service.options.SourceRecursive,
 		Environment:        service.options.Env,
 		LocalDir:           service.options.SourceDir,
 		Host:               service.options.FTPHost,

@@ -14,6 +14,7 @@ type Config struct {
 	WebAppURL                     string
 	UploadsDir                    string
 	ERPSourceKind                 string
+	ERPSourceRecursive            bool
 	ERPSourceDir                  string
 	ERPLocalSourceDir             string
 	ERPStorageDir                 string
@@ -59,13 +60,14 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		AppName:       getEnv("APP_NAME", "lista-da-vez-api"),
-		Env:           getEnv("APP_ENV", "development"),
-		HTTPAddr:      getEnv("APP_ADDR", ":8080"),
-		WebAppURL:     getEnv("WEB_APP_URL", "http://localhost:3003"),
-		UploadsDir:    getEnv("UPLOADS_DIR", "data/uploads"),
-		ERPSourceKind: getEnv("ERP_SOURCE_KIND", "local"),
-		ERPSourceDir:  getEnv("ERP_SOURCE_DIR", ""),
+		AppName:            getEnv("APP_NAME", "lista-da-vez-api"),
+		Env:                getEnv("APP_ENV", "development"),
+		HTTPAddr:           getEnv("APP_ADDR", ":8080"),
+		WebAppURL:          getEnv("WEB_APP_URL", "http://localhost:3003"),
+		UploadsDir:         getEnv("UPLOADS_DIR", "data/uploads"),
+		ERPSourceKind:      getEnv("ERP_SOURCE_KIND", "local"),
+		ERPSourceRecursive: getEnvBool("ERP_SOURCE_RECURSIVE", false),
+		ERPSourceDir:       getEnv("ERP_SOURCE_DIR", ""),
 		ERPLocalSourceDir: getEnv(
 			"ERP_LOCAL_SOURCE_DIR",
 			getEnv("ERP_SOURCE_DIR", ""),

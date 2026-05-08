@@ -122,6 +122,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	erpService := erp.NewService(erpRepository, erp.Options{
 		Env:                        cfg.Env,
 		SourceKind:                 cfg.ERPSourceKind,
+		SourceRecursive:            cfg.ERPSourceRecursive,
 		SourceDir:                  cfg.ERPLocalSourceDir,
 		StorageDir:                 cfg.ERPStorageDir,
 		BootstrapItemFile:          cfg.ERPBootstrapItemFile,

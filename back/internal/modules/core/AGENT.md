@@ -12,7 +12,7 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 ## Estado por fase
 
-### Fase 1 (atual) — leituras basicas
+### Fase 1 — leituras basicas (concluida)
 
 - Tabelas core.* criadas via migration `0100_core_schema.sql`.
 - Seed inicial de `tenants → accounts` e `users → users` em `0101_core_seed_from_legacy.sql`.
@@ -20,12 +20,25 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
   expostos APENAS quando `CORE_V2_ENABLED=true`.
 - `roles` e `permissions` ainda retornam `[]` (Fase 3).
 
-### Fase 2 (proxima) — Module Registry
+### Fase 2 (atual) — Module Registry
 
-- `core.modules`, `core.permissions`, `core.role_templates` populados pelo
-  `SyncCatalog` no boot a partir do Module Registry.
-- `core.account_modules` recebe registro para todos os accounts existentes
-  (todos os modulos atuais habilitados — nao quebra nada).
+- `module.go` adapta o core para a interface `modules.Module`. Agora o core
+  passa pelo Registry no boot (em vez de wiring direto via `core.RegisterRoutes`).
+- 8 permissoes declaradas (`core.account.view/manage`, `core.users.view/manage`,
+  `core.roles.view/manage`, `core.modules.manage`, `core.organization.consolidated_read`).
+- 3 role templates: `core.owner` (acesso total, locked nas accounts), `core.admin`
+  (gerencia usuarios e cargos), `core.member` (membership basica).
+- `SyncCatalog` no boot popula `core.modules`, `core.permissions`,
+  `core.role_templates` e `core.role_template_permissions` declarativamente.
+- Endpoints `/v2/me/accounts` e `/v2/me/context` continuam servidos pelo handle
+  retornado de `Module.Build()` — mesmas rotas, mesmo shape.
+
+### Fase 3 (proxima) — RBAC dinamico
+
+- `core.roles` por account: clones de `core.role_templates`.
+- `core.role_permissions` populadas (validadas contra catalogo).
+- `core.user_role_assignments` migrada a partir de `public.user_*_roles`.
+- Service `MeContext` passa a popular `Roles[]` e `Permissions[]` reais.
 
 ### Fase 3 — RBAC dinamico
 

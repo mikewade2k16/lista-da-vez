@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import RoadmapDatabaseDiagram from "~/components/roadmap/RoadmapDatabaseDiagram.vue";
 import {
   DATABASE_SCHEMAS,
   type DatabaseSchema,
@@ -24,6 +25,7 @@ const schemas = computed<DatabaseSchema[]>(() => DATABASE_SCHEMAS);
 
 const selectedSchemaId = ref<string>(schemas.value[0]?.id ?? "core");
 const expandedTable = ref<string>("");
+const viewMode = ref<"list" | "diagram">("diagram");
 
 const selectedSchema = computed<DatabaseSchema | undefined>(
   () => schemas.value.find((schema) => schema.id === selectedSchemaId.value)
@@ -132,9 +134,37 @@ function fkLabel(field: SchemaField): string {
         <p class="schema-detail__description">{{ selectedSchema.description }}</p>
       </header>
 
+      <div class="view-toggle" role="tablist" aria-label="Modo de visualizacao">
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'diagram'"
+          :class="['view-toggle__btn', { 'is-active': viewMode === 'diagram' }]"
+          @click="viewMode = 'diagram'"
+        >
+          <span class="material-icons-round">hub</span>
+          <span>Diagrama</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          :aria-selected="viewMode === 'list'"
+          :class="['view-toggle__btn', { 'is-active': viewMode === 'list' }]"
+          @click="viewMode = 'list'"
+        >
+          <span class="material-icons-round">list_alt</span>
+          <span>Lista detalhada</span>
+        </button>
+      </div>
+
       <p v-if="selectedSchema.tables.length === 0" class="schema-detail__empty">
         Nenhuma tabela documentada ainda neste schema.
       </p>
+
+      <RoadmapDatabaseDiagram
+        v-else-if="viewMode === 'diagram'"
+        :schema="selectedSchema"
+      />
 
       <ul v-else class="schema-tables">
         <li
@@ -435,6 +465,45 @@ function fkLabel(field: SchemaField): string {
   font-style: italic;
   border: 1px dashed rgba(148, 163, 184, 0.25);
   border-radius: 12px;
+}
+
+.view-toggle {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  width: max-content;
+}
+
+.view-toggle__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.view-toggle__btn:hover {
+  background: rgba(99, 102, 241, 0.12);
+  color: #c7d2fe;
+}
+
+.view-toggle__btn.is-active {
+  background: rgba(99, 102, 241, 0.22);
+  color: #c7d2fe;
+}
+
+.view-toggle__btn .material-icons-round {
+  font-size: 1.1rem;
 }
 
 .schema-tables {

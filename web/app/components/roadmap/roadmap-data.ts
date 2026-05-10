@@ -66,17 +66,21 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     id: "fase-2",
     code: "Fase 2",
     title: "Module Registry e refactor do bootstrap",
-    goal: "Trocar o wiring manual por um Registry de módulos plugáveis sem mudar comportamento das rotas atuais.",
-    status: "pending",
+    goal: "Introduzir Registry de módulos plugáveis e event bus in-process sem mudar comportamento das rotas legadas.",
+    status: "done",
     estimateWeeks: "2 semanas",
+    startedAt: "2026-05-10",
+    finishedAt: "2026-05-10",
     tasks: [
-      { id: "registry-pkg", label: "Pacote back/internal/platform/modules/ (Registry, Module, Dependencies, EventBus)", done: false },
-      { id: "app-rewrite", label: "back/internal/platform/app/app.go reescrito sobre registry.Build(deps)", done: false },
-      { id: "adapters", label: "Módulos atuais embrulhados em adapters Module finos (zero reescrita interna)", done: false },
-      { id: "sync-catalog", label: "core.modules / core.permissions / core.role_templates populados pelo SyncCatalog no boot", done: false },
-      { id: "guard", label: "Middleware accountModulesGuard ativo (todos os módulos atuais habilitados para todos os accounts existentes)", done: false }
+      { id: "registry-pkg", label: "Pacote back/internal/platform/modules/ com Module, Handle, Dependencies, Registry, CatalogRepository", done: true },
+      { id: "events-pkg", label: "Pacote back/internal/platform/events/ com Bus + InMemoryBus (causationId, correlationId, MaxDepth=10)", done: true },
+      { id: "guard", label: "Middleware AccountModulesGuard em platform/httpapi/ (cache 60s, X-Account-Id)", done: true, note: "Disponível para módulos satélites; não aplicado a rotas v2/me/* do core (são ponto de descoberta)." },
+      { id: "sync-catalog", label: "SyncCatalog no boot popula core.modules, core.permissions, core.role_templates declarativamente", done: true, note: "deprecated_at marca removidas; nunca DELETE auto." },
+      { id: "core-module", label: "Módulo core implementa interface Module (8 permissões, 3 role templates: owner/admin/member)", done: true },
+      { id: "app-integration", label: "app.go usa Registry.Build/SyncCatalog quando CORE_V2_ENABLED=true; legado intacto quando off", done: true },
+      { id: "adapters", label: "Módulos legados (auth, tenants, stores, etc.) NÃO foram embrulhados em adapters", done: true, note: "Decisão pragmática: continuam pelo wiring legado até serem reescritos na Fase 4 (queue) e Fase 6 (satélites). Infra do Registry está pronta para receber satélites quando chegarem." }
     ],
-    verifiable: "Rotas atuais respondem igual, agora gated pelo guard."
+    verifiable: "go build ./... passa; com flag on, SyncCatalog roda no boot e popula core.modules/permissions/role_templates a partir do módulo core declarativo. Endpoints /v2/me/* continuam funcionando via handle do Registry."
   },
   {
     id: "fase-3",

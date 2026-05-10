@@ -26,7 +26,9 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 )
 
 func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) (http.Handler, error) {
@@ -246,9 +248,37 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	users.RegisterRoutes(mux, usersService, authMiddleware)
 
 	if cfg.CoreV2Enabled {
-		coreRepository := core.NewPostgresRepository(pool)
-		coreService := core.NewService(coreRepository)
-		core.RegisterRoutes(mux, coreService, authMiddleware)
+		ctx := context.Background()
+
+		bus := events.NewInMemoryBus(logger)
+
+		registry := modules.NewRegistry(logger)
+		registry.MustRegister(core.New())
+
+		catalogRepo := modules.NewPostgresCatalogRepository(pool)
+		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
+			return nil, err
+		}
+
+		moduleHandles, err := registry.Build(modules.Dependencies{
+			Pool:           pool,
+			Logger:         logger,
+			Bus:            bus,
+			AuthMiddleware: authMiddleware,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Guard fica disponivel para modulos satelites a partir da Fase 6.
+		// Modulos do registry hoje (so o core) nao usam o guard porque o core
+		// e o ponto de descoberta dos modulos habilitados.
+		_ = httpapi.NewAccountModulesGuard(pool)
+
+		for _, h := range moduleHandles {
+			h.RegisterRoutes(mux)
+			h.RegisterEventHandlers(bus)
+		}
 	}
 
 	return httpapi.Chain(

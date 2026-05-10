@@ -153,10 +153,14 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	repo := NewPostgresRepository(deps.Pool)
 	rbacRepo := NewPostgresRBACRepository(deps.Pool)
+	rbacSvc := NewRBACService(rbacRepo)
+
+	svc := NewService(repo)
+	svc.WithRBAC(rbacSvc)
 
 	m.handle = &handle{
-		service:        NewService(repo),
-		rbacService:    NewRBACService(rbacRepo),
+		service:        svc,
+		rbacService:    rbacSvc,
 		authMiddleware: deps.AuthMiddleware,
 	}
 	return m.handle, nil
@@ -174,13 +178,10 @@ type handle struct {
 
 func (h *handle) ID() string { return "core" }
 
-// RegisterRoutes monta /v2/me/accounts e /v2/me/context.
-//
-// Estas rotas NAO sao protegidas por accountModulesGuard — sao o ponto de
-// descoberta dos modulos habilitados. Bloquear pelo proprio guard que dependem
-// seria circular ("para descobrir modulos, precisaria ja estar autorizada").
+// RegisterRoutes monta /v2/me/accounts, /v2/me/context e os endpoints RBAC.
 func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterRoutes(mux, h.service, h.authMiddleware)
+	RegisterRBACRoutes(mux, h.rbacService, h.authMiddleware)
 }
 
 // RegisterEventHandlers — core nao consome eventos por enquanto (publica

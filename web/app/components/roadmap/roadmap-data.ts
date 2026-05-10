@@ -87,13 +87,15 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 3",
     title: "RBAC dinâmico",
     goal: "Permitir que cada Account clone cargos-template e edite suas próprias permissões.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "2 semanas",
+    startedAt: "2026-05-10",
+    finishedAt: "2026-05-10",
     tasks: [
-      { id: "rbac-service", label: "Service core.rbac (CloneTemplateToAccount, CreateRole, UpdateRolePermissions, AssignRoleToUser)", done: false },
-      { id: "rbac-endpoint", label: "Endpoint /v1/accounts/:id/roles CRUD", done: false },
-      { id: "data-migration", label: "Migração de dados: roles atuais (Owner, Manager, Director, etc.) viram core.roles por account", done: false },
-      { id: "principal-resolution", label: "Principal.Permissions resolvido pelo path novo; antigo continua como fallback", done: false }
+      { id: "rbac-service", label: "Service core.rbac (CloneTemplateToAccount, CreateRole, UpdateRolePermissions, AssignRoleToUser)", done: true },
+      { id: "rbac-endpoint", label: "Endpoint /v1/accounts/:id/roles CRUD + AssignRoleToUser", done: true },
+      { id: "data-migration", label: "Migração de dados: roles atuais (Owner, Manager, Director, etc.) viram core.roles por account", done: true, note: "Migration 0103. Requer boot com CORE_V2_ENABLED=true antes de executar." },
+      { id: "principal-resolution", label: "MeContext resolve Roles[] e Permissions[] reais de core.role_permissions (legado continua como fallback no auth)", done: true }
     ],
     verifiable: "UI de roles permite clonar template e ajustar permissões; mudança reflete no login do user."
   },

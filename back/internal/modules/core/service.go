@@ -7,16 +7,18 @@ import (
 )
 
 // Service expoe o contexto multi-account (v2) para o frontend.
-//
-// Fase 1 entrega leituras (GET /v2/me/accounts, GET /v2/me/context). RBAC
-// dinamico (roles e permissions resolvidas a partir de core.role_permissions)
-// chega na Fase 3. Ate la, AccountContext.Roles e Permissions ficam vazios.
 type Service struct {
-	repository Repository
+	repository  Repository
+	rbacService *RBACService
 }
 
 func NewService(repository Repository) *Service {
 	return &Service{repository: repository}
+}
+
+// WithRBAC conecta o RBACService para resolucao de roles/permissions em MeContext.
+func (s *Service) WithRBAC(rbac *RBACService) {
+	s.rbacService = rbac
 }
 
 // MeAccounts lista todas as accounts onde o user tem membership ativa.
@@ -110,12 +112,22 @@ func (s *Service) MeContext(ctx context.Context, userID string, accountID string
 		}
 	}
 
+	roles := []RoleSummary{}
+	permissions := []string{}
+
+	if s.rbacService != nil {
+		roles, permissions, err = s.rbacService.ResolveUserContext(ctx, accountID, userID)
+		if err != nil {
+			return MeContextResponse{}, err
+		}
+	}
+
 	return MeContextResponse{
 		Context: AccountContext{
 			Account:     account.Summary(moduleIDs),
 			User:        user.View(),
-			Roles:       []RoleSummary{},
-			Permissions: []string{},
+			Roles:       roles,
+			Permissions: permissions,
 			Org:         orgView,
 		},
 	}, nil

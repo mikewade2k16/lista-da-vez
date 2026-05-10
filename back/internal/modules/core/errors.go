@@ -27,4 +27,11 @@ var (
 
 	// ErrTemplateNotFound e retornado quando core.role_templates nao tem o id.
 	ErrTemplateNotFound = errors.New("core: role template not found")
+
+	// ErrRoleCodeConflict e retornado quando ja existe um role com o mesmo code
+	// na account (unique constraint account_id + code).
+	ErrRoleCodeConflict = errors.New("core: role code already exists in this account")
+
+	// ErrRoleIsLocked e retornado ao tentar deletar um role com is_locked=true.
+	ErrRoleIsLocked = errors.New("core: role is locked and cannot be deleted")
 )

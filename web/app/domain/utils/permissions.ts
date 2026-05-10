@@ -78,6 +78,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: "workspace.erp.edit"
   },
   {
+    id: "crm",
+    label: "CRM",
+    description: "Painel comercial cruzando ERP com metas cadastradas no sistema.",
+    viewPermission: "workspace.erp.view",
+    editPermission: "workspace.erp.edit"
+  },
+  {
     id: "multiloja",
     label: "Multi-loja",
     description: "Consolidado e administracao de lojas.",
@@ -118,6 +125,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     description: "Estrutura do banco de dados — tabelas, campos, relacionamentos e status de migracao.",
     viewPermission: "",
     editPermission: ""
+  },
+  {
+    id: "roadmap",
+    label: "Roadmap",
+    description: "Acompanhamento das fases da reestruturacao multi-tenant.",
+    viewPermission: "",
+    editPermission: ""
   }
 ];
 
@@ -145,14 +159,14 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
 ];
 
 const ROLE_WORKSPACES = {
-  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "banco"],
-  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "alertas", "feedback"],
-  marketing: ["operacao", "erp"],
-  director: ["operacao", "erp"],
-  manager: ["operacao", "erp", "alertas", "feedback"],
+  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "banco", "roadmap"],
+  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "roadmap"],
+  marketing: ["operacao", "erp", "crm"],
+  director: ["operacao", "erp", "crm"],
+  manager: ["operacao", "erp", "crm", "alertas", "feedback"],
   store_terminal: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "alertas"],
   consultant: ["operacao"],
-  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "multiloja", "usuarios", "configuracoes", "alertas", "feedback"]
+  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "roadmap"]
 };
 
 export function normalizeAppRole(role) {

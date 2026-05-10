@@ -63,7 +63,8 @@ export const SIDEBAR_NAV_SECTIONS = [
           { id: "ranking", label: "Ranking", icon: "ranking", path: "/ranking", workspaceId: "ranking" },
           { id: "dados", label: "Dados", icon: "chart", path: "/dados", workspaceId: "dados" },
           { id: "inteligencia", label: "Inteligencia", icon: "brain", path: "/inteligencia", workspaceId: "inteligencia" },
-          { id: "relatorios", label: "Relatorios", icon: "reports", path: "/relatorios", workspaceId: "relatorios" }
+          { id: "relatorios", label: "Relatorios", icon: "reports", path: "/relatorios", workspaceId: "relatorios" },
+          { id: "crm", label: "CRM", icon: "chart", path: "/crm", workspaceId: "crm" }
         ]
       },
       { id: "finance", label: "Finance", icon: "finance", path: "/finance" },
@@ -88,7 +89,8 @@ export const SIDEBAR_NAV_SECTIONS = [
           { id: "feedback", label: "Feedback", icon: "feedback", path: "/feedback", workspaceId: "feedback" },
           { id: "banco", label: "Banco", icon: "database", path: "/banco", workspaceId: "banco" },
           { id: "manage-auditoria", label: "Auditoria", icon: "audit", path: "/manage/auditoria" },
-          { id: "manage-integracoes", label: "Integracoes", icon: "integration", path: "/manage/integracoes" }
+          { id: "manage-integracoes", label: "Integracoes", icon: "integration", path: "/manage/integracoes" },
+          { id: "roadmap", label: "Roadmap", icon: "indicators", path: "/roadmap", workspaceId: "roadmap" }
         ]
       }
     ]

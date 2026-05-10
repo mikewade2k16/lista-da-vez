@@ -48,16 +48,19 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 1",
     title: "Schema core novo",
     goal: "Criar tabelas core (organizations, accounts, users globais, sessions, roles, permissions) sem desligar o produto atual.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "2–3 semanas",
+    startedAt: "2026-05-10",
+    finishedAt: "2026-05-10",
     tasks: [
-      { id: "migration", label: "Migration 0100_core_schema.sql cria seção A.2 completa", done: false },
-      { id: "seed", label: "Job de seed: public.tenants → core.accounts (mesmo id) + account_users", done: false },
-      { id: "endpoint-context", label: "GET /v2/me/context sob feature-flag", done: false },
-      { id: "endpoint-switch", label: "POST /v2/accounts/:id/switch sob feature-flag", done: false },
-      { id: "legacy", label: "GET /v1/me/context legado intacto", done: false }
+      { id: "migration", label: "Migration 0100_core_schema.sql cria seção A.2 completa", done: true, note: "15 tabelas em schema core; idempotente." },
+      { id: "seed", label: "Job de seed: public.tenants → core.accounts (mesmo id) + account_users", done: true, note: "Migration 0101 com ON CONFLICT DO NOTHING." },
+      { id: "endpoint-accounts", label: "GET /v2/me/accounts (lean) sob feature-flag", done: true, note: "Lista accounts do user autenticado." },
+      { id: "endpoint-context", label: "GET /v2/me/context?accountId=... (full) sob feature-flag", done: true, note: "Roles/permissions vazios até Fase 3." },
+      { id: "module-go", label: "Módulo Go back/internal/modules/core/ (model/store/service/http/AGENT.md)", done: true },
+      { id: "legacy", label: "GET /v1/me/context legado intacto", done: true, note: "Endpoints v1 não foram modificados." }
     ],
-    verifiable: "Login antigo funciona; com flag ligada, retorna accounts[] e activeAccountId."
+    verifiable: "Login antigo funciona; com flag CORE_V2_ENABLED=true, /v2/me/accounts retorna lista de accounts e /v2/me/context retorna o contexto completo."
   },
   {
     id: "fase-2",

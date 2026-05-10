@@ -15,6 +15,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/erp"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
@@ -243,6 +244,12 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
 	erp.RegisterRoutes(mux, erpService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)
+
+	if cfg.CoreV2Enabled {
+		coreRepository := core.NewPostgresRepository(pool)
+		coreService := core.NewService(coreRepository)
+		core.RegisterRoutes(mux, coreService, authMiddleware)
+	}
 
 	return httpapi.Chain(
 		mux,

@@ -153,6 +153,11 @@ type RoleTemplateDef struct {
 	IsSystem    bool
 	SortOrder   int
 
+	// IsLocked indica que o role clonado na Account nao pode ser deletado.
+	// Usar para roles estruturais como "core.owner" — a account precisa ter
+	// ao menos um proprietario.
+	IsLocked bool
+
 	// Permissions lista as Keys de PermissionDef que o template concede.
 	// SyncCatalog valida que todas as keys existam em core.permissions antes
 	// de inserir em core.role_template_permissions.

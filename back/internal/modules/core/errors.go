@@ -21,4 +21,10 @@ var (
 	// ErrFeatureDisabled e retornado quando o endpoint v2 e chamado com
 	// CORE_V2_ENABLED desligado. Defesa explicita em runtime.
 	ErrFeatureDisabled = errors.New("core: CORE_V2_ENABLED feature flag is disabled")
+
+	// ErrRoleNotFound e retornado quando core.roles nao tem o id ou code.
+	ErrRoleNotFound = errors.New("core: role not found")
+
+	// ErrTemplateNotFound e retornado quando core.role_templates nao tem o id.
+	ErrTemplateNotFound = errors.New("core: role template not found")
 )

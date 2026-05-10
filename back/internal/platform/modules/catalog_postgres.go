@@ -128,12 +128,13 @@ func (r *PostgresCatalogRepository) UpsertRoleTemplate(
 	row RoleTemplateRow,
 ) (bool, error) {
 	const query = `
-		insert into core.role_templates (id, module_id, label, description, is_system, sort_order)
-		values ($1, $2, $3, $4, $5, $6)
+		insert into core.role_templates (id, module_id, label, description, is_system, is_locked, sort_order)
+		values ($1, $2, $3, $4, $5, $6, $7)
 		on conflict (id) do update set
 			label = excluded.label,
 			description = excluded.description,
 			is_system = excluded.is_system,
+			is_locked = excluded.is_locked,
 			sort_order = excluded.sort_order,
 			updated_at = now()
 		returning (xmax = 0) as inserted
@@ -147,6 +148,7 @@ func (r *PostgresCatalogRepository) UpsertRoleTemplate(
 		row.Label,
 		row.Description,
 		row.IsSystem,
+		row.IsLocked,
 		row.SortOrder,
 	).Scan(&inserted)
 	if err != nil {

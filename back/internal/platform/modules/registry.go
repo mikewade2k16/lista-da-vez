@@ -143,6 +143,7 @@ func (r *Registry) SyncCatalog(ctx context.Context, repo CatalogRepository) erro
 				Label:       tmpl.Label,
 				Description: tmpl.Description,
 				IsSystem:    tmpl.IsSystem,
+				IsLocked:    tmpl.IsLocked,
 				SortOrder:   tmpl.SortOrder,
 			})
 			if err != nil {
@@ -291,5 +292,6 @@ type RoleTemplateRow struct {
 	Label       string
 	Description string
 	IsSystem    bool
+	IsLocked    bool
 	SortOrder   int
 }

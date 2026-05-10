@@ -108,6 +108,7 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 			Label:       "Proprietario",
 			Description: "Dono da account. Acesso total a configuracao, usuarios, cargos e modulos.",
 			IsSystem:    true,
+			IsLocked:    true,
 			SortOrder:   0,
 			Permissions: []string{
 				"core.account.view",
@@ -148,13 +149,14 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 	}
 }
 
-// Build conecta o Service do core ao Handle do Registry.
+// Build conecta o Service e o RBACService do core ao Handle do Registry.
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	repo := NewPostgresRepository(deps.Pool)
-	svc := NewService(repo)
+	rbacRepo := NewPostgresRBACRepository(deps.Pool)
 
 	m.handle = &handle{
-		service:        svc,
+		service:        NewService(repo),
+		rbacService:    NewRBACService(rbacRepo),
 		authMiddleware: deps.AuthMiddleware,
 	}
 	return m.handle, nil
@@ -166,6 +168,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 
 type handle struct {
 	service        *Service
+	rbacService    *RBACService
 	authMiddleware *auth.Middleware
 }
 

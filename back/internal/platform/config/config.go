@@ -60,6 +60,7 @@ type Config struct {
 	BcryptCost                    int
 	ConsultantEmailDomain         string
 	ConsultantDefaultPassword     string
+	CoreV2Enabled                 bool
 }
 
 func Load() Config {
@@ -144,6 +145,7 @@ func Load() Config {
 		BcryptCost:                getEnvInt("AUTH_BCRYPT_COST", 10),
 		ConsultantEmailDomain:     getEnv("AUTH_CONSULTANT_EMAIL_DOMAIN", "acesso.omni.local"),
 		ConsultantDefaultPassword: getEnv("AUTH_CONSULTANT_DEFAULT_PASSWORD", "Omni@123"),
+		CoreV2Enabled:             getEnvBool("CORE_V2_ENABLED", false),
 	}
 }
 

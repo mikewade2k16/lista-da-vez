@@ -31,13 +31,15 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 0",
     title: "Fundação",
     goal: "Preparar terreno para o trabalho da reestruturação sem quebrar nada do que já existe.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "1–2 semanas",
+    startedAt: "2026-05-10",
+    finishedAt: "2026-05-10",
     tasks: [
-      { id: "branch", label: "Criar branch refactor/multi-tenant-core a partir de migracao/nuxt", done: false },
-      { id: "contract-freeze", label: "docs/CONTRACT_FREEZE.md com interfaces que não podem quebrar até Fase 4", done: false },
-      { id: "schema-target", label: "docs/SCHEMA_TARGET.md com diagrama dos schemas Postgres alvo", done: false },
-      { id: "feature-flag", label: "Feature-flag CORE_V2_ENABLED no backend", done: false }
+      { id: "branch", label: "Criar branch refactor/multi-tenant-core a partir de migracao/nuxt", done: true },
+      { id: "contract-freeze", label: "docs/CONTRACT_FREEZE.md com interfaces que não podem quebrar até Fase 4", done: true },
+      { id: "schema-target", label: "docs/SCHEMA_TARGET.md com diagrama dos schemas Postgres alvo", done: true },
+      { id: "feature-flag", label: "Feature-flag CORE_V2_ENABLED no backend", done: true, note: "Exposta em GET /healthz e logada no boot quando ativa." }
     ],
     verifiable: "Projeto compila e roda igual ao main."
   },

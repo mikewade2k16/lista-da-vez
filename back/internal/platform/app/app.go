@@ -218,9 +218,14 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"erp",
 				"users",
 			},
-			"tenantMode": "owner-is-client",
+			"tenantMode":    "owner-is-client",
+			"coreV2Enabled": cfg.CoreV2Enabled,
 		})
 	})
+
+	if cfg.CoreV2Enabled {
+		logger.Info("core_v2 feature flag enabled — multi-tenant refactor code paths active")
+	}
 
 	auth.RegisterRoutes(mux, authService, invitationService, passwordResetService, authMiddleware)
 	registerContextRoutes(mux, authService, authMiddleware, tenantService, storeService)

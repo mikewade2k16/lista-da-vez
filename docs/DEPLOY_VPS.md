@@ -385,7 +385,8 @@ SQL
 Se o botao de bootstrap/importacao manual for usado em producao, a pasta dos
 consolidados tambem precisa existir no host configurado por
 `ERP_SOURCE_HOST_DIR` e `ERP_ALLOW_MANUAL_SYNC` precisa estar `true` no
-`.env.production`. Por padrao, o sync manual fica desligado em producao.
+`.env.production`. No baseline operacional atual (`2026-05-08`), o ERP ficou
+com sync manual ligado e scheduler FTP diario ativo em producao.
 
 ### Carga ERP por dump de banco
 
@@ -528,6 +529,29 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec -T pos
   rm -f /tmp/erp_data.dump
 rm -f ./tmp/erp_data.dump
 ```
+
+Resultado validado do restore feito em `2026-05-08`:
+
+```text
+runs=54
+files=7227
+item_raw=1526022
+item_current=357619
+customer_raw=339174
+employee_raw=20695
+order_raw=757617
+order_canceled_raw=43775
+```
+
+Estado final do ERP em producao apos esse restore:
+
+- API em `ERP_SOURCE_KIND=ftp`
+- `ERP_SOURCE_RECURSIVE=false`, mantendo a rotina diaria olhando apenas a raiz `extract_files`
+- `ERP_ALLOW_MANUAL_SYNC=true`, permitindo disparo pelo painel `/erp`
+- `ERP_SYNC_AUTOMATIC_ENABLED=true`, `ERP_SYNC_INTERVAL=24h`, `ERP_SYNC_HOUR_UTC=4`
+- scheduler confirmado em log por `erp_sync_scheduler_started`
+- sync manual em producao validado com sucesso depois da ativacao
+- dump temporario apagado do host local, do host remoto e do container Postgres remoto apos a validacao
 
 ## Integracao do Caddy atual
 

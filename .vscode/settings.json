@@ -28,6 +28,7 @@
       "matchCommandLine": true
     },
     "gofmt": true,
-    "npm run build": true
+    "npm run build": true,
+    "ssh": true
   }
 }

@@ -89,6 +89,7 @@ const recordsColumnsByTab: Record<string, ErpGridColumn[]> = {
     { id: "country", label: "Pais", width: "100px", align: "center" },
     { id: "zipcode", label: "CEP", width: "130px", align: "left" },
     { id: "employee_id", label: "Funcionario", width: "130px", align: "left" },
+    { id: "store_id_raw", label: "Store ID ERP", width: "150px", align: "left" },
     { id: "registered_at_raw", label: "Cadastro", width: "170px", align: "left" },
     { id: "original_id", label: "ID original", width: "140px", align: "left" },
     { id: "identifier", label: "Identificador", width: "140px", align: "left" },
@@ -96,6 +97,7 @@ const recordsColumnsByTab: Record<string, ErpGridColumn[]> = {
   ],
   funcionarios: [
     { id: "name", label: "Nome", width: "minmax(240px, 1.8fr)", align: "left", locked: true },
+    { id: "store_id_raw", label: "Store ID ERP", width: "150px", align: "left" },
     { id: "original_id", label: "ID original", width: "150px", align: "left" },
     { id: "street", label: "Endereco", width: "minmax(220px, 1.3fr)", align: "left" },
     { id: "complement", label: "Complemento", width: "150px", align: "left" },
@@ -107,6 +109,7 @@ const recordsColumnsByTab: Record<string, ErpGridColumn[]> = {
   pedidos: [
     { id: "order_id", label: "Compra", width: "160px", align: "left", locked: true },
     { id: "identifier", label: "Identificador", width: "140px", align: "left" },
+    { id: "store_id_raw", label: "Store ID ERP", width: "150px", align: "left" },
     { id: "customer_id", label: "Cliente", width: "130px", align: "left" },
     { id: "order_date_raw", label: "Data", width: "140px", align: "left" },
     { id: "total_amount_raw", label: "Total compra", width: "130px", align: "right" },
@@ -122,6 +125,7 @@ const recordsColumnsByTab: Record<string, ErpGridColumn[]> = {
   cancelados: [
     { id: "order_id", label: "Compra", width: "160px", align: "left", locked: true },
     { id: "identifier", label: "Identificador", width: "140px", align: "left" },
+    { id: "store_id_raw", label: "Store ID ERP", width: "150px", align: "left" },
     { id: "customer_id", label: "Cliente", width: "130px", align: "left" },
     { id: "order_date_raw", label: "Data", width: "140px", align: "left" },
     { id: "total_amount_raw", label: "Total compra", width: "130px", align: "right" },
@@ -162,10 +166,10 @@ const recordsSpecificSearchByTab: Record<string, { label: string; placeholder: s
   cancelados: { label: "Compra cancelada (comeca com)", placeholder: "Ex: 315578" }
 };
 const recordsGeneralSearchPlaceholderByTab: Record<string, string> = {
-  clientes: "Busca geral (nome, email, telefone, cidade, tags...)",
-  funcionarios: "Busca geral (nome, cidade, UF, endereco, status...)",
-  pedidos: "Busca geral (compra, cliente, SKU, valor, funcionario, pagamento...)",
-  cancelados: "Busca geral (compra cancelada, cliente, SKU, valor, funcionario...)"
+  clientes: "Busca geral (nome, email, telefone, cidade, store ID, tags...)",
+  funcionarios: "Busca geral (nome, store ID, cidade, UF, endereco, status...)",
+  pedidos: "Busca geral (compra, store ID, cliente, SKU, valor, funcionario...)",
+  cancelados: "Busca geral (compra cancelada, store ID, cliente, SKU, valor...)"
 };
 
 const status = computed(() => erpStore.status);
@@ -809,7 +813,7 @@ onMounted(() => {
         :general-search-placeholder="activeRecordsGeneralSearchPlaceholder"
         empty-title="Nenhum registro encontrado"
         empty-text="Nao ha linhas importadas para este tipo no escopo consolidado do ERP. Use a sincronizacao da aba para carregar os dados."
-        :storage-key="`erp-${activeTab}-grid-columns-v3`"
+        :storage-key="`erp-${activeTab}-grid-columns-v4`"
         :testid="`erp-${activeTab}-grid`"
         @update:search-value="recordsSearchValue = $event"
         @update:identifier-search-value="recordsSpecificSearchValue = $event"

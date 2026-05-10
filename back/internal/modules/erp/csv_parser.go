@@ -183,6 +183,10 @@ func buildCSVFileMetadata(baseName string, extractedAtRaw string, storeCode stri
 }
 
 func StreamCSV(reader io.Reader, dataType string, meta csvFileMetadata, onRow func(idx int, rec any) error) (string, int, error) {
+	return StreamCSVWithLimit(reader, dataType, meta, 0, onRow)
+}
+
+func StreamCSVWithLimit(reader io.Reader, dataType string, meta csvFileMetadata, maxBytes int64, onRow func(idx int, rec any) error) (string, int, error) {
 	normalizedDataType := strings.TrimSpace(strings.ToLower(dataType))
 	if normalizedDataType == "" {
 		normalizedDataType = strings.TrimSpace(strings.ToLower(meta.DataType))
@@ -205,8 +209,20 @@ func StreamCSV(reader io.Reader, dataType string, meta csvFileMetadata, onRow fu
 	}()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tempFile, hasher), reader); err != nil {
+	copyReader := reader
+	if maxBytes > 0 {
+		copyReader = io.LimitReader(reader, maxBytes+1)
+	}
+	bytesCopied, err := io.Copy(io.MultiWriter(tempFile, hasher), copyReader)
+	if err != nil {
 		return "", 0, err
+	}
+	if maxBytes > 0 && bytesCopied > maxBytes {
+		return "", 0, &ErrCSVTooLarge{
+			SourceName: meta.OriginalName,
+			MaxBytes:   maxBytes,
+			GotBytes:   bytesCopied,
+		}
 	}
 	checksum := hex.EncodeToString(hasher.Sum(nil))
 
@@ -324,6 +340,7 @@ func parseItemCSVRecord(values []string, meta csvFileMetadata, lineNumber int) (
 	if err := validateCSVColumnCount(meta, DataTypeItem, lineNumber, values); err != nil {
 		return ItemRawRecord{}, err
 	}
+	rawValues, rawPayload := buildRawCSVMirror(expectedColumnsByType[DataTypeItem], values)
 
 	priceCents, err := parseOptionalInt64(values[12])
 	if err != nil {
@@ -344,6 +361,8 @@ func parseItemCSVRecord(values []string, meta csvFileMetadata, lineNumber int) (
 		SourceFileName:    meta.OriginalName,
 		SourceBatchDate:   formatCSVBatchDate(meta),
 		SourceLineNumber:  lineNumber,
+		RawValues:         rawValues,
+		RawPayload:        rawPayload,
 		SKU:               strings.TrimSpace(values[0]),
 		Name:              strings.TrimSpace(values[1]),
 		Description:       strings.TrimSpace(values[2]),
@@ -370,6 +389,7 @@ func parseCustomerCSVRecord(values []string, meta csvFileMetadata, lineNumber in
 	if err := validateCSVColumnCount(meta, DataTypeCustomer, lineNumber, values); err != nil {
 		return CustomerRawRecord{}, err
 	}
+	rawValues, rawPayload := buildRawCSVMirror(expectedColumnsByType[DataTypeCustomer], values)
 	if _, err := parseCompactDate(values[7]); err != nil {
 		return CustomerRawRecord{}, wrapCSVFieldError(meta, DataTypeCustomer, lineNumber, "birthday", err)
 	}
@@ -383,6 +403,8 @@ func parseCustomerCSVRecord(values []string, meta csvFileMetadata, lineNumber in
 		SourceFileName:   meta.OriginalName,
 		SourceBatchDate:  formatCSVBatchDate(meta),
 		SourceLineNumber: lineNumber,
+		RawValues:        rawValues,
+		RawPayload:       rawPayload,
 		Name:             strings.TrimSpace(values[0]),
 		Nickname:         strings.TrimSpace(values[1]),
 		CPF:              strings.TrimSpace(values[2]),
@@ -400,6 +422,7 @@ func parseCustomerCSVRecord(values []string, meta csvFileMetadata, lineNumber in
 		Country:          strings.TrimSpace(values[14]),
 		Zipcode:          strings.TrimSpace(values[15]),
 		EmployeeID:       strings.TrimSpace(values[16]),
+		StoreIDRaw:       strings.TrimSpace(values[17]),
 		RegisteredAtRaw:  strings.TrimSpace(values[18]),
 		OriginalID:       strings.TrimSpace(values[19]),
 		Identifier:       strings.TrimSpace(values[20]),
@@ -411,6 +434,7 @@ func parseEmployeeCSVRecord(values []string, meta csvFileMetadata, lineNumber in
 	if err := validateCSVColumnCount(meta, DataTypeEmployee, lineNumber, values); err != nil {
 		return EmployeeRawRecord{}, err
 	}
+	rawValues, rawPayload := buildRawCSVMirror(expectedColumnsByType[DataTypeEmployee], values)
 
 	return EmployeeRawRecord{
 		StoreCode:        meta.StoreCode,
@@ -418,6 +442,8 @@ func parseEmployeeCSVRecord(values []string, meta csvFileMetadata, lineNumber in
 		SourceFileName:   meta.OriginalName,
 		SourceBatchDate:  formatCSVBatchDate(meta),
 		SourceLineNumber: lineNumber,
+		RawValues:        rawValues,
+		RawPayload:       rawPayload,
 		Name:             strings.TrimSpace(values[0]),
 		StoreIDRaw:       strings.TrimSpace(values[1]),
 		OriginalID:       strings.TrimSpace(values[2]),
@@ -434,6 +460,7 @@ func parseOrderCSVRecord(values []string, meta csvFileMetadata, lineNumber int) 
 	if err := validateCSVColumnCount(meta, meta.DataType, lineNumber, values); err != nil {
 		return OrderRawRecord{}, err
 	}
+	rawValues, rawPayload := buildRawCSVMirror(expectedColumnsByType[meta.DataType], values)
 
 	orderDate, err := parseOptionalTimestamp(values[4])
 	if err != nil {
@@ -470,6 +497,8 @@ func parseOrderCSVRecord(values []string, meta csvFileMetadata, lineNumber int) 
 		SourceFileName:      meta.OriginalName,
 		SourceBatchDate:     formatCSVBatchDate(meta),
 		SourceLineNumber:    lineNumber,
+		RawValues:           rawValues,
+		RawPayload:          rawPayload,
 		OrderID:             strings.TrimSpace(values[0]),
 		Identifier:          strings.TrimSpace(values[1]),
 		StoreIDRaw:          strings.TrimSpace(values[2]),
@@ -547,4 +576,16 @@ func formatCSVBatchDate(meta csvFileMetadata) string {
 		return ""
 	}
 	return meta.DataReference.UTC().Format("2006-01-02")
+}
+
+func buildRawCSVMirror(columns []string, values []string) ([]string, map[string]string) {
+	rawValues := append([]string{}, values...)
+	rawPayload := make(map[string]string, len(columns))
+	for index, column := range columns {
+		if index >= len(values) {
+			break
+		}
+		rawPayload[column] = values[index]
+	}
+	return rawValues, rawPayload
 }

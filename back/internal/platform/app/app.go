@@ -143,6 +143,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		SyncInterval:               cfg.ERPSyncInterval,
 		SyncHourUTC:                cfg.ERPSyncHourUTC,
 		SyncDryRunDefault:          cfg.ERPSyncDryRunDefault,
+		CSVMaxBytes:                cfg.ERPCSVMaxBytes,
+		ManualSyncMaxFiles:         cfg.ERPManualSyncMaxFiles,
+		BackfillMaxFiles:           cfg.ERPBackfillMaxFiles,
+		ManualSyncMinInterval:      cfg.ERPManualSyncMinInterval,
 	})
 	if cfg.ERPSyncAutomaticEnabled {
 		logger.Info("erp_sync_scheduler_started",

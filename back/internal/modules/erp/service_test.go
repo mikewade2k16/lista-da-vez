@@ -133,6 +133,12 @@ loja;cnpj_loja;arquivo_origem;data_lote;linha_origem;name;nickname;cpf;email;pho
 	if batch.Rows[0].CPF != "12345678901" {
 		t.Fatalf("unexpected cpf %q", batch.Rows[0].CPF)
 	}
+	if batch.Rows[0].StoreIDRaw != "12583959000186" {
+		t.Fatalf("unexpected store_id %q", batch.Rows[0].StoreIDRaw)
+	}
+	if batch.Rows[0].RawPayload["store_id"] != "12583959000186" {
+		t.Fatalf("expected raw payload store_id, got %#v", batch.Rows[0].RawPayload)
+	}
 }
 
 func TestStreamOrderConsolidatedParsesBatch(t *testing.T) {

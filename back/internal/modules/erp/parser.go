@@ -582,6 +582,7 @@ func parseItemConsolidatedRow(line string) (ItemRawRecord, error) {
 			len(itemConsolidatedColumns),
 		)
 	}
+	rawValues, rawPayload := buildRawCSVMirror(itemConsolidatedColumns, values)
 
 	lineNumber, err := strconv.Atoi(strings.TrimSpace(values[4]))
 	if err != nil {
@@ -607,6 +608,8 @@ func parseItemConsolidatedRow(line string) (ItemRawRecord, error) {
 		SourceFileName:    strings.TrimSpace(values[2]),
 		SourceBatchDate:   strings.TrimSpace(values[3]),
 		SourceLineNumber:  lineNumber,
+		RawValues:         rawValues,
+		RawPayload:        rawPayload,
 		SKU:               strings.TrimSpace(values[5]),
 		Name:              strings.TrimSpace(values[6]),
 		Description:       strings.TrimSpace(values[7]),
@@ -637,6 +640,7 @@ func parseCustomerConsolidatedRow(line string) (CustomerRawRecord, error) {
 	if len(values) != len(customerConsolidatedColumns) {
 		return CustomerRawRecord{}, fmt.Errorf("%w: linha de customer com %d colunas; esperado %d", ErrValidation, len(values), len(customerConsolidatedColumns))
 	}
+	rawValues, rawPayload := buildRawCSVMirror(customerConsolidatedColumns, values)
 
 	lineNumber, err := strconv.Atoi(strings.TrimSpace(values[4]))
 	if err != nil {
@@ -649,6 +653,8 @@ func parseCustomerConsolidatedRow(line string) (CustomerRawRecord, error) {
 		SourceFileName:   strings.TrimSpace(values[2]),
 		SourceBatchDate:  strings.TrimSpace(values[3]),
 		SourceLineNumber: lineNumber,
+		RawValues:        rawValues,
+		RawPayload:       rawPayload,
 		Name:             strings.TrimSpace(values[5]),
 		Nickname:         strings.TrimSpace(values[6]),
 		CPF:              strings.TrimSpace(values[7]),
@@ -666,6 +672,7 @@ func parseCustomerConsolidatedRow(line string) (CustomerRawRecord, error) {
 		Country:          strings.TrimSpace(values[19]),
 		Zipcode:          strings.TrimSpace(values[20]),
 		EmployeeID:       strings.TrimSpace(values[21]),
+		StoreIDRaw:       strings.TrimSpace(values[22]),
 		RegisteredAtRaw:  strings.TrimSpace(values[23]),
 		OriginalID:       strings.TrimSpace(values[24]),
 		Identifier:       strings.TrimSpace(values[25]),
@@ -681,6 +688,7 @@ func parseEmployeeConsolidatedRow(line string) (EmployeeRawRecord, error) {
 	if len(values) != len(employeeConsolidatedColumns) {
 		return EmployeeRawRecord{}, fmt.Errorf("%w: linha de employee com %d colunas; esperado %d", ErrValidation, len(values), len(employeeConsolidatedColumns))
 	}
+	rawValues, rawPayload := buildRawCSVMirror(employeeConsolidatedColumns, values)
 
 	lineNumber, err := strconv.Atoi(strings.TrimSpace(values[4]))
 	if err != nil {
@@ -693,6 +701,8 @@ func parseEmployeeConsolidatedRow(line string) (EmployeeRawRecord, error) {
 		SourceFileName:   strings.TrimSpace(values[2]),
 		SourceBatchDate:  strings.TrimSpace(values[3]),
 		SourceLineNumber: lineNumber,
+		RawValues:        rawValues,
+		RawPayload:       rawPayload,
 		Name:             strings.TrimSpace(values[5]),
 		StoreIDRaw:       strings.TrimSpace(values[6]),
 		OriginalID:       strings.TrimSpace(values[7]),
@@ -713,6 +723,7 @@ func parseOrderConsolidatedRow(line string) (OrderRawRecord, error) {
 	if len(values) != len(orderConsolidatedColumns) {
 		return OrderRawRecord{}, fmt.Errorf("%w: linha de order com %d colunas; esperado %d", ErrValidation, len(values), len(orderConsolidatedColumns))
 	}
+	rawValues, rawPayload := buildRawCSVMirror(orderConsolidatedColumns, values)
 
 	lineNumber, err := strconv.Atoi(strings.TrimSpace(values[4]))
 	if err != nil {
@@ -754,6 +765,8 @@ func parseOrderConsolidatedRow(line string) (OrderRawRecord, error) {
 		SourceFileName:      strings.TrimSpace(values[2]),
 		SourceBatchDate:     strings.TrimSpace(values[3]),
 		SourceLineNumber:    lineNumber,
+		RawValues:           rawValues,
+		RawPayload:          rawPayload,
 		OrderID:             strings.TrimSpace(values[5]),
 		Identifier:          strings.TrimSpace(values[6]),
 		StoreIDRaw:          strings.TrimSpace(values[7]),

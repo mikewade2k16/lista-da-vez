@@ -18,6 +18,8 @@ var (
 	ErrSourcePathOutsideRoot = errors.New("erp: source path outside root")
 	ErrSourceHostKeyRequired = errors.New("erp: source host key required")
 	ErrUnsupportedDataType   = errors.New("erp: unsupported data type")
+	ErrSyncAlreadyRunning    = errors.New("erp: sync already running")
+	ErrSyncRateLimited       = errors.New("erp: sync rate limited")
 )
 
 type ErrCSVEncoding struct {
@@ -34,6 +36,21 @@ func (err *ErrCSVEncoding) Error() string {
 
 func (err *ErrCSVEncoding) Unwrap() error {
 	return err.Cause
+}
+
+type ErrCSVTooLarge struct {
+	SourceName string
+	MaxBytes   int64
+	GotBytes   int64
+}
+
+func (err *ErrCSVTooLarge) Error() string {
+	return fmt.Sprintf(
+		"erp: csv too large for %s: max %d bytes, got at least %d bytes",
+		firstNonEmpty(strings.TrimSpace(err.SourceName), "csv"),
+		err.MaxBytes,
+		err.GotBytes,
+	)
 }
 
 type ErrCSVColumnCountMismatch struct {

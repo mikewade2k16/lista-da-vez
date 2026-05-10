@@ -36,6 +36,10 @@ type Config struct {
 	ERPSyncHourUTC                int
 	ERPSyncAutomaticEnabled       bool
 	ERPSyncDryRunDefault          bool
+	ERPCSVMaxBytes                int64
+	ERPManualSyncMaxFiles         int
+	ERPBackfillMaxFiles           int
+	ERPManualSyncMinInterval      time.Duration
 	DatabaseURL                   string
 	DatabaseMinConns              int
 	DatabaseMaxConns              int
@@ -106,9 +110,16 @@ func Load() Config {
 		ERPSyncHourUTC:          getEnvInt("ERP_SYNC_HOUR_UTC", 4),
 		ERPSyncAutomaticEnabled: getEnvBool("ERP_SYNC_AUTOMATIC_ENABLED", false),
 		ERPSyncDryRunDefault:    getEnvBool("ERP_SYNC_DRY_RUN_DEFAULT", false),
-		DatabaseURL:             getEnv("DATABASE_URL", ""),
-		DatabaseMinConns:        getEnvInt("DATABASE_MIN_CONNS", 0),
-		DatabaseMaxConns:        getEnvInt("DATABASE_MAX_CONNS", 10),
+		ERPCSVMaxBytes:          getEnvInt64("ERP_CSV_MAX_BYTES", 128*1024*1024),
+		ERPManualSyncMaxFiles:   getEnvInt("ERP_MANUAL_SYNC_MAX_FILES", 100),
+		ERPBackfillMaxFiles:     getEnvInt("ERP_BACKFILL_MAX_FILES", 1000),
+		ERPManualSyncMinInterval: getEnvDuration(
+			"ERP_MANUAL_SYNC_MIN_INTERVAL",
+			5*time.Minute,
+		),
+		DatabaseURL:      getEnv("DATABASE_URL", ""),
+		DatabaseMinConns: getEnvInt("DATABASE_MIN_CONNS", 0),
+		DatabaseMaxConns: getEnvInt("DATABASE_MAX_CONNS", 10),
 		CORSAllowedOrigins: getEnvCSV(
 			"CORS_ALLOWED_ORIGINS",
 			[]string{
@@ -152,6 +163,20 @@ func getEnvInt(key string, fallback int) int {
 	}
 
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+
+	return value
+}
+
+func getEnvInt64(key string, fallback int64) int64 {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return fallback
+	}
+
+	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
 		return fallback
 	}

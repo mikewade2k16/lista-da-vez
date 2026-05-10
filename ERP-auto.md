@@ -110,6 +110,10 @@ Ele usa:
 - `ERP_SYNC_INTERVAL`
 - `ERP_SYNC_HOUR_UTC`
 - `ERP_SYNC_DRY_RUN_DEFAULT`
+- `ERP_CSV_MAX_BYTES`
+- `ERP_MANUAL_SYNC_MAX_FILES`
+- `ERP_BACKFILL_MAX_FILES`
+- `ERP_MANUAL_SYNC_MIN_INTERVAL`
 
 Com isso, a aplicacao ja ficou pronta para disparar sync automatico quando estiver configurada no ambiente correto.
 
@@ -213,16 +217,18 @@ Paramos no ponto em que:
 - a documentacao tecnica do modulo foi atualizada
 - o fluxo real FTP -> parser -> persistencia ja foi provado em lote controlado pequeno para os 5 tipos ERP
 - a UI do ERP agora tambem tem um resumo operacional mais direto para responder “ja puxamos tudo?”, “esta automatico?” e “o que falta?”
+- em `2026-05-08`, o codigo e a migration `0057` foram aplicados na VPS
+- o dump ERP atualizado foi restaurado em producao e os contadores finais da VPS ficaram iguais aos do banco local (`54|7227|1526022|357619|339174|20695|757617|43775`)
+- o ERP de producao ficou configurado em `ftp`, com `ERP_ALLOW_MANUAL_SYNC=true` e `ERP_SYNC_AUTOMATIC_ENABLED=true`
+- o log de producao registrou `erp_sync_scheduler_started`
+- o sync manual pelo proprio painel foi testado em producao e funcionou
 
-Mas ainda nao fechamos a operacao completa de producao.
+Fechamos a operacao minima de producao do ERP.
 
 ## O que ainda nao foi feito
 
 ### Nao foi feito ainda
 
-- rodar a aplicacao no ambiente alvo com as envs definitivas do FTP
-- disparar e conferir um sync/backfill real mais amplo no banco alvo final
-- validar contagens finais no banco apos ingestao real completo por tipo/loja
 - fechar endpoints completos de listagem detalhada de runs e reprocessamento
 - criar alertas para FTP indisponivel
 - criar alertas para ausencia de CSV esperado
@@ -323,14 +329,16 @@ Implementar o que falta para a automacao ficar realmente operacional:
 
 ## Estado final deste checkpoint
 
-Estado em 2026-05-05:
+Estado em 2026-05-08:
 
 - conseguimos localizar e validar a origem real no FTP
 - conseguimos adaptar o backend para consumir essa origem
-- conseguimos deixar a automacao basica preparada
-- ainda falta rodar e homologar o ciclo final no banco/ambiente alvo
+- conseguimos restaurar o historico ERP completo na VPS via dump de banco
+- conseguimos habilitar a rotina diaria FTP e o sync manual em producao
+- conseguimos validar o scheduler em log e o sync manual pelo painel
 
 Em outras palavras:
 
 - a parte de descoberta e implementacao tecnica principal foi resolvida
-- a parte de operacao final e fechamento ainda ficou para a proxima sessao
+- a parte minima de operacao em producao tambem foi resolvida
+- o que sobrou e endurecimento operacional: alertas, reprocessamento e observabilidade mais profunda

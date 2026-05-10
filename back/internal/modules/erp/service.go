@@ -21,6 +21,18 @@ type Service struct {
 }
 
 func NewService(repository *PostgresRepository, options Options) *Service {
+	if options.CSVMaxBytes <= 0 {
+		options.CSVMaxBytes = defaultCSVMaxBytes
+	}
+	if options.ManualSyncMaxFiles <= 0 {
+		options.ManualSyncMaxFiles = defaultManualSyncMaxFiles
+	}
+	if options.BackfillMaxFiles <= 0 {
+		options.BackfillMaxFiles = defaultBackfillMaxFiles
+	}
+	if options.ManualSyncMinInterval <= 0 {
+		options.ManualSyncMinInterval = defaultManualSyncMinInterval
+	}
 	return &Service{repository: repository, options: options, sourceFactory: NewSource}
 }
 
@@ -207,6 +219,24 @@ func (service *Service) Overview(ctx context.Context, principal auth.Principal, 
 	return overview, nil
 }
 
+func (service *Service) CRMOverview(ctx context.Context, principal auth.Principal, query CRMOverviewQuery) (CRMOverviewResponse, error) {
+	if !canViewERP(principal) {
+		return CRMOverviewResponse{}, ErrForbidden
+	}
+
+	normalized, err := normalizeCRMOverviewQuery(query)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	store, err := service.resolveERPScope(ctx, principal, normalized.TenantID, normalized.StoreCode)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	return service.repository.GetCRMOverview(ctx, store, normalized)
+}
+
 func (service *Service) BootstrapItems(ctx context.Context, principal auth.Principal, input ItemBootstrapInput) (ItemBootstrapResult, error) {
 	result, err := service.Bootstrap(ctx, principal, BootstrapInput{
 		TenantID:   input.TenantID,
@@ -374,6 +404,11 @@ func (service *Service) ingestStoreResolved(ctx context.Context, store StoreScop
 	if err != nil {
 		return IngestResult{}, err
 	}
+	normalizedInput, err := service.normalizeIngestInput(ctx, store, input)
+	if err != nil {
+		return IngestResult{}, err
+	}
+	input = normalizedInput
 
 	source, err := service.newSource()
 	if err != nil {
@@ -416,7 +451,7 @@ func (service *Service) ingestStoreResolved(ctx context.Context, store StoreScop
 		result.DataType = normalizedTypes[0]
 	}
 
-	triggeredBy := firstNonEmpty(strings.TrimSpace(strings.ToLower(input.TriggeredBy)), SyncTriggeredByManual)
+	triggeredBy := input.TriggeredBy
 	for _, dataType := range normalizedTypes {
 		candidates := grouped[dataType]
 		if len(candidates) == 0 && strings.TrimSpace(input.DataType) == "" {
@@ -731,6 +766,36 @@ func normalizeRunsQuery(query RunsQuery) RunsQuery {
 	return normalized
 }
 
+func normalizeCRMOverviewQuery(query CRMOverviewQuery) (CRMOverviewQuery, error) {
+	normalized := CRMOverviewQuery{
+		TenantID:  strings.TrimSpace(query.TenantID),
+		StoreCode: strings.TrimSpace(query.StoreCode),
+		DateFrom:  query.DateFrom.UTC(),
+		DateTo:    query.DateTo.UTC(),
+	}
+
+	if normalized.DateFrom.IsZero() || normalized.DateTo.IsZero() {
+		now := time.Now().UTC()
+		monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+		monthEnd := monthStart.AddDate(0, 1, -1)
+		if normalized.DateFrom.IsZero() {
+			normalized.DateFrom = monthStart
+		}
+		if normalized.DateTo.IsZero() {
+			normalized.DateTo = monthEnd
+		}
+	}
+
+	normalized.DateFrom = time.Date(normalized.DateFrom.Year(), normalized.DateFrom.Month(), normalized.DateFrom.Day(), 0, 0, 0, 0, time.UTC)
+	normalized.DateTo = time.Date(normalized.DateTo.Year(), normalized.DateTo.Month(), normalized.DateTo.Day(), 0, 0, 0, 0, time.UTC)
+
+	if normalized.DateTo.Before(normalized.DateFrom) {
+		return CRMOverviewQuery{}, ErrValidation
+	}
+
+	return normalized, nil
+}
+
 func (service *Service) manualSyncAllowed() bool {
 	if service.options.AllowManualSync {
 		return true
@@ -814,6 +879,65 @@ func normalizeIngestDataTypes(raw string) ([]string, error) {
 	return []string{normalized}, nil
 }
 
+func (service *Service) normalizeIngestInput(ctx context.Context, store StoreScope, input IngestInput) (IngestInput, error) {
+	if input.MaxFiles < 0 {
+		return IngestInput{}, ErrValidation
+	}
+
+	triggeredBy, err := normalizeSyncTriggeredBy(input.TriggeredBy)
+	if err != nil {
+		return IngestInput{}, err
+	}
+	input.TriggeredBy = triggeredBy
+
+	switch triggeredBy {
+	case SyncTriggeredByManual:
+		if input.MaxFiles == 0 {
+			input.MaxFiles = service.options.ManualSyncMaxFiles
+		}
+		if input.MaxFiles > service.options.ManualSyncMaxFiles {
+			return IngestInput{}, ErrValidation
+		}
+	case SyncTriggeredByBackfill:
+		if input.MaxFiles == 0 {
+			input.MaxFiles = service.options.BackfillMaxFiles
+		}
+		if input.MaxFiles > service.options.BackfillMaxFiles {
+			return IngestInput{}, ErrValidation
+		}
+	}
+
+	if triggeredBy == SyncTriggeredByManual || triggeredBy == SyncTriggeredByBackfill {
+		running, err := service.repository.HasRunningCSVSyncRun(ctx, store)
+		if err != nil {
+			return IngestInput{}, err
+		}
+		if running {
+			return IngestInput{}, ErrSyncAlreadyRunning
+		}
+
+		recent, err := service.repository.HasRecentCSVSyncRun(ctx, store, time.Now().UTC().Add(-service.options.ManualSyncMinInterval))
+		if err != nil {
+			return IngestInput{}, err
+		}
+		if recent {
+			return IngestInput{}, ErrSyncRateLimited
+		}
+	}
+
+	return input, nil
+}
+
+func normalizeSyncTriggeredBy(raw string) (string, error) {
+	normalized := firstNonEmpty(strings.TrimSpace(strings.ToLower(raw)), SyncTriggeredByManual)
+	switch normalized {
+	case SyncTriggeredByManual, SyncTriggeredByCron, SyncTriggeredByBackfill:
+		return normalized, nil
+	default:
+		return "", ErrValidation
+	}
+}
+
 func (service *Service) newSource() (ErpSource, error) {
 	factory := service.sourceFactory
 	if factory == nil {
@@ -849,6 +973,10 @@ func (service *Service) describeSource(source ErpSource) string {
 }
 
 func (service *Service) loadCSVBatch(ctx context.Context, source ErpSource, candidate sourceCandidate) (any, int, error) {
+	if err := service.validateCSVSize(candidate); err != nil {
+		return nil, 0, err
+	}
+
 	reader, err := source.Open(ctx, candidate.info.Name)
 	if err != nil {
 		return nil, 0, err
@@ -856,11 +984,12 @@ func (service *Service) loadCSVBatch(ctx context.Context, source ErpSource, cand
 	defer reader.Close()
 
 	baseBatch := sourceBatchMetadata(candidate, source.Kind())
+	maxBytes := service.options.CSVMaxBytes
 	switch candidate.meta.DataType {
 	case DataTypeItem:
 		batch := itemConsolidatedBatch{Rows: make([]ItemRawRecord, 0, 256)}
 		applySourceBatchMetadataToItem(&batch, baseBatch)
-		checksum, rowCount, err := StreamCSV(reader, candidate.meta.DataType, candidate.meta, func(idx int, record any) error {
+		checksum, rowCount, err := StreamCSVWithLimit(reader, candidate.meta.DataType, candidate.meta, maxBytes, func(idx int, record any) error {
 			batch.Rows = append(batch.Rows, record.(ItemRawRecord))
 			return nil
 		})
@@ -869,7 +998,7 @@ func (service *Service) loadCSVBatch(ctx context.Context, source ErpSource, cand
 	case DataTypeCustomer:
 		batch := customerConsolidatedBatch{Rows: make([]CustomerRawRecord, 0, 256)}
 		applySourceBatchMetadataToCustomer(&batch, baseBatch)
-		checksum, rowCount, err := StreamCSV(reader, candidate.meta.DataType, candidate.meta, func(idx int, record any) error {
+		checksum, rowCount, err := StreamCSVWithLimit(reader, candidate.meta.DataType, candidate.meta, maxBytes, func(idx int, record any) error {
 			batch.Rows = append(batch.Rows, record.(CustomerRawRecord))
 			return nil
 		})
@@ -878,7 +1007,7 @@ func (service *Service) loadCSVBatch(ctx context.Context, source ErpSource, cand
 	case DataTypeEmployee:
 		batch := employeeConsolidatedBatch{Rows: make([]EmployeeRawRecord, 0, 128)}
 		applySourceBatchMetadataToEmployee(&batch, baseBatch)
-		checksum, rowCount, err := StreamCSV(reader, candidate.meta.DataType, candidate.meta, func(idx int, record any) error {
+		checksum, rowCount, err := StreamCSVWithLimit(reader, candidate.meta.DataType, candidate.meta, maxBytes, func(idx int, record any) error {
 			batch.Rows = append(batch.Rows, record.(EmployeeRawRecord))
 			return nil
 		})
@@ -887,7 +1016,7 @@ func (service *Service) loadCSVBatch(ctx context.Context, source ErpSource, cand
 	case DataTypeOrder, DataTypeOrderCanceled:
 		batch := orderConsolidatedBatch{Rows: make([]OrderRawRecord, 0, 256)}
 		applySourceBatchMetadataToOrder(&batch, baseBatch)
-		checksum, rowCount, err := StreamCSV(reader, candidate.meta.DataType, candidate.meta, func(idx int, record any) error {
+		checksum, rowCount, err := StreamCSVWithLimit(reader, candidate.meta.DataType, candidate.meta, maxBytes, func(idx int, record any) error {
 			batch.Rows = append(batch.Rows, record.(OrderRawRecord))
 			return nil
 		})
@@ -895,6 +1024,18 @@ func (service *Service) loadCSVBatch(ctx context.Context, source ErpSource, cand
 		return batch, rowCount, err
 	default:
 		return nil, 0, ErrUnsupportedDataType
+	}
+}
+
+func (service *Service) validateCSVSize(candidate sourceCandidate) error {
+	maxBytes := service.options.CSVMaxBytes
+	if maxBytes <= 0 || candidate.info.Size <= 0 || candidate.info.Size <= maxBytes {
+		return nil
+	}
+	return &ErrCSVTooLarge{
+		SourceName: candidate.meta.OriginalName,
+		MaxBytes:   maxBytes,
+		GotBytes:   candidate.info.Size,
 	}
 }
 

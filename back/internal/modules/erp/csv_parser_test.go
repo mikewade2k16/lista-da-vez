@@ -90,6 +90,9 @@ func TestStreamCSVParsesSupportedTypes(t *testing.T) {
 				if row.CPF != "81447981553" || row.Identifier != "04904070569" {
 					t.Fatalf("unexpected customer row %#v", row)
 				}
+				if row.StoreIDRaw != "12583959000186" || row.RawPayload["store_id"] != "12583959000186" {
+					t.Fatalf("expected raw store_id to be preserved, got row=%#v payload=%#v", row, row.RawPayload)
+				}
 			},
 		},
 		{
@@ -105,6 +108,9 @@ func TestStreamCSVParsesSupportedTypes(t *testing.T) {
 				if row.OriginalID != "165" || row.StoreIDRaw != "31327524000115" {
 					t.Fatalf("unexpected employee row %#v", row)
 				}
+				if row.RawPayload["store_id"] != "31327524000115" {
+					t.Fatalf("expected raw employee store_id, got %#v", row.RawPayload)
+				}
 			},
 		},
 		{
@@ -119,6 +125,9 @@ func TestStreamCSVParsesSupportedTypes(t *testing.T) {
 				}
 				if row.OrderID != "315199" || row.SKU != "361245" {
 					t.Fatalf("unexpected order row %#v", row)
+				}
+				if row.StoreIDRaw != "12583959000186" || row.RawPayload["store_id"] != "12583959000186" {
+					t.Fatalf("expected raw order store_id to be preserved, got row=%#v payload=%#v", row, row.RawPayload)
 				}
 			},
 		},
@@ -170,6 +179,50 @@ func TestStreamCSVParsesSupportedTypes(t *testing.T) {
 			}
 			test.assertRecord(t, seen[0])
 		})
+	}
+}
+
+func TestStreamCSVRawMirrorPreservesSourceValues(t *testing.T) {
+	meta := mustCSVMeta(t, "20260413010001_184-12583959000186-item-20260413010001.csv")
+	content := "27709;  BRINCO  ;0,79CT;;48;GEMAS;JOIAS;SOLITARIO;;11MM;AMARELO;PR;1783500;27709;2013-12-13 13:02:28;2026-04-04 14:29:43\n"
+
+	var parsed ItemRawRecord
+	_, rowCount, err := StreamCSV(bytes.NewReader([]byte(content)), DataTypeItem, meta, func(idx int, record any) error {
+		parsed = record.(ItemRawRecord)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("StreamCSV() error = %v", err)
+	}
+	if rowCount != 1 {
+		t.Fatalf("expected one row, got %d", rowCount)
+	}
+	if parsed.Name != "BRINCO" {
+		t.Fatalf("expected typed helper column to stay normalized, got %q", parsed.Name)
+	}
+	if parsed.RawPayload["name"] != "  BRINCO  " {
+		t.Fatalf("expected raw payload to preserve source value, got %q", parsed.RawPayload["name"])
+	}
+	if len(parsed.RawValues) != len(expectedColumnsByType[DataTypeItem]) || parsed.RawValues[1] != "  BRINCO  " {
+		t.Fatalf("unexpected raw values %#v", parsed.RawValues)
+	}
+}
+
+func TestStreamCSVRejectsOversizedFile(t *testing.T) {
+	meta := mustCSVMeta(t, "20260413010001_184-12583959000186-item-20260413010001.csv")
+	content := "27709;BRINCO;0,79CT;;48;GEMAS;JOIAS;SOLITARIO;;11MM;AMARELO;PR;1783500;27709;2013-12-13 13:02:28;2026-04-04 14:29:43\n"
+
+	_, _, err := StreamCSVWithLimit(bytes.NewReader([]byte(content)), DataTypeItem, meta, 16, func(idx int, record any) error {
+		t.Fatalf("callback should not run for oversized CSV")
+		return nil
+	})
+
+	var sizeErr *ErrCSVTooLarge
+	if !errors.As(err, &sizeErr) {
+		t.Fatalf("expected ErrCSVTooLarge, got %v", err)
+	}
+	if sizeErr.MaxBytes != 16 {
+		t.Fatalf("expected max bytes 16, got %d", sizeErr.MaxBytes)
 	}
 }
 

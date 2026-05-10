@@ -9,12 +9,17 @@ Entradas disponíveis hoje:
 - `POST /v1/erp/backfill`
 - `GET /v1/erp/runs`
 - `GET /v1/erp/overview`
+- `GET /v1/erp/crm`
 
 Ambos reaproveitam:
 - `erp_sync_runs`
 - `erp_sync_files`
 - tabelas raw `erp_*_raw`
 - projeção `erp_item_current`
+
+Para a regra de atribuicao comercial do CRM por loja e consultor, ver:
+
+- `docs/ERP_CRM_STORE_ATTRIBUTION.md`
 
 ## Origem dos arquivos
 
@@ -39,6 +44,10 @@ Configuração por ambiente:
 - `ERP_SYNC_INTERVAL`
 - `ERP_SYNC_HOUR_UTC`
 - `ERP_SYNC_DRY_RUN_DEFAULT`
+- `ERP_CSV_MAX_BYTES` — limite maximo por CSV antes de abortar a leitura. Padrao: `134217728` (128 MiB).
+- `ERP_MANUAL_SYNC_MAX_FILES` — limite de arquivos por tipo quando `POST /sync` omite `maxFiles`. Padrao: `100`.
+- `ERP_BACKFILL_MAX_FILES` — limite de arquivos por tipo quando `POST /backfill` omite `maxFiles`. Padrao: `1000`.
+- `ERP_MANUAL_SYNC_MIN_INTERVAL` — janela minima entre disparos manuais/backfill por loja. Padrao: `5m`.
 
 ## Fluxo
 
@@ -131,9 +140,9 @@ Após o backfill, restaurar o modo diário normal:
 
 ```bash
 ERP_SOURCE_KIND=ftp ERP_SOURCE_RECURSIVE=false ERP_ROOT_STORE_CODE=184 \
-  ERP_FTP_HOST=ftp.aperolajoias.com.br ERP_FTP_PORT=21 \
-  ERP_FTP_USER=desenvolvimento@aperolajoias.com.br \
-  ERP_FTP_PASSWORD='#Since1967' ERP_FTP_REMOTE_DIR=extract_files \
+  ERP_FTP_HOST=<ftp-host> ERP_FTP_PORT=21 \
+  ERP_FTP_USER=<ftp-user> \
+  ERP_FTP_PASSWORD='<ftp-password>' ERP_FTP_REMOTE_DIR=<remote-dir> \
   docker compose -f docker-compose.yml up -d --build --force-recreate api
 ```
 
@@ -147,6 +156,25 @@ ERP_SOURCE_KIND=ftp ERP_SOURCE_RECURSIVE=false ERP_ROOT_STORE_CODE=184 \
 - O overview compara os nomes dos arquivos da origem com os `source_name` já registrados no banco
 - Antes do backfill local, a loja 184 já tinha 4255 arquivos históricos registrados via `bootstrap_markdown`; por isso só 115 apareciam como pendentes na primeira consulta — não era bug
 - O estado do banco após o backfill: `~7227` registros em `erp_sync_files` para `storeCode=184`
+
+## Estado validado em produção
+
+Validação real em `2026-05-08` na VPS:
+- `npm run prod:deploy:vps` aplicado com sucesso e migration `0057_erp_csv_metadata.sql` efetivamente presente em produção
+- dump ERP atualizado restaurado no Postgres da VPS via `pg_restore`, sem reenviar os CSVs históricos crus
+- contadores finais em produção iguais ao local:
+  - `runs=54`
+  - `files=7227`
+  - `item_raw=1526022`
+  - `item_current=357619`
+  - `customer_raw=339174`
+  - `employee_raw=20695`
+  - `order_raw=757617`
+  - `order_canceled_raw=43775`
+- dump temporário removido após validação do host local, do host remoto e do container Postgres remoto
+- produção final ficou com `ERP_SOURCE_KIND=ftp`, `ERP_SOURCE_RECURSIVE=false`, `ERP_ALLOW_MANUAL_SYNC=true`, `ERP_SYNC_AUTOMATIC_ENABLED=true`, `ERP_SYNC_INTERVAL=24h`, `ERP_SYNC_HOUR_UTC=4`
+- a API registrou `erp_sync_scheduler_started` em produção, confirmando o scheduler diário ativo
+- o sync manual pelo painel `/erp` também foi testado em produção e funcionou
 
 ## Operação local
 

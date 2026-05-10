@@ -2,7 +2,9 @@ package erp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,6 +26,75 @@ type syncFileImportState struct {
 	Status      string
 	RecordCount int
 	ImportedAt  *time.Time
+}
+
+type crmStoreAlias struct {
+	Slug  string
+	Label string
+}
+
+type crmStoreTarget struct {
+	Slug               string
+	Label              string
+	Code               string
+	Name               string
+	MonthlyGoalCents   int64
+	AvgTicketGoalCents int64
+	PAGoal             float64
+}
+
+type crmStoreAggregate struct {
+	StoreCNPJ         string
+	Orders            int
+	Units             int64
+	SalesCents        int64
+	ProductSalesCents int64
+}
+
+type crmConsultantAggregate struct {
+	ConsultantID      string
+	ConsultantName    string
+	StoreCNPJ         string
+	Orders            int
+	Units             int64
+	SalesCents        int64
+	ProductSalesCents int64
+}
+
+type crmOrderAggregate struct {
+	ExplicitStoreCNPJ string
+	FallbackStoreCNPJ string
+	EmployeeID        string
+	Units             int64
+	SalesCents        int64
+	ProductSalesCents int64
+}
+
+const crmStoreKeyManagementMultiStore = "gerencia-multiloja"
+
+var crmStoreAliases = map[string]crmStoreAlias{
+	"31327524000115": {Slug: "riomar", Label: "Riomar"},
+	"12583959000186": {Slug: "riomar", Label: "Riomar"},
+	"56173889000163": {Slug: "jardins", Label: "Jardins"},
+	"53578278000107": {Slug: "garcia", Label: "Garcia"},
+	"43068099000176": {Slug: "treze", Label: "Treze"},
+	"43068099000257": {Slug: "treze", Label: "Treze"},
+}
+
+var crmSpecialStoreAliases = map[string]crmStoreAlias{
+	crmStoreKeyManagementMultiStore: {Slug: crmStoreKeyManagementMultiStore, Label: "Gerencia / Multi-loja"},
+}
+
+var crmEmployeeSpecialStoreKeys = map[string]string{
+	"16": crmStoreKeyManagementMultiStore,
+}
+
+var crmStoreOrder = map[string]int{
+	"riomar":                      0,
+	"jardins":                     1,
+	"garcia":                      2,
+	"treze":                       3,
+	crmStoreKeyManagementMultiStore: 4,
 }
 
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
@@ -602,10 +673,13 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			country,
 			zipcode,
 			employee_id,
+			store_id_raw,
 			registered_at_raw,
 			original_id,
 			identifier,
-			tags`
+			tags,
+			raw_values,
+			raw_payload`
 		searchCondition = `(
 			name ilike $4
 			or nickname ilike $4
@@ -617,6 +691,7 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			or uf ilike $4
 			or zipcode ilike $4
 			or employee_id ilike $4
+			or store_id_raw ilike $4
 			or original_id ilike $4
 			or identifier ilike $4
 			or tags ilike $4
@@ -628,15 +703,19 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			id::text as id,
 			store_cnpj,
 			name,
+			store_id_raw,
 			original_id,
 			city,
 			uf,
 			street,
 			complement,
 			zipcode,
-			is_active_raw`
+			is_active_raw,
+			raw_values,
+			raw_payload`
 		searchCondition = `(
 			name ilike $4
+			or store_id_raw ilike $4
 			or original_id ilike $4
 			or city ilike $4
 			or uf ilike $4
@@ -652,6 +731,7 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			store_cnpj,
 			order_id,
 			identifier,
+			store_id_raw,
 			customer_id,
 			order_date_raw,
 			total_amount_raw,
@@ -668,10 +748,13 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			total_exclusion_raw,
 			total_exclusion_cents,
 			total_debit_raw,
-			total_debit_cents`
+			total_debit_cents,
+			raw_values,
+			raw_payload`
 		searchCondition = `(
 			order_id ilike $4
 			or identifier ilike $4
+			or store_id_raw ilike $4
 			or customer_id ilike $4
 			or order_date_raw ilike $4
 			or total_amount_raw ilike $4
@@ -691,6 +774,7 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			store_cnpj,
 			order_id,
 			identifier,
+			store_id_raw,
 			customer_id,
 			order_date_raw,
 			total_amount_raw,
@@ -707,10 +791,13 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 			total_exclusion_raw,
 			total_exclusion_cents,
 			total_debit_raw,
-			total_debit_cents`
+			total_debit_cents,
+			raw_values,
+			raw_payload`
 		searchCondition = `(
 			order_id ilike $4
 			or identifier ilike $4
+			or store_id_raw ilike $4
 			or customer_id ilike $4
 			or order_date_raw ilike $4
 			or total_amount_raw ilike $4
@@ -806,6 +893,150 @@ func (repository *PostgresRepository) ListRawRecords(ctx context.Context, store 
 	}, nil
 }
 
+func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store StoreScope, query CRMOverviewQuery) (CRMOverviewResponse, error) {
+	targets, err := repository.listCRMStoreTargets(ctx, store.TenantID)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	storeAggregates, err := repository.listCRMStoreAggregates(ctx, store, query)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	consultantAggregates, err := repository.listCRMConsultantAggregates(ctx, store, query)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	rowsByKey := make(map[string]*CRMStoreMetric, len(targets)+len(storeAggregates))
+	productSalesByKey := make(map[string]int64, len(targets)+len(storeAggregates))
+	unmappedCNPJs := make([]string, 0)
+
+	for _, target := range targets {
+		rowsByKey[target.Slug] = &CRMStoreMetric{
+			StoreSlug:          target.Slug,
+			StoreLabel:         target.Label,
+			StoreCode:          target.Code,
+			StoreName:          target.Name,
+			StoreCNPJs:         []string{},
+			Mapped:             true,
+			MonthlyGoalCents:   target.MonthlyGoalCents,
+			AvgTicketGoalCents: target.AvgTicketGoalCents,
+			PAGoal:             target.PAGoal,
+		}
+		productSalesByKey[target.Slug] = 0
+	}
+
+	for _, aggregate := range storeAggregates {
+		key, row := repository.resolveCRMStoreMetricRow(rowsByKey, targets, aggregate.StoreCNPJ)
+		if !row.Mapped {
+			unmappedCNPJs = appendUniqueString(unmappedCNPJs, aggregate.StoreCNPJ)
+		}
+		row.StoreCNPJs = appendUniqueString(row.StoreCNPJs, aggregate.StoreCNPJ)
+		row.Orders += aggregate.Orders
+		row.Units += aggregate.Units
+		row.SalesCents += aggregate.SalesCents
+		productSalesByKey[key] += aggregate.ProductSalesCents
+	}
+
+	storeRows := make([]CRMStoreMetric, 0, len(rowsByKey))
+	for key, row := range rowsByKey {
+		row.TicketAverageCents, row.ValuePerProductCents, row.PAScore = buildCRMMetricValues(row.Orders, row.Units, row.SalesCents, productSalesByKey[key])
+		if row.MonthlyGoalCents > 0 {
+			row.GoalProgress = (float64(row.SalesCents) / float64(row.MonthlyGoalCents)) * 100
+			row.RemainingToGoalCents = maxCRMRemaining(row.MonthlyGoalCents, row.SalesCents)
+		}
+		sort.Strings(row.StoreCNPJs)
+		storeRows = append(storeRows, *row)
+	}
+
+	sort.Slice(storeRows, func(left int, right int) bool {
+		leftOrder := crmStoreOrderValue(storeRows[left])
+		rightOrder := crmStoreOrderValue(storeRows[right])
+		if leftOrder != rightOrder {
+			return leftOrder < rightOrder
+		}
+		if storeRows[left].Mapped != storeRows[right].Mapped {
+			return storeRows[left].Mapped
+		}
+		if storeRows[left].SalesCents != storeRows[right].SalesCents {
+			return storeRows[left].SalesCents > storeRows[right].SalesCents
+		}
+		return storeRows[left].StoreLabel < storeRows[right].StoreLabel
+	})
+
+	consultantRows := make([]CRMConsultantMetric, 0, len(consultantAggregates))
+	for _, aggregate := range consultantAggregates {
+		alias, mapped := resolveCRMStoreAlias(aggregate.StoreCNPJ)
+		row := CRMConsultantMetric{
+			ConsultantID:   aggregate.ConsultantID,
+			ConsultantName: aggregate.ConsultantName,
+			StoreCNPJ:      aggregate.StoreCNPJ,
+			Mapped:         mapped,
+			Orders:         aggregate.Orders,
+			Units:          aggregate.Units,
+			SalesCents:     aggregate.SalesCents,
+		}
+		if mapped {
+			row.StoreSlug = alias.Slug
+			row.StoreLabel = alias.Label
+		} else {
+			row.StoreLabel = formatCRMUnknownStoreLabel(aggregate.StoreCNPJ)
+		}
+		row.TicketAverageCents, row.ValuePerProductCents, row.PAScore = buildCRMMetricValues(aggregate.Orders, aggregate.Units, aggregate.SalesCents, aggregate.ProductSalesCents)
+		consultantRows = append(consultantRows, row)
+	}
+
+	sort.Slice(consultantRows, func(left int, right int) bool {
+		if consultantRows[left].SalesCents != consultantRows[right].SalesCents {
+			return consultantRows[left].SalesCents > consultantRows[right].SalesCents
+		}
+		if consultantRows[left].StoreLabel != consultantRows[right].StoreLabel {
+			return consultantRows[left].StoreLabel < consultantRows[right].StoreLabel
+		}
+		return consultantRows[left].ConsultantName < consultantRows[right].ConsultantName
+	})
+
+	summary := CRMSummary{}
+	for _, row := range storeRows {
+		summary.Orders += row.Orders
+		summary.Units += row.Units
+		summary.SalesCents += row.SalesCents
+		if row.Mapped {
+			summary.MonthlyGoalCents += row.MonthlyGoalCents
+		} else {
+			summary.UnmappedSalesCents += row.SalesCents
+		}
+	}
+
+	totalProductSales := int64(0)
+	for _, value := range productSalesByKey {
+		totalProductSales += value
+	}
+	summary.TicketAverageCents, summary.ValuePerProductCents, summary.PAScore = buildCRMMetricValues(summary.Orders, summary.Units, summary.SalesCents, totalProductSales)
+	if summary.MonthlyGoalCents > 0 {
+		summary.GoalProgress = (float64(summary.SalesCents) / float64(summary.MonthlyGoalCents)) * 100
+		summary.RemainingToGoalCents = maxCRMRemaining(summary.MonthlyGoalCents, summary.SalesCents)
+	}
+
+	warnings := make([]string, 0, 1)
+	if len(unmappedCNPJs) > 0 {
+		sort.Strings(unmappedCNPJs)
+		warnings = append(warnings, fmt.Sprintf("CNPJs sem mapeamento comercial: %s.", strings.Join(unmappedCNPJs, ", ")))
+	}
+
+	return CRMOverviewResponse{
+		Store:       store,
+		DateFrom:    query.DateFrom.Format("2006-01-02"),
+		DateTo:      query.DateTo.Format("2006-01-02"),
+		Summary:     summary,
+		Stores:      storeRows,
+		Consultants: consultantRows,
+		Warnings:    warnings,
+	}, nil
+}
+
 func onlyDigits(value string) string {
 	var builder strings.Builder
 	for _, char := range value {
@@ -814,6 +1045,607 @@ func onlyDigits(value string) string {
 		}
 	}
 	return builder.String()
+}
+
+func crmPrimaryStoreKeyFromSlug(slug string) string {
+	switch strings.TrimSpace(slug) {
+	case "riomar":
+		return "12583959000186"
+	case "jardins":
+		return "56173889000163"
+	case "garcia":
+		return "53578278000107"
+	case "treze":
+		return "43068099000176"
+	default:
+		return ""
+	}
+}
+
+func crmStoreKeyFromOperationalStore(code string, name string) string {
+	slug, _ := crmStoreSlugFromOperationalStore(code, name)
+	return crmPrimaryStoreKeyFromSlug(slug)
+}
+
+func crmEmployeeSpecialStoreKey(employeeID string) string {
+	return strings.TrimSpace(crmEmployeeSpecialStoreKeys[strings.TrimSpace(employeeID)])
+}
+
+func resolveCRMOrderStoreKey(explicitStoreKey string, fallbackStoreCNPJ string, employeeID string, employeeStoreFallbacks map[string]string, employeeDominantStoreKeys map[string]string) string {
+	if normalized := onlyDigits(strings.TrimSpace(explicitStoreKey)); normalized != "" {
+		return normalized
+	}
+
+	normalizedEmployeeID := strings.TrimSpace(employeeID)
+	if normalizedEmployeeID != "" {
+		if specialKey := crmEmployeeSpecialStoreKey(normalizedEmployeeID); specialKey != "" {
+			return specialKey
+		}
+		if normalized := onlyDigits(employeeStoreFallbacks[normalizedEmployeeID]); normalized != "" {
+			return normalized
+		}
+		if normalized := onlyDigits(employeeDominantStoreKeys[normalizedEmployeeID]); normalized != "" {
+			return normalized
+		}
+	}
+
+	return onlyDigits(strings.TrimSpace(fallbackStoreCNPJ))
+}
+
+func (repository *PostgresRepository) listCRMStoreTargets(ctx context.Context, tenantID string) (map[string]crmStoreTarget, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select
+			code,
+			name,
+			coalesce(round(monthly_goal * 100), 0)::bigint,
+			coalesce(round(avg_ticket_goal * 100), 0)::bigint,
+			coalesce(pa_goal, 0)::float8
+		from stores
+		where tenant_id = $1::uuid
+		  and is_active = true;
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	targets := make(map[string]crmStoreTarget, 4)
+	for rows.Next() {
+		var (
+			code               string
+			name               string
+			monthlyGoalCents   int64
+			avgTicketGoalCents int64
+			paGoal             float64
+		)
+		if err := rows.Scan(&code, &name, &monthlyGoalCents, &avgTicketGoalCents, &paGoal); err != nil {
+			return nil, err
+		}
+
+		slug, label := crmStoreSlugFromOperationalStore(code, name)
+		if slug == "" {
+			continue
+		}
+
+		targets[slug] = crmStoreTarget{
+			Slug:               slug,
+			Label:              label,
+			Code:               code,
+			Name:               name,
+			MonthlyGoalCents:   monthlyGoalCents,
+			AvgTicketGoalCents: avgTicketGoalCents,
+			PAGoal:             paGoal,
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return targets, nil
+}
+
+func (repository *PostgresRepository) listCRMEmployeeStoreFallbacks(ctx context.Context, tenantID string) (map[string]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select
+			trim(u.employee_code) as employee_code,
+			coalesce(max(nullif(consultant_store.code, '')), max(nullif(role_store.code, '')), '') as store_code,
+			coalesce(max(nullif(consultant_store.name, '')), max(nullif(role_store.name, '')), '') as store_name
+		from users u
+		left join consultants c
+			on c.user_id = u.id
+		   and c.tenant_id = $1::uuid
+		left join stores consultant_store
+			on consultant_store.id = c.store_id
+		   and consultant_store.tenant_id = $1::uuid
+		left join user_store_roles usr
+			on usr.user_id = u.id
+		left join stores role_store
+			on role_store.id = usr.store_id
+		   and role_store.tenant_id = $1::uuid
+		where nullif(trim(u.employee_code), '') is not null
+		group by trim(u.employee_code);
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	fallbacks := make(map[string]string)
+	for rows.Next() {
+		var employeeCode string
+		var storeCode string
+		var storeName string
+		if err := rows.Scan(&employeeCode, &storeCode, &storeName); err != nil {
+			return nil, err
+		}
+
+		employeeCode = strings.TrimSpace(employeeCode)
+		if employeeCode == "" {
+			continue
+		}
+
+		if storeKey := crmStoreKeyFromOperationalStore(storeCode, storeName); storeKey != "" {
+			fallbacks[employeeCode] = storeKey
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return fallbacks, nil
+}
+
+func (repository *PostgresRepository) listCRMDominantEmployeeStoreKeys(ctx context.Context, store StoreScope) (map[string]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		with known_orders as (
+			select
+				order_id,
+				coalesce(max(nullif(trim(store_id_raw), '')), '') as explicit_store_key,
+				coalesce(max(nullif(trim(employee_id), '')), '') as employee_id,
+				case
+					when max(total_amount_cents) > 0 then max(total_amount_cents)::bigint
+					else sum(amount_cents)::bigint
+				end as order_total_cents
+			from erp_order_raw
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+			  and nullif(trim(order_id), '') is not null
+			  and coalesce(nullif(trim(store_id_raw), ''), '') <> ''
+			group by order_id
+		), canceled_orders as (
+			select distinct order_id
+			from erp_order_canceled_raw
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+		), active_known_orders as (
+			select *
+			from known_orders known
+			where not exists (
+				select 1
+				from canceled_orders canceled
+				where canceled.order_id = known.order_id
+			)
+		), ranked as (
+			select
+				employee_id,
+				explicit_store_key,
+				row_number() over (
+					partition by employee_id
+					order by count(*) desc, sum(order_total_cents) desc, explicit_store_key asc
+				) as row_number
+			from active_known_orders
+			where employee_id <> ''
+			group by employee_id, explicit_store_key
+		)
+		select employee_id, explicit_store_key
+		from ranked
+		where row_number = 1;
+	`, store.TenantID, store.StoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	dominantKeys := make(map[string]string)
+	for rows.Next() {
+		var employeeID string
+		var storeKey string
+		if err := rows.Scan(&employeeID, &storeKey); err != nil {
+			return nil, err
+		}
+
+		employeeID = strings.TrimSpace(employeeID)
+		storeKey = onlyDigits(strings.TrimSpace(storeKey))
+		if employeeID == "" || storeKey == "" {
+			continue
+		}
+
+		dominantKeys[employeeID] = storeKey
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return dominantKeys, nil
+}
+
+func (repository *PostgresRepository) listCRMEmployeeNames(ctx context.Context, store StoreScope) (map[string]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select distinct on (original_id)
+			original_id,
+			name
+		from erp_employee_raw
+		where tenant_id = $1::uuid
+		  and store_id = $2::uuid
+		  and nullif(trim(original_id), '') is not null
+		order by original_id, created_at_imported desc, source_batch_date desc, id desc;
+	`, store.TenantID, store.StoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := make(map[string]string)
+	for rows.Next() {
+		var employeeID string
+		var name string
+		if err := rows.Scan(&employeeID, &name); err != nil {
+			return nil, err
+		}
+
+		employeeID = strings.TrimSpace(employeeID)
+		name = strings.TrimSpace(name)
+		if employeeID == "" || name == "" {
+			continue
+		}
+
+		names[employeeID] = name
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return names, nil
+}
+
+func (repository *PostgresRepository) listCRMOrderAggregates(ctx context.Context, store StoreScope, query CRMOverviewQuery) ([]crmOrderAggregate, error) {
+	rows, err := repository.pool.Query(ctx, `
+		with order_lines as (
+			select
+				order_id,
+				coalesce(nullif(trim(store_id_raw), ''), '') as explicit_store_key,
+				coalesce(nullif(trim(store_cnpj), ''), '') as fallback_store_cnpj,
+				coalesce(nullif(trim(employee_id), ''), '') as employee_id,
+				coalesce(total_amount_cents, 0) as total_amount_cents,
+				coalesce(amount_cents, 0) as amount_cents,
+				case when coalesce(quantity, 0) > 0 then quantity else 1 end as quantity
+			from erp_order_raw
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+			  and order_date >= $3
+			  and order_date < $4
+			  and nullif(trim(order_id), '') is not null
+		), canceled_orders as (
+			select distinct order_id
+			from erp_order_canceled_raw
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+		), orders_grouped as (
+			select
+				order_id,
+				coalesce(max(explicit_store_key), '') as explicit_store_key,
+				coalesce(max(fallback_store_cnpj), '') as fallback_store_cnpj,
+				coalesce(max(employee_id), '') as employee_id,
+				case
+					when max(total_amount_cents) > 0 then max(total_amount_cents)::bigint
+					else sum(amount_cents)::bigint
+				end as order_total_cents,
+				sum(amount_cents)::bigint as product_sales_cents,
+				sum(quantity)::bigint as units
+			from order_lines
+			group by order_id
+		), active_orders as (
+			select *
+			from orders_grouped grouped
+			where not exists (
+				select 1
+				from canceled_orders canceled
+				where canceled.order_id = grouped.order_id
+			)
+		)
+		select
+			explicit_store_key,
+			fallback_store_cnpj,
+			employee_id,
+			coalesce(units, 0)::bigint as units,
+			coalesce(order_total_cents, 0)::bigint as sales_cents,
+			coalesce(product_sales_cents, 0)::bigint as product_sales_cents
+		from active_orders
+		order by sales_cents desc, order_id asc;
+	`, store.TenantID, store.StoreID, query.DateFrom, query.DateTo.AddDate(0, 0, 1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	orders := make([]crmOrderAggregate, 0, 128)
+	for rows.Next() {
+		var aggregate crmOrderAggregate
+		if err := rows.Scan(
+			&aggregate.ExplicitStoreCNPJ,
+			&aggregate.FallbackStoreCNPJ,
+			&aggregate.EmployeeID,
+			&aggregate.Units,
+			&aggregate.SalesCents,
+			&aggregate.ProductSalesCents,
+		); err != nil {
+			return nil, err
+		}
+
+		aggregate.ExplicitStoreCNPJ = onlyDigits(strings.TrimSpace(aggregate.ExplicitStoreCNPJ))
+		aggregate.FallbackStoreCNPJ = onlyDigits(strings.TrimSpace(aggregate.FallbackStoreCNPJ))
+		aggregate.EmployeeID = strings.TrimSpace(aggregate.EmployeeID)
+		orders = append(orders, aggregate)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
+}
+
+func (repository *PostgresRepository) listCRMStoreAggregates(ctx context.Context, store StoreScope, query CRMOverviewQuery) ([]crmStoreAggregate, error) {
+	orders, err := repository.listCRMOrderAggregates(ctx, store, query)
+	if err != nil {
+		return nil, err
+	}
+
+	employeeStoreFallbacks, err := repository.listCRMEmployeeStoreFallbacks(ctx, store.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	employeeDominantStoreKeys, err := repository.listCRMDominantEmployeeStoreKeys(ctx, store)
+	if err != nil {
+		return nil, err
+	}
+
+	rowsByStore := make(map[string]*crmStoreAggregate, 8)
+	for _, order := range orders {
+		storeKey := resolveCRMOrderStoreKey(order.ExplicitStoreCNPJ, order.FallbackStoreCNPJ, order.EmployeeID, employeeStoreFallbacks, employeeDominantStoreKeys)
+		row, ok := rowsByStore[storeKey]
+		if !ok {
+			row = &crmStoreAggregate{StoreCNPJ: storeKey}
+			rowsByStore[storeKey] = row
+		}
+		row.Orders += 1
+		row.Units += order.Units
+		row.SalesCents += order.SalesCents
+		row.ProductSalesCents += order.ProductSalesCents
+	}
+
+	aggregates := make([]crmStoreAggregate, 0, len(rowsByStore))
+	for _, aggregate := range rowsByStore {
+		aggregates = append(aggregates, *aggregate)
+	}
+
+	sort.Slice(aggregates, func(left int, right int) bool {
+		if aggregates[left].SalesCents != aggregates[right].SalesCents {
+			return aggregates[left].SalesCents > aggregates[right].SalesCents
+		}
+		return aggregates[left].StoreCNPJ < aggregates[right].StoreCNPJ
+	})
+
+	return aggregates, nil
+}
+
+func (repository *PostgresRepository) listCRMConsultantAggregates(ctx context.Context, store StoreScope, query CRMOverviewQuery) ([]crmConsultantAggregate, error) {
+	orders, err := repository.listCRMOrderAggregates(ctx, store, query)
+	if err != nil {
+		return nil, err
+	}
+
+	employeeStoreFallbacks, err := repository.listCRMEmployeeStoreFallbacks(ctx, store.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	employeeDominantStoreKeys, err := repository.listCRMDominantEmployeeStoreKeys(ctx, store)
+	if err != nil {
+		return nil, err
+	}
+
+	employeeNames, err := repository.listCRMEmployeeNames(ctx, store)
+	if err != nil {
+		return nil, err
+	}
+
+	rowsByConsultant := make(map[string]*crmConsultantAggregate, 32)
+	for _, order := range orders {
+		consultantID := strings.TrimSpace(order.EmployeeID)
+		if consultantID == "" {
+			consultantID = "sem-id"
+		}
+
+		storeKey := resolveCRMOrderStoreKey(order.ExplicitStoreCNPJ, order.FallbackStoreCNPJ, order.EmployeeID, employeeStoreFallbacks, employeeDominantStoreKeys)
+		rowKey := consultantID + "\x00" + storeKey
+		row, ok := rowsByConsultant[rowKey]
+		if !ok {
+			consultantName := strings.TrimSpace(employeeNames[consultantID])
+			if consultantName == "" {
+				consultantName = fmt.Sprintf("Consultor ERP %s", consultantID)
+			}
+
+			row = &crmConsultantAggregate{
+				ConsultantID:   consultantID,
+				ConsultantName: consultantName,
+				StoreCNPJ:      storeKey,
+			}
+			rowsByConsultant[rowKey] = row
+		}
+
+		row.Orders += 1
+		row.Units += order.Units
+		row.SalesCents += order.SalesCents
+		row.ProductSalesCents += order.ProductSalesCents
+	}
+
+	aggregates := make([]crmConsultantAggregate, 0, len(rowsByConsultant))
+	for _, aggregate := range rowsByConsultant {
+		aggregates = append(aggregates, *aggregate)
+	}
+
+	sort.Slice(aggregates, func(left int, right int) bool {
+		if aggregates[left].SalesCents != aggregates[right].SalesCents {
+			return aggregates[left].SalesCents > aggregates[right].SalesCents
+		}
+		if aggregates[left].StoreCNPJ != aggregates[right].StoreCNPJ {
+			return aggregates[left].StoreCNPJ < aggregates[right].StoreCNPJ
+		}
+		return aggregates[left].ConsultantName < aggregates[right].ConsultantName
+	})
+
+	return aggregates, nil
+}
+
+func (repository *PostgresRepository) resolveCRMStoreMetricRow(rowsByKey map[string]*CRMStoreMetric, targets map[string]crmStoreTarget, storeCNPJ string) (string, *CRMStoreMetric) {
+	if alias, ok := resolveCRMStoreAlias(storeCNPJ); ok {
+		if row, exists := rowsByKey[alias.Slug]; exists {
+			return alias.Slug, row
+		}
+
+		target := targets[alias.Slug]
+		rowsByKey[alias.Slug] = &CRMStoreMetric{
+			StoreSlug:          alias.Slug,
+			StoreLabel:         alias.Label,
+			StoreCode:          target.Code,
+			StoreName:          target.Name,
+			StoreCNPJs:         []string{},
+			Mapped:             true,
+			MonthlyGoalCents:   target.MonthlyGoalCents,
+			AvgTicketGoalCents: target.AvgTicketGoalCents,
+			PAGoal:             target.PAGoal,
+		}
+		return alias.Slug, rowsByKey[alias.Slug]
+	}
+
+	key := strings.TrimSpace(storeCNPJ)
+	if key == "" {
+		key = "sem-cnpj"
+	}
+	if row, exists := rowsByKey[key]; exists {
+		return key, row
+	}
+
+	rowsByKey[key] = &CRMStoreMetric{
+		StoreSlug:  key,
+		StoreLabel: formatCRMUnknownStoreLabel(storeCNPJ),
+		StoreCNPJs: []string{},
+		Mapped:     false,
+	}
+	return key, rowsByKey[key]
+}
+
+func resolveCRMStoreAlias(storeCNPJ string) (crmStoreAlias, bool) {
+	normalized := strings.TrimSpace(storeCNPJ)
+	if alias, ok := crmSpecialStoreAliases[normalized]; ok {
+		return alias, true
+	}
+	alias, ok := crmStoreAliases[normalized]
+	return alias, ok
+}
+
+func crmStoreSlugFromOperationalStore(code string, name string) (string, string) {
+	switch strings.ToUpper(strings.TrimSpace(code)) {
+	case "RIO", "PJ-RIO":
+		return "riomar", "Riomar"
+	case "JAR", "PJ-JAR":
+		return "jardins", "Jardins"
+	case "GAR", "PJ-GARCIA":
+		return "garcia", "Garcia"
+	case "TRE", "PJ-TRE":
+		return "treze", "Treze"
+	}
+
+	normalizedName := strings.ToLower(strings.TrimSpace(name))
+	switch {
+	case strings.Contains(normalizedName, "riomar"):
+		return "riomar", "Riomar"
+	case strings.Contains(normalizedName, "jardins"):
+		return "jardins", "Jardins"
+	case strings.Contains(normalizedName, "garcia"):
+		return "garcia", "Garcia"
+	case strings.Contains(normalizedName, "treze"):
+		return "treze", "Treze"
+	default:
+		return "", ""
+	}
+}
+
+func buildCRMMetricValues(orders int, units int64, salesCents int64, productSalesCents int64) (int64, int64, float64) {
+	ticketAverageCents := int64(0)
+	if orders > 0 {
+		ticketAverageCents = salesCents / int64(orders)
+	}
+
+	valuePerProductCents := int64(0)
+	baseProductSales := productSalesCents
+	if baseProductSales <= 0 {
+		baseProductSales = salesCents
+	}
+	if units > 0 {
+		valuePerProductCents = baseProductSales / units
+	}
+
+	paScore := 0.0
+	if orders > 0 {
+		paScore = float64(units) / float64(orders)
+	}
+
+	return ticketAverageCents, valuePerProductCents, paScore
+}
+
+func crmStoreOrderValue(row CRMStoreMetric) int {
+	if !row.Mapped {
+		return 100
+	}
+	if value, ok := crmStoreOrder[row.StoreSlug]; ok {
+		return value
+	}
+	return 99
+}
+
+func formatCRMUnknownStoreLabel(storeCNPJ string) string {
+	normalized := strings.TrimSpace(storeCNPJ)
+	if normalized == "" {
+		return "Nao mapeada"
+	}
+	return fmt.Sprintf("Nao mapeada (%s)", normalized)
+}
+
+func appendUniqueString(values []string, value string) []string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return values
+	}
+	for _, current := range values {
+		if strings.EqualFold(strings.TrimSpace(current), normalized) {
+			return values
+		}
+	}
+	return append(values, normalized)
+}
+
+func maxCRMRemaining(goal int64, sales int64) int64 {
+	if goal <= sales {
+		return 0
+	}
+	return goal - sales
 }
 
 func (repository *PostgresRepository) StartSyncRun(ctx context.Context, store StoreScope, dataType string, mode string, sourcePath string, triggeredBy string) (syncRunStart, error) {
@@ -849,6 +1681,10 @@ func (repository *PostgresRepository) StartSyncRun(ctx context.Context, store St
 		returning id::text, started_at;
 	`, store.TenantID, store.StoreID, store.StoreCode, store.StoreCNPJ, dataType, mode, firstNonEmpty(triggeredBy, SyncTriggeredByManual), sourcePath, SyncStatusRunning).Scan(&started.ID, &started.StartedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "erp_sync_runs_one_running_csv_ftp_per_store_idx" {
+			return syncRunStart{}, ErrSyncAlreadyRunning
+		}
 		return syncRunStart{}, err
 	}
 	return started, nil
@@ -883,6 +1719,40 @@ func (repository *PostgresRepository) SyncFileExists(ctx context.Context, store 
 			  and checksum_sha256 = $5
 		);
 	`, store.TenantID, store.StoreID, dataType, sourceName, checksum).Scan(&exists)
+	return exists, err
+}
+
+func (repository *PostgresRepository) HasRunningCSVSyncRun(ctx context.Context, store StoreScope) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from erp_sync_runs
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+			  and mode = $3
+			  and status = $4
+		);
+	`, store.TenantID, store.StoreID, SyncModeCSVFTP, SyncStatusRunning).Scan(&exists)
+	return exists, err
+}
+
+func (repository *PostgresRepository) HasRecentCSVSyncRun(ctx context.Context, store StoreScope, since time.Time) (bool, error) {
+	if since.IsZero() {
+		return false, nil
+	}
+
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from erp_sync_runs
+			where tenant_id = $1::uuid
+			  and store_id = $2::uuid
+			  and mode = $3
+			  and started_at >= $4
+		);
+	`, store.TenantID, store.StoreID, SyncModeCSVFTP, since).Scan(&exists)
 	return exists, err
 }
 
@@ -949,11 +1819,15 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 		return itemBatchImportResult{}, err
 	}
 	if !inserted {
-		if err := tx.Rollback(ctx); err != nil {
+		refreshedRows, refreshErr := repository.refreshRawMirror(ctx, tx, "erp_item_raw", fileID, false, rawMirrorRowsFromItems(input.Batch.Rows))
+		if refreshErr != nil {
+			return itemBatchImportResult{}, refreshErr
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return itemBatchImportResult{}, err
 		}
 		tx = nil
-		return itemBatchImportResult{Imported: false, Rows: 0, StoreCNPJ: input.Batch.StoreCNPJ}, nil
+		return itemBatchImportResult{Imported: false, Rows: 0, FileID: fileID, StoreCNPJ: input.Batch.StoreCNPJ, RefreshedRows: refreshedRows}, nil
 	}
 
 	if len(input.Batch.Rows) > 0 {
@@ -989,6 +1863,8 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 				"updated_at_raw",
 				"created_at",
 				"updated_at",
+				"raw_values",
+				"raw_payload",
 				"created_at_imported",
 			},
 			pgx.CopyFromSlice(len(input.Batch.Rows), func(index int) ([]any, error) {
@@ -1022,6 +1898,8 @@ func (repository *PostgresRepository) ImportItemBatch(ctx context.Context, input
 					row.UpdatedAtRaw,
 					row.CreatedAt,
 					row.UpdatedAt,
+					row.RawValues,
+					row.RawPayload,
 					input.ImportedAt,
 				}, nil
 			}),
@@ -1192,11 +2070,15 @@ func (repository *PostgresRepository) ImportCustomerBatch(ctx context.Context, i
 		return itemBatchImportResult{}, err
 	}
 	if !inserted {
-		if err := tx.Rollback(ctx); err != nil {
+		refreshedRows, refreshErr := repository.refreshRawMirror(ctx, tx, "erp_customer_raw", fileID, true, rawMirrorRowsFromCustomers(input.Batch.Rows))
+		if refreshErr != nil {
+			return itemBatchImportResult{}, refreshErr
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return itemBatchImportResult{}, err
 		}
 		tx = nil
-		return itemBatchImportResult{Imported: false, Rows: 0, StoreCNPJ: input.Batch.StoreCNPJ}, nil
+		return itemBatchImportResult{Imported: false, Rows: 0, FileID: fileID, StoreCNPJ: input.Batch.StoreCNPJ, RefreshedRows: refreshedRows}, nil
 	}
 
 	if len(input.Batch.Rows) > 0 {
@@ -1206,14 +2088,14 @@ func (repository *PostgresRepository) ImportCustomerBatch(ctx context.Context, i
 			[]string{
 				"run_id", "file_id", "tenant_id", "store_id", "store_code", "store_cnpj", "source_file_name", "source_batch_date", "source_line_number",
 				"name", "nickname", "cpf", "email", "phone", "mobile", "gender", "birthday_raw", "street", "number", "complement", "neighborhood",
-				"city", "uf", "country", "zipcode", "employee_id", "registered_at_raw", "original_id", "identifier", "tags", "created_at_imported",
+				"city", "uf", "country", "zipcode", "employee_id", "store_id_raw", "registered_at_raw", "original_id", "identifier", "tags", "raw_values", "raw_payload", "created_at_imported",
 			},
 			pgx.CopyFromSlice(len(input.Batch.Rows), func(index int) ([]any, error) {
 				row := input.Batch.Rows[index]
 				return []any{
 					input.RunID, fileID, input.Store.TenantID, input.Store.StoreID, row.StoreCode, row.StoreCNPJ, row.SourceFileName, row.SourceBatchDate, row.SourceLineNumber,
 					row.Name, row.Nickname, row.CPF, row.Email, row.Phone, row.Mobile, row.Gender, row.BirthdayRaw, row.Street, row.Number, row.Complement, row.Neighborhood,
-					row.City, row.UF, row.Country, row.Zipcode, row.EmployeeID, row.RegisteredAtRaw, row.OriginalID, row.Identifier, row.Tags, input.ImportedAt,
+					row.City, row.UF, row.Country, row.Zipcode, row.EmployeeID, row.StoreIDRaw, row.RegisteredAtRaw, row.OriginalID, row.Identifier, row.Tags, row.RawValues, row.RawPayload, input.ImportedAt,
 				}, nil
 			}),
 		); err != nil {
@@ -1268,11 +2150,15 @@ func (repository *PostgresRepository) ImportEmployeeBatch(ctx context.Context, i
 		return itemBatchImportResult{}, err
 	}
 	if !inserted {
-		if err := tx.Rollback(ctx); err != nil {
+		refreshedRows, refreshErr := repository.refreshRawMirror(ctx, tx, "erp_employee_raw", fileID, true, rawMirrorRowsFromEmployees(input.Batch.Rows))
+		if refreshErr != nil {
+			return itemBatchImportResult{}, refreshErr
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return itemBatchImportResult{}, err
 		}
 		tx = nil
-		return itemBatchImportResult{Imported: false, Rows: 0, StoreCNPJ: input.Batch.StoreCNPJ}, nil
+		return itemBatchImportResult{Imported: false, Rows: 0, FileID: fileID, StoreCNPJ: input.Batch.StoreCNPJ, RefreshedRows: refreshedRows}, nil
 	}
 
 	if len(input.Batch.Rows) > 0 {
@@ -1281,13 +2167,13 @@ func (repository *PostgresRepository) ImportEmployeeBatch(ctx context.Context, i
 			pgx.Identifier{"erp_employee_raw"},
 			[]string{
 				"run_id", "file_id", "tenant_id", "store_id", "store_code", "store_cnpj", "source_file_name", "source_batch_date", "source_line_number",
-				"name", "original_id", "street", "complement", "city", "uf", "zipcode", "is_active_raw", "created_at_imported",
+				"name", "store_id_raw", "original_id", "street", "complement", "city", "uf", "zipcode", "is_active_raw", "raw_values", "raw_payload", "created_at_imported",
 			},
 			pgx.CopyFromSlice(len(input.Batch.Rows), func(index int) ([]any, error) {
 				row := input.Batch.Rows[index]
 				return []any{
 					input.RunID, fileID, input.Store.TenantID, input.Store.StoreID, row.StoreCode, row.StoreCNPJ, row.SourceFileName, row.SourceBatchDate, row.SourceLineNumber,
-					row.Name, row.OriginalID, row.Street, row.Complement, row.City, row.UF, row.Zipcode, row.IsActiveRaw, input.ImportedAt,
+					row.Name, row.StoreIDRaw, row.OriginalID, row.Street, row.Complement, row.City, row.UF, row.Zipcode, row.IsActiveRaw, row.RawValues, row.RawPayload, input.ImportedAt,
 				}, nil
 			}),
 		); err != nil {
@@ -1347,11 +2233,15 @@ func (repository *PostgresRepository) ImportOrderBatch(ctx context.Context, inpu
 		return itemBatchImportResult{}, err
 	}
 	if !inserted {
-		if err := tx.Rollback(ctx); err != nil {
+		refreshedRows, refreshErr := repository.refreshRawMirror(ctx, tx, tableName, fileID, true, rawMirrorRowsFromOrders(input.Batch.Rows))
+		if refreshErr != nil {
+			return itemBatchImportResult{}, refreshErr
+		}
+		if err := tx.Commit(ctx); err != nil {
 			return itemBatchImportResult{}, err
 		}
 		tx = nil
-		return itemBatchImportResult{Imported: false, Rows: 0, StoreCNPJ: input.Batch.StoreCNPJ}, nil
+		return itemBatchImportResult{Imported: false, Rows: 0, FileID: fileID, StoreCNPJ: input.Batch.StoreCNPJ, RefreshedRows: refreshedRows}, nil
 	}
 
 	if len(input.Batch.Rows) > 0 {
@@ -1360,8 +2250,8 @@ func (repository *PostgresRepository) ImportOrderBatch(ctx context.Context, inpu
 			pgx.Identifier{tableName},
 			[]string{
 				"run_id", "file_id", "tenant_id", "store_id", "store_code", "store_cnpj", "source_file_name", "source_batch_date", "source_line_number",
-				"order_id", "identifier", "customer_id", "order_date_raw", "order_date", "total_amount_raw", "total_amount_cents", "product_return_raw", "product_return_cents",
-				"sku", "amount_raw", "amount_cents", "quantity_raw", "quantity", "employee_id", "payment_type", "total_exclusion_raw", "total_exclusion_cents", "total_debit_raw", "total_debit_cents", "created_at_imported",
+				"order_id", "identifier", "store_id_raw", "customer_id", "order_date_raw", "order_date", "total_amount_raw", "total_amount_cents", "product_return_raw", "product_return_cents",
+				"sku", "amount_raw", "amount_cents", "quantity_raw", "quantity", "employee_id", "payment_type", "total_exclusion_raw", "total_exclusion_cents", "total_debit_raw", "total_debit_cents", "raw_values", "raw_payload", "created_at_imported",
 			},
 			pgx.CopyFromSlice(len(input.Batch.Rows), func(index int) ([]any, error) {
 				row := input.Batch.Rows[index]
@@ -1371,8 +2261,8 @@ func (repository *PostgresRepository) ImportOrderBatch(ctx context.Context, inpu
 				}
 				return []any{
 					input.RunID, fileID, input.Store.TenantID, input.Store.StoreID, row.StoreCode, row.StoreCNPJ, row.SourceFileName, row.SourceBatchDate, row.SourceLineNumber,
-					row.OrderID, row.Identifier, row.CustomerID, row.OrderDateRaw, row.OrderDate, row.TotalAmountRaw, row.TotalAmountCents, row.ProductReturnRaw, row.ProductReturnCents,
-					row.SKU, row.AmountRaw, row.AmountCents, row.QuantityRaw, quantity, row.EmployeeID, row.PaymentType, row.TotalExclusionRaw, row.TotalExclusionCents, row.TotalDebitRaw, row.TotalDebitCents, input.ImportedAt,
+					row.OrderID, row.Identifier, row.StoreIDRaw, row.CustomerID, row.OrderDateRaw, row.OrderDate, row.TotalAmountRaw, row.TotalAmountCents, row.ProductReturnRaw, row.ProductReturnCents,
+					row.SKU, row.AmountRaw, row.AmountCents, row.QuantityRaw, quantity, row.EmployeeID, row.PaymentType, row.TotalExclusionRaw, row.TotalExclusionCents, row.TotalDebitRaw, row.TotalDebitCents, row.RawValues, row.RawPayload, input.ImportedAt,
 				}, nil
 			}),
 		); err != nil {
@@ -1464,11 +2354,34 @@ func (repository *PostgresRepository) insertSyncFile(ctx context.Context, tx pgx
 	`, input.RunID, input.Store.TenantID, input.Store.StoreID, input.Store.StoreCode, input.StoreCNPJ, input.DataType, input.SourceName, input.SourcePath, input.SourceKind, input.BatchDate, input.ExtractedAt, input.DataReference, nullIfZeroInt64(input.SizeBytes), input.ErrorMessage, input.Checksum, input.Rows, input.ImportedAt).Scan(&fileID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return "", false, nil
+			existingID, existingErr := repository.findSyncFileID(ctx, tx, input)
+			if existingErr != nil {
+				return "", false, existingErr
+			}
+			return existingID, false, nil
 		}
 		return "", false, err
 	}
 	return fileID, true, nil
+}
+
+func (repository *PostgresRepository) findSyncFileID(ctx context.Context, tx pgx.Tx, input insertSyncFileInput) (string, error) {
+	var fileID string
+	err := tx.QueryRow(ctx, `
+		select id::text
+		from erp_sync_files
+		where tenant_id = $1::uuid
+		  and store_id = $2::uuid
+		  and data_type = $3
+		  and source_name = $4
+		  and checksum_sha256 = $5
+		order by imported_at desc, created_at desc
+		limit 1;
+	`, input.Store.TenantID, input.Store.StoreID, input.DataType, input.SourceName, input.Checksum).Scan(&fileID)
+	if err != nil {
+		return "", err
+	}
+	return fileID, nil
 }
 
 func nullIfZeroInt64(value int64) any {
@@ -1476,6 +2389,133 @@ func nullIfZeroInt64(value int64) any {
 		return nil
 	}
 	return value
+}
+
+type rawMirrorRow struct {
+	SourceLineNumber int
+	StoreIDRaw       string
+	RawValues        []string
+	RawPayload       map[string]string
+}
+
+func (repository *PostgresRepository) refreshRawMirror(ctx context.Context, tx pgx.Tx, tableName string, fileID string, includeStoreID bool, rows []rawMirrorRow) (int, error) {
+	if strings.TrimSpace(fileID) == "" || len(rows) == 0 {
+		return 0, nil
+	}
+
+	safeTableName, err := rawMirrorTableName(tableName)
+	if err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.Exec(ctx, `drop table if exists pg_temp.erp_raw_refresh_tmp;`); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `
+		create temp table erp_raw_refresh_tmp (
+			source_line_number integer primary key,
+			store_id_raw text not null default '',
+			raw_values jsonb not null,
+			raw_payload jsonb not null
+		) on commit drop;
+	`); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"erp_raw_refresh_tmp"},
+		[]string{"source_line_number", "store_id_raw", "raw_values", "raw_payload"},
+		pgx.CopyFromSlice(len(rows), func(index int) ([]any, error) {
+			row := rows[index]
+			return []any{row.SourceLineNumber, row.StoreIDRaw, row.RawValues, row.RawPayload}, nil
+		}),
+	); err != nil {
+		return 0, err
+	}
+
+	setClause := `
+		raw_values = tmp.raw_values,
+		raw_payload = tmp.raw_payload`
+	if includeStoreID {
+		setClause = `
+		store_id_raw = tmp.store_id_raw,
+		raw_values = tmp.raw_values,
+		raw_payload = tmp.raw_payload`
+	}
+
+	commandTag, err := tx.Exec(ctx, fmt.Sprintf(`
+		update %s raw
+		set %s
+		from erp_raw_refresh_tmp tmp
+		where raw.file_id = $1::uuid
+		  and raw.source_line_number = tmp.source_line_number;
+	`, safeTableName, setClause), fileID)
+	if err != nil {
+		return 0, err
+	}
+
+	return int(commandTag.RowsAffected()), nil
+}
+
+func rawMirrorTableName(tableName string) (string, error) {
+	switch tableName {
+	case "erp_item_raw", "erp_customer_raw", "erp_employee_raw", "erp_order_raw", "erp_order_canceled_raw":
+		return tableName, nil
+	default:
+		return "", ErrUnsupportedDataType
+	}
+}
+
+func rawMirrorRowsFromItems(rows []ItemRawRecord) []rawMirrorRow {
+	result := make([]rawMirrorRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, rawMirrorRow{
+			SourceLineNumber: row.SourceLineNumber,
+			RawValues:        row.RawValues,
+			RawPayload:       row.RawPayload,
+		})
+	}
+	return result
+}
+
+func rawMirrorRowsFromCustomers(rows []CustomerRawRecord) []rawMirrorRow {
+	result := make([]rawMirrorRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, rawMirrorRow{
+			SourceLineNumber: row.SourceLineNumber,
+			StoreIDRaw:       row.StoreIDRaw,
+			RawValues:        row.RawValues,
+			RawPayload:       row.RawPayload,
+		})
+	}
+	return result
+}
+
+func rawMirrorRowsFromEmployees(rows []EmployeeRawRecord) []rawMirrorRow {
+	result := make([]rawMirrorRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, rawMirrorRow{
+			SourceLineNumber: row.SourceLineNumber,
+			StoreIDRaw:       row.StoreIDRaw,
+			RawValues:        row.RawValues,
+			RawPayload:       row.RawPayload,
+		})
+	}
+	return result
+}
+
+func rawMirrorRowsFromOrders(rows []OrderRawRecord) []rawMirrorRow {
+	result := make([]rawMirrorRow, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, rawMirrorRow{
+			SourceLineNumber: row.SourceLineNumber,
+			StoreIDRaw:       row.StoreIDRaw,
+			RawValues:        row.RawValues,
+			RawPayload:       row.RawPayload,
+		})
+	}
+	return result
 }
 
 func (repository *PostgresRepository) getLastRun(ctx context.Context, store StoreScope, dataType string) (*SyncRunSummary, error) {

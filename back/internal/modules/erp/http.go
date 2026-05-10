@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -73,6 +74,28 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			strings.TrimSpace(r.URL.Query().Get("tenantId")),
 			strings.TrimSpace(r.URL.Query().Get("storeCode")),
 		)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, overview)
+	})))
+
+	mux.Handle("GET /v1/erp/crm", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		query, err := parseCRMOverviewQuery(r)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		overview, err := service.CRMOverview(r.Context(), principal, query)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -290,6 +313,26 @@ func parseRunsQuery(r *http.Request) (RunsQuery, error) {
 	}, nil
 }
 
+func parseCRMOverviewQuery(r *http.Request) (CRMOverviewQuery, error) {
+	query := r.URL.Query()
+
+	dateFrom, err := parseOptionalDate(query.Get("dateFrom"))
+	if err != nil {
+		return CRMOverviewQuery{}, ErrValidation
+	}
+	dateTo, err := parseOptionalDate(query.Get("dateTo"))
+	if err != nil {
+		return CRMOverviewQuery{}, ErrValidation
+	}
+
+	return CRMOverviewQuery{
+		TenantID:  strings.TrimSpace(query.Get("tenantId")),
+		StoreCode: strings.TrimSpace(query.Get("storeCode")),
+		DateFrom:  dateFrom,
+		DateTo:    dateTo,
+	}, nil
+}
+
 func parseOptionalInt(raw string) (int, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -298,10 +341,28 @@ func parseOptionalInt(raw string) (int, error) {
 	return strconv.Atoi(trimmed)
 }
 
+func parseOptionalDate(raw string) (time.Time, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return time.Time{}, nil
+	}
+
+	parsed, err := time.Parse("2006-01-02", trimmed)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return parsed.UTC(), nil
+}
+
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrManualSyncDisabled):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
+	case errors.Is(err, ErrSyncAlreadyRunning):
+		httpapi.WriteError(w, r, http.StatusConflict, "sync_already_running", "Ja existe uma sincronizacao ERP em andamento.")
+	case errors.Is(err, ErrSyncRateLimited):
+		httpapi.WriteError(w, r, http.StatusTooManyRequests, "sync_rate_limited", "Aguarde antes de disparar outra sincronizacao ERP.")
 	case errors.Is(err, ErrStoreRequired), errors.Is(err, ErrTenantRequired), errors.Is(err, ErrValidation):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os parametros enviados.")
 	case errors.Is(err, ErrUnsupportedDataType):
@@ -310,6 +371,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "store_not_found", "Loja nao encontrada.")
 	case errors.Is(err, ErrSourceNotConfigured), errors.Is(err, ErrSourcePathOutsideRoot), errors.Is(err, ErrSourceHostKeyRequired):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "source_error", "Origem do bootstrap ERP invalida ou nao configurada.")
+	case errors.As(err, new(*ErrCSVTooLarge)):
+		httpapi.WriteError(w, r, http.StatusRequestEntityTooLarge, "csv_too_large", err.Error())
 	case errors.As(err, new(*ErrCSVColumnCountMismatch)), errors.As(err, new(*ErrCSVHeaderMismatch)), errors.As(err, new(*ErrCSVRowParse)), errors.As(err, new(*ErrCSVEncoding)), errors.As(err, new(*ErrCSVFilenameInvalid)):
 		httpapi.WriteError(w, r, http.StatusUnprocessableEntity, "csv_error", err.Error())
 	default:

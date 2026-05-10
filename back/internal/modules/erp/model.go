@@ -19,8 +19,12 @@ const (
 	SyncTriggeredByCron     = "cron"
 	SyncTriggeredByBackfill = "backfill"
 
-	defaultPageSize = 50
-	maxPageSize     = 200
+	defaultPageSize              = 50
+	maxPageSize                  = 200
+	defaultCSVMaxBytes           = 128 * 1024 * 1024
+	defaultManualSyncMaxFiles    = 100
+	defaultBackfillMaxFiles      = 1000
+	defaultManualSyncMinInterval = 5 * time.Minute
 )
 
 var supportedDataTypes = []string{
@@ -55,6 +59,10 @@ type Options struct {
 	SyncInterval               time.Duration
 	SyncHourUTC                int
 	SyncDryRunDefault          bool
+	CSVMaxBytes                int64
+	ManualSyncMaxFiles         int
+	BackfillMaxFiles           int
+	ManualSyncMinInterval      time.Duration
 }
 
 type StoreScope struct {
@@ -245,6 +253,71 @@ type SyncOverviewResponse struct {
 	LastImportedFile *SyncFileSummary            `json:"lastImportedFile,omitempty"`
 }
 
+type CRMOverviewQuery struct {
+	TenantID  string    `json:"tenantId,omitempty"`
+	StoreCode string    `json:"storeCode,omitempty"`
+	DateFrom  time.Time `json:"dateFrom,omitempty"`
+	DateTo    time.Time `json:"dateTo,omitempty"`
+}
+
+type CRMSummary struct {
+	Orders               int     `json:"orders"`
+	Units                int64   `json:"units"`
+	SalesCents           int64   `json:"salesCents"`
+	TicketAverageCents   int64   `json:"ticketAverageCents"`
+	ValuePerProductCents int64   `json:"valuePerProductCents"`
+	PAScore              float64 `json:"paScore"`
+	MonthlyGoalCents     int64   `json:"monthlyGoalCents"`
+	GoalProgress         float64 `json:"goalProgress"`
+	RemainingToGoalCents int64   `json:"remainingToGoalCents"`
+	UnmappedSalesCents   int64   `json:"unmappedSalesCents,omitempty"`
+}
+
+type CRMStoreMetric struct {
+	StoreSlug            string   `json:"storeSlug"`
+	StoreLabel           string   `json:"storeLabel"`
+	StoreCode            string   `json:"storeCode,omitempty"`
+	StoreName            string   `json:"storeName,omitempty"`
+	StoreCNPJs           []string `json:"storeCnpjs,omitempty"`
+	Mapped               bool     `json:"mapped"`
+	Orders               int      `json:"orders"`
+	Units                int64    `json:"units"`
+	SalesCents           int64    `json:"salesCents"`
+	TicketAverageCents   int64    `json:"ticketAverageCents"`
+	ValuePerProductCents int64    `json:"valuePerProductCents"`
+	PAScore              float64  `json:"paScore"`
+	MonthlyGoalCents     int64    `json:"monthlyGoalCents"`
+	AvgTicketGoalCents   int64    `json:"avgTicketGoalCents"`
+	PAGoal               float64  `json:"paGoal"`
+	GoalProgress         float64  `json:"goalProgress"`
+	RemainingToGoalCents int64    `json:"remainingToGoalCents"`
+}
+
+type CRMConsultantMetric struct {
+	ConsultantID         string  `json:"consultantId"`
+	ConsultantName       string  `json:"consultantName"`
+	StoreSlug            string  `json:"storeSlug"`
+	StoreLabel           string  `json:"storeLabel"`
+	StoreCNPJ            string  `json:"storeCnpj,omitempty"`
+	Mapped               bool    `json:"mapped"`
+	Orders               int     `json:"orders"`
+	Units                int64   `json:"units"`
+	SalesCents           int64   `json:"salesCents"`
+	TicketAverageCents   int64   `json:"ticketAverageCents"`
+	ValuePerProductCents int64   `json:"valuePerProductCents"`
+	PAScore              float64 `json:"paScore"`
+}
+
+type CRMOverviewResponse struct {
+	Store       StoreScope            `json:"store"`
+	DateFrom    string                `json:"dateFrom"`
+	DateTo      string                `json:"dateTo"`
+	Summary     CRMSummary            `json:"summary"`
+	Stores      []CRMStoreMetric      `json:"stores"`
+	Consultants []CRMConsultantMetric `json:"consultants"`
+	Warnings    []string              `json:"warnings,omitempty"`
+}
+
 type ItemBootstrapInput struct {
 	TenantID   string `json:"tenantId,omitempty"`
 	StoreCode  string `json:"storeCode"`
@@ -398,6 +471,8 @@ type ItemRawRecord struct {
 	SourceFileName    string
 	SourceBatchDate   string
 	SourceLineNumber  int
+	RawValues         []string
+	RawPayload        map[string]string
 	SKU               string
 	Name              string
 	Description       string
@@ -425,6 +500,8 @@ type CustomerRawRecord struct {
 	SourceFileName   string
 	SourceBatchDate  string
 	SourceLineNumber int
+	RawValues        []string
+	RawPayload       map[string]string
 	Name             string
 	Nickname         string
 	CPF              string
@@ -442,6 +519,7 @@ type CustomerRawRecord struct {
 	Country          string
 	Zipcode          string
 	EmployeeID       string
+	StoreIDRaw       string
 	RegisteredAtRaw  string
 	OriginalID       string
 	Identifier       string
@@ -454,6 +532,8 @@ type EmployeeRawRecord struct {
 	SourceFileName   string
 	SourceBatchDate  string
 	SourceLineNumber int
+	RawValues        []string
+	RawPayload       map[string]string
 	Name             string
 	StoreIDRaw       string
 	OriginalID       string
@@ -471,6 +551,8 @@ type OrderRawRecord struct {
 	SourceFileName      string
 	SourceBatchDate     string
 	SourceLineNumber    int
+	RawValues           []string
+	RawPayload          map[string]string
 	OrderID             string
 	Identifier          string
 	StoreIDRaw          string
@@ -503,10 +585,11 @@ type itemBatchImportInput struct {
 }
 
 type itemBatchImportResult struct {
-	Imported  bool
-	Rows      int
-	FileID    string
-	StoreCNPJ string
+	Imported      bool
+	Rows          int
+	FileID        string
+	StoreCNPJ     string
+	RefreshedRows int
 }
 
 type customerBatchImportInput struct {

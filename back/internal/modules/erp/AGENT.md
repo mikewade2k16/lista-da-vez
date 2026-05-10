@@ -40,6 +40,7 @@ Na fase 1, ele precisa sustentar:
 - bootstrap markdown legado permanece ativo por compatibilidade e deve ser tratado como caminho em transição
 - o FTP real em `extract_files` já foi validado com arquivos `item`, `customer`, `employee`, `order` e `ordercanceled`
 - o codigo `184` aparece nos arquivos observados do ERP, mas o modulo nao deve tratar isso como escopo fixo de UI nem como tenant separado
+- `GET /v1/erp/crm` agrega vendas ERP por loja comercial e consultor no escopo raiz do ERP, resolvendo a loja nesta ordem: `store_id_raw`, cadastro interno do vendedor (`users` + `consultants`/`user_store_roles`), loja dominante do historico ERP do vendedor e `store_cnpj` como ultimo fallback; ver tambem `docs/ERP_CRM_STORE_ATTRIBUTION.md`
 
 ## Invariantes novos
 

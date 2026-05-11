@@ -33,33 +33,29 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 - Endpoints `/v2/me/accounts` e `/v2/me/context` continuam servidos pelo handle
   retornado de `Module.Build()` — mesmas rotas, mesmo shape.
 
-### Fase 3 — RBAC dinamico (em andamento)
-
-#### Item 1 — CloneTemplateToAccount (concluido)
+### Fase 3 — RBAC dinamico (concluida)
 
 - Migration `0102_rbac_locked_templates.sql` adiciona `is_locked` em `core.role_templates`.
 - `RoleTemplateDef.IsLocked` propagado de `platform/modules/module.go` ate `catalog_postgres.go`.
 - Template `core.owner` declarado com `IsLocked: true` — roles clonados dele nao podem ser deletados.
-- `rbac_model.go` — structs `RoleTemplate` e `Role` com `ToSummary()`.
+- `rbac_model.go` — structs `RoleTemplate` e `Role` com `ToSummary()`, erros RBAC em `errors.go`.
 - `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository`:
-  `ListTemplatesForModules`, `ListTemplatePermissionKeys`, `CloneTemplate`, `SetRolePermissions`.
-- `rbac_service.go` — `RBACService.InitAccountRoles(ctx, accountID, moduleIDs)`: seed idempotente
-  de roles para a account. Chamado ao criar account ou habilitar modulo novo.
-- `module.go` — `Build()` cria `PostgresRBACRepository` e `RBACService`; exposto em `handle.rbacService`.
-
-#### Items pendentes
-
-- **Item 2**: `EnsureModuleRoles` — ao habilitar modulo em account existente, seed sem resetar customizacoes.
-- **Item 3**: Endpoints `POST /v1/accounts`, `GET/POST/PATCH/DELETE /v1/accounts/:id/roles`, `AssignRoleToUser`.
-- **Item 4**: Migration de dados — `user_tenant_roles` + `user_store_roles` → `core.user_role_assignments`.
-- **Item 5**: `MeContext` popula `Roles[]` e `Permissions[]` reais a partir de `core.role_permissions`.
+  todos os metodos de seed, CRUD, atribuicao, resolucao de contexto e validacao de permissoes.
+- `rbac_service.go` — `RBACService`: `InitAccountRoles`, `ListRoles`, `GetRole`, `CreateRole`,
+  `UpdateRolePermissions`, `DeleteRole`, `AssignRoleToUser`, `RemoveRoleFromUser`,
+  `ResolveUserContext` (retorna roles e permissions reais via UNION/EXCEPT de overrides).
+- `rbac_http.go` — 7 endpoints RBAC registrados via `RegisterRBACRoutes`.
+- Migration `0103_rbac_seed_roles_and_assignments.sql` — seed de roles para accounts ativas
+  e migracao de `user_tenant_roles`+`user_store_roles` → `core.user_role_assignments`.
+- `service.go` — `MeContext` popula `Roles[]` e `Permissions[]` reais quando `rbacService != nil`.
+- `module.go` — `Build()` cria `PostgresRBACRepository`, `RBACService`, wira os dois services.
 
 ## Endpoints expostos (gated por `CORE_V2_ENABLED`)
 
 | Verbo | Path | Resposta | Status |
 |---|---|---|---|
 | GET | `/v2/me/accounts` | `MeAccountsResponse` (accounts lean) | implementado |
-| GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | implementado, roles/permissions vazios ate Fase 3 |
+| GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | roles/permissions reais via core.role_permissions (Fase 3) |
 | POST | `/v2/me/active-account` | — | nao implementado (frontend gerencia cookie ate Fase 5) |
 
 `/v2/me/context` valida que o user e membership ativo da account (defesa
@@ -86,9 +82,10 @@ para nao vazar existencia.
 - `store_postgres.go` — `PostgresRepository` implementando `Repository`.
 - `service.go` — orquestra leituras, valida membership.
 - `http.go` — handlers, registro de rotas.
-- `rbac_model.go` — structs `RoleTemplate` e `Role`.
-- `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository`.
-- `rbac_service.go` — `RBACService` (seed de roles, futuramente CRUD e resolucao).
+- `rbac_model.go` — structs `RoleTemplate` e `Role`, `RoleSummary`.
+- `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository` (seed, CRUD, atribuicao, resolucao, validacao).
+- `rbac_service.go` — `RBACService` completo.
+- `rbac_http.go` — 7 endpoints RBAC (list/create/get/patch/delete roles + assign/remove).
 
 ## Como testar manualmente
 

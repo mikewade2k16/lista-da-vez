@@ -36,7 +36,7 @@ import {
   Users,
   Wrench
 } from "lucide-vue-next";
-import { SIDEBAR_NAV_SECTIONS } from "~/utils/sidebar-nav";
+import { useNavStore } from "~/stores/nav";
 
 const props = defineProps({
   activeWorkspace: {
@@ -49,6 +49,7 @@ const props = defineProps({
   }
 });
 
+const navStore = useNavStore();
 const route = useRoute();
 const openGroups = ref({});
 const collapsed = ref(false);
@@ -93,7 +94,7 @@ const iconMap = {
 const currentPath = computed(() => normalizePath(route.path));
 const allowedWorkspaceSet = computed(() => new Set(props.allowedWorkspaces || []));
 const visibleSections = computed(() =>
-  SIDEBAR_NAV_SECTIONS.map((section) => ({
+  navStore.sections.map((section) => ({
     ...section,
     items: (section.items || []).map(filterItem).filter(Boolean)
   })).filter((section) => section.items.length > 0)

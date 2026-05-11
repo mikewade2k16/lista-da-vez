@@ -6,6 +6,7 @@ const watcherIgnorePatterns = ["**/.output/**", "**/dist/**"];
 const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350);
 
 export default defineNuxtConfig({
+  extends: ["../layers/core"],
   compatibilityDate: "2026-03-23",
   devtools: {
     enabled: shouldEnableNuxtDevtools

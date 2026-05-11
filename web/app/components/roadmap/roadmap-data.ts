@@ -160,13 +160,14 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 5",
     title: "Frontend layers + menu dinâmico",
     goal: "Substituir sidebar estática por menu montado a partir dos nav.config.ts dos layers.",
-    status: "pending",
+    status: "in_progress",
     estimateWeeks: "1–2 semanas (paralelo à Fase 4)",
+    startedAt: "2026-05-10",
     tasks: [
-      { id: "plugin-registry", label: "app/plugins/module-registry.client.ts lendo nav.config.ts via import.meta.glob", done: false },
-      { id: "core-layer", label: "layers/core/ com AccountSwitcher, PermissionGate, usePermission, useNav", done: false },
-      { id: "delete-static", label: "Deletar web/app/utils/sidebar-nav.ts", done: false },
-      { id: "sidebar-rewrite", label: "DashboardSidebarNav.vue reescrito para consumir useNavStore", done: false }
+      { id: "plugin-registry", label: "app/plugins/module-registry.client.ts lendo nav.config.ts via import.meta.glob", done: true, note: "Injeta layers dinamicamente + fallback legado via sidebar-nav.ts enquanto layer queue não chega." },
+      { id: "core-layer", label: "layers/core/ com AccountSwitcher, PermissionGate, usePermission, useNav", done: true, note: "stores/account.ts (multi-account v2), composables/usePermission, composables/useNav, CoreAccountSwitcher.vue, CorePermissionGate.vue." },
+      { id: "delete-static", label: "Deletar web/app/utils/sidebar-nav.ts", done: false, note: "Bloqueado: requer layer queue com nav.config.ts próprio para substituir o fallback legado." },
+      { id: "sidebar-rewrite", label: "DashboardSidebarNav.vue reescrito para consumir useNavStore", done: true }
     ],
     verifiable: "Trocar account no AccountSwitcher recarrega menu; desabilitar módulo no banco esconde itens."
   },

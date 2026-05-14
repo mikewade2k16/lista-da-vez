@@ -29,6 +29,10 @@
     },
     "gofmt": true,
     "npm run build": true,
-    "ssh": true
+    "ssh": true,
+    "/^node -e \"\nconst fs = require\\('fs'\\);\nconst path = require\\('path'\\);\n\nconst pagesDir = 'c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/pages';\nconst files = \\[\n  'consultor\\.vue','ranking\\.vue','dados\\.vue','inteligencia\\.vue',\n  'relatorios\\.vue','campanhas\\.vue','clientes\\.vue','erp\\.vue',\n  'crm\\.vue','multiloja\\.vue','usuarios\\.vue','configuracoes\\.vue',\n  'alertas\\.vue','feedback\\.vue','banco\\.vue','roadmap\\.vue'\n\\];\n\nfor \\(const fname of files\\) \\{\n  const fpath = path\\.join\\(pagesDir, fname\\);\n  if \\(!fs\\.existsSync\\(fpath\\)\\) \\{ console\\.log\\('SKIP \\(not found\\)', fname\\); continue; \\}\n  let content = fs\\.readFileSync\\(fpath, 'utf8'\\);\n  if \\(content\\.includes\\('alias:'\\)\\) \\{ console\\.log\\('SKIP \\(exists\\)', fname\\); continue; \\}\n  const m = content\\.match\\(/workspaceId:\\\\s\\*\\[\\\\\"'\\]\\(\\[\\^\\\\\"'\\]\\+\\)\\[\\\\\"'\\]/\\);\n  if \\(!m\\) \\{ console\\.log\\('NO workspaceId', fname\\); continue; \\}\n  const wsId = m\\[1\\];\n  const aliasLine = '  alias: \\[\\\\\"/operacao/' \\+ wsId \\+ '\\\\\"\\],';\n  // Add alias right after the workspaceId line\n  const newContent = content\\.replace\\(\n    /\\(  workspaceId:\\\\s\\*\\[\\\\\"'\\]\\[\\^\\\\\"'\\]\\+\\[\\\\\"'\\]\\)\\(,\\?\\)/,\n    \\(match, p1, comma\\) => p1 \\+ \\(comma \\|\\| ','\\) \\+ '\\\\n' \\+ aliasLine\n  \\);\n  if \\(newContent === content\\) \\{ console\\.log\\('NO CHANGE', fname\\); continue; \\}\n  fs\\.writeFileSync\\(fpath, newContent, 'utf8'\\);\n  console\\.log\\('OK', fname, '-> /operacao/' \\+ wsId\\);\n\\}\n\"\n$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }

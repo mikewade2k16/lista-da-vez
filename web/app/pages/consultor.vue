@@ -9,6 +9,7 @@ import { useConsultantsStore } from "~/stores/consultants";
 definePageMeta({
   layout: "dashboard",
   workspaceId: "consultor",
+  alias: ["/operacao/consultor"],
   supportsAllStoresScope: true
 });
 

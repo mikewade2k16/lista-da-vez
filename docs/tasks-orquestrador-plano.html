@@ -1,0 +1,2062 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Plano de Implementação — Tasks Orquestrador</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-soft: #161b22;
+    --bg-card: #1c2330;
+    --bg-code: #0a0e14;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #9aa6b2;
+    --accent: #58a6ff;
+    --accent-2: #79c0ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #d2a8ff;
+    --orange: #ff9b6a;
+    --teal: #56d4dd;
+    --pink: #ff7eb6;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    font-size: 14px;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+  aside.toc {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg-soft);
+    border-right: 1px solid var(--border);
+    padding: 24px 16px;
+  }
+  aside.toc h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin: 0 0 8px;
+    padding: 8px 8px 4px;
+  }
+  aside.toc nav a {
+    display: block;
+    padding: 6px 10px;
+    color: var(--text-dim);
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 13px;
+    margin: 1px 0;
+    border-left: 2px solid transparent;
+  }
+  aside.toc nav a:hover { background: var(--bg-card); color: var(--text); }
+  aside.toc nav a.section { color: var(--accent-2); font-weight: 600; margin-top: 8px; }
+  aside.toc nav a.sub { padding-left: 22px; font-size: 12px; }
+
+  main { padding: 32px 40px 80px; max-width: 1100px; }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.5px; }
+  h2 {
+    font-size: 22px;
+    margin: 48px 0 14px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    letter-spacing: -0.3px;
+  }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  h3 { font-size: 17px; margin: 26px 0 10px; color: var(--accent-2); }
+  h4 { font-size: 14px; margin: 18px 0 6px; color: var(--text); text-transform: uppercase; letter-spacing: 0.8px; }
+  p, li { color: var(--text); }
+  .eyebrow { color: var(--text-dim); text-transform: uppercase; font-size: 11px; letter-spacing: 1.5px; }
+  .lead { color: var(--text-dim); max-width: 800px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  pre, code {
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    font-size: 12.5px;
+  }
+  code:not(pre code) {
+    background: #1f2937;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--orange);
+    font-size: 12.5px;
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    line-height: 1.55;
+    margin: 8px 0 16px;
+  }
+  pre code { background: none; padding: 0; color: var(--text); }
+  pre.sql code { color: #9ecbff; }
+  pre.go code  { color: #c0cfdf; }
+  pre.ts code  { color: #c0cfdf; }
+  pre.bash code{ color: #b8e1ff; }
+
+  .decisions, .principles, .releases {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .decision, .principle {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .decision .label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .decision .value { color: var(--accent-2); font-weight: 600; font-size: 14px; }
+  .decision .note { color: var(--text-dim); font-size: 12px; margin-top: 6px; }
+  .principle { font-size: 13px; }
+  .principle .n { color: var(--accent); font-weight: 700; margin-right: 6px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+    font-size: 13px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { color: var(--text-dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; background: var(--bg-soft); }
+  tr:last-child td { border-bottom: none; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 99px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .pill.low { background: rgba(63,185,80,0.15); color: var(--green); }
+  .pill.med { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .pill.high { background: rgba(248,81,73,0.15); color: var(--red); }
+  .pill.dep { background: rgba(154,166,178,0.12); color: var(--text-dim); }
+  .pill.new { background: rgba(210,168,255,0.15); color: var(--purple); }
+
+  .callout {
+    background: linear-gradient(180deg, rgba(63,185,80,0.08), rgba(63,185,80,0.02));
+    border: 1px solid rgba(63,185,80,0.35);
+    border-left: 4px solid var(--green);
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--green); }
+  .callout.warn {
+    background: linear-gradient(180deg, rgba(210,153,34,0.08), rgba(210,153,34,0.02));
+    border-color: rgba(210,153,34,0.35);
+    border-left-color: var(--yellow);
+  }
+  .callout.warn strong { color: var(--yellow); }
+  .callout.info {
+    background: linear-gradient(180deg, rgba(88,166,255,0.08), rgba(88,166,255,0.02));
+    border-color: rgba(88,166,255,0.35);
+    border-left-color: var(--accent);
+  }
+  .callout.info strong { color: var(--accent); }
+
+  .release {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .release::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+    background: linear-gradient(90deg, #3fb950, #56d4dd);
+  }
+  .release.r2::before { background: linear-gradient(90deg, #d2a8ff, #79c0ff); }
+  .release.r3::before { background: linear-gradient(90deg, #ff9b6a, #d29922); }
+  .release.r4::before { background: linear-gradient(90deg, #f85149, #ff9b6a); }
+  .release.r5::before { background: linear-gradient(90deg, #ff7eb6, #d2a8ff); }
+  .release .name { font-weight: 700; font-size: 16px; }
+  .release .when { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+  .release ul { padding-left: 18px; margin: 12px 0 0; }
+  .release li { font-size: 13px; margin: 4px 0; }
+
+  .gantt {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-top: 16px;
+    overflow-x: auto;
+  }
+  .gantt-grid {
+    display: grid;
+    grid-template-columns: 180px repeat(45, 1fr);
+    align-items: center;
+    gap: 6px 2px;
+    min-width: 1000px;
+  }
+  .gantt-row { display: contents; }
+  .gantt-label { font-size: 12px; color: var(--text); padding-right: 8px; }
+  .gantt-label small { color: var(--text-dim); display: block; font-size: 10px; }
+  .gantt-bar {
+    height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 10.5px;
+    color: #0d1117;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .gantt-header {
+    display: grid;
+    grid-template-columns: 180px repeat(45, 1fr);
+    align-items: center;
+    gap: 0 2px;
+    margin-bottom: 12px;
+    color: var(--text-dim);
+    font-size: 10px;
+    min-width: 1000px;
+  }
+  .gantt-header span { text-align: center; }
+  .bar-doc      { background: var(--text-dim); grid-column: 2 / span 1; }
+  .bar-back     { background: var(--accent); grid-column: 2 / span 8; }
+  .bar-ws       { background: var(--teal); grid-column: 10 / span 3; }
+  .bar-notify   { background: var(--purple); grid-column: 13 / span 3; }
+  .bar-relations{ background: var(--purple); grid-column: 13 / span 2; }
+  .bar-front    { background: var(--green); grid-column: 16 / span 10; }
+  .bar-views-a  { background: var(--pink); grid-column: 23 / span 3; }
+  .bar-track    { background: var(--yellow); grid-column: 26 / span 3; }
+  .bar-presence { background: var(--teal); grid-column: 26 / span 3; }
+  .bar-views-b  { background: var(--pink); grid-column: 29 / span 4; }
+  .bar-hard     { background: var(--orange); grid-column: 33 / span 2; }
+  .bar-views-c  { background: var(--pink); grid-column: 35 / span 5; }
+  .bar-tests    { background: var(--red); grid-column: 40 / span 3; }
+
+  ol.steps { padding-left: 20px; counter-reset: step; }
+  ol.steps > li {
+    list-style: none;
+    counter-increment: step;
+    position: relative;
+    padding-left: 36px;
+    margin: 10px 0;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 24px;
+    height: 24px;
+    background: var(--accent);
+    color: #0d1117;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .views-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .view-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+  }
+  .view-card .title {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--accent-2);
+    margin-bottom: 4px;
+  }
+  .view-card .when { color: var(--text-dim); font-size: 11px; margin-bottom: 8px; }
+  .view-card ul { padding-left: 16px; margin: 8px 0 0; }
+  .view-card li { font-size: 12.5px; margin: 2px 0; color: var(--text-dim); }
+  .view-card .stamp {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    background: rgba(88,166,255,0.15);
+    color: var(--accent);
+  }
+  .view-card.mvp .stamp { background: rgba(63,185,80,0.15); color: var(--green); }
+  .view-card.v14 .stamp { background: rgba(210,153,34,0.15); color: var(--yellow); }
+  .view-card.v15 .stamp { background: rgba(255,155,106,0.15); color: var(--orange); }
+  .view-card.v20 .stamp { background: rgba(255,126,182,0.15); color: var(--pink); }
+
+  .checklist { list-style: none; padding: 0; margin: 8px 0; }
+  .checklist li {
+    padding: 6px 0 6px 28px;
+    position: relative;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .checklist li::before {
+    content: "\2610";
+    position: absolute;
+    left: 8px;
+    top: 6px;
+    color: var(--text-dim);
+    font-size: 16px;
+  }
+  .checklist li:last-child { border-bottom: none; }
+
+  .endpoint {
+    display: grid;
+    grid-template-columns: 64px 1fr 140px;
+    gap: 12px;
+    align-items: center;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+  }
+  .endpoint .method {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-align: center;
+    font-size: 11px;
+  }
+  .endpoint .method.get { background: rgba(88,166,255,0.2); color: var(--accent); }
+  .endpoint .method.post { background: rgba(63,185,80,0.2); color: var(--green); }
+  .endpoint .method.patch { background: rgba(210,153,34,0.2); color: var(--yellow); }
+  .endpoint .method.delete { background: rgba(248,81,73,0.2); color: var(--red); }
+  .endpoint .path { color: var(--text); }
+  .endpoint .perm { color: var(--text-dim); font-size: 11px; text-align: right; }
+
+  .phase-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .phase-header h2 { margin: 0; padding: 0; border: none; }
+</style>
+</head>
+<body>
+
+<aside class="toc">
+  <h3>Plano Tasks</h3>
+  <nav>
+    <a href="#contexto" class="section">Contexto</a>
+    <a href="#decisoes" class="sub">Decisões</a>
+    <a href="#principios" class="sub">Princípios</a>
+    <a href="#gantt" class="sub">Gantt</a>
+    <a href="#releases" class="sub">Releases</a>
+    <a href="#aditivo" class="sub">Aditividade</a>
+
+    <a href="#fase-0" class="section">Fase 0 — Docs</a>
+    <a href="#fase-05" class="section">Fase 0.5 — Split tasks.vue</a>
+    <a href="#fase-1" class="section">Fase 1 — Schema + back</a>
+    <a href="#fase-1-schema" class="sub">1.1 Migration SQL</a>
+    <a href="#fase-1-go" class="sub">1.2 Estrutura Go</a>
+    <a href="#fase-1-scope" class="sub">1.3 scopedQuery</a>
+    <a href="#fase-1-dto" class="sub">1.4 Perspective + DTO</a>
+    <a href="#fase-1-perms" class="sub">1.5 Permissões</a>
+    <a href="#fase-1-rest" class="sub">1.6 Endpoints REST</a>
+    <a href="#fase-1-audit" class="sub">1.7 Audit log</a>
+    <a href="#fase-1-registry" class="sub">1.8 Module Registry</a>
+    <a href="#fase-2" class="section">Fase 2 — Realtime</a>
+    <a href="#fase-3" class="section">Fase 3 — Notificações</a>
+    <a href="#fase-4" class="section">Fase 4 — Cross-módulo</a>
+    <a href="#fase-5" class="section">Fase 5 — Front integra</a>
+    <a href="#fase-6" class="section">Fase 6 — Tracking server</a>
+    <a href="#fase-7" class="section">Fase 7 — Presence</a>
+    <a href="#fase-8" class="section">Fase 8 — Hardening</a>
+    <a href="#fase-9" class="section">Fase 9 — Testes</a>
+    <a href="#fase-10" class="section">Fase 10 — Views</a>
+    <a href="#views-board" class="sub">Quadro</a>
+    <a href="#views-table" class="sub">Tabela</a>
+    <a href="#views-list" class="sub">Lista</a>
+    <a href="#views-calendar" class="sub">Calendário</a>
+    <a href="#views-timeline" class="sub">Cronograma</a>
+    <a href="#views-gallery" class="sub">Galeria</a>
+    <a href="#views-chart" class="sub">Gráfico</a>
+    <a href="#views-feed" class="sub">Feed</a>
+    <a href="#views-map" class="sub">Mapa</a>
+    <a href="#views-dashboard" class="sub">Painel</a>
+    <a href="#views-custom" class="sub">Autoral</a>
+
+    <a href="#riscos" class="section">Riscos</a>
+    <a href="#e2e" class="section">Smoke E2E</a>
+  </nav>
+</aside>
+
+<main>
+
+<div class="eyebrow">Plano de Implementação Detalhado</div>
+<h1 id="contexto">Tasks Orquestrador — Multi-tenant, Realtime, Tracking + Sistema de Views</h1>
+<p class="lead">
+Roteiro fasado, executável passo a passo. Cada fase contém: SQL completo, estrutura de arquivos, snippets de código, endpoints REST, checklist e como testar. Pensado para qualquer dev ou agente seguir sem decidir nada por conta.
+</p>
+
+<h2 id="decisoes">Decisões arquiteturais (fechadas)</h2>
+<div class="decisions">
+  <div class="decision"><div class="label">Multi-tenant cliente externo</div><div class="value">Account separada + grant</div><div class="note">Cada cliente = própria <code>core.account</code>. Compartilhamento via <code>tasks.task_shares</code>.</div></div>
+  <div class="decision"><div class="label">Tracking de tempo</div><div class="value">Server-side autoritativo</div><div class="note">DB é a verdade. WS distribui. Tick local via clock-offset.</div></div>
+  <div class="decision"><div class="label">Presence MVP</div><div class="value">Avatares + "editando campo"</div><div class="note">Bloqueio leve. Cursores Tiptap = fase futura.</div></div>
+  <div class="decision"><div class="label">Migração</div><div class="value">Wipe + seed novo</div><div class="note">Cada account ganha 1 board demo.</div></div>
+  <div class="decision"><div class="label">Cross-módulo</div><div class="value">Registry de resolvers</div><div class="note">CRM/ERP/operations registram como expandir suas referências.</div></div>
+  <div class="decision"><div class="label">Notificações MVP</div><div class="value">In-app + WS</div><div class="note">Email/WhatsApp/Push: adapters stubados.</div></div>
+  <div class="decision"><div class="label">Acesso cliente externo</div><div class="value">Mesma /tasks, layout adaptado</div><div class="note">Defesa no backend. Componentes condicionais — nunca dados condicionais.</div></div>
+  <div class="decision"><div class="label">Sistema de Views</div><div class="value">11 layouts (Notion-style)</div><div class="note">Board, Tabela, Cronograma, Calendário, Lista, Galeria, Gráfico, Feed, Mapa, Painel, Autoral.</div></div>
+</div>
+
+<h2 id="principios">Princípios não-negociáveis</h2>
+<div class="principles">
+  <div class="principle"><span class="n">1.</span>Permissões no backend, sempre.</div>
+  <div class="principle"><span class="n">2.</span><code>scopedQuery</code> obrigatório no repository.</div>
+  <div class="principle"><span class="n">3.</span><code>BuildTaskDTO(task, perspective)</code> — payload mínimo por perfil.</div>
+  <div class="principle"><span class="n">4.</span>Separação por views/services quando faz sentido.</div>
+  <div class="principle"><span class="n">5.</span>Componentes condicionais, <strong>nunca</strong> dados condicionais.</div>
+  <div class="principle"><span class="n">6.</span>UX rápida: cursor pagination, cache, optimistic, WS leve.</div>
+  <div class="principle"><span class="n">7.</span>Defense in depth: middleware → service → repo.</div>
+  <div class="principle"><span class="n">8.</span>Documentar antes (<code>roadmap-data.ts</code> + <code>AGENT.md</code>).</div>
+  <div class="principle"><span class="n">9.</span>Modal, card e views espelhados (mesmo DTO, mesmo renderer).</div>
+  <div class="principle"><span class="n">10.</span>Local-only, sem push automático.</div>
+</div>
+
+<h2 id="gantt">Linha do tempo (Gantt)</h2>
+<div class="callout">
+  <strong>Leitura:</strong> cada coluna ≈ 1 dia útil. MVP em produção: <strong>~22 dias</strong>. Total com todas as fases (views completas + autoral): <strong>~42 dias</strong>.
+</div>
+<div class="gantt">
+  <div class="gantt-header">
+    <span>&nbsp;</span>
+    <span>D1</span><span>D2</span><span>D3</span><span>D4</span><span>D5</span><span>D6</span><span>D7</span><span>D8</span><span>D9</span><span>D10</span>
+    <span>D11</span><span>D12</span><span>D13</span><span>D14</span><span>D15</span><span>D16</span><span>D17</span><span>D18</span><span>D19</span><span>D20</span>
+    <span>D21</span><span>D22</span><span>D23</span><span>D24</span><span>D25</span><span>D26</span><span>D27</span><span>D28</span><span>D29</span><span>D30</span>
+    <span>D31</span><span>D32</span><span>D33</span><span>D34</span><span>D35</span><span>D36</span><span>D37</span><span>D38</span><span>D39</span><span>D40</span>
+    <span>D41</span><span>D42</span><span>D43</span><span>D44</span><span>D45</span>
+  </div>
+  <div class="gantt-grid">
+    <div class="gantt-row"><div class="gantt-label">Fase 0<small>Docs</small></div><div class="gantt-bar bar-doc">concluída · docs</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 0.5<small>Split tasks.vue</small></div><div class="gantt-bar bar-front">concluída · 2955 → 832 linhas</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 1<small>Schema + back</small></div><div class="gantt-bar bar-back">concluída · schema + Go module</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 2<small>Realtime</small></div><div class="gantt-bar bar-ws">concluída · WS/presence</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 3<small>Notificações</small></div><div class="gantt-bar bar-notify">2–3d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 4<small>Cross-módulo</small></div><div class="gantt-bar bar-relations">2d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 5<small>Front integra</small></div><div class="gantt-bar bar-front">7–10d · API + WS + RBAC real</div></div>
+    <div class="gantt-row"><div class="gantt-label">Views 10.A<small>List + Calendar</small></div><div class="gantt-bar bar-views-a">3d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 6<small>Tracking server</small></div><div class="gantt-bar bar-track">2–3d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 7<small>Presence</small></div><div class="gantt-bar bar-presence">2–3d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Views 10.B<small>Timeline+Gallery+Chart</small></div><div class="gantt-bar bar-views-b">4d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 8<small>Hardening</small></div><div class="gantt-bar bar-hard">2d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Views 10.C<small>Feed+Map+Dashboard</small></div><div class="gantt-bar bar-views-c">5d</div></div>
+    <div class="gantt-row"><div class="gantt-label">Fase 9<small>Testes + obs</small></div><div class="gantt-bar bar-tests">2–3d</div></div>
+  </div>
+  <div style="margin-top: 16px; font-size: 12px; color: var(--text-dim);">
+    <span style="color:var(--accent)">■ backend core</span>
+    &nbsp; <span style="color:var(--teal)">■ realtime/presence</span>
+    &nbsp; <span style="color:var(--purple)">■ integrações</span>
+    &nbsp; <span style="color:var(--green)">■ front</span>
+    &nbsp; <span style="color:var(--yellow)">■ tracking</span>
+    &nbsp; <span style="color:var(--orange)">■ hardening</span>
+    &nbsp; <span style="color:var(--pink)">■ sistema de views</span>
+    &nbsp; <span style="color:var(--red)">■ qualidade</span>
+  </div>
+</div>
+
+<h2 id="releases">Plano de releases</h2>
+<div class="releases">
+  <div class="release">
+    <div class="name">v1.0 — MVP de Produção</div>
+    <div class="when">Fases 0→5 + Views 10.A · ~22 dias</div>
+    <ul>
+      <li>Schema multi-tenant completo</li>
+      <li>Boards, colunas, campos custom, tasks via API</li>
+      <li>RBAC dinâmico (admin, member, client_viewer)</li>
+      <li>WebSocket distribuindo mudanças</li>
+      <li>Cliente externo logando, vendo só o compartilhado</li>
+      <li>Front sem localStorage</li>
+      <li><strong>4 views funcionais</strong>: Quadro, Tabela, Lista, Calendário</li>
+    </ul>
+  </div>
+  <div class="release r2">
+    <div class="name">v1.1 — Tracking + Presence</div>
+    <div class="when">+5–6 dias</div>
+    <ul>
+      <li>Tracking server-side</li>
+      <li>Métricas agregadas</li>
+      <li>Avatares + "editando campo"</li>
+      <li>Optimistic locking</li>
+    </ul>
+  </div>
+  <div class="release r3">
+    <div class="name">v1.2 — Notificações + Cross-módulo</div>
+    <div class="when">+4–5 dias</div>
+    <ul>
+      <li>Notificações in-app + sino</li>
+      <li>Trigger em assign/mention/comment</li>
+      <li>Mute por board/task</li>
+      <li>Vincular task a CRM/ERP/atendimento</li>
+    </ul>
+  </div>
+  <div class="release r4">
+    <div class="name">v1.4 — Views avançadas</div>
+    <div class="when">+4 dias</div>
+    <ul>
+      <li>Cronograma (Gantt)</li>
+      <li>Galeria visual</li>
+      <li>Gráfico (bar/line/pie/donut)</li>
+    </ul>
+  </div>
+  <div class="release r5">
+    <div class="name">v1.5 — Painel + Feed + Mapa</div>
+    <div class="when">+5 dias</div>
+    <ul>
+      <li>Feed cronológico</li>
+      <li>Mapa com geolocalização</li>
+      <li>Painel (Dashboard) com widgets</li>
+    </ul>
+  </div>
+  <div class="release r4">
+    <div class="name">v1.6 — Hardening</div>
+    <div class="when">+4–5 dias</div>
+    <ul>
+      <li>Audit log retroativo</li>
+      <li>Rate limit WS + REST</li>
+      <li>Fuzz cross-account leak</li>
+      <li>Métricas Prometheus</li>
+    </ul>
+  </div>
+  <div class="release r5">
+    <div class="name">v2.0 — Layout Autoral</div>
+    <div class="when">+3 dias</div>
+    <ul>
+      <li>Registry de renderers customizados</li>
+      <li>Primeiro layout autoral (a definir)</li>
+    </ul>
+  </div>
+</div>
+
+<h2 id="aditivo">Como cada fase é aditiva (não quebra produção)</h2>
+<div class="callout">
+  <strong>Garantia:</strong> nenhuma fase é destrutiva. Schemas <code>tasks.*</code> e <code>notifications.*</code> são novos, isolados. Tópicos WS novos não conflitam com <code>operations</code>/<code>context</code>. Front troca composables internos sem mudar a URL <code>/tasks</code>. Cada view nova pluga via Registry, sem rasgar as anteriores.
+</div>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-0">Fase 0 — Documentação prévia</h2>
+  <span class="pill low">Baixa</span><span class="pill dep">~0.5d</span>
+</div>
+
+<h3>Objetivo</h3>
+<p>Antes de qualquer linha de código, registrar o plano em roadmap e AGENT.md. Cumpre a memória "documentar antes de implementar".</p>
+
+<h3>Passos</h3>
+<ol class="steps">
+  <li>Abrir <code>web/app/components/roadmap/roadmap-data.ts</code> e adicionar lane <strong>Tasks Orquestrador</strong> com 11 cards (<code>Tasks T0</code>, <code>Tasks T0.5</code> e <code>Tasks T1–T9</code>).</li>
+  <li>Criar <code>back/internal/modules/tasks/AGENT.md</code> copiando estrutura de <code>back/internal/modules/operations/AGENT.md</code>.</li>
+  <li>Criar <code>back/internal/modules/notifications/AGENT.md</code>; MVP só entrega in-app.</li>
+  <li>Editar <code>back/internal/modules/realtime/AGENT.md</code> com a seção "Canais de Tasks/Presence/Notifications".</li>
+  <li>Criar <code>web/layers/tasks/AGENT.md</code>.</li>
+  <li>Atualizar <code>docs/TASKS_ORCHESTRATOR_PHASE12.md</code> com apêndice "Fase 13: Backend".</li>
+</ol>
+
+<h3>Critério de aceite</h3>
+<ul class="checklist">
+  <li>/roadmap renderiza lane com 11 cards, mantendo T0/T0.5/T1/T2 como concluídas e T3+ como próximas</li>
+  <li>4 AGENT.md afetados existem e descrevem a Fase 1</li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-05">Fase 0.5 — Quebrar <code>tasks.vue</code> em sub-componentes</h2>
+  <span class="pill low">Concluída</span><span class="pill dep">2026-05-14</span>
+</div>
+
+<h3>Objetivo</h3>
+<p>Remover da Fase 5 o risco de plugar backend em cima de uma página monolítica. O arquivo <code>web/layers/tasks/pages/tasks.vue</code> tinha aproximadamente 2955 linhas e foi quebrado antes da integração com API.</p>
+
+<h3>Entrega</h3>
+<ul class="checklist">
+  <li><code>useTasksPageContext.ts</code> concentra estado, computed, watchers, CRUD local, drag/drop, filtros, modal e resize.</li>
+  <li><code>TasksFilterBar.vue</code>, <code>TasksBoardView.vue</code>, <code>TasksTableView.vue</code>, <code>TasksProjectSettings.vue</code> e <code>TasksTaskModal.vue</code> foram extraídos.</li>
+  <li><code>tasks.vue</code> ficou como wrapper fino com <code>provide(TASKS_PAGE_CONTEXT_KEY, context)</code>.</li>
+  <li>Estado atual verificado em 2026-05-14: <code>tasks.vue</code> está com 832 linhas totais.</li>
+</ul>
+
+<h3>Critério de aceite</h3>
+<ul class="checklist">
+  <li><code>/tasks</code> mantém comportamento visual e funcional do port inicial.</li>
+  <li>Sub-componentes podem ser migrados/testados isoladamente na Fase 5.</li>
+  <li>Documentação atualizada em <code>docs/TASKS_ORCHESTRATOR_PHASE12.md</code>, <code>web/layers/tasks/AGENT.md</code> e roadmap.</li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-1">Fase 1 — Schema multi-tenant + módulo <code>tasks</code></h2>
+  <span class="pill low">Concluída</span><span class="pill dep">2026-05-14</span><span class="pill dep">depende: Fase 0.5</span>
+</div>
+
+<h3>Objetivo</h3>
+<p>Criar schema <code>tasks</code> em Postgres com as tabelas de fundação na primeira migration, plugar módulo Go no Module Registry, RBAC declarativo, endpoints REST de CRUD básico e tracking inicial.</p>
+
+<div class="callout info">
+  <strong>Status em 2026-05-14:</strong> implementado em <code>0108_tasks_schema_foundation.sql</code> e <code>back/internal/modules/tasks/</code>. Validação executada: <code>go test ./...</code> em <code>back/</code>. A aplicação da migration em DB fresh/staging e smoke curl ficam como validação de ambiente antes da T5.
+</div>
+
+<h3 id="fase-1-schema">1.1 Migration completa</h3>
+<p>Arquivo: <code>back/internal/platform/database/migrations/0108_tasks_schema_foundation.sql</code></p>
+
+<pre class="sql"><code>BEGIN;
+
+CREATE SCHEMA IF NOT EXISTS tasks;
+
+-- ===== BOARDS =====
+CREATE TABLE tasks.boards (
+    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id         uuid NOT NULL REFERENCES core.accounts(id) ON DELETE CASCADE,
+    organization_id    uuid REFERENCES core.organizations(id) ON DELETE SET NULL,
+    slug               text NOT NULL,
+    name               text NOT NULL,
+    description        text NOT NULL DEFAULT '',
+    icon               text NOT NULL DEFAULT '',
+    archived           boolean NOT NULL DEFAULT false,
+    created_by_user_id uuid NOT NULL REFERENCES core.users(id),
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    updated_at         timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT boards_slug_unique UNIQUE (account_id, slug)
+);
+CREATE INDEX boards_account_idx ON tasks.boards(account_id);
+
+-- ===== COLUMNS =====
+CREATE TABLE tasks.columns (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    board_id   uuid NOT NULL REFERENCES tasks.boards(id) ON DELETE CASCADE,
+    label      text NOT NULL,
+    color      text NOT NULL DEFAULT 'slate',
+    sort_order int NOT NULL DEFAULT 100,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX columns_board_idx ON tasks.columns(board_id);
+
+-- ===== FIELDS (campos custom por board) =====
+CREATE TABLE tasks.fields (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    board_id   uuid NOT NULL REFERENCES tasks.boards(id) ON DELETE CASCADE,
+    key        text NOT NULL,
+    label      text NOT NULL,
+    type       text NOT NULL CHECK (type IN (
+        'title','text','select','multiSelect','status','person','client',
+        'date','priority','number','checkbox','image','location',
+        'url','email','phone'
+    )),
+    required   boolean NOT NULL DEFAULT false,
+    hidden     boolean NOT NULL DEFAULT false,
+    sort_order int NOT NULL DEFAULT 100,
+    config     jsonb NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT fields_key_unique UNIQUE (board_id, key)
+);
+CREATE INDEX fields_board_idx ON tasks.fields(board_id);
+
+-- ===== FIELD OPTIONS =====
+CREATE TABLE tasks.field_options (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    field_id   uuid NOT NULL REFERENCES tasks.fields(id) ON DELETE CASCADE,
+    value      text NOT NULL,
+    label      text NOT NULL,
+    color      text NOT NULL DEFAULT 'slate',
+    sort_order int,
+    CONSTRAINT field_options_value_unique UNIQUE (field_id, value)
+);
+
+-- ===== VIEWS (layouts) =====
+CREATE TABLE tasks.views (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    board_id      uuid NOT NULL REFERENCES tasks.boards(id) ON DELETE CASCADE,
+    name          text NOT NULL,
+    type          text NOT NULL CHECK (type IN (
+        'board','table','timeline','calendar','list','gallery',
+        'chart','feed','map','dashboard','custom'
+    )),
+    scope         text NOT NULL DEFAULT 'board' CHECK (scope IN ('board','user')),
+    owner_user_id uuid REFERENCES core.users(id) ON DELETE CASCADE,
+    config        jsonb NOT NULL DEFAULT '{}'::jsonb,
+    sort_order    int NOT NULL DEFAULT 100,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX views_board_idx ON tasks.views(board_id);
+
+-- ===== VIEW WIDGETS (para layout 'dashboard') =====
+CREATE TABLE tasks.view_widgets (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    view_id     uuid NOT NULL REFERENCES tasks.views(id) ON DELETE CASCADE,
+    widget_type text NOT NULL CHECK (widget_type IN (
+        'count','chart','list','text','progress','calendar_mini','feed_mini'
+    )),
+    title       text NOT NULL DEFAULT '',
+    position    jsonb NOT NULL DEFAULT '{"x":0,"y":0,"w":4,"h":3}'::jsonb,
+    config      jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
+-- ===== TASKS =====
+CREATE TABLE tasks.tasks (
+    id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id           uuid NOT NULL,   -- redundância p/ scope
+    board_id             uuid NOT NULL REFERENCES tasks.boards(id) ON DELETE CASCADE,
+    column_id            uuid REFERENCES tasks.columns(id) ON DELETE SET NULL,
+    title                text NOT NULL,
+    content_html         text NOT NULL DEFAULT '',
+    status               text,
+    priority             text CHECK (priority IN ('baixa','media','alta')) DEFAULT 'media',
+    due_date             timestamptz,
+    start_date           timestamptz,
+    archived             boolean NOT NULL DEFAULT false,
+    sort_order           numeric(20,5) NOT NULL DEFAULT 0,
+    created_by_user_id   uuid NOT NULL REFERENCES core.users(id),
+    responsible_user_id  uuid REFERENCES core.users(id),
+    client_account_id    uuid REFERENCES core.accounts(id) ON DELETE SET NULL,
+    version              int NOT NULL DEFAULT 0,
+    created_at           timestamptz NOT NULL DEFAULT now(),
+    updated_at           timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX tasks_account_board_idx ON tasks.tasks(account_id, board_id, archived);
+CREATE INDEX tasks_due_date_idx ON tasks.tasks(account_id, due_date) WHERE archived = false;
+CREATE INDEX tasks_responsible_idx ON tasks.tasks(responsible_user_id);
+CREATE INDEX tasks_client_idx ON tasks.tasks(client_account_id);
+CREATE INDEX tasks_column_order_idx ON tasks.tasks(board_id, column_id, sort_order);
+
+-- ===== FIELD VALUES =====
+CREATE TABLE tasks.field_values (
+    task_id      uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    field_id     uuid NOT NULL REFERENCES tasks.fields(id) ON DELETE CASCADE,
+    value_text   text,
+    value_number numeric,
+    value_date   timestamptz,
+    value_bool   boolean,
+    value_json   jsonb,
+    PRIMARY KEY (task_id, field_id)
+);
+
+-- ===== ASSIGNEES / SUBSCRIBERS =====
+CREATE TABLE tasks.task_assignees (
+    task_id uuid REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    user_id uuid REFERENCES core.users(id)  ON DELETE CASCADE,
+    PRIMARY KEY (task_id, user_id)
+);
+CREATE TABLE tasks.task_subscribers (
+    task_id uuid REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    user_id uuid REFERENCES core.users(id)  ON DELETE CASCADE,
+    PRIMARY KEY (task_id, user_id)
+);
+
+-- ===== COMMENTS / MENTIONS =====
+CREATE TABLE tasks.task_comments (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id         uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    author_user_id  uuid NOT NULL REFERENCES core.users(id),
+    body_html       text NOT NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    deleted_at      timestamptz
+);
+CREATE TABLE tasks.task_mentions (
+    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id             uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    comment_id          uuid REFERENCES tasks.task_comments(id) ON DELETE CASCADE,
+    mentioned_user_id   uuid NOT NULL REFERENCES core.users(id),
+    created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- ===== TIME ENTRIES (tracking server-side) =====
+CREATE TABLE tasks.task_time_entries (
+    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id      uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    user_id      uuid NOT NULL REFERENCES core.users(id),
+    account_id   uuid NOT NULL,
+    started_at   timestamptz NOT NULL,
+    paused_at    timestamptz,
+    resumed_at   timestamptz,
+    stopped_at   timestamptz,
+    duration_ms  bigint NOT NULL DEFAULT 0,
+    notes        text NOT NULL DEFAULT '',
+    version      int NOT NULL DEFAULT 0,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX time_entries_one_active_per_user_task
+    ON tasks.task_time_entries(user_id, task_id) WHERE stopped_at IS NULL;
+CREATE INDEX time_entries_user_idx ON tasks.task_time_entries(user_id, stopped_at);
+CREATE INDEX time_entries_task_idx ON tasks.task_time_entries(task_id, started_at DESC);
+
+-- ===== RELATIONS (cross-module) =====
+CREATE TABLE tasks.task_relations (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id         uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    module          text NOT NULL,
+    resource_type   text NOT NULL,
+    resource_id     text NOT NULL,
+    label_cache     text NOT NULL DEFAULT '',
+    metadata_cache  jsonb NOT NULL DEFAULT '{}'::jsonb,
+    refreshed_at    timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT task_relations_unique UNIQUE (task_id, module, resource_type, resource_id)
+);
+CREATE INDEX task_relations_module_idx ON tasks.task_relations(module, resource_type, resource_id);
+
+-- ===== SHARES =====
+CREATE TABLE tasks.task_shares (
+    id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id              uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    client_account_id    uuid NOT NULL REFERENCES core.accounts(id) ON DELETE CASCADE,
+    permission           text NOT NULL CHECK (permission IN ('view','comment','edit')),
+    shared_by_user_id    uuid NOT NULL REFERENCES core.users(id),
+    created_at           timestamptz NOT NULL DEFAULT now(),
+    revoked_at           timestamptz
+);
+CREATE INDEX task_shares_client_idx ON tasks.task_shares(client_account_id) WHERE revoked_at IS NULL;
+
+-- ===== AUDIT LOG =====
+CREATE TABLE tasks.audit_log (
+    id              bigserial PRIMARY KEY,
+    account_id      uuid NOT NULL,
+    user_id         uuid REFERENCES core.users(id),
+    action          text NOT NULL,
+    resource_type   text NOT NULL,
+    resource_id     text NOT NULL,
+    before          jsonb,
+    after           jsonb,
+    at              timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX audit_account_at_idx ON tasks.audit_log(account_id, at DESC);
+
+-- ===== Preparação futura p/ Y.js (Fase 7.4) =====
+CREATE TABLE tasks.task_doc_snapshots (
+    task_id    uuid NOT NULL REFERENCES tasks.tasks(id) ON DELETE CASCADE,
+    snapshot   bytea NOT NULL,
+    version    int NOT NULL,
+    saved_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (task_id, version)
+);
+
+COMMIT;
+</code></pre>
+
+<h3 id="fase-1-go">1.2 Estrutura do módulo Go</h3>
+<pre class="bash"><code>back/internal/modules/tasks/
+├── AGENT.md
+├── model.go
+├── errors.go
+├── permissions.go
+├── module.go
+├── ports.go
+├── service.go
+├── service_dto.go
+├── service_tracking.go
+├── service_views.go          (Fase 10)
+├── repository_postgres.go
+├── http.go
+├── http_tracking.go
+└── http_views.go             (Fase 10)</code></pre>
+
+<h4>model.go</h4>
+<pre class="go"><code>package tasks
+
+import "time"
+
+type Perspective string
+
+const (
+    PerspectiveAgency       Perspective = "agency"
+    PerspectiveClientViewer Perspective = "client_viewer"
+)
+
+type Board struct {
+    ID              string
+    AccountID       string
+    OrganizationID  *string
+    Slug            string
+    Name            string
+    Description     string
+    Icon            string
+    Archived        bool
+    CreatedByUserID string
+    CreatedAt       time.Time
+    UpdatedAt       time.Time
+}
+
+type Task struct {
+    ID                  string
+    AccountID           string
+    BoardID             string
+    ColumnID            *string
+    Title               string
+    ContentHTML         string
+    Status              *string
+    Priority            string
+    DueDate             *time.Time
+    StartDate           *time.Time
+    Archived            bool
+    SortOrder           float64
+    CreatedByUserID     string
+    ResponsibleUserID   *string
+    ClientAccountID     *string
+    Version             int
+    CreatedAt, UpdatedAt time.Time
+}
+
+type AccessContext struct {
+    UserID      string
+    AccountID   string
+    Perspective Perspective
+    Permissions map[string]struct{}
+}
+
+func (a AccessContext) Has(key string) bool {
+    _, ok := a.Permissions[key]
+    return ok
+}</code></pre>
+
+<h4>errors.go</h4>
+<pre class="go"><code>package tasks
+
+import "errors"
+
+var (
+    ErrBoardNotFound      = errors.New("tasks: board not found")
+    ErrTaskNotFound       = errors.New("tasks: task not found")
+    ErrVersionConflict    = errors.New("tasks: version conflict")
+    ErrShareRequired      = errors.New("tasks: share required")
+    ErrForbidden          = errors.New("tasks: forbidden")
+    ErrViewConfigInvalid  = errors.New("tasks: view config invalid")
+)</code></pre>
+
+<h3 id="fase-1-scope">1.3 <code>scopedQuery</code> — defense in depth</h3>
+<p>Toda query passa por este helper. Em dev, <code>panic</code> se chamado sem <code>accountID</code>.</p>
+
+<pre class="go"><code>// repository_postgres.go
+package tasks
+
+import (
+    "context"
+    "fmt"
+    "strings"
+    "github.com/jackc/pgx/v5/pgxpool"
+)
+
+type PostgresRepository struct{ pool *pgxpool.Pool }
+
+func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
+    return &PostgresRepository{pool: pool}
+}
+
+func (r *PostgresRepository) scopedQuery(accountID string, baseSQL string, args ...any) (string, []any) {
+    if strings.TrimSpace(accountID) == "" {
+        panic("tasks: scopedQuery called without accountID")
+    }
+    return baseSQL, append([]any{accountID}, args...)
+}
+
+func (r *PostgresRepository) GetTask(ctx context.Context, accountID, taskID string) (Task, error) {
+    sql, args := r.scopedQuery(accountID, `
+        SELECT id, account_id, board_id, column_id, title, content_html,
+               status, priority, due_date, start_date, archived, sort_order,
+               created_by_user_id, responsible_user_id, client_account_id,
+               version, created_at, updated_at
+          FROM tasks.tasks
+         WHERE account_id = $1 AND id = $2 AND archived = false
+    `, taskID)
+
+    var t Task
+    err := r.pool.QueryRow(ctx, sql, args...).Scan(
+        &t.ID, &t.AccountID, &t.BoardID, &t.ColumnID, &t.Title, &t.ContentHTML,
+        &t.Status, &t.Priority, &t.DueDate, &t.StartDate, &t.Archived, &t.SortOrder,
+        &t.CreatedByUserID, &t.ResponsibleUserID, &t.ClientAccountID,
+        &t.Version, &t.CreatedAt, &t.UpdatedAt,
+    )
+    if err != nil {
+        return Task{}, fmt.Errorf("tasks.GetTask: %w", err)
+    }
+    return t, nil
+}</code></pre>
+
+<h3 id="fase-1-dto">1.4 <code>Perspective</code> + <code>BuildTaskDTO</code></h3>
+
+<pre class="go"><code>// service_dto.go
+package tasks
+
+type TaskDTO struct {
+    ID          string        `json:"id"`
+    BoardID     string        `json:"boardId"`
+    Title       string        `json:"title"`
+    Status      *string       `json:"status,omitempty"`
+    Priority    string        `json:"priority"`
+    DueDate     *string       `json:"dueDate,omitempty"`
+    StartDate   *string       `json:"startDate,omitempty"`
+    Responsible *UserMiniDTO  `json:"responsible,omitempty"`
+
+    // APENAS para agency:
+    ClientAccountID *string       `json:"clientAccountId,omitempty"`
+    Assignees       []UserMiniDTO `json:"assignees,omitempty"`
+    TrackingTotalMs *int64        `json:"trackingTotalMs,omitempty"`
+
+    Version int `json:"version"`
+}
+
+func (s *Service) BuildTaskDTO(task Task, perspective Perspective) TaskDTO {
+    dto := TaskDTO{
+        ID:        task.ID,
+        BoardID:   task.BoardID,
+        Title:     task.Title,
+        Status:    task.Status,
+        Priority:  task.Priority,
+        DueDate:   formatISO(task.DueDate),
+        StartDate: formatISO(task.StartDate),
+        Version:   task.Version,
+    }
+    if task.ResponsibleUserID != nil {
+        dto.Responsible = s.resolveUser(task.ResponsibleUserID)
+    }
+    if perspective == PerspectiveAgency {
+        dto.ClientAccountID = task.ClientAccountID
+        dto.Assignees = s.resolveAssignees(task.ID)
+        dto.TrackingTotalMs = ptrInt64(s.computeTrackingTotal(task.ID))
+    }
+    // client_viewer não recebe nada além do mínimo.
+    return dto
+}</code></pre>
+
+<div class="callout info">
+<strong>Por que isso é crítico:</strong> o front pode renderizar componentes condicionais, mas se o JSON nunca trouxe o campo, não vaza via DevTools, prints, bug de UI. Defesa onde importa.
+</div>
+
+<h3 id="fase-1-perms">1.5 Permissões + Role Templates</h3>
+
+<pre class="go"><code>// permissions.go
+package tasks
+
+const (
+    PermBoardsView      = "tasks.boards.view"
+    PermBoardsManage    = "tasks.boards.manage"
+    PermTasksView       = "tasks.tasks.view"
+    PermTasksCreate     = "tasks.tasks.create"
+    PermTasksEdit       = "tasks.tasks.edit"
+    PermTasksDelete     = "tasks.tasks.delete"
+    PermTasksAssign     = "tasks.tasks.assign"
+    PermTasksComment    = "tasks.tasks.comment"
+    PermTrackingUse     = "tasks.tracking.use"
+    PermTrackingViewAll = "tasks.tracking.view_all"
+    PermRelationsManage = "tasks.relations.manage"
+    PermSharesManage    = "tasks.shares.manage"
+    PermClientView      = "tasks.client_view"
+    PermViewsManage     = "tasks.views.manage"
+)</code></pre>
+
+<table>
+  <thead><tr><th>Role Template</th><th>Permissões</th></tr></thead>
+  <tbody>
+    <tr><td><code>tasks.admin</code></td><td>todas exceto <code>tasks.client_view</code></td></tr>
+    <tr><td><code>tasks.member</code></td><td>boards.view, tasks.view/create/edit/comment/assign, tracking.use, relations.manage, views.manage</td></tr>
+    <tr><td><code>tasks.client_viewer</code></td><td>client_view, tasks.comment (limitado pelo share.permission)</td></tr>
+  </tbody>
+</table>
+
+<h3 id="fase-1-rest">1.6 Endpoints REST (mínimo Fase 1)</h3>
+
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/boards</span><span class="perm">tasks.boards.view</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/boards</span><span class="perm">tasks.boards.manage</span></div>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/boards/:boardId</span><span class="perm">tasks.boards.view</span></div>
+<div class="endpoint"><span class="method patch">PATCH</span><span class="path">/v1/tasks/boards/:boardId</span><span class="perm">tasks.boards.manage</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/boards/:boardId/columns</span><span class="perm">tasks.boards.manage</span></div>
+<div class="endpoint"><span class="method patch">PATCH</span><span class="path">/v1/tasks/columns/:columnId</span><span class="perm">tasks.boards.manage</span></div>
+<div class="endpoint"><span class="method delete">DELETE</span><span class="path">/v1/tasks/columns/:columnId</span><span class="perm">tasks.boards.manage</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/boards/:boardId/fields</span><span class="perm">tasks.boards.manage</span></div>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/boards/:boardId/tasks?cursor=&amp;limit=</span><span class="perm">tasks.tasks.view</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/boards/:boardId/tasks</span><span class="perm">tasks.tasks.create</span></div>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/:taskId</span><span class="perm">tasks.tasks.view</span></div>
+<div class="endpoint"><span class="method patch">PATCH</span><span class="path">/v1/tasks/:taskId (If-Match)</span><span class="perm">tasks.tasks.edit</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/move</span><span class="perm">tasks.tasks.edit</span></div>
+<div class="endpoint"><span class="method delete">DELETE</span><span class="path">/v1/tasks/:taskId</span><span class="perm">tasks.tasks.delete</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/comments</span><span class="perm">tasks.tasks.comment</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/shares</span><span class="perm">tasks.shares.manage</span></div>
+
+<h4>Handler com middleware de permissão</h4>
+<pre class="go"><code>// http.go
+func (h *HTTPHandler) RegisterRoutes(mux *http.ServeMux, auth middleware.Auth) {
+    mux.Handle("GET /v1/tasks/boards",
+        auth.RequireAuth(h.withPermission(PermBoardsView, h.listBoards)))
+
+    mux.Handle("POST /v1/tasks/boards",
+        auth.RequireAuth(h.withPermission(PermBoardsManage, h.createBoard)))
+
+    mux.Handle("GET /v1/tasks/{taskId}",
+        auth.RequireAuth(h.withPermission(PermTasksView, h.getTask)))
+}
+
+func (h *HTTPHandler) withPermission(key string, next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ac := accessContextFrom(r.Context())
+        if !ac.Has(key) {
+            httpapi.WriteError(w, http.StatusForbidden, "forbidden")
+            return
+        }
+        next(w, r)
+    }
+}
+
+func (h *HTTPHandler) getTask(w http.ResponseWriter, r *http.Request) {
+    ac := accessContextFrom(r.Context())
+    id := r.PathValue("taskId")
+
+    task, err := h.service.GetTask(r.Context(), ac, id)
+    if errors.Is(err, ErrTaskNotFound) {
+        httpapi.WriteError(w, http.StatusNotFound, "not_found") // 404, não 403
+        return
+    }
+    if err != nil {
+        httpapi.WriteError(w, http.StatusInternalServerError, "internal")
+        return
+    }
+    httpapi.WriteJSON(w, http.StatusOK, h.service.BuildTaskDTO(task, ac.Perspective))
+}</code></pre>
+
+<h3 id="fase-1-audit">1.7 Audit log (interceptor no service)</h3>
+
+<pre class="go"><code>func (s *Service) audit(ctx context.Context, ac AccessContext,
+    action, resourceType, resourceID string, before, after any) {
+
+    _ = s.repo.InsertAuditEntry(ctx, AuditEntry{
+        AccountID:    ac.AccountID,
+        UserID:       &ac.UserID,
+        Action:       action,
+        ResourceType: resourceType,
+        ResourceID:   resourceID,
+        Before:       before,
+        After:        after,
+    })
+}
+
+func (s *Service) UpdateTask(ctx context.Context, ac AccessContext,
+    in UpdateTaskInput) (Task, error) {
+
+    before, err := s.repo.GetTask(ctx, ac.AccountID, in.ID)
+    if err != nil { return Task{}, err }
+    if before.Version != in.ExpectedVersion {
+        return Task{}, ErrVersionConflict
+    }
+
+    after, err := s.repo.UpdateTask(ctx, ac.AccountID, in)
+    if err != nil { return Task{}, err }
+
+    s.audit(ctx, ac, "task.updated", "task", after.ID, before, after)
+    s.publisher.PublishTaskEvent(ctx, TaskEvent{
+        Type: "task.updated", AccountID: ac.AccountID,
+        BoardID: after.BoardID, TaskID: after.ID, Version: after.Version,
+    })
+    return after, nil
+}</code></pre>
+
+<h3 id="fase-1-registry">1.8 Registro no Module Registry</h3>
+<pre class="go"><code>// module.go
+package tasks
+
+import "your/internal/platform/modules"
+
+type Module struct{}
+
+func (Module) ID() string { return "tasks" }
+
+func (Module) Metadata() modules.Metadata {
+    return modules.Metadata{
+        SchemaName: "tasks", Label: "Tasks", IsCore: false,
+        RequiresModules: []string{"core"}, SortOrder: 50,
+    }
+}
+
+func (Module) Permissions() []modules.PermissionDef {
+    return []modules.PermissionDef{
+        {Key: PermBoardsView,   Scope: "account", Label: "Visualizar boards"},
+        {Key: PermBoardsManage, Scope: "account", Label: "Gerenciar boards"},
+        // ... demais
+    }
+}
+
+func (Module) RoleTemplates() []modules.RoleTemplateDef {
+    return []modules.RoleTemplateDef{
+        {Key: "tasks.admin",        Label: "Tasks · Admin",
+            Permissions: []string{PermBoardsView, PermBoardsManage /*…*/}},
+        {Key: "tasks.member",       Label: "Tasks · Membro",
+            Permissions: []string{PermBoardsView, PermTasksView /*…*/}},
+        {Key: "tasks.client_viewer",Label: "Tasks · Visão Cliente",
+            Permissions: []string{PermClientView, PermTasksComment}},
+    }
+}
+
+func (Module) Build(deps modules.Dependencies) (modules.Handle, error) {
+    repo := NewPostgresRepository(deps.Pool)
+    svc := NewService(repo, deps.Publisher, deps.Notifier)
+    h := NewHTTPHandler(svc)
+    return &handle{service: svc, http: h}, nil
+}</code></pre>
+
+<h3>Critério de aceite / status</h3>
+<ul class="checklist">
+  <li><strong>Concluído:</strong> <code>go test ./...</code> passa em <code>back/</code>.</li>
+  <li><strong>Concluído:</strong> módulo <code>tasks</code> registrado no Module Registry; <code>SyncCatalog</code> popula <code>core.modules</code>, <code>core.permissions</code> e <code>core.role_templates</code> quando <code>CORE_V2_ENABLED=true</code>.</li>
+  <li><strong>Concluído:</strong> endpoints REST base usam <code>RequireAuth</code>, <code>X-Account-Id</code>, <code>withPermission</code> e retornam 404 para recurso fora do escopo.</li>
+  <li><strong>Pendente de ambiente:</strong> aplicar migration em DB fresh/staging e rodar smoke curl agency/client_viewer.</li>
+</ul>
+
+<h3>Como testar manualmente</h3>
+<pre class="bash"><code># Aplicar migration
+make migrate
+
+# Confirmar schema
+psql -d fila -c "\dn"
+psql -d fila -c "\dt tasks.*"
+
+# Criar board (login como agency user)
+curl -X POST http://localhost:8080/v1/tasks/boards \
+  -H "Authorization: Bearer $TOKEN_AGENCY" \
+  -H "X-Account-Id: $ACCOUNT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo","slug":"demo"}'
+
+# Tentar acessar com user de OUTRA account
+curl http://localhost:8080/v1/tasks/boards/{ID} \
+  -H "Authorization: Bearer $TOKEN_OUTRO_ACCOUNT" \
+  -H "X-Account-Id: $ACCOUNT_ID"
+# Esperado: HTTP 404</code></pre>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-2">Fase 2 — Realtime (canais novos)</h2>
+  <span class="pill low">Concluída</span><span class="pill dep">2026-05-14</span><span class="pill dep">depende: Fase 1</span>
+</div>
+
+<div class="callout info">
+  <strong>Status em 2026-05-14:</strong> implementado em <code>back/internal/modules/realtime/service_tasks.go</code>, <code>presence.go</code>, <code>model.go</code>, <code>http.go</code> e compartilhado com <code>tasks.New(realtimeService, notificationService)</code>. Validação executada: <code>go test ./...</code> em <code>back/</code>.
+</div>
+
+<h3>Arquivos</h3>
+<pre class="bash"><code>back/internal/modules/realtime/
+├── service_tasks.go      # HandleTasksSocket, HandlePresenceSocket, HandleNotificationsSocket
+├── presence.go           # PresenceStore com TTL 30s
+├── http.go               # rotas /tasks, /presence e /notifications
+└── model.go              # EventType* novos + payloads leves</code></pre>
+
+<h3>Tópicos</h3>
+<table>
+  <thead><tr><th>Tópico</th><th>Quem publica</th><th>Quem consome</th></tr></thead>
+  <tbody>
+    <tr><td><code>tasks:account:{accountId}</code></td><td>service tasks</td><td>lista de boards</td></tr>
+    <tr><td><code>tasks:board:{boardId}</code></td><td>service tasks</td><td>board atual</td></tr>
+    <tr><td><code>tasks:task:{taskId}</code></td><td>service tasks</td><td>modal aberto</td></tr>
+    <tr><td><code>presence:board:{boardId}</code></td><td>presence store</td><td>avatares board</td></tr>
+    <tr><td><code>presence:task:{taskId}</code></td><td>presence store</td><td>modal aberto</td></tr>
+    <tr><td><code>notifications:user:{userId}</code></td><td>service notif</td><td>sineta</td></tr>
+  </tbody>
+</table>
+
+<h3>Eventos</h3>
+<pre class="go"><code>// realtime/model.go
+const (
+    EventTypeTaskCreated        = "task.created"
+    EventTypeTaskUpdated        = "task.updated"
+    EventTypeTaskMoved          = "task.moved"
+    EventTypeTaskDeleted        = "task.deleted"
+    EventTypeTaskAssigned       = "task.assigned"
+    EventTypeTaskCommentAdded   = "task.comment_added"
+    EventTypeTaskTimeStarted    = "task.time_started"
+    EventTypeTaskTimePaused     = "task.time_paused"
+    EventTypeTaskTimeResumed    = "task.time_resumed"
+    EventTypeTaskTimeStopped    = "task.time_stopped"
+
+    EventTypePresenceSnapshot      = "presence.snapshot"
+    EventTypePresenceUserJoined    = "presence.user_joined"
+    EventTypePresenceUserLeft      = "presence.user_left"
+    EventTypePresenceFieldLocked   = "presence.field_locked"
+    EventTypePresenceFieldUnlocked = "presence.field_unlocked"
+
+    EventTypeNotificationCreated   = "notification.created"
+)</code></pre>
+
+<h3>Endpoints WS</h3>
+<pre class="bash"><code>GET /v1/realtime/tasks?scope=account|board|task&amp;accountId=...&amp;boardId=...&amp;taskId=...&amp;access_token=...
+GET /v1/realtime/presence?scope=board|task&amp;accountId=...&amp;boardId=...&amp;taskId=...&amp;access_token=...
+GET /v1/realtime/notifications?accountId=...&amp;access_token=...</code></pre>
+
+<h3>Autorização antes do upgrade</h3>
+<ol class="steps">
+  <li><code>AuthenticateToken</code> via <code>service.authenticator</code></li>
+  <li>Resolver <code>accountId</code> ativo do principal</li>
+  <li>Para <code>tasks:board:{boardId}</code> → SQL confirma account_id == principal OU share ativa</li>
+  <li>Verifica <code>tasks.tasks.view</code> ou <code>tasks.client_view</code></li>
+</ol>
+
+<h3>Rate limit</h3>
+<ul class="checklist">
+  <li>30 events/seg por conexão (close 1008 se exceder)</li>
+  <li>Buffer 16 por subscription (operations usa 1)</li>
+  <li>Drop oldest quando buffer cheio</li>
+</ul>
+
+<h3>Como testar</h3>
+<pre class="bash"><code>wscat -c "ws://localhost:8080/v1/realtime/tasks?accountId=AAA&amp;access_token=$T"
+# Em outra aba, alterar task via REST → mensagem chega em &lt; 1s
+
+# Tentar board de outra account:
+wscat -c "ws://localhost:8080/v1/realtime/tasks?boardId=OUTRA&amp;access_token=$T"
+# Esperado: upgrade negado com 403/404 antes de abrir WS</code></pre>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-3">Fase 3 — Módulo <code>notifications</code></h2>
+  <span class="pill low">Concluída</span><span class="pill dep">2026-05-14</span><span class="pill dep">depende: Fase 2</span>
+</div>
+
+<div class="callout info">
+  <strong>Status em 2026-05-14:</strong> implementado em <code>back/internal/modules/notifications/</code>, migration <code>0109_notifications_module.sql</code> e injeção compartilhada via <code>notifications.NewService(...)</code> + <code>tasks.New(realtimeService, notificationService)</code>. Validação executada: <code>go test ./...</code> em <code>back/</code>.
+</div>
+
+<h3>Arquivos</h3>
+<pre class="bash"><code>back/internal/modules/notifications/
+├── module.go            # registry + permissões + role template notifications.member
+├── service.go           # Dispatch, MarkRead, MarkAllRead, Preferences, Mute
+├── repository_postgres.go
+├── http.go              # /v1/notifications/*
+├── adapter_inapp.go     # persiste + publica notification.created/read
+├── adapter_email.go     # stub ErrNotConfigured
+├── adapter_whatsapp.go  # stub ErrNotConfigured
+└── adapter_push.go      # stub ErrNotConfigured</code></pre>
+
+<h3>Schema 0109</h3>
+<pre class="sql"><code>notifications.user_notifications
+notifications.notification_channels
+notifications.delivery_log
+notifications.mutes</code></pre>
+
+<h3>Endpoints REST</h3>
+<pre class="bash"><code>GET  /v1/notifications
+POST /v1/notifications/{notificationId}/read
+POST /v1/notifications/mark-all-read
+GET  /v1/notifications/preferences
+PUT  /v1/notifications/preferences
+POST /v1/notifications/mute</code></pre>
+
+<h3>Triggers do tasks → notifications</h3>
+<ul class="checklist">
+  <li><code>task.assigned</code> → novo responsável</li>
+  <li><code>task.comment_mentioned</code> → usuários mencionados</li>
+  <li><code>task.comment_added</code> → subscribers quando não há mention</li>
+  <li><code>task.moved</code> e <code>task.status_changed</code> → subscribers</li>
+</ul>
+
+<h3>Comportamento runtime</h3>
+<ul class="checklist">
+  <li><code>InAppAdapter</code> grava <code>user_notifications</code> e publica <code>notification.created</code>/<code>notification.read</code> em <code>notifications:user:{userId}</code></li>
+  <li><code>mute</code> aplica TTL por <code>resourceType/resourceId</code></li>
+  <li>Adapters <code>email</code>, <code>whatsapp</code> e <code>push</code> permanecem como stub (<code>ErrNotConfigured</code>)</li>
+  <li><code>task_mentions</code> e <code>task_subscribers</code> passam a suportar os gatilhos do módulo</li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-4">Fase 4 — Registry de resolvers cross-module</h2>
+  <span class="pill low">Concluída</span><span class="pill dep">2026-05-14</span><span class="pill dep">depende: Fase 1</span>
+</div>
+
+<div class="callout info">
+  <strong>Status em 2026-05-14:</strong> implementado em <code>back/internal/platform/modules/relations.go</code>, <code>back/internal/modules/erp/relations_resolver.go</code>, <code>back/internal/modules/operations/relations_resolver.go</code> e no fluxo <code>tasks/http_relations.go</code> + <code>service_relations.go</code>. Validação executada: <code>go test ./...</code> em <code>back/</code>.
+</div>
+
+<h3>Interface</h3>
+<pre class="go"><code>// back/internal/platform/modules/relations.go
+package modules
+
+type RelationRef struct {
+    ModuleID     string
+    ResourceType string
+    ResourceID   string
+    Metadata     map[string]any
+}
+
+type RelationResult struct {
+    ModuleID     string
+    ResourceType string
+    ResourceID   string
+    Label        string
+    URL          string
+    Status       string
+    Metadata     map[string]any
+}
+
+type RelationResolver interface {
+    ModuleID() string
+    ResolveMany(ctx context.Context, accountID string, refs []RelationRef) ([]RelationResult, error)
+}</code></pre>
+
+<h3>Implementações MVP</h3>
+<ul class="checklist">
+  <li><code>crm</code> → alias em <code>erp/relations_resolver.go</code> para <code>contact</code> e <code>lead</code></li>
+  <li><code>erp</code> → resolve em bulk <code>customer</code>, <code>employee</code>, <code>order</code>, <code>order_canceled</code> e <code>record</code></li>
+  <li><code>operations</code> → resolve <code>service_history</code> com fallback para serviço ativo</li>
+</ul>
+
+<h3>Endpoint helper</h3>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/:taskId/relations:expand</span><span class="perm">tasks.tasks.view</span></div>
+
+<ol class="steps">
+  <li>Lê <code>tasks.task_relations</code> com o mesmo escopo/account do list padrão</li>
+  <li>Reusa o cache atual quando <code>refreshed_at</code> ainda está dentro do TTL de 60s</li>
+  <li>Resolve em bulk por módulo via <code>ResolveMany</code> (evita N+1 por relation)</li>
+  <li>Atualiza <code>label_cache</code>, <code>metadata_cache</code> e <code>refreshed_at</code> via upsert em <code>task_relations</code></li>
+  <li>Retorna a mesma coleção de relations, agora expandida com <code>status</code>, <code>url</code> e metadados do recurso</li>
+</ol>
+
+<h3>Comportamento runtime</h3>
+<ul class="checklist">
+  <li>Relação fora da account ou inexistente volta com <code>status = unknown</code> sem quebrar o restante da resposta</li>
+  <li><code>crm</code> e <code>erp</code> usam <code>accountID == tenant_id</code> para consultar as tabelas raw legadas</li>
+  <li><code>operations</code> resolve por <code>operation_service_history</code> e cai para <code>operation_active_services</code> quando o atendimento ainda está aberto</li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-5">Fase 5 — Front integra com backend</h2>
+  <span class="pill high">Alta</span><span class="pill dep">~7–10d</span><span class="pill dep">depende: Fases 1–4</span>
+</div>
+
+<h3>Wipe + seed</h3>
+<ol class="steps">
+  <li>Boot detecta <code>omni.admin.tasks.workspace.v1</code> em <code>useTasksWorkspace.ts:15</code> e descarta com toast</li>
+  <li>Backend: criação de <code>core.account</code> dispara <code>tasks.SeedDefaultBoard(accountID)</code></li>
+</ol>
+
+<h3>Pinia store</h3>
+<pre class="ts"><code>// web/layers/tasks/stores/tasks.ts
+import { defineStore } from 'pinia'
+
+export const useTasksStore = defineStore('tasks', () => {
+  const boards = ref&lt;Board[]&gt;([])
+  const activeBoardId = ref&lt;string | null&gt;(null)
+  const tasksByBoard = ref&lt;Record&lt;string, Task[]&gt;&gt;({})
+  const fieldsByBoard = ref&lt;Record&lt;string, Field[]&gt;&gt;({})
+  const columnsByBoard = ref&lt;Record&lt;string, Column[]&gt;&gt;({})
+  const cursorsByBoard = ref&lt;Record&lt;string, string | null&gt;&gt;({})
+
+  async function fetchBoards() {
+    boards.value = await $api&lt;Board[]&gt;('/v1/tasks/boards')
+  }
+
+  async function moveTask(taskId: string, columnId: string, sortOrder: number) {
+    const task = findTask(taskId)
+    const before = { columnId: task.columnId, sortOrder: task.sortOrder }
+    // optimistic
+    task.columnId = columnId
+    task.sortOrder = sortOrder
+
+    try {
+      const updated = await $api&lt;Task&gt;(`/v1/tasks/${taskId}/move`, {
+        method: 'POST',
+        body: { columnId, sortOrder },
+      })
+      mergeTask(updated)
+    } catch (err) {
+      task.columnId = before.columnId
+      task.sortOrder = before.sortOrder
+      throw err
+    }
+  }
+
+  function applyRealtimeEvent(evt: TaskEvent) {
+    if (evt.type === 'task.updated') refetchTask(evt.taskId)
+  }
+
+  return { boards, activeBoardId, tasksByBoard, fetchBoards, moveTask, applyRealtimeEvent }
+})</code></pre>
+
+<h3>Composables</h3>
+<table>
+  <thead><tr><th>Composable</th><th>Função</th></tr></thead>
+  <tbody>
+    <tr><td><code>useTasksRealtime</code></td><td>Clone de <code>useOperationsRealtime.ts</code>. Troca topic. Reconexão 1–10s.</td></tr>
+    <tr><td><code>useTaskPresence</code></td><td>Abre <code>presence:task:{id}</code>. Heartbeat 15s.</td></tr>
+    <tr><td><code>useTaskTracking</code></td><td>Server-backed. Tick local com <code>clockOffset</code>.</td></tr>
+    <tr><td><code>useTaskRelations</code></td><td>Lazy load + cache.</td></tr>
+    <tr><td><code>useCan(key)</code></td><td>Computed contra <code>useMeContext().permissions</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3>Refatoração de <code>tasks.vue</code> já concluída na Fase 0.5</h3>
+<p>A Fase 5 não precisa mais carregar o risco de quebrar o arquivo monolítico. O split principal já existe: <code>TasksBoardView.vue</code>, <code>TasksTableView.vue</code>, <code>TasksTaskModal.vue</code>, <code>TasksFilterBar.vue</code>, <code>TasksProjectSettings.vue</code> e <code>useTasksPageContext.ts</code>. Nesta fase, o trabalho é trocar a fonte de dados para API/Pinia sem voltar lógica para <code>tasks.vue</code>.</p>
+<pre class="bash"><code>web/layers/tasks/components/
+├── TasksBoardView.vue       # existente
+├── TasksTableView.vue       # existente
+├── TasksTaskModal.vue       # existente
+├── TasksFilterBar.vue       # existente
+├── TasksProjectSettings.vue # existente
+├── TasksListView.vue        # NOVO (Fase 10.A)
+├── TasksCalendarView.vue    # NOVO (Fase 10.A)
+├── TasksCard.vue            # futuro compartilhado
+├── TasksSidebar.vue         # futuro sidebar de boards
+├── TasksViewSwitcher.vue    # dropdown layout (Fase 10)
+└── TasksViewRegistry.ts     # type → component</code></pre>
+
+<h3>Layout adaptado sem dados condicionais</h3>
+<pre class="ts"><code>const meContext = useMeContextStore()
+const isClientView = computed(() =>
+  meContext.permissions.includes('tasks.client_view') &&
+  !meContext.permissions.includes('tasks.boards.manage')
+)
+const perspective = computed(() => isClientView.value ? 'client_viewer' : 'agency')</code></pre>
+
+<pre class="ts"><code>&lt;template&gt;
+  &lt;TasksFilterBar v-if="!isClientView" /&gt;
+  &lt;TasksSidebar :variant="perspective" /&gt;
+  &lt;component
+    :is="activeViewComponent"
+    :tasks="tasksStore.visibleTasks"
+    :perspective="perspective"
+  /&gt;
+&lt;/template&gt;</code></pre>
+
+<div class="callout info">
+<strong>Importante:</strong> o servidor já retornou só o que o cliente pode ver. O <code>v-if</code> é UX, não segurança. Quem remove o <code>v-if</code> via DevTools não consegue nada — o payload nunca veio.
+</div>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-6">Fase 6 — Tracking server-side autoritativo</h2>
+  <span class="pill med">Média</span><span class="pill dep">~2–3d</span><span class="pill dep">depende: Fases 1, 2, 5</span>
+</div>
+
+<h3>Service</h3>
+<pre class="go"><code>// service_tracking.go
+func (s *Service) StartTracking(ctx context.Context, ac AccessContext, taskID string) (TimeEntry, error) {
+    return s.repo.Tx(ctx, func(tx Querier) (TimeEntry, error) {
+        if err := s.assertCanTrack(ctx, tx, ac, taskID); err != nil {
+            return TimeEntry{}, err
+        }
+        // Constraint partial unique garante que não pode haver 2 ativos
+        entry, err := tx.InsertTimeEntry(ctx, NewTimeEntryInput{
+            TaskID: taskID, UserID: ac.UserID,
+            AccountID: ac.AccountID, StartedAt: time.Now().UTC(),
+        })
+        if err != nil { return TimeEntry{}, err }
+
+        s.publisher.PublishTaskEvent(ctx, TaskEvent{
+            Type: "task.time_started",
+            AccountID: ac.AccountID, TaskID: taskID,
+            ActorUserID: ac.UserID, SavedAt: entry.StartedAt,
+        })
+        return entry, nil
+    })
+}</code></pre>
+
+<h3>Endpoints</h3>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/tracking/active</span><span class="perm">tasks.tracking.use</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/tracking/start</span><span class="perm">tasks.tracking.use</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/tracking/pause</span><span class="perm">tasks.tracking.use</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/tracking/resume</span><span class="perm">tasks.tracking.use</span></div>
+<div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/tracking/stop</span><span class="perm">tasks.tracking.use</span></div>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/tracking/metrics</span><span class="perm">tasks.tracking.view_all</span></div>
+
+<h3>Front: tick com clock-offset</h3>
+<pre class="ts"><code>// useTaskTracking.ts
+const serverOffset = ref(0)
+
+function applyEvent(evt: { savedAt: string }) {
+  const serverNow = new Date(evt.savedAt).getTime()
+  const clientNow = Date.now()
+  serverOffset.value = serverNow - clientNow
+}
+
+const displayMs = computed(() => {
+  const elapsed = Date.now() - localStartAt.value + serverOffset.value
+  return durationMsFromServer.value + elapsed
+})
+setInterval(() => { /* trigger reactivity */ }, 1000)</code></pre>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-7">Fase 7 — Presence (avatares + field lock leve)</h2>
+  <span class="pill med">Média</span><span class="pill dep">~2–3d</span><span class="pill dep">depende: Fase 2</span>
+</div>
+
+<h3>PresenceStore</h3>
+<pre class="go"><code>// realtime/presence.go
+type presenceEntry struct {
+    UserID, DisplayName, AvatarPath string
+    ConnectedAt   time.Time
+    LastHeartbeat time.Time
+    FieldLocks    map[string]string // fieldKey → lockId
+}
+
+type PresenceStore struct {
+    mu      sync.RWMutex
+    byTopic map[string]map[string]*presenceEntry
+}
+
+func (p *PresenceStore) Heartbeat(topic, userID string) {
+    p.mu.Lock(); defer p.mu.Unlock()
+    if entry, ok := p.byTopic[topic][userID]; ok {
+        entry.LastHeartbeat = time.Now()
+    }
+}
+
+func (p *PresenceStore) sweepLoop() {
+    t := time.NewTicker(5 * time.Second)
+    for range t.C {
+        cutoff := time.Now().Add(-30 * time.Second)
+        p.mu.Lock()
+        for topic, users := range p.byTopic {
+            for uid, e := range users {
+                if e.LastHeartbeat.Before(cutoff) {
+                    delete(users, uid)
+                    p.publish(topic, "presence.user_left", uid)
+                }
+            }
+        }
+        p.mu.Unlock()
+    }
+}</code></pre>
+
+<h3>Protocolo cliente → server</h3>
+<pre class="ts"><code>{ "type": "presence.heartbeat" }
+{ "type": "presence.field_focus", "fieldKey": "title" }
+{ "type": "presence.field_blur",  "fieldKey": "title" }</code></pre>
+
+<h3>UI</h3>
+<ul class="checklist">
+  <li>Badge "Fulano está editando o título" quando recebe <code>field_locked</code></li>
+  <li><strong>Não trava</strong> input — só avisa</li>
+  <li>Save com 409 → re-fetch + toast "Sua versão estava desatualizada"</li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-8">Fase 8 — Hardening</h2>
+  <span class="pill med">Média</span><span class="pill dep">~2d</span>
+</div>
+
+<h3>Defense in depth (3 camadas)</h3>
+<table>
+  <thead><tr><th>Camada</th><th>Onde</th><th>Valida</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Middleware HTTP</td><td>permission key</td></tr>
+    <tr><td>2</td><td>Service</td><td>regra de negócio (account ou share)</td></tr>
+    <tr><td>3</td><td>Repository</td><td><code>WHERE account_id = $1</code> via <code>scopedQuery</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Rate limit</h3>
+<ul class="checklist">
+  <li>WS: 30 events/seg por conexão</li>
+  <li>Mutations REST: 60 req/min por user</li>
+  <li><code>tracking/metrics</code>: 1 req/3s por user</li>
+</ul>
+
+<h3>Validação</h3>
+<ul class="checklist">
+  <li>NUNCA trustar <code>account_id</code>/<code>client_account_id</code> no body</li>
+  <li><code>client_account_id</code> requer share ativa OU <code>tasks.shares.manage</code></li>
+  <li>404 ao invés de 403 (não vazar existência)</li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-9">Fase 9 — Testes E2E + observabilidade</h2>
+  <span class="pill med">Média</span><span class="pill dep">~2–3d</span>
+</div>
+
+<h3>Tests Go</h3>
+<pre class="bash"><code>tasks/
+├── service_test.go       # CRUD com 3 perspectives
+├── scope_test.go         # fuzz cross-account
+├── tracking_test.go      # version conflict
+└── dto_test.go           # snapshot JSON por perspective</code></pre>
+
+<pre class="go"><code>// scope_test.go
+func TestCrossAccountLeak(t *testing.T) {
+    accountA := setupAccount(t)
+    accountB := setupAccount(t)
+    boardA := createBoard(t, accountA)
+    taskA := createTask(t, accountA, boardA)
+
+    resp := getTask(t, accountB.UserToken, taskA.ID)
+    require.Equal(t, http.StatusNotFound, resp.StatusCode) // não 403!
+}</code></pre>
+
+<h3>Métricas Prometheus</h3>
+<ul class="checklist">
+  <li><code>tasks_ws_connections_total{topic}</code></li>
+  <li><code>tasks_event_publish_duration_seconds</code></li>
+  <li><code>tasks_dto_build_duration_seconds{perspective}</code></li>
+</ul>
+
+<!-- ============================================================ -->
+<div class="phase-header">
+  <h2 id="fase-10">Fase 10 — Sistema de Views (11 Layouts)</h2>
+  <span class="pill high">Alta</span><span class="pill dep">~10–14d</span><span class="pill dep">depende: Fase 5</span><span class="pill new">DESTAQUE</span>
+</div>
+
+<h3>Objetivo</h3>
+<p>O orquestrador apresenta a mesma fonte de dados em múltiplos layouts (Notion-style). Schema já vem pronto da Fase 1. Esta fase implementa UI + endpoints específicos.</p>
+
+<h3>Sub-faseamento</h3>
+<table>
+  <thead><tr><th>Sub-fase</th><th>Layouts</th><th>Release</th><th>Duração</th></tr></thead>
+  <tbody>
+    <tr><td>10.A</td><td>Lista + Calendário</td><td>v1.0 MVP</td><td>~3d</td></tr>
+    <tr><td>10.B</td><td>Cronograma + Galeria + Gráfico</td><td>v1.4</td><td>~4d</td></tr>
+    <tr><td>10.C</td><td>Feed + Mapa + Painel</td><td>v1.5</td><td>~5d</td></tr>
+    <tr><td>10.D</td><td>Autoral</td><td>v2.0</td><td>~3d</td></tr>
+  </tbody>
+</table>
+
+<h3>Backend comum</h3>
+<p>Endpoint genérico que renderiza qualquer view com <strong>payload mínimo</strong>:</p>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/boards/:boardId/views/:viewId/data?cursor=&amp;from=&amp;to=&amp;bbox=</span><span class="perm">tasks.tasks.view</span></div>
+
+<pre class="go"><code>// service_views.go
+func (s *Service) BuildViewData(ctx context.Context, ac AccessContext,
+    viewID string, params ViewQueryParams) (ViewDataDTO, error) {
+
+    view, err := s.repo.GetView(ctx, ac.AccountID, viewID)
+    if err != nil { return ViewDataDTO{}, err }
+
+    switch view.Type {
+    case "board":     return s.buildBoardView(ctx, ac, view)
+    case "table":     return s.buildTableView(ctx, ac, view, params)
+    case "list":      return s.buildListView(ctx, ac, view, params)
+    case "calendar":  return s.buildCalendarView(ctx, ac, view, params)   // só tasks com dateField no range
+    case "timeline":  return s.buildTimelineView(ctx, ac, view, params)   // só com start+end preenchidos
+    case "gallery":   return s.buildGalleryView(ctx, ac, view, params)
+    case "chart":     return s.buildChartView(ctx, ac, view)              // GROUP BY no server
+    case "feed":      return s.buildFeedView(ctx, ac, view, params)       // join com audit_log
+    case "map":       return s.buildMapView(ctx, ac, view, params)        // bounding box
+    case "dashboard": return s.buildDashboardView(ctx, ac, view)          // N sub-queries
+    case "custom":    return s.buildCustomView(ctx, ac, view, params)
+    }
+    return ViewDataDTO{}, ErrViewConfigInvalid
+}</code></pre>
+
+<h3>Frontend: arquitetura</h3>
+<pre class="bash"><code>web/layers/tasks/components/views/
+├── TasksViewBoard.vue
+├── TasksViewTable.vue
+├── TasksViewList.vue
+├── TasksViewCalendar.vue
+├── TasksViewTimeline.vue
+├── TasksViewGallery.vue
+├── TasksViewChart.vue
+├── TasksViewFeed.vue
+├── TasksViewMap.vue
+├── TasksViewDashboard.vue
+├── TasksViewCustom.vue
+├── TasksViewSwitcher.vue    # dropdown (como o print)
+├── TasksViewConfig.vue      # modal de config específica
+└── TasksViewRegistry.ts     # type → component + configSchema</code></pre>
+
+<pre class="ts"><code>// TasksViewRegistry.ts
+interface ViewDescriptor {
+  type: ViewType
+  label: string
+  icon: string
+  component: Component
+  requiredFieldTypes?: string[]   // ['date'] p/ calendar, ['date','date'] p/ timeline
+  configSchema: ZodSchema
+  defaultConfig: () => Record&lt;string, any&gt;
+}
+
+export const viewRegistry: Record&lt;ViewType, ViewDescriptor&gt; = {
+  board:     { type:'board',     label:'Quadro',     icon:'columns',  component: TasksViewBoard, /*…*/ },
+  table:     { type:'table',     label:'Tabela',     icon:'table',    component: TasksViewTable, /*…*/ },
+  list:      { type:'list',      label:'Lista',      icon:'list',     component: TasksViewList, /*…*/ },
+  calendar:  { type:'calendar',  label:'Calendário', icon:'calendar', component: TasksViewCalendar, /*…*/ },
+  timeline:  { type:'timeline',  label:'Cronograma', icon:'gantt',    component: TasksViewTimeline, /*…*/ },
+  gallery:   { type:'gallery',   label:'Galeria',    icon:'gallery',  component: TasksViewGallery, /*…*/ },
+  chart:     { type:'chart',     label:'Gráfico',    icon:'chart',    component: TasksViewChart, /*…*/ },
+  feed:      { type:'feed',      label:'Feed',       icon:'feed',     component: TasksViewFeed, /*…*/ },
+  map:       { type:'map',       label:'Mapa',       icon:'map',      component: TasksViewMap, /*…*/ },
+  dashboard: { type:'dashboard', label:'Painel',     icon:'dashboard',component: TasksViewDashboard, /*…*/ },
+  custom:    { type:'custom',    label:'Autoral',    icon:'sparkles', component: TasksViewCustom, /*…*/ },
+}</code></pre>
+
+<div class="callout warn">
+<strong>Mirror modal ↔ card ↔ view (regra crítica):</strong> qualquer campo no card precisa aparecer no modal e em todas as views. Cada componente chama <code>useTaskFieldRenderer(task, fieldKey)</code> que retorna o mesmo elemento (chip/badge/avatar) usado em todo lugar. Fonte única de verdade.
+</div>
+
+<h3>Bibliotecas sugeridas</h3>
+<table>
+  <thead><tr><th>View</th><th>Lib sugerida</th><th>Alternativa</th></tr></thead>
+  <tbody>
+    <tr><td>Cronograma</td><td>render próprio (CSS Grid)</td><td>vis-timeline</td></tr>
+    <tr><td>Calendário</td><td>render próprio (CSS Grid 7 cols)</td><td>v-calendar</td></tr>
+    <tr><td>Gráfico</td><td>ECharts (~150kb, multi-tipo)</td><td>Chart.js (mais leve)</td></tr>
+    <tr><td>Mapa</td><td>Leaflet + OpenStreetMap</td><td>Mapbox (chave de API)</td></tr>
+    <tr><td>Galeria</td><td>CSS Grid puro</td><td>—</td></tr>
+    <tr><td>Painel</td><td>vue-grid-layout</td><td>render próprio CSS Grid 12c</td></tr>
+  </tbody>
+</table>
+
+<h3>Detalhamento por layout</h3>
+<div class="views-grid">
+
+  <div class="view-card mvp" id="views-board">
+    <span class="stamp">MVP · existente</span>
+    <div class="title">1. Quadro (Board / Kanban)</div>
+    <div class="when">Refinar na Fase 5</div>
+    <p>Agrupa por field (status/priority/responsible). Drag-drop entre colunas.</p>
+    <ul>
+      <li><strong>Config:</strong> groupByFieldKey, hiddenColumnIds, cardFields</li>
+      <li><strong>Endpoint:</strong> <code>?type=board</code> → tasks agrupadas</li>
+      <li><strong>Field deps:</strong> ≥1 field <code>status</code>/<code>select</code></li>
+    </ul>
+  </div>
+
+  <div class="view-card mvp" id="views-table">
+    <span class="stamp">MVP · existente</span>
+    <div class="title">2. Tabela</div>
+    <div class="when">Refinar na Fase 5</div>
+    <p>Linhas + colunas. Sort, filter, inline edit. Cursor pagination.</p>
+    <ul>
+      <li><strong>Config:</strong> visibleFieldKeys, sortBy, sortDirection, columnWidths</li>
+      <li><strong>Endpoint:</strong> paginado <code>cursor</code>/<code>limit=50</code></li>
+    </ul>
+  </div>
+
+  <div class="view-card mvp" id="views-list">
+    <span class="stamp">MVP · v1.0 (10.A)</span>
+    <div class="title">3. Lista</div>
+    <div class="when">+1.5 dias</div>
+    <p>Linhas verticais densas. Agrupamento opcional. Mais compacto que tabela.</p>
+    <ul>
+      <li><strong>Config:</strong> groupByFieldKey, visibleFieldKeys (2–3), density</li>
+      <li><strong>Endpoint:</strong> mesma query da tabela, payload menor</li>
+      <li><strong>UI:</strong> uma linha = título + chips + avatar</li>
+    </ul>
+  </div>
+
+  <div class="view-card mvp" id="views-calendar">
+    <span class="stamp">MVP · v1.0 (10.A)</span>
+    <div class="title">4. Calendário</div>
+    <div class="when">+1.5 dias</div>
+    <p>Grid mensal/semanal/diário. Tasks no dia do <code>dateField</code>.</p>
+    <ul>
+      <li><strong>Config:</strong> dateFieldKey, defaultScale, showWeekends</li>
+      <li><strong>Endpoint:</strong> filtro <code>?from=&amp;to=</code></li>
+      <li><strong>Field deps:</strong> 1 field <code>date</code></li>
+      <li><strong>Interação:</strong> click no dia cria; drag muda data</li>
+    </ul>
+  </div>
+
+  <div class="view-card v14" id="views-timeline">
+    <span class="stamp">v1.4 (10.B)</span>
+    <div class="title">5. Cronograma (Gantt)</div>
+    <div class="when">+1.5 dias</div>
+    <p>Barras horizontais. Eixo temporal (dia/semana/mês). Drag para reescalonar.</p>
+    <ul>
+      <li><strong>Config:</strong> startFieldKey, endFieldKey, scale, groupByFieldKey</li>
+      <li><strong>Endpoint:</strong> só tasks com start+end</li>
+      <li><strong>Field deps:</strong> 2 fields <code>date</code></li>
+      <li><strong>Render:</strong> CSS Grid puro (calcular <code>grid-column</code>)</li>
+    </ul>
+  </div>
+
+  <div class="view-card v14" id="views-gallery">
+    <span class="stamp">v1.4 (10.B)</span>
+    <div class="title">6. Galeria</div>
+    <div class="when">+1 dia</div>
+    <p>Cards grandes em grid. Cover image opcional.</p>
+    <ul>
+      <li><strong>Config:</strong> coverFieldKey, visibleFieldKeys, cardSize</li>
+      <li><strong>Endpoint:</strong> mesma query, payload inclui URL imagem</li>
+      <li><strong>Field deps:</strong> opcional <code>image</code></li>
+    </ul>
+  </div>
+
+  <div class="view-card v14" id="views-chart">
+    <span class="stamp">v1.4 (10.B)</span>
+    <div class="title">7. Gráfico</div>
+    <div class="when">+1.5 dias</div>
+    <p>Agregação por field. bar / line / pie / donut / area.</p>
+    <ul>
+      <li><strong>Config:</strong> chartType, dimensionFieldKey, metric, metricFieldKey</li>
+      <li><strong>Endpoint:</strong> agregado server (<code>SELECT dim, COUNT(*) GROUP BY</code>)</li>
+      <li><strong>Lib:</strong> ECharts</li>
+      <li><strong>Drilldown:</strong> click numa barra → filtra tasks</li>
+    </ul>
+  </div>
+
+  <div class="view-card v15" id="views-feed">
+    <span class="stamp">v1.5 (10.C)</span>
+    <div class="title">8. Feed</div>
+    <div class="when">+1.5 dias</div>
+    <p>Timeline cronológica de atividade. Audit + comments + tracking.</p>
+    <ul>
+      <li><strong>Config:</strong> eventTypes[], groupBy</li>
+      <li><strong>Endpoint:</strong> JOIN audit_log + comments ORDER BY at DESC</li>
+      <li><strong>Realtime:</strong> novo evento entra no topo via WS</li>
+    </ul>
+  </div>
+
+  <div class="view-card v15" id="views-map">
+    <span class="stamp">v1.5 (10.C)</span>
+    <div class="title">9. Mapa</div>
+    <div class="when">+1.5 dias</div>
+    <p>Tasks com <code>location</code> aparecem como pin. Cluster automático.</p>
+    <ul>
+      <li><strong>Config:</strong> locationFieldKey, defaultCenter, defaultZoom</li>
+      <li><strong>Endpoint:</strong> bbox (<code>?bbox=lat1,lng1,lat2,lng2</code>)</li>
+      <li><strong>Field deps:</strong> 1 field <code>location</code></li>
+      <li><strong>Lib:</strong> Leaflet (sem chave)</li>
+    </ul>
+  </div>
+
+  <div class="view-card v15" id="views-dashboard">
+    <span class="stamp">v1.5 (10.C) · selecionado no print</span>
+    <div class="title">10. Painel (Dashboard)</div>
+    <div class="when">+2 dias</div>
+    <p>Composição de widgets em grid 12 colunas. Drag-drop.</p>
+    <ul>
+      <li><strong>Schema:</strong> <code>tasks.view_widgets</code> (Fase 1)</li>
+      <li><strong>Widgets:</strong> count, chart, list, text, progress, calendar_mini, feed_mini</li>
+      <li><strong>Endpoint:</strong> orquestra N sub-queries em paralelo</li>
+      <li><strong>Lib:</strong> vue-grid-layout</li>
+    </ul>
+  </div>
+
+  <div class="view-card v20" id="views-custom">
+    <span class="stamp">v2.0 (10.D)</span>
+    <div class="title">11. Autoral (Custom)</div>
+    <div class="when">+3 dias</div>
+    <p>Layout exclusivo do produto (a definir). Registry de renderers.</p>
+    <ul>
+      <li><strong>Config:</strong> customRendererKey, params jsonb</li>
+      <li><strong>Front:</strong> registry <code>key → Component</code></li>
+      <li><strong>Back:</strong> endpoint genérico (payload definido pelo renderer)</li>
+    </ul>
+  </div>
+
+</div>
+
+<h3>Permissões</h3>
+<ul class="checklist">
+  <li><code>tasks.views.manage</code> — criar/editar/deletar views</li>
+  <li>View herda permissão do board</li>
+  <li>View <strong>pessoal</strong> (<code>scope='user'</code>) vs <strong>compartilhada</strong> (<code>scope='board'</code>)</li>
+</ul>
+
+<h3>Validação ao criar view</h3>
+<pre class="go"><code>func (s *Service) CreateView(ctx context.Context, ac AccessContext,
+    in CreateViewInput) (View, error) {
+
+    board, err := s.repo.GetBoard(ctx, ac.AccountID, in.BoardID)
+    if err != nil { return View{}, err }
+
+    desc := viewDescriptors[in.Type]
+    for _, reqType := range desc.RequiredFieldTypes {
+        if !hasFieldOfType(board, in.Config, reqType) {
+            return View{}, fmt.Errorf(
+                "%w: view %s requer field tipo %s",
+                ErrViewConfigInvalid, in.Type, reqType,
+            )
+        }
+    }
+    return s.repo.InsertView(ctx, in)
+}</code></pre>
+
+<h3>Como testar</h3>
+<pre class="bash"><code># Criar view calendar
+curl -X POST /v1/tasks/boards/$BOARD/views \
+  -d '{"name":"Calendário","type":"calendar","config":{"dateFieldKey":"dueDate"}}'
+
+# Buscar dados da view (range mensal)
+curl "/v1/tasks/boards/$BOARD/views/$VIEW/data?from=2026-05-01&amp;to=2026-05-31"
+
+# Timeline sem campos date → erro
+curl -X POST /v1/tasks/boards/$BOARD/views \
+  -d '{"name":"Cronograma","type":"timeline","config":{}}'
+# Esperado: HTTP 422 "view timeline requer field tipo date"</code></pre>
+
+<!-- ============================================================ -->
+<h2 id="riscos">Riscos e mitigações</h2>
+<table>
+  <thead><tr><th style="width: 30%;">Risco</th><th>Mitigação</th></tr></thead>
+  <tbody>
+    <tr><td><code>tasks.vue</code> já foi reduzido de ~2955 para 832 linhas totais</td><td>Manter a Fase 5 restrita à troca de fonte de dados; não devolver regra pesada para <code>tasks.vue</code>.</td></tr>
+    <tr><td>17 tabelas no schema novo</td><td>Aplicar migration 0108 em DB fresh/staging; <code>EXPLAIN ANALYZE</code> nos joins críticos.</td></tr>
+    <tr><td>Field values polimórficos</td><td>Índice parcial por tipo se queries pesarem.</td></tr>
+    <tr><td>Hub WS in-memory não horizontaliza</td><td>OK para 1 processo. Broker externo (Redis/NATS) quando escalar sem mudar contrato.</td></tr>
+    <tr><td>Wipe do localStorage irrita usuários com dados</td><td>Botão "Baixar backup" antes da Fase 5.</td></tr>
+    <tr><td>Vazamento cross-account</td><td>Fuzz test Fase 9. <code>scopedQuery</code> panic em dev.</td></tr>
+    <tr><td>Tracking conflita com timer local</td><td>Sub-fase de transição: backend grava paralelo, valida paridade 1 semana.</td></tr>
+    <tr><td>Views com queries diferentes → N+1</td><td>Cada <code>build*View</code> usa UMA query agregada. Chart faz GROUP BY no server.</td></tr>
+    <tr><td>Layout autoral fica vago</td><td>Registry de renderers. Schema já comporta <code>type='custom'</code>.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="e2e">Smoke E2E (após Fase 5)</h2>
+<ol class="steps">
+  <li>Migrate DB fresh → seed cria account demo + board demo</li>
+  <li>Login user agência → <code>/tasks</code> carrega via REST</li>
+  <li>Criar task → aparece no board e tabela (mesma fonte)</li>
+  <li>2 abas → mover em A → B atualiza ao vivo via WS</li>
+  <li>Modal aberto → avatar da outra aba + "Editando título" ao focar</li>
+  <li>Compartilhar com client_account → logar como client_viewer → só essa task</li>
+  <li>Iniciar tracking, fechar aba, voltar 1min depois → timer continuou</li>
+  <li>Atribuir task → user recebe notificação na sineta sem refresh</li>
+  <li><code>curl GET /v1/tasks/{outroAccount}</code> → <strong>404</strong></li>
+  <li>Payload como client_viewer → ZERO campos de outro cliente no JSON</li>
+  <li>Trocar view Quadro → Calendário → mesmas tasks no dia certo</li>
+  <li>Criar timeline sem fields date → 422 mensagem clara</li>
+</ol>
+
+<div style="margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12px;">
+  Plano markdown: <code>C:\Users\Mike\.claude\plans\analisa-nossa-p-gina-de-agile-pumpkin.md</code><br>
+  Branch alvo: <code>refactor/multi-tenant-core</code>
+</div>
+
+</main>
+</body>
+</html>

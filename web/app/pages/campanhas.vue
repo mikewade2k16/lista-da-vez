@@ -9,6 +9,7 @@ import { useCampaignsStore } from "~/stores/campaigns";
 definePageMeta({
   layout: "dashboard",
   workspaceId: "campanhas",
+  alias: ["/operacao/campanhas"],
   supportsAllStoresScope: true
 });
 

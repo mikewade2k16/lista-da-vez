@@ -33,6 +33,21 @@ export function getWebSocketBase(runtimeConfig) {
   return url.toString();
 }
 
+// Limiar em ms a partir do qual uma requisicao aciona o loading global.
+// Requests mais curtos nao ativam o overlay para evitar flicker.
+const LOADING_THRESHOLD_MS = 200;
+
+// Hooks de loading global. Sao injetados pelo plugin client-only
+// `web/app/plugins/loading-bridge.client.ts` que liga o store
+// `core/loading` (do layer core) a este api-client. Mantemos esse contrato
+// de hooks para evitar import direto do store aqui (dependencia circular
+// com stores que usam o api-client durante o setup do pinia).
+let loadingHooks: { push: () => void; pop: () => void } | null = null;
+
+export function setApiLoadingHooks(hooks: { push: () => void; pop: () => void } | null) {
+  loadingHooks = hooks;
+}
+
 export function createApiRequest(runtimeConfig, getAccessToken = null) {
   return function apiRequest(path, options = {}) {
     const headers = {
@@ -64,10 +79,31 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
       }
     }
 
-    return $fetch(path, {
+    const fetchPromise = $fetch(path, {
       baseURL: getApiBase(runtimeConfig),
       ...processedOptions,
       headers
     });
+
+    // Fase 9A — feedback visual: se a requisicao passar de LOADING_THRESHOLD_MS,
+    // ativa o loading global (barra fina no topo). Curtas nao acionam para
+    // evitar flicker em chamadas rapidas. Hooks injetados pelo plugin
+    // loading-bridge.client.ts (so existe no client; SSR ignora).
+    if (loadingHooks && options.skipLoadingIndicator !== true) {
+      let pushed = false;
+      const timer = setTimeout(() => {
+        loadingHooks?.push();
+        pushed = true;
+      }, LOADING_THRESHOLD_MS);
+
+      fetchPromise.finally(() => {
+        clearTimeout(timer);
+        if (pushed) {
+          loadingHooks?.pop();
+        }
+      });
+    }
+
+    return fetchPromise;
   };
 }

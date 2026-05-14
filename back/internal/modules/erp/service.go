@@ -2,7 +2,6 @@ package erp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -379,6 +378,18 @@ func (service *Service) IngestAllStores(ctx context.Context, input IngestInput) 
 	if err != nil {
 		return nil, err
 	}
+	if rootStoreCode := strings.TrimSpace(service.options.RootStoreCode); rootStoreCode != "" {
+		rootStores := make([]StoreScope, 0, 1)
+		for _, store := range stores {
+			if strings.EqualFold(strings.TrimSpace(store.StoreCode), rootStoreCode) {
+				rootStores = append(rootStores, store)
+			}
+		}
+		if len(rootStores) == 0 {
+			return nil, ErrStoreNotFound
+		}
+		stores = rootStores
+	}
 
 	results := make([]IngestResult, 0, len(stores))
 	for _, store := range stores {
@@ -571,19 +582,14 @@ func (service *Service) ingestStoreResolved(ctx context.Context, store StoreScop
 
 func (service *Service) resolveERPScope(ctx context.Context, principal auth.Principal, tenantID string, requestedStoreCode string) (StoreScope, error) {
 	normalizedStoreCode := strings.TrimSpace(requestedStoreCode)
-	if normalizedStoreCode != "" {
-		return service.repository.ResolveStoreScope(ctx, principal, tenantID, normalizedStoreCode)
-	}
 
 	preferredStoreCode := strings.TrimSpace(service.options.RootStoreCode)
 	if preferredStoreCode != "" {
-		store, err := service.repository.ResolveStoreScope(ctx, principal, tenantID, preferredStoreCode)
-		if err == nil {
-			return store, nil
-		}
-		if !errors.Is(err, ErrStoreNotFound) && !errors.Is(err, ErrForbidden) {
-			return StoreScope{}, err
-		}
+		return service.repository.ResolveRootStoreScope(ctx, principal, tenantID, preferredStoreCode)
+	}
+
+	if normalizedStoreCode != "" {
+		return service.repository.ResolveStoreScope(ctx, principal, tenantID, normalizedStoreCode)
 	}
 
 	return service.repository.ResolveDefaultERPScope(ctx, principal, tenantID)

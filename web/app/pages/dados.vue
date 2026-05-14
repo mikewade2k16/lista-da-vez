@@ -9,6 +9,7 @@ import { useAnalyticsStore } from "~/stores/analytics";
 definePageMeta({
   layout: "dashboard",
   workspaceId: "dados",
+  alias: ["/operacao/dados"],
   supportsAllStoresScope: true
 });
 

@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { canUseAllStoresScope, getAllowedWorkspaces, normalizeAppRole } from "~/domain/utils/permissions";
+import { canUseAllStoresScope, filterPerolaERPWorkspaces, getAllowedWorkspaces, normalizeAppRole } from "~/domain/utils/permissions";
 import { useAppRuntimeStore } from "~/stores/app-runtime";
 import { AUTH_TOKEN_COOKIE, createApiRequest, getApiBase, getApiErrorMessage } from "~/utils/api-client";
 import { hydrateRuntimeStoreContext } from "~/utils/runtime-remote";
@@ -111,7 +111,16 @@ export const useAuthStore = defineStore("auth", () => {
   const permissionsResolved = computed(() => Boolean(principal.value?.permissionsResolved));
   const isAuthenticated = computed(() => Boolean(accessToken.value && user.value && principal.value));
   const mustChangePassword = computed(() => Boolean(user.value?.mustChangePassword));
-  const allowedWorkspaces = computed(() => getAllowedWorkspaces(role.value, permissionKeys.value, permissionsResolved.value));
+  const allowedWorkspaces = computed(() =>
+    filterPerolaERPWorkspaces(
+      getAllowedWorkspaces(role.value, permissionKeys.value, permissionsResolved.value),
+      {
+        role: role.value,
+        activeTenantId: activeTenantId.value,
+        tenantContext: tenantContext.value
+      }
+    )
+  );
   const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || "operacao");
   const homePath = computed(() => getWorkspacePath(homeWorkspaceId.value));
   const accessibleStoreIds = computed(() =>
@@ -551,6 +560,20 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function logout() {
+    // Avisa o backend para revogar a sessao (Fase 7B). Hoje o endpoint e
+    // idempotente, mas garante o contrato para quando a Fase 7D introduzir
+    // PrincipalCache + revogacao real via core.user_sessions.
+    // Falha de rede e tratada como sucesso: token local sera apagado de
+    // qualquer forma; nao podemos travar o logout em rede ruim.
+    if (accessToken.value) {
+      try {
+        const request = createApiRequest(useRuntimeConfig(), () => accessToken.value || "");
+        await request("/v1/auth/logout", { method: "POST" });
+      } catch {
+        // Silenciar — logout local sempre prossegue.
+      }
+    }
+
     clearSession();
     hydrated.value = true;
   }

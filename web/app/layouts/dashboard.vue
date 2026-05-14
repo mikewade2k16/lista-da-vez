@@ -1,7 +1,6 @@
 <script setup>
 import { computed, ref } from "vue";
 import DashboardHeader from "~/components/dashboard/DashboardHeader.vue";
-import DashboardSidebarNav from "~/components/dashboard/DashboardSidebarNav.vue";
 import DashboardWorkspaceNav from "~/components/dashboard/DashboardWorkspaceNav.vue";
 import FeedbackFormModal from "~/components/feedback/FeedbackFormModal.vue";
 import { useContextRealtime } from "~/composables/useContextRealtime";
@@ -10,11 +9,14 @@ import { useAuthStore } from "~/stores/auth";
 
 const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile, setActiveStore } = useDashboardShell();
 const auth = useAuthStore();
+const route = useRoute();
 useContextRealtime();
 
 const feedbackModalOpen = ref(false);
 const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || "").trim());
-const canShowExperimentalSidebar = computed(() => auth.role === "platform_admin");
+const usesQueueWorkspace = computed(() =>
+  String(route.path || "").startsWith("/operacao")
+);
 
 function handleProfileChange(profileId) {
   void setActiveProfile(profileId);
@@ -30,6 +32,9 @@ function handleStoreChange(storeId) {
     <section class="app-surface">
       <DashboardHeader
         :state="state"
+        :show-operations-context="false"
+        :active-workspace="activeWorkspaceId"
+        :allowed-workspaces="allowedWorkspaces"
         @profile-change="handleProfileChange"
         @store-change="handleStoreChange"
       />
@@ -40,17 +45,18 @@ function handleStoreChange(storeId) {
           <p>{{ runtimeSettingsNotice }}</p>
         </div>
       </div>
-      <DashboardSidebarNav
-        v-if="canShowExperimentalSidebar"
-        class="dashboard-sidebar-shell"
-        :active-workspace="activeWorkspaceId"
-        :allowed-workspaces="allowedWorkspaces"
-      />
-      <div class="workspace">
+      <div v-if="usesQueueWorkspace" class="workspace">
         <DashboardWorkspaceNav
           :active-workspace="activeWorkspaceId"
           :allowed-workspaces="allowedWorkspaces"
+          :state="state"
+          show-operations-context
+          @profile-change="handleProfileChange"
+          @store-change="handleStoreChange"
         />
+        <slot />
+      </div>
+      <div v-else class="module-workspace-full">
         <slot />
       </div>
     </section>
@@ -106,6 +112,24 @@ function handleStoreChange(storeId) {
   line-height: 1.45;
 }
 
+.workspace {
+  position: relative;
+  z-index: 0;
+}
+
+.module-workspace-full {
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 8px 12px 0;
+}
+
 .dashboard-feedback-btn {
   position: fixed;
   bottom: 2rem;
@@ -139,21 +163,4 @@ function handleStoreChange(storeId) {
   line-height: 1;
 }
 
-.dashboard-sidebar-shell {
-  position: fixed;
-  top: 5.1rem;
-  bottom: 1rem;
-  left: max(0.75rem, calc((100vw - 1400px) / 2 - 17rem));
-  width: 16rem;
-  z-index: 45;
-}
-
-@media (max-width: 980px) {
-  .dashboard-sidebar-shell {
-    top: auto;
-    left: 0.75rem;
-    bottom: 1rem;
-    width: min(16rem, calc(100vw - 1.5rem));
-  }
-}
 </style>

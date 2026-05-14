@@ -17,7 +17,10 @@ Na fase 1, ele precisa sustentar:
 ## Regras do modulo
 
 - manter `raw` separado da projecao `current`
-- preservar `tenant_id`, `store_id`, `store_code` e `store_cnpj`
+- preservar o escopo tecnico da importacao (`tenant_id`, `store_id`, `store_code` e `store_cnpj`) sem confundir isso com a loja comercial do pedido
+- as tabelas `erp_*_raw` representam o espelho do CSV importado; novas necessidades operacionais devem ir para metadados de sync ou projecoes, nao para alterar o contrato bruto do CSV
+- no FTP atual, `ERP_ROOT_STORE_CODE=184` e o escopo raiz do ERP da Perola; JAR/RIO/GAR/TRE sao dimensoes comerciais dentro do dataset 184, nao fontes FTP independentes
+- os dados ERP/CRM atuais pertencem somente ao cliente Perola; acesso ao root 184 deve ficar restrito a usuarios da Perola, membros da organization/agencia vinculada a essa account, e `platform_admin`
 - mutacao manual de sync deve continuar bloqueada fora de dev/opt-in
 - arquivos binarios/CSV continuam fora do PostgreSQL; o banco guarda metadados, checksums e controle de processamento
 
@@ -39,7 +42,7 @@ Na fase 1, ele precisa sustentar:
 - projeção de `erp_item_current` agora considera `source_extracted_at` como critério de desempate
 - bootstrap markdown legado permanece ativo por compatibilidade e deve ser tratado como caminho em transição
 - o FTP real em `extract_files` já foi validado com arquivos `item`, `customer`, `employee`, `order` e `ordercanceled`
-- o codigo `184` aparece nos arquivos observados do ERP, mas o modulo nao deve tratar isso como escopo fixo de UI nem como tenant separado
+- o codigo `184` e o escopo raiz configurado para o FTP da Perola; a UI pode estar em uma subloja operacional, mas o modulo ERP deve resolver o root 184 para status, sync, runs, produtos e CRM
 - `GET /v1/erp/crm` agrega vendas ERP por loja comercial e consultor no escopo raiz do ERP, resolvendo a loja nesta ordem: `store_id_raw`, cadastro interno do vendedor (`users` + `consultants`/`user_store_roles`), loja dominante do historico ERP do vendedor e `store_cnpj` como ultimo fallback; ver tambem `docs/ERP_CRM_STORE_ATTRIBUTION.md`
 
 ## Invariantes novos

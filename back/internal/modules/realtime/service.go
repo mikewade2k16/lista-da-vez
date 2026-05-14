@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -42,16 +43,24 @@ type Service struct {
 	tenantLister   TenantLister
 	allowedOrigins []string
 	hub            *Hub
+	pool           *pgxpool.Pool
+	presence       *PresenceStore
 	upgrader       websocket.Upgrader
 }
 
-func NewService(authenticator TokenAuthenticator, storeFinder StoreFinder, tenantLister TenantLister, allowedOrigins []string, hub *Hub) *Service {
+func NewService(authenticator TokenAuthenticator, storeFinder StoreFinder, tenantLister TenantLister, allowedOrigins []string, hub *Hub, pool ...*pgxpool.Pool) *Service {
 	service := &Service{
 		authenticator:  authenticator,
 		storeFinder:    storeFinder,
 		tenantLister:   tenantLister,
 		allowedOrigins: append([]string{}, allowedOrigins...),
 		hub:            hub,
+	}
+	if len(pool) > 0 {
+		service.pool = pool[0]
+	}
+	if hub != nil {
+		service.presence = NewPresenceStore(hub, 30*time.Second)
 	}
 
 	service.upgrader = websocket.Upgrader{

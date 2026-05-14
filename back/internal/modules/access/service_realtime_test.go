@@ -38,6 +38,10 @@ func (repository *accessRealtimeTestRepository) ListUserOverrides(context.Contex
 	return nil, nil
 }
 
+func (repository *accessRealtimeTestRepository) ResolveEffectivePermissions(context.Context, string, auth.Role) ([]string, error) {
+	return nil, nil
+}
+
 func (repository *accessRealtimeTestRepository) ReplaceUserOverrides(_ context.Context, userID string, overrides []UserOverride, _ string) ([]UserOverride, error) {
 	repository.replacedUserID = userID
 	repository.replacedUserOverrides = append([]UserOverride{}, overrides...)

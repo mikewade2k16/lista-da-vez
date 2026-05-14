@@ -21,7 +21,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
     );
   }
 
-  await auth.ensureSession();
+  // Em rotas /auth/* (login/reset/invite), pular o ensureSession evita travar
+  // a tela quando o token local esta valido mas o contexto remoto demora.
+  // Se o usuario ja esta autenticado, ainda redirecionamos abaixo via
+  // auth.isAuthenticated (que reflete o estado local em memoria).
+  if (!isAuthRoute) {
+    await auth.ensureSession();
+  }
 
   if (isAuthRoute) {
     if (auth.isAuthenticated && to.path === "/auth/login") {

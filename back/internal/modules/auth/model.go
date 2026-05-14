@@ -150,6 +150,9 @@ type InvitationIssueInput struct {
 type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
+	// LoadUserForAuth retorna user + role + storeIDs em uma unica round-trip de banco.
+	// Usado no hot-path do middleware de auth; outros callers continuam usando FindByID.
+	LoadUserForAuth(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, userID string, displayName string, email string) (User, error)
 	UpdatePassword(ctx context.Context, userID string, passwordHash string, mustChangePassword bool) (User, error)
 	UpdateAvatarPath(ctx context.Context, userID string, avatarPath string) (User, error)

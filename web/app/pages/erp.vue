@@ -1,7 +1,8 @@
 <script setup lang="ts">
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "erp"
+  workspaceId: "erp",
+  alias: ["/operacao/erp"],
 });
 </script>
 

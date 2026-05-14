@@ -17,7 +17,7 @@ func main() {
 	cfg := config.Load()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), migrationTimeout())
 	defer cancel()
 
 	pool, err := database.OpenPool(ctx, cfg)
@@ -112,4 +112,18 @@ func main() {
 		logger.Error("unknown_command", slog.String("command", command))
 		os.Exit(1)
 	}
+}
+
+func migrationTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("MIGRATION_TIMEOUT"))
+	if raw == "" {
+		return 5 * time.Minute
+	}
+
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		return 5 * time.Minute
+	}
+
+	return value
 }

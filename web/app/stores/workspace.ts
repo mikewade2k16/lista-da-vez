@@ -1,6 +1,6 @@
 import { computed } from "vue";
 import { defineStore, storeToRefs } from "pinia";
-import { getAllowedWorkspaces } from "~/domain/utils/permissions";
+import { filterPerolaERPWorkspaces, getAllowedWorkspaces } from "~/domain/utils/permissions";
 import { useAuthStore } from "~/stores/auth";
 import { useAppRuntimeStore } from "~/stores/app-runtime";
 
@@ -15,7 +15,16 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     null
   );
   const activeRole = computed(() => auth.role || activeProfile.value?.role || "consultant");
-  const allowedWorkspaces = computed(() => getAllowedWorkspaces(activeRole.value, auth.permissionKeys, auth.permissionsResolved));
+  const allowedWorkspaces = computed(() =>
+    filterPerolaERPWorkspaces(
+      getAllowedWorkspaces(activeRole.value, auth.permissionKeys, auth.permissionsResolved),
+      {
+        role: activeRole.value,
+        activeTenantId: auth.activeTenantId,
+        tenantContext: auth.tenantContext
+      }
+    )
+  );
 
   return {
     state,

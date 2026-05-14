@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useCoreAccountStore } from "../stores/account";
+import { useCoreLoadingStore } from "../stores/loading";
 
 const accountStore = useCoreAccountStore();
+const loading = useCoreLoadingStore();
 const open = ref(false);
 
 const activeAccount = computed(() => accountStore.activeAccount);
@@ -11,7 +13,14 @@ const accounts = computed(() => accountStore.accounts);
 async function select(id: string) {
   open.value = false;
   if (id !== accountStore.activeAccountId) {
-    await accountStore.switchAccount(id);
+    // Fase 9B: garante overlay durante troca de account, mesmo se o fetch
+    // for rapido demais para o threshold de 200ms do api-client.
+    loading.push("Trocando de account...");
+    try {
+      await accountStore.switchAccount(id);
+    } finally {
+      loading.pop("Trocando de account...");
+    }
   }
 }
 

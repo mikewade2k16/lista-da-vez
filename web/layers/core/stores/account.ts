@@ -52,14 +52,36 @@ export const useCoreAccountStore = defineStore("core/account", () => {
     loading.value = true;
     error.value = "";
     try {
-      const data = await api("/v2/me/accounts") as any;
-      accounts.value = data.accounts ?? [];
+      // Fase 7C: paraleliza /v2/me/accounts com /v2/me/context speculativo
+      // usando o accountId do cookie. Se o cookie estiver correto (caso
+      // comum), os dois requests rodam em paralelo e cortamos uma round-trip
+      // do bootstrap. Se o cookie nao bater com a lista retornada, refaz o
+      // fetchContext com o accountId correto.
+      const savedId = String(activeAccountCookie.value ?? "").trim();
+      const accountsPromise = api("/v2/me/accounts") as Promise<any>;
+      const speculativeContextPromise = savedId
+        ? (api(`/v2/me/context?accountId=${savedId}`) as Promise<any>).catch(() => null)
+        : Promise.resolve(null);
 
-      const savedId = activeAccountCookie.value;
+      const [accountsData, speculativeContext] = await Promise.all([
+        accountsPromise,
+        speculativeContextPromise
+      ]);
+
+      accounts.value = accountsData.accounts ?? [];
+
       const found = accounts.value.find((a) => a.id === savedId);
-      activeAccountId.value = found?.id ?? data.defaultAccountId ?? accounts.value[0]?.id ?? "";
+      activeAccountId.value =
+        found?.id ?? accountsData.defaultAccountId ?? accounts.value[0]?.id ?? "";
 
-      if (activeAccountId.value) {
+      const speculativeAccountId = speculativeContext?.context?.account?.id ?? "";
+      if (
+        speculativeContext &&
+        activeAccountId.value &&
+        speculativeAccountId === activeAccountId.value
+      ) {
+        context.value = speculativeContext.context ?? null;
+      } else if (activeAccountId.value) {
         await fetchContext(activeAccountId.value);
       }
     } catch (e: any) {

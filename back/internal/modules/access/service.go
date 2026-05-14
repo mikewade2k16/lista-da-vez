@@ -30,20 +30,9 @@ func (service *Service) SetContextPublisher(notifier ContextPublisher) {
 }
 
 func (service *Service) ResolveUserPermissions(ctx context.Context, userID string, role auth.Role) ([]string, error) {
-	basePermissionKeys, err := service.repository.ListRolePermissions(ctx, role)
-	if err != nil {
-		return nil, err
-	}
-	if len(basePermissionKeys) == 0 {
-		basePermissionKeys = DefaultRolePermissions(role)
-	}
-
-	overrides, err := service.repository.ListUserOverrides(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	return EffectivePermissionKeys(basePermissionKeys, overrides), nil
+	// Hot-path: 1 round-trip ao banco em vez de 2 (ListRolePermissions + ListUserOverrides).
+	// O repository ja aplica DefaultRolePermissions como fallback e processa overrides.
+	return service.repository.ResolveEffectivePermissions(ctx, userID, role)
 }
 
 func (service *Service) ListRoleMatrix(ctx context.Context, principal auth.Principal) (RoleMatrixView, error) {

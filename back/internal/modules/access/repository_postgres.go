@@ -145,6 +145,69 @@ func (repository *PostgresRepository) ReplaceRolePermissions(ctx context.Context
 	return nil
 }
 
+// ResolveEffectivePermissions resolve em uma unica round-trip ao banco as permission_keys
+// efetivas do user. Retorna o resultado ja com overrides allow/deny aplicados.
+//
+// Esta funcao substitui ListRolePermissions + ListUserOverrides no hot-path de auth:
+// reduz 2 round-trips em 1.
+//
+// Comportamento de fallback (preserva a logica original do Service.ResolveUserPermissions):
+//
+//	se access_role_permissions estiver vazio para a role, caller deve usar
+//	DefaultRolePermissions(role). Para sinalizar isso, a query retorna em uma unica row
+//	dois arrays: (base_role_keys, overrides_json). Go decide o fallback.
+func (repository *PostgresRepository) ResolveEffectivePermissions(ctx context.Context, userID string, role auth.Role) ([]string, error) {
+	var baseKeys []string
+	var overrideKeys []string
+	var overrideEffects []string
+
+	err := repository.pool.QueryRow(ctx, `
+		select
+			coalesce((
+				select array_agg(arp.permission_key order by arp.permission_key asc)
+				from access_role_permissions arp
+				where arp.role = $1
+			), '{}'::text[]) as base_keys,
+			coalesce((
+				select array_agg(uao.permission_key order by uao.permission_key asc)
+				from user_access_overrides uao
+				where uao.user_id = $2::uuid and uao.is_active = true
+			), '{}'::text[]) as override_keys,
+			coalesce((
+				select array_agg(uao.effect order by uao.permission_key asc)
+				from user_access_overrides uao
+				where uao.user_id = $2::uuid and uao.is_active = true
+			), '{}'::text[]) as override_effects;
+	`, role, strings.TrimSpace(userID)).Scan(&baseKeys, &overrideKeys, &overrideEffects)
+	if err != nil {
+		return nil, err
+	}
+
+	basePermissionKeys := RecognizedPermissionKeys(baseKeys)
+	if len(basePermissionKeys) == 0 {
+		basePermissionKeys = DefaultRolePermissions(role)
+	}
+
+	overrides := make([]UserOverride, 0, len(overrideKeys))
+	for index, permissionKey := range overrideKeys {
+		if index >= len(overrideEffects) {
+			break
+		}
+
+		if _, ok := PermissionDefinitionForKey(permissionKey); !ok {
+			continue
+		}
+
+		overrides = append(overrides, UserOverride{
+			PermissionKey: permissionKey,
+			Effect:        overrideEffects[index],
+			IsActive:      true,
+		})
+	}
+
+	return EffectivePermissionKeys(basePermissionKeys, overrides), nil
+}
+
 func (repository *PostgresRepository) ListUserOverrides(ctx context.Context, userID string) ([]UserOverride, error) {
 	rows, err := repository.pool.Query(ctx, `
 		select

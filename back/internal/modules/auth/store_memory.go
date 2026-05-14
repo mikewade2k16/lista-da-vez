@@ -51,6 +51,11 @@ func (store *MemoryUserStore) FindByID(_ context.Context, id string) (User, erro
 	return user, nil
 }
 
+func (store *MemoryUserStore) LoadUserForAuth(ctx context.Context, id string) (User, error) {
+	// Memory store ja carrega tudo em RAM — delega para FindByID.
+	return store.FindByID(ctx, id)
+}
+
 func SeedDemoUsers(hasher PasswordHasher) ([]User, error) {
 	type seed struct {
 		id          string

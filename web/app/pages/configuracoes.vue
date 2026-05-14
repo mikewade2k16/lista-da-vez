@@ -5,7 +5,8 @@ import { useSettingsStore } from "~/stores/settings";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "configuracoes"
+  workspaceId: "configuracoes",
+  alias: ["/operacao/configuracoes"],
 });
 
 const settingsStore = useSettingsStore();

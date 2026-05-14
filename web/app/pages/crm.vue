@@ -6,7 +6,8 @@ import { useCrmStore } from "~/stores/crm";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "crm"
+  workspaceId: "crm",
+  alias: ["/operacao/crm"],
 });
 
 const auth = useAuthStore();

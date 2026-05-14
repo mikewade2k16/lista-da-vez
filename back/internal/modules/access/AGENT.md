@@ -38,6 +38,12 @@ Ele nao deve cuidar de:
 - o modulo deve devolver tanto `basePermissionKeys` quanto `effectivePermissionKeys` para permitir auditoria no painel
 - permissoes efetivas devem ser calculadas com precedencia dos overrides ativos sobre o grant padrao do papel
 
+### Hot-path (Fase 7A)
+
+- `ResolveUserPermissions` agora delega para `Repository.ResolveEffectivePermissions`, que combina em uma unica query SQL os arrays de `access_role_permissions` (base) + `user_access_overrides` (allow/deny). Reduz 2 round-trips ao banco em 1.
+- Comportamento de fallback preservado: se a role nao tem linhas em `access_role_permissions`, o repository aplica `DefaultRolePermissions(role)` antes de processar overrides.
+- `ListRolePermissions` e `ListUserOverrides` continuam expostos na interface `Repository` porque sao usados em fluxos administrativos (`buildUserAccessView`, `ListRoleMatrix`) que precisam dos dois lados separadamente.
+
 ## Permissoes atuais
 
 O catalogo cobre workspaces (`operacao`, `consultor`, `ranking`, `dados`, `inteligencia`, `relatorios`, `campanhas`, `clientes`, `multiloja`, `usuarios`, `configuracoes`) e acoes administrativas de plataforma (`users.password.manage`, `access.role_defaults.manage`).

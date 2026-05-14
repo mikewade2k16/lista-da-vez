@@ -4,7 +4,7 @@ export const SIDEBAR_NAV_SECTIONS = [
     label: "Atendimento",
     items: [
       { id: "omnichannel", label: "Omnichannel", icon: "messages", path: "/omnichannel" },
-      { id: "tasks", label: "Tasks", icon: "tasks", path: "/tasks" },
+      { id: "tasks", label: "Tasks", icon: "tasks", path: "/tasks", workspaceId: "tasks" },
       { id: "tracking", label: "Tracking", icon: "tracking", path: "/tracking" },
       { id: "fila", label: "Fila", icon: "queue", path: "/operacao", workspaceId: "operacao" }
     ]
@@ -87,6 +87,7 @@ export const SIDEBAR_NAV_SECTIONS = [
           { id: "configuracoes", label: "Config", icon: "settings", path: "/configuracoes", workspaceId: "configuracoes" },
           { id: "alertas", label: "Alertas", icon: "alert", path: "/alertas", workspaceId: "alertas" },
           { id: "feedback", label: "Feedback", icon: "feedback", path: "/feedback", workspaceId: "feedback" },
+          { id: "themes", label: "Temas", icon: "palette", path: "/themes", workspaceId: "themes" },
           { id: "banco", label: "Banco", icon: "database", path: "/banco", workspaceId: "banco" },
           { id: "manage-auditoria", label: "Auditoria", icon: "audit", path: "/manage/auditoria" },
           { id: "manage-integracoes", label: "Integracoes", icon: "integration", path: "/manage/integracoes" },

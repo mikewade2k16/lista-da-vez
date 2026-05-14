@@ -90,10 +90,10 @@ var crmEmployeeSpecialStoreKeys = map[string]string{
 }
 
 var crmStoreOrder = map[string]int{
-	"riomar":                      0,
-	"jardins":                     1,
-	"garcia":                      2,
-	"treze":                       3,
+	"riomar":                        0,
+	"jardins":                       1,
+	"garcia":                        2,
+	"treze":                         3,
 	crmStoreKeyManagementMultiStore: 4,
 }
 
@@ -173,6 +173,104 @@ func (repository *PostgresRepository) ResolveStoreScope(ctx context.Context, pri
 	}
 
 	return scope, nil
+}
+
+func (repository *PostgresRepository) ResolveRootStoreScope(ctx context.Context, principal auth.Principal, requestedTenantID string, rootStoreCode string) (StoreScope, error) {
+	normalizedRootStoreCode := strings.TrimSpace(rootStoreCode)
+	if normalizedRootStoreCode == "" {
+		return StoreScope{}, ErrStoreRequired
+	}
+
+	if requestedTenantID = strings.TrimSpace(requestedTenantID); requestedTenantID != "" {
+		scope, err := repository.ResolveStoreScope(ctx, principal, requestedTenantID, normalizedRootStoreCode)
+		if err == nil {
+			return scope, nil
+		}
+		if !errors.Is(err, ErrStoreNotFound) {
+			return StoreScope{}, err
+		}
+	}
+
+	query := `
+		select
+			s.tenant_id::text,
+			s.id::text,
+			s.code,
+			s.name,
+			s.city,
+			coalesce(last_file.store_cnpj, '')
+		from stores s
+		join tenants t on t.id = s.tenant_id
+		left join lateral (
+			select sf.store_cnpj
+			from erp_sync_files sf
+			where sf.tenant_id = s.tenant_id
+			  and sf.store_id = s.id
+			order by sf.imported_at desc
+			limit 1
+		) last_file on true
+		where s.code = $1
+		  and s.is_active = true
+		  and t.is_active = true
+	`
+	args := []any{normalizedRootStoreCode}
+
+	switch principal.Role {
+	case auth.RolePlatformAdmin:
+		// Dev/platform admins can resolve the unique configured ERP root scope.
+	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
+		query += erpRootAccountAccessPredicate(2)
+		args = append(args, strings.TrimSpace(principal.UserID), strings.TrimSpace(principal.TenantID))
+	default:
+		query += erpRootStoreAccessPredicate(2)
+		args = append(args, strings.TrimSpace(principal.UserID), strings.TrimSpace(principal.TenantID))
+	}
+
+	query += `
+		order by s.created_at asc, s.id asc
+		limit 2;
+	`
+
+	rows, err := repository.pool.Query(ctx, query, args...)
+	if err != nil {
+		return StoreScope{}, err
+	}
+	defer rows.Close()
+
+	scopes := make([]StoreScope, 0, 2)
+	for rows.Next() {
+		var scope StoreScope
+		if err := rows.Scan(
+			&scope.TenantID,
+			&scope.StoreID,
+			&scope.StoreCode,
+			&scope.StoreName,
+			&scope.StoreCity,
+			&scope.StoreCNPJ,
+		); err != nil {
+			return StoreScope{}, err
+		}
+		scopes = append(scopes, scope)
+	}
+	if err := rows.Err(); err != nil {
+		return StoreScope{}, err
+	}
+
+	switch len(scopes) {
+	case 0:
+		exists, err := repository.rootStoreExists(ctx, normalizedRootStoreCode)
+		if err != nil {
+			return StoreScope{}, err
+		}
+		if exists {
+			return StoreScope{}, ErrForbidden
+		}
+		return StoreScope{}, ErrStoreNotFound
+	case 1:
+		return scopes[0], nil
+	default:
+		return StoreScope{}, ErrTenantRequired
+	}
 }
 
 func (repository *PostgresRepository) ResolveDefaultERPScope(ctx context.Context, principal auth.Principal, requestedTenantID string) (StoreScope, error) {
@@ -2613,7 +2711,9 @@ func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, princ
 	}
 
 	if principalTenantID := strings.TrimSpace(principal.TenantID); principalTenantID != "" {
-		return principalTenantID == normalizedTenantID, nil
+		if principalTenantID == normalizedTenantID {
+			return true, nil
+		}
 	}
 
 	var (
@@ -2637,10 +2737,33 @@ func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, princ
 			select exists(
 				select 1
 				from tenants t
-				join user_tenant_roles utr on utr.tenant_id = t.id
 				where t.id::text = $1
-				  and utr.user_id::text = $2
 				  and t.is_active = true
+				  and (
+					exists (
+						select 1
+						from user_tenant_roles utr
+						where utr.tenant_id = t.id
+						  and utr.user_id::text = $2
+					)
+					or exists (
+						select 1
+						from core.account_users au
+						where au.account_id = t.id
+						  and au.user_id::text = $2
+						  and au.is_active = true
+					)
+					or exists (
+						select 1
+						from core.accounts a
+						join core.organizations o on o.id = a.organization_id
+						join core.organization_users ou on ou.organization_id = o.id
+						where a.id = t.id
+						  and a.is_active = true
+						  and o.is_active = true
+						  and ou.user_id::text = $2
+					)
+				  )
 			);
 		`
 		args = []any{normalizedTenantID, strings.TrimSpace(principal.UserID)}
@@ -2665,6 +2788,74 @@ func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, princ
 		return false, err
 	}
 	return allowed, nil
+}
+
+func (repository *PostgresRepository) rootStoreExists(ctx context.Context, rootStoreCode string) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from stores s
+			join tenants t on t.id = s.tenant_id
+			where s.code = $1
+			  and s.is_active = true
+			  and t.is_active = true
+		);
+	`, strings.TrimSpace(rootStoreCode)).Scan(&exists)
+	return exists, err
+}
+
+func erpRootAccountAccessPredicate(firstArgIndex int) string {
+	userArg := fmt.Sprintf("$%d", firstArgIndex)
+	tenantArg := fmt.Sprintf("$%d", firstArgIndex+1)
+
+	return fmt.Sprintf(`
+		  and (
+			(%[2]s <> '' and s.tenant_id::text = %[2]s)
+			or exists (
+				select 1
+				from user_tenant_roles utr
+				where utr.tenant_id = s.tenant_id
+				  and utr.user_id::text = %[1]s
+			)
+			or exists (
+				select 1
+				from core.account_users au
+				where au.account_id = s.tenant_id
+				  and au.user_id::text = %[1]s
+				  and au.is_active = true
+			)
+			or exists (
+				select 1
+				from core.accounts a
+				join core.organizations o on o.id = a.organization_id
+				join core.organization_users ou on ou.organization_id = o.id
+				where a.id = s.tenant_id
+				  and a.is_active = true
+				  and o.is_active = true
+				  and ou.user_id::text = %[1]s
+			)
+		  )
+	`, userArg, tenantArg)
+}
+
+func erpRootStoreAccessPredicate(firstArgIndex int) string {
+	userArg := fmt.Sprintf("$%d", firstArgIndex)
+	tenantArg := fmt.Sprintf("$%d", firstArgIndex+1)
+
+	return fmt.Sprintf(`
+		  and (
+			(%[2]s <> '' and s.tenant_id::text = %[2]s)
+			or exists (
+				select 1
+				from stores scoped_store
+				join user_store_roles usr on usr.store_id = scoped_store.id
+				where scoped_store.tenant_id = s.tenant_id
+				  and scoped_store.is_active = true
+				  and usr.user_id::text = %[1]s
+			)
+		  )
+	`, userArg, tenantArg)
 }
 
 func (repository *PostgresRepository) ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error) {

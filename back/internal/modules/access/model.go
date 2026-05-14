@@ -104,6 +104,12 @@ type Repository interface {
 	ReplaceRolePermissions(ctx context.Context, role auth.Role, permissionKeys []string) error
 	ListUserOverrides(ctx context.Context, userID string) ([]UserOverride, error)
 	ReplaceUserOverrides(ctx context.Context, userID string, overrides []UserOverride, createdByUserID string) ([]UserOverride, error)
+	// ResolveEffectivePermissions resolve em uma unica query as permission_keys efetivas
+	// do user: (role_permissions UNION allow_overrides) EXCEPT deny_overrides. Retorna
+	// lista vazia se nao houver linhas em access_role_permissions para a role (caller
+	// aplica DefaultRolePermissions como fallback). Usado no hot-path do middleware
+	// de auth para reduzir round-trips ao banco.
+	ResolveEffectivePermissions(ctx context.Context, userID string, role auth.Role) ([]string, error)
 }
 
 type SubjectResolver interface {

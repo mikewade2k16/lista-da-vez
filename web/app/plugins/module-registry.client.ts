@@ -5,7 +5,13 @@ import type { NavSection } from "~/stores/nav";
 export default defineNuxtPlugin(() => {
   const navStore = useNavStore();
 
-  // Carrega nav.config.ts de todos os layers declarados em web/layers/*/
+  // 1. Legado com prioridade baixa — será sobrescrito por qualquer layer que
+  //    declare a mesma section id. Removido quando todos os layers estiverem prontos.
+  navStore.register(
+    SIDEBAR_NAV_SECTIONS.map((s) => ({ ...s, moduleId: "legacy" })) as NavSection[]
+  );
+
+  // 2. Layers declarativos (maior prioridade — sobrescrevem o legado pelo id da section).
   const layerConfigs = import.meta.glob("../../layers/*/nav.config.ts", { eager: true }) as Record<
     string,
     { default: { moduleId: string; sections: Omit<NavSection, "moduleId">[] } }
@@ -18,10 +24,4 @@ export default defineNuxtPlugin(() => {
       config.sections.map((s) => ({ ...s, moduleId: config.moduleId }))
     );
   }
-
-  // Fallback legado: injeta sidebar-nav.ts estático como módulo "legacy"
-  // Permanece enquanto o layer queue não estiver criado.
-  navStore.register(
-    SIDEBAR_NAV_SECTIONS.map((s) => ({ ...s, moduleId: "legacy" })) as NavSection[]
-  );
 });

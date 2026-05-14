@@ -15,10 +15,10 @@ body {
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+  font-family: var(--font-sans);
   background:
-    radial-gradient(circle at top, rgba(30, 20, 80, 0.35), transparent 40%),
-    linear-gradient(180deg, #0a0e18 0%, var(--bg-page) 100%);
+    radial-gradient(circle at top, rgb(var(--primary) / 0.12), transparent 42%),
+    linear-gradient(180deg, rgb(var(--surface-2)) 0%, var(--bg-page) 100%);
   color: var(--text-main);
 }
 

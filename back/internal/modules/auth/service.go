@@ -96,7 +96,11 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 		return Principal{}, err
 	}
 
-	user, err := service.users.FindByID(ctx, principal.UserID)
+	// Hot-path: LoadUserForAuth consolida em 1 query o que antes era FindByID (que fazia
+	// internamente 2 round-trips: findRecord + findStoreIDs). Resultado: 4 queries por
+	// request (findRecord + findStoreIDs + ListRolePermissions + ListUserOverrides) viram
+	// 2 (LoadUserForAuth + ResolveEffectivePermissions).
+	user, err := service.users.LoadUserForAuth(ctx, principal.UserID)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
 			return Principal{}, ErrUnauthorized

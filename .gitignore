@@ -24,6 +24,9 @@ back/.env.*
 # Local ERP/FTP working data
 Controlle10 - ftp/
 
+# Front do outro projeto trazido apenas para analise/referencia (Fase 10)
+web-reference/
+
 # Local assistant/browser artifacts
 .claude/
 .playwright-mcp/

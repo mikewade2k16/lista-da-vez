@@ -9,6 +9,7 @@ import { useAnalyticsStore } from "~/stores/analytics";
 definePageMeta({
   layout: "dashboard",
   workspaceId: "ranking",
+  alias: ["/operacao/ranking"],
   supportsAllStoresScope: true
 });
 

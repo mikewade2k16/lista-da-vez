@@ -170,6 +170,19 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 		})
 	})
 
+	// POST /v1/auth/logout — placeholder leve. Hoje o backend nao guarda sessao
+	// persistida, entao logout e idempotente e retorna 200 OK independentemente.
+	// Permite que o frontend pare de travar no logout (atualmente dispara loop
+	// de middleware quando navega para /auth/login sem confirmar invalidacao).
+	// Quando a Fase 7D introduzir PrincipalCache + core.user_sessions ativo,
+	// este handler passa a revogar a sessao do principal e publicar
+	// `user.session.revoked` no event bus.
+	mux.Handle("POST /v1/auth/logout", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteJSON(w, http.StatusOK, map[string]any{
+			"ok": true,
+		})
+	})))
+
 	mux.Handle("GET /v1/auth/me", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {

@@ -9,6 +9,7 @@ import { useReportsStore } from "~/stores/reports";
 definePageMeta({
   layout: "dashboard",
   workspaceId: "relatorios",
+  alias: ["/operacao/relatorios"],
   supportsAllStoresScope: true
 });
 

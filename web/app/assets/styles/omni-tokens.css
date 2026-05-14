@@ -1,0 +1,97 @@
+:root {
+  color-scheme: light;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text",
+    "Inter", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --radius-xs: 10px;
+  --radius-sm: 12px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --shadow-color: rgba(15, 23, 42, 0.24);
+  --shadow-glow-color: rgb(var(--primary) / 0.34);
+  --shadow-xs: 0 1px 0 color-mix(in srgb, var(--shadow-color) 35%, transparent);
+  --shadow-sm: 0 8px 24px color-mix(in srgb, var(--shadow-color) 55%, transparent);
+  --shadow-md: 0 14px 40px color-mix(in srgb, var(--shadow-color) 72%, transparent);
+  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--shadow-glow-color) 70%, transparent), 0 14px 44px color-mix(in srgb, var(--shadow-glow-color) 50%, transparent);
+  --bg: 248 250 252;
+  --surface: 255 255 255;
+  --surface-2: 244 246 250;
+  --border: 226 232 240;
+  --text: 15 23 42;
+  --muted: 100 116 139;
+  --primary: 99 102 241;
+  --primary-600: 79 70 229;
+  --success: 34 197 94;
+  --danger: 239 68 68;
+  --ring: 99 102 241;
+  --admin-header-brand-bg: linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)));
+  --admin-header-panel-bg: linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)));
+  --admin-header-brand-blur: 0px;
+  --admin-header-panel-blur: 0px;
+  --admin-header-border: rgb(var(--border) / 0.9);
+  --admin-header-separator: rgb(var(--border) / 0.9);
+  --admin-header-text: rgb(var(--text));
+  --admin-header-muted: rgb(var(--muted));
+  --admin-header-hover-bg: rgb(var(--primary) / 0.16);
+  --admin-header-active-bg: rgb(var(--primary) / 0.16);
+  --admin-header-shell-shadow: none;
+  --admin-header-fade-top: none;
+  --admin-header-fade-bottom: none;
+  --admin-header-fade-top-size: 0px;
+  --admin-header-fade-bottom-size: 0px;
+  --admin-page-header-eyebrow-display: block;
+  --admin-page-header-title-display: block;
+  --admin-page-header-description-display: block;
+}
+
+.dark {
+  color-scheme: dark;
+  --shadow-color: rgba(2, 6, 23, 0.72);
+  --bg: 6 10 18;
+  --surface: 13 18 29;
+  --surface-2: 18 25 38;
+  --border: 31 41 55;
+  --text: 226 232 240;
+  --muted: 148 163 184;
+  --primary: 129 140 248;
+  --primary-600: 165 180 252;
+  --success: 34 197 94;
+  --danger: 248 113 113;
+  --ring: 129 140 248;
+}
+
+.theme-apple-blue {
+  color-scheme: light;
+  --shadow-color: rgba(8, 59, 125, 0.24);
+  --bg: 236 246 255;
+  --surface: 247 252 255;
+  --surface-2: 228 241 255;
+  --border: 176 210 242;
+  --text: 12 52 98;
+  --muted: 67 105 147;
+  --primary: 10 132 255;
+  --primary-600: 0 122 255;
+  --success: 34 197 94;
+  --danger: 239 68 68;
+  --ring: 10 132 255;
+}
+
+.finance-dashboard-group {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.finance-dashboard-sidebar {
+  min-width: 0;
+}
+
+.finance-dashboard-panel {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .finance-dashboard-group {
+    grid-template-columns: 1fr;
+  }
+}

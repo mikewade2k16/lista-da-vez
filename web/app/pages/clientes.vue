@@ -6,7 +6,8 @@ import { useTenantsStore } from "~/stores/tenants";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "clientes"
+  workspaceId: "clientes",
+  alias: ["/operacao/clientes"],
 });
 
 const tenantsStore = useTenantsStore();

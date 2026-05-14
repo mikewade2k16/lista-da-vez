@@ -50,6 +50,12 @@ Ele nao deve cuidar de:
   - `user_store_roles`
 - a migration demo continua semeando usuarios para smoke local
 
+### Hot-path do middleware (Fase 7A)
+
+- `AuthenticateToken` usa `LoadUserForAuth` em vez de `FindByID`. Reduz 2 round-trips ao banco em 1 ao consolidar `findRecord` + `findStoreIDs` em uma unica query com `LATERAL` joins.
+- A resolucao de permissoes usa `access.Service.ResolveUserPermissions` que delega para `Repository.ResolveEffectivePermissions` (1 query unica consolidando `access_role_permissions` + `user_access_overrides`).
+- Resultado: requests autenticados fazem 2 round-trips ao banco no hot-path em vez de 4. Caminhos administrativos (update perfil, troca de senha) continuam usando `FindByID` para nao mudar shape.
+
 ### Token
 
 - token assinado via HMAC
@@ -79,6 +85,7 @@ Ele nao deve cuidar de:
 
 - `GET /v1/auth/roles`
 - `POST /v1/auth/login`
+- `POST /v1/auth/logout` (idempotente; Fase 7D vai revogar `core.user_sessions`)
 - `POST /v1/auth/password-reset/request`
 - `POST /v1/auth/password-reset/confirm`
 - `GET /v1/auth/me`

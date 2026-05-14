@@ -18,11 +18,13 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/erp"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/reports"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/settings"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tasks"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
@@ -67,7 +69,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	tenantRepository := tenants.NewPostgresRepository(pool)
 	tenantService := tenants.NewService(tenantRepository)
 	realtimeHub := realtime.NewHub()
-	realtimeService := realtime.NewService(authService, nil, tenantService, cfg.CORSAllowedOrigins, realtimeHub)
+	realtimeService := realtime.NewService(authService, nil, tenantService, cfg.CORSAllowedOrigins, realtimeHub, pool)
 	authService.SetContextPublisher(realtimeService)
 	accessService.SetContextPublisher(realtimeService)
 	storeRepository := stores.NewPostgresRepository(pool)
@@ -251,9 +253,23 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		ctx := context.Background()
 
 		bus := events.NewInMemoryBus(logger)
+		notificationService := notifications.NewService(
+			notifications.NewPostgresRepository(pool),
+			notifications.NewInAppAdapter(realtimeService),
+			notifications.NewEmailAdapter(),
+			notifications.NewWhatsAppAdapter(),
+			notifications.NewPushAdapter(),
+		)
+		relationRegistry := modules.NewRelationRegistry(
+			erp.NewRelationResolver(pool),
+			erp.NewCRMRelationResolver(pool),
+			operations.NewRelationResolver(pool),
+		)
 
 		registry := modules.NewRegistry(logger)
 		registry.MustRegister(core.New())
+		registry.MustRegister(notifications.New(notificationService))
+		registry.MustRegister(tasks.New(realtimeService, notificationService, relationRegistry))
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {

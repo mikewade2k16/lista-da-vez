@@ -9,6 +9,7 @@ import { useAnalyticsStore } from "~/stores/analytics";
 definePageMeta({
   layout: "dashboard",
   workspaceId: "inteligencia",
+  alias: ["/operacao/inteligencia"],
   supportsAllStoresScope: true
 });
 

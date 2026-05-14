@@ -6,7 +6,7 @@ const watcherIgnorePatterns = ["**/.output/**", "**/dist/**"];
 const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350);
 
 export default defineNuxtConfig({
-  extends: ["../layers/core"],
+  extends: ["./layers/core", "./layers/queue", "./layers/tasks"],
   compatibilityDate: "2026-03-23",
   devtools: {
     enabled: shouldEnableNuxtDevtools
@@ -17,6 +17,7 @@ export default defineNuxtConfig({
     "/configuracoes": { ssr: false },
     "/consultor": { ssr: false },
     "/dados": { ssr: false },
+    "/editor": { ssr: false },
     "/feedback": { ssr: false },
     "/finance": { ssr: false },
     "/inteligencia": { ssr: false },
@@ -32,12 +33,40 @@ export default defineNuxtConfig({
     "/site/**": { ssr: false },
     "/tasks": { ssr: false },
     "/team/**": { ssr: false },
+    "/themes": { ssr: false },
     "/tools/**": { ssr: false },
     "/tracking": { ssr: false },
     "/usuarios": { ssr: false }
   },
-  modules: ["@pinia/nuxt"],
+  modules: ["@nuxt/ui", "@pinia/nuxt"],
+  ui: {
+    fonts: false,
+    experimental: {
+      componentDetection: true
+    }
+  },
+  icon: {
+    provider: "server",
+    fallbackToApi: false,
+    collections: ["lucide"]
+  },
   vite: {
+    optimizeDeps: {
+      include: [
+        "@tiptap/extension-image",
+        "@tiptap/extension-link",
+        "@tiptap/extension-drag-handle",
+        "@tiptap/extension-emoji",
+        "@tiptap/extension-mention",
+        "@tiptap/extension-placeholder",
+        "@tiptap/extension-text-align",
+        "@tiptap/extension-underline",
+        "@tiptap/starter-kit",
+        "@tiptap/suggestion",
+        "@tiptap/vue-3",
+        "lucide-vue-next"
+      ]
+    },
     server: {
       watch: shouldUsePollingWatcher
         ? {
@@ -61,6 +90,7 @@ export default defineNuxtConfig({
     }
   },
   css: [
+    "~/assets/styles/omni-design-system.css",
     "~/assets/styles/tokens.css",
     "~/assets/styles/base.css",
     "~/assets/styles/layout.css",

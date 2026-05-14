@@ -304,9 +304,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div v-if="loading" class="app-entity-grid__empty-state">
-          <strong>{{ emptyTitle }}</strong>
-          <span>Carregando dados...</span>
+        <div v-if="loading" class="app-entity-grid__skeleton-state">
+          <CoreSkeleton variant="table-row" :count="6" />
         </div>
 
         <div v-else-if="!rows.length" class="app-entity-grid__empty-state">
@@ -591,6 +590,12 @@ onBeforeUnmount(() => {
 .app-entity-grid__empty-state strong {
   color: var(--text-main);
   font-size: 0.92rem;
+}
+
+/* Fase 9B: skeleton rows enquanto a tabela carrega.
+   Substitui o antigo "Carregando dados..." textual. */
+.app-entity-grid__skeleton-state {
+  padding: 0.4rem 0;
 }
 
 @media (max-width: 900px) {

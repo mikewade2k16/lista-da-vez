@@ -35,6 +35,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-lista_da_vez}:${POSTGRES_PASSWORD:-lista_da_vez_dev}@postgres:5432/${POSTGRES_DB:-lista_da_vez}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
+      MIGRATION_TIMEOUT: ${MIGRATION_TIMEOUT:-5m}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*,http://[::1]:*}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-dev-secret-change-me}
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}

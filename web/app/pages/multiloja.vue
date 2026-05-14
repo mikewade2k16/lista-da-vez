@@ -6,7 +6,8 @@ import { useMultiStoreStore } from "~/stores/multistore";
 
 definePageMeta({
   layout: "dashboard",
-  workspaceId: "multiloja"
+  workspaceId: "multiloja",
+  alias: ["/operacao/multiloja"],
 });
 
 const multiStore = useMultiStoreStore();

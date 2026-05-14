@@ -255,7 +255,7 @@ export const useErpStore = defineStore("erp", () => {
   });
 
   const activeTenantId = computed(() =>
-    normalizeText(auth.activeTenantId || activeStore.value?.tenantId || auth.tenantContext?.[0]?.id)
+    normalizeText(status.value?.store?.tenantId || overview.value?.store?.tenantId || "")
   );
 
   const activeStoreCode = computed(() =>
@@ -268,7 +268,7 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
       const params = new URLSearchParams();
@@ -298,7 +298,7 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
       const nextPage = Math.max(1, Number(payload.page || page.value || 1) || 1);
@@ -371,16 +371,22 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
+
+      const body: Record<string, unknown> = {
+        sourcePath: normalizeText(payload.sourcePath)
+      };
+      if (tenantId) {
+        body.tenantId = tenantId;
+      }
+      if (storeCode) {
+        body.storeCode = storeCode;
+      }
 
       const response = await apiRequest("/v1/erp/bootstrap/items", {
         method: "POST",
-        body: {
-          tenantId,
-          storeCode,
-          sourcePath: normalizeText(payload.sourcePath)
-        }
+        body
       }) as BootstrapResponse;
 
       return { ok: true, data: response };
@@ -399,21 +405,27 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
       const dataType = normalizeText(payload.dataType).toLowerCase();
       if (!dataType) {
         return { ok: false, message: "Tipo de dado ERP nao informado." };
       }
 
+      const body: Record<string, unknown> = {
+        dataType,
+        sourcePath: normalizeText(payload.sourcePath)
+      };
+      if (tenantId) {
+        body.tenantId = tenantId;
+      }
+      if (storeCode) {
+        body.storeCode = storeCode;
+      }
+
       const response = await apiRequest("/v1/erp/bootstrap", {
         method: "POST",
-        body: {
-          tenantId,
-          storeCode,
-          dataType,
-          sourcePath: normalizeText(payload.sourcePath)
-        }
+        body
       }) as BootstrapResponse;
 
       return { ok: true, data: response };
@@ -441,7 +453,7 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
       const dataType = normalizeText(payload.dataType).toLowerCase();
@@ -524,7 +536,7 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
       const nextPage = Math.max(1, Number(payload.page || 1) || 1);
@@ -582,7 +594,7 @@ export const useErpStore = defineStore("erp", () => {
       error.value = "";
       await auth.ensureSession();
 
-      const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+      const tenantId = normalizeText(payload.tenantId);
       const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
       const params = new URLSearchParams();
@@ -629,18 +641,24 @@ export const useErpStore = defineStore("erp", () => {
     error.value = "";
     await auth.ensureSession();
 
-    const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+    const tenantId = normalizeText(payload.tenantId);
     const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
-    const response = await apiRequest("/v1/erp/sync", {
-    method: "POST",
-    body: {
-      tenantId,
-      storeCode,
+    const body: Record<string, unknown> = {
       dataType: normalizeText(payload.dataType).toLowerCase(),
       dryRun: Boolean(payload.dryRun),
       maxFiles: Number(payload.maxFiles || 0) || 0
+    };
+    if (tenantId) {
+      body.tenantId = tenantId;
     }
+    if (storeCode) {
+      body.storeCode = storeCode;
+    }
+
+    const response = await apiRequest("/v1/erp/sync", {
+    method: "POST",
+    body
     }) as IngestResponse;
 
     return { ok: true, data: response };
@@ -659,18 +677,24 @@ export const useErpStore = defineStore("erp", () => {
     error.value = "";
     await auth.ensureSession();
 
-    const tenantId = normalizeText(payload.tenantId || activeTenantId.value);
+    const tenantId = normalizeText(payload.tenantId);
     const storeCode = normalizeText(payload.storeCode || activeStoreCode.value);
 
-    const response = await apiRequest("/v1/erp/backfill", {
-    method: "POST",
-    body: {
-      tenantId,
-      storeCode,
+    const body: Record<string, unknown> = {
       dataType: normalizeText(payload.dataType).toLowerCase(),
       dryRun: Boolean(payload.dryRun),
       maxFiles: Number(payload.maxFiles || 0) || 0
+    };
+    if (tenantId) {
+      body.tenantId = tenantId;
     }
+    if (storeCode) {
+      body.storeCode = storeCode;
+    }
+
+    const response = await apiRequest("/v1/erp/backfill", {
+    method: "POST",
+    body
     }) as IngestResponse;
 
     return { ok: true, data: response };

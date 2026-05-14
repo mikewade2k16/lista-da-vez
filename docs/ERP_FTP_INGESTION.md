@@ -199,8 +199,9 @@ Exemplo de payload para backfill:
 
 Observacao:
 
-- o `storeCode` deve refletir a loja ERP que existe no contexto autenticado e nos nomes de arquivo da origem remota
-- o fato de o FTP atual expor arquivos com codigo `184` nao transforma esse codigo em escopo fixo da UI ou tenant especial
+- o `storeCode` da importacao FTP diaria deve permanecer no escopo raiz ERP configurado (`ERP_ROOT_STORE_CODE=184` no cliente Perola)
+- as sublojas operacionais/comerciais (JAR/RIO/GAR/TRE) sao filtros e dimensoes de atribuicao dentro do dataset 184; elas nao substituem o root `184` em `/status`, `/overview`, `/runs`, `/sync`, `/backfill`, `/products` ou `/crm`
+- se a UI estiver com uma subloja ativa no topo, o backend ERP ainda deve resolver o root `184`; a subloja ativa nao e fonte FTP independente
 
 ## Próximo passo obrigatório
 

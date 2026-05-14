@@ -1,4 +1,4 @@
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import { defineStore } from "pinia";
 
 import { useAuthStore } from "~/stores/auth";
@@ -122,13 +122,8 @@ export const useCrmStore = defineStore("crm", () => {
   const dateFrom = ref(defaultRange.dateFrom);
   const dateTo = ref(defaultRange.dateTo);
 
-  const activeTenantId = computed(() =>
-    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id)
-  );
-
   function buildRequestKey() {
     return JSON.stringify({
-      tenantId: activeTenantId.value,
       dateFrom: dateFrom.value,
       dateTo: dateTo.value
     });
@@ -166,9 +161,6 @@ export const useCrmStore = defineStore("crm", () => {
       }
 
       const params = new URLSearchParams();
-      if (activeTenantId.value) {
-        params.set("tenantId", activeTenantId.value);
-      }
       if (dateFrom.value) {
         params.set("dateFrom", dateFrom.value);
       }

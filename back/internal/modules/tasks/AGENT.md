@@ -59,13 +59,15 @@ Todos os endpoints exigem `Authorization: Bearer` + `X-Account-Id`.
 ```
 GET    /v1/tasks/boards
 POST   /v1/tasks/boards
-GET    /v1/tasks/boards/:boardId
+GET    /v1/task-boards/:boardId          detalhe completo do board
 PATCH  /v1/tasks/boards/:boardId
 POST   /v1/tasks/boards/:boardId/columns
 PATCH  /v1/tasks/columns/:columnId
 DELETE /v1/tasks/columns/:columnId        body: { remapToColumnId }
 POST   /v1/tasks/boards/:boardId/fields
 ```
+
+**Trava T5 (2026-05-14):** nao reintroduzir `GET /v1/tasks/boards/:boardId` no Go `ServeMux` atual. Essa rota conflita com rotas parametrizadas como `GET /v1/tasks/:taskId/comments`, pois ambas podem casar caminhos como `/v1/tasks/boards/comments`. O detalhe de board fica em `GET /v1/task-boards/:boardId` ate o desenho de rotas ser reorganizado.
 
 ### Tasks
 
@@ -79,6 +81,76 @@ DELETE /v1/tasks/:taskId                  soft delete (archived=true)
 POST   /v1/tasks/:taskId/comments
 POST   /v1/tasks/:taskId/shares           { clientAccountId, permission }
 ```
+
+**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet` e `createdBy`. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
+
+**Paginacao cursor-based em ListTasks (T5 — fechamento 2026-05-15):** o repository usa keyset pagination
+sobre a tupla `(sort_order, created_at, id)` — ordem total estavel mesmo quando varias tasks
+compartilham `sort_order`/`created_at`. O cursor exposto na API e' opaco (`base64url(JSON{s,c,i})`).
+A query pede `limit+1` rows para detectar `hasMore` sem segunda chamada; se vier o extra, a
+ultima e' descartada e o `nextCursor` aponta para a anterior. Response: `{ tasks, nextCursor }`
+— `nextCursor` vazio = fim da paginacao. `ListTasksResult` em `service.go` carrega ambos.
+Nao expor `sort_order`/`created_at` direto na URL — manter cursor opaco para permitir mudar a
+estrategia (ex: adicionar filtro) sem quebrar URLs salvas.
+
+**Hardening T8 (2026-05-15):**
+
+- **Rate limit REST**: `httpapi.RateLimit(httpapi.DefaultRESTRateLimit)` aplicado globalmente em
+  `app.go` antes do middleware de Logging — 60 req/min por (user_id, fallback IP). Quando
+  excedido, devolve `429` com header `Retry-After: <segundos>`. Token bucket in-memory com
+  cleanup a cada 5 min; aceitavel ate broker externo (multi-replica) em T9.
+- **slog em mutations**: `service.audit(...)` ja era o ponto unico chamado por todas as 13
+  mutations (CreateBoard, UpdateBoard, CreateColumn, UpdateColumn, DeleteColumn, CreateField,
+  CreateTask, UpdateTask, MoveTask, DeleteTask, AddComment, AddShare, AddRelation). Agora ele
+  tambem dispara `service.logMutation` -> `slog.LogAttrs(LevelInfo, "tasks.mutation", ...)` com
+  `action`, `account_id`, `user_id`, `resource_type`, `resource_id`. Persistencia segue em
+  `tasks.tasks_audit` via `repository.InsertAuditEntry`.
+- **404 vs 403**: `ResolveAccessContext` retorna `ErrAccountNotFound` (mapeado para 404) sempre
+  que o user nao e' membro da account ou ela nao existe. `ErrForbidden` (403) fica reservado
+  para "user na account certa mas falta a permissao especifica". `scopedQuery(accountID, ...)`
+  no repository garante que recursos de outras accounts nunca aparecem (vira `pgx.ErrNoRows` ->
+  `ErrTaskNotFound`/`ErrBoardNotFound`). Nao misturar os dois.
+- **accountId nunca vem do body**: `withPermission` em `http.go` resolve a partir de `X-Account-Id`
+  (header), `accountId` (query) e `principal.TenantID` (fallback) — *nessa ordem*. Inputs com
+  campo `AccountID` JSON sao ignorados pelo service. Para alterar a account de uma mutation, o
+  cliente DEVE trocar o header.
+- **Logger injetado via `deps.Logger`**: `module.Build(...)` chama `service.SetLogger(deps.Logger)`.
+  Quando o Module Registry nao for usado (tests, scripts), o servico cai para `slog.Default()`.
+
+**Quando implementar `RemoveRelation` (sem rota DELETE ainda):** lembrar de publicar
+`task.relation_removed` no `Publisher.PublishTaskEvent`. O composable front `useTaskRelations`
+ja escuta esse evento para invalidar cache.
+
+## Testes (T9 — fechada 2026-05-15)
+
+Cobertura completa adicionada na T9 (todos os testes Go rodam sem Postgres real, via mocks):
+
+### Backend Go (50 testes novos)
+
+- `dto_test.go` (4) — `BuildTaskDTO` agency vs client_viewer; uiMetadata sempre nao-nil; ISO dates.
+- `cursor_test.go` (4) — round-trip do `listTasksCursor`; URL-safe; decode invalido nao panica.
+- `service_test.go` (10) — CreateTask happy/no-perm/validation; GetTask perspective + 404; ListTasks default-limit/clamp/no-perm/perspective/nextCursor.
+- `scope_test.go` (8) — accountID vazio, account 404, **cross-account 404 (nunca 403)**, platform_admin bypass, client_viewer perspective, manage override, **fuzz 100 IDs cross-account = 100% 404**, `scopedQuery` panica sem accountID.
+- `tracking_test.go` (8) — no-perm/task-not-found, happy-path publica WS + audita, **ErrVersionConflict propaga (409)**, expectedVersion passa intacto, StopTracking 404 nao publica nem audita.
+- `realtime/presence_test.go` (6) — user_joined unico, **LockField exclusivo (T7.2)**, owner reclaim, UnlockField publica, Leave decrementa, TTL expira.
+- `httpapi/rate_limit_test.go` (6) — dentro do limite passa, 429+Retry-After, resolver custom precede IP, fallback X-Forwarded-For, janela reseta.
+
+### Mock leve
+
+`repository_mock_test.go` — satisfaz `Repository` (30+ metodos) com hooks `onXxx` opcionais; captura passiva de `auditEntries`. Cada teste sobrescreve so o que precisa.
+
+### Frontend Vitest (9 testes)
+
+- `web/layers/tasks/utils/text.ts` extraido com `clampText`/`normalizeText` (re-export no `useTasksPageContext`).
+- `web/layers/tasks/utils/text.test.ts` — 9 testes cobrindo trim/colapso/clamp, **`clampText('palavra ')` preserva o espaco (T7.2)**.
+- Vitest 2.1 instalado em `web/package.json` (dev); scripts `npm test` / `npm run test:watch`.
+- `capturingPublisher` em `tracking_test.go` — Publisher mockado que captura `events`/`boards`/`presences` para asserts sem WebSocket real.
+
+### Pendencias futuras (T9.1 / nao bloqueantes)
+
+- **Integration tests com Postgres real** — alternativa pesada aos mocks. Smoke E2E manual cobre na pratica.
+- **`@nuxt/test-utils` + `happy-dom`** — para testar composables Vue completos (`useTaskRelations` com fetch mockado, `useTaskPresence` com WebSocket fake, `useTasksRealtime` reconnect+jitter). Por enquanto, util puros (`clampText`/`normalizeText`) cobrem o caso critico T7.2.
+- **Roteiro smoke E2E 12 passos** — documentado em `docs/TASKS_ORCHESTRATOR_PHASE12.md` para o usuario rodar manualmente em staging.
 
 ### Tracking
 

@@ -219,9 +219,16 @@ func (service *Service) HandlePresenceSocket(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	displayName := strings.TrimSpace(principal.Nick)
+	if displayName == "" {
+		displayName = strings.TrimSpace(principal.DisplayName)
+	}
+	if displayName == "" {
+		displayName = strings.TrimSpace(principal.Email)
+	}
 	user := PresenceUser{
 		UserID:      strings.TrimSpace(principal.UserID),
-		DisplayName: strings.TrimSpace(principal.DisplayName),
+		DisplayName: displayName,
 	}
 
 	onConnected := func() []Event {

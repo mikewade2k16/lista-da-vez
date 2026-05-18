@@ -14,6 +14,7 @@ const (
 type User struct {
 	ID                 string
 	DisplayName        string
+	Nick               string
 	Email              string
 	PasswordHash       string
 	MustChangePassword bool
@@ -37,6 +38,7 @@ const (
 type UserView struct {
 	ID                 string   `json:"id"`
 	DisplayName        string   `json:"displayName"`
+	Nick               string   `json:"nick,omitempty"`
 	Email              string   `json:"email"`
 	AvatarPath         string   `json:"avatarPath,omitempty"`
 	MustChangePassword bool     `json:"mustChangePassword"`
@@ -49,6 +51,7 @@ type UserView struct {
 type Principal struct {
 	UserID              string
 	DisplayName         string
+	Nick                string
 	Email               string
 	Role                Role
 	TenantID            string
@@ -192,6 +195,7 @@ func (user User) View() UserView {
 	return UserView{
 		ID:                 user.ID,
 		DisplayName:        user.DisplayName,
+		Nick:               user.Nick,
 		Email:              user.Email,
 		AvatarPath:         user.AvatarPath,
 		MustChangePassword: user.MustChangePassword,

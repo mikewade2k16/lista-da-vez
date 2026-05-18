@@ -26,6 +26,9 @@ func NewPostgresCatalogRepository(pool *pgxpool.Pool) *PostgresCatalogRepository
 // linhas existentes. schema_name e is_core nunca mudam apos criados (proteja-se
 // de typo).
 func (r *PostgresCatalogRepository) UpsertModule(ctx context.Context, row ModuleRow) error {
+	requiresModules := normalizeStringSlice(row.RequiresModules)
+	optionalModules := normalizeStringSlice(row.OptionalModules)
+
 	const query = `
 		insert into core.modules (
 			id, schema_name, label, description, is_core,
@@ -49,11 +52,18 @@ func (r *PostgresCatalogRepository) UpsertModule(ctx context.Context, row Module
 		row.Label,
 		row.Description,
 		row.IsCore,
-		row.RequiresModules,
-		row.OptionalModules,
+		requiresModules,
+		optionalModules,
 		row.SortOrder,
 	)
 	return err
+}
+
+func normalizeStringSlice(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 
 // UpsertPermission sincroniza uma linha em core.permissions.

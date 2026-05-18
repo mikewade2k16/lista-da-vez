@@ -3,29 +3,33 @@ package tasks
 import "time"
 
 type UserMiniDTO struct {
-	ID string `json:"id"`
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName,omitempty"`
+	Email       string `json:"email,omitempty"`
+	AvatarPath  string `json:"avatarPath,omitempty"`
 }
 
 type TaskDTO struct {
-	ID                string        `json:"id"`
-	BoardID           string        `json:"boardId"`
-	ColumnID          *string       `json:"columnId,omitempty"`
-	Title             string        `json:"title"`
-	ContentHTML       string        `json:"contentHtml,omitempty"`
-	Status            *string       `json:"status,omitempty"`
-	Priority          string        `json:"priority"`
-	DueDate           *string       `json:"dueDate,omitempty"`
-	StartDate         *string       `json:"startDate,omitempty"`
-	Archived          bool          `json:"archived"`
-	SortOrder         float64       `json:"sortOrder"`
-	Responsible       *UserMiniDTO  `json:"responsible,omitempty"`
-	ResponsibleUserID *string       `json:"responsibleUserId,omitempty"`
-	ClientAccountID   *string       `json:"clientAccountId,omitempty"`
-	Assignees         []UserMiniDTO `json:"assignees,omitempty"`
-	TrackingTotalMs   *int64        `json:"trackingTotalMs,omitempty"`
-	Version           int           `json:"version"`
-	CreatedAt         string        `json:"createdAt"`
-	UpdatedAt         string        `json:"updatedAt"`
+	ID                string         `json:"id"`
+	BoardID           string         `json:"boardId"`
+	ColumnID          *string        `json:"columnId,omitempty"`
+	Title             string         `json:"title"`
+	ContentHTML       string         `json:"contentHtml,omitempty"`
+	Status            *string        `json:"status,omitempty"`
+	Priority          string         `json:"priority"`
+	DueDate           *string        `json:"dueDate,omitempty"`
+	StartDate         *string        `json:"startDate,omitempty"`
+	Archived          bool           `json:"archived"`
+	SortOrder         float64        `json:"sortOrder"`
+	Responsible       *UserMiniDTO   `json:"responsible,omitempty"`
+	ResponsibleUserID *string        `json:"responsibleUserId,omitempty"`
+	ClientAccountID   *string        `json:"clientAccountId,omitempty"`
+	Assignees         []UserMiniDTO  `json:"assignees,omitempty"`
+	UIMetadata        map[string]any `json:"uiMetadata"`
+	TrackingTotalMs   *int64         `json:"trackingTotalMs,omitempty"`
+	Version           int            `json:"version"`
+	CreatedAt         string         `json:"createdAt"`
+	UpdatedAt         string         `json:"updatedAt"`
 }
 
 func (service *Service) BuildTaskDTO(task Task, perspective Perspective) TaskDTO {
@@ -42,6 +46,7 @@ func (service *Service) BuildTaskDTO(task Task, perspective Perspective) TaskDTO
 		Archived:          task.Archived,
 		SortOrder:         task.SortOrder,
 		ResponsibleUserID: task.ResponsibleUserID,
+		UIMetadata:        normalizeMap(task.UIMetadata),
 		Version:           task.Version,
 		CreatedAt:         task.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:         task.UpdatedAt.UTC().Format(time.RFC3339),

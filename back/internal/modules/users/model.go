@@ -10,6 +10,7 @@ import (
 type User struct {
 	ID                 string
 	DisplayName        string
+	Nick               string
 	Email              string
 	EmployeeCode       string
 	JobTitle           string
@@ -41,6 +42,7 @@ type OnboardingView struct {
 type UserView struct {
 	ID                string         `json:"id"`
 	DisplayName       string         `json:"displayName"`
+	Nick              string         `json:"nick,omitempty"`
 	Email             string         `json:"email"`
 	EmployeeCode      string         `json:"employeeCode,omitempty"`
 	JobTitle          string         `json:"jobTitle,omitempty"`
@@ -118,6 +120,7 @@ func (user User) View() UserView {
 	return UserView{
 		ID:                user.ID,
 		DisplayName:       user.DisplayName,
+		Nick:              user.Nick,
 		Email:             user.Email,
 		EmployeeCode:      user.EmployeeCode,
 		JobTitle:          user.JobTitle,

@@ -9,7 +9,7 @@ const {
   projectSettingsOpen,
   projectSettingsDraft,
   statusOptions,
-  responsibleOptions,
+  responsibleOptionsAvatar,
   typeOptions,
   BOARD_GROUP_OPTIONS,
   FIELD_DEFS,
@@ -100,10 +100,10 @@ const {
             <p
               class="tasks-page__settings-label text-xs font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">
               Responsaveis</p>
-            <OmniSelectMenuInput v-model="projectSettingsDraft.responsibles" :items="responsibleOptions"
-              placeholder="Adicionar responsavel" :multiple="true" :creatable="{ when: 'always', position: 'bottom' }"
-              :searchable="true" :full-content-width="true" item-display-mode="text" color="neutral" variant="none"
-              :highlight="false" :badge-mode="true" clear option-edit-mode="full" />
+            <OmniSelectMenuInput v-model="projectSettingsDraft.responsibles" :items="responsibleOptionsAvatar"
+              placeholder="Selecionar responsavel" :multiple="true" :searchable="true" :full-content-width="true"
+              item-display-mode="rich" :show-avatar="true" color="neutral" variant="none" :highlight="false"
+              :badge-mode="true" badge-style="entity" clear option-edit-mode="color" />
           </div>
 
           <div class="tasks-page__settings-field space-y-1">

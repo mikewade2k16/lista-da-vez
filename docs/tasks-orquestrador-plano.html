@@ -183,6 +183,12 @@
     border-left-color: var(--accent);
   }
   .callout.info strong { color: var(--accent); }
+  .callout.danger {
+    background: linear-gradient(180deg, rgba(248,81,73,0.08), rgba(248,81,73,0.02));
+    border-color: rgba(248,81,73,0.35);
+    border-left-color: var(--red);
+  }
+  .callout.danger strong { color: var(--red); }
 
   .release {
     background: var(--bg-card);
@@ -1103,7 +1109,7 @@ const (
 
 <div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/boards</span><span class="perm">tasks.boards.view</span></div>
 <div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/boards</span><span class="perm">tasks.boards.manage</span></div>
-<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/tasks/boards/:boardId</span><span class="perm">tasks.boards.view</span></div>
+<div class="endpoint"><span class="method get">GET</span><span class="path">/v1/task-boards/:boardId</span><span class="perm">tasks.boards.view</span></div>
 <div class="endpoint"><span class="method patch">PATCH</span><span class="path">/v1/tasks/boards/:boardId</span><span class="perm">tasks.boards.manage</span></div>
 <div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/boards/:boardId/columns</span><span class="perm">tasks.boards.manage</span></div>
 <div class="endpoint"><span class="method patch">PATCH</span><span class="path">/v1/tasks/columns/:columnId</span><span class="perm">tasks.boards.manage</span></div>
@@ -1117,6 +1123,10 @@ const (
 <div class="endpoint"><span class="method delete">DELETE</span><span class="path">/v1/tasks/:taskId</span><span class="perm">tasks.tasks.delete</span></div>
 <div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/comments</span><span class="perm">tasks.tasks.comment</span></div>
 <div class="endpoint"><span class="method post">POST</span><span class="path">/v1/tasks/:taskId/shares</span><span class="perm">tasks.shares.manage</span></div>
+
+<div class="callout warn">
+  <strong>Rota de detalhe do board:</strong> manter <code>GET /v1/task-boards/:boardId</code>. No Go <code>ServeMux</code> atual, <code>GET /v1/tasks/boards/:boardId</code> conflita com rotas parametrizadas de task como <code>GET /v1/tasks/:taskId/comments</code>.
+</div>
 
 <h4>Handler com middleware de permissão</h4>
 <pre class="go"><code>// http.go
@@ -1514,12 +1524,79 @@ export const useTasksStore = defineStore('tasks', () => {
   return { boards, activeBoardId, tasksByBoard, fetchBoards, moveTask, applyRealtimeEvent }
 })</code></pre>
 
+<h3>Registro de regressao T5 - nao repetir</h3>
+<div class="callout warn">
+  <strong>Incidente em 2026-05-14:</strong> o smoke inicial da T5 validou criar/editar/arquivar, mas nao cobriu reload, drag/drop, data no modal e contrato completo do board. Esses pontos sao obrigatorios antes de marcar a fase como concluida.
+</div>
+
+<h4>Sintomas observados</h4>
+<ul class="checklist">
+  <li>Drag/drop nao movia a task de forma confiavel.</li>
+  <li>Task criada sumia ou voltava errada depois de recarregar a pagina.</li>
+  <li>Modal podia abrir sem campo de prazo/data por normalizacao incorreta de chaves.</li>
+  <li>Criacao pela tabela podia focar uma task sem <code>id</code>, porque a chamada async nao era aguardada.</li>
+  <li>Responsavel podia aparecer como email em vez de nome de exibicao.</li>
+  <li>Falhas de sincronizacao ficavam silenciosas na UI.</li>
+  <li>A rota <code>GET /v1/tasks/boards/{boardId}</code> derrubava o boot do Go <code>ServeMux</code> por conflito com rotas de task por id.</li>
+  <li>Cards do board exibiam placeholders de campos vazios, incluindo <code>Sem data</code>, mesmo sem dado cadastrado.</li>
+  <li>Selects de responsavel/envolvidos permitiam criar pessoas manuais e duplicar o responsavel como envolvido.</li>
+  <li>Cores editadas no select apareciam no modal, mas nao no board; usuarios/clientes nao seguiam o padrao avatar + nome.</li>
+  <li>Prazo com inicio/fim e hora nao era persistido de forma igual no modal e no board.</li>
+  <li>Tracking do front ainda usava <code>localStorage</code>, apesar dos endpoints server-side da T6 ja existirem.</li>
+  <li>Dois usuarios viam cliente, responsavel, envolvidos, tipo e data final diferentes porque esses campos ainda dependiam de metadata local por navegador.</li>
+</ul>
+
+<h4>Causa raiz</h4>
+<ul class="checklist">
+  <li><code>GET /v1/tasks/boards</code> retorna resumo, nao board completo com colunas, views e fields.</li>
+  <li>O front recriava colunas fallback quando nao buscava o detalhe do board.</li>
+  <li><code>due_date</code>, <code>dueDate</code>, <code>client_id</code> e <code>clientId</code> eram normalizados como chaves diferentes.</li>
+  <li>Campos front-only do prototipo, como <code>responsible</code>, <code>involved</code>, <code>clientName</code>, <code>type</code> e <code>dueEndDate</code>, nao tinham persistencia backend equivalente.</li>
+  <li><code>TasksBoardView.vue</code> usava <code>onDropCard</code> no template sem receber a funcao do contexto.</li>
+</ul>
+
+<h4>Correcoes aplicadas</h4>
+<table>
+  <thead><tr><th>Area</th><th>Correcao</th></tr></thead>
+  <tbody>
+    <tr><td>Rotas</td><td>Detalhe de board usa <code>GET /v1/task-boards/{boardId}</code>. Nao reintroduzir <code>GET /v1/tasks/boards/{boardId}</code> no <code>ServeMux</code> atual.</td></tr>
+    <tr><td>Hydration</td><td><code>tasks.ts</code> busca detalhe do board antes de montar projeto, colunas, views e fields.</td></tr>
+    <tr><td>Field keys</td><td><code>normalizeFieldKey</code> preserva aliases canonicos como <code>dueDate</code>, <code>clientId</code>, <code>createdAt</code> e <code>createdBy</code>.</td></tr>
+    <tr><td>Drag/drop</td><td><code>TasksBoardView.vue</code> recebe <code>onDropCard</code> do contexto; o smoke deve validar <code>POST /v1/tasks/{taskId}/move</code>.</td></tr>
+    <tr><td>Criacao</td><td><code>createTableTask</code> aguarda <code>tasksWorkspace.createTask()</code> antes de focar a celula.</td></tr>
+    <tr><td>Identidade</td><td><code>currentUserName</code> prioriza <code>displayName</code> antes de <code>email</code>.</td></tr>
+    <tr><td>Sync</td><td><code>/tasks</code> exibe alerta quando <code>tasksWorkspace.errorMessage</code> estiver preenchido.</td></tr>
+    <tr><td>Metadata da task</td><td><code>tasks.tasks.ui_metadata</code> persiste <code>responsible</code>, <code>involved</code>, <code>clientId</code>, <code>clientName</code>, <code>type</code>, <code>dueEndDate</code>, <code>prioritySet</code> e <code>createdBy</code>; o DTO sempre devolve <code>uiMetadata</code>, mesmo vazio, para impedir fallback em cache local velho.</td></tr>
+    <tr><td>Card limpo</td><td>Campo vazio nao renderiza no card. Placeholder como <code>Sem data</code> so aparece no editor/draft quando o campo foi aberto.</td></tr>
+    <tr><td>Pessoas reais</td><td>Responsavel/envolvidos nao usam <code>creatable</code>; opcoes vem de usuarios, projeto e tasks existentes, com responsavel removido de envolvidos.</td></tr>
+    <tr><td>Visual unificado</td><td>Usuarios/clientes usam avatar + nome e borda opcional; status/tipo/prioridade continuam como badge colorido preenchido.</td></tr>
+    <tr><td>Prazo completo</td><td><code>AppDatePicker</code> emite inicio e fim; data e hora ficam na mesma linha; <code>dueEndDate</code> persiste em <code>ui_metadata</code> e aparece igual no modal e no board.</td></tr>
+    <tr><td>T6 tracking</td><td><code>useTimeTracking</code> hidrata e aciona <code>/v1/tasks/tracking/active</code> e <code>/v1/tasks/{taskId}/tracking/{start,pause,resume,stop}</code>.</td></tr>
+  </tbody>
+</table>
+
+<h4>Checklist de aceite T5</h4>
+<ol class="steps">
+  <li>Subir API com <code>docker compose up -d --build api</code> sem panic.</li>
+  <li>Validar <code>curl http://localhost:8883/healthz</code> com <code>status: ok</code>.</li>
+  <li>Rodar <code>go test ./...</code> em <code>back/</code>.</li>
+  <li>Rodar <code>npm --prefix web run build</code>.</li>
+  <li>No navegador, criar task, abrir modal, definir prazo, salvar, arrastar para outra coluna e recarregar.</li>
+  <li>Depois do reload, confirmar titulo, status, prazo e nome do responsavel preservados.</li>
+  <li>Network deve mostrar <code>GET /v1/task-boards/{boardId}</code>, create/update/move com <code>2xx</code>, sem <code>405</code>/<code>500</code>.</li>
+  <li>Console nao deve ter erro novo de Tasks, CORS ou promise sem tratamento.</li>
+</ol>
+
+<div class="callout danger">
+  <strong>Trava:</strong> nao declarar T5 concluida apenas com smoke de criar/editar/arquivar. Reload, drag/drop, card sem placeholder vazio, prazo inicio/fim, selects de pessoa sem criacao manual e persistencia cross-user via <code>ui_metadata</code> fazem parte do aceite minimo.
+</div>
+
 <h3>Composables</h3>
 <table>
   <thead><tr><th>Composable</th><th>Função</th></tr></thead>
   <tbody>
-    <tr><td><code>useTasksRealtime</code></td><td>Clone de <code>useOperationsRealtime.ts</code>. Troca topic. Reconexão 1–10s.</td></tr>
-    <tr><td><code>useTaskPresence</code></td><td>Abre <code>presence:task:{id}</code>. Heartbeat 15s.</td></tr>
+    <tr><td><code>useTasksRealtime</code></td><td>Abre <code>/v1/realtime/tasks</code> em escopo account, reconecta e agenda refresh para <code>task.*</code>, <code>board.*</code> e <code>field.*</code>. O canal <code>presence</code> sozinho nao sincroniza cards.</td></tr>
+    <tr><td><code>useTaskPresence</code></td><td>Abre <code>presence:task:{id}</code> e <code>presence:board:{id}</code>. Heartbeat 15s, avatares, nome de quem edita e bloqueio do mesmo campo quando houver lock remoto.</td></tr>
     <tr><td><code>useTaskTracking</code></td><td>Server-backed. Tick local com <code>clockOffset</code>.</td></tr>
     <tr><td><code>useTaskRelations</code></td><td>Lazy load + cache.</td></tr>
     <tr><td><code>useCan(key)</code></td><td>Computed contra <code>useMeContext().permissions</code>.</td></tr>
@@ -1620,6 +1697,14 @@ setInterval(() => { /* trigger reactivity */ }, 1000)</code></pre>
 <div class="phase-header">
   <h2 id="fase-7">Fase 7 — Presence (avatares + field lock leve)</h2>
   <span class="pill med">Média</span><span class="pill dep">~2–3d</span><span class="pill dep">depende: Fase 2</span>
+</div>
+
+<div class="callout ok">
+  <strong>Status em 2026-05-15:</strong> front aplicado em <code>web/layers/tasks/composables/useTaskPresence.ts</code>, <code>useTasksPageContext.ts</code>, <code>TasksTaskModal.vue</code>, <code>TasksBoardView.vue</code> e <code>tasks.vue</code>. O modal abre <code>presence:task:{id}</code> e tambem publica no escopo <code>presence:board:{boardId}</code>; o board mostra avatares/nome de quem esta editando e bloqueia o mesmo campo ate blur/TTL.
+</div>
+
+<div class="callout warn">
+  <strong>Correcao em 2026-05-15:</strong> teste com dois usuarios mostrou que presence funcionava, mas dados de task nao atualizavam sem reload porque o front ainda nao abria <code>GET /v1/realtime/tasks</code> e alguns campos do card estavam em metadata local. Criado <code>useTasksRealtime.ts</code>, ligado refresh para eventos <code>task.*</code>, <code>board.*</code> e <code>field.*</code>, e persistidos campos visuais em <code>tasks.tasks.ui_metadata</code>. Nao repetir: presence nao substitui sincronizacao do board.
 </div>
 
 <h3>PresenceStore</h3>

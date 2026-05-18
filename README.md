@@ -117,3 +117,7 @@ O onboarding inicial agora funciona por convite:
 - backend: `back/README.md`
 - arquitetura do frontend: `docs/NUXT_4_STORE_ARCHITECTURE.md`
 - backlog: `docs/BACKLOG.md`
+- roadmap multi-tenant: `docs/ROADMAP.md`
+- estado atual do projeto: `docs/ESTADO_ATUAL.md` (visual: `docs/estado-atual.html`)
+- plano de refatoracao em andamento: `docs/PLANO_REFATORACAO.md` (visual: `docs/plano-refatoracao.html`)
+- planos e atas arquivados: `docs/historico/`

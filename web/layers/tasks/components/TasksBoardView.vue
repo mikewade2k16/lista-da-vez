@@ -32,10 +32,12 @@ const {
   onDragStart,
   onDragEnd,
   openTaskEditor,
+  onDropCard,
   activeInlineTaskId,
   onCardFocusOut,
   updateTaskInline,
   normalizeText,
+  clampText,
   startTracking,
   pauseTracking,
   stopTracking,
@@ -44,7 +46,7 @@ const {
   isCardFieldVisible,
   statusOptions,
   responsibleOptionsAvatar,
-  involvedOptionsAvatar,
+  involvedOptionsForResponsible,
   clientOptionsAvatar,
   clientLabel,
   toNumberId,
@@ -54,6 +56,11 @@ const {
   formatElapsed,
   getElapsedMs,
   dateLabel,
+  focusTaskCardPresence,
+  blurTaskCardPresence,
+  boardPresenceUsersForTask,
+  boardPresenceSummary,
+  isBoardPresenceFieldLocked,
   creatingCards,
   onDraftCardFocusOut,
   commitDraftCard,
@@ -144,7 +151,7 @@ const {
           </div>
         </header>
 
-        <div class="tasks-page__board-column-body space-y-2 p-2">
+        <div class="tasks-page__board-column-body gap-2 p-2">
           <article v-for="(task, index) in column.tasks" :key="task.id"
             class="tasks-page__board-card cursor-pointer rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-3 transition-colors hover:border-primary"
             draggable="true" :class="{
@@ -157,9 +164,16 @@ const {
             @click="openTaskEditor(task)" @focusin="activeInlineTaskId = task.id"
             @focusout="onCardFocusOut($event, task)">
             <div class="tasks-page__board-card-head mb-2 flex items-start justify-between gap-2">
+              <button class="tasks-page__board-card-handle" type="button" title="Mover task" draggable="true"
+                @click.stop @dragstart.stop="onDragStart(task, $event)">
+                <UIcon name="i-lucide-grip-vertical" />
+              </button>
               <UInput :model-value="task.title" class="tasks-page__board-card-title-input min-w-0 flex-1"
                 :data-task-title-input="task.id" size="xs" variant="none" @click.stop
-                @update:model-value="updateTaskInline(task, { title: normalizeText($event, 220) || task.title })" />
+                :disabled="isBoardPresenceFieldLocked(task.id, 'title')"
+                @focusin.stop="focusTaskCardPresence(task.id, 'title')"
+                @focusout="blurTaskCardPresence(task.id, 'title', $event)"
+                @update:model-value="updateTaskInline(task, { title: clampText($event, 220) || task.title })" />
               <div class="tasks-page__board-card-actions flex items-center gap-0.5" @click.stop>
                 <UButton v-if="!isTracking(task.id)" color="neutral" variant="ghost" size="xs"
                   title="Iniciar tracking" @click="startTracking(task.id)">
@@ -199,56 +213,88 @@ const {
               </div>
             </div>
 
+            <div v-if="boardPresenceUsersForTask(task.id).length" class="tasks-page__board-card-presence" @click.stop>
+              <div class="tasks-page__presence-stack" :title="boardPresenceSummary(task.id)">
+                <UAvatar
+                  v-for="participant in boardPresenceUsersForTask(task.id).slice(0, 3)"
+                  :key="participant.userId"
+                  :src="participant.avatarPath || undefined"
+                  :text="participant.avatarText"
+                  size="xs"
+                  class="tasks-page__presence-avatar"
+                />
+                <span v-if="boardPresenceUsersForTask(task.id).length > 3" class="tasks-page__presence-more">
+                  +{{ boardPresenceUsersForTask(task.id).length - 3 }}
+                </span>
+              </div>
+              <span>{{ boardPresenceSummary(task.id) }}</span>
+            </div>
+
             <p v-if="task.description && boardView.visibleFieldKeys.includes('description')"
               class="tasks-page__board-card-description line-clamp-2 text-xs text-[rgb(var(--muted))]">{{
                 task.description }}
             </p>
 
             <div class="tasks-page__board-card-inline mt-2 flex flex-col items-start gap-1" @click.stop>
-              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'status') && task.status"
+              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'status')"
                 :model-value="task.status" :items="statusOptions" placeholder="Status" :searchable="true"
                 :full-content-width="true" item-display-mode="text" color="neutral" variant="none"
                 :highlight="false" :badge-mode="true" trailing-icon="" option-edit-mode="color"
+                :disabled="isBoardPresenceFieldLocked(task.id, 'status')"
+                @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'status') : blurTaskCardPresence(task.id, 'status')"
                 @update:model-value="updateTaskInline(task, { status: normalizeText($event, 120) || task.status })" />
-              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'responsible') && task.responsible"
+              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'responsible')"
                 class="tasks-page__board-card-people" :model-value="task.responsible"
                 :items="responsibleOptionsAvatar" placeholder="Responsavel"
-                :creatable="{ when: 'always', position: 'bottom' }" :searchable="true" :full-content-width="true"
+                :searchable="true" :full-content-width="true"
                 item-display-mode="rich" :show-avatar="true" color="neutral" variant="none" :highlight="false"
-                :badge-mode="true" trailing-icon="" clear option-edit-mode="full"
+                :badge-mode="true" badge-style="entity" trailing-icon="" clear option-edit-mode="color"
+                :disabled="isBoardPresenceFieldLocked(task.id, 'responsible')"
+                @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'responsible') : blurTaskCardPresence(task.id, 'responsible')"
                 @update:model-value="updateTaskInline(task, { responsible: normalizeText($event, 120) })" />
-              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'involved') && task.involved?.length"
-                class="tasks-page__board-card-people" :model-value="task.involved" :items="involvedOptionsAvatar"
-                placeholder="Envolvidos" :multiple="true" :creatable="{ when: 'always', position: 'bottom' }"
+              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'involved')"
+                class="tasks-page__board-card-people" :model-value="task.involved" :items="involvedOptionsForResponsible(task.responsible)"
+                placeholder="Envolvidos" :multiple="true"
                 :searchable="true" :full-content-width="true" item-display-mode="rich" :show-avatar="true"
-                color="neutral" variant="none" :highlight="false" :badge-mode="true" trailing-icon="" clear
-                option-edit-mode="full"
+                color="neutral" variant="none" :highlight="false" :badge-mode="true" badge-style="entity"
+                trailing-icon="" clear option-edit-mode="color"
+                :disabled="isBoardPresenceFieldLocked(task.id, 'involved')"
+                @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'involved') : blurTaskCardPresence(task.id, 'involved')"
                 @update:model-value="updateTaskInline(task, { involved: Array.isArray($event) ? $event.map((item: string) => normalizeText(item, 120)).filter(Boolean) : [] })" />
-              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'client') && task.clientId"
-                class="tasks-page__board-card-people" :model-value="task.clientId" :items="clientOptionsAvatar"
+              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'client')"
+                class="tasks-page__board-card-people" :model-value="task.clientId || null" :items="clientOptionsAvatar"
                 placeholder="Cliente" :searchable="true" :full-content-width="true" item-display-mode="rich"
                 :show-avatar="true" color="neutral" variant="none" :highlight="false" :badge-mode="true"
-                trailing-icon="" option-edit-mode="color"
+                badge-style="entity" trailing-icon="" option-edit-mode="color"
+                :disabled="isBoardPresenceFieldLocked(task.id, 'clientId')"
+                @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'clientId') : blurTaskCardPresence(task.id, 'clientId')"
                 @update:model-value="updateTaskInline(task, { clientId: toNumberId($event) || task.clientId, clientName: clientLabel(toNumberId($event) || task.clientId) })" />
-              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'type') && task.type" :model-value="task.type"
+              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'type')" :model-value="task.type"
                 :items="typeOptions" placeholder="Tipo" :creatable="{ when: 'always', position: 'bottom' }"
                 :searchable="true" :full-content-width="true" item-display-mode="text" color="neutral"
                 variant="none" :highlight="false" :badge-mode="true" trailing-icon="" clear option-edit-mode="full"
+                :disabled="isBoardPresenceFieldLocked(task.id, 'type')"
+                @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'type') : blurTaskCardPresence(task.id, 'type')"
                 @update:model-value="updateTaskInline(task, { type: normalizeText($event, 120) })" />
-              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'priority') && task.priority"
+              <OmniSelectMenuInput v-if="isCardFieldVisible(task, 'priority')"
                 :model-value="task.priority" :items="PRIORITY_OPTIONS" placeholder="Prioridade" :searchable="false"
                 :full-content-width="true" item-display-mode="text" color="neutral" variant="none"
                 :highlight="false" :badge-mode="true" trailing-icon="" option-edit-mode="color"
+                :disabled="isBoardPresenceFieldLocked(task.id, 'priority')"
+                @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'priority') : blurTaskCardPresence(task.id, 'priority')"
                 @update:model-value="updateTaskInline(task, { priority: toPriority($event) })" />
             </div>
 
             <span v-if="isTracking(task.id) && !isRunning(task.id)" class="tasks-page__board-card-pause-dot" />
 
-            <AppDatePicker v-if="isCardFieldVisible(task, 'dueDate')" :model-value="task.dueDate" placement="bottom"
-              @update:model-value="updateTaskInline(task, { dueDate: $event })">
+            <AppDatePicker v-if="isCardFieldVisible(task, 'dueDate')" :model-value="task.dueDate"
+              :end-date="task.dueEndDate" placement="bottom"
+              @update:open="(open: boolean) => open ? focusTaskCardPresence(task.id, 'dueDate') : blurTaskCardPresence(task.id, 'dueDate')"
+              @update:model-value="updateTaskInline(task, { dueDate: $event })"
+              @update:end-date="updateTaskInline(task, { dueEndDate: $event })">
               <template #default="{ labelStart, labelEnd }">
                 <button class="tasks-page__board-card-duedate mt-2 flex items-center gap-1.5 cursor-pointer"
-                  type="button" @click.stop>
+                  type="button" :disabled="isBoardPresenceFieldLocked(task.id, 'dueDate')" @click.stop>
                   <UIcon name="i-lucide-calendar-days" class="h-3.5 w-3.5 text-[rgb(var(--muted))] shrink-0" />
                   <span v-if="labelStart" class="flex flex-col leading-tight">
                     <span class="text-[rgb(var(--text))]">{{ labelStart }}</span>
@@ -285,22 +331,24 @@ const {
               <OmniSelectMenuInput v-if="isDraftFieldVisible(column.id, 'responsible')"
                 class="tasks-page__board-card-people" v-model="creatingCards[column.id].responsible"
                 :open="draftFieldOpen[column.id]?.responsible" :items="responsibleOptionsAvatar"
-                placeholder="Responsavel" :creatable="{ when: 'always', position: 'bottom' }" :searchable="true"
+                placeholder="Responsavel" :searchable="true"
                 :full-content-width="true" item-display-mode="rich" :show-avatar="true" color="neutral"
-                variant="none" :highlight="false" :badge-mode="true" trailing-icon="" clear option-edit-mode="full"
+                variant="none" :highlight="false" :badge-mode="true" badge-style="entity" trailing-icon="" clear
+                option-edit-mode="color"
                 @update:open="setDraftFieldOpen(column.id, 'responsible', $event)" />
               <OmniSelectMenuInput v-if="isDraftFieldVisible(column.id, 'involved')"
                 class="tasks-page__board-card-people" v-model="creatingCards[column.id].involved"
-                :open="draftFieldOpen[column.id]?.involved" :items="involvedOptionsAvatar" placeholder="Envolvidos"
-                :multiple="true" :creatable="{ when: 'always', position: 'bottom' }" :searchable="true"
+                :open="draftFieldOpen[column.id]?.involved" :items="involvedOptionsForResponsible(creatingCards[column.id].responsible)" placeholder="Envolvidos"
+                :multiple="true" :searchable="true"
                 :full-content-width="true" item-display-mode="rich" :show-avatar="true" color="neutral"
-                variant="none" :highlight="false" :badge-mode="true" trailing-icon="" clear option-edit-mode="full"
+                variant="none" :highlight="false" :badge-mode="true" badge-style="entity" trailing-icon="" clear
+                option-edit-mode="color"
                 @update:open="setDraftFieldOpen(column.id, 'involved', $event)" />
               <OmniSelectMenuInput v-if="isDraftFieldVisible(column.id, 'clientId')"
                 class="tasks-page__board-card-people" v-model="creatingCards[column.id].clientId"
                 :open="draftFieldOpen[column.id]?.clientId" :items="clientOptionsAvatar" placeholder="Cliente"
                 :searchable="true" :full-content-width="true" item-display-mode="rich" :show-avatar="true"
-                color="neutral" variant="none" :highlight="false" :badge-mode="true" trailing-icon=""
+                color="neutral" variant="none" :highlight="false" :badge-mode="true" badge-style="entity" trailing-icon=""
                 option-edit-mode="color"
                 @update:model-value="creatingCards[column.id].clientName = clientLabel(toNumberId($event) || creatingCards[column.id].clientId)"
                 @update:open="setDraftFieldOpen(column.id, 'clientId', $event)" />
@@ -317,8 +365,10 @@ const {
                 trailing-icon="" option-edit-mode="color"
                 @update:open="setDraftFieldOpen(column.id, 'priority', $event)" />
               <AppDatePicker v-if="isDraftFieldVisible(column.id, 'dueDate')"
-                :model-value="creatingCards[column.id].dueDate" :open="draftFieldOpen[column.id]?.dueDate"
+                :model-value="creatingCards[column.id].dueDate" :end-date="creatingCards[column.id].dueEndDate"
+                :open="draftFieldOpen[column.id]?.dueDate"
                 placement="bottom" @update:model-value="creatingCards[column.id].dueDate = $event"
+                @update:end-date="creatingCards[column.id].dueEndDate = $event"
                 @update:open="setDraftFieldOpen(column.id, 'dueDate', $event)">
                 <template #default="{ labelStart, labelEnd }">
                   <button class="tasks-page__board-card-duedate flex items-center gap-1.5 cursor-pointer"

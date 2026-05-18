@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -15,6 +16,7 @@ type Service struct {
 	publisher  Publisher
 	notifier   notifications.Notifier
 	relations  *platformmodules.RelationRegistry
+	logger     *slog.Logger
 }
 
 func NewService(repository Repository, publisher Publisher, notifier notifications.Notifier, relationRegistry *platformmodules.RelationRegistry) *Service {
@@ -24,7 +26,62 @@ func NewService(repository Repository, publisher Publisher, notifier notificatio
 	if notifier == nil {
 		notifier = notifications.NewNoopNotifier()
 	}
-	return &Service{repository: repository, publisher: publisher, notifier: notifier, relations: relationRegistry}
+	return &Service{
+		repository: repository,
+		publisher:  publisher,
+		notifier:   notifier,
+		relations:  relationRegistry,
+		logger:     slog.Default(),
+	}
+}
+
+// SetLogger injeta o slog do modulo (com `app_name` ja em atributos). Quando nao for chamado,
+// o servico cai para `slog.Default()`. Usar `tasks.New(...).Build(deps)` no Module Registry
+// passa o `deps.Logger` automaticamente.
+func (service *Service) SetLogger(logger *slog.Logger) {
+	if logger == nil {
+		service.logger = slog.Default()
+		return
+	}
+	service.logger = logger.With(slog.String("module", "tasks"))
+}
+
+// logMutation registra mutations criticas com atributos estruturados — accountId/userId/action
+// e o par (resourceType, resourceId). T8 exige: nunca expor IDs de outras accounts (na pratica,
+// `scopedQuery` ja garantiu o filtro antes do log). Nao logar payload completo — comentarios e
+// titulos podem ter PII.
+func (service *Service) logMutation(ctx context.Context, access AccessContext, action, resourceType, resourceID string, extra ...slog.Attr) {
+	if service.logger == nil {
+		return
+	}
+	attrs := make([]any, 0, 4+len(extra))
+	attrs = append(attrs,
+		slog.String("action", action),
+		slog.String("account_id", access.AccountID),
+		slog.String("user_id", access.UserID),
+	)
+	if resourceType != "" {
+		attrs = append(attrs, slog.String("resource_type", resourceType))
+	}
+	if resourceID != "" {
+		attrs = append(attrs, slog.String("resource_id", resourceID))
+	}
+	for _, attr := range extra {
+		attrs = append(attrs, attr)
+	}
+	service.logger.LogAttrs(ctx, slog.LevelInfo, "tasks.mutation", convertAnyToAttrs(attrs)...)
+}
+
+// convertAnyToAttrs converte `[]any` (misturado com slog.Attr) em `[]slog.Attr` para
+// `LogAttrs`. Helper interno — mantemos os call sites com varargs simples.
+func convertAnyToAttrs(items []any) []slog.Attr {
+	out := make([]slog.Attr, 0, len(items))
+	for _, item := range items {
+		if attr, ok := item.(slog.Attr); ok {
+			out = append(out, attr)
+		}
+	}
+	return out
 }
 
 func (service *Service) ResolveAccessContext(ctx context.Context, principal auth.Principal, accountID string) (AccessContext, error) {
@@ -251,27 +308,34 @@ func (service *Service) CreateField(ctx context.Context, access AccessContext, i
 	return field, nil
 }
 
-func (service *Service) ListTasks(ctx context.Context, access AccessContext, input ListTasksInput) ([]TaskDTO, error) {
+// ListTasksResult devolve a pagina de tasks junto com o cursor para a proxima pagina. NextCursor
+// vazio sinaliza fim da paginacao.
+type ListTasksResult struct {
+	Tasks      []TaskDTO
+	NextCursor string
+}
+
+func (service *Service) ListTasks(ctx context.Context, access AccessContext, input ListTasksInput) (ListTasksResult, error) {
 	if !access.Has(PermTasksView) {
-		return nil, ErrForbidden
+		return ListTasksResult{}, ErrForbidden
 	}
 	input.BoardID = strings.TrimSpace(input.BoardID)
 	if input.BoardID == "" {
-		return nil, ErrValidation
+		return ListTasksResult{}, ErrValidation
 	}
 	if input.Limit <= 0 || input.Limit > 200 {
 		input.Limit = 50
 	}
 
-	tasks, err := service.repository.ListTasks(ctx, access, input)
+	tasks, nextCursor, err := service.repository.ListTasks(ctx, access, input)
 	if err != nil {
-		return nil, err
+		return ListTasksResult{}, err
 	}
 	dtos := make([]TaskDTO, 0, len(tasks))
 	for _, task := range tasks {
 		dtos = append(dtos, service.BuildTaskDTO(task, access.Perspective))
 	}
-	return dtos, nil
+	return ListTasksResult{Tasks: dtos, NextCursor: nextCursor}, nil
 }
 
 func (service *Service) GetTask(ctx context.Context, access AccessContext, taskID string) (TaskDTO, error) {
@@ -293,6 +357,7 @@ func (service *Service) CreateTask(ctx context.Context, access AccessContext, in
 	input.Title = strings.TrimSpace(input.Title)
 	input.ContentHTML = strings.TrimSpace(input.ContentHTML)
 	input.Priority = defaultString(strings.TrimSpace(input.Priority), "media")
+	input.UIMetadata = normalizeTaskUIMetadata(input.UIMetadata)
 	if input.BoardID == "" || input.Title == "" {
 		return TaskDTO{}, ErrValidation
 	}
@@ -324,6 +389,10 @@ func (service *Service) UpdateTask(ctx context.Context, access AccessContext, in
 	}
 	if input.Priority != nil {
 		*input.Priority = defaultString(strings.TrimSpace(*input.Priority), "media")
+	}
+	if input.UIMetadata != nil {
+		normalized := normalizeTaskUIMetadata(*input.UIMetadata)
+		input.UIMetadata = &normalized
 	}
 
 	before, err := service.repository.GetTask(ctx, access, input.ID)
@@ -517,6 +586,10 @@ func (service *Service) audit(ctx context.Context, access AccessContext, action,
 		Before:       snapshotMap(before),
 		After:        snapshotMap(after),
 	})
+	// T8: alem do registro persistente em tasks.tasks_audit, emite slog estruturado em todas as
+	// mutations para observabilidade externa (ELK/Loki/etc). audit() ja e' o ponto unico onde
+	// passa toda mutation; centralizar aqui evita ter que tocar 13+ call sites.
+	service.logMutation(ctx, access, action, resourceType, resourceID)
 }
 
 func snapshotMap(value any) map[string]any {

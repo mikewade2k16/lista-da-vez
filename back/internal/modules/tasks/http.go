@@ -25,7 +25,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 func (handler *HTTPHandler) RegisterRoutes(mux *http.ServeMux, middleware *auth.Middleware) {
 	mux.Handle("GET /v1/tasks/boards", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.listBoards)))
 	mux.Handle("POST /v1/tasks/boards", middleware.RequireAuth(handler.withPermission(PermBoardsManage, handler.createBoard)))
-	mux.Handle("GET /v1/tasks/boards/{boardId}", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.getBoard)))
+	mux.Handle("GET /v1/task-boards/{boardId}", middleware.RequireAuth(handler.withPermission(PermBoardsView, handler.getBoard)))
 	mux.Handle("PATCH /v1/tasks/boards/{boardId}", middleware.RequireAuth(handler.withPermission(PermBoardsManage, handler.updateBoard)))
 	mux.Handle("POST /v1/tasks/boards/{boardId}/columns", middleware.RequireAuth(handler.withPermission(PermBoardsManage, handler.createColumn)))
 	mux.Handle("PATCH /v1/tasks/columns/{columnId}", middleware.RequireAuth(handler.withPermission(PermBoardsManage, handler.updateColumn)))
@@ -201,7 +201,7 @@ func (handler *HTTPHandler) listTasks(w http.ResponseWriter, r *http.Request, ct
 		writeServiceError(w, r, ErrValidation)
 		return
 	}
-	tasks, err := handler.service.ListTasks(r.Context(), ctx.Access, ListTasksInput{
+	result, err := handler.service.ListTasks(r.Context(), ctx.Access, ListTasksInput{
 		BoardID:         strings.TrimSpace(r.PathValue("boardId")),
 		Limit:           limit,
 		Cursor:          strings.TrimSpace(r.URL.Query().Get("cursor")),
@@ -211,7 +211,10 @@ func (handler *HTTPHandler) listTasks(w http.ResponseWriter, r *http.Request, ct
 		writeServiceError(w, r, err)
 		return
 	}
-	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{
+		"tasks":      result.Tasks,
+		"nextCursor": result.NextCursor,
+	})
 }
 
 func (handler *HTTPHandler) createTask(w http.ResponseWriter, r *http.Request, ctx taskHTTPContext) {

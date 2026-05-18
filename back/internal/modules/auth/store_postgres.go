@@ -20,6 +20,7 @@ type userRecord struct {
 	ID                 string
 	Email              string
 	DisplayName        string
+	Nick               string
 	PasswordHash       string
 	MustChangePassword bool
 	AvatarPath         string
@@ -97,6 +98,7 @@ func (store *PostgresUserStore) LoadUserForAuth(ctx context.Context, userID stri
 			u.id::text,
 			lower(u.email) as email,
 			u.display_name,
+			coalesce(u.nick, '') as nick,
 			u.password_hash,
 			u.must_change_password,
 			coalesce(u.avatar_path, '') as avatar_path,
@@ -169,6 +171,7 @@ func (store *PostgresUserStore) LoadUserForAuth(ctx context.Context, userID stri
 		&record.ID,
 		&record.Email,
 		&record.DisplayName,
+		&record.Nick,
 		&passwordHash,
 		&record.MustChangePassword,
 		&record.AvatarPath,
@@ -215,6 +218,7 @@ func (store *PostgresUserStore) LoadUserForAuth(ctx context.Context, userID stri
 	user := User{
 		ID:                 record.ID,
 		DisplayName:        record.DisplayName,
+		Nick:               strings.TrimSpace(record.Nick),
 		Email:              strings.ToLower(strings.TrimSpace(record.Email)),
 		PasswordHash:       strings.TrimSpace(record.PasswordHash),
 		MustChangePassword: record.MustChangePassword,
@@ -239,6 +243,7 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 			u.id::text,
 			lower(u.email) as email,
 			u.display_name,
+			coalesce(u.nick, '') as nick,
 			u.password_hash,
 			u.must_change_password,
 			coalesce(u.avatar_path, '') as avatar_path,
@@ -310,6 +315,7 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 		&record.ID,
 		&record.Email,
 		&record.DisplayName,
+		&record.Nick,
 		&passwordHash,
 		&record.MustChangePassword,
 		&record.AvatarPath,
@@ -346,6 +352,7 @@ func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord
 	user := User{
 		ID:                 record.ID,
 		DisplayName:        record.DisplayName,
+		Nick:               strings.TrimSpace(record.Nick),
 		Email:              strings.ToLower(strings.TrimSpace(record.Email)),
 		PasswordHash:       strings.TrimSpace(record.PasswordHash),
 		MustChangePassword: record.MustChangePassword,

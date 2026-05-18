@@ -1,8 +1,13 @@
 import type { InjectionKey } from 'vue'
 import { useCoreLoading } from '../../core/composables/useCoreLoading'
 import { useAuthStore } from '~/stores/auth'
+import { useUsersStore } from '~/stores/users'
 import { useSessionSimulationStore } from '../stores/session-simulation'
 import { useCan } from './useCan'
+import { useTaskPresence } from './useTaskPresence'
+import { useTasksRealtime, type TasksRealtimeEvent } from './useTasksRealtime'
+import { useTaskRelations } from './useTaskRelations'
+import { clampText as sharedClampText, normalizeText as sharedNormalizeText } from '../utils/text'
 import { useTasksWorkspace } from './useTasksWorkspace'
 import { useTimeTracking } from './useTimeTracking'
 import type { OmniFocusCell, OmniSelectOption, OmniTableCellUpdate, OmniTableColumn } from '../types/omni/collection'
@@ -12,18 +17,19 @@ export const TASKS_PAGE_CONTEXT_KEY: InjectionKey<TasksPageContext> = Symbol('ta
 
 export function useTasksPageContext() {
 	const auth = useAuthStore()
+  const usersStore = useUsersStore()
   const sessionSimulation = useSessionSimulationStore()
   const tasksWorkspace = useTasksWorkspace()
   const pageLoading = useCoreLoading()
   const canManageBoards = useCan('tasks.boards.manage')
   const canClientView = useCan('tasks.client_view')
-  const { startTracking, pauseTracking, stopTracking, isTracking, isRunning, getElapsedMs, formatElapsed } = useTimeTracking()
+  const { startTracking, pauseTracking, stopTracking, isTracking, isRunning, getElapsedMs, formatElapsed, refreshActiveTracking } = useTimeTracking()
 
   const ORDER_STEP = 10
   const PRIORITY_OPTIONS: OmniSelectOption[] = [
-    { label: 'Baixa', value: 'baixa' },
-    { label: 'Media', value: 'media' },
-    { label: 'Alta', value: 'alta' }
+    { label: 'Baixa', value: 'baixa', color: 'green' },
+    { label: 'Media', value: 'media', color: 'yellow' },
+    { label: 'Alta', value: 'alta', color: 'red' }
   ]
   const COLUMN_COLOR_OPTIONS: OmniSelectOption[] = [
     { label: 'Indigo', value: 'indigo' },
@@ -99,6 +105,7 @@ export function useTasksPageContext() {
     type: string
     priority: TaskPriority
     dueDate: string
+    dueEndDate: string
     firstEnterDone: boolean
   }>>({})
   const draftAddedFields = reactive<Record<string, string[]>>({})
@@ -148,10 +155,24 @@ export function useTasksPageContext() {
 
   const taskDraft = reactive({
     id: '', title: '', description: '', contentHtml: '', status: '', responsible: '', involved: [] as string[], clientId: 0, clientName: '', type: '',
-    priority: 'media' as TaskPriority, dueDate: '', archived: false, createdBy: '', createdAt: ''
+    priority: '' as TaskPriority, dueDate: '', dueEndDate: '', archived: false, createdBy: '', createdAt: ''
   })
+  type TaskVideoDraft = { id: string, name: string, size: number, sizeLabel: string, type: string, url: string }
+  const taskVideoDrafts = ref<TaskVideoDraft[]>([])
+  const taskDraftHydrating = ref(false)
+  const taskDraftSaveQueued = ref(false)
+  const taskDraftAutosaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+  const lastSavedTaskDraftSignature = ref('')
+  const TASK_AUTOSAVE_DELAY_MS = 650
+  let tasksRealtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let tasksRealtimeRefreshing = false
+  let tasksRealtimeRefreshQueued = false
 
-  function normalizeText(value: unknown, max = 240) { return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max) }
+  // Re-export os helpers compartilhados em `utils/text.ts` para manter o contrato do contexto.
+  // Sub-componentes consomem via `inject` e nao precisam saber se estamos importando ou definindo
+  // localmente — implementacao canonica fica no util (testavel via Vitest).
+  const normalizeText = sharedNormalizeText
+  const clampText = sharedClampText
   function normalizeKey(value: unknown) {
     return normalizeText(value, 120).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
   }
@@ -224,8 +245,51 @@ export function useTasksPageContext() {
   const activeProject = computed(() => tasksWorkspace.projects.value.find(p => p.id === tasksWorkspace.activeProjectId.value) ?? null)
   const projectOptions = computed(() => tasksWorkspace.projects.value.map(p => ({ label: p.name, value: p.id })))
   const clientOptions = computed(() => sessionSimulation.clientOptions.map(c => ({ label: c.label, value: c.value })))
-  const currentUserName = computed(() => normalizeText(auth.user?.name || auth.user?.fullName || auth.user?.email, 120) || (viewerUserType.value === 'client' ? sessionSimulation.activeClientLabel : 'Usuario'))
+  const currentUserName = computed(() => normalizeText(auth.user?.nick || auth.principal?.nick || auth.user?.displayName || auth.user?.name || auth.user?.fullName || auth.user?.email, 120) || (viewerUserType.value === 'client' ? sessionSimulation.activeClientLabel : 'Usuario'))
   const taskEditorCssVars = computed(() => ({ '--tasks-editor-width': `${taskEditorWidth.value}px` }))
+  const taskPresence = useTaskPresence({
+    enabled: computed(() => taskEditorOpen.value && !!taskDraft.id),
+    scope: 'task',
+    taskId: computed(() => taskDraft.id),
+    boardId: computed(() => activeProject.value?.id || ''),
+    accountId: computed(() => auth.activeTenantId || '')
+  })
+  const boardPresence = useTaskPresence({
+    enabled: computed(() => !!activeProject.value),
+    scope: 'board',
+    boardId: computed(() => activeProject.value?.id || ''),
+    accountId: computed(() => auth.activeTenantId || '')
+  })
+  const presenceParticipants = taskPresence.participants
+  const presenceStatus = taskPresence.status
+  const tasksRealtimeLastEvent = ref<TasksRealtimeEvent | null>(null)
+  function handleTasksRealtimeEvent(event: TasksRealtimeEvent) {
+    tasksRealtimeLastEvent.value = event
+    scheduleTasksRealtimeRefresh(event)
+  }
+  const accountTasksRealtime = useTasksRealtime({
+    enabled: computed(() => tasksWorkspace.initialized.value && auth.isAuthenticated),
+    scope: 'account',
+    accountId: computed(() => auth.activeTenantId || ''),
+    onEvent: handleTasksRealtimeEvent
+  })
+  const boardTasksRealtime = useTasksRealtime({
+    enabled: computed(() => tasksWorkspace.initialized.value && auth.isAuthenticated && !!activeProject.value?.id),
+    scope: 'board',
+    accountId: computed(() => auth.activeTenantId || ''),
+    boardId: computed(() => activeProject.value?.id || ''),
+    onEvent: handleTasksRealtimeEvent
+  })
+  const tasksRealtimeStatus = computed(() => {
+    if (boardTasksRealtime.status.value === 'connected' || accountTasksRealtime.status.value === 'connected') return 'connected'
+    if (boardTasksRealtime.status.value !== 'idle') return boardTasksRealtime.status.value
+    return accountTasksRealtime.status.value
+  })
+  const taskRelations = useTaskRelations({
+    enabled: computed(() => taskEditorOpen.value && !!taskDraft.id),
+    taskId: computed(() => taskDraft.id),
+    realtimeEvent: computed(() => tasksRealtimeLastEvent.value)
+  })
 
   watch(taskEditorWidth, (width) => {
     if (import.meta.client) document.documentElement.style.setProperty('--tasks-editor-width', `${width}px`)
@@ -234,6 +298,32 @@ export function useTasksPageContext() {
   function uniqueValues(list: string[]) {
     const seen = new Set<string>()
     return list.filter((v) => { const k = normalizeKey(v); if (!k || seen.has(k)) return false; seen.add(k); return true })
+  }
+
+  function selectOptionColor(value: unknown, index = 0) {
+    const key = normalizeKey(value)
+    if (key === 'slate' || key === 'gray' || key === 'cinza') return 'gray'
+    if (key === 'emerald' || key === 'green' || key === 'verde') return 'green'
+    if (key === 'amber' || key === 'yellow' || key === 'amarelo') return 'yellow'
+    if (key === 'rose' || key === 'red' || key === 'vermelho') return 'red'
+    if (key === 'violet' || key === 'indigo' || key === 'purple' || key === 'roxo') return 'purple'
+    if (key === 'blue' || key === 'azul') return 'blue'
+    if (key === 'orange' || key === 'laranja') return 'orange'
+    if (key === 'pink' || key === 'rosa') return 'pink'
+    return ['blue', 'purple', 'green', 'orange', 'pink', 'yellow', 'red', 'gray'][index % 8]!
+  }
+
+  function optionListFromLabels(labels: string[]): OmniSelectOption[] {
+    return uniqueValues(labels)
+      .map(label => ({ label, value: label }))
+  }
+
+  function sanitizeInvolved(values: unknown, responsible: unknown) {
+    const responsibleKey = normalizeKey(responsible)
+    const raw = Array.isArray(values) ? values : String(values ?? '').split(',')
+    return uniqueValues(raw
+      .map((person) => normalizeText(person, 120))
+      .filter((person) => person && normalizeKey(person) !== responsibleKey))
   }
 
   function defaultView(type: 'board' | 'table'): OrchestratorView {
@@ -293,30 +383,44 @@ export function useTasksPageContext() {
   const tableView = computed(() => projectView(activeProject.value, 'table'))
   const boardGroupBy = computed(() => normalizeText(boardView.value.groupByFieldKey, 80) || 'status')
   const statuses = computed(() => uniqueValues(boardSchemaColumns.value.map(column => normalizeText(column.label, 120)).filter(Boolean)))
-  const statusOptions = computed<OmniSelectOption[]>(() => statuses.value.map(v => ({ label: v, value: v })))
+  const statusOptions = computed<OmniSelectOption[]>(() => boardSchemaColumns.value.map((column, index) => ({
+    label: column.label,
+    value: column.label,
+    color: selectOptionColor(column.color, index)
+  })))
+  const directoryUserLabels = computed(() => {
+    const users = Array.isArray(usersStore.users) ? usersStore.users : []
+    return users
+      .map((user: Record<string, unknown>) => normalizeText(user.nick || user.displayName || user.name || user.fullName || user.email, 120))
+      .filter(Boolean)
+  })
   const responsibleOptions = computed<OmniSelectOption[]>(() => {
     const project = activeProject.value
     if (!project) return []
-    const values = uniqueValues([...project.responsibles, ...tasksWorkspace.tasks.value.filter(t => t.projectId === project.id).map(t => t.responsible)])
-    return values.map(v => ({ label: v, value: v }))
+    return optionListFromLabels([
+      currentUserName.value,
+      ...directoryUserLabels.value,
+      ...project.responsibles,
+      ...tasksWorkspace.tasks.value.filter(t => t.projectId === project.id).map(t => t.responsible)
+    ])
   })
   const involvedOptions = computed<OmniSelectOption[]>(() => {
     const project = activeProject.value
     if (!project) return []
-    const values = uniqueValues([
+    return optionListFromLabels([
       currentUserName.value,
+      ...directoryUserLabels.value,
       ...project.responsibles,
       ...tasksWorkspace.tasks.value
         .filter(t => t.projectId === project.id)
         .flatMap(t => [t.responsible, ...(Array.isArray(t.involved) ? t.involved : [])])
     ])
-    return values.map(v => ({ label: v, value: v }))
   })
   const typeOptions = computed<OmniSelectOption[]>(() => {
     const project = activeProject.value
     if (!project) return []
     const values = uniqueValues([...project.types, ...tasksWorkspace.tasks.value.filter(t => t.projectId === project.id).map(t => t.type)])
-    return values.map(v => ({ label: v, value: v }))
+    return values.map((v, index) => ({ label: v, value: v, color: selectOptionColor(v, index + 4) }))
   })
   function initialsFor(value: unknown) {
     const s = String(value ?? '').trim()
@@ -328,6 +432,10 @@ export function useTasksPageContext() {
   const responsibleOptionsAvatar = computed<OmniSelectOption[]>(() => responsibleOptions.value.map((o: OmniSelectOption) => ({ ...o, avatar: { text: initialsFor(o.label) } })))
   const involvedOptionsAvatar = computed<OmniSelectOption[]>(() => involvedOptions.value.map((o: OmniSelectOption) => ({ ...o, avatar: { text: initialsFor(o.label) } })))
   const clientOptionsAvatar = computed<OmniSelectOption[]>(() => clientOptions.value.map((o: OmniSelectOption) => ({ ...o, avatar: { text: initialsFor(o.label) } })))
+  function involvedOptionsForResponsible(responsible: unknown) {
+    const responsibleKey = normalizeKey(responsible)
+    return involvedOptionsAvatar.value.filter((option) => normalizeKey(option.value) !== responsibleKey)
+  }
   const peopleMentionLabels = computed(() => involvedOptions.value.map(option => String(option.label || option.value)))
   const clientMentionLabels = computed(() => clientOptions.value.map(option => String(option.label || option.value)))
   const taskMentionLabels = computed(() => projectTasks.value.map(task => task.title))
@@ -435,7 +543,7 @@ export function useTasksPageContext() {
       { key: 'title', label: 'Titulo', type: 'text', editable: true, minWidth: 220, focusOnCreate: true },
       { key: 'description', label: 'Descricao', type: 'text', editable: true, minWidth: 260 },
       { key: 'status', label: 'Status', type: 'select', editable: true, minWidth: 180, options: statusOptions.value },
-      { key: 'responsible', label: 'Responsavel', type: 'select', editable: true, minWidth: 170, options: responsibleOptions.value, creatable: true },
+      { key: 'responsible', label: 'Responsavel', type: 'select', editable: true, minWidth: 170, options: responsibleOptions.value },
       { key: 'involved', label: 'Envolvidos', type: 'text', editable: true, minWidth: 220, formatter: v => Array.isArray(v) ? v.join(', ') : normalizeText(v, 300) },
       { key: 'clientId', label: 'Cliente', type: 'select', editable: true, minWidth: 170, adminOnly: true, options: clientOptions.value },
       { key: 'type', label: 'Tipo', type: 'select', editable: true, minWidth: 150, options: typeOptions.value, creatable: true },
@@ -492,7 +600,127 @@ export function useTasksPageContext() {
     projectSettingsDraft.defaults = { ...project.defaults }
   }
 
+  function clearTaskVideoDrafts() {
+    if (import.meta.client) {
+      taskVideoDrafts.value.forEach((file) => {
+        if (file.url) URL.revokeObjectURL(file.url)
+      })
+    }
+    taskVideoDrafts.value = []
+  }
+
+  function formatFileSize(size: number) {
+    if (!Number.isFinite(size) || size <= 0) return '0 KB'
+    if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
+    return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+  }
+
+  function addTaskVideoFiles(files: FileList | File[] | null | undefined) {
+    if (!files) return
+    const nextFiles = Array.from(files).filter((file) => file.type.startsWith('video/'))
+    if (nextFiles.length === 0) return
+    const timestamp = Date.now()
+    taskVideoDrafts.value = [
+      ...taskVideoDrafts.value,
+      ...nextFiles.map((file, index) => ({
+        id: `${timestamp}-${index}-${normalizeKey(file.name)}`,
+        name: file.name,
+        size: file.size,
+        sizeLabel: formatFileSize(file.size),
+        type: file.type || 'video',
+        url: import.meta.client ? URL.createObjectURL(file) : ''
+      }))
+    ]
+  }
+
+  function onTaskVideoInput(event: Event) {
+    const input = event.target as HTMLInputElement | null
+    addTaskVideoFiles(input?.files)
+    if (input) input.value = ''
+  }
+
+  function onTaskVideoDrop(event: DragEvent) {
+    addTaskVideoFiles(event.dataTransfer?.files)
+  }
+
+  function removeTaskVideoDraft(fileId: string) {
+    const file = taskVideoDrafts.value.find((item) => item.id === fileId)
+    if (file?.url && import.meta.client) URL.revokeObjectURL(file.url)
+    taskVideoDrafts.value = taskVideoDrafts.value.filter((item) => item.id !== fileId)
+  }
+
+  function taskSignatureFromTask(task: TaskItem | null | undefined) {
+    if (!task) return ''
+    return JSON.stringify({
+      id: normalizeText(task.id, 80),
+      title: normalizeText(task.title, 220),
+      description: normalizeText(task.description, 5000),
+      contentHtml: task.contentHtml || '',
+      status: normalizeText(task.status, 120),
+      responsible: normalizeText(task.responsible, 120),
+      involved: [...(task.involved || [])].map((person) => normalizeText(person, 120)).filter(Boolean),
+      clientId: toNumberId(task.clientId),
+      clientName: normalizeText(task.clientName, 140),
+      type: normalizeText(task.type, 120),
+      priority: normalizeText(task.priority, 30),
+      prioritySet: Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet),
+      dueDate: normalizeText(task.dueDate, 30),
+      dueEndDate: normalizeText(task.dueEndDate, 30),
+      archived: Boolean(task.archived),
+      createdBy: normalizeText(task.createdBy, 120)
+    })
+  }
+
+  function taskDraftSignature() {
+    return taskSignatureFromTask({
+      id: taskDraft.id,
+      projectId: activeProject.value?.id || '',
+      title: taskDraft.title,
+      description: taskDraft.description,
+      contentHtml: taskDraft.contentHtml,
+      status: taskDraft.status,
+      responsible: taskDraft.responsible,
+      involved: taskDraft.involved,
+      clientId: taskDraft.clientId,
+      clientName: taskDraft.clientName,
+      type: taskDraft.type,
+      priority: taskDraft.priority || undefined,
+      prioritySet: Boolean(taskDraft.priority),
+      dueDate: taskDraft.dueDate,
+      dueEndDate: taskDraft.dueEndDate,
+      archived: taskDraft.archived,
+      order: 0,
+      createdBy: taskDraft.createdBy,
+      createdAt: taskDraft.createdAt,
+      updatedAt: ''
+    })
+  }
+
+  function syncTaskDraftFromTask(task: TaskItem, options: { markSaved?: boolean, clearVideos?: boolean } = {}) {
+    taskDraftHydrating.value = true
+    taskDraft.id = task.id
+    taskDraft.title = task.title
+    taskDraft.description = task.description
+    taskDraft.contentHtml = task.contentHtml
+    taskDraft.status = task.status
+    taskDraft.responsible = task.responsible
+    taskDraft.involved = sanitizeInvolved(task.involved, task.responsible)
+    taskDraft.clientId = task.clientId
+    taskDraft.clientName = task.clientName
+    taskDraft.type = task.type
+    taskDraft.priority = (task as TaskItem & { prioritySet?: boolean }).prioritySet ? task.priority : '' as TaskPriority
+    taskDraft.dueDate = task.dueDate
+    taskDraft.dueEndDate = task.dueEndDate
+    taskDraft.archived = task.archived
+    taskDraft.createdBy = task.createdBy
+    taskDraft.createdAt = task.createdAt
+    if (options.clearVideos) clearTaskVideoDrafts()
+    if (options.markSaved !== false) lastSavedTaskDraftSignature.value = taskDraftSignature()
+    nextTick(() => { taskDraftHydrating.value = false })
+  }
+
   function resetTaskDraft() {
+    taskDraftHydrating.value = true
     const project = activeProject.value
     const responsible = project?.defaults.responsibleFromCreator ? currentUserName.value : ''
     const clientId = viewerUserType.value === 'client'
@@ -504,83 +732,133 @@ export function useTasksPageContext() {
     taskDraft.contentHtml = ''
     taskDraft.status = statuses.value[0] || ''
     taskDraft.responsible = responsible
-    taskDraft.involved = responsible ? [responsible] : []
+    taskDraft.involved = []
     taskDraft.clientId = clientId
     taskDraft.clientName = clientLabel(taskDraft.clientId)
     taskDraft.type = ''
-    taskDraft.priority = 'media'
+    taskDraft.priority = '' as TaskPriority
     taskDraft.dueDate = ''
+    taskDraft.dueEndDate = ''
     taskDraft.archived = false
     taskDraft.createdBy = currentUserName.value
     taskDraft.createdAt = ''
+    clearTaskVideoDrafts()
+    lastSavedTaskDraftSignature.value = taskDraftSignature()
+    nextTick(() => { taskDraftHydrating.value = false })
   }
 
   function openTaskEditor(task?: TaskItem | null) {
     if (!task) { resetTaskDraft(); taskEditorOpen.value = true; return }
-    taskDraft.id = task.id
-    taskDraft.title = task.title
-    taskDraft.description = task.description
-    taskDraft.contentHtml = task.contentHtml
-    taskDraft.status = task.status
-    taskDraft.responsible = task.responsible
-    taskDraft.involved = [...task.involved]
-    taskDraft.clientId = task.clientId
-    taskDraft.clientName = task.clientName
-    taskDraft.type = task.type
-    taskDraft.priority = task.priority
-    taskDraft.dueDate = task.dueDate
-    taskDraft.archived = task.archived
-    taskDraft.createdBy = task.createdBy
-    taskDraft.createdAt = task.createdAt
+    syncTaskDraftFromTask(task, { clearVideos: true })
     taskEditorOpen.value = true
   }
 
-  function closeTaskEditor() { taskEditorOpen.value = false; resetTaskDraft() }
-
-  async function upsertProjectListsFromTask() {
-    const project = activeProject.value
-    if (!project) return
-    const responsible = normalizeText(taskDraft.responsible, 120)
-    const type = normalizeText(taskDraft.type, 120)
-    const nextResponsibles = [...project.responsibles]
-    const nextTypes = [...project.types]
-    if (responsible && !nextResponsibles.some(v => normalizeKey(v) === normalizeKey(responsible))) nextResponsibles.push(responsible)
-    taskDraft.involved.forEach((person) => {
-      const label = normalizeText(person, 120)
-      if (label && !nextResponsibles.some(v => normalizeKey(v) === normalizeKey(label))) nextResponsibles.push(label)
-    })
-    if (type && !nextTypes.some(v => normalizeKey(v) === normalizeKey(type))) nextTypes.push(type)
-    await tasksWorkspace.saveProjectSettings(project.id, { responsibles: nextResponsibles, types: nextTypes })
+  function clearTaskDraftAutosaveTimer() {
+    if (!taskDraftAutosaveTimer.value) return
+    clearTimeout(taskDraftAutosaveTimer.value)
+    taskDraftAutosaveTimer.value = null
   }
 
-  async function saveTask() {
-    const project = activeProject.value
-    if (!project) return
+  function buildTaskDraftPayload(project: TaskProjectItem) {
     const title = normalizeText(taskDraft.title, 220)
-    if (!title) return
-    taskSaving.value = true
+    if (!title) return null
     const clientId = viewerUserType.value === 'client' ? sessionSimulation.clientId : Math.max(1, toNumberId(taskDraft.clientId) || sessionSimulation.clientId)
-    const payload = {
+    return {
       title,
       description: normalizeText(taskDraft.description, 5000),
       contentHtml: taskDraft.contentHtml,
       status: normalizeText(taskDraft.status, 120) || project.statuses[0] || 'Raw',
       responsible: normalizeText(taskDraft.responsible, 120),
-      involved: [...taskDraft.involved],
+      involved: sanitizeInvolved(taskDraft.involved, taskDraft.responsible),
       clientId,
       clientName: clientLabel(clientId),
       type: normalizeText(taskDraft.type, 120),
       priority: taskDraft.priority,
       dueDate: normalizeText(taskDraft.dueDate, 30),
+      dueEndDate: normalizeText(taskDraft.dueEndDate, 30),
       archived: Boolean(taskDraft.archived),
       createdBy: normalizeText(taskDraft.createdBy, 120) || currentUserName.value
     }
+  }
+
+  function applyTaskDraftToLocalTask() {
+    const taskId = normalizeText(taskDraft.id, 80)
+    if (!taskId) return
+    const task = tasksWorkspace.tasks.value.find((item) => item.id === taskId)
+    if (!task) return
+    const clientId = viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(taskDraft.clientId) || task.clientId || sessionSimulation.clientId)
+    task.title = normalizeText(taskDraft.title, 220)
+    task.description = normalizeText(taskDraft.description, 5000)
+    task.contentHtml = taskDraft.contentHtml
+    task.status = normalizeText(taskDraft.status, 120) || task.status
+    task.responsible = normalizeText(taskDraft.responsible, 120)
+    task.involved = sanitizeInvolved(taskDraft.involved, taskDraft.responsible)
+    task.clientId = clientId
+    task.clientName = clientLabel(clientId)
+    task.type = normalizeText(taskDraft.type, 120)
+    task.priority = taskDraft.priority ? taskDraft.priority : 'media'
+    ;(task as TaskItem & { prioritySet?: boolean }).prioritySet = Boolean(taskDraft.priority)
+    task.dueDate = normalizeText(taskDraft.dueDate, 30)
+    task.dueEndDate = normalizeText(taskDraft.dueEndDate, 30)
+    task.archived = Boolean(taskDraft.archived)
+    task.createdBy = normalizeText(taskDraft.createdBy, 120) || task.createdBy
+    task.updatedAt = new Date().toISOString()
+  }
+
+  function scheduleTaskDraftAutosave() {
+    if (!taskEditorOpen.value || taskDraftHydrating.value) return
+    if (taskDraftSignature() === lastSavedTaskDraftSignature.value) return
+    clearTaskDraftAutosaveTimer()
+    taskDraftAutosaveTimer.value = setTimeout(() => { void flushTaskDraftAutosave() }, TASK_AUTOSAVE_DELAY_MS)
+  }
+
+  async function flushTaskDraftAutosave() {
+    clearTaskDraftAutosaveTimer()
+    if (!taskEditorOpen.value || taskDraftHydrating.value) return
+    if (taskDraftSignature() === lastSavedTaskDraftSignature.value) return
+    await saveTask()
+  }
+
+  async function closeTaskEditor() {
+    await flushTaskDraftAutosave()
+    releaseTaskEditorPresence()
+    taskEditorOpen.value = false
+    resetTaskDraft()
+  }
+
+  async function upsertProjectListsFromTask() {
+    const project = activeProject.value
+    if (!project) return
+    const type = normalizeText(taskDraft.type, 120)
+    const nextTypes = [...project.types]
+    let changed = false
+    if (type && !nextTypes.some(v => normalizeKey(v) === normalizeKey(type))) {
+      nextTypes.push(type)
+      changed = true
+    }
+    if (!changed) return
+    await tasksWorkspace.saveProjectSettings(project.id, { types: nextTypes })
+  }
+
+  async function saveTask() {
+    const project = activeProject.value
+    if (!project || taskDraftHydrating.value) return
+    const payload = buildTaskDraftPayload(project)
+    if (!payload) return
+    const savingSignature = taskDraftSignature()
+    if (savingSignature === lastSavedTaskDraftSignature.value) return
+    if (taskSaving.value) {
+      taskDraftSaveQueued.value = true
+      return
+    }
+    clearTaskDraftAutosaveTimer()
+    taskSaving.value = true
     try {
       let savedTaskId = normalizeText(taskDraft.id, 80)
       if (!taskDraft.id) {
         const created = await tasksWorkspace.createTask({ projectId: project.id, ...payload })
         if (!created) return
-        taskDraft.id = created.id
+        if (!taskDraft.id) taskDraft.id = created.id
         savedTaskId = created.id
       } else {
         const updated = await tasksWorkspace.updateTask(taskDraft.id, payload)
@@ -589,9 +867,18 @@ export function useTasksPageContext() {
       }
       await upsertProjectListsFromTask()
       if (savedTaskId) taskDraft.id = savedTaskId
-      taskEditorOpen.value = false
+      if (taskDraftSignature() === savingSignature) {
+        lastSavedTaskDraftSignature.value = taskDraftSignature()
+      }
+    } catch (error) {
+      console.error('Nao foi possivel salvar a task automaticamente.', error)
     } finally {
       taskSaving.value = false
+      if (taskDraftSaveQueued.value || taskDraftSignature() !== lastSavedTaskDraftSignature.value) {
+        taskDraftSaveQueued.value = false
+        applyTaskDraftToLocalTask()
+        scheduleTaskDraftAutosave()
+      }
     }
   }
 
@@ -742,12 +1029,13 @@ export function useTasksPageContext() {
     const base = {
       status: boardGroupBy.value === 'status' ? column.status : (statuses.value[0] || 'Raw'),
       responsible,
-      involved: responsible ? [responsible] : [],
+      involved: [],
       clientId,
       clientName: clientLabel(clientId),
       type: '',
       priority: '' as unknown as TaskPriority,
-      dueDate: ''
+      dueDate: '',
+      dueEndDate: ''
     }
     return { ...base, ...patchForGroupColumn(column) }
   }
@@ -797,12 +1085,14 @@ export function useTasksPageContext() {
       status: draft.status,
       title,
       responsible: draft.responsible,
-      involved: [...draft.involved],
+      involved: sanitizeInvolved(draft.involved, draft.responsible),
       clientId: draft.clientId,
       clientName: draft.clientName,
       type: draft.type,
-      priority: toPriority(draft.priority),
+      priority: draft.priority ? toPriority(draft.priority) : undefined,
+      prioritySet: Boolean(draft.priority),
       dueDate: draft.dueDate,
+      dueEndDate: draft.dueEndDate,
       createdBy: currentUserName.value,
       ...patchForGroupColumn(column)
     })
@@ -942,18 +1232,28 @@ export function useTasksPageContext() {
   }
   function onDragEnd() { draggingTaskId.value = ''; dragKind.value = ''; dropTarget.columnId = ''; dropTarget.index = -1 }
   async function onDropColumn(column: { id?: string, groupFieldKey?: string, value?: string, status: string }) {
-    if (dragKind.value === 'task' && draggingTaskId.value) await moveTaskToGroupColumn(draggingTaskId.value, column)
-    draggingTaskId.value = ''
-    dragKind.value = ''
-    dropTarget.columnId = ''
-    dropTarget.index = -1
+    try {
+      if (dragKind.value === 'task' && draggingTaskId.value) await moveTaskToGroupColumn(draggingTaskId.value, column, 0)
+    } catch (error) {
+      console.error('Nao foi possivel mover a task.', error)
+    } finally {
+      draggingTaskId.value = ''
+      dragKind.value = ''
+      dropTarget.columnId = ''
+      dropTarget.index = -1
+    }
   }
   async function onDropCard(column: { id?: string, groupFieldKey?: string, value?: string, status: string }, index: number) {
-    if (dragKind.value === 'task' && draggingTaskId.value) await moveTaskToGroupColumn(draggingTaskId.value, column, index)
-    draggingTaskId.value = ''
-    dragKind.value = ''
-    dropTarget.columnId = ''
-    dropTarget.index = -1
+    try {
+      if (dragKind.value === 'task' && draggingTaskId.value) await moveTaskToGroupColumn(draggingTaskId.value, column, index)
+    } catch (error) {
+      console.error('Nao foi possivel mover a task.', error)
+    } finally {
+      draggingTaskId.value = ''
+      dragKind.value = ''
+      dropTarget.columnId = ''
+      dropTarget.index = -1
+    }
   }
   function markDropTarget(columnId: string, index = -1) {
     if (dragKind.value !== 'task') return
@@ -979,14 +1279,20 @@ export function useTasksPageContext() {
   }
 
   function updateTaskInline(task: TaskItem, patch: Partial<TaskItem>) {
-    tasksWorkspace.updateTask(task.id, patch)
+    const normalizedPatch: Partial<TaskItem> = { ...patch }
+    if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'responsible')) {
+      const responsible = normalizeText(normalizedPatch.responsible, 120)
+      normalizedPatch.responsible = responsible
+      normalizedPatch.involved = sanitizeInvolved(normalizedPatch.involved ?? task.involved, responsible)
+    } else if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'involved')) {
+      normalizedPatch.involved = sanitizeInvolved(normalizedPatch.involved, task.responsible)
+    }
+    tasksWorkspace.updateTask(task.id, normalizedPatch).catch((error) => {
+      console.error('Nao foi possivel atualizar a task.', error)
+    })
     const project = activeProject.value
     if (!project) return
-    const responsible = Object.prototype.hasOwnProperty.call(patch, 'responsible') ? normalizeText(patch.responsible, 120) : ''
-    const type = Object.prototype.hasOwnProperty.call(patch, 'type') ? normalizeText(patch.type, 120) : ''
-    if (responsible && !project.responsibles.some(v => normalizeKey(v) === normalizeKey(responsible))) {
-      tasksWorkspace.saveProjectSettings(project.id, { responsibles: [...project.responsibles, responsible] })
-    }
+    const type = Object.prototype.hasOwnProperty.call(normalizedPatch, 'type') ? normalizeText(normalizedPatch.type, 120) : ''
     if (type && !project.types.some(v => normalizeKey(v) === normalizeKey(type))) {
       tasksWorkspace.saveProjectSettings(project.id, { types: [...project.types, type] })
     }
@@ -1006,14 +1312,13 @@ export function useTasksPageContext() {
     if (key === 'createdAt' && !project.cardFields.createdAt && !project.defaults.showCreatedAt) return false
     const fieldKey = key === 'client' ? 'clientId' : key
     if (key !== 'createdAt' && !boardView.value.visibleFieldKeys.includes(fieldKey)) return false
-    if (activeInlineTaskId.value === task.id) return true
-    if (key === 'status') return false
-    if (key === 'responsible') return Boolean(normalizeText(task.responsible, 120))
+    if (key === 'status') return boardGroupBy.value !== 'status' && !!task.status
+    if (key === 'responsible') return !!task.responsible
     if (key === 'involved') return Array.isArray(task.involved) && task.involved.length > 0
-    if (key === 'client') return viewerUserType.value === 'admin' && Boolean(task.clientName)
-    if (key === 'type') return Boolean(normalizeText(task.type, 120))
-    if (key === 'dueDate') return Boolean(normalizeText(task.dueDate, 24))
-    if (key === 'priority') return Boolean(task.priority)
+    if (key === 'client') return viewerUserType.value === 'admin' && !!task.clientId
+    if (key === 'type') return !!task.type
+    if (key === 'dueDate') return !!task.dueDate
+    if (key === 'priority') return !!task.priority && Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
     if (key === 'createdAt') return activeProject.value?.defaults.showCreatedAt || boardView.value.visibleFieldKeys.includes('createdAt')
     return true
   }
@@ -1036,14 +1341,17 @@ export function useTasksPageContext() {
     column.tasks?.forEach((task: TaskItem) => tasksWorkspace.removeTask(task.id))
   }
 
-  function createTableTask() {
+  async function createTableTask() {
     const firstStatus = statuses.value[0] || 'Raw'
-    const created = tasksWorkspace.createTask({
+    const created = await tasksWorkspace.createTask({
       projectId: activeProject.value?.id,
       status: firstStatus,
       title: 'Nova task',
+      responsible: activeProject.value?.defaults.responsibleFromCreator ? currentUserName.value : '',
+      involved: [],
       clientId: viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId),
-      clientName: clientLabel(viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId))
+      clientName: clientLabel(viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId)),
+      createdBy: currentUserName.value
     })
     if (created) {
       viewMode.value = 'table'
@@ -1070,7 +1378,8 @@ export function useTasksPageContext() {
     if (key === 'status') { const status = normalizeText(payload.value, 120); if (status) tasksWorkspace.updateTask(id, { status }); return }
     if (key === 'responsible') {
       const responsible = normalizeText(payload.value, 120)
-      tasksWorkspace.updateTask(id, { responsible })
+      const task = tasksWorkspace.tasks.value.find((item) => item.id === id)
+      tasksWorkspace.updateTask(id, { responsible, involved: sanitizeInvolved(task?.involved || [], responsible) })
       const project = activeProject.value
       if (project && responsible && !project.responsibles.some(v => normalizeKey(v) === normalizeKey(responsible))) {
         tasksWorkspace.saveProjectSettings(project.id, { responsibles: [...project.responsibles, responsible] })
@@ -1078,9 +1387,8 @@ export function useTasksPageContext() {
       return
     }
     if (key === 'involved') {
-      const involved = normalizeText(payload.value, 500)
-        .split(',').map(item => normalizeText(item, 120)).filter(Boolean)
-      tasksWorkspace.updateTask(id, { involved })
+      const task = tasksWorkspace.tasks.value.find((item) => item.id === id)
+      tasksWorkspace.updateTask(id, { involved: sanitizeInvolved(payload.value, task?.responsible || '') })
       return
     }
     if (key === 'type') {
@@ -1134,6 +1442,209 @@ export function useTasksPageContext() {
     if (viewerUserType.value === 'client' || !project.filters.client) filters.clientId = ''
   }
 
+  function clearTasksRealtimeRefreshTimer() {
+    if (!tasksRealtimeRefreshTimer) return
+    clearTimeout(tasksRealtimeRefreshTimer)
+    tasksRealtimeRefreshTimer = null
+  }
+
+  // Estrategia de realtime adotada (2026-05-15, refeita): espelho do `useOperationsRealtime`.
+  // QUALQUER evento de tasks (task.*, board.*, field.*) agenda um refresh full do workspace com
+  // debounce de 200ms. Sem patch local, sem hidratacao individual — simples e robusto.
+  //
+  // Tentativa anterior (descartada): aplicar `hydrateTask(taskId)` so para `task.updated`/`moved`
+  // a fim de evitar flicker do board inteiro. O patch local NAO funcionava quando a task
+  // editada por outro user nao existia no store local (cenario comum: criar em aba B, esperar
+  // ver em aba A). Resultado: silencio total entre abas. Operations nao otimiza — refresh full
+  // sempre, e a UX e' aceitavel.
+  //
+  // Logs `[tasks-ws]` no console facilitam diagnostico sem precisar abrir DevTools > Network >
+  // WS. Em produccao, sao info-level e podem ser filtrados.
+  function scheduleTasksRealtimeRefresh(event: TasksRealtimeEvent) {
+    const type = normalizeText(event.type, 80)
+    if (!type || type === 'realtime.connected') return
+    const isTasksEvent = type.startsWith('task.') || type.startsWith('board.') || type.startsWith('field.')
+    if (!isTasksEvent) {
+      if (import.meta.client) console.debug('[tasks-ws] ignorando evento nao-tasks:', type)
+      return
+    }
+    const eventAccountId = normalizeText(event.accountId, 80)
+    const currentAccountId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80)
+    if (eventAccountId && currentAccountId && eventAccountId !== currentAccountId) {
+      if (import.meta.client) console.debug('[tasks-ws] evento de outra account, ignorado:', { eventAccountId, currentAccountId })
+      return
+    }
+
+    if (import.meta.client) {
+      console.info('[tasks-ws] evento recebido — refresh agendado:', {
+        type,
+        taskId: normalizeText(event.taskId, 80) || undefined,
+        boardId: normalizeText(event.boardId, 80) || undefined,
+        version: event.version
+      })
+    }
+
+    if (type.startsWith('task.time_')) {
+      refreshActiveTracking(true).catch(() => undefined)
+    }
+
+    clearTasksRealtimeRefreshTimer()
+    tasksRealtimeRefreshTimer = setTimeout(() => { void flushTasksRealtimeRefresh() }, 200)
+  }
+
+  async function flushTasksRealtimeRefresh() {
+    clearTasksRealtimeRefreshTimer()
+    if (pageBootstrapping.value || !auth.isAuthenticated) return
+    if (tasksRealtimeRefreshing) {
+      tasksRealtimeRefreshQueued = true
+      return
+    }
+
+    tasksRealtimeRefreshing = true
+    try {
+      if (import.meta.client) console.info('[tasks-ws] executando refresh full do workspace')
+      await tasksWorkspace.refresh()
+      if (taskEditorOpen.value && taskDraft.id && !tasksWorkspace.tasks.value.some(task => task.id === taskDraft.id)) {
+        clearTaskDraftAutosaveTimer()
+        taskEditorOpen.value = false
+        resetTaskDraft()
+      }
+      if (import.meta.client) console.info('[tasks-ws] refresh concluido — tasks:', tasksWorkspace.tasks.value.length)
+    } catch (error) {
+      console.error('[tasks-ws] erro no refresh:', error)
+    } finally {
+      tasksRealtimeRefreshing = false
+      if (tasksRealtimeRefreshQueued) {
+        tasksRealtimeRefreshQueued = false
+        tasksRealtimeRefreshTimer = setTimeout(() => { void flushTasksRealtimeRefresh() }, 150)
+      }
+    }
+  }
+
+  function boardPresenceKey(taskId: string, fieldKey: string) {
+    const id = normalizeText(taskId, 80)
+    const key = normalizeText(fieldKey, 40)
+    return id && key ? `${id}:${key}` : ''
+  }
+
+  function presenceFieldName(fieldKey: string) {
+    const key = normalizeText(fieldKey, 80)
+    return FIELD_DEFS.find(field => field.key === key)?.label || key
+  }
+
+  function taskUsersForPresenceField(taskId: string, fieldKey: string) {
+    const key = boardPresenceKey(taskId, fieldKey)
+    return key ? boardPresence.usersForField(key) : []
+  }
+
+  function boardPresenceUsersForTask(taskId: string) {
+    const prefix = `${normalizeText(taskId, 80)}:`
+    if (!prefix.trim()) return []
+    return boardPresence.participants.value.filter(user => user.fieldKey.startsWith(prefix))
+  }
+
+  function boardPresenceSummary(taskId: string) {
+    const users = boardPresenceUsersForTask(taskId)
+    if (!users.length) return ''
+    const first = users[0]!
+    const fieldKey = first.fieldKey.split(':').slice(1).join(':')
+    const fieldName = presenceFieldName(fieldKey)
+    if (users.length === 1) return `${first.displayName} editando ${fieldName}`
+    return `${first.displayName} +${users.length - 1} editando`
+  }
+
+  function focusTaskCardPresence(taskId: string, fieldKey: string) {
+    const key = boardPresenceKey(taskId, fieldKey)
+    if (key) boardPresence.focusField(key)
+  }
+
+  function blurTaskCardPresence(taskId: string, fieldKey: string, event?: FocusEvent) {
+    const current = event?.currentTarget as HTMLElement | null
+    const next = event?.relatedTarget as Node | null
+    if (current && next && current.contains(next)) return
+    const key = boardPresenceKey(taskId, fieldKey)
+    if (key) boardPresence.blurField(key)
+  }
+
+  function boardPresenceFieldLabel(taskId: string, fieldKey: string) {
+    const users = taskUsersForPresenceField(taskId, fieldKey)
+    if (!users.length) return ''
+    if (users.length === 1) return `${users[0]!.displayName} editando`
+    return `${users[0]!.displayName} +${users.length - 1} editando`
+  }
+
+  function isBoardPresenceFieldLocked(taskId: string, fieldKey: string) {
+    return taskUsersForPresenceField(taskId, fieldKey).length > 0
+  }
+
+  function releaseTaskEditorPresence() {
+    const taskFieldKey = normalizeText(taskPresence.activeFieldKey.value, 80)
+    if (taskFieldKey) taskPresence.blurField(taskFieldKey)
+
+    const taskId = normalizeText(taskDraft.id, 80)
+    const boardFieldKey = normalizeText(boardPresence.activeFieldKey.value, 120)
+    if (taskId && boardFieldKey.startsWith(`${taskId}:`)) {
+      boardPresence.blurField(boardFieldKey)
+    }
+  }
+
+  function focusPresenceField(fieldKey: string) {
+    taskPresence.focusField(fieldKey)
+    if (taskDraft.id) focusTaskCardPresence(taskDraft.id, fieldKey)
+  }
+
+  function blurPresenceField(fieldKey: string, event?: FocusEvent) {
+    const current = event?.currentTarget as HTMLElement | null
+    const next = event?.relatedTarget as Node | null
+    if (current && next && current.contains(next)) return
+    taskPresence.blurField(fieldKey)
+    if (taskDraft.id) blurTaskCardPresence(taskDraft.id, fieldKey)
+  }
+
+  function presenceUsersForField(fieldKey: string) {
+    const users = taskPresence.usersForField(fieldKey)
+    if (users.length || !taskDraft.id) return users
+    return taskUsersForPresenceField(taskDraft.id, fieldKey)
+  }
+
+  function presenceFieldLabel(fieldKey: string) {
+    const label = taskPresence.fieldLabel(fieldKey)
+    if (label || !taskDraft.id) return label
+    return boardPresenceFieldLabel(taskDraft.id, fieldKey)
+  }
+
+  function isPresenceFieldLocked(fieldKey: string) {
+    return presenceUsersForField(fieldKey).length > 0
+  }
+
+  function onTaskEditorDocumentPointerDown(event: PointerEvent) {
+    if (!taskEditorOpen.value) return
+    const target = event.target as HTMLElement | null
+    if (!target) return
+    if (target.closest('.tasks-page__task-overlay')) return
+    if (target.closest('.tasks-page__board-wrap')) return
+    if (target.closest('[role="dialog"], [role="listbox"], [role="menu"], [data-reka-popper-content-wrapper], [data-radix-popper-content-wrapper], [data-headlessui-portal]')) return
+    void closeTaskEditor()
+  }
+
+  watch(() => taskDraftSignature(), () => {
+    if (!taskEditorOpen.value || taskDraftHydrating.value) return
+    applyTaskDraftToLocalTask()
+    scheduleTaskDraftAutosave()
+  }, { flush: 'post' })
+
+  watch(() => [taskDraft.responsible, taskDraft.involved.join('|')], () => {
+    if (taskDraftHydrating.value) return
+    const sanitized = sanitizeInvolved(taskDraft.involved, taskDraft.responsible)
+    if (sanitized.join('|') !== taskDraft.involved.join('|')) taskDraft.involved = sanitized
+  }, { flush: 'sync' })
+
+  watch(() => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id), (task) => {
+    if (!taskEditorOpen.value || !task || taskDraftHydrating.value || taskSaving.value) return
+    if (taskSignatureFromTask(task) === taskDraftSignature()) return
+    syncTaskDraftFromTask(task)
+  }, { deep: true })
+
   watch(() => tasksWorkspace.activeProjectId.value, () => {
     hydrateProjectDraft(activeProject.value)
     syncClientFilter()
@@ -1144,10 +1655,15 @@ export function useTasksPageContext() {
   watch(() => viewerUserType.value, () => { syncClientFilter() }, { immediate: true })
 
   onMounted(async () => {
+    if (import.meta.client) document.addEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
     try {
       await pageLoading.withLoading('Carregando tasks...', async () => {
         sessionSimulation.initialize()
         await tasksWorkspace.initialize()
+        await Promise.all([
+          usersStore.ensureLoaded().catch(() => false),
+          refreshActiveTracking(true).catch(() => undefined)
+        ])
         if (sessionSimulation.isAdmin) await sessionSimulation.refreshClientOptions()
         if (!activeProject.value && tasksWorkspace.projects.value.length > 0) tasksWorkspace.setActiveProject(tasksWorkspace.projects.value[0]!.id)
         hydrateProjectDraft(activeProject.value)
@@ -1161,6 +1677,14 @@ export function useTasksPageContext() {
     }
   })
 
+  onUnmounted(() => {
+    releaseTaskEditorPresence()
+    clearTaskDraftAutosaveTimer()
+    clearTasksRealtimeRefreshTimer()
+    clearTaskVideoDrafts()
+    if (import.meta.client) document.removeEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
+  })
+
   return {
     // constants
     ORDER_STEP, PRIORITY_OPTIONS, COLUMN_COLOR_OPTIONS, DEFAULT_FILTERS, BOARD_GROUP_OPTIONS, FIELD_DEFS,
@@ -1169,13 +1693,14 @@ export function useTasksPageContext() {
     viewMode, pageBootstrapping, draggingTaskId, draggingColumnId, filters, tableSelectedRows,
     tableFocusCell, activeInlineTaskId, creatingCards, draftAddedFields, draftMenuOpen, draftFieldOpen,
     dragKind, dropTarget, projectSettingsOpen, columnSettingsOpen, taskEditorOpen, taskEditorMode,
-    taskEditorWidth, taskEditorResizing, settingsSaving, taskSaving,
+    taskEditorWidth, taskEditorResizing, settingsSaving, taskSaving, taskVideoDrafts,
     legacyMigrationNotice: tasksWorkspace.legacyMigrationNotice,
+    tasksErrorMessage: tasksWorkspace.errorMessage,
     projectSettingsDraft, columnDraft, taskDraft,
     // computed
     viewerUserType, activeProject, projectOptions, clientOptions, currentUserName, taskEditorCssVars,
     boardSchemaColumns, boardView, tableView, boardGroupBy, statuses, statusOptions,
-    responsibleOptions, involvedOptions, typeOptions,
+    responsibleOptions, involvedOptions, typeOptions, involvedOptionsForResponsible,
     responsibleOptionsAvatar, involvedOptionsAvatar, clientOptionsAvatar,
     peopleMentionLabels, clientMentionLabels, taskMentionLabels,
     projectModel, projectTasks, filteredTasks, boardColumns, tableRows, projectCount, tableColumns,
@@ -1183,11 +1708,16 @@ export function useTasksPageContext() {
     activeFilterChips, hasAnyActiveFilter,
     // tracking
     startTracking, pauseTracking, stopTracking, isTracking, isRunning, getElapsedMs, formatElapsed,
+    // presence
+    presenceParticipants, presenceStatus, tasksRealtimeStatus, taskRelations,
+    focusPresenceField, blurPresenceField, presenceUsersForField, presenceFieldLabel, isPresenceFieldLocked,
+    focusTaskCardPresence, blurTaskCardPresence, boardPresenceUsersForTask, boardPresenceSummary, boardPresenceFieldLabel, isBoardPresenceFieldLocked,
     // functions
-    setDraftFieldOpen, normalizeText, normalizeKey, toNumberId, dateLabel, dateLabelLong,
+    setDraftFieldOpen, normalizeText, clampText, normalizeKey, toNumberId, dateLabel, dateLabelLong,
     priorityLabel, priorityColor, toPriority, columnColorClass, clientLabel, taskSort,
     fieldLabel, fieldSwitchValue, setFieldSwitch,
-    hydrateProjectDraft, resetTaskDraft, openTaskEditor, closeTaskEditor, saveTask,
+    hydrateProjectDraft, resetTaskDraft, openTaskEditor, closeTaskEditor, saveTask, flushTaskDraftAutosave,
+    onTaskVideoInput, onTaskVideoDrop, removeTaskVideoDraft,
     onCreateProject, saveProjectSettings, deleteProject,
     prepareColumnDraft, openColumnSettings, closeColumnSettings, saveColumnSettings, deleteColumn, createColumn,
     beginCreateTaskInColumn, beginCreateTaskInFirstColumn, cancelDraftCard, onDraftCardFocusOut, commitDraftCard,

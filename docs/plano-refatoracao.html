@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Omni — Plano de Refatoração</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #14141c;
+    --panel-soft: #1c1c26;
+    --border: #26262e;
+    --border-strong: #3a3a45;
+    --text: #e5e7eb;
+    --text-muted: #9ca3af;
+    --text-dim: #6b7280;
+    --accent: #6366f1;
+    --accent-soft: rgba(99, 102, 241, .14);
+    --success: #10b981;
+    --success-soft: rgba(16, 185, 129, .14);
+    --warning: #f59e0b;
+    --warning-soft: rgba(245, 158, 11, .14);
+    --danger: #ef4444;
+    --danger-soft: rgba(239, 68, 68, .14);
+    --info: #3b82f6;
+    --info-soft: rgba(59, 130, 246, .14);
+    --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -20px rgba(0,0,0,.7);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+    font-size: 14px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background:
+      radial-gradient(1200px 600px at 80% -200px, rgba(99,102,241,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(16,185,129,.06), transparent 60%),
+      var(--bg);
+    min-height: 100vh;
+  }
+  .container { max-width: 1240px; margin: 0 auto; padding: 32px 24px 96px; }
+
+  .hero {
+    padding: 28px 32px;
+    background: linear-gradient(180deg, var(--panel) 0%, var(--panel-soft) 100%);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    margin-bottom: 28px;
+  }
+  .hero-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .hero-brand { display: flex; align-items: center; gap: 14px; }
+  .brand-mark {
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6);
+    display: grid; place-items: center; font-weight: 700; font-size: 20px; color: white;
+  }
+  .hero h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+  .hero-sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+  .hero-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; border-radius: 999px;
+    font-size: 12px; font-weight: 500;
+    background: var(--panel-soft); border: 1px solid var(--border); color: var(--text-muted);
+  }
+  .pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .pill.accent { color: var(--accent); border-color: rgba(99,102,241,.4); background: var(--accent-soft); }
+  .pill.success { color: var(--success); border-color: rgba(16,185,129,.4); background: var(--success-soft); }
+  .pill.warning { color: var(--warning); border-color: rgba(245,158,11,.4); background: var(--warning-soft); }
+  .pill.danger { color: var(--danger); border-color: rgba(239,68,68,.4); background: var(--danger-soft); }
+  .pill.info { color: var(--info); border-color: rgba(59,130,246,.4); background: var(--info-soft); }
+
+  .nav { display: flex; gap: 18px; flex-wrap: wrap; margin: 22px 0 0; padding-top: 18px; border-top: 1px solid var(--border); }
+  .nav a { color: var(--text-muted); text-decoration: none; font-size: 13px; font-weight: 500; }
+  .nav a:hover { color: var(--accent); }
+
+  h2 { font-size: 19px; font-weight: 600; letter-spacing: -.2px; margin: 40px 0 16px; display: flex; align-items: center; gap: 10px; }
+  h2 .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; }
+  h3 { font-size: 15px; font-weight: 600; margin: 18px 0 10px; }
+
+  .grid { display: grid; gap: 14px; }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 980px) { .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+  .metric .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); font-weight: 600; }
+  .metric .value { font-size: 30px; font-weight: 700; letter-spacing: -1px; margin-top: 4px; }
+  .metric .sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--text-dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; background: var(--panel-soft); }
+  tr:hover td { background: rgba(99,102,241,.03); }
+  td code, p code, li code { background: var(--panel-soft); padding: 2px 6px; border-radius: 5px; font-size: 12px; color: var(--accent); font-family: "JetBrains Mono", Consolas, monospace; }
+
+  .alert { display: flex; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid; margin-bottom: 12px; }
+  .alert .alert-icon { font-size: 18px; flex-shrink: 0; }
+  .alert.danger { background: var(--danger-soft); border-color: rgba(239,68,68,.3); color: #fca5a5; }
+  .alert.warning { background: var(--warning-soft); border-color: rgba(245,158,11,.3); color: #fcd34d; }
+  .alert.info { background: var(--info-soft); border-color: rgba(59,130,246,.3); color: #93c5fd; }
+  .alert.success { background: var(--success-soft); border-color: rgba(16,185,129,.3); color: #6ee7b7; }
+  .alert h4 { margin: 0 0 4px; color: inherit; font-size: 14px; font-weight: 600; }
+  .alert p { margin: 0; font-size: 13px; opacity: .9; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-right: 4px; }
+  .tag.green { background: var(--success-soft); color: var(--success); }
+  .tag.yellow { background: var(--warning-soft); color: var(--warning); }
+  .tag.red { background: var(--danger-soft); color: var(--danger); }
+  .tag.blue { background: var(--info-soft); color: var(--info); }
+  .tag.gray { background: var(--panel-soft); color: var(--text-muted); }
+  .tag.accent { background: var(--accent-soft); color: var(--accent); }
+
+  .chart-box { position: relative; height: 280px; padding: 8px 0 0; }
+  .chart-box.short { height: 220px; }
+  .chart-box.tall { height: 380px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .footer { text-align: center; color: var(--text-dim); font-size: 12px; padding-top: 40px; }
+  .footer a { color: var(--text-muted); }
+
+  /* TIMELINE de fases */
+  .timeline { position: relative; padding: 8px 0; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 18px;
+    top: 16px;
+    bottom: 16px;
+    width: 2px;
+    background: linear-gradient(180deg, var(--success), var(--accent) 12%, var(--warning) 50%, var(--text-dim) 100%);
+    border-radius: 1px;
+  }
+  .phase {
+    position: relative;
+    padding: 16px 16px 16px 56px;
+    margin-bottom: 12px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .phase::before {
+    content: '';
+    position: absolute;
+    left: 6px; top: 22px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--panel-soft);
+    border: 3px solid var(--border-strong);
+  }
+  .phase.done::before { background: var(--success); border-color: rgba(16,185,129,.4); box-shadow: 0 0 0 4px rgba(16,185,129,.18); }
+  .phase.now::before { background: var(--accent); border-color: rgba(99,102,241,.4); box-shadow: 0 0 0 4px rgba(99,102,241,.18); animation: pulse 2s ease-in-out infinite; }
+  .phase.next::before { background: var(--warning); border-color: rgba(245,158,11,.4); }
+  .phase.pending::before { background: var(--panel-soft); border-color: var(--border-strong); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(99,102,241,.18); }
+    50% { box-shadow: 0 0 0 8px rgba(99,102,241,.08); }
+  }
+  .phase-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .phase-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .phase-meta { font-size: 12px; color: var(--text-muted); }
+  .phase-desc { color: var(--text-muted); font-size: 13px; }
+  .phase-tasks { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .phase-tasks ul { margin: 0; padding-left: 18px; }
+  .phase-tasks li { color: var(--text-muted); padding: 3px 0; }
+  .phase-tasks li.done { color: var(--success); }
+  .phase-tasks li.done::marker { color: var(--success); }
+
+  .progress-grid {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 8px 0;
+  }
+  .progress-ring {
+    --p: 0;
+    --sz: 84px;
+    width: var(--sz); height: var(--sz);
+    border-radius: 50%;
+    background:
+      conic-gradient(var(--accent) calc(var(--p) * 1%), var(--panel-soft) 0);
+    display: grid; place-items: center;
+    position: relative;
+  }
+  .progress-ring::before {
+    content: '';
+    width: calc(var(--sz) - 12px);
+    height: calc(var(--sz) - 12px);
+    border-radius: 50%;
+    background: var(--panel);
+    position: absolute;
+  }
+  .progress-ring span {
+    position: relative;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--text);
+  }
+
+  details.section { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; margin-bottom: 10px; }
+  details.section > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  details.section > summary::-webkit-details-marker { display: none; }
+  details.section > summary::after { content: '+'; color: var(--text-muted); font-size: 18px; transition: transform .2s ease; }
+  details.section[open] > summary::after { transform: rotate(45deg); }
+  details.section > .body { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+  .step-list { list-style: none; padding: 0; margin: 0; counter-reset: step; }
+  .step-list li { position: relative; padding: 12px 0 12px 40px; counter-increment: step; border-bottom: 1px solid var(--border); }
+  .step-list li:last-child { border-bottom: none; }
+  .step-list li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 12px;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    display: grid; place-items: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .step-list strong { color: var(--text); display: block; margin-bottom: 2px; }
+  .step-list .muted { color: var(--text-muted); font-size: 12px; }
+
+  section[id] { scroll-margin-top: 20px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div class="hero-top">
+      <div class="hero-brand">
+        <div class="brand-mark">O</div>
+        <div>
+          <h1>Omni — Plano de Refatoração</h1>
+          <div class="hero-sub">Higienização da base + renomeação para <code>Omni</code> / <code>omni</code></div>
+        </div>
+      </div>
+      <div class="hero-meta">
+        <span class="pill"><span class="pill-dot"></span>Atualizado 2026-05-18</span>
+        <span class="pill success"><span class="pill-dot"></span>2 de 9 fases concluídas</span>
+        <span class="pill accent"><span class="pill-dot"></span>Próxima: Fase 2</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="#progresso">Progresso</a>
+      <a href="#decisoes">Decisões</a>
+      <a href="#pilares" style="color: var(--accent); font-weight: 600;">Pilares ★</a>
+      <a href="#timeline">Timeline</a>
+      <a href="#fases">Fases</a>
+      <a href="#renomeacao">Renomeação</a>
+      <a href="#validacao">Validação</a>
+      <a href="estado-atual.html">← Estado Atual</a>
+    </nav>
+  </header>
+
+  <!-- PROGRESSO -->
+  <section id="progresso">
+    <h2><span class="num">P</span> Progresso geral</h2>
+
+    <div class="grid grid-4">
+      <div class="card" style="display:flex; align-items:center; gap:14px;">
+        <div class="progress-ring" style="--p: 22;">
+          <span>22%</span>
+        </div>
+        <div>
+          <div class="metric">
+            <div class="label">Fases concluídas</div>
+            <div class="value" style="font-size: 22px">2 / 9</div>
+            <div class="sub">Fase 0 (decisões) + Fase 1 (limpeza)</div>
+          </div>
+        </div>
+      </div>
+      <div class="card metric">
+        <div class="label">Tarefas (total)</div>
+        <div class="value">~55</div>
+        <div class="sub">distribuídas em 9 fases</div>
+      </div>
+      <div class="card metric">
+        <div class="label">Tarefas concluídas</div>
+        <div class="value">11</div>
+        <div class="sub">Fase 0: 3 · Fase 1: 8</div>
+      </div>
+      <div class="card metric">
+        <div class="label">Risco máximo</div>
+        <div class="value" style="color: var(--danger)">Alto</div>
+        <div class="sub">Fase 4.6 — rename DB prod</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top: 14px;">
+      <div class="card">
+        <h3 style="margin-top:0">Progresso por fase</h3>
+        <div class="chart-box tall"><canvas id="chartPhaseProgress"></canvas></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Risco × Esforço</h3>
+        <div class="chart-box tall"><canvas id="chartRiskEffort"></canvas></div>
+        <p style="color:var(--text-muted); font-size:12px; margin: 10px 0 0;">
+          Quanto maior a bolha, mais subtarefas. Posicionamento horizontal = esforço; vertical = risco.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- DECISÕES -->
+  <section id="decisoes">
+    <h2><span class="num">D</span> Decisões fechadas</h2>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong>Nome do produto</strong>
+          <span class="tag green">✓ fechado</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">
+          Display <code>Omni</code> · slug <code>omni</code>.
+          Substitui <code>lista-da-vez</code>, <code>fila-atendimento</code>, <code>listaatendimento</code>.
+        </p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong>Renomear DB prod</strong>
+          <span class="tag green">✓ fechado</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">
+          Sim, padronizar com <code>omni</code> via <code>ALTER DATABASE</code> em janela curta.
+          Fallback: <code>pg_dump</code> + <code>pg_restore</code>.
+        </p>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong>Layer <code>queue</code></strong>
+          <span class="tag green">✓ fechado</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">
+          Deixar como placeholder com AGENT.md próprio. Migração concreta entra na Fase 4 do <a href="ROADMAP.md">ROADMAP.md</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PILARES DE QUALIDADE -->
+  <section id="pilares">
+    <h2><span class="num">Q</span> 5 pilares de qualidade</h2>
+    <p style="color:var(--text-muted); margin-top:-6px;">
+      Foco norteador deste plano. Diagnóstico detalhado em
+      <a href="estado-atual.html#qualidade" style="color:var(--accent)">estado-atual.html#qualidade</a>.
+    </p>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>🔐 Segurança</strong><span class="tag green">8/10</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">bcrypt, prepared stmts, CORS, rate limit. Falta: HTTP security headers, <code>govulncheck</code> em CI, guard contra secret default em prod.</p>
+        <div style="font-size:12px; color:var(--accent); margin-top:8px;">→ Fase 8.4 · 8.5 · 8.6</div>
+      </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>⚡ Performance</strong><span class="tag yellow">6/10</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">SSR controlado, WebSocket, índices parciais. Falta: lazy loading, bundle audit, ETag, auditoria de N+1.</p>
+        <div style="font-size:12px; color:var(--accent); margin-top:8px;">→ Fase 8.1 · 8.2 · 8.3</div>
+      </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>🧩 Organização</strong><span class="tag yellow">6/10</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">Backend exemplar; front bem dividido. Penaliza: 7 Vue + 8 Go acima de 1000 linhas, composables monolíticos.</p>
+        <div style="font-size:12px; color:var(--accent); margin-top:8px;">→ Fase 7 (inteira)</div>
+      </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>📐 Padronização</strong><span class="tag accent">7/10</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">100% Composition API, ~0 <code>any</code>, ~0 <code>console.log</code>. Falta: ESLint, Prettier, <code>golangci-lint</code>, pre-commit.</p>
+        <div style="font-size:12px; color:var(--accent); margin-top:8px;">→ Fase 6 (inteira)</div>
+      </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>📚 Documentação</strong><span class="tag accent">7/10</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">AGENT.md por módulo, ERD, planos. Falta: godoc/TSDoc inline, pasta <code>docs/adr/</code>, inventário automatizado.</p>
+        <div style="font-size:12px; color:var(--accent); margin-top:8px;">→ Fase 8.7 · 8.8</div>
+      </div>
+      <div class="card" style="background: linear-gradient(180deg, var(--panel) 0%, rgba(99,102,241,.08) 100%);">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+          <strong>🎯 Total</strong><span class="tag accent">34/50</span>
+        </div>
+        <p style="color:var(--text-muted); font-size:13px; margin:0">Base sólida. Ganhos rápidos em padronização e organização vão puxar todos os outros pilares para cima.</p>
+        <div style="font-size:12px; color:var(--accent); margin-top:8px;">→ Alvo pós-plano: 44/50</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TIMELINE -->
+  <section id="timeline">
+    <h2><span class="num">T</span> Timeline das fases</h2>
+
+    <div class="timeline">
+      <div class="phase done">
+        <div class="phase-head">
+          <span class="phase-title">Fase 0 — Decisões</span>
+          <span class="phase-meta"><span class="tag green">✓ concluída</span> 2026-05-16</span>
+        </div>
+        <div class="phase-desc">Travas removidas: nome, banco prod, layer <code>queue</code>.</div>
+      </div>
+
+      <div class="phase done">
+        <div class="phase-head">
+          <span class="phase-title">Fase 1 — Limpeza da raiz</span>
+          <span class="phase-meta"><span class="tag green">✓ concluída</span> 2026-05-16</span>
+        </div>
+        <div class="phase-desc">35 → 10 arquivos na raiz. <code>docs/historico/</code> criado.</div>
+      </div>
+
+      <div class="phase now">
+        <div class="phase-head">
+          <span class="phase-title">Fase 2 — Reorganizar documentação</span>
+          <span class="phase-meta"><span class="tag accent">★ próxima</span> ~1-2h</span>
+        </div>
+        <div class="phase-desc">Consolidar <code>docs_depoy/</code> em <code>docs/deploy/</code>. Mover .md errante de <code>pages/</code>. Avaliar HTML estático de 100 KB.</div>
+      </div>
+
+      <div class="phase next">
+        <div class="phase-head">
+          <span class="phase-title">Fase 3 — Remover código morto</span>
+          <span class="phase-meta"><span class="tag yellow">pendente</span> ~1h</span>
+        </div>
+        <div class="phase-desc">3 funções Go + 2 componentes Vue + 1 pasta vazia + 1 export sem caller.</div>
+      </div>
+
+      <div class="phase pending">
+        <div class="phase-head">
+          <span class="phase-title">Fase 4 — Renomeação para Omni</span>
+          <span class="phase-meta"><span class="tag red">alto risco</span> ~3-4h + janela DB</span>
+        </div>
+        <div class="phase-desc">11 pontos de troca + rename DB prod. Inclui sub-tarefa de 4.6 (janela de manutenção).</div>
+      </div>
+
+      <div class="phase pending">
+        <div class="phase-head">
+          <span class="phase-title">Fase 5 — Estabilizar infra local</span>
+          <span class="phase-meta"><span class="tag yellow">pendente</span> ~30min</span>
+        </div>
+        <div class="phase-desc">Renomear <code>Controlle10 - ftp/</code> → <code>erp-source-local/</code>. Ajustar bind no compose.</div>
+      </div>
+
+      <div class="phase pending">
+        <div class="phase-head">
+          <span class="phase-title">Fase 6 — Qualidade & Padronização</span>
+          <span class="phase-meta"><span class="tag accent">alto ROI</span> ~3h</span>
+        </div>
+        <div class="phase-desc">ESLint + Prettier no front, <code>golangci-lint</code> no back, pre-commit hook, <code>tsconfig.json</code> próprio, <code>strict: true</code>.</div>
+      </div>
+
+      <div class="phase pending">
+        <div class="phase-head">
+          <span class="phase-title">Fase 7 — Fatiamento de arquivos gigantes</span>
+          <span class="phase-meta"><span class="tag accent">alto ROI</span> ~8h+</span>
+        </div>
+        <div class="phase-desc">7 Vue + 2 TS + 8 Go acima de 1000 linhas. Limite alvo: 500 (front) / 800 (back). Lint <code>max-lines</code> bloqueia regressão.</div>
+      </div>
+
+      <div class="phase pending">
+        <div class="phase-head">
+          <span class="phase-title">Fase 8 — Performance · Segurança · Doc inline</span>
+          <span class="phase-meta"><span class="tag warning">médio risco</span> ~5h</span>
+        </div>
+        <div class="phase-desc">Lazy loading, bundle audit, HTTP security headers, <code>govulncheck</code>, godoc/TSDoc, primeiros ADRs.</div>
+      </div>
+
+      <div class="phase pending">
+        <div class="phase-head">
+          <span class="phase-title">Fase 9 — Testes do frontend</span>
+          <span class="phase-meta"><span class="tag gray">recomendado</span> ~3h</span>
+        </div>
+        <div class="phase-desc">Setup Vitest + 1 teste por store crítica + composables de realtime. Step no CI.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FASES DETALHADAS -->
+  <section id="fases">
+    <h2><span class="num">F</span> Fases em detalhe</h2>
+
+    <details class="section">
+      <summary>
+        Fase 1 — Limpeza da raiz
+        <span><span class="tag green">8/8 ✓</span></span>
+      </summary>
+      <div class="body">
+        <table>
+          <thead><tr><th>Tarefa</th><th>Status</th><th>Resultado</th></tr></thead>
+          <tbody>
+            <tr><td>1.1 — Histórico para <code>docs/historico/</code></td><td><span class="tag green">✓</span></td><td>8 .md movidos com <code>git mv</code></td></tr>
+            <tr><td>1.2 — Triagem de <code>todo.md</code></td><td><span class="tag yellow">⚠ parcial</span></td><td>Arquivado; 170 itens aguardam triagem</td></tr>
+            <tr><td>1.3 — Mover <code>roadmap.md</code></td><td><span class="tag green">✓</span></td><td>→ <code>docs/ROADMAP.md</code> + refs atualizadas</td></tr>
+            <tr><td>1.4 — Remover artefatos avulsos</td><td><span class="tag green">✓</span></td><td>3 logos + 2 PNGs + 1 GIF + 1 HTML + 1 log</td></tr>
+            <tr><td>1.5 — Mover helpers de token</td><td><span class="tag green">✓</span></td><td>→ <code>scripts/dev/token-helpers/</code> + <code>tmp/</code></td></tr>
+            <tr><td>1.6 — Limpar <code>tmp/</code></td><td><span class="tag green">✓</span></td><td>21 logs antigos + 2 scripts throwaway</td></tr>
+            <tr><td>1.7 — Arquivar <code>dev-compose-perfis.md</code></td><td><span class="tag green">✓</span></td><td>→ <code>docs/historico/</code> (era doc de outro projeto)</td></tr>
+            <tr><td>Atualizar <code>.gitignore</code></td><td><span class="tag green">✓</span></td><td>+<code>tmp/</code>, +<code>token-helpers/</code>, +<code>.codex-logs/</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 2 — Reorganizar documentação
+        <span><span class="tag accent">próxima</span></span>
+      </summary>
+      <div class="body">
+        <table>
+          <thead><tr><th>Tarefa</th><th>Subtarefas</th><th>Risco</th></tr></thead>
+          <tbody>
+            <tr><td>2.1 — <code>docs_depoy/</code> → <code>docs/deploy/</code></td><td>3 .md a comparar/integrar</td><td><span class="tag green">baixo</span></td></tr>
+            <tr><td>2.2 — Tirar <code>.md</code> errante de <code>pages/</code></td><td>1 arquivo (<code>operacao/operations.md</code>)</td><td><span class="tag green">baixo</span></td></tr>
+            <tr><td>2.3 — Avaliar HTML estático</td><td>100 KB de <code>tasks-orquestrador-plano.html</code></td><td><span class="tag green">baixo</span></td></tr>
+            <tr><td>2.4 — Auditar <code>COMPONENT_INVENTORY.md</code></td><td>comparar com árvore real ou gerar via script</td><td><span class="tag yellow">médio</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 3 — Remover código morto
+        <span><span class="tag yellow">pendente</span></span>
+      </summary>
+      <div class="body">
+        <div class="grid grid-2">
+          <div>
+            <h3 style="margin-top:0">Backend Go</h3>
+            <ul>
+              <li>Pasta vazia <code>back/cmd/debuginvite/</code></li>
+              <li><code>StreamCSV</code> em <code>erp/csv_parser.go:185</code></li>
+              <li><code>NewMemoryUserStore</code> em <code>auth/store_memory.go:14</code></li>
+              <li><code>SeedDemoUsers</code> em <code>auth/store_memory.go:59</code></li>
+              <li><em>Rodar <code>go vet</code> e <code>go test</code></em></li>
+            </ul>
+          </div>
+          <div>
+            <h3 style="margin-top:0">Frontend Vue</h3>
+            <ul>
+              <li><code>OperationCampaignBrief.vue</code></li>
+              <li><code>layers/tasks/.../AdminPageHeader.vue</code> (duplicado)</li>
+              <li><code>useDashboardState</code> em <code>useDashboardShell.ts:7</code></li>
+              <li>Remover <code>web/dist/</code> local</li>
+              <li><em>Rodar <code>npm run build</code></em></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 4 — Renomeação para Omni
+        <span><span class="tag red">alto risco</span></span>
+      </summary>
+      <div class="body">
+        <p style="color:var(--text-muted); font-size:13px;">11 pontos de troca + rename do DB prod. Detalhes na <a href="#renomeacao">seção dedicada abaixo</a>.</p>
+        <table>
+          <thead><tr><th>Tarefa</th><th>Local</th></tr></thead>
+          <tbody>
+            <tr><td>4.1</td><td><code>package.json</code> raiz + <code>web/package.json</code></td></tr>
+            <tr><td>4.2</td><td><code>docker-compose.yml</code> (name + APP_NAME) + <code>docker-compose.prod.yml</code></td></tr>
+            <tr><td>4.3</td><td>Templates <code>.env.*</code></td></tr>
+            <tr><td>4.4</td><td>Código Go (<code>config.go</code>, <code>password_reset_delivery.go</code>)</td></tr>
+            <tr><td>4.5</td><td><code>nuxt.config.ts</code> + grep <code>web/</code></td></tr>
+            <tr><td>4.6 ⚠</td><td>DB em produção — janela com <code>ALTER DATABASE</code></td></tr>
+            <tr><td>4.7</td><td>README + todos os AGENT.md</td></tr>
+            <tr><td>4.8 (opcional)</td><td>Renomear diretório local do repo</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 5 — Estabilizar infra local
+        <span><span class="tag yellow">pendente</span></span>
+      </summary>
+      <div class="body">
+        <ul>
+          <li>5.1 — Renomear <code>Controlle10 - ftp/</code> → <code>erp-source-local/</code> + atualizar <code>docker-compose.yml:84</code></li>
+          <li>5.2 — Confirmar cobertura no <code>.gitignore</code> (<code>.playwright-mcp/</code>, <code>*.bak</code>, etc)</li>
+          <li>5.3 — Padronizar nomes de logs locais</li>
+        </ul>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 6 — Qualidade & Padronização (linters, formatters, hooks)
+        <span><span class="tag accent">alto ROI</span></span>
+      </summary>
+      <div class="body">
+        <p style="color:var(--text-muted); font-size:13px;">Para de aceitar regressão de padrão sem rede de proteção.</p>
+        <table>
+          <thead><tr><th>Tarefa</th><th>O que faz</th></tr></thead>
+          <tbody>
+            <tr><td>6.1 — ESLint + Prettier (web)</td><td>flat config Nuxt 4, scripts <code>lint</code>/<code>lint:fix</code>/<code>format</code>, fixar baseline</td></tr>
+            <tr><td>6.2 — <code>golangci-lint</code> (back)</td><td>govet, staticcheck, errcheck, gosec, gocritic; fixar baseline</td></tr>
+            <tr><td>6.3 — Pre-commit hook</td><td>Husky + lint-staged: lint nos staged + gofmt; opcional conventional commits</td></tr>
+            <tr><td>6.4 — <code>tsconfig.json</code> próprio</td><td>estender <code>.nuxt/tsconfig</code>, ligar <code>strict</code> + <code>noUncheckedIndexedAccess</code></td></tr>
+            <tr><td>6.5 — <code>AGENT.md</code> × <code>AGENTS.md</code></td><td>escolher grafia única e renomear</td></tr>
+            <tr><td>6.6 — Convenção migration numbering</td><td>prefixo único 4 dígitos, resolver 4 colisões legadas</td></tr>
+            <tr><td>6.7 — Decidir feature-first × domain-first</td><td>migrar arquivos conforme padrão escolhido</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 7 — Fatiamento de arquivos gigantes
+        <span><span class="tag accent">alto ROI</span></span>
+      </summary>
+      <div class="body">
+        <p style="color:var(--text-muted); font-size:13px;">Alvo: <strong>≤500 linhas</strong> no front (Vue/TS) e <strong>≤800</strong> no back (Go). Acima disso, blast radius cresce demais.</p>
+        <table>
+          <thead><tr><th>Tarefa</th><th>Alvo</th></tr></thead>
+          <tbody>
+            <tr><td>7.1 — Top 3 Vue críticos</td><td><code>UsersAccessManager</code> (2.187), <code>OperationFinishModal</code> (2.143), <code>tasks.vue</code> (1.340)</td></tr>
+            <tr><td>7.2 — Workspaces inflados</td><td><code>Feedback/Settings/Erp/ThemeColor</code> Workspaces (1.000–1.300)</td></tr>
+            <tr><td>7.3 — Composables/stores monolíticos</td><td><code>useTasksPageContext</code> (1.737, 1 export), <code>tasks.ts</code> (1.486), 5 stores 600–760</td></tr>
+            <tr><td>7.4 — Backend Go &gt;1000</td><td><code>erp/repository_postgres</code> (2.942), <code>operations/service</code> (1.975), 6 outros</td></tr>
+            <tr><td>7.5 — Lint <code>max-lines</code>/<code>gocyclo</code></td><td>regra automática contra regressão</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 8 — Performance · Segurança · Documentação inline
+        <span><span class="tag warning">médio risco</span></span>
+      </summary>
+      <div class="body">
+        <div class="grid grid-3">
+          <div>
+            <h3 style="margin-top:0; font-size:14px;">Performance</h3>
+            <ul>
+              <li>8.1 — Lazy load de modais pesados (<code>defineAsyncComponent</code> + <code>Suspense</code>)</li>
+              <li>8.2 — Bundle audit (<code>vite-bundle-visualizer</code>) e baseline</li>
+              <li>8.3 — N+1 e cache HTTP (EXPLAIN + ETag)</li>
+            </ul>
+          </div>
+          <div>
+            <h3 style="margin-top:0; font-size:14px;">Segurança</h3>
+            <ul>
+              <li>8.4 — HTTP security headers no Caddy prod</li>
+              <li>8.5 — <code>npm audit</code> + <code>govulncheck</code> no CI</li>
+              <li>8.6 — Boot do back aborta se prod com secret default</li>
+            </ul>
+          </div>
+          <div>
+            <h3 style="margin-top:0; font-size:14px;">Documentação</h3>
+            <ul>
+              <li>8.7 — godoc/TSDoc nos pontos críticos</li>
+              <li>8.7 — Pasta <code>docs/adr/</code> com ADR-0001 (rename Omni)</li>
+              <li>8.8 — Gerador automático para <code>COMPONENT_INVENTORY</code></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details class="section">
+      <summary>
+        Fase 9 — Testes do frontend
+        <span><span class="tag gray">recomendado</span></span>
+      </summary>
+      <div class="body">
+        <ul>
+          <li>9.1 — Setup Vitest: 1 teste por store crítica (<code>auth</code>, <code>operations</code>, <code>settings</code>, <code>tasks</code>) + composables realtime + utils de domínio</li>
+          <li>9.2 — Step <code>vitest</code> + <code>go test</code> no CI</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- RENOMEAÇÃO -->
+  <section id="renomeacao">
+    <h2><span class="num">R</span> Renomeação detalhada — Fase 4</h2>
+
+    <div class="alert danger">
+      <div class="alert-icon">⚠</div>
+      <div>
+        <h4>Atenção máxima na tarefa 4.6 (rename do banco prod)</h4>
+        <p>Vai derrubar serviços por alguns minutos. Garantir backup recente antes. Fallback: <code>pg_dump</code> → criar banco novo → <code>pg_restore</code> → swap de <code>.env</code>.</p>
+      </div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3 style="margin-top:0">Valores canônicos</h3>
+        <table>
+          <tbody>
+            <tr><td>Display</td><td><code>Omni</code></td></tr>
+            <tr><td>Slug</td><td><code>omni</code></td></tr>
+            <tr><td>DB local (dev)</td><td><code>omni</code></td></tr>
+            <tr><td>DB prod</td><td><code>omni</code> (após rename)</td></tr>
+            <tr><td>APP_NAME</td><td><code>omni-api</code></td></tr>
+            <tr><td>COMPOSE_PROJECT_NAME</td><td><code>omni</code></td></tr>
+            <tr><td>SMTP_FROM_NAME</td><td><code>Omni</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">NÃO tocar</h3>
+        <table>
+          <tbody>
+            <tr><td><code>omnichannel-mvp_default</code></td><td>rede Docker da VPS</td></tr>
+            <tr><td><code>omnichannel-mvp-caddy-1</code></td><td>container Caddy da VPS</td></tr>
+            <tr><td><code>/opt/omnichannel/Caddyfile</code></td><td>path no servidor</td></tr>
+            <tr><td><code>acesso.omni.local</code></td><td>já alinhado ao slug</td></tr>
+            <tr><td><code>omnichannel</code> (módulo)</td><td>página de chat continua existindo</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3 style="margin-top:24px">Procedimento para a janela do DB prod</h3>
+    <div class="card">
+      <ol class="step-list">
+        <li>
+          <strong>Backup primeiro</strong>
+          <div class="muted"><code>pg_dump -Fc -h … -U listaatendimento listaatendimento &gt; omni-pre-rename.dump</code></div>
+        </li>
+        <li>
+          <strong>Derrubar serviços que conectam</strong>
+          <div class="muted">Parar containers <code>api</code> e <code>web</code> via <code>docker compose stop</code> para liberar conexões.</div>
+        </li>
+        <li>
+          <strong>Renomear o banco e o role</strong>
+          <div class="muted"><code>ALTER DATABASE listaatendimento RENAME TO omni;</code><br><code>ALTER ROLE listaatendimento RENAME TO omni;</code></div>
+        </li>
+        <li>
+          <strong>Atualizar <code>.env</code> de produção</strong>
+          <div class="muted">Trocar <code>POSTGRES_DB</code>, <code>POSTGRES_USER</code>, <code>COMPOSE_PROJECT_NAME</code>.</div>
+        </li>
+        <li>
+          <strong>Subir tudo</strong>
+          <div class="muted"><code>docker compose -f docker-compose.prod.yml --env-file .env up -d</code></div>
+        </li>
+        <li>
+          <strong>Smoke check</strong>
+          <div class="muted">Login, criação de tenant, leitura de operação. <code>docker compose exec api ./migrate up</code> para confirmar idempotência.</div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- VALIDAÇÃO -->
+  <section id="validacao">
+    <h2><span class="num">V</span> Validação final</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Check</th><th>Comando / Critério</th></tr></thead>
+        <tbody>
+          <tr><td>Build do front</td><td><code>npm --prefix web run build</code> sem erro</td></tr>
+          <tr><td>Testes do back</td><td><code>go test ./...</code> em <code>back/</code> passa</td></tr>
+          <tr><td>Compose dev</td><td><code>docker compose config</code> OK</td></tr>
+          <tr><td>Compose prod</td><td><code>docker compose -f docker-compose.prod.yml config</code> OK</td></tr>
+          <tr><td>Stack sobe</td><td><code>npm run dev</code> + portas <code>5432</code>, <code>8080</code>, <code>3003</code></td></tr>
+          <tr><td>Title no head</td><td><code>http://localhost:3003</code> → <code>&lt;title&gt;Omni&lt;/title&gt;</code></td></tr>
+          <tr><td>APP_NAME no container</td><td><code>docker compose exec api env | grep APP_NAME</code> → <code>omni-api</code></td></tr>
+          <tr><td>Banco renomeado</td><td><code>docker compose exec postgres psql -U omni -d omni -c '\l'</code></td></tr>
+          <tr><td>Nomes antigos zerados</td><td><code>grep -ri "lista da vez\|lista-da-vez\|fila de atendimento" .</code> retorna 0</td></tr>
+          <tr><td>Raiz limpa</td><td>≤ 12 arquivos na raiz <span class="tag green">✓ atual: 10</span></td></tr>
+          <tr><td>Doc viva</td><td><code>ESTADO_ATUAL.md</code> atualizado pós-refatoração</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <hr/>
+
+  <p class="footer">
+    Omni · plano operacional gerado a partir de <a href="PLANO_REFATORACAO.md">PLANO_REFATORACAO.md</a> ·
+    retrato técnico em <a href="estado-atual.html">estado-atual.html</a>
+  </p>
+
+</div>
+
+<script>
+  Chart.defaults.color = '#9ca3af';
+  Chart.defaults.borderColor = '#26262e';
+  Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, Inter, "Segoe UI", system-ui, sans-serif';
+  Chart.defaults.font.size = 12;
+
+  const COLORS = {
+    accent: '#6366f1', accentSoft: 'rgba(99,102,241,.7)',
+    success: '#10b981', successSoft: 'rgba(16,185,129,.7)',
+    warning: '#f59e0b', warningSoft: 'rgba(245,158,11,.7)',
+    danger: '#ef4444', dangerSoft: 'rgba(239,68,68,.7)',
+    info: '#3b82f6', infoSoft: 'rgba(59,130,246,.7)',
+    purple: '#a855f7', cyan: '#06b6d4'
+  };
+
+  // Progresso por fase (% conclusão)
+  new Chart(document.getElementById('chartPhaseProgress'), {
+    type: 'bar',
+    data: {
+      labels: [
+        'Fase 0 — Decisões',
+        'Fase 1 — Limpeza raiz',
+        'Fase 2 — Docs',
+        'Fase 3 — Código morto',
+        'Fase 4 — Renomeação Omni',
+        'Fase 5 — Infra local',
+        'Fase 6 — Qualidade/Lint',
+        'Fase 7 — Fatiamento',
+        'Fase 8 — Perf/Sec/Doc',
+        'Fase 9 — Testes front'
+      ],
+      datasets: [
+        {
+          label: 'Concluído (%)',
+          data: [100, 95, 0, 0, 0, 0, 0, 0, 0, 0],
+          backgroundColor: ctx => {
+            const v = ctx.raw;
+            if (v >= 95) return COLORS.success;
+            if (v >= 50) return COLORS.accent;
+            if (v > 0) return COLORS.warning;
+            return 'rgba(99,102,241,.12)';
+          },
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw + '%' } } },
+      scales: {
+        x: { beginAtZero: true, max: 100, grid: { color: '#26262e' }, ticks: { callback: v => v + '%' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+
+  // Risco × Esforço (bubble)
+  new Chart(document.getElementById('chartRiskEffort'), {
+    type: 'bubble',
+    data: {
+      datasets: [
+        { label: 'Fase 0 — Decisões', data: [{ x: 1, y: 1, r: 8 }], backgroundColor: COLORS.successSoft, borderColor: COLORS.success },
+        { label: 'Fase 1 — Limpeza', data: [{ x: 4, y: 1, r: 22 }], backgroundColor: COLORS.successSoft, borderColor: COLORS.success },
+        { label: 'Fase 2 — Docs', data: [{ x: 2, y: 1, r: 14 }], backgroundColor: COLORS.accentSoft, borderColor: COLORS.accent },
+        { label: 'Fase 3 — Cód. morto', data: [{ x: 2, y: 2, r: 12 }], backgroundColor: COLORS.warningSoft, borderColor: COLORS.warning },
+        { label: 'Fase 4 — Renomeação', data: [{ x: 8, y: 5, r: 30 }], backgroundColor: COLORS.dangerSoft, borderColor: COLORS.danger },
+        { label: 'Fase 5 — Infra local', data: [{ x: 1, y: 2, r: 9 }], backgroundColor: COLORS.warningSoft, borderColor: COLORS.warning },
+        { label: 'Fase 6 — Qualidade', data: [{ x: 3, y: 2, r: 18 }], backgroundColor: 'rgba(168,85,247,.5)', borderColor: COLORS.purple },
+        { label: 'Fase 7 — Fatiamento', data: [{ x: 8, y: 3, r: 28 }], backgroundColor: 'rgba(168,85,247,.5)', borderColor: COLORS.purple },
+        { label: 'Fase 8 — Perf/Sec', data: [{ x: 5, y: 3, r: 22 }], backgroundColor: COLORS.warningSoft, borderColor: COLORS.warning },
+        { label: 'Fase 9 — Testes', data: [{ x: 4, y: 1, r: 12 }], backgroundColor: 'rgba(6,182,212,.5)', borderColor: COLORS.cyan }
+      ]
+    },
+    options: {
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 10 } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: risco ${ctx.raw.y}/5, esforço ${ctx.raw.x}/10` } }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Esforço (relativo)' }, min: 0, max: 10, grid: { color: '#26262e' } },
+        y: { title: { display: true, text: 'Risco (1-5)' }, min: 0, max: 6, grid: { color: '#26262e' }, ticks: { stepSize: 1 } }
+      }
+    }
+  });
+</script>
+</body>
+</html>

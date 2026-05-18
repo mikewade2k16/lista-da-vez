@@ -29,10 +29,15 @@ web-reference/
 
 # Local assistant/browser artifacts
 .claude/
+.codex-logs/
 .playwright-mcp/
 web/.codex-devserver.*.log
 
-# Local token/debug helpers
+# Local working area (logs, throwaway scripts, tokens, payloads)
+tmp/
+scripts/dev/token-helpers/
+
+# Defesa em profundidade: garante que mesmo se reaparecerem na raiz, não vão para o git
 token.txt
 token_gen.js
 token_gen_real.js

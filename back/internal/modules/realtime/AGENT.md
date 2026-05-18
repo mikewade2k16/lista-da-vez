@@ -134,6 +134,17 @@ presence.field_unlocked { userId, fieldKey }
 Presence usa `PresenceStore` em memoria com TTL 30s. Heartbeat do cliente a cada 15s.
 Ticker server-side varre entries expiradas e publica `presence.user_left`.
 
+**DisplayName no payload de presence:** usa `principal.Nick` (coluna `nick` em `core.users`, opcional)
+quando preenchido; cai para `principal.DisplayName` e por ultimo para `principal.Email`. Front exibe
+o que vier no payload — sem regra de fallback adicional no client. Nick e' a identidade curta
+preferida em mascaras de presence/selects (T7.1).
+
+**Lock exclusivo por fieldKey (T7.2):** `LockField` valida se outro usuario ja esta no mesmo
+`fieldKey` dentro do TTL. Quando ocupado, vira no-op (nao publica `field_locked`, nao altera
+estado). Front-end ja desabilita o input via `:disabled` quando `isPresenceFieldLocked`; o guard
+server-side e' defesa em camada para evitar dois clientes verem o outro editando o mesmo campo
+simultaneamente (problema mascarado quando display_names sao iguais).
+
 ### Eventos de notifications
 
 ```

@@ -95,6 +95,12 @@ func (store *PresenceStore) Heartbeat(topic string, user PresenceUser) {
 	}
 }
 
+// LockField marca o usuario como "editando" `fieldKey` no `topic` informado.
+//
+// Regra de exclusividade: se outro usuario ja esta no mesmo `fieldKey` dentro
+// do TTL, a chamada nao atualiza o estado de quem tentou tomar o lock. O store
+// republica o lock atual para recuperar clientes que tenham perdido snapshot ou
+// evento anterior.
 func (store *PresenceStore) LockField(topic string, user PresenceUser, fieldKey string, lockID string) {
 	topic = strings.TrimSpace(topic)
 	fieldKey = strings.TrimSpace(fieldKey)
@@ -107,9 +113,34 @@ func (store *PresenceStore) LockField(topic string, user PresenceUser, fieldKey 
 	}
 
 	shouldPublishJoined := false
+	denied := false
+	var currentLocker PresenceUser
 
 	store.mu.Lock()
 	topicEntries := store.ensureTopicLocked(topic)
+	for otherUserID, other := range topicEntries {
+		if otherUserID == user.UserID {
+			continue
+		}
+		if other.user.FieldKey != fieldKey {
+			continue
+		}
+		if user.UpdatedAt.Sub(other.user.UpdatedAt) > store.ttl {
+			// lock alheio ja expirou pelo TTL; cleanup vai remover, podemos
+			// assumir como livre nessa chamada.
+			continue
+		}
+		denied = true
+		currentLocker = other.user
+		break
+	}
+
+	if denied {
+		store.mu.Unlock()
+		store.publishPresenceEvent(topic, EventTypePresenceFieldLocked, currentLocker)
+		return
+	}
+
 	entry, exists := topicEntries[user.UserID]
 	if exists {
 		entry.user.DisplayName = user.DisplayName

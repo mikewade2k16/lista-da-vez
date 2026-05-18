@@ -483,7 +483,7 @@ Resultado: passou.
 
 **Observações para o próximo dev/agente:**
 
-- O frontend ainda não abre esses WS; isso entra na T5/T7 via `useTasksRealtime` e `useTaskPresence`.
+- O frontend ja abre os WS de tasks e presence via `useTasksRealtime` e `useTaskPresence`; notifications continuam para a fase dedicada.
 - `notifications:user:{userId}` agora tem persistência/adapters na T3; o frontend ainda precisa consumir REST/WS na T5.
 - Autorização WS usa `tasks.tasks.view` ou `tasks.client_view` e valida account/board/task antes do upgrade. Board compartilhado é permitido quando existe task share ativa naquele board.
 - Presence é in-memory por processo; broker externo continua evolução futura quando houver múltiplas réplicas.
@@ -572,13 +572,428 @@ Resultado: passou.
 
 ---
 
+### T5 - Registro de regressao e correcoes aplicadas em 2026-05-14
+
+Este registro existe para evitar repeticao do mesmo erro na virada `localStorage -> Pinia/API`.
+
+**Sintomas vistos no front:**
+
+- drag/drop do board nao movia a task de forma confiavel;
+- task criada parecia existir na tela, mas sumia ou voltava errada apos reload;
+- modal abria incompleto, sem `Prazo/Data` em alguns boards;
+- criacao pela tabela podia focar uma task sem `id`, porque a chamada async nao era aguardada;
+- board era reconstruido com colunas fake quando o list de boards vinha sem detalhes;
+- responsavel podia aparecer como email em vez de nome de exibicao;
+- falhas de sync ficavam silenciosas, sem alerta visual para o usuario;
+- tentativa de expor `GET /v1/tasks/boards/{boardId}` quebrava o boot do Go `ServeMux`, por conflito com rotas como `GET /v1/tasks/{taskId}/comments`.
+- card do board mostrava placeholders de campos vazios (`Sem data`, prioridade default, tipo vazio) mesmo quando o usuario nao tinha cadastrado o dado;
+- selects de `responsavel` e `envolvidos` ainda permitiam criar pessoas manuais, apesar de esses valores virem do diretorio de usuarios;
+- responsavel podia ser duplicado em `envolvidos`;
+- cores de opcoes editadas no select apareciam no modal, mas nao no board, e cliente/usuario usavam badge preenchido em vez de avatar + nome com borda opcional;
+- prazo com inicio/fim e hora era exibido no modal, mas o board nao recebia `endDate`; a hora ficava em uma linha separada do date picker;
+- tracking do front ainda usava `localStorage`, mesmo com endpoints server-side ja disponiveis para a T6.
+- dois usuarios viam cliente, responsavel, envolvidos, tipo e data final diferentes, porque esses campos ainda vinham de metadata local por navegador.
+
+**Causa raiz:**
+
+O smoke inicial validou um caminho estreito, mas a T5 ainda misturava contrato incompleto do backend com suposicoes do front:
+
+- `GET /v1/tasks/boards` retorna resumo do board, nao colunas/views/fields completos;
+- a rota canonica de detalhe do board conflita com rotas parametrizadas de task no `ServeMux`;
+- chaves de campos do backend (`due_date`) e chaves camelCase do front (`dueDate`, `clientId`) eram normalizadas como valores diferentes;
+- campos front-only do prototipo (`responsible`, `involved`, `clientName`, `type`, `createdBy`, `dueEndDate`) nao tinham persistencia server-side e ficavam divergentes entre navegadores;
+- `TasksBoardView.vue` usava `onDropCard` no template sem expor a funcao no destructuring local.
+
+**Correcoes aplicadas:**
+
+| Area | Correcao |
+|------|----------|
+| Backend routes | Detalhe de board usa `GET /v1/task-boards/{boardId}` para evitar conflito no `ServeMux`; nao reintroduzir `GET /v1/tasks/boards/{boardId}` sem mudar o desenho das rotas. |
+| Board hydration | `web/layers/tasks/stores/tasks.ts` carrega detalhe do board antes de montar projeto, colunas, views e fields. |
+| Field keys | `normalizeFieldKey` preserva aliases canonicos como `dueDate`, `clientId`, `createdAt` e `createdBy`. |
+| Drag/drop | `TasksBoardView.vue` passa a receber `onDropCard` do contexto; smoke real deve validar `POST /v1/tasks/{taskId}/move`. |
+| Criacao tabela | `createTableTask` agora aguarda `tasksWorkspace.createTask()` antes de focar a celula. |
+| Nome do usuario | `currentUserName` usa `displayName` antes de `email`. |
+| Sync visivel | `/tasks` exibe alerta quando `tasksWorkspace.errorMessage` estiver preenchido. |
+| Metadata da task | `tasks.tasks.ui_metadata` persiste `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet` e `createdBy`; o DTO sempre devolve `uiMetadata`, mesmo `{}`, para impedir fallback em cache local velho. |
+| Card sem placeholder | `isCardFieldVisible` mantem campos vazios fora do card; `Sem data` so aparece dentro do editor/draft quando o campo foi aberto. |
+| Pessoas reais | Selects de `responsavel` e `envolvidos` nao usam `creatable`; opcoes vem de `/v1/users`, projeto e tasks existentes. |
+| Involved limpo | `sanitizeInvolved` remove automaticamente o responsavel da lista de envolvidos. |
+| Visual unificado | Pessoas/clientes usam avatar + nome e `badge-style="entity"`; cores manuais viram somente borda. Status/tipo/prioridade continuam como badges preenchidos. |
+| Prazo completo | `AppDatePicker` emite `modelValue` e `endDate`; data e hora ficam na mesma linha para inicio e fim; `dueEndDate` agora persiste em `ui_metadata` e aparece igual no modal e no board. |
+| T6 tracking front | `useTimeTracking` deixou de usar `localStorage` e passou a hidratar/acionar `/v1/tasks/tracking/active` e `/v1/tasks/{taskId}/tracking/{start,pause,resume,stop}` com `X-Account-Id`. |
+
+**Checklist obrigatorio antes de marcar T5 como concluido:**
+
+1. API sobe sem panic apos `docker compose up -d --build api`.
+2. `curl http://localhost:8883/healthz` responde `status: ok`.
+3. `go test ./...` passa em `back/`.
+4. `npm --prefix web run build` passa.
+5. Smoke real em `http://localhost:3003/tasks`:
+   - criar task no board;
+   - abrir modal;
+   - definir prazo;
+   - salvar;
+   - arrastar para outra coluna;
+   - recarregar a pagina;
+   - confirmar titulo, status, prazo e nome do responsavel preservados.
+6. Network do smoke deve conter `GET /v1/task-boards/{boardId}`, `POST /v1/tasks/boards/{boardId}/tasks`, `PATCH /v1/tasks/{taskId}` e `POST /v1/tasks/{taskId}/move` com `2xx`.
+7. Console do navegador nao deve ter erro novo de Tasks, CORS, rota `405/500` ou promise sem tratamento.
+
+**Nao repetir:**
+
+- Nao montar colunas fallback (`column-todo`, `column-doing`, etc.) quando a API real tem board criado; buscar detalhe do board primeiro.
+- Nao declarar T5 pronto apenas com smoke de criar/editar/arquivar; reload e drag/drop sao parte do aceite.
+- Nao usar a rota `GET /v1/tasks/boards/{boardId}` no Go `ServeMux` atual.
+- Nao usar `omni.tasks.api.workspace.ui.v1` como fonte autoritativa para campos do card (`cliente`, `responsavel`, `envolvidos`, `tipo`, `prazo fim`); esses valores ficam em `tasks.tasks.ui_metadata`. A ponte local e apenas fallback/configuracao de view enquanto nao houver tabela dedicada para views/filtros.
+- Nao renderizar placeholder de campo vazio no card: se nao cadastrou valor, o card nao mostra o campo.
+- Nao reabilitar criacao manual em selects de pessoa; novas pessoas devem vir do modulo de usuarios.
+
+---
+
+### T7 - Presence MVP front aplicado em 2026-05-15
+
+**Entrega:** o front agora usa o canal `GET /v1/realtime/presence` no modal e no board, com avatares de participantes, nome de quem esta editando e bloqueio do mesmo campo enquanto outro usuario esta nele.
+
+| Arquivo | Correcao |
+|---------|----------|
+| `web/layers/tasks/composables/useTaskPresence.ts` | Composable para `presence:task:{taskId}` e `presence:board:{boardId}` com auth por `access_token`, reconexao simples, heartbeat a cada 15s e handlers de `presence.snapshot`, `presence.user_joined`, `presence.user_left`, `presence.field_locked` e `presence.field_unlocked`. |
+| `web/layers/tasks/composables/useTasksPageContext.ts` | Contexto expoe participantes e helpers de focus/blur para modal e board; modal tambem publica presence no escopo do board para o card refletir a edicao. |
+| `web/layers/tasks/components/TasksTaskModal.vue` | Header mostra avatares de outros usuarios no mesmo modal; campos principais publicam focus/blur; labels exibem "Fulano editando" e bloqueiam o campo se outro usuario estiver nele. |
+| `web/layers/tasks/components/TasksBoardView.vue` | Cards mostram avatar/nome de quem esta editando e bloqueiam inline title/status/responsavel/envolvidos/cliente/tipo/prioridade/prazo quando ha lock remoto. |
+| `web/layers/tasks/pages/tasks.vue` | CSS compacto para pilha de avatares, badges de presenca e presence no card. |
+
+**Nao repetir:**
+
+- Nao deixar field lock apenas visual: se outro usuario esta no mesmo campo, o input/select correspondente deve ficar desabilitado ate o blur/TTL.
+- Nao espalhar `WebSocket` direto nos componentes; a conexao fica em `useTaskPresence`.
+- Nao reduzir o heartbeat para menos de 15s sem rever o rate limit de 30 eventos/s por conexao.
+- Nao mostrar participante atual como colaborador remoto; o modal deve destacar apenas outras pessoas na mesma task.
+
+**Correcao em 2026-05-15 apos teste com dois usuarios:**
+
+| Arquivo | Correcao |
+|---------|----------|
+| `web/layers/tasks/composables/useTasksRealtime.ts` | Criado composable real para `GET /v1/realtime/tasks` em escopo `account`, com reconexao e handler de eventos. |
+| `web/layers/tasks/composables/useTasksPageContext.ts` | Ligado `useTasksRealtime` ao workspace; eventos `task.*`, `board.*` e `field.*` agora agendam `tasksWorkspace.refresh()` com debounce para atualizar board/modal sem reiniciar a pagina. |
+
+**Nao repetir:** presence nao substitui realtime de dados. `presence.field_locked` so informa/bloqueia edicao simultanea; sincronizacao de cards precisa do canal `tasks`, e campos visuais de card devem persistir em `ui_metadata`.
+
+---
+
+### T7.1 / T7.2 — Hardening de presence + nick + DX inline (em curso 2026-05-15)
+
+Sintomas reportados apos novo round de teste com dois browsers logados ao mesmo tempo:
+
+- ao renomear titulo de card pelo board, nao era possivel digitar espaco no final da palavra (cursor pulava);
+- antes da correcao 2026-05-15, apenas um usuario via o outro editando; depois, ambos passaram a ver o OUTRO editando o mesmo campo simultaneamente (visualmente confunde quando os display_names sao iguais ou parecidos);
+- tentativa posterior de otimizar WebSocket com patch local quebrou sincronizacao entre abas quando a task remota nao existia no store local;
+- selects e badges de presenca usam o `display_name` completo do usuario, sem identidade curta para reduzir ambiguidade.
+
+**Causa raiz por item:**
+
+| Sintoma | Causa | Onde |
+|---------|-------|------|
+| Espaco no final do input do card some | `normalizeText(value)` faz `.replace(/\s+/g,' ').trim()` e roda no `@update:model-value` — input controlado reflete o valor truncado a cada keystroke | `useTasksPageContext.ts` (`normalizeText`) usado em `TasksBoardView.vue` no input do titulo |
+| "Dois editando o mesmo campo" | `PresenceStore.LockField` aceita lock de qualquer user mesmo quando outro user ja esta no `fieldKey`; servidor publica `presence.field_locked` para ambos | `back/internal/modules/realtime/presence.go` |
+| Sync entre abas falhava apos patch local | `hydrateTask(taskId)` dependia da task ja existir no store local; se nao existia, o evento remoto era ignorado | `web/layers/tasks/composables/useTasksPageContext.ts` (handler `scheduleTasksRealtimeRefresh`) |
+| Nomes longos/iguais nas mascaras | `core.users` (e `public.users`) so tem `display_name`; presence/selects/avatar usam ele direto | esquema do banco + `auth/model.go` + `realtime/service_tasks.go` + `useTasksPageContext.ts` |
+
+**Plano (T7.1 nick infra + T7.2 fixes):**
+
+1. Documentar T7 com sub-itens `lock-exclusivo`, `nick-infra`, `input-espaco`, `patch-local-realtime` em `roadmap-data.ts` ANTES de codar (regra do projeto).
+2. Backend:
+   - migration `0111_users_nick.sql`: `alter table users add column if not exists nick text not null default ''` (e mesmo em `core.users`).
+   - `auth/model.go`: `Nick string` em `User`, `Principal`, `UserView` (json `nick,omitempty`).
+   - `auth/store_postgres.go`: `LoadUserForAuth` e `findRecord` carregam `u.nick`.
+   - `auth/tokens.go`: claims com `Nick`.
+   - `auth/service.go`: `principal.Nick = user.Nick`.
+   - `auth/store_memory.go`: seed com `Nick: ""` (fallback para display_name no front).
+   - `users/model.go` + `store_postgres.go`: `Nick` no DTO e na projecao `baseProjectedUsersQuery`.
+   - `realtime/service_tasks.go`: `HandlePresenceSocket` usa `principal.Nick` se preenchido; cai pra `principal.DisplayName` se vazio.
+   - `realtime/presence.go`: `LockField` checa se ja existe outro user com o mesmo `fieldKey` (apenas mesmo `LockID`/`UserID` pode atualizar); se ocupado, nao mexe no estado de quem tentou tomar o lock e republica o `field_locked` do usuario atual para recuperar clients defasados.
+3. Frontend:
+   - `useTasksPageContext.ts`: criar `clampText(value, max)` (apenas `String(value).slice(0, max)`, sem trim/colapso). Trocar `normalizeText` por `clampText` em `updateTaskInline.title` e demais `@update:model-value` inline; `normalizeText` so no flush/autosave.
+   - `currentUserName` e `directoryUserLabels` preferem `nick` (fallback `displayName` -> `name` -> `fullName` -> `email`).
+   - `useTaskPresence.ts`: `focusField` sempre libera o campo ativo anterior e envia `field_focus`; nao usar guard local baseado em `usersForField()`, porque estado defasado pode esconder presenca em uma das abas. Backend e `:disabled` continuam sendo as fontes de verdade do lock.
+   - `useTasksPageContext.ts`/`useTasksRealtime.ts`: handler de evento sempre agenda `tasksWorkspace.refresh()` com debounce de 200ms para qualquer `task.*`, `board.*` ou `field.*`, seguindo o padrao de operations.
+
+**Validacao obrigatoria:**
+
+- `cd back && go test ./...` passa.
+- `npm --prefix web run build` passa.
+- Smoke com 2 sessoes logadas no mesmo modulo:
+  1. `nick` editado por SQL em uma conta -> badge de presenca exibe nick em vez de display_name.
+  2. Focar mesmo campo em ambas as abas: a segunda nao consegue digitar (input disabled) e a primeira NAO recebe `field_locked` para a segunda sessao.
+  3. Renomear card no board digitando `Smoke fase 12 ` (espaco no final, antes da proxima palavra) -> espaco fica preservado.
+  4. Mudar status/responsavel em uma aba -> outra aba reflete via `[tasks-ws] executando refresh full do workspace`; full refresh debounced e esperado.
+
+**Nao repetir:**
+
+- Nunca normalizar (trim/colapso) o valor durante `@update:model-value` em inputs controlados — input vira saltitante. Normalizar so no flush/save.
+- `PresenceStore.LockField` precisa ser exclusivo por `fieldKey`. Sem isso, dois clientes veem o outro editando o mesmo campo simultaneamente.
+- Nao reintroduzir patch local/hydrate por evento em tasks. O padrao valido e `tasksWorkspace.refresh()` full com debounce de 200ms, igual operations; otimizar antes de medir quebrou sync entre abas.
+- Nick e identidade curta: fallback obrigatorio para `display_name` quando vazio; nao expor email em mascaras.
+
+---
+
+### T5 — Fechamento (relations + paginacao cursor-based), iniciado 2026-05-15
+
+Sintomas/pendencias que sobraram da T5 inicial:
+
+- `useTaskRelations.ts` nao existe — modal nao mostra vinculos com `crm`/`erp`/`operations` apesar do backend T4 (`GET /v1/tasks/:id/relations:expand`) estar pronto;
+- `listBoardTasks` no Pinia store pede `limit=200` direto e nao usa o `cursor`/`nextCursor`; backend repository ignora `input.Cursor`. Boards com >200 tasks perdem itens silenciosamente.
+
+**Causa raiz:**
+
+| Sintoma | Causa | Onde |
+|---------|-------|------|
+| Sem vinculos no modal | composable `useTaskRelations` nao existe; modal nunca chama o endpoint | `web/layers/tasks/` |
+| `limit=200` hard-cap | front passa fixo; backend repository tambem nao implementou cursor | `back/internal/modules/tasks/repository_postgres.go` (`ListTasks`) + `store/tasks.ts` (`listBoardTasks`) |
+
+**Plano:**
+
+1. **Backend** — `tasks/model.go`: tornar `ListTasksInput.Limit` opcional (service ja defaulta 50, max 200). Adicionar `ListTasksResult { Tasks []TaskDTO; NextCursor string }`.
+2. **Backend** — `repository_postgres.go:ListTasks`: usar cursor opaco. Encoding `base64url(JSON{ "s": sort_order, "c": created_at, "i": id })`. WHERE tuplado: `(t.sort_order, t.created_at, t.id) > ($cs, $cc, $ci::uuid)`. Pedir `limit+1` para detectar `hasMore`; cortar a lista, devolver o cursor do ultimo item retornado.
+3. **Backend** — `service.go:ListTasks`: monta `nextCursor` baseado no ultimo task.
+4. **Backend** — `http.go:listTasks`: response `{ tasks, nextCursor }`.
+5. **Frontend** — `stores/tasks.ts:listBoardTasks`: loop interno (50/page) at e' `nextCursor` vazio. Para board kanban precisamos de tudo; para tabela view futura, expor `fetchMoreTasks(boardId, cursor)` separado.
+6. **Frontend novo** — `composables/useTaskRelations.ts`:
+   - lazy load via `GET /v1/tasks/{taskId}/relations:expand` na primeira abertura do modal;
+   - cache por `taskId` em mapa local;
+   - listener de eventos `task.relation_added`/`task.relation_removed` no canal `tasks:task` invalida o cache;
+   - retorna `{ relations, status, refresh }`.
+7. **Frontend** — `TasksTaskModal.vue`: nova secao "Vinculos" entre Comments e o editor rico. Cada relation mostra `labelCache`, `resourceType`, e badge de `metadataCache.status`.
+
+**Eventos WS de relations:**
+
+A T1 ja publica eventos `task.relation_added` e `task.relation_removed` quando `AddRelation`/`RemoveRelation` rodam? Verificar; se nao, adicionar publish na service para alimentar o realtime refresh do composable. (Se nao publica, o composable so atualiza no `refresh()` manual ou ao reabrir o modal — degradacao aceitavel ate T8.)
+
+**Validacao obrigatoria:**
+
+- `cd back && go test ./...` passa.
+- `npm --prefix web run build` passa.
+- Smoke: criar board com >50 tasks via API, abrir `/tasks`, board renderiza todas (loop de pages funciona); abrir modal de task com relations cadastradas no banco -> secao Vinculos aparece com labels.
+
+**Nao repetir:**
+
+- Paginar so no backend nao serve: front precisa fazer loop ate esgotar para o board kanban (UX espera ver tudo). Tabela futura pode lazy-load.
+- Cursor opaco (base64) e' obrigatorio — nao expor sort_order/created_at em URL. Trocar a estrategia internamente sem quebrar URLs salvas/historico.
+- Relations nao podem disparar `tasksWorkspace.refresh()` (full reload) — sao independentes da task em si. Cache local + invalidacao por evento dedicado.
+
+---
+
+### T8 — Hardening (audit, rate limit REST, slog), iniciado 2026-05-15
+
+Cobertura do que ja existia antes da T8:
+
+- `GET /v1/tasks/:taskId/audit` com `tasks.boards.manage` — implementado na T1 (service.ListAudit + repository.ListAudit) com `tasks.tasks_audit` populada por `service.audit(...)` em CreateTask, UpdateTask, MoveTask, DeleteTask, AddRelation, AddShare, AddComment.
+- Rate limit WS — 30 events/seg por conexao com close code 1008 — implementado na T2 (`realtime/service_tasks.go`).
+- Cross-account = 404 — `service.ResolveAccessContext` retorna `ErrAccountNotFound` (mapeado para 404) quando o user nao e' membro da account ou ela nao existe. `scopedQuery(accountID, ...)` no repository garante que recursos de outras accounts viram `pgx.ErrNoRows` → `ErrTaskNotFound`/`ErrBoardNotFound` → 404. **403 fica reservado para "user esta na account certa mas falta permissao".** Nao misturar os dois.
+- `X-Account-Id` no body **nunca** e' usado. Vem do header (`r.Header.Get("X-Account-Id")`), fallback para query (`accountId`), fallback para `principal.TenantID`. Inputs com campo `AccountID` JSON (ex: `CreateBoardInput.AccountID`) sao ignorados pelo service — usa-se `access.AccountID` derivado do `Principal`.
+
+Gaps identificados:
+
+| Item | Status | Causa |
+|------|--------|-------|
+| Rate limit REST 60 req/min | ❌ inexistente | `httpapi/middleware.go` so tem RequestID/Logging/Recover/CORS |
+| slog estruturado em mutations | ❌ inexistente | `tasks/service.go` nao tem `*slog.Logger`; logs so existem no middleware genérico do httpapi |
+| `task.relation_removed` no WS | ⚠️ N/A | `service.RemoveRelation` ainda nao existe (sem rota DELETE); quando for implementado, lembrar de publicar o evento |
+| 404 cross-account audit/integration test | ⚠️ aplica-se quando T9 chegar | Sem testes integration ainda — T9 cobre |
+
+Plano:
+
+1. **httpapi.RateLimit middleware** — token bucket in-memory por (userID|IP, minuto). Default 60 req/min; `429 Too Many Requests` com `Retry-After`. Identidade preferida = `principal.UserID` (via `auth.PrincipalFromContext` se presente), fallback para IP (`r.RemoteAddr` ou `X-Forwarded-For`). Cleanup periodico de buckets velhos (a cada 5 min). Plugar no `Chain` do app.go *antes* do `Logging` para o 429 ser logado.
+2. **slog em mutations de tasks** — adicionar `logger *slog.Logger` em `tasks.Service`. Helper privado `service.logMutation(action, access, attrs...)` com `slog.Info` carregando `accountId`, `userId`, `action`, e `resourceType:resourceId` quando aplicavel. Aplicado a CreateTask, UpdateTask, MoveTask, DeleteTask, CreateBoard, UpdateBoard, DeleteBoard, AddRelation, AddShare, AddComment, StartTracking, StopTracking. Erros sem expor IDs de outras accounts (na pratica, ja garantido porque `scopedQuery` rejeita antes de qualquer mensagem).
+3. **NÃO mexer em RemoveRelation** agora — endpoint ainda nao existe. Anotar no AGENT.md que quando for criado, deve publicar `task.relation_removed` para o composable `useTaskRelations` invalidar cache.
+
+Validacao:
+
+- `cd back && go test ./...` passa.
+- Smoke manual: 70 requisicoes em 60s contra `/v1/tasks/boards` -> a 61a retorna 429 com `Retry-After: <s>`. (User faz o smoke; nao roda CI agora.)
+
+Nao repetir:
+
+- Rate limit REST tem que considerar `principal.UserID` antes do IP — usuario atras de proxy compartilhado nao pode ser limitado em grupo. IP e' fallback so para nao-autenticados.
+- slog **nunca** inclui IDs de outras accounts em mensagens de erro. Mantemos sempre o `accountId` do principal/access — qualquer cross-account ja virou 404 antes do log.
+- Nao logar payloads inteiros — so chaves estruturais (`taskId`, `boardId`). Comentarios/titulos podem ter PII; evitar.
+
+---
+
+### T9 — Testes Go (sem DB), iniciado 2026-05-15
+
+Escopo desta rodada — testes unitarios em Go que rodam sem Postgres real:
+
+| Arquivo | O que cobre |
+|---------|-------------|
+| `tasks/dto_test.go` | `BuildTaskDTO` em perspective `agency` (mantem `clientAccountId`) vs `client_viewer` (omite `clientAccountId`). Tambem cobre `UIMetadata` sempre nao-nil e formatos ISO. |
+| `tasks/cursor_test.go` | `encodeListTasksCursor` / `decodeListTasksCursor` — round-trip preserva tupla, base64url, decodifica vazio = `false`, cursor invalido = `false` (nao panica). |
+| `realtime/presence_test.go` | `PresenceStore`: Join publica `user_joined` apenas na primeira conexao; LockField recusa quando outro user ja tem o `fieldKey` (T7.2); UnlockField libera; Leave decrementa connections; cleanup expira por TTL. |
+| `httpapi/rate_limit_test.go` | `RateLimit`: dentro do limite passa; excede vira 429 com `Retry-After`; reset depois da janela; resolver custom precede IP; fallback para X-Forwarded-For e RemoteAddr. |
+
+Pendencias deixadas para o usuario (ou T9.1):
+
+- **Integration tests com DB real** (fuzz 100 IDs cross-account, scope_test.go, tracking_test.go com version conflict) — exigem `pg_test` / docker-compose; mantemos fora da CI agora.
+- **Vitest no front** — `web/package.json` nao tem Vitest configurado. Adicionar `vitest`/`@vue/test-utils`/`happy-dom` e plugar no Nuxt e' uma instalacao nao trivial; deixei como pendencia explicita.
+- **Smoke E2E 12 passos** — depende do user rodar `docker compose up` + Nuxt em 3003 + login real. Roteiro detalhado fica no roadmap.
+
+Validacao desta rodada:
+
+- `cd back && go test ./...` precisa rodar verde — os novos arquivos `_test.go` devem ser executados (modulos tasks/realtime/httpapi nao tinham testes antes).
+- `go test ./internal/modules/tasks -run TestBuildTaskDTO -v` deve mostrar pelo menos 1 caso para cada perspective.
+
+Nao repetir:
+
+- Nao usar pgx pool em unit test — repository mock satisfazendo `Repository` interface, ou testar so funcoes puras (cursor, DTO). Integration test fica em ambiente separado.
+- Tests de presence devem usar `time.Now()` injetavel quando possivel — TTL fixo de 30s em produccao, mas no test usar TTL curto (`100ms`) para nao depender de `time.Sleep` longo.
+- Rate limit test nao pode depender de `time.Sleep(window)` — exposer `now` injetavel ou usar `Window` curto (100ms).
+
+---
+
+### T9 — Fechamento (mock Repository + Vitest + smoke roteiro), 2026-05-15
+
+Cobertura adicional desta rodada:
+
+| Arquivo | O que cobre |
+|---------|-------------|
+| `tasks/repository_mock_test.go` | Mock leve de `Repository` (30+ metodos com hooks `onXxx` opcionais e captura passiva de audit). Usado pelos service/scope/tracking tests. |
+| `tasks/service_test.go` | 10 testes: CreateTask happy path (audit gerado), no-perm = 403, validation, GetTask perspective controla `clientAccountId`, GetTask 404 passthrough, ListTasks default limit / clamp >200 / no-perm 403 / perspective propaga / nextCursor propaga. |
+| `tasks/scope_test.go` | 8 testes: accountID vazio -> ErrAccountRequired; account inexistente -> 404; **cross-account = 404 (nunca 403)**; platform_admin bypassa membership; perspective client_viewer quando so tem `client_view`; `boards.manage` override; **fuzz 100 IDs cross-account -> 100% 404**; `scopedQuery` panica sem accountID. |
+| `tasks/tracking_test.go` | 8 testes: no-perm 403; task not found 404; happy path publica WS + audita; **PauseTracking propaga `ErrVersionConflict` -> 409**; ResumeTracking passa `expectedVersion`; StopTracking 404 nao publica nem audita; ListActiveTimeEntries aceita `view_all` e rejeita sem perm. |
+| `web/layers/tasks/utils/text.ts` + `text.test.ts` | Extracao de `clampText`/`normalizeText` para util compartilhado; 9 testes Vitest cobrindo trim/colapso/clamp e o caso critico T7.2 (`clampText('palavra ') === 'palavra '`). |
+| `web/vitest.config.ts` + `package.json` | Vitest 2.1 instalado como devDependency; scripts `test`/`test:watch`; `npm test` roda no node environment. |
+
+Estatisticas:
+
+- **Go**: 50 testes novos passando (4 cursor + 4 DTO + 6 presence + 6 rate-limit + 10 service + 8 scope + 8 tracking + 4 antigos cursor/DTO).
+- **Vitest**: 9 testes passando.
+- **Cobertura por funcao critica**: `BuildTaskDTO`, `ResolveAccessContext`, `ListTasks`, `CreateTask`, `GetTask`, `StartTracking`, `PauseTracking`, `ResumeTracking`, `StopTracking`, `ListActiveTimeEntries`, `LockField` (T7.2), `RateLimit` (T8), `listTasksCursor`, `clampText`, `normalizeText`.
+
+Pendencias deixadas:
+
+- **Integration tests com Postgres real** ainda nao implementados. O smoke E2E manual abaixo cobre na pratica.
+- **`@nuxt/test-utils` + `happy-dom`** para testar composables Vue completos: fica para rodada futura. Por enquanto, util puros sao testaveis.
+
+#### Smoke E2E 12 passos — roteiro manual para staging
+
+Pre-requisitos:
+- `docker compose up -d postgres api`
+- `cd back && go run ./cmd/migrate`
+- `npm --prefix web run dev` em port 3003
+
+Passos:
+
+1. **Migrate fresh** — `go run ./cmd/migrate` aplica ate `0111_users_nick.sql`.
+2. **Seed nick** — `psql -c "update core.users set nick='alice' where email='owner@demo.local'; update users set nick='alice' where email='owner@demo.local';"`. Repetir para um segundo user de teste.
+3. **Login agencia** — abrir `http://localhost:3003/login`, logar como `owner@demo.local` / `dev123456`. Verificar no DevTools que `auth/me` retorna `nick` no JSON.
+4. **Criar task** — em `/tasks`, criar uma task num board. Network deve mostrar `POST /v1/tasks/boards/:id/tasks` 201 com `X-Account-Id` no header.
+5. **WS task event** — abrir DevTools > WS > filtrar `/v1/realtime/tasks` — deve receber `task.created` com `accountId` correto.
+6. **Presence dual-tab** — abrir uma segunda aba/browser com outro user logado, abrir o mesmo modal. Avatar do outro user aparece com o nick. Focar mesmo campo nas duas abas: a segunda input fica `:disabled` e NAO consegue digitar (T7.2 lock exclusivo).
+7. **Espaco no card** — renomear card inline pelo board digitando `"smoke fase 12 "` (espaco no final, depois digite outra palavra). Espaco DEVE ficar preservado durante a digitacao.
+8. **Tracking** — start/pause/resume/stop no modal. Network mostra `If-Match: <version>`. Forcar conflito: editar a task em outra aba antes do pause -> 409.
+9. **Share** — adicionar share com um clientAccountId. Outro browser logado como cliente desse account ve a task com `clientAccountId === undefined` no payload (perspective `client_viewer`).
+10. **Cross-account = 404** — `curl -H "Authorization: Bearer ..." -H "X-Account-Id: ACCOUNT_DIFERENTE" http://localhost:8883/v1/tasks/TASK_DA_MINHA_ACCOUNT` -> deve voltar `404` (nunca 403).
+11. **Rate limit REST** — script `for i in {1..70}; do curl -H "Authorization: Bearer ..." http://localhost:8883/v1/tasks/boards; done`. A 61a vira `429` com header `Retry-After`.
+12. **Audit + slog** — `psql -c "select action, resource_type, resource_id, account_id from tasks.tasks_audit order by created_at desc limit 10;"` mostra as mutations dos passos 4-9. `tail -f` no log do API mostra `tasks.mutation` com `account_id`/`user_id`/`resource_type` em cada CRUD.
+
+---
+
+### Reversao 2026-05-15 — patch-local-realtime trocado por refresh full debounced
+
+**Sintoma reportado:** com duas abas/usuarios abertos no mesmo board, edicoes em uma aba NAO apareciam na outra. O modulo de `operations` funciona perfeitamente nesse cenario; o de `tasks` ficou silencioso.
+
+**Causa raiz:** o `scheduleTasksRealtimeRefresh` em `useTasksPageContext.ts` tentava otimizar evitando `tasksWorkspace.refresh()` (full reload) e chamando `tasksWorkspace.hydrateTask(taskId)` (single GET) para eventos `task.updated`/`task.moved`. O guard era:
+
+```ts
+if (taskId && TASK_REALTIME_HYDRATE_EVENTS.has(type) && tasksWorkspace.tasks.value.some(t => t.id === taskId)) {
+    tasksWorkspace.hydrateTask(taskId)
+    return
+}
+```
+
+Quando user B editava uma task que user A acabou de carregar via `refresh()`, funcionava. Mas em N cenarios comuns nao:
+
+- User B cria task -> evento `task.created` chega em A; mas se o tipo nao estiver em `TASK_REALTIME_HYDRATE_EVENTS` (criar nao estava), caia no refresh full — OK. Porem se chegasse antes do refresh full inicial, `hydrateTask` nao saberia da task e retornaria null. Race.
+- User B edita uma task que user A nao tinha carregado ainda (filtro/paginacao) -> guard `some(t => t.id === taskId)` retorna false -> NADA acontece. Bug.
+- Eventos sem `taskId` populado caiam no refresh full, OK; mas evento `task.tracking_changed` nao publicado pelo backend -> tracking nao atualizava em outras abas.
+
+**Resultado:** silencio total em muitos casos. UX degradou ao ponto de parecer "WS quebrado", que e' o que o usuario reportou.
+
+**Decisao:** voltar ao padrao do `useOperationsRealtime` — SEMPRE `tasksWorkspace.refresh()` debounced (200ms). Sem otimizacao, sem branching, sem hidratacao individual. Operations roda assim em producao ha meses sem queixas; tasks nao precisa ser "mais esperto".
+
+**O que foi removido:**
+
+- `TASK_REALTIME_HYDRATE_EVENTS` (set de tipos de evento) — apagado de `useTasksPageContext.ts`.
+- `tasksWorkspace.hydrateTask(taskId)` no path de eventos realtime — nao chamado mais.
+- Endpoint `GET /v1/tasks/{taskId}` continua funcional (usado por outras coisas como `useTaskRelations` quando precisar) mas a funcao `hydrateTask` foi REMOVIDA do store, pois nao era usada por mais nada.
+- Funcao auxiliar `shouldApplyTasksRealtimeEvent` inlineada dentro do `scheduleTasksRealtimeRefresh` (era usada so la).
+
+**O que foi adicionado:**
+
+- Logs `[tasks-ws]` no `console.info`/`debug`/`warn`/`error` em pontos chave:
+  - `[tasks-ws] socket OPEN` quando conecta
+  - `[tasks-ws] evento recebido — refresh agendado: { type, taskId, boardId, version }` quando chega um evento aplicavel
+  - `[tasks-ws] ignorando evento nao-tasks: realtime.connected` (e similares) — filtrados
+  - `[tasks-ws] evento de outra account, ignorado: { eventAccountId, currentAccountId }` — defesa em camada
+  - `[tasks-ws] executando refresh full do workspace` quando o debounce dispara
+  - `[tasks-ws] refresh concluido — tasks: N` quando termina
+  - `[tasks-ws] socket CLOSED — agendando reconexao: { code, reason, wasClean }`
+  - `[tasks-ws] socket ERROR`
+
+Filtre por `[tasks-ws]` no console do browser para diagnostico rapido sem mim.
+
+**Heuristica de "preservar titulo local" ajustada:** continua existindo em `store.updateTask`, mas agora so dispara quando `localTask.title !== localTask.title.trim()` (ou seja, ha trailing whitespace, sinal de digitacao em curso). Antes disparava sempre que `normalizeText(local) === mapped.title`, o que podia mascarar updates remotos legitimos. Em refresh realtime (`tasksWorkspace.refresh()`), o caminho e' outro — passa por `replaceTask` direto sem essa logica.
+
+**Nao repetir:**
+
+- "Patching local" so faz sentido quando ha protocolo de sync com versao explicita (CRDT, Y.js). Para um refresh debounced, full reload e' o caminho — operations comprova.
+- Logs de WS no console em pontos chave nao sao opcionais quando o feature e' WS — sem eles, diagnostico depende de Network > WS frames, que e' pesado.
+- "Otimizar" antes de medir e' a fonte do bug. A T7 originalmente nao tinha patch local; introduzimos na pressa de "evitar flicker" sem checar se de fato havia flicker problematico. Nao havia.
+
+### Correcao 2026-05-15 — presence assimetrico por guard local
+
+**Sintoma reportado:** em duas sessoes com usuarios diferentes, uma pessoa via que a outra estava editando, mas o inverso nao acontecia de forma confiavel. Em alguns casos o bloqueio de campo sumia ou ficava preso.
+
+**Causa raiz:** `useTaskPresence.focusField()` abortava antes de enviar `presence.field_focus` quando `usersForField(key).length > 0`. Esse guard era local, baseado em snapshot possivelmente defasado. Pior: ele rodava antes de liberar `activeFieldKey` antigo, entao clicar em um campo que o client achava ocupado podia deixar o lock anterior preso.
+
+**Decisao:** servidor e UI sao as fontes de verdade. O client sempre:
+
+- libera o campo ativo anterior antes de trocar;
+- envia `field_focus` para o servidor decidir se aceita;
+- preserva `activeFieldKey` quando o socket reconecta no mesmo canal, para reenviar o lock ao abrir;
+- libera o lock ativo em `visibilitychange:hidden`, `pagehide`, fechamento de modal e unmount;
+- registra logs `[tasks-presence]` para socket open/close/error, snapshot, field_focus, field_blur, field_locked e field_unlocked.
+
+**Nao repetir:** nao reintroduzir guard client-side de presence baseado apenas em `usersForField()`. Se precisar de UX mais forte, adicionar ACK/denied direcionado no protocolo de presence; nao bloquear o envio antes do servidor.
+
+### Correcao 2026-05-16 — board realtime + recuperacao de lock defasado
+
+**Sintoma reportado:** o WS parecia "funcionando", mas dois usuarios ainda podiam ver dados diferentes no mesmo board e a presence continuava assimetrica em alguns casos.
+
+**Causas adicionais:**
+
+- `useTasksRealtime` estava conectado somente em `scope=account`. Isso falha para usuarios em outra conta/escopo vendo o mesmo board compartilhado, porque o backend tambem publica `tasks:board:{boardId}` e o front nao estava escutando esse canal.
+- `PresenceStore.LockField` recusava lock concorrente em silencio. Se um client perdesse snapshot/evento anterior, tentar focar um campo ocupado nao recuperava o estado correto.
+- `window.blur` liberava o lock ativo, atrapalhando teste manual com dois browsers lado a lado e qualquer troca rapida de janela.
+
+**Correcoes:**
+
+- `useTasksPageContext.ts` agora abre dois WS de tasks: `scope=account` e `scope=board` do board ativo. Ambos alimentam o mesmo debounce de refresh full.
+- `useTasksRealtime.ts` loga `scope`, `accountId`, `boardId` e `taskId` no `[tasks-ws] socket OPEN`.
+- `PresenceStore.LockField` continua exclusivo, mas quando nega uma tomada de lock republica o `presence.field_locked` do usuario que ja possui o campo.
+- `useTaskPresence.ts` removeu release em `window.blur`; release continua em focusout dos campos, `visibilitychange:hidden`, `pagehide`, fechamento de modal e unmount.
+
+**Nao repetir:** canal `account` nao substitui canal `board` em fluxo colaborativo. Para qualquer tela de board aberto, manter assinatura `tasks:board:{boardId}`.
+
+---
+
 ### Próximas fases (planejadas)
 
 | Fase | O que entrega | Depende de |
 |------|---------------|------------|
 | T5 | Front substitui localStorage pelo backend (Pinia store real, wipe legacy, useCan) | T1–T4 |
 | T6 | Tracking server-side autoritativo (start/pause/resume/stop, clockOffset) | T1, T2, T5 |
-| T7 | Presence MVP (avatares + field locking leve, heartbeat 15s) | T2 |
+| T7 | Presence MVP (front aplicado: avatares + field locking leve, heartbeat 15s) | T2 |
 | T8 | Segurança, audit log, rate limit, hardening | T1–T7 |
 | T9 | Testes E2E + observabilidade | T8 |
 | T10 | Sistema de Views (11 tipos, /views/:id/data) | T5 |

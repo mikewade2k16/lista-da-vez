@@ -16,11 +16,15 @@ import type {
 
 const LEGACY_STORAGE_KEY = 'omni.admin.tasks.workspace.v1'
 const LEGACY_NOTICE_KEY = 'tasks.legacy-migrated.v1'
+const UI_METADATA_STORAGE_KEY = 'omni.tasks.api.workspace.ui.v1'
+const UI_METADATA_VERSION = 1
 const ORDER_STEP = 10
 const SUPPORTED_COLUMN_COLORS = new Set(['indigo', 'slate', 'blue', 'amber', 'emerald', 'violet', 'rose'])
 
 interface BackendUserMini {
 	id?: string
+	displayName?: string
+	email?: string
 }
 
 interface BackendColumn {
@@ -80,10 +84,39 @@ interface BackendTask {
 	responsibleUserId?: string | null
 	clientAccountId?: string | null
 	assignees?: BackendUserMini[]
+	uiMetadata?: Record<string, any>
 	trackingTotalMs?: number | null
 	version?: number
 	createdAt?: string
 	updatedAt?: string
+}
+
+interface ProjectUiMetadata {
+	responsibles?: string[]
+	types?: string[]
+	views?: OrchestratorView[]
+	activeViewId?: string
+	filters?: Partial<TaskProjectFiltersConfig>
+	cardFields?: Partial<TaskProjectCardFieldsConfig>
+	defaults?: Partial<TaskProjectDefaultsConfig>
+}
+
+interface TaskUiMetadata {
+	responsible?: string
+	involved?: string[]
+	clientId?: number
+	clientName?: string
+	type?: string
+	dueEndDate?: string
+	prioritySet?: boolean
+	createdBy?: string
+}
+
+interface TasksUiMetadata {
+	version: number
+	activeProjectId?: string
+	projects: Record<string, ProjectUiMetadata>
+	tasks: Record<string, TaskUiMetadata>
 }
 
 export interface TasksStoreTaskItem extends TaskItem {
@@ -92,10 +125,18 @@ export interface TasksStoreTaskItem extends TaskItem {
 	responsibleUserId?: string
 	clientAccountId?: string
 	trackingTotalMs?: number
+	prioritySet?: boolean
 }
 
 function normalizeText(value: unknown, max = 240) {
 	return String(value ?? '').trim().slice(0, max)
+}
+
+// clampText preserva exatamente o que veio (sem trim) para uso em optimistic updates de inputs
+// controlados. Permite o usuario digitar espaco no final sem que o cursor "salte" — o backend
+// sempre faz TrimSpace, entao a divergencia se resolve no proximo response autoritativo.
+function clampText(value: unknown, max = 240) {
+	return String(value ?? '').slice(0, max)
 }
 
 function normalizeKey(value: unknown) {
@@ -125,10 +166,64 @@ function normalizeColumnColor(color: unknown) {
 
 function normalizeFieldKey(key: unknown) {
 	const normalized = normalizeKey(key)
-	if (normalized === 'due_date') {
-		return 'dueDate'
+	const aliases: Record<string, string> = {
+		client_id: 'clientId',
+		clientid: 'clientId',
+		created_at: 'createdAt',
+		createdat: 'createdAt',
+		created_by: 'createdBy',
+		createdby: 'createdBy',
+		due_date: 'dueDate',
+		duedate: 'dueDate'
+	}
+	if (aliases[normalized]) {
+		return aliases[normalized]
 	}
 	return normalized || 'field'
+}
+
+function emptyUiMetadata(): TasksUiMetadata {
+	return {
+		version: UI_METADATA_VERSION,
+		projects: {},
+		tasks: {}
+	}
+}
+
+function readUiMetadata(): TasksUiMetadata {
+	if (!import.meta.client) {
+		return emptyUiMetadata()
+	}
+	try {
+		const raw = localStorage.getItem(UI_METADATA_STORAGE_KEY)
+		if (!raw) {
+			return emptyUiMetadata()
+		}
+		const parsed = JSON.parse(raw)
+		if (!parsed || typeof parsed !== 'object') {
+			return emptyUiMetadata()
+		}
+		return {
+			version: UI_METADATA_VERSION,
+			activeProjectId: normalizeText(parsed.activeProjectId, 80) || undefined,
+			projects: parsed.projects && typeof parsed.projects === 'object' ? parsed.projects : {},
+			tasks: parsed.tasks && typeof parsed.tasks === 'object' ? parsed.tasks : {}
+		}
+	} catch {
+		return emptyUiMetadata()
+	}
+}
+
+function writeUiMetadata(metadata: TasksUiMetadata) {
+	if (!import.meta.client) {
+		return
+	}
+	localStorage.setItem(UI_METADATA_STORAGE_KEY, JSON.stringify({
+		version: UI_METADATA_VERSION,
+		activeProjectId: normalizeText(metadata.activeProjectId, 80) || undefined,
+		projects: metadata.projects || {},
+		tasks: metadata.tasks || {}
+	}))
 }
 
 function defaultFiltersConfig(value?: Partial<TaskProjectFiltersConfig>): TaskProjectFiltersConfig {
@@ -191,6 +286,40 @@ function defaultViews(): OrchestratorView[] {
 	]
 }
 
+function normalizeViewConfig(view: Partial<OrchestratorView> | undefined, fallback: OrchestratorView): OrchestratorView {
+	const hiddenColumnIds = Array.isArray(view?.hiddenColumnIds)
+		? view.hiddenColumnIds.map((columnId) => normalizeText(columnId, 80)).filter(Boolean)
+		: [...fallback.hiddenColumnIds]
+	const visibleFieldKeys = Array.isArray(view?.visibleFieldKeys) && view.visibleFieldKeys.length > 0
+		? view.visibleFieldKeys.map((key) => normalizeFieldKey(key)).filter(Boolean)
+		: [...fallback.visibleFieldKeys]
+	const modalVisibleFieldKeys = Array.isArray(view?.modalVisibleFieldKeys) && view.modalVisibleFieldKeys.length > 0
+		? view.modalVisibleFieldKeys.map((key) => normalizeFieldKey(key)).filter(Boolean)
+		: [...fallback.modalVisibleFieldKeys]
+	return {
+		id: normalizeText(view?.id, 80) || fallback.id,
+		name: normalizeText(view?.name, 120) || fallback.name,
+		type: view?.type === 'table' ? 'table' : fallback.type,
+		groupByFieldKey: normalizeFieldKey(view?.groupByFieldKey || fallback.groupByFieldKey),
+		visibleFieldKeys,
+		modalVisibleFieldKeys,
+		hiddenColumnIds,
+		showAggregation: view?.showAggregation !== false,
+		sortBy: normalizeFieldKey(view?.sortBy || fallback.sortBy),
+		sortDirection: normalizeKey(view?.sortDirection) === 'desc' ? 'desc' : 'asc'
+	}
+}
+
+function normalizeUiViews(views: ProjectUiMetadata['views']) {
+	if (!Array.isArray(views)) {
+		return []
+	}
+	const fallbacks = defaultViews()
+	return views
+		.map((view) => normalizeViewConfig(view, view?.type === 'table' ? fallbacks[1]! : fallbacks[0]!))
+		.filter((view) => view.id && (view.type === 'board' || view.type === 'table'))
+}
+
 function uniqueStrings(values: Array<string | undefined | null>) {
 	const seen = new Set<string>()
 	const result: string[] = []
@@ -218,11 +347,25 @@ function toDateOnly(value: unknown) {
 	if (!raw) {
 		return ''
 	}
+	if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+		return raw
+	}
+	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+		return raw.slice(0, 16)
+	}
+	if (/^\d{4}-\d{2}-\d{2}T00:00(?::00(?:\.000)?)?[zZ]?$/.test(raw)) {
+		return raw.slice(0, 10)
+	}
 	const date = new Date(raw)
 	if (Number.isNaN(date.getTime())) {
 		return ''
 	}
-	return date.toISOString().slice(0, 10)
+	const yyyy = date.getFullYear()
+	const mm = String(date.getMonth() + 1).padStart(2, '0')
+	const dd = String(date.getDate()).padStart(2, '0')
+	const hh = String(date.getHours()).padStart(2, '0')
+	const min = String(date.getMinutes()).padStart(2, '0')
+	return `${yyyy}-${mm}-${dd}T${hh}:${min}`
 }
 
 function toOptionalDateTime(value: unknown) {
@@ -265,7 +408,7 @@ function mapView(view: BackendView): OrchestratorView {
 	const type = normalizeKey(view.type) === 'table' ? 'table' : 'board'
 	const config = view.config || {}
 	const fallback = type === 'table' ? defaultViews()[1] : defaultViews()[0]
-	return {
+	return normalizeViewConfig({
 		id: normalizeText(view.id, 80) || fallback.id,
 		name: normalizeText(view.name, 120) || fallback.name,
 		type,
@@ -282,7 +425,7 @@ function mapView(view: BackendView): OrchestratorView {
 		showAggregation: config.showAggregation !== false,
 		sortBy: normalizeFieldKey(config.sortBy || fallback.sortBy),
 		sortDirection: normalizeKey(config.sortDirection) === 'desc' ? 'desc' : 'asc'
-	}
+	}, fallback)
 }
 
 function mapBoardColumns(columns: BackendColumn[]) {
@@ -325,7 +468,104 @@ function findColumnByStatus(project: TaskProjectItem | undefined, status: unknow
 	return project.columns.find((column) => normalizeKey(column.label) === normalizedStatus) || null
 }
 
-function mapTaskToStoreItem(task: BackendTask, project: TaskProjectItem): TasksStoreTaskItem {
+function apiStatusCode(error: unknown) {
+	const err = error as { statusCode?: number; status?: number; response?: { status?: number } }
+	return Number(err?.statusCode || err?.status || err?.response?.status || 0)
+}
+
+function currentUserLabel(currentUser?: Record<string, any> | null) {
+	return normalizeText(
+		currentUser?.displayName ||
+		currentUser?.name ||
+		currentUser?.fullName ||
+		currentUser?.email,
+		120
+	)
+}
+
+function backendUserLabel(user: BackendUserMini | null | undefined, currentUser?: Record<string, any> | null) {
+	const userID = normalizeText(user?.id, 80)
+	const authUserID = normalizeText(currentUser?.id, 80)
+	if (userID && authUserID && userID === authUserID) {
+		return currentUserLabel(currentUser)
+	}
+	return normalizeText(user?.displayName || user?.email || userID, 120)
+}
+
+function taskUiPatchFromPayload(payload: Record<string, any>): TaskUiMetadata {
+	const patch: TaskUiMetadata = {}
+	if (Object.prototype.hasOwnProperty.call(payload, 'responsible')) {
+		patch.responsible = normalizeText(payload.responsible, 120)
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'involved')) {
+		const responsibleKey = normalizeKey(payload.responsible)
+		patch.involved = Array.isArray(payload.involved)
+			? payload.involved.map((item: unknown) => normalizeText(item, 120)).filter(Boolean)
+			: []
+		if (responsibleKey) {
+			patch.involved = patch.involved.filter((item) => normalizeKey(item) !== responsibleKey)
+		}
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'clientId')) {
+		const clientId = Number(payload.clientId || 0)
+		patch.clientId = Number.isFinite(clientId) && clientId > 0 ? clientId : 0
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'clientName')) {
+		patch.clientName = normalizeText(payload.clientName, 140)
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'type')) {
+		patch.type = normalizeText(payload.type, 120)
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'dueEndDate')) {
+		patch.dueEndDate = toDateOnly(payload.dueEndDate)
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'prioritySet')) {
+		patch.prioritySet = Boolean(payload.prioritySet)
+	} else if (Object.prototype.hasOwnProperty.call(payload, 'priority')) {
+		patch.prioritySet = true
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, 'createdBy')) {
+		patch.createdBy = normalizeText(payload.createdBy, 120)
+	}
+	return patch
+}
+
+function normalizeTaskUiMetadata(value: unknown): TaskUiMetadata {
+	if (!value || typeof value !== 'object') {
+		return {}
+	}
+	const raw = value as Record<string, any>
+	const payload: Record<string, any> = {}
+	;['responsible', 'involved', 'clientId', 'clientName', 'type', 'dueEndDate', 'prioritySet', 'createdBy'].forEach((key) => {
+		if (Object.prototype.hasOwnProperty.call(raw, key)) {
+			payload[key] = raw[key]
+		}
+	})
+	return taskUiPatchFromPayload(payload)
+}
+
+function hasTaskUiMetadataEnvelope(value: unknown) {
+	return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+function mergeTaskUiMetadata(localUi?: TaskUiMetadata, serverUi?: unknown) {
+	if (hasTaskUiMetadataEnvelope(serverUi)) {
+		return normalizeTaskUiMetadata(serverUi)
+	}
+	return normalizeTaskUiMetadata(localUi)
+}
+
+function hasUiPatch(patch: TaskUiMetadata) {
+	return Object.keys(patch).length > 0
+}
+
+function mapTaskToStoreItem(
+	task: BackendTask,
+	project: TaskProjectItem,
+	taskUi?: TaskUiMetadata,
+	currentUser?: Record<string, any> | null
+): TasksStoreTaskItem {
+	const resolvedTaskUi = mergeTaskUiMetadata(taskUi, task.uiMetadata)
 	const explicitColumnId = normalizeText(task.columnId, 80)
 	const mappedColumn = explicitColumnId
 		? project.columns.find((column) => column.id === explicitColumnId) || null
@@ -333,6 +573,15 @@ function mapTaskToStoreItem(task: BackendTask, project: TaskProjectItem): TasksS
 	const status = normalizeText(mappedColumn?.label || task.status || project.statuses[0] || 'A fazer', 120)
 	const responsibleUserId = normalizeText(task.responsibleUserId || task.responsible?.id, 80)
 	const clientAccountId = normalizeText(task.clientAccountId, 80)
+	const responsibleLabel = normalizeText(resolvedTaskUi?.responsible, 120) || backendUserLabel(task.responsible, currentUser) || responsibleUserId
+	const involvedLabels = Array.isArray(resolvedTaskUi?.involved)
+		? resolvedTaskUi.involved.map((item) => normalizeText(item, 120)).filter(Boolean)
+		: (Array.isArray(task.assignees)
+			? task.assignees.map((item) => backendUserLabel(item, currentUser)).filter(Boolean)
+			: [])
+	const normalizedInvolvedLabels = uniqueStrings(involvedLabels)
+		.filter((label) => normalizeKey(label) !== normalizeKey(responsibleLabel))
+	const uiClientId = Number(resolvedTaskUi?.clientId || 0)
 	return {
 		id: normalizeText(task.id, 80),
 		projectId: normalizeText(task.boardId, 80) || project.id,
@@ -340,18 +589,18 @@ function mapTaskToStoreItem(task: BackendTask, project: TaskProjectItem): TasksS
 		description: stripHtml(task.contentHtml),
 		contentHtml: normalizeText(task.contentHtml, 50000),
 		status,
-		responsible: responsibleUserId,
-		involved: Array.isArray(task.assignees)
-			? task.assignees.map((item) => normalizeText(item?.id, 80)).filter(Boolean)
-			: [],
-		clientId: 0,
-		clientName: clientAccountId ? `Conta ${clientAccountId.slice(0, 8)}` : '',
-		type: '',
+		responsible: responsibleLabel,
+		involved: normalizedInvolvedLabels,
+		clientId: Number.isFinite(uiClientId) && uiClientId > 0 ? uiClientId : 0,
+		clientName: normalizeText(resolvedTaskUi?.clientName, 140) || (clientAccountId ? `Conta ${clientAccountId.slice(0, 8)}` : ''),
+		type: normalizeText(resolvedTaskUi?.type, 120),
 		priority: normalizePriority(task.priority),
+		prioritySet: typeof resolvedTaskUi?.prioritySet === 'boolean' ? resolvedTaskUi.prioritySet : normalizePriority(task.priority) !== 'media',
 		dueDate: toDateOnly(task.dueDate),
+		dueEndDate: toDateOnly(resolvedTaskUi?.dueEndDate),
 		archived: Boolean(task.archived),
-		order: Number(task.sortOrder || 0) || ORDER_STEP,
-		createdBy: '',
+		order: Number.isFinite(Number(task.sortOrder)) ? Number(task.sortOrder) : ORDER_STEP,
+		createdBy: normalizeText(resolvedTaskUi?.createdBy, 120),
 		createdAt: normalizeText(task.createdAt, 80) || new Date().toISOString(),
 		updatedAt: normalizeText(task.updatedAt, 80) || new Date().toISOString(),
 		columnId: normalizeText(mappedColumn?.id || explicitColumnId, 80),
@@ -362,13 +611,21 @@ function mapTaskToStoreItem(task: BackendTask, project: TaskProjectItem): TasksS
 	}
 }
 
-function buildProject(board: BackendBoard, existingProject: TaskProjectItem | undefined, boardTasks: TasksStoreTaskItem[]): TaskProjectItem {
+function buildProject(
+	board: BackendBoard,
+	existingProject: TaskProjectItem | undefined,
+	boardTasks: TasksStoreTaskItem[],
+	projectUi?: ProjectUiMetadata
+): TaskProjectItem {
 	const columns = mapBoardColumns(Array.isArray(board.columns) ? board.columns : [])
-	const views = Array.isArray(board.views) && board.views.length > 0
+	const uiViews = normalizeUiViews(projectUi?.views)
+	const views = uiViews.length > 0
+		? uiViews
+		: Array.isArray(board.views) && board.views.length > 0
 		? board.views.map((view) => mapView(view))
 		: (existingProject?.views?.length ? [...existingProject.views] : defaultViews())
 	const availableViewIds = new Set(views.map((view) => view.id))
-	const activeViewId = normalizeText(existingProject?.activeViewId, 80)
+	const activeViewId = normalizeText(projectUi?.activeViewId || existingProject?.activeViewId, 80)
 	return {
 		id: normalizeText(board.id, 80),
 		name: normalizeText(board.name, 140) || existingProject?.name || 'Projeto',
@@ -376,14 +633,14 @@ function buildProject(board: BackendBoard, existingProject: TaskProjectItem | un
 		icon: normalizeText(board.icon, 40) || existingProject?.icon || 'layout-dashboard',
 		columns,
 		statuses: columns.map((column) => column.label),
-		responsibles: uniqueStrings([...(existingProject?.responsibles || []), ...boardTasks.map((task) => task.responsible)]),
-		types: uniqueStrings([...(existingProject?.types || []), ...boardTasks.map((task) => task.type)]),
+		responsibles: uniqueStrings([...(projectUi?.responsibles || []), ...(existingProject?.responsibles || []), ...boardTasks.map((task) => task.responsible)]),
+		types: uniqueStrings([...(projectUi?.types || []), ...(existingProject?.types || []), ...boardTasks.map((task) => task.type)]),
 		fields: mapBoardFields(Array.isArray(board.fields) ? board.fields : [], existingProject),
 		views,
 		activeViewId: activeViewId && availableViewIds.has(activeViewId) ? activeViewId : views[0]?.id || 'view-board',
-		filters: defaultFiltersConfig(existingProject?.filters),
-		cardFields: defaultCardFieldsConfig(existingProject?.cardFields),
-		defaults: defaultProjectDefaults(existingProject?.defaults),
+		filters: defaultFiltersConfig(projectUi?.filters || existingProject?.filters),
+		cardFields: defaultCardFieldsConfig(projectUi?.cardFields || existingProject?.cardFields),
+		defaults: defaultProjectDefaults(projectUi?.defaults || existingProject?.defaults),
 		createdAt: normalizeText(board.createdAt, 80) || existingProject?.createdAt || new Date().toISOString(),
 		updatedAt: normalizeText(board.updatedAt, 80) || existingProject?.updatedAt || new Date().toISOString()
 	}
@@ -402,6 +659,11 @@ export const useTasksStore = defineStore('tasks', () => {
 	const tasks = ref<TasksStoreTaskItem[]>([])
 	const activeProjectId = ref('')
 	const legacyMigrationNotice = ref(false)
+	const uiMetadata = ref<TasksUiMetadata>(readUiMetadata())
+
+	if (uiMetadata.value.activeProjectId) {
+		activeProjectId.value = uiMetadata.value.activeProjectId
+	}
 
 	const accountId = computed(() => normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80))
 
@@ -442,6 +704,68 @@ export const useTasksStore = defineStore('tasks', () => {
 		legacyMigrationNotice.value = false
 	}
 
+	function persistUiMetadata() {
+		writeUiMetadata(uiMetadata.value)
+	}
+
+	function saveProjectUiMetadata(projectId: string, patch: ProjectUiMetadata) {
+		const id = normalizeText(projectId, 80)
+		if (!id) {
+			return
+		}
+		uiMetadata.value.projects[id] = {
+			...(uiMetadata.value.projects[id] || {}),
+			...patch
+		}
+		persistUiMetadata()
+	}
+
+	function saveTaskUiMetadata(taskId: string, patch: TaskUiMetadata) {
+		const id = normalizeText(taskId, 80)
+		if (!id || !hasUiPatch(patch)) {
+			return
+		}
+		uiMetadata.value.tasks[id] = {
+			...(uiMetadata.value.tasks[id] || {}),
+			...patch
+		}
+		persistUiMetadata()
+	}
+
+	function deleteTaskUiMetadata(taskId: string) {
+		const id = normalizeText(taskId, 80)
+		if (!id || !uiMetadata.value.tasks[id]) {
+			return
+		}
+		delete uiMetadata.value.tasks[id]
+		persistUiMetadata()
+	}
+
+	function pruneUiMetadata() {
+		const projectIds = new Set(projects.value.map((project) => project.id))
+		const taskIds = new Set(tasks.value.map((task) => task.id))
+		let changed = false
+		for (const projectId of Object.keys(uiMetadata.value.projects || {})) {
+			if (!projectIds.has(projectId)) {
+				delete uiMetadata.value.projects[projectId]
+				changed = true
+			}
+		}
+		for (const taskId of Object.keys(uiMetadata.value.tasks || {})) {
+			if (!taskIds.has(taskId)) {
+				delete uiMetadata.value.tasks[taskId]
+				changed = true
+			}
+		}
+		if (activeProjectId.value) {
+			uiMetadata.value.activeProjectId = activeProjectId.value
+			changed = true
+		}
+		if (changed) {
+			persistUiMetadata()
+		}
+	}
+
 	function replaceProject(project: TaskProjectItem) {
 		const index = projects.value.findIndex((item) => item.id === project.id)
 		if (index >= 0) {
@@ -461,40 +785,83 @@ export const useTasksStore = defineStore('tasks', () => {
 		tasks.value = sortTasks(tasks.value)
 	}
 
+	// listBoardTasks segue a paginacao cursor-based do backend (T4/T5). Para a UI de board kanban
+	// precisamos de todas as tasks do board, entao iteramos `nextCursor` ate esgotar; o pageSize
+	// de 100 reduz numero de round-trips sem estourar o cap de 200 do backend.
 	async function listBoardTasks(boardId: string) {
-		const params = new URLSearchParams()
-		params.set('limit', '200')
-		params.set('archived', 'true')
-		const response = await request(`/v1/tasks/boards/${encodeURIComponent(boardId)}/tasks?${params.toString()}`)
-		return Array.isArray(response?.tasks) ? (response.tasks as BackendTask[]) : []
+		const normalizedBoardId = normalizeText(boardId, 80)
+		if (!normalizedBoardId) {
+			return []
+		}
+		const pageSize = 100
+		const collected: BackendTask[] = []
+		let cursor = ''
+		// Hard ceiling: 100 paginas (10k tasks). Se chegar la, ha algo errado — preferimos parar a
+		// loopar indefinidamente.
+		for (let page = 0; page < 100; page += 1) {
+			const params = new URLSearchParams()
+			params.set('limit', String(pageSize))
+			params.set('archived', 'true')
+			if (cursor) params.set('cursor', cursor)
+			const response = await request(`/v1/tasks/boards/${encodeURIComponent(normalizedBoardId)}/tasks?${params.toString()}`)
+			const pageTasks = Array.isArray(response?.tasks) ? (response.tasks as BackendTask[]) : []
+			collected.push(...pageTasks)
+			const nextCursor = typeof response?.nextCursor === 'string' ? response.nextCursor.trim() : ''
+			if (!nextCursor || pageTasks.length === 0) break
+			cursor = nextCursor
+		}
+		return collected
+	}
+
+	async function loadBoardDetails(board: BackendBoard) {
+		const boardId = normalizeText(board.id, 80)
+		if (!boardId) {
+			return board
+		}
+		if (
+			Array.isArray(board.columns) && board.columns.length > 0 &&
+			Array.isArray(board.views) && board.views.length > 0 &&
+			Array.isArray(board.fields) && board.fields.length > 0
+		) {
+			return board
+		}
+		const response = await request(`/v1/task-boards/${encodeURIComponent(boardId)}`)
+		return (response?.board as BackendBoard | undefined) || board
 	}
 
 	async function refresh() {
 		pending.value = true
 		errorMessage.value = ''
 		try {
+			uiMetadata.value = readUiMetadata()
 			const currentProjects = new Map(projects.value.map((project) => [project.id, project] as const))
 			const response = await request('/v1/tasks/boards')
 			const boards = Array.isArray(response?.boards)
 				? (response.boards as BackendBoard[]).filter((board) => !board?.archived)
 				: []
+			const detailedBoards = await Promise.all(boards.map((board) => loadBoardDetails(board)))
 			const taskEntries = await Promise.all(
-				boards.map(async (board) => [normalizeText(board.id, 80), await listBoardTasks(normalizeText(board.id, 80))] as const)
+				detailedBoards.map(async (board) => [normalizeText(board.id, 80), await listBoardTasks(normalizeText(board.id, 80))] as const)
 			)
 			const boardTasksMap = new Map<string, TasksStoreTaskItem[]>()
-			const nextProjects = boards.map((board) => {
+			const nextProjects = detailedBoards.map((board) => {
 				const boardId = normalizeText(board.id, 80)
-				const placeholderProject = buildProject(board, currentProjects.get(boardId), [])
+				const projectUi = uiMetadata.value.projects[boardId]
+				const placeholderProject = buildProject(board, currentProjects.get(boardId), [], projectUi)
 				const mappedTasks = (taskEntries.find(([entryBoardId]) => entryBoardId === boardId)?.[1] || [])
-					.map((task) => mapTaskToStoreItem(task, placeholderProject))
+					.map((task) => mapTaskToStoreItem(task, placeholderProject, uiMetadata.value.tasks[normalizeText(task.id, 80)], auth.user))
 				boardTasksMap.set(boardId, mappedTasks)
-				return buildProject(board, currentProjects.get(boardId), mappedTasks)
+				return buildProject(board, currentProjects.get(boardId), mappedTasks, projectUi)
 			})
 			projects.value = nextProjects
 			tasks.value = sortTasks(nextProjects.flatMap((project) => boardTasksMap.get(project.id) || []))
 			if (!projects.value.some((project) => project.id === activeProjectId.value)) {
-				activeProjectId.value = projects.value[0]?.id || ''
+				const rememberedProjectId = normalizeText(uiMetadata.value.activeProjectId, 80)
+				activeProjectId.value = projects.value.some((project) => project.id === rememberedProjectId)
+					? rememberedProjectId
+					: projects.value[0]?.id || ''
 			}
+			pruneUiMetadata()
 		} catch (error) {
 			errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar as tasks.')
 			throw error
@@ -523,6 +890,8 @@ export const useTasksStore = defineStore('tasks', () => {
 			return
 		}
 		activeProjectId.value = targetId
+		uiMetadata.value.activeProjectId = targetId
+		persistUiMetadata()
 	}
 
 	function buildBoardSlug(name: unknown) {
@@ -551,6 +920,16 @@ export const useTasksStore = defineStore('tasks', () => {
 		const project = buildProject(board, undefined, [])
 		replaceProject(project)
 		activeProjectId.value = project.id
+		uiMetadata.value.activeProjectId = project.id
+		saveProjectUiMetadata(project.id, {
+			views: project.views,
+			activeViewId: project.activeViewId,
+			filters: project.filters,
+			cardFields: project.cardFields,
+			defaults: project.defaults,
+			responsibles: project.responsibles,
+			types: project.types
+		})
 		return project
 	}
 
@@ -568,9 +947,11 @@ export const useTasksStore = defineStore('tasks', () => {
 		})
 		projects.value = projects.value.filter((project) => project.id !== target.id)
 		tasks.value = tasks.value.filter((task) => task.projectId !== target.id)
+		delete uiMetadata.value.projects[target.id]
 		if (activeProjectId.value === target.id) {
 			activeProjectId.value = projects.value[0]?.id || ''
 		}
+		pruneUiMetadata()
 		return true
 	}
 
@@ -657,6 +1038,15 @@ export const useTasksStore = defineStore('tasks', () => {
 		nextProject.statuses = nextProject.columns.map((column) => column.label)
 		nextProject.activeViewId = normalizeText(payload.activeViewId || nextProject.activeViewId, 80) || nextProject.views[0]?.id || 'view-board'
 		replaceProject(nextProject)
+		saveProjectUiMetadata(nextProject.id, {
+			responsibles: nextProject.responsibles,
+			types: nextProject.types,
+			views: nextProject.views,
+			activeViewId: nextProject.activeViewId,
+			filters: nextProject.filters,
+			cardFields: nextProject.cardFields,
+			defaults: nextProject.defaults
+		})
 		return nextProject
 	}
 
@@ -676,7 +1066,7 @@ export const useTasksStore = defineStore('tasks', () => {
 			return before.order + ORDER_STEP
 		}
 		if (after) {
-			return Math.max(ORDER_STEP / 2, after.order / 2)
+			return after.order - ORDER_STEP
 		}
 		return ORDER_STEP
 	}
@@ -698,7 +1088,7 @@ export const useTasksStore = defineStore('tasks', () => {
 		return null
 	}
 
-	async function createTask(payload: Partial<Omit<TaskItem, 'id' | 'createdAt' | 'updatedAt'>> = {}) {
+	async function createTask(payload: Partial<Omit<TasksStoreTaskItem, 'id' | 'createdAt' | 'updatedAt'>> = {}) {
 		const projectId = normalizeText(payload.projectId, 80) || activeProjectId.value || projects.value[0]?.id || ''
 		const project = projects.value.find((item) => item.id === projectId)
 		if (!project) {
@@ -706,6 +1096,7 @@ export const useTasksStore = defineStore('tasks', () => {
 		}
 		const status = normalizeText(payload.status, 120) || project.statuses[0] || 'A fazer'
 		const column = findColumnByStatus(project, status)
+		const taskUiPatch = taskUiPatchFromPayload(payload as Record<string, any>)
 		const response = await request(`/v1/tasks/boards/${encodeURIComponent(project.id)}/tasks`, {
 			method: 'POST',
 			body: {
@@ -715,16 +1106,20 @@ export const useTasksStore = defineStore('tasks', () => {
 				status,
 				priority: normalizePriority(payload.priority),
 				dueDate: toOptionalDateTime(payload.dueDate),
-				sortOrder: Number.isFinite(Number(payload.order)) ? Number(payload.order) : nextOrder(project.id, status),
+				sortOrder: Number.isFinite(Number(payload.order)) ? Number(payload.order) : nextOrder(project.id, status, undefined, 0),
 				responsibleUserId: resolveResponsibleUserId(undefined, payload.responsible),
-				clientAccountId: looksLikeUUID((payload as TasksStoreTaskItem).clientAccountId) ? (payload as TasksStoreTaskItem).clientAccountId : null
+				clientAccountId: looksLikeUUID((payload as TasksStoreTaskItem).clientAccountId) ? (payload as TasksStoreTaskItem).clientAccountId : null,
+				uiMetadata: taskUiPatch
 			}
 		})
 		const task = response?.task as BackendTask | undefined
 		if (!task?.id) {
 			return null
 		}
-		const mapped = mapTaskToStoreItem(task, project)
+		if (hasUiPatch(taskUiPatch)) {
+			saveTaskUiMetadata(task.id, taskUiPatch)
+		}
+		const mapped = mapTaskToStoreItem(task, project, uiMetadata.value.tasks[task.id], auth.user)
 		replaceTask(mapped)
 		const refreshedProject = buildProject({
 			id: project.id,
@@ -733,15 +1128,28 @@ export const useTasksStore = defineStore('tasks', () => {
 			icon: project.icon,
 			columns: project.columns.map((column) => ({ id: column.id, label: column.label, color: column.color, sortOrder: column.order })),
 			fields: project.fields.map((field) => ({ id: field.id, key: field.key, label: field.label, type: field.type, required: field.required, hidden: field.hidden, sortOrder: field.order })),
-			views: project.views.map((view) => ({ id: view.id, name: view.name, type: view.type, config: { groupByFieldKey: view.groupByFieldKey } })),
+			views: project.views.map((view) => ({
+				id: view.id,
+				name: view.name,
+				type: view.type,
+				config: {
+					groupByFieldKey: view.groupByFieldKey,
+					visibleFieldKeys: view.visibleFieldKeys,
+					modalVisibleFieldKeys: view.modalVisibleFieldKeys,
+					hiddenColumnIds: view.hiddenColumnIds,
+					showAggregation: view.showAggregation,
+					sortBy: view.sortBy,
+					sortDirection: view.sortDirection
+				}
+			})),
 			createdAt: project.createdAt,
 			updatedAt: new Date().toISOString()
-		}, project, tasks.value.filter((item) => item.projectId === project.id))
+		}, project, tasks.value.filter((item) => item.projectId === project.id), uiMetadata.value.projects[project.id])
 		replaceProject({ ...refreshedProject, filters: project.filters, cardFields: project.cardFields, defaults: project.defaults })
 		return mapped
 	}
 
-	async function updateTask(taskId: string, patch: Partial<Omit<TaskItem, 'id' | 'projectId' | 'createdAt'>>) {
+	async function updateTask(taskId: string, patch: Partial<Omit<TasksStoreTaskItem, 'id' | 'projectId' | 'createdAt'>>) {
 		const currentTask = tasks.value.find((item) => item.id === normalizeText(taskId, 80))
 		if (!currentTask) {
 			return null
@@ -754,46 +1162,104 @@ export const useTasksStore = defineStore('tasks', () => {
 			? normalizeText(patch.status, 120)
 			: currentTask.status
 		const nextColumn = nextStatus ? findColumnByStatus(project, nextStatus) : (currentTask.columnId ? project.columns.find((column) => column.id === currentTask.columnId) || null : null)
-		const headers = currentTask.version ? { 'If-Match': String(currentTask.version) } : undefined
-		const response = await request(`/v1/tasks/${encodeURIComponent(currentTask.id)}`, {
+		const previousTask: TasksStoreTaskItem = { ...currentTask, involved: [...currentTask.involved] }
+		const optimisticTask: TasksStoreTaskItem = { ...currentTask, involved: [...currentTask.involved], updatedAt: new Date().toISOString() }
+		if (Object.prototype.hasOwnProperty.call(patch, 'title')) optimisticTask.title = clampText(patch.title, 220)
+		if (Object.prototype.hasOwnProperty.call(patch, 'contentHtml') || Object.prototype.hasOwnProperty.call(patch, 'description')) {
+			const contentHtml = normalizeText(patch.contentHtml || patch.description, 50000)
+			optimisticTask.contentHtml = contentHtml
+			optimisticTask.description = stripHtml(contentHtml)
+		}
+		if (Object.prototype.hasOwnProperty.call(patch, 'status')) {
+			optimisticTask.status = nextStatus || currentTask.status
+			optimisticTask.columnId = nextColumn?.id || optimisticTask.columnId
+		}
+		if (Object.prototype.hasOwnProperty.call(patch, 'priority')) {
+			optimisticTask.priority = normalizePriority(patch.priority)
+			optimisticTask.prioritySet = true
+		}
+		if (Object.prototype.hasOwnProperty.call(patch, 'prioritySet')) optimisticTask.prioritySet = Boolean((patch as TasksStoreTaskItem).prioritySet)
+		if (Object.prototype.hasOwnProperty.call(patch, 'dueDate')) optimisticTask.dueDate = toDateOnly(patch.dueDate)
+		if (Object.prototype.hasOwnProperty.call(patch, 'dueEndDate')) optimisticTask.dueEndDate = toDateOnly((patch as TasksStoreTaskItem).dueEndDate)
+		if (Object.prototype.hasOwnProperty.call(patch, 'archived')) optimisticTask.archived = Boolean(patch.archived)
+		if (Object.prototype.hasOwnProperty.call(patch, 'order')) optimisticTask.order = Number(patch.order || 0)
+		if (Object.prototype.hasOwnProperty.call(patch, 'responsible')) optimisticTask.responsible = normalizeText(patch.responsible, 120)
+		if (Object.prototype.hasOwnProperty.call(patch, 'involved')) {
+			optimisticTask.involved = Array.isArray(patch.involved) ? patch.involved.map((item) => normalizeText(item, 120)).filter(Boolean) : []
+		}
+		if (Object.prototype.hasOwnProperty.call(patch, 'clientId')) optimisticTask.clientId = Number(patch.clientId || 0) || currentTask.clientId
+		if (Object.prototype.hasOwnProperty.call(patch, 'clientName')) optimisticTask.clientName = normalizeText(patch.clientName, 140)
+		if (Object.prototype.hasOwnProperty.call(patch, 'type')) optimisticTask.type = normalizeText(patch.type, 120)
+		replaceTask(optimisticTask)
+		let response: any
+		const taskUiPatch = taskUiPatchFromPayload(patch as Record<string, any>)
+		const requestBody = {
+			columnId: Object.prototype.hasOwnProperty.call(patch, 'status') || Object.prototype.hasOwnProperty.call(patch, 'columnId')
+				? (nextColumn?.id || (patch as TasksStoreTaskItem).columnId || null)
+				: undefined,
+			title: Object.prototype.hasOwnProperty.call(patch, 'title') ? normalizeText(patch.title, 220) : undefined,
+			contentHtml: Object.prototype.hasOwnProperty.call(patch, 'contentHtml') || Object.prototype.hasOwnProperty.call(patch, 'description')
+				? normalizeText(patch.contentHtml || patch.description, 50000)
+				: undefined,
+			status: Object.prototype.hasOwnProperty.call(patch, 'status') ? (nextStatus || null) : undefined,
+			priority: Object.prototype.hasOwnProperty.call(patch, 'priority') ? normalizePriority(patch.priority) : undefined,
+			dueDate: Object.prototype.hasOwnProperty.call(patch, 'dueDate') ? (toOptionalDateTime(patch.dueDate) || null) : undefined,
+			archived: Object.prototype.hasOwnProperty.call(patch, 'archived') ? Boolean(patch.archived) : undefined,
+			sortOrder: Object.prototype.hasOwnProperty.call(patch, 'order') ? Number(patch.order || 0) : undefined,
+			responsibleUserId: Object.prototype.hasOwnProperty.call(patch, 'responsible')
+				? resolveResponsibleUserId(currentTask, patch.responsible)
+				: undefined,
+			clientAccountId: Object.prototype.hasOwnProperty.call(patch, 'clientName') || Object.prototype.hasOwnProperty.call(patch, 'clientId') || Object.prototype.hasOwnProperty.call(patch as object, 'clientAccountId')
+				? (looksLikeUUID((patch as TasksStoreTaskItem).clientAccountId) ? (patch as TasksStoreTaskItem).clientAccountId : null)
+				: undefined,
+			uiMetadata: hasUiPatch(taskUiPatch) ? taskUiPatch : undefined
+		}
+		const sendPatch = (version?: number) => request(`/v1/tasks/${encodeURIComponent(currentTask.id)}`, {
 			method: 'PATCH',
-			headers,
-			body: {
-				columnId: Object.prototype.hasOwnProperty.call(patch, 'status') || Object.prototype.hasOwnProperty.call(patch, 'columnId')
-					? (nextColumn?.id || (patch as TasksStoreTaskItem).columnId || null)
-					: undefined,
-				title: Object.prototype.hasOwnProperty.call(patch, 'title') ? normalizeText(patch.title, 220) : undefined,
-				contentHtml: Object.prototype.hasOwnProperty.call(patch, 'contentHtml') || Object.prototype.hasOwnProperty.call(patch, 'description')
-					? normalizeText(patch.contentHtml || patch.description, 50000)
-					: undefined,
-				status: Object.prototype.hasOwnProperty.call(patch, 'status') ? (nextStatus || null) : undefined,
-				priority: Object.prototype.hasOwnProperty.call(patch, 'priority') ? normalizePriority(patch.priority) : undefined,
-				dueDate: Object.prototype.hasOwnProperty.call(patch, 'dueDate') ? (toOptionalDateTime(patch.dueDate) || null) : undefined,
-				archived: Object.prototype.hasOwnProperty.call(patch, 'archived') ? Boolean(patch.archived) : undefined,
-				sortOrder: Object.prototype.hasOwnProperty.call(patch, 'order') ? Number(patch.order || 0) : undefined,
-				responsibleUserId: Object.prototype.hasOwnProperty.call(patch, 'responsible')
-					? resolveResponsibleUserId(currentTask, patch.responsible)
-					: undefined,
-				clientAccountId: Object.prototype.hasOwnProperty.call(patch, 'clientName') || Object.prototype.hasOwnProperty.call(patch, 'clientId') || Object.prototype.hasOwnProperty.call(patch as object, 'clientAccountId')
-					? (looksLikeUUID((patch as TasksStoreTaskItem).clientAccountId) ? (patch as TasksStoreTaskItem).clientAccountId : null)
-					: undefined
-			}
+			headers: version ? { 'If-Match': String(version) } : undefined,
+			body: requestBody
 		})
-		const task = response?.task as BackendTask | undefined
-		if (!task?.id) {
+		try {
+			response = await sendPatch(currentTask.version)
+		} catch (error) {
+			if (apiStatusCode(error) === 409) {
+				await refresh().catch(() => undefined)
+				const refreshedTask = tasks.value.find((item) => item.id === currentTask.id)
+				if (refreshedTask?.version && refreshedTask.version !== currentTask.version) {
+					response = await sendPatch(refreshedTask.version)
+				} else {
+					replaceTask(previousTask)
+					throw error
+				}
+			} else {
+				replaceTask(previousTask)
+				throw error
+			}
+		}
+		if (!response) {
+			replaceTask(previousTask)
 			return null
 		}
-		const mapped = mapTaskToStoreItem(task, project)
-		replaceTask({
-			...mapped,
-			responsible: Object.prototype.hasOwnProperty.call(patch, 'responsible') && !mapped.responsibleUserId
-				? normalizeText(patch.responsible, 120)
-				: mapped.responsible,
-			clientName: Object.prototype.hasOwnProperty.call(patch, 'clientName') && !mapped.clientAccountId
-				? normalizeText(patch.clientName, 140)
-				: mapped.clientName,
-			type: Object.prototype.hasOwnProperty.call(patch, 'type') ? normalizeText(patch.type, 120) : mapped.type
-		})
+		const task = response?.task as BackendTask | undefined
+		if (!task?.id) {
+			replaceTask(previousTask)
+			return null
+		}
+		if (hasUiPatch(taskUiPatch)) {
+			saveTaskUiMetadata(task.id, taskUiPatch)
+		}
+		const mapped = mapTaskToStoreItem(task, project, uiMetadata.value.tasks[task.id], auth.user)
+		// Preserva titulo local APENAS no caso "user esta digitando agora": titulo local com
+		// trailing whitespace cujo trim bate com a versao normalizada do backend. Sem a checagem
+		// de whitespace, esta heuristica acabava mascarando updates remotos legitimos. Em refresh
+		// realtime (vindo do canal WS), `replaceTask(mapped)` e' chamado direto pelo `refresh()`,
+		// nao por aqui — entao essa logica nao interfere em sincronizacao cross-tab.
+		const localTask = tasks.value.find((item) => item.id === mapped.id)
+		if (localTask && localTask.title !== localTask.title.trim() &&
+			normalizeText(localTask.title, 220) === mapped.title) {
+			mapped.title = localTask.title
+		}
+		replaceTask(mapped)
 		return tasks.value.find((item) => item.id === mapped.id) || null
 	}
 
@@ -806,6 +1272,7 @@ export const useTasksStore = defineStore('tasks', () => {
 			method: 'DELETE'
 		})
 		tasks.value = tasks.value.filter((item) => item.id !== currentTask.id)
+		deleteTaskUiMetadata(currentTask.id)
 		return true
 	}
 
@@ -829,19 +1296,35 @@ export const useTasksStore = defineStore('tasks', () => {
 		const targetColumn = findColumnByStatus(project, status)
 		const sortOrder = nextOrder(project.id, status, currentTask.id, targetIndex)
 		const headers = currentTask.version ? { 'If-Match': String(currentTask.version) } : undefined
-		const response = await request(`/v1/tasks/${encodeURIComponent(currentTask.id)}/move`, {
-			method: 'POST',
-			headers,
-			body: {
-				columnId: targetColumn?.id || null,
-				sortOrder
-			}
+		const previousTask: TasksStoreTaskItem = { ...currentTask, involved: [...currentTask.involved] }
+		replaceTask({
+			...currentTask,
+			status,
+			columnId: targetColumn?.id || currentTask.columnId,
+			order: sortOrder,
+			updatedAt: new Date().toISOString(),
+			involved: [...currentTask.involved]
 		})
+		let response: any
+		try {
+			response = await request(`/v1/tasks/${encodeURIComponent(currentTask.id)}/move`, {
+				method: 'POST',
+				headers,
+				body: {
+					columnId: targetColumn?.id || null,
+					sortOrder
+				}
+			})
+		} catch (error) {
+			replaceTask(previousTask)
+			throw error
+		}
 		const task = response?.task as BackendTask | undefined
 		if (!task?.id) {
+			replaceTask(previousTask)
 			return null
 		}
-		const mapped = mapTaskToStoreItem({ ...task, status }, project)
+		const mapped = mapTaskToStoreItem({ ...task, status }, project, uiMetadata.value.tasks[task.id], auth.user)
 		replaceTask(mapped)
 		return mapped
 	}

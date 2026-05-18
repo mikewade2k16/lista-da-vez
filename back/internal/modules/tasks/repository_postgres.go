@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,42 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// listTasksCursor representa a posicao paginada de ListTasks. Encoding como base64url(JSON) e'
+// opaco para o cliente — podemos mudar a estrategia (ex: adicionar um filtro) sem quebrar URLs
+// salvas. Tuple (sort_order, created_at, id) e' estavel e total no SQL.
+type listTasksCursor struct {
+	SortOrder float64   `json:"s"`
+	CreatedAt time.Time `json:"c"`
+	ID        string    `json:"i"`
+}
+
+func encodeListTasksCursor(cursor listTasksCursor) string {
+	payload, err := json.Marshal(cursor)
+	if err != nil {
+		return ""
+	}
+	return base64.RawURLEncoding.EncodeToString(payload)
+}
+
+func decodeListTasksCursor(raw string) (listTasksCursor, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return listTasksCursor{}, false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return listTasksCursor{}, false
+	}
+	var cursor listTasksCursor
+	if err := json.Unmarshal(payload, &cursor); err != nil {
+		return listTasksCursor{}, false
+	}
+	if strings.TrimSpace(cursor.ID) == "" {
+		return listTasksCursor{}, false
+	}
+	return cursor, true
+}
 
 type PostgresRepository struct {
 	pool *pgxpool.Pool
@@ -368,35 +405,58 @@ func (repository *PostgresRepository) CreateField(ctx context.Context, accountID
 	return field, nil
 }
 
-func (repository *PostgresRepository) ListTasks(ctx context.Context, access AccessContext, input ListTasksInput) ([]Task, error) {
+func (repository *PostgresRepository) ListTasks(ctx context.Context, access AccessContext, input ListTasksInput) ([]Task, string, error) {
+	cursor, hasCursor := decodeListTasksCursor(input.Cursor)
+
+	// Pedimos limit+1 para detectar `hasMore` sem segunda query. Se vier limit+1 rows, removemos a
+	// ultima e devolvemos o cursor apontando para a anterior.
+	fetchLimit := input.Limit + 1
+
+	// Tuple keyset pagination com (sort_order, created_at, id) — ordem total e estavel mesmo
+	// quando varias tasks tem o mesmo sort_order/created_at.
 	sql, args := repository.scopedQuery(access.AccountID, `
 		select t.id::text, t.account_id::text, t.board_id::text, t.column_id::text,
 		       t.title, t.content_html, t.status, t.priority, t.due_date, t.start_date,
 		       t.archived, t.sort_order::float8, t.created_by_user_id::text,
-		       t.responsible_user_id::text, t.client_account_id::text, t.version,
+		       t.responsible_user_id::text, t.client_account_id::text, t.ui_metadata, t.version,
 		       t.created_at, t.updated_at
 		from tasks.tasks t
 		where t.account_id = $1::uuid and t.board_id = $2::uuid
 		  and ($3::boolean = true or t.archived = false)
-		order by t.sort_order asc, t.created_at asc
-		limit $4
-	`, input.BoardID, input.IncludeArchived, input.Limit)
+		  and ($4::boolean = false or (t.sort_order, t.created_at, t.id) > ($5::float8, $6::timestamptz, $7::uuid))
+		order by t.sort_order asc, t.created_at asc, t.id asc
+		limit $8
+	`, input.BoardID, input.IncludeArchived, hasCursor, cursor.SortOrder, cursor.CreatedAt, cursor.ID, fetchLimit)
 
 	rows, err := repository.pool.Query(ctx, sql, args...)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer rows.Close()
 
-	tasks := make([]Task, 0)
+	tasks := make([]Task, 0, input.Limit)
 	for rows.Next() {
 		task, err := scanTask(rows.Scan)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		tasks = append(tasks, task)
 	}
-	return tasks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	var nextCursor string
+	if len(tasks) > input.Limit {
+		last := tasks[input.Limit-1]
+		tasks = tasks[:input.Limit]
+		nextCursor = encodeListTasksCursor(listTasksCursor{
+			SortOrder: last.SortOrder,
+			CreatedAt: last.CreatedAt,
+			ID:        last.ID,
+		})
+	}
+	return tasks, nextCursor, nil
 }
 
 func (repository *PostgresRepository) GetTask(ctx context.Context, access AccessContext, taskID string) (Task, error) {
@@ -404,7 +464,7 @@ func (repository *PostgresRepository) GetTask(ctx context.Context, access Access
 		select t.id::text, t.account_id::text, t.board_id::text, t.column_id::text,
 		       t.title, t.content_html, t.status, t.priority, t.due_date, t.start_date,
 		       t.archived, t.sort_order::float8, t.created_by_user_id::text,
-		       t.responsible_user_id::text, t.client_account_id::text, t.version,
+		       t.responsible_user_id::text, t.client_account_id::text, t.ui_metadata, t.version,
 		       t.created_at, t.updated_at
 		from tasks.tasks t
 		where t.account_id = $1::uuid and t.id = $2::uuid and t.archived = false
@@ -422,18 +482,18 @@ func (repository *PostgresRepository) CreateTask(ctx context.Context, accountID 
 		insert into tasks.tasks (
 			account_id, board_id, column_id, title, content_html, status, priority,
 			due_date, start_date, sort_order, created_by_user_id, responsible_user_id,
-			client_account_id
+			client_account_id, ui_metadata
 		) values (
 			$1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
-			$11::uuid, $12::uuid, $13::uuid
+			$11::uuid, $12::uuid, $13::uuid, $14::jsonb
 		)
 		returning id::text, account_id::text, board_id::text, column_id::text,
 		          title, content_html, status, priority, due_date, start_date,
 		          archived, sort_order::float8, created_by_user_id::text,
-		          responsible_user_id::text, client_account_id::text, version,
+		          responsible_user_id::text, client_account_id::text, ui_metadata, version,
 		          created_at, updated_at
 	`, input.BoardID, input.ColumnID, input.Title, input.ContentHTML, input.Status, input.Priority,
-		input.DueDate, input.StartDate, input.SortOrder, createdByUserID, input.ResponsibleUserID, input.ClientAccountID)
+		input.DueDate, input.StartDate, input.SortOrder, createdByUserID, input.ResponsibleUserID, input.ClientAccountID, mustJSON(normalizeMap(input.UIMetadata)))
 
 	task, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -485,6 +545,9 @@ func (repository *PostgresRepository) UpdateTask(ctx context.Context, accountID 
 	if input.ClientAccountID != nil {
 		task.ClientAccountID = *input.ClientAccountID
 	}
+	if input.UIMetadata != nil {
+		task.UIMetadata = mergeMetadata(task.UIMetadata, *input.UIMetadata)
+	}
 
 	return repository.updateTaskRow(ctx, accountID, task)
 }
@@ -513,7 +576,7 @@ func (repository *PostgresRepository) ArchiveTask(ctx context.Context, accountID
 		returning id::text, account_id::text, board_id::text, column_id::text,
 		          title, content_html, status, priority, due_date, start_date,
 		          archived, sort_order::float8, created_by_user_id::text,
-		          responsible_user_id::text, client_account_id::text, version,
+		          responsible_user_id::text, client_account_id::text, ui_metadata, version,
 		          created_at, updated_at
 	`, taskID)
 	task, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
@@ -858,16 +921,17 @@ func (repository *PostgresRepository) updateTaskRow(ctx context.Context, account
 		       sort_order = $11,
 		       responsible_user_id = $12::uuid,
 		       client_account_id = $13::uuid,
+		       ui_metadata = $14::jsonb,
 		       version = version + 1,
 		       updated_at = now()
 		 where account_id = $1::uuid and id = $2::uuid
 		returning id::text, account_id::text, board_id::text, column_id::text,
 		          title, content_html, status, priority, due_date, start_date,
 		          archived, sort_order::float8, created_by_user_id::text,
-		          responsible_user_id::text, client_account_id::text, version,
+		          responsible_user_id::text, client_account_id::text, ui_metadata, version,
 		          created_at, updated_at
 	`, task.ID, task.ColumnID, task.Title, task.ContentHTML, task.Status, task.Priority,
-		task.DueDate, task.StartDate, task.Archived, task.SortOrder, task.ResponsibleUserID, task.ClientAccountID)
+		task.DueDate, task.StartDate, task.Archived, task.SortOrder, task.ResponsibleUserID, task.ClientAccountID, mustJSON(normalizeMap(task.UIMetadata)))
 	updated, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Task{}, ErrTaskNotFound
@@ -1157,6 +1221,7 @@ func scanView(scan func(...any) error) (View, error) {
 
 func scanTask(scan func(...any) error) (Task, error) {
 	var task Task
+	var uiMetadataRaw []byte
 	err := scan(
 		&task.ID,
 		&task.AccountID,
@@ -1173,10 +1238,12 @@ func scanTask(scan func(...any) error) (Task, error) {
 		&task.CreatedByUserID,
 		&task.ResponsibleUserID,
 		&task.ClientAccountID,
+		&uiMetadataRaw,
 		&task.Version,
 		&task.CreatedAt,
 		&task.UpdatedAt,
 	)
+	task.UIMetadata = decodeMap(uiMetadataRaw)
 	return task, err
 }
 
@@ -1232,15 +1299,94 @@ func decodeMap(raw []byte) map[string]any {
 	return value
 }
 
+func mustJSON(value map[string]any) []byte {
+	raw, err := json.Marshal(normalizeMap(value))
+	if err != nil {
+		return []byte(`{}`)
+	}
+	return raw
+}
+
 func normalizeMap(value map[string]any) map[string]any {
 	if value == nil {
 		return map[string]any{}
 	}
 	normalized := make(map[string]any, len(value))
 	for key, item := range value {
-		normalized[strings.TrimSpace(key)] = item
+		normalizedKey := strings.TrimSpace(key)
+		if normalizedKey != "" {
+			normalized[normalizedKey] = item
+		}
 	}
 	return normalized
+}
+
+func mergeMetadata(current map[string]any, patch map[string]any) map[string]any {
+	next := normalizeMap(current)
+	for key, value := range normalizeTaskUIMetadata(patch) {
+		next[key] = value
+	}
+	return next
+}
+
+func normalizeTaskUIMetadata(value map[string]any) map[string]any {
+	raw := normalizeMap(value)
+	if len(raw) == 0 {
+		return map[string]any{}
+	}
+
+	normalized := map[string]any{}
+	if item, ok := raw["responsible"]; ok {
+		normalized["responsible"] = strings.TrimSpace(fmt.Sprint(item))
+	}
+	if item, ok := raw["involved"]; ok {
+		normalized["involved"] = normalizeStringList(item)
+	}
+	if item, ok := raw["clientId"]; ok {
+		normalized["clientId"] = item
+	}
+	if item, ok := raw["clientName"]; ok {
+		normalized["clientName"] = strings.TrimSpace(fmt.Sprint(item))
+	}
+	if item, ok := raw["type"]; ok {
+		normalized["type"] = strings.TrimSpace(fmt.Sprint(item))
+	}
+	if item, ok := raw["dueEndDate"]; ok {
+		normalized["dueEndDate"] = strings.TrimSpace(fmt.Sprint(item))
+	}
+	if item, ok := raw["prioritySet"]; ok {
+		normalized["prioritySet"] = item
+	}
+	if item, ok := raw["createdBy"]; ok {
+		normalized["createdBy"] = strings.TrimSpace(fmt.Sprint(item))
+	}
+	return normalized
+}
+
+func normalizeStringList(value any) []string {
+	rawList, ok := value.([]any)
+	if !ok {
+		if typed, ok := value.([]string); ok {
+			result := make([]string, 0, len(typed))
+			for _, item := range typed {
+				trimmed := strings.TrimSpace(item)
+				if trimmed != "" {
+					result = append(result, trimmed)
+				}
+			}
+			return result
+		}
+		return []string{}
+	}
+
+	result := make([]string, 0, len(rawList))
+	for _, item := range rawList {
+		trimmed := strings.TrimSpace(fmt.Sprint(item))
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 func parseOptionalTime(raw string) (*time.Time, error) {

@@ -301,6 +301,20 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		mux,
 		httpapi.CORS(cfg.CORSAllowedOrigins),
 		httpapi.RequestID,
+		// RateLimit antes do Logging para que requisicoes bloqueadas tambem apareçam nos logs
+		// com status 429. Identidade preferida = principal.UserID (via callback que evita import
+		// cycle com o pacote auth); fallback para IP.
+		httpapi.RateLimit(httpapi.RateLimitOptions{
+			Limit:  httpapi.DefaultRESTRateLimit.Limit,
+			Window: httpapi.DefaultRESTRateLimit.Window,
+			Resolver: func(r *http.Request) string {
+				principal, ok := auth.PrincipalFromContext(r.Context())
+				if !ok {
+					return ""
+				}
+				return principal.UserID
+			},
+		}),
 		httpapi.Logging(logger),
 		httpapi.Recover(logger),
 	), nil

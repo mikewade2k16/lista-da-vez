@@ -30,10 +30,13 @@ const viewPlaceholder = ref<CalendarDate>(today(getLocalTimeZone()))
 // ─── Settings state ───────────────────────────────────────────────────────────
 const showEndDate  = ref(false)
 const includeTime  = ref(false)
-// timeHour holds 1-12 when timeFormat='12h', or 0-23 when timeFormat='24h'
-const timeHour     = ref('00')
-const timeMinute   = ref('00')
-const timePeriod   = ref<'AM' | 'PM'>('AM')
+type TimeTarget = 'start' | 'end'
+const startTimeHour   = ref('00')
+const startTimeMinute = ref('00')
+const startTimePeriod = ref<'AM' | 'PM'>('AM')
+const endTimeHour     = ref('00')
+const endTimeMinute   = ref('00')
+const endTimePeriod   = ref<'AM' | 'PM'>('AM')
 // dateFormat and timeFormat are shared singletons from useDateFormat —
 // changing in one picker updates all other pickers and their trigger labels.
 const { dateFormat, timeFormat } = useDateFormat()
@@ -83,12 +86,47 @@ function isoToCalendar(iso?: string): CalendarDate | undefined {
 }
 
 // ─── 24h hour from current input state ───────────────────────────────────────
-function get24hHour(): string {
-  if (timeFormat.value === '24h') return String(timeHour.value).padStart(2, '0')
-  let h = Number(timeHour.value)
-  if (timePeriod.value === 'PM' && h !== 12) h += 12
-  if (timePeriod.value === 'AM' && h === 12) h = 0
+function timeRefs(target: TimeTarget) {
+  return target === 'start'
+    ? { hour: startTimeHour, minute: startTimeMinute, period: startTimePeriod }
+    : { hour: endTimeHour, minute: endTimeMinute, period: endTimePeriod }
+}
+
+function normalizedHour(target: TimeTarget) {
+  const { hour } = timeRefs(target)
+  const n = Number.parseInt(String(hour.value || '0'), 10)
+  const min = timeFormat.value === '12h' ? 1 : 0
+  const max = timeFormat.value === '12h' ? 12 : 23
+  return String(Math.min(max, Math.max(min, Number.isFinite(n) ? n : min))).padStart(2, '0')
+}
+
+function normalizedMinute(target: TimeTarget) {
+  const { minute } = timeRefs(target)
+  const n = Number.parseInt(String(minute.value || '0'), 10)
+  return String(Math.min(59, Math.max(0, Number.isFinite(n) ? n : 0))).padStart(2, '0')
+}
+
+function get24hHour(target: TimeTarget = 'start'): string {
+  const { period } = timeRefs(target)
+  if (timeFormat.value === '24h') return normalizedHour(target)
+  let h = Number(normalizedHour(target))
+  if (period.value === 'PM' && h !== 12) h += 12
+  if (period.value === 'AM' && h === 12) h = 0
   return String(h).padStart(2, '0')
+}
+
+function syncTimeFromIso(iso: string | undefined, target: TimeTarget) {
+  if (!iso || iso.length < 16) return
+  includeTime.value = true
+  const h24 = Number(iso.slice(11, 13))
+  const { hour, minute, period } = timeRefs(target)
+  minute.value = iso.slice(14, 16)
+  if (timeFormat.value === '12h') {
+    period.value = h24 >= 12 ? 'PM' : 'AM'
+    hour.value = String(h24 % 12 || 12)
+    return
+  }
+  hour.value = String(h24).padStart(2, '0')
 }
 
 // ─── Sync prop → state ────────────────────────────────────────────────────────
@@ -98,41 +136,46 @@ watch(
     const parsed = isoToCalendar(val)
     calStart.value = parsed
     if (parsed) viewPlaceholder.value = parsed
-    if (val && val.length >= 16) {
-      includeTime.value = true
-      const h24 = Number(val.slice(11, 13))
-      timeMinute.value  = val.slice(14, 16)
-      if (timeFormat.value === '12h') {
-        timePeriod.value = h24 >= 12 ? 'PM' : 'AM'
-        timeHour.value   = String(h24 % 12 || 12)
-      } else {
-        timeHour.value = String(h24).padStart(2, '0')
-      }
-    }
+    syncTimeFromIso(val, 'start')
   },
   { immediate: true }
 )
 
 watch(() => props.endDate, (val) => {
   calEnd.value = isoToCalendar(val)
-  if (val) showEndDate.value = true
+  if (val) {
+    showEndDate.value = true
+    syncTimeFromIso(val, 'end')
+  }
 }, { immediate: true })
+
+watch(showEndDate, (enabled) => {
+  if (enabled) return
+  calEnd.value = undefined
+  emit('update:endDate', '')
+})
 
 // ─── timeFormat change: convert hour value and clamp range ────────────────────
 // Guard: only emit modelValue update from the currently open picker to avoid
 // re-emitting unchanged ISO from every mounted instance on the page.
 watch(timeFormat, (fmt, prev) => {
-  const h = Number(timeHour.value)
-  if (fmt === '12h' && prev === '24h') {
-    timePeriod.value = h >= 12 ? 'PM' : 'AM'
-    timeHour.value   = String(h % 12 || 12)
-  } else if (fmt === '24h' && prev === '12h') {
-    let h24 = h
-    if (timePeriod.value === 'PM' && h !== 12) h24 = h + 12
-    if (timePeriod.value === 'AM' && h === 12) h24 = 0
-    timeHour.value = String(h24).padStart(2, '0')
+  ;(['start', 'end'] as const).forEach((target) => {
+    const { hour, period } = timeRefs(target)
+    const h = Number(hour.value)
+    if (fmt === '12h' && prev === '24h') {
+      period.value = h >= 12 ? 'PM' : 'AM'
+      hour.value = String(h % 12 || 12)
+    } else if (fmt === '24h' && prev === '12h') {
+      let h24 = h
+      if (period.value === 'PM' && h !== 12) h24 = h + 12
+      if (period.value === 'AM' && h === 12) h24 = 0
+      hour.value = String(h24).padStart(2, '0')
+    }
+  })
+  if (includeTime.value && popoverOpen.value) {
+    if (calStart.value) onTimeChange('start')
+    if (calEnd.value) onTimeChange('end')
   }
-  if (includeTime.value && calStart.value && popoverOpen.value) onTimeChange()
 })
 
 // ─── Computed labels ──────────────────────────────────────────────────────────
@@ -147,13 +190,6 @@ const formatLabel     = computed(() => FORMAT_OPTIONS.find(o => o.value === date
 const timeFormatLabel = computed(() => TIME_FORMAT_OPTIONS.find(o => o.value === timeFormat.value)?.label ?? '24 horas')
 
 // ─── Time display (for boxes inside picker) ───────────────────────────────────
-const timeDisplay = computed(() => {
-  if (!includeTime.value) return ''
-  const m = timeMinute.value.padStart(2, '0')
-  if (timeFormat.value === '12h') return `${timeHour.value}:${m} ${timePeriod.value}`
-  return `${String(timeHour.value).padStart(2, '0')}:${m}`
-})
-
 // ─── Trigger labels (read from props, not internal cal state) ─────────────────
 // Using props ensures labels reflect persisted parent data after popover closes.
 // labelStart = start date + time; labelEnd = end date (empty when no range).
@@ -183,7 +219,11 @@ const labelStart = computed(() => {
 // This means the end-date line shows while the component is mounted, even without endDate prop binding.
 const labelEnd = computed(() => {
   const iso = props.endDate || (calEnd.value ? calEnd.value.toString() : undefined)
-  return iso ? formatDisplay(iso) : ''
+  if (!iso) return ''
+  let label = formatDisplay(iso)
+  const t = formatTimeFromIso(iso)
+  if (t) label += ` ${t}`
+  return label
 })
 
 const triggerLabel = computed(() => {
@@ -236,18 +276,26 @@ function buildIso(date: CalendarDate, withTime = false, h = '00', m = '00'): str
   return withTime ? `${iso}T${h.padStart(2,'0')}:${m.padStart(2,'0')}` : iso
 }
 
+function emitStartDate() {
+  emit('update:modelValue', calStart.value ? buildIso(calStart.value, includeTime.value, get24hHour('start'), normalizedMinute('start')) : '')
+}
+
+function emitEndDate() {
+  emit('update:endDate', calEnd.value ? buildIso(calEnd.value, includeTime.value, get24hHour('end'), normalizedMinute('end')) : '')
+}
+
 function onSelect(val: CalendarDate | undefined) {
   calStart.value = val
   if (val) viewPlaceholder.value = val
-  emit('update:modelValue', val ? buildIso(val, includeTime.value, get24hHour(), timeMinute.value) : '')
+  emitStartDate()
 }
 
 function onRangeSelect(val: { start: CalendarDate | undefined, end: CalendarDate | undefined } | undefined) {
   calStart.value = val?.start
   calEnd.value   = val?.end
   if (val?.start) viewPlaceholder.value = val.start
-  emit('update:modelValue', val?.start ? buildIso(val.start, includeTime.value, get24hHour(), timeMinute.value) : '')
-  emit('update:endDate',    val?.end   ? buildIso(val.end) : '')
+  emitStartDate()
+  emitEndDate()
 }
 
 function onCalendarUpdate(val: unknown) {
@@ -255,14 +303,23 @@ function onCalendarUpdate(val: unknown) {
   else onSelect(val as CalendarDate | undefined)
 }
 
-function onTimeChange() {
-  if (!calStart.value) return
-  emit('update:modelValue', buildIso(calStart.value, true, get24hHour(), timeMinute.value))
+function onTimeChange(target: TimeTarget = 'start') {
+  if (target === 'start') {
+    if (calStart.value) emitStartDate()
+    return
+  }
+  if (calEnd.value) emitEndDate()
 }
 
-function togglePeriod() {
-  timePeriod.value = timePeriod.value === 'AM' ? 'PM' : 'AM'
-  onTimeChange()
+function onIncludeTimeChange(_enabled?: boolean) {
+  emitStartDate()
+  if (showEndDate.value) emitEndDate()
+}
+
+function togglePeriod(target: TimeTarget = 'start') {
+  const { period } = timeRefs(target)
+  period.value = period.value === 'AM' ? 'PM' : 'AM'
+  onTimeChange(target)
 }
 
 function goToToday() {
@@ -295,14 +352,62 @@ function clear() {
         <!-- Date display boxes -->
         <div class="app-datepicker__inputs" :class="{ 'app-datepicker__inputs--range': showEndDate }">
           <div class="app-datepicker__date-box" :class="{ 'is-set': !!calStart }">
-            <span v-if="startDisplay">{{ startDisplay }}</span>
+            <span v-if="startDisplay" class="app-datepicker__date-text">{{ startDisplay }}</span>
             <span v-else class="app-datepicker__date-placeholder">{{ showEndDate ? 'Início' : 'Selecionar data...' }}</span>
-            <span v-if="timeDisplay && calStart" class="app-datepicker__time-display">{{ timeDisplay }}</span>
+            <span v-if="includeTime && calStart" class="app-datepicker__time-inline" @click.stop>
+              <input
+                v-model="startTimeHour"
+                class="app-datepicker__time-input"
+                type="number"
+                :min="timeFormat === '12h' ? 1 : 0"
+                :max="timeFormat === '12h' ? 12 : 23"
+                placeholder="HH"
+                @change="onTimeChange('start')"
+              />
+              <span class="app-datepicker__time-sep">:</span>
+              <input
+                v-model="startTimeMinute"
+                class="app-datepicker__time-input"
+                type="number" min="0" max="59"
+                placeholder="MM"
+                @change="onTimeChange('start')"
+              />
+              <button
+                v-if="timeFormat === '12h'"
+                class="app-datepicker__ampm-btn"
+                type="button"
+                @click="togglePeriod('start')"
+              >{{ startTimePeriod }}</button>
+            </span>
           </div>
           <div v-if="showEndDate" class="app-datepicker__date-box" :class="{ 'is-set': !!calEnd }">
-            <span v-if="endDisplay">{{ endDisplay }}</span>
+            <span v-if="endDisplay" class="app-datepicker__date-text">{{ endDisplay }}</span>
             <span v-else class="app-datepicker__date-placeholder">Fim</span>
-            <span v-if="timeDisplay && calEnd" class="app-datepicker__time-display">{{ timeDisplay }}</span>
+            <span v-if="includeTime && calEnd" class="app-datepicker__time-inline" @click.stop>
+              <input
+                v-model="endTimeHour"
+                class="app-datepicker__time-input"
+                type="number"
+                :min="timeFormat === '12h' ? 1 : 0"
+                :max="timeFormat === '12h' ? 12 : 23"
+                placeholder="HH"
+                @change="onTimeChange('end')"
+              />
+              <span class="app-datepicker__time-sep">:</span>
+              <input
+                v-model="endTimeMinute"
+                class="app-datepicker__time-input"
+                type="number" min="0" max="59"
+                placeholder="MM"
+                @change="onTimeChange('end')"
+              />
+              <button
+                v-if="timeFormat === '12h'"
+                class="app-datepicker__ampm-btn"
+                type="button"
+                @click="togglePeriod('end')"
+              >{{ endTimePeriod }}</button>
+            </span>
           </div>
         </div>
 
@@ -359,35 +464,8 @@ function clear() {
           <!-- Incluir hora -->
           <div class="app-datepicker__setting-row">
             <span>Incluir hora</span>
-            <USwitch v-model="includeTime" size="sm" @update:model-value="onTimeChange" />
+            <USwitch v-model="includeTime" size="sm" @update:model-value="onIncludeTimeChange" />
           </div>
-          <Transition name="datepicker-expand">
-            <div v-if="includeTime" class="app-datepicker__time-row">
-              <input
-                v-model="timeHour"
-                class="app-datepicker__time-input"
-                type="number"
-                :min="timeFormat === '12h' ? 1 : 0"
-                :max="timeFormat === '12h' ? 12 : 23"
-                placeholder="HH"
-                @change="onTimeChange"
-              />
-              <span class="app-datepicker__time-sep">:</span>
-              <input
-                v-model="timeMinute"
-                class="app-datepicker__time-input"
-                type="number" min="0" max="59"
-                placeholder="MM"
-                @change="onTimeChange"
-              />
-              <button
-                v-if="timeFormat === '12h'"
-                class="app-datepicker__ampm-btn"
-                type="button"
-                @click="togglePeriod"
-              >{{ timePeriod }}</button>
-            </div>
-          </Transition>
 
           <!-- Formato de hora -->
           <UPopover v-model:open="timeFormatOpen" :content="{ side: 'left', align: 'start' }">
@@ -461,12 +539,13 @@ function clear() {
 }
 
 .app-datepicker__inputs--range {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
 }
 
 .app-datepicker__date-box {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.35rem;
   min-height: 2rem;
   padding: 0 0.55rem;
@@ -485,11 +564,15 @@ function clear() {
   color: var(--admin-header-muted);
 }
 
-.app-datepicker__time-display {
+.app-datepicker__date-text {
+  min-width: 0;
+}
+
+.app-datepicker__time-inline {
   margin-left: auto;
-  color: var(--admin-header-muted);
-  font-size: 0.75rem;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
 }
 
 /* ── Calendar ── */
@@ -573,7 +656,7 @@ function clear() {
 }
 
 .app-datepicker__time-input {
-  width: 3rem;
+  width: 2.7rem;
   padding: 0.2rem 0.35rem;
   border: 1px solid var(--admin-header-border);
   border-radius: 6px;

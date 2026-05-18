@@ -13,11 +13,12 @@ const {
   setTaskEditorMode,
   modalModeOptions,
   taskDraft,
+  taskRelations,
   isModalFieldVisible,
   statusOptions,
-  responsibleOptions,
-  involvedOptions,
-  clientOptions,
+  responsibleOptionsAvatar,
+  involvedOptionsForResponsible,
+  clientOptionsAvatar,
   typeOptions,
   PRIORITY_OPTIONS,
   isTracking,
@@ -27,6 +28,11 @@ const {
   stopTracking,
   formatElapsed,
   getElapsedMs,
+  presenceParticipants,
+  focusPresenceField,
+  blurPresenceField,
+  presenceFieldLabel,
+  isPresenceFieldLocked,
   dateLabel,
   currentUserName,
   peopleMentionLabels,
@@ -36,13 +42,18 @@ const {
   projectSettingsOpen,
   viewerUserType,
   taskSaving,
-  saveTask,
+  taskVideoDrafts,
+  flushTaskDraftAutosave,
+  onTaskVideoInput,
+  onTaskVideoDrop,
+  removeTaskVideoDraft,
   deleteCurrentDraftTask,
 } = ctx
 </script>
 
 <template>
   <USlideover v-model:open="taskEditorOpen"
+    :overlay="false" :modal="false" :dismissible="false"
     :ui="{ content: `tasks-page__task-overlay tasks-page__task-overlay--${taskEditorMode}` }"
     @update:open="(open: boolean) => { if (!open) closeTaskEditor() }">
     <template #header>
@@ -67,7 +78,20 @@ const {
           </UPopover>
         </div>
 
-        <div class="flex min-w-0 items-center justify-end gap-1">
+        <div class="flex min-w-0 items-center justify-end gap-2">
+          <div v-if="presenceParticipants.length" class="tasks-page__presence-stack" :title="`${presenceParticipants.length} pessoa(s) nesta task`">
+            <UAvatar
+              v-for="participant in presenceParticipants.slice(0, 4)"
+              :key="participant.userId"
+              :src="participant.avatarPath || undefined"
+              :text="participant.avatarText"
+              size="xs"
+              class="tasks-page__presence-avatar"
+            />
+            <span v-if="presenceParticipants.length > 4" class="tasks-page__presence-more">
+              +{{ presenceParticipants.length - 4 }}
+            </span>
+          </div>
           <UButton icon="i-lucide-lock-keyhole" label="Compartilhar" color="neutral" variant="ghost" size="xs" />
           <UButton icon="i-lucide-link" color="neutral" variant="ghost" size="xs" title="Copiar link" />
           <UButton icon="i-lucide-star" color="neutral" variant="ghost" size="xs" title="Favoritar" />
@@ -81,61 +105,87 @@ const {
         <button v-if="taskEditorMode === 'side'" class="tasks-page__task-resize-handle" type="button"
           aria-label="Redimensionar modal" @mousedown="startTaskEditorResize" />
 
-        <div class="tasks-page__task-title-row">
+        <div class="tasks-page__task-title-row" @focusin="focusPresenceField('title')" @focusout="blurPresenceField('title', $event)">
+          <span v-if="presenceFieldLabel('title')" class="tasks-page__presence-field tasks-page__presence-field--title">
+            {{ presenceFieldLabel('title') }}
+          </span>
           <UInput v-model="taskDraft.title" class="tasks-page__task-title-input" variant="none"
-            placeholder="Nova task" autofocus @keydown.enter.prevent="saveTask" />
+            :disabled="isPresenceFieldLocked('title')"
+            placeholder="Nova task" autofocus @keydown.enter.prevent="flushTaskDraftAutosave" />
         </div>
 
         <div class="tasks-page__task-properties">
-          <div v-if="isModalFieldVisible('status')" class="tasks-page__task-property-row">
+          <div v-if="isModalFieldVisible('status')" class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('status')"
+            @click.capture="focusPresenceField('status')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-loader-circle" />Status
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-loader-circle" />Status</span>
+              <span v-if="presenceFieldLabel('status')" class="tasks-page__presence-field">{{ presenceFieldLabel('status') }}</span>
             </span>
             <OmniSelectMenuInput v-model="taskDraft.status" class="tasks-page__task-property-control"
               :items="statusOptions" placeholder="Empty" :searchable="true" :full-content-width="true"
               item-display-mode="text" color="neutral" variant="none" :highlight="false" :badge-mode="true" clear
-              option-edit-mode="color" />
+              :disabled="isPresenceFieldLocked('status')"
+              option-edit-mode="color" @update:open="(open: boolean) => open ? focusPresenceField('status') : blurPresenceField('status')" />
           </div>
 
-          <div v-if="isModalFieldVisible('responsible')" class="tasks-page__task-property-row">
+          <div v-if="isModalFieldVisible('responsible')" class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('responsible')"
+            @click.capture="focusPresenceField('responsible')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-user-round" />Responsavel
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-user-round" />Responsavel</span>
+              <span v-if="presenceFieldLabel('responsible')" class="tasks-page__presence-field">{{ presenceFieldLabel('responsible') }}</span>
             </span>
             <OmniSelectMenuInput v-model="taskDraft.responsible" class="tasks-page__task-property-control"
-              :items="responsibleOptions" placeholder="Empty" :creatable="{ when: 'always', position: 'bottom' }"
-              :searchable="true" :full-content-width="true" item-display-mode="text" color="neutral" variant="none"
-              :highlight="false" :badge-mode="true" clear option-edit-mode="full" />
+              :items="responsibleOptionsAvatar" placeholder="Empty" :searchable="true" :full-content-width="true"
+              item-display-mode="rich" :show-avatar="true" color="neutral" variant="none" :highlight="false"
+              :badge-mode="true" badge-style="entity" clear option-edit-mode="color"
+              :disabled="isPresenceFieldLocked('responsible')"
+              @update:open="(open: boolean) => open ? focusPresenceField('responsible') : blurPresenceField('responsible')" />
           </div>
 
-          <div v-if="isModalFieldVisible('involved')" class="tasks-page__task-property-row">
+          <div v-if="isModalFieldVisible('involved')" class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('involved')"
+            @click.capture="focusPresenceField('involved')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-users-round" />Envolvidos
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-users-round" />Envolvidos</span>
+              <span v-if="presenceFieldLabel('involved')" class="tasks-page__presence-field">{{ presenceFieldLabel('involved') }}</span>
             </span>
             <OmniSelectMenuInput v-model="taskDraft.involved" class="tasks-page__task-property-control"
-              :items="involvedOptions" placeholder="Empty" :multiple="true"
-              :creatable="{ when: 'always', position: 'bottom' }" :searchable="true" :full-content-width="true"
-              item-display-mode="text" color="neutral" variant="none" :highlight="false" :badge-mode="true" clear
-              option-edit-mode="full" />
+              :items="involvedOptionsForResponsible(taskDraft.responsible)" placeholder="Empty" :multiple="true"
+              :searchable="true" :full-content-width="true" item-display-mode="rich" :show-avatar="true"
+              color="neutral" variant="none" :highlight="false" :badge-mode="true" badge-style="entity" clear
+              :disabled="isPresenceFieldLocked('involved')"
+              option-edit-mode="color" @update:open="(open: boolean) => open ? focusPresenceField('involved') : blurPresenceField('involved')" />
           </div>
 
           <div v-if="viewerUserType === 'admin' && isModalFieldVisible('clientId')"
-            class="tasks-page__task-property-row">
+            class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('clientId')"
+            @click.capture="focusPresenceField('clientId')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-circle-dot" />Cliente
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-circle-dot" />Cliente</span>
+              <span v-if="presenceFieldLabel('clientId')" class="tasks-page__presence-field">{{ presenceFieldLabel('clientId') }}</span>
             </span>
             <OmniSelectMenuInput v-model="taskDraft.clientId" class="tasks-page__task-property-control"
-              :items="clientOptions" placeholder="Empty" :searchable="true" :full-content-width="true"
-              item-display-mode="text" color="neutral" variant="none" :highlight="false" :badge-mode="true" clear
-              option-edit-mode="color" />
+              :items="clientOptionsAvatar" placeholder="Empty" :searchable="true" :full-content-width="true"
+              item-display-mode="rich" :show-avatar="true" color="neutral" variant="none" :highlight="false"
+              :badge-mode="true" badge-style="entity" clear option-edit-mode="color"
+              :disabled="isPresenceFieldLocked('clientId')"
+              @update:open="(open: boolean) => open ? focusPresenceField('clientId') : blurPresenceField('clientId')" />
           </div>
 
-          <div v-if="isModalFieldVisible('dueDate')" class="tasks-page__task-property-row">
+          <div v-if="isModalFieldVisible('dueDate')" class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('dueDate')"
+            @click.capture="focusPresenceField('dueDate')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-calendar-days" />Prazo
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-calendar-days" />Prazo</span>
+              <span v-if="presenceFieldLabel('dueDate')" class="tasks-page__presence-field">{{ presenceFieldLabel('dueDate') }}</span>
             </span>
-            <AppDatePicker v-model="taskDraft.dueDate" placement="left">
+            <AppDatePicker v-model="taskDraft.dueDate" v-model:end-date="taskDraft.dueEndDate" placement="left"
+              @update:open="(open: boolean) => open ? focusPresenceField('dueDate') : blurPresenceField('dueDate')">
               <template #default="{ labelStart, labelEnd }">
-                <button class="tasks-page__task-date-btn" type="button">
+                <button class="tasks-page__task-date-btn" type="button" :disabled="isPresenceFieldLocked('dueDate')">
                   <span v-if="labelStart" class="flex flex-col leading-tight">
                     <span>{{ labelStart }}</span>
                     <span v-if="labelEnd" class="tasks-page__task-date-btn--end">{{ labelEnd }}</span>
@@ -146,14 +196,18 @@ const {
             </AppDatePicker>
           </div>
 
-          <div v-if="isModalFieldVisible('priority')" class="tasks-page__task-property-row">
+          <div v-if="isModalFieldVisible('priority')" class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('priority')"
+            @click.capture="focusPresenceField('priority')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-badge-alert" />Prioridade
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-badge-alert" />Prioridade</span>
+              <span v-if="presenceFieldLabel('priority')" class="tasks-page__presence-field">{{ presenceFieldLabel('priority') }}</span>
             </span>
             <OmniSelectMenuInput v-model="taskDraft.priority" class="tasks-page__task-property-control"
               :items="PRIORITY_OPTIONS" placeholder="Empty" :searchable="false" :full-content-width="true"
               item-display-mode="text" color="neutral" variant="none" :highlight="false" :badge-mode="true" clear
-              option-edit-mode="color" />
+              :disabled="isPresenceFieldLocked('priority')"
+              option-edit-mode="color" @update:open="(open: boolean) => open ? focusPresenceField('priority') : blurPresenceField('priority')" />
           </div>
 
           <div v-if="taskDraft.id" class="tasks-page__task-property-row">
@@ -175,14 +229,19 @@ const {
             </div>
           </div>
 
-          <div v-if="isModalFieldVisible('type')" class="tasks-page__task-property-row">
+          <div v-if="isModalFieldVisible('type')" class="tasks-page__task-property-row"
+            @focusin="focusPresenceField('type')"
+            @click.capture="focusPresenceField('type')">
             <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-hash" />Tipo
+              <span class="tasks-page__task-property-label-main"><UIcon name="i-lucide-hash" />Tipo</span>
+              <span v-if="presenceFieldLabel('type')" class="tasks-page__presence-field">{{ presenceFieldLabel('type') }}</span>
             </span>
             <OmniSelectMenuInput v-model="taskDraft.type" class="tasks-page__task-property-control"
               :items="typeOptions" placeholder="Empty" :creatable="{ when: 'always', position: 'bottom' }"
               :searchable="true" :full-content-width="true" item-display-mode="text" color="neutral" variant="none"
-              :highlight="false" :badge-mode="true" clear option-edit-mode="full" />
+              :highlight="false" :badge-mode="true" clear option-edit-mode="full"
+              :disabled="isPresenceFieldLocked('type')"
+              @update:open="(open: boolean) => open ? focusPresenceField('type') : blurPresenceField('type')" />
           </div>
 
           <div v-if="isModalFieldVisible('createdAt') && taskDraft.createdAt" class="tasks-page__task-property-row">
@@ -196,8 +255,73 @@ const {
         <UButton icon="i-lucide-plus" label="Add a property" color="neutral" variant="ghost" size="sm"
           @click="projectSettingsOpen = true" />
 
-        <div v-if="isModalFieldVisible('description')" class="tasks-page__task-description-bridge">
-          <UTextarea v-model="taskDraft.description" variant="none" :rows="2" placeholder="Resumo curto..." />
+        <div class="tasks-page__task-video-upload" @focusin="focusPresenceField('videos')"
+          @focusout="blurPresenceField('videos', $event)" @dragenter="focusPresenceField('videos')">
+          <div class="tasks-page__task-video-head">
+            <span class="tasks-page__task-video-title">
+              <UIcon name="i-lucide-video" />Videos
+              <span v-if="presenceFieldLabel('videos')" class="tasks-page__presence-field tasks-page__presence-field--inline">
+                {{ presenceFieldLabel('videos') }}
+              </span>
+            </span>
+            <label class="tasks-page__task-video-action">
+              <UIcon name="i-lucide-upload" />
+              <span>Adicionar video</span>
+              <input class="sr-only" type="file" accept="video/*" multiple @change="onTaskVideoInput" />
+            </label>
+          </div>
+          <label class="tasks-page__task-video-drop" @dragover.prevent @drop.prevent="onTaskVideoDrop">
+            <UIcon name="i-lucide-film" />
+            <span>Solte arquivos de video aqui</span>
+            <small>MP4, MOV, WebM</small>
+            <input class="sr-only" type="file" accept="video/*" multiple @change="onTaskVideoInput" />
+          </label>
+          <div v-if="taskVideoDrafts.length" class="tasks-page__task-video-list">
+            <div v-for="file in taskVideoDrafts" :key="file.id" class="tasks-page__task-video-item">
+              <video v-if="file.url" :src="file.url" controls preload="metadata" />
+              <div class="tasks-page__task-video-meta min-w-0">
+                <p class="truncate">{{ file.name }}</p>
+                <span>{{ file.sizeLabel }}</span>
+              </div>
+              <UButton icon="i-lucide-x" color="neutral" variant="ghost" size="xs" title="Remover video"
+                @click="removeTaskVideoDraft(file.id)" />
+            </div>
+          </div>
+        </div>
+
+        <div v-if="taskRelations.relations.value.length || taskRelations.status.value === 'loading'"
+          class="tasks-page__task-relations">
+          <p class="tasks-page__task-relations-title">
+            <UIcon name="i-lucide-link-2" />
+            <span>Vinculos</span>
+            <span v-if="taskRelations.status.value === 'loading'" class="tasks-page__task-relations-loading">
+              <UIcon name="i-lucide-loader-circle" class="animate-spin" />
+            </span>
+          </p>
+          <ul v-if="taskRelations.relations.value.length" class="tasks-page__task-relations-list">
+            <li v-for="relation in taskRelations.relations.value" :key="relation.id"
+              class="tasks-page__task-relations-item">
+              <UIcon
+                :name="relation.module === 'crm' ? 'i-lucide-user-round'
+                  : relation.module === 'erp' ? 'i-lucide-package'
+                  : relation.module === 'operations' ? 'i-lucide-clipboard-list'
+                  : 'i-lucide-link'"
+                class="tasks-page__task-relations-icon" />
+              <span class="tasks-page__task-relations-label">{{ relation.labelCache || relation.resourceId }}</span>
+              <span class="tasks-page__task-relations-type">{{ relation.resourceType }}</span>
+              <UBadge v-if="typeof relation.metadataCache.status === 'string' && relation.metadataCache.status"
+                :color="relation.metadataCache.status === 'unknown' ? 'neutral'
+                  : relation.metadataCache.status === 'active' ? 'success'
+                  : 'warning'"
+                variant="soft" size="xs">{{ relation.metadataCache.status }}</UBadge>
+              <UButton v-if="typeof relation.metadataCache.url === 'string' && relation.metadataCache.url"
+                :to="relation.metadataCache.url" target="_blank" external icon="i-lucide-external-link"
+                color="neutral" variant="ghost" size="xs" title="Abrir recurso" />
+            </li>
+          </ul>
+          <p v-else-if="taskRelations.errorMessage.value" class="tasks-page__task-relations-error">
+            {{ taskRelations.errorMessage.value }}
+          </p>
         </div>
 
         <div class="tasks-page__task-comments">
@@ -208,9 +332,15 @@ const {
           </div>
         </div>
 
-        <OmniEditor v-model="taskDraft.contentHtml" class="tasks-page__task-rich-editor" :people="peopleMentionLabels"
-          :clients="clientMentionLabels" :tasks="taskMentionLabels" content-type="html" min-height="320px"
-          max-height="52vh" placeholder="Press '/' for commands, ':' for emojis, '@' to mention..." />
+        <div class="tasks-page__task-rich-editor-wrap" @focusin="focusPresenceField('description')"
+          @focusout="blurPresenceField('description', $event)">
+          <span v-if="presenceFieldLabel('description')" class="tasks-page__presence-field tasks-page__presence-field--editor">
+            {{ presenceFieldLabel('description') }}
+          </span>
+          <OmniEditor v-model="taskDraft.contentHtml" class="tasks-page__task-rich-editor" :people="peopleMentionLabels"
+            :clients="clientMentionLabels" :tasks="taskMentionLabels" content-type="html" min-height="320px"
+            max-height="52vh" placeholder="Press '/' for commands, ':' for emojis, '@' to mention..." />
+        </div>
 
         <label v-if="isModalFieldVisible('archived')" class="tasks-page__task-archived">
           <span>Task arquivada</span>
@@ -224,8 +354,11 @@ const {
         <UButton icon="i-lucide-trash-2" label="Excluir" color="error" variant="ghost" :disabled="!taskDraft.id"
           @click="deleteCurrentDraftTask" />
         <div class="flex items-center gap-2">
-          <UButton label="Cancelar" color="neutral" variant="ghost" @click="closeTaskEditor" />
-          <UButton label="Salvar task" color="primary" :loading="taskSaving" @click="saveTask" />
+          <span class="tasks-page__task-autosave-status">
+            <UIcon :name="taskSaving ? 'i-lucide-loader-circle' : 'i-lucide-check'" :class="{ 'animate-spin': taskSaving }" />
+            {{ taskSaving ? 'Salvando...' : 'Salvo automatico' }}
+          </span>
+          <UButton label="Fechar" color="neutral" variant="ghost" @click="closeTaskEditor" />
         </div>
       </div>
     </template>

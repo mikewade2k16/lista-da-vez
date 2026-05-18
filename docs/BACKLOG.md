@@ -2,6 +2,8 @@
 
 Atualizado em: 2026-04-01
 
+> **Pendente de triagem (2026-05-16)**: `todo.md` raiz foi arquivado em [historico/todo-settings.md](historico/todo-settings.md) com **170 itens pendentes** da refatoração de Settings. Antes de planejar próximas fases de Settings, revisitar esse arquivo e migrar o que ainda for relevante para cá ou para a seção apropriada de [ROADMAP.md](ROADMAP.md). Itens marcados `[x]` são histórico — descartar do filtro.
+
 ## Entregas concluidas (MVP atual)
 
 - Lista da vez com entrada na fila pela barra de Co.

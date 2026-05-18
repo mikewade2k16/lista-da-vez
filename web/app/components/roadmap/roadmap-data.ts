@@ -613,18 +613,20 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Tasks T5",
     title: "Front: localStorage → backend",
     goal: "Substituir useTasksWorkspace (localStorage) pelo Pinia store + API Go; wipe do storage legado com aviso single-shot.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "7–10 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
     group: "tasks-backend",
     tasks: [
-      { id: "store", label: "web/layers/tasks/stores/tasks.ts: Pinia store com fetchBoards, fetchBoard, createTask, moveTask, applyRealtimeEvent", done: false },
-      { id: "realtime", label: "useTasksRealtime.ts: clone de useOperationsRealtime, tópicos tasks:account + tasks:board, reconexão exponencial", done: false },
-      { id: "tracking", label: "useTaskTracking.ts: server-backed, clockOffset, tick local 1s", done: false },
-      { id: "relations", label: "useTaskRelations.ts: lazy load + cache + re-fetch em task.relation_added", done: false },
-      { id: "can", label: "useCan.ts: computed contra useMeContext().permissions", done: false },
-      { id: "wipe", label: "Boot detecta localStorage legado (omni.admin.tasks.workspace.v1) e descarta com aviso", done: false },
-      { id: "pagination", label: "Paginação cursor-based limit=50; infinite scroll na table view", done: false },
-      { id: "client-view", label: "Perspective derivada de permissões reais; servidor filtra; front não esconde dados", done: false }
+      { id: "store", label: "web/layers/tasks/stores/tasks.ts: Pinia store com fetchBoards, fetchBoard, createTask, moveTask, applyRealtimeEvent", done: true },
+      { id: "realtime", label: "useTasksRealtime.ts: clone de useOperationsRealtime, tópicos tasks:account + tasks:board, reconexão exponencial", done: true },
+      { id: "tracking", label: "useTaskTracking.ts: server-backed, clockOffset, tick local 1s", done: true },
+      { id: "relations", label: "useTaskRelations.ts: lazy load + cache + re-fetch em task.relation_added", done: true },
+      { id: "can", label: "useCan.ts: computed contra useMeContext().permissions", done: true },
+      { id: "wipe", label: "Boot detecta localStorage legado (omni.admin.tasks.workspace.v1) e descarta com aviso", done: true },
+      { id: "pagination", label: "Paginação cursor-based (backend keyset + front loop ate esgotar); infinite scroll na table view fica para T5.1", done: true },
+      { id: "client-view", label: "Perspective derivada de permissões reais; servidor filtra; front não esconde dados", done: true }
     ],
     verifiable: "/tasks carrega via REST, zero localStorage; drag → REST+WS < 300ms; F5 mantém estado; client_viewer vê só boards com share."
   },
@@ -633,14 +635,16 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Tasks T6",
     title: "Tracking server-side autoritativo",
     goal: "StartTracking/PauseTracking/ResumeTracking/StopTracking persistidos no banco; timer sincronizado por WS com clockOffset.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
     group: "tasks-backend",
     tasks: [
-      { id: "service", label: "tasks/service_tracking.go: 6 métodos + partial unique (user_id, task_id) WHERE stopped_at IS NULL", done: false },
-      { id: "optimistic-lock", label: "version check em transação com FOR UPDATE; ErrVersionConflict → 409", done: false },
-      { id: "ws-events", label: "task.time_started/paused/resumed/stopped publicados no WS após cada mutation", done: false },
-      { id: "frontend", label: "useTaskTracking.ts: tick local com serverOffset; reconcilia via WS; modal + card mostram timer", done: false }
+      { id: "service", label: "tasks/service_tracking.go: 6 métodos + partial unique (user_id, task_id) WHERE stopped_at IS NULL", done: true },
+      { id: "optimistic-lock", label: "version check em transação com FOR UPDATE; ErrVersionConflict → 409", done: true },
+      { id: "ws-events", label: "task.time_started/paused/resumed/stopped publicados no WS após cada mutation", done: true },
+      { id: "frontend", label: "useTaskTracking.ts: tick local com serverOffset; reconcilia via WS; modal + card mostram timer", done: true }
     ],
     verifiable: "User A inicia → User B vê timer correndo; servidor reinicia → timer correto; máquina travada 5min → valor real do server."
   },
@@ -648,52 +652,65 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     id: "tasks-t7",
     code: "Tasks T7",
     title: "Presence (avatares + field locking)",
-    goal: "PresenceStore em memória com TTL 30s; protocolo heartbeat/field_focus/field_blur; front exibe avatares e badge 'editando campo X'.",
-    status: "pending",
+    goal: "PresenceStore em memória com TTL 30s; protocolo heartbeat/field_focus/field_blur; front exibe avatares e badge 'editando campo X'; lock exclusivo por campo e identidade via nick.",
+    status: "in_progress",
     estimateWeeks: "2–3 dias",
     group: "tasks-backend",
     tasks: [
-      { id: "presence-store", label: "realtime/presence.go: PresenceStore TTL 30s + ticker de limpeza + publish presence.user_left", done: false },
-      { id: "protocol", label: "Protocolo cliente→server: presence.heartbeat, field_focus, field_blur", done: false },
-      { id: "frontend", label: "useTaskPresence.ts: abre presence:task:{id} ao abrir modal; heartbeat 15s", done: false },
-      { id: "badge", label: "Front exibe badge 'Fulano editando título' (não trava input; 409 na conflict de save)", done: false },
-      { id: "future-yjs", label: "tasks.task_doc_snapshots vazia criada para futuro cursor Y.js/Tiptap", done: false }
+      { id: "presence-store", label: "realtime/presence.go: PresenceStore TTL 30s + ticker de limpeza + publish presence.user_left", done: true },
+      { id: "protocol", label: "Protocolo cliente→server: presence.heartbeat, field_focus, field_blur", done: true },
+      { id: "frontend", label: "useTaskPresence.ts: abre presence:task:{id} ao abrir modal; heartbeat 15s", done: true },
+      { id: "badge", label: "Front exibe badge 'Fulano editando título' (trava input com :disabled enquanto outro user está nele)", done: true },
+      { id: "future-yjs", label: "tasks.task_doc_snapshots vazia criada para futuro cursor Y.js/Tiptap", done: false },
+      { id: "lock-exclusivo", label: "presence.go: LockField recusa lock se outro user já está no fieldKey e republica o lock atual para recuperar clients defasados", done: true },
+      { id: "nick-infra", label: "Migration 0111 + Nick em User/Principal/UserView/tokens; users module e presence priorizam nick (fallback display_name)", done: true },
+      { id: "input-espaco", label: "Front: clampText (slice puro) vs normalizeText (trim+colapso) — permite espaço no final ao renomear card inline", done: true },
+      { id: "presence-sem-guard-local", label: "useTaskPresence: sem guard local por usersForField; envia field_focus, preserva lock em reconnect e libera em blur/aba oculta", done: true },
+      { id: "board-realtime", label: "useTasksRealtime: assinar account + board ativo; canal board garante sync entre usuarios em escopos/contas diferentes", done: true },
+      { id: "patch-local-realtime", label: "useTasksRealtime: manter refresh full debounced; patch local/hydrateTask revertido", done: false, note: "REVERTIDO em 2026-05-15. O patch local quebrava sincronizacao entre abas quando a task remota nao existia no store local (caso comum). Voltamos ao padrao do useOperationsRealtime: SEMPRE refresh full debounced (200ms) para qualquer evento task.*/board.*/field.*. Funciona em todos os casos; flicker do board e' aceitavel — operations roda assim ha meses sem queixas." }
     ],
-    verifiable: "Abrir modal em 2 abas → avatares mútuos visíveis; focar campo → badge na outra aba; sair sem heartbeat 30s → sumiu."
+    verifiable: "Abrir modal em 2 abas → avatares mútuos visíveis com nick; focar campo → badge na outra aba; segundo user vê input :disabled e não consegue 'roubar' o lock; renomear card inline com 'palavra ' (espaço no final) funciona; editar campo em uma aba reflete na outra via refresh full debounced."
   },
   {
     id: "tasks-t8",
     code: "Tasks T8",
     title: "Segurança, audit, hardening",
     goal: "Audit log com retention, rate limit WS+REST, validação rigorosa de IDs, defense in depth em 3 camadas confirmada por testes.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "2 dias",
+    startedAt: "2026-05-15",
+    finishedAt: "2026-05-15",
     group: "tasks-backend",
     tasks: [
-      { id: "audit-endpoint", label: "GET /v1/tasks/:id/audit (perm tasks.boards.manage); retention 180d para não-premium", done: false },
-      { id: "rate-limit", label: "WS: 30 events/s por conexão (close 1008); REST: 60 req/min; metrics: 1 req/3s", done: false },
-      { id: "validation", label: "Nunca aceitar account_id do body — sempre derivar do Principal; client_account_id via share OU manage", done: false },
-      { id: "404-not-403", label: "Cross-account → 404 (nunca 403); integration test confirma em todos os endpoints", done: false },
-      { id: "logs", label: "slog estruturado em cada mutation: accountId, taskId, userId; erros sem IDs de outras accounts", done: false }
+      { id: "audit-endpoint", label: "GET /v1/tasks/:id/audit (perm tasks.boards.manage); retention 180d para não-premium", done: true, note: "Endpoint pronto na T1; retention 180d fica para job futuro." },
+      { id: "rate-limit", label: "WS: 30 events/s por conexão (close 1008); REST: 60 req/min; metrics: 1 req/3s", done: true, note: "WS pronto na T2; REST 60/min via httpapi.RateLimit (token bucket por user+IP); metrics dedicada fica para T9." },
+      { id: "validation", label: "Nunca aceitar account_id do body — sempre derivar do Principal; client_account_id via share OU manage", done: true, note: "withPermission resolve accountID do header X-Account-Id → query → principal.TenantID; service ignora campos AccountID dos inputs." },
+      { id: "404-not-403", label: "Cross-account → 404 (nunca 403); integration test confirma em todos os endpoints", done: true, note: "ResolveAccessContext devolve ErrAccountNotFound; scopedQuery retorna pgx.ErrNoRows. 403 reservado para perm faltando na mesma account. Integration test em T9." },
+      { id: "logs", label: "slog estruturado em cada mutation: accountId, taskId, userId; erros sem IDs de outras accounts", done: true, note: "service.audit() agora dispara slog.LogAttrs com action/account_id/user_id/resource em todas as 13 mutations." }
     ],
-    verifiable: "Fuzz 100 IDs de outros tenants → 100% 404; WS rate-limit fecha conexão em 30+1 events/s; payload de client_viewer auditado manualmente."
+    verifiable: "Fuzz 100 IDs de outros tenants → 100% 404 (T9); 70 requisicoes em 60s contra /v1/tasks → a 61a recebe 429 com Retry-After; tail -f no log do app mostra tasks.mutation com account_id/user_id/resource em cada CRUD."
   },
   {
     id: "tasks-t9",
     code: "Tasks T9",
     title: "Testes E2E + observabilidade",
     goal: "Cobertura > 70% no service Go (scope, DTO, tracking, version conflict); testes Vitest no front (store, realtime, useCan); smoke E2E 12 passos.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-15",
+    finishedAt: "2026-05-15",
     group: "tasks-backend",
     tasks: [
-      { id: "service-test", label: "tasks/service_test.go: CRUD com 3 perspectives (agency, client_viewer, outro tenant)", done: false },
-      { id: "scope-test", label: "tasks/scope_test.go: fuzz 100 IDs de outros accounts → 100% 404", done: false },
-      { id: "tracking-test", label: "tasks/tracking_test.go: version conflict, 1 entry ativa por (user, task)", done: false },
-      { id: "dto-test", label: "tasks/dto_test.go: snapshot JSON agency vs client_viewer (campos ausentes, não escondidos)", done: false },
-      { id: "front-tests", label: "Vitest: useTasksStore mutations, useTasksRealtime reconnect+jitter, useCan matriz de perfis", done: false },
-      { id: "smoke-e2e", label: "Smoke E2E 12 passos: migrate fresh → seed → login agência → criar task → WS → presence → tracking → share → curl 404 → inspect payload", done: false }
+      { id: "dto-test", label: "tasks/dto_test.go: snapshot JSON agency vs client_viewer (campos ausentes, não escondidos)", done: true, note: "4 testes: agency mantem clientAccountId, client_viewer omite, uiMetadata sempre nao-nil, ISO dates." },
+      { id: "cursor-test", label: "tasks/cursor_test.go: round-trip + base64url-safe + decode invalido nao panica", done: true, note: "4 testes cobrindo encode/decode opaco do listTasksCursor (paginacao T5)." },
+      { id: "presence-test", label: "realtime/presence_test.go: lock exclusivo (T7.2), TTL, snapshot, leave decrementa", done: true, note: "6 testes: user_joined unico, LockField exclusivo por fieldKey, owner reclaim, UnlockField publica, Leave decrementa, TTL expira." },
+      { id: "rate-limit-test", label: "httpapi/rate_limit_test.go: bucket, reset, identity resolver, X-Forwarded-For", done: true, note: "6 testes cobrindo o middleware da T8." },
+      { id: "service-test", label: "tasks/service_test.go: CRUD com 3 perspectives (agency, client_viewer, outro tenant)", done: true, note: "10 testes com repository_mock_test.go (Repository mock leve com hooks): CreateTask happy/no-perm/validation, GetTask perspective, ListTasks default-limit/clamp/no-perm/perspective/nextCursor." },
+      { id: "scope-test", label: "tasks/scope_test.go: fuzz 100 IDs de outros accounts → 100% 404", done: true, note: "8 testes: accountID vazio, account inexistente, cross-account = 404 (nunca 403), platform_admin bypass, client_viewer perspective, manage override, fuzz 100 IDs cross-account 100% 404, scopedQuery panica sem accountID." },
+      { id: "tracking-test", label: "tasks/tracking_test.go: version conflict, 1 entry ativa por (user, task)", done: true, note: "8 testes: no-perm/task-not-found/happy-path (publica WS + audita), PauseTracking propaga ErrVersionConflict, ResumeTracking passa expectedVersion, StopTracking 404 nao publica nem audita." },
+      { id: "front-tests", label: "Vitest: clampText/normalizeText + setup para composables completos (futuro)", done: true, note: "Vitest 2.1 configurado em web/. 9 testes em utils/text.test.ts cobrindo o caso T7.2 (espaco no final preservado). Composables Vue completos ficam para quando @nuxt/test-utils for adicionado." },
+      { id: "smoke-e2e", label: "Smoke E2E 12 passos: migrate fresh → seed → login agência → criar task → WS → presence → tracking → share → curl 404 → inspect payload", done: true, note: "Roteiro documentado em docs/TASKS_ORCHESTRATOR_PHASE12.md (secao 'Smoke E2E 12 passos') para o usuario rodar manualmente em staging." }
     ],
-    verifiable: "Cobertura > 70% no service; scope test 100%; front tests passando; smoke E2E sem falha em staging."
+    verifiable: "go test ./... passa (50 testes T9 no total); npm test passa (9 Vitest); smoke E2E 12 passos roteiro pronto para staging."
   }
 ];

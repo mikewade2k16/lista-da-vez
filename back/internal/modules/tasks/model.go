@@ -96,24 +96,25 @@ type View struct {
 }
 
 type Task struct {
-	ID                string     `json:"id"`
-	AccountID         string     `json:"accountId,omitempty"`
-	BoardID           string     `json:"boardId"`
-	ColumnID          *string    `json:"columnId,omitempty"`
-	Title             string     `json:"title"`
-	ContentHTML       string     `json:"contentHtml"`
-	Status            *string    `json:"status,omitempty"`
-	Priority          string     `json:"priority"`
-	DueDate           *time.Time `json:"dueDate,omitempty"`
-	StartDate         *time.Time `json:"startDate,omitempty"`
-	Archived          bool       `json:"archived"`
-	SortOrder         float64    `json:"sortOrder"`
-	CreatedByUserID   string     `json:"createdByUserId,omitempty"`
-	ResponsibleUserID *string    `json:"responsibleUserId,omitempty"`
-	ClientAccountID   *string    `json:"clientAccountId,omitempty"`
-	Version           int        `json:"version"`
-	CreatedAt         time.Time  `json:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt"`
+	ID                string         `json:"id"`
+	AccountID         string         `json:"accountId,omitempty"`
+	BoardID           string         `json:"boardId"`
+	ColumnID          *string        `json:"columnId,omitempty"`
+	Title             string         `json:"title"`
+	ContentHTML       string         `json:"contentHtml"`
+	Status            *string        `json:"status,omitempty"`
+	Priority          string         `json:"priority"`
+	DueDate           *time.Time     `json:"dueDate,omitempty"`
+	StartDate         *time.Time     `json:"startDate,omitempty"`
+	Archived          bool           `json:"archived"`
+	SortOrder         float64        `json:"sortOrder"`
+	CreatedByUserID   string         `json:"createdByUserId,omitempty"`
+	ResponsibleUserID *string        `json:"responsibleUserId,omitempty"`
+	ClientAccountID   *string        `json:"clientAccountId,omitempty"`
+	UIMetadata        map[string]any `json:"uiMetadata,omitempty"`
+	Version           int            `json:"version"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
 }
 
 type Comment struct {
@@ -231,32 +232,34 @@ type ListTasksInput struct {
 
 type CreateTaskInput struct {
 	BoardID           string
-	ColumnID          *string    `json:"columnId"`
-	Title             string     `json:"title"`
-	ContentHTML       string     `json:"contentHtml"`
-	Status            *string    `json:"status"`
-	Priority          string     `json:"priority"`
-	DueDate           *time.Time `json:"dueDate"`
-	StartDate         *time.Time `json:"startDate"`
-	SortOrder         float64    `json:"sortOrder"`
-	ResponsibleUserID *string    `json:"responsibleUserId"`
-	ClientAccountID   *string    `json:"clientAccountId"`
+	ColumnID          *string        `json:"columnId"`
+	Title             string         `json:"title"`
+	ContentHTML       string         `json:"contentHtml"`
+	Status            *string        `json:"status"`
+	Priority          string         `json:"priority"`
+	DueDate           *time.Time     `json:"dueDate"`
+	StartDate         *time.Time     `json:"startDate"`
+	SortOrder         float64        `json:"sortOrder"`
+	ResponsibleUserID *string        `json:"responsibleUserId"`
+	ClientAccountID   *string        `json:"clientAccountId"`
+	UIMetadata        map[string]any `json:"uiMetadata"`
 }
 
 type UpdateTaskInput struct {
 	ID                string
 	ExpectedVersion   *int
-	ColumnID          **string    `json:"columnId"`
-	Title             *string     `json:"title"`
-	ContentHTML       *string     `json:"contentHtml"`
-	Status            **string    `json:"status"`
-	Priority          *string     `json:"priority"`
-	DueDate           **time.Time `json:"dueDate"`
-	StartDate         **time.Time `json:"startDate"`
-	Archived          *bool       `json:"archived"`
-	SortOrder         *float64    `json:"sortOrder"`
-	ResponsibleUserID **string    `json:"responsibleUserId"`
-	ClientAccountID   **string    `json:"clientAccountId"`
+	ColumnID          **string        `json:"columnId"`
+	Title             *string         `json:"title"`
+	ContentHTML       *string         `json:"contentHtml"`
+	Status            **string        `json:"status"`
+	Priority          *string         `json:"priority"`
+	DueDate           **time.Time     `json:"dueDate"`
+	StartDate         **time.Time     `json:"startDate"`
+	Archived          *bool           `json:"archived"`
+	SortOrder         *float64        `json:"sortOrder"`
+	ResponsibleUserID **string        `json:"responsibleUserId"`
+	ClientAccountID   **string        `json:"clientAccountId"`
+	UIMetadata        *map[string]any `json:"uiMetadata"`
 }
 
 type MoveTaskInput struct {
@@ -310,7 +313,7 @@ type Repository interface {
 	DeleteColumn(ctx context.Context, accountID string, input DeleteColumnInput) (string, error)
 	CreateField(ctx context.Context, accountID string, input CreateFieldInput) (Field, error)
 
-	ListTasks(ctx context.Context, access AccessContext, input ListTasksInput) ([]Task, error)
+	ListTasks(ctx context.Context, access AccessContext, input ListTasksInput) ([]Task, string, error)
 	GetTask(ctx context.Context, access AccessContext, taskID string) (Task, error)
 	CreateTask(ctx context.Context, accountID string, input CreateTaskInput, createdByUserID string) (Task, error)
 	UpdateTask(ctx context.Context, accountID string, input UpdateTaskInput) (Task, error)

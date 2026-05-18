@@ -101,6 +101,7 @@ export interface TaskItem {
   type: string
   priority: TaskPriority
   dueDate: string
+  dueEndDate: string
   archived: boolean
   order: number
   createdBy: string

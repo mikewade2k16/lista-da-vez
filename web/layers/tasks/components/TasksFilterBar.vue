@@ -16,10 +16,10 @@ const {
   toggleSearch,
   responsibleOpen,
   responsibleInnerOpen,
-  responsibleOptions,
+  responsibleOptionsAvatar,
   clientOpen,
   clientInnerOpen,
-  clientOptions,
+  clientOptionsAvatar,
   typeOpen,
   typeInnerOpen,
   typeOptions,
@@ -83,9 +83,9 @@ const {
         <template #content>
           <div class="tasks-toolbar__filter-popover">
             <OmniSelectMenuInput v-model:open="responsibleInnerOpen" v-model="filters.responsible"
-              :items="responsibleOptions" placeholder="Responsavel" :searchable="true" :full-content-width="true"
-              item-display-mode="text" color="neutral" variant="none" :highlight="false" :badge-mode="true" clear
-              option-edit-mode="color" />
+              :items="responsibleOptionsAvatar" placeholder="Responsavel" :searchable="true" :full-content-width="true"
+              item-display-mode="rich" :show-avatar="true" color="neutral" variant="none" :highlight="false"
+              :badge-mode="true" badge-style="entity" clear option-edit-mode="color" />
           </div>
         </template>
       </UPopover>
@@ -97,9 +97,10 @@ const {
           title="Cliente" :data-active="!!filters.clientId" />
         <template #content>
           <div class="tasks-toolbar__filter-popover">
-            <OmniSelectMenuInput v-model:open="clientInnerOpen" v-model="filters.clientId" :items="clientOptions"
-              placeholder="Cliente" :searchable="true" :full-content-width="true" item-display-mode="text"
-              color="neutral" variant="none" :highlight="false" :badge-mode="true" clear option-edit-mode="color" />
+            <OmniSelectMenuInput v-model:open="clientInnerOpen" v-model="filters.clientId" :items="clientOptionsAvatar"
+              placeholder="Cliente" :searchable="true" :full-content-width="true" item-display-mode="rich"
+              :show-avatar="true" color="neutral" variant="none" :highlight="false" :badge-mode="true"
+              badge-style="entity" clear option-edit-mode="color" />
           </div>
         </template>
       </UPopover>

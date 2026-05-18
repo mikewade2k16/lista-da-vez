@@ -114,6 +114,7 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 	}
 
 	principal.DisplayName = user.DisplayName
+	principal.Nick = user.Nick
 	principal.Email = user.Email
 	principal.Role = user.Role
 	principal.TenantID = user.TenantID

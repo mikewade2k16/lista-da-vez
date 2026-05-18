@@ -89,6 +89,7 @@ func (module *Module) RoleTemplates() []modules.RoleTemplateDef {
 func (module *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	repository := NewPostgresRepository(deps.Pool)
 	service := NewService(repository, module.publisher, module.notifier, module.relationRegistry)
+	service.SetLogger(deps.Logger)
 
 	module.handle = &handle{
 		service:        service,

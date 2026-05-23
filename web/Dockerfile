@@ -9,6 +9,8 @@ FROM deps AS build
 
 COPY . .
 
+# Aumentar heap do Node para evitar OOM no build do Nuxt (default ~1.5GB)
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 FROM deps AS dev

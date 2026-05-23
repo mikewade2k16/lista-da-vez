@@ -1,224 +1,232 @@
 <script setup lang="ts">
-import { Bell, MessageCircle, X } from "lucide-vue-next";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
-import { useAuthStore } from "~/stores/auth";
-import { useFeedbackStore } from "~/stores/feedback";
-import { useUiStore } from "~/stores/ui";
+import { Bell, MessageCircle, X } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '~/stores/auth'
+import { useFeedbackStore } from '~/stores/feedback'
+import { useUiStore } from '~/stores/ui'
 
-const feedbackStore = useFeedbackStore();
-const auth = useAuthStore();
-const ui = useUiStore();
-const { allowedWorkspaces, storeContext, user } = storeToRefs(auth);
-const menuRef = ref(null);
-const menuOpen = ref(false);
-const feedbackSyncCursor = ref("");
-let pollingTimer = null;
+const feedbackStore = useFeedbackStore()
+const auth = useAuthStore()
+const ui = useUiStore()
+const { allowedWorkspaces, storeContext, user } = storeToRefs(auth)
+const menuRef = ref(null)
+const menuOpen = ref(false)
+const feedbackSyncCursor = ref('')
+let pollingTimer = null
 
-const ownUserId = computed(() => String(user.value?.id || "").trim());
-const canManageFeedback = computed(() => allowedWorkspaces.value.includes("feedback"));
+const ownUserId = computed(() => String(user.value?.id || '').trim())
+const canManageFeedback = computed(() => allowedWorkspaces.value.includes('feedback'))
 const feedbackCollection = computed(() =>
-  canManageFeedback.value ? feedbackStore.feedbacks : feedbackStore.myFeedbacks
-);
-const feedbackPath = computed(() => (canManageFeedback.value ? "/feedback" : "/meus-feedbacks"));
+  canManageFeedback.value ? feedbackStore.feedbacks : feedbackStore.myFeedbacks,
+)
+const feedbackPath = computed(() => (canManageFeedback.value ? '/feedback' : '/meus-feedbacks'))
 
 function statusLabel(status) {
   const labels = {
-    open: "Aberto",
-    in_progress: "Em analise",
-    resolved: "Resolvido",
-    closed: "Fechado"
-  };
+    open: 'Aberto',
+    in_progress: 'Em analise',
+    resolved: 'Resolvido',
+    closed: 'Fechado',
+  }
 
-  return labels[String(status || "").trim()] || status || "-";
+  return labels[String(status || '').trim()] || status || '-'
 }
 
 function getStoreLabel(storeId) {
-  const normalizedStoreId = String(storeId || "").trim();
-  const store = (storeContext.value || []).find((entry) => String(entry?.id || "").trim() === normalizedStoreId);
+  const normalizedStoreId = String(storeId || '').trim()
+  const store = (storeContext.value || []).find(
+    (entry) => String(entry?.id || '').trim() === normalizedStoreId,
+  )
   if (!store) {
-    return "Loja nao informada";
+    return 'Loja nao informada'
   }
 
-  return String(store.name || store.code || store.city || "Loja nao informada").trim();
+  return String(store.name || store.code || store.city || 'Loja nao informada').trim()
 }
 
 function isUnreadForViewer(feedback, message, readAt) {
-  const authorUserId = String(message.author_user_id || "").trim();
-  const createdAt = new Date(message.created_at).getTime();
+  const authorUserId = String(message.author_user_id || '').trim()
+  const createdAt = new Date(message.created_at).getTime()
   if (!Number.isFinite(createdAt) || createdAt <= readAt) {
-    return false;
+    return false
   }
 
   if (canManageFeedback.value) {
-    return authorUserId === String(feedback.user_id || "").trim();
+    return authorUserId === String(feedback.user_id || '').trim()
   }
 
-  return authorUserId !== ownUserId.value;
+  return authorUserId !== ownUserId.value
 }
 
 function isNewFeedbackUnread(feedback) {
   if (!canManageFeedback.value) {
-    return false;
+    return false
   }
 
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime();
-  const createdAt = new Date(feedback.created_at).getTime();
+  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
+  const createdAt = new Date(feedback.created_at).getTime()
   if (!Number.isFinite(createdAt) || createdAt <= readAt) {
-    return false;
+    return false
   }
 
-  return !(feedbackStore.messagesByFeedbackId[feedback.id] || []).length;
+  return !(feedbackStore.messagesByFeedbackId[feedback.id] || []).length
 }
 
 function getLatestUnreadReply(feedback) {
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime();
-  const messages = feedbackStore.messagesByFeedbackId[feedback.id] || [];
+  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
+  const messages = feedbackStore.messagesByFeedbackId[feedback.id] || []
 
-  return [...messages]
-    .reverse()
-    .find((message) => isUnreadForViewer(feedback, message, readAt));
+  return [...messages].reverse().find((message) => isUnreadForViewer(feedback, message, readAt))
 }
 
 const notifications = computed(() => {
   return feedbackCollection.value
     .map((feedback) => {
-      const latestReply = getLatestUnreadReply(feedback);
-      const unreadNewFeedback = isNewFeedbackUnread(feedback);
+      const latestReply = getLatestUnreadReply(feedback)
+      const unreadNewFeedback = isNewFeedbackUnread(feedback)
 
-      if ((!latestReply && !unreadNewFeedback) || feedback.status === "closed") {
-        return null;
+      if ((!latestReply && !unreadNewFeedback) || feedback.status === 'closed') {
+        return null
       }
 
       const createdAt = unreadNewFeedback
         ? feedback.created_at || feedback.updated_at
-        : latestReply.created_at || feedback.updated_at;
+        : latestReply.created_at || feedback.updated_at
       const preview = unreadNewFeedback
-        ? feedback.body || ""
-        : latestReply.body || feedback.body || "";
+        ? feedback.body || ''
+        : latestReply.body || feedback.body || ''
 
       return {
         id: unreadNewFeedback ? `${feedback.id}:created` : `${feedback.id}:${latestReply.id}`,
         feedbackId: feedback.id,
-        title: feedback.subject || "Chamado sem assunto",
+        title: feedback.subject || 'Chamado sem assunto',
         meta: canManageFeedback.value
-          ? `${feedback.user_name || "Usuario"} · ${getStoreLabel(feedback.store_id)}`
+          ? `${feedback.user_name || 'Usuario'} · ${getStoreLabel(feedback.store_id)}`
           : statusLabel(feedback.status),
         preview,
         createdAt,
-        path: `${feedbackPath.value}?id=${encodeURIComponent(feedback.id)}`
-      };
+        path: `${feedbackPath.value}?id=${encodeURIComponent(feedback.id)}`,
+      }
     })
     .filter(Boolean)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .slice(0, 6);
-});
+    .slice(0, 6)
+})
 
-const notificationCount = computed(() => notifications.value.length);
+const notificationCount = computed(() => notifications.value.length)
 
 function isDocumentVisible() {
-  return !import.meta.client || document.visibilityState === "visible";
+  return !import.meta.client || document.visibilityState === 'visible'
 }
 
 function toggleMenu() {
-  menuOpen.value = !menuOpen.value;
+  menuOpen.value = !menuOpen.value
 }
 
 function closeMenu() {
-  menuOpen.value = false;
+  menuOpen.value = false
 }
 
 function formatDate(isoString) {
   try {
-    return new Date(isoString).toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
+    return new Date(isoString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   } catch {
-    return "";
+    return ''
   }
 }
 
 async function dismissNotification(notification) {
-  const result = await feedbackStore.markFeedbackAsRead(notification.feedbackId);
+  const result = await feedbackStore.markFeedbackAsRead(notification.feedbackId)
   if (!result.ok) {
-    ui.error(result.message || "Erro ao apagar notificacao");
+    ui.error(result.message || 'Erro ao apagar notificacao')
   }
 }
 
 function handleNotificationOpen(notification) {
-  closeMenu();
-  void feedbackStore.markFeedbackAsRead(notification.feedbackId);
+  closeMenu()
+  void feedbackStore.markFeedbackAsRead(notification.feedbackId)
 }
 
 async function loadNotifications() {
   if (!ownUserId.value || !isDocumentVisible()) {
-    return;
+    return
   }
 
   const result = canManageFeedback.value
-    ? await feedbackStore.fetchFeedbacks(feedbackSyncCursor.value ? { since: feedbackSyncCursor.value } : undefined)
-    : await feedbackStore.fetchMyFeedbacks(feedbackSyncCursor.value ? { since: feedbackSyncCursor.value } : undefined);
+    ? await feedbackStore.fetchFeedbacks(
+        feedbackSyncCursor.value ? { since: feedbackSyncCursor.value } : undefined,
+      )
+    : await feedbackStore.fetchMyFeedbacks(
+        feedbackSyncCursor.value ? { since: feedbackSyncCursor.value } : undefined,
+      )
 
   if (!result.ok) {
-    return;
+    return
   }
 
   if (result.cursor) {
-    feedbackSyncCursor.value = result.cursor;
+    feedbackSyncCursor.value = result.cursor
   }
 
   await feedbackStore.syncMessagesForFeedbacks(
-    feedbackCollection.value.map((feedback) => feedback.id)
-  );
+    feedbackCollection.value.map((feedback) => feedback.id),
+  )
 }
 
 function startPolling() {
-  stopPolling();
-  pollingTimer = window.setInterval(loadNotifications, 30000);
+  stopPolling()
+  pollingTimer = window.setInterval(loadNotifications, 30000)
 }
 
 function stopPolling() {
   if (pollingTimer) {
-    window.clearInterval(pollingTimer);
-    pollingTimer = null;
+    window.clearInterval(pollingTimer)
+    pollingTimer = null
   }
 }
 
 function handlePointerDown(event) {
   if (!menuOpen.value) {
-    return;
+    return
   }
 
   if (menuRef.value && !menuRef.value.contains(event.target)) {
-    closeMenu();
+    closeMenu()
   }
 }
 
 function handleVisibilityChange() {
   if (isDocumentVisible()) {
-    void loadNotifications();
+    void loadNotifications()
   }
 }
 
-watch([ownUserId, canManageFeedback], () => {
-  feedbackSyncCursor.value = "";
-  void loadNotifications();
-}, { immediate: true });
+watch(
+  [ownUserId, canManageFeedback],
+  () => {
+    feedbackSyncCursor.value = ''
+    void loadNotifications()
+  },
+  { immediate: true },
+)
 
 onMounted(() => {
-  startPolling();
-  document.addEventListener("pointerdown", handlePointerDown);
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-});
+  startPolling()
+  document.addEventListener('pointerdown', handlePointerDown)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
 
 onBeforeUnmount(() => {
-  stopPolling();
-  document.removeEventListener("pointerdown", handlePointerDown);
-  document.removeEventListener("visibilitychange", handleVisibilityChange);
-});
+  stopPolling()
+  document.removeEventListener('pointerdown', handlePointerDown)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 </script>
 
 <template>
@@ -278,7 +286,13 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <NuxtLink v-else :to="feedbackPath" class="feedback-notifications__empty feedback-notifications__empty-link" role="menuitem" @click="closeMenu">
+        <NuxtLink
+          v-else
+          :to="feedbackPath"
+          class="feedback-notifications__empty feedback-notifications__empty-link"
+          role="menuitem"
+          @click="closeMenu"
+        >
           <strong>Nenhuma resposta nova</strong>
           <span>Quando responderem seus chamados, eles aparecem aqui.</span>
         </NuxtLink>
@@ -307,7 +321,7 @@ onBeforeUnmount(() => {
 }
 
 .feedback-notifications__trigger:hover,
-.feedback-notifications__trigger[aria-expanded="true"] {
+.feedback-notifications__trigger[aria-expanded='true'] {
   border-color: rgba(118, 138, 255, 0.42);
   background: rgba(255, 255, 255, 0.12);
 }
@@ -480,7 +494,9 @@ onBeforeUnmount(() => {
 
 .feedback-notifications-menu-enter-active,
 .feedback-notifications-menu-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .feedback-notifications-menu-enter-from,

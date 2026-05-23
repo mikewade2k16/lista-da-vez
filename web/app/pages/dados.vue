@@ -1,33 +1,32 @@
 <script setup>
-import { computed, watch } from "vue";
-import DataWorkspace from "~/components/data/DataWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { canUseAllStoresScope } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { useAnalyticsStore } from "~/stores/analytics";
+import { computed, watch } from 'vue'
+import DataWorkspace from '~/components/data/DataWorkspace.vue'
+import { storeToRefs } from 'pinia'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useAnalyticsStore } from '~/stores/analytics'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "dados",
-  alias: ["/operacao/dados"],
-  supportsAllStoresScope: true
-});
+  layout: 'dashboard',
+  workspaceId: 'dados',
+  alias: ['/operacao/dados'],
+  supportsAllStoresScope: true,
+})
 
-const auth = useAuthStore();
-const analyticsStore = useAnalyticsStore();
-const { data, pending, errorMessage } = storeToRefs(analyticsStore);
-const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
-const { isAllStoresScope } = storeToRefs(auth);
-const integratedScope = computed(() => canSeeIntegrated.value && isAllStoresScope.value);
+const auth = useAuthStore()
+const analyticsStore = useAnalyticsStore()
+const { data, pending, errorMessage } = storeToRefs(analyticsStore)
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
+const integratedScope = computed(() => canSeeIntegrated.value)
 
 watch(
   () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId],
   () => {
-    analyticsStore.setIntegratedScope(integratedScope.value);
-    void analyticsStore.fetchData();
+    analyticsStore.setIntegratedScope(integratedScope.value)
+    void analyticsStore.fetchData()
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 </script>
 
 <template>

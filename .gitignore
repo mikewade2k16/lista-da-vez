@@ -7,6 +7,9 @@ web/.nuxt/
 web/.output/
 web/dist/
 back/bin/
+back/api
+back/api.exe
+*.exe
 qa-bot/.venv/
 qa-bot/artifacts/
 __pycache__/
@@ -22,6 +25,8 @@ back/.env.*
 .env.production
 
 # Local ERP/FTP working data
+erp-source-local/
+# Defesa em profundidade: mantém o nome antigo por 1 ciclo após o rename (Fase 5 / 2026-05-21)
 Controlle10 - ftp/
 
 # Front do outro projeto trazido apenas para analise/referencia (Fase 10)

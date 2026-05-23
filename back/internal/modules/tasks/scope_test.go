@@ -127,6 +127,34 @@ func TestResolveAccessContext_BoardsManageOverridesClientViewer(t *testing.T) {
 	}
 }
 
+func TestResolveAccessContext_FallsBackToMemberPermissionsForMvpRole(t *testing.T) {
+	repository := &repositoryMock{
+		onAccountExists:   func(_ context.Context, _ string) (bool, error) { return true, nil },
+		onIsAccountMember: func(_ context.Context, _, _ string) (bool, error) { return true, nil },
+		onListPermissionsForUser: func(_ context.Context, _, _ string) ([]string, error) {
+			return nil, nil
+		},
+	}
+	service := NewService(repository, nil, nil, nil)
+
+	access, err := service.ResolveAccessContext(context.Background(), principalForRole(auth.RoleManager, "u-manager", "acc-1"), "acc-1")
+	if err != nil {
+		t.Fatalf("ResolveAccessContext: %v", err)
+	}
+	if !access.Has(PermTasksView) {
+		t.Fatalf("manager sem grants core.* deve receber fallback com tasks.view")
+	}
+	if !access.Has(PermTasksComment) {
+		t.Fatalf("manager sem grants core.* deve receber fallback com tasks.comment")
+	}
+	if access.Has(PermBoardsManage) {
+		t.Fatalf("manager fallback deve ser member, nao admin")
+	}
+	if access.Perspective != PerspectiveAgency {
+		t.Fatalf("manager fallback continua agency; got %q", access.Perspective)
+	}
+}
+
 // TestScope_FuzzCrossAccountReturns404 simula o "fuzz 100 IDs de outros accounts" da T9. Como
 // nao temos DB real, simulamos no mock: qualquer accountID != accountValido retorna
 // `IsAccountMember=false` e o resultado deve SEMPRE virar 404, nunca 403, nunca vazamento.

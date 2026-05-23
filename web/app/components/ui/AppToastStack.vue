@@ -1,32 +1,42 @@
 <script setup>
-import { storeToRefs } from "pinia";
-import { useUiStore } from "~/stores/ui";
+import { storeToRefs } from 'pinia'
+import { useUiStore } from '~/stores/ui'
 
-const ui = useUiStore();
-const { toasts } = storeToRefs(ui);
+const ui = useUiStore()
+const { toasts } = storeToRefs(ui)
 
 function handleToastRemove(toastId) {
   // Aguarda a animação de saída (300ms) + pequeno buffer
   setTimeout(() => {
-    ui.dismissToast(toastId);
-  }, 320);
+    ui.dismissToast(toastId)
+  }, 320)
 }
 
 function renderIcon(type) {
-  if (type === "success") {
-    return "checkmark";
-  } else if (type === "error") {
-    return "x-mark";
+  if (type === 'success') {
+    return 'checkmark'
+  } else if (type === 'error') {
+    return 'x-mark'
   } else {
-    return "info";
+    return 'info'
   }
 }
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="app-toast-container" aria-live="polite" aria-atomic="true" data-testid="app-toast-container">
-      <TransitionGroup name="toast-animation" tag="div" class="app-toast-stack" move-class="toast-animation-move">
+    <div
+      class="app-toast-container"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="app-toast-container"
+    >
+      <TransitionGroup
+        name="toast-animation"
+        tag="div"
+        class="app-toast-stack"
+        move-class="toast-animation-move"
+      >
         <article
           v-for="toast in toasts"
           :key="toast.id"
@@ -36,17 +46,35 @@ function renderIcon(type) {
         >
           <div class="app-toast__indicator"></div>
           <div class="app-toast__icon">
-            <svg v-if="renderIcon(toast.type) === 'checkmark'" class="toast-icon toast-icon--success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12"></polyline>
+            <svg
+              v-if="renderIcon(toast.type) === 'checkmark'"
+              class="toast-icon toast-icon--success"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="20 6 9 17 4 12" />
             </svg>
-            <svg v-else-if="renderIcon(toast.type) === 'x-mark'" class="toast-icon toast-icon--error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
+            <svg
+              v-else-if="renderIcon(toast.type) === 'x-mark'"
+              class="toast-icon toast-icon--error"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
             <svg v-else class="toast-icon toast-icon--info" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="12" r="1"></circle>
-              <path d="M12 7v5"></path>
-              <circle cx="12" cy="2" r="10" fill="none" stroke="currentColor" stroke-width="2"></circle>
+              <circle cx="12" cy="12" r="1" />
+              <path d="M12 7v5" />
+              <circle cx="12" cy="2" r="10" fill="none" stroke="currentColor" stroke-width="2" />
             </svg>
           </div>
           <div class="app-toast__content">
@@ -60,9 +88,17 @@ function renderIcon(type) {
             :data-testid="`app-toast-close-${toast.id}`"
             @click="handleToastRemove(toast.id)"
           >
-            <svg class="toast-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
+            <svg
+              class="toast-close-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
           <div class="app-toast__progress"></div>
@@ -97,7 +133,9 @@ function renderIcon(type) {
   background: rgba(15, 23, 42, 0.96);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(226, 232, 240, 0.1);
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.3),
+    0 10px 10px -5px rgba(0, 0, 0, 0.2);
   min-width: 280px;
   max-width: 360px;
   position: relative;
@@ -179,18 +217,24 @@ function renderIcon(type) {
 .toast-icon--success {
   stroke-dasharray: 52;
   stroke-dashoffset: 52;
-  animation: scaleIcon 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards 0.15s, drawCheckmark 0.5s ease-out forwards 0.35s;
+  animation:
+    scaleIcon 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards 0.15s,
+    drawCheckmark 0.5s ease-out forwards 0.35s;
 }
 
 .toast-icon--error {
   stroke-dasharray: 60;
   stroke-dashoffset: 60;
-  animation: scaleIcon 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards 0.15s, drawXMark 0.4s ease-out forwards 0.35s;
+  animation:
+    scaleIcon 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards 0.15s,
+    drawXMark 0.4s ease-out forwards 0.35s;
 }
 
 .toast-icon--info {
   opacity: 0;
-  animation: scaleIcon 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards 0.15s, fadeIn 0.3s ease-out forwards 0.35s;
+  animation:
+    scaleIcon 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards 0.15s,
+    fadeIn 0.3s ease-out forwards 0.35s;
 }
 
 .toast-close-icon {

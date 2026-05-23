@@ -8,6 +8,18 @@ Permite que um consultor atenda múltiplos clientes simultâneos. O limite é co
 
 ---
 
+## Campo productsNotFound (2026-05-21)
+
+Campo `products_not_found_json jsonb` adicionado à `queue.operation_service_history` (migration 0112).
+
+- `ServiceHistoryEntry.ProductsNotFound []ProductEntry` — produto que o cliente queria mas a loja não tinha
+- Separado de `ProductsSeen` (produto visto/experimentado) e `ProductsClosed` (produto comprado)
+- Persiste via `appendHistory` em `store_postgres.go`; lido com `coalesce(..., '[]')` para compatibilidade com registros anteriores
+- `FinishCommandInput.ProductsNotFound` aceita o campo do frontend no modal de finalização
+- Uso no CRM 360: base para análise de produtos procurados e não encontrados por loja/consultor
+
+---
+
 ## Conceitos
 
 ### Atendimento Normal (Queue)
@@ -229,7 +241,7 @@ func applyStatusTransitions(...) {
 
 ### Phase 5: Docs + Tests
 - [ ] Tests unitários
-- [ ] AGENTS.md em módulos tocados
+- [ ] AGENT.md em módulos tocados
 - [ ] Manual test plan
 
 ---

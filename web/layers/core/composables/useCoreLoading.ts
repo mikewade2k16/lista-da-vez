@@ -1,5 +1,5 @@
-import { computed } from "vue";
-import { useCoreLoadingStore } from "../stores/loading";
+import { computed } from 'vue'
+import { useCoreLoadingStore } from '../stores/loading'
 
 // Composable de loading global. Acesso ergonomico ao `useCoreLoadingStore`
 // para uso em paginas/components. Exemplo:
@@ -10,13 +10,13 @@ import { useCoreLoadingStore } from "../stores/loading";
 //
 // Tambem usado pelo api-client para envolver requests > 200ms.
 export function useCoreLoading() {
-  const store = useCoreLoadingStore();
+  const store = useCoreLoadingStore()
 
   function withLoading<T>(label: string, fn: () => Promise<T>): Promise<T> {
-    store.push(label);
+    store.push(label)
     return fn().finally(() => {
-      store.pop(label);
-    });
+      store.pop(label)
+    })
   }
 
   return {
@@ -25,6 +25,6 @@ export function useCoreLoading() {
     reset: store.reset,
     isLoading: computed(() => store.isLoading),
     activeLabel: computed(() => store.activeLabel),
-    withLoading
-  };
+    withLoading,
+  }
 }

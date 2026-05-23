@@ -2,9 +2,9 @@
 defineProps({
   page: {
     type: Object,
-    required: true
-  }
-});
+    required: true,
+  },
+})
 </script>
 
 <template>
@@ -45,11 +45,7 @@ defineProps({
         </div>
 
         <div class="demo-page__rows">
-          <article
-            v-for="row in page.rows"
-            :key="row.title"
-            class="demo-page__row"
-          >
+          <article v-for="row in page.rows" :key="row.title" class="demo-page__row">
             <div class="demo-page__row-main">
               <strong>{{ row.title }}</strong>
               <span>{{ row.meta }}</span>
@@ -67,11 +63,7 @@ defineProps({
         </div>
 
         <div class="demo-page__tags">
-          <span
-            v-for="item in page.asideItems"
-            :key="item"
-            class="demo-page__tag"
-          >
+          <span v-for="item in page.asideItems" :key="item" class="demo-page__tag">
             {{ item }}
           </span>
         </div>

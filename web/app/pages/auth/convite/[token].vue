@@ -1,81 +1,81 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
-import AdminAuthShell from "~/components/layout/AdminAuthShell.vue";
-import { getRoleLabel } from "~/domain/utils/permissions";
-import { getApiErrorMessage } from "~/utils/api-client";
-import { useAuthStore } from "~/stores/auth";
+import { computed, reactive, ref } from 'vue'
+import AdminAuthShell from '~/components/layout/AdminAuthShell.vue'
+import { getRoleLabel } from '~/domain/utils/permissions'
+import { getApiErrorMessage } from '~/utils/api-client'
+import { useAuthStore } from '~/stores/auth'
 
 definePageMeta({
-  layout: "auth"
-});
+  layout: 'auth',
+})
 
 useHead({
-  title: "Aceitar convite | Fila de Atendimento"
-});
+  title: 'Aceitar convite | Omni',
+})
 
-const route = useRoute();
-const auth = useAuthStore();
+const route = useRoute()
+const auth = useAuthStore()
 
-const invitation = ref<any | null>(null);
-const pageError = ref("");
-const formError = ref("");
+const invitation = ref<any | null>(null)
+const pageError = ref('')
+const formError = ref('')
 const form = reactive({
-  password: "",
-  confirmPassword: ""
-});
-const showPassword = ref(false);
-const showConfirmPassword = ref(false);
+  password: '',
+  confirmPassword: '',
+})
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
 
-const token = computed(() => String(route.params.token || "").trim());
-const shellTitle = computed(() => (invitation.value ? "Aceitar convite" : "Convite indisponivel"));
+const token = computed(() => String(route.params.token || '').trim())
+const shellTitle = computed(() => (invitation.value ? 'Aceitar convite' : 'Convite indisponivel'))
 const shellDescription = computed(() => {
   if (invitation.value) {
-    return "Defina sua senha para ativar o acesso inicial e entrar na plataforma.";
+    return 'Defina sua senha para ativar o acesso inicial e entrar na plataforma.'
   }
 
-  return pageError.value || "O link de convite esta indisponivel ou expirou.";
-});
+  return pageError.value || 'O link de convite esta indisponivel ou expirou.'
+})
 
 async function loadInvitation() {
   if (!token.value) {
-    pageError.value = "Convite invalido.";
-    return;
+    pageError.value = 'Convite invalido.'
+    return
   }
 
   try {
-    const response = await auth.fetchInvitation(token.value);
-    invitation.value = response?.invitation || null;
-    pageError.value = "";
+    const response = (await auth.fetchInvitation(token.value)) as { invitation?: unknown }
+    invitation.value = response?.invitation || null
+    pageError.value = ''
   } catch (error) {
-    invitation.value = null;
-    pageError.value = getApiErrorMessage(error, "Nao foi possivel carregar o convite.");
+    invitation.value = null
+    pageError.value = getApiErrorMessage(error, 'Nao foi possivel carregar o convite.')
   }
 }
 
 async function submitInvitation() {
-  formError.value = "";
+  formError.value = ''
 
-  if (String(form.password || "").trim().length < 6) {
-    formError.value = "Defina uma senha com pelo menos 6 caracteres.";
-    return;
+  if (String(form.password || '').trim().length < 6) {
+    formError.value = 'Defina uma senha com pelo menos 6 caracteres.'
+    return
   }
 
   if (form.password !== form.confirmPassword) {
-    formError.value = "A confirmacao da senha nao confere.";
-    return;
+    formError.value = 'A confirmacao da senha nao confere.'
+    return
   }
 
   try {
     await auth.acceptInvitation({
       token: token.value,
-      password: form.password
-    });
+      password: form.password,
+    })
 
-    await navigateTo(auth.homePath, { replace: true });
+    await navigateTo(auth.homePath, { replace: true })
   } catch {}
 }
 
-await loadInvitation();
+await loadInvitation()
 </script>
 
 <template>
@@ -106,19 +106,37 @@ await loadInvitation();
             placeholder="Nova senha"
             :readonly="auth.pending"
             required
-          >
+          />
           <button
             type="button"
             class="admin-auth-eye-btn"
             :aria-label="showPassword ? 'Ocultar senha' : 'Mostrar senha'"
             @click="showPassword = !showPassword"
           >
-            <svg v-if="!showPassword" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              v-if="!showPassword"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+              />
               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
               <line x1="1" y1="1" x2="23" y2="23" />
             </svg>
@@ -134,19 +152,37 @@ await loadInvitation();
             placeholder="Confirmar senha"
             :readonly="auth.pending"
             required
-          >
+          />
           <button
             type="button"
             class="admin-auth-eye-btn"
             :aria-label="showConfirmPassword ? 'Ocultar senha' : 'Mostrar senha'"
             @click="showConfirmPassword = !showConfirmPassword"
           >
-            <svg v-if="!showConfirmPassword" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <svg
+              v-if="!showConfirmPassword"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"
+              />
               <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
               <line x1="1" y1="1" x2="23" y2="23" />
             </svg>
@@ -160,21 +196,21 @@ await loadInvitation();
         </Transition>
 
         <button class="admin-auth-submit" type="submit" :disabled="auth.pending">
-          <span v-if="auth.pending" class="admin-auth-submit__spinner" />
-          <span>{{ auth.pending ? "Ativando..." : "Ativar acesso" }}</span>
+          <span v-if="auth.pending" class="admin-auth-submit__spinner"></span>
+          <span>{{ auth.pending ? 'Ativando...' : 'Ativar acesso' }}</span>
         </button>
 
-        <p class="admin-auth-meta">Use uma senha com pelo menos 6 caracteres para concluir o primeiro acesso.</p>
+        <p class="admin-auth-meta">
+          Use uma senha com pelo menos 6 caracteres para concluir o primeiro acesso.
+        </p>
       </form>
     </template>
 
     <template v-else>
       <div class="admin-auth-alert admin-auth-alert--error">
-        {{ pageError || "Convite indisponivel." }}
+        {{ pageError || 'Convite indisponivel.' }}
       </div>
-      <NuxtLink class="admin-auth-submit" to="/auth/login">
-        Voltar para login
-      </NuxtLink>
+      <NuxtLink class="admin-auth-submit" to="/auth/login">Voltar para login</NuxtLink>
     </template>
   </AdminAuthShell>
 </template>

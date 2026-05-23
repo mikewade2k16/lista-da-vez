@@ -100,49 +100,49 @@ func (repository *PostgresRepository) listHistoryQuery(
 	position := 2
 
 	if filters.FinishedAtFrom != nil {
-		query.WriteString(fmt.Sprintf(" and h.finished_at >= $%d", position))
+		fmt.Fprintf(&query, " and h.finished_at >= $%d", position)
 		args = append(args, *filters.FinishedAtFrom)
 		position++
 	}
 
 	if filters.FinishedAtTo != nil {
-		query.WriteString(fmt.Sprintf(" and h.finished_at <= $%d", position))
+		fmt.Fprintf(&query, " and h.finished_at <= $%d", position)
 		args = append(args, *filters.FinishedAtTo)
 		position++
 	}
 
 	if len(filters.ConsultantIDs) > 0 {
-		query.WriteString(fmt.Sprintf(" and h.person_id::text = any($%d)", position))
+		fmt.Fprintf(&query, " and h.person_id::text = any($%d)", position)
 		args = append(args, filters.ConsultantIDs)
 		position++
 	}
 
 	if len(filters.Outcomes) > 0 {
-		query.WriteString(fmt.Sprintf(" and h.finish_outcome = any($%d)", position))
+		fmt.Fprintf(&query, " and h.finish_outcome = any($%d)", position)
 		args = append(args, filters.Outcomes)
 		position++
 	}
 
 	if len(filters.StartModes) > 0 {
-		query.WriteString(fmt.Sprintf(" and h.start_mode = any($%d)", position))
+		fmt.Fprintf(&query, " and h.start_mode = any($%d)", position)
 		args = append(args, filters.StartModes)
 		position++
 	}
 
 	if filters.IsExistingCustomer != nil {
-		query.WriteString(fmt.Sprintf(" and h.is_existing_customer = $%d", position))
+		fmt.Fprintf(&query, " and h.is_existing_customer = $%d", position)
 		args = append(args, *filters.IsExistingCustomer)
 		position++
 	}
 
 	if filters.MinSaleAmount != nil {
-		query.WriteString(fmt.Sprintf(" and h.sale_amount >= $%d", position))
+		fmt.Fprintf(&query, " and h.sale_amount >= $%d", position)
 		args = append(args, *filters.MinSaleAmount)
 		position++
 	}
 
 	if filters.MaxSaleAmount != nil {
-		query.WriteString(fmt.Sprintf(" and h.sale_amount <= $%d", position))
+		fmt.Fprintf(&query, " and h.sale_amount <= $%d", position)
 		args = append(args, *filters.MaxSaleAmount)
 		position++
 	}

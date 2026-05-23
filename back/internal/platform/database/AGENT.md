@@ -66,6 +66,40 @@ Consultar primeiro:
 - `back/database/AGENT.md`
 - `back/database/ERD.md`
 
+## Convencao de nomeacao de migrations (Fase 6.6 do PLANO_REFATORACAO)
+
+Padrao oficial **a partir de 2026-05-18**:
+
+```
+NNNN_slug_descritivo.sql
+```
+
+Onde:
+
+- `NNNN`: 4 digitos zero-padded, ordem cronologica estrita
+- `slug_descritivo`: kebab/snake case curto descrevendo o que a migration faz
+- Extensao `.sql` obrigatoria
+
+Regras inegociaveis:
+
+1. **Nunca usar sufixo alfabetico** (`0015a_*.sql`). Causa ambiguidade lexicografica.
+2. **Nunca criar 2 migrations com o mesmo NNNN**. O migrator usa o nome de arquivo como chave em `schema_migrations.version` — colisoes funcionam por sorte da ordenacao lexicografica do `slug`.
+3. **Sempre incrementar a partir do maior numero existente**. Antes de criar `NNNN_*.sql`, listar `back/internal/platform/database/migrations/` e usar `MAX(NNNN) + 1`.
+4. **Migrations sao imutaveis depois de comitadas**. Para mudar comportamento, criar nova migration.
+
+### Colisoes legadas (dividia congelada — NAO renomear)
+
+As 4 colisoes abaixo ficam congeladas porque renomear arquivos quebra o migrator (`schema_migrations.version = filename` no banco; renomear faz a migration ser tratada como nova e tenta reaplicar):
+
+| Prefixo | Arquivos | Ordem real (lex) |
+|---|---|---|
+| `0015` | `0015_mvp_access_foundation.sql`, `0015a_access_foundation_schema.sql` | `0015_*` aplica antes de `0015a_*` |
+| `0019` | `0019_user_password_resets.sql`, `0019_workspace_access_matrix.sql` | `_user` antes de `_workspace` |
+| `0031` | `0031_active_service_stop_state.sql`, `0031_per_consultant_concurrency.sql` | `_active` antes de `_per` |
+| `0039` | `0039_erp_store_184_production_bootstrap.sql`, `0039_finish_modal_purchase_code.sql` | `_erp` antes de `_finish` |
+
+Bancos em producao e dev ja tem essas migrations gravadas com o nome exato. Trocar nome = bug imediato.
+
 ## Comandos uteis
 
 ```bash

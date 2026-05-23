@@ -2,13 +2,13 @@
 defineProps({
   title: {
     type: String,
-    required: true
+    required: true,
   },
   items: {
     type: Array,
-    default: () => []
-  }
-});
+    default: () => [],
+  },
+})
 </script>
 
 <template>

@@ -7,27 +7,35 @@ import { useTasksWorkspace } from '../composables/useTasksWorkspace'
 definePageMeta({
   layout: 'dashboard',
   workspaceId: '',
-  pageLabel: 'Editor'
+  pageLabel: 'Editor',
 })
 
 const tasksWorkspace = useTasksWorkspace()
 const pageLoading = useCoreLoading()
 const pageBootstrapping = ref(true)
-const value = ref(`<h1>Documento OmniEditor</h1>
+const EDITOR_STORAGE_KEY = 'tasks:omni-editor:document'
+const defaultValue = `<h1>Documento OmniEditor</h1>
 <p>Use este espaco para testar textos longos, imagens, HTML, emojis, mencoes, slash commands, toolbar flutuante e drag por bloco.</p>
-<p>Digite <strong>/</strong> para comandos, <strong>@</strong> para pessoas, <strong>#</strong> para clientes/tasks e <strong>:</strong> para emojis.</p>`)
+<p>Digite <strong>/</strong> para comandos, <strong>@</strong> para pessoas, <strong>#</strong> para clientes/tasks e <strong>:</strong> para emojis.</p>`
+const value = ref(defaultValue)
 
 const people = computed(() => {
-  const project = tasksWorkspace.projects.value.find(item => item.id === tasksWorkspace.activeProjectId.value)
+  const project = tasksWorkspace.projects.value.find(
+    (item) => item.id === tasksWorkspace.activeProjectId.value,
+  )
   return project?.responsibles || []
 })
 const clients = computed(() => ['Dr Antonio', 'Perola Jardins', 'Crow Visuals', 'UNO'])
-const tasks = computed(() => tasksWorkspace.tasks.value.map(task => task.title).filter(Boolean))
+const tasks = computed(() => tasksWorkspace.tasks.value.map((task) => task.title).filter(Boolean))
 
 onMounted(async () => {
   try {
     await pageLoading.withLoading('Carregando editor...', async () => {
       await tasksWorkspace.initialize()
+      if (import.meta.client) {
+        const savedValue = window.localStorage.getItem(EDITOR_STORAGE_KEY)
+        if (savedValue !== null) value.value = savedValue
+      }
       await nextTick()
       if (import.meta.client) {
         await new Promise<void>((resolve) => {
@@ -39,6 +47,15 @@ onMounted(async () => {
     pageBootstrapping.value = false
   }
 })
+
+watch(
+  value,
+  (nextValue) => {
+    if (!import.meta.client) return
+    window.localStorage.setItem(EDITOR_STORAGE_KEY, nextValue)
+  },
+  { flush: 'post' },
+)
 </script>
 
 <template>

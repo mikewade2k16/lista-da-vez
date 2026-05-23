@@ -202,14 +202,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		rules, err := service.UpdateRules(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("tenantId")), UpdateRulesInput{
-			LongOpenServiceMinutes:   request.LongOpenServiceMinutes,
-			IdleStoreMinutes:         request.IdleStoreMinutes,
-			AfterClosingGraceMinutes: request.AfterClosingGraceMinutes,
-			NotifyDashboard:          request.NotifyDashboard,
-			NotifyOperationContext:   request.NotifyOperationContext,
-			NotifyExternal:           request.NotifyExternal,
-		})
+		rules, err := service.UpdateRules(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("tenantId")), UpdateRulesInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -369,25 +362,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		rule, err := service.UpdateRule(r.Context(), principal, strings.TrimSpace(r.PathValue("id")), UpdateRuleInput{
-			Name:                   request.Name,
-			Description:            request.Description,
-			IsActive:               request.IsActive,
-			TriggerType:            request.TriggerType,
-			ThresholdMinutes:       request.ThresholdMinutes,
-			Severity:               request.Severity,
-			DisplayKind:            request.DisplayKind,
-			ColorTheme:             request.ColorTheme,
-			TitleTemplate:          request.TitleTemplate,
-			BodyTemplate:           request.BodyTemplate,
-			InteractionKind:        request.InteractionKind,
-			ResponseOptions:        request.ResponseOptions,
-			IsMandatory:            request.IsMandatory,
-			NotifyDashboard:        request.NotifyDashboard,
-			NotifyOperationContext: request.NotifyOperationContext,
-			NotifyExternal:         request.NotifyExternal,
-			ExternalChannel:        request.ExternalChannel,
-		})
+		rule, err := service.UpdateRule(r.Context(), principal, strings.TrimSpace(r.PathValue("id")), UpdateRuleInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

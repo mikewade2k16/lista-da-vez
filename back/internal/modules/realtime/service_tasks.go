@@ -42,6 +42,7 @@ type presenceClientMessage struct {
 	Type     string `json:"type"`
 	FieldKey string `json:"fieldKey"`
 	LockID   string `json:"lockId"`
+	DraftValue string `json:"draftValue"`
 }
 
 type socketRateLimiter struct {
@@ -49,6 +50,27 @@ type socketRateLimiter struct {
 	interval    time.Duration
 	windowStart time.Time
 	count       int
+}
+
+func compactRealtimeDisplayName(nick string, displayName string, email string) string {
+	if value := strings.TrimSpace(nick); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(displayName); value != "" {
+		parts := strings.Fields(value)
+		if len(parts) > 0 {
+			return parts[0]
+		}
+		return value
+	}
+	value := strings.TrimSpace(email)
+	if value == "" {
+		return ""
+	}
+	if at := strings.Index(value, "@"); at > 0 {
+		return value[:at]
+	}
+	return value
 }
 
 func newSocketRateLimiter(limit int, interval time.Duration) *socketRateLimiter {
@@ -219,13 +241,7 @@ func (service *Service) HandlePresenceSocket(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	displayName := strings.TrimSpace(principal.Nick)
-	if displayName == "" {
-		displayName = strings.TrimSpace(principal.DisplayName)
-	}
-	if displayName == "" {
-		displayName = strings.TrimSpace(principal.Email)
-	}
+	displayName := compactRealtimeDisplayName(principal.Nick, principal.DisplayName, principal.Email)
 	user := PresenceUser{
 		UserID:      strings.TrimSpace(principal.UserID),
 		DisplayName: displayName,
@@ -817,6 +833,8 @@ func (service *Service) readPresencePump(connection *websocket.Conn, done chan<-
 			service.presence.Heartbeat(topic, user)
 		case "presence.field_focus":
 			service.presence.LockField(topic, user, payload.FieldKey, payload.LockID)
+		case "presence.field_draft":
+			service.presence.UpdateFieldDraft(topic, user.UserID, payload.FieldKey, payload.DraftValue)
 		case "presence.field_blur":
 			service.presence.UnlockField(topic, user.UserID, payload.FieldKey)
 		}
@@ -838,6 +856,8 @@ func normalizeClientEventType(eventType string) string {
 		return "presence.heartbeat"
 	case "field_focus":
 		return "presence.field_focus"
+	case "field_draft":
+		return "presence.field_draft"
 	case "field_blur":
 		return "presence.field_blur"
 	default:

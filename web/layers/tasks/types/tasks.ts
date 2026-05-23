@@ -1,5 +1,14 @@
 export type TaskPriority = 'baixa' | 'media' | 'alta'
 
+export interface TaskVideoItem {
+  id: string
+  name: string
+  url: string
+  size: number
+  contentType: string
+  uploadedAt: string
+}
+
 export interface TaskProjectFiltersConfig {
   search: boolean
   responsible: boolean
@@ -100,6 +109,7 @@ export interface TaskItem {
   clientName: string
   type: string
   priority: TaskPriority
+  prioritySet?: boolean
   dueDate: string
   dueEndDate: string
   archived: boolean
@@ -107,6 +117,7 @@ export interface TaskItem {
   createdBy: string
   createdAt: string
   updatedAt: string
+  videos?: TaskVideoItem[]
 }
 
 export interface TasksWorkspaceState {

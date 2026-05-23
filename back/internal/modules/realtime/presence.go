@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const maxPresenceDraftRunes = 24000
+
 type presenceEntry struct {
 	user        PresenceUser
 	connections int
@@ -150,6 +152,9 @@ func (store *PresenceStore) LockField(topic string, user PresenceUser, fieldKey 
 		entry = presenceEntry{user: user, connections: 1}
 		shouldPublishJoined = true
 	}
+	if entry.user.FieldKey != fieldKey {
+		entry.user.DraftValue = ""
+	}
 	entry.user.FieldKey = fieldKey
 	entry.user.LockID = strings.TrimSpace(lockID)
 	topicEntries[user.UserID] = entry
@@ -160,6 +165,41 @@ func (store *PresenceStore) LockField(topic string, user PresenceUser, fieldKey 
 		store.publishPresenceEvent(topic, EventTypePresenceUserJoined, user)
 	}
 	store.publishPresenceEvent(topic, EventTypePresenceFieldLocked, lockedUser)
+}
+
+func (store *PresenceStore) UpdateFieldDraft(topic string, userID string, fieldKey string, draftValue string) {
+	topic = strings.TrimSpace(topic)
+	userID = strings.TrimSpace(userID)
+	fieldKey = strings.TrimSpace(fieldKey)
+	draftValue = normalizePresenceDraftValue(draftValue)
+	if topic == "" || userID == "" || fieldKey == "" {
+		return
+	}
+
+	var updatedUser PresenceUser
+	shouldPublish := false
+
+	store.mu.Lock()
+	if topicEntries, ok := store.entries[topic]; ok {
+		if entry, ok := topicEntries[userID]; ok {
+			if entry.user.FieldKey == fieldKey {
+				entry.user.UpdatedAt = time.Now().UTC()
+				if entry.user.DraftValue != draftValue {
+					entry.user.DraftValue = draftValue
+					topicEntries[userID] = entry
+					updatedUser = entry.user
+					shouldPublish = true
+				} else {
+					topicEntries[userID] = entry
+				}
+			}
+		}
+	}
+	store.mu.Unlock()
+
+	if shouldPublish {
+		store.publishPresenceEvent(topic, EventTypePresenceFieldDraft, updatedUser)
+	}
 }
 
 func (store *PresenceStore) UnlockField(topic string, userID string, fieldKey string) {
@@ -179,6 +219,7 @@ func (store *PresenceStore) UnlockField(topic string, userID string, fieldKey st
 			if fieldKey == "" || entry.user.FieldKey == fieldKey {
 				entry.user.FieldKey = ""
 				entry.user.LockID = ""
+				entry.user.DraftValue = ""
 				entry.user.UpdatedAt = time.Now().UTC()
 				topicEntries[userID] = entry
 				unlockedUser = entry.user
@@ -310,8 +351,18 @@ func normalizePresenceUser(user PresenceUser, now time.Time) PresenceUser {
 	user.AvatarPath = strings.TrimSpace(user.AvatarPath)
 	user.FieldKey = strings.TrimSpace(user.FieldKey)
 	user.LockID = strings.TrimSpace(user.LockID)
+	user.DraftValue = normalizePresenceDraftValue(user.DraftValue)
 	user.UpdatedAt = now
 	return user
+}
+
+func normalizePresenceDraftValue(value string) string {
+	value = strings.ReplaceAll(value, "\x00", "")
+	runes := []rune(value)
+	if len(runes) <= maxPresenceDraftRunes {
+		return value
+	}
+	return string(runes[:maxPresenceDraftRunes])
 }
 
 func snapshotPresenceLocked(entries map[string]presenceEntry) []PresenceUser {
@@ -345,6 +396,7 @@ func presenceEventForTopic(topic string, eventType string, user PresenceUser) Ev
 		AvatarPath:  user.AvatarPath,
 		FieldKey:    user.FieldKey,
 		LockID:      user.LockID,
+		DraftValue:  user.DraftValue,
 		SavedAt:     time.Now().UTC(),
 	}
 

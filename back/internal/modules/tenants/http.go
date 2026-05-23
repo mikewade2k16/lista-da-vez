@@ -63,11 +63,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		tenant, err := service.Create(r.Context(), principal, CreateInput{
-			Slug:     request.Slug,
-			Name:     request.Name,
-			IsActive: request.IsActive,
-		})
+		tenant, err := service.Create(r.Context(), principal, CreateInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

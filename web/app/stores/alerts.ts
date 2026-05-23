@@ -1,25 +1,25 @@
-import { computed, ref, watch } from "vue"
-import { defineStore } from "pinia"
+import { computed, ref, watch } from 'vue'
+import { defineStore } from 'pinia'
 
-import { useAuthStore } from "~/stores/auth"
-import { createApiRequest, getApiErrorMessage } from "~/utils/api-client"
-import { normalizeAlertHexColor } from "~/utils/alert-colors"
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+import { normalizeAlertHexColor } from '~/utils/alert-colors'
 
 function normalizeText(value: unknown) {
-  return String(value || "").trim()
+  return String(value || '').trim()
 }
 
 function normalizeBoolean(value: unknown, fallback = false) {
-  if (typeof value === "boolean") {
+  if (typeof value === 'boolean') {
     return value
   }
 
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase()
-    if (["true", "1", "yes"].includes(normalized)) {
+    if (['true', '1', 'yes'].includes(normalized)) {
       return true
     }
-    if (["false", "0", "no"].includes(normalized)) {
+    if (['false', '0', 'no'].includes(normalized)) {
       return false
     }
   }
@@ -29,11 +29,13 @@ function normalizeBoolean(value: unknown, fallback = false) {
 
 function normalizeDate(value: unknown) {
   const normalized = normalizeText(value)
-  return normalized || ""
+  return normalized || ''
 }
 
 function normalizeMetadata(value: unknown) {
-  return value && typeof value === "object" && !Array.isArray(value) ? { ...value as Record<string, unknown> } : {}
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? { ...(value as Record<string, unknown>) }
+    : {}
 }
 
 function normalizeAlert(alert: Record<string, unknown> = {}) {
@@ -54,7 +56,7 @@ function normalizeAlert(alert: Record<string, unknown> = {}) {
     lastTriggeredAt: normalizeDate(alert.lastTriggeredAt),
     acknowledgedAt: normalizeDate(alert.acknowledgedAt),
     resolvedAt: normalizeDate(alert.resolvedAt),
-    interactionKind: normalizeText(alert.interactionKind) || "none",
+    interactionKind: normalizeText(alert.interactionKind) || 'none',
     interactionResponse: normalizeText(alert.interactionResponse),
     respondedAt: normalizeDate(alert.respondedAt),
     externalNotifiedAt: normalizeDate(alert.externalNotifiedAt),
@@ -62,15 +64,15 @@ function normalizeAlert(alert: Record<string, unknown> = {}) {
     updatedAt: normalizeDate(alert.updatedAt),
     metadata: normalizeMetadata(alert.metadata),
     ruleDefinitionId: normalizeText(alert.ruleDefinitionId),
-    displayKind: normalizeText(alert.displayKind) || "banner",
-    colorTheme: normalizeAlertHexColor(alert.colorTheme || "amber"),
+    displayKind: normalizeText(alert.displayKind) || 'banner',
+    colorTheme: normalizeAlertHexColor(alert.colorTheme || 'amber'),
     titleTemplate: normalizeText(alert.titleTemplate) || normalizeText(alert.headline),
     bodyTemplate: normalizeText(alert.bodyTemplate) || normalizeText(alert.body),
     responseOptions: Array.isArray(alert.responseOptions)
       ? (alert.responseOptions as Array<{ value: string; label: string }>)
       : [],
     isMandatory: normalizeBoolean(alert.isMandatory, false),
-    consultantName: normalizeText(alert.consultantName)
+    consultantName: normalizeText(alert.consultantName),
   }
 }
 
@@ -81,7 +83,7 @@ function normalizeOverview(overview: Record<string, unknown> = {}) {
     totalActive: Math.max(0, Number(overview.totalActive || 0) || 0),
     criticalActive: Math.max(0, Number(overview.criticalActive || 0) || 0),
     acknowledged: Math.max(0, Number(overview.acknowledged || 0) || 0),
-    resolvedToday: Math.max(0, Number(overview.resolvedToday || 0) || 0)
+    resolvedToday: Math.max(0, Number(overview.resolvedToday || 0) || 0),
   }
 }
 
@@ -94,40 +96,44 @@ function normalizeRules(rules: Record<string, unknown> = {}) {
     notifyDashboard: normalizeBoolean(rules.notifyDashboard, true),
     notifyOperationContext: normalizeBoolean(rules.notifyOperationContext, true),
     notifyExternal: normalizeBoolean(rules.notifyExternal, false),
-    source: normalizeText(rules.source) || "module-defaults",
-    updatedAt: normalizeDate(rules.updatedAt)
+    source: normalizeText(rules.source) || 'module-defaults',
+    updatedAt: normalizeDate(rules.updatedAt),
   }
 }
 
 const rulePayloadKeys = [
-  "name",
-  "description",
-  "isActive",
-  "triggerType",
-  "thresholdMinutes",
-  "severity",
-  "displayKind",
-  "colorTheme",
-  "titleTemplate",
-  "bodyTemplate",
-  "interactionKind",
-  "responseOptions",
-  "isMandatory",
-  "notifyDashboard",
-  "notifyOperationContext",
-  "notifyExternal",
-  "externalChannel"
+  'name',
+  'description',
+  'isActive',
+  'triggerType',
+  'thresholdMinutes',
+  'severity',
+  'displayKind',
+  'colorTheme',
+  'titleTemplate',
+  'bodyTemplate',
+  'interactionKind',
+  'responseOptions',
+  'isMandatory',
+  'notifyDashboard',
+  'notifyOperationContext',
+  'notifyExternal',
+  'externalChannel',
 ]
 
-function createScopeKey(scopeType: string, scopeId: string, filters: { status: string; type: string }) {
+function createScopeKey(
+  scopeType: string,
+  scopeId: string,
+  filters: { status: string; type: string },
+) {
   return JSON.stringify({
     scopeType,
     scopeId,
-    filters
+    filters,
   })
 }
 
-export const useAlertsStore = defineStore("alerts", () => {
+export const useAlertsStore = defineStore('alerts', () => {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
@@ -137,20 +143,22 @@ export const useAlertsStore = defineStore("alerts", () => {
   const rules = ref<ReturnType<typeof normalizeRules> | null>(null)
   const ruleDefinitions = ref<Array<Record<string, any>>>([])
   const filters = ref({
-    status: "active",
-    type: ""
+    status: 'active',
+    type: '',
   })
   const pending = ref(false)
   const rulesPending = ref(false)
   const ready = ref(false)
   const rulesLoaded = ref(false)
-  const errorMessage = ref("")
-  const lastLoadedKey = ref("")
+  const errorMessage = ref('')
+  const lastLoadedKey = ref('')
   const pendingFinishForServiceId = ref<string | null>(null)
 
   const integratedScope = computed(() => Boolean(auth.isAllStoresScope))
   const activeStoreId = computed(() => normalizeText(auth.activeStoreId))
-  const activeTenantId = computed(() => normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id))
+  const activeTenantId = computed(() =>
+    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id),
+  )
 
   function hasValidScope() {
     if (!auth.isAuthenticated) {
@@ -168,28 +176,31 @@ export const useAlertsStore = defineStore("alerts", () => {
     const params = new URLSearchParams()
 
     if (activeTenantId.value) {
-      params.set("tenantId", activeTenantId.value)
+      params.set('tenantId', activeTenantId.value)
     }
 
     if (!integratedScope.value && activeStoreId.value) {
-      params.set("storeId", activeStoreId.value)
+      params.set('storeId', activeStoreId.value)
     }
 
     if (includeFilters) {
-      params.set("category", "operational")
+      params.set('category', 'operational')
 
       if (filters.value.status) {
-        params.set("status", filters.value.status)
+        params.set('status', filters.value.status)
       }
       if (filters.value.type) {
-        params.set("type", filters.value.type)
+        params.set('type', filters.value.type)
       }
     }
 
     return params
   }
 
-  function sanitizeRulePayload(input: Record<string, unknown> = {}, { includeTenant = false } = {}) {
+  function sanitizeRulePayload(
+    input: Record<string, unknown> = {},
+    { includeTenant = false } = {},
+  ) {
     const payload: Record<string, unknown> = {}
 
     if (includeTenant && activeTenantId.value) {
@@ -201,21 +212,20 @@ export const useAlertsStore = defineStore("alerts", () => {
         continue
       }
 
-      if (key === "responseOptions") {
+      if (key === 'responseOptions') {
         payload.responseOptions = Array.isArray(input.responseOptions)
           ? input.responseOptions
               .map((option: any) => ({
                 value: normalizeText(option?.value),
-                label: normalizeText(option?.label)
+                label: normalizeText(option?.label),
               }))
               .filter((option) => option.value || option.label)
           : []
         continue
       }
 
-      payload[key] = key === "colorTheme"
-        ? normalizeAlertHexColor(input[key]).toUpperCase()
-        : input[key]
+      payload[key] =
+        key === 'colorTheme' ? normalizeAlertHexColor(input[key]).toUpperCase() : input[key]
     }
 
     return payload
@@ -223,10 +233,10 @@ export const useAlertsStore = defineStore("alerts", () => {
 
   function currentScopeKey() {
     if (integratedScope.value) {
-      return createScopeKey("tenant", activeTenantId.value, filters.value)
+      return createScopeKey('tenant', activeTenantId.value, filters.value)
     }
 
-    return createScopeKey("store", activeStoreId.value, filters.value)
+    return createScopeKey('store', activeStoreId.value, filters.value)
   }
 
   function clearState() {
@@ -235,8 +245,8 @@ export const useAlertsStore = defineStore("alerts", () => {
     rules.value = null
     ready.value = false
     rulesLoaded.value = false
-    errorMessage.value = ""
-    lastLoadedKey.value = ""
+    errorMessage.value = ''
+    lastLoadedKey.value = ''
   }
 
   function updateLocalAlert(nextAlert: Record<string, unknown>) {
@@ -257,7 +267,9 @@ export const useAlertsStore = defineStore("alerts", () => {
       return null
     }
 
-    const response = await apiRequest(`/v1/alerts/overview?${buildScopeParams({ includeFilters: false }).toString()}`)
+    const response = await apiRequest(
+      `/v1/alerts/overview?${buildScopeParams({ includeFilters: false }).toString()}`,
+    )
     overview.value = normalizeOverview(response?.overview || {})
     return overview.value
   }
@@ -269,12 +281,12 @@ export const useAlertsStore = defineStore("alerts", () => {
     }
 
     pending.value = true
-    errorMessage.value = ""
+    errorMessage.value = ''
 
     try {
       const [alertsResponse, overviewResponse] = await Promise.all([
         apiRequest(`/v1/alerts?${buildScopeParams().toString()}`),
-        apiRequest(`/v1/alerts/overview?${buildScopeParams({ includeFilters: false }).toString()}`)
+        apiRequest(`/v1/alerts/overview?${buildScopeParams({ includeFilters: false }).toString()}`),
       ])
 
       items.value = Array.isArray(alertsResponse?.alerts)
@@ -286,7 +298,7 @@ export const useAlertsStore = defineStore("alerts", () => {
 
       return items.value
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar os alertas.")
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar os alertas.')
       throw error
     } finally {
       pending.value = false
@@ -304,13 +316,16 @@ export const useAlertsStore = defineStore("alerts", () => {
 
     try {
       const params = new URLSearchParams()
-      params.set("tenantId", activeTenantId.value)
+      params.set('tenantId', activeTenantId.value)
       const response = await apiRequest(`/v1/alerts/rules?${params.toString()}`)
       rules.value = normalizeRules(response?.rules || {})
       rulesLoaded.value = true
       return rules.value
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar as regras de alertas.")
+      errorMessage.value = getApiErrorMessage(
+        error,
+        'Nao foi possivel carregar as regras de alertas.',
+      )
       throw error
     } finally {
       rulesPending.value = false
@@ -351,32 +366,38 @@ export const useAlertsStore = defineStore("alerts", () => {
       ...filters.value,
       ...nextFilters,
       status: normalizeText(nextFilters.status ?? filters.value.status),
-      type: normalizeText(nextFilters.type ?? filters.value.type)
+      type: normalizeText(nextFilters.type ?? filters.value.type),
     }
 
     return refreshAlerts()
   }
 
-  async function acknowledgeAlert(alertId: string, note = "") {
-    const response = await apiRequest(`/v1/alerts/${encodeURIComponent(normalizeText(alertId))}/acknowledge`, {
-      method: "POST",
-      body: {
-        note: normalizeText(note)
-      }
-    })
+  async function acknowledgeAlert(alertId: string, note = '') {
+    const response = await apiRequest(
+      `/v1/alerts/${encodeURIComponent(normalizeText(alertId))}/acknowledge`,
+      {
+        method: 'POST',
+        body: {
+          note: normalizeText(note),
+        },
+      },
+    )
 
     const updated = updateLocalAlert(response?.alert || {})
     await refreshOverview()
     return updated
   }
 
-  async function resolveAlert(alertId: string, note = "") {
-    const response = await apiRequest(`/v1/alerts/${encodeURIComponent(normalizeText(alertId))}/resolve`, {
-      method: "POST",
-      body: {
-        note: normalizeText(note)
-      }
-    })
+  async function resolveAlert(alertId: string, note = '') {
+    const response = await apiRequest(
+      `/v1/alerts/${encodeURIComponent(normalizeText(alertId))}/resolve`,
+      {
+        method: 'POST',
+        body: {
+          note: normalizeText(note),
+        },
+      },
+    )
 
     const updated = updateLocalAlert(response?.alert || {})
     await refreshOverview()
@@ -385,23 +406,35 @@ export const useAlertsStore = defineStore("alerts", () => {
 
   async function updateRules(payload: Record<string, unknown> = {}) {
     if (!activeTenantId.value) {
-      throw new Error("Tenant invalido para regras de alertas.")
+      throw new Error('Tenant invalido para regras de alertas.')
     }
 
     rulesPending.value = true
 
     try {
-      const response = await apiRequest(`/v1/alerts/rules?tenantId=${encodeURIComponent(activeTenantId.value)}`, {
-        method: "PATCH",
-        body: {
-          longOpenServiceMinutes: Math.max(1, Number(payload.longOpenServiceMinutes || 0) || defaultLongOpenServiceMinutes),
-          idleStoreMinutes: Math.max(1, Number(payload.idleStoreMinutes || 0) || defaultIdleStoreMinutes),
-          afterClosingGraceMinutes: Math.max(0, Number(payload.afterClosingGraceMinutes || 0) || defaultAfterClosingGraceMinutes),
-          notifyDashboard: normalizeBoolean(payload.notifyDashboard, true),
-          notifyOperationContext: normalizeBoolean(payload.notifyOperationContext, true),
-          notifyExternal: normalizeBoolean(payload.notifyExternal, false)
-        }
-      })
+      const response = await apiRequest(
+        `/v1/alerts/rules?tenantId=${encodeURIComponent(activeTenantId.value)}`,
+        {
+          method: 'PATCH',
+          body: {
+            longOpenServiceMinutes: Math.max(
+              1,
+              Number(payload.longOpenServiceMinutes || 0) || defaultLongOpenServiceMinutes,
+            ),
+            idleStoreMinutes: Math.max(
+              1,
+              Number(payload.idleStoreMinutes || 0) || defaultIdleStoreMinutes,
+            ),
+            afterClosingGraceMinutes: Math.max(
+              0,
+              Number(payload.afterClosingGraceMinutes || 0) || defaultAfterClosingGraceMinutes,
+            ),
+            notifyDashboard: normalizeBoolean(payload.notifyDashboard, true),
+            notifyOperationContext: normalizeBoolean(payload.notifyOperationContext, true),
+            notifyExternal: normalizeBoolean(payload.notifyExternal, false),
+          },
+        },
+      )
 
       rules.value = normalizeRules(response?.rules || {})
       rulesLoaded.value = true
@@ -412,10 +445,13 @@ export const useAlertsStore = defineStore("alerts", () => {
   }
 
   async function respondToAlert(alertId: string, response: string) {
-    const result = await apiRequest(`/v1/alerts/${encodeURIComponent(normalizeText(alertId))}/respond`, {
-      method: "POST",
-      body: { response }
-    })
+    const result = await apiRequest(
+      `/v1/alerts/${encodeURIComponent(normalizeText(alertId))}/respond`,
+      {
+        method: 'POST',
+        body: { response },
+      },
+    )
 
     updateLocalAlert(result?.alert || {})
     await refreshOverview()
@@ -427,7 +463,9 @@ export const useAlertsStore = defineStore("alerts", () => {
     return result
   }
 
-  async function fetchRuleDefinitions(filters: { triggerType?: string; onlyActive?: boolean } = {}) {
+  async function fetchRuleDefinitions(
+    filters: { triggerType?: string; onlyActive?: boolean } = {},
+  ) {
     if (!activeTenantId.value) {
       ruleDefinitions.value = []
       return []
@@ -438,13 +476,13 @@ export const useAlertsStore = defineStore("alerts", () => {
     try {
       const params = new URLSearchParams({
         tenantId: activeTenantId.value,
-        format: "definitions"
+        format: 'definitions',
       })
       if (filters.triggerType) {
-        params.append("triggerType", normalizeText(filters.triggerType))
+        params.append('triggerType', normalizeText(filters.triggerType))
       }
       if (filters.onlyActive) {
-        params.append("onlyActive", "true")
+        params.append('onlyActive', 'true')
       }
 
       const response = await apiRequest(`/v1/alerts/rules?${params.toString()}`)
@@ -452,7 +490,7 @@ export const useAlertsStore = defineStore("alerts", () => {
       ruleDefinitions.value = rules
       return rules
     } catch (err) {
-      errorMessage.value = getApiErrorMessage(err)
+      errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel carregar as regras.')
       return []
     } finally {
       rulesPending.value = false
@@ -461,15 +499,15 @@ export const useAlertsStore = defineStore("alerts", () => {
 
   async function createRule(input: Record<string, unknown>) {
     if (!activeTenantId.value) {
-      throw new Error("Tenant invalido para criar regra.")
+      throw new Error('Tenant invalido para criar regra.')
     }
 
     rulesPending.value = true
 
     try {
-      const response = await apiRequest("/v1/alerts/rules", {
-        method: "POST",
-        body: sanitizeRulePayload(input, { includeTenant: true })
+      const response = await apiRequest('/v1/alerts/rules', {
+        method: 'POST',
+        body: sanitizeRulePayload(input, { includeTenant: true }),
       })
       const rule = response?.rule || null
       if (rule) {
@@ -477,7 +515,7 @@ export const useAlertsStore = defineStore("alerts", () => {
       }
       return rule
     } catch (err) {
-      errorMessage.value = getApiErrorMessage(err)
+      errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel criar a regra.')
       throw err
     } finally {
       rulesPending.value = false
@@ -488,10 +526,13 @@ export const useAlertsStore = defineStore("alerts", () => {
     rulesPending.value = true
 
     try {
-      const response = await apiRequest(`/v1/alerts/rules/${encodeURIComponent(normalizeText(ruleId))}`, {
-        method: "PATCH",
-        body: sanitizeRulePayload(input)
-      })
+      const response = await apiRequest(
+        `/v1/alerts/rules/${encodeURIComponent(normalizeText(ruleId))}`,
+        {
+          method: 'PATCH',
+          body: sanitizeRulePayload(input),
+        },
+      )
       const rule = response?.rule || null
       if (rule) {
         const index = ruleDefinitions.value.findIndex((r) => r.id === rule.id)
@@ -501,7 +542,7 @@ export const useAlertsStore = defineStore("alerts", () => {
       }
       return rule
     } catch (err) {
-      errorMessage.value = getApiErrorMessage(err)
+      errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel atualizar a regra.')
       throw err
     } finally {
       rulesPending.value = false
@@ -513,11 +554,11 @@ export const useAlertsStore = defineStore("alerts", () => {
 
     try {
       await apiRequest(`/v1/alerts/rules/${encodeURIComponent(normalizeText(ruleId))}`, {
-        method: "DELETE"
+        method: 'DELETE',
       })
       ruleDefinitions.value = ruleDefinitions.value.filter((r) => r.id !== ruleId)
     } catch (err) {
-      errorMessage.value = getApiErrorMessage(err)
+      errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel remover a regra.')
       throw err
     } finally {
       rulesPending.value = false
@@ -528,14 +569,17 @@ export const useAlertsStore = defineStore("alerts", () => {
     rulesPending.value = true
 
     try {
-      const response = await apiRequest(`/v1/alerts/rules/${encodeURIComponent(normalizeText(ruleId))}/apply-now`, {
-        method: "POST"
-      })
+      const response = await apiRequest(
+        `/v1/alerts/rules/${encodeURIComponent(normalizeText(ruleId))}/apply-now`,
+        {
+          method: 'POST',
+        },
+      )
       const appliedCount = Math.max(0, Number(response?.appliedCount || 0) || 0)
       await refreshAlerts()
       return { appliedCount }
     } catch (err) {
-      errorMessage.value = getApiErrorMessage(err)
+      errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel aplicar a regra agora.')
       throw err
     } finally {
       rulesPending.value = false
@@ -545,14 +589,14 @@ export const useAlertsStore = defineStore("alerts", () => {
   function activeAlertsForStore(storeId: string) {
     const normalizedStoreId = normalizeText(storeId)
     return items.value.filter(
-      (alert) => alert.status === "active" && alert.storeId === normalizedStoreId
+      (alert) => alert.status === 'active' && alert.storeId === normalizedStoreId,
     )
   }
 
   function alertForService(serviceId: string) {
     const normalizedServiceId = normalizeText(serviceId)
     return items.value.find(
-      (alert) => alert.serviceId === normalizedServiceId && alert.status === "active"
+      (alert) => alert.serviceId === normalizedServiceId && alert.status === 'active',
     )
   }
 
@@ -564,14 +608,22 @@ export const useAlertsStore = defineStore("alerts", () => {
     await Promise.allSettled([
       refreshAlerts(),
       rulesLoaded.value ? fetchRules() : Promise.resolve(null),
-      activeTenantId.value ? fetchRuleDefinitions() : Promise.resolve([])
+      activeTenantId.value ? fetchRuleDefinitions() : Promise.resolve([]),
     ])
   }
 
   if (import.meta.client) {
     watch(
-      () => [auth.isAuthenticated, activeStoreId.value, activeTenantId.value, integratedScope.value],
-      ([isAuthenticated, storeId, tenantId, isIntegrated], [previousAuthenticated, previousStoreId, previousTenantId, previousIntegrated]) => {
+      () => [
+        auth.isAuthenticated,
+        activeStoreId.value,
+        activeTenantId.value,
+        integratedScope.value,
+      ],
+      (
+        [isAuthenticated, storeId, tenantId, isIntegrated],
+        [previousAuthenticated, previousStoreId, previousTenantId, previousIntegrated],
+      ) => {
         if (!isAuthenticated || (isIntegrated ? !tenantId : !storeId && !tenantId)) {
           clearState()
           return
@@ -585,7 +637,7 @@ export const useAlertsStore = defineStore("alerts", () => {
         ) {
           void ensureLoaded()
         }
-      }
+      },
     )
   }
 
@@ -619,7 +671,7 @@ export const useAlertsStore = defineStore("alerts", () => {
     activeAlertsForStore,
     alertForService,
     updateRules,
-    refreshRealtimeState
+    refreshRealtimeState,
   }
 })
 

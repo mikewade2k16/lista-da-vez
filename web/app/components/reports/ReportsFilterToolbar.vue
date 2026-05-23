@@ -1,286 +1,286 @@
 <script setup>
-import { computed } from "vue";
+import { computed } from 'vue'
 
 const FILTER_GROUPS = [
-  { id: "consultantIds", label: "Consultor" },
-  { id: "outcomes", label: "Desfecho" },
-  { id: "sourceIds", label: "Origem" },
-  { id: "visitReasonIds", label: "Motivo" },
-  { id: "campaignIds", label: "Campanha" },
-  { id: "startModes", label: "Tipo" },
-  { id: "existingCustomerModes", label: "Cliente" },
-  { id: "completionLevels", label: "Preenchimento" },
-  { id: "advanced", label: "Periodo e busca" }
-];
+  { id: 'consultantIds', label: 'Consultor' },
+  { id: 'outcomes', label: 'Desfecho' },
+  { id: 'sourceIds', label: 'Origem' },
+  { id: 'visitReasonIds', label: 'Motivo' },
+  { id: 'campaignIds', label: 'Campanha' },
+  { id: 'startModes', label: 'Tipo' },
+  { id: 'existingCustomerModes', label: 'Cliente' },
+  { id: 'completionLevels', label: 'Preenchimento' },
+  { id: 'advanced', label: 'Periodo e busca' },
+]
 
 const props = defineProps({
   filters: {
     type: Object,
-    required: true
+    required: true,
   },
   roster: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   visitReasonOptions: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   customerSourceOptions: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   campaigns: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   filtersExpanded: {
     type: Boolean,
-    default: false
+    default: false,
   },
   expandedGroup: {
     type: String,
-    default: null
-  }
-});
+    default: null,
+  },
+})
 
 defineEmits([
-  "toggle-filters",
-  "toggle-group",
-  "toggle-value",
-  "update-filter",
-  "clear-filter",
-  "reset-filters",
-  "export-csv",
-  "export-pdf"
-]);
+  'toggle-filters',
+  'toggle-group',
+  'toggle-value',
+  'update-filter',
+  'clear-filter',
+  'reset-filters',
+  'export-csv',
+  'export-pdf',
+])
 
 function formatCurrency(value) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  }).format(Number(value || 0));
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(Number(value || 0))
 }
 
 function hasActiveValue(value) {
-  return Array.isArray(value) ? value.length > 0 : String(value || "").trim().length > 0;
+  return Array.isArray(value) ? value.length > 0 : String(value || '').trim().length > 0
 }
 
 function hasActiveGroup(groupId) {
-  if (groupId === "advanced") {
+  if (groupId === 'advanced') {
     return Boolean(
       props.filters.dateFrom ||
-        props.filters.dateTo ||
-        props.filters.minSaleAmount ||
-        props.filters.maxSaleAmount ||
-        props.filters.search
-    );
+      props.filters.dateTo ||
+      props.filters.minSaleAmount ||
+      props.filters.maxSaleAmount ||
+      props.filters.search,
+    )
   }
 
-  return hasActiveValue(props.filters[groupId]);
+  return hasActiveValue(props.filters[groupId])
 }
 
 const activeChips = computed(() => {
-  const consultantMap = new Map((props.roster || []).map((consultant) => [consultant.id, consultant.name]));
-  const visitReasonMap = new Map((props.visitReasonOptions || []).map((item) => [item.id, item.label]));
-  const customerSourceMap = new Map((props.customerSourceOptions || []).map((item) => [item.id, item.label]));
+  const consultantMap = new Map(
+    (props.roster || []).map((consultant) => [consultant.id, consultant.name]),
+  )
+  const visitReasonMap = new Map(
+    (props.visitReasonOptions || []).map((item) => [item.id, item.label]),
+  )
+  const customerSourceMap = new Map(
+    (props.customerSourceOptions || []).map((item) => [item.id, item.label]),
+  )
   const outcomeMap = new Map([
-    ["compra", "Compra"],
-    ["reserva", "Reserva"],
-    ["nao-compra", "Nao compra"]
-  ]);
+    ['compra', 'Compra'],
+    ['reserva', 'Reserva'],
+    ['nao-compra', 'Nao compra'],
+  ])
   const startModeMap = new Map([
-    ["queue", "Na vez"],
-    ["queue-jump", "Fora da vez"]
-  ]);
+    ['queue', 'Na vez'],
+    ['queue-jump', 'Fora da vez'],
+  ])
   const existingCustomerMap = new Map([
-    ["yes", "Recorrente"],
-    ["no", "Novo cliente"]
-  ]);
+    ['yes', 'Recorrente'],
+    ['no', 'Novo cliente'],
+  ])
   const completionMap = new Map([
-    ["excellent", "Completo + observacao"],
-    ["complete", "Completo"],
-    ["incomplete", "Incompleto"]
-  ]);
-  const chips = [];
+    ['excellent', 'Completo + observacao'],
+    ['complete', 'Completo'],
+    ['incomplete', 'Incompleto'],
+  ])
+  const chips = []
 
-  (props.filters.consultantIds || []).forEach((value) => {
+  ;(props.filters.consultantIds || []).forEach((value) => {
     chips.push({
-      filterId: "consultantIds",
+      filterId: 'consultantIds',
       filterValue: value,
-      label: `Consultor: ${consultantMap.get(value) || value}`
-    });
-  });
-
-  (props.filters.outcomes || []).forEach((value) => {
+      label: `Consultor: ${consultantMap.get(value) || value}`,
+    })
+  })
+  ;(props.filters.outcomes || []).forEach((value) => {
     chips.push({
-      filterId: "outcomes",
+      filterId: 'outcomes',
       filterValue: value,
-      label: `Desfecho: ${outcomeMap.get(value) || value}`
-    });
-  });
-
-  (props.filters.sourceIds || []).forEach((value) => {
+      label: `Desfecho: ${outcomeMap.get(value) || value}`,
+    })
+  })
+  ;(props.filters.sourceIds || []).forEach((value) => {
     chips.push({
-      filterId: "sourceIds",
+      filterId: 'sourceIds',
       filterValue: value,
-      label: `Origem: ${customerSourceMap.get(value) || value}`
-    });
-  });
-
-  (props.filters.visitReasonIds || []).forEach((value) => {
+      label: `Origem: ${customerSourceMap.get(value) || value}`,
+    })
+  })
+  ;(props.filters.visitReasonIds || []).forEach((value) => {
     chips.push({
-      filterId: "visitReasonIds",
+      filterId: 'visitReasonIds',
       filterValue: value,
-      label: `Motivo: ${visitReasonMap.get(value) || value}`
-    });
-  });
-
-  (props.filters.startModes || []).forEach((value) => {
+      label: `Motivo: ${visitReasonMap.get(value) || value}`,
+    })
+  })
+  ;(props.filters.startModes || []).forEach((value) => {
     chips.push({
-      filterId: "startModes",
+      filterId: 'startModes',
       filterValue: value,
-      label: `Tipo: ${startModeMap.get(value) || value}`
-    });
-  });
-
-  (props.filters.existingCustomerModes || []).forEach((value) => {
+      label: `Tipo: ${startModeMap.get(value) || value}`,
+    })
+  })
+  ;(props.filters.existingCustomerModes || []).forEach((value) => {
     chips.push({
-      filterId: "existingCustomerModes",
+      filterId: 'existingCustomerModes',
       filterValue: value,
-      label: `Cliente: ${existingCustomerMap.get(value) || value}`
-    });
-  });
-
-  (props.filters.completionLevels || []).forEach((value) => {
+      label: `Cliente: ${existingCustomerMap.get(value) || value}`,
+    })
+  })
+  ;(props.filters.completionLevels || []).forEach((value) => {
     chips.push({
-      filterId: "completionLevels",
+      filterId: 'completionLevels',
       filterValue: value,
-      label: `Preenchimento: ${completionMap.get(value) || value}`
-    });
-  });
+      label: `Preenchimento: ${completionMap.get(value) || value}`,
+    })
+  })
 
-  const campaignMap = new Map((props.campaigns || []).map((c) => [c.id, c.name || c.id]));
+  const campaignMap = new Map((props.campaigns || []).map((c) => [c.id, c.name || c.id]))
 
-  (props.filters.campaignIds || []).forEach((value) => {
+  ;(props.filters.campaignIds || []).forEach((value) => {
     chips.push({
-      filterId: "campaignIds",
+      filterId: 'campaignIds',
       filterValue: value,
-      label: `Campanha: ${campaignMap.get(value) || value}`
-    });
-  });
+      label: `Campanha: ${campaignMap.get(value) || value}`,
+    })
+  })
 
   if (props.filters.dateFrom) {
     chips.push({
-      filterId: "dateFrom",
-      label: `De: ${props.filters.dateFrom}`
-    });
+      filterId: 'dateFrom',
+      label: `De: ${props.filters.dateFrom}`,
+    })
   }
 
   if (props.filters.dateTo) {
     chips.push({
-      filterId: "dateTo",
-      label: `Ate: ${props.filters.dateTo}`
-    });
+      filterId: 'dateTo',
+      label: `Ate: ${props.filters.dateTo}`,
+    })
   }
 
   if (props.filters.minSaleAmount) {
     chips.push({
-      filterId: "minSaleAmount",
-      label: `Min: ${formatCurrency(props.filters.minSaleAmount)}`
-    });
+      filterId: 'minSaleAmount',
+      label: `Min: ${formatCurrency(props.filters.minSaleAmount)}`,
+    })
   }
 
   if (props.filters.maxSaleAmount) {
     chips.push({
-      filterId: "maxSaleAmount",
-      label: `Max: ${formatCurrency(props.filters.maxSaleAmount)}`
-    });
+      filterId: 'maxSaleAmount',
+      label: `Max: ${formatCurrency(props.filters.maxSaleAmount)}`,
+    })
   }
 
   if (props.filters.search) {
     chips.push({
-      filterId: "search",
-      label: `Busca: ${props.filters.search}`
-    });
+      filterId: 'search',
+      label: `Busca: ${props.filters.search}`,
+    })
   }
 
-  return chips;
-});
+  return chips
+})
 
 const consultantOptions = computed(() =>
   (props.roster || []).map((consultant) => ({
     value: consultant.id,
-    label: consultant.name
-  }))
-);
+    label: consultant.name,
+  })),
+)
 const campaignOptions = computed(() =>
   (props.campaigns || []).map((c) => ({
     value: c.id,
-    label: c.name || c.id
-  }))
-);
+    label: c.name || c.id,
+  })),
+)
 const sourceOptions = computed(() =>
   (props.customerSourceOptions || []).map((option) => ({
     value: option.id,
-    label: option.label
-  }))
-);
+    label: option.label,
+  })),
+)
 const visitReasonOptions = computed(() =>
   (props.visitReasonOptions || []).map((option) => ({
     value: option.id,
-    label: option.label
-  }))
-);
+    label: option.label,
+  })),
+)
 
 function getGroupOptions(groupId) {
-  if (groupId === "consultantIds") {
-    return consultantOptions.value;
+  if (groupId === 'consultantIds') {
+    return consultantOptions.value
   }
 
-  if (groupId === "outcomes") {
+  if (groupId === 'outcomes') {
     return [
-      { value: "compra", label: "Compra" },
-      { value: "reserva", label: "Reserva" },
-      { value: "nao-compra", label: "Nao compra" }
-    ];
+      { value: 'compra', label: 'Compra' },
+      { value: 'reserva', label: 'Reserva' },
+      { value: 'nao-compra', label: 'Nao compra' },
+    ]
   }
 
-  if (groupId === "sourceIds") {
-    return sourceOptions.value;
+  if (groupId === 'sourceIds') {
+    return sourceOptions.value
   }
 
-  if (groupId === "visitReasonIds") {
-    return visitReasonOptions.value;
+  if (groupId === 'visitReasonIds') {
+    return visitReasonOptions.value
   }
 
-  if (groupId === "startModes") {
+  if (groupId === 'startModes') {
     return [
-      { value: "queue", label: "Na vez" },
-      { value: "queue-jump", label: "Fora da vez" }
-    ];
+      { value: 'queue', label: 'Na vez' },
+      { value: 'queue-jump', label: 'Fora da vez' },
+    ]
   }
 
-  if (groupId === "existingCustomerModes") {
+  if (groupId === 'existingCustomerModes') {
     return [
-      { value: "yes", label: "Recorrente" },
-      { value: "no", label: "Novo cliente" }
-    ];
+      { value: 'yes', label: 'Recorrente' },
+      { value: 'no', label: 'Novo cliente' },
+    ]
   }
 
-  if (groupId === "completionLevels") {
+  if (groupId === 'completionLevels') {
     return [
-      { value: "excellent", label: "Completo + observacao" },
-      { value: "complete", label: "Completo" },
-      { value: "incomplete", label: "Incompleto" }
-    ];
+      { value: 'excellent', label: 'Completo + observacao' },
+      { value: 'complete', label: 'Completo' },
+      { value: 'incomplete', label: 'Incompleto' },
+    ]
   }
 
-  if (groupId === "campaignIds") {
-    return campaignOptions.value;
+  if (groupId === 'campaignIds') {
+    return campaignOptions.value
   }
 
-  return [];
+  return []
 }
 </script>
 
@@ -337,7 +337,7 @@ function getGroupOptions(groupId) {
           type="button"
           :class="[
             'report-filter-group-btn',
-            { 'is-active': expandedGroup === group.id, 'has-value': hasActiveGroup(group.id) }
+            { 'is-active': expandedGroup === group.id, 'has-value': hasActiveGroup(group.id) },
           ]"
           @click="$emit('toggle-group', group.id)"
         >
@@ -350,11 +350,19 @@ function getGroupOptions(groupId) {
           <div class="report-filter-grid">
             <label class="settings-field">
               <span>Data inicial</span>
-              <input type="date" :value="filters.dateFrom" @input="$emit('update-filter', 'dateFrom', $event.target.value)">
+              <input
+                type="date"
+                :value="filters.dateFrom"
+                @input="$emit('update-filter', 'dateFrom', $event.target.value)"
+              />
             </label>
             <label class="settings-field">
               <span>Data final</span>
-              <input type="date" :value="filters.dateTo" @input="$emit('update-filter', 'dateTo', $event.target.value)">
+              <input
+                type="date"
+                :value="filters.dateTo"
+                @input="$emit('update-filter', 'dateTo', $event.target.value)"
+              />
             </label>
             <label class="settings-field">
               <span>Valor minimo (R$)</span>
@@ -364,7 +372,7 @@ function getGroupOptions(groupId) {
                 step="1"
                 :value="filters.minSaleAmount"
                 @input="$emit('update-filter', 'minSaleAmount', $event.target.value)"
-              >
+              />
             </label>
             <label class="settings-field">
               <span>Valor maximo (R$)</span>
@@ -374,7 +382,7 @@ function getGroupOptions(groupId) {
                 step="1"
                 :value="filters.maxSaleAmount"
                 @input="$emit('update-filter', 'maxSaleAmount', $event.target.value)"
-              >
+              />
             </label>
             <label class="settings-field report-filter-grid__search">
               <span>Busca livre</span>
@@ -383,7 +391,7 @@ function getGroupOptions(groupId) {
                 :value="filters.search"
                 placeholder="ID, cliente, telefone, produto..."
                 @input="$emit('update-filter', 'search', $event.target.value)"
-              >
+              />
             </label>
           </div>
         </template>
@@ -396,7 +404,7 @@ function getGroupOptions(groupId) {
               type="button"
               :class="[
                 'report-option-chip',
-                { 'is-active': (filters[expandedGroup] || []).includes(option.value) }
+                { 'is-active': (filters[expandedGroup] || []).includes(option.value) },
               ]"
               @click="$emit('toggle-value', expandedGroup, option.value)"
             >
@@ -408,10 +416,22 @@ function getGroupOptions(groupId) {
     </template>
 
     <div class="report-actions">
-      <button type="button" class="report-icon-action" title="Exportar CSV" data-testid="reports-export-csv" @click="$emit('export-csv')">
+      <button
+        type="button"
+        class="report-icon-action"
+        title="Exportar CSV"
+        data-testid="reports-export-csv"
+        @click="$emit('export-csv')"
+      >
         <span class="material-icons-round">table_view</span>
       </button>
-      <button type="button" class="report-icon-action" title="Exportar PDF" data-testid="reports-export-pdf" @click="$emit('export-pdf')">
+      <button
+        type="button"
+        class="report-icon-action"
+        title="Exportar PDF"
+        data-testid="reports-export-pdf"
+        @click="$emit('export-pdf')"
+      >
         <span class="material-icons-round">picture_as_pdf</span>
       </button>
     </div>

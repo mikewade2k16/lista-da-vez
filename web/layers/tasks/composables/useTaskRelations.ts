@@ -41,7 +41,9 @@ function sourceValue<T>(source: RelationsSource<T> | undefined, fallback: T): T 
 }
 
 function normalizeText(value: unknown, max = 240) {
-  return String(value ?? '').trim().slice(0, max)
+  return String(value ?? '')
+    .trim()
+    .slice(0, max)
 }
 
 function normalizeRelation(raw: Record<string, unknown>): TaskRelation {
@@ -52,10 +54,13 @@ function normalizeRelation(raw: Record<string, unknown>): TaskRelation {
     resourceType: normalizeText(raw.resourceType, 80),
     resourceId: normalizeText(raw.resourceId, 200),
     labelCache: normalizeText(raw.labelCache, 240),
-    metadataCache: (raw.metadataCache && typeof raw.metadataCache === 'object' && !Array.isArray(raw.metadataCache))
-      ? raw.metadataCache as Record<string, unknown>
-      : {},
-    refreshedAt: normalizeText(raw.refreshedAt, 40)
+    metadataCache:
+      raw.metadataCache &&
+      typeof raw.metadataCache === 'object' &&
+      !Array.isArray(raw.metadataCache)
+        ? (raw.metadataCache as Record<string, unknown>)
+        : {},
+    refreshedAt: normalizeText(raw.refreshedAt, 40),
   }
 }
 
@@ -66,6 +71,9 @@ export function useTaskRelations(options: TaskRelationsOptions) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const request = createApiRequest(runtimeConfig, () => auth.accessToken)
+  const accountId = computed(() =>
+    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80),
+  )
 
   const cache = reactive<Record<string, TaskRelation[]>>({})
   const status = ref<TaskRelationStatus>('idle')
@@ -81,13 +89,19 @@ export function useTaskRelations(options: TaskRelationsOptions) {
   async function fetchRelations(taskId: string, { force = false }: { force?: boolean } = {}) {
     const id = normalizeText(taskId, 120)
     if (!id) return []
+    const resolvedAccountId = accountId.value
+    if (!resolvedAccountId) return []
     if (!force && Array.isArray(cache[id])) {
       return cache[id]
     }
     try {
       status.value = 'loading'
       errorMessage.value = ''
-      const response = await request(`/v1/tasks/${encodeURIComponent(id)}/relations:expand`)
+      const response = await request(`/v1/tasks/${encodeURIComponent(id)}/relations:expand`, {
+        headers: {
+          'X-Account-Id': resolvedAccountId,
+        },
+      })
       const list = Array.isArray(response?.relations)
         ? (response.relations as Record<string, unknown>[]).map(normalizeRelation)
         : []
@@ -117,7 +131,7 @@ export function useTaskRelations(options: TaskRelationsOptions) {
   watch(
     () => ({
       enabled: Boolean(sourceValue(options.enabled, false)),
-      taskId: normalizeText(sourceValue(options.taskId, ''), 120)
+      taskId: normalizeText(sourceValue(options.taskId, ''), 120),
     }),
     ({ enabled, taskId }) => {
       if (!enabled || !taskId) {
@@ -128,7 +142,7 @@ export function useTaskRelations(options: TaskRelationsOptions) {
       activeTaskId.value = taskId
       void fetchRelations(taskId)
     },
-    { immediate: true }
+    { immediate: true },
   )
 
   // Invalidacao via realtime: quando o canal `tasks` publica `task.relation_added` ou
@@ -146,7 +160,7 @@ export function useTaskRelations(options: TaskRelationsOptions) {
         if (eventTaskId === activeTaskId.value) {
           void fetchRelations(eventTaskId, { force: true })
         }
-      }
+      },
     )
   }
 
@@ -156,6 +170,6 @@ export function useTaskRelations(options: TaskRelationsOptions) {
     relations,
     fetchRelations,
     refresh,
-    invalidate
+    invalidate,
   }
 }

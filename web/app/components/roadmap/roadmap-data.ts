@@ -38,6 +38,11 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     id: "tasks-backend",
     label: "Tasks Orquestrador — Backend",
     description: "Transformar o protótipo localStorage em produto multi-tenant real: schema tasks.*, API Go, realtime, RBAC, notificações e sistema de views."
+  },
+  {
+    id: "crm-360",
+    label: "CRM 360 — Fila + ERP",
+    description: "Indicadores por consultor e loja cruzando dados de atendimento da fila com vendas do ERP: conversão, faturamento, PA, ticket médio, produto não encontrado."
   }
 ];
 
@@ -690,6 +695,128 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     ],
     verifiable: "Fuzz 100 IDs de outros tenants → 100% 404 (T9); 70 requisicoes em 60s contra /v1/tasks → a 61a recebe 429 com Retry-After; tail -f no log do app mostra tasks.mutation com account_id/user_id/resource em cada CRUD."
   },
+  // ─── CRM 360 — Fila + ERP ─────────────────────────────────────────────────
+
+  {
+    id: "crm-c1",
+    code: "CRM C1",
+    title: "Indicadores por consultor — backend",
+    goal: "Novo endpoint que funde dados de atendimento da fila (conversão, cancelamento) com dados de vendas do ERP (faturamento, PA, ticket médio, % meta).",
+    status: "in_progress",
+    estimateWeeks: "3–5 dias",
+    startedAt: "2026-05-21",
+    group: "crm-360",
+    tasks: [
+      { id: "model-queue-stats", label: "Adicionar QueueStats (atendimentos, conversões, taxa conversão, taxa cancelamento fila) ao CRMConsultantMetric e CRMStoreMetric", done: false },
+      { id: "query-fusion", label: "Query SQL em repository_crm_aggregates.go que agrega operation_service_history por consultor/loja no período", done: false },
+      { id: "service-fusion", label: "service.CRMOverview inclui dados de fila; taxa cancelamento ERP (ordercanceled/order) calculada separadamente", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/erp/AGENT.md com novos campos e query de fusão", done: false }
+    ],
+    verifiable: "GET /v1/erp/crm retorna atendimentos, taxaConversao e taxaCancelamentoFila por consultor; go test ./... passa."
+  },
+  {
+    id: "crm-c2",
+    code: "CRM C2",
+    title: "Produto não encontrado — modelo e modal",
+    goal: "Separar campo 'produto que o cliente queria mas a loja não tinha' de 'produto visto' no modelo da fila. Adicionar distinção de motivo de perda: preço vs falta de estoque.",
+    status: "in_progress",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-21",
+    group: "crm-360",
+    tasks: [
+      { id: "migration", label: "Migration SQL: adicionar products_not_found_json em operation_service_history", done: false },
+      { id: "model-go", label: "Adicionar ProductsNotFound []ProductEntry ao FinishCommandInput e ServiceHistoryEntry em operations/model.go", done: false },
+      { id: "store-postgres", label: "Persistir e ler products_not_found_json em operations/store_postgres.go", done: false },
+      { id: "frontend-modal", label: "Adicionar seção 'Produto procurado / não encontrado' no OperationFinishModal.vue separada de produtos vistos", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/operations/CONCURRENT_SERVICES.md e AGENT.md com novo campo", done: false }
+    ],
+    verifiable: "Finalizar atendimento com produto não encontrado persiste no banco; histórico retorna o campo; modal mostra seção distinta."
+  },
+  {
+    id: "crm-c3",
+    code: "CRM C3",
+    title: "Painel CRM — gráficos e 360",
+    goal: "ErpCrmWorkspace com gráficos de faturamento, % meta, conversão e cancelamento por consultor e por loja. Cards de indicadores com comparativo.",
+    status: "pending",
+    estimateWeeks: "4–6 dias",
+    group: "crm-360",
+    tasks: [
+      { id: "ts-types", label: "Atualizar tipos TypeScript no CRM store com novos campos de QueueStats", done: false },
+      { id: "chart-consultant", label: "Gráficos por consultor: faturamento, % meta, PA, ticket médio, taxa conversão, taxa cancelamento", done: false },
+      { id: "chart-store", label: "Comparativo por loja: mesmos indicadores + ranking", done: false },
+      { id: "products-not-found", label: "Seção de produto não encontrado no painel CRM com agrupamento por SKU/motivo", done: false },
+      { id: "360-checklist", label: "Aba 360 com indicadores + atendimento + metas + não compra (estrutura inicial)", done: false },
+      { id: "agent-md", label: "Atualizar web/app/components/erp/AGENT.md com novos componentes de gráficos", done: false }
+    ],
+    verifiable: "Painel CRM exibe gráficos com dados reais do novo endpoint; filtro de período funciona; sem erros de console."
+  },
+  {
+    id: "crm-c4",
+    code: "CRM C4",
+    title: "Consultor gamificado — player card + drawer",
+    goal: "Substituir o painel de cards planos da workspace Consultor por player card (gauge dominante + 4 KPIs core + badges) e mover métricas secundárias + simulador para drawer lateral. Visão all-stores vira grid de mini-cards.",
+    status: "in_progress",
+    estimateWeeks: "4–6 dias",
+    startedAt: "2026-05-22",
+    group: "crm-360",
+    tasks: [
+      { id: "agent-md", label: "Atualizar web/app/components/consultant/AGENT.md com contrato dos novos componentes (player card, drawer, grid)", done: false },
+      { id: "gamification-config-composable", label: "useGamificationConfig() composable com defaults hardcoded para badges + Score 360 weights (preparado para C6 plugar fonte real)", done: false },
+      { id: "player-card-component", label: "ConsultantPlayerCard.vue (modos full e mini) — gauge SVG, 4 KPIs core (Vendido, Ticket, PA, Conversão), slot de badges", done: false },
+      { id: "badges-component", label: "ConsultantBadges.vue puro recebe stats + badgesConfig — defaults: Meta batida, Top N, Conversão > média loja, Ticket > meta, PA > meta", done: false },
+      { id: "drawer-shell", label: "ConsultantDetailsDrawer.vue com USlideover (modos center/fullscreen/side igual TasksTaskModal) + composable useConsultantDetailsDrawer()", done: false },
+      { id: "drawer-tabs", label: "Drawer com 3 tabs: Visão geral (todos KPIs incluindo cancelamento/fora-da-vez/tempo médio), Histórico (sparkline 7d), Simulador (move ConsultantSimulator atual)", done: false },
+      { id: "single-store-wire", label: "ConsultantWorkspace.vue (single-store) usa ConsultantPlayerCard full + drawer", done: false },
+      { id: "multi-store-grid", label: "ConsultantPlayerGrid.vue substitui tabela 'Comparativo completo' por grid de mini-cards filtráveis", done: false },
+      { id: "cancellation-wire", label: "Garantir cancellationRate no DTO consumido por consultants/analytics stores (já calculado em repository_crm_queue.go)", done: false },
+      { id: "delete-old-metrics", label: "Remover ConsultantMetrics.vue após migração completa", done: false }
+    ],
+    verifiable: "/consultor em loja única mostra player card + drawer abrindo via 'Ver detalhes'. Visão all-stores mostra grid de mini-cards; click no card abre drawer. Sem erros de console; npm test passa."
+  },
+  {
+    id: "crm-c5",
+    code: "CRM C5",
+    title: "Ranking gamificado — pódio + leaderboard + drawer",
+    goal: "Substituir as duas tabelas de 11 colunas por pódio dos 3 primeiros + leaderboard de cards horizontais para o resto. Tabs Lojas/Consultores/Por-loja. Score 360 vira sort default. Detalhes (breakdown 360 + alertas) em drawer lateral.",
+    status: "in_progress",
+    estimateWeeks: "5–7 dias",
+    startedAt: "2026-05-22",
+    group: "crm-360",
+    tasks: [
+      { id: "agent-md", label: "Criar web/app/components/ranking/AGENT.md com contrato do novo workspace", done: false },
+      { id: "tabs-header", label: "RankingTabsHeader.vue (3 tabs Lojas/Consultores/Por-loja + chips de sort, Score 360 default)", done: false },
+      { id: "podium-component", label: "RankingPodium.vue — top-3 visual (2º-1º-3º) com avatar, nome/loja, número grande da métrica ativa", done: false },
+      { id: "leaderboard-card", label: "RankingLeaderboardCard.vue — card horizontal (4º+) com posição, métrica grande, barra meta, badge variação ↑/↓", done: false },
+      { id: "variation-derivation", label: "Derivar variação vs período anterior client-side (comparar monthlyRows com snapshot mês anterior já disponível)", done: false },
+      { id: "stores-tab", label: "Agregação por loja para tab Lojas: totalSoldValue, Score 360 ponderado por attendances (decisão fechada), consultantsAtGoal", done: false },
+      { id: "per-store-tab", label: "Tab 'Por loja' com combobox de loja + pódio + leaderboard filtrados", done: false },
+      { id: "drawer-ranking", label: "RankingDetailsDrawer.vue com USlideover (center/fullscreen/side) + tabs Visão geral / Breakdown 360 / Alertas. Mover alertas do topo do RankingWorkspace para drawer (manter contador)", done: false },
+      { id: "score-breakdown", label: "Componente de barra stackeada para breakdown do Score 360 — pesos vêm de useGamificationConfig() (defaults 35/25/20/15/5 até C6 plugar fonte real)", done: false },
+      { id: "legacy-table", label: "Manter RankingTable.vue acessível como 'Ver como tabela' dentro do drawer para usuários que preferem formato denso", done: false }
+    ],
+    verifiable: "/ranking mostra pódio + leaderboard cards; tabs trocam agrupamento; click no card abre drawer com breakdown 360. ESC/overlay/X fecham. Alertas continuam acessíveis via drawer. npm test passa; sem regressões."
+  },
+  {
+    id: "crm-c6",
+    code: "CRM C6",
+    title: "Backend de gamificação — config de badges + Score 360 weights",
+    goal: "Permitir que cada tenant configure regras de badges (Meta batida, Top N, Conversão > média loja, etc.) e os pesos do Score 360 (Conversão/Valor/Qualidade/PA/Queue-jump). Plugar no composable useGamificationConfig() do front (criado em C4) substituindo defaults hardcoded.",
+    status: "pending",
+    estimateWeeks: "3–5 dias",
+    group: "crm-360",
+    tasks: [
+      { id: "model-go", label: "Adicionar GamificationConfig (BadgeRules []BadgeRule + ScoreWeights ScoreWeights) ao settings.Bundle e Record", done: false },
+      { id: "migration", label: "Migration SQL: tabela settings_gamification (tenant_id, badge_rules_json, score_weights_json)", done: false },
+      { id: "store-postgres", label: "Persistir e ler GamificationConfig em settings store_postgres.go", done: false },
+      { id: "defaults", label: "settings/defaults.go com defaults de GamificationConfig (mesmos hardcoded usados em C4/C5)", done: false },
+      { id: "http-endpoint", label: "PATCH /v1/settings/gamification com perm settings.write; GET expõe junto com o bundle existente", done: false },
+      { id: "frontend-settings-ui", label: "Seção 'Gamificação' na página de configurações para editar badges (CRUD lista) e weights (5 sliders que somam 100%)", done: false },
+      { id: "wire-composable", label: "useGamificationConfig() passa a ler do settings store (com fallback para defaults se config não existir)", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/settings/AGENT.md com novo bundle field e endpoint", done: false }
+    ],
+    verifiable: "PATCH /v1/settings/gamification persiste; GET /v1/settings retorna gamificationConfig no bundle; UI permite editar badges e weights; após salvar, player cards e ranking refletem mudanças sem recarregar. go test ./... passa."
+  },
+
   {
     id: "tasks-t9",
     code: "Tasks T9",

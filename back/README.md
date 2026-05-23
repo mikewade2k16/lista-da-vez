@@ -1,6 +1,6 @@
 # Back
 
-Base inicial da API em Go para o modulo de fila de atendimento.
+Base inicial da API em Go para o produto Omni.
 
 ## Objetivo desta fase
 
@@ -322,19 +322,19 @@ Fluxo recomendado:
 O script:
 
 - reutiliza o servico `postgresql-x64-16` quando ele existir
-- cai para um cluster manual em `%LOCALAPPDATA%\lista-da-vez\postgres16\data` quando o servico nao existir
+- cai para um cluster manual em `%LOCALAPPDATA%\omni\postgres16\data` quando o servico nao existir
 - sobe o servidor na porta `5432`
-- cria a role `lista_da_vez`
-- cria o banco `lista_da_vez`
+- cria a role `omni`
+- cria o banco `omni`
 - aplica as migrations do projeto
 
 Credenciais padrao da aplicacao:
 
 - host: `localhost`
 - porta: `5432`
-- database: `lista_da_vez`
-- user: `lista_da_vez`
-- password: `lista_da_vez_dev`
+- database: `omni`
+- user: `omni`
+- password: `omni_dev`
 
 Observacao de CORS local:
 

@@ -17,10 +17,7 @@ Na fase 1, ele precisa sustentar:
 ## Regras do modulo
 
 - manter `raw` separado da projecao `current`
-- preservar o escopo tecnico da importacao (`tenant_id`, `store_id`, `store_code` e `store_cnpj`) sem confundir isso com a loja comercial do pedido
-- as tabelas `erp_*_raw` representam o espelho do CSV importado; novas necessidades operacionais devem ir para metadados de sync ou projecoes, nao para alterar o contrato bruto do CSV
-- no FTP atual, `ERP_ROOT_STORE_CODE=184` e o escopo raiz do ERP da Perola; JAR/RIO/GAR/TRE sao dimensoes comerciais dentro do dataset 184, nao fontes FTP independentes
-- os dados ERP/CRM atuais pertencem somente ao cliente Perola; acesso ao root 184 deve ficar restrito a usuarios da Perola, membros da organization/agencia vinculada a essa account, e `platform_admin`
+- preservar `tenant_id`, `store_id`, `store_code` e `store_cnpj`
 - mutacao manual de sync deve continuar bloqueada fora de dev/opt-in
 - arquivos binarios/CSV continuam fora do PostgreSQL; o banco guarda metadados, checksums e controle de processamento
 
@@ -31,7 +28,10 @@ Na fase 1, ele precisa sustentar:
 - `parser.go`
 - `service.go`
 - `http.go`
-- `repository_postgres.go`
+- `repository_postgres.go` apenas com struct/construtor
+- `repository_scope.go`, `repository_status.go`, `repository_items.go`, `repository_raw_records.go`
+- `repository_crm*.go` para agregacoes e helpers CRM
+- `repository_import_*.go`, `repository_sync_*.go`, `repository_raw_mirror.go`
 
 ## MVP atual
 
@@ -42,8 +42,18 @@ Na fase 1, ele precisa sustentar:
 - projeção de `erp_item_current` agora considera `source_extracted_at` como critério de desempate
 - bootstrap markdown legado permanece ativo por compatibilidade e deve ser tratado como caminho em transição
 - o FTP real em `extract_files` já foi validado com arquivos `item`, `customer`, `employee`, `order` e `ordercanceled`
-- o codigo `184` e o escopo raiz configurado para o FTP da Perola; a UI pode estar em uma subloja operacional, mas o modulo ERP deve resolver o root 184 para status, sync, runs, produtos e CRM
+- o codigo `184` aparece nos arquivos observados do ERP, mas o modulo nao deve tratar isso como escopo fixo de UI nem como tenant separado
+- `ResolveDefaultTenantID` para `platform_admin` filtra `tenants` por `exists (... stores ativas)` antes do `limit 2`. Isso evita 404 "Loja nao encontrada" quando existem tenants vazios (sem stores) que apareceriam alfabeticamente antes do tenant real do ERP. A regra de "exatamente 1 tenant acessivel ou `ErrTenantRequired`" continua valendo apos o filtro
 - `GET /v1/erp/crm` agrega vendas ERP por loja comercial e consultor no escopo raiz do ERP, resolvendo a loja nesta ordem: `store_id_raw`, cadastro interno do vendedor (`users` + `consultants`/`user_store_roles`), loja dominante do historico ERP do vendedor e `store_cnpj` como ultimo fallback; ver tambem `docs/ERP_CRM_STORE_ATTRIBUTION.md`
+- repositorio PostgreSQL fatiado por responsabilidade; manter novos metodos perto do arquivo tematico correspondente em vez de voltar a concentrar em `repository_postgres.go`
+
+## CRM 360 — Indicadores integrados com a fila (2026-05-21)
+
+- `GET /v1/erp/crm` agora retorna também `queueStats` com dados de atendimento da fila (`operation_service_history`) para o mesmo período e loja
+- `queueStats.byConsultant` agrupa por `person_id/person_name`; o merge com `consultants` (ERP) é feito no frontend por nome normalizado (sem mapeamento direto person_id → employee_id no banco)
+- `erpCancellations` / `erpCancellationRate` adicionados em `CRMSummary` e `CRMStoreMetric` a partir de `erp_order_canceled_raw`
+- novos arquivos: `repository_crm_queue.go` (queries de fila), `repository_crm_types.go` (tipos internos adicionados)
+- taxa de conversão da fila = `finish_outcome = 'compra'` / total atendimentos; taxa de cancelamento = `cancel_reason preenchido` / total
 
 ## Invariantes novos
 

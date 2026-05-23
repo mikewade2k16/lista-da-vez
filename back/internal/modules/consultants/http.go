@@ -95,10 +95,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusCreated, consultantResponse{
-			Consultant: result.Consultant,
-			Access:     result.Access,
-		})
+		httpapi.WriteJSON(w, http.StatusCreated, consultantResponse(result))
 	})))
 
 	mux.Handle("PATCH /v1/consultants/{id}", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -33,11 +33,15 @@ let _hydrated = false
 let _hydratePromise: Promise<void> | null = null
 
 if (typeof window !== 'undefined') {
-  setInterval(() => { _tick.value++ }, 1000)
+  setInterval(() => {
+    _tick.value++
+  }, 1000)
 }
 
 function normalizeText(value: unknown, max = 180) {
-  return String(value ?? '').trim().slice(0, max)
+  return String(value ?? '')
+    .trim()
+    .slice(0, max)
 }
 
 function toMs(value: unknown) {
@@ -61,7 +65,7 @@ function entryFromBackend(entry: BackendTimeEntry): TrackingEntry | null {
     status: paused ? 'paused' : 'running',
     startedAt: paused ? null : anchor,
     accumulatedMs: Math.max(0, Number(entry.durationMs || 0) || 0),
-    version: Math.max(0, Number(entry.version || 0) || 0)
+    version: Math.max(0, Number(entry.version || 0) || 0),
   }
 }
 
@@ -104,8 +108,8 @@ function optimisticRun(taskId: string, accumulatedMs = 0, previous?: TrackingEnt
       status: 'running',
       startedAt: nowServerMs(),
       accumulatedMs,
-      version: previous?.version || 0
-    }
+      version: previous?.version || 0,
+    },
   }
 }
 
@@ -115,7 +119,9 @@ export function useTimeTracking() {
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const trackedTaskIds = computed(() => Object.keys(_entries.value))
-  const pendingTaskIds = computed(() => Object.keys(_pending.value).filter(taskId => _pending.value[taskId]))
+  const pendingTaskIds = computed(() =>
+    Object.keys(_pending.value).filter((taskId) => _pending.value[taskId]),
+  )
   const lastTrackingError = computed(() => _lastError.value)
 
   async function requestTracking(path: string, options: Record<string, any> = {}) {
@@ -128,8 +134,8 @@ export function useTimeTracking() {
       ...options,
       headers: {
         ...(options.headers || {}),
-        ...(accountId ? { 'X-Account-Id': accountId } : {})
-      }
+        ...(accountId ? { 'X-Account-Id': accountId } : {}),
+      },
     })
   }
 
@@ -160,10 +166,13 @@ export function useTimeTracking() {
     optimisticRun(id, previous?.accumulatedMs || 0, previous)
     _pending.value = { ..._pending.value, [id]: true }
     try {
-      const response = await requestTracking(`/v1/tasks/${encodeURIComponent(id)}/tracking/${endpoint}`, {
-        method: 'POST',
-        headers: previous?.version ? { 'If-Match': String(previous.version) } : undefined
-      })
+      const response = await requestTracking(
+        `/v1/tasks/${encodeURIComponent(id)}/tracking/${endpoint}`,
+        {
+          method: 'POST',
+          headers: previous?.version ? { 'If-Match': String(previous.version) } : undefined,
+        },
+      )
       if (response?.entry) mergeBackendEntry(response.entry)
       _lastError.value = ''
     } catch (error) {
@@ -188,14 +197,14 @@ export function useTimeTracking() {
         ...previous,
         status: 'paused',
         startedAt: null,
-        accumulatedMs: previous.accumulatedMs + liveMs
-      }
+        accumulatedMs: previous.accumulatedMs + liveMs,
+      },
     }
     _pending.value = { ..._pending.value, [id]: true }
     try {
       const response = await requestTracking(`/v1/tasks/${encodeURIComponent(id)}/tracking/pause`, {
         method: 'POST',
-        headers: previous.version ? { 'If-Match': String(previous.version) } : undefined
+        headers: previous.version ? { 'If-Match': String(previous.version) } : undefined,
       })
       if (response?.entry) mergeBackendEntry(response.entry)
       _lastError.value = ''
@@ -221,7 +230,7 @@ export function useTimeTracking() {
     try {
       const response = await requestTracking(`/v1/tasks/${encodeURIComponent(id)}/tracking/stop`, {
         method: 'POST',
-        headers: previous.version ? { 'If-Match': String(previous.version) } : undefined
+        headers: previous.version ? { 'If-Match': String(previous.version) } : undefined,
       })
       if (response?.entry) mergeBackendEntry(response.entry)
       _lastError.value = ''
@@ -240,9 +249,10 @@ export function useTimeTracking() {
     void _tick.value
     const entry = _entries.value[taskId]
     if (!entry) return 0
-    const live = entry.status === 'running' && entry.startedAt !== null
-      ? Math.max(0, nowServerMs() - entry.startedAt)
-      : 0
+    const live =
+      entry.status === 'running' && entry.startedAt !== null
+        ? Math.max(0, nowServerMs() - entry.startedAt)
+        : 0
     return entry.accumulatedMs + live
   }
 

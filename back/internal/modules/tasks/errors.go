@@ -14,4 +14,5 @@ var (
 	ErrShareRequired     = errors.New("tasks: share required")
 	ErrForbidden         = errors.New("tasks: forbidden")
 	ErrValidation        = errors.New("tasks: validation error")
+	ErrInvalidVideo      = errors.New("tasks: invalid video")
 )

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "alertas",
-  alias: ["/operacao/alertas"],
+  layout: 'dashboard',
+  workspaceId: 'alertas',
+  alias: ['/operacao/alertas'],
 })
 </script>
 

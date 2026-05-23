@@ -1,49 +1,48 @@
 <script setup>
-import { computed, watch } from "vue";
-import CampaignWorkspace from "~/components/campaigns/CampaignWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { canUseAllStoresScope } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { useCampaignsStore } from "~/stores/campaigns";
+import { computed, watch } from 'vue'
+import CampaignWorkspace from '~/components/campaigns/CampaignWorkspace.vue'
+import { storeToRefs } from 'pinia'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useCampaignsStore } from '~/stores/campaigns'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "campanhas",
-  alias: ["/operacao/campanhas"],
-  supportsAllStoresScope: true
-});
+  layout: 'dashboard',
+  workspaceId: 'campanhas',
+  alias: ['/operacao/campanhas'],
+  supportsAllStoresScope: true,
+})
 
-const auth = useAuthStore();
-const campaignsStore = useCampaignsStore();
-const { state, integratedHistory, integratedPending, integratedError } = storeToRefs(campaignsStore);
-const { isAllStoresScope } = storeToRefs(auth);
-const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
-const integratedScope = computed(() => canSeeIntegrated.value && isAllStoresScope.value);
-const storeOptions = computed(() => auth.storeContext || []);
+const auth = useAuthStore()
+const campaignsStore = useCampaignsStore()
+const { state, integratedHistory, integratedPending, integratedError } = storeToRefs(campaignsStore)
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
+const integratedScope = computed(() => canSeeIntegrated.value)
+const storeOptions = computed(() => auth.storeContext || [])
 
 watch(
   () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId, auth.isAuthenticated],
   async () => {
     try {
-      await auth.ensureSession();
+      await auth.ensureSession()
 
       if (!auth.isAuthenticated) {
-        campaignsStore.clearIntegratedHistory();
-        return;
+        campaignsStore.clearIntegratedHistory()
+        return
       }
 
       if (integratedScope.value) {
-        await campaignsStore.ensureIntegratedHistory();
-        return;
+        await campaignsStore.ensureIntegratedHistory()
+        return
       }
 
-      campaignsStore.clearIntegratedHistory();
+      campaignsStore.clearIntegratedHistory()
     } catch {
-      campaignsStore.clearIntegratedHistory();
+      campaignsStore.clearIntegratedHistory()
     }
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 </script>
 
 <template>

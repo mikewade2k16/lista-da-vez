@@ -33,19 +33,34 @@ func TestResolveCRMStoreAlias(t *testing.T) {
 	}
 }
 
-func TestNormalizeCRMOverviewQueryDefaultsCurrentMonth(t *testing.T) {
+func TestNormalizeCRMOverviewQueryKeepsEmptyRangeAsAllData(t *testing.T) {
 	normalized, err := normalizeCRMOverviewQuery(CRMOverviewQuery{})
 	if err != nil {
 		t.Fatalf("normalizeCRMOverviewQuery() error = %v", err)
 	}
-	if normalized.DateFrom.IsZero() || normalized.DateTo.IsZero() {
-		t.Fatal("expected default current-month range")
+	if !normalized.DateFrom.IsZero() || !normalized.DateTo.IsZero() {
+		t.Fatalf("expected empty range for all data, got %s - %s", normalized.DateFrom.Format(time.DateOnly), normalized.DateTo.Format(time.DateOnly))
 	}
-	if normalized.DateFrom.Day() != 1 {
-		t.Fatalf("expected first day of month, got %s", normalized.DateFrom.Format(time.DateOnly))
+}
+
+func TestNormalizeCRMOverviewQueryPreservesExplicitTime(t *testing.T) {
+	dateFrom := time.Date(2026, 1, 10, 9, 30, 0, 0, time.FixedZone("BRT", -3*60*60))
+	dateTo := time.Date(2026, 1, 10, 18, 0, 0, 0, time.FixedZone("BRT", -3*60*60))
+
+	normalized, err := normalizeCRMOverviewQuery(CRMOverviewQuery{
+		DateFrom:        dateFrom,
+		DateTo:          dateTo,
+		DateFromHasTime: true,
+		DateToHasTime:   true,
+	})
+	if err != nil {
+		t.Fatalf("normalizeCRMOverviewQuery() error = %v", err)
 	}
-	if normalized.DateTo.Before(normalized.DateFrom) {
-		t.Fatalf("expected dateTo >= dateFrom, got %s < %s", normalized.DateTo.Format(time.DateOnly), normalized.DateFrom.Format(time.DateOnly))
+	if normalized.DateFrom.Hour() != 12 || normalized.DateFrom.Minute() != 30 {
+		t.Fatalf("expected UTC-preserved from time, got %s", normalized.DateFrom.Format(time.RFC3339))
+	}
+	if normalized.DateTo.Hour() != 21 || normalized.DateTo.Minute() != 0 {
+		t.Fatalf("expected UTC-preserved to time, got %s", normalized.DateTo.Format(time.RFC3339))
 	}
 	if normalized.DateFrom.Location() != time.UTC || normalized.DateTo.Location() != time.UTC {
 		t.Fatal("expected UTC-normalized dates")

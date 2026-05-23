@@ -1,114 +1,116 @@
 <script setup>
-import { ArrowDown, ArrowUp } from "lucide-vue-next";
-import { ref, watch } from "vue";
+import { ArrowDown, ArrowUp } from 'lucide-vue-next'
+import { ref, watch } from 'vue'
 
 const props = defineProps({
   title: {
     type: String,
-    required: true
+    required: true,
   },
   description: {
     type: String,
-    default: ""
+    default: '',
   },
   items: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   addPlaceholder: {
     type: String,
-    default: "Adicionar nova opcao"
+    default: 'Adicionar nova opcao',
   },
   testid: {
     type: String,
-    default: ""
+    default: '',
   },
   disabled: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 
-const emit = defineEmits(["add", "update", "remove", "reorder"]);
-const drafts = ref({});
-const updateErrors = ref({});
-const newLabel = ref("");
-const addError = ref("");
+const emit = defineEmits(['add', 'update', 'remove', 'reorder'])
+const drafts = ref({})
+const updateErrors = ref({})
+const newLabel = ref('')
+const addError = ref('')
 
 watch(
   () => props.items,
   (items) => {
-    drafts.value = Object.fromEntries((items || []).map((item) => [item.id, item.label]));
+    drafts.value = Object.fromEntries((items || []).map((item) => [item.id, item.label]))
   },
-  { immediate: true, deep: true }
-);
+  { immediate: true, deep: true },
+)
 
 function normalize(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase()
 }
 
 function isDuplicate(label, excludeId = null) {
-  const normalized = normalize(label);
+  const normalized = normalize(label)
   if (!normalized) {
-    return false;
+    return false
   }
 
   return (props.items || []).some(
-    (item) => item.id !== excludeId && normalize(item.label) === normalized
-  );
+    (item) => item.id !== excludeId && normalize(item.label) === normalized,
+  )
 }
 
 function submitAdd() {
   if (props.disabled) {
-    return;
+    return
   }
 
-  const trimmed = newLabel.value.trim();
+  const trimmed = newLabel.value.trim()
   if (!trimmed) {
-    return;
+    return
   }
 
   if (isDuplicate(trimmed)) {
-    addError.value = "Ja existe um registro com esse nome.";
-    return;
+    addError.value = 'Ja existe um registro com esse nome.'
+    return
   }
 
-  addError.value = "";
-  emit("add", trimmed);
-  newLabel.value = "";
+  addError.value = ''
+  emit('add', trimmed)
+  newLabel.value = ''
 }
 
 function submitUpdate(id) {
   if (props.disabled) {
-    return;
+    return
   }
 
-  const label = drafts.value[id];
+  const label = drafts.value[id]
   if (isDuplicate(label, id)) {
-    updateErrors.value = { ...updateErrors.value, [id]: "Ja existe um registro com esse nome." };
-    return;
+    updateErrors.value = { ...updateErrors.value, [id]: 'Ja existe um registro com esse nome.' }
+    return
   }
 
-  updateErrors.value = { ...updateErrors.value, [id]: "" };
-  emit("update", id, label);
+  updateErrors.value = { ...updateErrors.value, [id]: '' }
+  emit('update', id, label)
 }
 
 function moveItem(itemId, direction) {
   if (props.disabled) {
-    return;
+    return
   }
 
-  const currentIds = (props.items || []).map((item) => item.id);
-  const currentIndex = currentIds.findIndex((id) => id === itemId);
-  const nextIndex = currentIndex + direction;
+  const currentIds = (props.items || []).map((item) => item.id)
+  const currentIndex = currentIds.findIndex((id) => id === itemId)
+  const nextIndex = currentIndex + direction
 
   if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentIds.length) {
-    return;
+    return
   }
 
-  const nextIds = [...currentIds];
-  [nextIds[currentIndex], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[currentIndex]];
-  emit("reorder", nextIds);
+  const nextIds = [...currentIds]
+  ;[nextIds[currentIndex], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[currentIndex]]
+  emit('reorder', nextIds)
 }
 </script>
 
@@ -117,7 +119,9 @@ function moveItem(itemId, direction) {
     <header class="settings-card__header">
       <h3 class="settings-card__title">{{ title }}</h3>
       <p class="settings-card__text">{{ description }}</p>
-      <p class="settings-card__text settings-card__text--muted">A ordem abaixo define como o select aparece no sistema.</p>
+      <p class="settings-card__text settings-card__text--muted">
+        A ordem abaixo define como o select aparece no sistema.
+      </p>
     </header>
 
     <div class="option-list">
@@ -159,10 +163,19 @@ function moveItem(itemId, direction) {
           type="text"
           :disabled="disabled"
           @input="updateErrors[item.id] = ''"
-        >
+        />
         <button class="option-row__save" type="submit" :disabled="disabled">Salvar</button>
-        <button class="option-row__remove" type="button" :disabled="disabled" @click="$emit('remove', item.id)">Excluir</button>
-        <span v-if="updateErrors[item.id]" class="option-row__error">{{ updateErrors[item.id] }}</span>
+        <button
+          class="option-row__remove"
+          type="button"
+          :disabled="disabled"
+          @click="$emit('remove', item.id)"
+        >
+          Excluir
+        </button>
+        <span v-if="updateErrors[item.id]" class="option-row__error">
+          {{ updateErrors[item.id] }}
+        </span>
       </form>
     </div>
 
@@ -175,7 +188,7 @@ function moveItem(itemId, direction) {
         :disabled="disabled"
         :data-testid="testid ? `${testid}-add-input` : undefined"
         @input="addError = ''"
-      >
+      />
       <button
         class="option-add__button"
         type="submit"
@@ -237,7 +250,10 @@ function moveItem(itemId, direction) {
   background: rgba(15, 23, 42, 0.7);
   color: #cbd5f5;
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .option-row__move:hover:not(:disabled) {

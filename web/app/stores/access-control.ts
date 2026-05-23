@@ -1,258 +1,282 @@
-import { computed, ref } from "vue";
-import { defineStore } from "pinia";
+import { computed, ref } from 'vue'
+import { defineStore } from 'pinia'
 
-import { normalizePermissionKeys } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
+import { normalizePermissionKeys } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 function normalizePermission(definition) {
   return {
-    key: String(definition?.key || "").trim(),
-    scope: String(definition?.scope || "").trim(),
-    description: String(definition?.description || "").trim()
-  };
+    key: String(definition?.key || '').trim(),
+    scope: String(definition?.scope || '').trim(),
+    description: String(definition?.description || '').trim(),
+  }
 }
 
 function normalizeRoleEntry(entry) {
   return {
-    role: String(entry?.role || "").trim(),
-    label: String(entry?.label || "").trim(),
-    scope: String(entry?.scope || "").trim(),
-    permissionKeys: normalizePermissionKeys(entry?.permissionKeys || [])
-  };
+    role: String(entry?.role || '').trim(),
+    label: String(entry?.label || '').trim(),
+    scope: String(entry?.scope || '').trim(),
+    permissionKeys: normalizePermissionKeys(entry?.permissionKeys || []),
+  }
 }
 
 function normalizeOverride(override) {
   return {
-    id: String(override?.id || "").trim(),
-    userId: String(override?.userId || "").trim(),
-    permissionKey: String(override?.permissionKey || "").trim(),
-    effect: String(override?.effect || "").trim(),
-    tenantId: String(override?.tenantId || "").trim(),
-    storeId: String(override?.storeId || "").trim(),
-    note: String(override?.note || "").trim(),
-    isActive: Boolean(override?.isActive ?? true)
-  };
+    id: String(override?.id || '').trim(),
+    userId: String(override?.userId || '').trim(),
+    permissionKey: String(override?.permissionKey || '').trim(),
+    effect: String(override?.effect || '').trim(),
+    tenantId: String(override?.tenantId || '').trim(),
+    storeId: String(override?.storeId || '').trim(),
+    note: String(override?.note || '').trim(),
+    isActive: Boolean(override?.isActive ?? true),
+  }
 }
 
 function normalizeUserAccess(access) {
   return {
-    userId: String(access?.userId || "").trim(),
-    role: String(access?.role || "").trim(),
-    tenantId: String(access?.tenantId || "").trim(),
-    storeIds: Array.isArray(access?.storeIds) ? access.storeIds.map((storeId) => String(storeId || "").trim()).filter(Boolean) : [],
-    permissions: Array.isArray(access?.permissions) ? access.permissions.map(normalizePermission).filter((permission) => permission.key) : [],
+    userId: String(access?.userId || '').trim(),
+    role: String(access?.role || '').trim(),
+    tenantId: String(access?.tenantId || '').trim(),
+    storeIds: Array.isArray(access?.storeIds)
+      ? access.storeIds.map((storeId) => String(storeId || '').trim()).filter(Boolean)
+      : [],
+    permissions: Array.isArray(access?.permissions)
+      ? access.permissions.map(normalizePermission).filter((permission) => permission.key)
+      : [],
     basePermissionKeys: normalizePermissionKeys(access?.basePermissionKeys || []),
     effectivePermissionKeys: normalizePermissionKeys(access?.effectivePermissionKeys || []),
-    overrides: Array.isArray(access?.overrides) ? access.overrides.map(normalizeOverride).filter((override) => override.permissionKey) : []
-  };
+    overrides: Array.isArray(access?.overrides)
+      ? access.overrides.map(normalizeOverride).filter((override) => override.permissionKey)
+      : [],
+  }
 }
 
-export const useAccessControlStore = defineStore("access-control", () => {
-  const runtimeConfig = useRuntimeConfig();
-  const auth = useAuthStore();
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
+export const useAccessControlStore = defineStore('access-control', () => {
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
-  const permissions = ref([]);
-  const roleMatrix = ref([]);
-  const userAccessById = ref({});
-  const pendingRoles = ref(false);
-  const pendingUserIds = ref({});
-  const errorMessage = ref("");
+  const permissions = ref([])
+  const roleMatrix = ref([])
+  const userAccessById = ref({})
+  const pendingRoles = ref(false)
+  const pendingUserIds = ref({})
+  const errorMessage = ref('')
 
-  const roleLookup = computed(() => new Map(roleMatrix.value.map((entry) => [entry.role, entry])));
+  const roleLookup = computed(() => new Map(roleMatrix.value.map((entry) => [entry.role, entry])))
 
   function clearState() {
-    permissions.value = [];
-    roleMatrix.value = [];
-    userAccessById.value = {};
-    pendingRoles.value = false;
-    pendingUserIds.value = {};
-    errorMessage.value = "";
+    permissions.value = []
+    roleMatrix.value = []
+    userAccessById.value = {}
+    pendingRoles.value = false
+    pendingUserIds.value = {}
+    errorMessage.value = ''
   }
 
   async function refreshRoleMatrix() {
-    await auth.ensureSession();
+    await auth.ensureSession()
     if (!auth.isAuthenticated) {
-      clearState();
-      return [];
+      clearState()
+      return []
     }
 
-    pendingRoles.value = true;
-    errorMessage.value = "";
+    pendingRoles.value = true
+    errorMessage.value = ''
 
     try {
-      const response = await apiRequest("/v1/access/roles");
+      const response = await apiRequest('/v1/access/roles')
       permissions.value = Array.isArray(response?.permissions)
         ? response.permissions.map(normalizePermission).filter((permission) => permission.key)
-        : [];
+        : []
       roleMatrix.value = Array.isArray(response?.roles)
         ? response.roles.map(normalizeRoleEntry).filter((entry) => entry.role)
-        : [];
-      return roleMatrix.value;
+        : []
+      return roleMatrix.value
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar a matriz de acesso.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(
+        error,
+        'Nao foi possivel carregar a matriz de acesso.',
+      )
+      throw error
     } finally {
-      pendingRoles.value = false;
+      pendingRoles.value = false
     }
   }
 
   async function ensureRoleMatrix() {
     if (roleMatrix.value.length && permissions.value.length) {
-      return roleMatrix.value;
+      return roleMatrix.value
     }
 
     try {
-      return await refreshRoleMatrix();
+      return await refreshRoleMatrix()
     } catch {
-      return [];
+      return []
     }
   }
 
   async function loadUserAccess(userId) {
-    const normalizedUserId = String(userId || "").trim();
+    const normalizedUserId = String(userId || '').trim()
     if (!normalizedUserId) {
-      return null;
+      return null
     }
 
     pendingUserIds.value = {
       ...pendingUserIds.value,
-      [normalizedUserId]: true
-    };
-    errorMessage.value = "";
+      [normalizedUserId]: true,
+    }
+    errorMessage.value = ''
 
     try {
-      const response = await apiRequest(`/v1/access/users/${encodeURIComponent(normalizedUserId)}`);
-      const normalizedAccess = normalizeUserAccess(response?.access);
+      const response = await apiRequest(`/v1/access/users/${encodeURIComponent(normalizedUserId)}`)
+      const normalizedAccess = normalizeUserAccess(response?.access)
       userAccessById.value = {
         ...userAccessById.value,
-        [normalizedUserId]: normalizedAccess
-      };
-      if (normalizedAccess.permissions.length) {
-        permissions.value = normalizedAccess.permissions;
+        [normalizedUserId]: normalizedAccess,
       }
-      return normalizedAccess;
+      if (normalizedAccess.permissions.length) {
+        permissions.value = normalizedAccess.permissions
+      }
+      return normalizedAccess
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar o acesso do usuario.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(
+        error,
+        'Nao foi possivel carregar o acesso do usuario.',
+      )
+      throw error
     } finally {
       pendingUserIds.value = {
         ...pendingUserIds.value,
-        [normalizedUserId]: false
-      };
+        [normalizedUserId]: false,
+      }
     }
   }
 
   async function saveRolePermissions(roleId, permissionKeys) {
-    const normalizedRoleId = String(roleId || "").trim();
+    const normalizedRoleId = String(roleId || '').trim()
     if (!normalizedRoleId) {
-      return { ok: false, message: "Perfil invalido." };
+      return { ok: false, message: 'Perfil invalido.' }
     }
 
-    pendingRoles.value = true;
-    errorMessage.value = "";
+    pendingRoles.value = true
+    errorMessage.value = ''
 
     try {
-      const response = await apiRequest(`/v1/access/roles/${encodeURIComponent(normalizedRoleId)}`, {
-        method: "PUT",
-        body: {
-          permissionKeys: normalizePermissionKeys(permissionKeys)
-        }
-      });
+      const response = await apiRequest(
+        `/v1/access/roles/${encodeURIComponent(normalizedRoleId)}`,
+        {
+          method: 'PUT',
+          body: {
+            permissionKeys: normalizePermissionKeys(permissionKeys),
+          },
+        },
+      )
 
-      const entry = normalizeRoleEntry(response?.role);
-      roleMatrix.value = roleMatrix.value.map((current) => (current.role === entry.role ? entry : current));
+      const entry = normalizeRoleEntry(response?.role)
+      roleMatrix.value = roleMatrix.value.map((current) =>
+        current.role === entry.role ? entry : current,
+      )
       if (!roleLookup.value.has(entry.role)) {
-        roleMatrix.value = [...roleMatrix.value, entry];
+        roleMatrix.value = [...roleMatrix.value, entry]
       }
 
-      return { ok: true, role: entry };
+      return { ok: true, role: entry }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar o padrao do perfil.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar o padrao do perfil.'),
+      }
     } finally {
-      pendingRoles.value = false;
+      pendingRoles.value = false
     }
   }
 
   async function saveUserOverrides(userId, overrides) {
-    const normalizedUserId = String(userId || "").trim();
+    const normalizedUserId = String(userId || '').trim()
     if (!normalizedUserId) {
-      return { ok: false, message: "Usuario invalido." };
+      return { ok: false, message: 'Usuario invalido.' }
     }
 
     pendingUserIds.value = {
       ...pendingUserIds.value,
-      [normalizedUserId]: true
-    };
-    errorMessage.value = "";
+      [normalizedUserId]: true,
+    }
+    errorMessage.value = ''
 
     try {
-      const response = await apiRequest(`/v1/access/users/${encodeURIComponent(normalizedUserId)}/overrides`, {
-        method: "PUT",
-        body: {
-          overrides: Array.isArray(overrides)
-            ? overrides.map((override) => ({
-              permissionKey: String(override?.permissionKey || "").trim(),
-              effect: String(override?.effect || "").trim(),
-              note: String(override?.note || "").trim()
-            })).filter((override) => override.permissionKey && override.effect)
-            : []
-        }
-      });
+      const response = await apiRequest(
+        `/v1/access/users/${encodeURIComponent(normalizedUserId)}/overrides`,
+        {
+          method: 'PUT',
+          body: {
+            overrides: Array.isArray(overrides)
+              ? overrides
+                  .map((override) => ({
+                    permissionKey: String(override?.permissionKey || '').trim(),
+                    effect: String(override?.effect || '').trim(),
+                    note: String(override?.note || '').trim(),
+                  }))
+                  .filter((override) => override.permissionKey && override.effect)
+              : [],
+          },
+        },
+      )
 
-      const normalizedAccess = normalizeUserAccess(response?.access);
+      const normalizedAccess = normalizeUserAccess(response?.access)
       userAccessById.value = {
         ...userAccessById.value,
-        [normalizedUserId]: normalizedAccess
-      };
+        [normalizedUserId]: normalizedAccess,
+      }
 
-      return { ok: true, access: normalizedAccess };
+      return { ok: true, access: normalizedAccess }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as permissoes do usuario.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as permissoes do usuario.'),
+      }
     } finally {
       pendingUserIds.value = {
         ...pendingUserIds.value,
-        [normalizedUserId]: false
-      };
+        [normalizedUserId]: false,
+      }
     }
   }
 
   function getUserAccess(userId) {
-    return userAccessById.value[String(userId || "").trim()] || null;
+    return userAccessById.value[String(userId || '').trim()] || null
   }
 
   function isUserPending(userId) {
-    return Boolean(pendingUserIds.value[String(userId || "").trim()]);
+    return Boolean(pendingUserIds.value[String(userId || '').trim()])
   }
 
   async function refreshRealtimeState() {
-    await auth.ensureSession();
+    await auth.ensureSession()
     if (!auth.isAuthenticated) {
-      clearState();
-      return;
+      clearState()
+      return
     }
 
-    const refreshes = [];
+    const refreshes = []
     if (roleMatrix.value.length || permissions.value.length) {
-      refreshes.push(refreshRoleMatrix().catch(() => []));
+      refreshes.push(refreshRoleMatrix().catch(() => []))
     }
 
-    for (const userId of Object.keys(userAccessById.value).map((entry) => String(entry || "").trim()).filter(Boolean)) {
-      refreshes.push(loadUserAccess(userId).catch(() => null));
+    for (const userId of Object.keys(userAccessById.value)
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean)) {
+      refreshes.push(loadUserAccess(userId).catch(() => null))
     }
 
     if (!refreshes.length) {
-      return;
+      return
     }
 
-    await Promise.allSettled(refreshes);
+    await Promise.allSettled(refreshes)
   }
 
   return {
@@ -269,6 +293,6 @@ export const useAccessControlStore = defineStore("access-control", () => {
     saveUserOverrides,
     getUserAccess,
     isUserPending,
-		refreshRealtimeState
-  };
-});
+    refreshRealtimeState,
+  }
+})

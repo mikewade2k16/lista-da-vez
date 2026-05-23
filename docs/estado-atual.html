@@ -328,7 +328,7 @@
         <h3 style="margin-top:0">Distribuição dos diretórios (MB)</h3>
         <div class="chart-box short"><canvas id="chartDirs"></canvas></div>
         <p style="color:var(--text-muted); font-size:12px; margin: 10px 0 0;">
-          <code>web-reference/</code> (414 MB) e <code>Controlle10 - ftp/</code> (493 MB) ocupam o maior espaço local, ambos ignorados pelo git.
+          <code>web-reference/</code> (414 MB) e <code>erp-source-local/</code> (493 MB — antes <code>Controlle10 - ftp/</code>) ocupam o maior espaço local, ambos ignorados pelo git.
         </p>
       </div>
     </div>
@@ -374,7 +374,7 @@
       <div class="alert-icon">i</div>
       <div>
         <h4>Convivência saudável de feature-first × domain-first no front</h4>
-        <p>Só <code>web/app/features/operation/</code> adota feature-first; o resto está em <code>web/app/components/&lt;dominio&gt;/</code>. Convém escolher um padrão único antes da Fase 4 do roadmap.</p>
+        <p>Só <code>web/app/components/operation/</code> adota feature-first; o resto está em <code>web/app/components/&lt;dominio&gt;/</code>. Convém escolher um padrão único antes da Fase 4 do roadmap.</p>
       </div>
     </div>
   </section>
@@ -582,8 +582,8 @@ package.json</div>
       <div class="card">
         <h3 style="margin-top:0">Pontos a resolver na Fase 2</h3>
         <ul class="list-stripe">
-          <li><span class="name">📁 <code>docs_depoy/</code></span><span class="tag yellow">typo: depoy → deploy</span></li>
-          <li><span class="name">📄 <code>web/app/pages/operacao/operations.md</code></span><span class="tag yellow">.md em pages/</span></li>
+          <li><span class="name">📁 <code>docs_depoy/</code> consolidado</span><span class="tag green">resolvido (Fase 2.1)</span></li>
+          <li><span class="name">📄 <code>docs/operacao/operations.md</code></span><span class="tag yellow">.md em pages/</span></li>
           <li><span class="name">📄 <code>tasks-orquestrador-plano.html</code></span><span class="tag gray">100 KB · avaliar</span></li>
           <li><span class="name">📄 <code>COMPONENT_INVENTORY.md</code></span><span class="tag yellow">possivelmente desatualizado</span></li>
         </ul>
@@ -668,7 +668,7 @@ package.json</div>
             <tr><td><code>OperationCampaignBrief.vue</code></td><td><span class="tag red">0 referências</span></td></tr>
             <tr><td><code>layers/tasks/.../AdminPageHeader.vue</code></td><td><span class="tag red">duplicado (versão core é usada)</span></td></tr>
             <tr><td><code>useDashboardState</code> em <code>useDashboardShell.ts:7</code></td><td><span class="tag yellow">export sem caller externo</span></td></tr>
-            <tr><td><code>web/app/pages/operacao/operations.md</code></td><td><span class="tag yellow">.md em pages/ (Nuxt ignora)</span></td></tr>
+            <tr><td><code>docs/operacao/operations.md</code></td><td><span class="tag yellow">.md em pages/ (Nuxt ignora)</span></td></tr>
             <tr><td><code>web/dist/</code></td><td><span class="tag yellow">build artifact local</span></td></tr>
           </tbody>
         </table>
@@ -769,7 +769,7 @@ package.json</div>
             <tr><td><code>golangci-lint</code> no back</td><td><span class="tag red">ausente</span></td></tr>
             <tr><td>Pre-commit hooks (Husky/lint-staged)</td><td><span class="tag red">ausente</span></td></tr>
             <tr><td><code>tsconfig.json</code> próprio em <code>web/</code></td><td><span class="tag red">ausente</span></td></tr>
-            <tr><td>Grafia <code>AGENT.md</code> × <code>AGENTS.md</code></td><td><span class="tag yellow">inconsistente</span></td></tr>
+            <tr><td>Grafia <code>AGENT.md</code> padronizada</td><td><span class="tag green">resolvido (Fase 6.5)</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -926,7 +926,7 @@ package.json</div>
   new Chart(document.getElementById('chartDirs'), {
     type: 'bar',
     data: {
-      labels: ['Controlle10 - ftp', 'web-reference', 'web', 'qa-bot', 'back', '.git', '.playwright-mcp', 'docs', 'tmp'],
+      labels: ['erp-source-local', 'web-reference', 'web', 'qa-bot', 'back', '.git', '.playwright-mcp', 'docs', 'tmp'],
       datasets: [{
         label: 'MB',
         data: [493.3, 414.1, 378, 116, 2.1, 7.5, 2.1, 0.4, 0.5],

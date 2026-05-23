@@ -5,12 +5,6 @@ import (
 	"time"
 )
 
-const (
-	DemoTenantID   = "tenant-demo"
-	StoreRiomarID  = "loja-pj-riomar"
-	StoreJardinsID = "loja-pj-jardins"
-)
-
 type User struct {
 	ID                 string
 	DisplayName        string

@@ -1,15 +1,15 @@
 <script setup>
-import { computed } from "vue";
-import DemoWorkspacePage from "~/components/demo/DemoWorkspacePage.vue";
-import { getDemoPage } from "~/utils/demo-pages";
+import { computed } from 'vue'
+import DemoWorkspacePage from '~/components/demo/DemoWorkspacePage.vue'
+import { getDemoPage } from '~/utils/demo-pages'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "",
-  pageLabel: "Finance"
-});
+  layout: 'dashboard',
+  workspaceId: '',
+  pageLabel: 'Finance',
+})
 
-const page = computed(() => getDemoPage("finance"));
+const page = computed(() => getDemoPage('finance'))
 </script>
 
 <template>

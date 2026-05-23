@@ -21,10 +21,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update-font': [value: string | number | undefined]
-  'update-radius': [payload: { key: string, value: string | number | undefined }]
-  'update-css': [payload: { key: string, value: string | number | undefined }]
-  'update-triplet': [payload: { key: string, value: string | number | undefined }]
-  'update-text': [payload: { key: string, value: string | number | undefined }]
+  'update-radius': [payload: { key: string; value: string | number | undefined }]
+  'update-css': [payload: { key: string; value: string | number | undefined }]
+  'update-triplet': [payload: { key: string; value: string | number | undefined }]
+  'update-text': [payload: { key: string; value: string | number | undefined }]
 }>()
 
 function isRadiusKey(key: string) {
@@ -43,7 +43,9 @@ function isShadowColorKey(key: string) {
       :key="section.key"
       class="rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-4"
     >
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">{{ props.groupLabelBy(section.key) }}</h2>
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">
+        {{ props.groupLabelBy(section.key) }}
+      </h2>
 
       <div class="mt-3 space-y-3">
         <div
@@ -68,7 +70,10 @@ function isShadowColorKey(key: string) {
             </p>
           </div>
 
-          <div v-else-if="isRadiusKey(variable.key)" class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+          <div
+            v-else-if="isRadiusKey(variable.key)"
+            class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center"
+          >
             <UInput
               :model-value="String(props.radiusValueMap[variable.key] ?? 0)"
               type="number"
@@ -79,7 +84,7 @@ function isShadowColorKey(key: string) {
             <div
               class="h-10 w-10 border border-[rgb(var(--border))] bg-[rgb(var(--surface))]"
               :style="{ borderRadius: `${props.radiusValueMap[variable.key] ?? 0}px` }"
-            />
+            ></div>
           </div>
 
           <ThemeColorInput

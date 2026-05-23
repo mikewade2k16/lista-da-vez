@@ -1,31 +1,31 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { useCoreAccountStore } from "../stores/account";
-import { useCoreLoadingStore } from "../stores/loading";
+import { ref, computed } from 'vue'
+import { useCoreAccountStore } from '../stores/account'
+import { useCoreLoadingStore } from '../stores/loading'
 
-const accountStore = useCoreAccountStore();
-const loading = useCoreLoadingStore();
-const open = ref(false);
+const accountStore = useCoreAccountStore()
+const loading = useCoreLoadingStore()
+const open = ref(false)
 
-const activeAccount = computed(() => accountStore.activeAccount);
-const accounts = computed(() => accountStore.accounts);
+const activeAccount = computed(() => accountStore.activeAccount)
+const accounts = computed(() => accountStore.accounts)
 
 async function select(id: string) {
-  open.value = false;
+  open.value = false
   if (id !== accountStore.activeAccountId) {
     // Fase 9B: garante overlay durante troca de account, mesmo se o fetch
     // for rapido demais para o threshold de 200ms do api-client.
-    loading.push("Trocando de account...");
+    loading.push('Trocando de account...')
     try {
-      await accountStore.switchAccount(id);
+      await accountStore.switchAccount(id)
     } finally {
-      loading.pop("Trocando de account...");
+      loading.pop('Trocando de account...')
     }
   }
 }
 
 function toggle() {
-  open.value = !open.value;
+  open.value = !open.value
 }
 </script>
 
@@ -39,7 +39,7 @@ function toggle() {
       @click="toggle"
     >
       <span class="core-account-switcher__name">
-        {{ activeAccount?.name ?? "Selecionar account" }}
+        {{ activeAccount?.name ?? 'Selecionar account' }}
       </span>
       <span class="core-account-switcher__arrow" aria-hidden="true">▾</span>
     </button>
@@ -84,7 +84,9 @@ function toggle() {
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .core-account-switcher__trigger:hover {
@@ -113,7 +115,9 @@ function toggle() {
   color: rgba(226, 232, 240, 0.82);
   font-size: 0.8rem;
   cursor: pointer;
-  transition: background 0.13s ease, color 0.13s ease;
+  transition:
+    background 0.13s ease,
+    color 0.13s ease;
 }
 
 .core-account-switcher__option:hover,

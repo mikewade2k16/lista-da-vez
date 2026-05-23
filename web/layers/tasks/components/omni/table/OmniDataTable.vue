@@ -8,7 +8,7 @@ import type {
   OmniTableCellUpdate,
   OmniTableImageUpload,
   OmniTableColumn,
-  OmniSelectOption
+  OmniSelectOption,
 } from '../../../types/omni/collection'
 
 const props = withDefaults(
@@ -30,20 +30,20 @@ const props = withDefaults(
     emptyText: 'Nenhum item encontrado.',
     selectable: true,
     modelValue: () => [],
-    focusCell: null
-  }
+    focusCell: null,
+  },
 )
 
 const resolvedColumns = computed(() => {
   const isAdmin = props.viewerUserType === 'admin'
   if (isAdmin) return props.columns
-  return props.columns.filter(column => !column.adminOnly)
+  return props.columns.filter((column) => !column.adminOnly)
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: Array<string | number>]
   'update:cell': [payload: OmniTableCellUpdate]
-  'row-action': [payload: { action: string, row: Record<string, any> }]
+  'row-action': [payload: { action: string; row: Record<string, any> }]
   'upload:image': [payload: OmniTableImageUpload]
 }>()
 
@@ -53,19 +53,22 @@ const imagePreviewUrl = ref('')
 
 const selectedSet = computed(() => new Set(props.modelValue))
 
-const rowIds = computed(() => props.rows
-  .map(row => row[props.rowKey])
-  .filter(id => id !== undefined && id !== null) as Array<string | number>)
+const rowIds = computed(
+  () =>
+    props.rows
+      .map((row) => row[props.rowKey])
+      .filter((id) => id !== undefined && id !== null) as Array<string | number>,
+)
 
 const allSelected = computed(() => {
   if (!rowIds.value.length) return false
-  return rowIds.value.every(id => selectedSet.value.has(id))
+  return rowIds.value.every((id) => selectedSet.value.has(id))
 })
 
 const partiallySelected = computed(() => {
   if (!rowIds.value.length) return false
   if (allSelected.value) return false
-  return rowIds.value.some(id => selectedSet.value.has(id))
+  return rowIds.value.some((id) => selectedSet.value.has(id))
 })
 
 function columnAlignClass(align: OmniTableColumn['align']) {
@@ -77,11 +80,19 @@ function columnAlignClass(align: OmniTableColumn['align']) {
 function columnStyle(column: OmniTableColumn) {
   const style: Record<string, string> = {}
 
-  if (typeof column.minWidth === 'number' && Number.isFinite(column.minWidth) && column.minWidth > 0) {
+  if (
+    typeof column.minWidth === 'number' &&
+    Number.isFinite(column.minWidth) &&
+    column.minWidth > 0
+  ) {
     style.minWidth = `${column.minWidth}px`
   }
 
-  if (typeof column.maxWidth === 'number' && Number.isFinite(column.maxWidth) && column.maxWidth > 0) {
+  if (
+    typeof column.maxWidth === 'number' &&
+    Number.isFinite(column.maxWidth) &&
+    column.maxWidth > 0
+  ) {
     style.maxWidth = `${column.maxWidth}px`
   }
 
@@ -90,9 +101,9 @@ function columnStyle(column: OmniTableColumn) {
 
 function normalizeSelectItems(options: OmniSelectOption[] | undefined) {
   if (!Array.isArray(options)) return []
-  return options.map(option => ({
+  return options.map((option) => ({
     label: option.label,
-    value: option.value
+    value: option.value,
   }))
 }
 
@@ -126,7 +137,7 @@ function emitCellUpdate(row: Record<string, any>, column: OmniTableColumn, value
     rowId: rowId(row),
     key: column.key,
     value,
-    immediate: column.immediate
+    immediate: column.immediate,
   })
 }
 
@@ -171,7 +182,10 @@ function displayValue(row: Record<string, any>, column: OmniTableColumn) {
 
   if (Array.isArray(value)) {
     if (value.length === 0) return '-'
-    return value.map(item => String(item ?? '')).filter(Boolean).join(', ')
+    return value
+      .map((item) => String(item ?? ''))
+      .filter(Boolean)
+      .join(', ')
   }
 
   if (value === null || value === undefined || value === '') {
@@ -215,7 +229,7 @@ function multiselectValues(value: unknown) {
 
   return text
     .split(/[\n,;|]+/)
-    .map(item => item.trim())
+    .map((item) => item.trim())
     .filter(Boolean) as Array<string | number>
 }
 
@@ -229,7 +243,7 @@ function onImageFileChange(event: Event, row: Record<string, any>, column: OmniT
   emit('upload:image', {
     rowId: rowId(row),
     key: column.key,
-    file
+    file,
   })
 
   target.value = ''
@@ -246,7 +260,7 @@ function actionDisabled(action: OmniTableAction, row: Record<string, any>) {
 function fireAction(action: OmniTableAction, row: Record<string, any>) {
   emit('row-action', {
     action: action.id,
-    row
+    row,
   })
 }
 
@@ -257,7 +271,9 @@ function focusCellInput(target: OmniFocusCell | null | undefined) {
   const wrapper = tableRootRef.value.querySelector(selector)
   if (!wrapper) return
 
-  const focusable = wrapper.querySelector('input, textarea, [role="switch"], button') as HTMLElement | null
+  const focusable = wrapper.querySelector(
+    'input, textarea, [role="switch"], button',
+  ) as HTMLElement | null
   if (!focusable) return
 
   focusable.focus()
@@ -272,7 +288,7 @@ watch(
     await nextTick()
     focusCellInput(target)
   },
-  { deep: true }
+  { deep: true },
 )
 
 watch(imagePreviewOpen, (open) => {
@@ -282,11 +298,19 @@ watch(imagePreviewOpen, (open) => {
 </script>
 
 <template>
-  <div ref="tableRootRef" class="omni-data-table overflow-x-auto rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] shadow-[var(--shadow-sm)]">
+  <div
+    ref="tableRootRef"
+    class="omni-data-table overflow-x-auto rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] shadow-[var(--shadow-sm)]"
+  >
     <table class="omni-data-table__table w-full min-w-[1100px] text-sm">
       <thead class="omni-data-table__head sticky top-0 z-10 bg-[rgb(var(--surface-2))]">
-        <tr class="omni-data-table__head-row border-b border-[rgb(var(--border))] text-[rgb(var(--text))]">
-          <th v-if="props.selectable" class="omni-data-table__head-cell omni-data-table__head-cell--select w-12 px-2 py-3 text-center">
+        <tr
+          class="omni-data-table__head-row border-b border-[rgb(var(--border))] text-[rgb(var(--text))]"
+        >
+          <th
+            v-if="props.selectable"
+            class="omni-data-table__head-cell omni-data-table__head-cell--select w-12 px-2 py-3 text-center"
+          >
             <div class="flex justify-center">
               <UCheckbox
                 :model-value="allSelected"
@@ -311,7 +335,10 @@ watch(imagePreviewOpen, (open) => {
 
       <tbody>
         <tr v-if="props.loading && props.rows.length === 0">
-          <td :colspan="resolvedColumns.length + (props.selectable ? 1 : 0)" class="omni-data-table__state-cell omni-data-table__state-cell--loading px-3 py-8 text-center text-sm text-[rgb(var(--muted))]">
+          <td
+            :colspan="resolvedColumns.length + (props.selectable ? 1 : 0)"
+            class="omni-data-table__state-cell omni-data-table__state-cell--loading px-3 py-8 text-center text-sm text-[rgb(var(--muted))]"
+          >
             Carregando...
           </td>
         </tr>
@@ -322,7 +349,10 @@ watch(imagePreviewOpen, (open) => {
           class="omni-data-table__row border-b border-[rgb(var(--border))] transition-colors"
           :class="index % 2 === 0 ? 'bg-[rgb(var(--surface))]' : 'bg-[rgb(var(--surface-2))]'"
         >
-          <td v-if="props.selectable" class="omni-data-table__cell omni-data-table__cell--select w-12 px-2 py-3 text-center align-middle">
+          <td
+            v-if="props.selectable"
+            class="omni-data-table__cell omni-data-table__cell--select w-12 px-2 py-3 text-center align-middle"
+          >
             <div class="flex justify-center">
               <UCheckbox
                 :model-value="selectedSet.has(rowId(row))"
@@ -340,7 +370,7 @@ watch(imagePreviewOpen, (open) => {
             :style="columnStyle(column)"
           >
             <template v-if="column.type === 'custom'">
-              <slot :name="`cell-${column.key}`" :row="row" :column="column" />
+              <slot :name="`cell-${column.key}`" :row="row" :column="column"></slot>
             </template>
 
             <template v-else-if="isColumnEditable(column, row) && column.type === 'switch'">
@@ -349,7 +379,13 @@ watch(imagePreviewOpen, (open) => {
                   :model-value="isSwitchOn(row[column.key], column)"
                   :disabled="props.loading"
                   :aria-label="`Alternar ${column.label}`"
-                  @update:model-value="emitCellUpdate(row, column, $event === true ? switchOnValue(column) : switchOffValue(column))"
+                  @update:model-value="
+                    emitCellUpdate(
+                      row,
+                      column,
+                      $event === true ? switchOnValue(column) : switchOffValue(column),
+                    )
+                  "
                 />
               </div>
             </template>
@@ -392,7 +428,10 @@ watch(imagePreviewOpen, (open) => {
             </template>
 
             <template v-else-if="isColumnEditable(column, row) && column.type === 'image'">
-              <div :data-cell-input="`${rowId(row)}:${column.key}`" class="flex min-w-[88px] justify-center">
+              <div
+                :data-cell-input="`${rowId(row)}:${column.key}`"
+                class="flex min-w-[88px] justify-center"
+              >
                 <div class="group w-50 relative">
                   <button
                     v-if="stringValue(row[column.key])"
@@ -406,7 +445,7 @@ watch(imagePreviewOpen, (open) => {
                       alt="Imagem"
                       class="h-full w-full object-cover"
                       loading="lazy"
-                    >
+                    />
                   </button>
 
                   <label
@@ -431,7 +470,7 @@ watch(imagePreviewOpen, (open) => {
                     accept="image/*"
                     class="hidden"
                     @change="onImageFileChange($event, row, column)"
-                  >
+                  />
                 </div>
               </div>
             </template>
@@ -460,7 +499,9 @@ watch(imagePreviewOpen, (open) => {
 
             <template v-else-if="column.editable">
               <div class="flex items-center gap-1">
-                <span class="line-clamp-1" :title="displayValue(row, column)">{{ displayValue(row, column) }}</span>
+                <span class="line-clamp-1" :title="displayValue(row, column)">
+                  {{ displayValue(row, column) }}
+                </span>
                 <UIcon name="i-lucide-lock" class="text-xs text-[rgb(var(--muted))]" />
               </div>
             </template>
@@ -497,20 +538,25 @@ watch(imagePreviewOpen, (open) => {
                     alt="Imagem"
                     class="h-full w-full object-cover"
                     loading="lazy"
-                  >
+                  />
                 </button>
                 <span v-else class="text-xs text-[rgb(var(--muted))]">-</span>
               </div>
             </template>
 
             <template v-else>
-              <span class="line-clamp-1" :title="displayValue(row, column)">{{ displayValue(row, column) }}</span>
+              <span class="line-clamp-1" :title="displayValue(row, column)">
+                {{ displayValue(row, column) }}
+              </span>
             </template>
           </td>
         </tr>
 
         <tr v-if="!props.loading && props.rows.length === 0">
-          <td :colspan="resolvedColumns.length + (props.selectable ? 1 : 0)" class="omni-data-table__state-cell omni-data-table__state-cell--empty px-3 py-8 text-center text-sm text-[rgb(var(--muted))]">
+          <td
+            :colspan="resolvedColumns.length + (props.selectable ? 1 : 0)"
+            class="omni-data-table__state-cell omni-data-table__state-cell--empty px-3 py-8 text-center text-sm text-[rgb(var(--muted))]"
+          >
             {{ props.emptyText }}
           </td>
         </tr>
@@ -525,13 +571,15 @@ watch(imagePreviewOpen, (open) => {
     :ui="{ content: 'max-w-5xl' }"
   >
     <template #body>
-      <div class="omni-data-table__image-preview-body flex min-h-[240px] w-full items-center justify-center rounded-[var(--radius-md)] bg-[rgb(var(--surface-2))] p-2">
+      <div
+        class="omni-data-table__image-preview-body flex min-h-[240px] w-full items-center justify-center rounded-[var(--radius-md)] bg-[rgb(var(--surface-2))] p-2"
+      >
         <img
           v-if="imagePreviewUrl"
           :src="imagePreviewUrl"
           alt="Imagem"
           class="max-h-[80vh] max-w-full rounded-[var(--radius-sm)] object-contain"
-        >
+        />
       </div>
     </template>
 

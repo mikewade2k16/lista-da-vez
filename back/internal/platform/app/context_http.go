@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -71,6 +72,16 @@ func registerContextRoutes(
 			return
 		}
 
+		tenantIDsWithStores := make(map[string]struct{}, len(storeViews))
+		for _, store := range storeViews {
+			if !store.Active {
+				continue
+			}
+			if tenantID := strings.TrimSpace(store.TenantID); tenantID != "" {
+				tenantIDsWithStores[tenantID] = struct{}{}
+			}
+		}
+
 		httpapi.WriteJSON(w, http.StatusOK, meContextResponse{
 			User: user,
 			Principal: principalDTO{
@@ -83,7 +94,7 @@ func registerContextRoutes(
 				ExpiresAt:           principal.ExpiresAt,
 			},
 			Context: authenticatedView{
-				ActiveTenantID: tenants.ResolveDefaultActiveTenantID(principal, tenantViews),
+				ActiveTenantID: tenants.ResolveDefaultActiveTenantID(principal, tenantViews, tenantIDsWithStores),
 				ActiveStoreID:  stores.ResolveDefaultActiveStoreID(principal, storeViews),
 				Tenants:        tenantViews,
 				Stores:         storeViews,

@@ -1,163 +1,177 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed } from 'vue'
 
-import AppEntityGrid from "~/components/ui/AppEntityGrid.vue";
+import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
 
 interface TableColumn {
-  id: string;
-  label: string;
-  width?: string;
-  align?: string;
-  locked?: boolean;
-  defaultVisible?: boolean;
+  id: string
+  label: string
+  width?: string
+  align?: string
+  locked?: boolean
+  defaultVisible?: boolean
 }
 
 interface GenericRow {
-  [key: string]: unknown;
+  [key: string]: unknown
 }
 
-const props = withDefaults(defineProps<{
-  columns: TableColumn[];
-  rows: GenericRow[];
-  rowKey?: string | ((row: GenericRow, index: number) => string);
-  loading?: boolean;
-  searchValue?: string;
-  generalSearchPlaceholder?: string;
-  identifierSearchValue?: string;
-  identifierSearchLabel?: string;
-  identifierSearchPlaceholder?: string;
-  showIdentifierSearch?: boolean;
-  showRefreshAction?: boolean;
-  showBootstrapAction?: boolean;
-  bootstrapLabel?: string;
-  bootstrapBusyLabel?: string;
-  syncing?: boolean;
-  canBootstrap?: boolean;
-  total?: number;
-  page?: number;
-  pageSize?: number;
-  pageSizeOptions?: number[];
-  showCounterColumn?: boolean;
-  counterColumnLabel?: string;
-  emptyTitle?: string;
-  emptyText?: string;
-  storageKey?: string;
-  testid?: string;
-}>(), {
-  rowKey: "id",
-  loading: false,
-  searchValue: "",
-  generalSearchPlaceholder: "Busca geral...",
-  identifierSearchValue: "",
-  identifierSearchLabel: "Busca por identificador (comeca com)",
-  identifierSearchPlaceholder: "Ex: 153",
-  showIdentifierSearch: true,
-  showRefreshAction: true,
-  showBootstrapAction: true,
-  bootstrapLabel: "Bootstrap produtos ERP",
-  bootstrapBusyLabel: "Sincronizando...",
-  syncing: false,
-  canBootstrap: true,
-  total: 0,
-  page: 1,
-  pageSize: 50,
-  pageSizeOptions: () => [25, 50, 100, 200],
-  showCounterColumn: true,
-  counterColumnLabel: "#",
-  emptyTitle: "Nenhum produto no ERP",
-  emptyText: "Ajuste os filtros para preencher a grade.",
-  storageKey: "erp-products-grid-columns",
-  testid: "erp-products-grid"
-});
+const props = withDefaults(
+  defineProps<{
+    columns: TableColumn[]
+    rows: GenericRow[]
+    rowKey?: string | ((row: GenericRow, index: number) => string)
+    loading?: boolean
+    searchValue?: string
+    generalSearchPlaceholder?: string
+    identifierSearchValue?: string
+    identifierSearchLabel?: string
+    identifierSearchPlaceholder?: string
+    showIdentifierSearch?: boolean
+    showRefreshAction?: boolean
+    showBootstrapAction?: boolean
+    bootstrapLabel?: string
+    bootstrapBusyLabel?: string
+    syncing?: boolean
+    canBootstrap?: boolean
+    total?: number
+    page?: number
+    pageSize?: number
+    pageSizeOptions?: number[]
+    showCounterColumn?: boolean
+    counterColumnLabel?: string
+    emptyTitle?: string
+    emptyText?: string
+    storageKey?: string
+    testid?: string
+  }>(),
+  {
+    rowKey: 'id',
+    loading: false,
+    searchValue: '',
+    generalSearchPlaceholder: 'Busca geral...',
+    identifierSearchValue: '',
+    identifierSearchLabel: 'Busca por identificador (comeca com)',
+    identifierSearchPlaceholder: 'Ex: 153',
+    showIdentifierSearch: true,
+    showRefreshAction: true,
+    showBootstrapAction: true,
+    bootstrapLabel: 'Bootstrap produtos ERP',
+    bootstrapBusyLabel: 'Sincronizando...',
+    syncing: false,
+    canBootstrap: true,
+    total: 0,
+    page: 1,
+    pageSize: 50,
+    pageSizeOptions: () => [25, 50, 100, 200],
+    showCounterColumn: true,
+    counterColumnLabel: '#',
+    emptyTitle: 'Nenhum produto no ERP',
+    emptyText: 'Ajuste os filtros para preencher a grade.',
+    storageKey: 'erp-products-grid-columns',
+    testid: 'erp-products-grid',
+  },
+)
 
 const emit = defineEmits<{
-  (e: "update:searchValue", value: string): void;
-  (e: "update:identifierSearchValue", value: string): void;
-  (e: "update:page", value: number): void;
-  (e: "update:pageSize", value: number): void;
-  (e: "refresh"): void;
-  (e: "bootstrap"): void;
-}>();
+  (e: 'update:searchValue', value: string): void
+  (e: 'update:identifierSearchValue', value: string): void
+  (e: 'update:page', value: number): void
+  (e: 'update:pageSize', value: number): void
+  (e: 'refresh'): void
+  (e: 'bootstrap'): void
+}>()
 
 const totalPages = computed(() => {
-  const size = Math.max(1, Number(props.pageSize || 1));
-  const rawTotal = Math.max(0, Number(props.total || 0));
-  return Math.max(1, Math.ceil(rawTotal / size));
-});
+  const size = Math.max(1, Number(props.pageSize || 1))
+  const rawTotal = Math.max(0, Number(props.total || 0))
+  return Math.max(1, Math.ceil(rawTotal / size))
+})
 
 const resolvedColumns = computed(() => {
   if (!props.showCounterColumn) {
-    return props.columns;
+    return props.columns
   }
 
   return [
-    { id: "__counter", label: props.counterColumnLabel, width: "84px", align: "center", locked: true },
-    ...props.columns
-  ];
-});
+    {
+      id: '__counter',
+      label: props.counterColumnLabel,
+      width: '84px',
+      align: 'center',
+      locked: true,
+    },
+    ...props.columns,
+  ]
+})
 
 const rowsWithCounter = computed(() => {
-  const baseIndex = (Math.max(1, Number(props.page || 1)) - 1) * Math.max(1, Number(props.pageSize || 1));
+  const baseIndex =
+    (Math.max(1, Number(props.page || 1)) - 1) * Math.max(1, Number(props.pageSize || 1))
 
   return (Array.isArray(props.rows) ? props.rows : []).map((row, index) => ({
     ...row,
-    __counter: baseIndex + index + 1
-  }));
-});
+    __counter: baseIndex + index + 1,
+  }))
+})
+
+function castRow(v: unknown): GenericRow {
+  return v as GenericRow
+}
 
 function formatCurrencyFromCents(value: unknown) {
-  const rawValue = String(value ?? "").trim();
+  const rawValue = String(value ?? '').trim()
   if (!rawValue) {
-    return "-";
+    return '-'
   }
 
-  const parsed = Number(rawValue);
+  const parsed = Number(rawValue)
   if (!Number.isFinite(parsed)) {
-    return rawValue;
+    return rawValue
   }
 
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL"
-  }).format(parsed / 100);
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(parsed / 100)
 }
 
 function resolveInputValue(value: Event | string) {
-  if (typeof value === "string") {
-    return value;
+  if (typeof value === 'string') {
+    return value
   }
 
-  const target = value.target as HTMLInputElement | null;
-  return String(target?.value || "");
+  const target = value.target as HTMLInputElement | null
+  return String(target?.value || '')
 }
 
 function updateGeneralSearch(value: Event | string) {
-  emit("update:searchValue", resolveInputValue(value));
+  emit('update:searchValue', resolveInputValue(value))
 }
 
 function updateIdentifierSearch(event: Event) {
-  emit("update:identifierSearchValue", resolveInputValue(event));
+  emit('update:identifierSearchValue', resolveInputValue(event))
 }
 
 function previousPage() {
-  const nextPage = Math.max(1, Number(props.page || 1) - 1);
+  const nextPage = Math.max(1, Number(props.page || 1) - 1)
   if (nextPage !== props.page) {
-    emit("update:page", nextPage);
+    emit('update:page', nextPage)
   }
 }
 
 function nextPage() {
-  const next = Math.min(totalPages.value, Number(props.page || 1) + 1);
+  const next = Math.min(totalPages.value, Number(props.page || 1) + 1)
   if (next !== props.page) {
-    emit("update:page", next);
+    emit('update:page', next)
   }
 }
 
 function updatePageSize(event: Event) {
-  const target = event.target as HTMLSelectElement;
-  const parsed = Number(target?.value || props.pageSize);
-  const nextSize = Number.isFinite(parsed) && parsed > 0 ? parsed : props.pageSize;
-  emit("update:pageSize", nextSize);
+  const target = event.target as HTMLSelectElement
+  const parsed = Number(target?.value || props.pageSize)
+  const nextSize = Number.isFinite(parsed) && parsed > 0 ? parsed : props.pageSize
+  emit('update:pageSize', nextSize)
 }
 </script>
 
@@ -165,14 +179,16 @@ function updatePageSize(event: Event) {
   <div class="erp-products-table">
     <header class="erp-products-table__pagination erp-products-table__pagination--top">
       <div class="erp-products-table__pagination-summary">
-        Mostrando {{ rowsWithCounter.length }} de {{ Number(total || 0).toLocaleString("pt-BR") }}
+        Mostrando {{ rowsWithCounter.length }} de {{ Number(total || 0).toLocaleString('pt-BR') }}
       </div>
 
       <div class="erp-products-table__pagination-controls">
         <label class="erp-products-table__page-size">
           <span>Por pagina</span>
           <select :value="pageSize" :disabled="loading" @change="updatePageSize">
-            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size === 99999 ? 'Todos' : size }}</option>
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">
+              {{ size === 99999 ? 'Todos' : size }}
+            </option>
           </select>
         </label>
 
@@ -185,7 +201,9 @@ function updatePageSize(event: Event) {
           Anterior
         </button>
 
-        <strong class="erp-products-table__page-indicator">{{ Number(page || 1) }} / {{ totalPages }}</strong>
+        <strong class="erp-products-table__page-indicator">
+          {{ Number(page || 1) }} / {{ totalPages }}
+        </strong>
 
         <button
           class="erp-products-table__page-btn"
@@ -220,10 +238,10 @@ function updatePageSize(event: Event) {
             :value="identifierSearchValue"
             :placeholder="identifierSearchPlaceholder"
             @input="updateIdentifierSearch"
-          >
+          />
         </label>
 
-        <slot name="toolbar-filters" />
+        <slot name="toolbar-filters"></slot>
       </template>
 
       <template #toolbar-actions>
@@ -248,63 +266,75 @@ function updatePageSize(event: Event) {
             {{ syncing ? bootstrapBusyLabel : bootstrapLabel }}
           </button>
 
-          <slot name="toolbar-actions" />
+          <slot name="toolbar-actions"></slot>
         </div>
       </template>
 
       <template #cell-__counter="{ row }">
-        <span class="erp-products-table__counter">{{ row.__counter }}</span>
+        <span class="erp-products-table__counter">{{ castRow(row).__counter }}</span>
       </template>
 
       <template #cell-name="slotProps">
         <slot name="cell-name" v-bind="slotProps">
-          {{ slotProps.row?.name }}
+          {{ castRow(slotProps.row).name }}
         </slot>
       </template>
 
       <template #cell-priceRaw="slotProps">
         <slot name="cell-priceRaw" v-bind="slotProps">
-          {{ slotProps.row?.priceRaw }}
+          {{ castRow(slotProps.row).priceRaw }}
         </slot>
       </template>
 
       <template #cell-sourceUpdatedAt="slotProps">
         <slot name="cell-sourceUpdatedAt" v-bind="slotProps">
-          {{ slotProps.row?.sourceUpdatedAt }}
+          {{ castRow(slotProps.row).sourceUpdatedAt }}
         </slot>
       </template>
 
       <template #cell-total_amount_raw="{ row }">
-        <span class="erp-products-table__money">{{ formatCurrencyFromCents(row?.total_amount_raw) }}</span>
+        <span class="erp-products-table__money">
+          {{ formatCurrencyFromCents(castRow(row).total_amount_raw) }}
+        </span>
       </template>
 
       <template #cell-product_return_raw="{ row }">
-        <span class="erp-products-table__money">{{ formatCurrencyFromCents(row?.product_return_raw) }}</span>
+        <span class="erp-products-table__money">
+          {{ formatCurrencyFromCents(castRow(row).product_return_raw) }}
+        </span>
       </template>
 
       <template #cell-amount_raw="{ row }">
-        <span class="erp-products-table__money">{{ formatCurrencyFromCents(row?.amount_raw) }}</span>
+        <span class="erp-products-table__money">
+          {{ formatCurrencyFromCents(castRow(row).amount_raw) }}
+        </span>
       </template>
 
       <template #cell-total_exclusion_raw="{ row }">
-        <span class="erp-products-table__money">{{ formatCurrencyFromCents(row?.total_exclusion_raw) }}</span>
+        <span class="erp-products-table__money">
+          {{ formatCurrencyFromCents(castRow(row).total_exclusion_raw) }}
+        </span>
       </template>
 
       <template #cell-total_debit_raw="{ row }">
-        <span class="erp-products-table__money">{{ formatCurrencyFromCents(row?.total_debit_raw) }}</span>
+        <span class="erp-products-table__money">
+          {{ formatCurrencyFromCents(castRow(row).total_debit_raw) }}
+        </span>
       </template>
     </AppEntityGrid>
 
     <footer class="erp-products-table__pagination">
       <div class="erp-products-table__pagination-summary">
-        Mostrando {{ rowsWithCounter.length }} de {{ Number(total || 0).toLocaleString("pt-BR") }}
+        Mostrando {{ rowsWithCounter.length }} de {{ Number(total || 0).toLocaleString('pt-BR') }}
       </div>
 
       <div class="erp-products-table__pagination-controls">
         <label class="erp-products-table__page-size">
           <span>Por pagina</span>
           <select :value="pageSize" :disabled="loading" @change="updatePageSize">
-            <option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size === 99999 ? 'Todos' : size }}</option>
+            <option v-for="size in pageSizeOptions" :key="size" :value="size">
+              {{ size === 99999 ? 'Todos' : size }}
+            </option>
           </select>
         </label>
 
@@ -317,7 +347,9 @@ function updatePageSize(event: Event) {
           Anterior
         </button>
 
-        <strong class="erp-products-table__page-indicator">{{ Number(page || 1) }} / {{ totalPages }}</strong>
+        <strong class="erp-products-table__page-indicator">
+          {{ Number(page || 1) }} / {{ totalPages }}
+        </strong>
 
         <button
           class="erp-products-table__page-btn"
@@ -396,7 +428,10 @@ function updatePageSize(event: Event) {
   color: var(--text-main);
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
 }
 
 .erp-products-table__action:hover:not(:disabled) {

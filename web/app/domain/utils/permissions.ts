@@ -29,6 +29,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: ""
   },
   {
+    id: "tasks",
+    label: "Tasks",
+    description: "Quadros e tarefas do modulo notion-like.",
+    viewPermission: "",
+    editPermission: ""
+  },
+  {
     id: "ranking",
     label: "Ranking",
     description: "Leitura de performance comercial.",
@@ -78,6 +85,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: "workspace.erp.edit"
   },
   {
+    id: "bi",
+    label: "BI",
+    description: "Proxy e diagnostico da API Perola BI.",
+    viewPermission: "",
+    editPermission: ""
+  },
+  {
     id: "crm",
     label: "CRM",
     description: "Painel comercial cruzando ERP com metas cadastradas no sistema.",
@@ -120,20 +134,6 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: "workspace.feedback.edit"
   },
   {
-    id: "tasks",
-    label: "Tasks",
-    description: "Workspace dev do modulo de tasks migrado do front de referencia.",
-    viewPermission: "",
-    editPermission: ""
-  },
-  {
-    id: "themes",
-    label: "Temas",
-    description: "Theme Studio dev-only para tokens, header e visual das paginas migradas.",
-    viewPermission: "",
-    editPermission: ""
-  },
-  {
     id: "banco",
     label: "Banco",
     description: "Estrutura do banco de dados — tabelas, campos, relacionamentos e status de migracao.",
@@ -173,27 +173,15 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
 ];
 
 const ROLE_WORKSPACES = {
-  platform_admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "tasks", "themes", "banco", "roadmap"],
-  owner: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "roadmap"],
-  marketing: ["operacao", "erp", "crm"],
-  director: ["operacao", "erp", "crm"],
-  manager: ["operacao", "erp", "crm", "alertas", "feedback"],
+  platform_admin: ["operacao", "consultor", "tasks", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "bi", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "banco", "roadmap"],
+  owner: ["operacao", "consultor", "tasks", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "bi", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "roadmap"],
+  marketing: ["operacao", "erp", "bi", "crm"],
+  director: ["operacao", "erp", "bi", "crm"],
+  manager: ["operacao", "erp", "bi", "crm", "alertas", "feedback"],
   store_terminal: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "alertas"],
   consultant: ["operacao"],
-  admin: ["operacao", "consultor", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "roadmap"]
+  admin: ["operacao", "consultor", "tasks", "ranking", "dados", "inteligencia", "relatorios", "campanhas", "clientes", "erp", "bi", "crm", "multiloja", "usuarios", "configuracoes", "alertas", "feedback", "roadmap"]
 };
-
-const PEROLA_ERP_ACCOUNT_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-const PEROLA_ERP_WORKSPACES = new Set(["erp", "crm"]);
-const PEROLA_SLUGS = new Set(["perola", "perola-joias", "cliente-perola"]);
-
-function normalizeScopeText(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
-}
 
 export function normalizeAppRole(role) {
   const normalized = String(role || "").trim();
@@ -304,45 +292,6 @@ export function getAllowedWorkspaces(role, permissionKeys = [], permissionsResol
       return hasPermission(permissionKeys, viewPermission);
     })
     .map((workspace) => workspace.id);
-}
-
-export function canAccessPerolaERPWorkspace({ role, activeTenantId, tenantContext = [] } = {}) {
-  if (normalizeAppRole(role) === "platform_admin") {
-    return true;
-  }
-
-  const normalizedTenantId = String(activeTenantId || "").trim();
-  if (normalizedTenantId === PEROLA_ERP_ACCOUNT_ID) {
-    return true;
-  }
-
-  const isPerolaTenant = (tenant) => {
-    if (String(tenant?.id || "").trim() === PEROLA_ERP_ACCOUNT_ID) {
-      return true;
-    }
-
-    const slug = normalizeScopeText(tenant?.slug);
-    const name = normalizeScopeText(tenant?.name);
-    return PEROLA_SLUGS.has(slug) || name.includes("perola");
-  };
-
-  const activeTenant = Array.isArray(tenantContext)
-    ? tenantContext.find((tenant) => String(tenant?.id || "").trim() === normalizedTenantId)
-    : null;
-
-  if (activeTenant && isPerolaTenant(activeTenant)) {
-    return true;
-  }
-
-  return Array.isArray(tenantContext) && tenantContext.some(isPerolaTenant);
-}
-
-export function filterPerolaERPWorkspaces(workspaces = [], scope = {}) {
-  if (canAccessPerolaERPWorkspace(scope)) {
-    return workspaces;
-  }
-
-  return workspaces.filter((workspaceId) => !PEROLA_ERP_WORKSPACES.has(String(workspaceId || "").trim()));
 }
 
 export function canManageSettings(role, permissionKeys = [], permissionsResolved = false) {
@@ -464,4 +413,10 @@ export function canAccessMultiStore(role, permissionKeys = [], permissionsResolv
 
 export function getRoleLabel(role) {
   return ROLE_LABELS[normalizeAppRole(role)] || "Consultor";
+}
+
+export function filterPerolaERPWorkspaces(workspaces = []) {
+  return Array.isArray(workspaces)
+    ? workspaces.map((workspace) => String(workspace || "").trim()).filter(Boolean)
+    : [];
 }

@@ -11,8 +11,8 @@ import (
 // fluxos de start/pause/resume/stop.
 func trackingAccessFor(accountID, userID string) AccessContext {
 	return AccessContext{
-		UserID:    userID,
-		AccountID: accountID,
+		UserID:      userID,
+		AccountID:   accountID,
 		Perspective: PerspectiveAgency,
 		Permissions: map[string]struct{}{
 			PermTrackingUse: {},

@@ -13,6 +13,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bi"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
@@ -42,6 +43,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	tokenManager := auth.NewHMACTokenManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL)
 	avatarStorage := auth.NewDiskAvatarStorage(cfg.UploadsDir)
 	feedbackImageStorage := feedback.NewDiskImageStorage(cfg.UploadsDir)
+	taskVideoStorage := tasks.NewDiskVideoStorage(cfg.UploadsDir)
 	passwordResetDelivery, err := auth.BuildPasswordResetDelivery(auth.SMTPPasswordResetDeliveryConfig{
 		AppName:            cfg.AppName,
 		Host:               cfg.SMTPHost,
@@ -153,6 +155,12 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		BackfillMaxFiles:           cfg.ERPBackfillMaxFiles,
 		ManualSyncMinInterval:      cfg.ERPManualSyncMinInterval,
 	})
+	if recovered, err := erpRepository.RecoverOrphanedSyncRuns(context.Background(), 2*time.Hour); err != nil {
+		logger.Warn("erp_orphan_recovery_failed", "error", err)
+	} else if recovered > 0 {
+		logger.Info("erp_orphaned_runs_recovered", "count", recovered)
+	}
+
 	if cfg.ERPSyncAutomaticEnabled {
 		logger.Info("erp_sync_scheduler_started",
 			"source_kind", cfg.ERPSourceKind,
@@ -161,6 +169,22 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 			"dry_run", cfg.ERPSyncDryRunDefault,
 		)
 		go func() {
+			if missedFor, ok := missedERPScheduledRun(time.Now().UTC(), cfg.ERPSyncInterval, cfg.ERPSyncHourUTC); ok {
+				alreadyRan, err := erpRepository.HasAutomaticCSVSyncRunSince(context.Background(), missedFor)
+				if err != nil {
+					logger.Warn("erp_automatic_sync_catchup_check_failed",
+						"scheduled_for", missedFor,
+						"error", err,
+					)
+				} else if !alreadyRan {
+					logger.Info("erp_automatic_sync_catchup_started",
+						"scheduled_for", missedFor,
+						"dry_run", cfg.ERPSyncDryRunDefault,
+					)
+					runERPAutomaticSync(context.Background(), logger, erpService, cfg.ERPSyncDryRunDefault, missedFor, "catchup")
+				}
+			}
+
 			for {
 				scheduledFor := nextERPScheduledRun(time.Now().UTC(), cfg.ERPSyncInterval, cfg.ERPSyncHourUTC)
 				wait := time.Until(scheduledFor)
@@ -169,33 +193,22 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 					<-timer.C
 				}
 
-				startedAt := time.Now().UTC()
-				results, err := erpService.IngestAllStores(context.Background(), erp.IngestInput{
-					DryRun:      cfg.ERPSyncDryRunDefault,
-					TriggeredBy: erp.SyncTriggeredByCron,
-				})
-				if err != nil {
-					logger.Warn("erp_automatic_sync_failed",
-						"scheduled_for", scheduledFor,
-						"error", err,
-					)
-					continue
-				}
-
-				storeCount, runCount, filesImported, fileFailures, rowsImported := summarizeERPAutomaticResults(results)
-				logger.Info("erp_automatic_sync_completed",
-					"scheduled_for", scheduledFor,
-					"duration", time.Since(startedAt).String(),
-					"stores", storeCount,
-					"runs", runCount,
-					"files_imported", filesImported,
-					"file_failures", fileFailures,
-					"rows_imported", rowsImported,
-				)
+				runERPAutomaticSync(context.Background(), logger, erpService, cfg.ERPSyncDryRunDefault, scheduledFor, "scheduled")
 			}
 		}()
 	}
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
+	biService := bi.NewService(bi.Options{
+		CompanyKey:         cfg.PerolaBICompanyKey,
+		Login:              cfg.PerolaBILogin,
+		Pass:               cfg.PerolaBIPass,
+		StaticToken:        cfg.PerolaBIStaticToken,
+		DefaultCNPJEmpresa: cfg.PerolaBICNPJEmpresa,
+		TokenTTL:           cfg.PerolaBITokenTTL.String(),
+		RequestTimeout:     cfg.PerolaBIRequestTimeout.String(),
+		PageLimit:          cfg.PerolaBIPageLimit,
+		MaxPages:           cfg.PerolaBIMaxPages,
+	})
 
 	mux := http.NewServeMux()
 	if strings.TrimSpace(cfg.UploadsDir) != "" {
@@ -221,6 +234,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"access",
 				"feedback",
 				"erp",
+				"bi",
 				"users",
 			},
 			"tenantMode":    "owner-is-client",
@@ -247,6 +261,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	access.RegisterRoutes(mux, accessService, authMiddleware)
 	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
 	erp.RegisterRoutes(mux, erpService, authMiddleware)
+	bi.RegisterRoutes(mux, biService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)
 
 	if cfg.CoreV2Enabled {
@@ -269,7 +284,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		registry := modules.NewRegistry(logger)
 		registry.MustRegister(core.New())
 		registry.MustRegister(notifications.New(notificationService))
-		registry.MustRegister(tasks.New(realtimeService, notificationService, relationRegistry))
+		registry.MustRegister(tasks.New(realtimeService, notificationService, relationRegistry, taskVideoStorage))
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -305,8 +320,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// com status 429. Identidade preferida = principal.UserID (via callback que evita import
 		// cycle com o pacote auth); fallback para IP.
 		httpapi.RateLimit(httpapi.RateLimitOptions{
-			Limit:  httpapi.DefaultRESTRateLimit.Limit,
-			Window: httpapi.DefaultRESTRateLimit.Window,
+			Limit:  cfg.HTTPRateLimitRequests,
+			Window: cfg.HTTPRateLimitWindow,
 			Resolver: func(r *http.Request) string {
 				principal, ok := auth.PrincipalFromContext(r.Context())
 				if !ok {
@@ -333,6 +348,49 @@ func nextERPScheduledRun(now time.Time, interval time.Duration, hourUTC int) tim
 		next = next.Add(24 * time.Hour)
 	}
 	return next
+}
+
+func missedERPScheduledRun(now time.Time, interval time.Duration, hourUTC int) (time.Time, bool) {
+	nowUTC := now.UTC()
+	if interval > 0 && interval < 24*time.Hour {
+		return time.Time{}, false
+	}
+	if hourUTC < 0 || hourUTC > 23 {
+		hourUTC = 4
+	}
+	scheduledToday := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), hourUTC, 0, 0, 0, time.UTC)
+	if scheduledToday.After(nowUTC) {
+		return time.Time{}, false
+	}
+	return scheduledToday, true
+}
+
+func runERPAutomaticSync(ctx context.Context, logger *slog.Logger, erpService *erp.Service, dryRun bool, scheduledFor time.Time, runKind string) {
+	startedAt := time.Now().UTC()
+	results, err := erpService.IngestAllStores(ctx, erp.IngestInput{
+		DryRun:      dryRun,
+		TriggeredBy: erp.SyncTriggeredByCron,
+	})
+	if err != nil {
+		logger.Warn("erp_automatic_sync_failed",
+			"scheduled_for", scheduledFor,
+			"run_kind", runKind,
+			"error", err,
+		)
+		return
+	}
+
+	storeCount, runCount, filesImported, fileFailures, rowsImported := summarizeERPAutomaticResults(results)
+	logger.Info("erp_automatic_sync_completed",
+		"scheduled_for", scheduledFor,
+		"run_kind", runKind,
+		"duration", time.Since(startedAt).String(),
+		"stores", storeCount,
+		"runs", runCount,
+		"files_imported", filesImported,
+		"file_failures", fileFailures,
+		"rows_imported", rowsImported,
+	)
 }
 
 func summarizeERPAutomaticResults(results []erp.IngestResult) (storeCount int, runCount int, filesImported int, fileFailures int, rowsImported int) {

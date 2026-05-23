@@ -57,6 +57,37 @@ func TestListTasksCursor_DecodeInvalidReturnsFalse(t *testing.T) {
 	}
 }
 
+func TestListTasksCursorQueryArgs_EmptyCursorReturnsNullables(t *testing.T) {
+	sortOrder, createdAt, id := listTasksCursorQueryArgs(listTasksCursor{}, false)
+	if sortOrder != nil {
+		t.Fatalf("sortOrder sem cursor deveria ser nil; got %#v", sortOrder)
+	}
+	if createdAt != nil {
+		t.Fatalf("createdAt sem cursor deveria ser nil; got %#v", createdAt)
+	}
+	if id != nil {
+		t.Fatalf("id sem cursor deveria ser nil; got %#v", id)
+	}
+}
+
+func TestListTasksCursorQueryArgs_WithCursorReturnsValues(t *testing.T) {
+	original := listTasksCursor{
+		SortOrder: 77.5,
+		CreatedAt: time.Date(2026, 5, 19, 10, 11, 12, 0, time.UTC),
+		ID:        "00000000-0000-0000-0000-000000000123",
+	}
+	sortOrder, createdAt, id := listTasksCursorQueryArgs(original, true)
+	if got := sortOrder.(float64); got != original.SortOrder {
+		t.Fatalf("sortOrder diff: got %v, want %v", got, original.SortOrder)
+	}
+	if got := createdAt.(time.Time); !got.Equal(original.CreatedAt) {
+		t.Fatalf("createdAt diff: got %v, want %v", got, original.CreatedAt)
+	}
+	if got := id.(string); got != original.ID {
+		t.Fatalf("id diff: got %q, want %q", got, original.ID)
+	}
+}
+
 func TestListTasksCursor_EncodeIsBase64URLSafe(t *testing.T) {
 	// Cursor com IDs/timestamps reais nao pode conter caracteres que quebram URL (+, /, =).
 	cursor := listTasksCursor{

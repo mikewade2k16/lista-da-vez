@@ -1,77 +1,82 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import { ChevronDown, ChevronLeft, ChevronRight, LayoutPanelLeft } from "lucide-vue-next";
-import { useDashboardNav } from "~/composables/useDashboardNav";
+import { computed, onMounted, ref, watch } from 'vue'
+import { ChevronDown, ChevronLeft, ChevronRight, LayoutPanelLeft } from 'lucide-vue-next'
+import { useDashboardNav } from '~/composables/useDashboardNav'
 
 const props = defineProps({
   activeWorkspace: {
     type: String,
-    required: true
+    required: true,
   },
   allowedWorkspaces: {
     type: Array,
-    required: true
+    required: true,
   },
   alwaysExpanded: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 
-const route = useRoute();
-const openGroups = ref({});
-const collapsed = ref(false);
-const sidebarStorageKey = "dashboard-sidebar-collapsed";
+const route = useRoute()
+const openGroups = ref({})
+const collapsed = ref(false)
+const sidebarStorageKey = 'dashboard-sidebar-collapsed'
 
 const { visibleSections, resolveIcon, isItemActive, isGroupActive } = useDashboardNav(
   computed(() => props.activeWorkspace),
-  computed(() => props.allowedWorkspaces)
-);
+  computed(() => props.allowedWorkspaces),
+)
 
-const isCollapsed = computed(() => collapsed.value && !props.alwaysExpanded);
+const isCollapsed = computed(() => collapsed.value && !props.alwaysExpanded)
 
 function isGroupOpen(item) {
-  return Boolean(openGroups.value[item.id]) || isGroupActive(item);
+  return Boolean(openGroups.value[item.id]) || isGroupActive(item)
 }
 
 function toggleGroup(item) {
   if (isCollapsed.value) {
-    collapsed.value = false;
-    openGroups.value = { ...openGroups.value, [item.id]: true };
-    return;
+    collapsed.value = false
+    openGroups.value = { ...openGroups.value, [item.id]: true }
+    return
   }
-  openGroups.value = { ...openGroups.value, [item.id]: !isGroupOpen(item) };
+  openGroups.value = { ...openGroups.value, [item.id]: !isGroupOpen(item) }
 }
 
 function toggleCollapsed() {
-  if (props.alwaysExpanded) { collapsed.value = false; return; }
-  collapsed.value = !collapsed.value;
+  if (props.alwaysExpanded) {
+    collapsed.value = false
+    return
+  }
+  collapsed.value = !collapsed.value
 }
 
 watch(
   () => [route.path, visibleSections.value],
   () => {
-    const nextOpenGroups = { ...openGroups.value };
+    const nextOpenGroups = { ...openGroups.value }
     for (const section of visibleSections.value) {
       for (const item of section.items) {
-        if (isGroupActive(item)) nextOpenGroups[item.id] = true;
+        if (isGroupActive(item)) nextOpenGroups[item.id] = true
       }
     }
-    openGroups.value = nextOpenGroups;
+    openGroups.value = nextOpenGroups
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 watch(collapsed, (value) => {
   if (import.meta.client && !props.alwaysExpanded) {
-    window.localStorage.setItem(sidebarStorageKey, value ? "1" : "0");
+    window.localStorage.setItem(sidebarStorageKey, value ? '1' : '0')
   }
-});
+})
 
 onMounted(() => {
-  if (!import.meta.client) return;
-  collapsed.value = props.alwaysExpanded ? false : window.localStorage.getItem(sidebarStorageKey) === "1";
-});
+  if (!import.meta.client) return
+  collapsed.value = props.alwaysExpanded
+    ? false
+    : window.localStorage.getItem(sidebarStorageKey) === '1'
+})
 </script>
 
 <template>
@@ -81,11 +86,16 @@ onMounted(() => {
     aria-label="Paginas do sistema"
   >
     <div class="dashboard-sidebar__head">
-      <NuxtLink v-if="!isCollapsed" to="/operacao" class="dashboard-sidebar__brand" aria-label="Crow Visuals">
+      <NuxtLink
+        v-if="!isCollapsed"
+        to="/operacao"
+        class="dashboard-sidebar__brand"
+        aria-label="Crow Visuals"
+      >
         <picture class="dashboard-sidebar__logo">
-          <source srcset="/logo.avif" type="image/avif">
-          <source srcset="/logo.webp" type="image/webp">
-          <img src="/logo.png" alt="">
+          <source srcset="/logo.avif" type="image/avif" />
+          <source srcset="/logo.webp" type="image/webp" />
+          <img src="/logo.png" alt="" />
         </picture>
       </NuxtLink>
       <span v-else class="dashboard-sidebar__head-icon" aria-hidden="true">
@@ -100,28 +110,16 @@ onMounted(() => {
         :aria-pressed="isCollapsed ? 'true' : 'false'"
         @click="toggleCollapsed"
       >
-        <ChevronRight
-          v-if="isCollapsed"
-          :size="16"
-          :stroke-width="2.2"
-          aria-hidden="true"
-        />
-        <ChevronLeft
-          v-else
-          :size="16"
-          :stroke-width="2.2"
-          aria-hidden="true"
-        />
+        <ChevronRight v-if="isCollapsed" :size="16" :stroke-width="2.2" aria-hidden="true" />
+        <ChevronLeft v-else :size="16" :stroke-width="2.2" aria-hidden="true" />
       </button>
     </div>
 
     <div class="dashboard-sidebar__scroll">
-      <div
-        v-for="section in visibleSections"
-        :key="section.id"
-        class="dashboard-sidebar__section"
-      >
-      <span v-if="!isCollapsed" class="dashboard-sidebar__section-label">{{ section.label }}</span>
+      <div v-for="section in visibleSections" :key="section.id" class="dashboard-sidebar__section">
+        <span v-if="!isCollapsed" class="dashboard-sidebar__section-label">
+          {{ section.label }}
+        </span>
 
         <div class="dashboard-sidebar__items">
           <template v-for="item in section.items" :key="item.id">
@@ -216,7 +214,9 @@ onMounted(() => {
   box-shadow: var(--shadow-md);
   color: var(--admin-header-text);
   backdrop-filter: blur(var(--admin-header-panel-blur));
-  transition: width 0.2s ease, border-radius 0.2s ease;
+  transition:
+    width 0.2s ease,
+    border-radius 0.2s ease;
 }
 
 .dashboard-sidebar.is-collapsed {
@@ -302,7 +302,10 @@ onMounted(() => {
   background: transparent;
   color: var(--admin-header-muted);
   cursor: pointer;
-  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
 }
 
 .dashboard-sidebar__collapse-btn:hover {
@@ -373,7 +376,11 @@ onMounted(() => {
   text-decoration: none;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease;
 }
 
 .dashboard-sidebar__item {
@@ -447,7 +454,9 @@ onMounted(() => {
   margin-left: auto;
   flex-shrink: 0;
   color: var(--admin-header-muted);
-  transition: transform 0.16s ease, color 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    color 0.16s ease;
 }
 
 .dashboard-sidebar__item.is-open .dashboard-sidebar__chevron {
@@ -462,7 +471,7 @@ onMounted(() => {
 }
 
 .dashboard-sidebar__submenu::before {
-  content: "";
+  content: '';
   position: absolute;
   top: 0.16rem;
   bottom: 0.16rem;
@@ -481,7 +490,9 @@ onMounted(() => {
 
 .dashboard-sidebar-submenu-enter-active,
 .dashboard-sidebar-submenu-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .dashboard-sidebar-submenu-enter-from,

@@ -13,8 +13,8 @@ const _dateFormat = ref(getStored('tasks-date-format', 'dmy'))
 const _timeFormat = ref<'24h' | '12h'>(getStored('tasks-time-format', '24h') as '24h' | '12h')
 
 if (typeof window !== 'undefined') {
-  watch(_dateFormat, v => localStorage.setItem('tasks-date-format', v))
-  watch(_timeFormat, v => localStorage.setItem('tasks-time-format', v))
+  watch(_dateFormat, (v) => localStorage.setItem('tasks-date-format', v))
+  watch(_timeFormat, (v) => localStorage.setItem('tasks-time-format', v))
 }
 
 export function useDateFormat() {

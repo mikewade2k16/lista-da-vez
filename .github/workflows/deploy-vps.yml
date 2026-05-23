@@ -57,6 +57,53 @@ jobs:
         with:
           ref: ${{ inputs.git_ref }}
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run web Vitest suite
+        working-directory: web
+        run: npm run test
+
+      - name: Audit root npm dependencies
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Audit web npm dependencies
+        id: web_npm_audit
+        continue-on-error: true
+        working-directory: web
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Warn about current web audit baseline
+        if: ${{ steps.web_npm_audit.outcome == 'failure' }}
+        run: |
+          echo "::warning title=web npm audit::High severity vulnerabilities are still present in web/package-lock.json. This audit is warning-only until the frontend dependencies are upgraded."
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.3
+          cache-dependency-path: back/go.sum
+
+      - name: Run Go tests
+        working-directory: back
+        run: go test ./...
+
+      - name: List Go module updates
+        working-directory: back
+        run: go list -m -u all
+
+      - name: Run govulncheck
+        working-directory: back
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Configure SSH access
         env:
           DEPLOY_VPS_SSH_KEY: ${{ secrets.DEPLOY_VPS_SSH_KEY }}
@@ -105,6 +152,7 @@ jobs:
             --exclude='back/.logs' \
             --exclude='qa-bot/.venv' \
             --exclude='qa-bot/artifacts' \
+            --exclude='erp-source-local' \
             --exclude='Controlle10 - ftp' \
             --exclude='tmp' \
             . | ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -153,6 +201,8 @@ jobs:
       - name: Publish summary
         if: ${{ always() }}
         run: |
+          web_audit_outcome="${{ steps.web_npm_audit.outcome }}"
+
           {
             echo "## Deploy VPS"
             echo ""
@@ -160,6 +210,18 @@ jobs:
             echo "- Services: \`${{ inputs.services }}\`"
             echo "- Host: \`$DEPLOY_HOST\`"
             echo "- Remote path: \`$DEPLOY_REMOTE_PATH\`"
+            echo "- Web tests: blocking (\`npm run test\` em \`web/\`)"
+            echo "- Root npm audit: blocking (`npm audit --package-lock-only --audit-level=high`)"
+
+            if [[ "$web_audit_outcome" == "success" ]]; then
+              echo "- Web npm audit: clean (`npm audit --package-lock-only --audit-level=high`)"
+            else
+              echo "- Web npm audit: warning-only for now (current frontend baseline still has advisories to upgrade)"
+            fi
+
+            echo "- Go tests: blocking (\`go test ./...\` em \`back/\`)"
+            echo "- Go module updates: informational (`go list -m -u all`)"
+            echo "- govulncheck: blocking (`go run golang.org/x/vuln/cmd/govulncheck@latest ./...`) with Go 1.26.3 to mirror the backend Docker build"
 
             if [[ "${{ inputs.backup_database }}" == "true" && -n "${{ steps.backup.outputs.backup_file }}" ]]; then
               echo "- Backup: \`${{ steps.backup.outputs.backup_file }}\`"

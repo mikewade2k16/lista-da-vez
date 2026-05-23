@@ -7,14 +7,24 @@ type SelectColor = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'e
 type SelectVariant = 'outline' | 'soft' | 'subtle' | 'ghost' | 'none'
 type OptionEditMode = 'none' | 'color' | 'full'
 type BadgeStyle = 'filled' | 'entity'
-type OptionColorKey = 'default' | 'gray' | 'brown' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'red'
+type OptionColorKey =
+  | 'default'
+  | 'gray'
+  | 'brown'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'blue'
+  | 'purple'
+  | 'pink'
+  | 'red'
 type SelectCreateConfig =
   | boolean
   | 'always'
   | {
-    position?: 'top' | 'bottom'
-    when?: 'empty' | 'always'
-  }
+      position?: 'top' | 'bottom'
+      when?: 'empty' | 'always'
+    }
 
 interface OmniSelectMenuInputItem {
   label?: string
@@ -44,69 +54,132 @@ interface OptionColorConfig {
 type SelectSourceItem = OmniSelectMenuInputItem | SelectPrimitive
 
 const OPTION_COLOR_PALETTE: OptionColorConfig[] = [
-  { key: 'default', label: 'Padrao', swatchClass: 'bg-zinc-500', badgeClass: 'bg-zinc-700/45 text-zinc-100 ring-zinc-500/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-transparent' },
-  { key: 'gray', label: 'Cinza', swatchClass: 'bg-slate-500', badgeClass: 'bg-slate-600/50 text-slate-100 ring-slate-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-slate-400/70' },
-  { key: 'brown', label: 'Marrom', swatchClass: 'bg-amber-700', badgeClass: 'bg-amber-700/50 text-amber-50 ring-amber-500/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-amber-600/70' },
-  { key: 'orange', label: 'Laranja', swatchClass: 'bg-orange-500', badgeClass: 'bg-orange-600/55 text-orange-50 ring-orange-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-orange-400/80' },
-  { key: 'yellow', label: 'Amarelo', swatchClass: 'bg-yellow-500', badgeClass: 'bg-yellow-500/55 text-zinc-950 ring-yellow-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-yellow-400/80' },
-  { key: 'green', label: 'Verde', swatchClass: 'bg-emerald-500', badgeClass: 'bg-emerald-700/55 text-emerald-50 ring-emerald-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-emerald-400/80' },
-  { key: 'blue', label: 'Azul', swatchClass: 'bg-blue-500', badgeClass: 'bg-blue-700/55 text-blue-50 ring-blue-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-blue-400/80' },
-  { key: 'purple', label: 'Roxo', swatchClass: 'bg-violet-500', badgeClass: 'bg-violet-700/55 text-violet-50 ring-violet-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-violet-400/80' },
-  { key: 'pink', label: 'Rosa', swatchClass: 'bg-fuchsia-500', badgeClass: 'bg-fuchsia-700/55 text-fuchsia-50 ring-fuchsia-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-fuchsia-400/80' },
-  { key: 'red', label: 'Vermelho', swatchClass: 'bg-rose-500', badgeClass: 'bg-rose-700/55 text-rose-50 ring-rose-400/50', entityClass: 'bg-transparent text-[rgb(var(--text))] ring-rose-400/80' }
+  {
+    key: 'default',
+    label: 'Padrao',
+    swatchClass: 'bg-zinc-500',
+    badgeClass: 'bg-zinc-700/45 text-zinc-100 ring-zinc-500/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-transparent',
+  },
+  {
+    key: 'gray',
+    label: 'Cinza',
+    swatchClass: 'bg-slate-500',
+    badgeClass: 'bg-slate-600/50 text-slate-100 ring-slate-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-slate-400/70',
+  },
+  {
+    key: 'brown',
+    label: 'Marrom',
+    swatchClass: 'bg-amber-700',
+    badgeClass: 'bg-amber-700/50 text-amber-50 ring-amber-500/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-amber-600/70',
+  },
+  {
+    key: 'orange',
+    label: 'Laranja',
+    swatchClass: 'bg-orange-500',
+    badgeClass: 'bg-orange-600/55 text-orange-50 ring-orange-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-orange-400/80',
+  },
+  {
+    key: 'yellow',
+    label: 'Amarelo',
+    swatchClass: 'bg-yellow-500',
+    badgeClass: 'bg-yellow-500/55 text-zinc-950 ring-yellow-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-yellow-400/80',
+  },
+  {
+    key: 'green',
+    label: 'Verde',
+    swatchClass: 'bg-emerald-500',
+    badgeClass: 'bg-emerald-700/55 text-emerald-50 ring-emerald-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-emerald-400/80',
+  },
+  {
+    key: 'blue',
+    label: 'Azul',
+    swatchClass: 'bg-blue-500',
+    badgeClass: 'bg-blue-700/55 text-blue-50 ring-blue-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-blue-400/80',
+  },
+  {
+    key: 'purple',
+    label: 'Roxo',
+    swatchClass: 'bg-violet-500',
+    badgeClass: 'bg-violet-700/55 text-violet-50 ring-violet-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-violet-400/80',
+  },
+  {
+    key: 'pink',
+    label: 'Rosa',
+    swatchClass: 'bg-fuchsia-500',
+    badgeClass: 'bg-fuchsia-700/55 text-fuchsia-50 ring-fuchsia-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-fuchsia-400/80',
+  },
+  {
+    key: 'red',
+    label: 'Vermelho',
+    swatchClass: 'bg-rose-500',
+    badgeClass: 'bg-rose-700/55 text-rose-50 ring-rose-400/50',
+    entityClass: 'bg-transparent text-[rgb(var(--text))] ring-rose-400/80',
+  },
 ]
 
-const props = withDefaults(defineProps<{
-  modelValue?: SelectModelValue
-  items?: SelectSourceItem[]
-  placeholder?: string
-  multiple?: boolean
-  creatable?: SelectCreateConfig
-  searchable?: boolean
-  fullContentWidth?: boolean
-  loading?: boolean
-  loadingIcon?: string
-  disabled?: boolean
-  clear?: boolean
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
-  color?: SelectColor
-  variant?: SelectVariant
-  highlight?: boolean
-  trailingIcon?: string
-  selectedIcon?: string
-  ignoreFilter?: boolean
-  badgeMode?: boolean
-  badgeStyle?: BadgeStyle
-  showAvatar?: boolean
-  itemDisplayMode?: 'rich' | 'text'
-  optionEditMode?: OptionEditMode
-  open?: boolean
-}>(), {
-  modelValue: null,
-  items: () => [],
-  placeholder: 'Selecione',
-  multiple: false,
-  creatable: false,
-  searchable: true,
-  fullContentWidth: false,
-  loading: false,
-  loadingIcon: 'i-lucide-loader-circle',
-  disabled: false,
-  clear: false,
-  size: 'sm',
-  color: 'neutral',
-  variant: 'none',
-  highlight: false,
-  trailingIcon: 'i-lucide-chevron-down',
-  selectedIcon: 'i-lucide-check',
-  ignoreFilter: false,
-  badgeMode: false,
-  badgeStyle: 'filled',
-  showAvatar: false,
-  itemDisplayMode: 'rich',
-  optionEditMode: 'none',
-  open: undefined
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: SelectModelValue
+    items?: SelectSourceItem[]
+    placeholder?: string
+    multiple?: boolean
+    creatable?: SelectCreateConfig
+    searchable?: boolean
+    fullContentWidth?: boolean
+    loading?: boolean
+    loadingIcon?: string
+    disabled?: boolean
+    clear?: boolean
+    size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
+    color?: SelectColor
+    variant?: SelectVariant
+    highlight?: boolean
+    trailingIcon?: string
+    selectedIcon?: string
+    ignoreFilter?: boolean
+    badgeMode?: boolean
+    badgeStyle?: BadgeStyle
+    showAvatar?: boolean
+    itemDisplayMode?: 'rich' | 'text'
+    optionEditMode?: OptionEditMode
+    open?: boolean
+  }>(),
+  {
+    modelValue: null,
+    items: () => [],
+    placeholder: 'Selecione',
+    multiple: false,
+    creatable: false,
+    searchable: true,
+    fullContentWidth: false,
+    loading: false,
+    loadingIcon: 'i-lucide-loader-circle',
+    disabled: false,
+    clear: false,
+    size: 'sm',
+    color: 'neutral',
+    variant: 'none',
+    highlight: false,
+    trailingIcon: 'i-lucide-chevron-down',
+    selectedIcon: 'i-lucide-check',
+    ignoreFilter: false,
+    badgeMode: false,
+    badgeStyle: 'filled',
+    showAvatar: false,
+    itemDisplayMode: 'rich',
+    optionEditMode: 'none',
+    open: undefined,
+  },
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: SelectModelValue]
@@ -115,11 +188,17 @@ const emit = defineEmits<{
 }>()
 
 const createdItems = ref<OmniSelectMenuInputItem[]>([])
-const optionMetaState = useState<Record<string, OptionMeta>>('__omni_select_menu_option_meta__', () => ({}))
+const optionMetaState = useState<Record<string, OptionMeta>>(
+  '__omni_select_menu_option_meta__',
+  () => ({}),
+)
 const optionDraftLabelMap = reactive<Record<string, string>>({})
 
 function normalizeText(value: unknown, max = 180) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
 }
 
 function optionKey(value: unknown) {
@@ -128,13 +207,13 @@ function optionKey(value: unknown) {
 
 function normalizeColorKey(value: unknown): OptionColorKey {
   const key = normalizeText(value, 30).toLowerCase() as OptionColorKey
-  const known = OPTION_COLOR_PALETTE.find(item => item.key === key)
+  const known = OPTION_COLOR_PALETTE.find((item) => item.key === key)
   return known?.key || 'default'
 }
 
 function colorConfig(color: unknown): OptionColorConfig {
   const key = normalizeColorKey(color)
-  return OPTION_COLOR_PALETTE.find(item => item.key === key) || OPTION_COLOR_PALETTE[0]!
+  return OPTION_COLOR_PALETTE.find((item) => item.key === key) || OPTION_COLOR_PALETTE[0]!
 }
 
 function setOptionMeta(value: unknown, patch: Partial<OptionMeta>) {
@@ -144,28 +223,29 @@ function setOptionMeta(value: unknown, patch: Partial<OptionMeta>) {
     ...optionMetaState.value,
     [key]: {
       ...(optionMetaState.value[key] || {}),
-      ...patch
-    }
+      ...patch,
+    },
   }
 }
 
 function normalizeOption(source: SelectSourceItem): OmniSelectMenuInputItem {
-  const base: OmniSelectMenuInputItem = (typeof source === 'object' && source !== null && 'value' in source)
-    ? {
-      ...source,
-      value: source.value as SelectPrimitive
-    }
-    : {
-      label: normalizeText(source),
-      value: source as SelectPrimitive
-    }
+  const base: OmniSelectMenuInputItem =
+    typeof source === 'object' && source !== null && 'value' in source
+      ? {
+          ...source,
+          value: source.value as SelectPrimitive,
+        }
+      : {
+          label: normalizeText(source),
+          value: source as SelectPrimitive,
+        }
 
   const meta = optionMetaState.value[optionKey(base.value)]
   const label = normalizeText(meta?.label || base.label || base.value)
   return {
     ...base,
     label,
-    color: normalizeColorKey(meta?.color || base.color)
+    color: normalizeColorKey(meta?.color || base.color),
   }
 }
 
@@ -195,23 +275,23 @@ const normalizedModelArray = computed<SelectPrimitive[]>(() => {
   return [props.modelValue]
 })
 
-const selectedValueKeys = computed(() => new Set(normalizedModelArray.value.map(value => optionKey(value))))
+const selectedValueKeys = computed(
+  () => new Set(normalizedModelArray.value.map((value) => optionKey(value))),
+)
 
 const sourceItems = computed(() => {
-  return (props.items || [])
-    .map(normalizeOption)
-    .filter(item => isValidPrimitive(item.value))
+  return (props.items || []).map(normalizeOption).filter((item) => isValidPrimitive(item.value))
 })
 
 const modelDerivedItems = computed<OmniSelectMenuInputItem[]>(() => {
-  const known = new Set(sourceItems.value.map(item => optionKey(item.value)))
-  createdItems.value.forEach(item => known.add(optionKey(item.value)))
+  const known = new Set(sourceItems.value.map((item) => optionKey(item.value)))
+  createdItems.value.forEach((item) => known.add(optionKey(item.value)))
   return normalizedModelArray.value
-    .filter(value => !known.has(optionKey(value)))
-    .map(value => ({
+    .filter((value) => !known.has(optionKey(value)))
+    .map((value) => ({
       label: normalizeText(value),
       value,
-      color: 'default'
+      color: 'default',
     }))
 })
 
@@ -219,7 +299,7 @@ const mergedItems = computed(() => {
   return dedupeOptions([
     ...sourceItems.value,
     ...createdItems.value,
-    ...modelDerivedItems.value
+    ...modelDerivedItems.value,
   ]).filter((item) => {
     const meta = optionMetaState.value[optionKey(item.value)]
     if (meta?.deleted && !selectedValueKeys.value.has(optionKey(item.value))) {
@@ -231,7 +311,7 @@ const mergedItems = computed(() => {
 
 const itemMapByValueKey = computed(() => {
   const map = new Map<string, OmniSelectMenuInputItem>()
-  mergedItems.value.forEach(item => map.set(optionKey(item.value), item))
+  mergedItems.value.forEach((item) => map.set(optionKey(item.value), item))
   return map
 })
 
@@ -242,11 +322,11 @@ function itemForValue(value: unknown): OmniSelectMenuInputItem {
   return {
     label: normalized,
     value: normalized,
-    color: 'default'
+    color: 'default',
   }
 }
 
-const selectedItems = computed(() => normalizedModelArray.value.map(value => itemForValue(value)))
+const selectedItems = computed(() => normalizedModelArray.value.map((value) => itemForValue(value)))
 
 const resolvedModelValue = computed<SelectPrimitive | SelectPrimitive[] | undefined>(() => {
   if (props.multiple) return normalizedModelArray.value
@@ -272,7 +352,7 @@ const selectUi = computed(() => ({
   placeholder: 'omni-select-menu-input__placeholder',
   input: 'omni-select-menu-input__search',
   trailing: 'omni-select-menu-input__trailing',
-  trailingIcon: 'omni-select-menu-input__trailing-icon'
+  trailingIcon: 'omni-select-menu-input__trailing-icon',
 }))
 
 function optionBadgeClassForValue(value: unknown) {
@@ -288,10 +368,9 @@ function emitModelValue(value: SelectModelValue) {
 function onUpdateModelValue(nextValue: unknown) {
   if (props.multiple) {
     const rawArray = Array.isArray(nextValue) ? nextValue : []
-    const next = dedupeOptions(rawArray
-      .filter(isValidPrimitive)
-      .map(value => ({ label: normalizeText(value), value })))
-      .map(option => option.value)
+    const next = dedupeOptions(
+      rawArray.filter(isValidPrimitive).map((value) => ({ label: normalizeText(value), value })),
+    ).map((option) => option.value)
     emitModelValue(next)
     return
   }
@@ -308,11 +387,11 @@ function onCreateItem(rawItem: string) {
   const label = normalizeText(rawItem, 120)
   if (!label) return
 
-  const existing = mergedItems.value.find(item => optionKey(item.value) === optionKey(label))
+  const existing = mergedItems.value.find((item) => optionKey(item.value) === optionKey(label))
   const option = existing || {
     label,
     value: label,
-    color: 'default'
+    color: 'default',
   }
 
   if (!existing) {
@@ -323,14 +402,11 @@ function onCreateItem(rawItem: string) {
 
   emit('create', {
     label: option.label || label,
-    value: option.value
+    value: option.value,
   })
 
   if (props.multiple) {
-    const nextValues = dedupeOptions([
-      ...selectedItems.value,
-      option
-    ]).map(item => item.value)
+    const nextValues = dedupeOptions([...selectedItems.value, option]).map((item) => item.value)
     emitModelValue(nextValues)
     return
   }
@@ -345,7 +421,7 @@ function removeSingleSelection() {
 
 function removeMultiSelection(value: SelectPrimitive) {
   if (props.disabled || !props.clear) return
-  const next = normalizedModelArray.value.filter(item => optionKey(item) !== optionKey(value))
+  const next = normalizedModelArray.value.filter((item) => optionKey(item) !== optionKey(value))
   emitModelValue(next)
 }
 
@@ -382,10 +458,10 @@ function removeOption(option: OmniSelectMenuInputItem) {
   if (!canDeleteOptions.value) return
   const key = optionKey(option.value)
   setOptionMeta(option.value, { deleted: true })
-  createdItems.value = createdItems.value.filter(item => optionKey(item.value) !== key)
+  createdItems.value = createdItems.value.filter((item) => optionKey(item.value) !== key)
 
   if (props.multiple) {
-    const next = normalizedModelArray.value.filter(item => optionKey(item) !== key)
+    const next = normalizedModelArray.value.filter((item) => optionKey(item) !== key)
     emitModelValue(next)
     return
   }
@@ -433,7 +509,12 @@ function removeOption(option: OmniSelectMenuInputItem) {
                 v-for="item in selectedItems"
                 :key="String(item.value)"
                 class="omni-select-menu-input__selected-badge ring-1 ring-inset"
-                :class="[optionBadgeClassForValue(item.value), { 'omni-select-menu-input__selected-badge--entity': props.badgeStyle === 'entity' }]"
+                :class="[
+                  optionBadgeClassForValue(item.value),
+                  {
+                    'omni-select-menu-input__selected-badge--entity': props.badgeStyle === 'entity',
+                  },
+                ]"
                 color="neutral"
                 variant="solid"
               >
@@ -462,7 +543,12 @@ function removeOption(option: OmniSelectMenuInputItem) {
             <template v-else>
               <UBadge
                 class="omni-select-menu-input__selected-badge ring-1 ring-inset"
-                :class="[optionBadgeClassForValue(selectedItems[0]?.value), { 'omni-select-menu-input__selected-badge--entity': props.badgeStyle === 'entity' }]"
+                :class="[
+                  optionBadgeClassForValue(selectedItems[0]?.value),
+                  {
+                    'omni-select-menu-input__selected-badge--entity': props.badgeStyle === 'entity',
+                  },
+                ]"
                 color="neutral"
                 variant="solid"
               >
@@ -518,7 +604,10 @@ function removeOption(option: OmniSelectMenuInputItem) {
         <span
           v-if="props.badgeMode"
           class="omni-select-menu-input__item-badge inline-flex max-w-[220px] items-center rounded-md px-2 py-1 text-xs font-medium leading-none ring-1 ring-inset"
-          :class="[optionBadgeClassForValue(item.value), { 'omni-select-menu-input__item-badge--entity': props.badgeStyle === 'entity' }]"
+          :class="[
+            optionBadgeClassForValue(item.value),
+            { 'omni-select-menu-input__item-badge--entity': props.badgeStyle === 'entity' },
+          ]"
         >
           <span class="truncate">{{ item.label }}</span>
         </span>
@@ -552,21 +641,30 @@ function removeOption(option: OmniSelectMenuInputItem) {
             />
 
             <template #content>
-              <div class="omni-select-menu-input__option-popover w-[250px] space-y-3 p-3" @click.stop>
+              <div
+                class="omni-select-menu-input__option-popover w-[250px] space-y-3 p-3"
+                @click.stop
+              >
                 <div v-if="canRenameOptions" class="omni-select-menu-input__option-group space-y-1">
-                  <p class="omni-select-menu-input__option-title text-[11px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">
+                  <p
+                    class="omni-select-menu-input__option-title text-[11px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
+                  >
                     Nome
                   </p>
                   <UInput
                     :model-value="draftLabelForOption(item)"
                     size="sm"
-                    @update:model-value="optionDraftLabelMap[optionKey(item.value)] = String($event ?? '')"
+                    @update:model-value="
+                      optionDraftLabelMap[optionKey(item.value)] = String($event ?? '')
+                    "
                     @keydown.enter.prevent="renameOption(item)"
                   />
                 </div>
 
                 <div class="omni-select-menu-input__option-group space-y-1">
-                  <p class="omni-select-menu-input__option-title text-[11px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">
+                  <p
+                    class="omni-select-menu-input__option-title text-[11px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
+                  >
                     Cores
                   </p>
                   <button
@@ -577,7 +675,10 @@ function removeOption(option: OmniSelectMenuInputItem) {
                     @click="updateOptionColor(item, color.key)"
                   >
                     <span class="flex items-center gap-2">
-                      <span class="omni-select-menu-input__color-swatch inline-flex h-4 w-4 rounded" :class="color.swatchClass" />
+                      <span
+                        class="omni-select-menu-input__color-swatch inline-flex h-4 w-4 rounded"
+                        :class="color.swatchClass"
+                      ></span>
                       {{ color.label }}
                     </span>
                     <UIcon
@@ -588,7 +689,10 @@ function removeOption(option: OmniSelectMenuInputItem) {
                   </button>
                 </div>
 
-                <div v-if="canDeleteOptions" class="omni-select-menu-input__option-delete border-t border-[rgb(var(--border))] pt-2">
+                <div
+                  v-if="canDeleteOptions"
+                  class="omni-select-menu-input__option-delete border-t border-[rgb(var(--border))] pt-2"
+                >
                   <UButton
                     icon="i-lucide-trash-2"
                     label="Excluir"
@@ -604,9 +708,7 @@ function removeOption(option: OmniSelectMenuInputItem) {
         </div>
       </template>
 
-      <template #create-item-label="{ item }">
-        Criar "{{ item }}"
-      </template>
+      <template #create-item-label="{ item }">Criar "{{ item }}"</template>
     </USelectMenu>
   </div>
 </template>

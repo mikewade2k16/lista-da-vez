@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { storeToRefs } from "pinia";
+import { CalendarDays } from "lucide-vue-next";
 
 import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
 import { useCrmStore } from "~/stores/crm";
+import type { QueueConsultantStats } from "~/stores/crm";
 
 const crmStore = useCrmStore();
 const { overview, pending, ready, errorMessage, dateFrom, dateTo } = storeToRefs(crmStore);
+
+// filtros locais (sem nova requisição)
+const selectedStore = ref("");
+const consultantSearch = ref("");
 
 const summary = computed(() => overview.value?.summary || {
   orders: 0,
@@ -22,13 +28,65 @@ const summary = computed(() => overview.value?.summary || {
 });
 const storeRows = computed(() => overview.value?.stores || []);
 const consultantRows = computed(() => overview.value?.consultants || []);
-const managementStoreSlug = "gerencia-multiloja";
-const commercialStoreRows = computed(() => storeRows.value.filter((row) => row.storeSlug !== managementStoreSlug));
-const managementStoreRows = computed(() => storeRows.value.filter((row) => row.storeSlug === managementStoreSlug));
-const commercialConsultantRows = computed(() => consultantRows.value.filter((row) => row.storeSlug !== managementStoreSlug));
-const managementConsultantRows = computed(() => consultantRows.value.filter((row) => row.storeSlug === managementStoreSlug));
+const queueStats = computed(() => overview.value?.queueStats || null);
 const warnings = computed(() => overview.value?.warnings || []);
-const summaryProgressWidth = computed(() => `${Math.min(100, Number(summary.value.goalProgress || 0)).toFixed(1)}%`);
+
+const managementStoreSlug = "gerencia-multiloja";
+
+const commercialStoreRows = computed(() =>
+  storeRows.value.filter((row) => row.storeSlug !== managementStoreSlug)
+);
+const managementStoreRows = computed(() =>
+  storeRows.value.filter((row) => row.storeSlug === managementStoreSlug)
+);
+
+const storeOptions = computed(() =>
+  commercialStoreRows.value.map((s) => ({ slug: s.storeSlug, label: s.storeLabel }))
+);
+
+const filteredStoreRows = computed(() => {
+  if (!selectedStore.value) return commercialStoreRows.value;
+  return commercialStoreRows.value.filter((s) => s.storeSlug === selectedStore.value);
+});
+
+// merge ERP × fila por nome normalizado
+type MergedConsultant = (typeof consultantRows.value)[number] & {
+  queue?: QueueConsultantStats;
+  matched: boolean;
+};
+
+const queueByName = computed(() => {
+  const map = new Map<string, QueueConsultantStats>();
+  for (const q of queueStats.value?.byConsultant ?? []) {
+    map.set(q.personName.trim().toLowerCase(), q);
+  }
+  return map;
+});
+
+const mergedConsultants = computed<MergedConsultant[]>(() => {
+  const search = consultantSearch.value.trim().toLowerCase();
+  return consultantRows.value
+    .filter((c) => c.storeSlug !== managementStoreSlug)
+    .filter((c) => !selectedStore.value || c.storeSlug === selectedStore.value)
+    .filter((c) => !search || c.consultantName.toLowerCase().includes(search))
+    .map((c) => {
+      const queue = queueByName.value.get(c.consultantName.trim().toLowerCase());
+      return { ...c, queue, matched: !!queue };
+    });
+});
+
+const managementConsultantRows = computed(() =>
+  consultantRows.value.filter((row) => row.storeSlug === managementStoreSlug)
+);
+
+const summaryProgressWidth = computed(() =>
+  `${Math.min(100, Number(summary.value.goalProgress || 0)).toFixed(1)}%`
+);
+
+// consultores ERP sem correspondente na fila
+const unmatchedCount = computed(() =>
+  mergedConsultants.value.filter((c) => !c.matched && queueStats.value).length
+);
 
 function formatCurrencyFromCents(value?: number | null) {
   return formatCurrencyBRL((Number(value || 0) || 0) / 100);
@@ -42,18 +100,19 @@ function formatPA(value?: number | null) {
   return Number(value || 0).toFixed(2);
 }
 
+function formatPct(value?: number | null) {
+  const n = Number(value || 0);
+  return n ? `${n.toFixed(1)}%` : "-";
+}
+
 function progressWidth(value?: number | null) {
   return `${Math.min(100, Number(value || 0)).toFixed(1)}%`;
 }
 
 function progressClass(value?: number | null) {
   const normalized = Number(value || 0);
-  if (normalized >= 100) {
-    return "is-hit";
-  }
-  if (normalized >= 75) {
-    return "is-near";
-  }
+  if (normalized >= 100) return "is-hit";
+  if (normalized >= 75) return "is-near";
   return "is-miss";
 }
 
@@ -73,27 +132,68 @@ async function resetMonth() {
       <div>
         <h2 class="admin-panel__title">CRM comercial via ERP</h2>
         <p class="admin-panel__text">
-          Metas cadastradas no sistema cruzadas com pedidos do ERP no escopo raiz. O foco aqui e leitura comercial por loja e consultor.
+          Metas cadastradas no sistema cruzadas com pedidos do ERP. Leitura comercial por loja e consultor.
         </p>
       </div>
 
+      <!-- filtros de periodo -->
       <form class="crm-filters" @submit.prevent="submitFilters">
-        <label class="crm-filters__field">
-          <span>De</span>
-          <input v-model="dateFrom" class="crm-filters__input" type="date">
-        </label>
-
-        <label class="crm-filters__field">
-          <span>Ate</span>
-          <input v-model="dateTo" class="crm-filters__input" type="date">
-        </label>
+        <div class="crm-filters__date-wrap">
+          <label class="crm-filters__label">Periodo</label>
+          <AppDatePicker
+            :model-value="dateFrom"
+            :end-date="dateTo"
+            @update:model-value="dateFrom = $event"
+            @update:end-date="dateTo = $event"
+          >
+            <template #default="{ label }">
+              <button type="button" class="crm-date-trigger">
+                <CalendarDays :size="14" />
+                <span>{{ label || "Todas as vendas" }}</span>
+              </button>
+            </template>
+          </AppDatePicker>
+        </div>
 
         <div class="crm-filters__actions">
           <button class="crm-btn crm-btn--ghost" type="button" @click="resetMonth">Mes atual</button>
-          <button class="crm-btn" type="submit" :disabled="pending">{{ pending ? "Atualizando..." : "Atualizar" }}</button>
+          <button class="crm-btn" type="submit" :disabled="pending">
+            {{ pending ? "Atualizando..." : "Atualizar" }}
+          </button>
         </div>
       </form>
     </header>
+
+    <!-- filtros de loja e consultor (local, sem nova requisição) -->
+    <div v-if="ready" class="crm-local-filters">
+      <select
+        v-model="selectedStore"
+        class="crm-select"
+        title="Filtrar por loja"
+      >
+        <option value="">Todas as lojas</option>
+        <option v-for="s in storeOptions" :key="s.slug" :value="s.slug">
+          {{ s.label }}
+        </option>
+      </select>
+
+      <input
+        v-model="consultantSearch"
+        class="crm-search"
+        type="text"
+        placeholder="Buscar consultor..."
+        autocomplete="off"
+      />
+
+      <button
+        v-if="selectedStore || consultantSearch"
+        class="crm-btn crm-btn--ghost crm-btn--sm"
+        type="button"
+        @click="selectedStore = ''; consultantSearch = '';"
+      >
+        Limpar filtros
+      </button>
+    </div>
 
     <article v-if="errorMessage" class="settings-card">
       <p class="settings-card__text">{{ errorMessage }}</p>
@@ -104,26 +204,35 @@ async function resetMonth() {
     </article>
 
     <section v-else class="crm-panel__content">
+      <!-- hero de meta -->
       <article class="crm-hero">
         <div class="crm-hero__copy">
           <span class="crm-hero__eyebrow">% Meta do periodo</span>
           <strong class="crm-hero__value">{{ formatPercent(summary.goalProgress) }}</strong>
           <p class="crm-hero__text">
-            {{ formatCurrencyFromCents(summary.salesCents) }} vendidos sobre {{ formatCurrencyFromCents(summary.monthlyGoalCents) }} de meta consolidada.
+            {{ formatCurrencyFromCents(summary.salesCents) }} vendidos sobre
+            {{ formatCurrencyFromCents(summary.monthlyGoalCents) }} de meta consolidada.
           </p>
         </div>
 
         <div class="crm-progress-card">
           <div class="crm-progress-card__track">
-            <div class="crm-progress-card__fill" :class="progressClass(summary.goalProgress)" :style="{ width: summaryProgressWidth }" />
+            <div
+              class="crm-progress-card__fill"
+              :class="progressClass(summary.goalProgress)"
+              :style="{ width: summaryProgressWidth }"
+            />
           </div>
           <div class="crm-progress-card__meta">
             <span>Falta {{ formatCurrencyFromCents(summary.remainingToGoalCents) }}</span>
-            <span v-if="summary.unmappedSalesCents">Nao mapeado: {{ formatCurrencyFromCents(summary.unmappedSalesCents) }}</span>
+            <span v-if="summary.unmappedSalesCents">
+              Nao mapeado: {{ formatCurrencyFromCents(summary.unmappedSalesCents) }}
+            </span>
           </div>
         </div>
       </article>
 
+      <!-- métricas ERP -->
       <section class="metric-grid crm-metrics">
         <article class="metric-card">
           <span class="metric-card__label">Vendas do periodo</span>
@@ -151,15 +260,72 @@ async function resetMonth() {
         </article>
       </section>
 
+      <!-- indicadores de fila -->
+      <section v-if="queueStats" class="crm-queue-metrics">
+        <h3 class="crm-section-label">Fila de atendimento — periodo selecionado</h3>
+        <div class="metric-grid crm-queue-grid">
+          <article class="metric-card crm-queue-card">
+            <span class="metric-card__label">Atendimentos</span>
+            <strong class="metric-card__value">{{ formatNumber(queueStats.totalAttendances) }}</strong>
+          </article>
+          <article class="metric-card crm-queue-card">
+            <span class="metric-card__label">Conversoes (fila)</span>
+            <strong class="metric-card__value">{{ formatNumber(queueStats.totalConversions) }}</strong>
+          </article>
+          <article class="metric-card crm-queue-card">
+            <span class="metric-card__label">Taxa de conversao</span>
+            <strong class="metric-card__value crm-rate--good">
+              {{ formatPct(queueStats.conversionRate) }}
+            </strong>
+            <div class="crm-bar">
+              <div
+                class="crm-bar__fill crm-bar__fill--green"
+                :style="{ width: `${Math.min(queueStats.conversionRate, 100)}%` }"
+              />
+            </div>
+          </article>
+          <article class="metric-card crm-queue-card">
+            <span class="metric-card__label">Cancelamento (fila)</span>
+            <strong class="metric-card__value crm-rate--warn">
+              {{ formatPct(queueStats.cancellationRate) }}
+            </strong>
+            <div class="crm-bar">
+              <div
+                class="crm-bar__fill crm-bar__fill--red"
+                :style="{ width: `${Math.min(queueStats.cancellationRate, 100)}%` }"
+              />
+            </div>
+          </article>
+          <article v-if="summary.erpCancellations" class="metric-card crm-queue-card">
+            <span class="metric-card__label">Cancelamento ERP</span>
+            <strong class="metric-card__value crm-rate--warn">
+              {{ formatPct(summary.erpCancellationRate) }}
+            </strong>
+            <small class="crm-metric-sub">{{ formatNumber(summary.erpCancellations) }} pedidos</small>
+          </article>
+        </div>
+      </section>
+
+      <!-- aviso de não mapeados -->
       <article v-if="warnings.length" class="crm-warning-list">
-        <p v-for="warning in warnings" :key="warning" class="crm-warning-list__item">{{ warning }}</p>
+        <p v-for="warning in warnings" :key="warning" class="crm-warning-list__item">
+          {{ warning }}
+        </p>
       </article>
 
+      <!-- aviso de consultores sem match na fila -->
+      <article v-if="unmatchedCount > 0" class="crm-warning-list">
+        <p class="crm-warning-list__item crm-warning-list__item--info">
+          {{ unmatchedCount }} consultor(es) ERP sem correspondente identificado na fila (nomes nao coincidem).
+        </p>
+      </article>
+
+      <!-- tabela por loja -->
       <article class="insight-card insight-card--wide">
         <header class="crm-section__header">
           <div>
             <h3 class="insight-card__title">Lojas mapeadas</h3>
-            <p class="insight-card__text">Meta da loja cadastrada no sistema comparada com a venda vinda do ERP.</p>
+            <p class="insight-card__text">Meta da loja vs venda ERP no periodo.</p>
           </div>
           <span class="crm-section__meta">{{ overview?.dateFrom }} ate {{ overview?.dateTo }}</span>
         </header>
@@ -174,14 +340,15 @@ async function resetMonth() {
                 <th>% Meta</th>
                 <th>Falta</th>
                 <th>Ticket medio</th>
-                <th>Valor por produto</th>
                 <th>P.A.</th>
                 <th>Pedidos</th>
                 <th>Produtos</th>
+                <th v-if="queueStats">Conv. fila</th>
+                <th v-if="summary.erpCancellations">Canc. ERP</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in commercialStoreRows" :key="row.storeSlug">
+              <tr v-for="row in filteredStoreRows" :key="row.storeSlug">
                 <td>
                   <div class="crm-row-heading">
                     <strong>{{ row.storeLabel }}</strong>
@@ -193,31 +360,130 @@ async function resetMonth() {
                 <td>
                   <div class="crm-table-progress">
                     <span class="crm-table-progress__track">
-                      <span class="crm-table-progress__fill" :class="progressClass(row.goalProgress)" :style="{ width: progressWidth(row.goalProgress) }" />
+                      <span
+                        class="crm-table-progress__fill"
+                        :class="progressClass(row.goalProgress)"
+                        :style="{ width: progressWidth(row.goalProgress) }"
+                      />
                     </span>
                     <strong>{{ formatPercent(row.goalProgress) }}</strong>
                   </div>
                 </td>
                 <td>{{ formatCurrencyFromCents(row.remainingToGoalCents) }}</td>
                 <td>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</td>
-                <td>{{ formatCurrencyFromCents(row.valuePerProductCents) }}</td>
                 <td>{{ formatPA(row.paScore) }}</td>
                 <td>{{ formatNumber(row.orders) }}</td>
                 <td>{{ formatNumber(row.units) }}</td>
+                <td v-if="queueStats">
+                  <span v-if="queueStats.byStore">
+                    {{
+                      formatPct(
+                        queueStats.byStore.find((s) => s.storeId === row.storeSlug)?.conversionRate
+                      )
+                    }}
+                  </span>
+                  <span v-else class="crm-muted">-</span>
+                </td>
+                <td v-if="summary.erpCancellations">
+                  <span :class="{ 'crm-rate--bad': (row.erpCancellationRate ?? 0) > 5 }">
+                    {{ row.erpCancellations ? formatPct(row.erpCancellationRate) : "-" }}
+                  </span>
+                </td>
               </tr>
-              <tr v-if="!commercialStoreRows.length">
-                <td class="crm-empty" colspan="10">Nenhuma loja com vendas ERP no periodo selecionado.</td>
+              <tr v-if="!filteredStoreRows.length">
+                <td class="crm-empty" colspan="11">Nenhuma loja com vendas ERP no periodo selecionado.</td>
               </tr>
             </tbody>
           </table>
         </div>
       </article>
 
+      <!-- tabela por consultor com merge fila -->
+      <article class="insight-card insight-card--wide">
+        <header class="crm-section__header">
+          <div>
+            <h3 class="insight-card__title">Indicadores por consultor</h3>
+            <p class="insight-card__text">
+              ERP + fila de atendimento. Colunas de fila marcadas com (F) cruzadas por nome.
+            </p>
+          </div>
+          <span class="crm-section__meta">{{ mergedConsultants.length }} consultor(es)</span>
+        </header>
+
+        <div class="insight-table-wrap">
+          <table class="insight-table crm-table crm-table--consultants">
+            <thead>
+              <tr>
+                <th>Consultor</th>
+                <th>Loja</th>
+                <th>Vendido</th>
+                <th>Ticket medio</th>
+                <th>P.A.</th>
+                <th>Pedidos</th>
+                <th>Atend. (F)</th>
+                <th>Conversao (F)</th>
+                <th>Canc. fila (F)</th>
+                <th>Status fila</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in mergedConsultants"
+                :key="`${row.consultantId}-${row.storeSlug}-${row.storeCnpj || ''}`"
+                :class="{ 'crm-tr--unmatched': !row.matched && queueStats }"
+              >
+                <td>
+                  <div class="crm-row-heading">
+                    <strong>{{ row.consultantName }}</strong>
+                    <small class="crm-muted">{{ row.consultantId }}</small>
+                  </div>
+                </td>
+                <td>{{ row.storeLabel }}</td>
+                <td>{{ formatCurrencyFromCents(row.salesCents) }}</td>
+                <td>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</td>
+                <td>{{ formatPA(row.paScore) }}</td>
+                <td>{{ formatNumber(row.orders) }}</td>
+                <td :class="{ 'crm-td--queue': row.queue }">
+                  {{ row.queue ? formatNumber(row.queue.attendances) : "-" }}
+                </td>
+                <td>
+                  <span
+                    v-if="row.queue"
+                    :class="{ 'crm-rate--good': row.queue.conversionRate >= 30 }"
+                  >
+                    {{ formatPct(row.queue.conversionRate) }}
+                  </span>
+                  <span v-else class="crm-muted">-</span>
+                </td>
+                <td>
+                  <span
+                    v-if="row.queue"
+                    :class="{ 'crm-rate--bad': row.queue.queueCancellationRate > 10 }"
+                  >
+                    {{ formatPct(row.queue.queueCancellationRate) }}
+                  </span>
+                  <span v-else class="crm-muted">-</span>
+                </td>
+                <td>
+                  <span v-if="!queueStats" class="crm-badge crm-badge--neutral">sem dados fila</span>
+                  <span v-else-if="row.matched" class="crm-badge crm-badge--ok">identificado</span>
+                  <span v-else class="crm-badge crm-badge--warn">nao identificado</span>
+                </td>
+              </tr>
+              <tr v-if="!mergedConsultants.length">
+                <td class="crm-empty" colspan="10">Nenhum consultor com pedidos ERP no periodo selecionado.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <!-- gerência multi-loja -->
       <article v-if="managementStoreRows.length" class="insight-card insight-card--wide">
         <header class="crm-section__header">
           <div>
             <h3 class="insight-card__title">Gerencia / Multi-loja</h3>
-            <p class="insight-card__text">Pedidos sem loja comercial confiavel para atribuicao direta dentro das lojas.</p>
+            <p class="insight-card__text">Pedidos sem loja comercial confiavel para atribuicao direta.</p>
           </div>
           <span class="crm-section__meta">Separado do consolidado por loja</span>
         </header>
@@ -229,7 +495,6 @@ async function resetMonth() {
                 <th>Grupo</th>
                 <th>Vendido</th>
                 <th>Ticket medio</th>
-                <th>Valor por produto</th>
                 <th>P.A.</th>
                 <th>Pedidos</th>
                 <th>Produtos</th>
@@ -245,57 +510,9 @@ async function resetMonth() {
                 </td>
                 <td>{{ formatCurrencyFromCents(row.salesCents) }}</td>
                 <td>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</td>
-                <td>{{ formatCurrencyFromCents(row.valuePerProductCents) }}</td>
                 <td>{{ formatPA(row.paScore) }}</td>
                 <td>{{ formatNumber(row.orders) }}</td>
                 <td>{{ formatNumber(row.units) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </article>
-
-      <article class="insight-card insight-card--wide">
-        <header class="crm-section__header">
-          <div>
-            <h3 class="insight-card__title">Ticket medio e P.A. por consultor</h3>
-            <p class="insight-card__text">Leitura comercial individual derivada diretamente dos pedidos ERP do periodo.</p>
-          </div>
-          <span class="crm-section__meta">{{ commercialConsultantRows.length }} consultor(es)</span>
-        </header>
-
-        <div class="insight-table-wrap">
-          <table class="insight-table crm-table">
-            <thead>
-              <tr>
-                <th>Consultor</th>
-                <th>Loja</th>
-                <th>Vendido</th>
-                <th>Ticket medio</th>
-                <th>Valor por produto</th>
-                <th>P.A.</th>
-                <th>Pedidos</th>
-                <th>Produtos</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in commercialConsultantRows" :key="`${row.consultantId}-${row.storeSlug}-${row.storeCnpj || ''}`">
-                <td>
-                  <div class="crm-row-heading">
-                    <strong>{{ row.consultantName }}</strong>
-                    <small>{{ row.consultantId }}</small>
-                  </div>
-                </td>
-                <td>{{ row.storeLabel }}</td>
-                <td>{{ formatCurrencyFromCents(row.salesCents) }}</td>
-                <td>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</td>
-                <td>{{ formatCurrencyFromCents(row.valuePerProductCents) }}</td>
-                <td>{{ formatPA(row.paScore) }}</td>
-                <td>{{ formatNumber(row.orders) }}</td>
-                <td>{{ formatNumber(row.units) }}</td>
-              </tr>
-              <tr v-if="!commercialConsultantRows.length">
-                <td class="crm-empty" colspan="8">Nenhum consultor com pedidos ERP no periodo selecionado.</td>
               </tr>
             </tbody>
           </table>
@@ -306,7 +523,7 @@ async function resetMonth() {
         <header class="crm-section__header">
           <div>
             <h3 class="insight-card__title">Gerencia / Multi-loja por consultor</h3>
-            <p class="insight-card__text">Consultores com pedidos sem loja comercial suficientemente confiavel no ERP.</p>
+            <p class="insight-card__text">Consultores com pedidos sem loja comercial suficientemente confiavel.</p>
           </div>
           <span class="crm-section__meta">{{ managementConsultantRows.length }} consultor(es)</span>
         </header>
@@ -319,14 +536,16 @@ async function resetMonth() {
                 <th>Grupo</th>
                 <th>Vendido</th>
                 <th>Ticket medio</th>
-                <th>Valor por produto</th>
                 <th>P.A.</th>
                 <th>Pedidos</th>
                 <th>Produtos</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in managementConsultantRows" :key="`${row.consultantId}-${row.storeSlug}-${row.storeCnpj || ''}`">
+              <tr
+                v-for="row in managementConsultantRows"
+                :key="`${row.consultantId}-${row.storeSlug}-${row.storeCnpj || ''}`"
+              >
                 <td>
                   <div class="crm-row-heading">
                     <strong>{{ row.consultantName }}</strong>
@@ -336,7 +555,6 @@ async function resetMonth() {
                 <td>{{ row.storeLabel }}</td>
                 <td>{{ formatCurrencyFromCents(row.salesCents) }}</td>
                 <td>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</td>
-                <td>{{ formatCurrencyFromCents(row.valuePerProductCents) }}</td>
                 <td>{{ formatPA(row.paScore) }}</td>
                 <td>{{ formatNumber(row.orders) }}</td>
                 <td>{{ formatNumber(row.units) }}</td>
@@ -364,35 +582,25 @@ async function resetMonth() {
   gap: 1rem;
 }
 
+/* filtros de periodo */
 .crm-filters {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(150px, 1fr)) auto;
+  display: flex;
   gap: 0.75rem;
-  align-items: end;
-  min-width: min(100%, 520px);
+  align-items: flex-end;
+  flex-wrap: wrap;
 }
 
-.crm-filters__field {
+.crm-filters__date-wrap {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
-.crm-filters__field span {
-  font-size: 0.75rem;
+.crm-filters__label {
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: rgba(15, 23, 42, 0.65);
-}
-
-.crm-filters__input {
-  width: 100%;
-  min-height: 42px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 12px;
-  padding: 0.75rem 0.9rem;
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
+  color: rgba(15, 23, 42, 0.6);
 }
 
 .crm-filters__actions {
@@ -400,6 +608,57 @@ async function resetMonth() {
   gap: 0.5rem;
 }
 
+.crm-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 13rem;
+  min-height: 42px;
+  padding: 0 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* filtros locais */
+.crm-local-filters {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.crm-select,
+.crm-search {
+  min-height: 38px;
+  padding: 0 0.85rem;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  font-size: 0.88rem;
+}
+
+.crm-select {
+  min-width: 160px;
+  cursor: pointer;
+}
+
+.crm-search {
+  min-width: 200px;
+}
+
+.crm-search::placeholder {
+  color: rgba(15, 23, 42, 0.45);
+}
+
+/* botoes */
 .crm-btn {
   min-height: 42px;
   border: none;
@@ -409,6 +668,7 @@ async function resetMonth() {
   color: #f8fafc;
   font-weight: 700;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .crm-btn:disabled {
@@ -421,6 +681,14 @@ async function resetMonth() {
   color: #115e59;
 }
 
+.crm-btn--sm {
+  min-height: 38px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.84rem;
+  border-radius: 10px;
+}
+
+/* hero */
 .crm-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
@@ -506,10 +774,76 @@ async function resetMonth() {
   color: rgba(248, 250, 252, 0.88);
 }
 
+/* métricas ERP */
 .crm-metrics {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
+/* indicadores fila */
+.crm-queue-metrics {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.crm-section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(15, 23, 42, 0.55);
+  margin: 0;
+}
+
+.crm-queue-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.crm-queue-card {
+  border-left: 3px solid rgba(99, 102, 241, 0.35);
+}
+
+.crm-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  margin-top: 0.3rem;
+}
+
+.crm-bar__fill {
+  height: 100%;
+  border-radius: 2px;
+}
+
+.crm-bar__fill--green {
+  background: #0f766e;
+}
+
+.crm-bar__fill--red {
+  background: #dc2626;
+}
+
+.crm-rate--good {
+  color: #065f46;
+  font-weight: 700;
+}
+
+.crm-rate--warn {
+  color: #92400e;
+  font-weight: 700;
+}
+
+.crm-rate--bad {
+  color: #991b1b;
+  font-weight: 700;
+}
+
+.crm-metric-sub {
+  font-size: 0.72rem;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+/* avisos */
 .crm-warning-list {
   display: grid;
   gap: 0.5rem;
@@ -523,6 +857,12 @@ async function resetMonth() {
   color: #9a3412;
 }
 
+.crm-warning-list__item--info {
+  background: rgba(99, 102, 241, 0.1);
+  color: #3730a3;
+}
+
+/* section header */
 .crm-section__header {
   display: flex;
   justify-content: space-between;
@@ -536,8 +876,13 @@ async function resetMonth() {
   font-size: 0.88rem;
 }
 
+/* tabelas */
 .crm-table {
-  min-width: 1080px;
+  min-width: 860px;
+}
+
+.crm-table--consultants {
+  min-width: 1100px;
 }
 
 .crm-row-heading {
@@ -555,6 +900,10 @@ async function resetMonth() {
   color: rgba(15, 23, 42, 0.62);
 }
 
+.crm-muted {
+  color: rgba(15, 23, 42, 0.4);
+}
+
 .crm-table-progress {
   display: grid;
   gap: 0.35rem;
@@ -565,6 +914,41 @@ async function resetMonth() {
   font-size: 0.85rem;
 }
 
+.crm-td--queue {
+  color: #065f46;
+  font-weight: 600;
+}
+
+.crm-tr--unmatched td {
+  opacity: 0.75;
+}
+
+/* badges */
+.crm-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.crm-badge--ok {
+  background: rgba(5, 150, 105, 0.12);
+  color: #065f46;
+}
+
+.crm-badge--warn {
+  background: rgba(245, 158, 11, 0.14);
+  color: #92400e;
+}
+
+.crm-badge--neutral {
+  background: rgba(148, 163, 184, 0.18);
+  color: rgba(15, 23, 42, 0.55);
+}
+
+/* responsive */
 @media (max-width: 1100px) {
   .crm-metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -580,7 +964,8 @@ async function resetMonth() {
   }
 
   .crm-filters {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .crm-filters__actions {

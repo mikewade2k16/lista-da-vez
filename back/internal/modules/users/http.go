@@ -90,25 +90,13 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		user, err := service.Create(r.Context(), principal, CreateInput{
-			DisplayName:  request.DisplayName,
-			Email:        request.Email,
-			EmployeeCode: request.EmployeeCode,
-			Password:     request.Password,
-			Role:         request.Role,
-			TenantID:     request.TenantID,
-			StoreIDs:     request.StoreIDs,
-			Active:       request.Active,
-		})
+		user, err := service.Create(r.Context(), principal, CreateInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusCreated, userResponse{
-			User:       user.User,
-			Invitation: user.Invitation,
-		})
+		httpapi.WriteJSON(w, http.StatusCreated, userResponse(user))
 	})))
 
 	mux.Handle("PATCH /v1/users/", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -187,10 +175,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 				return
 			}
 
-			httpapi.WriteJSON(w, http.StatusOK, resetPasswordResponse{
-				User:              result.User,
-				TemporaryPassword: result.TemporaryPassword,
-			})
+			httpapi.WriteJSON(w, http.StatusOK, resetPasswordResponse(result))
 		case "archive":
 			user, err := service.Archive(r.Context(), principal, userID)
 			if err != nil {

@@ -1,16 +1,24 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
+const (
+	devTokenSecretDefault = "dev-secret-change-me"
+	productionMinBcrypt   = 10
+)
+
 type Config struct {
 	AppName                       string
 	Env                           string
 	HTTPAddr                      string
+	HTTPRateLimitRequests         int
+	HTTPRateLimitWindow           time.Duration
 	WebAppURL                     string
 	UploadsDir                    string
 	ERPSourceKind                 string
@@ -40,6 +48,15 @@ type Config struct {
 	ERPManualSyncMaxFiles         int
 	ERPBackfillMaxFiles           int
 	ERPManualSyncMinInterval      time.Duration
+	PerolaBICompanyKey            string
+	PerolaBILogin                 string
+	PerolaBIPass                  string
+	PerolaBIStaticToken           string
+	PerolaBICNPJEmpresa           string
+	PerolaBITokenTTL              time.Duration
+	PerolaBIRequestTimeout        time.Duration
+	PerolaBIPageLimit             int
+	PerolaBIMaxPages              int
 	DatabaseURL                   string
 	DatabaseMinConns              int
 	DatabaseMaxConns              int
@@ -64,15 +81,18 @@ type Config struct {
 }
 
 func Load() Config {
+	env := getEnv("APP_ENV", "development")
 	return Config{
-		AppName:            getEnv("APP_NAME", "lista-da-vez-api"),
-		Env:                getEnv("APP_ENV", "development"),
-		HTTPAddr:           getEnv("APP_ADDR", ":8080"),
-		WebAppURL:          getEnv("WEB_APP_URL", "http://localhost:3003"),
-		UploadsDir:         getEnv("UPLOADS_DIR", "data/uploads"),
-		ERPSourceKind:      getEnv("ERP_SOURCE_KIND", "local"),
-		ERPSourceRecursive: getEnvBool("ERP_SOURCE_RECURSIVE", false),
-		ERPSourceDir:       getEnv("ERP_SOURCE_DIR", ""),
+		AppName:               getEnv("APP_NAME", "omni-api"),
+		Env:                   env,
+		HTTPAddr:              getEnv("APP_ADDR", ":8080"),
+		HTTPRateLimitRequests: getEnvInt("HTTP_RATE_LIMIT_REQUESTS", defaultHTTPRateLimitRequests(env)),
+		HTTPRateLimitWindow:   getEnvDuration("HTTP_RATE_LIMIT_WINDOW", time.Minute),
+		WebAppURL:             getEnv("WEB_APP_URL", "http://localhost:3003"),
+		UploadsDir:            getEnv("UPLOADS_DIR", "data/uploads"),
+		ERPSourceKind:         getEnv("ERP_SOURCE_KIND", "local"),
+		ERPSourceRecursive:    getEnvBool("ERP_SOURCE_RECURSIVE", false),
+		ERPSourceDir:          getEnv("ERP_SOURCE_DIR", ""),
 		ERPLocalSourceDir: getEnv(
 			"ERP_LOCAL_SOURCE_DIR",
 			getEnv("ERP_SOURCE_DIR", ""),
@@ -118,9 +138,21 @@ func Load() Config {
 			"ERP_MANUAL_SYNC_MIN_INTERVAL",
 			5*time.Minute,
 		),
-		DatabaseURL:      getEnv("DATABASE_URL", ""),
-		DatabaseMinConns: getEnvInt("DATABASE_MIN_CONNS", 0),
-		DatabaseMaxConns: getEnvInt("DATABASE_MAX_CONNS", 10),
+		PerolaBICompanyKey:  getEnv("PEROLA_BI_COMPANY_KEY", ""),
+		PerolaBILogin:       getEnv("PEROLA_BI_LOGIN", ""),
+		PerolaBIPass:        getEnv("PEROLA_BI_PASS", ""),
+		PerolaBIStaticToken: getEnv("PEROLA_BI_TOKEN", ""),
+		PerolaBICNPJEmpresa: getEnv("PEROLA_BI_CNPJ_EMPRESA", ""),
+		PerolaBITokenTTL:    getEnvDuration("PEROLA_BI_TOKEN_TTL", 50*time.Minute),
+		PerolaBIRequestTimeout: getEnvDuration(
+			"PEROLA_BI_REQUEST_TIMEOUT",
+			12*time.Second,
+		),
+		PerolaBIPageLimit: getEnvInt("PEROLA_BI_PAGE_LIMIT", 100),
+		PerolaBIMaxPages:  getEnvInt("PEROLA_BI_MAX_PAGES", 50),
+		DatabaseURL:       getEnv("DATABASE_URL", ""),
+		DatabaseMinConns:  getEnvInt("DATABASE_MIN_CONNS", 0),
+		DatabaseMaxConns:  getEnvInt("DATABASE_MAX_CONNS", 10),
 		CORSAllowedOrigins: getEnvCSV(
 			"CORS_ALLOWED_ORIGINS",
 			[]string{
@@ -138,7 +170,7 @@ func Load() Config {
 		SMTPUsername:              getEnv("SMTP_USERNAME", ""),
 		SMTPPassword:              getEnv("SMTP_PASSWORD", ""),
 		SMTPFromEmail:             getEnv("SMTP_FROM_EMAIL", ""),
-		SMTPFromName:              getEnv("SMTP_FROM_NAME", "Lista da Vez"),
+		SMTPFromName:              getEnv("SMTP_FROM_NAME", "Omni"),
 		SMTPTLSMode:               getEnv("SMTP_TLS_MODE", "starttls"),
 		SMTPInsecureSkipVerify:    getEnvBool("SMTP_INSECURE_SKIP_VERIFY", false),
 		SMTPTimeout:               getEnvDuration("SMTP_TIMEOUT", 10*time.Second),
@@ -147,6 +179,38 @@ func Load() Config {
 		ConsultantDefaultPassword: getEnv("AUTH_CONSULTANT_DEFAULT_PASSWORD", "Omni@123"),
 		CoreV2Enabled:             getEnvBool("CORE_V2_ENABLED", false),
 	}
+}
+
+// Validate runs production-only sanity checks on the loaded configuration.
+// Em dev/docker o método é no-op para não atrapalhar onboarding local.
+// Em production aborta o boot se algum default inseguro escapou para a VPS.
+func (cfg Config) Validate() error {
+	if !strings.EqualFold(strings.TrimSpace(cfg.Env), "production") {
+		return nil
+	}
+
+	var problems []string
+
+	if cfg.AuthTokenSecret == "" || cfg.AuthTokenSecret == devTokenSecretDefault {
+		problems = append(problems, "AUTH_TOKEN_SECRET ainda usa o default de dev")
+	}
+	if cfg.BcryptCost < productionMinBcrypt {
+		problems = append(problems, fmt.Sprintf("AUTH_BCRYPT_COST=%d é menor que o mínimo recomendado para produção (%d)", cfg.BcryptCost, productionMinBcrypt))
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("configuração inválida para ambiente production: %s", strings.Join(problems, "; "))
+	}
+
+	return nil
+}
+
+func defaultHTTPRateLimitRequests(env string) int {
+	normalizedEnv := strings.TrimSpace(env)
+	if strings.EqualFold(normalizedEnv, "development") || strings.EqualFold(normalizedEnv, "docker") {
+		return 1200
+	}
+	return 300
 }
 
 func getEnv(key, fallback string) string {

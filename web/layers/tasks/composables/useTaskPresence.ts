@@ -12,6 +12,8 @@ export interface TaskPresenceUser {
   avatarPath: string
   fieldKey: string
   lockId: string
+  draftValue: string
+  hasDraftValue: boolean
   updatedAt: string
   avatarText: string
 }
@@ -39,20 +41,46 @@ function sourceValue<T>(source: PresenceSource<T> | undefined, fallback: T): T {
 }
 
 function normalizeText(value: unknown, max = 240) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
 }
 
 function initialsFor(value: string) {
   const words = normalizeText(value, 80).split(' ').filter(Boolean)
   if (!words.length) return 'U'
-  return words.slice(0, 2).map(word => word[0]?.toUpperCase() || '').join('') || 'U'
+  return (
+    words
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase() || '')
+      .join('') || 'U'
+  )
 }
 
 function normalizeFieldKey(value: unknown) {
   return normalizeText(value, 80)
 }
 
-function presenceLog(level: 'info' | 'warn' | 'error', message: string, payload?: Record<string, unknown>) {
+function normalizeDraftValue(value: unknown, max = 24000) {
+  // eslint-disable-next-line no-control-regex -- remove NUL que quebra Postgres
+  const text = String(value ?? '').replace(/\u0000/g, '')
+  return text.length <= max ? text : text.slice(0, max)
+}
+
+function rawHasDraftValue(raw: Record<string, unknown>) {
+  return (
+    Object.prototype.hasOwnProperty.call(raw, 'draftValue') ||
+    Object.prototype.hasOwnProperty.call(raw, 'fieldValue') ||
+    Object.prototype.hasOwnProperty.call(raw, 'value')
+  )
+}
+
+function presenceLog(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  payload?: Record<string, unknown>,
+) {
   if (!import.meta.client) return
   const logger = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info
   logger(`[tasks-presence] ${message}`, payload || '')
@@ -64,6 +92,10 @@ function normalizePresenceUser(raw: Record<string, unknown>): TaskPresenceUser {
   const avatarPath = normalizeText(raw.avatarPath ?? raw.avatarUrl ?? raw.avatarURL, 500)
   const fieldKey = normalizeFieldKey(raw.fieldKey)
   const lockId = normalizeText(raw.lockId ?? raw.lockID, 180)
+  const hasDraftValue = rawHasDraftValue(raw)
+  const draftValue = hasDraftValue
+    ? normalizeDraftValue(raw.draftValue ?? raw.fieldValue ?? raw.value)
+    : ''
   const updatedAt = normalizeText(raw.updatedAt ?? raw.savedAt, 80)
 
   return {
@@ -72,8 +104,10 @@ function normalizePresenceUser(raw: Record<string, unknown>): TaskPresenceUser {
     avatarPath,
     fieldKey,
     lockId,
+    draftValue,
+    hasDraftValue,
     updatedAt,
-    avatarText: initialsFor(displayName)
+    avatarText: initialsFor(displayName),
   }
 }
 
@@ -83,7 +117,7 @@ function resolveAccountId(auth: ReturnType<typeof useAuthStore>, explicitAccount
       auth.activeTenantId ||
       auth.principal?.tenantId ||
       auth.tenantContext?.[0]?.id,
-    120
+    120,
   )
 }
 
@@ -95,17 +129,20 @@ function resolveCurrentUserId(auth: ReturnType<typeof useAuthStore>) {
       auth.user?.userId ||
       auth.user?.userID ||
       auth.user?.email,
-    160
+    160,
   )
 }
 
-function buildSocketURL(runtimeConfig: ReturnType<typeof useRuntimeConfig>, params: {
-  scope: 'task' | 'board'
-  accountId: string
-  boardId: string
-  taskId: string
-  accessToken: string
-}) {
+function buildSocketURL(
+  runtimeConfig: ReturnType<typeof useRuntimeConfig>,
+  params: {
+    scope: 'task' | 'board'
+    accountId: string
+    boardId: string
+    taskId: string
+    accessToken: string
+  },
+) {
   const url = new URL('/v1/realtime/presence', getWebSocketBase(runtimeConfig))
   url.searchParams.set('scope', params.scope)
   url.searchParams.set('accountId', params.accountId)
@@ -123,18 +160,22 @@ export function useTaskPresence(options: TaskPresenceOptions) {
   const lastEvent = ref<Record<string, unknown> | null>(null)
   const participantsById = ref<Record<string, TaskPresenceUser>>({})
   const activeFieldKey = ref('')
+  const localFieldDrafts = ref<Record<string, string>>({})
 
   let socket: WebSocket | null = null
   let socketKey = ''
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  let draftTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let reconnectAttempts = 0
   const silencedSockets = new WeakSet<WebSocket>()
 
   const currentUserId = computed(() => resolveCurrentUserId(auth))
-  const participants = computed(() => Object.values(participantsById.value)
-    .filter(user => user.userId && user.userId !== currentUserId.value)
-    .sort((a, b) => a.displayName.localeCompare(b.displayName)))
+  const participants = computed(() =>
+    Object.values(participantsById.value)
+      .filter((user) => user.userId && user.userId !== currentUserId.value)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+  )
 
   function desiredConnection() {
     const enabled = Boolean(sourceValue(options.enabled, false))
@@ -154,7 +195,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
       accountId,
       boardId,
       taskId,
-      accessToken
+      accessToken,
     }
   }
 
@@ -181,11 +222,34 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     }
   }
 
+  function clearDraftTimer(fieldKey: string) {
+    const key = normalizeFieldKey(fieldKey)
+    if (!key) return
+    const timer = draftTimers.get(key)
+    if (!timer) return
+    clearTimeout(timer)
+    draftTimers.delete(key)
+  }
+
+  function clearDraftTimers() {
+    draftTimers.forEach((timer) => clearTimeout(timer))
+    draftTimers.clear()
+  }
+
+  function setLocalFieldDraft(fieldKey: string, draftValue: string | null) {
+    const key = normalizeFieldKey(fieldKey)
+    if (!key) return
+    const next = { ...localFieldDrafts.value }
+    if (draftValue == null) delete next[key]
+    else next[key] = draftValue
+    localFieldDrafts.value = next
+  }
+
   function send(payload: Record<string, unknown>) {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       presenceLog('warn', 'envio ignorado; socket fechado', {
         type: normalizeText(payload.type, 80),
-        fieldKey: normalizeFieldKey(payload.fieldKey)
+        fieldKey: normalizeFieldKey(payload.fieldKey),
       })
       return false
     }
@@ -202,6 +266,16 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     if (!key) return false
     const lockId = `${currentUserId.value || 'user'}:${key}:${Date.now()}`
     return send({ type: 'presence.field_focus', fieldKey: key, lockId })
+  }
+
+  function sendFieldDraft(fieldKey: string, value: unknown) {
+    const key = normalizeFieldKey(fieldKey)
+    if (!key || activeFieldKey.value !== key) return false
+    return send({
+      type: 'presence.field_draft',
+      fieldKey: key,
+      draftValue: normalizeDraftValue(value),
+    })
   }
 
   function startHeartbeat() {
@@ -224,7 +298,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
       })
       participantsById.value = next
       presenceLog('info', 'snapshot recebido', {
-        participants: Object.keys(next).length
+        participants: Object.keys(next).length,
       })
       return
     }
@@ -239,12 +313,23 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     if (eventType === 'presence.user_joined' || eventType === 'presence.field_locked') {
       const user = normalizePresenceUser(payload)
       const existing = user.userId ? participantsById.value[user.userId] : null
-      replaceParticipant({ ...(existing || user), ...user })
-      presenceLog('info', eventType === 'presence.field_locked' ? 'campo travado' : 'usuario entrou', {
-        userId: user.userId,
-        displayName: user.displayName,
-        fieldKey: user.fieldKey
-      })
+      replaceParticipant({ ...(existing || user), ...user, hasDraftValue: user.hasDraftValue })
+      presenceLog(
+        'info',
+        eventType === 'presence.field_locked' ? 'campo travado' : 'usuario entrou',
+        {
+          userId: user.userId,
+          displayName: user.displayName,
+          fieldKey: user.fieldKey,
+        },
+      )
+      return
+    }
+
+    if (eventType === 'presence.field_draft') {
+      const user = normalizePresenceUser(payload)
+      const existing = user.userId ? participantsById.value[user.userId] : null
+      replaceParticipant({ ...(existing || user), ...user, hasDraftValue: user.hasDraftValue })
       return
     }
 
@@ -258,12 +343,14 @@ export function useTaskPresence(options: TaskPresenceOptions) {
         avatarPath: user.avatarPath || existing.avatarPath,
         fieldKey: '',
         lockId: '',
-        updatedAt: user.updatedAt || existing.updatedAt
+        draftValue: '',
+        hasDraftValue: false,
+        updatedAt: user.updatedAt || existing.updatedAt,
       })
       presenceLog('info', 'campo liberado', {
         userId: user.userId,
         displayName: user.displayName,
-        fieldKey: user.fieldKey
+        fieldKey: user.fieldKey,
       })
     }
   }
@@ -286,6 +373,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
 
   function disconnect(clearParticipants = true, preserveActiveField = false) {
     clearTimers()
+    clearDraftTimers()
 
     if (socket) {
       silencedSockets.add(socket)
@@ -296,6 +384,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     socketKey = ''
     reconnectAttempts = 0
     if (!preserveActiveField) activeFieldKey.value = ''
+    if (!preserveActiveField) localFieldDrafts.value = {}
     if (clearParticipants) participantsById.value = {}
     updateStatus()
   }
@@ -340,13 +429,17 @@ export function useTaskPresence(options: TaskPresenceOptions) {
       if (socket !== nextSocket) return
       reconnectAttempts = 0
       startHeartbeat()
-      if (activeFieldKey.value) sendFieldFocus(activeFieldKey.value)
+      if (activeFieldKey.value) {
+        sendFieldFocus(activeFieldKey.value)
+        const localDraft = localFieldDrafts.value[activeFieldKey.value]
+        if (localDraft !== undefined) sendFieldDraft(activeFieldKey.value, localDraft)
+      }
       updateStatus()
       presenceLog('info', 'socket OPEN', {
         scope: desired.scope,
         accountId: desired.accountId,
         boardId: desired.boardId,
-        taskId: desired.taskId
+        taskId: desired.taskId,
       })
     })
 
@@ -376,7 +469,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
         scope: desired.scope,
         accountId: desired.accountId,
         boardId: desired.boardId,
-        taskId: desired.taskId
+        taskId: desired.taskId,
       })
       reconnectAttempts += 1
       scheduleReconnect()
@@ -388,7 +481,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
         scope: desired.scope,
         accountId: desired.accountId,
         boardId: desired.boardId,
-        taskId: desired.taskId
+        taskId: desired.taskId,
       })
     })
   }
@@ -406,10 +499,32 @@ export function useTaskPresence(options: TaskPresenceOptions) {
   function blurField(fieldKey = activeFieldKey.value) {
     const key = normalizeFieldKey(fieldKey)
     if (!key) return
+    clearDraftTimer(key)
+    setLocalFieldDraft(key, null)
     if (send({ type: 'presence.field_blur', fieldKey: key })) {
       presenceLog('info', 'field_blur enviado', { fieldKey: key })
     }
     if (activeFieldKey.value === key) activeFieldKey.value = ''
+  }
+
+  function scheduleFieldDraft(fieldKey: string, value: unknown, delayMs = 220) {
+    const key = normalizeFieldKey(fieldKey)
+    if (!key || activeFieldKey.value !== key) return
+    const draftValue = normalizeDraftValue(value)
+    setLocalFieldDraft(key, draftValue)
+    clearDraftTimer(key)
+
+    const sendDraft = () => {
+      draftTimers.delete(key)
+      sendFieldDraft(key, draftValue)
+    }
+
+    if (delayMs <= 0) {
+      sendDraft()
+      return
+    }
+
+    draftTimers.set(key, setTimeout(sendDraft, delayMs))
   }
 
   function releaseActiveField() {
@@ -423,7 +538,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
   function usersForField(fieldKey: string) {
     const key = normalizeFieldKey(fieldKey)
     if (!key) return []
-    return participants.value.filter(user => user.fieldKey === key)
+    return participants.value.filter((user) => user.fieldKey === key)
   }
 
   function fieldLabel(fieldKey: string) {
@@ -431,6 +546,11 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     if (!users.length) return ''
     if (users.length === 1) return `${users[0]!.displayName} editando`
     return `${users[0]!.displayName} +${users.length - 1} editando`
+  }
+
+  function draftValueForField(fieldKey: string) {
+    const user = usersForField(fieldKey)[0]
+    return user?.hasDraftValue ? user.draftValue : null
   }
 
   onMounted(() => {
@@ -447,10 +567,10 @@ export function useTaskPresence(options: TaskPresenceOptions) {
         () => auth.isAuthenticated,
         () => auth.accessToken,
         () => auth.activeTenantId,
-        () => auth.principal?.tenantId
+        () => auth.principal?.tenantId,
       ],
       () => ensureConnection(),
-      { immediate: true }
+      { immediate: true },
     )
   })
 
@@ -467,8 +587,10 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     activeFieldKey,
     focusField,
     blurField,
+    scheduleFieldDraft,
     usersForField,
     fieldLabel,
-    disconnect
+    draftValueForField,
+    disconnect,
   }
 }

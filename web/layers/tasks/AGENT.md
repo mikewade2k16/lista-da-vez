@@ -49,8 +49,9 @@ web/layers/tasks/
     TasksTaskModal.vue                   USlideover: detalhe/edição da task
     inputs/OmniSelectMenuInput.vue
     omni/table/OmniDataTable.vue
-    editor/TasksRichEditor.vue
     AppDatePicker.vue
+  app/components/omni/
+    OmniEditor.vue                       editor compartilhado com slash menu, bubble tools e drag handle
   types/
     tasks.ts                             TaskItem, TaskProjectItem, TaskBoardColumn, OrchestratorField
 ```
@@ -75,7 +76,7 @@ const perspective = computed(() =>
   meContext.permissions.includes('tasks.client_view') &&
   !meContext.permissions.includes('tasks.boards.manage')
     ? 'client_viewer'
-    : 'agency'
+    : 'agency',
 )
 ```
 
@@ -120,12 +121,13 @@ Cuidados obrigatorios:
 ### useTasksRealtime (Fase T2)
 
 Clone de `web/app/composables/useOperationsRealtime.ts`:
+
 - Tópicos: `tasks:account:{accountId}` e `tasks:board:{boardId}`
 - Reconexão exponencial 1–10s com jitter
 - Handler `applyRealtimeEvent(evt)` no Pinia store
 - Backend já disponível em `GET /v1/realtime/tasks?scope=account|board|task&accountId=&boardId=&taskId=&access_token=...`
 
-Status 2026-05-16: `useTasksRealtime.ts` esta ligado em `useTasksPageContext.ts` com dois canais: `account` para mudancas gerais/lista de boards e `board` para o board ativo. Manter o canal de board e obrigatorio para usuarios em contas/escopos diferentes verem a mesma task compartilhada. Nao confundir com `useTaskPresence`: presence mostra quem esta editando, mas nao sincroniza dados de task.
+Status 2026-05-16: `useTasksRealtime.ts` esta ligado em `useTasksPageContext.ts` com dois canais: `account` para mudancas gerais/lista de boards e `board` para o board ativo. Manter o canal de board e obrigatorio para usuarios em contas/escopos diferentes verem a mesma task compartilhada. Nao confundir com `useTaskPresence`: presence continua sem persistir/hidratar task, mas agora tambem carrega draft efemero (`presence.field_draft`) para preview ao vivo de campos travados.
 
 **T7.2 — refresh full debounced:** a tentativa de patch local com `tasksWorkspace.hydrateTask(taskId)` foi revertida em 2026-05-15. O handler de realtime segue o padrao de operations: qualquer evento `task.*`, `board.*` ou `field.*` agenda `tasksWorkspace.refresh()` com debounce de 200ms. Nao reintroduzir hydrate por evento sem prova forte, porque ele quebrou sincronizacao quando a task remota nao existia no store local.
 
@@ -133,8 +135,9 @@ Status 2026-05-16: `useTasksRealtime.ts` esta ligado em `useTasksPageContext.ts`
 
 - Abre canal `presence:task:{taskId}` quando o modal abre e `presence:board:{boardId}` enquanto o board esta ativo
 - Envia heartbeat a cada 15s
-- Escuta `presence.snapshot`, `presence.user_joined`, `presence.user_left`, `presence.field_locked`
+- Escuta `presence.snapshot`, `presence.user_joined`, `presence.user_left`, `presence.field_locked`, `presence.field_draft` e `presence.field_unlocked`
 - Exibe avatar e badge "Fulano editando X" e bloqueia o mesmo campo quando outro usuario esta nele
+- Para campos textuais (`title` e editor rico em `description`), mostra o draft remoto ao vivo com debounce curto no mesmo input/editor travado; persistencia continua via autosave/REST normal.
 - Status 2026-05-15: `useTaskPresence.ts` implementado para modal e board com heartbeat 15s, reconexao simples, filtro do usuario atual, avatares de outros participantes, aviso visual de campo em edicao e lock de campo remoto. WebSocket nao deve ir direto para componentes.
 - Backend já disponível em `GET /v1/realtime/presence?scope=board|task&accountId=&boardId=&taskId=&access_token=...`
 
@@ -145,6 +148,7 @@ Status 2026-05-16: `useTasksRealtime.ts` esta ligado em `useTasksPageContext.ts`
 ### Inputs inline e digitacao com espaco (T7.2)
 
 `useTasksPageContext.ts` expoe dois helpers de texto:
+
 - `normalizeText(value, max)`: faz `.replace(/\s+/g,' ').trim().slice(0,max)`. Usar em flush/autosave e em situacoes onde o valor sera persistido.
 - `clampText(value, max)`: apenas `String(value).slice(0,max)`, sem trim/colapso. Usar em `@update:model-value` de inputs controlados — `<UInput :model-value :update:model-value="...clampText(...)">`. Sem ele, o cursor "salta" porque o `model-value` re-renderiza com o valor trimado a cada keystroke (impossivel digitar espaco no final).
 
@@ -176,10 +180,8 @@ Server-backed com clock offset. O front nao deve voltar para `localStorage`; usa
 - `POST /v1/tasks/{taskId}/tracking/stop`
 
 ```typescript
-const serverOffset = serverNow - clientNow  // calculado no evento task.time_started
-const displayMs = computed(() =>
-  durationMsFromServer + (Date.now() - localStartAt + serverOffset)
-)
+const serverOffset = serverNow - clientNow // calculado no evento task.time_started
+const displayMs = computed(() => durationMsFromServer + (Date.now() - localStartAt + serverOffset))
 ```
 
 ### useTaskRelations (Fase T4)

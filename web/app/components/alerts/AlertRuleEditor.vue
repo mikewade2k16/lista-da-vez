@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue"
-import { isValidAlertHexColor, normalizeAlertHexColor } from "~/utils/alert-colors"
+import { ref, computed, watch } from 'vue'
+import { isValidAlertHexColor, normalizeAlertHexColor } from '~/utils/alert-colors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -9,52 +9,54 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  "update:modelValue": [value: boolean]
-  "save": [rule: Record<string, any>]
+  'update:modelValue': [value: boolean]
+  save: [rule: Record<string, any>]
 }>()
 
 function defaultForm() {
   return {
-    name: "",
-    description: "",
+    name: '',
+    description: '',
     isActive: true,
-    triggerType: "long_open_service",
+    triggerType: 'long_open_service',
     thresholdMinutes: 25,
-    severity: "critical",
-    displayKind: "banner",
-    colorTheme: "#F59E0B",
-    titleTemplate: "Atendimento em aberto ha {elapsed}",
-    bodyTemplate: "O atendimento de {consultant} segue aberto acima do limite de {threshold} min.",
-    interactionKind: "none",
+    severity: 'critical',
+    displayKind: 'banner',
+    colorTheme: '#F59E0B',
+    titleTemplate: 'Atendimento em aberto ha {elapsed}',
+    bodyTemplate: 'O atendimento de {consultant} segue aberto acima do limite de {threshold} min.',
+    interactionKind: 'none',
     responseOptions: [] as Array<{ value: string; label: string }>,
     isMandatory: false,
     notifyDashboard: true,
     notifyOperationContext: true,
     notifyExternal: false,
-    externalChannel: "none"
+    externalChannel: 'none',
   }
 }
 
 const form = ref(defaultForm())
 
 const triggerTypes = [
-  { value: "long_open_service", label: "Atendimento longo" },
-  { value: "long_queue_wait", label: "Fila longa" },
-  { value: "long_pause", label: "Pausa longa" },
-  { value: "idle_store", label: "Loja parada" },
-  { value: "outside_business_hours", label: "Fora do horário" }
+  { value: 'long_open_service', label: 'Atendimento longo' },
+  { value: 'long_queue_wait', label: 'Fila longa' },
+  { value: 'long_pause', label: 'Pausa longa' },
+  { value: 'idle_store', label: 'Loja parada' },
+  { value: 'outside_business_hours', label: 'Fora do horário' },
 ]
 
 const disabledTriggerTypes = new Set([
-  "long_queue_wait",
-  "long_pause",
-  "idle_store",
-  "outside_business_hours"
+  'long_queue_wait',
+  'long_pause',
+  'idle_store',
+  'outside_business_hours',
 ])
-const enabledTriggerValues = new Set(triggerTypes.map((trigger) => trigger.value).filter((value) => !disabledTriggerTypes.has(value)))
+const enabledTriggerValues = new Set(
+  triggerTypes.map((trigger) => trigger.value).filter((value) => !disabledTriggerTypes.has(value)),
+)
 
 function isTriggerDisabled(value: string) {
-  return disabledTriggerTypes.has(String(value || "").trim())
+  return disabledTriggerTypes.has(String(value || '').trim())
 }
 
 function triggerOptionLabel(trigger: { value: string; label: string }) {
@@ -62,46 +64,46 @@ function triggerOptionLabel(trigger: { value: string; label: string }) {
 }
 
 const displayKinds = [
-  { value: "card_badge", label: "Badge no card" },
-  { value: "banner", label: "Banner" },
-  { value: "toast", label: "Notificação" },
-  { value: "corner_popup", label: "Popup canto" },
-  { value: "center_modal", label: "Modal central" },
-  { value: "fullscreen", label: "Tela cheia" }
+  { value: 'card_badge', label: 'Badge no card' },
+  { value: 'banner', label: 'Banner' },
+  { value: 'toast', label: 'Notificação' },
+  { value: 'corner_popup', label: 'Popup canto' },
+  { value: 'center_modal', label: 'Modal central' },
+  { value: 'fullscreen', label: 'Tela cheia' },
 ]
 
 const colorThemes = [
-  { value: "amber", label: "Âmbar" },
-  { value: "red", label: "Vermelho" },
-  { value: "blue", label: "Azul" },
-  { value: "green", label: "Verde" },
-  { value: "purple", label: "Roxo" },
-  { value: "slate", label: "Cinza" }
+  { value: 'amber', label: 'Âmbar' },
+  { value: 'red', label: 'Vermelho' },
+  { value: 'blue', label: 'Azul' },
+  { value: 'green', label: 'Verde' },
+  { value: 'purple', label: 'Roxo' },
+  { value: 'slate', label: 'Cinza' },
 ]
 
 const colorPresetLabels: Record<string, string> = {
-  amber: "Ambar",
-  red: "Vermelho",
-  blue: "Azul",
-  green: "Verde",
-  purple: "Roxo",
-  slate: "Cinza"
+  amber: 'Ambar',
+  red: 'Vermelho',
+  blue: 'Azul',
+  green: 'Verde',
+  purple: 'Roxo',
+  slate: 'Cinza',
 }
 
 const colorPresets = colorThemes.map((theme) => ({
   value: normalizeAlertHexColor(theme.value).toUpperCase(),
-  label: colorPresetLabels[theme.value] || theme.label
+  label: colorPresetLabels[theme.value] || theme.label,
 }))
 
 const interactionKinds = [
-  { value: "none", label: "Nenhuma" },
-  { value: "dismiss", label: "Descartar" },
-  { value: "confirm_choice", label: "Confirmação" },
-  { value: "select_option", label: "Seleção" }
+  { value: 'none', label: 'Nenhuma' },
+  { value: 'dismiss', label: 'Descartar' },
+  { value: 'confirm_choice', label: 'Confirmação' },
+  { value: 'select_option', label: 'Seleção' },
 ]
 
 const needsOptions = computed(() =>
-  ["confirm_choice", "select_option"].includes(form.value.interactionKind)
+  ['confirm_choice', 'select_option'].includes(form.value.interactionKind),
 )
 
 const colorPreview = computed(() => normalizeAlertHexColor(form.value.colorTheme))
@@ -110,21 +112,21 @@ const colorPickerValue = computed({
   get: () => colorPreview.value,
   set: (value: string) => {
     form.value.colorTheme = normalizeAlertHexColor(value).toUpperCase()
-  }
+  },
 })
 
 const isOpen = computed({
   get: () => props.modelValue,
-  set: (value) => emit("update:modelValue", value)
+  set: (value) => emit('update:modelValue', value),
 })
 
-function normalizeText(value: unknown, fallback = "") {
-  const normalized = String(value ?? "").trim()
+function normalizeText(value: unknown, fallback = '') {
+  const normalized = String(value ?? '').trim()
   return normalized || fallback
 }
 
 function normalizeBoolean(value: unknown, fallback = false) {
-  return typeof value === "boolean" ? value : fallback
+  return typeof value === 'boolean' ? value : fallback
 }
 
 function normalizeMinutes(value: unknown, fallback: number) {
@@ -138,7 +140,9 @@ function normalizeTriggerType(value: unknown, fallback = defaultForm().triggerTy
 
 function handleColorTextInput(event: Event) {
   const target = event.target as HTMLInputElement
-  form.value.colorTheme = String(target?.value || "").trim().toUpperCase()
+  form.value.colorTheme = String(target?.value || '')
+    .trim()
+    .toUpperCase()
 }
 
 function commitColorTextInput() {
@@ -152,7 +156,7 @@ function cloneResponseOptions(value: unknown) {
 
   return value.map((option) => ({
     value: normalizeText(option?.value),
-    label: normalizeText(option?.label)
+    label: normalizeText(option?.label),
   }))
 }
 
@@ -179,14 +183,17 @@ function initForm() {
     responseOptions: cloneResponseOptions(props.rule.responseOptions),
     isMandatory: normalizeBoolean(props.rule.isMandatory, defaults.isMandatory),
     notifyDashboard: normalizeBoolean(props.rule.notifyDashboard, defaults.notifyDashboard),
-    notifyOperationContext: normalizeBoolean(props.rule.notifyOperationContext, defaults.notifyOperationContext),
+    notifyOperationContext: normalizeBoolean(
+      props.rule.notifyOperationContext,
+      defaults.notifyOperationContext,
+    ),
     notifyExternal: normalizeBoolean(props.rule.notifyExternal, defaults.notifyExternal),
-    externalChannel: normalizeText(props.rule.externalChannel, defaults.externalChannel)
+    externalChannel: normalizeText(props.rule.externalChannel, defaults.externalChannel),
   }
 }
 
 function addOption() {
-  form.value.responseOptions.push({ value: "", label: "" })
+  form.value.responseOptions.push({ value: '', label: '' })
 }
 
 function removeOption(index: number) {
@@ -199,15 +206,15 @@ function save() {
     triggerType: normalizeTriggerType(form.value.triggerType),
     thresholdMinutes: normalizeMinutes(form.value.thresholdMinutes, defaultForm().thresholdMinutes),
     colorTheme: normalizeAlertHexColor(form.value.colorTheme).toUpperCase(),
-    responseOptions: cloneResponseOptions(form.value.responseOptions)
+    responseOptions: cloneResponseOptions(form.value.responseOptions),
   }
 
-  if (!["confirm_choice", "select_option"].includes(payload.interactionKind)) {
+  if (!['confirm_choice', 'select_option'].includes(payload.interactionKind)) {
     payload.isMandatory = false
     payload.responseOptions = []
   }
 
-  emit("save", payload)
+  emit('save', payload)
 }
 
 function handleOpenChange(open: boolean) {
@@ -224,7 +231,7 @@ watch(
       initForm()
     }
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 watch(
@@ -234,7 +241,7 @@ watch(
       initForm()
     }
   },
-  { deep: true }
+  { deep: true },
 )
 </script>
 
@@ -242,7 +249,7 @@ watch(
   <div v-if="isOpen" class="alert-rule-editor-overlay" @click.self="handleOpenChange(false)">
     <div class="alert-rule-editor-modal">
       <div class="editor-header">
-        <h2>{{ isEditing ? "Editar regra" : "Nova regra" }}</h2>
+        <h2>{{ isEditing ? 'Editar regra' : 'Nova regra' }}</h2>
         <button class="close-btn" @click="handleOpenChange(false)">✕</button>
       </div>
 
@@ -256,10 +263,14 @@ watch(
           </div>
           <div class="form-group">
             <label>Descrição</label>
-            <input v-model="form.description" type="text" placeholder="ex: Alerta para atendimentos que excedem o limite" />
+            <input
+              v-model="form.description"
+              type="text"
+              placeholder="ex: Alerta para atendimentos que excedem o limite"
+            />
           </div>
           <div class="form-group checkbox">
-            <input v-model="form.isActive" type="checkbox" id="is-active" />
+            <input id="is-active" v-model="form.isActive" type="checkbox" />
             <label for="is-active">Ativa</label>
           </div>
         </section>
@@ -270,7 +281,12 @@ watch(
           <div class="form-group">
             <label>Tipo de gatilho *</label>
             <select v-model="form.triggerType">
-              <option v-for="t in triggerTypes" :key="t.value" :value="t.value" :disabled="isTriggerDisabled(t.value)">
+              <option
+                v-for="t in triggerTypes"
+                :key="t.value"
+                :value="t.value"
+                :disabled="isTriggerDisabled(t.value)"
+              >
                 {{ triggerOptionLabel(t) }}
               </option>
             </select>
@@ -304,7 +320,11 @@ watch(
             <label>Cor do tema</label>
             <div class="color-picker">
               <div class="color-picker__controls">
-                <label class="color-picker__swatch" :style="{ '--selected-color': colorPreview }" aria-label="Escolher cor hexadecimal">
+                <label
+                  class="color-picker__swatch"
+                  :style="{ '--selected-color': colorPreview }"
+                  aria-label="Escolher cor hexadecimal"
+                >
                   <input v-model="colorPickerValue" type="color" />
                 </label>
                 <input
@@ -333,16 +353,26 @@ watch(
                   <span>{{ preset.label }}</span>
                 </button>
               </div>
-              <p v-if="!colorIsValid" class="color-picker__error">Informe uma cor hexadecimal valida. Ex.: #F59E0B</p>
+              <p v-if="!colorIsValid" class="color-picker__error">
+                Informe uma cor hexadecimal valida. Ex.: #F59E0B
+              </p>
             </div>
           </div>
           <div class="form-group">
             <label>Título do alerta *</label>
-            <input v-model="form.titleTemplate" type="text" placeholder="{consultant} atendimento longo" />
+            <input
+              v-model="form.titleTemplate"
+              type="text"
+              placeholder="{consultant} atendimento longo"
+            />
           </div>
           <div class="form-group">
             <label>Corpo do alerta</label>
-            <input v-model="form.bodyTemplate" type="text" placeholder="{consultant} há {elapsed}" />
+            <input
+              v-model="form.bodyTemplate"
+              type="text"
+              placeholder="{consultant} há {elapsed}"
+            />
           </div>
         </section>
 
@@ -364,14 +394,19 @@ watch(
               <div v-for="(opt, idx) in form.responseOptions" :key="idx" class="option-row">
                 <input v-model="opt.value" placeholder="valor" />
                 <input v-model="opt.label" placeholder="rótulo" />
-                <button @click="removeOption(idx)" class="btn-remove">✕</button>
+                <button class="btn-remove" @click="removeOption(idx)">✕</button>
               </div>
             </div>
-            <button @click="addOption" class="btn-secondary">+ Adicionar opção</button>
+            <button class="btn-secondary" @click="addOption">+ Adicionar opção</button>
           </div>
 
           <div class="form-group checkbox">
-            <input v-model="form.isMandatory" type="checkbox" id="is-mandatory" :disabled="form.interactionKind === 'none'" />
+            <input
+              id="is-mandatory"
+              v-model="form.isMandatory"
+              type="checkbox"
+              :disabled="form.interactionKind === 'none'"
+            />
             <label for="is-mandatory">Resposta obrigatória</label>
           </div>
         </section>
@@ -380,15 +415,15 @@ watch(
         <section class="editor-section">
           <h3>Notificações</h3>
           <div class="form-group checkbox">
-            <input v-model="form.notifyDashboard" type="checkbox" id="notify-dashboard" />
+            <input id="notify-dashboard" v-model="form.notifyDashboard" type="checkbox" />
             <label for="notify-dashboard">Notificar dashboard</label>
           </div>
           <div class="form-group checkbox">
-            <input v-model="form.notifyOperationContext" type="checkbox" id="notify-context" />
+            <input id="notify-context" v-model="form.notifyOperationContext" type="checkbox" />
             <label for="notify-context">Notificar contexto operacional</label>
           </div>
           <div class="form-group checkbox">
-            <input v-model="form.notifyExternal" type="checkbox" id="notify-external" />
+            <input id="notify-external" v-model="form.notifyExternal" type="checkbox" />
             <label for="notify-external">Notificar externo</label>
           </div>
           <div v-if="form.notifyExternal" class="form-group">
@@ -503,8 +538,8 @@ watch(
   font-size: 0.9rem;
 }
 
-.form-group input[type="text"],
-.form-group input[type="number"],
+.form-group input[type='text'],
+.form-group input[type='number'],
 .form-group select {
   width: 100%;
   padding: 0.55rem 0.75rem;
@@ -518,8 +553,8 @@ watch(
   box-sizing: border-box;
 }
 
-.form-group input[type="text"]:focus,
-.form-group input[type="number"]:focus,
+.form-group input[type='text']:focus,
+.form-group input[type='number']:focus,
 .form-group select:focus {
   border-color: rgba(59, 130, 246, 0.6);
 }
@@ -619,7 +654,7 @@ watch(
   cursor: pointer;
 }
 
-.form-group.checkbox input[type="checkbox"] {
+.form-group.checkbox input[type='checkbox'] {
   width: auto;
   margin: 0;
   accent-color: #3b82f6;

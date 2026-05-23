@@ -1,232 +1,248 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Search, SlidersHorizontal } from "lucide-vue-next";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Search, SlidersHorizontal } from 'lucide-vue-next'
 
 const props = defineProps({
   columns: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   rows: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   rowKey: {
     type: [String, Function],
-    default: "id"
+    default: 'id',
   },
   searchValue: {
     type: String,
-    default: ""
+    default: '',
   },
   searchPlaceholder: {
     type: String,
-    default: "Pesquisar por texto..."
+    default: 'Pesquisar por texto...',
   },
   showSearch: {
     type: Boolean,
-    default: true
+    default: true,
   },
   showColumnsManager: {
     type: Boolean,
-    default: true
+    default: true,
   },
   loading: {
     type: Boolean,
-    default: false
+    default: false,
   },
   emptyTitle: {
     type: String,
-    default: "Nenhum resultado"
+    default: 'Nenhum resultado',
   },
   emptyText: {
     type: String,
-    default: "Ajuste os filtros ou cadastre um novo item para preencher a listagem."
+    default: 'Ajuste os filtros ou cadastre um novo item para preencher a listagem.',
   },
   storageKey: {
     type: String,
-    default: ""
+    default: '',
   },
   columnsLabel: {
     type: String,
-    default: "Colunas"
+    default: 'Colunas',
   },
   testid: {
     type: String,
-    default: ""
-  }
-});
+    default: '',
+  },
+  sortBy: {
+    type: String,
+    default: '',
+  },
+  sortDir: {
+    type: String,
+    default: 'desc',
+  },
+})
 
-const emit = defineEmits(["update:searchValue", "visible-columns-change"]);
+const emit = defineEmits(['update:searchValue', 'visible-columns-change', 'sort'])
 
-const columnsMenuOpen = ref(false);
-const columnsMenuRef = ref(null);
-const visibleColumnIds = ref([]);
-const hydrated = ref(false);
+const columnsMenuOpen = ref(false)
+const columnsMenuRef = ref(null)
+const visibleColumnIds = ref([])
+const hydrated = ref(false)
 
 const normalizedColumns = computed(() =>
   (Array.isArray(props.columns) ? props.columns : []).map((column, index) => ({
     id: String(column?.id || `column-${index}`).trim(),
     label: String(column?.label || column?.id || `Coluna ${index + 1}`).trim(),
-    width: String(column?.width || "minmax(140px, 1fr)").trim(),
-    align: String(column?.align || "start").trim(),
+    width: String(column?.width || 'minmax(140px, 1fr)').trim(),
+    align: String(column?.align || 'start').trim(),
     locked: Boolean(column?.locked),
+    sortable: Boolean(column?.sortable),
     defaultVisible: column?.defaultVisible !== false,
-    description: String(column?.description || "").trim()
-  }))
-);
+    description: String(column?.description || '').trim(),
+  })),
+)
 
 const visibleColumns = computed(() =>
-  normalizedColumns.value.filter((column) => column.locked || visibleColumnIds.value.includes(column.id))
-);
+  normalizedColumns.value.filter(
+    (column) => column.locked || visibleColumnIds.value.includes(column.id),
+  ),
+)
 
-const gridTemplateColumns = computed(() => visibleColumns.value.map((column) => column.width).join(" "));
-const selectedColumnsCount = computed(() => visibleColumns.value.length);
+const gridTemplateColumns = computed(() =>
+  visibleColumns.value.map((column) => column.width).join(' '),
+)
+const selectedColumnsCount = computed(() => visibleColumns.value.length)
 
 function buildDefaultVisibleColumns() {
   return normalizedColumns.value
     .filter((column) => column.defaultVisible && !column.locked)
-    .map((column) => column.id);
+    .map((column) => column.id)
 }
 
 function syncVisibleColumns(forceDefaults = false) {
-  const availableIds = new Set(normalizedColumns.value.map((column) => column.id));
-  const defaults = buildDefaultVisibleColumns();
+  const availableIds = new Set(normalizedColumns.value.map((column) => column.id))
+  const defaults = buildDefaultVisibleColumns()
 
   if (forceDefaults || visibleColumnIds.value.length === 0) {
-    visibleColumnIds.value = defaults;
-    return;
+    visibleColumnIds.value = defaults
+    return
   }
 
-  visibleColumnIds.value = visibleColumnIds.value.filter((columnId) => availableIds.has(columnId));
+  visibleColumnIds.value = visibleColumnIds.value.filter((columnId) => availableIds.has(columnId))
 
   if (visibleColumnIds.value.length === 0) {
-    visibleColumnIds.value = defaults;
+    visibleColumnIds.value = defaults
   }
 }
 
 function loadVisibleColumns() {
   if (!import.meta.client || !props.storageKey) {
-    syncVisibleColumns(true);
-    hydrated.value = true;
-    return;
+    syncVisibleColumns(true)
+    hydrated.value = true
+    return
   }
 
   try {
-    const rawValue = window.localStorage.getItem(props.storageKey);
+    const rawValue = window.localStorage.getItem(props.storageKey)
     if (!rawValue) {
-      syncVisibleColumns(true);
-      hydrated.value = true;
-      return;
+      syncVisibleColumns(true)
+      hydrated.value = true
+      return
     }
 
-    const parsed = JSON.parse(rawValue);
+    const parsed = JSON.parse(rawValue)
     visibleColumnIds.value = Array.isArray(parsed)
-      ? parsed.map((columnId) => String(columnId || "").trim()).filter(Boolean)
-      : [];
-    syncVisibleColumns(false);
+      ? parsed.map((columnId) => String(columnId || '').trim()).filter(Boolean)
+      : []
+    syncVisibleColumns(false)
   } catch {
-    syncVisibleColumns(true);
+    syncVisibleColumns(true)
   }
 
-  hydrated.value = true;
+  hydrated.value = true
 }
 
 function persistVisibleColumns() {
   if (!import.meta.client || !props.storageKey || !hydrated.value) {
-    return;
+    return
   }
 
-  window.localStorage.setItem(props.storageKey, JSON.stringify(visibleColumnIds.value));
+  window.localStorage.setItem(props.storageKey, JSON.stringify(visibleColumnIds.value))
 }
 
 function isColumnVisible(column) {
-  return column.locked || visibleColumnIds.value.includes(column.id);
+  return column.locked || visibleColumnIds.value.includes(column.id)
 }
 
 function toggleColumn(column) {
   if (column.locked) {
-    return;
+    return
   }
 
   if (visibleColumnIds.value.includes(column.id)) {
-    visibleColumnIds.value = visibleColumnIds.value.filter((columnId) => columnId !== column.id);
-    return;
+    visibleColumnIds.value = visibleColumnIds.value.filter((columnId) => columnId !== column.id)
+    return
   }
 
-  visibleColumnIds.value = [...visibleColumnIds.value, column.id];
+  visibleColumnIds.value = [...visibleColumnIds.value, column.id]
 }
 
 function closeColumnsMenu() {
-  columnsMenuOpen.value = false;
+  columnsMenuOpen.value = false
 }
 
 function handleOutsideClick(event) {
   if (!columnsMenuOpen.value) {
-    return;
+    return
   }
 
   if (columnsMenuRef.value?.contains(event.target)) {
-    return;
+    return
   }
 
-  closeColumnsMenu();
+  closeColumnsMenu()
 }
 
 function resolveRowKey(row, index) {
-  if (typeof props.rowKey === "function") {
-    return props.rowKey(row, index);
+  if (typeof props.rowKey === 'function') {
+    return props.rowKey(row, index)
   }
 
-  const key = String(props.rowKey || "id").trim();
-  return row?.[key] || `row-${index}`;
+  const key = String(props.rowKey || 'id').trim()
+  return row?.[key] || `row-${index}`
 }
 
 function updateSearchValue(event) {
-  emit("update:searchValue", String(event?.target?.value || ""));
+  emit('update:searchValue', String(event?.target?.value || ''))
 }
 
 function formatCellValue(value) {
   if (Array.isArray(value)) {
-    return value.filter(Boolean).join(", ") || "-";
+    return value.filter(Boolean).join(', ') || '-'
   }
 
-  if (value === null || value === undefined || String(value).trim() === "") {
-    return "-";
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return '-'
   }
 
-  return String(value);
+  return String(value)
 }
 
 watch(
   normalizedColumns,
   () => {
     if (!hydrated.value) {
-      return;
+      return
     }
 
-    syncVisibleColumns(false);
+    syncVisibleColumns(false)
   },
-  { deep: true }
-);
+  { deep: true },
+)
 
 watch(
   visibleColumnIds,
   () => {
-    persistVisibleColumns();
-    emit("visible-columns-change", visibleColumns.value.map((column) => column.id));
+    persistVisibleColumns()
+    emit(
+      'visible-columns-change',
+      visibleColumns.value.map((column) => column.id),
+    )
   },
-  { deep: true }
-);
+  { deep: true },
+)
 
 onMounted(() => {
-  loadVisibleColumns();
-  document.addEventListener("click", handleOutsideClick);
-});
+  loadVisibleColumns()
+  document.addEventListener('click', handleOutsideClick)
+})
 
 onBeforeUnmount(() => {
-  document.removeEventListener("click", handleOutsideClick);
-});
+  document.removeEventListener('click', handleOutsideClick)
+})
 </script>
 
 <template>
@@ -241,18 +257,26 @@ onBeforeUnmount(() => {
             type="search"
             :placeholder="searchPlaceholder"
             @input="updateSearchValue"
-          >
+          />
         </label>
 
         <div class="app-entity-grid__filters">
-          <slot name="toolbar-filters" />
+          <slot name="toolbar-filters"></slot>
         </div>
       </div>
 
       <div class="app-entity-grid__toolbar-actions">
         <div v-if="showColumnsManager" ref="columnsMenuRef" class="app-entity-grid__columns-wrap">
-          <button class="app-entity-grid__toolbar-btn" type="button" @click.stop="columnsMenuOpen = !columnsMenuOpen">
-            <SlidersHorizontal class="app-entity-grid__toolbar-icon" :size="15" :stroke-width="2.1" />
+          <button
+            class="app-entity-grid__toolbar-btn"
+            type="button"
+            @click.stop="columnsMenuOpen = !columnsMenuOpen"
+          >
+            <SlidersHorizontal
+              class="app-entity-grid__toolbar-icon"
+              :size="15"
+              :stroke-width="2.1"
+            />
             <span>{{ columnsLabel }}</span>
             <strong>{{ selectedColumnsCount }}</strong>
           </button>
@@ -274,7 +298,7 @@ onBeforeUnmount(() => {
                 type="checkbox"
                 :disabled="column.locked"
                 @change="toggleColumn(column)"
-              >
+              />
               <span class="app-entity-grid__columns-copy">
                 <span>{{ column.label }}</span>
                 <small v-if="column.description">{{ column.description }}</small>
@@ -283,7 +307,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <slot name="toolbar-actions" />
+        <slot name="toolbar-actions"></slot>
       </div>
     </header>
 
@@ -298,9 +322,16 @@ onBeforeUnmount(() => {
             v-for="column in visibleColumns"
             :key="column.id"
             class="app-entity-grid__head-cell"
-            :class="`is-${column.align}`"
+            :class="[`is-${column.align}`, column.sortable ? 'is-sortable' : '']"
+            @click="column.sortable ? emit('sort', column.id) : undefined"
           >
             {{ column.label }}
+            <span v-if="column.sortable" class="app-entity-grid__sort-indicator">
+              <template v-if="sortBy === column.id">
+                {{ sortDir === 'asc' ? '▲' : '▼' }}
+              </template>
+              <template v-else>⇅</template>
+            </span>
           </div>
         </div>
 
@@ -311,7 +342,7 @@ onBeforeUnmount(() => {
         <div v-else-if="!rows.length" class="app-entity-grid__empty-state">
           <strong>{{ emptyTitle }}</strong>
           <span>{{ emptyText }}</span>
-          <slot name="empty" />
+          <slot name="empty"></slot>
         </div>
 
         <div v-else class="app-entity-grid__body">
@@ -539,6 +570,24 @@ onBeforeUnmount(() => {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  user-select: none;
+}
+
+.app-entity-grid__head-cell.is-sortable {
+  cursor: pointer;
+}
+
+.app-entity-grid__head-cell.is-sortable:hover {
+  color: rgba(226, 232, 240, 1);
+}
+
+.app-entity-grid__sort-indicator {
+  font-size: 0.6rem;
+  opacity: 0.6;
+  flex-shrink: 0;
 }
 
 .app-entity-grid__body {

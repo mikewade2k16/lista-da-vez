@@ -327,29 +327,7 @@ type RuleDefinitionView struct {
 }
 
 func (rule RuleDefinition) View() RuleDefinitionView {
-	return RuleDefinitionView{
-		ID:                     rule.ID,
-		TenantID:               rule.TenantID,
-		Name:                   rule.Name,
-		Description:            rule.Description,
-		IsActive:               rule.IsActive,
-		TriggerType:            rule.TriggerType,
-		ThresholdMinutes:       rule.ThresholdMinutes,
-		Severity:               rule.Severity,
-		DisplayKind:            rule.DisplayKind,
-		ColorTheme:             rule.ColorTheme,
-		TitleTemplate:          rule.TitleTemplate,
-		BodyTemplate:           rule.BodyTemplate,
-		InteractionKind:        rule.InteractionKind,
-		ResponseOptions:        rule.ResponseOptions,
-		IsMandatory:            rule.IsMandatory,
-		NotifyDashboard:        rule.NotifyDashboard,
-		NotifyOperationContext: rule.NotifyOperationContext,
-		NotifyExternal:         rule.NotifyExternal,
-		ExternalChannel:        rule.ExternalChannel,
-		CreatedAt:              rule.CreatedAt,
-		UpdatedAt:              rule.UpdatedAt,
-	}
+	return RuleDefinitionView(rule)
 }
 
 type CreateRuleInput struct {

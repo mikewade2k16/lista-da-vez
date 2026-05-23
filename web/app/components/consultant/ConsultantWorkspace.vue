@@ -1,52 +1,61 @@
 <script setup>
-import { computed } from "vue";
-import { buildConsultantStats } from "~/domain/utils/admin-metrics";
-import ConsultantIntegratedWorkspace from "~/components/consultant/ConsultantIntegratedWorkspace.vue";
-import ConsultantMetrics from "~/components/consultant/ConsultantMetrics.vue";
-import ConsultantSelector from "~/components/consultant/ConsultantSelector.vue";
-import ConsultantSimulator from "~/components/consultant/ConsultantSimulator.vue";
-import { useConsultantsStore } from "~/stores/consultants";
+import { computed } from 'vue'
+import { buildConsultantStats } from '~/domain/utils/admin-metrics'
+import ConsultantHistoryPanel from '~/components/consultant/ConsultantHistoryPanel.vue'
+import ConsultantIntegratedWorkspace from '~/components/consultant/ConsultantIntegratedWorkspace.vue'
+import ConsultantPlayerCard from '~/components/consultant/ConsultantPlayerCard.vue'
+import ConsultantRecentAttendancesTable from '~/components/consultant/ConsultantRecentAttendancesTable.vue'
+import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
+import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
+import { useConsultantsStore } from '~/stores/consultants'
 
 const props = defineProps({
   state: {
     type: Object,
-    required: true
+    required: true,
   },
   integratedScope: {
     type: Boolean,
-    default: false
+    default: false,
   },
   integratedRoster: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   integratedRanking: {
     type: Object,
-    default: null
+    default: null,
   },
   integratedOverview: {
     type: Object,
-    default: null
+    default: null,
+  },
+  integratedHistory: {
+    type: Array,
+    default: () => [],
   },
   integratedPending: {
     type: Boolean,
-    default: false
+    default: false,
   },
   integratedError: {
     type: String,
-    default: ""
-  }
-});
+    default: '',
+  },
+})
 
-const consultantsStore = useConsultantsStore();
+const consultantsStore = useConsultantsStore()
 
-const roster = computed(() => props.state.roster || []);
-const selectedConsultant = computed(() =>
-  roster.value.find((consultant) => consultant.id === props.state.selectedConsultantId) || roster.value[0] || null
-);
+const roster = computed(() => props.state.roster || [])
+const selectedConsultant = computed(
+  () =>
+    roster.value.find((consultant) => consultant.id === props.state.selectedConsultantId) ||
+    roster.value[0] ||
+    null,
+)
 const stats = computed(() => {
   if (!selectedConsultant.value) {
-    return null;
+    return null
   }
 
   return buildConsultantStats({
@@ -56,23 +65,28 @@ const stats = computed(() => {
     commissionRate: Number(selectedConsultant.value.commissionRate || 0),
     conversionGoal: Number(selectedConsultant.value.conversionGoal || 0),
     avgTicketGoal: Number(selectedConsultant.value.avgTicketGoal || 0),
-    paGoal: Number(selectedConsultant.value.paGoal || 0)
-  });
-});
-const goalPercent = computed(() => {
-  if (!stats.value?.monthlyGoal) {
-    return 0;
-  }
+    paGoal: Number(selectedConsultant.value.paGoal || 0),
+  })
+})
 
-  return (stats.value.soldValue / stats.value.monthlyGoal) * 100;
-});
+const storeConversionAvg = computed(() => {
+  const history = props.state.serviceHistory || []
+  const rosterIds = new Set(roster.value.map((c) => c.id))
+  const inStore = history.filter((entry) => rosterIds.has(entry.personId))
+  if (!inStore.length) return null
+
+  const converted = inStore.filter(
+    (entry) => entry.finishOutcome === 'compra' || entry.finishOutcome === 'reserva',
+  )
+  return (converted.length / inStore.length) * 100
+})
 
 function selectConsultant(consultantId) {
-  void consultantsStore.setSelectedConsultant(consultantId);
+  void consultantsStore.setSelectedConsultant(consultantId)
 }
 
 function updateSimulation(amount) {
-  void consultantsStore.setConsultantSimulationAdditionalSales(amount);
+  void consultantsStore.setConsultantSimulationAdditionalSales(amount)
 }
 </script>
 
@@ -82,6 +96,7 @@ function updateSimulation(amount) {
     :roster="integratedRoster"
     :ranking="integratedRanking"
     :overview="integratedOverview"
+    :history="integratedHistory"
     :pending="integratedPending"
     :error-message="integratedError"
   />
@@ -89,7 +104,7 @@ function updateSimulation(amount) {
   <section v-else class="admin-panel" data-testid="consultant-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Perfil do consultor</h2>
-      <p class="admin-panel__text">Meta mensal, desempenho e simulacao de venda.</p>
+      <p class="admin-panel__text">Meta mensal, desempenho e simulação de venda.</p>
     </header>
 
     <template v-if="selectedConsultant && stats">
@@ -99,19 +114,66 @@ function updateSimulation(amount) {
         @select="selectConsultant"
       />
 
-      <ConsultantMetrics :stats="stats" :goal-percent="goalPercent" />
+      <ConsultantPlayerCard
+        :consultant="selectedConsultant"
+        :stats="stats"
+        :store-conversion-avg="storeConversionAvg"
+        mode="full"
+        :show-details-button="false"
+      />
 
-      <ConsultantSimulator
-        :sold-value="stats.soldValue"
-        :monthly-goal="stats.monthlyGoal"
-        :commission-rate="stats.commissionRate"
-        :simulation-additional-sales="Number(state.consultantSimulationAdditionalSales || 0)"
-        @update:simulation-additional-sales="updateSimulation"
+      <div class="consultant-workspace__insights">
+        <ConsultantHistoryPanel
+          :consultant-id="selectedConsultant.id"
+          :store-id="selectedConsultant.storeId"
+          :entries="state.serviceHistory || []"
+        />
+
+        <section class="consultant-workspace__insight-panel">
+          <ConsultantSimulator
+            :sold-value="stats.soldValue"
+            :monthly-goal="stats.monthlyGoal"
+            :commission-rate="stats.commissionRate"
+            :simulation-additional-sales="Number(state.consultantSimulationAdditionalSales || 0)"
+            @update:simulation-additional-sales="updateSimulation"
+          />
+        </section>
+      </div>
+
+      <ConsultantRecentAttendancesTable
+        :consultant-id="selectedConsultant.id"
+        :consultant-name="selectedConsultant.name"
+        :store-id="selectedConsultant.storeId"
+        :store-name="selectedConsultant.storeName"
+        :entries="state.serviceHistory || []"
+        :visit-reason-options="state.visitReasonOptions || []"
+        :customer-source-options="state.customerSourceOptions || []"
       />
     </template>
 
-    <div v-else class="admin-panel__empty">
-      Nenhum consultor disponivel para exibir.
-    </div>
+    <div v-else class="admin-panel__empty">Nenhum consultor disponível para exibir.</div>
   </section>
 </template>
+
+<style scoped>
+.consultant-workspace__insights {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.consultant-workspace__insight-panel {
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(125, 146, 255, 0.16);
+  background: rgba(13, 19, 36, 0.55);
+}
+
+@media (max-width: 1100px) {
+  .consultant-workspace__insights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>
+

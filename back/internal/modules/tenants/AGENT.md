@@ -41,6 +41,7 @@ Ele nao deve cuidar de:
 - `manager` e `consultant` enxergam o tenant derivado das lojas a que pertencem
 - criacao de tenant continua restrita a `platform_admin`
 - atualizacao, arquivamento e restauracao exigem permissao de edicao de clientes ou papel autorizado; a validacao final acontece no service e no repositorio acessivel
+- `ResolveDefaultActiveTenantID` recebe `tenantIDsWithStores` e prioriza um tenant que tenha ao menos uma store ativa visivel ao principal; tenants sem stores so sao retornados como ultimo fallback. Isso evita que `platform_admin` caia em tenants vazios (ex.: novos clientes sem stores cadastradas) e gere 404 ao buscar lojas/ERP
 
 ## Regras de implementacao
 

@@ -94,12 +94,34 @@ O fluxo local sem Docker continua existindo apenas como fallback:
 - `back/PLAN.md`
 - `back/CORE_MODULES_PORTABILITY.md`
 - `back/START_LOCAL.md`
-- `web/AGENTS.md`
+- `web/AGENT.md`
 - `back/AGENT.md`
 - `docs/NUXT_4_STORE_ARCHITECTURE.md`
 
+## Pre-commit hook (Fase 6.3 do PLANO_REFATORACAO)
+
+Configurado a partir de 2026-05-18. Toda vez que voce roda `git commit`, o Husky dispara `npx lint-staged` que despacha pelos wrappers:
+
+- `scripts/dev/lint-web-staged.sh` -> `eslint --fix` nos `.vue`/`.ts`/`.js`/`.mjs` staged
+- `scripts/dev/format-web-staged.sh` -> `prettier --write` nos arquivos web staged
+- `scripts/dev/lint-go-staged.sh` -> `gofmt -w` + `golangci-lint run --new-from-rev=HEAD` em **escopo de pacote** (nao arquivo isolado)
+
+### Decisao tecnica importante
+
+O wrapper Go nao roda golangci-lint em arquivos isolados — extrai os **pacotes** dos arquivos staged e roda no escopo `./pkg/...`. Sem isso, linters como `unused`, `errcheck` e `staticcheck` (que precisam do pacote inteiro) gerariam falsos positivos/negativos. A flag `--new-from-rev=HEAD` evita bloquear commit em pacote que ja tinha divida na baseline registrada.
+
+### Bypass de emergencia
+
+Quando MESMO precisar pular o hook (ex.: hotfix urgente):
+
+```bash
+git commit --no-verify -m "..."
+```
+
+Use com parcimonia — o ponto do hook e evitar regressao silenciosa.
+
 ## Validacao minima
 
-- frontend: `npm --prefix web run build`
-- backend: `go test ./...` em `back/`
+- frontend: `npm --prefix web run build` + `npm --prefix web run lint`
+- backend: `go test ./...` + `golangci-lint run ./...` em `back/`
 - compose: `docker compose config`

@@ -5,9 +5,9 @@ type OmniCreateOptionConfig =
   | boolean
   | 'always'
   | {
-    position?: 'top' | 'bottom'
-    when?: 'empty' | 'always'
-  }
+      position?: 'top' | 'bottom'
+      when?: 'empty' | 'always'
+    }
 
 type OmniSelectColorKey =
   | 'default'
@@ -40,7 +40,7 @@ const DEFAULT_COLOR: {
   key: 'default',
   label: 'Padrao',
   swatchClass: 'bg-zinc-500',
-  chipClass: 'bg-zinc-700/40 text-zinc-100 ring-zinc-500/50'
+  chipClass: 'bg-zinc-700/40 text-zinc-100 ring-zinc-500/50',
 }
 
 const COLOR_PALETTE: Array<{
@@ -54,81 +54,84 @@ const COLOR_PALETTE: Array<{
     key: 'gray',
     label: 'Cinza',
     swatchClass: 'bg-slate-500',
-    chipClass: 'bg-slate-600/50 text-slate-100 ring-slate-400/50'
+    chipClass: 'bg-slate-600/50 text-slate-100 ring-slate-400/50',
   },
   {
     key: 'brown',
     label: 'Marrom',
     swatchClass: 'bg-amber-700',
-    chipClass: 'bg-amber-700/50 text-amber-50 ring-amber-500/50'
+    chipClass: 'bg-amber-700/50 text-amber-50 ring-amber-500/50',
   },
   {
     key: 'orange',
     label: 'Laranja',
     swatchClass: 'bg-orange-500',
-    chipClass: 'bg-orange-600/50 text-orange-50 ring-orange-400/50'
+    chipClass: 'bg-orange-600/50 text-orange-50 ring-orange-400/50',
   },
   {
     key: 'yellow',
     label: 'Amarelo',
     swatchClass: 'bg-yellow-500',
-    chipClass: 'bg-yellow-600/50 text-yellow-50 ring-yellow-400/50'
+    chipClass: 'bg-yellow-600/50 text-yellow-50 ring-yellow-400/50',
   },
   {
     key: 'green',
     label: 'Verde',
     swatchClass: 'bg-emerald-500',
-    chipClass: 'bg-emerald-700/55 text-emerald-50 ring-emerald-400/50'
+    chipClass: 'bg-emerald-700/55 text-emerald-50 ring-emerald-400/50',
   },
   {
     key: 'blue',
     label: 'Azul',
     swatchClass: 'bg-blue-500',
-    chipClass: 'bg-blue-700/55 text-blue-50 ring-blue-400/50'
+    chipClass: 'bg-blue-700/55 text-blue-50 ring-blue-400/50',
   },
   {
     key: 'purple',
     label: 'Roxo',
     swatchClass: 'bg-violet-500',
-    chipClass: 'bg-violet-700/55 text-violet-50 ring-violet-400/50'
+    chipClass: 'bg-violet-700/55 text-violet-50 ring-violet-400/50',
   },
   {
     key: 'pink',
     label: 'Rosa',
     swatchClass: 'bg-pink-500',
-    chipClass: 'bg-pink-700/55 text-pink-50 ring-pink-400/50'
+    chipClass: 'bg-pink-700/55 text-pink-50 ring-pink-400/50',
   },
   {
     key: 'red',
     label: 'Vermelho',
     swatchClass: 'bg-rose-500',
-    chipClass: 'bg-rose-700/55 text-rose-50 ring-rose-400/50'
-  }
+    chipClass: 'bg-rose-700/55 text-rose-50 ring-rose-400/50',
+  },
 ]
 
-const props = withDefaults(defineProps<{
-  modelValue?: string | number | Array<string | number> | null
-  items?: OmniSelectOption[]
-  placeholder?: string
-  multiple?: boolean
-  disabled?: boolean
-  creatable?: OmniCreateOptionConfig
-  searchInput?: boolean
-  clear?: boolean
-  manageOptions?: boolean
-  overlayOnOpen?: boolean
-}>(), {
-  modelValue: null,
-  items: () => [],
-  placeholder: 'Selecione',
-  multiple: false,
-  disabled: false,
-  creatable: false,
-  searchInput: true,
-  clear: false,
-  manageOptions: false,
-  overlayOnOpen: false
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string | number | Array<string | number> | null
+    items?: OmniSelectOption[]
+    placeholder?: string
+    multiple?: boolean
+    disabled?: boolean
+    creatable?: OmniCreateOptionConfig
+    searchInput?: boolean
+    clear?: boolean
+    manageOptions?: boolean
+    overlayOnOpen?: boolean
+  }>(),
+  {
+    modelValue: null,
+    items: () => [],
+    placeholder: 'Selecione',
+    multiple: false,
+    disabled: false,
+    creatable: false,
+    searchInput: true,
+    clear: false,
+    manageOptions: false,
+    overlayOnOpen: false,
+  },
+)
 
 const emit = defineEmits<{
   'update:modelValue': [value: string | number | Array<string | number> | null]
@@ -136,7 +139,10 @@ const emit = defineEmits<{
 }>()
 
 const createdItems = ref<OmniSelectViewOption[]>([])
-const optionMetaState = useState<Record<string, OmniSelectOptionMeta>>('__omni_select_option_meta__', () => ({}))
+const optionMetaState = useState<Record<string, OmniSelectOptionMeta>>(
+  '__omni_select_option_meta__',
+  () => ({}),
+)
 const optionDraftLabelMap = reactive<Record<string, string>>({})
 const searchTerm = ref('')
 const menuOpen = ref(false)
@@ -148,36 +154,40 @@ const multiUi = computed(() => ({
     'omni-select__multi-root flex-nowrap items-center gap-1 overflow-hidden w-full min-w-0',
     props.overlayOnOpen && menuOpen.value
       ? 'omni-select__multi-root--overlay-open absolute left-0 top-1/2 z-[80] -translate-y-1/2 w-max min-w-[320px] max-w-[560px] flex-wrap items-start gap-1.5 overflow-visible rounded-md border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-1.5 py-2 shadow-[var(--shadow-lg)]'
-      : ''
-  ].join(' ').trim(),
+      : '',
+  ]
+    .join(' ')
+    .trim(),
   base: [
     'omni-select__multi-base border-0 bg-transparent py-0 shadow-none',
-    props.overlayOnOpen && menuOpen.value
-      ? 'min-h-9 h-auto px-1'
-      : 'min-h-9 max-h-9 px-2'
+    props.overlayOnOpen && menuOpen.value ? 'min-h-9 h-auto px-1' : 'min-h-9 max-h-9 px-2',
   ].join(' '),
   tagsItem: 'omni-select__tag-item p-0 bg-transparent ring-0 max-w-[184px]',
   tagsItemText: 'omni-select__tag-item-text p-0',
   tagsItemDelete: 'omni-select__tag-item-delete hidden',
   tagsInput: menuOpen.value
     ? 'omni-select__search-input min-w-[128px] px-1 opacity-100'
-    : 'omni-select__search-input w-0  max-w-0 px-0 opacity-0 pointer-events-none'
+    : 'omni-select__search-input w-0  max-w-0 px-0 opacity-0 pointer-events-none',
 }))
 
 const singleUi = {
   base: 'omni-select__single-base border-0 bg-transparent px-0 py-0 shadow-none',
-  trailing: 'omni-select__single-trailing relative inset-auto ms-1'
+  trailing: 'omni-select__single-trailing relative inset-auto ms-1',
 }
 
-const wrapperClasses = computed(() => [
-  'omni-select relative w-full min-w-0 cursor-text',
-  props.multiple && props.overlayOnOpen && menuOpen.value
-    ? 'omni-select--menu-open z-[70] overflow-visible'
-    : 'overflow-hidden'
-].join(' '))
+const wrapperClasses = computed(() =>
+  [
+    'omni-select relative w-full min-w-0 cursor-text',
+    props.multiple && props.overlayOnOpen && menuOpen.value
+      ? 'omni-select--menu-open z-[70] overflow-visible'
+      : 'overflow-hidden',
+  ].join(' '),
+)
 
 function normalizeText(value: unknown) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim()
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function optionKey(value: unknown) {
@@ -194,7 +204,7 @@ function isManageEnabled() {
 
 function colorConfig(color: OmniSelectColorKey | undefined) {
   const key = color || 'default'
-  return COLOR_PALETTE.find(item => item.key === key) || DEFAULT_COLOR
+  return COLOR_PALETTE.find((item) => item.key === key) || DEFAULT_COLOR
 }
 
 function setOptionMeta(optionValue: string | number, patch: Partial<OmniSelectOptionMeta>) {
@@ -205,8 +215,8 @@ function setOptionMeta(optionValue: string | number, patch: Partial<OmniSelectOp
     ...optionMetaState.value,
     [key]: {
       ...current,
-      ...patch
-    }
+      ...patch,
+    },
   }
 }
 
@@ -218,7 +228,7 @@ function normalizeOption(option: OmniSelectOption): OmniSelectViewOption {
   return {
     label: label || fallbackLabel || normalizeText(option.value),
     value: option.value,
-    color: (meta?.color || option.color || 'default') as OmniSelectColorKey
+    color: (meta?.color || option.color || 'default') as OmniSelectColorKey,
   }
 }
 
@@ -242,10 +252,16 @@ function dedupeOptions(options: OmniSelectOption[]) {
 
 const normalizedModelArray = computed<Array<string | number>>(() => {
   if (Array.isArray(props.modelValue)) {
-    return props.modelValue.filter(value => value !== null && value !== undefined && normalizeText(value) !== '') as Array<string | number>
+    return props.modelValue.filter(
+      (value) => value !== null && value !== undefined && normalizeText(value) !== '',
+    ) as Array<string | number>
   }
 
-  if (props.modelValue === null || props.modelValue === undefined || normalizeText(props.modelValue) === '') {
+  if (
+    props.modelValue === null ||
+    props.modelValue === undefined ||
+    normalizeText(props.modelValue) === ''
+  ) {
     return []
   }
 
@@ -257,36 +273,44 @@ const normalizedSingleValue = computed<string | number | undefined>(() => {
     return props.modelValue[0]
   }
 
-  if (props.modelValue === null || props.modelValue === undefined || normalizeText(props.modelValue) === '') {
+  if (
+    props.modelValue === null ||
+    props.modelValue === undefined ||
+    normalizeText(props.modelValue) === ''
+  ) {
     return undefined
   }
 
   return props.modelValue as string | number
 })
 
-const selectedValueKeys = computed(() => new Set(normalizedModelArray.value.map(value => optionKey(value))))
+const selectedValueKeys = computed(
+  () => new Set(normalizedModelArray.value.map((value) => optionKey(value))),
+)
 
 const optionItems = computed(() => dedupeOptions(props.items || []))
 
 const modelDerivedItems = computed<OmniSelectViewOption[]>(() => {
   const known = new Set([
-    ...optionItems.value.map(item => optionKey(item.value)),
-    ...createdItems.value.map(item => optionKey(item.value))
+    ...optionItems.value.map((item) => optionKey(item.value)),
+    ...createdItems.value.map((item) => optionKey(item.value)),
   ])
 
   return normalizedModelArray.value
-    .filter(value => !known.has(optionKey(value)))
-    .map(value => normalizeOption({
-      label: normalizeText(value),
-      value
-    }))
+    .filter((value) => !known.has(optionKey(value)))
+    .map((value) =>
+      normalizeOption({
+        label: normalizeText(value),
+        value,
+      }),
+    )
 })
 
 const mergedItems = computed<OmniSelectViewOption[]>(() => {
   return dedupeOptions([
     ...optionItems.value,
     ...createdItems.value,
-    ...modelDerivedItems.value
+    ...modelDerivedItems.value,
   ]).filter((option) => {
     const meta = optionMetaState.value[optionKey(option.value)]
     if (meta?.deleted && !selectedValueKeys.value.has(optionKey(option.value))) {
@@ -310,7 +334,7 @@ const createItemConfig = computed<OmniCreateOptionConfig>(() => {
   if (props.creatable === true) {
     return {
       when: 'always',
-      position: 'bottom'
+      position: 'bottom',
     }
   }
 
@@ -352,7 +376,7 @@ function optionOrFallback(value: unknown): OmniSelectViewOption {
   return {
     label: optionLabelForValue(normalizedValue) || normalizeText(normalizedValue),
     value: normalizedValue,
-    color: optionColorForValue(normalizedValue) as OmniSelectColorKey
+    color: optionColorForValue(normalizedValue) as OmniSelectColorKey,
   }
 }
 
@@ -426,7 +450,7 @@ function onCreateItem(rawValue: string) {
   const normalized = normalizeText(rawValue)
   if (!normalized) return
 
-  const existing = mergedItems.value.find(item => optionKey(item.value) === optionKey(normalized))
+  const existing = mergedItems.value.find((item) => optionKey(item.value) === optionKey(normalized))
   const option = existing || normalizeOption({ label: normalized, value: normalized })
 
   if (!existing) {
@@ -474,7 +498,7 @@ function onContainerClick() {
 function removeTagValue(value: unknown) {
   if (!props.multiple) return
   const key = optionKey(value)
-  const next = normalizedModelArray.value.filter(current => optionKey(current) !== key)
+  const next = normalizedModelArray.value.filter((current) => optionKey(current) !== key)
   emit('update:modelValue', next)
   focusInteractiveTarget()
 }
@@ -499,14 +523,14 @@ function renameOption(option: OmniSelectViewOption) {
 
   setOptionMeta(option.value, {
     label: draft,
-    deleted: false
+    deleted: false,
   })
 }
 
 function updateOptionColor(option: OmniSelectViewOption, color: OmniSelectColorKey) {
   setOptionMeta(option.value, {
     color,
-    deleted: false
+    deleted: false,
   })
 }
 
@@ -514,10 +538,10 @@ function removeOption(option: OmniSelectViewOption) {
   const key = optionKey(option.value)
 
   setOptionMeta(option.value, { deleted: true })
-  createdItems.value = createdItems.value.filter(item => optionKey(item.value) !== key)
+  createdItems.value = createdItems.value.filter((item) => optionKey(item.value) !== key)
 
   if (props.multiple) {
-    const next = normalizedModelArray.value.filter(value => optionKey(value) !== key)
+    const next = normalizedModelArray.value.filter((value) => optionKey(value) !== key)
     emit('update:modelValue', next)
     return
   }
@@ -554,24 +578,33 @@ function removeOption(option: OmniSelectViewOption) {
       @create="onCreateItem"
     >
       <template #content-top>
-        <div v-if="menuOpen && props.placeholder" class="omni-select__menu-hint border-b border-[rgb(var(--border))] px-2 py-1 text-[14px] text-[rgb(var(--muted))]">
+        <div
+          v-if="menuOpen && props.placeholder"
+          class="omni-select__menu-hint border-b border-[rgb(var(--border))] px-2 py-1 text-[14px] text-[rgb(var(--muted))]"
+        >
           {{ props.placeholder }}
         </div>
       </template>
 
-      <template #create-item-label="{ item }">
-        Criar "{{ item }}"
-      </template>
+      <template #create-item-label="{ item }">Criar "{{ item }}"</template>
 
       <template #item-label="{ item }">
-        <span class="omni-select__option-chip inline-flex max-w-[180px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset" :class="optionChipClass(valueFromItem(item))">
+        <span
+          class="omni-select__option-chip inline-flex max-w-[180px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset"
+          :class="optionChipClass(valueFromItem(item))"
+        >
           <span class="truncate">{{ optionLabelForValue(valueFromItem(item)) }}</span>
         </span>
       </template>
 
       <template #tags-item-text="{ item }">
-        <span class="omni-select__tag-chip relative inline-flex max-w-[148px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset transition-colors" :class="optionChipClass(item)">
-          <span class="truncate" :class="menuOpen ? 'pe-4' : ''">{{ optionLabelForValue(item) }}</span>
+        <span
+          class="omni-select__tag-chip relative inline-flex max-w-[148px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset transition-colors"
+          :class="optionChipClass(item)"
+        >
+          <span class="truncate" :class="menuOpen ? 'pe-4' : ''">
+            {{ optionLabelForValue(item) }}
+          </span>
           <button
             type="button"
             class="omni-select__tag-remove absolute end-0.5 top-1/2 inline-flex h-3.5 w-3.5 -translate-y-1/2 items-center justify-center rounded-sm bg-black/70 text-white ring-1 ring-white/20 transition hover:bg-black/90"
@@ -599,17 +632,27 @@ function removeOption(option: OmniSelectViewOption) {
           <template #content>
             <div class="w-[250px] space-y-3 p-3" @click.stop>
               <div class="space-y-1">
-                <p class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">Nome</p>
+                <p
+                  class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
+                >
+                  Nome
+                </p>
                 <UInput
                   :model-value="draftLabelForValue(valueFromItem(item))"
                   size="sm"
-                  @update:model-value="optionDraftLabelMap[optionKey(valueFromItem(item))] = String($event ?? '')"
+                  @update:model-value="
+                    optionDraftLabelMap[optionKey(valueFromItem(item))] = String($event ?? '')
+                  "
                   @keydown.enter.prevent="renameOption(optionOrFallback(valueFromItem(item)))"
                 />
               </div>
 
               <div class="space-y-1.5">
-                <p class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">Cores</p>
+                <p
+                  class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
+                >
+                  Cores
+                </p>
                 <button
                   v-for="color in COLOR_PALETTE"
                   :key="color.key"
@@ -618,7 +661,7 @@ function removeOption(option: OmniSelectViewOption) {
                   @click="updateOptionColor(optionOrFallback(valueFromItem(item)), color.key)"
                 >
                   <span class="flex items-center gap-2">
-                    <span class="inline-flex h-4 w-4 rounded" :class="color.swatchClass" />
+                    <span class="inline-flex h-4 w-4 rounded" :class="color.swatchClass"></span>
                     {{ color.label }}
                   </span>
                   <UIcon
@@ -666,20 +709,30 @@ function removeOption(option: OmniSelectViewOption) {
       @create="onCreateItem"
     >
       <template #content-top>
-        <div v-if="menuOpen && props.placeholder" class="omni-select__menu-hint border-b border-[rgb(var(--border))] px-2 py-1 text-[14px] text-[rgb(var(--muted))]">
+        <div
+          v-if="menuOpen && props.placeholder"
+          class="omni-select__menu-hint border-b border-[rgb(var(--border))] px-2 py-1 text-[14px] text-[rgb(var(--muted))]"
+        >
           {{ props.placeholder }}
         </div>
       </template>
 
       <template #default="{ modelValue }">
-        <span v-if="modelValue !== undefined" class="omni-select__selected-chip inline-flex max-w-[180px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset" :class="optionChipClass(modelValue)">
+        <span
+          v-if="modelValue !== undefined"
+          class="omni-select__selected-chip inline-flex max-w-[180px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset"
+          :class="optionChipClass(modelValue)"
+        >
           <span class="truncate">{{ optionLabelForValue(modelValue) }}</span>
         </span>
-        <span v-else class="inline-block h-4 min-w-2" />
+        <span v-else class="inline-block h-4 min-w-2"></span>
       </template>
 
       <template #item-label="{ item }">
-        <span class="omni-select__option-chip inline-flex max-w-[180px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset" :class="optionChipClass(valueFromItem(item))">
+        <span
+          class="omni-select__option-chip inline-flex max-w-[180px] items-center rounded-md px-2 py-1 text-[14px] font-medium leading-none ring-1 ring-inset"
+          :class="optionChipClass(valueFromItem(item))"
+        >
           <span class="truncate">{{ optionLabelForValue(valueFromItem(item)) }}</span>
         </span>
       </template>
@@ -698,17 +751,27 @@ function removeOption(option: OmniSelectViewOption) {
           <template #content>
             <div class="w-[250px] space-y-3 p-3" @click.stop>
               <div class="space-y-1">
-                <p class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">Nome</p>
+                <p
+                  class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
+                >
+                  Nome
+                </p>
                 <UInput
                   :model-value="draftLabelForValue(valueFromItem(item))"
                   size="sm"
-                  @update:model-value="optionDraftLabelMap[optionKey(valueFromItem(item))] = String($event ?? '')"
+                  @update:model-value="
+                    optionDraftLabelMap[optionKey(valueFromItem(item))] = String($event ?? '')
+                  "
                   @keydown.enter.prevent="renameOption(optionOrFallback(valueFromItem(item)))"
                 />
               </div>
 
               <div class="space-y-1.5">
-                <p class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">Cores</p>
+                <p
+                  class="text-[14px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]"
+                >
+                  Cores
+                </p>
                 <button
                   v-for="color in COLOR_PALETTE"
                   :key="color.key"
@@ -717,7 +780,7 @@ function removeOption(option: OmniSelectViewOption) {
                   @click="updateOptionColor(optionOrFallback(valueFromItem(item)), color.key)"
                 >
                   <span class="flex items-center gap-2">
-                    <span class="inline-flex h-4 w-4 rounded" :class="color.swatchClass" />
+                    <span class="inline-flex h-4 w-4 rounded" :class="color.swatchClass"></span>
                     {{ color.label }}
                   </span>
                   <UIcon
@@ -743,9 +806,7 @@ function removeOption(option: OmniSelectViewOption) {
         </UPopover>
       </template>
 
-      <template #create-item-label="{ item }">
-        Criar "{{ item }}"
-      </template>
+      <template #create-item-label="{ item }">Criar "{{ item }}"</template>
     </USelectMenu>
   </div>
 </template>

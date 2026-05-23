@@ -1,46 +1,49 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
-  storeCode?: string;
-  lastRun?: Record<string, any> | null;
-  lastImportedFile?: Record<string, any> | null;
-  syncing?: boolean;
-  canSync?: boolean;
-}>(), {
-  storeCode: "",
-  lastRun: null,
-  lastImportedFile: null,
-  syncing: false,
-  canSync: false
-});
+const props = withDefaults(
+  defineProps<{
+    storeCode?: string
+    lastRun?: Record<string, any> | null
+    lastImportedFile?: Record<string, any> | null
+    syncing?: boolean
+    canSync?: boolean
+  }>(),
+  {
+    storeCode: '',
+    lastRun: null,
+    lastImportedFile: null,
+    syncing: false,
+    canSync: false,
+  },
+)
 
 const emit = defineEmits<{
-  (e: "sync"): void;
-  (e: "backfill"): void;
-  (e: "refresh"): void;
-}>();
+  (e: 'sync'): void
+  (e: 'backfill'): void
+  (e: 'refresh'): void
+}>()
 
 function formatDateTime(value?: string | null) {
-  const normalized = String(value || "").trim();
+  const normalized = String(value || '').trim()
   if (!normalized) {
-    return "-";
+    return '-'
   }
 
-  const parsed = new Date(normalized);
+  const parsed = new Date(normalized)
   if (Number.isNaN(parsed.getTime())) {
-    return normalized;
+    return normalized
   }
 
-  return parsed.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return parsed.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("pt-BR");
+  return Number(value || 0).toLocaleString('pt-BR')
 }
 </script>
 
@@ -50,18 +53,34 @@ function formatNumber(value?: number | null) {
       <div>
         <h3 class="erp-sync-status__title">Sincronização CSV ERP</h3>
         <p class="erp-sync-status__text">
-          Dispara a leitura dos CSVs brutos do escopo ERP completo do sistema e acompanha o último ciclo conhecido pelo módulo.
+          Dispara a leitura dos CSVs brutos do escopo ERP completo do sistema e acompanha o último
+          ciclo conhecido pelo módulo.
         </p>
       </div>
 
       <div class="erp-sync-status__actions">
-        <button class="erp-sync-status__button erp-sync-status__button--ghost" type="button" :disabled="syncing" @click="emit('refresh')">
+        <button
+          class="erp-sync-status__button erp-sync-status__button--ghost"
+          type="button"
+          :disabled="syncing"
+          @click="emit('refresh')"
+        >
           Atualizar
         </button>
-        <button class="erp-sync-status__button erp-sync-status__button--ghost" type="button" :disabled="!canSync || syncing" @click="emit('backfill')">
+        <button
+          class="erp-sync-status__button erp-sync-status__button--ghost"
+          type="button"
+          :disabled="!canSync || syncing"
+          @click="emit('backfill')"
+        >
           {{ syncing ? 'Processando...' : 'Backfill retroativo' }}
         </button>
-        <button class="erp-sync-status__button erp-sync-status__button--primary" type="button" :disabled="!canSync || syncing" @click="emit('sync')">
+        <button
+          class="erp-sync-status__button erp-sync-status__button--primary"
+          type="button"
+          :disabled="!canSync || syncing"
+          @click="emit('sync')"
+        >
           {{ syncing ? 'Sincronizando...' : 'Rodar agora' }}
         </button>
       </div>
@@ -85,7 +104,9 @@ function formatNumber(value?: number | null) {
       </article>
       <article class="erp-sync-status__card">
         <span class="erp-sync-status__label">Último arquivo</span>
-        <strong class="erp-sync-status__value erp-sync-status__value--small">{{ lastImportedFile?.sourceName || '-' }}</strong>
+        <strong class="erp-sync-status__value erp-sync-status__value--small">
+          {{ lastImportedFile?.sourceName || '-' }}
+        </strong>
         <small>{{ formatDateTime(lastImportedFile?.importedAt) }}</small>
       </article>
     </div>

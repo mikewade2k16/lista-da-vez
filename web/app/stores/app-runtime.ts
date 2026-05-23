@@ -1,97 +1,97 @@
-import { ref } from "vue";
-import { defineStore } from "pinia";
-import { mockQueueState } from "~/domain/data/mock-queue";
-import { cloneValue } from "~/domain/utils/object";
-import { createAppStore } from "~/stores/dashboard/runtime/create-dashboard-runtime";
+import { ref } from 'vue'
+import { defineStore } from 'pinia'
+import { mockQueueState } from '~/domain/data/mock-queue'
+import { cloneValue } from '~/domain/utils/object'
+import { createAppStore } from '~/stores/dashboard/runtime/create-dashboard-runtime'
 
-export const useAppRuntimeStore = defineStore("app-runtime", () => {
-  const state = ref(cloneValue(mockQueueState));
-  let runtimeStore = null;
-  let unsubscribe = null;
-  let initialized = false;
+export const useAppRuntimeStore = defineStore('app-runtime', () => {
+  const state = ref(cloneValue(mockQueueState))
+  let runtimeStore = null
+  let unsubscribe = null
+  let initialized = false
 
   function getSeedState() {
-    return cloneValue(state.value || mockQueueState);
+    return cloneValue(state.value || mockQueueState)
   }
 
   function replaceState(nextState) {
-    state.value = cloneValue(nextState || mockQueueState);
+    state.value = cloneValue(nextState || mockQueueState)
   }
 
   function getRuntimeStore() {
     if (!runtimeStore) {
-      runtimeStore = createAppStore(getSeedState());
+      runtimeStore = createAppStore(getSeedState())
     }
 
-    return runtimeStore;
+    return runtimeStore
   }
 
   function bindRuntimeStore(store) {
     if (unsubscribe) {
-      return;
+      return
     }
 
     unsubscribe = store.subscribe((nextState) => {
-      replaceState(nextState);
-    });
+      replaceState(nextState)
+    })
   }
 
   async function ensure() {
-    const store = getRuntimeStore();
+    const store = getRuntimeStore()
 
     if (!initialized) {
-      bindRuntimeStore(store);
-      store.hydrate(getSeedState());
-      initialized = true;
+      bindRuntimeStore(store)
+      store.hydrate(getSeedState())
+      initialized = true
     }
 
-    replaceState(store.getState());
+    replaceState(store.getState())
 
-    return store;
+    return store
   }
 
   async function withStore(handler) {
-    const store = await ensure();
+    const store = await ensure()
 
     if (!store) {
-      return null;
+      return null
     }
 
-    const result = await handler(store);
-    replaceState(store.getState());
-    return result;
+    const result = await handler(store)
+    replaceState(store.getState())
+    return result
   }
 
   async function run(actionName, ...args) {
     return withStore((store) => {
-      const action = store?.[actionName];
+      const action = store?.[actionName]
 
-      if (typeof action !== "function") {
-        return null;
+      if (typeof action !== 'function') {
+        return null
       }
 
-      return action(...args);
-    });
+      return action(...args)
+    })
   }
 
   function hydrate(nextState) {
-    const store = getRuntimeStore();
-    bindRuntimeStore(store);
-    store.hydrate(nextState);
+    const store = getRuntimeStore()
+    bindRuntimeStore(store)
+    store.hydrate(nextState)
 
-    initialized = true;
-    replaceState(store.getState());
-    return store.getState();
+    initialized = true
+    replaceState(store.getState())
+    return store.getState()
   }
 
   function replace(nextState) {
-    const store = getRuntimeStore();
-    bindRuntimeStore(store);
-    store.replace(nextState);
+    const store = getRuntimeStore()
+    bindRuntimeStore(store)
+    store.replace(nextState)
 
-    initialized = true;
-    replaceState(store.getState());
-    return store.getState();
+    initialized = true
+    replaceState(store.getState())
+    return store.getState()
   }
 
   return {
@@ -100,6 +100,6 @@ export const useAppRuntimeStore = defineStore("app-runtime", () => {
     hydrate,
     replace,
     run,
-    withStore
-  };
-});
+    withStore,
+  }
+})

@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:-listaatendimento}
+name: ${COMPOSE_PROJECT_NAME:-omni}
 
 services:
   postgres:
@@ -24,13 +24,13 @@ services:
       - app
 
   api:
-    image: ${COMPOSE_PROJECT_NAME:-listaatendimento}-api:latest
+    image: ${COMPOSE_PROJECT_NAME:-omni}-api:latest
     build:
       context: ./back
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      APP_NAME: ${APP_NAME:-lista-da-vez-api}
+      APP_NAME: ${APP_NAME:-omni-api}
       APP_ENV: production
       APP_ADDR: :8080
       WEB_APP_URL: ${WEB_APP_URL}
@@ -48,7 +48,7 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Lista da Vez}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Omni}
       SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
       SMTP_INSECURE_SKIP_VERIFY: ${SMTP_INSECURE_SKIP_VERIFY:-false}
       SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
@@ -112,7 +112,7 @@ services:
           - ${PROXY_API_ALIAS:-lista-api}
 
   web:
-    image: ${COMPOSE_PROJECT_NAME:-listaatendimento}-web:latest
+    image: ${COMPOSE_PROJECT_NAME:-omni}-web:latest
     build:
       context: ./web
       dockerfile: Dockerfile

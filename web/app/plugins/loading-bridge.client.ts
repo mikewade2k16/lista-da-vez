@@ -1,5 +1,5 @@
-import { setApiLoadingHooks } from "~/utils/api-client";
-import { useCoreLoadingStore } from "../../layers/core/stores/loading";
+import { setApiLoadingHooks } from '~/utils/api-client'
+import { useCoreLoadingStore } from '../../layers/core/stores/loading'
 
 // Plugin client-only que conecta o store global de loading ao api-client.
 // Sem ele, requisicoes nao acionam o CoreLoadingOverlay (barra fina no topo)
@@ -9,10 +9,10 @@ import { useCoreLoadingStore } from "../../layers/core/stores/loading";
 //
 // Import relativo para o layer (auto-import via `~/` aponta para app/srcDir).
 export default defineNuxtPlugin(() => {
-  const store = useCoreLoadingStore();
+  const store = useCoreLoadingStore()
 
   setApiLoadingHooks({
     push: () => store.push(),
-    pop: () => store.pop()
-  });
-});
+    pop: () => store.pop(),
+  })
+})

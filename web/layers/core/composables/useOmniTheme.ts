@@ -24,7 +24,7 @@ export const OMNI_THEME_LABELS: Record<OmniThemeName, string> = {
   light: 'Light',
   dark: 'Dark',
   apple: 'Apple-Blue',
-  custom: 'Custom'
+  custom: 'Custom',
 }
 
 export const OMNI_THEME_VARIABLES: OmniThemeVariable[] = [
@@ -65,17 +65,48 @@ export const OMNI_THEME_VARIABLES: OmniThemeVariable[] = [
   { key: 'admin-header-active-bg', label: 'Header Active BG', group: 'header', kind: 'css-color' },
   { key: 'admin-header-shell-shadow', label: 'Header Shell Shadow', group: 'header', kind: 'text' },
   { key: 'admin-header-fade-top', label: 'Header Fade Top', group: 'header', kind: 'css-gradient' },
-  { key: 'admin-header-fade-bottom', label: 'Header Fade Bottom', group: 'header', kind: 'css-gradient' },
-  { key: 'admin-header-fade-top-size', label: 'Header Fade Top Size', group: 'header', kind: 'text' },
-  { key: 'admin-header-fade-bottom-size', label: 'Header Fade Bottom Size', group: 'header', kind: 'text' },
+  {
+    key: 'admin-header-fade-bottom',
+    label: 'Header Fade Bottom',
+    group: 'header',
+    kind: 'css-gradient',
+  },
+  {
+    key: 'admin-header-fade-top-size',
+    label: 'Header Fade Top Size',
+    group: 'header',
+    kind: 'text',
+  },
+  {
+    key: 'admin-header-fade-bottom-size',
+    label: 'Header Fade Bottom Size',
+    group: 'header',
+    kind: 'text',
+  },
 
-  { key: 'admin-page-header-eyebrow-display', label: 'Page Header Eyebrow Display', group: 'page', kind: 'text' },
-  { key: 'admin-page-header-title-display', label: 'Page Header Title Display', group: 'page', kind: 'text' },
-  { key: 'admin-page-header-description-display', label: 'Page Header Description Display', group: 'page', kind: 'text' }
+  {
+    key: 'admin-page-header-eyebrow-display',
+    label: 'Page Header Eyebrow Display',
+    group: 'page',
+    kind: 'text',
+  },
+  {
+    key: 'admin-page-header-title-display',
+    label: 'Page Header Title Display',
+    group: 'page',
+    kind: 'text',
+  },
+  {
+    key: 'admin-page-header-description-display',
+    label: 'Page Header Description Display',
+    group: 'page',
+    kind: 'text',
+  },
 ]
 
 const SHARED_THEME_DEFAULTS: ThemeVars = {
-  'font-sans': '"Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
+  'font-sans':
+    '"Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
   'radius-xs': '10px',
   'radius-sm': '12px',
   'radius-md': '14px',
@@ -84,7 +115,8 @@ const SHARED_THEME_DEFAULTS: ThemeVars = {
   'shadow-xs': '0 1px 0 color-mix(in srgb, var(--shadow-color) 35%, transparent)',
   'shadow-sm': '0 8px 24px color-mix(in srgb, var(--shadow-color) 55%, transparent)',
   'shadow-md': '0 14px 40px color-mix(in srgb, var(--shadow-color) 72%, transparent)',
-  'shadow-glow': '0 0 0 1px color-mix(in srgb, var(--shadow-glow-color) 70%, transparent), 0 14px 44px color-mix(in srgb, var(--shadow-glow-color) 50%, transparent)',
+  'shadow-glow':
+    '0 0 0 1px color-mix(in srgb, var(--shadow-glow-color) 70%, transparent), 0 14px 44px color-mix(in srgb, var(--shadow-glow-color) 50%, transparent)',
   'admin-header-brand-bg': 'linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)))',
   'admin-header-panel-bg': 'linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)))',
   'admin-header-brand-blur': '0px',
@@ -102,7 +134,7 @@ const SHARED_THEME_DEFAULTS: ThemeVars = {
   'admin-header-fade-bottom-size': '0px',
   'admin-page-header-eyebrow-display': 'block',
   'admin-page-header-title-display': 'block',
-  'admin-page-header-description-display': 'block'
+  'admin-page-header-description-display': 'block',
 }
 
 export const OMNI_THEME_DEFAULTS: Record<Exclude<OmniThemeName, 'custom'>, ThemeVars> = {
@@ -119,7 +151,7 @@ export const OMNI_THEME_DEFAULTS: Record<Exclude<OmniThemeName, 'custom'>, Theme
     'primary-600': '79 70 229',
     success: '34 197 94',
     danger: '239 68 68',
-    ring: '99 102 241'
+    ring: '99 102 241',
   },
   dark: {
     ...SHARED_THEME_DEFAULTS,
@@ -134,7 +166,7 @@ export const OMNI_THEME_DEFAULTS: Record<Exclude<OmniThemeName, 'custom'>, Theme
     'primary-600': '165 180 252',
     success: '34 197 94',
     danger: '248 113 113',
-    ring: '129 140 248'
+    ring: '129 140 248',
   },
   apple: {
     ...SHARED_THEME_DEFAULTS,
@@ -149,8 +181,8 @@ export const OMNI_THEME_DEFAULTS: Record<Exclude<OmniThemeName, 'custom'>, Theme
     'primary-600': '0 122 255',
     success: '34 197 94',
     danger: '239 68 68',
-    ring: '10 132 255'
-  }
+    ring: '10 132 255',
+  },
 }
 
 function createEmptyOverrides(): OmniThemeOverrides {
@@ -158,7 +190,7 @@ function createEmptyOverrides(): OmniThemeOverrides {
     light: {},
     dark: {},
     apple: {},
-    custom: {}
+    custom: {},
   }
 }
 
@@ -214,7 +246,7 @@ export function rgbTripletToHex(value: string) {
     .map((rawNumber) => Math.max(0, Math.min(255, Number(rawNumber) || 0)))
 
   const [r = 0, g = 0, b = 0] = channelNumbers
-  return `#${[r, g, b].map(channel => channel.toString(16).padStart(2, '0')).join('')}`
+  return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
 }
 
 export function hexToRgbTriplet(hex: string) {
@@ -223,9 +255,13 @@ export function hexToRgbTriplet(hex: string) {
     return null
   }
 
-  const full = parsed.length === 3
-    ? parsed.split('').map(char => `${char}${char}`).join('')
-    : parsed
+  const full =
+    parsed.length === 3
+      ? parsed
+          .split('')
+          .map((char) => `${char}${char}`)
+          .join('')
+      : parsed
 
   if (full.length !== 6) {
     return null
@@ -235,18 +271,39 @@ export function hexToRgbTriplet(hex: string) {
   const g = Number.parseInt(full.slice(2, 4), 16)
   const b = Number.parseInt(full.slice(4, 6), 16)
 
-  if ([r, g, b].some(n => Number.isNaN(n))) {
+  if ([r, g, b].some((n) => Number.isNaN(n))) {
     return null
   }
 
   return `${r} ${g} ${b}`
 }
 
+/**
+ * Gerencia o tema visual do produto Omni, incluindo selecao persistida e overrides por variavel CSS.
+ *
+ * O composable sincroniza o tema atual com `useColorMode`, persiste escolha e overrides no
+ * `localStorage`, injeta um `<style>` dinamico com variaveis customizadas e expõe utilitarios para
+ * duplicar, resetar e rotular temas base e customizados.
+ *
+ * @returns Estado reativo do tema atual, overrides e helpers para inicializar, aplicar e editar temas.
+ *
+ * @example
+ * ```ts
+ * const { currentTheme, applyTheme, setThemeValue } = useOmniTheme()
+ * applyTheme('apple')
+ * setThemeValue('custom', 'primary', '10 132 255')
+ * ```
+ *
+ * @see OMNI_THEME_DEFAULTS
+ * @see OMNI_THEME_VARIABLES
+ */
 export function useOmniTheme() {
   const colorMode = useColorMode()
   const initialized = useState<boolean>('omni-theme-initialized', () => false)
   const currentTheme = useState<OmniThemeName>('omni-theme-current', () => 'light')
-  const overrides = useState<OmniThemeOverrides>('omni-theme-overrides', () => createEmptyOverrides())
+  const overrides = useState<OmniThemeOverrides>('omni-theme-overrides', () =>
+    createEmptyOverrides(),
+  )
   const customThemeName = useState<string>('omni-theme-custom-name', () => OMNI_THEME_LABELS.custom)
 
   const hasCustomTheme = computed(() => Object.keys(overrides.value.custom).length > 0)
@@ -272,15 +329,18 @@ export function useOmniTheme() {
     const cssBlocks: string[] = []
 
     for (const theme of ALL_THEMES) {
-      const entries = Object.entries(overrides.value[theme] || {})
-        .filter(([, value]) => value && value.trim().length > 0)
+      const entries = Object.entries(overrides.value[theme] || {}).filter(
+        ([, value]) => value && value.trim().length > 0,
+      )
 
       if (!entries.length) {
         continue
       }
 
       const selector = selectorByTheme(theme)
-      const declarations = entries.map(([key, value]) => `  --${normalizeVariableKey(key)}: ${value};`).join('\n')
+      const declarations = entries
+        .map(([key, value]) => `  --${normalizeVariableKey(key)}: ${value};`)
+        .join('\n')
       cssBlocks.push(`${selector} {\n${declarations}\n}`)
     }
 
@@ -390,7 +450,7 @@ export function useOmniTheme() {
   function getResolvedThemeValues(theme: OmniThemeName) {
     return {
       ...getThemeDefaults(theme),
-      ...(overrides.value[theme] || {})
+      ...(overrides.value[theme] || {}),
     }
   }
 
@@ -415,8 +475,8 @@ export function useOmniTheme() {
       ...overrides.value,
       [theme]: {
         ...overrides.value[theme],
-        [normalizedKey]: value
-      }
+        [normalizedKey]: value,
+      },
     }
 
     applyOverrides()
@@ -437,7 +497,7 @@ export function useOmniTheme() {
 
     overrides.value = {
       ...overrides.value,
-      [theme]: nextValues
+      [theme]: nextValues,
     }
 
     applyOverrides()
@@ -447,7 +507,7 @@ export function useOmniTheme() {
   function resetThemeOverrides(theme: OmniThemeName) {
     overrides.value = {
       ...overrides.value,
-      [theme]: {}
+      [theme]: {},
     }
 
     applyOverrides()
@@ -492,6 +552,6 @@ export function useOmniTheme() {
     setThemeValue,
     setThemeValues,
     resetThemeOverrides,
-    duplicateTheme
+    duplicateTheme,
   }
 }

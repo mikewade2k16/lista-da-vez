@@ -33,23 +33,23 @@ type repositoryMock struct {
 	onMoveTask    func(ctx context.Context, accountID string, input MoveTaskInput) (Task, error)
 	onArchiveTask func(ctx context.Context, accountID, taskID string) (Task, error)
 
-	onAddComment             func(ctx context.Context, accountID string, input AddCommentInput, authorUserID string) (Comment, error)
-	onAddCommentMentions     func(ctx context.Context, accountID, taskID, commentID string, mentionedUserIDs []string) ([]string, error)
-	onListComments           func(ctx context.Context, access AccessContext, taskID string) ([]Comment, error)
-	onUpsertSubscribers      func(ctx context.Context, accountID, taskID string, userIDs []string) error
-	onListSubscriberUserIDs  func(ctx context.Context, accountID, taskID string) ([]string, error)
-	onAddShare               func(ctx context.Context, accountID string, input AddShareInput, sharedByUserID string) (Share, error)
-	onListRelations          func(ctx context.Context, access AccessContext, taskID string) ([]Relation, error)
-	onAddRelation            func(ctx context.Context, accountID string, input AddRelationInput) (Relation, error)
-	onListAudit              func(ctx context.Context, accountID, taskID string) ([]AuditEntry, error)
-	auditEntries             []AuditEntry // captura passive das audit entries para verificacao
-	onInsertAuditEntry       func(ctx context.Context, entry AuditEntry) error
-	onListActiveTimeEntries  func(ctx context.Context, access AccessContext) ([]TimeEntry, error)
-	onStartTracking          func(ctx context.Context, accountID, taskID, userID string) (TimeEntry, error)
-	onPauseTracking          func(ctx context.Context, accountID, taskID, userID string, expectedVersion *int) (TimeEntry, error)
-	onResumeTracking         func(ctx context.Context, accountID, taskID, userID string, expectedVersion *int) (TimeEntry, error)
-	onStopTracking           func(ctx context.Context, accountID, taskID, userID string, expectedVersion *int) (TimeEntry, error)
-	onTrackingMetrics        func(ctx context.Context, accountID string, input TrackingMetricsInput) (TrackingMetrics, error)
+	onAddComment            func(ctx context.Context, accountID string, input AddCommentInput, authorUserID string) (Comment, error)
+	onAddCommentMentions    func(ctx context.Context, accountID, taskID, commentID string, mentionedUserIDs []string) ([]string, error)
+	onListComments          func(ctx context.Context, access AccessContext, taskID string) ([]Comment, error)
+	onUpsertSubscribers     func(ctx context.Context, accountID, taskID string, userIDs []string) error
+	onListSubscriberUserIDs func(ctx context.Context, accountID, taskID string) ([]string, error)
+	onAddShare              func(ctx context.Context, accountID string, input AddShareInput, sharedByUserID string) (Share, error)
+	onListRelations         func(ctx context.Context, access AccessContext, taskID string) ([]Relation, error)
+	onAddRelation           func(ctx context.Context, accountID string, input AddRelationInput) (Relation, error)
+	onListAudit             func(ctx context.Context, accountID, taskID string) ([]AuditEntry, error)
+	auditEntries            []AuditEntry // captura passive das audit entries para verificacao
+	onInsertAuditEntry      func(ctx context.Context, entry AuditEntry) error
+	onListActiveTimeEntries func(ctx context.Context, access AccessContext) ([]TimeEntry, error)
+	onStartTracking         func(ctx context.Context, accountID, taskID, userID string) (TimeEntry, error)
+	onPauseTracking         func(ctx context.Context, accountID, taskID, userID string, expectedVersion *int) (TimeEntry, error)
+	onResumeTracking        func(ctx context.Context, accountID, taskID, userID string, expectedVersion *int) (TimeEntry, error)
+	onStopTracking          func(ctx context.Context, accountID, taskID, userID string, expectedVersion *int) (TimeEntry, error)
+	onTrackingMetrics       func(ctx context.Context, accountID string, input TrackingMetricsInput) (TrackingMetrics, error)
 }
 
 func (m *repositoryMock) AccountExists(ctx context.Context, accountID string) (bool, error) {

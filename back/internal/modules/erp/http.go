@@ -148,6 +148,29 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, response)
 	})))
 
+	mux.Handle("GET /v1/erp/stats", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		query := RecordsStatsQuery{
+			TenantID:       strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			StoreCode:      strings.TrimSpace(r.URL.Query().Get("storeCode")),
+			DataType:       strings.TrimSpace(r.URL.Query().Get("dataType")),
+			Search:         strings.TrimSpace(r.URL.Query().Get("search")),
+			SpecificSearch: strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("specificSearch"), r.URL.Query().Get("keySearch"))),
+			DateFrom:       strings.TrimSpace(r.URL.Query().Get("dateFrom")),
+			DateTo:         strings.TrimSpace(r.URL.Query().Get("dateTo")),
+		}
+		result, err := service.RecordsStats(r.Context(), principal, query)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	})))
+
 	mux.Handle("GET /v1/erp/records", handleRawRecords(""))
 	mux.Handle("GET /v1/erp/customers", handleRawRecords(DataTypeCustomer))
 	mux.Handle("GET /v1/erp/employees", handleRawRecords(DataTypeEmployee))
@@ -266,6 +289,10 @@ func parseProductQuery(r *http.Request) (ProductQuery, error) {
 		Search:           strings.TrimSpace(query.Get("search")),
 		Page:             page,
 		PageSize:         pageSize,
+		SortBy:           strings.TrimSpace(query.Get("sortBy")),
+		SortDir:          strings.TrimSpace(query.Get("sortDir")),
+		DateFrom:         strings.TrimSpace(query.Get("dateFrom")),
+		DateTo:           strings.TrimSpace(query.Get("dateTo")),
 	}, nil
 }
 
@@ -289,6 +316,11 @@ func parseRawRecordsQuery(r *http.Request) (RawRecordsQuery, error) {
 		SpecificSearch: strings.TrimSpace(firstNonEmpty(query.Get("specificSearch"), query.Get("keySearch"))),
 		Page:           page,
 		PageSize:       pageSize,
+		Dedup:          strings.TrimSpace(query.Get("dedup")) == "true",
+		SortBy:         strings.TrimSpace(query.Get("sortBy")),
+		SortDir:        strings.TrimSpace(query.Get("sortDir")),
+		DateFrom:       strings.TrimSpace(query.Get("dateFrom")),
+		DateTo:         strings.TrimSpace(query.Get("dateTo")),
 	}, nil
 }
 
@@ -316,20 +348,22 @@ func parseRunsQuery(r *http.Request) (RunsQuery, error) {
 func parseCRMOverviewQuery(r *http.Request) (CRMOverviewQuery, error) {
 	query := r.URL.Query()
 
-	dateFrom, err := parseOptionalDate(query.Get("dateFrom"))
+	dateFrom, dateFromHasTime, err := parseOptionalDateTime(query.Get("dateFrom"))
 	if err != nil {
 		return CRMOverviewQuery{}, ErrValidation
 	}
-	dateTo, err := parseOptionalDate(query.Get("dateTo"))
+	dateTo, dateToHasTime, err := parseOptionalDateTime(query.Get("dateTo"))
 	if err != nil {
 		return CRMOverviewQuery{}, ErrValidation
 	}
 
 	return CRMOverviewQuery{
-		TenantID:  strings.TrimSpace(query.Get("tenantId")),
-		StoreCode: strings.TrimSpace(query.Get("storeCode")),
-		DateFrom:  dateFrom,
-		DateTo:    dateTo,
+		TenantID:        strings.TrimSpace(query.Get("tenantId")),
+		StoreCode:       strings.TrimSpace(query.Get("storeCode")),
+		DateFrom:        dateFrom,
+		DateTo:          dateTo,
+		DateFromHasTime: dateFromHasTime,
+		DateToHasTime:   dateToHasTime,
 	}, nil
 }
 
@@ -341,18 +375,34 @@ func parseOptionalInt(raw string) (int, error) {
 	return strconv.Atoi(trimmed)
 }
 
-func parseOptionalDate(raw string) (time.Time, error) {
+func parseOptionalDateTime(raw string) (time.Time, bool, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return time.Time{}, nil
+		return time.Time{}, false, nil
 	}
 
-	parsed, err := time.Parse("2006-01-02", trimmed)
-	if err != nil {
-		return time.Time{}, err
+	layouts := []struct {
+		layout  string
+		hasTime bool
+	}{
+		{layout: time.RFC3339, hasTime: true},
+		{layout: "2006-01-02T15:04:05", hasTime: true},
+		{layout: "2006-01-02T15:04", hasTime: true},
+		{layout: "2006-01-02 15:04:05", hasTime: true},
+		{layout: "2006-01-02 15:04", hasTime: true},
+		{layout: "2006-01-02", hasTime: false},
 	}
 
-	return parsed.UTC(), nil
+	var lastErr error
+	for _, item := range layouts {
+		parsed, err := time.Parse(item.layout, trimmed)
+		if err == nil {
+			return parsed.UTC(), item.hasTime, nil
+		}
+		lastErr = err
+	}
+
+	return time.Time{}, false, lastErr
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

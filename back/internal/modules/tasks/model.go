@@ -117,6 +117,32 @@ type Task struct {
 	UpdatedAt         time.Time      `json:"updatedAt"`
 }
 
+type TaskVideo struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	URL         string    `json:"url"`
+	Size        int       `json:"size"`
+	ContentType string    `json:"contentType"`
+	UploadedAt  time.Time `json:"uploadedAt"`
+}
+
+type TaskVideoUpload struct {
+	FileName    string
+	ContentType string
+	Content     []byte
+}
+
+type StoredTaskVideo struct {
+	ID          string
+	Path        string
+	ContentType string
+	SizeBytes   int
+}
+
+type TaskVideoStorage interface {
+	Save(ctx context.Context, taskID string, fileName string, contentType string, content []byte) (*StoredTaskVideo, error)
+}
+
 type Comment struct {
 	ID           string     `json:"id"`
 	TaskID       string     `json:"taskId"`

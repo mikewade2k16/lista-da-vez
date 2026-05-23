@@ -1,268 +1,291 @@
-import { computed, ref, watch } from "vue";
-import { defineStore } from "pinia";
+import { computed, ref, watch } from 'vue'
+import { defineStore } from 'pinia'
 
-import { canAccessClients, canManageTenants } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
+import { canAccessClients, canManageTenants } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+
+type LooseRecord = Record<string, any>
+type RefreshTenantsOptions = {
+  includeInactive?: boolean
+}
 
 function normalizeText(value) {
-  return String(value || "").trim();
+  return String(value || '').trim()
 }
 
 function normalizeBoolean(value, fallback = true) {
   if (value === undefined || value === null) {
-    return fallback;
+    return fallback
   }
 
-  return Boolean(value);
+  return Boolean(value)
 }
 
 function normalizeSlug(value) {
   return normalizeText(value)
     .toLowerCase()
-    .replace(/[_\s]+/g, "-")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
 }
 
-function normalizeTenant(tenant = {}) {
+function normalizeTenant(tenant: LooseRecord = {}) {
   return {
     id: normalizeText(tenant.id),
     name: normalizeText(tenant.name),
     slug: normalizeSlug(tenant.slug),
-    active: normalizeBoolean(tenant.active, true)
-  };
+    active: normalizeBoolean(tenant.active, true),
+  }
 }
 
-function buildUpdatePayload(payload = {}, currentTenant = {}) {
-  const body = {};
-  const nextName = normalizeText(payload.name ?? currentTenant.name);
-  const nextSlug = normalizeSlug(payload.slug ?? currentTenant.slug);
-  const nextActive = normalizeBoolean(payload.active, currentTenant.active);
+function buildUpdatePayload(payload: LooseRecord = {}, currentTenant: LooseRecord = {}) {
+  const body: LooseRecord = {}
+  const nextName = normalizeText(payload.name ?? currentTenant.name)
+  const nextSlug = normalizeSlug(payload.slug ?? currentTenant.slug)
+  const nextActive = normalizeBoolean(payload.active, currentTenant.active)
 
   if (nextName !== normalizeText(currentTenant.name)) {
-    body.name = nextName;
+    body.name = nextName
   }
 
   if (nextSlug !== normalizeSlug(currentTenant.slug)) {
-    body.slug = nextSlug;
+    body.slug = nextSlug
   }
 
   if (nextActive !== normalizeBoolean(currentTenant.active, true)) {
-    body.isActive = nextActive;
+    body.isActive = nextActive
   }
 
-  return body;
+  return body
 }
 
-export const useTenantsStore = defineStore("tenants", () => {
-  const runtimeConfig = useRuntimeConfig();
-  const auth = useAuthStore();
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
+export const useTenantsStore = defineStore('tenants', () => {
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
-  const tenants = ref([]);
-  const pending = ref(false);
-  const ready = ref(false);
-  const errorMessage = ref("");
+  const tenants = ref([])
+  const pending = ref(false)
+  const ready = ref(false)
+  const errorMessage = ref('')
 
-  const viewable = computed(() => canAccessClients(auth.role, auth.permissionKeys, auth.permissionsResolved));
-  const manageable = computed(() => canManageTenants(auth.role, auth.permissionKeys, auth.permissionsResolved));
-  const canCreate = computed(() => manageable.value && normalizeText(auth.role) === "platform_admin");
+  const viewable = computed(() =>
+    canAccessClients(auth.role, auth.permissionKeys, auth.permissionsResolved),
+  )
+  const manageable = computed(() =>
+    canManageTenants(auth.role, auth.permissionKeys, auth.permissionsResolved),
+  )
+  const canCreate = computed(
+    () => manageable.value && normalizeText(auth.role) === 'platform_admin',
+  )
 
   function clearState() {
-    tenants.value = [];
-    pending.value = false;
-    ready.value = false;
-    errorMessage.value = "";
+    tenants.value = []
+    pending.value = false
+    ready.value = false
+    errorMessage.value = ''
   }
 
-  async function refreshTenants({ includeInactive = true } = {}) {
-    await auth.ensureSession();
+  async function refreshTenants({ includeInactive = true }: RefreshTenantsOptions = {}) {
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !viewable.value) {
-      clearState();
-      return [];
+      clearState()
+      return []
     }
 
-    pending.value = true;
-    errorMessage.value = "";
+    pending.value = true
+    errorMessage.value = ''
 
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams()
       if (includeInactive) {
-        params.set("includeInactive", "true");
+        params.set('includeInactive', 'true')
       }
 
-      const response = await apiRequest(`/v1/tenants?${params.toString()}`);
+      const response = await apiRequest(`/v1/tenants?${params.toString()}`)
       tenants.value = Array.isArray(response?.tenants)
         ? response.tenants.map((tenant) => normalizeTenant(tenant)).filter((tenant) => tenant.id)
-        : [];
-      ready.value = true;
-      return tenants.value;
+        : []
+      ready.value = true
+      return tenants.value
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar os clientes.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar os clientes.')
+      throw error
     } finally {
-      pending.value = false;
+      pending.value = false
     }
   }
 
   async function ensureLoaded() {
     if (!auth.isAuthenticated) {
-      await auth.ensureSession();
+      await auth.ensureSession()
     }
 
     if (!auth.isAuthenticated || !viewable.value) {
-      clearState();
-      return false;
+      clearState()
+      return false
     }
 
     if (ready.value) {
-      return true;
+      return true
     }
 
     try {
-      await refreshTenants();
-      return true;
+      await refreshTenants()
+      return true
     } catch {
-      return false;
+      return false
     }
   }
 
   async function refreshContext() {
     if (!auth.isAuthenticated) {
-      return null;
+      return null
     }
 
-    const response = await auth.fetchContext();
-    await refreshTenants();
-    return response;
+    const response = await auth.fetchContext()
+    await refreshTenants()
+    return response
   }
 
-  async function createTenant(payload = {}) {
-    await auth.ensureSession();
+  async function createTenant(payload: LooseRecord = {}) {
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !canCreate.value) {
-      return { ok: false, message: "Somente o admin da plataforma pode criar clientes." };
+      return { ok: false, message: 'Somente o admin da plataforma pode criar clientes.' }
     }
 
     const body = {
       name: normalizeText(payload.name),
       slug: normalizeSlug(payload.slug || payload.name),
-      isActive: normalizeBoolean(payload.active, true)
-    };
+      isActive: normalizeBoolean(payload.active, true),
+    }
 
     if (!body.name || !body.slug) {
-      return { ok: false, message: "Preencha nome e slug do cliente." };
+      return { ok: false, message: 'Preencha nome e slug do cliente.' }
     }
 
     try {
-      const response = await apiRequest("/v1/tenants", {
-        method: "POST",
-        body
-      });
+      const response = await apiRequest('/v1/tenants', {
+        method: 'POST',
+        body,
+      })
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        tenant: normalizeTenant(response?.tenant)
-      };
+        tenant: normalizeTenant(response?.tenant),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel criar o cliente.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel criar o cliente.'),
+      }
     }
   }
 
-  async function updateTenant(tenantId, payload = {}) {
-    await ensureLoaded();
+  async function updateTenant(tenantId, payload: LooseRecord = {}) {
+    await ensureLoaded()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para editar clientes." };
+      return { ok: false, message: 'Sem permissao para editar clientes.' }
     }
 
-    const currentTenant = tenants.value.find((tenant) => tenant.id === normalizeText(tenantId));
+    const currentTenant = tenants.value.find((tenant) => tenant.id === normalizeText(tenantId))
     if (!currentTenant) {
-      return { ok: false, message: "Cliente nao encontrado." };
+      return { ok: false, message: 'Cliente nao encontrado.' }
     }
 
-    const body = buildUpdatePayload(payload, currentTenant);
+    const body = buildUpdatePayload(payload, currentTenant)
     if (!Object.keys(body).length) {
-      return { ok: true, noChange: true, tenant: currentTenant };
+      return { ok: true, noChange: true, tenant: currentTenant }
     }
 
-    if (!normalizeText(body.name ?? currentTenant.name) || !normalizeSlug(body.slug ?? currentTenant.slug)) {
-      return { ok: false, message: "Preencha nome e slug validos." };
+    if (
+      !normalizeText(body.name ?? currentTenant.name) ||
+      !normalizeSlug(body.slug ?? currentTenant.slug)
+    ) {
+      return { ok: false, message: 'Preencha nome e slug validos.' }
     }
 
     try {
-      const response = await apiRequest(`/v1/tenants/${encodeURIComponent(normalizeText(tenantId))}`, {
-        method: "PATCH",
-        body
-      });
+      const response = await apiRequest(
+        `/v1/tenants/${encodeURIComponent(normalizeText(tenantId))}`,
+        {
+          method: 'PATCH',
+          body,
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        tenant: normalizeTenant(response?.tenant)
-      };
+        tenant: normalizeTenant(response?.tenant),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel atualizar o cliente.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel atualizar o cliente.'),
+      }
     }
   }
 
   async function archiveTenant(tenantId) {
-    await ensureLoaded();
+    await ensureLoaded()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para editar clientes." };
+      return { ok: false, message: 'Sem permissao para editar clientes.' }
     }
 
     try {
-      const response = await apiRequest(`/v1/tenants/${encodeURIComponent(normalizeText(tenantId))}/archive`, {
-        method: "POST"
-      });
+      const response = await apiRequest(
+        `/v1/tenants/${encodeURIComponent(normalizeText(tenantId))}/archive`,
+        {
+          method: 'POST',
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        tenant: normalizeTenant(response?.tenant)
-      };
+        tenant: normalizeTenant(response?.tenant),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel arquivar o cliente.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel arquivar o cliente.'),
+      }
     }
   }
 
   async function restoreTenant(tenantId) {
-    await ensureLoaded();
+    await ensureLoaded()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para editar clientes." };
+      return { ok: false, message: 'Sem permissao para editar clientes.' }
     }
 
     try {
-      const response = await apiRequest(`/v1/tenants/${encodeURIComponent(normalizeText(tenantId))}/restore`, {
-        method: "POST"
-      });
+      const response = await apiRequest(
+        `/v1/tenants/${encodeURIComponent(normalizeText(tenantId))}/restore`,
+        {
+          method: 'POST',
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        tenant: normalizeTenant(response?.tenant)
-      };
+        tenant: normalizeTenant(response?.tenant),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel reativar o cliente.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel reativar o cliente.'),
+      }
     }
   }
 
@@ -270,10 +293,10 @@ export const useTenantsStore = defineStore("tenants", () => {
     () => auth.isAuthenticated,
     (isAuthenticated) => {
       if (!isAuthenticated) {
-        clearState();
+        clearState()
       }
-    }
-  );
+    },
+  )
 
   return {
     tenants,
@@ -288,6 +311,6 @@ export const useTenantsStore = defineStore("tenants", () => {
     createTenant,
     updateTenant,
     archiveTenant,
-    restoreTenant
-  };
-});
+    restoreTenant,
+  }
+})

@@ -1,33 +1,31 @@
 <script setup lang="ts">
-import { computed } from "vue"
-
 const props = defineProps<{
   rules: Array<Record<string, any>>
   pending?: boolean
 }>()
 
 const emit = defineEmits<{
-  "edit": [rule: Record<string, any>]
-  "delete": [ruleId: string]
-  "toggle": [ruleId: string, isActive: boolean]
-  "apply-now": [ruleId: string]
+  edit: [rule: Record<string, any>]
+  delete: [ruleId: string]
+  toggle: [ruleId: string, isActive: boolean]
+  'apply-now': [ruleId: string]
 }>()
 
 const triggerTypeLabels: Record<string, string> = {
-  long_open_service: "Atendimento longo",
-  long_queue_wait: "Fila longa",
-  long_pause: "Pausa longa",
-  idle_store: "Loja parada",
-  outside_business_hours: "Fora do horário"
+  long_open_service: 'Atendimento longo',
+  long_queue_wait: 'Fila longa',
+  long_pause: 'Pausa longa',
+  idle_store: 'Loja parada',
+  outside_business_hours: 'Fora do horário',
 }
 
 const displayKindLabels: Record<string, string> = {
-  card_badge: "Badge",
-  banner: "Banner",
-  toast: "Toast",
-  corner_popup: "Popup",
-  center_modal: "Modal",
-  fullscreen: "Fullscreen"
+  card_badge: 'Badge',
+  banner: 'Banner',
+  toast: 'Toast',
+  corner_popup: 'Popup',
+  center_modal: 'Modal',
+  fullscreen: 'Fullscreen',
 }
 
 const getTriggerLabel = (type: string) => triggerTypeLabels[type] || type
@@ -39,8 +37,13 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
     <div v-if="rules.length === 0" class="empty-state">
       <div class="empty-state__icon">🎯</div>
       <p class="empty-state__title">Nenhuma regra de alerta configurada</p>
-      <p class="empty-state__text">Comece criando uma nova regra para personalizar os alertas operacionais</p>
-      <p class="empty-state__hint">Escolha um gatilho (atendimento longo, fila, pausa), tipo de display (banner, popup, modal, tela cheia) e configure templates com cores dinâmicas</p>
+      <p class="empty-state__text">
+        Comece criando uma nova regra para personalizar os alertas operacionais
+      </p>
+      <p class="empty-state__hint">
+        Escolha um gatilho (atendimento longo, fila, pausa), tipo de display (banner, popup, modal,
+        tela cheia) e configure templates com cores dinâmicas
+      </p>
     </div>
 
     <table v-else class="rules-table">
@@ -67,11 +70,11 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
           <td>
             <button
               :class="['toggle-btn', rule.isActive ? 'active' : 'inactive']"
-              @click="emit('toggle', rule.id, !rule.isActive)"
               :disabled="pending"
               :title="rule.isActive ? 'Desativar' : 'Ativar'"
+              @click="emit('toggle', rule.id, !rule.isActive)"
             >
-              {{ rule.isActive ? "✓ Ativa" : "✕ Inativa" }}
+              {{ rule.isActive ? '✓ Ativa' : '✕ Inativa' }}
             </button>
           </td>
           <td class="updated-at">
@@ -80,25 +83,25 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
           <td class="actions-cell">
             <button
               class="btn-icon edit"
-              @click="emit('edit', rule)"
               :disabled="pending"
               title="Editar"
+              @click="emit('edit', rule)"
             >
               ✎
             </button>
             <button
               class="btn-icon apply"
-              @click="emit('apply-now', rule.id)"
               :disabled="pending"
               title="Aplicar agora"
+              @click="emit('apply-now', rule.id)"
             >
               ⚡
             </button>
             <button
               class="btn-icon delete"
-              @click="emit('delete', rule.id)"
               :disabled="pending"
               title="Deletar"
+              @click="emit('delete', rule.id)"
             >
               🗑
             </button>

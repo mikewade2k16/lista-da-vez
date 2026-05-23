@@ -1,0 +1,142 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { MockWebSocket } from '../../test/helpers/mock-websocket'
+
+const cleanupFns: Array<() => void> = []
+const refreshRuntimeStoreSettings = vi.fn()
+const authStore = {
+  isAuthenticated: true,
+  activeTenantId: 'tenant-1',
+  activeStoreId: 'store-1',
+  accessToken: 'token-123',
+  tenantContext: [{ id: 'tenant-1' }],
+  principal: { userId: 'user-1' },
+  role: 'consultant',
+  fetchContext: vi.fn().mockResolvedValue(undefined),
+  applyRuntimeSettingsStatus: vi.fn(),
+}
+const runtimeStore = {
+  state: {
+    activeStoreId: 'store-1',
+  },
+}
+const accessControlStore = {
+  refreshRealtimeState: vi.fn().mockResolvedValue(undefined),
+}
+const alertsStore = {
+  items: [],
+  refreshRealtimeState: vi.fn().mockResolvedValue(undefined),
+}
+const uiStore = {
+  notify: vi.fn(),
+}
+const multiStore = {
+  refreshOverview: vi.fn().mockResolvedValue(undefined),
+  refreshManagedStores: vi.fn().mockResolvedValue(undefined),
+}
+const usersStore = {
+  refreshUsers: vi.fn().mockResolvedValue(undefined),
+}
+
+vi.mock('vue', async () => {
+  const actual = await vi.importActual<typeof import('vue')>('vue')
+  return {
+    ...actual,
+    onMounted: (handler: () => void) => handler(),
+    onBeforeUnmount: (handler: () => void) => {
+      cleanupFns.push(handler)
+    },
+  }
+})
+
+vi.mock('~/stores/auth', () => ({
+  useAuthStore: () => authStore,
+}))
+
+vi.mock('~/stores/access-control', () => ({
+  useAccessControlStore: () => accessControlStore,
+}))
+
+vi.mock('~/stores/alerts', () => ({
+  useAlertsStore: () => alertsStore,
+}))
+
+vi.mock('~/stores/ui', () => ({
+  useUiStore: () => uiStore,
+}))
+
+vi.mock('~/stores/app-runtime', () => ({
+  useAppRuntimeStore: () => runtimeStore,
+}))
+
+vi.mock('~/stores/multistore', () => ({
+  useMultiStoreStore: () => multiStore,
+}))
+
+vi.mock('~/stores/users', () => ({
+  useUsersStore: () => usersStore,
+}))
+
+vi.mock('~/utils/runtime-remote', () => ({
+  refreshRuntimeStoreSettings: (...args: unknown[]) => refreshRuntimeStoreSettings(...args),
+}))
+
+describe('useContextRealtime', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    MockWebSocket.reset()
+    cleanupFns.length = 0
+    refreshRuntimeStoreSettings.mockReset()
+    refreshRuntimeStoreSettings.mockResolvedValue({ settingsLoadState: 'loaded' })
+    authStore.fetchContext.mockClear()
+    authStore.applyRuntimeSettingsStatus.mockClear()
+    accessControlStore.refreshRealtimeState.mockClear()
+    alertsStore.refreshRealtimeState.mockClear()
+    uiStore.notify.mockClear()
+    multiStore.refreshOverview.mockClear()
+    multiStore.refreshManagedStores.mockClear()
+    usersStore.refreshUsers.mockClear()
+    ;(globalThis as any).WebSocket = MockWebSocket
+  })
+
+  afterEach(() => {
+    while (cleanupFns.length > 0) {
+      cleanupFns.pop()?.()
+    }
+    vi.restoreAllMocks()
+  })
+
+  it('refreshes tenant store settings when a matching settings event arrives', async () => {
+    const { useContextRealtime } = await import('./useContextRealtime')
+
+    const realtime = useContextRealtime()
+    const socket = MockWebSocket.instances[0]
+
+    expect(socket?.url).toContain('/v1/realtime/context')
+    expect(socket?.url).toContain('tenantId=tenant-1')
+
+    socket?.open()
+    socket?.message({
+      type: 'context.updated',
+      tenantId: 'tenant-1',
+      resource: 'settings',
+      resourceId: 'tenant-1',
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(refreshRuntimeStoreSettings).toHaveBeenCalledTimes(1)
+    expect(refreshRuntimeStoreSettings.mock.calls[0]?.[2]).toBe('store-1')
+    expect(refreshRuntimeStoreSettings.mock.calls[0]?.[3]).toBe('tenant-1')
+    expect(authStore.applyRuntimeSettingsStatus).toHaveBeenCalledWith({
+      settingsLoadState: 'loaded',
+    })
+    expect(realtime.lastEvent.value).toEqual(
+      expect.objectContaining({
+        type: 'context.updated',
+        resource: 'settings',
+      }),
+    )
+  })
+})

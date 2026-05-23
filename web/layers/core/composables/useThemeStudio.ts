@@ -1,7 +1,18 @@
-import { OMNI_THEME_VARIABLES, hexToRgbTriplet, useOmniTheme, type OmniThemeName } from './useOmniTheme'
+import {
+  OMNI_THEME_VARIABLES,
+  hexToRgbTriplet,
+  useOmniTheme,
+  type OmniThemeName,
+} from './useOmniTheme'
 
 const THEME_ORDER: OmniThemeName[] = ['light', 'dark', 'apple', 'custom']
-const GROUP_ORDER: Array<'surface' | 'accent' | 'foundation' | 'header' | 'page'> = ['surface', 'accent', 'foundation', 'header', 'page']
+const GROUP_ORDER: Array<'surface' | 'accent' | 'foundation' | 'header' | 'page'> = [
+  'surface',
+  'accent',
+  'foundation',
+  'header',
+  'page',
+]
 
 export const RADIUS_KEYS = ['radius-xs', 'radius-sm', 'radius-md', 'radius-lg'] as const
 export const SHADOW_COLOR_KEYS = ['shadow-color', 'shadow-glow-color'] as const
@@ -41,7 +52,7 @@ export function useThemeStudio() {
     getThemeValue,
     setThemeValue,
     resetThemeOverrides,
-    duplicateTheme
+    duplicateTheme,
   } = useOmniTheme()
 
   const selectedTheme = ref<OmniThemeName>('light')
@@ -55,39 +66,45 @@ export function useThemeStudio() {
     linkDividers: true,
     linkInteractions: true,
     textFollowTheme: true,
-    actionFollowPrimary: true
+    actionFollowPrimary: true,
   })
   const pageHeaderState = reactive<ThemeStudioPageHeaderState>({
     showEyebrow: true,
     showTitle: true,
-    showDescription: true
+    showDescription: true,
   })
 
   const fontItems: FontItem[] = [
     {
       label: 'Inter',
-      value: '"Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
+      value:
+        '"Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     },
     {
       label: 'Montserrat',
-      value: '"Montserrat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
+      value:
+        '"Montserrat", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     },
     {
       label: 'Manrope',
-      value: '"Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
+      value:
+        '"Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     },
     {
       label: 'Poppins',
-      value: '"Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
+      value:
+        '"Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     },
     {
       label: 'Nunito Sans',
-      value: '"Nunito Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
+      value:
+        '"Nunito Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
     },
     {
       label: 'System Sans',
-      value: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"'
-    }
+      value:
+        'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
+    },
   ]
 
   const isSimpleMode = computed(() => !showDetailedEditors.value)
@@ -96,7 +113,7 @@ export function useThemeStudio() {
     light: getThemeLabel('light'),
     dark: getThemeLabel('dark'),
     apple: getThemeLabel('apple'),
-    custom: getThemeLabel('custom')
+    custom: getThemeLabel('custom'),
   }))
 
   const groupedVariables = computed(() => {
@@ -105,7 +122,7 @@ export function useThemeStudio() {
       surface: [] as typeof OMNI_THEME_VARIABLES,
       accent: [] as typeof OMNI_THEME_VARIABLES,
       header: [] as typeof OMNI_THEME_VARIABLES,
-      page: [] as typeof OMNI_THEME_VARIABLES
+      page: [] as typeof OMNI_THEME_VARIABLES,
     }
 
     const query = search.value.trim().toLowerCase()
@@ -127,12 +144,10 @@ export function useThemeStudio() {
   })
 
   const groupedSections = computed(() =>
-    GROUP_ORDER
-      .map(group => ({
-        key: group,
-        items: groupedVariables.value[group]
-      }))
-      .filter(section => section.items.length > 0)
+    GROUP_ORDER.map((group) => ({
+      key: group,
+      items: groupedVariables.value[group],
+    })).filter((section) => section.items.length > 0),
   )
 
   const variableValueMap = computed<Record<string, string>>(() => {
@@ -144,7 +159,7 @@ export function useThemeStudio() {
   })
 
   const radiusValueMap = computed<Record<string, number>>(() =>
-    Object.fromEntries(RADIUS_KEYS.map(key => [key, radiusNumber(key)]))
+    Object.fromEntries(RADIUS_KEYS.map((key) => [key, radiusNumber(key)])),
   )
 
   const tripletModelValueMap = computed<Record<string, string>>(() => {
@@ -167,7 +182,7 @@ export function useThemeStudio() {
     syncPageHeaderControlState()
   })
 
-  watch(currentTheme, value => {
+  watch(currentTheme, (value) => {
     selectedTheme.value = value
     syncHeaderControlState()
     syncPageHeaderControlState()
@@ -178,7 +193,7 @@ export function useThemeStudio() {
     syncPageHeaderControlState()
   })
 
-  watch(customThemeName, value => {
+  watch(customThemeName, (value) => {
     customThemeNameDraft.value = value
   })
 
@@ -290,7 +305,7 @@ export function useThemeStudio() {
       return normalizeTriplet(
         Number.parseInt(directMatch[1] ?? '0', 10),
         Number.parseInt(directMatch[2] ?? '0', 10),
-        Number.parseInt(directMatch[3] ?? '0', 10)
+        Number.parseInt(directMatch[3] ?? '0', 10),
       )
     }
 
@@ -311,14 +326,26 @@ export function useThemeStudio() {
 
     let rgbTokens: string[] = []
     if (body.includes('/')) {
-      const [rawRgb = ''] = body.split('/').map(token => token.trim())
+      const [rawRgb = ''] = body.split('/').map((token) => token.trim())
       rgbTokens = rawRgb.includes(',')
-        ? rawRgb.split(',').map(token => token.trim()).filter(Boolean)
-        : rawRgb.split(/\s+/).map(token => token.trim()).filter(Boolean)
+        ? rawRgb
+            .split(',')
+            .map((token) => token.trim())
+            .filter(Boolean)
+        : rawRgb
+            .split(/\s+/)
+            .map((token) => token.trim())
+            .filter(Boolean)
     } else {
       rgbTokens = body.includes(',')
-        ? body.split(',').map(token => token.trim()).filter(Boolean)
-        : body.split(/\s+/).map(token => token.trim()).filter(Boolean)
+        ? body
+            .split(',')
+            .map((token) => token.trim())
+            .filter(Boolean)
+        : body
+            .split(/\s+/)
+            .map((token) => token.trim())
+            .filter(Boolean)
     }
 
     if (rgbTokens.length < 3) {
@@ -422,11 +449,14 @@ export function useThemeStudio() {
     headerState.linkDividers = border === separator
     headerState.linkInteractions = hover === active
     headerState.textFollowTheme = text.trim() === HEADER_TEXT_LINK_VALUE
-    headerState.actionFollowPrimary = hover.trim() === HEADER_PRIMARY_ACTION_VALUE && active.trim() === HEADER_PRIMARY_ACTION_VALUE
+    headerState.actionFollowPrimary =
+      hover.trim() === HEADER_PRIMARY_ACTION_VALUE && active.trim() === HEADER_PRIMARY_ACTION_VALUE
   }
 
   function normalizeDisplayToken(value: string) {
-    const normalized = String(value ?? '').trim().toLowerCase()
+    const normalized = String(value ?? '')
+      .trim()
+      .toLowerCase()
     if (!normalized) return 'block'
     if (normalized === 'none') return 'none'
     return 'block'
@@ -435,14 +465,22 @@ export function useThemeStudio() {
   function syncPageHeaderControlState() {
     const eyebrow = normalizeDisplayToken(variableValue('admin-page-header-eyebrow-display'))
     const title = normalizeDisplayToken(variableValue('admin-page-header-title-display'))
-    const description = normalizeDisplayToken(variableValue('admin-page-header-description-display'))
+    const description = normalizeDisplayToken(
+      variableValue('admin-page-header-description-display'),
+    )
 
     pageHeaderState.showEyebrow = eyebrow !== 'none'
     pageHeaderState.showTitle = title !== 'none'
     pageHeaderState.showDescription = description !== 'none'
   }
 
-  function setPageHeaderVisibility(key: 'admin-page-header-eyebrow-display' | 'admin-page-header-title-display' | 'admin-page-header-description-display', visible: boolean) {
+  function setPageHeaderVisibility(
+    key:
+      | 'admin-page-header-eyebrow-display'
+      | 'admin-page-header-title-display'
+      | 'admin-page-header-description-display',
+    visible: boolean,
+  ) {
     setThemeValue(selectedTheme.value, key, visible ? 'block' : 'none')
     applyThemeIfNeeded()
     syncPageHeaderControlState()
@@ -607,13 +645,21 @@ export function useThemeStudio() {
 
   function onHeaderFadeTopSizeChange(value: string | number | undefined) {
     const fallback = parsePx(variableValue('admin-header-fade-top-size'))
-    setThemeValue(selectedTheme.value, 'admin-header-fade-top-size', normalizePxValue(value, fallback, 80))
+    setThemeValue(
+      selectedTheme.value,
+      'admin-header-fade-top-size',
+      normalizePxValue(value, fallback, 80),
+    )
     applyThemeIfNeeded()
   }
 
   function onHeaderFadeBottomSizeChange(value: string | number | undefined) {
     const fallback = parsePx(variableValue('admin-header-fade-bottom-size'))
-    setThemeValue(selectedTheme.value, 'admin-header-fade-bottom-size', normalizePxValue(value, fallback, 80))
+    setThemeValue(
+      selectedTheme.value,
+      'admin-header-fade-bottom-size',
+      normalizePxValue(value, fallback, 80),
+    )
     applyThemeIfNeeded()
   }
 
@@ -673,6 +719,6 @@ export function useThemeStudio() {
     onPageHeaderEyebrowVisibilityChange,
     onPageHeaderTitleVisibilityChange,
     onPageHeaderDescriptionVisibilityChange,
-    onPageHeaderDisableAll
+    onPageHeaderDisableAll,
   }
 }

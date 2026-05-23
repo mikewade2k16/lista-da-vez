@@ -14,8 +14,8 @@ const props = withDefaults(
     loading: false,
     ariaLabel: 'Alternar',
     checkedIcon: '',
-    uncheckedIcon: ''
-  }
+    uncheckedIcon: '',
+  },
 )
 
 const emit = defineEmits<{
@@ -30,7 +30,7 @@ const switchUi = {
   icon: 'omni-switch__icon',
   wrapper: 'omni-switch__wrapper',
   label: 'omni-switch__label',
-  description: 'omni-switch__description'
+  description: 'omni-switch__description',
 }
 
 function onUpdate(value: boolean | 'indeterminate') {

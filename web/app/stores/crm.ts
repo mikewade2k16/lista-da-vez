@@ -1,10 +1,10 @@
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 
 import { useAuthStore } from "~/stores/auth";
 import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
 
-type CRMSummary = {
+export type CRMSummary = {
   orders: number;
   units: number;
   salesCents: number;
@@ -15,9 +15,11 @@ type CRMSummary = {
   goalProgress: number;
   remainingToGoalCents: number;
   unmappedSalesCents?: number;
+  erpCancellations?: number;
+  erpCancellationRate?: number;
 };
 
-type CRMStoreMetric = {
+export type CRMStoreMetric = {
   storeSlug: string;
   storeLabel: string;
   storeCode?: string;
@@ -35,9 +37,11 @@ type CRMStoreMetric = {
   paGoal: number;
   goalProgress: number;
   remainingToGoalCents: number;
+  erpCancellations?: number;
+  erpCancellationRate?: number;
 };
 
-type CRMConsultantMetric = {
+export type CRMConsultantMetric = {
   consultantId: string;
   consultantName: string;
   storeSlug: string;
@@ -52,13 +56,44 @@ type CRMConsultantMetric = {
   paScore: number;
 };
 
-type CRMOverviewResponse = {
+export type QueueConsultantStats = {
+  personId: string;
+  personName: string;
+  storeId: string;
+  attendances: number;
+  conversions: number;
+  conversionRate: number;
+  queueCancellations: number;
+  queueCancellationRate: number;
+};
+
+export type QueueStoreStats = {
+  storeId: string;
+  attendances: number;
+  conversions: number;
+  conversionRate: number;
+  queueCancellations: number;
+  queueCancellationRate: number;
+};
+
+export type QueueStats = {
+  totalAttendances: number;
+  totalConversions: number;
+  totalCancellations: number;
+  conversionRate: number;
+  cancellationRate: number;
+  byStore?: QueueStoreStats[];
+  byConsultant?: QueueConsultantStats[];
+};
+
+export type CRMOverviewResponse = {
   store?: Record<string, unknown> | null;
   dateFrom: string;
   dateTo: string;
   summary: CRMSummary;
   stores: CRMStoreMetric[];
   consultants: CRMConsultantMetric[];
+  queueStats?: QueueStats | null;
   warnings?: string[];
 };
 
@@ -122,8 +157,13 @@ export const useCrmStore = defineStore("crm", () => {
   const dateFrom = ref(defaultRange.dateFrom);
   const dateTo = ref(defaultRange.dateTo);
 
+  const activeTenantId = computed(() =>
+    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id)
+  );
+
   function buildRequestKey() {
     return JSON.stringify({
+      tenantId: activeTenantId.value,
       dateFrom: dateFrom.value,
       dateTo: dateTo.value
     });
@@ -161,6 +201,9 @@ export const useCrmStore = defineStore("crm", () => {
       }
 
       const params = new URLSearchParams();
+      if (activeTenantId.value) {
+        params.set("tenantId", activeTenantId.value);
+      }
       if (dateFrom.value) {
         params.set("dateFrom", dateFrom.value);
       }

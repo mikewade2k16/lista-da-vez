@@ -1,29 +1,23 @@
 <script setup>
-import { computed, ref } from "vue";
-import DashboardHeader from "~/components/dashboard/DashboardHeader.vue";
-import DashboardWorkspaceNav from "~/components/dashboard/DashboardWorkspaceNav.vue";
-import FeedbackFormModal from "~/components/feedback/FeedbackFormModal.vue";
-import { useContextRealtime } from "~/composables/useContextRealtime";
-import { useDashboardShell } from "~/composables/useDashboardShell";
-import { useAuthStore } from "~/stores/auth";
+import { computed, ref } from 'vue'
+import DashboardHeader from '~/components/dashboard/DashboardHeader.vue'
+import DashboardWorkspaceNav from '~/components/dashboard/DashboardWorkspaceNav.vue'
+import FeedbackFormModal from '~/components/feedback/FeedbackFormModal.vue'
+import { useContextRealtime } from '~/composables/useContextRealtime'
+import { useDashboardShell } from '~/composables/useDashboardShell'
+import { useAuthStore } from '~/stores/auth'
 
-const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile, setActiveStore } = useDashboardShell();
-const auth = useAuthStore();
-const route = useRoute();
-useContextRealtime();
+const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile } = useDashboardShell()
+const auth = useAuthStore()
+const route = useRoute()
+useContextRealtime()
 
-const feedbackModalOpen = ref(false);
-const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || "").trim());
-const usesQueueWorkspace = computed(() =>
-  String(route.path || "").startsWith("/operacao")
-);
+const feedbackModalOpen = ref(false)
+const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || '').trim())
+const usesQueueWorkspace = computed(() => String(route.path || '').startsWith('/operacao'))
 
 function handleProfileChange(profileId) {
-  void setActiveProfile(profileId);
-}
-
-function handleStoreChange(storeId) {
-  void setActiveStore(storeId);
+  void setActiveProfile(profileId)
 }
 </script>
 
@@ -36,10 +30,16 @@ function handleStoreChange(storeId) {
         :active-workspace="activeWorkspaceId"
         :allowed-workspaces="allowedWorkspaces"
         @profile-change="handleProfileChange"
-        @store-change="handleStoreChange"
       />
-      <div v-if="runtimeSettingsNotice" class="runtime-settings-banner" role="status" aria-live="polite">
-        <span class="material-icons-round runtime-settings-banner__icon" aria-hidden="true">warning</span>
+      <div
+        v-if="runtimeSettingsNotice"
+        class="runtime-settings-banner"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="material-icons-round runtime-settings-banner__icon" aria-hidden="true">
+          warning
+        </span>
         <div class="runtime-settings-banner__body">
           <strong>Modo degradado de configuracoes</strong>
           <p>{{ runtimeSettingsNotice }}</p>
@@ -52,20 +52,19 @@ function handleStoreChange(storeId) {
           :state="state"
           show-operations-context
           @profile-change="handleProfileChange"
-          @store-change="handleStoreChange"
         />
-        <slot />
+        <slot></slot>
       </div>
       <div v-else class="module-workspace-full">
-        <slot />
+        <slot></slot>
       </div>
     </section>
 
     <button
       class="dashboard-feedback-btn"
-      @click="feedbackModalOpen = true"
       title="Enviar feedback para o time"
       aria-label="Enviar feedback"
+      @click="feedbackModalOpen = true"
     >
       <span class="dashboard-feedback-btn__icon">💬</span>
     </button>
@@ -162,5 +161,4 @@ function handleStoreChange(storeId) {
   font-size: 1.5rem;
   line-height: 1;
 }
-
 </style>

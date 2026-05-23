@@ -146,10 +146,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		result, err := service.Update(r.Context(), principal, id, UpdateInput{
-			Status:    request.Status,
-			AdminNote: request.AdminNote,
-		})
+		result, err := service.Update(r.Context(), principal, id, UpdateInput(request))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

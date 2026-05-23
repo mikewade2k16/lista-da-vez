@@ -13,7 +13,10 @@
 // que ja consomem via inject, mas a implementacao canonica e' aqui — testaveis isoladamente.
 
 export function normalizeText(value: unknown, max = 240): string {
-  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
 }
 
 export function clampText(value: unknown, max = 240): string {

@@ -1,221 +1,227 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
+import { computed, reactive, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 
-import AppEntityGrid from "~/components/ui/AppEntityGrid.vue";
-import { useAuthStore } from "~/stores/auth";
-import { useTenantsStore } from "~/stores/tenants";
-import { useUiStore } from "~/stores/ui";
+import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
+import { useAuthStore } from '~/stores/auth'
+import { useTenantsStore } from '~/stores/tenants'
+import { useUiStore } from '~/stores/ui'
 
-const auth = useAuthStore();
-const ui = useUiStore();
-const tenantsStore = useTenantsStore();
+const auth = useAuthStore()
+const ui = useUiStore()
+const tenantsStore = useTenantsStore()
 
-const { tenants, pending, errorMessage, canCreate, manageable } = storeToRefs(tenantsStore);
+const { tenants, pending, errorMessage, canCreate, manageable } = storeToRefs(tenantsStore)
 
-const searchValue = ref("");
-const statusFilter = ref("all");
-const selectedTenantId = ref("");
-const createSaving = ref(false);
-const detailSaving = ref(false);
-const actionTenantId = ref("");
+const searchValue = ref('')
+const statusFilter = ref('all')
+const selectedTenantId = ref('')
+const createSaving = ref(false)
+const detailSaving = ref(false)
+const actionTenantId = ref('')
 
 const createDraft = reactive({
-  name: "",
-  slug: "",
-  active: true
-});
+  name: '',
+  slug: '',
+  active: true,
+})
 
 const detailDraft = reactive({
-  name: "",
-  slug: "",
-  active: true
-});
+  name: '',
+  slug: '',
+  active: true,
+})
 
 const columns = [
-  { id: "name", label: "Cliente", width: "minmax(220px, 1.8fr)", locked: true },
-  { id: "slug", label: "Slug", width: "minmax(140px, 1fr)" },
-  { id: "status", label: "Status", width: "minmax(108px, 0.7fr)", align: "center" },
-  { id: "actions", label: "Abrir", width: "minmax(90px, 0.6fr)", align: "end", locked: true }
-];
+  { id: 'name', label: 'Cliente', width: 'minmax(220px, 1.8fr)', locked: true },
+  { id: 'slug', label: 'Slug', width: 'minmax(140px, 1fr)' },
+  { id: 'status', label: 'Status', width: 'minmax(108px, 0.7fr)', align: 'center' },
+  { id: 'actions', label: 'Abrir', width: 'minmax(90px, 0.6fr)', align: 'end', locked: true },
+]
 
 const summary = computed(() => ({
   total: tenants.value.length,
   active: tenants.value.filter((tenant) => tenant.active).length,
-  inactive: tenants.value.filter((tenant) => !tenant.active).length
-}));
+  inactive: tenants.value.filter((tenant) => !tenant.active).length,
+}))
 
 const filteredRows = computed(() => {
-  const search = String(searchValue.value || "").trim().toLowerCase();
+  const search = String(searchValue.value || '')
+    .trim()
+    .toLowerCase()
 
   return tenants.value
     .filter((tenant) => {
-      if (statusFilter.value === "active") {
-        return tenant.active;
+      if (statusFilter.value === 'active') {
+        return tenant.active
       }
 
-      if (statusFilter.value === "inactive") {
-        return !tenant.active;
+      if (statusFilter.value === 'inactive') {
+        return !tenant.active
       }
 
-      return true;
+      return true
     })
     .filter((tenant) => {
       if (!search) {
-        return true;
+        return true
       }
 
-      return tenant.name.toLowerCase().includes(search) || tenant.slug.toLowerCase().includes(search);
+      return (
+        tenant.name.toLowerCase().includes(search) || tenant.slug.toLowerCase().includes(search)
+      )
     })
     .map((tenant) => ({
       ...tenant,
-      status: tenant.active ? "Ativo" : "Inativo",
-      actions: "Abrir"
-    }));
-});
+      status: tenant.active ? 'Ativo' : 'Inativo',
+      actions: 'Abrir',
+    }))
+})
 
-const selectedTenant = computed(() =>
-  tenants.value.find((tenant) => tenant.id === String(selectedTenantId.value || "").trim()) || null
-);
+const selectedTenant = computed(
+  () =>
+    tenants.value.find((tenant) => tenant.id === String(selectedTenantId.value || '').trim()) ||
+    null,
+)
 
-const selectedTenantLabel = computed(() => selectedTenant.value?.name || "Selecione um cliente");
+const selectedTenantLabel = computed(() => selectedTenant.value?.name || 'Selecione um cliente')
 
 watch(
   tenants,
   (nextTenants) => {
     if (!nextTenants.length) {
-      selectedTenantId.value = "";
-      return;
+      selectedTenantId.value = ''
+      return
     }
 
-    const selectedStillExists = nextTenants.some((tenant) => tenant.id === selectedTenantId.value);
+    const selectedStillExists = nextTenants.some((tenant) => tenant.id === selectedTenantId.value)
     if (!selectedStillExists) {
-      selectedTenantId.value = nextTenants[0].id;
+      selectedTenantId.value = nextTenants[0].id
     }
   },
-  { immediate: true, deep: true }
-);
+  { immediate: true, deep: true },
+)
 
 watch(
   selectedTenant,
   (tenant) => {
-    detailDraft.name = tenant?.name || "";
-    detailDraft.slug = tenant?.slug || "";
-    detailDraft.active = Boolean(tenant?.active ?? true);
+    detailDraft.name = tenant?.name || ''
+    detailDraft.slug = tenant?.slug || ''
+    detailDraft.active = Boolean(tenant?.active ?? true)
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 function normalizeSlug(value) {
-  return String(value || "")
+  return String(value || '')
     .trim()
     .toLowerCase()
-    .replace(/[_\s]+/g, "-")
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
 }
 
 function applyCreateSlug() {
-  createDraft.slug = normalizeSlug(createDraft.slug || createDraft.name);
+  createDraft.slug = normalizeSlug(createDraft.slug || createDraft.name)
 }
 
 function applyDetailSlug() {
-  detailDraft.slug = normalizeSlug(detailDraft.slug || detailDraft.name);
+  detailDraft.slug = normalizeSlug(detailDraft.slug || detailDraft.name)
 }
 
 function selectTenant(tenantId) {
-  selectedTenantId.value = String(tenantId || "").trim();
+  selectedTenantId.value = String(tenantId || '').trim()
 }
 
 function resetCreateDraft() {
-  createDraft.name = "";
-  createDraft.slug = "";
-  createDraft.active = true;
+  createDraft.name = ''
+  createDraft.slug = ''
+  createDraft.active = true
 }
 
 async function handleRefresh() {
   try {
-    await tenantsStore.refreshTenants();
+    await tenantsStore.refreshTenants()
   } catch {
-    ui.error(errorMessage.value || "Nao foi possivel atualizar os clientes.");
+    ui.error(errorMessage.value || 'Nao foi possivel atualizar os clientes.')
   }
 }
 
 async function handleCreate() {
-  createSaving.value = true;
+  createSaving.value = true
   const result = await tenantsStore.createTenant({
     name: createDraft.name,
     slug: createDraft.slug,
-    active: createDraft.active
-  });
-  createSaving.value = false;
+    active: createDraft.active,
+  })
+  createSaving.value = false
 
   if (!result?.ok) {
-    ui.error(result?.message || "Nao foi possivel criar o cliente.");
-    return;
+    ui.error(result?.message || 'Nao foi possivel criar o cliente.')
+    return
   }
 
-  resetCreateDraft();
-  selectedTenantId.value = result.tenant?.id || selectedTenantId.value;
-  ui.success("Cliente criado.");
+  resetCreateDraft()
+  selectedTenantId.value = result.tenant?.id || selectedTenantId.value
+  ui.success('Cliente criado.')
 }
 
 async function handleSave() {
   if (!selectedTenant.value) {
-    return;
+    return
   }
 
-  detailSaving.value = true;
+  detailSaving.value = true
   const result = await tenantsStore.updateTenant(selectedTenant.value.id, {
     name: detailDraft.name,
     slug: detailDraft.slug,
-    active: detailDraft.active
-  });
-  detailSaving.value = false;
+    active: detailDraft.active,
+  })
+  detailSaving.value = false
 
   if (!result?.ok) {
-    ui.error(result?.message || "Nao foi possivel atualizar o cliente.");
-    return;
+    ui.error(result?.message || 'Nao foi possivel atualizar o cliente.')
+    return
   }
 
   if (!result.noChange) {
-    ui.success("Cliente atualizado.");
+    ui.success('Cliente atualizado.')
   }
 }
 
 async function handleArchive() {
   if (!selectedTenant.value) {
-    return;
+    return
   }
 
-  actionTenantId.value = selectedTenant.value.id;
-  const result = await tenantsStore.archiveTenant(selectedTenant.value.id);
-  actionTenantId.value = "";
+  actionTenantId.value = selectedTenant.value.id
+  const result = await tenantsStore.archiveTenant(selectedTenant.value.id)
+  actionTenantId.value = ''
 
   if (!result?.ok) {
-    ui.error(result?.message || "Nao foi possivel arquivar o cliente.");
-    return;
+    ui.error(result?.message || 'Nao foi possivel arquivar o cliente.')
+    return
   }
 
-  ui.success("Cliente arquivado.");
+  ui.success('Cliente arquivado.')
 }
 
 async function handleRestore() {
   if (!selectedTenant.value) {
-    return;
+    return
   }
 
-  actionTenantId.value = selectedTenant.value.id;
-  const result = await tenantsStore.restoreTenant(selectedTenant.value.id);
-  actionTenantId.value = "";
+  actionTenantId.value = selectedTenant.value.id
+  const result = await tenantsStore.restoreTenant(selectedTenant.value.id)
+  actionTenantId.value = ''
 
   if (!result?.ok) {
-    ui.error(result?.message || "Nao foi possivel reativar o cliente.");
-    return;
+    ui.error(result?.message || 'Nao foi possivel reativar o cliente.')
+    return
   }
 
-  ui.success("Cliente reativado.");
+  ui.success('Cliente reativado.')
 }
 </script>
 
@@ -226,7 +232,8 @@ async function handleRestore() {
         <div>
           <h2 class="settings-card__title">Clientes e agencias</h2>
           <p class="settings-card__text">
-            Organize os clientes acessiveis do painel, ajuste nome e slug, e controle quem permanece ativo no ecossistema.
+            Organize os clientes acessiveis do painel, ajuste nome e slug, e controle quem permanece
+            ativo no ecossistema.
           </p>
         </div>
 
@@ -307,13 +314,20 @@ async function handleRestore() {
           </template>
 
           <template #cell-status="{ row }">
-            <span class="tenants-workspace__status-pill" :class="row.active ? 'is-active' : 'is-inactive'">
+            <span
+              class="tenants-workspace__status-pill"
+              :class="row.active ? 'is-active' : 'is-inactive'"
+            >
               {{ row.status }}
             </span>
           </template>
 
           <template #cell-actions="{ row }">
-            <button class="tenants-workspace__row-action" type="button" @click="selectTenant(row.id)">
+            <button
+              class="tenants-workspace__row-action"
+              type="button"
+              @click="selectTenant(row.id)"
+            >
               Abrir
             </button>
           </template>
@@ -332,27 +346,41 @@ async function handleRestore() {
           <div class="tenants-workspace__form-grid">
             <label class="tenants-workspace__field">
               <span>Nome</span>
-              <input v-model="createDraft.name" type="text" placeholder="Ex.: Grupo Centro" @blur="applyCreateSlug">
+              <input
+                v-model="createDraft.name"
+                type="text"
+                placeholder="Ex.: Grupo Centro"
+                @blur="applyCreateSlug"
+              />
             </label>
 
             <label class="tenants-workspace__field">
               <span>Slug</span>
               <div class="tenants-workspace__slug-row">
-                <input v-model="createDraft.slug" type="text" placeholder="grupo-centro">
-                <button class="tenants-workspace__ghost-btn" type="button" @click="applyCreateSlug">Gerar</button>
+                <input v-model="createDraft.slug" type="text" placeholder="grupo-centro" />
+                <button class="tenants-workspace__ghost-btn" type="button" @click="applyCreateSlug">
+                  Gerar
+                </button>
               </div>
             </label>
 
             <label class="tenants-workspace__checkbox">
-              <input v-model="createDraft.active" type="checkbox">
+              <input v-model="createDraft.active" type="checkbox" />
               <span>Criar como ativo</span>
             </label>
           </div>
 
           <div class="tenants-workspace__panel-actions">
-            <button class="tenants-workspace__ghost-btn" type="button" @click="resetCreateDraft">Limpar</button>
-            <button class="tenants-workspace__primary-btn" type="button" :disabled="createSaving" @click="handleCreate">
-              {{ createSaving ? "Criando..." : "Criar cliente" }}
+            <button class="tenants-workspace__ghost-btn" type="button" @click="resetCreateDraft">
+              Limpar
+            </button>
+            <button
+              class="tenants-workspace__primary-btn"
+              type="button"
+              :disabled="createSaving"
+              @click="handleCreate"
+            >
+              {{ createSaving ? 'Criando...' : 'Criar cliente' }}
             </button>
           </div>
         </section>
@@ -373,10 +401,19 @@ async function handleRestore() {
           </div>
 
           <template v-else>
-            <div class="tenants-workspace__detail-banner" :class="selectedTenant.active ? 'is-active' : 'is-inactive'">
+            <div
+              class="tenants-workspace__detail-banner"
+              :class="selectedTenant.active ? 'is-active' : 'is-inactive'"
+            >
               <div>
                 <strong>{{ selectedTenant.name }}</strong>
-                <p>{{ selectedTenant.active ? 'Cliente ativo no painel.' : 'Cliente inativo, mas preservado para restauracao.' }}</p>
+                <p>
+                  {{
+                    selectedTenant.active
+                      ? 'Cliente ativo no painel.'
+                      : 'Cliente inativo, mas preservado para restauracao.'
+                  }}
+                </p>
               </div>
 
               <span>{{ selectedTenant.slug }}</span>
@@ -385,21 +422,38 @@ async function handleRestore() {
             <div class="tenants-workspace__form-grid">
               <label class="tenants-workspace__field">
                 <span>Nome</span>
-                <input v-model="detailDraft.name" type="text" :disabled="detailSaving || !manageable">
+                <input
+                  v-model="detailDraft.name"
+                  type="text"
+                  :disabled="detailSaving || !manageable"
+                />
               </label>
 
               <label class="tenants-workspace__field">
                 <span>Slug</span>
                 <div class="tenants-workspace__slug-row">
-                  <input v-model="detailDraft.slug" type="text" :disabled="detailSaving || !manageable">
-                  <button class="tenants-workspace__ghost-btn" type="button" :disabled="detailSaving || !manageable" @click="applyDetailSlug">
+                  <input
+                    v-model="detailDraft.slug"
+                    type="text"
+                    :disabled="detailSaving || !manageable"
+                  />
+                  <button
+                    class="tenants-workspace__ghost-btn"
+                    type="button"
+                    :disabled="detailSaving || !manageable"
+                    @click="applyDetailSlug"
+                  >
                     Gerar
                   </button>
                 </div>
               </label>
 
               <label class="tenants-workspace__checkbox">
-                <input v-model="detailDraft.active" type="checkbox" :disabled="detailSaving || !manageable">
+                <input
+                  v-model="detailDraft.active"
+                  type="checkbox"
+                  :disabled="detailSaving || !manageable"
+                />
                 <span>Cliente ativo no painel</span>
               </label>
             </div>
@@ -413,7 +467,7 @@ async function handleRestore() {
                   :disabled="actionTenantId === selectedTenant.id || !manageable"
                   @click="handleArchive"
                 >
-                  {{ actionTenantId === selectedTenant.id ? "Arquivando..." : "Arquivar" }}
+                  {{ actionTenantId === selectedTenant.id ? 'Arquivando...' : 'Arquivar' }}
                 </button>
 
                 <button
@@ -423,17 +477,23 @@ async function handleRestore() {
                   :disabled="actionTenantId === selectedTenant.id || !manageable"
                   @click="handleRestore"
                 >
-                  {{ actionTenantId === selectedTenant.id ? "Reativando..." : "Reativar" }}
+                  {{ actionTenantId === selectedTenant.id ? 'Reativando...' : 'Reativar' }}
                 </button>
               </div>
 
-              <button class="tenants-workspace__primary-btn" type="button" :disabled="detailSaving || !manageable" @click="handleSave">
-                {{ detailSaving ? "Salvando..." : "Salvar cliente" }}
+              <button
+                class="tenants-workspace__primary-btn"
+                type="button"
+                :disabled="detailSaving || !manageable"
+                @click="handleSave"
+              >
+                {{ detailSaving ? 'Salvando...' : 'Salvar cliente' }}
               </button>
             </div>
 
             <p v-if="!canCreate && manageable" class="tenants-workspace__help-note">
-              Como admin de cliente/agencia, voce consegue manter os clientes acessiveis, mas a criacao continua restrita ao admin da plataforma.
+              Como admin de cliente/agencia, voce consegue manter os clientes acessiveis, mas a
+              criacao continua restrita ao admin da plataforma.
             </p>
           </template>
         </section>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "feedback",
-  alias: ["/operacao/feedback"],
-});
+  layout: 'dashboard',
+  workspaceId: 'feedback',
+  alias: ['/operacao/feedback'],
+})
 </script>
 
 <template>

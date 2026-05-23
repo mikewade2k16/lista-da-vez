@@ -1,12 +1,12 @@
 <script setup>
-import { formatCurrencyBRL } from "~/domain/utils/admin-metrics";
+import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
 
 defineProps({
   items: {
     type: Array,
-    default: () => []
-  }
-});
+    default: () => [],
+  },
+})
 </script>
 
 <template>

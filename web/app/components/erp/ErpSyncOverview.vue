@@ -1,85 +1,88 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed } from 'vue'
 
-const props = withDefaults(defineProps<{
-  overview?: Record<string, any> | null;
-  loading?: boolean;
-}>(), {
-  overview: null,
-  loading: false
-});
+const props = withDefaults(
+  defineProps<{
+    overview?: Record<string, any> | null
+    loading?: boolean
+  }>(),
+  {
+    overview: null,
+    loading: false,
+  },
+)
 
 const entityLabels: Record<string, string> = {
-  item: "Produtos",
-  customer: "Clientes",
-  employee: "Funcionários",
-  order: "Pedidos",
-  ordercanceled: "Cancelados"
-};
+  item: 'Produtos',
+  customer: 'Clientes',
+  employee: 'Funcionários',
+  order: 'Pedidos',
+  ordercanceled: 'Cancelados',
+}
 
-const automaticLabel = computed(() => props.overview?.automatic?.enabled ? "Sim" : "Não");
+const automaticLabel = computed(() => (props.overview?.automatic?.enabled ? 'Sim' : 'Não'))
 const automaticDetail = computed(() => {
   if (!props.overview?.automatic?.enabled) {
-    return "O agendamento automático está desligado neste ambiente.";
+    return 'O agendamento automático está desligado neste ambiente.'
   }
-  const hour = Number(props.overview?.automatic?.hourUtc ?? 0);
-  const interval = String(props.overview?.automatic?.interval || "").trim();
-  return `Rodando com janela ${interval || "configurada"} e referência ${hour.toString().padStart(2, "0")}:00 UTC.`;
-});
-const importStatusLabel = computed(() => props.overview?.fullyImported ? "Sim" : "Ainda não");
+  const hour = Number(props.overview?.automatic?.hourUtc ?? 0)
+  const interval = String(props.overview?.automatic?.interval || '').trim()
+  return `Rodando com janela ${interval || 'configurada'} e referência ${hour.toString().padStart(2, '0')}:00 UTC.`
+})
+const importStatusLabel = computed(() => (props.overview?.fullyImported ? 'Sim' : 'Ainda não'))
 const nextSteps = computed(() => {
-  const items: string[] = [];
+  const items: string[] = []
   if (!props.overview?.automatic?.enabled) {
-    items.push("Ligar o scheduler automático no ambiente operacional.");
+    items.push('Ligar o scheduler automático no ambiente operacional.')
   }
-  const pending = Number(props.overview?.totals?.pendingFiles || 0);
+  const pending = Number(props.overview?.totals?.pendingFiles || 0)
   if (pending > 0) {
-    items.push(`Importar os ${pending.toLocaleString("pt-BR")} CSVs que ainda faltam do FTP atual.`);
+    items.push(`Importar os ${pending.toLocaleString('pt-BR')} CSVs que ainda faltam do FTP atual.`)
   }
-  items.push("Fechar alertas operacionais e ações de reprocessamento/abort para suporte." );
-  return items;
-});
+  items.push('Fechar alertas operacionais e ações de reprocessamento/abort para suporte.')
+  return items
+})
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("pt-BR");
+  return Number(value || 0).toLocaleString('pt-BR')
 }
 
 function formatDateTime(value?: string | null) {
-  const normalized = String(value || "").trim();
+  const normalized = String(value || '').trim()
   if (!normalized) {
-    return "-";
+    return '-'
   }
 
-  const parsed = new Date(normalized);
+  const parsed = new Date(normalized)
   if (Number.isNaN(parsed.getTime())) {
-    return normalized;
+    return normalized
   }
 
-  return parsed.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return parsed.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function formatSize(value?: number | null) {
-  const bytes = Number(value || 0);
+  const bytes = Number(value || 0)
   if (!bytes) {
-    return "-";
+    return '-'
   }
   if (bytes < 1024) {
-    return `${bytes} B`;
+    return `${bytes} B`
   }
   if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024).toFixed(1)} KB`
   }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function entityLabel(dataType?: string) {
-  return entityLabels[String(dataType || "").trim()] || String(dataType || "-");
+  return entityLabels[String(dataType || '').trim()] || String(dataType || '-')
 }
 </script>
 
@@ -89,7 +92,8 @@ function entityLabel(dataType?: string) {
       <div>
         <h3 class="erp-sync-overview__title">Resumo operacional do ERP</h3>
         <p class="erp-sync-overview__text">
-          Esta área responde se o FTP já foi coberto, se a rotina está automática e o que ainda falta para encerrar a operação no escopo completo do sistema.
+          Esta área responde se o FTP já foi coberto, se a rotina está automática e o que ainda
+          falta para encerrar a operação no escopo completo do sistema.
         </p>
       </div>
 
@@ -104,14 +108,20 @@ function entityLabel(dataType?: string) {
       </a>
     </header>
 
-    <div v-if="loading && !overview" class="erp-sync-overview__empty">Carregando overview do ERP...</div>
+    <div v-if="loading && !overview" class="erp-sync-overview__empty">
+      Carregando overview do ERP...
+    </div>
 
     <template v-else-if="overview">
       <div class="erp-sync-overview__hero-grid">
         <article class="erp-sync-overview__hero-card">
           <span>Puxamos tudo do FTP?</span>
           <strong>{{ importStatusLabel }}</strong>
-          <small>{{ formatNumber(overview.totals?.importedFiles) }} de {{ formatNumber(overview.totals?.totalFiles) }} CSVs do lote atual (raiz do FTP) já estão no banco.</small>
+          <small>
+            {{ formatNumber(overview.totals?.importedFiles) }} de
+            {{ formatNumber(overview.totals?.totalFiles) }} CSVs do lote atual (raiz do FTP) já
+            estão no banco.
+          </small>
         </article>
 
         <article class="erp-sync-overview__hero-card">
@@ -129,7 +139,10 @@ function entityLabel(dataType?: string) {
         <article class="erp-sync-overview__hero-card">
           <span>Pesquisa no painel</span>
           <strong>Disponível</strong>
-          <small>Sim: além do lote atual do FTP, registros históricos já carregados também aparecem nas abas do ERP.</small>
+          <small>
+            Sim: além do lote atual do FTP, registros históricos já carregados também aparecem nas
+            abas do ERP.
+          </small>
         </article>
       </div>
 
@@ -141,7 +154,9 @@ function entityLabel(dataType?: string) {
           </header>
 
           <p class="erp-sync-overview__table-note">
-            Este resumo não segue a subloja operacional do topo. “Linhas no banco” mostra tudo que já foi carregado antes, inclusive cargas legadas por markdown/CSV. “CSV no FTP” mostra só o conjunto remoto atual que ainda precisamos cobrir.
+            Este resumo não segue a subloja operacional do topo. “Linhas no banco” mostra tudo que
+            já foi carregado antes, inclusive cargas legadas por markdown/CSV. “CSV no FTP” mostra
+            só o conjunto remoto atual que ainda precisamos cobrir.
           </p>
 
           <div class="erp-sync-overview__entities-table">
@@ -154,7 +169,11 @@ function entityLabel(dataType?: string) {
               <span>Pesquisáveis</span>
             </div>
 
-            <div v-for="entity in overview.entities || []" :key="entity.dataType" class="erp-sync-overview__entities-row">
+            <div
+              v-for="entity in overview.entities || []"
+              :key="entity.dataType"
+              class="erp-sync-overview__entities-row"
+            >
               <strong>{{ entityLabel(entity.dataType) }}</strong>
               <span>{{ formatNumber(entity.remoteFilesTotal) }}</span>
               <span>{{ formatNumber(entity.importedFiles) }}</span>
@@ -192,10 +211,17 @@ function entityLabel(dataType?: string) {
         </header>
 
         <div v-if="overview.missingFiles?.length" class="erp-sync-overview__missing-list">
-          <article v-for="file in overview.missingFiles" :key="file.sourceName" class="erp-sync-overview__missing-item">
+          <article
+            v-for="file in overview.missingFiles"
+            :key="file.sourceName"
+            class="erp-sync-overview__missing-item"
+          >
             <div>
               <strong>{{ file.sourceName }}</strong>
-              <small>{{ entityLabel(file.dataType) }} • referência {{ formatDateTime(file.dataReference) }}</small>
+              <small>
+                {{ entityLabel(file.dataType) }} • referência
+                {{ formatDateTime(file.dataReference) }}
+              </small>
             </div>
             <div class="erp-sync-overview__missing-meta">
               <span>{{ formatSize(file.sizeBytes) }}</span>
@@ -204,11 +230,15 @@ function entityLabel(dataType?: string) {
             </div>
           </article>
         </div>
-        <p v-else class="erp-sync-overview__empty">Nenhum CSV pendente: o FTP atual já está totalmente coberto no banco.</p>
+        <p v-else class="erp-sync-overview__empty">
+          Nenhum CSV pendente: o FTP atual já está totalmente coberto no banco.
+        </p>
       </section>
     </template>
 
-    <p v-else class="erp-sync-overview__empty">Overview indisponível para o escopo ERP do sistema.</p>
+    <p v-else class="erp-sync-overview__empty">
+      Overview indisponível para o escopo ERP do sistema.
+    </p>
   </section>
 </template>
 

@@ -1,166 +1,122 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { ChevronDown, LayoutPanelLeft, LogOut, User, X } from "lucide-vue-next";
-import { storeToRefs } from "pinia";
-import AppSelectField from "~/components/ui/AppSelectField.vue";
-import DashboardSidebarNav from "~/components/dashboard/DashboardSidebarNav.vue";
-import FeedbackNotificationsDropdown from "~/components/feedback/FeedbackNotificationsDropdown.vue";
-import { useDashboardNav } from "~/composables/useDashboardNav";
-import { getRoleLabel } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { getApiBase } from "~/utils/api-client";
-
-const ALL_STORES_VALUE = "__all_stores__";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ChevronDown, LogOut, User, X } from 'lucide-vue-next'
+import { storeToRefs } from 'pinia'
+import AppSelectField from '~/components/ui/AppSelectField.vue'
+import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
+import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
+import { useDashboardNav } from '~/composables/useDashboardNav'
+import { getRoleLabel } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { getApiBase } from '~/utils/api-client'
 
 const props = defineProps({
   state: {
     type: Object,
-    required: true
+    required: true,
   },
   showOperationsContext: {
     type: Boolean,
-    default: true
+    default: true,
   },
   activeWorkspace: {
     type: String,
-    default: ""
+    default: '',
   },
   allowedWorkspaces: {
     type: Array,
-    default: () => []
-  }
-});
+    default: () => [],
+  },
+})
 
-const emit = defineEmits(["store-change", "profile-change"]);
-const auth = useAuthStore();
-const { isAuthenticated, user, role, accessibleStoreIds, canUseAllStores, isAllStoresScope } = storeToRefs(auth);
-const runtimeConfig = useRuntimeConfig();
-const sidebarOpen = ref(false);
-const profileMenuRef = ref(null);
-const profileMenuOpen = ref(false);
-const route = useRoute();
+const emit = defineEmits(['store-change', 'profile-change'])
+const auth = useAuthStore()
+const { isAuthenticated, user, role } = storeToRefs(auth)
+const runtimeConfig = useRuntimeConfig()
+const sidebarOpen = ref(false)
+const profileMenuRef = ref(null)
+const profileMenuOpen = ref(false)
+const route = useRoute()
 
 const { headerItems, resolveIcon, isItemActive, isGroupActive } = useDashboardNav(
   computed(() => props.activeWorkspace),
-  computed(() => props.allowedWorkspaces)
-);
+  computed(() => props.allowedWorkspaces),
+)
 
-const availableStores = computed(() => {
-  if (!isAuthenticated.value || !accessibleStoreIds.value.length) {
-    return props.state.stores || [];
-  }
-  const allowedStoreIds = new Set(accessibleStoreIds.value);
-  return (props.state.stores || []).filter((store) => allowedStoreIds.has(store.id));
-});
-
-const activeServicesCount = computed(() => props.state.activeServices?.length || 0);
-const displayName = computed(() => String(user.value?.displayName || "").trim());
-const profileEmail = computed(() => String(user.value?.email || "").trim());
-const profileRoleLabel = computed(() => getRoleLabel(role.value));
+const activeServicesCount = computed(() => props.state.activeServices?.length || 0)
+const displayName = computed(() => String(user.value?.displayName || '').trim())
+const profileEmail = computed(() => String(user.value?.email || '').trim())
+const profileRoleLabel = computed(() => getRoleLabel(role.value))
 const avatarUrl = computed(() => {
-  const avatarPath = String(user.value?.avatarPath || "").trim();
-  if (!avatarPath) return "";
-  return new URL(avatarPath, getApiBase(runtimeConfig)).toString();
-});
-const profileInitial = computed(() => displayName.value.charAt(0).toUpperCase() || "U");
-const selectedStoreValue = computed(() =>
-  isAllStoresScope.value ? ALL_STORES_VALUE : String(props.state.activeStoreId || "").trim()
-);
-const storeSelectOptions = computed(() => {
-  const options = availableStores.value.map((store) => ({
-    value: String(store.id || "").trim(),
-    label: String(store.name || "").trim(),
-    meta: [String(store.code || "").trim(), String(store.city || "").trim()].filter(Boolean).join(" - ")
-  }));
-  if (canUseAllStores.value) {
-    options.unshift({
-      value: ALL_STORES_VALUE,
-      label: "Todas as lojas",
-      meta: "Mantem o contexto global para comparativo multi-loja"
-    });
-  }
-  return options;
-});
+  const avatarPath = String(user.value?.avatarPath || '').trim()
+  if (!avatarPath) return ''
+  return new URL(avatarPath, getApiBase(runtimeConfig)).toString()
+})
+const profileInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
 const profileSelectOptions = computed(() =>
   (props.state.profiles || []).map((profile) => ({
-    value: String(profile.id || "").trim(),
-    label: String(profile.name || "").trim()
-  }))
-);
-
-function handleStoreChange(value) {
-  const normalizedValue = String(value || "").trim();
-
-  if (!normalizedValue) {
-    return;
-  }
-
-  if (normalizedValue === ALL_STORES_VALUE) {
-    auth.setStoreScopeMode("all");
-    return;
-  }
-
-  auth.setStoreScopeMode("single");
-  emit("store-change", normalizedValue);
-}
+    value: String(profile.id || '').trim(),
+    label: String(profile.name || '').trim(),
+  })),
+)
 
 function handleProfileChange(value) {
-  emit("profile-change", String(value || "").trim());
+  emit('profile-change', String(value || '').trim())
 }
 
 function closeProfileMenu() {
-  profileMenuOpen.value = false;
+  profileMenuOpen.value = false
 }
 
 function closeSidebar() {
-  sidebarOpen.value = false;
+  sidebarOpen.value = false
 }
 
 function toggleProfileMenu() {
-  profileMenuOpen.value = !profileMenuOpen.value;
+  profileMenuOpen.value = !profileMenuOpen.value
 }
 
 async function handleLogout() {
-  closeProfileMenu();
-  await auth.logout();
-  await navigateTo("/auth/login", { replace: true });
+  closeProfileMenu()
+  await auth.logout()
+  await navigateTo('/auth/login', { replace: true })
 }
 
 function handlePointerDown(event) {
   if (!profileMenuOpen.value) {
-    return;
+    return
   }
 
-  const target = event.target;
+  const target = event.target
   if (profileMenuRef.value && !profileMenuRef.value.contains(target)) {
-    closeProfileMenu();
+    closeProfileMenu()
   }
 }
 
 function handleEscape(event) {
-  if (event.key === "Escape") {
-    closeProfileMenu();
-    closeSidebar();
+  if (event.key === 'Escape') {
+    closeProfileMenu()
+    closeSidebar()
   }
 }
 
 watch(
   () => route.fullPath,
   () => {
-    closeProfileMenu();
-    closeSidebar();
-  }
-);
+    closeProfileMenu()
+    closeSidebar()
+  },
+)
 
 onMounted(() => {
-  document.addEventListener("pointerdown", handlePointerDown);
-  document.addEventListener("keydown", handleEscape);
-});
+  document.addEventListener('pointerdown', handlePointerDown)
+  document.addEventListener('keydown', handleEscape)
+})
 
 onBeforeUnmount(() => {
-  document.removeEventListener("pointerdown", handlePointerDown);
-  document.removeEventListener("keydown", handleEscape);
-});
+  document.removeEventListener('pointerdown', handlePointerDown)
+  document.removeEventListener('keydown', handleEscape)
+})
 </script>
 
 <template>
@@ -176,18 +132,15 @@ onBeforeUnmount(() => {
           @click="sidebarOpen = true"
         />
         <picture class="dashboard-header__logo" aria-label="Logo da plataforma">
-          <source srcset="/logo.avif" type="image/avif">
-          <source srcset="/logo.webp" type="image/webp">
-          <img src="/logo.png" alt="Logo da plataforma">
+          <source srcset="/logo.avif" type="image/avif" />
+          <source srcset="/logo.webp" type="image/webp" />
+          <img src="/logo.png" alt="Logo da plataforma" />
         </picture>
       </div>
 
       <nav class="dashboard-header__nav" aria-label="Menu principal">
         <template v-for="item in headerItems" :key="item.id">
-          <div
-            v-if="item.children"
-            class="dashboard-header__nav-dropdown"
-          >
+          <div v-if="item.children" class="dashboard-header__nav-dropdown">
             <button
               class="dashboard-header__nav-link"
               :class="{ 'is-active': isGroupActive(item) }"
@@ -248,7 +201,9 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="brand__meta dashboard-header__meta">
-        <span v-if="showOperationsContext" class="summary-pill">{{ state.waitingList.length }} na fila</span>
+        <span v-if="showOperationsContext" class="summary-pill">
+          {{ state.waitingList.length }} na fila
+        </span>
         <span
           v-if="showOperationsContext"
           class="summary-pill"
@@ -256,29 +211,22 @@ onBeforeUnmount(() => {
         >
           {{ activeServicesCount }}/{{ state.settings.maxConcurrentServices }} em atendimento
         </span>
-        <span v-if="showOperationsContext" class="summary-pill">{{ state.serviceHistory.length }} finalizados</span>
-        <AppSelectField
-          v-if="showOperationsContext"
-          class="summary-select dashboard-header__store-select"
-          :model-value="selectedStoreValue"
-          :options="storeSelectOptions"
-          placeholder="Selecionar loja"
-          :show-leading-icon="false"
-          compact
-          @update:model-value="handleStoreChange"
-        />
-        <AppSelectField
-          v-if="showOperationsContext && !isAuthenticated"
-          class="summary-select"
-          :model-value="state.activeProfileId"
-          :options="profileSelectOptions"
-          placeholder="Selecionar perfil"
-          :show-leading-icon="false"
-          compact
-          @update:model-value="handleProfileChange"
-        />
-        <FeedbackNotificationsDropdown v-if="isAuthenticated" />
-        <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
+        <span v-if="showOperationsContext" class="summary-pill">
+          {{ state.serviceHistory.length }} finalizados
+        </span>
+        <ClientOnly>
+          <AppSelectField
+            v-if="showOperationsContext && !isAuthenticated"
+            class="summary-select"
+            :model-value="state.activeProfileId"
+            :options="profileSelectOptions"
+            placeholder="Selecionar perfil"
+            :show-leading-icon="false"
+            compact
+            @update:model-value="handleProfileChange"
+          />
+          <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+          <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
           <button
             class="dashboard-header__profile-trigger"
             type="button"
@@ -288,7 +236,7 @@ onBeforeUnmount(() => {
             @click="toggleProfileMenu"
           >
             <span class="dashboard-header__profile-avatar" aria-hidden="true">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="" />
               <span v-else>{{ profileInitial }}</span>
             </span>
           </button>
@@ -297,31 +245,62 @@ onBeforeUnmount(() => {
             <div v-if="profileMenuOpen" class="dashboard-header__profile-dropdown" role="menu">
               <div class="dashboard-header__profile-card">
                 <span class="dashboard-header__profile-role">{{ profileRoleLabel }}</span>
-                <strong class="dashboard-header__profile-fullname">{{ displayName || "Conta autenticada" }}</strong>
-                <span class="dashboard-header__profile-email">{{ profileEmail || "Sessao ativa" }}</span>
+                <strong class="dashboard-header__profile-fullname">
+                  {{ displayName || 'Conta autenticada' }}
+                </strong>
+                <span class="dashboard-header__profile-email">
+                  {{ profileEmail || 'Sessao ativa' }}
+                </span>
               </div>
 
-              <NuxtLink class="dashboard-header__menu-action" to="/perfil" role="menuitem" @click="closeProfileMenu">
+              <NuxtLink
+                class="dashboard-header__menu-action"
+                to="/perfil"
+                role="menuitem"
+                @click="closeProfileMenu"
+              >
                 <User :size="16" :stroke-width="2.15" />
                 <span>Pagina de perfil</span>
               </NuxtLink>
 
-              <button class="dashboard-header__menu-action dashboard-header__menu-action--danger" type="button" role="menuitem" @click="handleLogout">
+              <button
+                class="dashboard-header__menu-action dashboard-header__menu-action--danger"
+                type="button"
+                role="menuitem"
+                @click="handleLogout"
+              >
                 <LogOut :size="16" :stroke-width="2.15" />
                 <span>Sair da plataforma</span>
               </button>
             </div>
           </Transition>
         </div>
+        </ClientOnly>
       </div>
     </div>
 
     <Teleport to="body">
       <Transition name="dashboard-sidebar-drawer">
-        <div v-if="sidebarOpen" class="dashboard-header__sidebar-drawer" role="dialog" aria-modal="true" aria-label="Menu do sistema">
-          <button class="dashboard-header__sidebar-backdrop" type="button" aria-label="Fechar sidebar" @click="closeSidebar" />
+        <div
+          v-if="sidebarOpen"
+          class="dashboard-header__sidebar-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu do sistema"
+        >
+          <button
+            class="dashboard-header__sidebar-backdrop"
+            type="button"
+            aria-label="Fechar sidebar"
+            @click="closeSidebar"
+          ></button>
           <aside class="dashboard-header__sidebar-panel">
-            <button class="dashboard-header__sidebar-close" type="button" aria-label="Fechar sidebar" @click="closeSidebar">
+            <button
+              class="dashboard-header__sidebar-close"
+              type="button"
+              aria-label="Fechar sidebar"
+              @click="closeSidebar"
+            >
               <X :size="18" :stroke-width="2.2" aria-hidden="true" />
             </button>
             <div class="dashboard-header__sidebar-body">
@@ -333,23 +312,25 @@ onBeforeUnmount(() => {
               />
             </div>
             <div class="dashboard-header__sidebar-footer">
-              <FeedbackNotificationsDropdown v-if="isAuthenticated" />
-              <NuxtLink
-                v-if="isAuthenticated"
-                class="dashboard-header__sidebar-profile"
-                aria-label="Abrir perfil"
-                to="/perfil"
-                @click="closeSidebar"
-              >
-                <span class="dashboard-header__profile-avatar" aria-hidden="true">
-                  <img v-if="avatarUrl" :src="avatarUrl" alt="">
-                  <span v-else>{{ profileInitial }}</span>
-                </span>
-                <span class="dashboard-header__sidebar-profile-copy">
-                  <strong>{{ displayName || "Conta autenticada" }}</strong>
-                  <small>{{ profileRoleLabel }}</small>
-                </span>
-              </NuxtLink>
+              <ClientOnly>
+                <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+                <NuxtLink
+                  v-if="isAuthenticated"
+                  class="dashboard-header__sidebar-profile"
+                  aria-label="Abrir perfil"
+                  to="/perfil"
+                  @click="closeSidebar"
+                >
+                  <span class="dashboard-header__profile-avatar" aria-hidden="true">
+                    <img v-if="avatarUrl" :src="avatarUrl" alt="" />
+                    <span v-else>{{ profileInitial }}</span>
+                  </span>
+                  <span class="dashboard-header__sidebar-profile-copy">
+                    <strong>{{ displayName || 'Conta autenticada' }}</strong>
+                    <small>{{ profileRoleLabel }}</small>
+                  </span>
+                </NuxtLink>
+              </ClientOnly>
             </div>
           </aside>
         </div>
@@ -448,7 +429,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-header__nav-link::after {
-  content: "";
+  content: '';
   position: absolute;
   inset-inline: 0.6rem;
   bottom: 0.18rem;
@@ -477,7 +458,9 @@ onBeforeUnmount(() => {
   width: 0.86rem;
   height: 0.86rem;
   color: var(--admin-header-muted);
-  transition: transform 0.16s ease, color 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    color 0.16s ease;
 }
 
 .dashboard-header__nav-dropdown {
@@ -525,7 +508,10 @@ onBeforeUnmount(() => {
   visibility: hidden;
   transform: translateY(-0.35rem);
   pointer-events: none;
-  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease,
+    visibility 0.14s ease;
 }
 
 .dashboard-header__nav-popover-item {
@@ -602,11 +588,14 @@ onBeforeUnmount(() => {
   background: var(--admin-header-hover-bg);
   color: var(--admin-header-text);
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease;
 }
 
 .dashboard-header__profile-trigger:hover,
-.dashboard-header__profile-trigger[aria-expanded="true"] {
+.dashboard-header__profile-trigger[aria-expanded='true'] {
   border-color: rgb(var(--ring) / 0.42);
   background: var(--admin-header-active-bg);
 }
@@ -691,7 +680,10 @@ onBeforeUnmount(() => {
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .dashboard-header__menu-action:hover {
@@ -712,7 +704,9 @@ onBeforeUnmount(() => {
 
 .dashboard-header-menu-enter-active,
 .dashboard-header-menu-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .dashboard-header-menu-enter-from,
@@ -777,7 +771,10 @@ onBeforeUnmount(() => {
   background: var(--admin-header-hover-bg);
   color: var(--admin-header-muted);
   cursor: pointer;
-  transition: color 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
 }
 
 .dashboard-header__sidebar-close:hover {

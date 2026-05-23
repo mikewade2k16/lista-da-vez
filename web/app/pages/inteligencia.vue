@@ -1,33 +1,32 @@
 <script setup>
-import { computed, watch } from "vue";
-import IntelligenceWorkspace from "~/components/intelligence/IntelligenceWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { canUseAllStoresScope } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { useAnalyticsStore } from "~/stores/analytics";
+import { computed, watch } from 'vue'
+import IntelligenceWorkspace from '~/components/intelligence/IntelligenceWorkspace.vue'
+import { storeToRefs } from 'pinia'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useAnalyticsStore } from '~/stores/analytics'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "inteligencia",
-  alias: ["/operacao/inteligencia"],
-  supportsAllStoresScope: true
-});
+  layout: 'dashboard',
+  workspaceId: 'inteligencia',
+  alias: ['/operacao/inteligencia'],
+  supportsAllStoresScope: true,
+})
 
-const auth = useAuthStore();
-const analyticsStore = useAnalyticsStore();
-const { intelligence, pending, errorMessage } = storeToRefs(analyticsStore);
-const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
-const { isAllStoresScope } = storeToRefs(auth);
-const integratedScope = computed(() => canSeeIntegrated.value && isAllStoresScope.value);
+const auth = useAuthStore()
+const analyticsStore = useAnalyticsStore()
+const { intelligence, pending, errorMessage } = storeToRefs(analyticsStore)
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
+const integratedScope = computed(() => canSeeIntegrated.value)
 
 watch(
   () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId],
   () => {
-    analyticsStore.setIntegratedScope(integratedScope.value);
-    void analyticsStore.fetchIntelligence();
+    analyticsStore.setIntegratedScope(integratedScope.value)
+    void analyticsStore.fetchIntelligence()
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 </script>
 
 <template>

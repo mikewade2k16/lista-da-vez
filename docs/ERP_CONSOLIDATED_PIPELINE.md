@@ -4,7 +4,7 @@
 
 This document describes the ERP ingestion flow using consolidated markdown files in:
 
-- `Controlle10 - ftp/consolidados/<store_code>/*.md`
+- `erp-source-local/consolidados/<store_code>/*.md` (pasta antes chamada `Controlle10 - ftp/`)
 
 No direct CSV read is required for ingestion in this flow.
 
@@ -62,7 +62,7 @@ Raw data tables used by type:
 ## VPS Data Load Strategy
 
 For production, prefer a DB-only ERP load when local Postgres already has the
-consolidated files imported. Do not upload `Controlle10 - ftp` to the VPS just
+consolidated files imported. Do not upload `erp-source-local` (formerly `Controlle10 - ftp`) to the VPS just
 to seed the same data.
 
 Operational rule:

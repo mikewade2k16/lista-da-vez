@@ -1,36 +1,36 @@
 <script setup lang="ts">
-import { watch } from "vue";
+import { watch } from 'vue'
 
-import { useAuthStore } from "~/stores/auth";
-import { useCrmStore } from "~/stores/crm";
+import { useAuthStore } from '~/stores/auth'
+import { useCrmStore } from '~/stores/crm'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "crm",
-  alias: ["/operacao/crm"],
-});
+  layout: 'dashboard',
+  workspaceId: 'crm',
+  alias: ['/operacao/crm'],
+})
 
-const auth = useAuthStore();
-const crmStore = useCrmStore();
+const auth = useAuthStore()
+const crmStore = useCrmStore()
 
 watch(
   () => [auth.activeTenantId, auth.isAuthenticated],
   async () => {
     try {
-      await auth.ensureSession();
+      await auth.ensureSession()
 
       if (!auth.isAuthenticated) {
-        crmStore.clearState();
-        return;
+        crmStore.clearState()
+        return
       }
 
-      await crmStore.ensureLoaded();
+      await crmStore.ensureLoaded()
     } catch {
-      crmStore.clearState();
+      crmStore.clearState()
     }
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 </script>
 
 <template>

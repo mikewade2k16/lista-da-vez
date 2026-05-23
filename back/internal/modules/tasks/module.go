@@ -14,14 +14,16 @@ type Module struct {
 	publisher        Publisher
 	notifier         notifications.Notifier
 	relationRegistry *modules.RelationRegistry
+	videoStorage     TaskVideoStorage
 }
 
-func New(publisher Publisher, notifier notifications.Notifier, relationRegistry ...*modules.RelationRegistry) *Module {
-	module := &Module{publisher: publisher, notifier: notifier}
-	if len(relationRegistry) > 0 {
-		module.relationRegistry = relationRegistry[0]
+func New(publisher Publisher, notifier notifications.Notifier, relationRegistry *modules.RelationRegistry, videoStorage TaskVideoStorage) *Module {
+	return &Module{
+		publisher:        publisher,
+		notifier:         notifier,
+		relationRegistry: relationRegistry,
+		videoStorage:     videoStorage,
 	}
-	return module
 }
 
 func (module *Module) ID() string {
@@ -88,7 +90,7 @@ func (module *Module) RoleTemplates() []modules.RoleTemplateDef {
 
 func (module *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	repository := NewPostgresRepository(deps.Pool)
-	service := NewService(repository, module.publisher, module.notifier, module.relationRegistry)
+	service := NewService(repository, module.publisher, module.notifier, module.relationRegistry, module.videoStorage)
 	service.SetLogger(deps.Logger)
 
 	module.handle = &handle{

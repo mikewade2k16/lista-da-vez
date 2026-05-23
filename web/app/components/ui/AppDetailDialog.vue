@@ -1,91 +1,96 @@
 <script setup>
-import { onBeforeUnmount, onMounted, watch } from "vue";
-import { X } from "lucide-vue-next";
+import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { X } from 'lucide-vue-next'
 
 const props = defineProps({
   modelValue: {
     type: Boolean,
-    default: false
+    default: false,
   },
   title: {
     type: String,
-    default: "Detalhes"
+    default: 'Detalhes',
   },
   subtitle: {
     type: String,
-    default: ""
+    default: '',
   },
   sections: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   width: {
     type: String,
-    default: "min(42rem, calc(100vw - 2rem))"
-  }
-});
+    default: 'min(42rem, calc(100vw - 2rem))',
+  },
+})
 
-const emit = defineEmits(["update:modelValue"]);
-let previousBodyOverflow = "";
+const emit = defineEmits(['update:modelValue'])
+let previousBodyOverflow = ''
 
 function closeDialog() {
-  emit("update:modelValue", false);
+  emit('update:modelValue', false)
 }
 
 function syncBodyScrollLock(isOpen) {
   if (!import.meta.client) {
-    return;
+    return
   }
 
   if (isOpen) {
-    previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return;
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return
   }
 
-  document.body.style.overflow = previousBodyOverflow;
+  document.body.style.overflow = previousBodyOverflow
 }
 
 function formatValue(value) {
   if (Array.isArray(value)) {
-    return value.filter(Boolean).join(", ") || "-";
+    return value.filter(Boolean).join(', ') || '-'
   }
 
-  if (value === null || value === undefined || String(value).trim() === "") {
-    return "-";
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return '-'
   }
 
-  return String(value);
+  return String(value)
 }
 
 function handleEscape(event) {
-  if (event.key === "Escape" && props.modelValue) {
-    closeDialog();
+  if (event.key === 'Escape' && props.modelValue) {
+    closeDialog()
   }
 }
 
 onMounted(() => {
-  document.addEventListener("keydown", handleEscape);
-});
+  document.addEventListener('keydown', handleEscape)
+})
 
 watch(
   () => props.modelValue,
   (isOpen) => {
-    syncBodyScrollLock(isOpen);
+    syncBodyScrollLock(isOpen)
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
-  document.removeEventListener("keydown", handleEscape);
-  syncBodyScrollLock(false);
-});
+  document.removeEventListener('keydown', handleEscape)
+  syncBodyScrollLock(false)
+})
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="modelValue" class="app-detail-dialog">
-      <button class="app-detail-dialog__scrim" type="button" aria-label="Fechar detalhes" @click="closeDialog" />
+      <button
+        class="app-detail-dialog__scrim"
+        type="button"
+        aria-label="Fechar detalhes"
+        @click="closeDialog"
+      ></button>
 
       <section class="app-detail-dialog__card" :style="{ width }">
         <header class="app-detail-dialog__header">
@@ -95,7 +100,12 @@ onBeforeUnmount(() => {
             <p v-if="subtitle" class="app-detail-dialog__subtitle">{{ subtitle }}</p>
           </div>
 
-          <button class="app-detail-dialog__close" type="button" aria-label="Fechar" @click="closeDialog">
+          <button
+            class="app-detail-dialog__close"
+            type="button"
+            aria-label="Fechar"
+            @click="closeDialog"
+          >
             <X :size="18" :stroke-width="2.1" />
           </button>
         </header>
@@ -118,12 +128,14 @@ onBeforeUnmount(() => {
                 class="app-detail-dialog__field"
               >
                 <span class="app-detail-dialog__field-label">{{ field?.label || field?.key }}</span>
-                <strong class="app-detail-dialog__field-value">{{ formatValue(field?.value) }}</strong>
+                <strong class="app-detail-dialog__field-value">
+                  {{ formatValue(field?.value) }}
+                </strong>
               </article>
             </div>
           </section>
 
-          <slot />
+          <slot></slot>
         </div>
       </section>
     </div>

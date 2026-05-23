@@ -1,36 +1,39 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
-  runs?: Array<Record<string, any>>;
-  selectedRunId?: string;
-}>(), {
-  runs: () => [],
-  selectedRunId: ""
-});
+const props = withDefaults(
+  defineProps<{
+    runs?: Array<Record<string, any>>
+    selectedRunId?: string
+  }>(),
+  {
+    runs: () => [],
+    selectedRunId: '',
+  },
+)
 
 const emit = defineEmits<{
-  (e: "select", runId: string): void;
-}>();
+  (e: 'select', runId: string): void
+}>()
 
 function formatDateTime(value?: string | null) {
-  const normalized = String(value || "").trim();
+  const normalized = String(value || '').trim()
   if (!normalized) {
-    return "-";
+    return '-'
   }
-  const parsed = new Date(normalized);
+  const parsed = new Date(normalized)
   if (Number.isNaN(parsed.getTime())) {
-    return normalized;
+    return normalized
   }
-  return parsed.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return parsed.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("pt-BR");
+  return Number(value || 0).toLocaleString('pt-BR')
 }
 </script>
 
@@ -91,7 +94,9 @@ function formatNumber(value?: number | null) {
 
 .erp-sync-runs__row {
   display: grid;
-  grid-template-columns: minmax(90px, 120px) minmax(120px, 1fr) minmax(110px, 130px) minmax(110px, 130px) minmax(160px, 190px);
+  grid-template-columns:
+    minmax(90px, 120px) minmax(120px, 1fr) minmax(110px, 130px) minmax(110px, 130px)
+    minmax(160px, 190px);
   gap: 0.6rem;
   align-items: center;
   padding: 0.8rem 0.9rem;

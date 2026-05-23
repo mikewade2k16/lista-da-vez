@@ -1,16 +1,16 @@
 <script setup>
-import { computed } from "vue";
-import DemoWorkspacePage from "~/components/demo/DemoWorkspacePage.vue";
-import { getDemoPage } from "~/utils/demo-pages";
+import { computed } from 'vue'
+import DemoWorkspacePage from '~/components/demo/DemoWorkspacePage.vue'
+import { getDemoPage } from '~/utils/demo-pages'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "",
-  pageLabel: "Team"
-});
+  layout: 'dashboard',
+  workspaceId: '',
+  pageLabel: 'Team',
+})
 
-const route = useRoute();
-const page = computed(() => getDemoPage(`team/${route.params.area}`));
+const route = useRoute()
+const page = computed(() => getDemoPage(`team/${route.params.area}`))
 </script>
 
 <template>

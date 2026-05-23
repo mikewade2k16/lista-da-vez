@@ -1,32 +1,35 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
-  run?: Record<string, any> | null;
-  lastImportedFile?: Record<string, any> | null;
-}>(), {
-  run: null,
-  lastImportedFile: null
-});
+const props = withDefaults(
+  defineProps<{
+    run?: Record<string, any> | null
+    lastImportedFile?: Record<string, any> | null
+  }>(),
+  {
+    run: null,
+    lastImportedFile: null,
+  },
+)
 
 function formatDateTime(value?: string | null) {
-  const normalized = String(value || "").trim();
+  const normalized = String(value || '').trim()
   if (!normalized) {
-    return "-";
+    return '-'
   }
-  const parsed = new Date(normalized);
+  const parsed = new Date(normalized)
   if (Number.isNaN(parsed.getTime())) {
-    return normalized;
+    return normalized
   }
-  return parsed.toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  return parsed.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("pt-BR");
+  return Number(value || 0).toLocaleString('pt-BR')
 }
 </script>
 
@@ -71,7 +74,10 @@ function formatNumber(value?: number | null) {
         <strong>{{ props.lastImportedFile?.sourceName || '-' }}</strong>
         <small>{{ formatDateTime(props.lastImportedFile?.importedAt) }}</small>
       </article>
-      <article v-if="props.run.errorMessage" class="erp-sync-detail__card erp-sync-detail__card--wide">
+      <article
+        v-if="props.run.errorMessage"
+        class="erp-sync-detail__card erp-sync-detail__card--wide"
+      >
         <span>Erro</span>
         <strong>{{ props.run.errorMessage }}</strong>
       </article>

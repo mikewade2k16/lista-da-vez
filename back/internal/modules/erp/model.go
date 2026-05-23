@@ -20,7 +20,7 @@ const (
 	SyncTriggeredByBackfill = "backfill"
 
 	defaultPageSize              = 50
-	maxPageSize                  = 200
+	maxPageSize                  = 5000
 	defaultCSVMaxBytes           = 128 * 1024 * 1024
 	defaultManualSyncMaxFiles    = 100
 	defaultBackfillMaxFiles      = 1000
@@ -79,6 +79,7 @@ type SyncRunSummary struct {
 	DataType      string     `json:"dataType"`
 	Mode          string     `json:"mode"`
 	Status        string     `json:"status"`
+	TriggeredBy   string     `json:"triggeredBy,omitempty"`
 	FilesSeen     int        `json:"filesSeen"`
 	FilesImported int        `json:"filesImported"`
 	FilesSkipped  int        `json:"filesSkipped"`
@@ -130,6 +131,10 @@ type ProductQuery struct {
 	Search           string `json:"search,omitempty"`
 	Page             int    `json:"page,omitempty"`
 	PageSize         int    `json:"pageSize,omitempty"`
+	SortBy           string `json:"sortBy,omitempty"`
+	SortDir          string `json:"sortDir,omitempty"`
+	DateFrom         string `json:"dateFrom,omitempty"`
+	DateTo           string `json:"dateTo,omitempty"`
 }
 
 type ProductRow struct {
@@ -172,6 +177,11 @@ type RawRecordsQuery struct {
 	SpecificSearch string `json:"specificSearch,omitempty"`
 	Page           int    `json:"page,omitempty"`
 	PageSize       int    `json:"pageSize,omitempty"`
+	Dedup          bool   `json:"dedup,omitempty"`
+	SortBy         string `json:"sortBy,omitempty"`   // coluna do allowlist por dataType
+	SortDir        string `json:"sortDir,omitempty"`  // "asc" | "desc"
+	DateFrom       string `json:"dateFrom,omitempty"` // YYYY-MM-DD (source_batch_date >=)
+	DateTo         string `json:"dateTo,omitempty"`   // YYYY-MM-DD (source_batch_date <=)
 }
 
 type RawRecordsListResponse struct {
@@ -254,10 +264,12 @@ type SyncOverviewResponse struct {
 }
 
 type CRMOverviewQuery struct {
-	TenantID  string    `json:"tenantId,omitempty"`
-	StoreCode string    `json:"storeCode,omitempty"`
-	DateFrom  time.Time `json:"dateFrom,omitempty"`
-	DateTo    time.Time `json:"dateTo,omitempty"`
+	TenantID        string    `json:"tenantId,omitempty"`
+	StoreCode       string    `json:"storeCode,omitempty"`
+	DateFrom        time.Time `json:"dateFrom,omitempty"`
+	DateTo          time.Time `json:"dateTo,omitempty"`
+	DateFromHasTime bool      `json:"-"`
+	DateToHasTime   bool      `json:"-"`
 }
 
 type CRMSummary struct {
@@ -271,6 +283,8 @@ type CRMSummary struct {
 	GoalProgress         float64 `json:"goalProgress"`
 	RemainingToGoalCents int64   `json:"remainingToGoalCents"`
 	UnmappedSalesCents   int64   `json:"unmappedSalesCents,omitempty"`
+	ERPCancellations     int     `json:"erpCancellations,omitempty"`
+	ERPCancellationRate  float64 `json:"erpCancellationRate,omitempty"`
 }
 
 type CRMStoreMetric struct {
@@ -291,6 +305,8 @@ type CRMStoreMetric struct {
 	PAGoal               float64  `json:"paGoal"`
 	GoalProgress         float64  `json:"goalProgress"`
 	RemainingToGoalCents int64    `json:"remainingToGoalCents"`
+	ERPCancellations     int      `json:"erpCancellations,omitempty"`
+	ERPCancellationRate  float64  `json:"erpCancellationRate,omitempty"`
 }
 
 type CRMConsultantMetric struct {
@@ -308,6 +324,38 @@ type CRMConsultantMetric struct {
 	PAScore              float64 `json:"paScore"`
 }
 
+// QueueConsultantStats contém indicadores de atendimento da fila por consultor.
+// O merge com CRMConsultantMetric é feito no frontend por PersonName × ConsultantName.
+type QueueConsultantStats struct {
+	PersonID              string  `json:"personId"`
+	PersonName            string  `json:"personName"`
+	StoreID               string  `json:"storeId"`
+	Attendances           int     `json:"attendances"`
+	Conversions           int     `json:"conversions"`
+	ConversionRate        float64 `json:"conversionRate"`
+	QueueCancellations    int     `json:"queueCancellations"`
+	QueueCancellationRate float64 `json:"queueCancellationRate"`
+}
+
+type QueueStoreStats struct {
+	StoreID               string  `json:"storeId"`
+	Attendances           int     `json:"attendances"`
+	Conversions           int     `json:"conversions"`
+	ConversionRate        float64 `json:"conversionRate"`
+	QueueCancellations    int     `json:"queueCancellations"`
+	QueueCancellationRate float64 `json:"queueCancellationRate"`
+}
+
+type QueueStats struct {
+	TotalAttendances   int                    `json:"totalAttendances"`
+	TotalConversions   int                    `json:"totalConversions"`
+	TotalCancellations int                    `json:"totalCancellations"`
+	ConversionRate     float64                `json:"conversionRate"`
+	CancellationRate   float64                `json:"cancellationRate"`
+	ByStore            []QueueStoreStats      `json:"byStore,omitempty"`
+	ByConsultant       []QueueConsultantStats `json:"byConsultant,omitempty"`
+}
+
 type CRMOverviewResponse struct {
 	Store       StoreScope            `json:"store"`
 	DateFrom    string                `json:"dateFrom"`
@@ -315,6 +363,7 @@ type CRMOverviewResponse struct {
 	Summary     CRMSummary            `json:"summary"`
 	Stores      []CRMStoreMetric      `json:"stores"`
 	Consultants []CRMConsultantMetric `json:"consultants"`
+	QueueStats  *QueueStats           `json:"queueStats,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
 }
 
@@ -574,6 +623,26 @@ type OrderRawRecord struct {
 	TotalExclusionCents *int64
 	TotalDebitRaw       string
 	TotalDebitCents     *int64
+}
+
+type RecordsStatsQuery struct {
+	TenantID       string `json:"tenantId,omitempty"`
+	StoreCode      string `json:"storeCode,omitempty"`
+	DataType       string `json:"dataType"`
+	Search         string `json:"search,omitempty"`
+	SpecificSearch string `json:"specificSearch,omitempty"`
+	DateFrom       string `json:"dateFrom,omitempty"`
+	DateTo         string `json:"dateTo,omitempty"`
+}
+
+type RecordsStatsResponse struct {
+	DataType         string  `json:"dataType"`
+	OrderCount       int64   `json:"orderCount"`
+	TotalAmountCents int64   `json:"totalAmountCents"`
+	AvgAmountCents   int64   `json:"avgAmountCents"`
+	TotalItems       int64   `json:"totalItems"`
+	PA               float64 `json:"pa"`
+	CustomerCount    int64   `json:"customerCount"`
 }
 
 type itemBatchImportInput struct {

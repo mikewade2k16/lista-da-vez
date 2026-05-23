@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import UserFeedbackWorkspace from "~/components/feedback/UserFeedbackWorkspace.vue";
+import UserFeedbackWorkspace from '~/components/feedback/UserFeedbackWorkspace.vue'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: ""
-});
+  layout: 'dashboard',
+  workspaceId: '',
+})
 </script>
 
 <template>

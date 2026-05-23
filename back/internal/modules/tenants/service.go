@@ -117,7 +117,7 @@ func (service *Service) Restore(ctx context.Context, principal auth.Principal, t
 	})
 }
 
-func ResolveDefaultActiveTenantID(principal auth.Principal, tenants []TenantView) string {
+func ResolveDefaultActiveTenantID(principal auth.Principal, tenants []TenantView, tenantIDsWithStores map[string]struct{}) string {
 	if principal.TenantID != "" {
 		for _, tenant := range tenants {
 			if tenant.ID == principal.TenantID {
@@ -128,6 +128,14 @@ func ResolveDefaultActiveTenantID(principal auth.Principal, tenants []TenantView
 
 	if len(tenants) == 0 {
 		return ""
+	}
+
+	if len(tenantIDsWithStores) > 0 {
+		for _, tenant := range tenants {
+			if _, ok := tenantIDsWithStores[tenant.ID]; ok {
+				return tenant.ID
+			}
+		}
 	}
 
 	return tenants[0].ID

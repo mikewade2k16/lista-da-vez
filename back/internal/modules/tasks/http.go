@@ -35,6 +35,7 @@ func (handler *HTTPHandler) RegisterRoutes(mux *http.ServeMux, middleware *auth.
 	mux.Handle("POST /v1/tasks/boards/{boardId}/tasks", middleware.RequireAuth(handler.withPermission(PermTasksCreate, handler.createTask)))
 	mux.Handle("GET /v1/tasks/{taskId}", middleware.RequireAuth(handler.withPermission(PermTasksView, handler.getTask)))
 	mux.Handle("PATCH /v1/tasks/{taskId}", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.updateTask)))
+	mux.Handle("POST /v1/tasks/{taskId}/videos", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.uploadTaskVideo)))
 	mux.Handle("DELETE /v1/tasks/{taskId}", middleware.RequireAuth(handler.withPermission(PermTasksDelete, handler.archiveTask)))
 	mux.Handle("POST /v1/tasks/{taskId}/move", middleware.RequireAuth(handler.withPermission(PermTasksEdit, handler.moveTask)))
 	mux.Handle("GET /v1/tasks/{taskId}/comments", middleware.RequireAuth(handler.withPermission(PermTasksView, handler.listComments)))
@@ -357,7 +358,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrForbidden):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
-	case errors.Is(err, ErrAccountRequired), errors.Is(err, ErrValidation):
+	case errors.Is(err, ErrAccountRequired), errors.Is(err, ErrValidation), errors.Is(err, ErrInvalidVideo):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os dados enviados.")
 	case errors.Is(err, ErrAccountNotFound), errors.Is(err, ErrBoardNotFound), errors.Is(err, ErrColumnNotFound), errors.Is(err, ErrFieldNotFound), errors.Is(err, ErrTaskNotFound), errors.Is(err, ErrShareRequired):
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Recurso nao encontrado.")

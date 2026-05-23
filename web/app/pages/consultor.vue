@@ -1,56 +1,56 @@
 <script setup>
-import { computed, watch } from "vue";
-import ConsultantWorkspace from "~/components/consultant/ConsultantWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { canUseAllStoresScope } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { useConsultantsStore } from "~/stores/consultants";
+import { computed, watch } from 'vue'
+import ConsultantWorkspace from '~/components/consultant/ConsultantWorkspace.vue'
+import { storeToRefs } from 'pinia'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useConsultantsStore } from '~/stores/consultants'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "consultor",
-  alias: ["/operacao/consultor"],
-  supportsAllStoresScope: true
-});
+  layout: 'dashboard',
+  workspaceId: 'consultor',
+  alias: ['/operacao/consultor'],
+  supportsAllStoresScope: true,
+})
 
-const auth = useAuthStore();
-const consultantsStore = useConsultantsStore();
+const auth = useAuthStore()
+const consultantsStore = useConsultantsStore()
 const {
   state,
   integratedRoster,
   integratedRanking,
   integratedOverview,
+  integratedHistory,
   integratedPending,
-  integratedError
-} = storeToRefs(consultantsStore);
-const { isAllStoresScope } = storeToRefs(auth);
-const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
-const integratedScope = computed(() => canSeeIntegrated.value && isAllStoresScope.value);
+  integratedError,
+} = storeToRefs(consultantsStore)
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
+const integratedScope = computed(() => canSeeIntegrated.value)
 
 watch(
-  () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId, auth.isAuthenticated],
+  () => [integratedScope.value, auth.activeTenantId, auth.isAuthenticated],
   async () => {
     try {
-      await auth.ensureSession();
+      await auth.ensureSession()
 
       if (!auth.isAuthenticated) {
-        consultantsStore.clearIntegratedView();
-        return;
+        consultantsStore.clearIntegratedView()
+        return
       }
 
       if (integratedScope.value) {
-        await consultantsStore.ensureIntegratedView();
-        return;
+        await consultantsStore.ensureIntegratedView()
+        return
       }
 
-      consultantsStore.clearIntegratedView();
-      await consultantsStore.refreshActiveStore();
+      consultantsStore.clearIntegratedView()
+      await consultantsStore.refreshActiveStore()
     } catch {
-      consultantsStore.clearIntegratedView();
+      consultantsStore.clearIntegratedView()
     }
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -61,6 +61,7 @@ watch(
       :integrated-roster="integratedRoster"
       :integrated-ranking="integratedRanking"
       :integrated-overview="integratedOverview"
+      :integrated-history="integratedHistory"
       :integrated-pending="integratedPending"
       :integrated-error="integratedError"
     />

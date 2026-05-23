@@ -1,22 +1,22 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    icon?: string;
-    title?: string;
-    description?: string;
-    actionLabel?: string;
-    compact?: boolean;
+    icon?: string
+    title?: string
+    description?: string
+    actionLabel?: string
+    compact?: boolean
   }>(),
   {
-    icon: "inbox",
-    title: "Nada por aqui ainda",
-    description: "",
-    actionLabel: "",
-    compact: false
-  }
-);
+    icon: 'inbox',
+    title: 'Nada por aqui ainda',
+    description: '',
+    actionLabel: '',
+    compact: false,
+  },
+)
 
-const emit = defineEmits<{ (e: "action"): void }>();
+const emit = defineEmits<{ (e: 'action'): void }>()
 </script>
 
 <template>
@@ -82,7 +82,9 @@ const emit = defineEmits<{ (e: "action"): void }>();
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .core-empty-state__action:hover,

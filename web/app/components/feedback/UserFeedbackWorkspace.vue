@@ -1,391 +1,402 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
-import { ImagePlus, Send, X } from "lucide-vue-next";
-import { useAuthStore } from "~/stores/auth";
-import { useFeedbackStore } from "~/stores/feedback";
-import { useUiStore } from "~/stores/ui";
-import { compressFeedbackImage, formatFeedbackImageSize } from "~/utils/feedback-image";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { ImagePlus, Send, X } from 'lucide-vue-next'
+import { useAuthStore } from '~/stores/auth'
+import { useFeedbackStore } from '~/stores/feedback'
+import { useUiStore } from '~/stores/ui'
+import { compressFeedbackImage, formatFeedbackImageSize } from '~/utils/feedback-image'
 
-const feedbackStore = useFeedbackStore();
-const auth = useAuthStore();
-const ui = useUiStore();
-const route = useRoute();
-const { user } = storeToRefs(auth);
-const selectedFeedbackId = ref("");
-const replyMessage = ref("");
-const replyImage = ref<File | null>(null);
-const replyImagePreviewUrl = ref("");
-const replyTextarea = ref(null);
-const messagesViewport = ref<HTMLElement | null>(null);
-const feedbackSyncCursor = ref("");
-let feedbackPollingTimer = null;
-let messagesPollingTimer = null;
+const feedbackStore = useFeedbackStore()
+const auth = useAuthStore()
+const ui = useUiStore()
+const route = useRoute()
+const { user } = storeToRefs(auth)
+const selectedFeedbackId = ref('')
+const replyMessage = ref('')
+const replyImage = ref<File | null>(null)
+const replyImagePreviewUrl = ref('')
+const replyTextarea = ref(null)
+const messagesViewport = ref<HTMLElement | null>(null)
+const feedbackSyncCursor = ref('')
+let feedbackPollingTimer = null
+let messagesPollingTimer = null
 
-const selectedFeedback = computed(() =>
-  feedbackStore.myFeedbacks.find((feedback) => feedback.id === selectedFeedbackId.value) ||
-  feedbackStore.myFeedbacks[0] ||
-  null
-);
+const selectedFeedback = computed(
+  () =>
+    feedbackStore.myFeedbacks.find((feedback) => feedback.id === selectedFeedbackId.value) ||
+    feedbackStore.myFeedbacks[0] ||
+    null,
+)
 
 const selectedMessages = computed(() => {
   if (!selectedFeedback.value?.id) {
-    return [];
+    return []
   }
 
-  return feedbackStore.messagesByFeedbackId[selectedFeedback.value.id] || [];
-});
+  return feedbackStore.messagesByFeedbackId[selectedFeedback.value.id] || []
+})
 
-const isSelectedFeedbackClosed = computed(() =>
-  String(selectedFeedback.value?.status || "").trim() === "closed"
-);
+const isSelectedFeedbackClosed = computed(
+  () => String(selectedFeedback.value?.status || '').trim() === 'closed',
+)
 
-const ownUserId = computed(() => String(user.value?.id || "").trim());
+const ownUserId = computed(() => String(user.value?.id || '').trim())
 
 const lastSelectedMessageCreatedAt = computed(() => {
   const timestamps = selectedMessages.value
     .map((message) => new Date(message.created_at).getTime())
-    .filter((value) => Number.isFinite(value));
+    .filter((value) => Number.isFinite(value))
 
   if (!timestamps.length) {
-    return "";
+    return ''
   }
 
-  return new Date(Math.max(...timestamps)).toISOString();
-});
+  return new Date(Math.max(...timestamps)).toISOString()
+})
 
 function isDocumentVisible() {
-  return !import.meta.client || document.visibilityState === "visible";
+  return !import.meta.client || document.visibilityState === 'visible'
 }
 
 function statusLabel(status) {
   const labels = {
-    open: "Aberto",
-    in_progress: "Em analise",
-    resolved: "Resolvido",
-    closed: "Fechado"
-  };
+    open: 'Aberto',
+    in_progress: 'Em analise',
+    resolved: 'Resolvido',
+    closed: 'Fechado',
+  }
 
-  return labels[String(status || "").trim()] || status || "-";
+  return labels[String(status || '').trim()] || status || '-'
 }
 
 function kindLabel(kind) {
   const labels = {
-    suggestion: "Sugestao",
-    question: "Duvida",
-    problem: "Problema"
-  };
+    suggestion: 'Sugestao',
+    question: 'Duvida',
+    problem: 'Problema',
+  }
 
-  return labels[String(kind || "").trim()] || kind || "-";
+  return labels[String(kind || '').trim()] || kind || '-'
 }
 
 function formatDate(isoString) {
   try {
-    return new Date(isoString).toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    });
+    return new Date(isoString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   } catch {
-    return isoString || "";
+    return isoString || ''
   }
 }
 
 function getFeedbackMessages(feedbackId) {
-  return feedbackStore.messagesByFeedbackId[String(feedbackId || "").trim()] || [];
+  return feedbackStore.messagesByFeedbackId[String(feedbackId || '').trim()] || []
 }
 
 function getFeedbackPreview(feedback) {
-  const latestMessage = getFeedbackMessages(feedback.id).at(-1);
+  const latestMessage = getFeedbackMessages(feedback.id).at(-1)
   if (!latestMessage) {
-    return feedback.body || "";
+    return feedback.body || ''
   }
 
-  return latestMessage.body || (latestMessage.image_url ? "Imagem anexada" : feedback.body || "");
+  return latestMessage.body || (latestMessage.image_url ? 'Imagem anexada' : feedback.body || '')
 }
 
 function getUnreadCount(feedback) {
   if (!feedback?.id) {
-    return 0;
+    return 0
   }
 
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime();
+  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
 
   return getFeedbackMessages(feedback.id).filter((message) => {
-    const authorUserId = String(message.author_user_id || "").trim();
-    const createdAt = new Date(message.created_at).getTime();
+    const authorUserId = String(message.author_user_id || '').trim()
+    const createdAt = new Date(message.created_at).getTime()
 
-    return authorUserId !== ownUserId.value && createdAt > readAt;
-  }).length;
+    return authorUserId !== ownUserId.value && createdAt > readAt
+  }).length
 }
 
 async function loadMyFeedbacks(options = {}) {
   if (!isDocumentVisible()) {
-    return;
+    return
   }
 
-  const nextSince = Object.prototype.hasOwnProperty.call(options, "since")
+  const nextSince = Object.prototype.hasOwnProperty.call(options, 'since')
     ? options.since
-    : feedbackSyncCursor.value;
-  const result = await feedbackStore.fetchMyFeedbacks(nextSince ? { ...options, since: nextSince } : options);
+    : feedbackSyncCursor.value
+  const result = await feedbackStore.fetchMyFeedbacks(
+    nextSince ? { ...options, since: nextSince } : options,
+  )
   if (!result.ok) {
-    ui.error(result.message || "Erro ao carregar seus chamados");
-    return;
+    ui.error(result.message || 'Erro ao carregar seus chamados')
+    return
   }
 
   if (result.cursor) {
-    feedbackSyncCursor.value = result.cursor;
+    feedbackSyncCursor.value = result.cursor
   }
 
-  await feedbackStore.syncMessagesForFeedbacks(feedbackStore.myFeedbacks.map((feedback) => feedback.id));
+  await feedbackStore.syncMessagesForFeedbacks(
+    feedbackStore.myFeedbacks.map((feedback) => feedback.id),
+  )
 
-  const queryId = String(route.query.id || "").trim();
+  const queryId = String(route.query.id || '').trim()
   if (queryId && feedbackStore.myFeedbacks.some((feedback) => feedback.id === queryId)) {
-    selectedFeedbackId.value = queryId;
-    return;
+    selectedFeedbackId.value = queryId
+    return
   }
 
   if (!selectedFeedbackId.value && feedbackStore.myFeedbacks[0]) {
-    selectedFeedbackId.value = feedbackStore.myFeedbacks[0].id;
+    selectedFeedbackId.value = feedbackStore.myFeedbacks[0].id
   }
 }
 
 async function loadMyFeedbackUpdates() {
-  await loadMyFeedbacks();
+  await loadMyFeedbacks()
 }
 
 function hasUnreadMessages(feedback) {
   if (!feedback?.id) {
-    return false;
+    return false
   }
 
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime();
+  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
 
   return selectedMessages.value.some((message) => {
-    const authorUserId = String(message.author_user_id || "").trim();
-    const createdAt = new Date(message.created_at).getTime();
+    const authorUserId = String(message.author_user_id || '').trim()
+    const createdAt = new Date(message.created_at).getTime()
 
-    return authorUserId !== ownUserId.value && createdAt > readAt;
-  });
+    return authorUserId !== ownUserId.value && createdAt > readAt
+  })
 }
 
 async function markSelectedFeedbackAsRead() {
-  if (!selectedFeedback.value?.id || !isDocumentVisible() || !hasUnreadMessages(selectedFeedback.value)) {
-    return;
+  if (
+    !selectedFeedback.value?.id ||
+    !isDocumentVisible() ||
+    !hasUnreadMessages(selectedFeedback.value)
+  ) {
+    return
   }
 
-  const result = await feedbackStore.markFeedbackAsRead(selectedFeedback.value.id);
+  const result = await feedbackStore.markFeedbackAsRead(selectedFeedback.value.id)
   if (!result.ok) {
-    ui.error(result.message || "Erro ao marcar chamado como lido");
+    ui.error(result.message || 'Erro ao marcar chamado como lido')
   }
 }
 
 async function loadSelectedMessages(options = {}) {
   if (!selectedFeedback.value?.id || !isDocumentVisible()) {
-    return;
+    return
   }
 
   const result = await feedbackStore.fetchMessages(selectedFeedback.value.id, {
-    after: lastSelectedMessageCreatedAt.value
-  });
+    after: lastSelectedMessageCreatedAt.value,
+  })
 
   if (!result.ok) {
-    ui.error(result.message || "Erro ao carregar conversa");
-    return;
+    ui.error(result.message || 'Erro ao carregar conversa')
+    return
   }
 
   if (options.markRead) {
-    await markSelectedFeedbackAsRead();
+    await markSelectedFeedbackAsRead()
   }
-  await scrollMessagesToBottom();
+  await scrollMessagesToBottom()
 }
 
 async function scrollMessagesToBottom() {
-  await nextTick();
+  await nextTick()
   if (messagesViewport.value) {
-    messagesViewport.value.scrollTop = messagesViewport.value.scrollHeight;
+    messagesViewport.value.scrollTop = messagesViewport.value.scrollHeight
   }
 }
 
 function selectFeedback(feedbackId) {
-  selectedFeedbackId.value = feedbackId;
+  selectedFeedbackId.value = feedbackId
 }
 
 function setReplyImage(file: File | null) {
   if (import.meta.client && replyImagePreviewUrl.value) {
-    URL.revokeObjectURL(replyImagePreviewUrl.value);
+    URL.revokeObjectURL(replyImagePreviewUrl.value)
   }
 
-  replyImage.value = file;
-  replyImagePreviewUrl.value = file && import.meta.client ? URL.createObjectURL(file) : "";
+  replyImage.value = file
+  replyImagePreviewUrl.value = file && import.meta.client ? URL.createObjectURL(file) : ''
 }
 
 function clearReplyImage() {
-  setReplyImage(null);
+  setReplyImage(null)
 }
 
 function syncReplyTextareaHeight(reset = false) {
-  const textarea = replyTextarea.value;
+  const textarea = replyTextarea.value
   if (!textarea) {
-    return;
+    return
   }
 
   if (reset) {
-    textarea.style.height = "";
-    textarea.style.overflowY = "hidden";
-    return;
+    textarea.style.height = ''
+    textarea.style.overflowY = 'hidden'
+    return
   }
 
-  textarea.style.height = "0px";
-  const nextHeight = Math.min(textarea.scrollHeight, 176);
-  textarea.style.height = `${Math.max(nextHeight, 44)}px`;
-  textarea.style.overflowY = textarea.scrollHeight > 176 ? "auto" : "hidden";
+  textarea.style.height = '0px'
+  const nextHeight = Math.min(textarea.scrollHeight, 176)
+  textarea.style.height = `${Math.max(nextHeight, 44)}px`
+  textarea.style.overflowY = textarea.scrollHeight > 176 ? 'auto' : 'hidden'
 }
 
 function handleReplyKeydown(event) {
-  if (event.key !== "Enter" || event.isComposing) {
-    return;
+  if (event.key !== 'Enter' || event.isComposing) {
+    return
   }
 
   if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
-    nextTick(() => syncReplyTextareaHeight());
-    return;
+    nextTick(() => syncReplyTextareaHeight())
+    return
   }
 
-  event.preventDefault();
+  event.preventDefault()
   if (isSelectedFeedbackClosed.value || feedbackStore.loading) {
-    return;
+    return
   }
 
   if (!replyMessage.value.trim() && !replyImage.value) {
-    return;
+    return
   }
 
-  void sendReply();
+  void sendReply()
 }
 
 async function handleReplyImageChange(event: Event) {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0] || null;
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0] || null
   if (!file) {
-    return;
+    return
   }
 
   try {
-    const compressedImage = await compressFeedbackImage(file);
-    setReplyImage(compressedImage);
+    const compressedImage = await compressFeedbackImage(file)
+    setReplyImage(compressedImage)
   } catch (err) {
-    ui.error(err instanceof Error ? err.message : "Nao foi possivel preparar a imagem.");
+    ui.error(err instanceof Error ? err.message : 'Nao foi possivel preparar a imagem.')
   } finally {
-    target.value = "";
+    target.value = ''
   }
 }
 
 async function sendReply() {
   if (!selectedFeedback.value?.id) {
-    return;
+    return
   }
 
   if (isSelectedFeedbackClosed.value) {
-    ui.error("Chamado encerrado. Nao e mais possivel enviar mensagens.");
-    return;
+    ui.error('Chamado encerrado. Nao e mais possivel enviar mensagens.')
+    return
   }
 
-  const body = String(replyMessage.value || "").trim();
-  const image = replyImage.value;
+  const body = String(replyMessage.value || '').trim()
+  const image = replyImage.value
   if (!body && !image) {
-    return;
+    return
   }
 
   const result = await feedbackStore.sendMessage(selectedFeedback.value.id, {
     body,
-    image
-  });
+    image,
+  })
 
   if (!result.ok) {
-    ui.error(result.message || "Erro ao enviar resposta");
-    return;
+    ui.error(result.message || 'Erro ao enviar resposta')
+    return
   }
 
-  replyMessage.value = "";
-  clearReplyImage();
-  syncReplyTextareaHeight(true);
-  await scrollMessagesToBottom();
+  replyMessage.value = ''
+  clearReplyImage()
+  syncReplyTextareaHeight(true)
+  await scrollMessagesToBottom()
 }
 
 function startPolling() {
-  stopPolling();
-  feedbackPollingTimer = window.setInterval(loadMyFeedbackUpdates, 30000);
-  messagesPollingTimer = window.setInterval(loadSelectedMessages, 8000);
+  stopPolling()
+  feedbackPollingTimer = window.setInterval(loadMyFeedbackUpdates, 30000)
+  messagesPollingTimer = window.setInterval(loadSelectedMessages, 8000)
 }
 
 function stopPolling() {
   if (feedbackPollingTimer) {
-    window.clearInterval(feedbackPollingTimer);
-    feedbackPollingTimer = null;
+    window.clearInterval(feedbackPollingTimer)
+    feedbackPollingTimer = null
   }
 
   if (messagesPollingTimer) {
-    window.clearInterval(messagesPollingTimer);
-    messagesPollingTimer = null;
+    window.clearInterval(messagesPollingTimer)
+    messagesPollingTimer = null
   }
 }
 
 function handleVisibilityChange() {
   if (isDocumentVisible()) {
-    loadMyFeedbackUpdates();
-    loadSelectedMessages();
+    loadMyFeedbackUpdates()
+    loadSelectedMessages()
   }
 }
 
 watch(selectedFeedbackId, (feedbackId) => {
-  replyMessage.value = "";
-  clearReplyImage();
-  syncReplyTextareaHeight(true);
-  feedbackStore.applyLocalReadState(feedbackId);
-  loadSelectedMessages({ markRead: true });
-});
+  replyMessage.value = ''
+  clearReplyImage()
+  syncReplyTextareaHeight(true)
+  feedbackStore.applyLocalReadState(feedbackId)
+  loadSelectedMessages({ markRead: true })
+})
 
 watch(replyMessage, () => {
-  nextTick(() => syncReplyTextareaHeight());
-});
+  nextTick(() => syncReplyTextareaHeight())
+})
 
 watch(selectedMessages, () => {
-  scrollMessagesToBottom();
-});
+  scrollMessagesToBottom()
+})
 
 watch(
   () => route.query.id,
   (id) => {
-    const normalizedId = String(id || "").trim();
+    const normalizedId = String(id || '').trim()
     if (normalizedId) {
-      selectedFeedbackId.value = normalizedId;
+      selectedFeedbackId.value = normalizedId
     }
-  }
-);
+  },
+)
 
 onMounted(async () => {
-  await loadMyFeedbacks();
-  await loadSelectedMessages({ markRead: true });
-  syncReplyTextareaHeight(true);
-  startPolling();
-  document.addEventListener("visibilitychange", handleVisibilityChange);
-});
+  await loadMyFeedbacks()
+  await loadSelectedMessages({ markRead: true })
+  syncReplyTextareaHeight(true)
+  startPolling()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
 
 onBeforeUnmount(() => {
-  stopPolling();
-  document.removeEventListener("visibilitychange", handleVisibilityChange);
-  clearReplyImage();
-});
+  stopPolling()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  clearReplyImage()
+})
 </script>
 
 <template>
   <section class="admin-panel user-feedback" data-testid="my-feedback-panel">
     <header class="admin-panel__header user-feedback__header">
       <h2 class="admin-panel__title">Meus chamados</h2>
-      <p class="admin-panel__subtitle">Acompanhe as respostas do time e continue a conversa quando precisar.</p>
+      <p class="admin-panel__subtitle">
+        Acompanhe as respostas do time e continue a conversa quando precisar.
+      </p>
     </header>
 
     <div class="user-feedback__layout">
@@ -394,19 +405,36 @@ onBeforeUnmount(() => {
           v-for="feedback in feedbackStore.myFeedbacks"
           :key="feedback.id"
           class="user-feedback__ticket"
-          :class="{ 'is-active': selectedFeedback?.id === feedback.id, 'has-unread': getUnreadCount(feedback) > 0 }"
+          :class="{
+            'is-active': selectedFeedback?.id === feedback.id,
+            'has-unread': getUnreadCount(feedback) > 0,
+          }"
           type="button"
           @click="selectFeedback(feedback.id)"
         >
           <span class="user-feedback__ticket-line">
             <strong :title="feedback.subject">{{ feedback.subject }}</strong>
             <span class="user-feedback__ticket-badges">
-              <small class="user-feedback__kind-tag" :class="`user-feedback__kind-tag--${feedback.kind}`">{{ kindLabel(feedback.kind) }}</small>
-              <small class="user-feedback__ticket-time">{{ formatDate(feedback.updated_at || feedback.created_at) }}</small>
-              <small class="user-feedback__status-tag" :class="`user-feedback__status-tag--${feedback.status}`">{{ statusLabel(feedback.status) }}</small>
+              <small
+                class="user-feedback__kind-tag"
+                :class="`user-feedback__kind-tag--${feedback.kind}`"
+              >
+                {{ kindLabel(feedback.kind) }}
+              </small>
+              <small class="user-feedback__ticket-time">
+                {{ formatDate(feedback.updated_at || feedback.created_at) }}
+              </small>
+              <small
+                class="user-feedback__status-tag"
+                :class="`user-feedback__status-tag--${feedback.status}`"
+              >
+                {{ statusLabel(feedback.status) }}
+              </small>
             </span>
           </span>
-          <small class="user-feedback__ticket-preview" :title="getFeedbackPreview(feedback)">{{ getFeedbackPreview(feedback) }}</small>
+          <small class="user-feedback__ticket-preview" :title="getFeedbackPreview(feedback)">
+            {{ getFeedbackPreview(feedback) }}
+          </small>
         </button>
 
         <div v-if="!feedbackStore.myFeedbacks.length" class="user-feedback__empty">
@@ -419,12 +447,19 @@ onBeforeUnmount(() => {
         <header class="user-feedback__conversation-header">
           <div class="user-feedback__conversation-copy">
             <div class="user-feedback__conversation-meta">
-              <span class="user-feedback__kind-tag" :class="`user-feedback__kind-tag--${selectedFeedback.kind}`">{{ kindLabel(selectedFeedback.kind) }}</span>
+              <span
+                class="user-feedback__kind-tag"
+                :class="`user-feedback__kind-tag--${selectedFeedback.kind}`"
+              >
+                {{ kindLabel(selectedFeedback.kind) }}
+              </span>
               <small>{{ formatDate(selectedFeedback.created_at) }}</small>
             </div>
             <h3 :title="selectedFeedback.subject">{{ selectedFeedback.subject }}</h3>
           </div>
-          <strong class="user-feedback__status-pill">{{ statusLabel(selectedFeedback.status) }}</strong>
+          <strong class="user-feedback__status-pill">
+            {{ statusLabel(selectedFeedback.status) }}
+          </strong>
         </header>
 
         <div ref="messagesViewport" class="user-feedback__messages">
@@ -435,7 +470,7 @@ onBeforeUnmount(() => {
             :class="{ 'user-feedback__message--own': message.author_user_id === user?.id }"
           >
             <header>
-              <strong>{{ message.author_name || "Usuario" }}</strong>
+              <strong>{{ message.author_name || 'Usuario' }}</strong>
               <span>{{ formatDate(message.created_at) }}</span>
             </header>
             <p v-if="message.body">{{ message.body }}</p>
@@ -446,7 +481,11 @@ onBeforeUnmount(() => {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <img :src="message.image_url" alt="Imagem anexada ao feedback" class="user-feedback__message-image">
+              <img
+                :src="message.image_url"
+                alt="Imagem anexada ao feedback"
+                class="user-feedback__message-image"
+              />
             </a>
           </article>
         </div>
@@ -460,14 +499,23 @@ onBeforeUnmount(() => {
             <textarea
               ref="replyTextarea"
               v-model="replyMessage"
-              :placeholder="isSelectedFeedbackClosed ? 'Chamado encerrado' : 'Responder este chamado'"
+              :placeholder="
+                isSelectedFeedbackClosed ? 'Chamado encerrado' : 'Responder este chamado'
+              "
               rows="1"
               :disabled="isSelectedFeedbackClosed || feedbackStore.loading"
               @input="syncReplyTextareaHeight()"
               @keydown="handleReplyKeydown"
             ></textarea>
 
-            <button type="submit" :disabled="isSelectedFeedbackClosed || (!replyMessage.trim() && !replyImage) || feedbackStore.loading">
+            <button
+              type="submit"
+              :disabled="
+                isSelectedFeedbackClosed ||
+                (!replyMessage.trim() && !replyImage) ||
+                feedbackStore.loading
+              "
+            >
               <Send :size="16" :stroke-width="2.2" />
               <span>Enviar</span>
             </button>
@@ -484,9 +532,9 @@ onBeforeUnmount(() => {
                 hidden
                 :disabled="isSelectedFeedbackClosed || feedbackStore.loading"
                 @change="handleReplyImageChange"
-              >
+              />
               <ImagePlus :size="16" :stroke-width="2.1" />
-              <span>{{ replyImage ? "Trocar imagem" : "Anexar imagem" }}</span>
+              <span>{{ replyImage ? 'Trocar imagem' : 'Anexar imagem' }}</span>
             </label>
             <small class="user-feedback__upload-hint">
               A imagem e compactada no envio e apagada 7 dias apos o fechamento.
@@ -494,7 +542,11 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="replyImagePreviewUrl" class="user-feedback__reply-preview">
-            <img :src="replyImagePreviewUrl" alt="Preview da imagem anexada" class="user-feedback__reply-preview-image">
+            <img
+              :src="replyImagePreviewUrl"
+              alt="Preview da imagem anexada"
+              class="user-feedback__reply-preview-image"
+            />
             <div class="user-feedback__reply-preview-copy">
               <strong>{{ replyImage?.name }}</strong>
               <span>{{ formatFeedbackImageSize(replyImage?.size || 0) }}</span>
@@ -562,7 +614,7 @@ onBeforeUnmount(() => {
 }
 
 .user-feedback__ticket.has-unread::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 0.88rem;
   right: 0.88rem;

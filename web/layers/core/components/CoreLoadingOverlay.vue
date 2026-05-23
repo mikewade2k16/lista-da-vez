@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { useCoreLoadingStore } from "../stores/loading";
+import { computed } from 'vue'
+import { useCoreLoadingStore } from '../stores/loading'
 
-const store = useCoreLoadingStore();
+const store = useCoreLoadingStore()
 
-const visible = computed(() => store.isLoading);
-const label = computed(() => store.activeLabel);
+const visible = computed(() => store.isLoading)
+const label = computed(() => store.activeLabel)
 </script>
 
 <template>
   <transition name="core-loading-fade">
-    <div v-if="visible" class="core-loading-overlay" role="status" :aria-label="label || 'Carregando'">
+    <div
+      v-if="visible"
+      class="core-loading-overlay"
+      role="status"
+      :aria-label="label || 'Carregando'"
+    >
       <div class="core-loading-overlay__bar">
-        <div class="core-loading-overlay__bar-fill" />
+        <div class="core-loading-overlay__bar-fill"></div>
       </div>
       <span v-if="label" class="core-loading-overlay__label">{{ label }}</span>
     </div>

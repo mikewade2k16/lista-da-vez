@@ -16,21 +16,27 @@ type Service struct {
 	publisher  Publisher
 	notifier   notifications.Notifier
 	relations  *platformmodules.RelationRegistry
+	videoStore TaskVideoStorage
 	logger     *slog.Logger
 }
 
-func NewService(repository Repository, publisher Publisher, notifier notifications.Notifier, relationRegistry *platformmodules.RelationRegistry) *Service {
+func NewService(repository Repository, publisher Publisher, notifier notifications.Notifier, relationRegistry *platformmodules.RelationRegistry, videoStore ...TaskVideoStorage) *Service {
 	if publisher == nil {
 		publisher = noopPublisher{}
 	}
 	if notifier == nil {
 		notifier = notifications.NewNoopNotifier()
 	}
+	var resolvedVideoStore TaskVideoStorage
+	if len(videoStore) > 0 {
+		resolvedVideoStore = videoStore[0]
+	}
 	return &Service{
 		repository: repository,
 		publisher:  publisher,
 		notifier:   notifier,
 		relations:  relationRegistry,
+		videoStore: resolvedVideoStore,
 		logger:     slog.Default(),
 	}
 }
@@ -116,6 +122,9 @@ func (service *Service) ResolveAccessContext(ctx context.Context, principal auth
 		permissionKeys, err = service.repository.ListPermissionsForUser(ctx, accountID, principal.UserID)
 		if err != nil {
 			return AccessContext{}, err
+		}
+		if len(permissionKeys) == 0 {
+			permissionKeys = defaultTaskPermissionsForRole(principal.Role)
 		}
 	}
 

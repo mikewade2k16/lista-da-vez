@@ -10,7 +10,7 @@ interface AdminPageHeaderProps {
 const props = withDefaults(defineProps<AdminPageHeaderProps>(), {
   eyebrow: '',
   title: '',
-  description: ''
+  description: '',
 })
 
 const pageHeaderVisibility = useAdminPageHeaderVisibility()
@@ -21,21 +21,32 @@ const hasDescription = computed(() => props.description.trim().length > 0)
 
 const showEyebrow = computed(() => pageHeaderVisibility.showEyebrow.value && hasEyebrow.value)
 const showTitle = computed(() => pageHeaderVisibility.showTitle.value && hasTitle.value)
-const showDescription = computed(() => pageHeaderVisibility.showDescription.value && hasDescription.value)
+const showDescription = computed(
+  () => pageHeaderVisibility.showDescription.value && hasDescription.value,
+)
 const showHeader = computed(() => showEyebrow.value || showTitle.value || showDescription.value)
 </script>
 
 <template>
   <header v-if="showHeader" class="admin-page-header space-y-1.5">
-    <p v-if="showEyebrow" class="admin-page-header__eyebrow text-[11px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))] sm:text-xs">
+    <p
+      v-if="showEyebrow"
+      class="admin-page-header__eyebrow text-[11px] font-semibold uppercase tracking-wider text-[rgb(var(--muted))] sm:text-xs"
+    >
       {{ eyebrow }}
     </p>
 
-    <h1 v-if="showTitle" class="admin-page-header__title text-xl font-semibold tracking-tight sm:text-2xl lg:text-3xl">
+    <h1
+      v-if="showTitle"
+      class="admin-page-header__title text-xl font-semibold tracking-tight sm:text-2xl lg:text-3xl"
+    >
       {{ title }}
     </h1>
 
-    <p v-if="showDescription" class="admin-page-header__description text-sm leading-6 text-[rgb(var(--muted))] sm:text-[0.95rem]">
+    <p
+      v-if="showDescription"
+      class="admin-page-header__description text-sm leading-6 text-[rgb(var(--muted))] sm:text-[0.95rem]"
+    >
       {{ description }}
     </p>
   </header>

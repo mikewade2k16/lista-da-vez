@@ -1,36 +1,36 @@
 <script setup>
-import { computed, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
-import { useUiStore } from "~/stores/ui";
+import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useUiStore } from '~/stores/ui'
 
-const ui = useUiStore();
-const { dialog } = storeToRefs(ui);
-const promptValue = ref("");
+const ui = useUiStore()
+const { dialog } = storeToRefs(ui)
+const promptValue = ref('')
 
-const isPrompt = computed(() => dialog.value?.kind === "prompt");
-const isAlert = computed(() => dialog.value?.kind === "alert");
+const isPrompt = computed(() => dialog.value?.kind === 'prompt')
+const isAlert = computed(() => dialog.value?.kind === 'alert')
 const isConfirmDisabled = computed(() =>
-  isPrompt.value && dialog.value?.required ? !promptValue.value.trim() : false
-);
+  isPrompt.value && dialog.value?.required ? !promptValue.value.trim() : false,
+)
 
 watch(
   dialog,
   (nextDialog) => {
-    promptValue.value = nextDialog?.initialValue || "";
+    promptValue.value = nextDialog?.initialValue || ''
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 function closeDialog() {
-  ui.cancelDialog();
+  ui.cancelDialog()
 }
 
 function submitDialog() {
   if (isConfirmDisabled.value) {
-    return;
+    return
   }
 
-  ui.submitDialog(isPrompt.value ? promptValue.value.trim() : "true");
+  ui.submitDialog(isPrompt.value ? promptValue.value.trim() : 'true')
 }
 </script>
 
@@ -74,7 +74,7 @@ function submitDialog() {
               :placeholder="dialog.inputPlaceholder"
               data-testid="ui-dialog-input"
               autofocus
-            >
+            />
           </label>
 
           <div class="ui-dialog__actions">

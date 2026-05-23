@@ -2,32 +2,32 @@
 const props = defineProps({
   modelValue: {
     type: Boolean,
-    default: false
+    default: false,
   },
   disabled: {
     type: Boolean,
-    default: false
+    default: false,
   },
   label: {
     type: String,
-    default: ""
+    default: '',
   },
   compact: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 
-const emit = defineEmits(["update:modelValue", "change"]);
+const emit = defineEmits(['update:modelValue', 'change'])
 
 function toggle() {
   if (props.disabled) {
-    return;
+    return
   }
 
-  const nextValue = !props.modelValue;
-  emit("update:modelValue", nextValue);
-  emit("change", nextValue);
+  const nextValue = !props.modelValue
+  emit('update:modelValue', nextValue)
+  emit('change', nextValue)
 }
 </script>
 
@@ -37,7 +37,7 @@ function toggle() {
     :class="{
       'is-on': modelValue,
       'is-disabled': disabled,
-      'app-toggle-switch--compact': compact
+      'app-toggle-switch--compact': compact,
     }"
     type="button"
     role="switch"
@@ -47,7 +47,7 @@ function toggle() {
     @click="toggle"
   >
     <span class="app-toggle-switch__track">
-      <span class="app-toggle-switch__thumb" />
+      <span class="app-toggle-switch__thumb"></span>
     </span>
     <span v-if="label" class="app-toggle-switch__label">{{ label }}</span>
   </button>

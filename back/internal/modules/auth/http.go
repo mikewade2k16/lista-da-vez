@@ -96,7 +96,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		if err := passwordResets.Request(r.Context(), PasswordResetRequestInput{Email: request.Email}); err != nil {
+		if err := passwordResets.Request(r.Context(), PasswordResetRequestInput(request)); err != nil {
 			writePasswordResetError(w, r, err)
 			return
 		}
@@ -118,11 +118,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		user, err := passwordResets.Confirm(r.Context(), PasswordResetConfirmInput{
-			Email:    request.Email,
-			Code:     request.Code,
-			Password: request.Password,
-		})
+		user, err := passwordResets.Confirm(r.Context(), PasswordResetConfirmInput(request))
 		if err != nil {
 			writePasswordResetError(w, r, err)
 			return
@@ -141,10 +137,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		result, err := service.Login(r.Context(), LoginInput{
-			Email:    request.Email,
-			Password: request.Password,
-		})
+		result, err := service.Login(r.Context(), LoginInput(request))
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrInvalidCredentials):
@@ -228,10 +221,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		user, err := service.UpdateProfile(r.Context(), principal, UpdateProfileInput{
-			DisplayName: request.DisplayName,
-			Email:       request.Email,
-		})
+		user, err := service.UpdateProfile(r.Context(), principal, UpdateProfileInput(request))
 		if err != nil {
 			writeSelfServiceError(w, r, err)
 			return
@@ -256,10 +246,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		user, err := service.ChangePassword(r.Context(), principal, ChangePasswordInput{
-			CurrentPassword: request.CurrentPassword,
-			NewPassword:     request.NewPassword,
-		})
+		user, err := service.ChangePassword(r.Context(), principal, ChangePasswordInput(request))
 		if err != nil {
 			writeSelfServiceError(w, r, err)
 			return
@@ -325,9 +312,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusOK, invitationResponse{
-			Invitation: result.Invitation,
-		})
+		httpapi.WriteJSON(w, http.StatusOK, invitationResponse(result))
 	})
 
 	mux.HandleFunc("POST /v1/auth/invitations/accept", func(w http.ResponseWriter, r *http.Request) {
@@ -337,10 +322,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		result, err := invitations.Accept(r.Context(), InvitationAcceptInput{
-			Token:    request.Token,
-			Password: request.Password,
-		})
+		result, err := invitations.Accept(r.Context(), InvitationAcceptInput(request))
 		if err != nil {
 			writeInvitationError(w, r, err)
 			return

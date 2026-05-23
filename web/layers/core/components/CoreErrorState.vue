@@ -1,35 +1,32 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    title?: string;
-    message?: string;
-    retryLabel?: string;
-    showRetry?: boolean;
-    compact?: boolean;
+    title?: string
+    message?: string
+    retryLabel?: string
+    showRetry?: boolean
+    compact?: boolean
   }>(),
   {
-    title: "Algo deu errado",
-    message: "Nao foi possivel carregar os dados. Tente novamente em instantes.",
-    retryLabel: "Tentar de novo",
+    title: 'Algo deu errado',
+    message: 'Nao foi possivel carregar os dados. Tente novamente em instantes.',
+    retryLabel: 'Tentar de novo',
     showRetry: true,
-    compact: false
-  }
-);
+    compact: false,
+  },
+)
 
-const emit = defineEmits<{ (e: "retry"): void }>();
+const emit = defineEmits<{ (e: 'retry'): void }>()
 </script>
 
 <template>
   <div class="core-error-state" :class="{ 'is-compact': compact }" role="alert">
-    <span class="material-icons-round core-error-state__icon" aria-hidden="true">error_outline</span>
+    <span class="material-icons-round core-error-state__icon" aria-hidden="true">
+      error_outline
+    </span>
     <h3 class="core-error-state__title">{{ title }}</h3>
     <p v-if="message" class="core-error-state__msg">{{ message }}</p>
-    <button
-      v-if="showRetry"
-      type="button"
-      class="core-error-state__retry"
-      @click="emit('retry')"
-    >
+    <button v-if="showRetry" type="button" class="core-error-state__retry" @click="emit('retry')">
       <span class="material-icons-round" aria-hidden="true">refresh</span>
       {{ retryLabel }}
     </button>
@@ -85,7 +82,9 @@ const emit = defineEmits<{ (e: "retry"): void }>();
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .core-error-state__retry:hover,

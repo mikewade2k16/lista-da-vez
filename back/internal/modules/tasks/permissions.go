@@ -1,5 +1,7 @@
 package tasks
 
+import "github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+
 const (
 	PermBoardsView      = "tasks.boards.view"
 	PermBoardsManage    = "tasks.boards.manage"
@@ -45,4 +47,15 @@ var memberPermissions = []string{
 var clientViewerPermissions = []string{
 	PermClientView,
 	PermTasksComment,
+}
+
+func defaultTaskPermissionsForRole(role auth.Role) []string {
+	switch role {
+	case auth.RolePlatformAdmin, auth.RoleOwner:
+		return adminPermissions
+	case auth.RoleManager, auth.RoleConsultant, auth.RoleStoreTerminal, auth.RoleMarketing, auth.RoleDirector:
+		return memberPermissions
+	default:
+		return nil
+	}
 }

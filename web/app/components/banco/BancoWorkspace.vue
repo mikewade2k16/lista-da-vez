@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import SettingsTabs from "~/components/settings/SettingsTabs.vue";
-import BancoSettingsSchema from "~/components/banco/BancoSettingsSchema.vue";
+import { ref } from 'vue'
+import SettingsTabs from '~/components/settings/SettingsTabs.vue'
+import BancoSettingsSchema from '~/components/banco/BancoSettingsSchema.vue'
 
-const tabs = [
-  { id: "settings", label: "Settings", icon: "tune" }
-];
+const tabs = [{ id: 'settings', label: 'Settings', icon: 'tune' }]
 
-const activeTab = ref("settings");
+const activeTab = ref('settings')
 </script>
 
 <template>
   <div class="banco-workspace">
     <div class="banco-workspace__header">
       <h2 class="banco-workspace__title">Banco de Dados</h2>
-      <p class="banco-workspace__text">Estrutura de tabelas, campos, tipos e status de migracao do banco PostgreSQL.</p>
+      <p class="banco-workspace__text">
+        Estrutura de tabelas, campos, tipos e status de migracao do banco PostgreSQL.
+      </p>
     </div>
 
     <SettingsTabs :tabs="tabs" :active-tab="activeTab" @update:active-tab="activeTab = $event" />

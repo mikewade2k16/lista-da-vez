@@ -1,8 +1,8 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, ref, watch } from 'vue'
 
-import AppSelectField from "~/components/ui/AppSelectField.vue";
-import AppToggleSwitch from "~/components/ui/AppToggleSwitch.vue";
+import AppSelectField from '~/components/ui/AppSelectField.vue'
+import AppToggleSwitch from '~/components/ui/AppToggleSwitch.vue'
 import {
   ADVANCED_ACCESS_DEFINITIONS,
   WORKSPACE_ACCESS_DEFINITIONS,
@@ -12,159 +12,172 @@ import {
   hasPermission,
   normalizePermissionKeys,
   readWorkspaceAccessState,
-  writeWorkspaceAccessState
-} from "~/domain/utils/permissions";
-import { useAccessControlStore } from "~/stores/access-control";
-import { useAuthStore } from "~/stores/auth";
-import { useUiStore } from "~/stores/ui";
+  writeWorkspaceAccessState,
+} from '~/domain/utils/permissions'
+import { useAccessControlStore } from '~/stores/access-control'
+import { useAuthStore } from '~/stores/auth'
+import { useUiStore } from '~/stores/ui'
 
-const auth = useAuthStore();
-const ui = useUiStore();
-const accessStore = useAccessControlStore();
+const auth = useAuthStore()
+const ui = useUiStore()
+const accessStore = useAccessControlStore()
 
-const roleDrafts = ref({});
-const expandedRoleIds = ref([]);
-const savingRoleId = ref("");
-const loadError = ref("");
+const roleDrafts = ref({})
+const expandedRoleIds = ref([])
+const savingRoleId = ref('')
+const loadError = ref('')
 
 const canEditRoleMatrix = computed(() =>
-  canManageRoleDefaults(auth.role, auth.permissionKeys, auth.permissionsResolved)
-);
+  canManageRoleDefaults(auth.role, auth.permissionKeys, auth.permissionsResolved),
+)
 
 const sortedRoles = computed(() =>
-  [...accessStore.roleMatrix].sort((left, right) => getRoleLabel(left.role).localeCompare(getRoleLabel(right.role), "pt-BR"))
-);
+  [...accessStore.roleMatrix].sort((left, right) =>
+    getRoleLabel(left.role).localeCompare(getRoleLabel(right.role), 'pt-BR'),
+  ),
+)
 
 function createRoleDraft(entry) {
   return {
-    permissionKeys: normalizePermissionKeys(entry?.permissionKeys || [])
-  };
+    permissionKeys: normalizePermissionKeys(entry?.permissionKeys || []),
+  }
 }
 
 function getRoleDraft(roleId) {
-  const normalizedRoleId = String(roleId || "").trim();
+  const normalizedRoleId = String(roleId || '').trim()
   if (!roleDrafts.value[normalizedRoleId]) {
-    const entry = accessStore.roleLookup.get(normalizedRoleId);
-    roleDrafts.value[normalizedRoleId] = createRoleDraft(entry);
+    const entry = accessStore.roleLookup.get(normalizedRoleId)
+    roleDrafts.value[normalizedRoleId] = createRoleDraft(entry)
   }
 
-  return roleDrafts.value[normalizedRoleId];
+  return roleDrafts.value[normalizedRoleId]
 }
 
 function syncRoleDrafts() {
-  const nextDrafts = {};
+  const nextDrafts = {}
 
   for (const entry of accessStore.roleMatrix) {
-    nextDrafts[entry.role] = createRoleDraft(entry);
+    nextDrafts[entry.role] = createRoleDraft(entry)
   }
 
-  roleDrafts.value = nextDrafts;
+  roleDrafts.value = nextDrafts
 
   if (!expandedRoleIds.value.length && accessStore.roleMatrix.length) {
-    expandedRoleIds.value = [accessStore.roleMatrix[0].role];
+    expandedRoleIds.value = [accessStore.roleMatrix[0].role]
   }
 }
 
 function isExpanded(roleId) {
-  return expandedRoleIds.value.includes(String(roleId || "").trim());
+  return expandedRoleIds.value.includes(String(roleId || '').trim())
 }
 
 function toggleRoleCard(roleId) {
-  const normalizedRoleId = String(roleId || "").trim();
+  const normalizedRoleId = String(roleId || '').trim()
   if (!normalizedRoleId) {
-    return;
+    return
   }
 
   expandedRoleIds.value = isExpanded(normalizedRoleId)
     ? expandedRoleIds.value.filter((entryRoleId) => entryRoleId !== normalizedRoleId)
-    : [...expandedRoleIds.value, normalizedRoleId];
+    : [...expandedRoleIds.value, normalizedRoleId]
 }
 
 function getRoleSummary(entry) {
-  const permissionKeys = getRoleDraft(entry.role).permissionKeys;
-  const visibleWorkspaces = WORKSPACE_ACCESS_DEFINITIONS.filter((workspaceDefinition) =>
-    readWorkspaceAccessState(workspaceDefinition, permissionKeys, "none") !== "none"
-  ).length;
-  const editableWorkspaces = WORKSPACE_ACCESS_DEFINITIONS.filter((workspaceDefinition) =>
-    readWorkspaceAccessState(workspaceDefinition, permissionKeys, "none") === "edit"
-  ).length;
+  const permissionKeys = getRoleDraft(entry.role).permissionKeys
+  const visibleWorkspaces = WORKSPACE_ACCESS_DEFINITIONS.filter(
+    (workspaceDefinition) =>
+      readWorkspaceAccessState(workspaceDefinition, permissionKeys, 'none') !== 'none',
+  ).length
+  const editableWorkspaces = WORKSPACE_ACCESS_DEFINITIONS.filter(
+    (workspaceDefinition) =>
+      readWorkspaceAccessState(workspaceDefinition, permissionKeys, 'none') === 'edit',
+  ).length
   const advancedPermissions = ADVANCED_ACCESS_DEFINITIONS.filter((permissionDefinition) =>
-    hasPermission(permissionKeys, permissionDefinition.key)
-  ).length;
+    hasPermission(permissionKeys, permissionDefinition.key),
+  ).length
 
   return {
     visibleWorkspaces,
     editableWorkspaces,
-    advancedPermissions
-  };
+    advancedPermissions,
+  }
 }
 
 function getWorkspaceState(roleId, workspaceDefinition) {
-  return readWorkspaceAccessState(workspaceDefinition, getRoleDraft(roleId).permissionKeys, "none");
+  return readWorkspaceAccessState(workspaceDefinition, getRoleDraft(roleId).permissionKeys, 'none')
 }
 
 function updateWorkspaceState(roleId, workspaceDefinition, nextState) {
-  const draft = getRoleDraft(roleId);
-  draft.permissionKeys = writeWorkspaceAccessState(workspaceDefinition, draft.permissionKeys, nextState);
+  const draft = getRoleDraft(roleId)
+  draft.permissionKeys = writeWorkspaceAccessState(
+    workspaceDefinition,
+    draft.permissionKeys,
+    nextState,
+  )
 }
 
 function hasAdvancedAccess(roleId, permissionKey) {
-  return hasPermission(getRoleDraft(roleId).permissionKeys, permissionKey);
+  return hasPermission(getRoleDraft(roleId).permissionKeys, permissionKey)
 }
 
 function toggleAdvancedAccess(roleId, permissionKey, nextValue) {
-  const draft = getRoleDraft(roleId);
-  const nextPermissions = normalizePermissionKeys(draft.permissionKeys).filter((currentKey) => currentKey !== permissionKey);
+  const draft = getRoleDraft(roleId)
+  const nextPermissions = normalizePermissionKeys(draft.permissionKeys).filter(
+    (currentKey) => currentKey !== permissionKey,
+  )
   if (nextValue) {
-    nextPermissions.push(permissionKey);
+    nextPermissions.push(permissionKey)
   }
-  draft.permissionKeys = normalizePermissionKeys(nextPermissions);
+  draft.permissionKeys = normalizePermissionKeys(nextPermissions)
 }
 
 function isDirty(roleId) {
-  const currentEntry = accessStore.roleLookup.get(String(roleId || "").trim());
+  const currentEntry = accessStore.roleLookup.get(String(roleId || '').trim())
   if (!currentEntry) {
-    return false;
+    return false
   }
 
-  return JSON.stringify(normalizePermissionKeys(currentEntry.permissionKeys)) !== JSON.stringify(getRoleDraft(roleId).permissionKeys);
+  return (
+    JSON.stringify(normalizePermissionKeys(currentEntry.permissionKeys)) !==
+    JSON.stringify(getRoleDraft(roleId).permissionKeys)
+  )
 }
 
 async function saveRole(roleId) {
   if (!canEditRoleMatrix.value || savingRoleId.value) {
-    return;
+    return
   }
 
-  savingRoleId.value = String(roleId || "").trim();
-  const result = await accessStore.saveRolePermissions(roleId, getRoleDraft(roleId).permissionKeys);
-  savingRoleId.value = "";
+  savingRoleId.value = String(roleId || '').trim()
+  const result = await accessStore.saveRolePermissions(roleId, getRoleDraft(roleId).permissionKeys)
+  savingRoleId.value = ''
 
   if (result?.ok === false) {
-    ui.error(result.message || "Nao foi possivel salvar o perfil.");
-    return;
+    ui.error(result.message || 'Nao foi possivel salvar o perfil.')
+    return
   }
 
-  ui.success("Padrao do perfil atualizado.");
+  ui.success('Padrao do perfil atualizado.')
 }
 
 async function loadRoleMatrix() {
-  loadError.value = "";
-  await accessStore.ensureRoleMatrix();
+  loadError.value = ''
+  await accessStore.ensureRoleMatrix()
 
   if (!accessStore.roleMatrix.length && accessStore.errorMessage) {
-    loadError.value = accessStore.errorMessage;
+    loadError.value = accessStore.errorMessage
   }
 }
 
 watch(
   () => accessStore.roleMatrix,
   () => {
-    syncRoleDrafts();
+    syncRoleDrafts()
   },
-  { immediate: true, deep: true }
-);
+  { immediate: true, deep: true },
+)
 
-await loadRoleMatrix();
+await loadRoleMatrix()
 </script>
 
 <template>
@@ -174,15 +187,22 @@ await loadRoleMatrix();
         <div>
           <h3 class="settings-card__title">Matriz padrao por perfil</h3>
           <p class="settings-card__text">
-            Defina o que cada tipo de usuario pode ver no painel e o que pode alterar antes dos overrides individuais.
+            Defina o que cada tipo de usuario pode ver no painel e o que pode alterar antes dos
+            overrides individuais.
           </p>
         </div>
 
-        <span class="users-role-matrix__summary-pill">{{ loadError ? 'Falha na carga' : `${sortedRoles.length} perfis` }}</span>
+        <span class="users-role-matrix__summary-pill">
+          {{ loadError ? 'Falha na carga' : `${sortedRoles.length} perfis` }}
+        </span>
       </div>
 
       <p class="users-role-matrix__intro-note">
-        {{ canEditRoleMatrix ? "As alteracoes abaixo viram o padrao para novos acessos e para usuarios sem override." : "Voce esta vendo a matriz em modo leitura. Para editar os padroes, e preciso a permissao de matriz por perfil." }}
+        {{
+          canEditRoleMatrix
+            ? 'As alteracoes abaixo viram o padrao para novos acessos e para usuarios sem override.'
+            : 'Voce esta vendo a matriz em modo leitura. Para editar os padroes, e preciso a permissao de matriz por perfil.'
+        }}
       </p>
     </header>
 
@@ -192,7 +212,9 @@ await loadRoleMatrix();
         <p>{{ loadError }}</p>
       </div>
 
-      <button class="users-role-matrix__retry-btn" type="button" @click="loadRoleMatrix">Tentar novamente</button>
+      <button class="users-role-matrix__retry-btn" type="button" @click="loadRoleMatrix">
+        Tentar novamente
+      </button>
     </div>
 
     <div v-else-if="!sortedRoles.length" class="users-role-matrix__empty-card">
@@ -201,7 +223,11 @@ await loadRoleMatrix();
     </div>
 
     <div v-else class="users-role-matrix__grid">
-      <article v-for="entry in sortedRoles" :key="entry.role" class="settings-card users-role-matrix__card">
+      <article
+        v-for="entry in sortedRoles"
+        :key="entry.role"
+        class="settings-card users-role-matrix__card"
+      >
         <button
           class="users-role-matrix__card-toggle"
           type="button"
@@ -211,13 +237,19 @@ await loadRoleMatrix();
           <div class="users-role-matrix__card-copy">
             <div>
               <h3 class="settings-card__title">{{ entry.label || getRoleLabel(entry.role) }}</h3>
-              <p class="settings-card__text">Escopo {{ entry.scope || "tenant" }}.</p>
+              <p class="settings-card__text">Escopo {{ entry.scope || 'tenant' }}.</p>
             </div>
 
             <div class="users-role-matrix__card-summary">
-              <span class="users-role-matrix__summary-chip">{{ getRoleSummary(entry).visibleWorkspaces }} visoes</span>
-              <span class="users-role-matrix__summary-chip">{{ getRoleSummary(entry).editableWorkspaces }} edicoes</span>
-              <span class="users-role-matrix__summary-chip">{{ getRoleSummary(entry).advancedPermissions }} sensiveis</span>
+              <span class="users-role-matrix__summary-chip">
+                {{ getRoleSummary(entry).visibleWorkspaces }} visoes
+              </span>
+              <span class="users-role-matrix__summary-chip">
+                {{ getRoleSummary(entry).editableWorkspaces }} edicoes
+              </span>
+              <span class="users-role-matrix__summary-chip">
+                {{ getRoleSummary(entry).advancedPermissions }} sensiveis
+              </span>
             </div>
           </div>
 
@@ -265,15 +297,22 @@ await loadRoleMatrix();
                 compact
                 :model-value="hasAdvancedAccess(entry.role, permissionDefinition.key)"
                 :disabled="!canEditRoleMatrix"
-                :label="hasAdvancedAccess(entry.role, permissionDefinition.key) ? 'Ativo' : 'Inativo'"
-                @update:model-value="toggleAdvancedAccess(entry.role, permissionDefinition.key, $event)"
+                :label="
+                  hasAdvancedAccess(entry.role, permissionDefinition.key) ? 'Ativo' : 'Inativo'
+                "
+                @update:model-value="
+                  toggleAdvancedAccess(entry.role, permissionDefinition.key, $event)
+                "
               />
             </div>
           </div>
 
           <footer class="users-role-matrix__card-actions">
-            <span class="users-role-matrix__draft-state" :class="{ 'is-dirty': isDirty(entry.role) }">
-              {{ isDirty(entry.role) ? "Alteracoes pendentes" : "Sem alteracoes" }}
+            <span
+              class="users-role-matrix__draft-state"
+              :class="{ 'is-dirty': isDirty(entry.role) }"
+            >
+              {{ isDirty(entry.role) ? 'Alteracoes pendentes' : 'Sem alteracoes' }}
             </span>
 
             <button
@@ -282,7 +321,7 @@ await loadRoleMatrix();
               :disabled="!canEditRoleMatrix || !isDirty(entry.role) || savingRoleId === entry.role"
               @click="saveRole(entry.role)"
             >
-              {{ savingRoleId === entry.role ? "Salvando..." : "Salvar perfil" }}
+              {{ savingRoleId === entry.role ? 'Salvando...' : 'Salvar perfil' }}
             </button>
           </footer>
         </div>
@@ -427,7 +466,7 @@ await loadRoleMatrix();
   transition: transform 0.2s ease;
 }
 
-.users-role-matrix__card-toggle[aria-expanded="true"] .users-role-matrix__collapse-icon {
+.users-role-matrix__card-toggle[aria-expanded='true'] .users-role-matrix__collapse-icon {
   transform: rotate(180deg);
 }
 

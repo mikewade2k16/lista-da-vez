@@ -1,0 +1,33 @@
+{
+  // tsconfig próprio do Omni web — Fase 6.4
+  //
+  // Estende o tsconfig gerado pelo Nuxt em .nuxt/ (paths, includes, libs).
+  //
+  // ESTRATÉGIA: endurecimento GRADUAL. Hoje a baseline tem 1.697 erros TS
+  // se `strict: true` for forçado de uma vez — dívida histórica esperada,
+  // já que o projeto nunca rodou strict.
+  //
+  // Por isso ligamos só as flags ESTRUTURAIS que dão pouca dor agora,
+  // e mantemos noImplicitAny/strictNullChecks DESLIGADOS até as Fases 7 e 8
+  // do PLANO_REFATORACAO. Cada flag virá ligada num PR isolado dedicado.
+  //
+  // Para ver a dívida atual: `npm run typecheck`.
+  // Para ver dívida com strict cheio: `npm run typecheck:strict`.
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": false,
+    // Flags estruturais — baixo custo, alto valor
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "useUnknownInCatchVariables": true,    // catch(e) tem `e: unknown` (mais seguro)
+
+    // Roadmap de strictness — DESLIGADAS hoje, alvo nas Fases 7/8
+    // Quando ligar, fazer baseline antes e abrir tarefa dedicada:
+    "noImplicitAny": false,                // baseline atual: ~810 erros
+    "strictNullChecks": false,             // baseline atual: ~622 erros
+    "noUncheckedIndexedAccess": false,     // alvo: pós-Fase 7
+    "exactOptionalPropertyTypes": false,   // alvo: pós-Fase 7
+    "noPropertyAccessFromIndexSignature": false
+  }
+}

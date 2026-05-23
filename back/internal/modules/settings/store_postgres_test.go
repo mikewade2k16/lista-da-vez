@@ -34,6 +34,11 @@ func TestCoreSettingsScanRowColumnsMatchDTO(t *testing.T) {
 			service_cancel_window_seconds,
 			test_mode_enabled,
 			auto_fill_finish_modal,
+			score_weight_conversion,
+			score_weight_sold_value,
+			score_weight_quality,
+			score_weight_pa,
+			score_weight_queue_discipline,
 			updated_at
 		from tenant_operation_core_settings
 		where tenant_id = $1::uuid

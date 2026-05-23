@@ -159,7 +159,7 @@ Ambiente esperado:
 1. `back/PLAN.md`
 2. `back/README.md`
 3. `back/database/ERD.md`
-4. `../web/app/pages/operacao/operations.md`
+4. `../docs/operacao/operations.md`
 5. `../docs/NUXT_FULL_REFERENCE.md`
 
 ## Proxima evolucao esperada

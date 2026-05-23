@@ -41,7 +41,10 @@ function sourceValue<T>(source: RealtimeSource<T> | undefined, fallback: T): T {
 }
 
 function normalizeText(value: unknown, max = 240) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+  return String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max)
 }
 
 function normalizeScope(value: unknown): TasksRealtimeScope {
@@ -56,17 +59,20 @@ function resolveAccountId(auth: ReturnType<typeof useAuthStore>, explicitAccount
       auth.activeTenantId ||
       auth.principal?.tenantId ||
       auth.tenantContext?.[0]?.id,
-    120
+    120,
   )
 }
 
-function buildSocketURL(runtimeConfig: ReturnType<typeof useRuntimeConfig>, params: {
-  scope: TasksRealtimeScope
-  accountId: string
-  boardId: string
-  taskId: string
-  accessToken: string
-}) {
+function buildSocketURL(
+  runtimeConfig: ReturnType<typeof useRuntimeConfig>,
+  params: {
+    scope: TasksRealtimeScope
+    accountId: string
+    boardId: string
+    taskId: string
+    accessToken: string
+  },
+) {
   const url = new URL('/v1/realtime/tasks', getWebSocketBase(runtimeConfig))
   url.searchParams.set('scope', params.scope)
   url.searchParams.set('accountId', params.accountId)
@@ -109,7 +115,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
       accountId,
       boardId,
       taskId,
-      accessToken
+      accessToken,
     }
   }
 
@@ -195,7 +201,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
           scope: desired.scope,
           accountId: desired.accountId,
           boardId: desired.boardId || undefined,
-          taskId: desired.taskId || undefined
+          taskId: desired.taskId || undefined,
         })
       }
     })
@@ -220,7 +226,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
         console.warn('[tasks-ws] socket CLOSED — agendando reconexao', {
           code: event.code,
           reason: event.reason,
-          wasClean: event.wasClean
+          wasClean: event.wasClean,
         })
       }
       reconnectAttempts += 1
@@ -244,10 +250,10 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
         () => auth.isAuthenticated,
         () => auth.accessToken,
         () => auth.activeTenantId,
-        () => auth.principal?.tenantId
+        () => auth.principal?.tenantId,
       ],
       () => ensureConnection(),
-      { immediate: true }
+      { immediate: true },
     )
   })
 
@@ -259,6 +265,6 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
     status,
     isConnected,
     lastEvent,
-    disconnect
+    disconnect,
   }
 }

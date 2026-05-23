@@ -1,9 +1,12 @@
 package erp
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestStreamItemConsolidatedParsesBatches(t *testing.T) {
@@ -193,3 +196,122 @@ loja;cnpj_loja;arquivo_origem;data_lote;linha_origem;order_id;identifier;store_i
 		t.Fatalf("unexpected store_id %q", row.StoreIDRaw)
 	}
 }
+
+func TestSortSourceCandidatesForIngestPrioritizesMissingLatestFiles(t *testing.T) {
+	importedOld := sourceCandidateForTest(t, "184-12583959000186-item-20260508010001.csv")
+	missingNew := sourceCandidateForTest(t, "184-12583959000186-item-20260518010001.csv")
+	missingOlder := sourceCandidateForTest(t, "184-12583959000186-item-20260512010001.csv")
+	importedNew := sourceCandidateForTest(t, "184-12583959000186-item-20260517010001.csv")
+
+	candidates := []sourceCandidate{importedOld, missingOlder, importedNew, missingNew}
+	sortSourceCandidatesForIngest(candidates, map[string]syncFileImportState{
+		importedOld.meta.OriginalName: {SourceName: importedOld.meta.OriginalName, Status: "imported"},
+		importedNew.meta.OriginalName: {SourceName: importedNew.meta.OriginalName, Status: "imported"},
+	}, SyncTriggeredByManual)
+
+	got := []string{
+		candidates[0].meta.OriginalName,
+		candidates[1].meta.OriginalName,
+		candidates[2].meta.OriginalName,
+		candidates[3].meta.OriginalName,
+	}
+	want := []string{
+		missingNew.meta.OriginalName,
+		missingOlder.meta.OriginalName,
+		importedNew.meta.OriginalName,
+		importedOld.meta.OriginalName,
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("index %d: expected %q, got %q", index, want[index], got[index])
+		}
+	}
+}
+
+func TestSortSourceCandidatesForIngestKeepsBackfillChronological(t *testing.T) {
+	missingNew := sourceCandidateForTest(t, "184-12583959000186-item-20260518010001.csv")
+	missingOlder := sourceCandidateForTest(t, "184-12583959000186-item-20260512010001.csv")
+
+	candidates := []sourceCandidate{missingNew, missingOlder}
+	sortSourceCandidatesForIngest(candidates, nil, SyncTriggeredByBackfill)
+
+	if candidates[0].meta.OriginalName != missingOlder.meta.OriginalName {
+		t.Fatalf("expected oldest missing file first, got %q", candidates[0].meta.OriginalName)
+	}
+}
+
+func TestFilterSourceCandidatesForIngestDropsImportedFiles(t *testing.T) {
+	imported := sourceCandidateForTest(t, "184-12583959000186-item-20260508010001.csv")
+	missing := sourceCandidateForTest(t, "184-12583959000186-item-20260518010001.csv")
+
+	candidates := filterSourceCandidatesForIngest([]sourceCandidate{imported, missing}, map[string]syncFileImportState{
+		imported.meta.OriginalName: {SourceName: imported.meta.OriginalName, Status: "imported"},
+	})
+
+	if len(candidates) != 1 {
+		t.Fatalf("expected 1 missing candidate, got %d", len(candidates))
+	}
+	if candidates[0].meta.OriginalName != missing.meta.OriginalName {
+		t.Fatalf("expected missing file, got %q", candidates[0].meta.OriginalName)
+	}
+}
+
+func TestNewSourceForIngestForcesBackfillRecursive(t *testing.T) {
+	service := NewService(nil, Options{SourceKind: SourceKindFTP})
+	var got SourceOptions
+	service.sourceFactory = func(options SourceOptions) (ErpSource, error) {
+		got = options
+		return noopSource{}, nil
+	}
+
+	source, err := service.newSourceForIngest(IngestInput{TriggeredBy: SyncTriggeredByBackfill})
+	if err != nil {
+		t.Fatalf("newSourceForIngest() error = %v", err)
+	}
+	_ = source.Close()
+
+	if !got.Recursive {
+		t.Fatal("expected backfill source to be recursive")
+	}
+}
+
+func TestNewSourceForIngestKeepsManualRecursiveConfig(t *testing.T) {
+	service := NewService(nil, Options{SourceKind: SourceKindFTP, SourceRecursive: false})
+	var got SourceOptions
+	service.sourceFactory = func(options SourceOptions) (ErpSource, error) {
+		got = options
+		return noopSource{}, nil
+	}
+
+	source, err := service.newSourceForIngest(IngestInput{TriggeredBy: SyncTriggeredByManual})
+	if err != nil {
+		t.Fatalf("newSourceForIngest() error = %v", err)
+	}
+	_ = source.Close()
+
+	if got.Recursive {
+		t.Fatal("expected manual sync source to keep recursive disabled")
+	}
+}
+
+func sourceCandidateForTest(t *testing.T, name string) sourceCandidate {
+	t.Helper()
+	meta, err := parseCSVFilename(name)
+	if err != nil {
+		t.Fatalf("parseCSVFilename(%q) error = %v", name, err)
+	}
+	return sourceCandidate{
+		info: SourceFileInfo{
+			Name:    name,
+			ModTime: time.Date(2026, 5, 18, 1, 0, 0, 0, time.UTC),
+		},
+		meta: meta,
+	}
+}
+
+type noopSource struct{}
+
+func (noopSource) List(context.Context, string) ([]SourceFileInfo, error) { return nil, nil }
+func (noopSource) Open(context.Context, string) (io.ReadCloser, error)    { return nil, nil }
+func (noopSource) Kind() string                                           { return SourceKindFTP }
+func (noopSource) Close() error                                           { return nil }

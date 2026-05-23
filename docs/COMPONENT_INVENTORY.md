@@ -1,6 +1,8 @@
 # Inventario de Componentes e Design System
 
-> Fase 10 do roadmap. Documento vivo: cada bloco executado deve atualizar este arquivo e a pagina `/roadmap`.
+> **Escopo deste documento**: catalogo do projeto de **referencia** em `web-reference/` (NAO e inventario dos componentes do `web/` atual). Serve de base para planejar a importacao de modulos nas Fases 5+ do [ROADMAP.md](ROADMAP.md). Para o inventario real do `web/` atual, ver Secao 5 do [ESTADO_ATUAL.md](ESTADO_ATUAL.md).
+>
+> Fase 10 do roadmap (catalogacao inicial) encerrada em 2026-05-12. Documento permanece vivo — cada bloco importado deve atualizar este arquivo e a pagina `/roadmap`.
 
 ## Status
 

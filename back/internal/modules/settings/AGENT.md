@@ -58,7 +58,7 @@ enviar `tenantId` do contexto ativo quando o principal for global. Nunca usar
 - escrita: `owner` e `platform_admin`
 - escopo de leitura/gravacao: `tenantId` explicito validado contra o acesso do principal, ou `principal.TenantID` quando o usuario ja for tenant-scoped
 - para principals globais como `platform_admin`, a UI deve chamar `/v1/settings?tenantId={activeTenantId}` e enviar esse mesmo query param nas escritas
-- se um principal global omitir `tenantId`, o fallback so pode resolver automaticamente quando existir exatamente um tenant acessivel; zero ou multiplos tenants devem falhar por escopo ambiguo
+- se um principal global omitir `tenantId`, o fallback so pode resolver automaticamente quando existir exatamente um tenant acessivel; zero ou multiplos tenants devem falhar por escopo ambiguo. `ResolveDefaultTenantID` para `platform_admin` filtra a lista por `exists (... stores ativas)` antes de aplicar o `limit 2`: tenants sem stores ativas nao contam para a desambiguacao
 - regressao a evitar: `platform_admin` normalmente autentica sem `tenantId` no token; o boot do painel precisa carregar `/v1/me/context`, usar `activeTenantId` e entao chamar `/v1/settings?tenantId={activeTenantId}`
 - a hidratacao automatica do runtime no login (em `web/app/utils/runtime-remote.ts`: `hydrateRuntimeStoreContext`, `refreshRuntimeStoreSettings`, `fetchRemoteStoreData`) tambem precisa receber `auth.activeTenantId`; do contrario o `tenantId` derivado do `runtime.state.stores` pode estar vazio e o backend cai em `ErrTenantRequired` (HTTP 400 `validation_error` "Verifique os dados de configuracao")
 

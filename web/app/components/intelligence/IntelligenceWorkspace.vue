@@ -1,78 +1,81 @@
 <script setup>
-import { computed } from "vue";
+import { computed } from 'vue'
 import {
   formatCurrencyBRL,
   formatDurationMinutes,
-  formatPercent
-} from "~/domain/utils/admin-metrics";
-import IntelligenceDiagnosisCard from "~/components/intelligence/IntelligenceDiagnosisCard.vue";
+  formatPercent,
+} from '~/domain/utils/admin-metrics'
+import IntelligenceDiagnosisCard from '~/components/intelligence/IntelligenceDiagnosisCard.vue'
 
 const props = defineProps({
   report: {
     type: Object,
-    default: null
+    default: null,
   },
   pending: {
     type: Boolean,
-    default: false
+    default: false,
   },
   errorMessage: {
     type: String,
-    default: ""
+    default: '',
   },
   integratedScope: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 
-const intelligence = computed(() => props.report || {
-  healthScore: 0,
-  severityCounts: {
-    critical: 0,
-    attention: 0,
-    healthy: 0
-  },
-  totalAttendances: 0,
-  diagnosis: [],
-  recommendedActions: [],
-  time: {
-    avgQueueWaitMs: 0,
-    notUsingQueueRate: 0
-  },
-  ticketAverage: 0,
-  conversionRate: 0
-});
+const intelligence = computed(
+  () =>
+    props.report || {
+      healthScore: 0,
+      severityCounts: {
+        critical: 0,
+        attention: 0,
+        healthy: 0,
+      },
+      totalAttendances: 0,
+      diagnosis: [],
+      recommendedActions: [],
+      time: {
+        avgQueueWaitMs: 0,
+        notUsingQueueRate: 0,
+      },
+      ticketAverage: 0,
+      conversionRate: 0,
+    },
+)
 const summaryLevelClass = computed(() => {
   if (intelligence.value.healthScore >= 80) {
-    return "healthy";
+    return 'healthy'
   }
 
   if (intelligence.value.healthScore >= 60) {
-    return "attention";
+    return 'attention'
   }
 
-  return "critical";
-});
+  return 'critical'
+})
 const contextRows = computed(() => [
   {
-    label: "Tempo medio de espera na fila",
-    value: formatDurationMinutes(intelligence.value.time.avgQueueWaitMs)
+    label: 'Tempo medio de espera na fila',
+    value: formatDurationMinutes(intelligence.value.time.avgQueueWaitMs),
   },
   {
-    label: "Taxa de atendimento fora da vez",
-    value: formatPercent(intelligence.value.time.notUsingQueueRate)
+    label: 'Taxa de atendimento fora da vez',
+    value: formatPercent(intelligence.value.time.notUsingQueueRate),
   },
   {
-    label: "Ticket medio (compra/reserva)",
-    value: formatCurrencyBRL(intelligence.value.ticketAverage)
+    label: 'Ticket medio (compra/reserva)',
+    value: formatCurrencyBRL(intelligence.value.ticketAverage),
   },
   {
-    label: "Conversao geral",
-    value: formatPercent(intelligence.value.conversionRate)
-  }
-]);
-const roundedScore = computed(() => Math.round(intelligence.value.healthScore));
+    label: 'Conversao geral',
+    value: formatPercent(intelligence.value.conversionRate),
+  },
+])
+const roundedScore = computed(() => Math.round(intelligence.value.healthScore))
 </script>
 
 <template>
@@ -80,7 +83,11 @@ const roundedScore = computed(() => Math.round(intelligence.value.healthScore));
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Inteligencia operacional</h2>
       <p class="admin-panel__text">
-        {{ integratedScope ? 'Leitura automatica consolidada para apoiar decisao multi-loja e gestao de equipe.' : 'Leitura automatica dos dados para apoiar decisao de loja e gestao de equipe.' }}
+        {{
+          integratedScope
+            ? 'Leitura automatica consolidada para apoiar decisao multi-loja e gestao de equipe.'
+            : 'Leitura automatica dos dados para apoiar decisao de loja e gestao de equipe.'
+        }}
       </p>
     </header>
 
@@ -89,7 +96,13 @@ const roundedScore = computed(() => Math.round(intelligence.value.healthScore));
     </article>
 
     <article v-else-if="pending && !report" class="insight-card">
-      <p class="settings-card__text">{{ integratedScope ? 'Carregando inteligencia operacional consolidada...' : 'Carregando inteligencia operacional da loja ativa...' }}</p>
+      <p class="settings-card__text">
+        {{
+          integratedScope
+            ? 'Carregando inteligencia operacional consolidada...'
+            : 'Carregando inteligencia operacional da loja ativa...'
+        }}
+      </p>
     </article>
 
     <article class="insight-card intel-summary" data-testid="intelligence-score">

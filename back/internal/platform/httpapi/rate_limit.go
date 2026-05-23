@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"strconv"
@@ -10,9 +12,9 @@ import (
 )
 
 // IdentityResolver extrai um identificador estavel do request para o bucket de rate limit.
-// Quando retorna string vazia, o middleware cai para identidade por IP. Caller injeta a funcao
-// para evitar import cycle com o pacote `auth` (httpapi nao pode importar auth, pois auth ja
-// importa httpapi para escrever erros).
+// Quando retorna string vazia, o middleware tenta identificar o bearer token antes de cair
+// para IP. Caller injeta a funcao para evitar import cycle com o pacote `auth` (httpapi nao
+// pode importar auth, pois auth ja importa httpapi para escrever erros).
 type IdentityResolver func(r *http.Request) string
 
 // RateLimitOptions configura o middleware RateLimit. Limit e' o numero maximo de requisicoes
@@ -34,8 +36,8 @@ var DefaultRESTRateLimit = RateLimitOptions{
 }
 
 type rateLimitBucket struct {
-	count     int
-	resetAt   time.Time
+	count      int
+	resetAt    time.Time
 	lastSeenAt time.Time
 }
 
@@ -91,7 +93,9 @@ func (store *rateLimiterStore) cleanupLoop() {
 }
 
 // RateLimit retorna um middleware que limita requisicoes por identidade. A identidade prefere
-// `principal.UserID` (quando autenticado via RequireAuth) e cai para o IP do client.
+// `principal.UserID` (quando autenticado via RequireAuth), depois bearer/access_token, e por
+// ultimo cai para o IP do client. Isso importa porque este middleware roda antes dos handlers
+// autenticados injetarem o principal no contexto.
 //
 // Quando o limite e' excedido, responde 429 com header `Retry-After` em segundos.
 func RateLimit(options RateLimitOptions) Middleware {
@@ -130,6 +134,10 @@ func resolveRateLimitIdentity(r *http.Request, resolver IdentityResolver) string
 		}
 	}
 
+	if token := bearerTokenFromRequest(r); token != "" {
+		return "token:" + shortTokenHash(token)
+	}
+
 	// Fallback: IP do client. Honra X-Forwarded-For quando presente (esperado em proxy/CDN);
 	// senao usa o RemoteAddr direto.
 	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
@@ -146,4 +154,18 @@ func resolveRateLimitIdentity(r *http.Request, resolver IdentityResolver) string
 		return "ip:" + r.RemoteAddr
 	}
 	return "ip:" + host
+}
+
+func bearerTokenFromRequest(r *http.Request) string {
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return strings.TrimSpace(authHeader[len("Bearer "):])
+	}
+
+	return strings.TrimSpace(r.URL.Query().Get("access_token"))
+}
+
+func shortTokenHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:8])
 }

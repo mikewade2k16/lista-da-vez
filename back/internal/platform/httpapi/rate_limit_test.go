@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,7 +19,7 @@ func TestRateLimit_AllowsWithinLimit(t *testing.T) {
 	handler := middleware(newOkHandler())
 
 	for index := 0; index < 3; index++ {
-		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 		req.RemoteAddr = "127.0.0.1:0"
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
@@ -35,7 +36,7 @@ func TestRateLimit_BlocksAfterLimit(t *testing.T) {
 
 	// Esgota o limite (2 reqs).
 	for index := 0; index < 2; index++ {
-		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 		req.RemoteAddr = "127.0.0.1:0"
 		rr := httptest.NewRecorder()
 		handler.ServeHTTP(rr, req)
@@ -45,7 +46,7 @@ func TestRateLimit_BlocksAfterLimit(t *testing.T) {
 	}
 
 	// 3a request deve bloquear.
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req.RemoteAddr = "127.0.0.1:0"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -70,7 +71,7 @@ func TestRateLimit_ResolverPrecedesIP(t *testing.T) {
 	handler := middleware(newOkHandler())
 
 	for _, user := range []string{"u1", "u2", "u3"} {
-		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 		req.RemoteAddr = "127.0.0.1:0"
 		req.Header.Set("X-User", user)
 		rr := httptest.NewRecorder()
@@ -81,7 +82,7 @@ func TestRateLimit_ResolverPrecedesIP(t *testing.T) {
 	}
 
 	// Segunda request do u1 deve bloquear (mesma identidade).
-	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req.RemoteAddr = "127.0.0.1:0"
 	req.Header.Set("X-User", "u1")
 	rr := httptest.NewRecorder()
@@ -99,7 +100,7 @@ func TestRateLimit_ResolverEmptyFallsBackToIP(t *testing.T) {
 	})
 	handler := middleware(newOkHandler())
 
-	req1 := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req1.RemoteAddr = "10.0.0.1:0"
 	rr1 := httptest.NewRecorder()
 	handler.ServeHTTP(rr1, req1)
@@ -108,7 +109,7 @@ func TestRateLimit_ResolverEmptyFallsBackToIP(t *testing.T) {
 	}
 
 	// Mesma IP, segunda req — bloqueia.
-	req2 := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req2.RemoteAddr = "10.0.0.1:0"
 	rr2 := httptest.NewRecorder()
 	handler.ServeHTTP(rr2, req2)
@@ -117,7 +118,7 @@ func TestRateLimit_ResolverEmptyFallsBackToIP(t *testing.T) {
 	}
 
 	// IP diferente — bucket proprio, passa.
-	req3 := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req3 := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req3.RemoteAddr = "10.0.0.2:0"
 	rr3 := httptest.NewRecorder()
 	handler.ServeHTTP(rr3, req3)
@@ -126,12 +127,52 @@ func TestRateLimit_ResolverEmptyFallsBackToIP(t *testing.T) {
 	}
 }
 
+func TestRateLimit_BearerTokenPrecedesIPFallback(t *testing.T) {
+	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
+	handler := middleware(newOkHandler())
+
+	for _, token := range []string{"token-a", "token-b"} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
+		req.RemoteAddr = "10.0.0.1:0"
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("token %q deveria ter bucket proprio; got %d", token, rr.Code)
+		}
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
+	req.RemoteAddr = "10.0.0.1:0"
+	req.Header.Set("Authorization", "Bearer token-a")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusTooManyRequests {
+		t.Errorf("segunda req do mesmo token deveria bloquear; got %d", rr.Code)
+	}
+}
+
+func TestRateLimit_QueryAccessTokenPrecedesIPFallback(t *testing.T) {
+	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
+	handler := middleware(newOkHandler())
+
+	for _, token := range []string{"ws-a", "ws-b"} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/socket?access_token="+token, nil)
+		req.RemoteAddr = "10.0.0.1:0"
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("access_token %q deveria ter bucket proprio; got %d", token, rr.Code)
+		}
+	}
+}
+
 func TestRateLimit_XForwardedForFirstHopWins(t *testing.T) {
 	middleware := RateLimit(RateLimitOptions{Limit: 1, Window: time.Minute})
 	handler := middleware(newOkHandler())
 
 	// Primeira req com X-Forwarded-For="9.9.9.9".
-	req1 := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req1.RemoteAddr = "proxy:0"
 	req1.Header.Set("X-Forwarded-For", "9.9.9.9, 10.0.0.1")
 	rr1 := httptest.NewRecorder()
@@ -141,7 +182,7 @@ func TestRateLimit_XForwardedForFirstHopWins(t *testing.T) {
 	}
 
 	// Mesma IP do header, mesmo bucket — bloqueia.
-	req2 := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet,"/x", nil)
 	req2.RemoteAddr = "outroproxy:0"
 	req2.Header.Set("X-Forwarded-For", "9.9.9.9, outroProxy")
 	rr2 := httptest.NewRecorder()

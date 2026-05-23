@@ -1,39 +1,39 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed } from 'vue'
 
-type Variant = "card" | "table-row" | "text" | "avatar" | "block";
+type Variant = 'card' | 'table-row' | 'text' | 'avatar' | 'block'
 
 const props = withDefaults(
   defineProps<{
-    variant?: Variant;
-    width?: string;
-    height?: string;
-    rounded?: boolean;
-    count?: number;
+    variant?: Variant
+    width?: string
+    height?: string
+    rounded?: boolean
+    count?: number
   }>(),
   {
-    variant: "block",
-    width: "",
-    height: "",
+    variant: 'block',
+    width: '',
+    height: '',
     rounded: true,
-    count: 1
-  }
-);
+    count: 1,
+  },
+)
 
-const items = computed(() => Array.from({ length: Math.max(1, props.count) }));
+const items = computed(() => Array.from({ length: Math.max(1, props.count) }))
 
 const inlineStyle = computed(() => {
-  const style: Record<string, string> = {};
-  if (props.width) style.width = props.width;
-  if (props.height) style.height = props.height;
-  return style;
-});
+  const style: Record<string, string> = {}
+  if (props.width) style.width = props.width
+  if (props.height) style.height = props.height
+  return style
+})
 
 const wrapperClass = computed(() => ({
-  "core-skeleton": true,
+  'core-skeleton': true,
   [`core-skeleton--${props.variant}`]: true,
-  "core-skeleton--rounded": props.rounded
-}));
+  'core-skeleton--rounded': props.rounded,
+}))
 </script>
 
 <template>
@@ -46,15 +46,15 @@ const wrapperClass = computed(() => ({
       aria-hidden="true"
     >
       <template v-if="variant === 'card'">
-        <div class="core-skeleton__line core-skeleton__line--lg" />
-        <div class="core-skeleton__line core-skeleton__line--md" />
-        <div class="core-skeleton__line core-skeleton__line--sm" />
+        <div class="core-skeleton__line core-skeleton__line--lg"></div>
+        <div class="core-skeleton__line core-skeleton__line--md"></div>
+        <div class="core-skeleton__line core-skeleton__line--sm"></div>
       </template>
       <template v-else-if="variant === 'table-row'">
-        <div class="core-skeleton__cell" />
-        <div class="core-skeleton__cell core-skeleton__cell--wide" />
-        <div class="core-skeleton__cell" />
-        <div class="core-skeleton__cell core-skeleton__cell--narrow" />
+        <div class="core-skeleton__cell"></div>
+        <div class="core-skeleton__cell core-skeleton__cell--wide"></div>
+        <div class="core-skeleton__cell"></div>
+        <div class="core-skeleton__cell core-skeleton__cell--narrow"></div>
       </template>
     </div>
   </div>
@@ -70,12 +70,12 @@ const wrapperClass = computed(() => ({
 
 .core-skeleton {
   position: relative;
-  background: rgba(148, 163, 184, 0.10);
+  background: rgba(148, 163, 184, 0.1);
   overflow: hidden;
 }
 
 .core-skeleton::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
@@ -144,7 +144,7 @@ const wrapperClass = computed(() => ({
 }
 
 .core-skeleton__line::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
@@ -179,7 +179,7 @@ const wrapperClass = computed(() => ({
 }
 
 .core-skeleton__cell::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   transform: translateX(-100%);

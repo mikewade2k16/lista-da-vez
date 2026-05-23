@@ -27,6 +27,7 @@ const (
 	EventTypePresenceUserJoined    = "presence.user_joined"
 	EventTypePresenceUserLeft      = "presence.user_left"
 	EventTypePresenceFieldLocked   = "presence.field_locked"
+	EventTypePresenceFieldDraft    = "presence.field_draft"
 	EventTypePresenceFieldUnlocked = "presence.field_unlocked"
 	EventTypeNotificationCreated   = "notification.created"
 	EventTypeNotificationRead      = "notification.read"
@@ -44,6 +45,7 @@ type Event struct {
 	AvatarPath     string         `json:"avatarPath,omitempty"`
 	FieldKey       string         `json:"fieldKey,omitempty"`
 	LockID         string         `json:"lockId,omitempty"`
+	DraftValue     string         `json:"draftValue,omitempty"`
 	NotificationID string         `json:"notificationId,omitempty"`
 	Action         string         `json:"action,omitempty"`
 	Resource       string         `json:"resource,omitempty"`
@@ -61,6 +63,7 @@ type PresenceUser struct {
 	AvatarPath  string    `json:"avatarPath,omitempty"`
 	FieldKey    string    `json:"fieldKey,omitempty"`
 	LockID      string    `json:"lockId,omitempty"`
+	DraftValue  string    `json:"draftValue,omitempty"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 

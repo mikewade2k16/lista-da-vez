@@ -1,74 +1,74 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import RoadmapDatabaseDiagram from "~/components/roadmap/RoadmapDatabaseDiagram.vue";
+import { computed, ref } from 'vue'
+import RoadmapDatabaseDiagram from '~/components/roadmap/RoadmapDatabaseDiagram.vue'
 import {
   DATABASE_SCHEMAS,
   type DatabaseSchema,
   type SchemaField,
   type SchemaStatus,
-  type SchemaTable
-} from "~/components/roadmap/database-schema-data";
+  type SchemaTable,
+} from '~/components/roadmap/database-schema-data'
 
 const STATUS_LABEL: Record<SchemaStatus, string> = {
-  implemented: "Implementado",
-  building: "Em construção",
-  planned: "Planejado"
-};
+  implemented: 'Implementado',
+  building: 'Em construção',
+  planned: 'Planejado',
+}
 
 const STATUS_ICON: Record<SchemaStatus, string> = {
-  implemented: "check_circle",
-  building: "construction",
-  planned: "schedule"
-};
+  implemented: 'check_circle',
+  building: 'construction',
+  planned: 'schedule',
+}
 
-const schemas = computed<DatabaseSchema[]>(() => DATABASE_SCHEMAS);
+const schemas = computed<DatabaseSchema[]>(() => DATABASE_SCHEMAS)
 
-const selectedSchemaId = ref<string>(schemas.value[0]?.id ?? "core");
-const expandedTable = ref<string>("");
-const viewMode = ref<"list" | "diagram">("diagram");
+const selectedSchemaId = ref<string>(schemas.value[0]?.id ?? 'core')
+const expandedTable = ref<string>('')
+const viewMode = ref<'list' | 'diagram'>('diagram')
 
-const selectedSchema = computed<DatabaseSchema | undefined>(
-  () => schemas.value.find((schema) => schema.id === selectedSchemaId.value)
-);
+const selectedSchema = computed<DatabaseSchema | undefined>(() =>
+  schemas.value.find((schema) => schema.id === selectedSchemaId.value),
+)
 
 const totals = computed(() => {
-  const counters = { schemas: 0, tables: 0, implemented: 0, building: 0, planned: 0 };
+  const counters = { schemas: 0, tables: 0, implemented: 0, building: 0, planned: 0 }
   for (const schema of schemas.value) {
-    counters.schemas += 1;
+    counters.schemas += 1
     for (const table of schema.tables) {
-      counters.tables += 1;
-      counters[table.status] += 1;
+      counters.tables += 1
+      counters[table.status] += 1
     }
   }
-  return counters;
-});
+  return counters
+})
 
 function selectSchema(schemaId: string) {
-  selectedSchemaId.value = schemaId;
-  expandedTable.value = "";
+  selectedSchemaId.value = schemaId
+  expandedTable.value = ''
 }
 
 function toggleTable(tableKey: string) {
-  expandedTable.value = expandedTable.value === tableKey ? "" : tableKey;
+  expandedTable.value = expandedTable.value === tableKey ? '' : tableKey
 }
 
 function tableKey(schema: DatabaseSchema, table: SchemaTable) {
-  return `${schema.id}.${table.name}`;
+  return `${schema.id}.${table.name}`
 }
 
 function fieldFlags(field: SchemaField): string[] {
-  const flags: string[] = [];
-  if (field.primaryKey) flags.push("PK");
-  if (field.unique && !field.primaryKey) flags.push("UNIQUE");
-  if (field.foreignKey) flags.push("FK");
-  if (field.nullable) flags.push("NULL");
-  return flags;
+  const flags: string[] = []
+  if (field.primaryKey) flags.push('PK')
+  if (field.unique && !field.primaryKey) flags.push('UNIQUE')
+  if (field.foreignKey) flags.push('FK')
+  if (field.nullable) flags.push('NULL')
+  return flags
 }
 
 function fkLabel(field: SchemaField): string {
-  if (!field.foreignKey) return "";
-  const target = `${field.foreignKey.schema}.${field.foreignKey.table}`;
-  return field.foreignKey.onDelete ? `${target} (${field.foreignKey.onDelete})` : target;
+  if (!field.foreignKey) return ''
+  const target = `${field.foreignKey.schema}.${field.foreignKey.table}`
+  return field.foreignKey.onDelete ? `${target} (${field.foreignKey.onDelete})` : target
 }
 </script>
 
@@ -78,8 +78,8 @@ function fkLabel(field: SchemaField): string {
       <div class="schema-view__heading">
         <h3 class="schema-view__title">Banco de dados — schemas e tabelas</h3>
         <p class="schema-view__text">
-          Visão por schema (core, queue, contacts, finance, …). Status reflete o que já está em produção
-          (implementado), em construção ou apenas planejado por fase.
+          Visão por schema (core, queue, contacts, finance, …). Status reflete o que já está em
+          produção (implementado), em construção ou apenas planejado por fase.
         </p>
       </div>
 
@@ -122,11 +122,21 @@ function fkLabel(field: SchemaField): string {
       </button>
     </nav>
 
-    <section v-if="selectedSchema" class="schema-detail" :class="`schema-detail--${selectedSchema.status}`">
+    <section
+      v-if="selectedSchema"
+      class="schema-detail"
+      :class="`schema-detail--${selectedSchema.status}`"
+    >
       <header class="schema-detail__header">
         <div class="schema-detail__title-row">
-          <h4 class="schema-detail__title">schema <code>{{ selectedSchema.label }}</code></h4>
-          <span class="schema-detail__status" :class="`schema-detail__status--${selectedSchema.status}`">
+          <h4 class="schema-detail__title">
+            schema
+            <code>{{ selectedSchema.label }}</code>
+          </h4>
+          <span
+            class="schema-detail__status"
+            :class="`schema-detail__status--${selectedSchema.status}`"
+          >
             {{ STATUS_LABEL[selectedSchema.status] }}
           </span>
           <span class="schema-detail__phase">{{ selectedSchema.phase }}</span>
@@ -161,10 +171,7 @@ function fkLabel(field: SchemaField): string {
         Nenhuma tabela documentada ainda neste schema.
       </p>
 
-      <RoadmapDatabaseDiagram
-        v-else-if="viewMode === 'diagram'"
-        :schema="selectedSchema"
-      />
+      <RoadmapDatabaseDiagram v-else-if="viewMode === 'diagram'" :schema="selectedSchema" />
 
       <ul v-else class="schema-tables">
         <li
@@ -176,11 +183,13 @@ function fkLabel(field: SchemaField): string {
           <button
             type="button"
             class="schema-table__head"
-            @click="toggleTable(tableKey(selectedSchema, table))"
             :aria-expanded="expandedTable === tableKey(selectedSchema, table)"
+            @click="toggleTable(tableKey(selectedSchema, table))"
           >
             <div class="schema-table__head-main">
-              <span class="material-icons-round schema-table__icon">{{ STATUS_ICON[table.status] }}</span>
+              <span class="material-icons-round schema-table__icon">
+                {{ STATUS_ICON[table.status] }}
+              </span>
               <code class="schema-table__name">{{ selectedSchema.label }}.{{ table.name }}</code>
               <span class="schema-table__status" :class="`schema-table__status--${table.status}`">
                 {{ STATUS_LABEL[table.status] }}
@@ -188,7 +197,9 @@ function fkLabel(field: SchemaField): string {
               <span v-if="table.phase" class="schema-table__phase">{{ table.phase }}</span>
             </div>
             <span class="material-icons-round schema-table__chevron">
-              {{ expandedTable === tableKey(selectedSchema, table) ? 'expand_less' : 'expand_more' }}
+              {{
+                expandedTable === tableKey(selectedSchema, table) ? 'expand_less' : 'expand_more'
+              }}
             </span>
           </button>
 
@@ -212,23 +223,34 @@ function fkLabel(field: SchemaField): string {
                 </thead>
                 <tbody>
                   <tr v-for="field in table.fields" :key="field.name">
-                    <td class="schema-fields__name"><code>{{ field.name }}</code></td>
-                    <td class="schema-fields__type"><code>{{ field.type }}</code></td>
+                    <td class="schema-fields__name">
+                      <code>{{ field.name }}</code>
+                    </td>
+                    <td class="schema-fields__type">
+                      <code>{{ field.type }}</code>
+                    </td>
                     <td class="schema-fields__flags">
                       <span
                         v-for="flag in fieldFlags(field)"
                         :key="flag"
                         class="schema-flag"
                         :class="`schema-flag--${flag.toLowerCase()}`"
-                      >{{ flag }}</span>
+                      >
+                        {{ flag }}
+                      </span>
                     </td>
                     <td class="schema-fields__default">
                       <code v-if="field.default">{{ field.default }}</code>
                       <span v-else class="schema-fields__muted">—</span>
                     </td>
                     <td class="schema-fields__ref">
-                      <span v-if="field.foreignKey" class="schema-fk">→ <code>{{ fkLabel(field) }}</code></span>
-                      <span v-else-if="field.description" class="schema-fields__note">{{ field.description }}</span>
+                      <span v-if="field.foreignKey" class="schema-fk">
+                        →
+                        <code>{{ fkLabel(field) }}</code>
+                      </span>
+                      <span v-else-if="field.description" class="schema-fields__note">
+                        {{ field.description }}
+                      </span>
                       <span v-else class="schema-fields__muted">—</span>
                     </td>
                   </tr>
@@ -239,7 +261,9 @@ function fkLabel(field: SchemaField): string {
             <div v-if="table.indexes && table.indexes.length > 0" class="schema-indexes">
               <span class="schema-indexes__label">Índices</span>
               <ul class="schema-indexes__list">
-                <li v-for="(idx, i) in table.indexes" :key="i"><code>{{ idx }}</code></li>
+                <li v-for="(idx, i) in table.indexes" :key="i">
+                  <code>{{ idx }}</code>
+                </li>
               </ul>
             </div>
           </div>
@@ -313,13 +337,17 @@ function fkLabel(field: SchemaField): string {
   border-color: rgba(34, 197, 94, 0.45);
   background: rgba(34, 197, 94, 0.12);
 }
-.schema-view__total--implemented .schema-view__total-value { color: #4ade80; }
+.schema-view__total--implemented .schema-view__total-value {
+  color: #4ade80;
+}
 
 .schema-view__total--building {
   border-color: rgba(59, 130, 246, 0.45);
   background: rgba(59, 130, 246, 0.12);
 }
-.schema-view__total--building .schema-view__total-value { color: #60a5fa; }
+.schema-view__total--building .schema-view__total-value {
+  color: #60a5fa;
+}
 
 .schema-view__total--planned {
   border-color: rgba(148, 163, 184, 0.35);
@@ -363,9 +391,15 @@ function fkLabel(field: SchemaField): string {
   line-height: 1;
 }
 
-.schema-chip--implemented .schema-chip__icon { color: #4ade80; }
-.schema-chip--building .schema-chip__icon { color: #60a5fa; }
-.schema-chip--planned .schema-chip__icon { color: var(--text-muted); }
+.schema-chip--implemented .schema-chip__icon {
+  color: #4ade80;
+}
+.schema-chip--building .schema-chip__icon {
+  color: #60a5fa;
+}
+.schema-chip--planned .schema-chip__icon {
+  color: var(--text-muted);
+}
 
 .schema-chip__count {
   display: inline-block;
@@ -391,8 +425,12 @@ function fkLabel(field: SchemaField): string {
   background: rgba(15, 23, 42, 0.5);
 }
 
-.schema-detail--implemented { border-color: rgba(34, 197, 94, 0.3); }
-.schema-detail--building { border-color: rgba(59, 130, 246, 0.35); }
+.schema-detail--implemented {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+.schema-detail--building {
+  border-color: rgba(59, 130, 246, 0.35);
+}
 
 .schema-detail__header {
   display: grid;
@@ -489,7 +527,9 @@ function fkLabel(field: SchemaField): string {
   font-size: 0.82rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .view-toggle__btn:hover {
@@ -523,8 +563,12 @@ function fkLabel(field: SchemaField): string {
   background: rgba(15, 23, 42, 0.6);
 }
 
-.schema-table--implemented { border-color: rgba(34, 197, 94, 0.25); }
-.schema-table--building { border-color: rgba(59, 130, 246, 0.3); }
+.schema-table--implemented {
+  border-color: rgba(34, 197, 94, 0.25);
+}
+.schema-table--building {
+  border-color: rgba(59, 130, 246, 0.3);
+}
 
 .schema-table__head {
   display: flex;
@@ -551,9 +595,15 @@ function fkLabel(field: SchemaField): string {
   font-size: 1.05rem;
 }
 
-.schema-table--implemented .schema-table__icon { color: #4ade80; }
-.schema-table--building .schema-table__icon { color: #60a5fa; }
-.schema-table--planned .schema-table__icon { color: var(--text-muted); }
+.schema-table--implemented .schema-table__icon {
+  color: #4ade80;
+}
+.schema-table--building .schema-table__icon {
+  color: #60a5fa;
+}
+.schema-table--planned .schema-table__icon {
+  color: var(--text-muted);
+}
 
 .schema-table__name {
   font-size: 0.92rem;

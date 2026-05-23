@@ -39,7 +39,7 @@ Configuração por ambiente:
 - `ERP_FTP_KEY_PATH`
 - `ERP_FTP_REMOTE_DIR`
 - `ERP_FTP_HOST_KEY`
-- `ERP_SOURCE_RECURSIVE` — quando `true`, o FTP varre recursivamente subpastas (ex: `processed/`). Padrão `false`. Veja "Backfill histórico local" abaixo.
+- `ERP_SOURCE_RECURSIVE` - quando `true`, a rotina diaria/overview varre recursivamente subpastas (ex: `processed/`). Padrao `false`. O endpoint `POST /v1/erp/backfill` forca listagem recursiva mesmo quando essa flag esta `false`.
 - `ERP_SYNC_AUTOMATIC_ENABLED`
 - `ERP_SYNC_INTERVAL`
 - `ERP_SYNC_HOUR_UTC`
@@ -119,21 +119,21 @@ A operação divide-se em dois modos distintos:
 - A automação ou um sync manual captura apenas esse lote
 - Overview típico: 35 arquivos, 0 pendentes após o sync do dia
 
-### Backfill histórico (local, operação única)
+### Backfill historico (FTP recursivo ou local, operacao controlada)
 
-O FTP também contém um histórico de anos em `extract_files/processed/` (~4370 arquivos). Para importar esse histórico sem copiar gigabytes para o repo, usamos um compose temporário que monta a pasta local diretamente no container.
+O FTP tambem contem historico em subpastas como `extract_files/processed/`. `POST /v1/erp/backfill` usa o mesmo source configurado, mas forca `Recursive=true` para procurar esses arquivos historicos. A rotina diaria permanece com `ERP_SOURCE_RECURSIVE=false` para importar apenas o lote pequeno da raiz.
+
+Se for necessario importar a partir de uma copia local, ainda e possivel usar um compose temporario que monta a pasta baixada diretamente no container.
 
 **Pré-requisito:** ter os arquivos históricos baixados do FTP em `C:\Users\Mike\Downloads\processed\loja_184` (cópia plana de todos os arquivos da subpasta `processed/`).
 
 **Como executar o backfill:**
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.erp-local-temp.yml up -d --build --force-recreate api
-# aguardar healthz
-curl http://localhost:8883/v1/erp/overview   # confirmar totalFiles esperado
-curl -X POST http://localhost:8883/v1/erp/sync -H "Authorization: Bearer <token>"
-# sync leva ~6 minutos para o lote completo
-# finalizado quando lastRun.status=success e pendingFiles=0
+curl -X POST http://localhost:8883/v1/erp/backfill \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"storeCode":"184","triggeredBy":"backfill"}'
 ```
 
 Após o backfill, restaurar o modo diário normal:
@@ -180,6 +180,10 @@ Validação real em `2026-05-08` na VPS:
 
 Para validar contra o FTP real em Docker dev, o `api` precisa subir com as envs ERP remotas efetivamente declaradas no `docker-compose.yml` e preenchidas na sessao de execucao.
 
+### Cuidado com volumes Docker
+
+O nome do projeto Compose define os volumes persistentes do Postgres. Se `name:` ou `COMPOSE_PROJECT_NAME` mudar, o Docker cria outro volume e a aplicacao aparenta "perder" o ERP, embora o volume antigo continue preservado. Antes de renomear o projeto, confirme os volumes com `docker volume ls` e compare contadores em `erp_item_current`, `erp_item_raw` e `erp_sync_files`.
+
 Exemplo de payload para sync manual:
 
 ```json
@@ -199,9 +203,8 @@ Exemplo de payload para backfill:
 
 Observacao:
 
-- o `storeCode` da importacao FTP diaria deve permanecer no escopo raiz ERP configurado (`ERP_ROOT_STORE_CODE=184` no cliente Perola)
-- as sublojas operacionais/comerciais (JAR/RIO/GAR/TRE) sao filtros e dimensoes de atribuicao dentro do dataset 184; elas nao substituem o root `184` em `/status`, `/overview`, `/runs`, `/sync`, `/backfill`, `/products` ou `/crm`
-- se a UI estiver com uma subloja ativa no topo, o backend ERP ainda deve resolver o root `184`; a subloja ativa nao e fonte FTP independente
+- o `storeCode` deve refletir a loja ERP que existe no contexto autenticado e nos nomes de arquivo da origem remota
+- o fato de o FTP atual expor arquivos com codigo `184` nao transforma esse codigo em escopo fixo da UI ou tenant especial
 
 ## Próximo passo obrigatório
 

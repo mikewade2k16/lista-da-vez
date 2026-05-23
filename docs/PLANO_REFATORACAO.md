@@ -4,10 +4,12 @@
 >
 > **Versão visual com timeline e gráficos:** [plano-refatoracao.html](plano-refatoracao.html)
 >
+> **A partir de 2026-05-21**, as Fases 3-9 estão sendo executadas em **paralelo por 3 agentes** (Claude Code, Codex CLI, GitHub Copilot). Plano de paralelização e divisão de zonas: [PARALELIZACAO.md](PARALELIZACAO.md). Briefings por agente: [agents/](agents/).
+>
 > Convenções:
 > - `[ ]` = pendente · `[~]` = em andamento · `[x]` = concluído
 > - Todas as ações devem rodar **localmente**. Commits/push ficam por conta do usuário (instrução durável).
-> - Sempre que tocar um módulo do back ou um layer do front, atualizar o respectivo `AGENT.md`/`AGENTS.md`.
+> - Sempre que tocar um módulo do back ou um layer do front, atualizar o respectivo `AGENT.md`.
 > - Mudanças em diretórios/nomes que mexem com Docker exigem `npm run dev:down:volumes` (perda do banco local) **ou** uma estratégia explícita de rename do banco.
 
 ---
@@ -116,36 +118,48 @@ Subtarefas:
 
 ---
 
-## Fase 2 — Reorganizar a documentação
+## Fase 2 — Reorganizar a documentação ✅ (18/05/2026)
 
-### Tarefa 2.1 — Renomear `docs_depoy/` → consolidar em `docs/deploy/`
+Trabalho curto, ganho alto de coerência. **Concluída.**
 
-Subtarefas:
-- [ ] Criar `docs/deploy/`.
-- [ ] Comparar [docs_depoy/deploy-vps.md](../docs_depoy/deploy-vps.md) com [docs/DEPLOY_VPS.md](DEPLOY_VPS.md) — se for redundante (auto-declarado "arquivado"), descartar.
-- [ ] Avaliar [docs_depoy/deploy-main-vps-auto.md](../docs_depoy/deploy-main-vps-auto.md) e [docs_depoy/deploy-producao-checklist.md](../docs_depoy/deploy-producao-checklist.md): integrar ao [docs/DEPLOY_VPS.md](DEPLOY_VPS.md) ou mover como `docs/deploy/{auto,checklist}.md`.
-- [ ] Remover `docs_depoy/`.
+### Tarefa 2.1 — Consolidar `docs_depoy/` em `docs/` ✅
 
-### Tarefa 2.2 — Tirar o `.md` errante de `pages/`
+Decisão: não criar subpasta `docs/deploy/` (overhead desnecessário). Cada arquivo foi avaliado individualmente e ganhou destino apropriado.
 
 Subtarefas:
-- [ ] Mover [web/app/pages/operacao/operations.md](../web/app/pages/operacao/operations.md) → `docs/operacao/operations.md`.
-- [ ] Atualizar referências em [web/AGENTS.md](../web/AGENTS.md) e em [back/PLAN.md](../back/PLAN.md) (que referencia este `.md`).
+- [x] `docs_depoy/deploy-vps.md` → removido (auto-declarado "arquivo arquivado, não se aplica").
+- [x] `docs_depoy/deploy-main-vps-auto.md` → [historico/deploy-main-vps-auto.md](historico/deploy-main-vps-auto.md) (era só apontador curto; conteúdo vivo já está em [DEPLOY_VPS.md](DEPLOY_VPS.md)).
+- [x] `docs_depoy/deploy-producao-checklist.md` → [DEPLOY_CHECKLIST.md](DEPLOY_CHECKLIST.md) (conteúdo vivo do dia-a-dia).
+- [x] Pasta `docs_depoy/` removida.
+- [x] [DEPLOY_VPS.md](DEPLOY_VPS.md) atualizado com link cruzado para o checklist novo.
 
-### Tarefa 2.3 — Decidir o futuro do HTML estático
-
-Subtarefas:
-- [ ] Avaliar utilidade de [docs/tasks-orquestrador-plano.html](tasks-orquestrador-plano.html) (100 KB).
-- [ ] Se for somente visualização do `.md` correspondente, remover.
-- [ ] Se for usado, mover para `docs/assets/`.
-
-### Tarefa 2.4 — Auditar e atualizar `COMPONENT_INVENTORY.md`
-
-> Provavelmente desatualizado. Decidir.
+### Tarefa 2.2 — Tirar o `.md` errante de `pages/` ✅
 
 Subtarefas:
-- [ ] Comparar [docs/COMPONENT_INVENTORY.md](COMPONENT_INVENTORY.md) com a árvore real de `web/app/components/` e `web/layers/*/components/`.
-- [ ] Atualizar OU substituir por um script gerador (`scripts/dev/gen-component-inventory.mjs`).
+- [x] Mover `web/app/pages/operacao/operations.md` → [operacao/operations.md](operacao/operations.md) via `git mv`.
+- [x] Atualizar referências em [web/AGENT.md](../web/AGENT.md), [web/PANEL_EMBED_CONTRACT.md](../web/PANEL_EMBED_CONTRACT.md), [back/AGENT.md](../back/AGENT.md), [back/database/AGENT.md](../back/database/AGENT.md), [back/PLAN.md](../back/PLAN.md), [OPERATION_DOCKER_BUG_LOG.md](OPERATION_DOCKER_BUG_LOG.md), [ESTADO_ATUAL.md](ESTADO_ATUAL.md) e [estado-atual.html](estado-atual.html).
+
+### Tarefa 2.3 — HTML estático `tasks-orquestrador-plano.html` ✅
+
+Decisão: **manter no lugar** (`docs/tasks-orquestrador-plano.html`).
+
+Justificativas:
+- 2.147 linhas de HTML standalone com tema dark próprio (não depende de Chart.js).
+- **Conteúdo único** — não é só visualização do `.md` companheiro: complementa [TASKS_ORCHESTRATOR_PHASE12.md](TASKS_ORCHESTRATOR_PHASE12.md) com layout visual rico.
+- Segue o mesmo padrão dos nossos [estado-atual.html](estado-atual.html) e [plano-refatoracao.html](plano-refatoracao.html) — coerente.
+- Criar `docs/assets/` só pra 1 HTML é overhead. Se aparecer um segundo, criamos a pasta.
+
+Subtarefas:
+- [x] Conteúdo confirmado como vivo e útil.
+- [x] Mantido no lugar atual.
+
+### Tarefa 2.4 — Esclarecer `COMPONENT_INVENTORY.md` ✅
+
+Achado da auditoria: o documento **NÃO é** inventário do `web/` atual — é catálogo do `web-reference/` (projeto de referência) usado para planejar a importação de módulos nas Fases 5+ do roadmap. Nome ambíguo gerava expectativa errada.
+
+Subtarefas:
+- [x] Adicionar nota clarificadora no topo do [COMPONENT_INVENTORY.md](COMPONENT_INVENTORY.md) explicando o escopo real e remetendo à Seção 5 do [ESTADO_ATUAL.md](ESTADO_ATUAL.md) para o inventário do projeto atual.
+- [x] Decisão: **não renomear** (5 referências externas, custo > benefício) e **não criar gerador automático** (conteúdo é planejamento humano, não dinâmico).
 
 ---
 
@@ -163,7 +177,7 @@ Subtarefas:
 ### Tarefa 3.2 — Frontend Vue
 
 Subtarefas:
-- [ ] Remover [web/app/features/operation/components/OperationCampaignBrief.vue](../web/app/features/operation/components/OperationCampaignBrief.vue) (0 referências).
+- [ ] Remover [web/app/components/operation/OperationCampaignBrief.vue](../web/app/components/operation/OperationCampaignBrief.vue) (0 referências).
 - [ ] Remover [web/layers/tasks/components/admin/AdminPageHeader.vue](../web/layers/tasks/components/admin/AdminPageHeader.vue) (todas as páginas importam a versão core).
 - [ ] Tornar `useDashboardState` em [web/app/composables/useDashboardShell.ts](../web/app/composables/useDashboardShell.ts) função interna privada (ou remover o `export`).
 - [ ] Remover [web/dist/](../web/dist/) local (re-gera no próximo build).
@@ -263,7 +277,7 @@ Subtarefas:
 Subtarefas:
 - [ ] [README.md](../README.md) — título "# Omni", descrição, exemplos de URL/e-mail.
 - [ ] [AGENT.md](../AGENT.md) — nome do produto.
-- [ ] [back/AGENT.md](../back/AGENT.md), [web/AGENTS.md](../web/AGENTS.md) — referências.
+- [ ] [back/AGENT.md](../back/AGENT.md), [web/AGENT.md](../web/AGENT.md) — referências.
 - [ ] AGENT.md por módulo que mencione o produto pelo nome antigo.
 - [ ] [back/README.md](../back/README.md), [back/START_LOCAL.md](../back/START_LOCAL.md), [back/PLAN.md](../back/PLAN.md) — referências.
 
@@ -303,9 +317,18 @@ Subtarefas:
 
 ---
 
-## Fase 6 — Qualidade & Padronização (linters, formatters, hooks)
+## Fase 6 — Qualidade & Padronização (linters, formatters, hooks) ✅ (18/05/2026)
 
 > **Foco**: parar de aceitar código sem rede de proteção. Toda regressão de padrão deve ser bloqueada por máquina, não por reviewer cansado.
+>
+> **Concluída em 18/05/2026.** Todas as 7 sub-tarefas fechadas. Resultado:
+> - ESLint + Prettier no `web/` rodando (baseline 200 warnings, 0 errors)
+> - golangci-lint v2 no `back/` rodando (baseline 94 issues após `--fix`)
+> - Pre-commit Husky + lint-staged ativo (wrappers garantem escopo de pacote no Go)
+> - `tsconfig.json` próprio no `web/` (baseline 387 erros TS, endurecimento gradual)
+> - `AGENT.md` padronizado (7 `AGENTS.md` renomeados)
+> - Convenção de migration numbering documentada
+> - Domain-first confirmado (16 arquivos movidos de `features/` para `components/operation/`)
 
 ### Tarefa 6.1 — ESLint + Prettier no `web/`
 
@@ -316,7 +339,7 @@ Subtarefas:
 - [ ] Criar `web/.prettierrc.json` com regras mínimas (2 spaces, single quotes ou double, trailing comma).
 - [ ] Adicionar scripts `lint`, `lint:fix`, `format` em [web/package.json](../web/package.json).
 - [ ] Rodar `npm --prefix web run lint:fix` 1 vez e fixar a baseline.
-- [ ] Documentar em [web/AGENTS.md](../web/AGENTS.md).
+- [ ] Documentar em [web/AGENT.md](../web/AGENT.md).
 
 ### Tarefa 6.2 — `golangci-lint` no `back/`
 
@@ -340,26 +363,30 @@ Subtarefas:
 - [ ] Habilitar `strict: true`, `noUncheckedIndexedAccess: true`, `noImplicitOverride: true`.
 - [ ] Rodar `vue-tsc --noEmit` e tratar os erros gerados (ou registrar como dívida em [BACKLOG.md](BACKLOG.md)).
 
-### Tarefa 6.5 — Padronizar `AGENT.md` × `AGENTS.md`
+### Tarefa 6.5 — Padronizar grafia `AGENT.md` ✅
 
 Subtarefas:
-- [ ] Escolher uma grafia única (recomenda-se `AGENT.md` por já ser maioria).
-- [ ] Renomear os discrepantes (sobretudo no `web/`).
-- [ ] Atualizar referências cruzadas.
+- [x] Escolher uma grafia única → `AGENT.md` (singular, já era maioria com 30 arquivos vs 7).
+- [x] Renomear os 7 `AGENTS.md` (plurais): `scripts/deploy/`, `web/`, `web/app/components/`, `web/app/components/campaigns/`, `web/app/components/consultant/`, `web/app/components/users/`, `web/app/components/operation/`.
+- [x] Atualizar refs em `AGENT.md` raiz, `web/AGENT.md`, `web/PANEL_EMBED_CONTRACT.md`, `back/internal/modules/operations/CONCURRENT_SERVICES.md`, `docs/ESTADO_ATUAL.md`, `docs/PLANO_REFATORACAO.md`, `docs/estado-atual.html`, `docs/plano-refatoracao.html`.
+- [x] `git mv` preserva histórico — não houve perda.
 
-### Tarefa 6.6 — Convenção de migration numbering
-
-Subtarefas:
-- [ ] Adotar prefixo único de 4 dígitos + slug obrigatório.
-- [ ] Resolver as 4 colisões atuais (`0015a`+`0015`, `0019_*` duplos, `0031_*` duplos, `0039_*` duplos) — se a ordem real diverge da intenção, renomear.
-- [ ] Documentar em [back/database/AGENT.md](../back/database/AGENT.md).
-
-### Tarefa 6.7 — Decidir entre `features/` e `components/`
+### Tarefa 6.6 — Convenção de migration numbering ✅
 
 Subtarefas:
-- [ ] Discutir convenção: feature-first (`features/<dominio>/`) ou domain-first (`components/<dominio>/`).
-- [ ] Migrar os arquivos no padrão escolhido.
-- [ ] Atualizar [web/AGENTS.md](../web/AGENTS.md).
+- [x] Adotar prefixo único de 4 dígitos + slug obrigatório (documentado em [back/internal/platform/database/AGENT.md](../back/internal/platform/database/AGENT.md)).
+- [x] Decidir: **NÃO renomear** as 4 colisões legadas. O migrator usa `version = filename` na tabela `schema_migrations`; renomear quebra bancos em prod e dev (migration trataria como nova e tentaria reaplicar). Documentadas como **dívida congelada** com a ordem lex real.
+- [x] Documentar regra "incrementar a partir do MAX(NNNN)" + proibir sufixo alfabético.
+
+### Tarefa 6.7 — Decidir entre `features/` e `components/` ✅
+
+Subtarefas:
+- [x] Decisão: **domain-first** (padrão majoritário já adotado em 22 pastas).
+- [x] Mover `web/app/features/operation/components/*` → `web/app/components/operation/` (16 arquivos) via `git mv`.
+- [x] Atualizar imports `~/features/operation/components/` → `~/components/operation/` em todos os Vue.
+- [x] Atualizar refs em [web/AGENT.md](../web/AGENT.md), [web/app/components/AGENT.md](../web/app/components/AGENT.md), [web/app/components/operation/AGENT.md](../web/app/components/operation/AGENT.md), [docs/operacao/operations.md](../docs/operacao/operations.md).
+- [x] Remover pasta `web/app/features/` (vazia).
+- [x] Build verde + lint 0 errors após o movimento.
 
 ---
 
@@ -379,7 +406,7 @@ Subtarefas:
   - [ ] Extrair os 20+ helpers do `<script>` para `web/app/domain/utils/user-access.ts`.
   - [ ] Extrair drafts (`createRowDraft`, `createDetailDraft`, etc.) para composable `useUserAccessDrafts.ts`.
   - [ ] Dividir o template grande em 3-4 sub-componentes (`UsersAccessTable`, `UsersAccessDetailDrawer`, `UsersAccessCreateModal`).
-- [ ] Fatiar [OperationFinishModal.vue](../web/app/features/operation/components/OperationFinishModal.vue) (2.143 linhas):
+- [ ] Fatiar [OperationFinishModal.vue](../web/app/components/operation/OperationFinishModal.vue) (2.143 linhas):
   - [ ] Extrair cada passo do wizard em sub-componente (`FinishStepClient`, `FinishStepProduct`, `FinishStepOutcome`).
   - [ ] Extrair regra de validação para `web/app/domain/utils/finish-modal.ts`.
 - [ ] Fatiar [layers/tasks/pages/tasks.vue](../web/layers/tasks/pages/tasks.vue) (1.340 linhas):
@@ -423,7 +450,7 @@ Subtarefas:
 
 Subtarefas:
 - [ ] Substituir import síncrono de modais pesados por `defineAsyncComponent`:
-  - [ ] [OperationFinishModal.vue](../web/app/features/operation/components/OperationFinishModal.vue) (2.143 linhas) — só carrega quando o usuário clica em "Finalizar atendimento".
+  - [ ] [OperationFinishModal.vue](../web/app/components/operation/OperationFinishModal.vue) (2.143 linhas) — só carrega quando o usuário clica em "Finalizar atendimento".
   - [ ] [UsersAccessManager.vue](../web/app/components/users/UsersAccessManager.vue) (2.187) e demais workspaces de admin.
 - [ ] Adicionar `<Suspense>` com fallback `CoreLoadingOverlay` nos lazy components.
 - [ ] Medir bundle antes/depois com `vite-bundle-visualizer` (subtarefa 8.4).
@@ -496,6 +523,55 @@ Subtarefas:
 - [ ] Adicionar step `vitest` em [.github/workflows/deploy-vps.yml](../.github/workflows/deploy-vps.yml) (ou criar workflow dedicado `test.yml` que dispare em PR).
 - [ ] Adicionar step `go test ./...` no mesmo workflow.
 - [ ] Adicionar coverage report (opcional).
+
+---
+
+## Fase 10 — Centralizar CSS em SASS (estratégia híbrida)
+
+> **Quando**: depois de todas as outras fases. Decisão fechada 2026-05-18 — estratégia híbrida (manter `<style scoped>` para regras específicas do componente; centralizar tokens, mixins e regras compartilhadas em SASS).
+>
+> **Por que adiar**: trabalho mecânico em ~60 componentes (12.463 linhas de CSS local hoje). Faz mais sentido executar **depois** da Fase 7 (fatiamento), porque os componentes vão ser quebrados de qualquer jeito — fazer SASS antes seria refator-em-refator.
+>
+> **Baseline 2026-05-18**:
+> - 141 componentes Vue, sendo **60 com `<style scoped>`**
+> - **12.463 linhas** de CSS dentro dos `.vue`
+> - 7 arquivos em `web/app/assets/styles/`: `base.css`, `components.css`, `layout.css`, `presentation.css`, `tokens.css`, `omni-tokens.css`, `omni-design-system.css` (suspeita de duplicação entre os 3 últimos)
+
+### Tarefa 10.1 — Consolidar tokens e migrar para SASS
+
+Subtarefas:
+- [ ] Auditar os 7 arquivos em `web/app/assets/styles/` para identificar duplicação real (provável: `tokens.css` × `omni-tokens.css`).
+- [ ] Renomear `.css` → `.scss` em [web/app/assets/styles/](../web/app/assets/styles/).
+- [ ] Criar `tokens.scss` único como fonte de verdade (`@forward` os blocos por tema/contexto).
+- [ ] Atualizar [web/nuxt.config.ts](../web/nuxt.config.ts) para apontar para os `.scss`.
+
+### Tarefa 10.2 — Mixins e funções compartilhadas
+
+Subtarefas:
+- [ ] Criar `web/app/assets/styles/mixins/` com `_typography.scss`, `_layout.scss`, `_shadows.scss`, `_transitions.scss`.
+- [ ] Migrar padrões repetidos identificados em `<style scoped>` para esses mixins.
+
+### Tarefa 10.3 — Refator dos `<style scoped>` por domínio
+
+Subtarefas:
+- [ ] Para cada componente Vue com `<style scoped>`: extrair regras compartilhadas para `assets/styles/<dominio>.scss`, manter no `<style scoped>` apenas overrides específicos.
+- [ ] Adicionar `@use "tokens";` no topo de cada `<style scoped>` que use variáveis.
+- [ ] Meta de redução: **de 12.463 linhas → ~3.500 linhas** em `<style scoped>` (~70% migradas).
+
+### Tarefa 10.4 — Detecção de CSS não usado
+
+Subtarefas:
+- [ ] Configurar PurgeCSS ou Lightning CSS (já incluso no Vite/Nuxt 4) com modo análise.
+- [ ] Rodar em build de produção e identificar seletores nunca usados.
+- [ ] Remover ou consolidar.
+
+### Tarefa 10.5 — Lint para CSS
+
+Subtarefas:
+- [ ] Adicionar `stylelint` + `stylelint-config-recommended-scss` + `stylelint-config-recommended-vue`.
+- [ ] Regras-chave: `no-duplicate-selectors`, `no-empty-source`, `declaration-block-no-redundant-longhand-properties`.
+- [ ] Adicionar `npm run lint:css` ao package.json.
+- [ ] Adicionar ao pre-commit hook (Fase 6.3).
 
 ---
 

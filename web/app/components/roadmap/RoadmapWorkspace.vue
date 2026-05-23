@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import SettingsTabs from "~/components/settings/SettingsTabs.vue";
-import RoadmapTimeline from "~/components/roadmap/RoadmapTimeline.vue";
-import RoadmapDatabaseSchema from "~/components/roadmap/RoadmapDatabaseSchema.vue";
-import { ROADMAP_SUBTITLE, ROADMAP_TITLE } from "~/components/roadmap/roadmap-data";
+import { ref } from 'vue'
+import SettingsTabs from '~/components/settings/SettingsTabs.vue'
+import RoadmapTimeline from '~/components/roadmap/RoadmapTimeline.vue'
+import RoadmapDatabaseSchema from '~/components/roadmap/RoadmapDatabaseSchema.vue'
+import { ROADMAP_SUBTITLE, ROADMAP_TITLE } from '~/components/roadmap/roadmap-data'
 
 const tabs = [
-  { id: "timeline", label: "Roadmap", icon: "timeline" },
-  { id: "database", label: "Banco", icon: "database" }
-];
+  { id: 'timeline', label: 'Roadmap', icon: 'timeline' },
+  { id: 'database', label: 'Banco', icon: 'database' },
+]
 
-const activeTab = ref<string>("timeline");
+const activeTab = ref<string>('timeline')
 </script>
 
 <template>

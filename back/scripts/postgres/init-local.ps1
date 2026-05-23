@@ -3,16 +3,16 @@ $ErrorActionPreference = "Stop"
 $pgBin = if ($env:PG_BIN) { $env:PG_BIN } else { "C:\Program Files\PostgreSQL\16\bin" }
 $pgRoot = Split-Path $pgBin -Parent
 $serviceName = if ($env:PG_SERVICE) { $env:PG_SERVICE } else { "postgresql-x64-16" }
-$baseDir = Join-Path $env:LOCALAPPDATA "lista-da-vez\postgres16"
+$baseDir = Join-Path $env:LOCALAPPDATA "omni\postgres16"
 $dataDir = if ($env:PGDATA) { $env:PGDATA } else { Join-Path $baseDir "data" }
 $serviceDataDir = Join-Path $pgRoot "data"
 $logFile = Join-Path $baseDir "postgres.log"
 $port = if ($env:PGPORT) { $env:PGPORT } else { "5432" }
 $superUser = if ($env:PG_SUPERUSER) { $env:PG_SUPERUSER } else { "postgres" }
 $superPassword = if ($env:PG_SUPERPASSWORD) { $env:PG_SUPERPASSWORD } else { "postgres" }
-$appUser = if ($env:APP_DB_USER) { $env:APP_DB_USER } else { "lista_da_vez" }
-$appPassword = if ($env:APP_DB_PASSWORD) { $env:APP_DB_PASSWORD } else { "lista_da_vez_dev" }
-$appDatabase = if ($env:APP_DB_NAME) { $env:APP_DB_NAME } else { "lista_da_vez" }
+$appUser = if ($env:APP_DB_USER) { $env:APP_DB_USER } else { "omni" }
+$appPassword = if ($env:APP_DB_PASSWORD) { $env:APP_DB_PASSWORD } else { "omni_dev" }
+$appDatabase = if ($env:APP_DB_NAME) { $env:APP_DB_NAME } else { "omni" }
 
 if (!(Test-Path $pgBin)) {
   throw "Nao encontrei o diretorio de binarios do PostgreSQL em '$pgBin'."

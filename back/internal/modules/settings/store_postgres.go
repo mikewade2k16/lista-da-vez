@@ -130,6 +130,10 @@ func (repository *PostgresRepository) ResolveDefaultTenantID(ctx context.Context
 			select t.id::text
 			from tenants t
 			where t.is_active = true
+			  and exists (
+				select 1 from stores s
+				where s.tenant_id = t.id and s.is_active = true
+			  )
 			order by t.name asc, t.created_at asc, t.id asc
 			limit 2;
 		`

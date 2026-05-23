@@ -24,6 +24,11 @@ type coreSettingsScanRow struct {
 	ServiceCancelWindowSeconds         int       `db:"service_cancel_window_seconds"`
 	TestModeEnabled                    bool      `db:"test_mode_enabled"`
 	AutoFillFinishModal                bool      `db:"auto_fill_finish_modal"`
+	ScoreWeightConversion              float64   `db:"score_weight_conversion"`
+	ScoreWeightSoldValue               float64   `db:"score_weight_sold_value"`
+	ScoreWeightQuality                 float64   `db:"score_weight_quality"`
+	ScoreWeightPa                      float64   `db:"score_weight_pa"`
+	ScoreWeightQueueDiscipline         float64   `db:"score_weight_queue_discipline"`
 	UpdatedAt                          time.Time `db:"updated_at"`
 }
 
@@ -64,6 +69,11 @@ func (repository *PostgresRepository) getCoreSettingsFromNew(ctx context.Context
 			service_cancel_window_seconds,
 			test_mode_enabled,
 			auto_fill_finish_modal,
+			score_weight_conversion,
+			score_weight_sold_value,
+			score_weight_quality,
+			score_weight_pa,
+			score_weight_queue_discipline,
 			updated_at
 		from tenant_operation_core_settings
 		where tenant_id = $1::uuid
@@ -91,6 +101,11 @@ func (repository *PostgresRepository) getCoreSettingsFromNew(ctx context.Context
 			ServiceCancelWindowSeconds:         row.ServiceCancelWindowSeconds,
 			TestModeEnabled:                    row.TestModeEnabled,
 			AutoFillFinishModal:                row.AutoFillFinishModal,
+			ScoreWeightConversion:              row.ScoreWeightConversion,
+			ScoreWeightSoldValue:               row.ScoreWeightSoldValue,
+			ScoreWeightQuality:                 row.ScoreWeightQuality,
+			ScoreWeightPa:                      row.ScoreWeightPa,
+			ScoreWeightQueueDiscipline:         row.ScoreWeightQueueDiscipline,
 		},
 		CreatedAt: row.UpdatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -120,12 +135,7 @@ func (repository *PostgresRepository) getAlertSettingsFromNew(ctx context.Contex
 		}
 		return AlertSettings{}, false, err
 	}
-	return AlertSettings{
-		AlertMinConversionRate: row.AlertMinConversionRate,
-		AlertMaxQueueJumpRate:  row.AlertMaxQueueJumpRate,
-		AlertMinPaScore:        row.AlertMinPaScore,
-		AlertMinTicketAverage:  row.AlertMinTicketAverage,
-	}, true, nil
+	return AlertSettings(row), true, nil
 }
 
 // GetModalSection carrega a secao de modal exclusivamente da tabela nova.
@@ -222,9 +232,14 @@ func upsertCoreSettingsToNew(ctx context.Context, queryer execQueryer, section O
 			service_cancel_window_seconds,
 			test_mode_enabled,
 			auto_fill_finish_modal,
+			score_weight_conversion,
+			score_weight_sold_value,
+			score_weight_quality,
+			score_weight_pa,
+			score_weight_queue_discipline,
 			updated_at
 		)
-		values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+		values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
 		on conflict (tenant_id) do update
 		set
 			selected_operation_template_id         = excluded.selected_operation_template_id,
@@ -236,6 +251,11 @@ func upsertCoreSettingsToNew(ctx context.Context, queryer execQueryer, section O
 			service_cancel_window_seconds          = excluded.service_cancel_window_seconds,
 			test_mode_enabled                      = excluded.test_mode_enabled,
 			auto_fill_finish_modal                 = excluded.auto_fill_finish_modal,
+			score_weight_conversion                = excluded.score_weight_conversion,
+			score_weight_sold_value                = excluded.score_weight_sold_value,
+			score_weight_quality                   = excluded.score_weight_quality,
+			score_weight_pa                        = excluded.score_weight_pa,
+			score_weight_queue_discipline          = excluded.score_weight_queue_discipline,
 			updated_at                             = now();
 	`,
 		section.TenantID,
@@ -248,6 +268,11 @@ func upsertCoreSettingsToNew(ctx context.Context, queryer execQueryer, section O
 		section.CoreSettings.ServiceCancelWindowSeconds,
 		section.CoreSettings.TestModeEnabled,
 		section.CoreSettings.AutoFillFinishModal,
+		section.CoreSettings.ScoreWeightConversion,
+		section.CoreSettings.ScoreWeightSoldValue,
+		section.CoreSettings.ScoreWeightQuality,
+		section.CoreSettings.ScoreWeightPa,
+		section.CoreSettings.ScoreWeightQueueDiscipline,
 	)
 	return err
 }

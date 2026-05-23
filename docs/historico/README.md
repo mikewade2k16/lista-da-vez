@@ -12,5 +12,6 @@ Documentos que descrevem **estado passado** do projeto ou planos já concluídos
 | [todo-reuniao.md](todo-reuniao.md) | raiz/`todo-reuniao.md` | Checklist da reunião de 23/03/2026. |
 | [dev-compose-perfis.md](dev-compose-perfis.md) | raiz/`dev-compose-perfis.md` | Documento de perfis Docker que mencionava serviços (`painel-web`, `plataforma-api`, `redis`) **de outro projeto** — não se aplica a este repositório. Arquivado em vez de removido para preservar contexto. |
 | [todo-settings.md](todo-settings.md) | raiz/`todo.md` | Plano detalhado da refatoração de Settings. **170 itens pendentes** e 252 concluídos. Aguarda triagem para BACKLOG.md (ver nota no topo de [../BACKLOG.md](../BACKLOG.md)). |
+| [deploy-main-vps-auto.md](deploy-main-vps-auto.md) | `docs_depoy/deploy-main-vps-auto.md` | Apontador curto para o workflow `Deploy VPS`. Conteúdo vivo já está em [../DEPLOY_VPS.md](../DEPLOY_VPS.md) e [../DEPLOY_CHECKLIST.md](../DEPLOY_CHECKLIST.md). Preservado para contexto histórico. |
 
 Convenção: novos arquivos arquivados ficam aqui com nome em kebab-case, opcionalmente sufixados com a data (`YYYY-MM-DD`).

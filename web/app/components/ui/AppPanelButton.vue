@@ -2,37 +2,40 @@
 const props = defineProps({
   as: {
     type: String,
-    default: "button"
+    default: 'button',
   },
   type: {
     type: String,
-    default: "button"
+    default: 'button',
   },
   variant: {
     type: String,
-    default: "primary"
+    default: 'primary',
   },
   block: {
     type: Boolean,
-    default: false
+    default: false,
   },
   disabled: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 </script>
 
 <template>
   <component
     :is="props.as"
     class="app-panel-button"
-    :class="[`app-panel-button--${props.variant}`, { 'app-panel-button--block': props.block, 'is-disabled': props.disabled }]"
+    :class="[
+      `app-panel-button--${props.variant}`,
+      { 'app-panel-button--block': props.block, 'is-disabled': props.disabled },
+    ]"
     :type="props.as === 'button' ? props.type : undefined"
     :disabled="props.as === 'button' ? props.disabled : undefined"
     :aria-disabled="props.disabled ? 'true' : undefined"
   >
-    <slot />
+    <slot></slot>
   </component>
 </template>
 
@@ -50,7 +53,9 @@ const props = defineProps({
   line-height: 1;
   text-decoration: none;
   cursor: pointer;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .app-panel-button:hover {

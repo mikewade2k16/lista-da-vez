@@ -128,11 +128,14 @@ presence.snapshot       lista completa ao entrar no canal
 presence.user_joined    { userId, displayName, avatarPath }
 presence.user_left      { userId }
 presence.field_locked   { userId, fieldKey, lockId }
+presence.field_draft    { userId, fieldKey, draftValue }
 presence.field_unlocked { userId, fieldKey }
 ```
 
 Presence usa `PresenceStore` em memoria com TTL 30s. Heartbeat do cliente a cada 15s.
 Ticker server-side varre entries expiradas e publica `presence.user_left`.
+
+`presence.field_draft` so e aceito para o user que ja detem o lock daquele `fieldKey`; o store guarda um unico `draftValue` efemero por participante/canal para popular snapshots e previews ao vivo sem virar fonte de verdade de persistencia.
 
 **DisplayName no payload de presence:** usa `principal.Nick` (coluna `nick` em `core.users`, opcional)
 quando preenchido; cai para `principal.DisplayName` e por ultimo para `principal.Email`. Front exibe

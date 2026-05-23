@@ -290,12 +290,41 @@ Sempre que um novo modulo nascer, ele deve ganhar seu proprio `AGENT.md`.
 6. relatorios, analytics, multiloja e usuarios/acessos
 7. campanhas server-side
 
+## Lint (Fase 6.2 do PLANO_REFATORACAO)
+
+Configurado a partir de 2026-05-18:
+
+- `golangci-lint` v2 (config em [.golangci.yml](.golangci.yml))
+- Linters habilitados: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused` (standard) + `bodyclose`, `gocritic`, `gosec`, `noctx`, `unconvert`, `whitespace`
+
+Instalacao (uma vez):
+
+```bash
+go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+```
+
+Comandos:
+
+```bash
+cd back
+golangci-lint run ./...        # ver issues
+golangci-lint run --fix ./...  # auto-fix do que da
+```
+
+Baseline registrada em 2026-05-18 (apos `--fix`): **94 issues**. Top categorias: `unused` (18 — valida codigo morto da Fase 3), `gocritic` (18), `errcheck` (16 — sobrou Close fora de defer), `noctx` (14 — HTTP sem context), `gosec` (12 — seguranca real, vai para Fase 8).
+
+Decisoes pragmaticas do config:
+- `misspell` removido: gera 41 falsos positivos em pt-BR (clientes, operacional, etc).
+- `errcheck` ignora `defer X.Close()` (idiom Go aceito).
+- `gosec` exclui G104 (errors unhandled, coberto por errcheck), G404 (math/rand para IDs nao-criticos), G304 (file inclusion ja validado em camadas anteriores no ERP), G115 (integer overflow falsos positivos).
+
 ## Validacao minima
 
 Ao alterar codigo em `back/`:
 
 - rodar `gofmt`
 - rodar `go test ./...`
+- rodar `golangci-lint run ./...` (ou pelo menos no modulo tocado)
 - quando mexer em handlers criticos, fazer smoke HTTP real
 - quando mexer em schema, atualizar tambem `database/ERD.md` e `database/AGENT.md`
 
@@ -311,4 +340,4 @@ Ao alterar codigo em `back/`:
 - `../docs/BACKLOG.md`
 - `../docs/NUXT_MIGRATION_BLUEPRINT.md`
 - `../docs/NUXT_FULL_REFERENCE.md`
-- `../web/app/pages/operacao/operations.md`
+- `../docs/operacao/operations.md`

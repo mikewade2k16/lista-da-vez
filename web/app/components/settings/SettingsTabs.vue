@@ -2,15 +2,15 @@
 defineProps({
   tabs: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   activeTab: {
     type: String,
-    required: true
-  }
-});
+    required: true,
+  },
+})
 
-defineEmits(["update:active-tab"]);
+defineEmits(['update:active-tab'])
 </script>
 
 <template>

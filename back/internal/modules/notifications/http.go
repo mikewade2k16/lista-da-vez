@@ -106,10 +106,7 @@ func (handler *HTTPHandler) listNotifications(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	httpapi.WriteJSON(w, http.StatusOK, notificationsResponse{
-		Notifications: page.Notifications,
-		NextCursor:    page.NextCursor,
-	})
+	httpapi.WriteJSON(w, http.StatusOK, notificationsResponse(page))
 }
 
 func (handler *HTTPHandler) markRead(w http.ResponseWriter, r *http.Request, ctx notificationsHTTPContext) {

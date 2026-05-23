@@ -8,7 +8,7 @@ Plano de implementacao do backend Go alinhado com o frontend Nuxt e com a docume
 
 - o frontend ja tem quase todo o comportamento operacional pronto e agora a fila principal ja persiste no backend
 - auth real e persistencia backend ainda sao gaps oficiais
-- o modulo principal e `fila de atendimento`
+- o modulo principal do produto e `Omni`
 - realtime por websocket e requisito, mas nao deve entrar antes de auth, tenant e snapshot HTTP
 - o backend precisa nascer multi-tenant, mesmo que o primeiro bootstrap use um tenant demo
 
@@ -17,7 +17,7 @@ Principais referencias usadas:
 - `docs/BACKLOG.md`
 - `docs/NUXT_MIGRATION_BLUEPRINT.md`
 - `docs/NUXT_FULL_REFERENCE.md`
-- `web/app/pages/operacao/operations.md`
+- `docs/operacao/operations.md`
 
 ## Resposta direta sobre a integracao com o Nuxt
 
@@ -179,7 +179,7 @@ Entregas:
 
 Contrato importante:
 
-Seguir o contrato descrito em `web/app/pages/operacao/operations.md`, especialmente:
+Seguir o contrato descrito em `docs/operacao/operations.md`, especialmente:
 
 - `productsSeen[]`
 - `productsClosed[]`

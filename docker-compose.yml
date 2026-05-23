@@ -1,12 +1,12 @@
-name: lista-da-vez
+name: ${COMPOSE_PROJECT_NAME:-omni}
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-lista_da_vez}
-      POSTGRES_USER: ${POSTGRES_USER:-lista_da_vez}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lista_da_vez_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-omni}
+      POSTGRES_USER: ${POSTGRES_USER:-omni}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omni_dev}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-lista_da_vez} -d ${POSTGRES_DB:-lista_da_vez}"
+          "pg_isready -U ${POSTGRES_USER:-omni} -d ${POSTGRES_DB:-omni}"
         ]
       interval: 5s
       timeout: 5s
@@ -27,12 +27,12 @@ services:
       context: ./back
       dockerfile: Dockerfile
     environment:
-      APP_NAME: lista-da-vez-api
+      APP_NAME: omni-api
       APP_ENV: docker
       APP_ADDR: :8080
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3003}
       UPLOADS_DIR: /app/data/uploads
-      DATABASE_URL: postgres://${POSTGRES_USER:-lista_da_vez}:${POSTGRES_PASSWORD:-lista_da_vez_dev}@postgres:5432/${POSTGRES_DB:-lista_da_vez}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-omni}:${POSTGRES_PASSWORD:-omni_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
       MIGRATION_TIMEOUT: ${MIGRATION_TIMEOUT:-5m}
@@ -47,7 +47,7 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Lista da Vez}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Omni}
       SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
       SMTP_INSECURE_SKIP_VERIFY: ${SMTP_INSECURE_SKIP_VERIFY:-false}
       SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
@@ -74,6 +74,15 @@ services:
       ERP_MANUAL_SYNC_MAX_FILES: ${ERP_MANUAL_SYNC_MAX_FILES:-100}
       ERP_BACKFILL_MAX_FILES: ${ERP_BACKFILL_MAX_FILES:-1000}
       ERP_MANUAL_SYNC_MIN_INTERVAL: ${ERP_MANUAL_SYNC_MIN_INTERVAL:-5m}
+      PEROLA_BI_COMPANY_KEY: ${PEROLA_BI_COMPANY_KEY:-}
+      PEROLA_BI_LOGIN: ${PEROLA_BI_LOGIN:-}
+      PEROLA_BI_PASS: ${PEROLA_BI_PASS:-}
+      PEROLA_BI_TOKEN: ${PEROLA_BI_TOKEN:-}
+      PEROLA_BI_CNPJ_EMPRESA: ${PEROLA_BI_CNPJ_EMPRESA:-}
+      PEROLA_BI_TOKEN_TTL: ${PEROLA_BI_TOKEN_TTL:-50m}
+      PEROLA_BI_REQUEST_TIMEOUT: ${PEROLA_BI_REQUEST_TIMEOUT:-12s}
+      PEROLA_BI_PAGE_LIMIT: ${PEROLA_BI_PAGE_LIMIT:-100}
+      PEROLA_BI_MAX_PAGES: ${PEROLA_BI_MAX_PAGES:-50}
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,7 +90,7 @@ services:
       - "${API_PORT:-8080}:8080"
     volumes:
       - api_uploads:/app/data/uploads
-      - "./Controlle10 - ftp:/app/data/erp/source:ro"
+      - "./erp-source-local:/app/data/erp/source:ro"
       - api_erp_storage:/app/data/erp/storage
     healthcheck:
       test:

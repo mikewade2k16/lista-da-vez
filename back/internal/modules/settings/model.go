@@ -29,6 +29,11 @@ type OperationCoreSettings struct {
 	ServiceCancelWindowSeconds         int
 	TestModeEnabled                    bool
 	AutoFillFinishModal                bool
+	ScoreWeightConversion              float64
+	ScoreWeightSoldValue               float64
+	ScoreWeightQuality                 float64
+	ScoreWeightPa                      float64
+	ScoreWeightQueueDiscipline         float64
 }
 
 type OperationCoreSettingsPatch struct {
@@ -40,6 +45,11 @@ type OperationCoreSettingsPatch struct {
 	ServiceCancelWindowSeconds         *int
 	TestModeEnabled                    *bool
 	AutoFillFinishModal                *bool
+	ScoreWeightConversion              *float64
+	ScoreWeightSoldValue               *float64
+	ScoreWeightQuality                 *float64
+	ScoreWeightPa                      *float64
+	ScoreWeightQueueDiscipline         *float64
 }
 
 type AlertSettings struct {
@@ -65,6 +75,11 @@ type AppSettings struct {
 	ServiceCancelWindowSeconds         int     `json:"serviceCancelWindowSeconds"`
 	TestModeEnabled                    bool    `json:"testModeEnabled"`
 	AutoFillFinishModal                bool    `json:"autoFillFinishModal"`
+	ScoreWeightConversion              float64 `json:"scoreWeightConversion"`
+	ScoreWeightSoldValue               float64 `json:"scoreWeightSoldValue"`
+	ScoreWeightQuality                 float64 `json:"scoreWeightQuality"`
+	ScoreWeightPa                      float64 `json:"scoreWeightPa"`
+	ScoreWeightQueueDiscipline         float64 `json:"scoreWeightQueueDiscipline"`
 	AlertMinConversionRate             float64 `json:"alertMinConversionRate"`
 	AlertMaxQueueJumpRate              float64 `json:"alertMaxQueueJumpRate"`
 	AlertMinPaScore                    float64 `json:"alertMinPaScore"`
@@ -80,6 +95,11 @@ type AppSettingsPatch struct {
 	ServiceCancelWindowSeconds         *int     `json:"serviceCancelWindowSeconds,omitempty"`
 	TestModeEnabled                    *bool    `json:"testModeEnabled,omitempty"`
 	AutoFillFinishModal                *bool    `json:"autoFillFinishModal,omitempty"`
+	ScoreWeightConversion              *float64 `json:"scoreWeightConversion,omitempty"`
+	ScoreWeightSoldValue               *float64 `json:"scoreWeightSoldValue,omitempty"`
+	ScoreWeightQuality                 *float64 `json:"scoreWeightQuality,omitempty"`
+	ScoreWeightPa                      *float64 `json:"scoreWeightPa,omitempty"`
+	ScoreWeightQueueDiscipline         *float64 `json:"scoreWeightQueueDiscipline,omitempty"`
 	AlertMinConversionRate             *float64 `json:"alertMinConversionRate,omitempty"`
 	AlertMaxQueueJumpRate              *float64 `json:"alertMaxQueueJumpRate,omitempty"`
 	AlertMinPaScore                    *float64 `json:"alertMinPaScore,omitempty"`

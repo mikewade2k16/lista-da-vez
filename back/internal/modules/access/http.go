@@ -44,10 +44,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusOK, roleMatrixResponse{
-			Permissions: matrix.Permissions,
-			Roles:       matrix.Roles,
-		})
+		httpapi.WriteJSON(w, http.StatusOK, roleMatrixResponse(matrix))
 	})))
 
 	mux.Handle("PUT /v1/access/roles/", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

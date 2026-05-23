@@ -32,7 +32,7 @@ Este documento é o retrato fiel do projeto em 16/05/2026 antes do trabalho de r
 | Arquitetura backend | Saudável | 19 módulos Go bem isolados, AGENT.md por módulo, `go vet` limpo. |
 | Arquitetura frontend | Em transição | Nuxt 4 com 3 layers (`core`, `queue`, `tasks`) — `queue` ainda é esqueleto. |
 | Cobertura de testes | Parcial | Back tem testes em pontos críticos. Front praticamente sem testes (1 utilitário). |
-| Documentação | Densa e fragmentada | 19 docs em `docs/` + 3 em `docs_depoy/` (typo) + 9 .md soltos na raiz. |
+| Documentação | Densa e fragmentada (✅ organizada nas Fases 1 e 2) | Era: 19 docs em `docs/` + 3 em `docs_depoy/` (typo) + 9 .md soltos na raiz. Agora: tudo consolidado em `docs/` + `docs/historico/`. |
 | Organização da raiz | **Bagunçada** | 35 arquivos soltos na raiz: tokens, screenshots, TODOs antigos, planos concluídos, HTML de teste. |
 | Nomenclatura | **Inconsistente** | Convivem 3 nomes: `fila-atendimento` (pasta), `lista-da-vez` (compose/package) e "Fila de Atendimento" (UI/README). |
 | Código morto | Baixo, identificável | 3 funções Go mortas + 2 componentes Vue órfãos + 1 layer Nuxt esqueleto. Plus pasta `back/cmd/debuginvite/` vazia. |
@@ -90,7 +90,7 @@ A raiz **antes da limpeza** tinha 35 arquivos + 17 pastas. Boa parte dos arquivo
 
 | Pasta | Tamanho local | Situação | Recomendação |
 |---|---|---|---|
-| [Controlle10 - ftp/](../Controlle10%20-%20ftp/) | **493 MB** | Dados locais do ERP para teste, montados no container (`docker-compose.yml:84`). Já está no `.gitignore`. | Renomear para `erp-source-local/` (sem espaço, sem ambiguidade). Atualizar o volume no compose. |
+| [erp-source-local/](../erp-source-local/) | **493 MB** | Dados locais do ERP para teste, montados no container (`docker-compose.yml:93`). Já está no `.gitignore`. Renomeada em 2026-05-21 (antes: `Controlle10 - ftp/`). | Manter local. Considerar limpar `consolidados/` pesados se não usados há 6+ meses. |
 | [tmp/](../tmp/) | 0,5 MB | 22 arquivos de log antigos (29/03 a 30/04/2026) + 1 script Python + 1 .go de utilidade. | Limpar conteúdo. Garantir `tmp/*` no `.gitignore` (já está coberto indiretamente? confirmar). |
 | [docs_depoy/](../docs_depoy/) | 10 KB | **Typo** ("depoy" → "deploy"). 3 .md, sendo um declarado como "arquivo arquivado, não se aplica a este repositório". | Migrar conteúdo vivo para `docs/deploy/`. Remover a pasta. |
 | [.codex-logs/](../.codex-logs/) | < 1 KB | Logs do agente Codex. Já no `.gitignore`. | Manter, mas opcionalmente mover para `.tmp/codex/`. |
@@ -258,13 +258,13 @@ web/
 /manage/[area], /operacao/index, /site/[area], /team/[area], /tools/[tool]
 ```
 
-Detalhe importante: [web/app/pages/operacao/operations.md](../web/app/pages/operacao/operations.md) — arquivo `.md` **dentro de `pages/`** é confuso (Nuxt ignora, mas o local errado polui). Deveria mover para `docs/`.
+Detalhe importante: [docs/operacao/operations.md](../docs/operacao/operations.md) — arquivo `.md` **dentro de `pages/`** é confuso (Nuxt ignora, mas o local errado polui). Deveria mover para `docs/`.
 
 ### 4.3 Componentes em [web/app/components/](../web/app/components/)
 
 ~63 `.vue` agrupados por domínio: `alerts/`, `banco/`, `campaigns/`, `consultant/`, `crm/`, `dashboard/`, `data/`, `demo/`, `erp/`, `feedback/`, `intelligence/`, `layout/`, `multistore/`, `omni/`, `ranking/`, `reports/`, `roadmap/`, `settings/`, `tenants/`, `ui/`, `users/`.
 
-### 4.4 Features em [web/app/features/operation/](../web/app/features/operation/)
+### 4.4 Features em [web/app/components/operation/](../web/app/components/operation/)
 
 15 componentes específicos da operação (`AlertDisplay*`, `Operation*`). É a única pasta `features/` — todo o resto vive em `components/`. **Inconsistência**: parte do produto adotou "feature-first", parte ficou em "domain-first". Decidir um padrão único e migrar.
 
@@ -301,7 +301,9 @@ Praticamente inexistentes: **1 arquivo** [web/layers/tasks/utils/text.test.ts](.
 
 ---
 
-## 5. Documentação (`docs/` e `docs_depoy/`)
+## 5. Documentação (`docs/`)
+
+> Atualização 2026-05-18: a pasta `docs_depoy/` (typo) foi consolidada em `docs/` na Fase 2. As tabelas abaixo refletem o estado antes da consolidação.
 
 ### 5.1 [docs/](../docs/)
 
@@ -329,15 +331,15 @@ Praticamente inexistentes: **1 arquivo** [web/layers/tasks/utils/text.test.ts](.
 | [tasks-orquestrador-plano.html](tasks-orquestrador-plano.html) | 100 KB de HTML estático (visual). |
 | [TASKS_ORCHESTRATOR_PHASE12.md](TASKS_ORCHESTRATOR_PHASE12.md) | Plano de Tasks fase 12. |
 
-### 5.2 [docs_depoy/](../docs_depoy/)
+### 5.2 ~~`docs_depoy/`~~ — consolidada em 2026-05-18
 
-3 documentos com **typo na pasta** (`depoy` → `deploy`):
+3 documentos com typo na pasta. Resolvido na Fase 2.1:
 
-| Documento | Status |
+| Arquivo original | Destino |
 |---|---|
-| [docs_depoy/deploy-vps.md](../docs_depoy/deploy-vps.md) | Auto-declarado "arquivo arquivado, não se aplica a este repo". Remete a `docs/DEPLOY_VPS.md`. |
-| [docs_depoy/deploy-main-vps-auto.md](../docs_depoy/deploy-main-vps-auto.md) | Verificar. |
-| [docs_depoy/deploy-producao-checklist.md](../docs_depoy/deploy-producao-checklist.md) | Provável duplicação com [DEPLOY_VPS.md](DEPLOY_VPS.md). |
+| `docs_depoy/deploy-vps.md` | Removido (auto-declarado arquivado) |
+| `docs_depoy/deploy-main-vps-auto.md` | → [historico/deploy-main-vps-auto.md](historico/deploy-main-vps-auto.md) |
+| `docs_depoy/deploy-producao-checklist.md` | → [DEPLOY_CHECKLIST.md](DEPLOY_CHECKLIST.md) (conteúdo vivo) |
 
 ---
 
@@ -345,7 +347,7 @@ Praticamente inexistentes: **1 arquivo** [web/layers/tasks/utils/text.test.ts](.
 
 ### 6.1 Docker Compose
 
-- [docker-compose.yml](../docker-compose.yml) — dev. Nome do projeto: `lista-da-vez`. Serviços: `postgres`, `api`, `web`. Bind mount de `./web` no container web, montagem read-only de `./Controlle10 - ftp` em `/app/data/erp/source` no container `api`.
+- [docker-compose.yml](../docker-compose.yml) — dev. Nome do projeto: `lista-da-vez`. Serviços: `postgres`, `api`, `web`. Bind mount de `./web` no container web, montagem read-only de `./erp-source-local` (antes `./Controlle10 - ftp`) em `/app/data/erp/source` no container `api`.
 - [docker-compose.prod.yml](../docker-compose.prod.yml) — prod. Nome do projeto: `${COMPOSE_PROJECT_NAME:-listaatendimento}`.
 
 ### 6.2 Templates de env
@@ -383,10 +385,10 @@ Achados consolidados por análise estática (grep + leitura cruzada).
 
 | Item | Localização | Evidência | Recomendação |
 |---|---|---|---|
-| Componente `OperationCampaignBrief.vue` | [web/app/features/operation/components/OperationCampaignBrief.vue](../web/app/features/operation/components/OperationCampaignBrief.vue) | 0 ocorrências em busca global por `\bOperationCampaignBrief\b` fora da própria definição. | Remover. Git preserva caso volte. |
+| Componente `OperationCampaignBrief.vue` | [web/app/components/operation/OperationCampaignBrief.vue](../web/app/components/operation/OperationCampaignBrief.vue) | 0 ocorrências em busca global por `\bOperationCampaignBrief\b` fora da própria definição. | Remover. Git preserva caso volte. |
 | Componente `AdminPageHeader.vue` (versão tasks) | [web/layers/tasks/components/admin/AdminPageHeader.vue](../web/layers/tasks/components/admin/AdminPageHeader.vue) | Todas as páginas importam a versão core. A versão tasks é simplificada e não referenciada. | Remover; padronizar a versão `layers/core/components/admin/AdminPageHeader.vue`. |
 | Função `useDashboardState` | [web/app/composables/useDashboardShell.ts:7-14](../web/app/composables/useDashboardShell.ts) | 0 importações externas. `useDashboardShell()` é o ponto público. | Tornar privada (`function _useDashboardState(...)`) ou remover a exportação. |
-| Arquivo `web/app/pages/operacao/operations.md` | [web/app/pages/operacao/operations.md](../web/app/pages/operacao/operations.md) | `.md` dentro de `pages/` (Nuxt ignora, mas não é o local). | Mover para `docs/operacao/`. |
+| Arquivo `docs/operacao/operations.md` | [docs/operacao/operations.md](../docs/operacao/operations.md) | `.md` dentro de `pages/` (Nuxt ignora, mas não é o local). | Mover para `docs/operacao/`. |
 | Pasta `web/dist/` | [web/dist/](../web/dist/) | Build artifact local. Coberto por `dist/` no `.gitignore`. | Remover (build re-gera quando necessário). |
 
 ### 7.3 Componentes não utilizados — suspeita média
@@ -457,9 +459,9 @@ Pontos de troca obrigatórios para `omni`:
 ## 10. Pontos de atenção para a próxima sessão
 
 1. **A pasta `back/cmd/debuginvite/` está vazia** — provavelmente sobrou de uma remoção. Verificar git log e apagar.
-2. **`web/app/pages/operacao/operations.md`** existe e o Nuxt ignora — risco zero, mas é poluição.
+2. **`docs/operacao/operations.md`** existe e o Nuxt ignora — risco zero, mas é poluição.
 3. **`dev-compose-perfis.md`** descreve serviços que não existem (`painel-web`, `plataforma-api`). É lixo de outro projeto.
-4. **A pasta `Controlle10 - ftp/`** (493 MB local) tem espaço no nome — funciona via `"./Controlle10 - ftp:/app/data/erp/source:ro"` no compose, mas qualquer script que faça `cd` precisa lidar com as aspas. Renomear ajuda.
+4. **A pasta `erp-source-local/`** (493 MB local) — renomeada em 2026-05-21 a partir de `Controlle10 - ftp/` justamente para tirar o espaço do caminho. Compose, .gitignore e excludes de deploy atualizados; defesa em profundidade mantém o nome antigo nas listas por 1 ciclo.
 5. **75 migrations** com 4 colisões de prefixo numérico. Nenhuma quebra, mas é uma armadilha futura.
 6. **Layer `queue` esqueleto** — o roadmap detalha como preencher (Fase 4 de [ROADMAP.md](ROADMAP.md)). Hoje é a maior dívida arquitetural latente do frontend.
 7. **Cobertura de testes do frontend** praticamente zero. Vitest configurado mas com 1 teste só. Antes de mexer no layer `queue`, vale fundar 4-5 testes de stores críticos (`auth`, `operations`, `settings`).
@@ -485,7 +487,7 @@ Pontos de troca obrigatórios para `omni`:
 | Husky / lint-staged / pre-commit hooks | ❌ ausente | Nenhum hook configurado. |
 | Layout Go (handler / service / repository) | ✅ aderente | Cada módulo segue o padrão idiomático Go com `http.go`, `service.go`, `store_postgres.go`, `model.go`. |
 | `AGENT.md` por módulo Go | ✅ excelente | 100% dos módulos têm seu `AGENT.md`. |
-| `AGENT.md` × `AGENTS.md` no front | ⚠ inconsistente | Convive `AGENT.md` (raiz/back) com `AGENTS.md` (web e algumas pastas). Decidir um. |
+| `AGENT.md` × `AGENTS.md` no front | ✅ resolvido em 2026-05-18 | Padronizado para `AGENT.md` (Fase 6.5). 7 `AGENTS.md` renomeados via `git mv`. |
 
 ### 13.2 Organização — tamanho de arquivos e separação de responsabilidades
 
@@ -504,7 +506,7 @@ Pontos de troca obrigatórios para `omni`:
 | Arquivo | Linhas | Problema típico |
 |---|---|---|
 | [web/app/components/users/UsersAccessManager.vue](../web/app/components/users/UsersAccessManager.vue) | **2.187** | 548 linhas de template + 1.076 de script com 20+ helpers que deveriam ser composable/util. |
-| [web/app/features/operation/components/OperationFinishModal.vue](../web/app/features/operation/components/OperationFinishModal.vue) | **2.143** | Modal multi-passo com toda a lógica do fluxo de finalização inline. |
+| [web/app/components/operation/OperationFinishModal.vue](../web/app/components/operation/OperationFinishModal.vue) | **2.143** | Modal multi-passo com toda a lógica do fluxo de finalização inline. |
 | [web/layers/tasks/pages/tasks.vue](../web/layers/tasks/pages/tasks.vue) | 1.340 | Página com lógica de board + filtros + modal + drag inline. |
 | [web/app/components/feedback/FeedbackWorkspace.vue](../web/app/components/feedback/FeedbackWorkspace.vue) | 1.297 | Workspace concentra listagem + form + filtros + estado. |
 | [web/app/components/settings/SettingsWorkspace.vue](../web/app/components/settings/SettingsWorkspace.vue) | 1.282 | Workspace com várias seções inline em vez de delegar para sub-componentes. |
@@ -576,7 +578,7 @@ Pontos de troca obrigatórios para `omni`:
 | Aspecto | Status | Detalhe |
 |---|---|---|
 | `AGENT.md` por módulo (back) | ✅ 100% | Todos os 19 módulos. |
-| `AGENT.md`/`AGENTS.md` no front | ✅ parcial | Raiz do web tem, alguns subdirs também (operations features, users components). |
+| `AGENT.md` no front | ✅ padronizado | Convenção `AGENT.md` (singular) em 100% das pastas após Fase 6.5. |
 | `README.md` no projeto e no back | ✅ presente | Cobrem fluxo Docker e fallback local. |
 | Doc inline (godoc) | ⚠ parcial | Funções exportadas nem sempre têm comentário no padrão godoc. |
 | JSDoc / TSDoc nos composables | ❌ ausente | Composables grandes (`useTasksPageContext` 1.737 linhas) não têm bloco JSDoc explicando contrato. |

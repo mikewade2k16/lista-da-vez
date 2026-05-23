@@ -16,6 +16,11 @@ func main() {
 	cfg := config.Load()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
+	if err := cfg.Validate(); err != nil {
+		logger.Error("config_invalid", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -34,7 +39,13 @@ func main() {
 
 	httpServer := server.New(cfg.HTTPAddr, handler)
 
-	logger.Info("api_listening", slog.String("addr", cfg.HTTPAddr), slog.String("env", cfg.Env))
+	logger.Info(
+		"api_listening",
+		slog.String("addr", cfg.HTTPAddr),
+		slog.String("env", cfg.Env),
+		slog.Int("http_rate_limit_requests", cfg.HTTPRateLimitRequests),
+		slog.Duration("http_rate_limit_window", cfg.HTTPRateLimitWindow),
+	)
 	if err := httpServer.ListenAndServe(); err != nil {
 		logger.Error("server_stopped", slog.Any("error", err))
 		os.Exit(1)

@@ -1,269 +1,235 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { storeToRefs } from "pinia";
-import AppSelectField from "~/components/ui/AppSelectField.vue";
-import DashboardSidebarNav from "~/components/dashboard/DashboardSidebarNav.vue";
-import FeedbackNotificationsDropdown from "~/components/feedback/FeedbackNotificationsDropdown.vue";
-import { getRoleLabel } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { useNavStore } from "~/stores/nav";
-import { getApiBase } from "~/utils/api-client";
-
-const ALL_STORES_VALUE = "__all_stores__";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import AppSelectField from '~/components/ui/AppSelectField.vue'
+import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
+import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
+import { getRoleLabel } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useNavStore } from '~/stores/nav'
+import { getApiBase } from '~/utils/api-client'
 
 const props = defineProps({
   state: {
     type: Object,
-    required: true
+    required: true,
   },
   activeWorkspace: {
     type: String,
-    required: true
+    required: true,
   },
   allowedWorkspaces: {
     type: Array,
-    required: true
-  }
-});
+    required: true,
+  },
+})
 
-const emit = defineEmits(["store-change", "profile-change"]);
+const emit = defineEmits(['store-change', 'profile-change'])
 
-const auth = useAuthStore();
-const navStore = useNavStore();
-const runtimeConfig = useRuntimeConfig();
-const route = useRoute();
-const { currentTheme, hasCustomTheme, initializeFromStorage, applyTheme, getThemeLabel } = useOmniTheme();
-const { isAuthenticated, user, role, accessibleStoreIds, canUseAllStores, isAllStoresScope } = storeToRefs(auth);
+const auth = useAuthStore()
+const navStore = useNavStore()
+const runtimeConfig = useRuntimeConfig()
+const route = useRoute()
+const { currentTheme, hasCustomTheme, initializeFromStorage, applyTheme, getThemeLabel } =
+  useOmniTheme()
+const { isAuthenticated, user, role } = storeToRefs(auth)
 
-const menuOpen = ref(false);
-const profileMenuRef = ref(null);
-const profileMenuOpen = ref(false);
+const menuOpen = ref(false)
+const profileMenuRef = ref(null)
+const profileMenuOpen = ref(false)
 
-const allowedWorkspaceSet = computed(() => new Set(props.allowedWorkspaces || []));
-const currentPath = computed(() => normalizePath(route.path));
-const activeServicesCount = computed(() => props.state.activeServices?.length || 0);
-
-const availableStores = computed(() => {
-  if (!isAuthenticated.value || !accessibleStoreIds.value.length) {
-    return props.state.stores || [];
-  }
-
-  const allowedStoreIds = new Set(accessibleStoreIds.value);
-  return (props.state.stores || []).filter((store) => allowedStoreIds.has(store.id));
-});
-
-const selectedStoreValue = computed(() =>
-  isAllStoresScope.value ? ALL_STORES_VALUE : String(props.state.activeStoreId || "").trim()
-);
-
-const storeSelectOptions = computed(() => {
-  const options = availableStores.value.map((store) => ({
-    value: String(store.id || "").trim(),
-    label: String(store.name || "").trim(),
-    meta: [String(store.code || "").trim(), String(store.city || "").trim()].filter(Boolean).join(" - ")
-  }));
-
-  if (canUseAllStores.value) {
-    options.unshift({
-      value: ALL_STORES_VALUE,
-      label: "Todas as lojas",
-      meta: "Mantem o contexto global para comparativo multi-loja"
-    });
-  }
-
-  return options;
-});
+const allowedWorkspaceSet = computed(() => new Set(props.allowedWorkspaces || []))
+const currentPath = computed(() => normalizePath(route.path))
+const activeServicesCount = computed(() => props.state.activeServices?.length || 0)
 
 const profileSelectOptions = computed(() =>
   (props.state.profiles || []).map((profile) => ({
-    value: String(profile.id || "").trim(),
-    label: String(profile.name || "").trim()
-  }))
-);
+    value: String(profile.id || '').trim(),
+    label: String(profile.name || '').trim(),
+  })),
+)
 
-const displayName = computed(() => String(user.value?.displayName || user.value?.name || "").trim());
-const profileEmail = computed(() => String(user.value?.email || "").trim());
-const profileRoleLabel = computed(() => getRoleLabel(role.value));
+const displayName = computed(() => String(user.value?.displayName || user.value?.name || '').trim())
+const profileEmail = computed(() => String(user.value?.email || '').trim())
+const profileRoleLabel = computed(() => getRoleLabel(role.value))
 const avatarUrl = computed(() => {
-  const avatarPath = String(user.value?.avatarPath || "").trim();
+  const avatarPath = String(user.value?.avatarPath || '').trim()
   if (!avatarPath) {
-    return "";
+    return ''
   }
 
-  return new URL(avatarPath, getApiBase(runtimeConfig)).toString();
-});
-const profileInitial = computed(() => (displayName.value || profileEmail.value || "m").charAt(0).toUpperCase());
+  return new URL(avatarPath, getApiBase(runtimeConfig)).toString()
+})
+const profileInitial = computed(() =>
+  (displayName.value || profileEmail.value || 'm').charAt(0).toUpperCase(),
+)
 
 const visibleSections = computed(() =>
-  navStore.sections.map((section) => ({
-    ...section,
-    items: (section.items || []).map(filterItem).filter(Boolean)
-  })).filter((section) => section.items.length > 0)
-);
+  navStore.sections
+    .map((section) => ({
+      ...section,
+      items: (section.items || []).map(filterItem).filter(Boolean),
+    }))
+    .filter((section) => section.items.length > 0),
+)
 
 const headerItems = computed(() =>
   visibleSections.value.flatMap((section) =>
     section.items.map((item) => ({
       ...item,
-      sectionLabel: section.label
-    }))
-  )
-);
+      sectionLabel: section.label,
+    })),
+  ),
+)
 
 const themeButton = computed(() => {
-  if (currentTheme.value === "dark") return { icon: "i-lucide-moon", label: getThemeLabel("dark") };
-  if (currentTheme.value === "apple") return { icon: "i-lucide-sparkles", label: getThemeLabel("apple") };
-  if (currentTheme.value === "custom") return { icon: "i-lucide-palette", label: getThemeLabel("custom") };
-  return { icon: "i-lucide-sun", label: getThemeLabel("light") };
-});
+  if (currentTheme.value === 'dark') return { icon: 'i-lucide-moon', label: getThemeLabel('dark') }
+  if (currentTheme.value === 'apple')
+    return { icon: 'i-lucide-sparkles', label: getThemeLabel('apple') }
+  if (currentTheme.value === 'custom')
+    return { icon: 'i-lucide-palette', label: getThemeLabel('custom') }
+  return { icon: 'i-lucide-sun', label: getThemeLabel('light') }
+})
 
 const themeItems = computed(() => [
-  { value: "light", label: getThemeLabel("light"), icon: "i-lucide-sun" },
-  { value: "dark", label: getThemeLabel("dark"), icon: "i-lucide-moon" },
-  { value: "apple", label: getThemeLabel("apple"), icon: "i-lucide-sparkles" },
-  { value: "custom", label: getThemeLabel("custom"), icon: "i-lucide-palette", disabled: !hasCustomTheme.value }
-]);
+  { value: 'light', label: getThemeLabel('light'), icon: 'i-lucide-sun' },
+  { value: 'dark', label: getThemeLabel('dark'), icon: 'i-lucide-moon' },
+  { value: 'apple', label: getThemeLabel('apple'), icon: 'i-lucide-sparkles' },
+  {
+    value: 'custom',
+    label: getThemeLabel('custom'),
+    icon: 'i-lucide-palette',
+    disabled: !hasCustomTheme.value,
+  },
+])
 
 function normalizePath(path) {
-  const normalizedPath = String(path || "").replace(/\/+$/, "");
-  return normalizedPath || "/";
+  const normalizedPath = String(path || '').replace(/\/+$/, '')
+  return normalizedPath || '/'
 }
 
 function filterItem(item) {
   if (!isItemAllowed(item)) {
-    return null;
+    return null
   }
 
   if (!Array.isArray(item.children)) {
-    return item;
+    return item
   }
 
-  const children = item.children.filter(isItemAllowed);
+  const children = item.children.filter(isItemAllowed)
   if (!children.length) {
-    return null;
+    return null
   }
 
   return {
     ...item,
-    children
-  };
+    children,
+  }
 }
 
 function isItemAllowed(item) {
-  const workspaceId = String(item.workspaceId || "").trim();
-  return !workspaceId || allowedWorkspaceSet.value.has(workspaceId);
+  const workspaceId = String(item.workspaceId || '').trim()
+  return !workspaceId || allowedWorkspaceSet.value.has(workspaceId)
 }
 
 function isItemActive(item) {
-  const workspaceId = String(item.workspaceId || "").trim();
-  const itemPath = normalizePath(item.path);
+  const workspaceId = String(item.workspaceId || '').trim()
+  const itemPath = normalizePath(item.path)
 
   if (workspaceId && props.activeWorkspace === workspaceId) {
-    return true;
+    return true
   }
 
-  return Boolean(item.path) && (currentPath.value === itemPath || currentPath.value.startsWith(`${itemPath}/`));
+  return (
+    Boolean(item.path) &&
+    (currentPath.value === itemPath || currentPath.value.startsWith(`${itemPath}/`))
+  )
 }
 
 function isGroupActive(item) {
-  return Array.isArray(item.children) && item.children.some(isItemActive);
-}
-
-function handleStoreChange(value) {
-  const normalizedValue = String(value || "").trim();
-
-  if (!normalizedValue) {
-    return;
-  }
-
-  if (normalizedValue === ALL_STORES_VALUE) {
-    auth.setStoreScopeMode("all");
-    return;
-  }
-
-  auth.setStoreScopeMode("single");
-  emit("store-change", normalizedValue);
+  return Array.isArray(item.children) && item.children.some(isItemActive)
 }
 
 function handleProfileChange(value) {
-  emit("profile-change", String(value || "").trim());
+  emit('profile-change', String(value || '').trim())
 }
 
 function closeProfileMenu() {
-  profileMenuOpen.value = false;
+  profileMenuOpen.value = false
 }
 
 function closeMenu() {
-  menuOpen.value = false;
+  menuOpen.value = false
 }
 
 function toggleProfileMenu() {
-  profileMenuOpen.value = !profileMenuOpen.value;
+  profileMenuOpen.value = !profileMenuOpen.value
 }
 
 function selectTheme(value) {
-  if (!value || value === "custom" && !hasCustomTheme.value) {
-    return;
+  if (!value || (value === 'custom' && !hasCustomTheme.value)) {
+    return
   }
 
-  applyTheme(value);
+  applyTheme(value)
 }
 
 async function toggleFullscreen() {
   if (!import.meta.client) {
-    return;
+    return
   }
 
   if (document.fullscreenElement) {
-    await document.exitFullscreen();
-    return;
+    await document.exitFullscreen()
+    return
   }
 
-  await document.documentElement.requestFullscreen();
+  await document.documentElement.requestFullscreen()
 }
 
 async function handleLogout() {
-  closeProfileMenu();
-  await auth.logout();
-  await navigateTo("/auth/login", { replace: true });
+  closeProfileMenu()
+  await auth.logout()
+  await navigateTo('/auth/login', { replace: true })
 }
 
 function handlePointerDown(event) {
   if (!profileMenuOpen.value) {
-    return;
+    return
   }
 
-  const target = event.target;
+  const target = event.target
   if (profileMenuRef.value && !profileMenuRef.value.contains(target)) {
-    closeProfileMenu();
+    closeProfileMenu()
   }
 }
 
 function handleEscape(event) {
-  if (event.key === "Escape") {
-    closeProfileMenu();
-    closeMenu();
+  if (event.key === 'Escape') {
+    closeProfileMenu()
+    closeMenu()
   }
 }
 
 watch(
   () => route.fullPath,
   () => {
-    closeProfileMenu();
-    closeMenu();
-  }
-);
+    closeProfileMenu()
+    closeMenu()
+  },
+)
 
 onMounted(() => {
-  initializeFromStorage();
-  document.addEventListener("pointerdown", handlePointerDown);
-  document.addEventListener("keydown", handleEscape);
-});
+  initializeFromStorage()
+  document.addEventListener('pointerdown', handlePointerDown)
+  document.addEventListener('keydown', handleEscape)
+})
 
 onBeforeUnmount(() => {
-  document.removeEventListener("pointerdown", handlePointerDown);
-  document.removeEventListener("keydown", handleEscape);
-});
+  document.removeEventListener('pointerdown', handlePointerDown)
+  document.removeEventListener('keydown', handleEscape)
+})
 </script>
 
 <template>
@@ -279,9 +245,9 @@ onBeforeUnmount(() => {
       />
       <NuxtLink to="/tasks" class="dashboard-unified-header__brand-link" aria-label="Crow Visuals">
         <picture class="dashboard-unified-header__logo">
-          <source srcset="/logo.avif" type="image/avif">
-          <source srcset="/logo.webp" type="image/webp">
-          <img src="/logo.png" alt="">
+          <source srcset="/logo.avif" type="image/avif" />
+          <source srcset="/logo.webp" type="image/webp" />
+          <img src="/logo.png" alt="" />
         </picture>
       </NuxtLink>
     </section>
@@ -289,10 +255,7 @@ onBeforeUnmount(() => {
     <section class="dashboard-unified-header__main-panel">
       <nav class="dashboard-unified-header__nav" aria-label="Menu principal">
         <template v-for="item in headerItems" :key="item.id">
-          <UPopover
-            v-if="item.children"
-            :content="{ side: 'bottom', align: 'start' }"
-          >
+          <UPopover v-if="item.children" :content="{ side: 'bottom', align: 'start' }">
             <button
               class="dashboard-unified-header__nav-link"
               :class="{ 'is-active': isGroupActive(item) }"
@@ -331,19 +294,11 @@ onBeforeUnmount(() => {
       <div class="dashboard-unified-header__actions">
         <div class="dashboard-unified-header__metrics" aria-label="Resumo da fila">
           <span class="summary-pill">{{ state.waitingList.length }} na fila</span>
-          <span class="summary-pill summary-pill--active">{{ activeServicesCount }}/{{ state.settings.maxConcurrentServices }} em atendimento</span>
+          <span class="summary-pill summary-pill--active">
+            {{ activeServicesCount }}/{{ state.settings.maxConcurrentServices }} em atendimento
+          </span>
           <span class="summary-pill">{{ state.serviceHistory.length }} finalizados</span>
         </div>
-
-        <AppSelectField
-          class="summary-select dashboard-unified-header__store-select"
-          :model-value="selectedStoreValue"
-          :options="storeSelectOptions"
-          placeholder="Selecionar loja"
-          :show-leading-icon="false"
-          compact
-          @update:model-value="handleStoreChange"
-        />
 
         <AppSelectField
           v-if="!isAuthenticated"
@@ -357,9 +312,17 @@ onBeforeUnmount(() => {
         />
 
         <UPopover :content="{ side: 'bottom', align: 'end' }">
-          <UButton :icon="themeButton.icon" color="neutral" variant="ghost" size="sm" :aria-label="themeButton.label" />
+          <UButton
+            :icon="themeButton.icon"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            :aria-label="themeButton.label"
+          />
           <template #content>
-            <div class="dashboard-unified-header__menu-popover dashboard-unified-header__menu-popover--sm">
+            <div
+              class="dashboard-unified-header__menu-popover dashboard-unified-header__menu-popover--sm"
+            >
               <button
                 v-for="item in themeItems"
                 :key="item.value"
@@ -376,10 +339,21 @@ onBeforeUnmount(() => {
           </template>
         </UPopover>
 
-        <UButton icon="i-lucide-expand" color="neutral" variant="ghost" size="sm" aria-label="Tela cheia" @click="toggleFullscreen" />
+        <UButton
+          icon="i-lucide-expand"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Tela cheia"
+          @click="toggleFullscreen"
+        />
         <FeedbackNotificationsDropdown v-if="isAuthenticated" />
 
-        <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-unified-header__profile-menu">
+        <div
+          v-if="isAuthenticated"
+          ref="profileMenuRef"
+          class="dashboard-unified-header__profile-menu"
+        >
           <button
             class="dashboard-unified-header__profile-trigger"
             type="button"
@@ -389,29 +363,43 @@ onBeforeUnmount(() => {
             @click="toggleProfileMenu"
           >
             <span class="dashboard-unified-header__profile-copy">
-              <strong>{{ displayName || profileEmail || "Conta" }}</strong>
+              <strong>{{ displayName || profileEmail || 'Conta' }}</strong>
               <span>{{ profileRoleLabel }} / Root</span>
             </span>
             <span class="dashboard-unified-header__profile-avatar" aria-hidden="true">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="">
+              <img v-if="avatarUrl" :src="avatarUrl" alt="" />
               <span v-else>{{ profileInitial }}</span>
             </span>
           </button>
 
           <Transition name="dashboard-unified-header-menu">
-            <div v-if="profileMenuOpen" class="dashboard-unified-header__profile-dropdown" role="menu">
+            <div
+              v-if="profileMenuOpen"
+              class="dashboard-unified-header__profile-dropdown"
+              role="menu"
+            >
               <div class="dashboard-unified-header__profile-card">
                 <span>{{ profileRoleLabel }}</span>
-                <strong>{{ displayName || "Conta autenticada" }}</strong>
-                <small>{{ profileEmail || "Sessao ativa" }}</small>
+                <strong>{{ displayName || 'Conta autenticada' }}</strong>
+                <small>{{ profileEmail || 'Sessao ativa' }}</small>
               </div>
 
-              <NuxtLink class="dashboard-unified-header__menu-action" to="/perfil" role="menuitem" @click="closeProfileMenu">
+              <NuxtLink
+                class="dashboard-unified-header__menu-action"
+                to="/perfil"
+                role="menuitem"
+                @click="closeProfileMenu"
+              >
                 <UIcon name="i-lucide-user-round" class="size-4" aria-hidden="true" />
                 <span>Pagina de perfil</span>
               </NuxtLink>
 
-              <button class="dashboard-unified-header__menu-action dashboard-unified-header__menu-action--danger" type="button" role="menuitem" @click="handleLogout">
+              <button
+                class="dashboard-unified-header__menu-action dashboard-unified-header__menu-action--danger"
+                type="button"
+                role="menuitem"
+                @click="handleLogout"
+              >
                 <UIcon name="i-lucide-log-out" class="size-4" aria-hidden="true" />
                 <span>Sair da plataforma</span>
               </button>
@@ -421,7 +409,12 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <USlideover v-model:open="menuOpen" side="left" title="Sistema" description="Menu completo do painel">
+    <USlideover
+      v-model:open="menuOpen"
+      side="left"
+      title="Sistema"
+      description="Menu completo do painel"
+    >
       <template #body>
         <DashboardSidebarNav
           class="dashboard-unified-header__drawer-nav"
@@ -519,7 +512,9 @@ onBeforeUnmount(() => {
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.16s ease, background 0.16s ease;
+  transition:
+    color 0.16s ease,
+    background 0.16s ease;
 }
 
 .dashboard-unified-header__nav-link:hover {
@@ -532,7 +527,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-unified-header__nav-link.is-active::after {
-  content: "";
+  content: '';
   position: absolute;
   inset-inline: 0.65rem;
   bottom: 0.2rem;
@@ -757,7 +752,9 @@ onBeforeUnmount(() => {
 
 .dashboard-unified-header-menu-enter-active,
 .dashboard-unified-header-menu-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
 }
 
 .dashboard-unified-header-menu-enter-from,

@@ -365,6 +365,7 @@ func TestSaveOperationSectionUsesSectionDefaultsAndClampsPerConsultant(t *testin
 	selectedTemplateID := "joalheria-relacionamento"
 	maxConcurrentServices := 2
 	maxConcurrentServicesPerConsultant := 7
+	scoreWeightConversion := 40.0
 
 	ack, err := service.SaveOperationSection(context.Background(), auth.Principal{
 		UserID:   "user-1",
@@ -375,6 +376,7 @@ func TestSaveOperationSectionUsesSectionDefaultsAndClampsPerConsultant(t *testin
 		Settings: &AppSettingsPatch{
 			MaxConcurrentServices:              &maxConcurrentServices,
 			MaxConcurrentServicesPerConsultant: &maxConcurrentServicesPerConsultant,
+			ScoreWeightConversion:              &scoreWeightConversion,
 		},
 	})
 	if err != nil {
@@ -395,6 +397,12 @@ func TestSaveOperationSectionUsesSectionDefaultsAndClampsPerConsultant(t *testin
 	}
 	if repository.lastSavedOperationSection.CoreSettings.MaxConcurrentServicesPerConsultant != 2 {
 		t.Fatalf("expected perConsultant to be clamped to 2, got %d", repository.lastSavedOperationSection.CoreSettings.MaxConcurrentServicesPerConsultant)
+	}
+	if repository.lastSavedOperationSection.CoreSettings.ScoreWeightConversion != 40 {
+		t.Fatalf("expected conversion weight 40, got %v", repository.lastSavedOperationSection.CoreSettings.ScoreWeightConversion)
+	}
+	if repository.lastSavedOperationSection.CoreSettings.ScoreWeightSoldValue != 25 {
+		t.Fatalf("expected sold value weight default 25, got %v", repository.lastSavedOperationSection.CoreSettings.ScoreWeightSoldValue)
 	}
 	if repository.lastSavedOperationSection.AlertSettings.AlertMinConversionRate != 0 {
 		t.Fatalf("expected alert defaults to stay at 0, got %v", repository.lastSavedOperationSection.AlertSettings.AlertMinConversionRate)
@@ -516,6 +524,9 @@ func TestApplyOperationTemplatePersistsTemplateAsSingleMutation(t *testing.T) {
 	}
 	if applied.OperationSection.CoreSettings.MaxConcurrentServices != 12 {
 		t.Fatalf("expected template max concurrent 12, got %d", applied.OperationSection.CoreSettings.MaxConcurrentServices)
+	}
+	if applied.OperationSection.CoreSettings.ScoreWeightConversion != 35 || applied.OperationSection.CoreSettings.ScoreWeightPa != 15 {
+		t.Fatalf("expected template score weights 35/15, got conversion=%v pa=%v", applied.OperationSection.CoreSettings.ScoreWeightConversion, applied.OperationSection.CoreSettings.ScoreWeightPa)
 	}
 	if !applied.OperationSection.CoreSettings.TestModeEnabled || !applied.OperationSection.CoreSettings.AutoFillFinishModal {
 		t.Fatalf("expected test/auto-fill flags to be preserved")

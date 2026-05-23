@@ -45,6 +45,6 @@ describe('clampText (usar em @update:model-value de inputs controlados)', () => 
     // T7.2: normalizeText e' destrutivo para digitacao em curso; clampText preserva.
     const partial = 'palavra '
     expect(normalizeText(partial)).toBe('palavra') // -> input "salta"
-    expect(clampText(partial)).toBe('palavra ')    // -> usuario continua digitando
+    expect(clampText(partial)).toBe('palavra ') // -> usuario continua digitando
   })
 })

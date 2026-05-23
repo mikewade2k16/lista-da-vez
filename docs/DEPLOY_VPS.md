@@ -1,7 +1,8 @@
 # Deploy na VPS
 
-Este e o unico playbook de deploy que vale para este repositorio.
-Os arquivos em `docs_depoy/` vieram de outro projeto, foram mantidos apenas como apontadores curtos e nao sao fonte de verdade daqui para frente.
+Este e o playbook completo de deploy. Para o checklist operacional curto do dia-a-dia (comandos prontos, ordem recomendada), veja [DEPLOY_CHECKLIST.md](DEPLOY_CHECKLIST.md).
+
+> Historico: a pasta `docs_depoy/` foi consolidada em 2026-05-18. Conteudo vivo migrou para este arquivo e para `DEPLOY_CHECKLIST.md`.
 
 ## O que faz sentido para este projeto
 
@@ -89,7 +90,7 @@ O registro `@` atual apontando para outro IP nao precisa ser alterado para este 
 
 ## O que fica isolado do outro app
 
-- `COMPOSE_PROJECT_NAME=listaatendimento` separa containers, rede e volumes
+- `COMPOSE_PROJECT_NAME=omni` separa containers, rede e volumes
 - banco proprio deste app
 - volume proprio do banco
 - volume proprio de uploads
@@ -118,9 +119,9 @@ Use `.env.production.example` como base.
 
 As variaveis mais importantes sao:
 
-- `COMPOSE_PROJECT_NAME=listaatendimento`
-- `POSTGRES_DB=listaatendimento`
-- `POSTGRES_USER=listaatendimento`
+- `COMPOSE_PROJECT_NAME=omni`
+- `POSTGRES_DB=omni`
+- `POSTGRES_USER=omni`
 - `POSTGRES_PASSWORD=<senha-forte>`
 - `PROXY_NETWORK_NAME=omnichannel-mvp_default`
 - `PROXY_API_ALIAS=lista-api`
@@ -131,6 +132,11 @@ As variaveis mais importantes sao:
 - `NUXT_API_INTERNAL_BASE=http://api:8080`
 - `CORS_ALLOWED_ORIGINS=https://lista.whenthelightsdie.com`
 - `AUTH_TOKEN_SECRET=<segredo-longo-e-aleatorio>`
+
+Observacao importante para a Fase 4:
+
+- o path remoto `/home/deploy/lista-atendimento` pode continuar igual nesta janela para evitar churn extra de filesystem;
+- o rename do banco em producao fica detalhado em [deploy/db-rename.md](deploy/db-rename.md).
 
 ## Portas locais desta stack
 
@@ -227,6 +233,58 @@ lista.whenthelightsdie.com {
     }
 }
 ```
+
+### Headers de seguranca
+
+Dentro do mesmo host `lista.whenthelightsdie.com`, adicione a matriz base abaixo antes dos blocos `handle`:
+
+```caddy
+header {
+  Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  X-Content-Type-Options "nosniff"
+  X-Frame-Options "SAMEORIGIN"
+  Referrer-Policy "strict-origin-when-cross-origin"
+  Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' wss://lista.whenthelightsdie.com;"
+}
+```
+
+Exemplo completo com o bloco `header` ja encaixado:
+
+```caddy
+lista.whenthelightsdie.com {
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' wss://lista.whenthelightsdie.com;"
+  }
+
+  handle /v1/* {
+    reverse_proxy lista-api:8080
+  }
+
+  handle /uploads/* {
+    reverse_proxy lista-api:8080
+  }
+
+  handle /healthz {
+    reverse_proxy lista-api:8080
+  }
+
+  handle {
+    reverse_proxy lista-web:3003
+  }
+}
+```
+
+Observacoes praticas:
+
+- `Strict-Transport-Security` so faz sentido depois de HTTPS estavel no host publico.
+- o `Content-Security-Policy` acima assume frontend, API e WebSocket no mesmo host `lista.whenthelightsdie.com`;
+- se algum recurso legitimo do Nuxt parar de carregar depois da mudanca, valide no navegador qual diretiva bloqueou e ajuste a policy antes de endurecer mais.
 
 Esse desenho mantem tudo em `lista.whenthelightsdie.com`, inclusive API e WebSocket, sem abrir outro subdominio publico.
 
@@ -391,7 +449,7 @@ com sync manual ligado e scheduler FTP diario ativo em producao.
 ### Carga ERP por dump de banco
 
 Quando os consolidados ja foram importados no Postgres local, nao subir a pasta
-`Controlle10 - ftp` para a VPS. Gere e transfira apenas um dump comprimido das
+`erp-source-local` (antiga `Controlle10 - ftp`) para a VPS. Gere e transfira apenas um dump comprimido das
 tabelas `erp_*`. Em 2026-04-29, os markdowns tinham cerca de 430 MB e o dump
 custom das tabelas ERP ficou com cerca de 111 MB.
 
@@ -414,7 +472,7 @@ Fluxo usado em producao:
 ```bash
 mkdir -p tmp
 docker compose --env-file .env.docker exec -T postgres pg_dump \
-  -U lista_da_vez -d lista_da_vez \
+  -U omni -d omni \
   -Fc --data-only --no-owner --no-privileges \
   -t public.erp_sync_runs \
   -t public.erp_sync_files \
@@ -426,7 +484,7 @@ docker compose --env-file .env.docker exec -T postgres pg_dump \
   -t public.erp_item_current \
   -t public.erp_export_outbox \
   -f /tmp/erp_data.dump
-docker cp lista-da-vez-postgres-1:/tmp/erp_data.dump ./tmp/erp_data.dump
+docker cp omni-postgres-1:/tmp/erp_data.dump ./tmp/erp_data.dump
 ```
 
 2. Enviar o dump para a VPS:
@@ -475,7 +533,7 @@ container=$(docker compose --env-file .env.production -f docker-compose.prod.yml
 docker cp tmp/erp_data.dump "$container:/tmp/erp_data.dump"
 
 docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
-  psql -U listaatendimento -d listaatendimento -v ON_ERROR_STOP=1 <<'SQL'
+  psql -U omni -d omni -v ON_ERROR_STOP=1 <<'SQL'
 truncate table
   erp_export_outbox,
   erp_item_current,
@@ -489,7 +547,7 @@ truncate table
 SQL
 
 docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
-  pg_restore -U listaatendimento -d listaatendimento \
+  pg_restore -U omni -d omni \
   --data-only --no-owner --no-privileges \
   --single-transaction --exit-on-error /tmp/erp_data.dump
 ```
@@ -670,7 +728,7 @@ npm run prod:deploy:vps
 Esse script usa o metodo validado neste ambiente:
 
 - empacota o workspace local por `tar`
-- exclui a pasta local `Controlle10 - ftp` do payload antes do envio
+- exclui a pasta local `erp-source-local` (e mantém `Controlle10 - ftp` como defesa) do payload antes do envio
 - limpa o diretorio remoto preservando `.env.production` e `backups`
 - envia o codigo por SSH
 - valida `docker compose`
@@ -774,6 +832,18 @@ docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail
 curl -I https://lista.whenthelightsdie.com
 curl -I https://lista.whenthelightsdie.com/healthz
 ```
+
+Checks de headers de seguranca:
+
+```bash
+curl -I https://lista.whenthelightsdie.com | grep -Ei 'strict-transport-security|x-content-type-options|x-frame-options|referrer-policy|permissions-policy|content-security-policy'
+curl -I https://lista.whenthelightsdie.com/healthz | grep -Ei 'strict-transport-security|x-content-type-options|x-frame-options|referrer-policy|permissions-policy|content-security-policy'
+```
+
+Check externo complementar:
+
+- abrir `https://securityheaders.com/` e testar `https://lista.whenthelightsdie.com`;
+- comparar o resultado com o bloco `header` aplicado no Caddy para confirmar que o proxy publico esta devolvendo a matriz esperada.
 
 Checks funcionais:
 

@@ -13,23 +13,40 @@ import TasksTaskModal from '../components/TasksTaskModal.vue'
 definePageMeta({
   layout: 'dashboard',
   workspaceId: 'tasks',
-  pageLabel: 'Tasks'
+  pageLabel: 'Tasks',
 })
 
 const context = useTasksPageContext()
 provide(TASKS_PAGE_CONTEXT_KEY, context)
 
-const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMigrationNotice, tasksErrorMessage, taskEditorOpen, taskEditorMode } = context
+const {
+  pageBootstrapping,
+  activeProject,
+  viewMode,
+  taskEditorCssVars,
+  legacyMigrationNotice,
+  tasksErrorMessage,
+  taskEditorOpen,
+  taskEditorMode,
+} = context
 </script>
 
 <template>
-  <section class="tasks-page space-y-4" :class="{ 'tasks-page--side-editor-open': taskEditorOpen && taskEditorMode === 'side' }"
-    :style="taskEditorCssVars">
-    <AdminPageHeader eyebrow="Tasks" title="Orquestrador Tasks"
-      description="Paginas notion-like com board, tabela, campos e colunas configuraveis." />
+  <section
+    class="tasks-page space-y-4"
+    :class="{ 'tasks-page--side-editor-open': taskEditorOpen && taskEditorMode === 'side' }"
+    :style="taskEditorCssVars"
+  >
+    <AdminPageHeader
+      eyebrow="Tasks"
+      title="Orquestrador Tasks"
+      description="Paginas notion-like com board, tabela, campos e colunas configuraveis."
+    />
 
     <div v-if="pageBootstrapping" class="grid gap-4" aria-live="polite">
-      <div class="rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4">
+      <div
+        class="rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4"
+      >
         <div class="flex flex-wrap items-center gap-3">
           <CoreSkeleton variant="block" width="280px" height="40px" />
           <CoreSkeleton variant="block" width="136px" height="36px" />
@@ -45,8 +62,11 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
       </div>
 
       <div class="grid gap-3 xl:grid-cols-3">
-        <div v-for="column in 3" :key="column"
-          class="rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4">
+        <div
+          v-for="column in 3"
+          :key="column"
+          class="rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-4"
+        >
           <CoreSkeleton variant="block" width="132px" height="18px" />
           <div class="mt-4">
             <CoreSkeleton variant="card" :count="3" />
@@ -56,18 +76,35 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
     </div>
 
     <template v-else>
-      <UAlert v-if="legacyMigrationNotice" color="info" variant="soft" icon="i-lucide-database-zap"
+      <UAlert
+        v-if="legacyMigrationNotice"
+        color="info"
+        variant="soft"
+        icon="i-lucide-database-zap"
         title="Tasks agora usa o servidor como fonte principal"
-        description="O estado legado em localStorage foi descartado para iniciar a migracao do prototipo local para a API real." />
+        description="O estado legado em localStorage foi descartado para iniciar a migracao do prototipo local para a API real."
+      />
 
-      <UAlert v-if="tasksErrorMessage" color="error" variant="soft" icon="i-lucide-circle-alert"
-        title="Nao foi possivel sincronizar Tasks" :description="tasksErrorMessage" />
+      <UAlert
+        v-if="tasksErrorMessage"
+        color="error"
+        variant="soft"
+        icon="i-lucide-circle-alert"
+        title="Nao foi possivel sincronizar Tasks"
+        :description="tasksErrorMessage"
+      />
 
       <TasksFilterBar />
 
-      <UAlert v-if="!activeProject" class="tasks-page__empty-project" color="warning" variant="soft"
-        icon="i-lucide-folder-open" title="Sem projeto ativo"
-        description="Crie ou selecione um projeto para comecar." />
+      <UAlert
+        v-if="!activeProject"
+        class="tasks-page__empty-project"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-folder-open"
+        title="Sem projeto ativo"
+        description="Crie ou selecione um projeto para comecar."
+      />
 
       <TasksBoardView v-else-if="viewMode === 'board'" />
       <TasksTableView v-else />
@@ -88,7 +125,9 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
 
 .tasks-page__board-wrap {
   scrollbar-gutter: stable;
-  transition: width 0.18s ease, max-width 0.18s ease;
+  transition:
+    width 0.18s ease,
+    max-width 0.18s ease;
 }
 
 .tasks-page__board-column-body {
@@ -111,7 +150,10 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
 .tasks-page__board-column {
   min-height: 350px;
   border-top-width: 3px;
-  transition: box-shadow 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+  transition:
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
 }
 
 .tasks-page__board-column--drop {
@@ -207,7 +249,10 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   color: rgb(var(--muted));
   cursor: grab;
   opacity: 0.55;
-  transition: opacity 0.16s ease, color 0.16s ease, background 0.16s ease;
+  transition:
+    opacity 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease;
 }
 
 .tasks-page__board-card-handle:active {
@@ -249,7 +294,7 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
 }
 
 .tasks-page__board-card--drop-before::before {
-  content: "";
+  content: '';
   position: absolute;
   inset-inline: 0.5rem;
   top: -0.45rem;
@@ -275,7 +320,9 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
 .tasks-page__board-card-actions {
   opacity: 0;
   transform: translateY(-0.15rem);
-  transition: opacity 0.16s ease, transform 0.16s ease;
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease;
 }
 
 .tasks-page__board-card-actions svg {
@@ -369,7 +416,10 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   background: rgb(var(--surface) / 0.56);
   font-size: 0.8rem;
   font-weight: 700;
-  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    color 0.16s ease,
+    background 0.16s ease;
 }
 
 .tasks-page__board-add-card:hover {
@@ -564,7 +614,7 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
 }
 
 .tasks-page__task-resize-handle::after {
-  content: "";
+  content: '';
   position: absolute;
   left: 0.3rem;
   top: 4rem;
@@ -993,8 +1043,8 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   position: relative;
 }
 
-.tasks-toolbar__filter-btn[data-active="true"]::after {
-  content: "";
+.tasks-toolbar__filter-btn[data-active='true']::after {
+  content: '';
   position: absolute;
   top: 3px;
   right: 3px;
@@ -1022,7 +1072,10 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   max-width: 0;
   opacity: 0;
   margin-right: 0;
-  transition: max-width 200ms ease-out, opacity 160ms ease-out, margin-right 200ms ease-out;
+  transition:
+    max-width 200ms ease-out,
+    opacity 160ms ease-out,
+    margin-right 200ms ease-out;
 }
 
 .tasks-toolbar__search.is-open {
@@ -1086,7 +1139,9 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   border-radius: 999px;
   color: rgb(var(--primary));
   background: transparent;
-  transition: background 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .tasks-toolbar__chip-x:hover {
@@ -1161,7 +1216,9 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   border-radius: calc(var(--radius-sm) - 2px);
   color: rgb(var(--muted));
   background: transparent;
-  transition: color 150ms ease, background 150ms ease;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
 }
 
 .tasks-toolbar__view-btn svg,
@@ -1288,7 +1345,9 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   z-index: 2;
 }
 
-.tasks-page__board-card-inline .omni-select-menu-input__selected-badge:hover .omni-select-menu-input__selected-badge-clear,
+.tasks-page__board-card-inline
+  .omni-select-menu-input__selected-badge:hover
+  .omni-select-menu-input__selected-badge-clear,
 .tasks-page__board-card-inline .omni-select-menu-input__selected-badge-clear:focus-visible {
   opacity: 1;
 }
@@ -1323,7 +1382,9 @@ const { pageBootstrapping, activeProject, viewMode, taskEditorCssVars, legacyMig
   border-radius: var(--radius-xs, 4px);
   width: auto;
   align-self: flex-start;
-  transition: color 120ms ease, background 120ms ease;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
 }
 
 .tasks-page__draft-add-row:hover {

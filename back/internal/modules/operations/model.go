@@ -114,6 +114,7 @@ type ServiceHistoryEntry struct {
 	ProductDetails             string            `json:"productDetails"`
 	ProductsSeen               []ProductEntry    `json:"productsSeen"`
 	ProductsClosed             []ProductEntry    `json:"productsClosed"`
+	ProductsNotFound           []ProductEntry    `json:"productsNotFound"`
 	ProductsSeenNone           bool              `json:"productsSeenNone"`
 	VisitReasonsNotInformed    bool              `json:"visitReasonsNotInformed"`
 	CustomerSourcesNotInformed bool              `json:"customerSourcesNotInformed"`
@@ -297,6 +298,7 @@ type FinishCommandInput struct {
 	ProductDetails             string            `json:"productDetails"`
 	ProductsSeen               []ProductEntry    `json:"productsSeen"`
 	ProductsClosed             []ProductEntry    `json:"productsClosed"`
+	ProductsNotFound           []ProductEntry    `json:"productsNotFound"`
 	ProductsSeenNone           bool              `json:"productsSeenNone"`
 	VisitReasonsNotInformed    bool              `json:"visitReasonsNotInformed"`
 	CustomerSourcesNotInformed bool              `json:"customerSourcesNotInformed"`

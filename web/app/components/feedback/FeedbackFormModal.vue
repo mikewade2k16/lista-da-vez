@@ -1,143 +1,143 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from "vue";
-import { ImagePlus, X } from "lucide-vue-next";
-import { useFeedbackStore } from "~/stores/feedback";
-import { useUiStore } from "~/stores/ui";
-import AppSelectField from "~/components/ui/AppSelectField.vue";
-import { compressFeedbackImage, formatFeedbackImageSize } from "~/utils/feedback-image";
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ImagePlus, X } from 'lucide-vue-next'
+import { useFeedbackStore } from '~/stores/feedback'
+import { useUiStore } from '~/stores/ui'
+import AppSelectField from '~/components/ui/AppSelectField.vue'
+import { compressFeedbackImage, formatFeedbackImageSize } from '~/utils/feedback-image'
 
 const props = defineProps({
   modelValue: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(['update:modelValue'])
 
-const feedbackStore = useFeedbackStore();
-const ui = useUiStore();
+const feedbackStore = useFeedbackStore()
+const ui = useUiStore()
 
-const kind = ref("");
-const subject = ref("");
-const body = ref("");
-const selectedImage = ref<File | null>(null);
-const selectedImagePreviewUrl = ref("");
-const submitting = ref(false);
+const kind = ref('')
+const subject = ref('')
+const body = ref('')
+const selectedImage = ref<File | null>(null)
+const selectedImagePreviewUrl = ref('')
+const submitting = ref(false)
 
-let previousBodyOverflow = "";
+let previousBodyOverflow = ''
 
 const kindOptions = [
-  { value: "suggestion", label: "Sugestão" },
-  { value: "question", label: "Dúvida" },
-  { value: "problem", label: "Problema" }
-];
+  { value: 'suggestion', label: 'Sugestão' },
+  { value: 'question', label: 'Dúvida' },
+  { value: 'problem', label: 'Problema' },
+]
 
 function closeModal() {
-  emit("update:modelValue", false);
+  emit('update:modelValue', false)
 }
 
 function resetForm() {
-  kind.value = "";
-  subject.value = "";
-  body.value = "";
-  clearSelectedImage();
+  kind.value = ''
+  subject.value = ''
+  body.value = ''
+  clearSelectedImage()
 }
 
 function setSelectedImage(file: File | null) {
   if (import.meta.client && selectedImagePreviewUrl.value) {
-    URL.revokeObjectURL(selectedImagePreviewUrl.value);
+    URL.revokeObjectURL(selectedImagePreviewUrl.value)
   }
 
-  selectedImage.value = file;
-  selectedImagePreviewUrl.value = file && import.meta.client ? URL.createObjectURL(file) : "";
+  selectedImage.value = file
+  selectedImagePreviewUrl.value = file && import.meta.client ? URL.createObjectURL(file) : ''
 }
 
 function clearSelectedImage() {
-  setSelectedImage(null);
+  setSelectedImage(null)
 }
 
 async function handleImageChange(event: Event) {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0] || null;
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0] || null
   if (!file) {
-    return;
+    return
   }
 
   try {
-    const compressedImage = await compressFeedbackImage(file);
-    setSelectedImage(compressedImage);
+    const compressedImage = await compressFeedbackImage(file)
+    setSelectedImage(compressedImage)
   } catch (err) {
-    ui.error(err instanceof Error ? err.message : "Nao foi possivel preparar a imagem.");
+    ui.error(err instanceof Error ? err.message : 'Nao foi possivel preparar a imagem.')
   } finally {
-    target.value = "";
+    target.value = ''
   }
 }
 
 function syncBodyScrollLock(isOpen) {
   if (!import.meta.client) {
-    return;
+    return
   }
 
   if (isOpen) {
-    previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return;
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return
   }
 
-  document.body.style.overflow = previousBodyOverflow;
+  document.body.style.overflow = previousBodyOverflow
 }
 
 function handleEscape(event) {
-  if (event.key === "Escape" && props.modelValue) {
-    closeModal();
+  if (event.key === 'Escape' && props.modelValue) {
+    closeModal()
   }
 }
 
 onMounted(() => {
-  document.addEventListener("keydown", handleEscape);
-});
+  document.addEventListener('keydown', handleEscape)
+})
 
 watch(
   () => props.modelValue,
   (isOpen) => {
     if (!isOpen) {
-      resetForm();
+      resetForm()
     }
-    syncBodyScrollLock(isOpen);
+    syncBodyScrollLock(isOpen)
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
-  document.removeEventListener("keydown", handleEscape);
-  syncBodyScrollLock(false);
-  clearSelectedImage();
-});
+  document.removeEventListener('keydown', handleEscape)
+  syncBodyScrollLock(false)
+  clearSelectedImage()
+})
 
 async function handleSubmit() {
   if (!kind.value || !subject.value.trim() || !body.value.trim()) {
-    ui.error("Preencha todos os campos obrigatórios");
-    return;
+    ui.error('Preencha todos os campos obrigatórios')
+    return
   }
 
-  submitting.value = true;
+  submitting.value = true
   try {
     const result = await feedbackStore.submitFeedback({
       kind: kind.value,
       subject: subject.value.trim(),
       body: body.value.trim(),
-      image: selectedImage.value
-    });
+      image: selectedImage.value,
+    })
 
     if (result.ok) {
-      ui.success("Feedback enviado com sucesso!");
-      closeModal();
+      ui.success('Feedback enviado com sucesso!')
+      closeModal()
     } else {
-      ui.error(result.message || "Erro ao enviar feedback");
+      ui.error(result.message || 'Erro ao enviar feedback')
     }
   } finally {
-    submitting.value = false;
+    submitting.value = false
   }
 }
 </script>
@@ -153,7 +153,11 @@ async function handleSubmit() {
                 <p class="feedback-form-modal__eyebrow">Comunicação</p>
                 <h2 class="feedback-form-modal__title">Enviar Feedback</h2>
               </div>
-              <button class="feedback-form-modal__close-btn" @click="closeModal" aria-label="Fechar">
+              <button
+                class="feedback-form-modal__close-btn"
+                aria-label="Fechar"
+                @click="closeModal"
+              >
                 <X :size="18" :stroke-width="2.1" />
               </button>
             </div>
@@ -201,16 +205,21 @@ async function handleSubmit() {
                       hidden
                       :disabled="submitting"
                       @change="handleImageChange"
-                    >
+                    />
                     <ImagePlus :size="16" :stroke-width="2.1" />
-                    <span>{{ selectedImage ? "Trocar imagem" : "Adicionar imagem" }}</span>
+                    <span>{{ selectedImage ? 'Trocar imagem' : 'Adicionar imagem' }}</span>
                   </label>
                   <small class="feedback-form-modal__upload-hint">
-                    Opcional. A imagem e compactada antes do envio e apagada 7 dias apos o encerramento do chamado.
+                    Opcional. A imagem e compactada antes do envio e apagada 7 dias apos o
+                    encerramento do chamado.
                   </small>
 
                   <div v-if="selectedImagePreviewUrl" class="feedback-form-modal__upload-preview">
-                    <img :src="selectedImagePreviewUrl" alt="Preview da imagem anexada" class="feedback-form-modal__upload-image">
+                    <img
+                      :src="selectedImagePreviewUrl"
+                      alt="Preview da imagem anexada"
+                      class="feedback-form-modal__upload-image"
+                    />
                     <div class="feedback-form-modal__upload-copy">
                       <strong>{{ selectedImage?.name }}</strong>
                       <span>{{ formatFeedbackImageSize(selectedImage?.size || 0) }}</span>
@@ -231,8 +240,8 @@ async function handleSubmit() {
                 <button
                   type="button"
                   class="feedback-form-modal__btn feedback-form-modal__btn--secondary"
-                  @click="closeModal"
                   :disabled="submitting"
+                  @click="closeModal"
                 >
                   Cancelar
                 </button>
@@ -241,7 +250,7 @@ async function handleSubmit() {
                   class="feedback-form-modal__btn feedback-form-modal__btn--primary"
                   :disabled="submitting || !kind || !subject.trim() || !body.trim()"
                 >
-                  {{ submitting ? "Enviando..." : "Enviar" }}
+                  {{ submitting ? 'Enviando...' : 'Enviar' }}
                 </button>
               </div>
             </form>

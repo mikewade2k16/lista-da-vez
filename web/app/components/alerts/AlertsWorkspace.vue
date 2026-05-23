@@ -1,27 +1,27 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue"
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
-import AppDetailDialog from "~/components/ui/AppDetailDialog.vue"
-import AppEntityGrid from "~/components/ui/AppEntityGrid.vue"
-import AppPanelButton from "~/components/ui/AppPanelButton.vue"
-import AppSelectField from "~/components/ui/AppSelectField.vue"
-import AppToggleSwitch from "~/components/ui/AppToggleSwitch.vue"
-import AlertRuleEditor from "~/components/alerts/AlertRuleEditor.vue"
-import AlertRuleList from "~/components/alerts/AlertRuleList.vue"
-import { hasPermission } from "~/domain/utils/permissions"
-import { useAuthStore } from "~/stores/auth"
-import { useAlertsStore } from "~/stores/alerts"
-import { useUiStore } from "~/stores/ui"
+import AppDetailDialog from '~/components/ui/AppDetailDialog.vue'
+import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
+import AppPanelButton from '~/components/ui/AppPanelButton.vue'
+import AppSelectField from '~/components/ui/AppSelectField.vue'
+import AppToggleSwitch from '~/components/ui/AppToggleSwitch.vue'
+import AlertRuleEditor from '~/components/alerts/AlertRuleEditor.vue'
+import AlertRuleList from '~/components/alerts/AlertRuleList.vue'
+import { hasPermission } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useAlertsStore } from '~/stores/alerts'
+import { useUiStore } from '~/stores/ui'
 
 const alertsStore = useAlertsStore()
 const auth = useAuthStore()
 const ui = useUiStore()
 
-const activeTab = ref<"rules" | "history">("rules")
+const activeTab = ref<'rules' | 'history'>('rules')
 const selectedAlert = ref<Record<string, unknown> | null>(null)
 const detailOpen = ref(false)
-const searchValue = ref("")
-const actionNote = ref("")
+const searchValue = ref('')
+const actionNote = ref('')
 const actionPending = ref(false)
 const savingRules = ref(false)
 const showRuleEditor = ref(false)
@@ -30,61 +30,75 @@ const editingRule = ref<Record<string, any> | null>(null)
 const rulesDraft = reactive({
   notifyDashboard: true,
   notifyOperationContext: true,
-  notifyExternal: false
+  notifyExternal: false,
 })
 
 const typeOptions = [
-  { value: "", label: "Todos" },
-  { value: "long_open_service", label: "Atendimento longo" }
+  { value: '', label: 'Todos' },
+  { value: 'long_open_service', label: 'Atendimento longo' },
 ]
 
 const statusOptions = [
-  { value: "active", label: "Ativos" },
-  { value: "acknowledged", label: "Reconhecidos" },
-  { value: "resolved", label: "Resolvidos" },
-  { value: "", label: "Todos" }
+  { value: 'active', label: 'Ativos' },
+  { value: 'acknowledged', label: 'Reconhecidos' },
+  { value: 'resolved', label: 'Resolvidos' },
+  { value: '', label: 'Todos' },
 ]
 
 const columns = [
-  { id: "status", label: "Status", width: "130px", align: "center" },
-  { id: "severity", label: "Severidade", width: "130px", align: "center" },
-  { id: "headline", label: "Resumo", width: "360px", align: "left" },
-  { id: "storeId", label: "Loja", width: "180px", align: "left" },
-  { id: "lastTriggeredAt", label: "Ultimo trigger", width: "180px", align: "left" },
-  { id: "actions", label: "Acoes", width: "160px", align: "center" }
+  { id: 'status', label: 'Status', width: '130px', align: 'center' },
+  { id: 'severity', label: 'Severidade', width: '130px', align: 'center' },
+  { id: 'headline', label: 'Resumo', width: '360px', align: 'left' },
+  { id: 'storeId', label: 'Loja', width: '180px', align: 'left' },
+  { id: 'lastTriggeredAt', label: 'Ultimo trigger', width: '180px', align: 'left' },
+  { id: 'actions', label: 'Acoes', width: '160px', align: 'center' },
 ]
 
 const canManageRules = computed(() => {
   if (auth.permissionsResolved) {
-    return hasPermission(auth.permissionKeys, "alerts.rules.manage") || hasPermission(auth.permissionKeys, "workspace.alertas.edit")
+    return (
+      hasPermission(auth.permissionKeys, 'alerts.rules.manage') ||
+      hasPermission(auth.permissionKeys, 'workspace.alertas.edit')
+    )
   }
 
-  return auth.role === "owner" || auth.role === "platform_admin"
+  return auth.role === 'owner' || auth.role === 'platform_admin'
 })
 
 const canManageActions = computed(() => {
   if (auth.permissionsResolved) {
-    return hasPermission(auth.permissionKeys, "alerts.actions.manage") || hasPermission(auth.permissionKeys, "workspace.alertas.edit")
+    return (
+      hasPermission(auth.permissionKeys, 'alerts.actions.manage') ||
+      hasPermission(auth.permissionKeys, 'workspace.alertas.edit')
+    )
   }
 
-  return ["store_terminal", "manager", "owner", "platform_admin"].includes(String(auth.role || ""))
+  return ['store_terminal', 'manager', 'owner', 'platform_admin'].includes(String(auth.role || ''))
 })
 
-const storeNameById = computed(() => new Map((auth.storeContext || []).map((store) => [String(store?.id || "").trim(), String(store?.name || "").trim()])))
+const storeNameById = computed(
+  () =>
+    new Map(
+      (auth.storeContext || []).map((store) => [
+        String(store?.id || '').trim(),
+        String(store?.name || '').trim(),
+      ]),
+    ),
+)
 
 const overviewCards = computed(() => {
   const current = alertsStore.overview || {
     totalActive: 0,
     criticalActive: 0,
     acknowledged: 0,
-    resolvedToday: 0
+    resolvedToday: 0,
   }
 
   return [
-    { id: "total", label: "Alertas ativos", value: current.totalActive, tone: "default" },
-    { id: "critical", label: "Criticos", value: current.criticalActive, tone: "critical" },
-    { id: "ack", label: "Reconhecidos", value: current.acknowledged, tone: "warning" },
-    { id: "resolved", label: "Resolvidos hoje", value: current.resolvedToday, tone: "success" }
+    { id: 'total', label: 'Alertas ativos', value: current.totalActive, tone: 'default' },
+    { id: 'critical', label: 'Criticos', value: current.criticalActive, tone: 'critical' },
+    { id: 'ack', label: 'Reconhecidos', value: current.acknowledged, tone: 'warning' },
+    { id: 'resolved', label: 'Resolvidos hoje', value: current.resolvedToday, tone: 'success' },
   ]
 })
 
@@ -97,7 +111,7 @@ const filteredAlerts = computed(() => {
   return alertsStore.items.filter((alert) => {
     const storeLabel = resolveStoreLabel(alert.storeId).toLowerCase()
     return [alert.headline, alert.body, alert.serviceId, storeLabel]
-      .map((value) => String(value || "").toLowerCase())
+      .map((value) => String(value || '').toLowerCase())
       .some((value) => value.includes(search))
   })
 })
@@ -117,7 +131,7 @@ const rulesDirty = computed(() => {
 
 const scopeDescription = computed(() => {
   if (alertsStore.integratedScope) {
-    return "Escopo: tenant inteiro com invalidação por contexto operacional em tempo quase imediato."
+    return 'Escopo: tenant inteiro com invalidação por contexto operacional em tempo quase imediato.'
   }
 
   return `Loja ativa: ${resolveStoreLabel(alertsStore.activeStoreId)}.`
@@ -135,22 +149,26 @@ function syncRulesDraft() {
 }
 
 function resolveStoreLabel(storeId: string) {
-  return storeNameById.value.get(String(storeId || "").trim()) || String(storeId || "").trim() || "Escopo atual"
+  return (
+    storeNameById.value.get(String(storeId || '').trim()) ||
+    String(storeId || '').trim() ||
+    'Escopo atual'
+  )
 }
 
 function formatDate(value: string) {
-  const normalized = String(value || "").trim()
+  const normalized = String(value || '').trim()
   if (!normalized) {
-    return "-"
+    return '-'
   }
 
   try {
-    return new Date(normalized).toLocaleString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
+    return new Date(normalized).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     })
   } catch {
     return normalized
@@ -158,25 +176,29 @@ function formatDate(value: string) {
 }
 
 function statusLabel(status: string) {
-  return {
-    active: "Ativo",
-    acknowledged: "Reconhecido",
-    resolved: "Resolvido",
-    closed_by_admin: "Fechado"
-  }[String(status || "").trim()] || String(status || "").trim()
+  return (
+    {
+      active: 'Ativo',
+      acknowledged: 'Reconhecido',
+      resolved: 'Resolvido',
+      closed_by_admin: 'Fechado',
+    }[String(status || '').trim()] || String(status || '').trim()
+  )
 }
 
 function severityLabel(severity: string) {
-  return {
-    critical: "Critica",
-    attention: "Atencao",
-    info: "Informativa"
-  }[String(severity || "").trim()] || String(severity || "").trim()
+  return (
+    {
+      critical: 'Critica',
+      attention: 'Atencao',
+      info: 'Informativa',
+    }[String(severity || '').trim()] || String(severity || '').trim()
+  )
 }
 
 function openDetail(alert: Record<string, unknown>) {
   selectedAlert.value = alert
-  actionNote.value = ""
+  actionNote.value = ''
   detailOpen.value = true
 }
 
@@ -194,37 +216,37 @@ async function handleSaveRule(rule: Record<string, unknown>) {
   try {
     if (editingRule.value?.id) {
       await alertsStore.updateRule(editingRule.value.id, rule)
-      ui.success("Regra atualizada com sucesso.")
+      ui.success('Regra atualizada com sucesso.')
     } else {
       await alertsStore.createRule(rule)
-      ui.success("Regra criada com sucesso.")
+      ui.success('Regra criada com sucesso.')
     }
     showRuleEditor.value = false
     editingRule.value = null
   } catch (error) {
-    ui.error(alertsStore.errorMessage || "Erro ao salvar regra.")
+    ui.error(alertsStore.errorMessage || 'Erro ao salvar regra.')
   }
 }
 
 async function handleDeleteRule(ruleId: string) {
-  if (!confirm("Tem certeza que deseja excluir esta regra?")) {
+  if (!confirm('Tem certeza que deseja excluir esta regra?')) {
     return
   }
 
   try {
     await alertsStore.deleteRule(ruleId)
-    ui.success("Regra excluída com sucesso.")
+    ui.success('Regra excluída com sucesso.')
   } catch (error) {
-    ui.error(alertsStore.errorMessage || "Erro ao excluir regra.")
+    ui.error(alertsStore.errorMessage || 'Erro ao excluir regra.')
   }
 }
 
 async function handleToggleRule(ruleId: string, isActive: boolean) {
   try {
     await alertsStore.updateRule(ruleId, { isActive })
-    ui.success(isActive ? "Regra ativada." : "Regra desativada.")
+    ui.success(isActive ? 'Regra ativada.' : 'Regra desativada.')
   } catch (error) {
-    ui.error(alertsStore.errorMessage || "Erro ao atualizar regra.")
+    ui.error(alertsStore.errorMessage || 'Erro ao atualizar regra.')
   }
 }
 
@@ -233,7 +255,7 @@ async function handleApplyRuleNow(ruleId: string) {
     const result = await alertsStore.applyRuleNow(ruleId)
     ui.success(`Regra aplicada. ${result.appliedCount} alerta(s) gerado(s).`)
   } catch (error) {
-    ui.error(alertsStore.errorMessage || "Erro ao aplicar regra.")
+    ui.error(alertsStore.errorMessage || 'Erro ao aplicar regra.')
   }
 }
 
@@ -241,10 +263,10 @@ async function applyFilters() {
   try {
     await alertsStore.applyFilters({
       status: alertsStore.filters.status,
-      type: alertsStore.filters.type
+      type: alertsStore.filters.type,
     })
   } catch {
-    ui.error(alertsStore.errorMessage || "Erro ao atualizar a lista de alertas")
+    ui.error(alertsStore.errorMessage || 'Erro ao atualizar a lista de alertas')
   }
 }
 
@@ -255,11 +277,14 @@ async function handleAcknowledge() {
 
   actionPending.value = true
   try {
-    const updated = await alertsStore.acknowledgeAlert(String(selectedAlert.value.id), actionNote.value)
+    const updated = await alertsStore.acknowledgeAlert(
+      String(selectedAlert.value.id),
+      actionNote.value,
+    )
     selectedAlert.value = updated
-    ui.success("Alerta reconhecido.")
+    ui.success('Alerta reconhecido.')
   } catch (error) {
-    ui.error(alertsStore.errorMessage || String(error || "Erro ao reconhecer alerta."))
+    ui.error(alertsStore.errorMessage || String(error || 'Erro ao reconhecer alerta.'))
   } finally {
     actionPending.value = false
   }
@@ -274,9 +299,9 @@ async function handleResolve() {
   try {
     const updated = await alertsStore.resolveAlert(String(selectedAlert.value.id), actionNote.value)
     selectedAlert.value = updated
-    ui.success("Alerta resolvido.")
+    ui.success('Alerta resolvido.')
   } catch (error) {
-    ui.error(alertsStore.errorMessage || String(error || "Erro ao resolver alerta."))
+    ui.error(alertsStore.errorMessage || String(error || 'Erro ao resolver alerta.'))
   } finally {
     actionPending.value = false
   }
@@ -287,9 +312,9 @@ async function handleSaveGlobalRules() {
   try {
     await alertsStore.updateRules({ ...rulesDraft })
     syncRulesDraft()
-    ui.success("Configurações globais atualizadas.")
+    ui.success('Configurações globais atualizadas.')
   } catch (error) {
-    ui.error(alertsStore.errorMessage || String(error || "Erro ao atualizar configurações."))
+    ui.error(alertsStore.errorMessage || String(error || 'Erro ao atualizar configurações.'))
   } finally {
     savingRules.value = false
   }
@@ -300,7 +325,7 @@ watch(
   () => {
     syncRulesDraft()
   },
-  { immediate: true }
+  { immediate: true },
 )
 
 onMounted(async () => {
@@ -321,11 +346,17 @@ onMounted(async () => {
   <section class="admin-panel alerts-panel" data-testid="alerts-panel">
     <header class="admin-panel__header">
       <h2 class="admin-panel__title">Alertas operacionais</h2>
-      <p class="admin-panel__text">Monitoramento autoritativo dos incidentes materializados pela Operacao e atualizados por realtime.</p>
+      <p class="admin-panel__text">
+        Monitoramento autoritativo dos incidentes materializados pela Operacao e atualizados por
+        realtime.
+      </p>
       <p class="admin-panel__text">{{ scopeDescription }}</p>
     </header>
 
-    <article v-if="alertsStore.errorMessage && !alertsStore.pending && !alertsStore.ready" class="settings-card">
+    <article
+      v-if="alertsStore.errorMessage && !alertsStore.pending && !alertsStore.ready"
+      class="settings-card"
+    >
       <p class="settings-card__text">{{ alertsStore.errorMessage }}</p>
     </article>
 
@@ -350,7 +381,12 @@ onMounted(async () => {
     <!-- Rules Tab -->
     <template v-if="activeTab === 'rules'">
       <section class="alerts-panel__summary-grid" data-testid="alerts-summary">
-        <article v-for="card in overviewCards" :key="card.id" class="metric-card alerts-panel__metric-card" :class="`alerts-panel__metric-card--${card.tone}`">
+        <article
+          v-for="card in overviewCards"
+          :key="card.id"
+          class="metric-card alerts-panel__metric-card"
+          :class="`alerts-panel__metric-card--${card.tone}`"
+        >
           <span class="metric-card__label">{{ card.label }}</span>
           <strong class="metric-card__value">{{ card.value }}</strong>
         </article>
@@ -361,7 +397,10 @@ onMounted(async () => {
         <header class="settings-card__header alerts-panel__section-header">
           <div>
             <h3 class="settings-card__title">Regras dinâmicas</h3>
-            <p class="settings-card__text">Crie e configure regras de alertas personalizadas com diferentes tipos de gatilho, display e interações.</p>
+            <p class="settings-card__text">
+              Crie e configure regras de alertas personalizadas com diferentes tipos de gatilho,
+              display e interações.
+            </p>
           </div>
           <AppPanelButton v-if="canManageRules" variant="primary" @click="openNewRuleEditor">
             + Nova regra
@@ -388,17 +427,38 @@ onMounted(async () => {
         </header>
 
         <div class="alerts-panel__toggle-grid">
-          <AppToggleSwitch v-model="rulesDraft.notifyDashboard" :disabled="!canManageRules || savingRules" label="Publicar na workspace de alertas" />
-          <AppToggleSwitch v-model="rulesDraft.notifyOperationContext" :disabled="!canManageRules || savingRules" label="Invalidar contexto operacional" />
-          <AppToggleSwitch v-model="rulesDraft.notifyExternal" :disabled="!canManageRules || savingRules" label="Preparar entrega externa" />
+          <AppToggleSwitch
+            v-model="rulesDraft.notifyDashboard"
+            :disabled="!canManageRules || savingRules"
+            label="Publicar na workspace de alertas"
+          />
+          <AppToggleSwitch
+            v-model="rulesDraft.notifyOperationContext"
+            :disabled="!canManageRules || savingRules"
+            label="Invalidar contexto operacional"
+          />
+          <AppToggleSwitch
+            v-model="rulesDraft.notifyExternal"
+            :disabled="!canManageRules || savingRules"
+            label="Preparar entrega externa"
+          />
         </div>
 
         <div v-if="canManageRules" class="alerts-panel__actions">
-          <AppPanelButton class="alerts-panel__secondary-btn" variant="secondary" :disabled="savingRules || !rulesDirty" @click="syncRulesDraft">
+          <AppPanelButton
+            class="alerts-panel__secondary-btn"
+            variant="secondary"
+            :disabled="savingRules || !rulesDirty"
+            @click="syncRulesDraft"
+          >
             Descartar
           </AppPanelButton>
-          <AppPanelButton class="alerts-panel__primary-btn" :disabled="savingRules || !rulesDirty" @click="handleSaveGlobalRules">
-            {{ savingRules ? "Salvando..." : "Salvar configurações" }}
+          <AppPanelButton
+            class="alerts-panel__primary-btn"
+            :disabled="savingRules || !rulesDirty"
+            @click="handleSaveGlobalRules"
+          >
+            {{ savingRules ? 'Salvando...' : 'Salvar configurações' }}
           </AppPanelButton>
         </div>
       </article>
@@ -422,21 +482,41 @@ onMounted(async () => {
           <div class="alerts-panel__toolbar">
             <label class="settings-field alerts-panel__filter-field">
               <span>Status</span>
-              <AppSelectField v-model="alertsStore.filters.status" :options="statusOptions" compact @change="applyFilters" />
+              <AppSelectField
+                v-model="alertsStore.filters.status"
+                :options="statusOptions"
+                compact
+                @change="applyFilters"
+              />
             </label>
             <label class="settings-field alerts-panel__filter-field">
               <span>Tipo</span>
-              <AppSelectField v-model="alertsStore.filters.type" :options="typeOptions" compact @change="applyFilters" />
+              <AppSelectField
+                v-model="alertsStore.filters.type"
+                :options="typeOptions"
+                compact
+                @change="applyFilters"
+              />
             </label>
           </div>
         </template>
 
         <template #cell-status="{ row }">
-          <span class="alerts-panel__status-badge" :class="`alerts-panel__status-badge--${row.status}`">{{ statusLabel(row.status) }}</span>
+          <span
+            class="alerts-panel__status-badge"
+            :class="`alerts-panel__status-badge--${row.status}`"
+          >
+            {{ statusLabel(row.status) }}
+          </span>
         </template>
 
         <template #cell-severity="{ row }">
-          <span class="alerts-panel__severity-badge" :class="`alerts-panel__severity-badge--${row.severity}`">{{ severityLabel(row.severity) }}</span>
+          <span
+            class="alerts-panel__severity-badge"
+            :class="`alerts-panel__severity-badge--${row.severity}`"
+          >
+            {{ severityLabel(row.severity) }}
+          </span>
         </template>
 
         <template #cell-storeId="{ row }">
@@ -448,7 +528,13 @@ onMounted(async () => {
         </template>
 
         <template #cell-actions="{ row }">
-          <AppPanelButton class="alerts-panel__table-btn" variant="secondary" @click="openDetail(row)">Detalhes</AppPanelButton>
+          <AppPanelButton
+            class="alerts-panel__table-btn"
+            variant="secondary"
+            @click="openDetail(row)"
+          >
+            Detalhes
+          </AppPanelButton>
         </template>
       </AppEntityGrid>
     </template>
@@ -468,9 +554,12 @@ onMounted(async () => {
             { label: 'Severidade', value: severityLabel(String(selectedAlert?.severity || '')) },
             { label: 'Loja', value: resolveStoreLabel(String(selectedAlert?.storeId || '')) },
             { label: 'Atendimento', value: selectedAlert?.serviceId || '-' },
-            { label: 'Ultimo trigger', value: formatDate(String(selectedAlert?.lastTriggeredAt || '')) }
-          ]
-        }
+            {
+              label: 'Ultimo trigger',
+              value: formatDate(String(selectedAlert?.lastTriggeredAt || '')),
+            },
+          ],
+        },
       ]"
     >
       <div class="alerts-panel__detail-body">
@@ -485,23 +574,42 @@ onMounted(async () => {
           <header class="settings-card__header">
             <h3 class="settings-card__title">Payload tecnico</h3>
           </header>
-          <pre class="alerts-panel__payload">{{ JSON.stringify(selectedAlert?.metadata || {}, null, 2) }}</pre>
+          <pre class="alerts-panel__payload">{{
+            JSON.stringify(selectedAlert?.metadata || {}, null, 2)
+          }}</pre>
         </article>
 
         <article v-if="canManageActions" class="settings-card">
           <header class="settings-card__header">
             <h3 class="settings-card__title">Acoes do alerta</h3>
-            <p class="settings-card__text">Registre uma observacao opcional antes de reconhecer ou resolver manualmente.</p>
+            <p class="settings-card__text">
+              Registre uma observacao opcional antes de reconhecer ou resolver manualmente.
+            </p>
           </header>
           <label class="settings-field">
             <span>Observacao</span>
-            <textarea id="alerts-action-note" v-model="actionNote" class="alerts-panel__note" rows="4" placeholder="Justificativa opcional para acknowledge ou resolucao"></textarea>
+            <textarea
+              id="alerts-action-note"
+              v-model="actionNote"
+              class="alerts-panel__note"
+              rows="4"
+              placeholder="Justificativa opcional para acknowledge ou resolucao"
+            ></textarea>
           </label>
           <div class="alerts-panel__actions">
-            <AppPanelButton class="alerts-panel__secondary-btn" variant="secondary" :disabled="actionPending" @click="handleAcknowledge">
+            <AppPanelButton
+              class="alerts-panel__secondary-btn"
+              variant="secondary"
+              :disabled="actionPending"
+              @click="handleAcknowledge"
+            >
               {{ actionPending ? 'Processando...' : 'Reconhecer' }}
             </AppPanelButton>
-            <AppPanelButton class="alerts-panel__primary-btn" :disabled="actionPending" @click="handleResolve">
+            <AppPanelButton
+              class="alerts-panel__primary-btn"
+              :disabled="actionPending"
+              @click="handleResolve"
+            >
               {{ actionPending ? 'Processando...' : 'Resolver' }}
             </AppPanelButton>
           </div>

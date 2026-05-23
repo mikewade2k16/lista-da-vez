@@ -1,20 +1,20 @@
 <script setup>
-import { onMounted } from "vue";
+import { onMounted } from 'vue'
 
-import TenantsWorkspace from "~/components/tenants/TenantsWorkspace.vue";
-import { useTenantsStore } from "~/stores/tenants";
+import TenantsWorkspace from '~/components/tenants/TenantsWorkspace.vue'
+import { useTenantsStore } from '~/stores/tenants'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "clientes",
-  alias: ["/operacao/clientes"],
-});
+  layout: 'dashboard',
+  workspaceId: 'clientes',
+  alias: ['/operacao/clientes'],
+})
 
-const tenantsStore = useTenantsStore();
+const tenantsStore = useTenantsStore()
 
 onMounted(() => {
-  void tenantsStore.ensureLoaded();
-});
+  void tenantsStore.ensureLoaded()
+})
 </script>
 
 <template>

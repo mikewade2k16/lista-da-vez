@@ -1,152 +1,150 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import OperationWorkspace from "~/features/operation/components/OperationWorkspace.vue";
-import AlertDisplayHost from "~/features/operation/components/AlertDisplayHost.vue";
-import { storeToRefs } from "pinia";
-import { useAuthStore } from "~/stores/auth";
-import { useOperationsStore } from "~/stores/operations";
-import { useAlertsStore } from "~/stores/alerts";
-import { useOperationsRealtime } from "~/composables/useOperationsRealtime";
-import { canUseAllStoresScope } from "~/domain/utils/permissions";
-import { getApiErrorMessage } from "~/utils/api-client";
+import { computed, onMounted, ref, watch } from 'vue'
+import OperationWorkspace from '~/components/operation/OperationWorkspace.vue'
+import AlertDisplayHost from '~/components/operation/AlertDisplayHost.vue'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '~/stores/auth'
+import { useOperationsStore } from '~/stores/operations'
+import { useAlertsStore } from '~/stores/alerts'
+import { useOperationsRealtime } from '~/composables/useOperationsRealtime'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { getApiErrorMessage } from '~/utils/api-client'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "operacao",
-  supportsAllStoresScope: true
-});
+  layout: 'dashboard',
+  workspaceId: 'operacao',
+  supportsAllStoresScope: true,
+})
 
-const auth = useAuthStore();
-const operationsStore = useOperationsStore();
-const alertsStore = useAlertsStore();
-const loadError = ref("");
-const integratedStoreId = ref("");
-const storeOptions = computed(() => auth.storeContext || []);
-const { isAllStoresScope } = storeToRefs(auth);
+const auth = useAuthStore()
+const operationsStore = useOperationsStore()
+const alertsStore = useAlertsStore()
+const loadError = ref('')
+const integratedStoreId = ref('')
+const storeOptions = computed(() => auth.storeContext || [])
 
-const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds));
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
 const scopeMode = computed(() => {
   if (!canSeeIntegrated.value) {
-    return "single";
+    return 'single'
   }
 
-  return isAllStoresScope.value ? "all" : "single";
-});
+  return 'all'
+})
 
-useOperationsRealtime({ scopeMode });
+useOperationsRealtime({ scopeMode })
 
 async function loadOperationView() {
   if (!auth.isAuthenticated) {
-    return;
+    return
   }
 
   try {
-    loadError.value = "";
+    loadError.value = ''
 
-    if (scopeMode.value === "all" && canSeeIntegrated.value) {
-      await operationsStore.refreshOverview();
-      return;
+    if (scopeMode.value === 'all' && canSeeIntegrated.value) {
+      await operationsStore.refreshOverview()
+      return
     }
 
-    operationsStore.clearOverview();
-    await operationsStore.refreshActiveStore();
+    operationsStore.clearOverview()
+    await operationsStore.refreshActiveStore()
   } catch (error) {
-    loadError.value = getApiErrorMessage(error, "Nao foi possivel carregar a operacao.");
+    loadError.value = getApiErrorMessage(error, 'Nao foi possivel carregar a operacao.')
   }
 }
 
 onMounted(async () => {
-  await auth.ensureSession();
-  await loadOperationView();
-  void alertsStore.refreshAlerts();
-});
+  await auth.ensureSession()
+  await loadOperationView()
+  void alertsStore.refreshAlerts()
+})
 
-const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore);
+const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore)
 
 const isRemoteRosterReady = computed(() => {
-  if (scopeMode.value === "all" && canSeeIntegrated.value) {
-    return !overviewPending.value || Boolean(overview.value);
+  if (scopeMode.value === 'all' && canSeeIntegrated.value) {
+    return !overviewPending.value || Boolean(overview.value)
   }
 
   if (!auth.isAuthenticated || loadError.value) {
-    return false;
+    return false
   }
 
-  const activeStoreId = String(auth.activeStoreId || state.value?.activeStoreId || "").trim();
-  const roster = Array.isArray(state.value?.roster) ? state.value.roster : [];
+  const activeStoreId = String(auth.activeStoreId || state.value?.activeStoreId || '').trim()
+  const roster = Array.isArray(state.value?.roster) ? state.value.roster : []
 
   if (!activeStoreId) {
-    return false;
+    return false
   }
 
   if (roster.length === 0) {
-    return true;
+    return true
   }
 
-  return roster.every((consultant) => String(consultant?.storeId || "").trim() === activeStoreId);
-});
+  return roster.every((consultant) => String(consultant?.storeId || '').trim() === activeStoreId)
+})
 
 const pageErrorMessage = computed(() => {
   if (loadError.value) {
-    return loadError.value;
+    return loadError.value
   }
 
-  if (scopeMode.value === "all" && overviewError.value) {
-    return overviewError.value;
+  if (scopeMode.value === 'all' && overviewError.value) {
+    return overviewError.value
   }
 
-  return "";
-});
+  return ''
+})
 
-watch(
-  [scopeMode, () => auth.activeStoreId, () => auth.isAuthenticated],
-  () => {
-    void loadOperationView();
-  }
-);
+watch([scopeMode, () => auth.activeStoreId, () => auth.isAuthenticated], () => {
+  void loadOperationView()
+})
 
 watch(
   storeOptions,
   (stores) => {
-    const normalizedFilter = String(integratedStoreId.value || "").trim();
+    const normalizedFilter = String(integratedStoreId.value || '').trim()
     if (!normalizedFilter) {
-      return;
+      return
     }
 
-    const exists = (stores || []).some((store) => String(store?.id || "").trim() === normalizedFilter);
+    const exists = (stores || []).some(
+      (store) => String(store?.id || '').trim() === normalizedFilter,
+    )
     if (!exists) {
-      integratedStoreId.value = "";
+      integratedStoreId.value = ''
     }
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 watch(scopeMode, (nextMode) => {
-  if (nextMode !== "all") {
-    integratedStoreId.value = "";
+  if (nextMode !== 'all') {
+    integratedStoreId.value = ''
   }
-});
+})
 
 const bannerStoreId = computed(() => {
-  if (scopeMode.value === "single") {
-    return String(auth.activeStoreId || "").trim();
+  if (scopeMode.value === 'single') {
+    return String(auth.activeStoreId || '').trim()
   }
 
-  return String(integratedStoreId.value || "").trim();
-});
+  return String(integratedStoreId.value || '').trim()
+})
 
 watch(
   () => alertsStore.pendingFinishForServiceId,
   (serviceId) => {
     if (serviceId) {
-      operationsStore.openFinishModal(serviceId);
-      alertsStore.pendingFinishForServiceId = null;
+      operationsStore.openFinishModal(serviceId)
+      alertsStore.pendingFinishForServiceId = null
     }
-  }
-);
+  },
+)
 
 function handleIntegratedStoreChange(storeId) {
-  integratedStoreId.value = String(storeId || "").trim();
+  integratedStoreId.value = String(storeId || '').trim()
 }
 </script>
 
@@ -159,7 +157,11 @@ function handleIntegratedStoreChange(storeId) {
     <div v-else-if="!isRemoteRosterReady" class="loading-state">
       <strong class="loading-state__title">Carregando operacao...</strong>
       <p class="workspace__text">
-        {{ scopeMode === "all" ? "Sincronizando a operacao integrada das lojas acessiveis." : "Sincronizando consultores, fila e atendimento da loja ativa." }}
+        {{
+          scopeMode === 'all'
+            ? 'Sincronizando a operacao integrada das lojas acessiveis.'
+            : 'Sincronizando consultores, fila e atendimento da loja ativa.'
+        }}
       </p>
     </div>
     <template v-else>

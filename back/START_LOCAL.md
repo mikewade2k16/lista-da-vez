@@ -22,8 +22,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\postgres\status-local.ps1
 Isso garante:
 
 - PostgreSQL rodando
-- banco `lista_da_vez`
-- usuario `lista_da_vez`
+- banco `omni`
+- usuario `omni`
 - migrations aplicadas
 
 ## 2. Subir a API Go

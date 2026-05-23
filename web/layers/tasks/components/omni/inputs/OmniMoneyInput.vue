@@ -8,8 +8,8 @@ const props = withDefaults(
   {
     modelValue: 0,
     placeholder: 'R$ 0,00',
-    disabled: false
-  }
+    disabled: false,
+  },
 )
 
 const emit = defineEmits<{
@@ -20,7 +20,7 @@ const formatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
   minimumFractionDigits: 2,
-  maximumFractionDigits: 2
+  maximumFractionDigits: 2,
 })
 
 function toNumeric(value: unknown) {
@@ -80,7 +80,7 @@ watch(
     if (next !== digits.value) {
       digits.value = next
     }
-  }
+  },
 )
 
 function updateFromDigits(nextDigits: string) {

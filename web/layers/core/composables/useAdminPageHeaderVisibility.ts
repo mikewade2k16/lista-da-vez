@@ -1,3 +1,5 @@
+import { useOmniTheme } from './useOmniTheme'
+
 function normalizeDisplayToken(value: string) {
   const normalized = String(value ?? '')
     .trim()
@@ -5,13 +7,16 @@ function normalizeDisplayToken(value: string) {
     .replace(/\s*!important$/, '')
     .replace(/;$/, '')
   if (!normalized) return 'block'
-  if (normalized === 'none' || normalized === 'hidden' || normalized === '0' || normalized === 'false') {
+  if (
+    normalized === 'none' ||
+    normalized === 'hidden' ||
+    normalized === '0' ||
+    normalized === 'false'
+  ) {
     return 'none'
   }
   return 'block'
 }
-
-import { useOmniTheme } from './useOmniTheme'
 
 export function useAdminPageHeaderVisibility() {
   const { currentTheme, getThemeValue, initializeFromStorage } = useOmniTheme()
@@ -35,14 +40,12 @@ export function useAdminPageHeaderVisibility() {
     return normalizeDisplayToken(value) !== 'none'
   })
 
-  const showHeader = computed(() =>
-    showEyebrow.value || showTitle.value || showDescription.value
-  )
+  const showHeader = computed(() => showEyebrow.value || showTitle.value || showDescription.value)
 
   return {
     showHeader,
     showEyebrow,
     showTitle,
-    showDescription
+    showDescription,
   }
 }

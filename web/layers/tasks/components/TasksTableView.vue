@@ -19,10 +19,18 @@ const {
 
 <template>
   <div class="tasks-page__table-wrap">
-    <OmniDataTable v-model="tableSelectedRows" :rows="tableRows" :columns="tableColumns" row-key="id"
-      :viewer-user-type="viewerUserType" :loading="pageBootstrapping" :focus-cell="tableFocusCell"
-      empty-text="Nenhuma task encontrada para os filtros atuais." @update:cell="onTableCellUpdate"
-      @row-action="onTableRowAction" />
+    <OmniDataTable
+      v-model="tableSelectedRows"
+      :rows="tableRows"
+      :columns="tableColumns"
+      row-key="id"
+      :viewer-user-type="viewerUserType"
+      :loading="pageBootstrapping"
+      :focus-cell="tableFocusCell"
+      empty-text="Nenhuma task encontrada para os filtros atuais."
+      @update:cell="onTableCellUpdate"
+      @row-action="onTableRowAction"
+    />
     <button class="tasks-page__table-add-row" type="button" @click="createTableTask">
       <UIcon name="i-lucide-plus" class="h-4 w-4" />
       <span>Nova linha</span>

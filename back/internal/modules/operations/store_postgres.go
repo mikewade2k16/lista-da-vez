@@ -488,6 +488,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			product_details,
 			products_seen_json,
 			products_closed_json,
+			coalesce(products_not_found_json, '[]'::jsonb) as products_not_found_json,
 			products_seen_none,
 			visit_reasons_not_informed,
 			customer_sources_not_informed,
@@ -528,6 +529,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		var skippedRaw []byte
 		var seenProductsRaw []byte
 		var closedProductsRaw []byte
+		var notFoundProductsRaw []byte
 		var visitReasonsRaw []byte
 		var visitReasonDetailsRaw []byte
 		var customerSourcesRaw []byte
@@ -558,6 +560,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			&entry.ProductDetails,
 			&seenProductsRaw,
 			&closedProductsRaw,
+			&notFoundProductsRaw,
 			&entry.ProductsSeenNone,
 			&entry.VisitReasonsNotInformed,
 			&entry.CustomerSourcesNotInformed,
@@ -590,6 +593,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		entry.SkippedPeople = decodeSkippedPeople(skippedRaw)
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)
+		entry.ProductsNotFound = decodeProducts(notFoundProductsRaw)
 		entry.VisitReasons = decodeStringSlice(visitReasonsRaw)
 		entry.VisitReasonDetails = decodeStringMap(visitReasonDetailsRaw)
 		entry.CustomerSources = decodeStringSlice(customerSourcesRaw)
@@ -748,6 +752,10 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 		if err != nil {
 			return err
 		}
+		productsNotFoundRaw, err := json.Marshal(item.ProductsNotFound)
+		if err != nil {
+			return err
+		}
 		visitReasonsRaw, err := json.Marshal(item.VisitReasons)
 		if err != nil {
 			return err
@@ -828,14 +836,15 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 				parallel_group_id,
 				parallel_start_index,
 				sibling_service_ids_json,
-				start_offset_ms
+				start_offset_ms,
+				products_not_found_json
 			)
 			values (
 				$1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
 				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, $21::jsonb,
 				$22, $23, $24, $25, $26, $27, $28, $29::jsonb, $30::jsonb, $31::jsonb,
 				$32::jsonb, $33::jsonb, $34::jsonb, $35, $36, $37, $38, $39, $40, $41::jsonb, $42,
-				$43, $44, $45::jsonb, $46
+				$43, $44, $45::jsonb, $46, $47::jsonb
 			)
 			on conflict (store_id, service_id) do nothing;
 		`,
@@ -885,6 +894,7 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			item.ParallelStartIndex,
 			string(siblingServiceIDsRaw),
 			item.StartOffsetMs,
+			string(productsNotFoundRaw),
 		); err != nil {
 			return err
 		}

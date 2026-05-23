@@ -2,13 +2,13 @@
 defineProps({
   rows: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   total: {
     type: Number,
-    default: 0
-  }
-});
+    default: 0,
+  },
+})
 </script>
 
 <template>

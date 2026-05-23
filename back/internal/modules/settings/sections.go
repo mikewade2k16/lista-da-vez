@@ -10,6 +10,11 @@ func splitAppSettings(settings AppSettings) (OperationCoreSettings, AlertSetting
 			ServiceCancelWindowSeconds:         settings.ServiceCancelWindowSeconds,
 			TestModeEnabled:                    settings.TestModeEnabled,
 			AutoFillFinishModal:                settings.AutoFillFinishModal,
+			ScoreWeightConversion:              settings.ScoreWeightConversion,
+			ScoreWeightSoldValue:               settings.ScoreWeightSoldValue,
+			ScoreWeightQuality:                 settings.ScoreWeightQuality,
+			ScoreWeightPa:                      settings.ScoreWeightPa,
+			ScoreWeightQueueDiscipline:         settings.ScoreWeightQueueDiscipline,
 		}, AlertSettings{
 			AlertMinConversionRate: settings.AlertMinConversionRate,
 			AlertMaxQueueJumpRate:  settings.AlertMaxQueueJumpRate,
@@ -28,6 +33,11 @@ func composeAppSettings(core OperationCoreSettings, alerts AlertSettings) AppSet
 		ServiceCancelWindowSeconds:         core.ServiceCancelWindowSeconds,
 		TestModeEnabled:                    core.TestModeEnabled,
 		AutoFillFinishModal:                core.AutoFillFinishModal,
+		ScoreWeightConversion:              core.ScoreWeightConversion,
+		ScoreWeightSoldValue:               core.ScoreWeightSoldValue,
+		ScoreWeightQuality:                 core.ScoreWeightQuality,
+		ScoreWeightPa:                      core.ScoreWeightPa,
+		ScoreWeightQueueDiscipline:         core.ScoreWeightQueueDiscipline,
 		AlertMinConversionRate:             alerts.AlertMinConversionRate,
 		AlertMaxQueueJumpRate:              alerts.AlertMaxQueueJumpRate,
 		AlertMinPaScore:                    alerts.AlertMinPaScore,
@@ -45,6 +55,11 @@ func splitAppSettingsPatch(patch AppSettingsPatch) (OperationCoreSettingsPatch, 
 			ServiceCancelWindowSeconds:         patch.ServiceCancelWindowSeconds,
 			TestModeEnabled:                    patch.TestModeEnabled,
 			AutoFillFinishModal:                patch.AutoFillFinishModal,
+			ScoreWeightConversion:              patch.ScoreWeightConversion,
+			ScoreWeightSoldValue:               patch.ScoreWeightSoldValue,
+			ScoreWeightQuality:                 patch.ScoreWeightQuality,
+			ScoreWeightPa:                      patch.ScoreWeightPa,
+			ScoreWeightQueueDiscipline:         patch.ScoreWeightQueueDiscipline,
 		}, AlertSettingsPatch{
 			AlertMinConversionRate: patch.AlertMinConversionRate,
 			AlertMaxQueueJumpRate:  patch.AlertMaxQueueJumpRate,
@@ -140,6 +155,11 @@ func normalizeOperationCoreSettings(input OperationCoreSettings, fallback Operat
 	fallback.ServiceCancelWindowSeconds = maxInt(input.ServiceCancelWindowSeconds, 0)
 	fallback.TestModeEnabled = input.TestModeEnabled
 	fallback.AutoFillFinishModal = input.AutoFillFinishModal
+	fallback.ScoreWeightConversion = maxFloat(input.ScoreWeightConversion, 0)
+	fallback.ScoreWeightSoldValue = maxFloat(input.ScoreWeightSoldValue, 0)
+	fallback.ScoreWeightQuality = maxFloat(input.ScoreWeightQuality, 0)
+	fallback.ScoreWeightPa = maxFloat(input.ScoreWeightPa, 0)
+	fallback.ScoreWeightQueueDiscipline = maxFloat(input.ScoreWeightQueueDiscipline, 0)
 	return fallback
 }
 
@@ -180,6 +200,21 @@ func applyOperationCoreSettingsPatch(base OperationCoreSettings, patch Operation
 	if patch.AutoFillFinishModal != nil {
 		base.AutoFillFinishModal = *patch.AutoFillFinishModal
 	}
+	if patch.ScoreWeightConversion != nil {
+		base.ScoreWeightConversion = maxFloat(*patch.ScoreWeightConversion, 0)
+	}
+	if patch.ScoreWeightSoldValue != nil {
+		base.ScoreWeightSoldValue = maxFloat(*patch.ScoreWeightSoldValue, 0)
+	}
+	if patch.ScoreWeightQuality != nil {
+		base.ScoreWeightQuality = maxFloat(*patch.ScoreWeightQuality, 0)
+	}
+	if patch.ScoreWeightPa != nil {
+		base.ScoreWeightPa = maxFloat(*patch.ScoreWeightPa, 0)
+	}
+	if patch.ScoreWeightQueueDiscipline != nil {
+		base.ScoreWeightQueueDiscipline = maxFloat(*patch.ScoreWeightQueueDiscipline, 0)
+	}
 
 	return base
 }
@@ -192,6 +227,11 @@ func applyOperationTemplateCoreSettings(base OperationCoreSettings, template Ope
 	next.TimingLongServiceMinutes = template.TimingLongServiceMinutes
 	next.TimingLowSaleAmount = template.TimingLowSaleAmount
 	next.ServiceCancelWindowSeconds = template.ServiceCancelWindowSeconds
+	next.ScoreWeightConversion = template.ScoreWeightConversion
+	next.ScoreWeightSoldValue = template.ScoreWeightSoldValue
+	next.ScoreWeightQuality = template.ScoreWeightQuality
+	next.ScoreWeightPa = template.ScoreWeightPa
+	next.ScoreWeightQueueDiscipline = template.ScoreWeightQueueDiscipline
 	return normalizeOperationCoreSettings(next, next)
 }
 

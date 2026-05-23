@@ -1,82 +1,103 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed } from 'vue'
 import {
   ROADMAP_PHASES,
   ROADMAP_GROUPS,
   type PhaseStatus,
-  type RoadmapPhase
-} from "~/components/roadmap/roadmap-data";
+  type RoadmapPhase,
+} from '~/components/roadmap/roadmap-data'
 
 const STATUS_LABEL: Record<PhaseStatus, string> = {
-  pending: "Pendente",
-  in_progress: "Em andamento",
-  done: "Concluido",
-  blocked: "Bloqueado"
-};
+  pending: 'Pendente',
+  in_progress: 'Em andamento',
+  done: 'Concluido',
+  blocked: 'Bloqueado',
+}
 
 const STATUS_ICON: Record<PhaseStatus, string> = {
-  pending: "schedule",
-  in_progress: "autorenew",
-  done: "check_circle",
-  blocked: "report"
-};
+  pending: 'schedule',
+  in_progress: 'autorenew',
+  done: 'check_circle',
+  blocked: 'report',
+}
 
-const phases = computed<RoadmapPhase[]>(() => ROADMAP_PHASES);
+const phases = computed<RoadmapPhase[]>(() => ROADMAP_PHASES)
 
 const groupedPhases = computed(() => {
-  const DEFAULT_GROUP = "multi-tenant";
-  const groups = ROADMAP_GROUPS.map(g => ({
+  const DEFAULT_GROUP = 'multi-tenant'
+  const groups = ROADMAP_GROUPS.map((g) => ({
     ...g,
-    phases: phases.value.filter(p => (p.group ?? DEFAULT_GROUP) === g.id)
-  }));
-  return groups.filter(g => g.phases.length > 0);
-});
+    phases: phases.value.filter((p) => (p.group ?? DEFAULT_GROUP) === g.id),
+  }))
+  return groups.filter((g) => g.phases.length > 0)
+})
 
 const anchorItems = computed(() => {
-  const items: Array<{ id: string; code: string; title: string; status: PhaseStatus; progress: number; groupLabel?: string }> = [];
-  const DEFAULT_GROUP = "multi-tenant";
-  let lastGroup = "";
+  const items: Array<{
+    id: string
+    code: string
+    title: string
+    status: PhaseStatus
+    progress: number
+    groupLabel?: string
+  }> = []
+  const DEFAULT_GROUP = 'multi-tenant'
+  let lastGroup = ''
   for (const phase of phases.value) {
-    const group = phase.group ?? DEFAULT_GROUP;
+    const group = phase.group ?? DEFAULT_GROUP
     if (group !== lastGroup) {
-      const groupDef = ROADMAP_GROUPS.find(g => g.id === group);
-      if (groupDef) items.push({ id: `group-${group}`, code: "", title: groupDef.label, status: "pending", progress: 0, groupLabel: groupDef.label });
-      lastGroup = group;
+      const groupDef = ROADMAP_GROUPS.find((g) => g.id === group)
+      if (groupDef)
+        items.push({
+          id: `group-${group}`,
+          code: '',
+          title: groupDef.label,
+          status: 'pending',
+          progress: 0,
+          groupLabel: groupDef.label,
+        })
+      lastGroup = group
     }
-    items.push({ id: phase.id, code: phase.code, title: phase.title, status: phase.status, progress: phaseProgress(phase) });
+    items.push({
+      id: phase.id,
+      code: phase.code,
+      title: phase.title,
+      status: phase.status,
+      progress: phaseProgress(phase),
+    })
   }
-  return items;
-});
+  return items
+})
 
 const totals = computed(() => {
-  const counters = { total: 0, pending: 0, in_progress: 0, done: 0, blocked: 0 };
+  const counters = { total: 0, pending: 0, in_progress: 0, done: 0, blocked: 0 }
   for (const phase of phases.value) {
-    counters.total += 1;
-    counters[phase.status] += 1;
+    counters.total += 1
+    counters[phase.status] += 1
   }
-  return counters;
-});
+  return counters
+})
 
 const overallProgress = computed(() => {
-  const totalTasks = phases.value.reduce((acc, phase) => acc + phase.tasks.length, 0);
+  const totalTasks = phases.value.reduce((acc, phase) => acc + phase.tasks.length, 0)
   const doneTasks = phases.value.reduce(
     (acc, phase) => acc + phase.tasks.filter((task) => task.done).length,
-    0
-  );
-  if (totalTasks === 0) return 0;
-  return Math.round((doneTasks / totalTasks) * 100);
-});
+    0,
+  )
+  if (totalTasks === 0) return 0
+  return Math.round((doneTasks / totalTasks) * 100)
+})
 
 function phaseProgress(phase: RoadmapPhase) {
-  if (phase.tasks.length === 0) return 0;
-  const done = phase.tasks.filter((task) => task.done).length;
-  return Math.round((done / phase.tasks.length) * 100);
+  if (phase.tasks.length === 0) return 0
+  const done = phase.tasks.filter((task) => task.done).length
+  return Math.round((done / phase.tasks.length) * 100)
 }
 
 function scrollToPhase(phaseId: string) {
-  const target = document.getElementById(phaseId);
-  if (!target) return;
-  target.scrollIntoView({ behavior: "smooth", block: "start" });
+  const target = document.getElementById(phaseId)
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 </script>
 
@@ -107,7 +128,13 @@ function scrollToPhase(phaseId: string) {
       </div>
 
       <div class="roadmap-progress">
-        <div class="roadmap-progress__bar" role="progressbar" :aria-valuenow="overallProgress" aria-valuemin="0" aria-valuemax="100">
+        <div
+          class="roadmap-progress__bar"
+          role="progressbar"
+          :aria-valuenow="overallProgress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
           <div class="roadmap-progress__fill" :style="{ width: `${overallProgress}%` }"></div>
         </div>
         <span class="roadmap-progress__label">{{ overallProgress }}% das tarefas concluidas</span>
@@ -119,7 +146,9 @@ function scrollToPhase(phaseId: string) {
         <span class="roadmap-anchor-menu__eyebrow">Fases</span>
         <nav class="roadmap-anchor-menu__list">
           <template v-for="item in anchorItems" :key="item.id">
-            <span v-if="item.groupLabel" class="roadmap-anchor-menu__group-label">{{ item.groupLabel }}</span>
+            <span v-if="item.groupLabel" class="roadmap-anchor-menu__group-label">
+              {{ item.groupLabel }}
+            </span>
             <button
               v-else
               type="button"
@@ -139,14 +168,12 @@ function scrollToPhase(phaseId: string) {
       </aside>
 
       <div class="roadmap-timeline-groups">
-        <section
-          v-for="group in groupedPhases"
-          :key="group.id"
-          class="roadmap-group"
-        >
+        <section v-for="group in groupedPhases" :key="group.id" class="roadmap-group">
           <header class="roadmap-group__header">
             <h2 class="roadmap-group__title">{{ group.label }}</h2>
-            <p v-if="group.description" class="roadmap-group__description">{{ group.description }}</p>
+            <p v-if="group.description" class="roadmap-group__description">
+              {{ group.description }}
+            </p>
           </header>
 
           <ol class="roadmap-timeline">
@@ -166,7 +193,10 @@ function scrollToPhase(phaseId: string) {
                   <div class="roadmap-phase__title-row">
                     <span class="roadmap-phase__code">{{ phase.code }}</span>
                     <h3 class="roadmap-phase__title">{{ phase.title }}</h3>
-                    <span class="roadmap-phase__status" :class="`roadmap-phase__status--${phase.status}`">
+                    <span
+                      class="roadmap-phase__status"
+                      :class="`roadmap-phase__status--${phase.status}`"
+                    >
                       {{ STATUS_LABEL[phase.status] }}
                     </span>
                   </div>
@@ -193,7 +223,10 @@ function scrollToPhase(phaseId: string) {
                 </dl>
 
                 <div class="roadmap-phase__progress" aria-hidden="true">
-                  <div class="roadmap-phase__progress-fill" :style="{ width: `${phaseProgress(phase)}%` }"></div>
+                  <div
+                    class="roadmap-phase__progress-fill"
+                    :style="{ width: `${phaseProgress(phase)}%` }"
+                  ></div>
                 </div>
 
                 <ul class="roadmap-phase__tasks">
@@ -218,7 +251,10 @@ function scrollToPhase(phaseId: string) {
                   <span>{{ phase.verifiable }}</span>
                 </p>
 
-                <div v-if="phase.blockers && phase.blockers.length > 0" class="roadmap-phase__blockers">
+                <div
+                  v-if="phase.blockers && phase.blockers.length > 0"
+                  class="roadmap-phase__blockers"
+                >
                   <strong>Bloqueios:</strong>
                   <ul>
                     <li v-for="(blocker, index) in phase.blockers" :key="index">{{ blocker }}</li>
@@ -326,7 +362,11 @@ function scrollToPhase(phaseId: string) {
   color: var(--text-muted);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
 }
 
 .roadmap-anchor-menu__item:hover,
@@ -447,13 +487,17 @@ function scrollToPhase(phaseId: string) {
   border-color: rgba(34, 197, 94, 0.45);
   background: rgba(34, 197, 94, 0.12);
 }
-.roadmap-stat--done .roadmap-stat__value { color: #4ade80; }
+.roadmap-stat--done .roadmap-stat__value {
+  color: #4ade80;
+}
 
 .roadmap-stat--in-progress {
   border-color: rgba(59, 130, 246, 0.45);
   background: rgba(59, 130, 246, 0.12);
 }
-.roadmap-stat--in-progress .roadmap-stat__value { color: #60a5fa; }
+.roadmap-stat--in-progress .roadmap-stat__value {
+  color: #60a5fa;
+}
 
 .roadmap-stat--pending {
   border-color: rgba(148, 163, 184, 0.35);
@@ -464,7 +508,9 @@ function scrollToPhase(phaseId: string) {
   border-color: rgba(239, 68, 68, 0.45);
   background: rgba(239, 68, 68, 0.12);
 }
-.roadmap-stat--blocked .roadmap-stat__value { color: #f87171; }
+.roadmap-stat--blocked .roadmap-stat__value {
+  color: #f87171;
+}
 
 .roadmap-progress {
   display: grid;
@@ -500,7 +546,7 @@ function scrollToPhase(phaseId: string) {
 }
 
 .roadmap-timeline::before {
-  content: "";
+  content: '';
   position: absolute;
   left: 18px;
   top: 18px;
@@ -557,8 +603,12 @@ function scrollToPhase(phaseId: string) {
 }
 
 @keyframes roadmap-spin {
-  from { transform: rotate(0); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .roadmap-phase__card {

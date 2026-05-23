@@ -15,6 +15,7 @@ Estas instrucoes valem para `back/internal/platform/config/`.
 - Nao colocar regra de negocio aqui. Apenas leitura, parsing e validacao leve.
 - Toda nova variavel de ambiente deve aparecer tambem em `back/.env.example` com comentario explicando o impacto.
 - Defaults: producao deve preferir falhar cedo (env obrigatoria) quando o valor nao tiver fallback seguro. Dev/local pode usar valores razoaveis (ex: `APP_ADDR=:8080`).
+- Guards de producao vao no metodo `(Config).Validate()`. Em dev/docker ele e no-op; em `APP_ENV=production` aborta o boot se algum default inseguro escapou. Adicionado em 2026-05-21 (Fase 8.6): aborta com `AUTH_TOKEN_SECRET` em branco ou igual ao default de dev, e com `AUTH_BCRYPT_COST < 10`. `cmd/api/main.go` chama `cfg.Validate()` logo apos `config.Load()` e faz `os.Exit(1)` se falhar.
 
 ## Feature flags ativas
 

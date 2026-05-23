@@ -1,4 +1,12 @@
-export type OmniTableCellType = 'text' | 'number' | 'money' | 'select' | 'multiselect' | 'switch' | 'image' | 'custom'
+export type OmniTableCellType =
+  | 'text'
+  | 'number'
+  | 'money'
+  | 'select'
+  | 'multiselect'
+  | 'switch'
+  | 'image'
+  | 'custom'
 
 export interface OmniSelectOption {
   label: string
@@ -30,10 +38,13 @@ export interface OmniTableColumn {
   align?: 'left' | 'center' | 'right'
   placeholder?: string
   options?: OmniSelectOption[]
-  creatable?: boolean | 'always' | {
-    position?: 'top' | 'bottom'
-    when?: 'empty' | 'always'
-  }
+  creatable?:
+    | boolean
+    | 'always'
+    | {
+        position?: 'top' | 'bottom'
+        when?: 'empty' | 'always'
+      }
   immediate?: boolean
   focusOnCreate?: boolean
   formatter?: (value: unknown, row: Record<string, unknown>) => string
@@ -75,4 +86,3 @@ export interface OmniFilterDefinition {
   customPredicate?: (row: Record<string, unknown>, filterValue: unknown) => boolean
   accessor?: (row: Record<string, unknown>) => unknown
 }
-

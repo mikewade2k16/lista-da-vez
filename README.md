@@ -1,6 +1,6 @@
-# Fila de Atendimento
+# Omni
 
-Repositorio principal do produto, com frontend em Nuxt 4 dentro de `web/` e backend em Go dentro de `back/`.
+Repositorio principal do Omni, com frontend em Nuxt 4 dentro de `web/` e backend em Go dentro de `back/`.
 
 ## Estrutura
 
@@ -120,4 +120,5 @@ O onboarding inicial agora funciona por convite:
 - roadmap multi-tenant: `docs/ROADMAP.md`
 - estado atual do projeto: `docs/ESTADO_ATUAL.md` (visual: `docs/estado-atual.html`)
 - plano de refatoracao em andamento: `docs/PLANO_REFATORACAO.md` (visual: `docs/plano-refatoracao.html`)
+- paralelizacao de agentes (Claude/Codex/Copilot): `docs/PARALELIZACAO.md` + `docs/agents/`
 - planos e atas arquivados: `docs/historico/`

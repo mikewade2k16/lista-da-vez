@@ -1,0 +1,58 @@
+# golangci-lint v2 — Omni backend
+# Baseline conservadora: standard linters + segurança (gosec) + qualidade (gocritic).
+# Mantemos pragmático na Fase 6 — endurecimento gradual depois das Fases 7 e 8.
+
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.24"
+
+linters:
+  default: standard
+  # standard já habilita: errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose       # Body HTTP nao fechado vaza memoria
+    - gocritic        # Coletânea de checks de qualidade
+    - gosec           # Segurança (SQL injection, hardcoded creds, etc)
+    - noctx           # HTTP requests sem context
+    - unconvert       # Conversões de tipo redundantes
+    - whitespace      # Linhas em branco extras
+    # misspell foi removido — gera 41 falsos positivos em pt-BR (clientes, operacional, etc)
+  settings:
+    gocritic:
+      disabled-checks:
+        - hugeParam         # nao vale a pena para o nosso porte
+        - rangeValCopy      # idem
+        - paramTypeCombine  # estilo, nao defeito
+    gosec:
+      excludes:
+        - G104  # Errors unhandled — coberto por errcheck
+        - G404  # math/rand suficiente para IDs nao-criticos
+        - G304  # File inclusion via variable — já validado em camadas anteriores no ERP
+        - G115  # Integer overflow uint→int — falsos positivos em conversões controladas
+
+  exclusions:
+    rules:
+      # Testes podem fazer asserts agressivos
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - bodyclose
+      # Migrations e cmd nao precisam de gosec
+      - path: cmd/
+        linters:
+          - gosec
+      # Arquivos gerados por ferramentas
+      - path: \.(pb|gen)\.go$
+        linters:
+          - all
+      # defer X.Close() é idiom Go aceito — não reportar errcheck
+      - source: 'defer [a-zA-Z][a-zA-Z0-9_]*\.Close\(\)'
+        linters:
+          - errcheck
+
+issues:
+  max-issues-per-linter: 0  # mostrar todos
+  max-same-issues: 0

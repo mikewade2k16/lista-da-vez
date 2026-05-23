@@ -147,9 +147,10 @@ Quando este modulo crescer, a ordem certa e:
 - `middleware.go`
 - `http.go`
 - `store_postgres.go`
-- `store_memory.go`
 - `passwords.go`
 - `errors.go`
+
+> `store_memory.go` foi removido na Fase 3 (2026-05-21). A persistência roda 100% no Postgres; o seed de usuários demo vive na migration `0002_seed_demo_auth.sql`. Se voltar a precisar de um store em memória pra testes, escreva como fake no próprio `_test.go` do consumidor — não exporte uma implementação pública.
 
 ## Auth como host, nao como dependencia obrigatoria do core
 

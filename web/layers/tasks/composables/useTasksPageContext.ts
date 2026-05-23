@@ -7,29 +7,56 @@ import { useCan } from './useCan'
 import { useTaskPresence } from './useTaskPresence'
 import { useTasksRealtime, type TasksRealtimeEvent } from './useTasksRealtime'
 import { useTaskRelations } from './useTaskRelations'
+import { useTaskComments } from './useTaskComments'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+import { sanitizeTaskContentHtml } from '../utils/content'
+import { compactUserLabel } from '../utils/user-label'
 import { clampText as sharedClampText, normalizeText as sharedNormalizeText } from '../utils/text'
 import { useTasksWorkspace } from './useTasksWorkspace'
 import { useTimeTracking } from './useTimeTracking'
-import type { OmniFocusCell, OmniSelectOption, OmniTableCellUpdate, OmniTableColumn } from '../types/omni/collection'
-import type { OrchestratorView, TaskBoardColumn, TaskItem, TaskPriority, TaskProjectItem } from '../types/tasks'
+import type {
+  OmniFocusCell,
+  OmniSelectOption,
+  OmniTableCellUpdate,
+  OmniTableColumn,
+} from '../types/omni/collection'
+import type {
+  OrchestratorView,
+  TaskBoardColumn,
+  TaskItem,
+  TaskPriority,
+  TaskProjectItem,
+  TaskVideoItem,
+} from '../types/tasks'
 
 export const TASKS_PAGE_CONTEXT_KEY: InjectionKey<TasksPageContext> = Symbol('tasksPageContext')
 
 export function useTasksPageContext() {
-	const auth = useAuthStore()
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
   const usersStore = useUsersStore()
   const sessionSimulation = useSessionSimulationStore()
   const tasksWorkspace = useTasksWorkspace()
+  const taskVideoRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const pageLoading = useCoreLoading()
   const canManageBoards = useCan('tasks.boards.manage')
   const canClientView = useCan('tasks.client_view')
-  const { startTracking, pauseTracking, stopTracking, isTracking, isRunning, getElapsedMs, formatElapsed, refreshActiveTracking } = useTimeTracking()
+  const {
+    startTracking,
+    pauseTracking,
+    stopTracking,
+    isTracking,
+    isRunning,
+    getElapsedMs,
+    formatElapsed,
+    refreshActiveTracking,
+  } = useTimeTracking()
 
   const ORDER_STEP = 10
   const PRIORITY_OPTIONS: OmniSelectOption[] = [
     { label: 'Baixa', value: 'baixa', color: 'green' },
     { label: 'Media', value: 'media', color: 'yellow' },
-    { label: 'Alta', value: 'alta', color: 'red' }
+    { label: 'Alta', value: 'alta', color: 'red' },
   ]
   const COLUMN_COLOR_OPTIONS: OmniSelectOption[] = [
     { label: 'Indigo', value: 'indigo' },
@@ -38,15 +65,21 @@ export function useTasksPageContext() {
     { label: 'Amber', value: 'amber' },
     { label: 'Emerald', value: 'emerald' },
     { label: 'Violet', value: 'violet' },
-    { label: 'Rose', value: 'rose' }
+    { label: 'Rose', value: 'rose' },
   ]
-  const DEFAULT_FILTERS = { search: '', responsible: '', clientId: '', type: '', hideArchived: true }
+  const DEFAULT_FILTERS = {
+    search: '',
+    responsible: '',
+    clientId: '',
+    type: '',
+    hideArchived: true,
+  }
   const BOARD_GROUP_OPTIONS: OmniSelectOption[] = [
     { label: 'Status', value: 'status' },
     { label: 'Responsavel', value: 'responsible' },
     { label: 'Cliente', value: 'clientId' },
     { label: 'Tipo', value: 'type' },
-    { label: 'Prioridade', value: 'priority' }
+    { label: 'Prioridade', value: 'priority' },
   ]
   const FIELD_DEFS = [
     { key: 'title', label: 'Titulo' },
@@ -59,7 +92,7 @@ export function useTasksPageContext() {
     { key: 'priority', label: 'Prioridade' },
     { key: 'dueDate', label: 'Entrega' },
     { key: 'createdAt', label: 'Criado em' },
-    { key: 'archived', label: 'Arquivada' }
+    { key: 'archived', label: 'Arquivada' },
   ] as const
 
   const filterSwitchDefs = [
@@ -67,7 +100,7 @@ export function useTasksPageContext() {
     { key: 'responsible', label: 'Responsavel' },
     { key: 'client', label: 'Cliente' },
     { key: 'type', label: 'Tipo' },
-    { key: 'hideArchived', label: 'Ocultar arquivadas' }
+    { key: 'hideArchived', label: 'Ocultar arquivadas' },
   ] as const
 
   const cardFieldSwitchDefs = [
@@ -78,13 +111,13 @@ export function useTasksPageContext() {
     { key: 'type', label: 'Tipo' },
     { key: 'dueDate', label: 'Entrega' },
     { key: 'priority', label: 'Prioridade' },
-    { key: 'createdAt', label: 'Criado em' }
+    { key: 'createdAt', label: 'Criado em' },
   ] as const
 
   const modalModeOptions = [
     { label: 'Modo lado a lado', value: 'side', icon: 'i-lucide-panel-right' },
     { label: 'Modo centralizado', value: 'center', icon: 'i-lucide-square' },
-    { label: 'Pagina inteira', value: 'fullscreen', icon: 'i-lucide-expand' }
+    { label: 'Pagina inteira', value: 'fullscreen', icon: 'i-lucide-expand' },
   ] as const
 
   const viewMode = ref<'board' | 'table'>('board')
@@ -95,19 +128,24 @@ export function useTasksPageContext() {
   const tableSelectedRows = ref<Array<string | number>>([])
   const tableFocusCell = ref<OmniFocusCell | null>(null)
   const activeInlineTaskId = ref('')
-  const creatingCards = reactive<Record<string, {
-    title: string
-    status: string
-    responsible: string
-    involved: string[]
-    clientId: number
-    clientName: string
-    type: string
-    priority: TaskPriority
-    dueDate: string
-    dueEndDate: string
-    firstEnterDone: boolean
-  }>>({})
+  const creatingCards = reactive<
+    Record<
+      string,
+      {
+        title: string
+        status: string
+        responsible: string
+        involved: string[]
+        clientId: number
+        clientName: string
+        type: string
+        priority: TaskPriority
+        dueDate: string
+        dueEndDate: string
+        firstEnterDone: boolean
+      }
+    >
+  >({})
   const draftAddedFields = reactive<Record<string, string[]>>({})
   const draftMenuOpen = reactive<Record<string, boolean>>({})
   const draftFieldOpen = reactive<Record<string, Record<string, boolean>>>({})
@@ -144,25 +182,66 @@ export function useTasksPageContext() {
     filters: TaskProjectItem['filters']
     cardFields: TaskProjectItem['cardFields']
   }>({
-    name: '', description: '', icon: '', statuses: [], columns: [], responsibles: [], types: [],
-    boardGroupBy: 'status', boardVisibleFieldKeys: [], tableVisibleFieldKeys: [], modalVisibleFieldKeys: [], showAggregation: true,
+    name: '',
+    description: '',
+    icon: '',
+    statuses: [],
+    columns: [],
+    responsibles: [],
+    types: [],
+    boardGroupBy: 'status',
+    boardVisibleFieldKeys: [],
+    tableVisibleFieldKeys: [],
+    modalVisibleFieldKeys: [],
+    showAggregation: true,
     defaults: { responsibleFromCreator: true, clientFromSession: true, showCreatedAt: false },
     filters: { search: true, responsible: true, client: true, type: true, hideArchived: true },
-    cardFields: { status: true, responsible: true, involved: true, client: true, type: true, dueDate: true, priority: true, createdAt: false }
+    cardFields: {
+      status: true,
+      responsible: true,
+      involved: true,
+      client: true,
+      type: true,
+      dueDate: true,
+      priority: true,
+      createdAt: false,
+    },
   })
 
   const columnDraft = reactive({ id: '', label: '', color: 'indigo' })
 
   const taskDraft = reactive({
-    id: '', title: '', description: '', contentHtml: '', status: '', responsible: '', involved: [] as string[], clientId: 0, clientName: '', type: '',
-    priority: '' as TaskPriority, dueDate: '', dueEndDate: '', archived: false, createdBy: '', createdAt: ''
+    id: '',
+    title: '',
+    description: '',
+    contentHtml: '',
+    status: '',
+    responsible: '',
+    involved: [] as string[],
+    clientId: 0,
+    clientName: '',
+    type: '',
+    priority: '' as TaskPriority,
+    dueDate: '',
+    dueEndDate: '',
+    archived: false,
+    createdBy: '',
+    createdAt: '',
   })
-  type TaskVideoDraft = { id: string, name: string, size: number, sizeLabel: string, type: string, url: string }
+  type TaskVideoDraft = TaskVideoItem & {
+    sizeLabel: string
+    persisted: boolean
+  }
   const taskVideoDrafts = ref<TaskVideoDraft[]>([])
+  const taskVideoSaving = ref(false)
+  const taskVideoError = ref('')
   const taskDraftHydrating = ref(false)
   const taskDraftSaveQueued = ref(false)
   const taskDraftAutosaveTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+  const taskCardTitleDrafts = reactive<Record<string, string>>({})
+  const taskCardTitleAutosaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const lastSavedTaskDraftSignature = ref('')
+  const lastSavedTaskVideoSignature = ref(taskVideoSignature([]))
   const TASK_AUTOSAVE_DELAY_MS = 650
   let tasksRealtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let tasksRealtimeRefreshing = false
@@ -174,9 +253,17 @@ export function useTasksPageContext() {
   const normalizeText = sharedNormalizeText
   const clampText = sharedClampText
   function normalizeKey(value: unknown) {
-    return normalizeText(value, 120).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+    return normalizeText(value, 120)
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
   }
-  function toNumberId(value: unknown) { const n = Number.parseInt(String(value ?? '').trim(), 10); return Number.isFinite(n) && n > 0 ? n : 0 }
+  function toNumberId(value: unknown) {
+    const n = Number.parseInt(String(value ?? '').trim(), 10)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
   function dateLabel(value: unknown) {
     const iso = normalizeText(value, 24)
     if (!iso) return '-'
@@ -198,20 +285,37 @@ export function useTasksPageContext() {
     }
     return dateStr
   }
-  function priorityLabel(value: TaskPriority) { return value === 'alta' ? 'Alta' : value === 'baixa' ? 'Baixa' : 'Media' }
-  function priorityColor(value: TaskPriority): 'error' | 'warning' | 'neutral' { return value === 'alta' ? 'error' : value === 'media' ? 'warning' : 'neutral' }
+  function priorityLabel(value: TaskPriority) {
+    return value === 'alta' ? 'Alta' : value === 'baixa' ? 'Baixa' : 'Media'
+  }
+  function priorityColor(value: TaskPriority): 'error' | 'warning' | 'neutral' {
+    return value === 'alta' ? 'error' : value === 'media' ? 'warning' : 'neutral'
+  }
   function toPriority(value: unknown): TaskPriority {
     const key = normalizeKey(value)
     return key === 'alta' || key === 'baixa' || key === 'media' ? key : 'media'
   }
-  function columnColorClass(color: string) { return `tasks-page__board-column--${normalizeKey(color) || 'indigo'}` }
-  function clientLabel(clientId: number) { return sessionSimulation.clientOptions.find(c => c.value === clientId)?.label || `Cliente #${clientId}` }
-  function taskSort(a: TaskItem, b: TaskItem) { const d = Number(a.order || 0) - Number(b.order || 0); return d !== 0 ? d : a.createdAt.localeCompare(b.createdAt) }
+  function columnColorClass(color: string) {
+    return `tasks-page__board-column--${normalizeKey(color) || 'indigo'}`
+  }
+  function clientLabel(clientId: number) {
+    return (
+      sessionSimulation.clientOptions.find((c) => c.value === clientId)?.label ||
+      `Cliente #${clientId}`
+    )
+  }
+  function taskSort(a: TaskItem, b: TaskItem) {
+    const d = Number(a.order || 0) - Number(b.order || 0)
+    return d !== 0 ? d : a.createdAt.localeCompare(b.createdAt)
+  }
   function renumber(projectId: string, status: string) {
     tasksWorkspace.tasks.value
-      .filter(t => t.projectId === projectId && normalizeKey(t.status) === normalizeKey(status))
+      .filter((t) => t.projectId === projectId && normalizeKey(t.status) === normalizeKey(status))
       .sort(taskSort)
-      .forEach((t, i) => { t.order = (i + 1) * ORDER_STEP; t.updatedAt = new Date().toISOString() })
+      .forEach((t, i) => {
+        t.order = (i + 1) * ORDER_STEP
+        t.updatedAt = new Date().toISOString()
+      })
   }
   async function moveTask(taskId: string, targetStatus: string, targetIndex?: number) {
     const project = activeProject.value
@@ -219,7 +323,7 @@ export function useTasksPageContext() {
     await tasksWorkspace.moveTaskToStatus(taskId, targetStatus, targetIndex)
   }
 
-  function patchForGroupColumn(column: { groupFieldKey?: string, value?: string, status: string }) {
+  function patchForGroupColumn(column: { groupFieldKey?: string; value?: string; status: string }) {
     const fieldKey = column.groupFieldKey || 'status'
     const value = normalizeText(column.value ?? column.status, 140)
     if (fieldKey === 'responsible') return { responsible: value }
@@ -232,7 +336,11 @@ export function useTasksPageContext() {
     return { status: column.status }
   }
 
-  async function moveTaskToGroupColumn(taskId: string, column: { groupFieldKey?: string, value?: string, status: string }, targetIndex?: number) {
+  async function moveTaskToGroupColumn(
+    taskId: string,
+    column: { groupFieldKey?: string; value?: string; status: string },
+    targetIndex?: number,
+  ) {
     if ((column.groupFieldKey || 'status') === 'status') {
       await moveTask(taskId, column.status, targetIndex)
       return
@@ -241,24 +349,48 @@ export function useTasksPageContext() {
     await tasksWorkspace.updateTask(taskId, patch)
   }
 
-  const viewerUserType = computed<'admin' | 'client'>(() => canClientView.value && !canManageBoards.value ? 'client' : 'admin')
-  const activeProject = computed(() => tasksWorkspace.projects.value.find(p => p.id === tasksWorkspace.activeProjectId.value) ?? null)
-  const projectOptions = computed(() => tasksWorkspace.projects.value.map(p => ({ label: p.name, value: p.id })))
-  const clientOptions = computed(() => sessionSimulation.clientOptions.map(c => ({ label: c.label, value: c.value })))
-  const currentUserName = computed(() => normalizeText(auth.user?.nick || auth.principal?.nick || auth.user?.displayName || auth.user?.name || auth.user?.fullName || auth.user?.email, 120) || (viewerUserType.value === 'client' ? sessionSimulation.activeClientLabel : 'Usuario'))
-  const taskEditorCssVars = computed(() => ({ '--tasks-editor-width': `${taskEditorWidth.value}px` }))
+  const viewerUserType = computed<'admin' | 'client'>(() =>
+    canClientView.value && !canManageBoards.value ? 'client' : 'admin',
+  )
+  const activeProject = computed(
+    () =>
+      tasksWorkspace.projects.value.find((p) => p.id === tasksWorkspace.activeProjectId.value) ??
+      null,
+  )
+  const projectOptions = computed(() =>
+    tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
+  )
+  const clientOptions = computed(() =>
+    sessionSimulation.clientOptions.map((c) => ({ label: c.label, value: c.value })),
+  )
+  const currentUserName = computed(
+    () =>
+      compactUserLabel(
+        {
+          nick: auth.user?.nick || auth.principal?.nick,
+          displayName: auth.user?.displayName || auth.principal?.displayName,
+          name: auth.user?.name,
+          fullName: auth.user?.fullName,
+          email: auth.user?.email || auth.principal?.email,
+        },
+        120,
+      ) || (viewerUserType.value === 'client' ? sessionSimulation.activeClientLabel : 'Usuario'),
+  )
+  const taskEditorCssVars = computed(() => ({
+    '--tasks-editor-width': `${taskEditorWidth.value}px`,
+  }))
   const taskPresence = useTaskPresence({
     enabled: computed(() => taskEditorOpen.value && !!taskDraft.id),
     scope: 'task',
     taskId: computed(() => taskDraft.id),
     boardId: computed(() => activeProject.value?.id || ''),
-    accountId: computed(() => auth.activeTenantId || '')
+    accountId: computed(() => auth.activeTenantId || ''),
   })
   const boardPresence = useTaskPresence({
     enabled: computed(() => !!activeProject.value),
     scope: 'board',
     boardId: computed(() => activeProject.value?.id || ''),
-    accountId: computed(() => auth.activeTenantId || '')
+    accountId: computed(() => auth.activeTenantId || ''),
   })
   const presenceParticipants = taskPresence.participants
   const presenceStatus = taskPresence.status
@@ -271,33 +403,99 @@ export function useTasksPageContext() {
     enabled: computed(() => tasksWorkspace.initialized.value && auth.isAuthenticated),
     scope: 'account',
     accountId: computed(() => auth.activeTenantId || ''),
-    onEvent: handleTasksRealtimeEvent
+    onEvent: handleTasksRealtimeEvent,
   })
   const boardTasksRealtime = useTasksRealtime({
-    enabled: computed(() => tasksWorkspace.initialized.value && auth.isAuthenticated && !!activeProject.value?.id),
+    enabled: computed(
+      () => tasksWorkspace.initialized.value && auth.isAuthenticated && !!activeProject.value?.id,
+    ),
     scope: 'board',
     accountId: computed(() => auth.activeTenantId || ''),
     boardId: computed(() => activeProject.value?.id || ''),
-    onEvent: handleTasksRealtimeEvent
+    onEvent: handleTasksRealtimeEvent,
   })
   const tasksRealtimeStatus = computed(() => {
-    if (boardTasksRealtime.status.value === 'connected' || accountTasksRealtime.status.value === 'connected') return 'connected'
+    if (
+      boardTasksRealtime.status.value === 'connected' ||
+      accountTasksRealtime.status.value === 'connected'
+    )
+      return 'connected'
     if (boardTasksRealtime.status.value !== 'idle') return boardTasksRealtime.status.value
     return accountTasksRealtime.status.value
   })
   const taskRelations = useTaskRelations({
     enabled: computed(() => taskEditorOpen.value && !!taskDraft.id),
     taskId: computed(() => taskDraft.id),
-    realtimeEvent: computed(() => tasksRealtimeLastEvent.value)
+    realtimeEvent: computed(() => tasksRealtimeLastEvent.value),
+  })
+  const taskComments = useTaskComments({
+    enabled: computed(() => taskEditorOpen.value && !!taskDraft.id),
+    taskId: computed(() => taskDraft.id),
+    realtimeEvent: computed(() => tasksRealtimeLastEvent.value),
+    remoteDraft: computed(() => {
+      const value = presenceDraftValue('comments')
+      return value == null ? '' : String(value)
+    }),
+    scheduleDraft: (value) => schedulePresenceDraft('comments', value),
   })
 
-  watch(taskEditorWidth, (width) => {
-    if (import.meta.client) document.documentElement.style.setProperty('--tasks-editor-width', `${width}px`)
-  }, { immediate: true })
+  watch(
+    taskEditorWidth,
+    (width) => {
+      if (import.meta.client)
+        document.documentElement.style.setProperty('--tasks-editor-width', `${width}px`)
+    },
+    { immediate: true },
+  )
 
   function uniqueValues(list: string[]) {
     const seen = new Set<string>()
-    return list.filter((v) => { const k = normalizeKey(v); if (!k || seen.has(k)) return false; seen.add(k); return true })
+    return list.filter((v) => {
+      const k = normalizeKey(v)
+      if (!k || seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+  }
+
+  function normalizeTaskVideoItem(value: unknown): TaskVideoItem | null {
+    if (!value || typeof value !== 'object') return null
+    const raw = value as Record<string, unknown>
+    const url = normalizeText(raw.url, 1000)
+    const id = normalizeText(raw.id, 240) || url
+    if (!id || !url) return null
+    return {
+      id,
+      name: normalizeText(raw.name, 240) || id,
+      url,
+      size: Math.max(0, Number(raw.size || 0) || 0),
+      contentType: normalizeText(raw.contentType, 120),
+      uploadedAt: normalizeText(raw.uploadedAt, 80),
+    }
+  }
+
+  function normalizeTaskVideoItems(value: unknown): TaskVideoItem[] {
+    if (!Array.isArray(value)) return []
+    const seen = new Set<string>()
+    const normalized: TaskVideoItem[] = []
+    value.forEach((item) => {
+      const video = normalizeTaskVideoItem(item)
+      if (!video || seen.has(video.id)) return
+      seen.add(video.id)
+      normalized.push(video)
+    })
+    return normalized
+  }
+
+  function taskVideoSignature(value: unknown) {
+    return JSON.stringify(
+      normalizeTaskVideoItems(value).map((video) => ({
+        id: video.id,
+        url: video.url,
+        size: video.size,
+        contentType: video.contentType,
+      })),
+    )
   }
 
   function selectOptionColor(value: unknown, index = 0) {
@@ -314,16 +512,17 @@ export function useTasksPageContext() {
   }
 
   function optionListFromLabels(labels: string[]): OmniSelectOption[] {
-    return uniqueValues(labels)
-      .map(label => ({ label, value: label }))
+    return uniqueValues(labels).map((label) => ({ label, value: label }))
   }
 
   function sanitizeInvolved(values: unknown, responsible: unknown) {
     const responsibleKey = normalizeKey(responsible)
     const raw = Array.isArray(values) ? values : String(values ?? '').split(',')
-    return uniqueValues(raw
-      .map((person) => normalizeText(person, 120))
-      .filter((person) => person && normalizeKey(person) !== responsibleKey))
+    return uniqueValues(
+      raw
+        .map((person) => normalizeText(person, 120))
+        .filter((person) => person && normalizeKey(person) !== responsibleKey),
+    )
   }
 
   function defaultView(type: 'board' | 'table'): OrchestratorView {
@@ -332,19 +531,40 @@ export function useTasksPageContext() {
       name: type === 'board' ? 'Board' : 'Tabela',
       type,
       groupByFieldKey: 'status',
-      visibleFieldKeys: type === 'board'
-        ? ['responsible', 'involved', 'clientId', 'type', 'priority', 'dueDate']
-        : ['title', 'status', 'responsible', 'involved', 'clientId', 'type', 'priority', 'dueDate', 'archived'],
-      modalVisibleFieldKeys: ['description', 'status', 'responsible', 'involved', 'clientId', 'type', 'priority', 'dueDate', 'archived'],
+      visibleFieldKeys:
+        type === 'board'
+          ? ['responsible', 'involved', 'clientId', 'type', 'priority', 'dueDate']
+          : [
+              'title',
+              'status',
+              'responsible',
+              'involved',
+              'clientId',
+              'type',
+              'priority',
+              'dueDate',
+              'archived',
+            ],
+      modalVisibleFieldKeys: [
+        'description',
+        'status',
+        'responsible',
+        'involved',
+        'clientId',
+        'type',
+        'priority',
+        'dueDate',
+        'archived',
+      ],
       hiddenColumnIds: [],
       showAggregation: true,
       sortBy: 'order',
-      sortDirection: 'asc'
+      sortDirection: 'asc',
     }
   }
 
   function projectView(project: TaskProjectItem | null, type: 'board' | 'table') {
-    return project?.views.find(view => view.type === type) || defaultView(type)
+    return project?.views.find((view) => view.type === type) || defaultView(type)
   }
 
   function updateProjectView(type: 'board' | 'table', patch: Partial<OrchestratorView>) {
@@ -352,18 +572,20 @@ export function useTasksPageContext() {
     if (!project) return
     const currentView = projectView(project, type)
     const views = [
-      ...project.views.filter(view => view.id !== currentView.id),
-      { ...currentView, ...patch }
-    ].sort((a, b) => a.type === b.type ? 0 : a.type === 'board' ? -1 : 1)
+      ...project.views.filter((view) => view.id !== currentView.id),
+      { ...currentView, ...patch },
+    ].sort((a, b) => (a.type === b.type ? 0 : a.type === 'board' ? -1 : 1))
     tasksWorkspace.saveProjectSettings(project.id, { views, activeViewId: currentView.id })
     hydrateProjectDraft(activeProject.value)
   }
 
   function fieldLabel(key: string) {
-    return FIELD_DEFS.find(field => field.key === key)?.label || key
+    return FIELD_DEFS.find((field) => field.key === key)?.label || key
   }
 
-  function fieldSwitchValue(list: string[], key: string) { return list.includes(key) }
+  function fieldSwitchValue(list: string[], key: string) {
+    return list.includes(key)
+  }
 
   function setFieldSwitch(list: string[], key: string, value: boolean) {
     const exists = list.includes(key)
@@ -374,24 +596,38 @@ export function useTasksPageContext() {
   const boardSchemaColumns = computed(() => {
     const project = activeProject.value
     if (!project) return []
-    const columns = Array.isArray(project.columns) && project.columns.length > 0
-      ? project.columns
-      : project.statuses.map((status, index) => ({ id: `column-${normalizeKey(status) || index}`, label: status, color: 'indigo', order: (index + 1) * ORDER_STEP }))
+    const columns =
+      Array.isArray(project.columns) && project.columns.length > 0
+        ? project.columns
+        : project.statuses.map((status, index) => ({
+            id: `column-${normalizeKey(status) || index}`,
+            label: status,
+            color: 'indigo',
+            order: (index + 1) * ORDER_STEP,
+          }))
     return [...columns].sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
   })
   const boardView = computed(() => projectView(activeProject.value, 'board'))
   const tableView = computed(() => projectView(activeProject.value, 'table'))
-  const boardGroupBy = computed(() => normalizeText(boardView.value.groupByFieldKey, 80) || 'status')
-  const statuses = computed(() => uniqueValues(boardSchemaColumns.value.map(column => normalizeText(column.label, 120)).filter(Boolean)))
-  const statusOptions = computed<OmniSelectOption[]>(() => boardSchemaColumns.value.map((column, index) => ({
-    label: column.label,
-    value: column.label,
-    color: selectOptionColor(column.color, index)
-  })))
+  const boardGroupBy = computed(
+    () => normalizeText(boardView.value.groupByFieldKey, 80) || 'status',
+  )
+  const statuses = computed(() =>
+    uniqueValues(
+      boardSchemaColumns.value.map((column) => normalizeText(column.label, 120)).filter(Boolean),
+    ),
+  )
+  const statusOptions = computed<OmniSelectOption[]>(() =>
+    boardSchemaColumns.value.map((column, index) => ({
+      label: column.label,
+      value: column.label,
+      color: selectOptionColor(column.color, index),
+    })),
+  )
   const directoryUserLabels = computed(() => {
     const users = Array.isArray(usersStore.users) ? usersStore.users : []
     return users
-      .map((user: Record<string, unknown>) => normalizeText(user.nick || user.displayName || user.name || user.fullName || user.email, 120))
+      .map((user: Record<string, unknown>) => compactUserLabel(user, 120))
       .filter(Boolean)
   })
   const responsibleOptions = computed<OmniSelectOption[]>(() => {
@@ -401,7 +637,9 @@ export function useTasksPageContext() {
       currentUserName.value,
       ...directoryUserLabels.value,
       ...project.responsibles,
-      ...tasksWorkspace.tasks.value.filter(t => t.projectId === project.id).map(t => t.responsible)
+      ...tasksWorkspace.tasks.value
+        .filter((t) => t.projectId === project.id)
+        .map((t) => t.responsible),
     ])
   })
   const involvedOptions = computed<OmniSelectOption[]>(() => {
@@ -412,37 +650,68 @@ export function useTasksPageContext() {
       ...directoryUserLabels.value,
       ...project.responsibles,
       ...tasksWorkspace.tasks.value
-        .filter(t => t.projectId === project.id)
-        .flatMap(t => [t.responsible, ...(Array.isArray(t.involved) ? t.involved : [])])
+        .filter((t) => t.projectId === project.id)
+        .flatMap((t) => [t.responsible, ...(Array.isArray(t.involved) ? t.involved : [])]),
     ])
   })
   const typeOptions = computed<OmniSelectOption[]>(() => {
     const project = activeProject.value
     if (!project) return []
-    const values = uniqueValues([...project.types, ...tasksWorkspace.tasks.value.filter(t => t.projectId === project.id).map(t => t.type)])
-    return values.map((v, index) => ({ label: v, value: v, color: selectOptionColor(v, index + 4) }))
+    const values = uniqueValues([
+      ...project.types,
+      ...tasksWorkspace.tasks.value.filter((t) => t.projectId === project.id).map((t) => t.type),
+    ])
+    return values.map((v, index) => ({
+      label: v,
+      value: v,
+      color: selectOptionColor(v, index + 4),
+    }))
   })
   function initialsFor(value: unknown) {
     const s = String(value ?? '').trim()
     if (!s) return '?'
     const parts = s.split(/\s+/).filter(Boolean).slice(0, 2)
-    const initials = parts.map(p => p[0]?.toUpperCase() || '').join('')
+    const initials = parts.map((p) => p[0]?.toUpperCase() || '').join('')
     return initials || s[0]!.toUpperCase()
   }
-  const responsibleOptionsAvatar = computed<OmniSelectOption[]>(() => responsibleOptions.value.map((o: OmniSelectOption) => ({ ...o, avatar: { text: initialsFor(o.label) } })))
-  const involvedOptionsAvatar = computed<OmniSelectOption[]>(() => involvedOptions.value.map((o: OmniSelectOption) => ({ ...o, avatar: { text: initialsFor(o.label) } })))
-  const clientOptionsAvatar = computed<OmniSelectOption[]>(() => clientOptions.value.map((o: OmniSelectOption) => ({ ...o, avatar: { text: initialsFor(o.label) } })))
+  const responsibleOptionsAvatar = computed<OmniSelectOption[]>(() =>
+    responsibleOptions.value.map((o: OmniSelectOption) => ({
+      ...o,
+      avatar: { text: initialsFor(o.label) },
+    })),
+  )
+  const involvedOptionsAvatar = computed<OmniSelectOption[]>(() =>
+    involvedOptions.value.map((o: OmniSelectOption) => ({
+      ...o,
+      avatar: { text: initialsFor(o.label) },
+    })),
+  )
+  const clientOptionsAvatar = computed<OmniSelectOption[]>(() =>
+    clientOptions.value.map((o: OmniSelectOption) => ({
+      ...o,
+      avatar: { text: initialsFor(o.label) },
+    })),
+  )
   function involvedOptionsForResponsible(responsible: unknown) {
     const responsibleKey = normalizeKey(responsible)
-    return involvedOptionsAvatar.value.filter((option) => normalizeKey(option.value) !== responsibleKey)
+    return involvedOptionsAvatar.value.filter(
+      (option) => normalizeKey(option.value) !== responsibleKey,
+    )
   }
-  const peopleMentionLabels = computed(() => involvedOptions.value.map(option => String(option.label || option.value)))
-  const clientMentionLabels = computed(() => clientOptions.value.map(option => String(option.label || option.value)))
-  const taskMentionLabels = computed(() => projectTasks.value.map(task => task.title))
+  const peopleMentionLabels = computed(() =>
+    involvedOptions.value.map((option) => String(option.label || option.value)),
+  )
+  const clientMentionLabels = computed(() =>
+    clientOptions.value.map((option) => String(option.label || option.value)),
+  )
+  const taskMentionLabels = computed(() => projectTasks.value.map((task) => task.title))
 
   const projectModel = computed({
     get: () => activeProject.value?.id ?? '',
-    set: (value: string | number | null) => { const id = normalizeText(value, 120); if (id) tasksWorkspace.setActiveProject(id) }
+    set: (value: string | number | null) => {
+      const id = normalizeText(value, 120)
+      if (id) tasksWorkspace.setActiveProject(id)
+    },
   })
 
   const projectTasks = computed(() => {
@@ -462,12 +731,26 @@ export function useTasksPageContext() {
       .filter((t) => {
         if (project.filters.hideArchived && filters.hideArchived && t.archived) return false
         if (project.filters.search && search) {
-          const hay = [t.title, t.description, t.responsible, t.clientName, t.type, t.status].join(' ').toLowerCase()
+          const hay = [t.title, t.description, t.responsible, t.clientName, t.type, t.status]
+            .join(' ')
+            .toLowerCase()
           if (!hay.includes(search)) return false
         }
-        if (project.filters.responsible && fResponsible && normalizeKey(t.responsible) !== normalizeKey(fResponsible)) return false
-        if (project.filters.type && fType && normalizeKey(t.type) !== normalizeKey(fType)) return false
-        if (viewerUserType.value === 'admin' && project.filters.client && fClient > 0 && t.clientId !== fClient) return false
+        if (
+          project.filters.responsible &&
+          fResponsible &&
+          normalizeKey(t.responsible) !== normalizeKey(fResponsible)
+        )
+          return false
+        if (project.filters.type && fType && normalizeKey(t.type) !== normalizeKey(fType))
+          return false
+        if (
+          viewerUserType.value === 'admin' &&
+          project.filters.client &&
+          fClient > 0 &&
+          t.clientId !== fClient
+        )
+          return false
         return true
       })
       .sort(taskSort)
@@ -476,7 +759,7 @@ export function useTasksPageContext() {
   function valueForGroup(task: TaskItem, fieldKey: string) {
     if (fieldKey === 'clientId') return String(task.clientId || '')
     if (fieldKey === 'priority') return task.priority
-    return normalizeText((task as Record<string, unknown>)[fieldKey], 140)
+    return normalizeText((task as unknown as Record<string, unknown>)[fieldKey], 140)
   }
 
   function labelForGroup(fieldKey: string, value: string) {
@@ -488,22 +771,54 @@ export function useTasksPageContext() {
 
   function groupOptionsFor(fieldKey: string) {
     if (fieldKey === 'status') {
-      return boardSchemaColumns.value.map(column => ({
-        id: column.id, label: column.label, value: column.label, color: column.color,
-        order: column.order, editable: true
+      return boardSchemaColumns.value.map((column) => ({
+        id: column.id,
+        label: column.label,
+        value: column.label,
+        color: column.color,
+        order: column.order,
+        editable: true,
       }))
     }
     if (fieldKey === 'responsible') {
-      return responsibleOptions.value.map((option, index) => ({ id: `responsible-${normalizeKey(option.value) || index}`, label: option.label, value: String(option.value), color: 'blue', order: (index + 1) * ORDER_STEP, editable: false }))
+      return responsibleOptions.value.map((option, index) => ({
+        id: `responsible-${normalizeKey(option.value) || index}`,
+        label: option.label,
+        value: String(option.value),
+        color: 'blue',
+        order: (index + 1) * ORDER_STEP,
+        editable: false,
+      }))
     }
     if (fieldKey === 'clientId') {
-      return clientOptions.value.map((option, index) => ({ id: `client-${option.value}`, label: option.label, value: String(option.value), color: 'emerald', order: (index + 1) * ORDER_STEP, editable: false }))
+      return clientOptions.value.map((option, index) => ({
+        id: `client-${option.value}`,
+        label: option.label,
+        value: String(option.value),
+        color: 'emerald',
+        order: (index + 1) * ORDER_STEP,
+        editable: false,
+      }))
     }
     if (fieldKey === 'type') {
-      return typeOptions.value.map((option, index) => ({ id: `type-${normalizeKey(option.value) || index}`, label: option.label, value: String(option.value), color: 'violet', order: (index + 1) * ORDER_STEP, editable: false }))
+      return typeOptions.value.map((option, index) => ({
+        id: `type-${normalizeKey(option.value) || index}`,
+        label: option.label,
+        value: String(option.value),
+        color: 'violet',
+        order: (index + 1) * ORDER_STEP,
+        editable: false,
+      }))
     }
     if (fieldKey === 'priority') {
-      return PRIORITY_OPTIONS.map((option, index) => ({ id: `priority-${option.value}`, label: option.label, value: String(option.value), color: option.value === 'alta' ? 'rose' : option.value === 'media' ? 'amber' : 'slate', order: (index + 1) * ORDER_STEP, editable: false }))
+      return PRIORITY_OPTIONS.map((option, index) => ({
+        id: `priority-${option.value}`,
+        label: option.label,
+        value: String(option.value),
+        color: option.value === 'alta' ? 'rose' : option.value === 'media' ? 'amber' : 'slate',
+        order: (index + 1) * ORDER_STEP,
+        editable: false,
+      }))
     }
     return []
   }
@@ -512,9 +827,11 @@ export function useTasksPageContext() {
     const fieldKey = boardGroupBy.value
     const hidden = new Set(boardView.value.hiddenColumnIds || [])
     const configured = groupOptionsFor(fieldKey)
-    const fromTasks = filteredTasks.value.map(task => valueForGroup(task, fieldKey))
-    const allValues = uniqueValues([...configured.map(group => group.value), ...fromTasks])
-    const configMap = new Map(configured.map(group => [normalizeKey(group.value), group] as const))
+    const fromTasks = filteredTasks.value.map((task) => valueForGroup(task, fieldKey))
+    const allValues = uniqueValues([...configured.map((group) => group.value), ...fromTasks])
+    const configMap = new Map(
+      configured.map((group) => [normalizeKey(group.value), group] as const),
+    )
     const groups = allValues.length > 0 ? allValues : ['']
     return groups
       .map((value, index) => {
@@ -525,42 +842,140 @@ export function useTasksPageContext() {
           label: config?.label || labelForGroup(fieldKey, value),
           status: config?.label || labelForGroup(fieldKey, value),
           value,
-          color: config?.color || COLUMN_COLOR_OPTIONS[index % COLUMN_COLOR_OPTIONS.length]?.value as string || 'indigo',
+          color:
+            config?.color ||
+            (COLUMN_COLOR_OPTIONS[index % COLUMN_COLOR_OPTIONS.length]?.value as string) ||
+            'indigo',
           order: config?.order || (index + 1) * ORDER_STEP,
           editable: Boolean(config?.editable),
           groupFieldKey: fieldKey,
-          tasks: filteredTasks.value.filter(t => normalizeKey(valueForGroup(t, fieldKey)) === normalizeKey(value)).sort(taskSort)
+          tasks: filteredTasks.value
+            .filter((t) => normalizeKey(valueForGroup(t, fieldKey)) === normalizeKey(value))
+            .sort(taskSort),
         }
       })
-      .filter(column => !hidden.has(column.id))
+      .filter((column) => !hidden.has(column.id))
       .sort((a, b) => Number(a.order || 0) - Number(b.order || 0))
   })
-  const tableRows = computed(() => filteredTasks.value.map(t => ({ ...t, clientId: t.clientId })))
+  const tableRows = computed(() => filteredTasks.value.map((t) => ({ ...t, clientId: t.clientId })))
   const projectCount = computed(() => tasksWorkspace.projects.value.length)
 
   const tableColumns = computed<OmniTableColumn[]>(() => {
     const columns: OmniTableColumn[] = [
-      { key: 'title', label: 'Titulo', type: 'text', editable: true, minWidth: 220, focusOnCreate: true },
-      { key: 'description', label: 'Descricao', type: 'text', editable: true, minWidth: 260 },
-      { key: 'status', label: 'Status', type: 'select', editable: true, minWidth: 180, options: statusOptions.value },
-      { key: 'responsible', label: 'Responsavel', type: 'select', editable: true, minWidth: 170, options: responsibleOptions.value },
-      { key: 'involved', label: 'Envolvidos', type: 'text', editable: true, minWidth: 220, formatter: v => Array.isArray(v) ? v.join(', ') : normalizeText(v, 300) },
-      { key: 'clientId', label: 'Cliente', type: 'select', editable: true, minWidth: 170, adminOnly: true, options: clientOptions.value },
-      { key: 'type', label: 'Tipo', type: 'select', editable: true, minWidth: 150, options: typeOptions.value, creatable: true },
-      { key: 'priority', label: 'Prioridade', type: 'select', editable: true, minWidth: 130, options: PRIORITY_OPTIONS },
-      { key: 'dueDate', label: 'Entrega', type: 'text', editable: true, minWidth: 130, formatter: v => dateLabel(v) },
-      { key: 'archived', label: 'Arquivada', type: 'switch', editable: true, minWidth: 120, align: 'center', switchOnValue: true, switchOffValue: false }
-    ]
-    const visible = new Set(tableView.value.visibleFieldKeys.length > 0 ? tableView.value.visibleFieldKeys : defaultView('table').visibleFieldKeys)
-    return [
-      ...columns.filter(column => visible.has(column.key)),
       {
-        key: 'actions', label: 'Acoes', minWidth: 120, align: 'right', actions: [
-          { id: 'edit', icon: 'i-lucide-pencil', label: 'Editar', color: 'neutral', variant: 'ghost' },
-          { id: 'archive', icon: 'i-lucide-archive', label: 'Arquivar', color: 'warning', variant: 'ghost' },
-          { id: 'delete', icon: 'i-lucide-trash-2', label: 'Excluir', color: 'error', variant: 'ghost' }
-        ]
-      }
+        key: 'title',
+        label: 'Titulo',
+        type: 'text',
+        editable: true,
+        minWidth: 220,
+        focusOnCreate: true,
+      },
+      { key: 'description', label: 'Descricao', type: 'text', editable: true, minWidth: 260 },
+      {
+        key: 'status',
+        label: 'Status',
+        type: 'select',
+        editable: true,
+        minWidth: 180,
+        options: statusOptions.value,
+      },
+      {
+        key: 'responsible',
+        label: 'Responsavel',
+        type: 'select',
+        editable: true,
+        minWidth: 170,
+        options: responsibleOptions.value,
+      },
+      {
+        key: 'involved',
+        label: 'Envolvidos',
+        type: 'text',
+        editable: true,
+        minWidth: 220,
+        formatter: (v) => (Array.isArray(v) ? v.join(', ') : normalizeText(v, 300)),
+      },
+      {
+        key: 'clientId',
+        label: 'Cliente',
+        type: 'select',
+        editable: true,
+        minWidth: 170,
+        adminOnly: true,
+        options: clientOptions.value,
+      },
+      {
+        key: 'type',
+        label: 'Tipo',
+        type: 'select',
+        editable: true,
+        minWidth: 150,
+        options: typeOptions.value,
+        creatable: true,
+      },
+      {
+        key: 'priority',
+        label: 'Prioridade',
+        type: 'select',
+        editable: true,
+        minWidth: 130,
+        options: PRIORITY_OPTIONS,
+      },
+      {
+        key: 'dueDate',
+        label: 'Entrega',
+        type: 'text',
+        editable: true,
+        minWidth: 130,
+        formatter: (v) => dateLabel(v),
+      },
+      {
+        key: 'archived',
+        label: 'Arquivada',
+        type: 'switch',
+        editable: true,
+        minWidth: 120,
+        align: 'center',
+        switchOnValue: true,
+        switchOffValue: false,
+      },
+    ]
+    const visible = new Set(
+      tableView.value.visibleFieldKeys.length > 0
+        ? tableView.value.visibleFieldKeys
+        : defaultView('table').visibleFieldKeys,
+    )
+    return [
+      ...columns.filter((column) => visible.has(column.key)),
+      {
+        key: 'actions',
+        label: 'Acoes',
+        minWidth: 120,
+        align: 'right',
+        actions: [
+          {
+            id: 'edit',
+            icon: 'i-lucide-pencil',
+            label: 'Editar',
+            color: 'neutral',
+            variant: 'ghost',
+          },
+          {
+            id: 'archive',
+            icon: 'i-lucide-archive',
+            label: 'Arquivar',
+            color: 'warning',
+            variant: 'ghost',
+          },
+          {
+            id: 'delete',
+            icon: 'i-lucide-trash-2',
+            label: 'Excluir',
+            color: 'error',
+            variant: 'ghost',
+          },
+        ],
+      },
     ]
   })
 
@@ -578,7 +993,11 @@ export function useTasksPageContext() {
       projectSettingsDraft.tableVisibleFieldKeys = []
       projectSettingsDraft.modalVisibleFieldKeys = []
       projectSettingsDraft.showAggregation = true
-      projectSettingsDraft.defaults = { responsibleFromCreator: true, clientFromSession: true, showCreatedAt: false }
+      projectSettingsDraft.defaults = {
+        responsibleFromCreator: true,
+        clientFromSession: true,
+        showCreatedAt: false,
+      }
       return
     }
     const board = projectView(project, 'board')
@@ -591,9 +1010,21 @@ export function useTasksPageContext() {
     projectSettingsDraft.responsibles = [...project.responsibles]
     projectSettingsDraft.types = [...project.types]
     projectSettingsDraft.boardGroupBy = board.groupByFieldKey || 'status'
-    projectSettingsDraft.boardVisibleFieldKeys = [...(board.visibleFieldKeys.length > 0 ? board.visibleFieldKeys : defaultView('board').visibleFieldKeys)]
-    projectSettingsDraft.tableVisibleFieldKeys = [...(table.visibleFieldKeys.length > 0 ? table.visibleFieldKeys : defaultView('table').visibleFieldKeys)]
-    projectSettingsDraft.modalVisibleFieldKeys = [...((board.modalVisibleFieldKeys || []).length > 0 ? board.modalVisibleFieldKeys : defaultView('board').modalVisibleFieldKeys)]
+    projectSettingsDraft.boardVisibleFieldKeys = [
+      ...(board.visibleFieldKeys.length > 0
+        ? board.visibleFieldKeys
+        : defaultView('board').visibleFieldKeys),
+    ]
+    projectSettingsDraft.tableVisibleFieldKeys = [
+      ...(table.visibleFieldKeys.length > 0
+        ? table.visibleFieldKeys
+        : defaultView('table').visibleFieldKeys),
+    ]
+    projectSettingsDraft.modalVisibleFieldKeys = [
+      ...((board.modalVisibleFieldKeys || []).length > 0
+        ? board.modalVisibleFieldKeys
+        : defaultView('board').modalVisibleFieldKeys),
+    ]
     projectSettingsDraft.showAggregation = board.showAggregation !== false
     projectSettingsDraft.filters = { ...project.filters }
     projectSettingsDraft.cardFields = { ...project.cardFields }
@@ -603,10 +1034,45 @@ export function useTasksPageContext() {
   function clearTaskVideoDrafts() {
     if (import.meta.client) {
       taskVideoDrafts.value.forEach((file) => {
-        if (file.url) URL.revokeObjectURL(file.url)
+        if (file.url && file.url.startsWith('blob:')) URL.revokeObjectURL(file.url)
       })
     }
     taskVideoDrafts.value = []
+  }
+
+  function syncTaskVideoDrafts(videos: unknown) {
+    clearTaskVideoDrafts()
+    taskVideoDrafts.value = normalizeTaskVideoItems(videos).map((video) => ({
+      ...video,
+      sizeLabel: formatFileSize(video.size),
+      persisted: true,
+    }))
+    taskVideoError.value = ''
+  }
+
+  function currentTaskVideoItems() {
+    return normalizeTaskVideoItems(taskVideoDrafts.value)
+  }
+
+  function activeTaskAccountId() {
+    return normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80)
+  }
+
+  async function ensureTaskVideoTarget() {
+    const currentTaskId = normalizeText(taskDraft.id, 80)
+    if (currentTaskId) return currentTaskId
+    if (!normalizeText(taskDraft.title, 220)) {
+      taskVideoError.value = 'Adicione um titulo na task antes de enviar videos.'
+      return ''
+    }
+    await saveTask()
+    return normalizeText(taskDraft.id, 80)
+  }
+
+  async function persistTaskVideos(nextVideos: TaskVideoItem[]) {
+    const taskId = normalizeText(taskDraft.id, 80)
+    if (!taskId) return null
+    return tasksWorkspace.updateTask(taskId, { videos: nextVideos })
   }
 
   function formatFileSize(size: number) {
@@ -615,59 +1081,105 @@ export function useTasksPageContext() {
     return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
   }
 
-  function addTaskVideoFiles(files: FileList | File[] | null | undefined) {
+  async function uploadTaskVideoFiles(files: FileList | File[] | null | undefined) {
     if (!files) return
-    const nextFiles = Array.from(files).filter((file) => file.type.startsWith('video/'))
-    if (nextFiles.length === 0) return
-    const timestamp = Date.now()
-    taskVideoDrafts.value = [
-      ...taskVideoDrafts.value,
-      ...nextFiles.map((file, index) => ({
-        id: `${timestamp}-${index}-${normalizeKey(file.name)}`,
-        name: file.name,
-        size: file.size,
-        sizeLabel: formatFileSize(file.size),
-        type: file.type || 'video',
-        url: import.meta.client ? URL.createObjectURL(file) : ''
-      }))
-    ]
+    const nextFiles = Array.from(files).filter(
+      (file) =>
+        file.type.startsWith('video/') || /\.(mp4|mov|webm|ogg|ogv|avi|m4v)$/i.test(file.name),
+    )
+    if (nextFiles.length === 0) {
+      taskVideoError.value = 'Selecione um arquivo de video valido.'
+      return
+    }
+
+    const taskId = await ensureTaskVideoTarget()
+    const accountId = activeTaskAccountId()
+    if (!taskId || !accountId) return
+
+    taskVideoSaving.value = true
+    taskVideoError.value = ''
+    try {
+      let nextVideos = currentTaskVideoItems()
+      for (const file of nextFiles) {
+        const formData = new FormData()
+        formData.append('video', file)
+        const response = await taskVideoRequest(`/v1/tasks/${encodeURIComponent(taskId)}/videos`, {
+          method: 'POST',
+          headers: {
+            'X-Account-Id': accountId,
+          },
+          body: formData,
+        })
+        const uploadedVideo = normalizeTaskVideoItem(response?.video)
+        if (!uploadedVideo) {
+          throw new Error('Upload de video retornou metadata invalida.')
+        }
+        nextVideos = [...nextVideos.filter((item) => item.id !== uploadedVideo.id), uploadedVideo]
+      }
+      const updatedTask = await persistTaskVideos(nextVideos)
+      syncTaskVideoDrafts((updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextVideos)
+    } catch (error) {
+      taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel enviar o video.')
+    } finally {
+      taskVideoSaving.value = false
+    }
   }
 
   function onTaskVideoInput(event: Event) {
     const input = event.target as HTMLInputElement | null
-    addTaskVideoFiles(input?.files)
+    const files = input?.files ? Array.from(input.files) : []
     if (input) input.value = ''
+    void uploadTaskVideoFiles(files)
   }
 
   function onTaskVideoDrop(event: DragEvent) {
-    addTaskVideoFiles(event.dataTransfer?.files)
+    void uploadTaskVideoFiles(event.dataTransfer?.files)
   }
 
-  function removeTaskVideoDraft(fileId: string) {
-    const file = taskVideoDrafts.value.find((item) => item.id === fileId)
-    if (file?.url && import.meta.client) URL.revokeObjectURL(file.url)
-    taskVideoDrafts.value = taskVideoDrafts.value.filter((item) => item.id !== fileId)
+  async function removeTaskVideoDraft(fileId: string) {
+    const previousDrafts = [...taskVideoDrafts.value]
+    const nextDrafts = previousDrafts.filter((item) => item.id !== fileId)
+    taskVideoDrafts.value = nextDrafts
+    const taskId = normalizeText(taskDraft.id, 80)
+    if (!taskId) return
+
+    taskVideoSaving.value = true
+    taskVideoError.value = ''
+    try {
+      const updatedTask = await persistTaskVideos(normalizeTaskVideoItems(nextDrafts))
+      syncTaskVideoDrafts(
+        (updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextDrafts,
+      )
+    } catch (error) {
+      taskVideoDrafts.value = previousDrafts
+      taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel remover o video.')
+    } finally {
+      taskVideoSaving.value = false
+    }
   }
 
   function taskSignatureFromTask(task: TaskItem | null | undefined) {
     if (!task) return ''
+    const prioritySet = Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
     return JSON.stringify({
       id: normalizeText(task.id, 80),
       title: normalizeText(task.title, 220),
       description: normalizeText(task.description, 5000),
-      contentHtml: task.contentHtml || '',
+      contentHtml: sanitizeTaskContentHtml(task.contentHtml),
       status: normalizeText(task.status, 120),
       responsible: normalizeText(task.responsible, 120),
-      involved: [...(task.involved || [])].map((person) => normalizeText(person, 120)).filter(Boolean),
+      involved: [...(task.involved || [])]
+        .map((person) => normalizeText(person, 120))
+        .filter(Boolean),
       clientId: toNumberId(task.clientId),
       clientName: normalizeText(task.clientName, 140),
       type: normalizeText(task.type, 120),
-      priority: normalizeText(task.priority, 30),
-      prioritySet: Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet),
+      priority: prioritySet ? normalizeText(task.priority, 30) : '',
+      prioritySet,
       dueDate: normalizeText(task.dueDate, 30),
       dueEndDate: normalizeText(task.dueEndDate, 30),
       archived: Boolean(task.archived),
-      createdBy: normalizeText(task.createdBy, 120)
+      createdBy: normalizeText(task.createdBy, 120),
     })
   }
 
@@ -692,40 +1204,54 @@ export function useTasksPageContext() {
       order: 0,
       createdBy: taskDraft.createdBy,
       createdAt: taskDraft.createdAt,
-      updatedAt: ''
+      updatedAt: '',
     })
   }
 
-  function syncTaskDraftFromTask(task: TaskItem, options: { markSaved?: boolean, clearVideos?: boolean } = {}) {
+  function syncTaskDraftFromTask(
+    task: TaskItem,
+    options: { markSaved?: boolean; clearVideos?: boolean } = {},
+  ) {
     taskDraftHydrating.value = true
     taskDraft.id = task.id
     taskDraft.title = task.title
     taskDraft.description = task.description
-    taskDraft.contentHtml = task.contentHtml
+    taskDraft.contentHtml = sanitizeTaskContentHtml(task.contentHtml)
     taskDraft.status = task.status
     taskDraft.responsible = task.responsible
     taskDraft.involved = sanitizeInvolved(task.involved, task.responsible)
     taskDraft.clientId = task.clientId
     taskDraft.clientName = task.clientName
     taskDraft.type = task.type
-    taskDraft.priority = (task as TaskItem & { prioritySet?: boolean }).prioritySet ? task.priority : '' as TaskPriority
+    taskDraft.priority = (task as TaskItem & { prioritySet?: boolean }).prioritySet
+      ? task.priority
+      : ('' as TaskPriority)
     taskDraft.dueDate = task.dueDate
     taskDraft.dueEndDate = task.dueEndDate
     taskDraft.archived = task.archived
     taskDraft.createdBy = task.createdBy
     taskDraft.createdAt = task.createdAt
     if (options.clearVideos) clearTaskVideoDrafts()
-    if (options.markSaved !== false) lastSavedTaskDraftSignature.value = taskDraftSignature()
-    nextTick(() => { taskDraftHydrating.value = false })
+    syncTaskVideoDrafts((task as TaskItem & { videos?: TaskVideoItem[] }).videos || [])
+    if (options.markSaved !== false) {
+      lastSavedTaskDraftSignature.value = taskDraftSignature()
+      lastSavedTaskVideoSignature.value = taskVideoSignature(taskVideoDrafts.value)
+    }
+    nextTick(() => {
+      taskDraftHydrating.value = false
+    })
   }
 
   function resetTaskDraft() {
     taskDraftHydrating.value = true
     const project = activeProject.value
     const responsible = project?.defaults.responsibleFromCreator ? currentUserName.value : ''
-    const clientId = viewerUserType.value === 'client'
-      ? sessionSimulation.clientId
-      : (project?.defaults.clientFromSession ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId))
+    const clientId =
+      viewerUserType.value === 'client'
+        ? sessionSimulation.clientId
+        : project?.defaults.clientFromSession
+          ? sessionSimulation.clientId
+          : toNumberId(filters.clientId) || sessionSimulation.clientId
     taskDraft.id = ''
     taskDraft.title = ''
     taskDraft.description = ''
@@ -744,11 +1270,18 @@ export function useTasksPageContext() {
     taskDraft.createdAt = ''
     clearTaskVideoDrafts()
     lastSavedTaskDraftSignature.value = taskDraftSignature()
-    nextTick(() => { taskDraftHydrating.value = false })
+    lastSavedTaskVideoSignature.value = taskVideoSignature(taskVideoDrafts.value)
+    nextTick(() => {
+      taskDraftHydrating.value = false
+    })
   }
 
   function openTaskEditor(task?: TaskItem | null) {
-    if (!task) { resetTaskDraft(); taskEditorOpen.value = true; return }
+    if (!task) {
+      resetTaskDraft()
+      taskEditorOpen.value = true
+      return
+    }
     syncTaskDraftFromTask(task, { clearVideos: true })
     taskEditorOpen.value = true
   }
@@ -759,14 +1292,69 @@ export function useTasksPageContext() {
     taskDraftAutosaveTimer.value = null
   }
 
+  function clearTaskCardTitleAutosaveTimer(taskId?: string) {
+    if (taskId) {
+      const key = normalizeText(taskId, 80)
+      const timer = taskCardTitleAutosaveTimers.get(key)
+      if (timer) clearTimeout(timer)
+      taskCardTitleAutosaveTimers.delete(key)
+      return
+    }
+    for (const timer of taskCardTitleAutosaveTimers.values()) clearTimeout(timer)
+    taskCardTitleAutosaveTimers.clear()
+  }
+
+  function clearTaskCardTitleDraft(taskId: string) {
+    const key = normalizeText(taskId, 80)
+    if (!key || !Object.prototype.hasOwnProperty.call(taskCardTitleDrafts, key)) return
+    delete taskCardTitleDrafts[key]
+  }
+
+  function localTaskCardTitleDraftValue(taskId: string) {
+    const key = normalizeText(taskId, 80)
+    if (!key || !Object.prototype.hasOwnProperty.call(taskCardTitleDrafts, key)) return null
+    return clampText(taskCardTitleDrafts[key], 220) || null
+  }
+
+  function flushTaskCardTitleAutosave(taskId: string) {
+    const key = normalizeText(taskId, 80)
+    if (!key) return
+    clearTaskCardTitleAutosaveTimer(key)
+    const nextTitle = localTaskCardTitleDraftValue(key)
+    clearTaskCardTitleDraft(key)
+    if (!nextTitle) return
+    const task = tasksWorkspace.tasks.value.find((item) => item.id === key)
+    if (!task || nextTitle === task.title) return
+    updateTaskInline(task, { title: nextTitle })
+  }
+
+  function flushPendingTaskCardTitleAutosaves() {
+    for (const taskId of [...taskCardTitleAutosaveTimers.keys()]) flushTaskCardTitleAutosave(taskId)
+  }
+
+  function scheduleTaskCardTitleAutosave(taskId: string) {
+    const key = normalizeText(taskId, 80)
+    if (!key) return
+    clearTaskCardTitleAutosaveTimer(key)
+    taskCardTitleAutosaveTimers.set(
+      key,
+      setTimeout(() => {
+        flushTaskCardTitleAutosave(key)
+      }, TASK_AUTOSAVE_DELAY_MS),
+    )
+  }
+
   function buildTaskDraftPayload(project: TaskProjectItem) {
     const title = normalizeText(taskDraft.title, 220)
     if (!title) return null
-    const clientId = viewerUserType.value === 'client' ? sessionSimulation.clientId : Math.max(1, toNumberId(taskDraft.clientId) || sessionSimulation.clientId)
+    const clientId =
+      viewerUserType.value === 'client'
+        ? sessionSimulation.clientId
+        : Math.max(1, toNumberId(taskDraft.clientId) || sessionSimulation.clientId)
     return {
       title,
       description: normalizeText(taskDraft.description, 5000),
-      contentHtml: taskDraft.contentHtml,
+      contentHtml: sanitizeTaskContentHtml(taskDraft.contentHtml),
       status: normalizeText(taskDraft.status, 120) || project.statuses[0] || 'Raw',
       responsible: normalizeText(taskDraft.responsible, 120),
       involved: sanitizeInvolved(taskDraft.involved, taskDraft.responsible),
@@ -777,7 +1365,7 @@ export function useTasksPageContext() {
       dueDate: normalizeText(taskDraft.dueDate, 30),
       dueEndDate: normalizeText(taskDraft.dueEndDate, 30),
       archived: Boolean(taskDraft.archived),
-      createdBy: normalizeText(taskDraft.createdBy, 120) || currentUserName.value
+      createdBy: normalizeText(taskDraft.createdBy, 120) || currentUserName.value,
     }
   }
 
@@ -786,7 +1374,10 @@ export function useTasksPageContext() {
     if (!taskId) return
     const task = tasksWorkspace.tasks.value.find((item) => item.id === taskId)
     if (!task) return
-    const clientId = viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(taskDraft.clientId) || task.clientId || sessionSimulation.clientId)
+    const clientId =
+      viewerUserType.value === 'client'
+        ? sessionSimulation.clientId
+        : toNumberId(taskDraft.clientId) || task.clientId || sessionSimulation.clientId
     task.title = normalizeText(taskDraft.title, 220)
     task.description = normalizeText(taskDraft.description, 5000)
     task.contentHtml = taskDraft.contentHtml
@@ -809,7 +1400,9 @@ export function useTasksPageContext() {
     if (!taskEditorOpen.value || taskDraftHydrating.value) return
     if (taskDraftSignature() === lastSavedTaskDraftSignature.value) return
     clearTaskDraftAutosaveTimer()
-    taskDraftAutosaveTimer.value = setTimeout(() => { void flushTaskDraftAutosave() }, TASK_AUTOSAVE_DELAY_MS)
+    taskDraftAutosaveTimer.value = setTimeout(() => {
+      void flushTaskDraftAutosave()
+    }, TASK_AUTOSAVE_DELAY_MS)
   }
 
   async function flushTaskDraftAutosave() {
@@ -832,7 +1425,7 @@ export function useTasksPageContext() {
     const type = normalizeText(taskDraft.type, 120)
     const nextTypes = [...project.types]
     let changed = false
-    if (type && !nextTypes.some(v => normalizeKey(v) === normalizeKey(type))) {
+    if (type && !nextTypes.some((v) => normalizeKey(v) === normalizeKey(type))) {
       nextTypes.push(type)
       changed = true
     }
@@ -891,14 +1484,22 @@ export function useTasksPageContext() {
   }
 
   function columnsFromStatusDraft() {
-    const currentColumns = new Map(projectSettingsDraft.columns.map(column => [normalizeKey(column.label), column] as const))
-    return uniqueValues(projectSettingsDraft.statuses)
-      .map((label, index) => {
-        const existing = currentColumns.get(normalizeKey(label))
-        return existing
-          ? { ...existing, label, order: (index + 1) * ORDER_STEP }
-          : { id: `column-${normalizeKey(label) || index}`, label, color: COLUMN_COLOR_OPTIONS[index % COLUMN_COLOR_OPTIONS.length]?.value as string || 'indigo', order: (index + 1) * ORDER_STEP }
-      })
+    const currentColumns = new Map(
+      projectSettingsDraft.columns.map((column) => [normalizeKey(column.label), column] as const),
+    )
+    return uniqueValues(projectSettingsDraft.statuses).map((label, index) => {
+      const existing = currentColumns.get(normalizeKey(label))
+      return existing
+        ? { ...existing, label, order: (index + 1) * ORDER_STEP }
+        : {
+            id: `column-${normalizeKey(label) || index}`,
+            label,
+            color:
+              (COLUMN_COLOR_OPTIONS[index % COLUMN_COLOR_OPTIONS.length]?.value as string) ||
+              'indigo',
+            order: (index + 1) * ORDER_STEP,
+          }
+    })
   }
 
   async function saveProjectSettings() {
@@ -913,13 +1514,17 @@ export function useTasksPageContext() {
         groupByFieldKey: normalizeText(projectSettingsDraft.boardGroupBy, 80) || 'status',
         visibleFieldKeys: [...projectSettingsDraft.boardVisibleFieldKeys],
         modalVisibleFieldKeys: [...projectSettingsDraft.modalVisibleFieldKeys],
-        showAggregation: Boolean(projectSettingsDraft.showAggregation)
+        showAggregation: Boolean(projectSettingsDraft.showAggregation),
       },
       {
         ...currentTableView,
-        visibleFieldKeys: ['title', ...projectSettingsDraft.tableVisibleFieldKeys.filter(key => key !== 'title')]
-      }
+        visibleFieldKeys: [
+          'title',
+          ...projectSettingsDraft.tableVisibleFieldKeys.filter((key) => key !== 'title'),
+        ],
+      },
     ]
+        lastSavedTaskVideoSignature.value = taskVideoSignature(taskVideoDrafts.value)
     try {
       const updated = await tasksWorkspace.saveProjectSettings(project.id, {
         name: normalizeText(projectSettingsDraft.name, 140) || project.name,
@@ -931,7 +1536,7 @@ export function useTasksPageContext() {
         views,
         filters: { ...projectSettingsDraft.filters },
         cardFields: { ...projectSettingsDraft.cardFields },
-        defaults: { ...projectSettingsDraft.defaults }
+        defaults: { ...projectSettingsDraft.defaults },
       })
       if (updated) {
         hydrateProjectDraft(updated)
@@ -980,7 +1585,7 @@ export function useTasksPageContext() {
     if (!project || !columnDraft.id) return
     await tasksWorkspace.updateColumn(project.id, columnDraft.id, {
       label: normalizeText(columnDraft.label, 120),
-      color: normalizeText(columnDraft.color, 40)
+      color: normalizeText(columnDraft.color, 40),
     })
     hydrateProjectDraft(activeProject.value)
     closeColumnSettings()
@@ -989,7 +1594,13 @@ export function useTasksPageContext() {
   async function deleteColumn() {
     const project = activeProject.value
     if (!project || !columnDraft.id || boardSchemaColumns.value.length <= 1) return
-    if (import.meta.client && !window.confirm(`Excluir a coluna "${columnDraft.label}"? Os itens vao para a primeira coluna disponivel.`)) return
+    if (
+      import.meta.client &&
+      !window.confirm(
+        `Excluir a coluna "${columnDraft.label}"? Os itens vao para a primeira coluna disponivel.`,
+      )
+    )
+      return
     await tasksWorkspace.deleteColumn(project.id, columnDraft.id)
     hydrateProjectDraft(activeProject.value)
     closeColumnSettings()
@@ -998,14 +1609,19 @@ export function useTasksPageContext() {
   async function createColumn() {
     const project = activeProject.value
     if (!project || boardGroupBy.value !== 'status') return
-    const created = await tasksWorkspace.createColumn(project.id, `Nova coluna ${boardSchemaColumns.value.length + 1}`)
+    const created = await tasksWorkspace.createColumn(
+      project.id,
+      `Nova coluna ${boardSchemaColumns.value.length + 1}`,
+    )
     if (created) hydrateProjectDraft(activeProject.value)
   }
 
   function focusDraftCard(columnId: string) {
     if (!import.meta.client) return
     nextTick(() => {
-      const input = document.querySelector(`[data-draft-card="${columnId}"] input, input[data-draft-card="${columnId}"]`) as HTMLInputElement | null
+      const input = document.querySelector(
+        `[data-draft-card="${columnId}"] input, input[data-draft-card="${columnId}"]`,
+      ) as HTMLInputElement | null
       input?.focus()
       input?.select()
     })
@@ -1014,20 +1630,30 @@ export function useTasksPageContext() {
   function focusBoardTitle(taskId: string) {
     if (!import.meta.client) return
     nextTick(() => {
-      const input = document.querySelector(`[data-task-title-input="${taskId}"] input, input[data-task-title-input="${taskId}"]`) as HTMLInputElement | null
+      const input = document.querySelector(
+        `[data-task-title-input="${taskId}"] input, input[data-task-title-input="${taskId}"]`,
+      ) as HTMLInputElement | null
       input?.focus()
       input?.select()
     })
   }
 
-  function defaultsForColumn(column: { id: string, status: string, groupFieldKey?: string, value?: string }) {
+  function defaultsForColumn(column: {
+    id: string
+    status: string
+    groupFieldKey?: string
+    value?: string
+  }) {
     const project = activeProject.value
-    const clientId = viewerUserType.value === 'client'
-      ? sessionSimulation.clientId
-      : (project?.defaults.clientFromSession ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId))
+    const clientId =
+      viewerUserType.value === 'client'
+        ? sessionSimulation.clientId
+        : project?.defaults.clientFromSession
+          ? sessionSimulation.clientId
+          : toNumberId(filters.clientId) || sessionSimulation.clientId
     const responsible = project?.defaults.responsibleFromCreator ? currentUserName.value : ''
     const base = {
-      status: boardGroupBy.value === 'status' ? column.status : (statuses.value[0] || 'Raw'),
+      status: boardGroupBy.value === 'status' ? column.status : statuses.value[0] || 'Raw',
       responsible,
       involved: [],
       clientId,
@@ -1035,12 +1661,17 @@ export function useTasksPageContext() {
       type: '',
       priority: '' as unknown as TaskPriority,
       dueDate: '',
-      dueEndDate: ''
+      dueEndDate: '',
     }
     return { ...base, ...patchForGroupColumn(column) }
   }
 
-  function beginCreateTaskInColumn(column: { id: string, status: string, groupFieldKey?: string, value?: string }) {
+  function beginCreateTaskInColumn(column: {
+    id: string
+    status: string
+    groupFieldKey?: string
+    value?: string
+  }) {
     const project = activeProject.value
     if (!project) return
     creatingCards[column.id] = { title: '', firstEnterDone: false, ...defaultsForColumn(column) }
@@ -1059,7 +1690,10 @@ export function useTasksPageContext() {
     delete draftFieldOpen[columnId]
   }
 
-  function onDraftCardFocusOut(event: FocusEvent, column: { id: string, status: string, groupFieldKey?: string, value?: string }) {
+  function onDraftCardFocusOut(
+    event: FocusEvent,
+    column: { id: string; status: string; groupFieldKey?: string; value?: string },
+  ) {
     const current = event.currentTarget as HTMLElement | null
     const next = event.relatedTarget as Node | null
     if (current && next && current.contains(next)) return
@@ -1073,7 +1707,11 @@ export function useTasksPageContext() {
     }, 200)
   }
 
-  async function commitDraftCard(column: { id: string, status: string, groupFieldKey?: string, value?: string }, useDefaultTitle = true, focusAfter = false) {
+  async function commitDraftCard(
+    column: { id: string; status: string; groupFieldKey?: string; value?: string },
+    useDefaultTitle = true,
+    focusAfter = false,
+  ) {
     const project = activeProject.value
     if (!project) return
     const draft = creatingCards[column.id]
@@ -1094,7 +1732,7 @@ export function useTasksPageContext() {
       dueDate: draft.dueDate,
       dueEndDate: draft.dueEndDate,
       createdBy: currentUserName.value,
-      ...patchForGroupColumn(column)
+      ...patchForGroupColumn(column),
     })
     delete creatingCards[column.id]
     delete draftAddedFields[column.id]
@@ -1131,20 +1769,54 @@ export function useTasksPageContext() {
     return false
   }
 
-  function draftAvailableFields(columnId: string): Array<{ key: string, label: string, icon: string }> {
+  function draftAvailableFields(
+    columnId: string,
+  ): Array<{ key: string; label: string; icon: string }> {
     const project = activeProject.value
     if (!project) return []
     const cf = project.cardFields
     const vf = boardView.value.visibleFieldKeys
-    const all: Array<{ key: string, label: string, icon: string, enabled: boolean }> = [
-      { key: 'type', label: 'Tipo', icon: 'i-lucide-hash', enabled: !!cf.type && vf.includes('type') },
-      { key: 'clientId', label: 'Cliente', icon: 'i-lucide-circle-dot', enabled: viewerUserType.value === 'admin' && !!cf.client && vf.includes('clientId') },
-      { key: 'dueDate', label: 'Prazo', icon: 'i-lucide-calendar-days', enabled: !!cf.dueDate && vf.includes('dueDate') },
-      { key: 'priority', label: 'Prioridade', icon: 'i-lucide-flag', enabled: !!cf.priority && vf.includes('priority') },
-      { key: 'responsible', label: 'Responsável', icon: 'i-lucide-user', enabled: !!cf.responsible && vf.includes('responsible') },
-      { key: 'involved', label: 'Envolvidos', icon: 'i-lucide-users', enabled: !!cf.involved && vf.includes('involved') },
+    const all: Array<{ key: string; label: string; icon: string; enabled: boolean }> = [
+      {
+        key: 'type',
+        label: 'Tipo',
+        icon: 'i-lucide-hash',
+        enabled: !!cf.type && vf.includes('type'),
+      },
+      {
+        key: 'clientId',
+        label: 'Cliente',
+        icon: 'i-lucide-circle-dot',
+        enabled: viewerUserType.value === 'admin' && !!cf.client && vf.includes('clientId'),
+      },
+      {
+        key: 'dueDate',
+        label: 'Prazo',
+        icon: 'i-lucide-calendar-days',
+        enabled: !!cf.dueDate && vf.includes('dueDate'),
+      },
+      {
+        key: 'priority',
+        label: 'Prioridade',
+        icon: 'i-lucide-flag',
+        enabled: !!cf.priority && vf.includes('priority'),
+      },
+      {
+        key: 'responsible',
+        label: 'Responsável',
+        icon: 'i-lucide-user',
+        enabled: !!cf.responsible && vf.includes('responsible'),
+      },
+      {
+        key: 'involved',
+        label: 'Envolvidos',
+        icon: 'i-lucide-users',
+        enabled: !!cf.involved && vf.includes('involved'),
+      },
     ]
-    return all.filter(f => f.enabled && !isDraftFieldVisible(columnId, f.key)).map(({ key, label, icon }) => ({ key, label, icon }))
+    return all
+      .filter((f) => f.enabled && !isDraftFieldVisible(columnId, f.key))
+      .map(({ key, label, icon }) => ({ key, label, icon }))
   }
 
   function addDraftField(columnId: string, fieldKey: string) {
@@ -1167,7 +1839,9 @@ export function useTasksPageContext() {
       el?.focus()
     })
   }
-  function closeSearch() { if (!filters.search) searchOpen.value = false }
+  function closeSearch() {
+    if (!filters.search) searchOpen.value = false
+  }
   function toggleSearch() {
     if (searchOpen.value || filters.search) {
       if (filters.search) filters.search = ''
@@ -1184,42 +1858,88 @@ export function useTasksPageContext() {
   const clientInnerOpen = ref(false)
   const typeInnerOpen = ref(false)
   watch(responsibleOpen, (open: boolean) => {
-    if (open) nextTick(() => { responsibleInnerOpen.value = true })
+    if (open)
+      nextTick(() => {
+        responsibleInnerOpen.value = true
+      })
     else responsibleInnerOpen.value = false
   })
   watch(clientOpen, (open: boolean) => {
-    if (open) nextTick(() => { clientInnerOpen.value = true })
+    if (open)
+      nextTick(() => {
+        clientInnerOpen.value = true
+      })
     else clientInnerOpen.value = false
   })
   watch(typeOpen, (open: boolean) => {
-    if (open) nextTick(() => { typeInnerOpen.value = true })
+    if (open)
+      nextTick(() => {
+        typeInnerOpen.value = true
+      })
     else typeInnerOpen.value = false
   })
   function clearFilters() {
     Object.assign(filters, DEFAULT_FILTERS)
     searchOpen.value = false
   }
-  function labelFor(options: { label?: string, value: string | number }[], value: string | number) {
-    const found = options.find(o => String(o.value) === String(value))
+  function labelFor(options: { label?: string; value: string | number }[], value: string | number) {
+    const found = options.find((o) => String(o.value) === String(value))
     return String(found?.label ?? value)
   }
   const activeFilterChips = computed(() => {
-    const chips: Array<{ key: string, label: string, value: string, onRemove: () => void }> = []
-    if (filters.search) chips.push({ key: 'search', label: 'Busca', value: filters.search, onRemove: () => { filters.search = ''; searchOpen.value = false } })
-    if (filters.responsible) chips.push({ key: 'responsible', label: 'Responsavel', value: labelFor(responsibleOptions.value, filters.responsible), onRemove: () => { filters.responsible = '' } })
-    if (filters.clientId) chips.push({ key: 'client', label: 'Cliente', value: labelFor(clientOptions.value, filters.clientId as any), onRemove: () => { filters.clientId = '' } })
-    if (filters.type) chips.push({ key: 'type', label: 'Tipo', value: labelFor(typeOptions.value, filters.type), onRemove: () => { filters.type = '' } })
+    const chips: Array<{ key: string; label: string; value: string; onRemove: () => void }> = []
+    if (filters.search)
+      chips.push({
+        key: 'search',
+        label: 'Busca',
+        value: filters.search,
+        onRemove: () => {
+          filters.search = ''
+          searchOpen.value = false
+        },
+      })
+    if (filters.responsible)
+      chips.push({
+        key: 'responsible',
+        label: 'Responsavel',
+        value: labelFor(responsibleOptions.value, filters.responsible),
+        onRemove: () => {
+          filters.responsible = ''
+        },
+      })
+    if (filters.clientId)
+      chips.push({
+        key: 'client',
+        label: 'Cliente',
+        value: labelFor(clientOptions.value, filters.clientId as any),
+        onRemove: () => {
+          filters.clientId = ''
+        },
+      })
+    if (filters.type)
+      chips.push({
+        key: 'type',
+        label: 'Tipo',
+        value: labelFor(typeOptions.value, filters.type),
+        onRemove: () => {
+          filters.type = ''
+        },
+      })
     return chips
   })
-  const hasAnyActiveFilter = computed(() => activeFilterChips.value.length > 0 || !filters.hideArchived)
-  function toggleArchive(task: TaskItem) { tasksWorkspace.toggleArchiveTask(task.id) }
+  const hasAnyActiveFilter = computed(
+    () => activeFilterChips.value.length > 0 || !filters.hideArchived,
+  )
+  function toggleArchive(task: TaskItem) {
+    tasksWorkspace.toggleArchiveTask(task.id)
+  }
   function deleteTask(task: TaskItem) {
     if (import.meta.client && !window.confirm(`Excluir task "${task.title}"?`)) return
     tasksWorkspace.removeTask(task.id)
     if (taskEditorOpen.value && taskDraft.id === task.id) closeTaskEditor()
   }
   function deleteCurrentDraftTask() {
-    const task = tasksWorkspace.tasks.value.find(t => t.id === taskDraft.id)
+    const task = tasksWorkspace.tasks.value.find((t) => t.id === taskDraft.id)
     if (task) deleteTask(task)
   }
 
@@ -1230,10 +1950,21 @@ export function useTasksPageContext() {
     event.dataTransfer?.setData('text/plain', task.id)
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
   }
-  function onDragEnd() { draggingTaskId.value = ''; dragKind.value = ''; dropTarget.columnId = ''; dropTarget.index = -1 }
-  async function onDropColumn(column: { id?: string, groupFieldKey?: string, value?: string, status: string }) {
+  function onDragEnd() {
+    draggingTaskId.value = ''
+    dragKind.value = ''
+    dropTarget.columnId = ''
+    dropTarget.index = -1
+  }
+  async function onDropColumn(column: {
+    id?: string
+    groupFieldKey?: string
+    value?: string
+    status: string
+  }) {
     try {
-      if (dragKind.value === 'task' && draggingTaskId.value) await moveTaskToGroupColumn(draggingTaskId.value, column, 0)
+      if (dragKind.value === 'task' && draggingTaskId.value)
+        await moveTaskToGroupColumn(draggingTaskId.value, column, 0)
     } catch (error) {
       console.error('Nao foi possivel mover a task.', error)
     } finally {
@@ -1243,9 +1974,13 @@ export function useTasksPageContext() {
       dropTarget.index = -1
     }
   }
-  async function onDropCard(column: { id?: string, groupFieldKey?: string, value?: string, status: string }, index: number) {
+  async function onDropCard(
+    column: { id?: string; groupFieldKey?: string; value?: string; status: string },
+    index: number,
+  ) {
     try {
-      if (dragKind.value === 'task' && draggingTaskId.value) await moveTaskToGroupColumn(draggingTaskId.value, column, index)
+      if (dragKind.value === 'task' && draggingTaskId.value)
+        await moveTaskToGroupColumn(draggingTaskId.value, column, index)
     } catch (error) {
       console.error('Nao foi possivel mover a task.', error)
     } finally {
@@ -1268,10 +2003,19 @@ export function useTasksPageContext() {
     event.dataTransfer?.setData('text/plain', column.id)
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
   }
-  function onColumnDragEnd() { draggingColumnId.value = ''; dragKind.value = '' }
+  function onColumnDragEnd() {
+    draggingColumnId.value = ''
+    dragKind.value = ''
+  }
   function onDropColumnHeader(targetColumn: TaskBoardColumn, targetIndex: number) {
     const project = activeProject.value
-    if (dragKind.value !== 'column' || !project || !draggingColumnId.value || draggingColumnId.value === targetColumn.id) return
+    if (
+      dragKind.value !== 'column' ||
+      !project ||
+      !draggingColumnId.value ||
+      draggingColumnId.value === targetColumn.id
+    )
+      return
     tasksWorkspace.moveColumn(project.id, draggingColumnId.value, targetIndex)
     hydrateProjectDraft(activeProject.value)
     draggingColumnId.value = ''
@@ -1283,7 +2027,10 @@ export function useTasksPageContext() {
     if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'responsible')) {
       const responsible = normalizeText(normalizedPatch.responsible, 120)
       normalizedPatch.responsible = responsible
-      normalizedPatch.involved = sanitizeInvolved(normalizedPatch.involved ?? task.involved, responsible)
+      normalizedPatch.involved = sanitizeInvolved(
+        normalizedPatch.involved ?? task.involved,
+        responsible,
+      )
     } else if (Object.prototype.hasOwnProperty.call(normalizedPatch, 'involved')) {
       normalizedPatch.involved = sanitizeInvolved(normalizedPatch.involved, task.responsible)
     }
@@ -1292,8 +2039,10 @@ export function useTasksPageContext() {
     })
     const project = activeProject.value
     if (!project) return
-    const type = Object.prototype.hasOwnProperty.call(normalizedPatch, 'type') ? normalizeText(normalizedPatch.type, 120) : ''
-    if (type && !project.types.some(v => normalizeKey(v) === normalizeKey(type))) {
+    const type = Object.prototype.hasOwnProperty.call(normalizedPatch, 'type')
+      ? normalizeText(normalizedPatch.type, 120)
+      : ''
+    if (type && !project.types.some((v) => normalizeKey(v) === normalizeKey(type))) {
       tasksWorkspace.saveProjectSettings(project.id, { types: [...project.types, type] })
     }
   }
@@ -1302,6 +2051,7 @@ export function useTasksPageContext() {
     const current = event.currentTarget as HTMLElement | null
     const next = event.relatedTarget as Node | null
     if (current && next && current.contains(next)) return
+    flushTaskCardTitleAutosave(task.id)
     if (activeInlineTaskId.value === task.id) activeInlineTaskId.value = ''
   }
 
@@ -1309,7 +2059,8 @@ export function useTasksPageContext() {
     const project = activeProject.value
     if (!project) return false
     if (key !== 'createdAt' && !project.cardFields[key]) return false
-    if (key === 'createdAt' && !project.cardFields.createdAt && !project.defaults.showCreatedAt) return false
+    if (key === 'createdAt' && !project.cardFields.createdAt && !project.defaults.showCreatedAt)
+      return false
     const fieldKey = key === 'client' ? 'clientId' : key
     if (key !== 'createdAt' && !boardView.value.visibleFieldKeys.includes(fieldKey)) return false
     if (key === 'status') return boardGroupBy.value !== 'status' && !!task.status
@@ -1318,13 +2069,19 @@ export function useTasksPageContext() {
     if (key === 'client') return viewerUserType.value === 'admin' && !!task.clientId
     if (key === 'type') return !!task.type
     if (key === 'dueDate') return !!task.dueDate
-    if (key === 'priority') return !!task.priority && Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
-    if (key === 'createdAt') return activeProject.value?.defaults.showCreatedAt || boardView.value.visibleFieldKeys.includes('createdAt')
+    if (key === 'priority')
+      return !!task.priority && Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
+    if (key === 'createdAt')
+      return (
+        activeProject.value?.defaults.showCreatedAt ||
+        boardView.value.visibleFieldKeys.includes('createdAt')
+      )
     return true
   }
 
   function isModalFieldVisible(key: string) {
-    const visible = boardView.value.modalVisibleFieldKeys || defaultView('board').modalVisibleFieldKeys
+    const visible =
+      boardView.value.modalVisibleFieldKeys || defaultView('board').modalVisibleFieldKeys
     return visible.includes(key)
   }
 
@@ -1333,11 +2090,21 @@ export function useTasksPageContext() {
     hidden.add(columnId)
     updateProjectView('board', { hiddenColumnIds: [...hidden] })
   }
-  function showAllColumns() { updateProjectView('board', { hiddenColumnIds: [] }) }
-  function toggleAggregation() { updateProjectView('board', { showAggregation: boardView.value.showAggregation === false }) }
+  function showAllColumns() {
+    updateProjectView('board', { hiddenColumnIds: [] })
+  }
+  function toggleAggregation() {
+    updateProjectView('board', { showAggregation: boardView.value.showAggregation === false })
+  }
 
-  function deleteTasksInColumn(column: { status: string, groupFieldKey?: string, value?: string, tasks?: TaskItem[] }) {
-    if (import.meta.client && !window.confirm(`Excluir todos os cards em "${column.status}"?`)) return
+  function deleteTasksInColumn(column: {
+    status: string
+    groupFieldKey?: string
+    value?: string
+    tasks?: TaskItem[]
+  }) {
+    if (import.meta.client && !window.confirm(`Excluir todos os cards em "${column.status}"?`))
+      return
     column.tasks?.forEach((task: TaskItem) => tasksWorkspace.removeTask(task.id))
   }
 
@@ -1347,11 +2114,20 @@ export function useTasksPageContext() {
       projectId: activeProject.value?.id,
       status: firstStatus,
       title: 'Nova task',
-      responsible: activeProject.value?.defaults.responsibleFromCreator ? currentUserName.value : '',
+      responsible: activeProject.value?.defaults.responsibleFromCreator
+        ? currentUserName.value
+        : '',
       involved: [],
-      clientId: viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId),
-      clientName: clientLabel(viewerUserType.value === 'client' ? sessionSimulation.clientId : (toNumberId(filters.clientId) || sessionSimulation.clientId)),
-      createdBy: currentUserName.value
+      clientId:
+        viewerUserType.value === 'client'
+          ? sessionSimulation.clientId
+          : toNumberId(filters.clientId) || sessionSimulation.clientId,
+      clientName: clientLabel(
+        viewerUserType.value === 'client'
+          ? sessionSimulation.clientId
+          : toNumberId(filters.clientId) || sessionSimulation.clientId,
+      ),
+      createdBy: currentUserName.value,
     })
     if (created) {
       viewMode.value = 'table'
@@ -1374,47 +2150,82 @@ export function useTasksPageContext() {
       tasksWorkspace.updateTask(id, { priority })
       return
     }
-    if (key === 'archived') { tasksWorkspace.updateTask(id, { archived: Boolean(payload.value) }); return }
-    if (key === 'status') { const status = normalizeText(payload.value, 120); if (status) tasksWorkspace.updateTask(id, { status }); return }
+    if (key === 'archived') {
+      tasksWorkspace.updateTask(id, { archived: Boolean(payload.value) })
+      return
+    }
+    if (key === 'status') {
+      const status = normalizeText(payload.value, 120)
+      if (status) tasksWorkspace.updateTask(id, { status })
+      return
+    }
     if (key === 'responsible') {
       const responsible = normalizeText(payload.value, 120)
       const task = tasksWorkspace.tasks.value.find((item) => item.id === id)
-      tasksWorkspace.updateTask(id, { responsible, involved: sanitizeInvolved(task?.involved || [], responsible) })
+      tasksWorkspace.updateTask(id, {
+        responsible,
+        involved: sanitizeInvolved(task?.involved || [], responsible),
+      })
       const project = activeProject.value
-      if (project && responsible && !project.responsibles.some(v => normalizeKey(v) === normalizeKey(responsible))) {
-        tasksWorkspace.saveProjectSettings(project.id, { responsibles: [...project.responsibles, responsible] })
+      if (
+        project &&
+        responsible &&
+        !project.responsibles.some((v) => normalizeKey(v) === normalizeKey(responsible))
+      ) {
+        tasksWorkspace.saveProjectSettings(project.id, {
+          responsibles: [...project.responsibles, responsible],
+        })
       }
       return
     }
     if (key === 'involved') {
       const task = tasksWorkspace.tasks.value.find((item) => item.id === id)
-      tasksWorkspace.updateTask(id, { involved: sanitizeInvolved(payload.value, task?.responsible || '') })
+      tasksWorkspace.updateTask(id, {
+        involved: sanitizeInvolved(payload.value, task?.responsible || ''),
+      })
       return
     }
     if (key === 'type') {
       const type = normalizeText(payload.value, 120)
       tasksWorkspace.updateTask(id, { type })
       const project = activeProject.value
-      if (project && type && !project.types.some(v => normalizeKey(v) === normalizeKey(type))) {
+      if (project && type && !project.types.some((v) => normalizeKey(v) === normalizeKey(type))) {
         tasksWorkspace.saveProjectSettings(project.id, { types: [...project.types, type] })
       }
       return
     }
-    if (key === 'title') { const title = normalizeText(payload.value, 220); if (title) tasksWorkspace.updateTask(id, { title }); return }
-    if (key === 'description') { tasksWorkspace.updateTask(id, { description: normalizeText(payload.value, 5000) }); return }
-    if (key === 'dueDate') { tasksWorkspace.updateTask(id, { dueDate: normalizeText(payload.value, 24) }) }
+    if (key === 'title') {
+      const title = normalizeText(payload.value, 220)
+      if (title) tasksWorkspace.updateTask(id, { title })
+      return
+    }
+    if (key === 'description') {
+      tasksWorkspace.updateTask(id, { description: normalizeText(payload.value, 5000) })
+      return
+    }
+    if (key === 'dueDate') {
+      tasksWorkspace.updateTask(id, { dueDate: normalizeText(payload.value, 24) })
+    }
   }
 
-  function onTableRowAction(payload: { action: string, row: Record<string, unknown> }) {
+  function onTableRowAction(payload: { action: string; row: Record<string, unknown> }) {
     const id = normalizeText(payload.row.id, 120)
-    const task = tasksWorkspace.tasks.value.find(t => t.id === id)
+    const task = tasksWorkspace.tasks.value.find((t) => t.id === id)
     if (!task) return
-    if (payload.action === 'edit') { openTaskEditor(task); return }
-    if (payload.action === 'archive') { toggleArchive(task); return }
+    if (payload.action === 'edit') {
+      openTaskEditor(task)
+      return
+    }
+    if (payload.action === 'archive') {
+      toggleArchive(task)
+      return
+    }
     if (payload.action === 'delete') deleteTask(task)
   }
 
-  function setTaskEditorMode(mode: 'side' | 'center' | 'fullscreen') { taskEditorMode.value = mode }
+  function setTaskEditorMode(mode: 'side' | 'center' | 'fullscreen') {
+    taskEditorMode.value = mode
+  }
 
   function startTaskEditorResize(event: MouseEvent) {
     if (taskEditorMode.value !== 'side' || !import.meta.client) return
@@ -1463,7 +2274,8 @@ export function useTasksPageContext() {
   function scheduleTasksRealtimeRefresh(event: TasksRealtimeEvent) {
     const type = normalizeText(event.type, 80)
     if (!type || type === 'realtime.connected') return
-    const isTasksEvent = type.startsWith('task.') || type.startsWith('board.') || type.startsWith('field.')
+    const isTasksEvent =
+      type.startsWith('task.') || type.startsWith('board.') || type.startsWith('field.')
     if (!isTasksEvent) {
       if (import.meta.client) console.debug('[tasks-ws] ignorando evento nao-tasks:', type)
       return
@@ -1471,7 +2283,11 @@ export function useTasksPageContext() {
     const eventAccountId = normalizeText(event.accountId, 80)
     const currentAccountId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80)
     if (eventAccountId && currentAccountId && eventAccountId !== currentAccountId) {
-      if (import.meta.client) console.debug('[tasks-ws] evento de outra account, ignorado:', { eventAccountId, currentAccountId })
+      if (import.meta.client)
+        console.debug('[tasks-ws] evento de outra account, ignorado:', {
+          eventAccountId,
+          currentAccountId,
+        })
       return
     }
 
@@ -1480,7 +2296,7 @@ export function useTasksPageContext() {
         type,
         taskId: normalizeText(event.taskId, 80) || undefined,
         boardId: normalizeText(event.boardId, 80) || undefined,
-        version: event.version
+        version: event.version,
       })
     }
 
@@ -1489,7 +2305,9 @@ export function useTasksPageContext() {
     }
 
     clearTasksRealtimeRefreshTimer()
-    tasksRealtimeRefreshTimer = setTimeout(() => { void flushTasksRealtimeRefresh() }, 200)
+    tasksRealtimeRefreshTimer = setTimeout(() => {
+      void flushTasksRealtimeRefresh()
+    }, 200)
   }
 
   async function flushTasksRealtimeRefresh() {
@@ -1504,19 +2322,26 @@ export function useTasksPageContext() {
     try {
       if (import.meta.client) console.info('[tasks-ws] executando refresh full do workspace')
       await tasksWorkspace.refresh()
-      if (taskEditorOpen.value && taskDraft.id && !tasksWorkspace.tasks.value.some(task => task.id === taskDraft.id)) {
+      if (
+        taskEditorOpen.value &&
+        taskDraft.id &&
+        !tasksWorkspace.tasks.value.some((task) => task.id === taskDraft.id)
+      ) {
         clearTaskDraftAutosaveTimer()
         taskEditorOpen.value = false
         resetTaskDraft()
       }
-      if (import.meta.client) console.info('[tasks-ws] refresh concluido — tasks:', tasksWorkspace.tasks.value.length)
+      if (import.meta.client)
+        console.info('[tasks-ws] refresh concluido — tasks:', tasksWorkspace.tasks.value.length)
     } catch (error) {
       console.error('[tasks-ws] erro no refresh:', error)
     } finally {
       tasksRealtimeRefreshing = false
       if (tasksRealtimeRefreshQueued) {
         tasksRealtimeRefreshQueued = false
-        tasksRealtimeRefreshTimer = setTimeout(() => { void flushTasksRealtimeRefresh() }, 150)
+        tasksRealtimeRefreshTimer = setTimeout(() => {
+          void flushTasksRealtimeRefresh()
+        }, 150)
       }
     }
   }
@@ -1529,7 +2354,7 @@ export function useTasksPageContext() {
 
   function presenceFieldName(fieldKey: string) {
     const key = normalizeText(fieldKey, 80)
-    return FIELD_DEFS.find(field => field.key === key)?.label || key
+    return FIELD_DEFS.find((field) => field.key === key)?.label || key
   }
 
   function taskUsersForPresenceField(taskId: string, fieldKey: string) {
@@ -1540,7 +2365,7 @@ export function useTasksPageContext() {
   function boardPresenceUsersForTask(taskId: string) {
     const prefix = `${normalizeText(taskId, 80)}:`
     if (!prefix.trim()) return []
-    return boardPresence.participants.value.filter(user => user.fieldKey.startsWith(prefix))
+    return boardPresence.participants.value.filter((user) => user.fieldKey.startsWith(prefix))
   }
 
   function boardPresenceSummary(taskId: string) {
@@ -1593,6 +2418,100 @@ export function useTasksPageContext() {
     if (taskDraft.id) focusTaskCardPresence(taskDraft.id, fieldKey)
   }
 
+  const structuredPresenceDraftPrefix = '__tasks_presence_json__:'
+
+  function encodeStructuredPresenceDraft(value: unknown) {
+    try {
+      return `${structuredPresenceDraftPrefix}${JSON.stringify(value ?? null)}`
+    } catch {
+      return `${structuredPresenceDraftPrefix}null`
+    }
+  }
+
+  function decodeStructuredPresenceDraft<T>(value: unknown): T | null {
+    if (typeof value !== 'string' || !value.startsWith(structuredPresenceDraftPrefix)) return null
+    try {
+      return JSON.parse(value.slice(structuredPresenceDraftPrefix.length)) as T
+    } catch {
+      return null
+    }
+  }
+
+  function serializePresenceDraftValue(fieldKey: string, value: unknown) {
+    const key = normalizeText(fieldKey, 80)
+    if (key === 'involved') {
+      const nextInvolved = Array.isArray(value)
+        ? value.map((item) => normalizeText(item, 120)).filter(Boolean)
+        : []
+      return encodeStructuredPresenceDraft(nextInvolved)
+    }
+    if (key === 'clientId') {
+      return encodeStructuredPresenceDraft(Math.max(0, toNumberId(value)))
+    }
+    if (key === 'dueDate') {
+      const payload =
+        value && typeof value === 'object'
+          ? {
+              dueDate: normalizeText((value as { dueDate?: unknown }).dueDate, 30),
+              dueEndDate: normalizeText((value as { dueEndDate?: unknown }).dueEndDate, 30),
+            }
+          : {
+              dueDate: normalizeText(value, 30),
+              dueEndDate: '',
+            }
+      return encodeStructuredPresenceDraft(payload)
+    }
+    return String(value ?? '')
+  }
+
+  function parsePresenceDraftValue(fieldKey: string, value: unknown) {
+    const key = normalizeText(fieldKey, 80)
+    if (value == null) return null
+    if (key === 'involved') {
+      const decoded = decodeStructuredPresenceDraft<unknown[]>(value)
+      if (Array.isArray(decoded)) {
+        return sanitizeInvolved(decoded.map((item) => normalizeText(item, 120)).filter(Boolean), taskDraftResponsibleValue())
+      }
+      if (typeof value === 'string' && value.trim()) {
+        return sanitizeInvolved(
+          value
+            .split(',')
+            .map((item) => normalizeText(item, 120))
+            .filter(Boolean),
+          taskDraftResponsibleValue(),
+        )
+      }
+      return []
+    }
+    if (key === 'clientId') {
+      const decoded = decodeStructuredPresenceDraft<number | string>(value)
+      return Math.max(0, toNumberId(decoded ?? value))
+    }
+    if (key === 'dueDate') {
+      const decoded = decodeStructuredPresenceDraft<{ dueDate?: unknown; dueEndDate?: unknown }>(value)
+      if (decoded && typeof decoded === 'object') {
+        return {
+          dueDate: normalizeText(decoded.dueDate, 30),
+          dueEndDate: normalizeText(decoded.dueEndDate, 30),
+        }
+      }
+      return {
+        dueDate: normalizeText(value, 30),
+        dueEndDate: '',
+      }
+    }
+    return String(value ?? '')
+  }
+
+  function schedulePresenceDraft(fieldKey: string, value: unknown) {
+    const key = normalizeText(fieldKey, 80)
+    if (!key) return
+    const serializedValue = serializePresenceDraftValue(key, value)
+    taskPresence.scheduleFieldDraft(key, serializedValue)
+    const boardKey = boardPresenceKey(taskDraft.id, key)
+    if (boardKey) boardPresence.scheduleFieldDraft(boardKey, serializedValue)
+  }
+
   function blurPresenceField(fieldKey: string, event?: FocusEvent) {
     const current = event?.currentTarget as HTMLElement | null
     const next = event?.relatedTarget as Node | null
@@ -1613,8 +2532,174 @@ export function useTasksPageContext() {
     return boardPresenceFieldLabel(taskDraft.id, fieldKey)
   }
 
+  function presenceDraftValue(fieldKey: string) {
+    const taskDraftValue = taskPresence.draftValueForField(fieldKey)
+    if (taskDraftValue != null || !taskDraft.id) return parsePresenceDraftValue(fieldKey, taskDraftValue)
+    const boardKey = boardPresenceKey(taskDraft.id, fieldKey)
+    return boardKey ? parsePresenceDraftValue(fieldKey, boardPresence.draftValueForField(boardKey)) : null
+  }
+
+  function boardPresenceDraftValue(taskId: string, fieldKey: string) {
+    const key = boardPresenceKey(taskId, fieldKey)
+    return key ? parsePresenceDraftValue(fieldKey, boardPresence.draftValueForField(key)) : null
+  }
+
   function isPresenceFieldLocked(fieldKey: string) {
     return presenceUsersForField(fieldKey).length > 0
+  }
+
+  function taskDraftTitleValue() {
+    const remoteDraft = presenceDraftValue('title')
+    return remoteDraft == null ? taskDraft.title : remoteDraft
+  }
+
+  function updateTaskDraftTitle(value: unknown) {
+    if (isPresenceFieldLocked('title')) return
+    const nextTitle = clampText(value, 220)
+    taskDraft.title = nextTitle
+    schedulePresenceDraft('title', nextTitle)
+  }
+
+  function taskDraftContentValue() {
+    const remoteDraft = presenceDraftValue('description')
+    return remoteDraft == null ? taskDraft.contentHtml : remoteDraft
+  }
+
+  function updateTaskDraftContent(value: unknown) {
+    if (isPresenceFieldLocked('description')) return
+    const nextContent = String(value ?? '')
+    taskDraft.contentHtml = nextContent
+    schedulePresenceDraft('description', nextContent)
+  }
+
+  function taskDraftStatusValue() {
+    const remoteDraft = presenceDraftValue('status')
+    return typeof remoteDraft === 'string' ? remoteDraft : taskDraft.status
+  }
+
+  function updateTaskDraftStatus(value: unknown) {
+    if (isPresenceFieldLocked('status')) return
+    const nextStatus = normalizeText(value, 120)
+    if (!nextStatus) return
+    taskDraft.status = nextStatus
+    schedulePresenceDraft('status', nextStatus)
+  }
+
+  function taskDraftResponsibleValue() {
+    const remoteDraft = presenceDraftValue('responsible')
+    return typeof remoteDraft === 'string' ? remoteDraft : taskDraft.responsible
+  }
+
+  function updateTaskDraftResponsible(value: unknown) {
+    if (isPresenceFieldLocked('responsible')) return
+    const nextResponsible = normalizeText(value, 120)
+    taskDraft.responsible = nextResponsible
+    taskDraft.involved = sanitizeInvolved(taskDraft.involved, nextResponsible)
+    schedulePresenceDraft('responsible', nextResponsible)
+    schedulePresenceDraft('involved', taskDraft.involved)
+  }
+
+  function taskDraftInvolvedValue() {
+    const remoteDraft = presenceDraftValue('involved')
+    return Array.isArray(remoteDraft) ? remoteDraft : taskDraft.involved
+  }
+
+  function updateTaskDraftInvolved(value: unknown) {
+    if (isPresenceFieldLocked('involved')) return
+    const nextInvolved = Array.isArray(value)
+      ? value.map((item) => normalizeText(item, 120)).filter(Boolean)
+      : []
+    taskDraft.involved = sanitizeInvolved(nextInvolved, taskDraftResponsibleValue())
+    schedulePresenceDraft('involved', taskDraft.involved)
+  }
+
+  function taskDraftClientIdValue() {
+    const remoteDraft = presenceDraftValue('clientId')
+    return typeof remoteDraft === 'number' ? remoteDraft : taskDraft.clientId
+  }
+
+  function updateTaskDraftClientId(value: unknown) {
+    if (isPresenceFieldLocked('clientId')) return
+    const nextClientId = Math.max(0, toNumberId(value))
+    taskDraft.clientId = nextClientId
+    taskDraft.clientName = clientLabel(nextClientId)
+    schedulePresenceDraft('clientId', nextClientId)
+  }
+
+  function taskDraftDueDateValue() {
+    const remoteDraft = presenceDraftValue('dueDate')
+    return remoteDraft && typeof remoteDraft === 'object' && 'dueDate' in remoteDraft
+      ? normalizeText((remoteDraft as { dueDate?: unknown }).dueDate, 30)
+      : taskDraft.dueDate
+  }
+
+  function taskDraftDueEndDateValue() {
+    const remoteDraft = presenceDraftValue('dueDate')
+    return remoteDraft && typeof remoteDraft === 'object' && 'dueEndDate' in remoteDraft
+      ? normalizeText((remoteDraft as { dueEndDate?: unknown }).dueEndDate, 30)
+      : taskDraft.dueEndDate
+  }
+
+  function updateTaskDraftDueDate(value: unknown) {
+    if (isPresenceFieldLocked('dueDate')) return
+    taskDraft.dueDate = normalizeText(value, 30)
+    schedulePresenceDraft('dueDate', {
+      dueDate: taskDraft.dueDate,
+      dueEndDate: taskDraft.dueEndDate,
+    })
+  }
+
+  function updateTaskDraftDueEndDate(value: unknown) {
+    if (isPresenceFieldLocked('dueDate')) return
+    taskDraft.dueEndDate = normalizeText(value, 30)
+    schedulePresenceDraft('dueDate', {
+      dueDate: taskDraft.dueDate,
+      dueEndDate: taskDraft.dueEndDate,
+    })
+  }
+
+  function taskDraftPriorityValue() {
+    const remoteDraft = presenceDraftValue('priority')
+    return typeof remoteDraft === 'string' ? (remoteDraft as TaskPriority | '') : taskDraft.priority
+  }
+
+  function updateTaskDraftPriority(value: unknown) {
+    if (isPresenceFieldLocked('priority')) return
+    const nextPriority = normalizeText(value, 30) as TaskPriority | ''
+    taskDraft.priority = nextPriority as TaskPriority
+    schedulePresenceDraft('priority', nextPriority)
+  }
+
+  function taskDraftTypeValue() {
+    const remoteDraft = presenceDraftValue('type')
+    return typeof remoteDraft === 'string' ? remoteDraft : taskDraft.type
+  }
+
+  function updateTaskDraftType(value: unknown) {
+    if (isPresenceFieldLocked('type')) return
+    const nextType = normalizeText(value, 120)
+    taskDraft.type = nextType
+    schedulePresenceDraft('type', nextType)
+  }
+
+  function taskCardTitleValue(task: TaskItem) {
+    const remoteDraft = boardPresenceDraftValue(task.id, 'title')
+    if (remoteDraft != null) return remoteDraft
+    return localTaskCardTitleDraftValue(task.id) ?? task.title
+  }
+
+  function updateTaskCardTitle(task: TaskItem, value: unknown) {
+    if (isBoardPresenceFieldLocked(task.id, 'title')) return
+    const nextTitle = clampText(value, 220)
+    taskCardTitleDrafts[task.id] = nextTitle
+    const key = boardPresenceKey(task.id, 'title')
+    if (key) boardPresence.scheduleFieldDraft(key, nextTitle)
+    if (!nextTitle || nextTitle === task.title) {
+      clearTaskCardTitleAutosaveTimer(task.id)
+      clearTaskCardTitleDraft(task.id)
+      return
+    }
+    scheduleTaskCardTitleAutosave(task.id)
   }
 
   function onTaskEditorDocumentPointerDown(event: PointerEvent) {
@@ -1623,53 +2708,108 @@ export function useTasksPageContext() {
     if (!target) return
     if (target.closest('.tasks-page__task-overlay')) return
     if (target.closest('.tasks-page__board-wrap')) return
-    if (target.closest('[role="dialog"], [role="listbox"], [role="menu"], [data-reka-popper-content-wrapper], [data-radix-popper-content-wrapper], [data-headlessui-portal]')) return
+    if (
+      target.closest(
+        '[role="dialog"], [role="listbox"], [role="menu"], [data-reka-popper-content-wrapper], [data-radix-popper-content-wrapper], [data-headlessui-portal]',
+      )
+    )
+      return
     void closeTaskEditor()
   }
 
-  watch(() => taskDraftSignature(), () => {
-    if (!taskEditorOpen.value || taskDraftHydrating.value) return
-    applyTaskDraftToLocalTask()
-    scheduleTaskDraftAutosave()
-  }, { flush: 'post' })
+  watch(
+    () => taskDraftSignature(),
+    () => {
+      if (!taskEditorOpen.value || taskDraftHydrating.value) return
+      applyTaskDraftToLocalTask()
+      scheduleTaskDraftAutosave()
+    },
+    { flush: 'post' },
+  )
 
-  watch(() => [taskDraft.responsible, taskDraft.involved.join('|')], () => {
-    if (taskDraftHydrating.value) return
-    const sanitized = sanitizeInvolved(taskDraft.involved, taskDraft.responsible)
-    if (sanitized.join('|') !== taskDraft.involved.join('|')) taskDraft.involved = sanitized
-  }, { flush: 'sync' })
+  watch(
+    () => [taskDraft.responsible, taskDraft.involved.join('|')],
+    () => {
+      if (taskDraftHydrating.value) return
+      const sanitized = sanitizeInvolved(taskDraft.involved, taskDraft.responsible)
+      if (sanitized.join('|') !== taskDraft.involved.join('|')) taskDraft.involved = sanitized
+    },
+    { flush: 'sync' },
+  )
 
-  watch(() => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id), (task) => {
-    if (!taskEditorOpen.value || !task || taskDraftHydrating.value || taskSaving.value) return
-    if (taskSignatureFromTask(task) === taskDraftSignature()) return
-    syncTaskDraftFromTask(task)
-  }, { deep: true })
+  watch(
+    () => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id),
+    (task) => {
+      if (
+        !taskEditorOpen.value ||
+        !task ||
+        taskDraftHydrating.value ||
+        taskSaving.value ||
+        taskVideoSaving.value
+      )
+        return
+      if (
+        taskDraftSignature() !== lastSavedTaskDraftSignature.value ||
+        taskVideoSignature(taskVideoDrafts.value) !== lastSavedTaskVideoSignature.value
+      ) {
+        // A refresh do store nao pode sobrescrever o draft local antes do autosave.
+        return
+      }
+      if (
+        taskSignatureFromTask(task) === taskDraftSignature() &&
+        taskVideoSignature((task as TaskItem & { videos?: TaskVideoItem[] }).videos || []) ===
+          taskVideoSignature(taskVideoDrafts.value)
+      )
+        return
+      syncTaskDraftFromTask(task)
+    },
+    { deep: true },
+  )
 
-  watch(() => tasksWorkspace.activeProjectId.value, () => {
-    hydrateProjectDraft(activeProject.value)
-    syncClientFilter()
-    tableSelectedRows.value = []
-    if (taskEditorOpen.value && taskDraft.id && !tasksWorkspace.tasks.value.some(t => t.id === taskDraft.id)) closeTaskEditor()
-  }, { immediate: true })
+  watch(
+    () => tasksWorkspace.activeProjectId.value,
+    () => {
+      hydrateProjectDraft(activeProject.value)
+      syncClientFilter()
+      tableSelectedRows.value = []
+      if (
+        taskEditorOpen.value &&
+        taskDraft.id &&
+        !tasksWorkspace.tasks.value.some((t) => t.id === taskDraft.id)
+      )
+        closeTaskEditor()
+    },
+    { immediate: true },
+  )
 
-  watch(() => viewerUserType.value, () => { syncClientFilter() }, { immediate: true })
+  watch(
+    () => viewerUserType.value,
+    () => {
+      syncClientFilter()
+    },
+    { immediate: true },
+  )
 
   onMounted(async () => {
-    if (import.meta.client) document.addEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
+    if (import.meta.client)
+      document.addEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
     try {
       await pageLoading.withLoading('Carregando tasks...', async () => {
         sessionSimulation.initialize()
         await tasksWorkspace.initialize()
         await Promise.all([
           usersStore.ensureLoaded().catch(() => false),
-          refreshActiveTracking(true).catch(() => undefined)
+          refreshActiveTracking(true).catch(() => undefined),
         ])
         if (sessionSimulation.isAdmin) await sessionSimulation.refreshClientOptions()
-        if (!activeProject.value && tasksWorkspace.projects.value.length > 0) tasksWorkspace.setActiveProject(tasksWorkspace.projects.value[0]!.id)
+        if (!activeProject.value && tasksWorkspace.projects.value.length > 0)
+          tasksWorkspace.setActiveProject(tasksWorkspace.projects.value[0]!.id)
         hydrateProjectDraft(activeProject.value)
         await nextTick()
         if (import.meta.client) {
-          await new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()) })
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve())
+          })
         }
       })
     } finally {
@@ -1679,58 +2819,220 @@ export function useTasksPageContext() {
 
   onUnmounted(() => {
     releaseTaskEditorPresence()
+    flushPendingTaskCardTitleAutosaves()
     clearTaskDraftAutosaveTimer()
+    clearTaskCardTitleAutosaveTimer()
     clearTasksRealtimeRefreshTimer()
     clearTaskVideoDrafts()
-    if (import.meta.client) document.removeEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
+    if (import.meta.client)
+      document.removeEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
   })
 
   return {
     // constants
-    ORDER_STEP, PRIORITY_OPTIONS, COLUMN_COLOR_OPTIONS, DEFAULT_FILTERS, BOARD_GROUP_OPTIONS, FIELD_DEFS,
-    filterSwitchDefs, cardFieldSwitchDefs, modalModeOptions,
+    ORDER_STEP,
+    PRIORITY_OPTIONS,
+    COLUMN_COLOR_OPTIONS,
+    DEFAULT_FILTERS,
+    BOARD_GROUP_OPTIONS,
+    FIELD_DEFS,
+    filterSwitchDefs,
+    cardFieldSwitchDefs,
+    modalModeOptions,
     // state
-    viewMode, pageBootstrapping, draggingTaskId, draggingColumnId, filters, tableSelectedRows,
-    tableFocusCell, activeInlineTaskId, creatingCards, draftAddedFields, draftMenuOpen, draftFieldOpen,
-    dragKind, dropTarget, projectSettingsOpen, columnSettingsOpen, taskEditorOpen, taskEditorMode,
-    taskEditorWidth, taskEditorResizing, settingsSaving, taskSaving, taskVideoDrafts,
+    viewMode,
+    pageBootstrapping,
+    draggingTaskId,
+    draggingColumnId,
+    filters,
+    tableSelectedRows,
+    tableFocusCell,
+    activeInlineTaskId,
+    creatingCards,
+    draftAddedFields,
+    draftMenuOpen,
+    draftFieldOpen,
+    dragKind,
+    dropTarget,
+    projectSettingsOpen,
+    columnSettingsOpen,
+    taskEditorOpen,
+    taskEditorMode,
+    taskEditorWidth,
+    taskEditorResizing,
+    settingsSaving,
+    taskSaving,
+    taskVideoDrafts,
+    taskVideoSaving,
+    taskVideoError,
     legacyMigrationNotice: tasksWorkspace.legacyMigrationNotice,
     tasksErrorMessage: tasksWorkspace.errorMessage,
-    projectSettingsDraft, columnDraft, taskDraft,
+    projectSettingsDraft,
+    columnDraft,
+    taskDraft,
     // computed
-    viewerUserType, activeProject, projectOptions, clientOptions, currentUserName, taskEditorCssVars,
-    boardSchemaColumns, boardView, tableView, boardGroupBy, statuses, statusOptions,
-    responsibleOptions, involvedOptions, typeOptions, involvedOptionsForResponsible,
-    responsibleOptionsAvatar, involvedOptionsAvatar, clientOptionsAvatar,
-    peopleMentionLabels, clientMentionLabels, taskMentionLabels,
-    projectModel, projectTasks, filteredTasks, boardColumns, tableRows, projectCount, tableColumns,
-    searchOpen, responsibleOpen, clientOpen, typeOpen, responsibleInnerOpen, clientInnerOpen, typeInnerOpen,
-    activeFilterChips, hasAnyActiveFilter,
+    viewerUserType,
+    activeProject,
+    projectOptions,
+    clientOptions,
+    currentUserName,
+    taskEditorCssVars,
+    boardSchemaColumns,
+    boardView,
+    tableView,
+    boardGroupBy,
+    statuses,
+    statusOptions,
+    responsibleOptions,
+    involvedOptions,
+    typeOptions,
+    involvedOptionsForResponsible,
+    responsibleOptionsAvatar,
+    involvedOptionsAvatar,
+    clientOptionsAvatar,
+    peopleMentionLabels,
+    clientMentionLabels,
+    taskMentionLabels,
+    projectModel,
+    projectTasks,
+    filteredTasks,
+    boardColumns,
+    tableRows,
+    projectCount,
+    tableColumns,
+    searchOpen,
+    responsibleOpen,
+    clientOpen,
+    typeOpen,
+    responsibleInnerOpen,
+    clientInnerOpen,
+    typeInnerOpen,
+    activeFilterChips,
+    hasAnyActiveFilter,
     // tracking
-    startTracking, pauseTracking, stopTracking, isTracking, isRunning, getElapsedMs, formatElapsed,
+    startTracking,
+    pauseTracking,
+    stopTracking,
+    isTracking,
+    isRunning,
+    getElapsedMs,
+    formatElapsed,
     // presence
-    presenceParticipants, presenceStatus, tasksRealtimeStatus, taskRelations,
-    focusPresenceField, blurPresenceField, presenceUsersForField, presenceFieldLabel, isPresenceFieldLocked,
-    focusTaskCardPresence, blurTaskCardPresence, boardPresenceUsersForTask, boardPresenceSummary, boardPresenceFieldLabel, isBoardPresenceFieldLocked,
+    presenceParticipants,
+    presenceStatus,
+    tasksRealtimeStatus,
+    taskRelations,
+    taskComments,
+    focusPresenceField,
+    blurPresenceField,
+    presenceUsersForField,
+    presenceFieldLabel,
+    presenceDraftValue,
+    isPresenceFieldLocked,
+    focusTaskCardPresence,
+    blurTaskCardPresence,
+    boardPresenceUsersForTask,
+    boardPresenceSummary,
+    boardPresenceFieldLabel,
+    boardPresenceDraftValue,
+    isBoardPresenceFieldLocked,
     // functions
-    setDraftFieldOpen, normalizeText, clampText, normalizeKey, toNumberId, dateLabel, dateLabelLong,
-    priorityLabel, priorityColor, toPriority, columnColorClass, clientLabel, taskSort,
-    fieldLabel, fieldSwitchValue, setFieldSwitch,
-    hydrateProjectDraft, resetTaskDraft, openTaskEditor, closeTaskEditor, saveTask, flushTaskDraftAutosave,
-    onTaskVideoInput, onTaskVideoDrop, removeTaskVideoDraft,
-    onCreateProject, saveProjectSettings, deleteProject,
-    prepareColumnDraft, openColumnSettings, closeColumnSettings, saveColumnSettings, deleteColumn, createColumn,
-    beginCreateTaskInColumn, beginCreateTaskInFirstColumn, cancelDraftCard, onDraftCardFocusOut, commitDraftCard,
-    isDraftFieldVisible, draftAvailableFields, addDraftField,
-    openSearch, closeSearch, toggleSearch, clearFilters, labelFor,
-    toggleArchive, deleteTask, deleteCurrentDraftTask,
-    onDragStart, onDragEnd, onDropColumn, onDropCard, markDropTarget,
-    onColumnDragStart, onColumnDragEnd, onDropColumnHeader,
-    updateTaskInline, onCardFocusOut, isCardFieldVisible, isModalFieldVisible,
-    hideColumn, showAllColumns, toggleAggregation, deleteTasksInColumn,
-    createTableTask, onTableCellUpdate, onTableRowAction,
-    setTaskEditorMode, startTaskEditorResize, syncClientFilter,
-    groupOptionsFor, updateProjectView
+    setDraftFieldOpen,
+    normalizeText,
+    clampText,
+    normalizeKey,
+    toNumberId,
+    dateLabel,
+    dateLabelLong,
+    priorityLabel,
+    priorityColor,
+    toPriority,
+    columnColorClass,
+    clientLabel,
+    taskSort,
+    fieldLabel,
+    fieldSwitchValue,
+    setFieldSwitch,
+    hydrateProjectDraft,
+    resetTaskDraft,
+    openTaskEditor,
+    closeTaskEditor,
+    taskDraftTitleValue,
+    updateTaskDraftTitle,
+    taskDraftContentValue,
+    updateTaskDraftContent,
+    taskDraftStatusValue,
+    updateTaskDraftStatus,
+    taskDraftResponsibleValue,
+    updateTaskDraftResponsible,
+    taskDraftInvolvedValue,
+    updateTaskDraftInvolved,
+    taskDraftClientIdValue,
+    updateTaskDraftClientId,
+    taskDraftDueDateValue,
+    taskDraftDueEndDateValue,
+    updateTaskDraftDueDate,
+    updateTaskDraftDueEndDate,
+    taskDraftPriorityValue,
+    updateTaskDraftPriority,
+    taskDraftTypeValue,
+    updateTaskDraftType,
+    saveTask,
+    flushTaskDraftAutosave,
+    onTaskVideoInput,
+    onTaskVideoDrop,
+    removeTaskVideoDraft,
+    onCreateProject,
+    saveProjectSettings,
+    deleteProject,
+    prepareColumnDraft,
+    openColumnSettings,
+    closeColumnSettings,
+    saveColumnSettings,
+    deleteColumn,
+    createColumn,
+    beginCreateTaskInColumn,
+    beginCreateTaskInFirstColumn,
+    cancelDraftCard,
+    onDraftCardFocusOut,
+    commitDraftCard,
+    isDraftFieldVisible,
+    draftAvailableFields,
+    addDraftField,
+    openSearch,
+    closeSearch,
+    toggleSearch,
+    clearFilters,
+    labelFor,
+    toggleArchive,
+    deleteTask,
+    deleteCurrentDraftTask,
+    onDragStart,
+    onDragEnd,
+    onDropColumn,
+    onDropCard,
+    markDropTarget,
+    onColumnDragStart,
+    onColumnDragEnd,
+    onDropColumnHeader,
+    updateTaskInline,
+    taskCardTitleValue,
+    updateTaskCardTitle,
+    onCardFocusOut,
+    isCardFieldVisible,
+    isModalFieldVisible,
+    hideColumn,
+    showAllColumns,
+    toggleAggregation,
+    deleteTasksInColumn,
+    createTableTask,
+    onTableCellUpdate,
+    onTableRowAction,
+    setTaskEditorMode,
+    startTaskEditorResize,
+    syncClientFilter,
+    groupOptionsFor,
+    updateProjectView,
   }
 }
 

@@ -96,6 +96,59 @@ func TestPresenceLockField_OwnerCanReclaim(t *testing.T) {
 	}
 }
 
+func TestPresenceUpdateFieldDraft_PublishesAndPersists(t *testing.T) {
+	hub := NewHub()
+	store := NewPresenceStore(hub, 30*time.Second)
+	topic := "presence:task:t1"
+	sub := hub.Subscribe(topic, 8)
+	defer sub.Close()
+
+	store.Join(topic, PresenceUser{UserID: "userA", DisplayName: "Alice"})
+	store.LockField(topic, PresenceUser{UserID: "userA", DisplayName: "Alice"}, "title", "lock-A")
+	store.UpdateFieldDraft(topic, "userA", "title", "Digitando agora")
+
+	events := drainEvents(t, sub, 100*time.Millisecond)
+	if events[EventTypePresenceFieldDraft] != 1 {
+		t.Errorf("UpdateFieldDraft deve publicar presence.field_draft; got %d", events[EventTypePresenceFieldDraft])
+	}
+
+	snapshot := store.Snapshot(topic)
+	if len(snapshot) != 1 {
+		t.Fatalf("snapshot deve conter userA; got %d", len(snapshot))
+	}
+	if snapshot[0].DraftValue != "Digitando agora" {
+		t.Errorf("DraftValue deveria persistir no snapshot; got %q", snapshot[0].DraftValue)
+	}
+}
+
+func TestPresenceUpdateFieldDraft_RequiresOwnedLock(t *testing.T) {
+	hub := NewHub()
+	store := NewPresenceStore(hub, 30*time.Second)
+	topic := "presence:task:t1"
+	sub := hub.Subscribe(topic, 8)
+	defer sub.Close()
+
+	store.Join(topic, PresenceUser{UserID: "userA", DisplayName: "Alice"})
+	store.Join(topic, PresenceUser{UserID: "userB", DisplayName: "Bob"})
+	store.LockField(topic, PresenceUser{UserID: "userA", DisplayName: "Alice"}, "title", "lock-A")
+	store.UpdateFieldDraft(topic, "userB", "title", "Nao deveria entrar")
+
+	events := drainEvents(t, sub, 100*time.Millisecond)
+	if events[EventTypePresenceFieldDraft] != 0 {
+		t.Errorf("user sem lock nao deve publicar presence.field_draft; got %d", events[EventTypePresenceFieldDraft])
+	}
+
+	snapshot := store.Snapshot(topic)
+	if len(snapshot) != 2 {
+		t.Fatalf("snapshot deve manter ambos users; got %d", len(snapshot))
+	}
+	for _, user := range snapshot {
+		if user.UserID == "userB" && user.DraftValue != "" {
+			t.Errorf("userB nao deveria ter DraftValue; got %q", user.DraftValue)
+		}
+	}
+}
+
 func TestPresenceUnlockField_ReleasesAndPublishes(t *testing.T) {
 	hub := NewHub()
 	store := NewPresenceStore(hub, 30*time.Second)

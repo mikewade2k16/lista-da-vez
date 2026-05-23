@@ -1,9 +1,9 @@
 <script setup lang="ts">
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "roadmap",
-  alias: ["/operacao/roadmap"],
-});
+  layout: 'dashboard',
+  workspaceId: 'roadmap',
+  alias: ['/operacao/roadmap'],
+})
 </script>
 
 <template>

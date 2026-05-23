@@ -105,6 +105,6 @@ Ele deve depender apenas de:
 
 ## Referencias
 
-- `AGENTS.md`
-- `app/pages/operacao/operations.md`
+- `AGENT.md`
+- `../docs/operacao/operations.md`
 - `../back/CORE_MODULES_PORTABILITY.md`

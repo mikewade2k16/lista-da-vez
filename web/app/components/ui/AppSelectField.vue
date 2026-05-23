@@ -1,151 +1,151 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Check, ChevronDown, Plus, Search } from "lucide-vue-next";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Check, ChevronDown, Plus, Search } from 'lucide-vue-next'
 
 const props = defineProps({
   label: {
     type: String,
-    default: ""
+    default: '',
   },
   modelValue: {
     type: String,
-    default: ""
+    default: '',
   },
   options: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   placeholder: {
     type: String,
-    default: "Selecionar opcao"
+    default: 'Selecionar opcao',
   },
   emptyLabel: {
     type: String,
-    default: "Nenhuma opcao encontrada."
+    default: 'Nenhuma opcao encontrada.',
   },
   searchPlaceholder: {
     type: String,
-    default: "Buscar opcao"
+    default: 'Buscar opcao',
   },
   searchable: {
     type: Boolean,
-    default: false
+    default: false,
   },
   showLeadingIcon: {
     type: Boolean,
-    default: true
+    default: true,
   },
   compact: {
     type: Boolean,
-    default: false
+    default: false,
   },
   testid: {
     type: String,
-    default: ""
+    default: '',
   },
   disabled: {
     type: Boolean,
-    default: false
-  }
-});
+    default: false,
+  },
+})
 
-const emit = defineEmits(["update:modelValue", "change"]);
+const emit = defineEmits(['update:modelValue', 'change'])
 
-const containerRef = ref(null);
-const searchInputRef = ref(null);
-const dropdownOpen = ref(false);
-const dropdownStyle = ref({});
-const searchTerm = ref("");
+const containerRef = ref(null)
+const searchInputRef = ref(null)
+const dropdownOpen = ref(false)
+const dropdownStyle = ref({})
+const searchTerm = ref('')
 
 const normalizedOptions = computed(() =>
   (Array.isArray(props.options) ? props.options : []).map((option) => ({
-    value: String(option?.value ?? "").trim(),
-    label: String(option?.label ?? "").trim(),
-    meta: String(option?.meta ?? option?.description ?? "").trim()
-  }))
-);
+    value: String(option?.value ?? '').trim(),
+    label: String(option?.label ?? '').trim(),
+    meta: String(option?.meta ?? option?.description ?? '').trim(),
+  })),
+)
 
-const selectedValue = computed(() => String(props.modelValue || "").trim());
-const selectedOption = computed(() =>
-  normalizedOptions.value.find((option) => option.value === selectedValue.value) || null
-);
-const shouldShowSearch = computed(() => props.searchable || normalizedOptions.value.length >= 8);
+const selectedValue = computed(() => String(props.modelValue || '').trim())
+const selectedOption = computed(
+  () => normalizedOptions.value.find((option) => option.value === selectedValue.value) || null,
+)
+const shouldShowSearch = computed(() => props.searchable || normalizedOptions.value.length >= 8)
 const filteredOptions = computed(() => {
-  const normalizedSearch = normalizeSearch(searchTerm.value);
+  const normalizedSearch = normalizeSearch(searchTerm.value)
 
   if (!normalizedSearch) {
-    return normalizedOptions.value;
+    return normalizedOptions.value
   }
 
   return normalizedOptions.value.filter((option) =>
-    normalizeSearch(`${option.label} ${option.meta}`.trim()).includes(normalizedSearch)
-  );
-});
+    normalizeSearch(`${option.label} ${option.meta}`.trim()).includes(normalizedSearch),
+  )
+})
 
 function normalizeSearch(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .trim()
-    .toLowerCase();
+    .toLowerCase()
 }
 
 function updateDropdownPosition() {
   if (!containerRef.value) {
-    return;
+    return
   }
 
-  const rect = containerRef.value.getBoundingClientRect();
+  const rect = containerRef.value.getBoundingClientRect()
   dropdownStyle.value = {
     top: `${rect.bottom + 4}px`,
     left: `${rect.left}px`,
-    width: `${rect.width}px`
-  };
+    width: `${rect.width}px`,
+  }
 }
 
 function closeDropdown() {
-  dropdownOpen.value = false;
-  searchTerm.value = "";
+  dropdownOpen.value = false
+  searchTerm.value = ''
 }
 
 function openDropdown() {
   if (props.disabled) {
-    return;
+    return
   }
 
-  dropdownOpen.value = true;
-  updateDropdownPosition();
+  dropdownOpen.value = true
+  updateDropdownPosition()
 
   nextTick(() => {
-    searchInputRef.value?.focus();
-  });
+    searchInputRef.value?.focus()
+  })
 }
 
 function toggleDropdown() {
   if (dropdownOpen.value) {
-    closeDropdown();
-    return;
+    closeDropdown()
+    return
   }
 
-  openDropdown();
+  openDropdown()
 }
 
 function selectOption(value) {
-  const nextValue = String(value || "").trim();
-  emit("update:modelValue", nextValue);
-  emit("change", nextValue);
-  closeDropdown();
+  const nextValue = String(value || '').trim()
+  emit('update:modelValue', nextValue)
+  emit('change', nextValue)
+  closeDropdown()
 }
 
 function handleEscape(event) {
-  if (event.key === "Escape") {
-    closeDropdown();
+  if (event.key === 'Escape') {
+    closeDropdown()
   }
 }
 
 function handleViewportChange() {
   if (dropdownOpen.value) {
-    updateDropdownPosition();
+    updateDropdownPosition()
   }
 }
 
@@ -153,24 +153,24 @@ watch(
   () => props.modelValue,
   () => {
     if (!dropdownOpen.value) {
-      return;
+      return
     }
 
-    closeDropdown();
-  }
-);
+    closeDropdown()
+  },
+)
 
 onMounted(() => {
-  document.addEventListener("keydown", handleEscape);
-  window.addEventListener("resize", handleViewportChange);
-  window.addEventListener("scroll", handleViewportChange, true);
-});
+  document.addEventListener('keydown', handleEscape)
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
+})
 
 onBeforeUnmount(() => {
-  document.removeEventListener("keydown", handleEscape);
-  window.removeEventListener("resize", handleViewportChange);
-  window.removeEventListener("scroll", handleViewportChange, true);
-});
+  document.removeEventListener('keydown', handleEscape)
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
+})
 </script>
 
 <template>
@@ -191,7 +191,13 @@ onBeforeUnmount(() => {
       @click="toggleDropdown"
     >
       <span class="app-select-field__trigger-main">
-        <component :is="selectedOption ? Check : Plus" v-if="showLeadingIcon" class="app-select-field__trigger-icon" :size="16" :stroke-width="2.1" />
+        <component
+          :is="selectedOption ? Check : Plus"
+          v-if="showLeadingIcon"
+          class="app-select-field__trigger-icon"
+          :size="16"
+          :stroke-width="2.1"
+        />
         <span class="app-select-field__trigger-text">
           {{ selectedOption?.label || placeholder }}
         </span>
@@ -207,9 +213,12 @@ onBeforeUnmount(() => {
           tabindex="-1"
           aria-label="Fechar seletor"
           @click="closeDropdown"
-        />
+        ></button>
 
-        <div class="product-pick__dropdown is-open app-select-field__dropdown" :style="dropdownStyle">
+        <div
+          class="product-pick__dropdown is-open app-select-field__dropdown"
+          :style="dropdownStyle"
+        >
           <label v-if="shouldShowSearch" class="catalog-picker__search">
             <Search class="app-select-field__search-icon" :size="14" :stroke-width="2.1" />
             <input
@@ -218,7 +227,7 @@ onBeforeUnmount(() => {
               class="catalog-picker__search-input"
               type="search"
               :placeholder="searchPlaceholder"
-            >
+            />
           </label>
 
           <div class="product-pick__results">

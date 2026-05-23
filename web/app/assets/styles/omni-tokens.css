@@ -1,7 +1,8 @@
 :root {
   color-scheme: light;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text",
-    "Inter", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Segoe UI',
+    Roboto, Arial, 'Apple Color Emoji', 'Segoe UI Emoji';
   --radius-xs: 10px;
   --radius-sm: 12px;
   --radius-md: 14px;
@@ -11,7 +12,9 @@
   --shadow-xs: 0 1px 0 color-mix(in srgb, var(--shadow-color) 35%, transparent);
   --shadow-sm: 0 8px 24px color-mix(in srgb, var(--shadow-color) 55%, transparent);
   --shadow-md: 0 14px 40px color-mix(in srgb, var(--shadow-color) 72%, transparent);
-  --shadow-glow: 0 0 0 1px color-mix(in srgb, var(--shadow-glow-color) 70%, transparent), 0 14px 44px color-mix(in srgb, var(--shadow-glow-color) 50%, transparent);
+  --shadow-glow:
+    0 0 0 1px color-mix(in srgb, var(--shadow-glow-color) 70%, transparent),
+    0 14px 44px color-mix(in srgb, var(--shadow-glow-color) 50%, transparent);
   --bg: 248 250 252;
   --surface: 255 255 255;
   --surface-2: 244 246 250;

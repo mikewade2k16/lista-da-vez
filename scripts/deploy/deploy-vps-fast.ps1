@@ -161,7 +161,8 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
-  --exclude='Controlle10 - ftp' \
+    --exclude='erp-source-local' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i $(Convert-ToBashSingleQuoted $keyPathBash) \
     -o StrictHostKeyChecking=accept-new \

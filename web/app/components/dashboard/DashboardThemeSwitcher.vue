@@ -39,15 +39,6 @@ const themeItems = computed(() =>
   })),
 )
 
-function readStoredUserTheme(): HeaderTheme | null {
-  if (!import.meta.client) {
-    return null
-  }
-
-  const storedTheme = window.localStorage.getItem(USER_THEME_STORAGE_KEY)
-  return storedTheme === 'dark' || storedTheme === 'light' ? storedTheme : null
-}
-
 function selectTheme(value: HeaderTheme) {
   if (value !== 'light' && value !== 'dark') {
     return
@@ -62,11 +53,6 @@ function selectTheme(value: HeaderTheme) {
 
 onMounted(() => {
   initializeFromStorage()
-
-  const storedTheme = readStoredUserTheme()
-  if (storedTheme) {
-    applyTheme(storedTheme, false)
-  }
 })
 </script>
 

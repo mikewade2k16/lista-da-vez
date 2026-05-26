@@ -39,6 +39,10 @@ export default defineNuxtConfig({
     '/usuarios': { ssr: false },
   },
   modules: ['@nuxt/ui', '@nuxt/eslint', '@pinia/nuxt'],
+  colorMode: {
+    preference: 'dark',
+    fallback: 'dark',
+  },
   eslint: {
     config: {
       stylistic: false, // Prettier cuida de estilo, evita conflito

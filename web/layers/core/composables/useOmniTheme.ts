@@ -16,6 +16,7 @@ export interface OmniThemeVariable {
 }
 
 const THEME_STORAGE_KEY = 'omni-ui-theme'
+const USER_THEME_STORAGE_KEY = 'omni-ui-user-theme'
 const OVERRIDES_STORAGE_KEY = 'omni-ui-theme-overrides'
 const CUSTOM_THEME_NAME_KEY = 'omni-ui-theme-custom-name'
 const STYLE_TAG_ID = 'omni-theme-overrides-style'
@@ -200,6 +201,10 @@ function isThemeName(value: string | null): value is OmniThemeName {
   return value === 'light' || value === 'dark' || value === 'apple' || value === 'custom'
 }
 
+function isBaseThemeName(value: string | null): value is 'light' | 'dark' {
+  return value === 'light' || value === 'dark'
+}
+
 function normalizeVariableKey(key: string) {
   return key.replace(/^--/, '').trim()
 }
@@ -306,7 +311,7 @@ export function useOmniTheme() {
   const runtime = useAppRuntimeStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const initialized = useState<boolean>('omni-theme-initialized', () => false)
-  const currentTheme = useState<OmniThemeName>('omni-theme-current', () => 'light')
+  const currentTheme = useState<OmniThemeName>('omni-theme-current', () => 'dark')
   const overrides = useState<OmniThemeOverrides>('omni-theme-overrides', () =>
     createEmptyOverrides(),
   )
@@ -333,6 +338,23 @@ export function useOmniTheme() {
     return normalized || OMNI_THEME_LABELS.custom
   }
 
+  function readStoredUserThemePreference(): 'light' | 'dark' | null {
+    if (!import.meta.client) {
+      return null
+    }
+
+    const storedThemePreference = localStorage.getItem(USER_THEME_STORAGE_KEY)
+    return isBaseThemeName(storedThemePreference) ? storedThemePreference : null
+  }
+
+  function resolvePreferredTheme(theme: OmniThemeName): OmniThemeName {
+    if (!isBaseThemeName(theme)) {
+      return theme
+    }
+
+    return readStoredUserThemePreference() ?? theme
+  }
+
   function resolveTenantId() {
     return String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim()
   }
@@ -354,7 +376,7 @@ export function useOmniTheme() {
   function normalizeAppearanceSnapshot(appearance: any) {
     const resolvedTheme = isThemeName(String(appearance?.activeTheme || '').trim())
       ? String(appearance?.activeTheme || '').trim()
-      : 'light'
+      : 'dark'
 
     return {
       activeTheme: resolvedTheme as OmniThemeName,
@@ -380,13 +402,7 @@ export function useOmniTheme() {
   }
 
   function getFallbackBaseTheme(): OmniThemeName {
-    if (!import.meta.client) {
-      return colorMode.value === 'dark' ? 'dark' : 'light'
-    }
-
-    return document.documentElement.classList.contains('dark') || colorMode.value === 'dark'
-      ? 'dark'
-      : 'light'
+    return readStoredUserThemePreference() ?? 'dark'
   }
 
   function clearAdvancedThemeStorage() {
@@ -453,14 +469,14 @@ export function useOmniTheme() {
 
   function detectThemeFromDom(): OmniThemeName {
     if (!import.meta.client) {
-      return 'light'
+      return 'dark'
     }
 
     const root = document.documentElement
     if (root.classList.contains('theme-custom')) return 'custom'
     if (root.classList.contains('theme-apple-blue')) return 'apple'
     if (root.classList.contains('dark') || colorMode.value === 'dark') return 'dark'
-    return 'light'
+    return readStoredUserThemePreference() ?? 'dark'
   }
 
   function applyRemoteAppearance(appearance: any, options: { markInitialized?: boolean } = {}) {
@@ -468,7 +484,7 @@ export function useOmniTheme() {
     overrides.value = normalizedAppearance.overrides
     customThemeName.value = normalizedAppearance.customThemeName
     applyOverrides()
-    applyTheme(normalizedAppearance.activeTheme, false)
+    applyTheme(resolvePreferredTheme(normalizedAppearance.activeTheme), false)
 
     if (isRemoteManaged.value) {
       clearLocalThemeStorage()
@@ -583,6 +599,7 @@ export function useOmniTheme() {
     applyOverrides()
 
     const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
+    const storedUserThemePreference = readStoredUserThemePreference()
     const storedCustomThemeName = localStorage.getItem(CUSTOM_THEME_NAME_KEY)
     if (advancedThemesEnabled.value && storedCustomThemeName) {
       customThemeName.value = normalizeThemeName(storedCustomThemeName)
@@ -591,12 +608,17 @@ export function useOmniTheme() {
     }
 
     const fallbackTheme = getFallbackBaseTheme()
-    const resolvedTheme =
+    const resolvedStoredTheme: OmniThemeName | null =
       storedTheme === 'light' ||
       storedTheme === 'dark' ||
       (advancedThemesEnabled.value && isThemeName(storedTheme))
         ? storedTheme
-        : fallbackTheme
+        : null
+
+    const resolvedTheme =
+      resolvedStoredTheme === 'light' || resolvedStoredTheme === 'dark'
+        ? (storedUserThemePreference ?? resolvedStoredTheme)
+        : (resolvedStoredTheme ?? fallbackTheme)
 
     applyTheme(resolvedTheme, resolvedTheme !== storedTheme)
 

@@ -132,9 +132,6 @@ function handleIntegratedStoreChange(value) {
   justify-content: space-between;
   gap: 0.9rem;
   padding: 0.85rem 1rem;
-  /*border: 1px solid rgba(125, 146, 255, 0.18);
-  background: rgba(10, 16, 32, 0.72);
-  */
   border-radius: 1rem;
 }
 
@@ -151,7 +148,7 @@ function handleIntegratedStoreChange(value) {
   align-self: stretch;
   flex-shrink: 0;
   border-radius: 999px;
-  background: linear-gradient(180deg, #818cf8 0%, #38bdf8 100%);
+  background: linear-gradient(180deg, rgb(var(--primary)) 0%, rgb(var(--ring)) 100%);
 }
 
 .operation-scope-bar__campaign-content {
@@ -162,13 +159,13 @@ function handleIntegratedStoreChange(value) {
 }
 
 .operation-scope-bar__campaign-headline {
-  color: #eef2ff;
+  color: var(--text-main);
   font-size: 0.84rem;
   line-height: 1.25;
 }
 
 .operation-scope-bar__campaign-subline {
-  color: #a5b4fc;
+  color: var(--text-muted);
   font-size: 0.72rem;
   line-height: 1.2;
   white-space: nowrap;
@@ -182,10 +179,10 @@ function handleIntegratedStoreChange(value) {
   justify-content: center;
   flex-shrink: 0;
   padding: 0.5rem 0.8rem;
-  border: 1px solid rgba(129, 140, 248, 0.28);
+  border: 1px solid rgb(var(--primary) / 0.28);
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.78);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary-600));
   font-size: 0.73rem;
   font-weight: 700;
   text-decoration: none;
@@ -196,9 +193,9 @@ function handleIntegratedStoreChange(value) {
 }
 
 .operation-scope-bar__campaign-action:hover {
-  border-color: rgba(129, 140, 248, 0.48);
-  background: rgba(30, 41, 59, 0.92);
-  color: #eef2ff;
+  border-color: rgb(var(--primary) / 0.48);
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
 }
 
 .operation-scope-bar__filter {
@@ -210,7 +207,7 @@ function handleIntegratedStoreChange(value) {
 }
 
 .operation-scope-bar__filter-label {
-  color: rgba(219, 226, 255, 0.72);
+  color: var(--text-muted);
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.08em;

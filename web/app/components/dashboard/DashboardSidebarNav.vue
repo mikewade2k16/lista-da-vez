@@ -172,6 +172,9 @@ onMounted(() => {
                     aria-hidden="true"
                   />
                   <span>{{ child.label }}</span>
+                  <span v-if="child.beta" class="dashboard-sidebar__beta" aria-label="Beta">
+                    Beta
+                  </span>
                 </NuxtLink>
               </div>
             </Transition>
@@ -192,6 +195,13 @@ onMounted(() => {
                 aria-hidden="true"
               />
               <span class="dashboard-sidebar__label">{{ item.label }}</span>
+              <span
+                v-if="item.beta && !isCollapsed"
+                class="dashboard-sidebar__beta"
+                aria-label="Beta"
+              >
+                Beta
+              </span>
             </NuxtLink>
           </template>
         </div>
@@ -486,6 +496,21 @@ onMounted(() => {
   border-radius: 9px;
   font-size: 0.77rem;
   font-weight: 700;
+}
+
+.dashboard-sidebar__beta {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 0.06rem 0.42rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.1;
 }
 
 .dashboard-sidebar-submenu-enter-active,

@@ -106,12 +106,20 @@ const outcomeItems = computed(() => {
   const total = report.value.metrics.totalAttendances || 1
 
   return [
-    { label: 'Compra', count: report.value.chartData.outcomeCounts.compra, color: '#22c55e' },
-    { label: 'Reserva', count: report.value.chartData.outcomeCounts.reserva, color: '#38bdf8' },
+    {
+      label: 'Compra',
+      count: report.value.chartData.outcomeCounts.compra,
+      color: 'rgb(var(--success))',
+    },
+    {
+      label: 'Reserva',
+      count: report.value.chartData.outcomeCounts.reserva,
+      color: 'rgb(var(--primary))',
+    },
     {
       label: 'Nao compra',
       count: report.value.chartData.outcomeCounts['nao-compra'],
-      color: '#475569',
+      color: 'rgb(var(--muted))',
     },
   ].map((item) => ({
     ...item,
@@ -487,7 +495,7 @@ function exportPdf() {
                   :y="item.y"
                   :width="item.width"
                   :height="item.height"
-                  fill="#1e293b"
+                  fill="rgb(var(--surface-2))"
                   rx="2"
                 />
                 <rect
@@ -496,7 +504,7 @@ function exportPdf() {
                   :y="item.conversionY"
                   :width="item.width"
                   :height="item.conversionHeight"
-                  fill="#22c55e"
+                  fill="rgb(var(--success))"
                   rx="2"
                 />
               </g>
@@ -506,7 +514,7 @@ function exportPdf() {
                 :x="item.x"
                 :y="CHART_HEIGHT + 13"
                 font-size="9"
-                fill="#94a3b8"
+                fill="rgb(var(--muted))"
                 text-anchor="middle"
               >
                 {{ item.label }}

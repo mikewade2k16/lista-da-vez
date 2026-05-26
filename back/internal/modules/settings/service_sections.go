@@ -52,6 +52,24 @@ func (service *Service) SaveModalSection(ctx context.Context, principal auth.Pri
 	return service.finalizeMutation(ctx, newMutationAck(tenantID, savedSection.UpdatedAt), nil)
 }
 
+func (service *Service) SaveAppearanceSection(ctx context.Context, principal auth.Principal, input AppearanceSectionInput) (MutationAck, error) {
+	tenantID, currentSection, err := service.loadWritableAppearanceSection(ctx, principal, input.TenantID)
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	if input.Appearance != nil {
+		currentSection.Appearance = applyAppearanceConfigPatch(currentSection.Appearance, *input.Appearance)
+	}
+
+	savedSection, err := service.repository.UpsertAppearanceSection(ctx, normalizeAppearanceSectionRecord(currentSection))
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	return service.finalizeMutation(ctx, newMutationAck(tenantID, savedSection.UpdatedAt), nil)
+}
+
 func (service *Service) ApplyOperationTemplate(ctx context.Context, principal auth.Principal, input OperationTemplateApplyInput) (MutationAck, error) {
 	tenantID, err := service.resolveWritableTenantID(ctx, principal, input.TenantID)
 	if err != nil {
@@ -143,6 +161,24 @@ func (service *Service) loadWritableModalSection(ctx context.Context, principal 
 	return tenantID, normalizeModalSectionRecord(section), nil
 }
 
+func (service *Service) loadWritableAppearanceSection(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, AppearanceSectionRecord, error) {
+	tenantID, err := service.resolveWritableTenantID(ctx, principal, requestedTenantID)
+	if err != nil {
+		return "", AppearanceSectionRecord{}, err
+	}
+
+	section, found, err := service.repository.GetAppearanceSection(ctx, tenantID)
+	if err != nil {
+		return "", AppearanceSectionRecord{}, err
+	}
+
+	if !found {
+		return tenantID, defaultAppearanceSectionRecord(tenantID), nil
+	}
+
+	return tenantID, normalizeAppearanceSectionRecord(section), nil
+}
+
 func (service *Service) loadSelectedOperationTemplateID(ctx context.Context, tenantID string) (string, error) {
 	section, found, err := service.repository.GetOperationSection(ctx, tenantID)
 	if err != nil {
@@ -155,4 +191,3 @@ func (service *Service) loadSelectedOperationTemplateID(ctx context.Context, ten
 
 	return normalizeOperationSectionRecord(section).SelectedOperationTemplateID, nil
 }
-

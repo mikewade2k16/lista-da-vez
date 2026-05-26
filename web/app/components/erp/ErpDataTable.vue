@@ -481,8 +481,8 @@ function emitExport(scope: ExportScope) {
   min-height: 2.45rem;
   padding: 0 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid rgba(129, 140, 248, 0.18);
-  background: rgba(18, 25, 38, 0.9);
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-control-bg);
   color: var(--text-main);
 }
 
@@ -493,8 +493,8 @@ function emitExport(scope: ExportScope) {
   min-height: 2.45rem;
   padding: 0 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid rgba(129, 140, 248, 0.18);
-  background: rgba(18, 25, 38, 0.9);
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   cursor: pointer;
   min-width: 160px;
@@ -506,7 +506,7 @@ function emitExport(scope: ExportScope) {
 }
 
 .erp-data-table__date-trigger:hover {
-  border-color: rgba(98, 129, 255, 0.35);
+  border-color: var(--erp-hover-border);
 }
 
 .erp-data-table__date-trigger-label {
@@ -547,7 +547,7 @@ function emitExport(scope: ExportScope) {
   padding: 0 0.95rem;
   border-radius: 0.8rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-weight: 600;
   cursor: pointer;
@@ -558,7 +558,7 @@ function emitExport(scope: ExportScope) {
 
 .erp-data-table__action:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(98, 129, 255, 0.35);
+  border-color: var(--erp-hover-border);
 }
 
 .erp-data-table__action:disabled {
@@ -567,15 +567,15 @@ function emitExport(scope: ExportScope) {
 }
 
 .erp-data-table__action--primary {
-  border-color: rgba(83, 198, 160, 0.32);
-  background: linear-gradient(135deg, rgba(13, 102, 87, 0.92), rgba(14, 73, 67, 0.94));
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-gradient);
 }
 
 .erp-data-table__action--export {
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  border-color: rgba(129, 140, 248, 0.28);
+  border-color: var(--erp-primary-border);
 }
 
 .erp-data-table__export-menu {
@@ -589,8 +589,8 @@ function emitExport(scope: ExportScope) {
   padding: 0.45rem;
   border: 1px solid var(--line-soft);
   border-radius: 0.8rem;
-  background: rgba(14, 20, 35, 0.98);
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+  background: var(--erp-strong-bg);
+  box-shadow: var(--erp-shadow-dropdown);
 }
 
 .erp-data-table__export-menu button {
@@ -607,7 +607,7 @@ function emitExport(scope: ExportScope) {
 }
 
 .erp-data-table__export-menu button:hover {
-  background: rgba(98, 129, 255, 0.12);
+  background: var(--erp-primary-soft-bg);
 }
 
 .erp-data-table__export-menu strong {
@@ -626,7 +626,7 @@ function emitExport(scope: ExportScope) {
 }
 
 .erp-data-table__money {
-  color: #b9ffd2;
+  color: var(--erp-success-text);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -663,7 +663,7 @@ function emitExport(scope: ExportScope) {
   min-height: 2rem;
   border-radius: 0.65rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   padding: 0 0.55rem;
 }
@@ -673,7 +673,7 @@ function emitExport(scope: ExportScope) {
   padding: 0 0.75rem;
   border-radius: 0.65rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   cursor: pointer;
 }

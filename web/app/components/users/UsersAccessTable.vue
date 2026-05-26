@@ -15,7 +15,7 @@ const ctx = useUsersAccessContext()
     :rows="ctx.filteredUsers"
     :loading="ctx.usersStore.pending"
     :search-value="ctx.filters.search"
-    :storage-key="'users-access-grid-columns-v1'"
+    :storage-key="ctx.gridStorageKey"
     empty-title="Nenhum usuario encontrado"
     empty-text="Ajuste os filtros ou abra um novo cadastro para preencher a grade."
     testid="users-access-grid"
@@ -41,7 +41,7 @@ const ctx = useUsersAccessContext()
       />
 
       <AppSelectField
-        v-if="ctx.auth.role === 'platform_admin'"
+        v-if="ctx.showTenantControls"
         class="users-access-manager__toolbar-select"
         :model-value="ctx.filters.tenant"
         :options="ctx.clientFilterOptions"
@@ -124,6 +124,23 @@ const ctx = useUsersAccessContext()
       />
     </template>
 
+    <template #cell-tenant="{ row }">
+      <AppSelectField
+        class="users-access-manager__inline-select"
+        :model-value="ctx.getRowDraft(row).tenantId"
+        :options="ctx.getTenantSelectOptions(row)"
+        :show-leading-icon="false"
+        compact
+        :disabled="
+          !ctx.showTenantControls ||
+          ctx.rowBusy[row.id] ||
+          ctx.isInlineLocked(row) ||
+          row.role === 'platform_admin'
+        "
+        @update:model-value="ctx.handleTenantChange(row, $event)"
+      />
+    </template>
+
     <template #cell-store="{ row }">
       <AppSelectField
         class="users-access-manager__inline-select"
@@ -134,6 +151,31 @@ const ctx = useUsersAccessContext()
         :disabled="ctx.rowBusy[row.id] || ctx.isInlineLocked(row)"
         @update:model-value="ctx.handleStoreChange(row, $event)"
       />
+    </template>
+
+    <template #cell-modules="{ row }">
+      <div class="users-access-manager__modules-cell">
+        <div class="users-access-manager__modules-list">
+          <span
+            v-for="workspaceItem in ctx.getUserWorkspaceSummary(row).previewItems"
+            :key="`${row.id}-${workspaceItem.id}`"
+            class="users-access-manager__module-chip"
+          >
+            {{ workspaceItem.label }}
+          </span>
+
+          <span
+            v-if="ctx.getUserWorkspaceSummary(row).hiddenCount"
+            class="users-access-manager__module-more"
+          >
+            +{{ ctx.getUserWorkspaceSummary(row).hiddenCount }}
+          </span>
+        </div>
+
+        <small class="users-access-manager__subcopy">
+          {{ ctx.getUserWorkspaceSummaryText(row) }}
+        </small>
+      </div>
     </template>
 
     <template #cell-employeeCode="{ row }">

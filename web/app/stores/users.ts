@@ -1,9 +1,13 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import { canManageUserPasswords, canManageUsers } from '~/domain/utils/permissions'
+import {
+  canManageUserPasswords,
+  canManageUsers,
+  getAllowedWorkspaces,
+} from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
-import { createApiRequest, getApiBase, getApiErrorMessage } from '~/utils/api-client'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 type LooseRecord = Record<string, any>
 type RefreshUsersOptions = {
@@ -117,6 +121,19 @@ export const useUsersStore = defineStore('users', () => {
       (role) => auth.role === 'platform_admin' || role.id !== 'platform_admin',
     ),
   )
+
+  function userHasWorkspaceAccess(user: LooseRecord | null | undefined, workspaceId: unknown) {
+    const normalizedWorkspaceId = normalizeText(workspaceId)
+    if (!normalizedWorkspaceId) {
+      return false
+    }
+
+    return getAllowedWorkspaces(normalizeText(user?.role)).includes(normalizedWorkspaceId)
+  }
+
+  function listUsersForWorkspace(workspaceId: unknown) {
+    return users.value.filter((user) => userHasWorkspaceAccess(user, workspaceId))
+  }
 
   function upsertLocalUser(user) {
     const normalizedUser = normalizeUser(user)
@@ -535,10 +552,12 @@ export const useUsersStore = defineStore('users', () => {
     manageable,
     ensureLoaded,
     refreshUsers,
+    listUsersForWorkspace,
     createUser,
     inviteUser,
     updateUser,
     archiveUser,
     resetPassword,
+    userHasWorkspaceAccess,
   }
 })

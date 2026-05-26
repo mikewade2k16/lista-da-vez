@@ -12,9 +12,12 @@ export const WORKSPACES = [
   { id: 'crm', label: 'CRM', icon: 'insights', path: '/crm' },
   { id: 'multiloja', label: 'Multi-loja', icon: 'store', path: '/multiloja' },
   { id: 'usuarios', label: 'Usuarios', icon: 'group', path: '/usuarios' },
+  { id: 'manage', label: 'Manage', icon: 'layout_panel_left', path: '/manage/users' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/configuracoes' },
+  { id: 'themes', label: 'Temas', icon: 'palette', path: '/themes' },
   { id: 'alertas', label: 'Alertas', icon: 'warning', path: '/alertas' },
   { id: 'feedback', label: 'Feedback', icon: 'chat_bubble', path: '/feedback' },
+  { id: 'tools', label: 'Tools', icon: 'build', path: '/editor' },
   { id: 'banco', label: 'Banco', icon: 'storage', path: '/banco' },
 ]
 

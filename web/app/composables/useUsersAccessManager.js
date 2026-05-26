@@ -4,6 +4,7 @@ import {
   ADVANCED_ACCESS_DEFINITIONS,
   WORKSPACE_ACCESS_DEFINITIONS,
   canManageUserPasswords,
+  getAllowedWorkspaces,
   getWorkspaceAccessOptions,
   hasPermission,
   normalizePermissionKeys,
@@ -43,11 +44,32 @@ export function useUsersAccessContext() {
   return ctx
 }
 
-export async function useUsersAccessManager() {
+const WORKSPACE_PREVIEW_ORDER = [
+  'operacao',
+  'tasks',
+  'erp',
+  'crm',
+  'consultor',
+  'ranking',
+  'dados',
+  'relatorios',
+  'campanhas',
+  'clientes',
+  'multiloja',
+  'configuracoes',
+  'alertas',
+  'feedback',
+  'bi',
+  'roadmap',
+  'banco',
+]
+
+export async function useUsersAccessManager(options = {}) {
   const auth = useAuthStore()
   const ui = useUiStore()
   const usersStore = useUsersStore()
   const accessStore = useAccessControlStore()
+  const workspaceMode = normalizeText(options?.mode) === 'queue' ? 'queue' : 'admin'
 
   const createComposerOpen = ref(false)
   const createMode = ref('invite')
@@ -70,6 +92,10 @@ export async function useUsersAccessManager() {
     canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved),
   )
   const canOverrideConsultantManaged = computed(() => normalizeText(auth.role) === 'platform_admin')
+  const showTenantControls = computed(
+    () => workspaceMode !== 'queue' && normalizeText(auth.role) === 'platform_admin',
+  )
+  const gridStorageKey = computed(() => `users-access-grid-columns-${workspaceMode}-v2`)
   const storeLookup = computed(
     () => new Map((auth.storeContext || []).map((store) => [String(store.id || '').trim(), store])),
   )
@@ -148,23 +174,36 @@ export async function useUsersAccessManager() {
     })),
   ])
 
-  const gridColumns = computed(() => [
-    { id: 'name', label: 'Nome', width: '1.55fr', locked: true },
-    { id: 'nick', label: 'Nick', width: '0.78fr' },
-    { id: 'email', label: 'Email', width: '1.35fr' },
-    { id: 'status', label: 'Status', width: '0.68fr', align: 'center' },
-    { id: 'profile', label: 'Perfil', width: '0.92fr' },
-    { id: 'store', label: 'Loja', width: '0.96fr' },
-    { id: 'employeeCode', label: 'Matricula', width: '0.72fr', align: 'center' },
-    { id: 'onboarding', label: 'Acesso', width: '0.9fr' },
-    { id: 'actions', label: 'Opcoes', width: '0.76fr', locked: true, align: 'end' },
-  ])
+  const gridColumns = computed(() => {
+    const columns = [
+      { id: 'name', label: 'Nome', width: '1.55fr', locked: true },
+      { id: 'nick', label: 'Nick', width: '0.78fr' },
+      { id: 'email', label: 'Email', width: '1.35fr' },
+      { id: 'status', label: 'Status', width: '0.68fr', align: 'center' },
+      { id: 'profile', label: 'Perfil', width: '0.92fr' },
+    ]
+
+    if (showTenantControls.value) {
+      columns.push({ id: 'tenant', label: 'Cliente', width: '1.02fr' })
+    }
+
+    columns.push(
+      { id: 'store', label: 'Loja', width: '0.96fr' },
+      { id: 'modules', label: 'Modulos', width: '1.22fr' },
+      { id: 'employeeCode', label: 'Matricula', width: '0.72fr', align: 'center' },
+      { id: 'onboarding', label: 'Acesso', width: '0.9fr' },
+      { id: 'actions', label: 'Opcoes', width: '0.76fr', locked: true, align: 'end' },
+    )
+
+    return columns
+  })
 
   const filteredUsers = computed(() => {
     return [...usersStore.users]
       .filter((user) => {
         const role = normalizeText(user.role)
         const tenantId = normalizeText(user.tenantId)
+        const workspaceDefinitions = getUserVisibleWorkspaceDefinitions(user)
         const searchHaystack = normalizeSearch(
           [
             user.displayName,
@@ -172,11 +211,19 @@ export async function useUsersAccessManager() {
             user.employeeCode,
             user.jobTitle,
             buildNickname(user.displayName),
+            getTenantLabel(user),
             getStoreLabel(user),
+            workspaceDefinitions.map((workspaceDefinition) => workspaceDefinition.label).join(' '),
             getRoleLabel(role),
           ].join(' '),
         )
 
+        if (
+          workspaceMode === 'queue' &&
+          !workspaceDefinitions.some((workspaceDefinition) => workspaceDefinition.id === 'operacao')
+        ) {
+          return false
+        }
         if (filters.search && !searchHaystack.includes(normalizeSearch(filters.search))) {
           return false
         }
@@ -274,6 +321,12 @@ export async function useUsersAccessManager() {
     return storeLookup.value.get(normalizeText(storeId))?.name || normalizeText(storeId) || '-'
   }
 
+  function getTenantLabel(user) {
+    const tenantId = normalizeText(user?.tenantId)
+    if (!tenantId) return 'Plataforma'
+    return tenantLookup.value.get(tenantId)?.name || tenantId
+  }
+
   function getStoreLabel(user) {
     if (!isStoreScopedRole(user.role)) return 'ALL'
 
@@ -281,6 +334,87 @@ export async function useUsersAccessManager() {
       .map((storeId) => getStoreName(storeId))
       .filter(Boolean)
     return names.join(', ') || 'Loja nao vinculada'
+  }
+
+  function getUserPermissionKeys(user) {
+    const userId = normalizeText(user?.id)
+    const accessView = userId ? accessStore.getUserAccess(userId) : null
+    if (
+      Array.isArray(accessView?.effectivePermissionKeys) &&
+      accessView.effectivePermissionKeys.length
+    ) {
+      return normalizePermissionKeys(accessView.effectivePermissionKeys)
+    }
+
+    return normalizePermissionKeys(
+      accessStore.roleLookup.get(normalizeText(user?.role))?.permissionKeys || [],
+    )
+  }
+
+  function sortWorkspaceDefinitions(workspaceDefinitions) {
+    return [...workspaceDefinitions].sort((left, right) => {
+      const leftIndex = WORKSPACE_PREVIEW_ORDER.indexOf(left.id)
+      const rightIndex = WORKSPACE_PREVIEW_ORDER.indexOf(right.id)
+      const normalizedLeftIndex = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex
+      const normalizedRightIndex = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex
+
+      if (normalizedLeftIndex !== normalizedRightIndex) {
+        return normalizedLeftIndex - normalizedRightIndex
+      }
+
+      return left.label.localeCompare(right.label, 'pt-BR')
+    })
+  }
+
+  function getUserVisibleWorkspaceDefinitions(user) {
+    const permissionKeys = getUserPermissionKeys(user)
+    const permissionsResolved = permissionKeys.length > 0 || Boolean(accessStore.roleMatrix.length)
+    const allowedWorkspaceIds = new Set(
+      getAllowedWorkspaces(normalizeText(user?.role), permissionKeys, permissionsResolved),
+    )
+
+    return sortWorkspaceDefinitions(
+      WORKSPACE_ACCESS_DEFINITIONS.filter(
+        (workspaceDefinition) =>
+          allowedWorkspaceIds.has(workspaceDefinition.id) && workspaceDefinition.id !== 'usuarios',
+      ),
+    )
+  }
+
+  function getUserEditableWorkspaceCount(user) {
+    const permissionKeys = getUserPermissionKeys(user)
+
+    return getUserVisibleWorkspaceDefinitions(user).filter((workspaceDefinition) => {
+      if (!normalizeText(workspaceDefinition.editPermission)) {
+        return false
+      }
+
+      return readWorkspaceAccessState(workspaceDefinition, permissionKeys, 'none') === 'edit'
+    }).length
+  }
+
+  function getUserWorkspaceSummary(user) {
+    const workspaceDefinitions = getUserVisibleWorkspaceDefinitions(user)
+    const previewItems = workspaceDefinitions.slice(0, 3).map((workspaceDefinition) => ({
+      id: workspaceDefinition.id,
+      label: workspaceDefinition.label,
+    }))
+
+    return {
+      editableCount: getUserEditableWorkspaceCount(user),
+      hiddenCount: Math.max(0, workspaceDefinitions.length - previewItems.length),
+      previewItems,
+      visibleCount: workspaceDefinitions.length,
+    }
+  }
+
+  function getUserWorkspaceSummaryText(user) {
+    const summary = getUserWorkspaceSummary(user)
+    if (!summary.visibleCount) {
+      return 'Sem modulos liberados'
+    }
+
+    return `${summary.visibleCount} modulos · ${summary.editableCount} com edicao`
   }
 
   function resetDetailOverrides() {
@@ -349,7 +483,25 @@ export async function useUsersAccessManager() {
   function getStoreSelectOptions(user, draft) {
     const role = normalizeText(draft?.role || user?.role)
     if (!isStoreScopedRole(role)) return [{ value: ALL_STORES_VALUE, label: 'ALL' }]
-    return getScopedStoreOptions(user?.tenantId || auth.activeTenantId)
+    return getScopedStoreOptions(draft?.tenantId || user?.tenantId || auth.activeTenantId)
+  }
+
+  function getTenantSelectOptions(user) {
+    const currentTenantId = normalizeText(user?.tenantId)
+    const options = (auth.tenantContext || []).map((tenant) => ({
+      value: normalizeText(tenant.id),
+      label: normalizeText(tenant.name),
+    }))
+
+    if (normalizeText(user?.role) === 'platform_admin') {
+      return [{ value: '', label: 'Plataforma' }]
+    }
+
+    if (!options.length && currentTenantId) {
+      return [{ value: currentTenantId, label: getTenantLabel(user) }]
+    }
+
+    return options
   }
 
   function findUserById(userId) {
@@ -401,6 +553,10 @@ export async function useUsersAccessManager() {
 
   function buildUpdatePayload(user) {
     const draft = getRowDraft(user)
+    const tenantId =
+      normalizeText(draft.role) === 'platform_admin'
+        ? ''
+        : normalizeText(draft.tenantId || user.tenantId || auth.activeTenantId)
     return {
       active: Boolean(draft.active),
       displayName: normalizeText(draft.displayName),
@@ -408,7 +564,7 @@ export async function useUsersAccessManager() {
       employeeCode: normalizeText(draft.employeeCode),
       role: normalizeText(draft.role),
       storeIds: isStoreScopedRole(draft.role) ? [normalizeText(draft.storeId)].filter(Boolean) : [],
-      tenantId: normalizeText(user.tenantId || auth.activeTenantId),
+      tenantId,
     }
   }
 
@@ -592,10 +748,31 @@ export async function useUsersAccessManager() {
   async function handleRoleChange(user, nextRole) {
     const draft = getRowDraft(user)
     draft.role = normalizeText(nextRole)
+    if (draft.role === 'platform_admin') {
+      draft.tenantId = ''
+      draft.storeId = ALL_STORES_VALUE
+    } else if (!draft.tenantId) {
+      draft.tenantId = normalizeText(user.tenantId || auth.activeTenantId)
+    }
+
     if (!isStoreScopedRole(draft.role)) {
       draft.storeId = ALL_STORES_VALUE
     } else if (!draft.storeId || draft.storeId === ALL_STORES_VALUE) {
       draft.storeId = getStoreSelectOptions(user, draft)[0]?.value || ''
+    }
+
+    await saveRow(user)
+  }
+
+  async function handleTenantChange(user, nextTenantId) {
+    const draft = getRowDraft(user)
+    draft.tenantId = normalizeText(nextTenantId)
+
+    if (isStoreScopedRole(draft.role)) {
+      const nextStoreOptions = getStoreSelectOptions(user, draft)
+      if (!nextStoreOptions.some((option) => option.value === draft.storeId)) {
+        draft.storeId = nextStoreOptions[0]?.value || ''
+      }
     }
 
     await saveRow(user)
@@ -923,7 +1100,12 @@ export async function useUsersAccessManager() {
     getStoreLabel,
     getStoreName,
     getStoreSelectOptions,
+    getTenantLabel,
+    getTenantSelectOptions,
+    getUserWorkspaceSummary,
+    getUserWorkspaceSummaryText,
     getWorkspaceAccessOptions,
+    gridStorageKey,
     gridColumns,
     handleArchiveAction,
     handleInlineBlur,
@@ -932,6 +1114,7 @@ export async function useUsersAccessManager() {
     handleRoleChange,
     handleStatusChange,
     handleStoreChange,
+    handleTenantChange,
     isConsultantManaged,
     isInlineLocked,
     isStoreScopedRole,
@@ -942,11 +1125,13 @@ export async function useUsersAccessManager() {
     rowBusy,
     saveDetails,
     selectedDetailUser,
+    showTenantControls,
     storeFilterOptions,
     statusFilterOptions,
     submitCreate,
     switchToInviteMode,
     tenantLookup,
     usersStore,
+    workspaceMode,
   })
 }

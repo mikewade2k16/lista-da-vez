@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { provide } from 'vue'
+import { defineAsyncComponent, provide } from 'vue'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
 import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
 import { TASKS_PAGE_CONTEXT_KEY, useTasksPageContext } from '../composables/useTasksPageContext'
 import TasksFilterBar from '../components/TasksFilterBar.vue'
 import TasksBoardView from '../components/TasksBoardView.vue'
-import TasksTableView from '../components/TasksTableView.vue'
-import TasksProjectSettings from '../components/TasksProjectSettings.vue'
-import TasksTaskModal from '../components/TasksTaskModal.vue'
+
+// Componentes pesados carregados sob demanda para reduzir o bundle inicial
+// da pagina /tasks. Boards e a view default; tabela/modal/settings so carregam
+// quando o usuario interage.
+const TasksTableView = defineAsyncComponent(() => import('../components/TasksTableView.vue'))
+const TasksProjectSettings = defineAsyncComponent(
+  () => import('../components/TasksProjectSettings.vue'),
+)
+const TasksTaskModal = defineAsyncComponent(() => import('../components/TasksTaskModal.vue'))
 
 // @ts-ignore Nuxt macro available at runtime in this page.
 definePageMeta({
@@ -116,6 +122,16 @@ const {
 </template>
 
 <style>
+/* Layout dashboard `.module-workspace-full` usa overflow:hidden + flex:1.
+   A pagina de tasks precisa ser scroll container propria para conseguir
+   exibir todas as tasks sem cortar. */
+.tasks-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 1rem;
+}
+
 .tasks-page__board {
   display: grid;
   grid-auto-flow: column;
@@ -682,6 +698,67 @@ const {
   font-size: 0.88rem;
 }
 
+.tasks-page__roadmap-control {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tasks-page__task-property-row--roadmap-create {
+  align-items: start;
+}
+
+.tasks-page__roadmap-create {
+  display: grid;
+  gap: 0.45rem;
+  width: min(100%, 34rem);
+}
+
+.tasks-page__roadmap-create-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(8rem, 1.2fr) minmax(7rem, 0.9fr) minmax(7rem, 0.9fr)
+    minmax(7rem, 0.8fr);
+  gap: 0.45rem;
+}
+
+.tasks-page__roadmap-priority {
+  min-height: 2rem;
+  padding: 0 0.45rem;
+  border: 1px solid rgb(var(--border));
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: rgb(var(--text));
+  font-size: 0.82rem;
+}
+
+.tasks-page__roadmap-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.tasks-page__roadmap-create-error {
+  margin: 0;
+  color: rgb(var(--error));
+  font-size: 0.78rem;
+}
+
+.tasks-page__roadmap-visible {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid rgb(var(--success) / 0.35);
+  border-radius: 999px;
+  background: rgb(var(--success) / 0.12);
+  color: rgb(var(--success));
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .tasks-page__task-date-input {
   width: fit-content;
   min-width: 10rem;
@@ -984,6 +1061,10 @@ const {
   .tasks-page__task-property-row {
     grid-template-columns: 1fr;
     gap: 0.25rem;
+  }
+
+  .tasks-page__roadmap-create-grid {
+    grid-template-columns: 1fr;
   }
 
   .tasks-page__task-title-input input {

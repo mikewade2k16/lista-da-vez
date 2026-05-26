@@ -249,6 +249,7 @@ func DefaultBundle(tenantID string, selectedTemplateID string) Bundle {
 			AlertMinPaScore:                    0,
 			AlertMinTicketAverage:              0,
 		},
+		Appearance:             defaultAppearanceConfig(),
 		ModalConfig:            mergeModalConfig(defaultBaseModalConfig(), template.ModalConfig),
 		VisitReasonOptions:     cloneOptions(template.VisitReasonOptions),
 		CustomerSourceOptions:  cloneOptions(template.CustomerSourceOptions),
@@ -259,6 +260,14 @@ func DefaultBundle(tenantID string, selectedTemplateID string) Bundle {
 		LossReasonOptions:      defaultLossReasonOptions(),
 		ProfessionOptions:      defaultProfessionOptions(),
 		ProductCatalog:         defaultProductCatalog(),
+	}
+}
+
+func defaultAppearanceConfig() AppearanceConfig {
+	return AppearanceConfig{
+		ActiveTheme:     "light",
+		CustomThemeName: "Custom",
+		Overrides:       AppearanceOverrides{},
 	}
 }
 

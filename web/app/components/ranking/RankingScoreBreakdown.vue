@@ -27,20 +27,15 @@ const breakdown = computed(() =>
   }),
 )
 
-const totalScore = computed(() =>
-  breakdown.value.reduce((sum, item) => sum + item.contribution, 0),
-)
+const totalScore = computed(() => breakdown.value.reduce((sum, item) => sum + item.contribution, 0))
 
-const totalWeight = computed(() =>
-  breakdown.value.reduce((sum, item) => sum + item.weight, 0),
-)
+const totalWeight = computed(() => breakdown.value.reduce((sum, item) => sum + item.weight, 0))
 
 const segments = computed(() =>
   breakdown.value.map((item) => ({
     ...item,
     sharePct: totalWeight.value > 0 ? (item.weight / totalWeight.value) * 100 : 0,
-    contributionPct:
-      item.weight > 0 ? (item.contribution / item.weight) * 100 : 0,
+    contributionPct: item.weight > 0 ? (item.contribution / item.weight) * 100 : 0,
   })),
 )
 </script>
@@ -72,7 +67,8 @@ const segments = computed(() =>
         <span class="score-breakdown__legend-label">{{ segment.label }}</span>
         <span class="score-breakdown__legend-weight">{{ segment.weight }}%</span>
         <span class="score-breakdown__legend-contribution">
-          {{ segment.contribution.toFixed(2) }} pts ({{ segment.contributionPct.toFixed(0) }}% do peso)
+          {{ segment.contribution.toFixed(2) }} pts ({{ segment.contributionPct.toFixed(0) }}% do
+          peso)
         </span>
       </li>
     </ul>
@@ -94,12 +90,12 @@ const segments = computed(() =>
 .score-breakdown__title {
   margin: 0;
   font-size: 0.95rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .score-breakdown__total {
   font-size: 1.4rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .score-breakdown__bar {
@@ -108,7 +104,7 @@ const segments = computed(() =>
   height: 0.85rem;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--border) / 0.68);
 }
 
 .score-breakdown__segment {
@@ -118,27 +114,27 @@ const segments = computed(() =>
 
 .score-breakdown__segment--conversion,
 .score-breakdown__legend-dot--conversion {
-  background: #6366f1;
+  background: rgb(var(--primary));
 }
 
 .score-breakdown__segment--soldValue,
 .score-breakdown__legend-dot--soldValue {
-  background: #22c55e;
+  background: rgb(var(--success));
 }
 
 .score-breakdown__segment--quality,
 .score-breakdown__legend-dot--quality {
-  background: #f59e0b;
+  background: rgb(var(--primary-600));
 }
 
 .score-breakdown__segment--pa,
 .score-breakdown__legend-dot--pa {
-  background: #ec4899;
+  background: rgb(var(--danger));
 }
 
 .score-breakdown__segment--queueDiscipline,
 .score-breakdown__legend-dot--queueDiscipline {
-  background: #14b8a6;
+  background: rgb(var(--muted));
 }
 
 .score-breakdown__legend {
@@ -155,7 +151,7 @@ const segments = computed(() =>
   align-items: center;
   gap: 0.5rem;
   font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.88);
+  color: rgb(var(--text) / 0.88);
 }
 
 .score-breakdown__legend-dot {
@@ -166,11 +162,11 @@ const segments = computed(() =>
 
 .score-breakdown__legend-weight {
   font-weight: 600;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .score-breakdown__legend-contribution {
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   font-size: 0.72rem;
 }
 </style>

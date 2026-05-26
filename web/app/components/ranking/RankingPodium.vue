@@ -130,7 +130,7 @@ function handleSelect(rowKey: string) {
   background: transparent;
   text-align: center;
   cursor: pointer;
-  color: rgba(226, 232, 240, 0.92);
+  color: rgb(var(--text) / 0.92);
 }
 
 .ranking-podium__slot--placeholder {
@@ -145,19 +145,19 @@ function handleSelect(rowKey: string) {
 .ranking-podium__name {
   font-size: 0.85rem;
   font-weight: 700;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
   word-break: break-word;
 }
 
 .ranking-podium__subtitle {
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .ranking-podium__value {
   margin-top: 0.25rem;
   font-size: 1.05rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .ranking-podium__pedestal {
@@ -168,21 +168,21 @@ function handleSelect(rowKey: string) {
   font-size: 1.6rem;
   font-weight: 800;
   border-radius: 0.5rem 0.5rem 0 0;
-  color: rgba(15, 23, 42, 0.85);
+  color: rgb(var(--text) / 0.85);
 }
 
 .ranking-podium__pedestal--gold {
-  background: linear-gradient(180deg, #facc15, #ca8a04);
+  background: linear-gradient(180deg, rgb(var(--primary)), rgb(var(--primary-600)));
   height: 7rem;
 }
 
 .ranking-podium__pedestal--silver {
-  background: linear-gradient(180deg, #cbd5e1, #94a3b8);
+  background: linear-gradient(180deg, rgb(var(--surface-2)), rgb(var(--border)));
   height: 5.5rem;
 }
 
 .ranking-podium__pedestal--bronze {
-  background: linear-gradient(180deg, #fb923c, #c2410c);
+  background: linear-gradient(180deg, rgb(var(--success)), rgb(var(--primary)));
   height: 4.5rem;
 }
 

@@ -3,10 +3,14 @@ import { ref } from 'vue'
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
 import RoadmapTimeline from '~/components/roadmap/RoadmapTimeline.vue'
 import RoadmapDatabaseSchema from '~/components/roadmap/RoadmapDatabaseSchema.vue'
+import RoadmapModulesBoard from '~/components/roadmap/RoadmapModulesBoard.vue'
+import RoadmapRulesBoard from '~/components/roadmap/RoadmapRulesBoard.vue'
 import { ROADMAP_SUBTITLE, ROADMAP_TITLE } from '~/components/roadmap/roadmap-data'
 
 const tabs = [
   { id: 'timeline', label: 'Roadmap', icon: 'timeline' },
+  { id: 'modules', label: 'Modulos', icon: 'view_module' },
+  { id: 'rules', label: 'Regras', icon: 'rule' },
   { id: 'database', label: 'Banco', icon: 'database' },
 ]
 
@@ -23,6 +27,8 @@ const activeTab = ref<string>('timeline')
     <SettingsTabs :tabs="tabs" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
 
     <RoadmapTimeline v-if="activeTab === 'timeline'" />
+    <RoadmapModulesBoard v-else-if="activeTab === 'modules'" />
+    <RoadmapRulesBoard v-else-if="activeTab === 'rules'" />
     <RoadmapDatabaseSchema v-else-if="activeTab === 'database'" />
   </div>
 </template>

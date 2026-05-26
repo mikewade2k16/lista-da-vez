@@ -30,9 +30,9 @@ defineProps({
   margin-top: 0.85rem;
   padding: 0.8rem 0.95rem;
   border-radius: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
+  border: 1px solid rgb(var(--primary) / 0.28);
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
 }
 
 .settings-runtime-warning .material-icons-round {

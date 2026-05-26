@@ -23,6 +23,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/reports"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/roadmap"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/settings"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tasks"
@@ -285,6 +286,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		registry.MustRegister(core.New())
 		registry.MustRegister(notifications.New(notificationService))
 		registry.MustRegister(tasks.New(realtimeService, notificationService, relationRegistry, taskVideoStorage))
+		registry.MustRegister(roadmap.New())
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {

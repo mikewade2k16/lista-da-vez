@@ -511,6 +511,24 @@ async function handleRestore() {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 0.2rem;
+  --tenants-control-bg: rgb(var(--surface) / 0.72);
+  --tenants-card-bg: rgb(var(--surface) / 0.46);
+  --tenants-input-bg: rgb(var(--surface) / 0.74);
+  --tenants-muted-bg: rgb(var(--surface-2) / 0.44);
+  --tenants-border-soft: rgb(var(--border) / 0.16);
+  --tenants-border-strong: rgb(var(--border) / 0.22);
+  --tenants-focus-border: rgb(var(--ring) / 0.45);
+  --tenants-focus-shadow: 0 0 0 3px rgb(var(--ring) / 0.12);
+  --tenants-primary-bg: rgb(var(--success) / 0.18);
+  --tenants-primary-border: rgb(var(--success) / 0.24);
+  --tenants-primary-text: color-mix(in srgb, rgb(var(--success)) 72%, rgb(var(--text)) 28%);
+  --tenants-danger-bg: rgb(var(--danger) / 0.16);
+  --tenants-danger-border: rgb(var(--danger) / 0.22);
+  --tenants-danger-text: color-mix(in srgb, rgb(var(--danger)) 72%, rgb(var(--text)) 28%);
+  --tenants-active-bg: rgb(var(--success) / 0.2);
+  --tenants-active-text: color-mix(in srgb, rgb(var(--success)) 68%, rgb(var(--text)) 32%);
+  --tenants-inactive-bg: rgb(var(--border) / 0.16);
+  --tenants-inactive-text: color-mix(in srgb, rgb(var(--muted)) 82%, rgb(var(--text)) 18%);
 }
 
 .tenants-workspace__hero {
@@ -526,8 +544,8 @@ async function handleRestore() {
   min-height: 2.5rem;
   padding: 0 0.95rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid var(--line-soft);
+  background: var(--tenants-control-bg);
   color: var(--text-main);
   font-size: 0.8rem;
   font-weight: 700;
@@ -543,15 +561,15 @@ async function handleRestore() {
 }
 
 .tenants-workspace__primary-btn {
-  border-color: rgba(34, 197, 94, 0.24);
-  background: rgba(34, 197, 94, 0.18);
-  color: #dcfce7;
+  border-color: var(--tenants-primary-border);
+  background: var(--tenants-primary-bg);
+  color: var(--tenants-primary-text);
 }
 
 .tenants-workspace__danger-btn {
-  border-color: rgba(248, 113, 113, 0.24);
-  background: rgba(127, 29, 29, 0.28);
-  color: #fecaca;
+  border-color: var(--tenants-danger-border);
+  background: var(--tenants-danger-bg);
+  color: var(--tenants-danger-text);
 }
 
 .tenants-workspace__metrics {
@@ -565,8 +583,8 @@ async function handleRestore() {
   gap: 0.3rem;
   padding: 0.95rem 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(15, 23, 42, 0.46);
+  border: 1px solid var(--tenants-border-soft);
+  background: var(--tenants-card-bg);
 }
 
 .tenants-workspace__metric-card span {
@@ -575,17 +593,17 @@ async function handleRestore() {
 }
 
 .tenants-workspace__metric-card strong {
-  color: #ffffff;
+  color: var(--text-main);
   font-size: 1.45rem;
 }
 
 .tenants-workspace__metric-card.is-positive {
-  border-color: rgba(34, 197, 94, 0.14);
-  background: rgba(20, 83, 45, 0.2);
+  border-color: var(--tenants-primary-border);
+  background: var(--tenants-active-bg);
 }
 
 .tenants-workspace__metric-card.is-muted {
-  border-color: rgba(148, 163, 184, 0.14);
+  border-color: var(--tenants-border-soft);
 }
 
 .tenants-workspace__layout {
@@ -618,7 +636,7 @@ async function handleRestore() {
 
 .tenants-workspace__section-head h3 {
   margin: 0;
-  color: #ffffff;
+  color: var(--text-main);
   font-size: 1rem;
 }
 
@@ -635,7 +653,7 @@ async function handleRestore() {
   min-height: 1.95rem;
   padding: 0 0.72rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.16);
+  background: var(--tenants-inactive-bg);
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -661,16 +679,16 @@ async function handleRestore() {
   width: 100%;
   padding: 0 0.85rem;
   border-radius: 0.95rem;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background: rgba(15, 23, 42, 0.74);
-  color: #ffffff;
+  border: 1px solid var(--tenants-border-strong);
+  background: var(--tenants-input-bg);
+  color: var(--text-main);
 }
 
 .tenants-workspace__filter-field select:focus,
 .tenants-workspace__field input:focus {
   outline: none;
-  border-color: rgba(56, 189, 248, 0.45);
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+  border-color: var(--tenants-focus-border);
+  box-shadow: var(--tenants-focus-shadow);
 }
 
 .tenants-workspace__slug-row {
@@ -717,18 +735,18 @@ async function handleRestore() {
   gap: 0.35rem;
   padding: 0.95rem 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(248, 113, 113, 0.18);
-  background: rgba(69, 10, 10, 0.16);
+  border: 1px solid var(--tenants-danger-border);
+  background: var(--tenants-danger-bg);
 }
 
 .tenants-workspace__empty-panel {
-  border-color: rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.44);
+  border-color: var(--tenants-border-soft);
+  background: var(--tenants-muted-bg);
 }
 
 .tenants-workspace__error-card strong,
 .tenants-workspace__empty-panel strong {
-  color: #ffffff;
+  color: var(--text-main);
 }
 
 .tenants-workspace__error-card p,
@@ -753,7 +771,7 @@ async function handleRestore() {
 }
 
 .tenants-workspace__row-link strong {
-  color: #ffffff;
+  color: var(--text-main);
   font-size: 0.84rem;
 }
 
@@ -763,7 +781,7 @@ async function handleRestore() {
 }
 
 .tenants-workspace__row-link.is-active strong {
-  color: #7dd3fc;
+  color: rgb(var(--primary));
 }
 
 .tenants-workspace__slug-chip,
@@ -779,20 +797,20 @@ async function handleRestore() {
 }
 
 .tenants-workspace__slug-chip {
-  background: rgba(148, 163, 184, 0.14);
+  background: var(--tenants-inactive-bg);
   color: var(--text-muted);
 }
 
 .tenants-workspace__status-pill.is-active,
 .tenants-workspace__detail-banner.is-active {
-  background: rgba(20, 83, 45, 0.2);
-  color: #bbf7d0;
+  background: var(--tenants-active-bg);
+  color: var(--tenants-active-text);
 }
 
 .tenants-workspace__status-pill.is-inactive,
 .tenants-workspace__detail-banner.is-inactive {
-  background: rgba(100, 116, 139, 0.16);
-  color: #cbd5e1;
+  background: var(--tenants-inactive-bg);
+  color: var(--tenants-inactive-text);
 }
 
 .tenants-workspace__detail-banner {
@@ -805,7 +823,7 @@ async function handleRestore() {
 }
 
 .tenants-workspace__detail-banner strong {
-  color: #ffffff;
+  color: var(--text-main);
   font-size: 0.9rem;
 }
 

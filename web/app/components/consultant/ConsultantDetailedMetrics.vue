@@ -47,7 +47,9 @@ defineProps<{
       <article class="detailed-metrics__card">
         <span class="detailed-metrics__icon" aria-hidden="true">💸</span>
         <span class="detailed-metrics__label">Comissão estimada</span>
-        <strong class="detailed-metrics__value">{{ formatCurrencyBRL(stats.estimatedCommission) }}</strong>
+        <strong class="detailed-metrics__value">
+          {{ formatCurrencyBRL(stats.estimatedCommission) }}
+        </strong>
         <span class="detailed-metrics__text">
           Taxa atual: {{ formatPercent(stats.commissionRate * 100) }}
         </span>
@@ -92,10 +94,7 @@ defineProps<{
         <span class="detailed-metrics__label">Fora da vez</span>
         <strong class="detailed-metrics__value">{{ stats.queueJumpServices }}</strong>
       </article>
-      <article
-        v-if="typeof stats.cancellationRate === 'number'"
-        class="detailed-metrics__card"
-      >
+      <article v-if="typeof stats.cancellationRate === 'number'" class="detailed-metrics__card">
         <span class="detailed-metrics__icon" aria-hidden="true">⛔</span>
         <span class="detailed-metrics__label">Taxa de cancelamento</span>
         <strong class="detailed-metrics__value">{{ formatPercent(stats.cancellationRate) }}</strong>
@@ -110,8 +109,9 @@ defineProps<{
   gap: 0.65rem;
   padding: 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(125, 146, 255, 0.16);
-  background: rgba(13, 19, 36, 0.55);
+  border: 1px solid rgb(var(--primary) / 0.16);
+  background: rgb(var(--surface) / 0.78);
+  box-shadow: var(--shadow-xs);
 }
 
 .detailed-metrics__header {
@@ -123,7 +123,7 @@ defineProps<{
 .detailed-metrics__title {
   margin: 0;
   font-size: 0.92rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .detailed-metrics__grid {
@@ -137,8 +137,8 @@ defineProps<{
   gap: 0.15rem;
   padding: 0.7rem 0.8rem;
   border-radius: 0.7rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgb(var(--surface-2) / 0.74);
+  border: 1px solid rgb(var(--border) / 0.72);
 }
 
 .detailed-metrics__icon {
@@ -148,26 +148,26 @@ defineProps<{
 
 .detailed-metrics__label {
   font-size: 0.68rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .detailed-metrics__value {
   font-size: 0.95rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .detailed-metrics__text {
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .detailed-metrics__text--hit {
-  color: #86efac;
+  color: rgb(var(--success));
 }
 
 .detailed-metrics__text--miss {
-  color: #fca5a5;
+  color: rgb(var(--danger));
 }
 </style>

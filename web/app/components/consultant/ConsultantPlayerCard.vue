@@ -326,9 +326,10 @@ function handleDetailsClick() {
   gap: 1rem;
   padding: 1.25rem;
   border-radius: 1rem;
-  border: 1px solid rgba(125, 146, 255, 0.18);
-  background: rgba(13, 19, 36, 0.78);
-  color: rgba(226, 232, 240, 0.92);
+  border: 1px solid rgb(var(--primary) / 0.18);
+  background: rgb(var(--surface) / 0.86);
+  color: rgb(var(--text) / 0.92);
+  box-shadow: var(--shadow-xs);
 }
 
 .player-card--mini {
@@ -342,7 +343,7 @@ function handleDetailsClick() {
 
 .player-card--mini:hover,
 .player-card--mini:focus-visible {
-  border-color: rgba(125, 146, 255, 0.42);
+  border-color: rgb(var(--ring) / 0.42);
   transform: translateY(-1px);
   outline: none;
 }
@@ -368,8 +369,8 @@ function handleDetailsClick() {
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.22);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
   font-weight: 700;
   font-size: 0.95rem;
 }
@@ -383,12 +384,12 @@ function handleDetailsClick() {
 .player-card__name {
   font-size: 0.95rem;
   line-height: 1.2;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .player-card__subtitle {
   font-size: 0.72rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .consultant-status {
@@ -398,31 +399,31 @@ function handleDetailsClick() {
   min-height: 1.6rem;
   padding: 0 0.55rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgb(var(--border) / 0.86);
   font-size: 0.68rem;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .consultant-status--available {
-  background: rgba(34, 197, 94, 0.14);
-  color: #86efac;
+  background: rgb(var(--success) / 0.14);
+  color: rgb(var(--success));
 }
 
 .consultant-status--service {
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
 }
 
 .consultant-status--queue {
-  background: rgba(250, 204, 21, 0.14);
-  color: #fde68a;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .consultant-status--paused,
 .consultant-status--assignment {
-  background: rgba(244, 114, 182, 0.14);
-  color: #f9a8d4;
+  background: rgb(var(--danger) / 0.12);
+  color: rgb(var(--danger));
 }
 
 .player-card__gauge-block {
@@ -443,22 +444,22 @@ function handleDetailsClick() {
 }
 
 .player-card__gauge-track {
-  stroke: rgba(148, 163, 184, 0.16);
+  stroke: rgb(var(--border) / 0.68);
 }
 
 .player-card__gauge-fill {
-  stroke: #6366f1;
+  stroke: rgb(var(--primary));
   transition: stroke-dasharray 240ms ease;
 }
 
 .player-card__gauge-value {
-  fill: rgba(248, 250, 252, 0.96);
+  fill: rgb(var(--text) / 0.96);
   font-size: 22px;
   font-weight: 700;
 }
 
 .player-card__gauge-caption {
-  fill: rgba(148, 163, 184, 0.92);
+  fill: rgb(var(--muted) / 0.92);
   font-size: 11px;
   font-weight: 500;
 }
@@ -476,13 +477,13 @@ function handleDetailsClick() {
 .player-card__sold-amount {
   font-size: 1.15rem;
   font-weight: 700;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .player-card__sold-of-goal,
 .player-card__sold-caption {
   font-size: 0.78rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .player-card__hero-metrics {
@@ -497,8 +498,8 @@ function handleDetailsClick() {
   gap: 0.15rem;
   padding: 0.55rem 0.65rem;
   border-radius: 0.7rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgb(var(--surface-2) / 0.76);
+  border: 1px solid rgb(var(--border) / 0.72);
 }
 
 .player-card__detail-grid {
@@ -527,27 +528,27 @@ function handleDetailsClick() {
 
 .player-card__kpi-label {
   font-size: 0.68rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .player-card__kpi-value {
   font-size: 0.92rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .player-card__metric-note {
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .player-card__metric-note--hit {
-  color: #86efac;
+  color: rgb(var(--success));
 }
 
 .player-card__metric-note--miss {
-  color: #fca5a5;
+  color: rgb(var(--danger));
 }
 
 .player-card__footer {
@@ -558,9 +559,9 @@ function handleDetailsClick() {
 .player-card__details-btn {
   padding: 0.45rem 0.95rem;
   border-radius: 0.6rem;
-  border: 1px solid rgba(125, 146, 255, 0.42);
-  background: rgba(99, 102, 241, 0.16);
-  color: #c7d2fe;
+  border: 1px solid rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -568,7 +569,7 @@ function handleDetailsClick() {
 }
 
 .player-card__details-btn:hover {
-  background: rgba(99, 102, 241, 0.28);
+  background: rgb(var(--primary) / 0.24);
 }
 
 @media (max-width: 720px) {

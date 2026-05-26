@@ -47,7 +47,8 @@ const clampedProgress = computed(() => {
 })
 
 const showProgress = computed(
-  () => typeof props.goal === 'number' && props.goal > 0 && typeof props.progressPercent === 'number',
+  () =>
+    typeof props.goal === 'number' && props.goal > 0 && typeof props.progressPercent === 'number',
 )
 
 const variationLabel = computed(() => {
@@ -58,7 +59,9 @@ const variationLabel = computed(() => {
 
 const variationClass = computed(() => {
   if (typeof props.variation !== 'number' || props.variation === 0) return ''
-  return props.variation > 0 ? 'leaderboard-card__variation--up' : 'leaderboard-card__variation--down'
+  return props.variation > 0
+    ? 'leaderboard-card__variation--up'
+    : 'leaderboard-card__variation--down'
 })
 
 function handleClick() {
@@ -107,18 +110,20 @@ function handleClick() {
   align-items: center;
   gap: 0.85rem;
   padding: 0.7rem 0.95rem;
-  border: 1px solid rgba(125, 146, 255, 0.16);
+  border: 1px solid rgb(var(--primary) / 0.16);
   border-radius: 0.85rem;
-  background: rgba(13, 19, 36, 0.72);
-  color: rgba(226, 232, 240, 0.92);
+  background: rgb(var(--surface) / 0.82);
+  color: rgb(var(--text) / 0.92);
   text-align: left;
   cursor: pointer;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
 }
 
 .leaderboard-card:hover,
 .leaderboard-card:focus-visible {
-  border-color: rgba(125, 146, 255, 0.42);
+  border-color: rgb(var(--ring) / 0.42);
   transform: translateY(-1px);
   outline: none;
 }
@@ -126,7 +131,7 @@ function handleClick() {
 .leaderboard-card__position {
   font-size: 1.1rem;
   font-weight: 700;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-align: center;
 }
 
@@ -145,12 +150,12 @@ function handleClick() {
 
 .leaderboard-card__name {
   font-size: 0.92rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .leaderboard-card__subtitle {
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .leaderboard-card__progress {
@@ -163,7 +168,7 @@ function handleClick() {
 .leaderboard-card__progress-bar {
   position: relative;
   height: 0.35rem;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--border) / 0.68);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -173,12 +178,12 @@ function handleClick() {
   top: 0;
   left: 0;
   bottom: 0;
-  background: #6366f1;
+  background: rgb(var(--primary));
 }
 
 .leaderboard-card__progress-text {
   font-size: 0.68rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   white-space: nowrap;
 }
 
@@ -190,7 +195,7 @@ function handleClick() {
 
 .leaderboard-card__metric-value {
   font-size: 1.05rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .leaderboard-card__variation {
@@ -201,12 +206,12 @@ function handleClick() {
 }
 
 .leaderboard-card__variation--up {
-  background: rgba(34, 197, 94, 0.14);
-  color: #86efac;
+  background: rgb(var(--success) / 0.14);
+  color: rgb(var(--success));
 }
 
 .leaderboard-card__variation--down {
-  background: rgba(248, 113, 113, 0.14);
-  color: #fca5a5;
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
 }
 </style>

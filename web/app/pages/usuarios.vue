@@ -18,6 +18,6 @@ onMounted(() => {
 
 <template>
   <div class="page-workspace">
-    <UsersWorkspace />
+    <UsersWorkspace mode="queue" />
   </div>
 </template>

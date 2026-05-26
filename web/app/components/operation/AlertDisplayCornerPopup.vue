@@ -109,11 +109,12 @@ function getColorStyle(colorTheme: string) {
 }
 
 .corner-popup {
-  background: white;
+  background: rgb(var(--surface));
+  color: rgb(var(--text));
   border-radius: 8px;
   padding: 1rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-left: 4px solid var(--alert-color, #f59e0b);
+  box-shadow: var(--shadow-sm);
+  border-left: 4px solid var(--alert-color, rgb(var(--primary)));
   pointer-events: auto;
   animation: slideIn 0.3s ease-out;
 }
@@ -141,13 +142,13 @@ function getColorStyle(colorTheme: string) {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #1f2937;
+  color: rgb(var(--text));
 }
 
 .corner-popup__close {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: rgb(var(--muted));
   cursor: pointer;
   font-size: 1rem;
   padding: 0;
@@ -155,13 +156,13 @@ function getColorStyle(colorTheme: string) {
 }
 
 .corner-popup__close:hover {
-  color: #6b7280;
+  color: rgb(var(--text));
 }
 
 .corner-popup__body {
   margin: 0 0 0.75rem 0;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: rgb(var(--muted));
 }
 
 .corner-popup__actions {
@@ -173,41 +174,41 @@ function getColorStyle(colorTheme: string) {
 .corner-popup__action-btn {
   padding: 0.4rem 0.8rem;
   border-radius: 4px;
-  border: 1px solid #d1d5db;
-  background: white;
-  color: #374151;
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface));
+  color: rgb(var(--text));
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .corner-popup__action-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: rgb(var(--primary) / 0.12);
+  border-color: rgb(var(--ring) / 0.36);
 }
 
 /* Color theme variants */
 .corner-popup--amber {
-  border-left-color: #f59e0b;
+  border-left-color: rgb(var(--primary));
 }
 
 .corner-popup--red {
-  border-left-color: #ef4444;
+  border-left-color: rgb(var(--danger));
 }
 
 .corner-popup--blue {
-  border-left-color: #3b82f6;
+  border-left-color: rgb(var(--primary));
 }
 
 .corner-popup--green {
-  border-left-color: #10b981;
+  border-left-color: rgb(var(--success));
 }
 
 .corner-popup--purple {
-  border-left-color: #a855f7;
+  border-left-color: rgb(var(--primary-600));
 }
 
 .corner-popup--slate {
-  border-left-color: #64748b;
+  border-left-color: rgb(var(--muted));
 }
 </style>

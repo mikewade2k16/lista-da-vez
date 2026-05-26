@@ -113,8 +113,8 @@ function selectMetric(next: RankingMetric) {
   gap: 0.25rem;
   padding: 0.25rem;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgb(var(--surface-2) / 0.74);
+  border: 1px solid rgb(var(--border) / 0.78);
   width: max-content;
   max-width: 100%;
 }
@@ -124,15 +124,15 @@ function selectMetric(next: RankingMetric) {
   border-radius: 999px;
   border: none;
   background: transparent;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ranking-tabs-header__scope-btn--active {
-  background: rgba(99, 102, 241, 0.2);
-  color: rgba(248, 250, 252, 0.98);
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .ranking-tabs-header__sort {
@@ -144,7 +144,7 @@ function selectMetric(next: RankingMetric) {
 
 .ranking-tabs-header__sort-label {
   font-size: 0.72rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -155,17 +155,17 @@ function selectMetric(next: RankingMetric) {
   gap: 0.3rem;
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid rgb(var(--border) / 0.82);
   background: transparent;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   font-size: 0.74rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ranking-tabs-header__sort-chip--active {
-  background: rgba(99, 102, 241, 0.18);
-  border-color: rgba(125, 146, 255, 0.42);
-  color: rgba(248, 250, 252, 0.96);
+  background: rgb(var(--primary) / 0.18);
+  border-color: rgb(var(--ring) / 0.42);
+  color: rgb(var(--primary));
 }
 </style>

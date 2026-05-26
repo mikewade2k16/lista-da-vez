@@ -212,6 +212,9 @@ func normalizeOverridesForSubject(subject UserSubject, overrides []UserOverride)
 }
 
 func canViewUserAccess(principal auth.Principal) bool {
+	if principal.Role == auth.RolePlatformAdmin {
+		return true
+	}
 	if principal.PermissionsResolved {
 		return HasPermission(principal.Permissions, PermissionUsersView)
 	}
@@ -220,6 +223,9 @@ func canViewUserAccess(principal auth.Principal) bool {
 }
 
 func canEditUserAccess(principal auth.Principal) bool {
+	if principal.Role == auth.RolePlatformAdmin {
+		return true
+	}
 	if principal.PermissionsResolved {
 		return HasPermission(principal.Permissions, PermissionUsersEdit)
 	}
@@ -228,6 +234,9 @@ func canEditUserAccess(principal auth.Principal) bool {
 }
 
 func canEditRoleMatrix(principal auth.Principal) bool {
+	if principal.Role == auth.RolePlatformAdmin {
+		return true
+	}
 	if principal.PermissionsResolved {
 		return HasPermission(principal.Permissions, PermissionRoleMatrixEdit)
 	}

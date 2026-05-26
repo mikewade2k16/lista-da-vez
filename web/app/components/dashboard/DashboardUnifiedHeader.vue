@@ -3,11 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
+import DashboardThemeSwitcher from '~/components/dashboard/DashboardThemeSwitcher.vue'
 import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
 import { getRoleLabel } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useNavStore } from '~/stores/nav'
 import { getApiBase } from '~/utils/api-client'
+import { QUEUE_ONLY_WORKSPACE_IDS } from '~/utils/workspaces'
 
 const props = defineProps({
   state: {
@@ -30,8 +32,6 @@ const auth = useAuthStore()
 const navStore = useNavStore()
 const runtimeConfig = useRuntimeConfig()
 const route = useRoute()
-const { currentTheme, hasCustomTheme, initializeFromStorage, applyTheme, getThemeLabel } =
-  useOmniTheme()
 const { isAuthenticated, user, role } = storeToRefs(auth)
 
 const menuOpen = ref(false)
@@ -82,27 +82,6 @@ const headerItems = computed(() =>
   ),
 )
 
-const themeButton = computed(() => {
-  if (currentTheme.value === 'dark') return { icon: 'i-lucide-moon', label: getThemeLabel('dark') }
-  if (currentTheme.value === 'apple')
-    return { icon: 'i-lucide-sparkles', label: getThemeLabel('apple') }
-  if (currentTheme.value === 'custom')
-    return { icon: 'i-lucide-palette', label: getThemeLabel('custom') }
-  return { icon: 'i-lucide-sun', label: getThemeLabel('light') }
-})
-
-const themeItems = computed(() => [
-  { value: 'light', label: getThemeLabel('light'), icon: 'i-lucide-sun' },
-  { value: 'dark', label: getThemeLabel('dark'), icon: 'i-lucide-moon' },
-  { value: 'apple', label: getThemeLabel('apple'), icon: 'i-lucide-sparkles' },
-  {
-    value: 'custom',
-    label: getThemeLabel('custom'),
-    icon: 'i-lucide-palette',
-    disabled: !hasCustomTheme.value,
-  },
-])
-
 function normalizePath(path) {
   const normalizedPath = String(path || '').replace(/\/+$/, '')
   return normalizedPath || '/'
@@ -129,8 +108,24 @@ function filterItem(item) {
 }
 
 function isItemAllowed(item) {
+  if (item.hidden) {
+    return false
+  }
+
   const workspaceId = String(item.workspaceId || '').trim()
-  return !workspaceId || allowedWorkspaceSet.value.has(workspaceId)
+  if (!workspaceId) {
+    return true
+  }
+
+  if (!allowedWorkspaceSet.value.has(workspaceId)) {
+    return false
+  }
+
+  if (QUEUE_ONLY_WORKSPACE_IDS.has(workspaceId)) {
+    return workspaceId === 'operacao' && normalizePath(item.path || '') === '/operacao'
+  }
+
+  return true
 }
 
 function isItemActive(item) {
@@ -165,14 +160,6 @@ function closeMenu() {
 
 function toggleProfileMenu() {
   profileMenuOpen.value = !profileMenuOpen.value
-}
-
-function selectTheme(value) {
-  if (!value || (value === 'custom' && !hasCustomTheme.value)) {
-    return
-  }
-
-  applyTheme(value)
 }
 
 async function toggleFullscreen() {
@@ -221,7 +208,6 @@ watch(
 )
 
 onMounted(() => {
-  initializeFromStorage()
   document.addEventListener('pointerdown', handlePointerDown)
   document.addEventListener('keydown', handleEscape)
 })
@@ -311,34 +297,6 @@ onBeforeUnmount(() => {
           @update:model-value="handleProfileChange"
         />
 
-        <UPopover :content="{ side: 'bottom', align: 'end' }">
-          <UButton
-            :icon="themeButton.icon"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            :aria-label="themeButton.label"
-          />
-          <template #content>
-            <div
-              class="dashboard-unified-header__menu-popover dashboard-unified-header__menu-popover--sm"
-            >
-              <button
-                v-for="item in themeItems"
-                :key="item.value"
-                class="dashboard-unified-header__menu-item"
-                :class="{ 'is-active': currentTheme === item.value }"
-                type="button"
-                :disabled="item.disabled"
-                @click="selectTheme(item.value)"
-              >
-                <UIcon :name="item.icon" class="size-4" aria-hidden="true" />
-                <span>{{ item.label }}</span>
-              </button>
-            </div>
-          </template>
-        </UPopover>
-
         <UButton
           icon="i-lucide-expand"
           color="neutral"
@@ -347,6 +305,7 @@ onBeforeUnmount(() => {
           aria-label="Tela cheia"
           @click="toggleFullscreen"
         />
+        <DashboardThemeSwitcher />
         <FeedbackNotificationsDropdown v-if="isAuthenticated" />
 
         <div
@@ -662,7 +621,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   border-radius: 999px;
   background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--success)));
-  color: #f8fafc;
+  color: rgb(255 255 255);
   font-size: 0.9rem;
   font-weight: 900;
   box-shadow: 0 0 0 3px rgb(var(--primary) / 0.28);
@@ -740,9 +699,9 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-unified-header__menu-action--danger {
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.18);
-  border-color: rgba(248, 113, 113, 0.16);
+  color: rgb(var(--danger));
+  background: rgb(var(--danger) / 0.12);
+  border-color: rgb(var(--danger) / 0.22);
 }
 
 .dashboard-unified-header__drawer-nav {

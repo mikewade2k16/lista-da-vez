@@ -257,12 +257,11 @@ const groupedRows = computed(() => {
 
   filteredRows.value.forEach((row) => {
     const storeId = String(row.storeId || '').trim()
-    const current =
-      groups.get(storeId) || {
-        storeId,
-        storeName: String(row.storeName || 'Loja sem nome').trim() || 'Loja sem nome',
-        rows: [],
-      }
+    const current = groups.get(storeId) || {
+      storeId,
+      storeName: String(row.storeName || 'Loja sem nome').trim() || 'Loja sem nome',
+      rows: [],
+    }
 
     current.rows.push(row)
     groups.set(storeId, current)
@@ -288,7 +287,8 @@ const selectedStoreConsultant = computed(() => {
   }
 
   return (
-    singleStoreRows.value.find((row) => row.id === selectedConsultantId.value) || singleStoreRows.value[0]
+    singleStoreRows.value.find((row) => row.id === selectedConsultantId.value) ||
+    singleStoreRows.value[0]
   )
 })
 
@@ -372,7 +372,9 @@ const selectedDrawerStats = computed(() => {
     avgTicketGoal: Number(row.avgTicketGoal || 0),
     paGoal: Number(row.paGoal || 0),
     conversionGoal: Number(row.conversionGoal || 0),
-    monthEntries: (props.history || []).filter((entry) => String(entry?.personId || '').trim() === row.id),
+    monthEntries: (props.history || []).filter(
+      (entry) => String(entry?.personId || '').trim() === row.id,
+    ),
   }
 })
 
@@ -530,10 +532,7 @@ function updateSimulationAdditionalSales(value) {
       </div>
     </template>
 
-    <ConsultantDetailsDrawer
-      :consultant="selectedDrawerConsultant"
-      :stats="selectedDrawerStats"
-    />
+    <ConsultantDetailsDrawer :consultant="selectedDrawerConsultant" :stats="selectedDrawerStats" />
   </section>
 </template>
 
@@ -563,8 +562,9 @@ function updateSimulationAdditionalSales(value) {
 .consultant-integrated-insight-panel {
   padding: 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(125, 146, 255, 0.16);
-  background: rgba(13, 19, 36, 0.55);
+  border: 1px solid rgb(var(--primary) / 0.16);
+  background: rgb(var(--surface) / 0.78);
+  box-shadow: var(--shadow-xs);
 }
 
 .consultant-integrated-group {
@@ -578,25 +578,25 @@ function updateSimulationAdditionalSales(value) {
   justify-content: space-between;
   gap: 0.75rem;
   padding-bottom: 0.35rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid rgb(var(--border) / 0.72);
 }
 
 .consultant-integrated-group__title {
   margin: 0;
   font-size: 1rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .consultant-integrated-group__text {
   margin: 0.2rem 0 0;
   font-size: 0.78rem;
-  color: rgba(148, 163, 184, 0.9);
+  color: rgb(var(--muted) / 0.9);
 }
 
 .player-grid__empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 @media (max-width: 1100px) {

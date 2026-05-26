@@ -55,8 +55,7 @@ const resolvedBadges = computed<ResolvedBadge[]>(() => {
         break
       }
       case 'ticket-above-goal':
-        earned =
-          (stats.avgTicketGoal ?? 0) > 0 && stats.ticketAverage >= (stats.avgTicketGoal ?? 0)
+        earned = (stats.avgTicketGoal ?? 0) > 0 && stats.ticketAverage >= (stats.avgTicketGoal ?? 0)
         break
       case 'pa-above-goal':
         earned = (stats.paGoal ?? 0) > 0 && stats.paScore >= (stats.paGoal ?? 0)
@@ -99,9 +98,9 @@ const resolvedBadges = computed<ResolvedBadge[]>(() => {
   gap: 0.35rem;
   padding: 0.3rem 0.65rem;
   border-radius: 999px;
-  background: rgba(34, 197, 94, 0.12);
-  border: 1px solid rgba(34, 197, 94, 0.32);
-  color: #86efac;
+  background: rgb(var(--success) / 0.12);
+  border: 1px solid rgb(var(--success) / 0.32);
+  color: rgb(var(--success));
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;

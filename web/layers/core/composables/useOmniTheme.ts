@@ -1,3 +1,5 @@
+import { createApiRequest } from '~/utils/api-client'
+
 export type OmniThemeName = 'light' | 'dark' | 'apple' | 'custom'
 
 type ThemeVars = Record<string, string>
@@ -162,11 +164,11 @@ export const OMNI_THEME_DEFAULTS: Record<Exclude<OmniThemeName, 'custom'>, Theme
     border: '31 41 55',
     text: '226 232 240',
     muted: '148 163 184',
-    primary: '129 140 248',
-    'primary-600': '165 180 252',
+    primary: '99 102 241',
+    'primary-600': '79 70 229',
     success: '34 197 94',
     danger: '248 113 113',
-    ring: '129 140 248',
+    ring: '99 102 241',
   },
   apple: {
     ...SHARED_THEME_DEFAULTS,
@@ -298,27 +300,111 @@ export function hexToRgbTriplet(hex: string) {
  * @see OMNI_THEME_VARIABLES
  */
 export function useOmniTheme() {
+  const runtimeConfig = useRuntimeConfig()
   const colorMode = useColorMode()
+  const auth = useAuthStore()
+  const runtime = useAppRuntimeStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const initialized = useState<boolean>('omni-theme-initialized', () => false)
   const currentTheme = useState<OmniThemeName>('omni-theme-current', () => 'light')
   const overrides = useState<OmniThemeOverrides>('omni-theme-overrides', () =>
     createEmptyOverrides(),
   )
   const customThemeName = useState<string>('omni-theme-custom-name', () => OMNI_THEME_LABELS.custom)
+  const runtimeAppearance = computed(() => runtime.state?.appearance || null)
+  const isRemoteManaged = computed(
+    () =>
+      auth.isAuthenticated &&
+      String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim().length > 0,
+  )
+  const canAccessThemeStudio = computed(
+    () =>
+      import.meta.dev ||
+      runtimeConfig.public.themeStudioEnabled === true ||
+      auth.allowedWorkspaces.includes('themes'),
+  )
+  const advancedThemesEnabled = computed(() => canAccessThemeStudio.value || isRemoteManaged.value)
 
   const hasCustomTheme = computed(() => Object.keys(overrides.value.custom).length > 0)
+  let persistTimer: ReturnType<typeof window.setTimeout> | null = null
 
   function normalizeThemeName(name: string) {
     const normalized = name.trim()
     return normalized || OMNI_THEME_LABELS.custom
   }
 
+  function resolveTenantId() {
+    return String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim()
+  }
+
+  function appendTenantQuery(path: string, tenantId: string) {
+    const separator = path.includes('?') ? '&' : '?'
+    return `${path}${separator}tenantId=${encodeURIComponent(tenantId)}`
+  }
+
+  function cloneOverridesSnapshot(
+    source: OmniThemeOverrides = overrides.value,
+  ): OmniThemeOverrides {
+    return ALL_THEMES.reduce((nextValue, theme) => {
+      nextValue[theme] = { ...(source?.[theme] || {}) }
+      return nextValue
+    }, createEmptyOverrides())
+  }
+
+  function normalizeAppearanceSnapshot(appearance: any) {
+    const resolvedTheme = isThemeName(String(appearance?.activeTheme || '').trim())
+      ? String(appearance?.activeTheme || '').trim()
+      : 'light'
+
+    return {
+      activeTheme: resolvedTheme as OmniThemeName,
+      customThemeName: normalizeThemeName(String(appearance?.customThemeName || '')),
+      overrides: sanitizeOverrides(appearance?.overrides),
+    }
+  }
+
+  function buildAppearanceSnapshot() {
+    return {
+      activeTheme: currentTheme.value,
+      customThemeName: normalizeThemeName(customThemeName.value),
+      overrides: cloneOverridesSnapshot(),
+    }
+  }
+
   function persistOverrides() {
-    if (!import.meta.client) {
+    if (!import.meta.client || !advancedThemesEnabled.value || isRemoteManaged.value) {
       return
     }
 
     localStorage.setItem(OVERRIDES_STORAGE_KEY, JSON.stringify(overrides.value))
+  }
+
+  function getFallbackBaseTheme(): OmniThemeName {
+    if (!import.meta.client) {
+      return colorMode.value === 'dark' ? 'dark' : 'light'
+    }
+
+    return document.documentElement.classList.contains('dark') || colorMode.value === 'dark'
+      ? 'dark'
+      : 'light'
+  }
+
+  function clearAdvancedThemeStorage() {
+    if (!import.meta.client) {
+      return
+    }
+
+    localStorage.removeItem(OVERRIDES_STORAGE_KEY)
+    localStorage.removeItem(CUSTOM_THEME_NAME_KEY)
+  }
+
+  function clearLocalThemeStorage() {
+    if (!import.meta.client) {
+      return
+    }
+
+    localStorage.removeItem(THEME_STORAGE_KEY)
+    clearAdvancedThemeStorage()
   }
 
   function applyOverrides() {
@@ -377,8 +463,66 @@ export function useOmniTheme() {
     return 'light'
   }
 
+  function applyRemoteAppearance(appearance: any, options: { markInitialized?: boolean } = {}) {
+    const normalizedAppearance = normalizeAppearanceSnapshot(appearance)
+    overrides.value = normalizedAppearance.overrides
+    customThemeName.value = normalizedAppearance.customThemeName
+    applyOverrides()
+    applyTheme(normalizedAppearance.activeTheme, false)
+
+    if (isRemoteManaged.value) {
+      clearLocalThemeStorage()
+    }
+
+    if (options.markInitialized !== false) {
+      initialized.value = true
+    }
+  }
+
+  async function persistRemoteAppearance(snapshot = buildAppearanceSnapshot()) {
+    const tenantId = resolveTenantId()
+
+    if (!import.meta.client || !tenantId || !auth.accessToken) {
+      return
+    }
+
+    await apiRequest(appendTenantQuery('/v1/settings/appearance', tenantId), {
+      method: 'PATCH',
+      body: {
+        appearance: snapshot,
+      },
+    })
+  }
+
+  function scheduleRemoteAppearancePersist() {
+    if (!import.meta.client || !isRemoteManaged.value) {
+      return
+    }
+
+    if (persistTimer) {
+      window.clearTimeout(persistTimer)
+      persistTimer = null
+    }
+
+    const snapshot = buildAppearanceSnapshot()
+    persistTimer = window.setTimeout(async () => {
+      persistTimer = null
+
+      try {
+        await persistRemoteAppearance(snapshot)
+      } catch (error) {
+        console.error('[omni-theme] failed to persist remote appearance', error)
+      }
+    }, 250)
+  }
+
   function applyTheme(theme: OmniThemeName, persist = true) {
-    currentTheme.value = theme
+    const resolvedTheme =
+      advancedThemesEnabled.value || theme === 'light' || theme === 'dark'
+        ? theme
+        : getFallbackBaseTheme()
+
+    currentTheme.value = resolvedTheme
 
     if (!import.meta.client) {
       return
@@ -387,7 +531,7 @@ export function useOmniTheme() {
     const root = document.documentElement
     root.classList.remove('theme-apple-blue', 'theme-custom')
 
-    if (theme === 'dark') {
+    if (resolvedTheme === 'dark') {
       root.classList.add('dark')
       colorMode.preference = 'dark'
     } else {
@@ -395,16 +539,20 @@ export function useOmniTheme() {
       colorMode.preference = 'light'
     }
 
-    if (theme === 'apple') {
+    if (resolvedTheme === 'apple') {
       root.classList.add('theme-apple-blue')
     }
 
-    if (theme === 'custom') {
+    if (resolvedTheme === 'custom') {
       root.classList.add('theme-custom')
     }
 
     if (persist) {
-      localStorage.setItem(THEME_STORAGE_KEY, theme)
+      if (isRemoteManaged.value) {
+        scheduleRemoteAppearancePersist()
+      } else {
+        localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme)
+      }
     }
   }
 
@@ -413,28 +561,44 @@ export function useOmniTheme() {
       return
     }
 
-    const rawOverrides = localStorage.getItem(OVERRIDES_STORAGE_KEY)
-    if (rawOverrides) {
-      try {
-        overrides.value = sanitizeOverrides(JSON.parse(rawOverrides))
-      } catch {
-        overrides.value = createEmptyOverrides()
+    if (isRemoteManaged.value) {
+      applyRemoteAppearance(runtimeAppearance.value || {}, { markInitialized: true })
+      return
+    }
+
+    if (advancedThemesEnabled.value) {
+      const rawOverrides = localStorage.getItem(OVERRIDES_STORAGE_KEY)
+      if (rawOverrides) {
+        try {
+          overrides.value = sanitizeOverrides(JSON.parse(rawOverrides))
+        } catch {
+          overrides.value = createEmptyOverrides()
+        }
       }
+    } else {
+      overrides.value = createEmptyOverrides()
+      clearAdvancedThemeStorage()
     }
 
     applyOverrides()
 
     const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
     const storedCustomThemeName = localStorage.getItem(CUSTOM_THEME_NAME_KEY)
-    if (storedCustomThemeName) {
+    if (advancedThemesEnabled.value && storedCustomThemeName) {
       customThemeName.value = normalizeThemeName(storedCustomThemeName)
+    } else {
+      customThemeName.value = OMNI_THEME_LABELS.custom
     }
 
-    if (isThemeName(storedTheme)) {
-      applyTheme(storedTheme, false)
-    } else {
-      applyTheme(detectThemeFromDom(), false)
-    }
+    const fallbackTheme = getFallbackBaseTheme()
+    const resolvedTheme =
+      storedTheme === 'light' ||
+      storedTheme === 'dark' ||
+      (advancedThemesEnabled.value && isThemeName(storedTheme))
+        ? storedTheme
+        : fallbackTheme
+
+    applyTheme(resolvedTheme, resolvedTheme !== storedTheme)
 
     initialized.value = true
   }
@@ -466,6 +630,10 @@ export function useOmniTheme() {
   }
 
   function setThemeValue(theme: OmniThemeName, key: string, value: string) {
+    if (!advancedThemesEnabled.value) {
+      return
+    }
+
     const normalizedKey = normalizeVariableKey(key)
     if (!normalizedKey) {
       return
@@ -480,10 +648,18 @@ export function useOmniTheme() {
     }
 
     applyOverrides()
-    persistOverrides()
+    if (isRemoteManaged.value) {
+      scheduleRemoteAppearancePersist()
+    } else {
+      persistOverrides()
+    }
   }
 
   function setThemeValues(theme: OmniThemeName, values: ThemeVars) {
+    if (!advancedThemesEnabled.value) {
+      return
+    }
+
     const nextValues: ThemeVars = {}
 
     for (const [rawKey, rawValue] of Object.entries(values)) {
@@ -501,28 +677,53 @@ export function useOmniTheme() {
     }
 
     applyOverrides()
-    persistOverrides()
+    if (isRemoteManaged.value) {
+      scheduleRemoteAppearancePersist()
+    } else {
+      persistOverrides()
+    }
   }
 
   function resetThemeOverrides(theme: OmniThemeName) {
+    if (!advancedThemesEnabled.value) {
+      return
+    }
+
     overrides.value = {
       ...overrides.value,
       [theme]: {},
     }
 
     applyOverrides()
-    persistOverrides()
+    if (isRemoteManaged.value) {
+      scheduleRemoteAppearancePersist()
+    } else {
+      persistOverrides()
+    }
   }
 
   function duplicateTheme(source: OmniThemeName, target: OmniThemeName = 'custom') {
+    if (!advancedThemesEnabled.value) {
+      return
+    }
+
     setThemeValues(target, getResolvedThemeValues(source))
   }
 
   function setCustomThemeName(name: string, persist = true) {
+    if (!advancedThemesEnabled.value) {
+      return
+    }
+
     const normalized = normalizeThemeName(name)
     customThemeName.value = normalized
 
     if (!import.meta.client || !persist) {
+      return
+    }
+
+    if (isRemoteManaged.value) {
+      scheduleRemoteAppearancePersist()
       return
     }
 
@@ -537,11 +738,25 @@ export function useOmniTheme() {
     return OMNI_THEME_LABELS[theme]
   }
 
+  watch(
+    [() => auth.isAuthenticated, () => auth.activeTenantId, runtimeAppearance],
+    () => {
+      if (!import.meta.client || !isRemoteManaged.value) {
+        return
+      }
+
+      applyRemoteAppearance(runtimeAppearance.value || {}, { markInitialized: true })
+    },
+    { immediate: true, deep: true },
+  )
+
   return {
     currentTheme,
     overrides,
     customThemeName,
     hasCustomTheme,
+    advancedThemesEnabled,
+    isRemoteManaged,
     initializeFromStorage,
     applyTheme,
     getThemeLabel,

@@ -206,9 +206,7 @@ function buildStoreAggregates(rows) {
     soldValue: entry.soldValue,
     conversionRate: entry.attendances > 0 ? (entry.conversions / entry.attendances) * 100 : 0,
     ticketAverage:
-      entry.ticketAverageWeight > 0
-        ? entry.ticketAverageWeighted / entry.ticketAverageWeight
-        : 0,
+      entry.ticketAverageWeight > 0 ? entry.ticketAverageWeighted / entry.ticketAverageWeight : 0,
     paScore: entry.conversions > 0 ? Math.max(1, entry.totalPieces / entry.conversions) : 0,
     qualityScore: entry.qualityWeight > 0 ? entry.qualityWeighted / entry.qualityWeight : 0,
     avgDurationMs: entry.attendances > 0 ? entry.avgDurationTotal / entry.attendances : 0,
@@ -344,8 +342,7 @@ const singleStorePodiumRows = computed(() => buildPodiumRows(sortedSingleStoreRo
 const singleStoreLeaderboardRows = computed(() => buildLeaderboardRows(sortedSingleStoreRows.value))
 
 const groupOrderMap = computed(
-  () =>
-    new Map(sortedStoreRows.value.map((row, index) => [normalizeText(row.storeId), index])),
+  () => new Map(sortedStoreRows.value.map((row, index) => [normalizeText(row.storeId), index])),
 )
 
 const groupedConsultantRows = computed(() => {
@@ -357,12 +354,11 @@ const groupedConsultantRows = computed(() => {
 
   filteredConsultantRows.value.forEach((row) => {
     const storeId = normalizeText(row.storeId)
-    const current =
-      groups.get(storeId) || {
-        storeId,
-        storeName: normalizeText(row.storeName) || 'Loja sem nome',
-        rows: [],
-      }
+    const current = groups.get(storeId) || {
+      storeId,
+      storeName: normalizeText(row.storeName) || 'Loja sem nome',
+      rows: [],
+    }
 
     current.rows.push(row)
     groups.set(storeId, current)
@@ -529,7 +525,9 @@ function updateMetric(next) {
               </div>
             </div>
           </div>
-          <div v-else class="player-grid__empty">Nenhuma loja encontrada para os filtros atuais.</div>
+          <div v-else class="player-grid__empty">
+            Nenhuma loja encontrada para os filtros atuais.
+          </div>
         </section>
 
         <div v-if="groupedConsultantRows.length" class="ranking-workspace__groups">
@@ -565,7 +563,9 @@ function updateMetric(next) {
           </section>
         </div>
 
-        <div v-else class="player-grid__empty">Nenhum consultor encontrado para os filtros atuais.</div>
+        <div v-else class="player-grid__empty">
+          Nenhum consultor encontrado para os filtros atuais.
+        </div>
       </template>
 
       <template v-else>
@@ -573,7 +573,9 @@ function updateMetric(next) {
           <header class="ranking-workspace__section-header">
             <div>
               <h3 class="ranking-workspace__section-title">
-                {{ integratedScope ? `Ranking de ${selectedStoreLabel}` : 'Ranking de consultores' }}
+                {{
+                  integratedScope ? `Ranking de ${selectedStoreLabel}` : 'Ranking de consultores'
+                }}
               </h3>
               <p class="ranking-workspace__section-text">
                 {{ currentMetricLabel }} no recorte mensal atual.
@@ -600,7 +602,9 @@ function updateMetric(next) {
               />
             </div>
           </div>
-          <div v-else class="player-grid__empty">Nenhum consultor encontrado para os filtros atuais.</div>
+          <div v-else class="player-grid__empty">
+            Nenhum consultor encontrado para os filtros atuais.
+          </div>
         </section>
 
         <div
@@ -665,13 +669,13 @@ function updateMetric(next) {
 .ranking-workspace__section-title {
   margin: 0;
   font-size: 1rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .ranking-workspace__section-text {
   margin: 0.2rem 0 0;
   font-size: 0.78rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .ranking-workspace__store-ranking {
@@ -687,7 +691,7 @@ function updateMetric(next) {
 .player-grid__empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .ranking-workspace__alerts-hint {
@@ -695,14 +699,14 @@ function updateMetric(next) {
   gap: 0.25rem;
   padding: 0.7rem 0.9rem;
   border-radius: 0.7rem;
-  border: 1px solid rgba(244, 114, 182, 0.32);
-  background: rgba(244, 114, 182, 0.08);
-  color: rgba(248, 250, 252, 0.92);
+  border: 1px solid rgb(var(--danger) / 0.32);
+  background: rgb(var(--danger) / 0.08);
+  color: rgb(var(--text) / 0.92);
   font-size: 0.82rem;
 }
 
 .ranking-workspace__alerts-hint-text {
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   font-size: 0.74rem;
 }
 

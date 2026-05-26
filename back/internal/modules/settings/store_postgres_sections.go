@@ -41,6 +41,14 @@ type alertSettingsScanRow struct {
 	AlertMinTicketAverage  float64 `db:"alert_min_ticket_average"`
 }
 
+type appearanceSettingsScanRow struct {
+	TenantID        string    `db:"tenant_id"`
+	ActiveTheme     string    `db:"active_theme"`
+	CustomThemeName string    `db:"custom_theme_name"`
+	Overrides       []byte    `db:"overrides"`
+	UpdatedAt       time.Time `db:"updated_at"`
+}
+
 // GetOperationSection carrega a secao de operacao exclusivamente das tabelas novas.
 // Fase 9: fallback legado (tenant_operation_settings) removido.
 func (repository *PostgresRepository) GetOperationSection(ctx context.Context, tenantID string) (OperationSectionRecord, bool, error) {
@@ -142,6 +150,52 @@ func (repository *PostgresRepository) getAlertSettingsFromNew(ctx context.Contex
 // Fase 9: fallback legado (tenant_operation_settings) removido.
 func (repository *PostgresRepository) GetModalSection(ctx context.Context, tenantID string) (ModalSectionRecord, bool, error) {
 	return repository.getModalSectionFromNew(ctx, tenantID)
+}
+
+func (repository *PostgresRepository) GetAppearanceSection(ctx context.Context, tenantID string) (AppearanceSectionRecord, bool, error) {
+	return repository.getAppearanceSectionFromNew(ctx, tenantID)
+}
+
+func (repository *PostgresRepository) getAppearanceSectionFromNew(ctx context.Context, tenantID string) (AppearanceSectionRecord, bool, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select
+			tenant_id::text,
+			active_theme,
+			custom_theme_name,
+			overrides,
+			updated_at
+		from tenant_ui_theme_settings
+		where tenant_id = $1::uuid
+		limit 1;
+	`, tenantID)
+	if err != nil {
+		return AppearanceSectionRecord{}, false, err
+	}
+	row, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[appearanceSettingsScanRow])
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AppearanceSectionRecord{}, false, nil
+		}
+		return AppearanceSectionRecord{}, false, err
+	}
+
+	var overrides AppearanceOverrides
+	if len(row.Overrides) > 0 {
+		if err := json.Unmarshal(row.Overrides, &overrides); err != nil {
+			return AppearanceSectionRecord{}, false, err
+		}
+	}
+
+	return AppearanceSectionRecord{
+		TenantID: row.TenantID,
+		Appearance: normalizeAppearanceConfig(AppearanceConfig{
+			ActiveTheme:     row.ActiveTheme,
+			CustomThemeName: row.CustomThemeName,
+			Overrides:       overrides,
+		}, defaultAppearanceConfig()),
+		CreatedAt: row.UpdatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, true, nil
 }
 
 func (repository *PostgresRepository) getModalSectionFromNew(ctx context.Context, tenantID string) (ModalSectionRecord, bool, error) {
@@ -314,6 +368,51 @@ func (repository *PostgresRepository) UpsertModalSection(ctx context.Context, se
 		return ModalSectionRecord{}, ErrTenantNotFound
 	}
 	return saved, nil
+}
+
+func (repository *PostgresRepository) UpsertAppearanceSection(ctx context.Context, section AppearanceSectionRecord) (AppearanceSectionRecord, error) {
+	section = normalizeAppearanceSectionRecord(section)
+	if err := upsertAppearanceSectionToNew(ctx, repository.pool, section); err != nil {
+		return AppearanceSectionRecord{}, err
+	}
+	saved, found, err := repository.getAppearanceSectionFromNew(ctx, section.TenantID)
+	if err != nil {
+		return AppearanceSectionRecord{}, err
+	}
+	if !found {
+		return AppearanceSectionRecord{}, ErrTenantNotFound
+	}
+	return saved, nil
+}
+
+func upsertAppearanceSectionToNew(ctx context.Context, queryer execQueryer, section AppearanceSectionRecord) error {
+	overridesJSON, err := json.Marshal(cloneAppearanceOverrides(section.Appearance.Overrides))
+	if err != nil {
+		return err
+	}
+
+	_, err = queryer.Exec(ctx, `
+		insert into tenant_ui_theme_settings (
+			tenant_id,
+			active_theme,
+			custom_theme_name,
+			overrides,
+			updated_at
+		)
+		values ($1::uuid, $2, $3, $4::jsonb, now())
+		on conflict (tenant_id) do update
+		set
+			active_theme = excluded.active_theme,
+			custom_theme_name = excluded.custom_theme_name,
+			overrides = excluded.overrides,
+			updated_at = now();
+	`,
+		section.TenantID,
+		section.Appearance.ActiveTheme,
+		section.Appearance.CustomThemeName,
+		string(overridesJSON),
+	)
+	return err
 }
 
 func upsertModalSectionToNew(ctx context.Context, queryer execQueryer, section ModalSectionRecord) error {

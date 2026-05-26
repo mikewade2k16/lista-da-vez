@@ -20,6 +20,20 @@ type ProductItem struct {
 	BasePrice float64 `json:"basePrice"`
 }
 
+type AppearanceOverrides map[string]map[string]string
+
+type AppearanceConfig struct {
+	ActiveTheme     string              `json:"activeTheme"`
+	CustomThemeName string              `json:"customThemeName"`
+	Overrides       AppearanceOverrides `json:"overrides"`
+}
+
+type AppearanceConfigPatch struct {
+	ActiveTheme     *string              `json:"activeTheme,omitempty"`
+	CustomThemeName *string              `json:"customThemeName,omitempty"`
+	Overrides       *AppearanceOverrides `json:"overrides,omitempty"`
+}
+
 type OperationCoreSettings struct {
 	MaxConcurrentServices              int
 	MaxConcurrentServicesPerConsultant int
@@ -338,6 +352,7 @@ type Bundle struct {
 	OperationTemplates          []OperationTemplate `json:"operationTemplates,omitempty"`
 	SelectedOperationTemplateID string              `json:"selectedOperationTemplateId"`
 	Settings                    AppSettings         `json:"settings"`
+	Appearance                  AppearanceConfig    `json:"appearance"`
 	ModalConfig                 ModalConfig         `json:"modalConfig"`
 	VisitReasonOptions          []OptionItem        `json:"visitReasonOptions"`
 	CustomerSourceOptions       []OptionItem        `json:"customerSourceOptions"`
@@ -364,6 +379,12 @@ type ModalSectionInput struct {
 	StoreID     string            `json:"storeId,omitempty"`
 	TenantID    string            `json:"tenantId,omitempty"`
 	ModalConfig *ModalConfigPatch `json:"modalConfig,omitempty"`
+}
+
+type AppearanceSectionInput struct {
+	StoreID    string                 `json:"storeId,omitempty"`
+	TenantID   string                 `json:"tenantId,omitempty"`
+	Appearance *AppearanceConfigPatch `json:"appearance,omitempty"`
 }
 
 type OperationTemplateApplyInput struct {
@@ -434,6 +455,13 @@ type ModalSectionRecord struct {
 	UpdatedAt                   time.Time
 }
 
+type AppearanceSectionRecord struct {
+	TenantID   string
+	Appearance AppearanceConfig
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type OperationTemplateApplyRecord struct {
 	TenantID              string
 	OperationSection      OperationSectionRecord
@@ -446,6 +474,7 @@ type Record struct {
 	TenantID                    string
 	SelectedOperationTemplateID string
 	Settings                    AppSettings
+	Appearance                  AppearanceConfig
 	ModalConfig                 ModalConfig
 	VisitReasonOptions          []OptionItem
 	CustomerSourceOptions       []OptionItem
@@ -466,11 +495,13 @@ type Repository interface {
 	ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error)
 	GetByTenant(ctx context.Context, tenantID string) (Record, bool, error)
 	GetOperationSection(ctx context.Context, tenantID string) (OperationSectionRecord, bool, error)
+	GetAppearanceSection(ctx context.Context, tenantID string) (AppearanceSectionRecord, bool, error)
 	GetModalSection(ctx context.Context, tenantID string) (ModalSectionRecord, bool, error)
 	GetOptionGroup(ctx context.Context, tenantID string, kind string) ([]OptionItem, error)
 	GetProductCatalog(ctx context.Context, tenantID string) ([]ProductItem, error)
 	Upsert(ctx context.Context, record Record) (Record, error)
 	UpsertOperationSection(ctx context.Context, section OperationSectionRecord) (OperationSectionRecord, error)
+	UpsertAppearanceSection(ctx context.Context, section AppearanceSectionRecord) (AppearanceSectionRecord, error)
 	UpsertModalSection(ctx context.Context, section ModalSectionRecord) (ModalSectionRecord, error)
 	ApplyOperationTemplate(ctx context.Context, record OperationTemplateApplyRecord) (time.Time, error)
 	ReplaceOptionGroup(ctx context.Context, tenantID string, kind string, options []OptionItem) (time.Time, error)

@@ -145,64 +145,72 @@ onBeforeUnmount(() => {
   padding: 0.7rem 1rem;
   background: linear-gradient(
     90deg,
-    var(--alert-color-darker, #78350f) 0%,
-    var(--alert-color-dark, #92400e) 100%
+    var(--alert-color-darker, rgb(var(--primary-600))) 0%,
+    var(--alert-color-dark, rgb(var(--primary))) 100%
   );
-  border-left: 3px solid var(--alert-color, #fbbf24);
-  color: #fff7ed;
+  border-left: 3px solid var(--alert-color, rgb(var(--primary)));
+  color: rgb(255 255 255);
   border-radius: 0 6px 6px 0;
-  box-shadow: 0 2px 12px rgba(var(--alert-color-rgb, 120, 53, 15), 0.28);
+  box-shadow: 0 2px 12px rgb(var(--primary) / 0.28);
 }
 
 .operation-alert-banner--red {
-  background: linear-gradient(90deg, #7f1d1d 0%, #991b1b 100%);
-  border-left-color: #fca5a5;
+  background: linear-gradient(90deg, rgb(var(--danger) / 0.28) 0%, rgb(var(--danger) / 0.18) 100%);
+  border-left-color: rgb(var(--danger));
 }
 
 .operation-alert-banner--blue {
-  background: linear-gradient(90deg, #1e3a8a 0%, #1d4ed8 100%);
-  border-left-color: #93c5fd;
+  background: linear-gradient(90deg, rgb(var(--primary-600)) 0%, rgb(var(--primary)) 100%);
+  border-left-color: rgb(var(--primary));
 }
 
 .operation-alert-banner--green {
-  background: linear-gradient(90deg, #064e3b 0%, #059669 100%);
-  border-left-color: #86efac;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--success) / 0.28) 0%,
+    rgb(var(--success) / 0.18) 100%
+  );
+  border-left-color: rgb(var(--success));
 }
 
 .operation-alert-banner--purple {
-  background: linear-gradient(90deg, #5b21b6 0%, #7e22ce 100%);
-  border-left-color: #d8b4fe;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--primary) / 0.28) 0%,
+    rgb(var(--primary) / 0.18) 100%
+  );
+  border-left-color: rgb(var(--primary));
 }
 
 .operation-alert-banner--slate {
-  background: linear-gradient(90deg, #1e293b 0%, #334155 100%);
-  border-left-color: #cbd5e1;
+  background: linear-gradient(90deg, rgb(var(--surface-2)) 0%, rgb(var(--surface)) 100%);
+  border-left-color: rgb(var(--border));
 }
 
 .operation-alert-banner__icon {
   font-size: 1.2rem;
-  color: var(--alert-color-light, #fbbf24);
+  color: var(--alert-color-light, rgb(var(--primary)));
   flex-shrink: 0;
 }
 
 .operation-alert-banner--red .operation-alert-banner__icon {
-  color: #fca5a5;
+  color: rgb(var(--danger));
 }
 
 .operation-alert-banner--blue .operation-alert-banner__icon {
-  color: #93c5fd;
+  color: rgb(var(--primary));
 }
 
 .operation-alert-banner--green .operation-alert-banner__icon {
-  color: #86efac;
+  color: rgb(var(--success));
 }
 
 .operation-alert-banner--purple .operation-alert-banner__icon {
-  color: #d8b4fe;
+  color: rgb(var(--primary));
 }
 
 .operation-alert-banner--slate .operation-alert-banner__icon {
-  color: #cbd5e1;
+  color: rgb(var(--muted));
 }
 
 .operation-alert-banner__body {
@@ -223,7 +231,7 @@ onBeforeUnmount(() => {
 
 .operation-alert-banner__elapsed {
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgb(255 255 255 / 0.75);
   white-space: nowrap;
 }
 
@@ -244,9 +252,9 @@ onBeforeUnmount(() => {
   cursor: pointer;
   border: 1px solid transparent;
   transition: opacity 0.15s;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.25);
-  color: #fff;
+  background: rgb(255 255 255 / 0.12);
+  border-color: rgb(255 255 255 / 0.25);
+  color: rgb(255 255 255);
 }
 
 .operation-alert-banner__btn:disabled {
@@ -255,7 +263,7 @@ onBeforeUnmount(() => {
 }
 
 .operation-alert-banner__btn:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255 255 255 / 0.2);
 }
 
 .operation-alert-banner__spinner {

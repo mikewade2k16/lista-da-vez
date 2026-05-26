@@ -73,7 +73,8 @@ const consultantEntries = computed(() =>
   (props.entries || [])
     .filter((entry) => String(entry.personId || '').trim() === props.consultantId)
     .filter(
-      (entry) => !String(props.storeId || '').trim() || String(entry.storeId || '').trim() === props.storeId,
+      (entry) =>
+        !String(props.storeId || '').trim() || String(entry.storeId || '').trim() === props.storeId,
     ),
 )
 
@@ -178,7 +179,7 @@ const periodLabel = computed(() => {
 
     <div v-if="hasHistory" class="history-panel__chart-shell">
       <svg viewBox="0 0 480 120" preserveAspectRatio="none" aria-hidden="true">
-        <path :d="chartPath" fill="none" stroke="#6366f1" stroke-width="2.5" />
+        <path :d="chartPath" fill="none" stroke="rgb(var(--primary))" stroke-width="2.5" />
       </svg>
     </div>
     <div v-else class="history-panel__empty">Sem dados no período selecionado.</div>
@@ -215,8 +216,9 @@ const periodLabel = computed(() => {
   gap: 0.9rem;
   padding: 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(125, 146, 255, 0.16);
-  background: rgba(13, 19, 36, 0.55);
+  border: 1px solid rgb(var(--primary) / 0.16);
+  background: rgb(var(--surface) / 0.78);
+  box-shadow: var(--shadow-xs);
 }
 
 .history-panel__header {
@@ -234,13 +236,13 @@ const periodLabel = computed(() => {
 .history-panel__title {
   margin: 0;
   font-size: 0.96rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .history-panel__text {
   margin: 0;
   font-size: 0.78rem;
-  color: rgba(148, 163, 184, 0.9);
+  color: rgb(var(--muted) / 0.9);
 }
 
 .history-panel__filters {
@@ -253,26 +255,26 @@ const periodLabel = computed(() => {
 .history-panel__filter {
   padding: 0.42rem 0.72rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(203, 213, 225, 0.92);
+  border: 1px solid rgb(var(--border) / 0.82);
+  background: rgb(var(--surface-2) / 0.74);
+  color: rgb(var(--muted) / 0.96);
   font-size: 0.74rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .history-panel__filter--active {
-  border-color: rgba(125, 146, 255, 0.4);
-  background: rgba(99, 102, 241, 0.18);
-  color: #c7d2fe;
+  border-color: rgb(var(--ring) / 0.4);
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .history-panel__chart-shell {
   min-height: 8rem;
   padding: 0.75rem 0.5rem 0.25rem;
   border-radius: 0.85rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgb(var(--surface-2) / 0.74);
+  border: 1px solid rgb(var(--border) / 0.72);
 }
 
 .history-panel__chart-shell svg {
@@ -287,9 +289,9 @@ const periodLabel = computed(() => {
   min-height: 8rem;
   padding: 1rem;
   border-radius: 0.85rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  color: rgba(148, 163, 184, 0.9);
+  background: rgb(var(--surface-2) / 0.74);
+  border: 1px solid rgb(var(--border) / 0.72);
+  color: rgb(var(--muted) / 0.9);
   font-size: 0.82rem;
 }
 
@@ -299,7 +301,7 @@ const periodLabel = computed(() => {
   justify-content: space-between;
   gap: 0.75rem;
   font-size: 0.76rem;
-  color: rgba(148, 163, 184, 0.9);
+  color: rgb(var(--muted) / 0.9);
 }
 
 .history-panel__summary {
@@ -313,20 +315,20 @@ const periodLabel = computed(() => {
   gap: 0.18rem;
   padding: 0.7rem 0.8rem;
   border-radius: 0.8rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgb(var(--surface-2) / 0.74);
+  border: 1px solid rgb(var(--border) / 0.72);
 }
 
 .history-panel__metric-label {
   font-size: 0.68rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .history-panel__metric-value {
   font-size: 0.95rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 @media (max-width: 920px) {

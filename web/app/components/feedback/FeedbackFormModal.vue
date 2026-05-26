@@ -269,7 +269,7 @@ async function handleSubmit() {
   display: grid;
   place-items: center;
   padding: 1rem;
-  background: rgba(3, 6, 12, 0.76);
+  background: rgb(3 6 12 / 0.76);
   backdrop-filter: blur(4px);
 }
 
@@ -280,9 +280,9 @@ async function handleSubmit() {
   overflow: auto;
   overscroll-behavior: contain;
   border-radius: 1.2rem;
-  border: 1px solid rgba(226, 232, 240, 0.1);
-  background: linear-gradient(180deg, rgba(13, 18, 29, 0.98), rgba(8, 12, 19, 0.98));
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+  border: 1px solid rgb(var(--border) / 0.74);
+  background: linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)));
+  box-shadow: var(--shadow-dropdown, 0 30px 80px rgb(15 23 42 / 0.22));
   width: min(42rem, calc(100vw - 2rem));
 }
 
@@ -292,7 +292,7 @@ async function handleSubmit() {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.2rem 0.9rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgb(var(--border) / 0.74);
 }
 
 .feedback-form-modal__copy {
@@ -305,12 +305,12 @@ async function handleSubmit() {
   font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
+  color: rgb(var(--muted) / 0.82);
 }
 
 .feedback-form-modal__title {
   margin: 0;
-  color: #ffffff;
+  color: rgb(var(--text));
   font-size: 1.15rem;
   font-weight: 600;
 }
@@ -322,17 +322,17 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(226, 232, 240, 0.7);
+  border: 1px solid rgb(var(--border) / 0.78);
+  background: rgb(var(--surface-2) / 0.74);
+  color: rgb(var(--muted));
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .feedback-form-modal__close-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .feedback-form-modal__close-btn:active {
@@ -353,7 +353,7 @@ async function handleSubmit() {
 .feedback-form-modal__label {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #ffffff;
+  color: rgb(var(--text));
   letter-spacing: 0.02em;
 }
 
@@ -361,26 +361,26 @@ async function handleSubmit() {
 .feedback-form-modal__textarea {
   width: 100%;
   padding: 0.75rem 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--border) / 0.84);
   border-radius: 0.7rem;
-  background: rgba(18, 25, 38, 0.6);
+  background: rgb(var(--surface-2) / 0.76);
   font-family: inherit;
   font-size: 0.875rem;
-  color: #ffffff;
+  color: rgb(var(--text));
   transition: all 0.2s ease;
 }
 
 .feedback-form-modal__input::placeholder,
 .feedback-form-modal__textarea::placeholder {
-  color: rgba(203, 213, 225, 0.5);
+  color: rgb(var(--muted) / 0.5);
 }
 
 .feedback-form-modal__input:focus,
 .feedback-form-modal__textarea:focus {
   outline: none;
-  border-color: rgba(148, 163, 184, 0.4);
-  background: rgba(18, 25, 38, 0.9);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  border-color: rgb(var(--ring) / 0.4);
+  background: rgb(var(--surface-2) / 0.92);
+  box-shadow: 0 0 0 3px rgb(var(--ring) / 0.15);
 }
 
 .feedback-form-modal__textarea {
@@ -393,9 +393,9 @@ async function handleSubmit() {
   display: grid;
   gap: 0.65rem;
   padding: 0.85rem;
-  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border: 1px dashed rgb(var(--border) / 0.82);
   border-radius: 0.8rem;
-  background: rgba(18, 25, 38, 0.5);
+  background: rgb(var(--surface-2) / 0.64);
 }
 
 .feedback-form-modal__upload-trigger {
@@ -405,16 +405,16 @@ async function handleSubmit() {
   width: fit-content;
   padding: 0.6rem 0.8rem;
   border-radius: 0.7rem;
-  border: 1px solid rgba(96, 165, 250, 0.22);
-  background: rgba(59, 130, 246, 0.12);
-  color: #dbeafe;
+  border: 1px solid rgb(var(--ring) / 0.22);
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .feedback-form-modal__upload-hint {
-  color: rgba(203, 213, 225, 0.74);
+  color: rgb(var(--muted) / 0.74);
   font-size: 0.76rem;
 }
 
@@ -425,7 +425,7 @@ async function handleSubmit() {
   gap: 0.75rem;
   padding: 0.6rem;
   border-radius: 0.75rem;
-  background: rgba(8, 12, 19, 0.6);
+  background: rgb(var(--surface-2) / 0.76);
 }
 
 .feedback-form-modal__upload-image {
@@ -433,7 +433,7 @@ async function handleSubmit() {
   height: 4rem;
   object-fit: cover;
   border-radius: 0.65rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgb(var(--border) / 0.78);
 }
 
 .feedback-form-modal__upload-copy {
@@ -450,12 +450,12 @@ async function handleSubmit() {
 }
 
 .feedback-form-modal__upload-copy strong {
-  color: #ffffff;
+  color: rgb(var(--text));
   font-size: 0.82rem;
 }
 
 .feedback-form-modal__upload-copy span {
-  color: rgba(203, 213, 225, 0.72);
+  color: rgb(var(--muted) / 0.72);
   font-size: 0.74rem;
 }
 
@@ -465,10 +465,10 @@ async function handleSubmit() {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgb(var(--border) / 0.78);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(226, 232, 240, 0.78);
+  background: rgb(var(--surface-2) / 0.7);
+  color: rgb(var(--muted));
   cursor: pointer;
 }
 
@@ -500,14 +500,14 @@ async function handleSubmit() {
 }
 
 .feedback-form-modal__btn--primary {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: #ffffff;
-  border-color: rgba(59, 130, 246, 0.3);
+  background: linear-gradient(135deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
+  color: rgb(255 255 255);
+  border-color: rgb(var(--ring) / 0.3);
 }
 
 .feedback-form-modal__btn--primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.25);
+  background: linear-gradient(135deg, rgb(var(--primary-600)) 0%, rgb(var(--primary)) 100%);
+  box-shadow: 0 8px 20px rgb(var(--primary) / 0.25);
 }
 
 .feedback-form-modal__btn--primary:active:not(:disabled) {
@@ -515,14 +515,14 @@ async function handleSubmit() {
 }
 
 .feedback-form-modal__btn--secondary {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(226, 232, 240, 0.9);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--surface-2) / 0.74);
+  color: rgb(var(--text) / 0.9);
+  border-color: rgb(var(--border) / 0.84);
 }
 
 .feedback-form-modal__btn--secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgb(var(--primary) / 0.12);
+  border-color: rgb(var(--ring) / 0.28);
 }
 
 .feedback-form-modal__btn--secondary:active:not(:disabled) {

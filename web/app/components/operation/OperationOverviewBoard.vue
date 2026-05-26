@@ -420,10 +420,12 @@ onBeforeUnmount(() => {
 
 .operation-overview__summary-card,
 .operation-overview__card {
-  border: 1px solid rgba(125, 146, 255, 0.16);
+  border: 1px solid rgb(var(--primary) / 0.16);
   border-radius: 1rem;
-  background: rgba(13, 19, 36, 0.82);
+  background: rgb(var(--surface) / 0.86);
+  color: rgb(var(--text));
   padding: 0.9rem;
+  box-shadow: var(--shadow-xs);
 }
 
 .operation-overview__summary-head,
@@ -436,7 +438,7 @@ onBeforeUnmount(() => {
 
 .operation-overview__summary-head span,
 .operation-overview__meta {
-  color: rgba(219, 226, 255, 0.68);
+  color: rgb(var(--muted) / 0.84);
   font-size: 0.78rem;
 }
 
@@ -445,7 +447,7 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.45rem 0.8rem;
   margin-top: 0.7rem;
-  color: rgba(244, 247, 255, 0.84);
+  color: rgb(var(--text) / 0.84);
   font-size: 0.82rem;
 }
 
@@ -459,9 +461,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-height: 18rem;
-  border: 1px solid rgba(125, 146, 255, 0.14);
+  border: 1px solid rgb(var(--primary) / 0.14);
   border-radius: 1rem;
-  background: rgba(8, 13, 26, 0.72);
+  background: rgb(var(--surface-2) / 0.66);
 }
 
 .operation-overview__column-head {
@@ -469,7 +471,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   padding: 0.9rem 1rem;
-  border-bottom: 1px solid rgba(125, 146, 255, 0.12);
+  border-bottom: 1px solid rgb(var(--primary) / 0.12);
 }
 
 .operation-overview__column-body {
@@ -486,8 +488,8 @@ onBeforeUnmount(() => {
   min-height: 1.7rem;
   padding: 0 0.55rem;
   border-radius: 999px;
-  background: rgba(125, 146, 255, 0.18);
-  color: #dce3ff;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
   font-size: 0.72rem;
   font-weight: 700;
 }
@@ -512,7 +514,7 @@ onBeforeUnmount(() => {
 
 .operation-overview__person-copy span,
 .operation-overview__details {
-  color: rgba(219, 226, 255, 0.76);
+  color: rgb(var(--muted) / 0.9);
   font-size: 0.8rem;
 }
 
@@ -526,17 +528,17 @@ onBeforeUnmount(() => {
 .operation-overview__action {
   margin-top: 0.8rem;
   min-height: 2.45rem;
-  border: 1px solid rgba(125, 146, 255, 0.24);
+  border: 1px solid rgb(var(--ring) / 0.24);
   border-radius: 0.85rem;
-  background: rgba(125, 146, 255, 0.18);
-  color: #f4f7ff;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
   font: inherit;
   font-weight: 700;
   cursor: pointer;
 }
 
 .operation-overview__action:hover {
-  background: rgba(125, 146, 255, 0.26);
+  background: rgb(var(--primary) / 0.26);
 }
 
 @media (max-width: 1250px) {

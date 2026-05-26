@@ -55,3 +55,21 @@ func TestEffectivePermissionKeysAppliesUserOverridesOnTopOfRoleDefaults(t *testi
 		t.Fatalf("inactive overrides must not change the effective permission set")
 	}
 }
+
+func TestPlatformAdminCanManageAccessEvenWithStaleResolvedPermissions(t *testing.T) {
+	principal := auth.Principal{
+		Role:                auth.RolePlatformAdmin,
+		PermissionsResolved: true,
+		Permissions:         []string{PermissionOperationsView},
+	}
+
+	if !canViewUserAccess(principal) {
+		t.Fatal("platform_admin must view user access even when resolved permissions are stale")
+	}
+	if !canEditUserAccess(principal) {
+		t.Fatal("platform_admin must edit user access even when resolved permissions are stale")
+	}
+	if !canEditRoleMatrix(principal) {
+		t.Fatal("platform_admin must edit role matrix even when resolved permissions are stale")
+	}
+}

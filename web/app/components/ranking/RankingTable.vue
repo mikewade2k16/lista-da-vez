@@ -133,7 +133,7 @@ const sortedRows = computed(() => {
 }
 
 .ranking-table__store {
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   font-size: 0.68rem;
   font-weight: 600;
 }

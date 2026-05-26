@@ -415,11 +415,15 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
     <div v-if="queueStats" class="erp-crm__metrics erp-crm__metrics--queue">
       <article class="erp-crm__metric-card erp-crm__metric-card--queue">
         <span class="erp-crm__metric-label">Atendimentos</span>
-        <strong class="erp-crm__metric-value">{{ formatNumber(queueStats.totalAttendances) }}</strong>
+        <strong class="erp-crm__metric-value">
+          {{ formatNumber(queueStats.totalAttendances) }}
+        </strong>
       </article>
       <article class="erp-crm__metric-card erp-crm__metric-card--queue">
         <span class="erp-crm__metric-label">Conversoes (fila)</span>
-        <strong class="erp-crm__metric-value">{{ formatNumber(queueStats.totalConversions) }}</strong>
+        <strong class="erp-crm__metric-value">
+          {{ formatNumber(queueStats.totalConversions) }}
+        </strong>
       </article>
       <article class="erp-crm__metric-card erp-crm__metric-card--queue">
         <span class="erp-crm__metric-label">Taxa de conversao</span>
@@ -430,27 +434,36 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
           <div
             class="erp-crm__progress-fill erp-crm__progress-fill--green"
             :style="{ width: `${Math.min(queueStats.conversionRate, 100)}%` }"
-          />
+          ></div>
         </div>
       </article>
       <article class="erp-crm__metric-card erp-crm__metric-card--queue">
         <span class="erp-crm__metric-label">Cancelamento (fila)</span>
-        <strong class="erp-crm__metric-value erp-crm__metric-value--rate erp-crm__metric-value--warn">
+        <strong
+          class="erp-crm__metric-value erp-crm__metric-value--rate erp-crm__metric-value--warn"
+        >
           {{ formatPct(queueStats.cancellationRate) }}
         </strong>
         <div class="erp-crm__progress-bar">
           <div
             class="erp-crm__progress-fill erp-crm__progress-fill--red"
             :style="{ width: `${Math.min(queueStats.cancellationRate, 100)}%` }"
-          />
+          ></div>
         </div>
       </article>
-      <article v-if="summary?.erpCancellations" class="erp-crm__metric-card erp-crm__metric-card--queue">
+      <article
+        v-if="summary?.erpCancellations"
+        class="erp-crm__metric-card erp-crm__metric-card--queue"
+      >
         <span class="erp-crm__metric-label">Cancelamento ERP</span>
-        <strong class="erp-crm__metric-value erp-crm__metric-value--rate erp-crm__metric-value--warn">
+        <strong
+          class="erp-crm__metric-value erp-crm__metric-value--rate erp-crm__metric-value--warn"
+        >
           {{ formatPct(summary.erpCancellationRate) }}
         </strong>
-        <small class="erp-crm__metric-sub">{{ formatNumber(summary.erpCancellations) }} pedidos</small>
+        <small class="erp-crm__metric-sub">
+          {{ formatNumber(summary.erpCancellations) }} pedidos
+        </small>
       </article>
     </div>
 
@@ -539,7 +552,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
                     <div
                       class="erp-crm__progress-fill erp-crm__progress-fill--green"
                       :style="{ width: `${Math.min(s.goalProgress, 100)}%` }"
-                    />
+                    ></div>
                   </div>
                 </div>
                 <span v-else class="erp-crm__muted">-</span>
@@ -547,7 +560,9 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
               <td class="erp-crm__td erp-crm__td--num">
                 {{ s.paScore ? s.paScore.toFixed(2) : '-' }}
               </td>
-              <td class="erp-crm__td erp-crm__td--num">{{ formatCurrency(s.ticketAverageCents) }}</td>
+              <td class="erp-crm__td erp-crm__td--num">
+                {{ formatCurrency(s.ticketAverageCents) }}
+              </td>
               <td class="erp-crm__td erp-crm__td--num">
                 <span :class="{ 'erp-crm__rate--bad': (s.erpCancellationRate ?? 0) > 5 }">
                   {{ s.erpCancellations ? formatPct(s.erpCancellationRate) : '-' }}
@@ -719,7 +734,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   padding: 1rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(13, 18, 29, 0.88);
+  background: var(--erp-card-bg);
   box-shadow: var(--shadow-card);
 }
 
@@ -739,7 +754,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 
 .erp-crm__metric-value--money {
   font-size: 1.1rem;
-  color: #b9ffd2;
+  color: var(--erp-success-text);
 }
 
 .erp-crm__metric-delta {
@@ -749,11 +764,11 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__metric-delta--up {
-  color: #b9ffd2;
+  color: var(--erp-success-text);
 }
 
 .erp-crm__metric-delta--down {
-  color: #ffb4b4;
+  color: var(--erp-danger-text);
 }
 
 /* Filters */
@@ -796,7 +811,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   padding: 0 0.7rem;
   border-radius: 0.75rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-size: 0.88rem;
   color-scheme: dark;
@@ -812,7 +827,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   padding: 0 0.75rem;
   border-radius: 0.75rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-size: 0.86rem;
   font-weight: 700;
@@ -828,7 +843,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__date-trigger--compare {
-  border-color: rgba(129, 140, 248, 0.22);
+  border-color: var(--erp-primary-border);
 }
 
 .erp-crm__compare-row {
@@ -843,7 +858,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   padding: 0 0.7rem;
   border-radius: 0.75rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-muted);
   font-size: 0.82rem;
   font-weight: 700;
@@ -878,7 +893,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   width: 2.4rem;
   height: 1.3rem;
   border-radius: 999px;
-  background: rgba(60, 70, 95, 0.8);
+  background: var(--erp-track-off);
   border: 1px solid var(--line-soft);
   transition:
     background 0.18s ease,
@@ -894,20 +909,20 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   width: 0.85rem;
   height: 0.85rem;
   border-radius: 50%;
-  background: rgba(140, 150, 175, 0.9);
+  background: var(--erp-track-thumb);
   transition:
     transform 0.18s ease,
     background 0.18s ease;
 }
 
 .erp-crm__dedup-track--on {
-  background: rgba(83, 198, 160, 0.25);
-  border-color: rgba(83, 198, 160, 0.5);
+  background: var(--erp-success-card-bg);
+  border-color: var(--erp-success-border);
 }
 
 .erp-crm__dedup-track--on::after {
   transform: translateX(1.1rem);
-  background: #53c6a0;
+  background: var(--erp-success-text);
 }
 
 .erp-crm__dedup-text {
@@ -926,9 +941,9 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   min-height: 2.35rem;
   padding: 0 1rem;
   border-radius: 0.75rem;
-  border: 1px solid rgba(98, 129, 255, 0.3);
-  background: rgba(30, 40, 65, 0.9);
-  color: #c8d8ff;
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-primary-soft-bg);
+  color: var(--erp-primary-soft-text);
   font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
@@ -938,7 +953,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__export-btn:hover:not(:disabled) {
-  border-color: rgba(98, 129, 255, 0.55);
+  border-color: var(--erp-hover-border);
   transform: translateY(-1px);
 }
 
@@ -956,8 +971,8 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   padding: 0.6rem;
   border-radius: 0.9rem;
   border: 1px solid var(--line-soft);
-  background: rgba(14, 20, 35, 0.98);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  background: var(--erp-strong-bg);
+  box-shadow: var(--erp-shadow-dropdown);
   display: grid;
   gap: 0.25rem;
 }
@@ -992,7 +1007,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__export-option:hover {
-  background: rgba(98, 129, 255, 0.12);
+  background: var(--erp-primary-soft-bg);
 }
 
 .erp-crm__export-divider {
@@ -1008,16 +1023,16 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__metric-card--queue {
-  border-color: rgba(98, 129, 255, 0.18);
+  border-color: var(--erp-primary-border);
 }
 
 .erp-crm__metric-value--rate {
   font-size: 1.3rem;
-  color: #b9ffd2;
+  color: var(--erp-success-text);
 }
 
 .erp-crm__metric-value--warn {
-  color: #ffcb8e;
+  color: var(--erp-warning-text);
 }
 
 .erp-crm__metric-sub {
@@ -1028,7 +1043,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 .erp-crm__progress-bar {
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--erp-table-divider);
   overflow: hidden;
   margin-top: 0.25rem;
 }
@@ -1045,11 +1060,11 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__progress-fill--green {
-  background: #53c6a0;
+  background: rgb(var(--success));
 }
 
 .erp-crm__progress-fill--red {
-  background: #ff7272;
+  background: rgb(var(--danger));
 }
 
 /* Sections */
@@ -1061,17 +1076,17 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 .erp-crm__section-title {
   font-size: 0.78rem;
   font-weight: 700;
-  text-transform: uppercase;
+  background: var(--erp-panel-bg);
   letter-spacing: 0.08em;
   color: var(--text-muted);
   margin: 0;
 }
 
-.erp-crm__table-wrap {
-  overflow-x: auto;
-  border-radius: 0.75rem;
-  border: 1px solid var(--line-soft);
-}
+background: var(--erp-hover-bg);
+overflow-x: auto;
+border-radius: 0.75rem;
+border: 1px solid var(--line-soft);
+border-top: 1px solid var(--erp-table-divider);
 
 .erp-crm__table {
   width: 100%;
@@ -1087,7 +1102,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  background: rgba(13, 18, 29, 0.6);
+  background: var(--erp-panel-bg);
   white-space: nowrap;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -1101,11 +1116,11 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__tr:hover {
-  background: rgba(98, 129, 255, 0.05);
+  background: var(--erp-hover-bg);
 }
 
 .erp-crm__tr + .erp-crm__tr .erp-crm__td {
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid var(--erp-table-divider);
 }
 
 .erp-crm__td {
@@ -1129,7 +1144,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__td--queue {
-  color: rgba(185, 255, 210, 0.8);
+  color: var(--erp-success-text);
 }
 
 .erp-crm__goal-cell {
@@ -1141,12 +1156,12 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
 }
 
 .erp-crm__rate--good {
-  color: #b9ffd2;
+  color: var(--erp-success-text);
   font-weight: 700;
 }
 
 .erp-crm__rate--bad {
-  color: #ffb4b4;
+  color: var(--erp-danger-text);
   font-weight: 700;
 }
 

@@ -2,6 +2,48 @@
   display: grid;
   gap: 1rem;
   align-content: start;
+  --erp-card-bg: rgb(var(--surface) / 0.9);
+  --erp-panel-bg: rgb(var(--surface) / 0.86);
+  --erp-control-bg: rgb(var(--surface-2) / 0.92);
+  --erp-strong-bg: rgb(var(--surface) / 0.98);
+  --erp-primary-border: rgb(var(--primary) / 0.24);
+  --erp-hover-border: rgb(var(--primary) / 0.38);
+  --erp-hover-bg: rgb(var(--primary) / 0.08);
+  --erp-primary-soft-bg: rgb(var(--primary) / 0.14);
+  --erp-primary-soft-text: color-mix(in srgb, rgb(var(--primary)) 70%, rgb(var(--text)) 30%);
+  --erp-primary-card-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, rgb(var(--primary)) 16%, rgb(var(--surface)) 84%) 0%,
+    rgb(var(--surface-2) / 0.96) 100%
+  );
+  --erp-primary-gradient: linear-gradient(
+    135deg,
+    rgb(var(--primary)) 0%,
+    rgb(var(--primary-600)) 100%
+  );
+  --erp-success-border: rgb(var(--success) / 0.28);
+  --erp-success-text: color-mix(in srgb, rgb(var(--success)) 74%, rgb(var(--text)) 26%);
+  --erp-success-card-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, rgb(var(--success)) 18%, rgb(var(--surface)) 82%) 0%,
+    rgb(var(--surface-2) / 0.96) 100%
+  );
+  --erp-success-gradient: linear-gradient(
+    135deg,
+    rgb(var(--success)) 0%,
+    color-mix(in srgb, rgb(var(--success)) 68%, rgb(var(--primary-600)) 32%) 100%
+  );
+  --erp-danger-border: rgb(var(--danger) / 0.24);
+  --erp-danger-text: color-mix(in srgb, rgb(var(--danger)) 72%, rgb(var(--text)) 28%);
+  --erp-warning: color-mix(in srgb, rgb(var(--success)) 44%, rgb(var(--danger)) 56%);
+  --erp-warning-border: color-mix(in srgb, var(--erp-warning) 28%, rgb(var(--border)) 72%);
+  --erp-warning-soft-bg: color-mix(in srgb, var(--erp-warning) 12%, rgb(var(--surface)) 88%);
+  --erp-warning-text: color-mix(in srgb, var(--erp-warning) 72%, rgb(var(--text)) 28%);
+  --erp-raw-border: color-mix(in srgb, rgb(var(--primary-600)) 56%, rgb(var(--danger)) 44%);
+  --erp-table-divider: rgb(var(--border) / 0.24);
+  --erp-track-off: rgb(var(--border) / 0.72);
+  --erp-track-thumb: rgb(var(--surface));
+  --erp-shadow-dropdown: var(--shadow-dropdown, var(--shadow-md));
 }
 
 .erp-panel__tab-body {
@@ -51,7 +93,7 @@
   padding: 1rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(13, 18, 29, 0.88);
+  background: var(--erp-card-bg);
   box-shadow: var(--shadow-card);
 }
 
@@ -78,7 +120,7 @@
 
 .erp-panel__stat-value--currency {
   font-size: 1.25rem;
-  color: #b9ffd2;
+  color: var(--erp-success-text);
 }
 
 .erp-panel__stats--orders {
@@ -86,13 +128,13 @@
 }
 
 .erp-panel__stat-card--accent {
-  border-color: rgba(98, 129, 255, 0.3);
-  background: linear-gradient(135deg, rgba(20, 26, 48, 0.95), rgba(18, 24, 40, 0.9));
+  border-color: var(--erp-primary-border);
+  background: var(--erp-primary-card-bg);
 }
 
 .erp-panel__stat-card--green {
-  border-color: rgba(83, 198, 160, 0.3);
-  background: linear-gradient(135deg, rgba(14, 36, 28, 0.95), rgba(12, 28, 22, 0.9));
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-card-bg);
 }
 
 .erp-panel__run-date {
@@ -130,7 +172,7 @@
   padding: 0 0.8rem;
   border-radius: 0.8rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
 }
 
@@ -139,7 +181,7 @@
   padding: 0 0.95rem;
   border-radius: 0.8rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-weight: 600;
   cursor: pointer;
@@ -151,7 +193,7 @@
 
 .erp-panel__toolbar-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(98, 129, 255, 0.35);
+  border-color: var(--erp-hover-border);
 }
 
 .erp-panel__toolbar-btn:disabled {
@@ -160,8 +202,8 @@
 }
 
 .erp-panel__toolbar-btn--primary {
-  border-color: rgba(83, 198, 160, 0.32);
-  background: linear-gradient(135deg, rgba(13, 102, 87, 0.92), rgba(14, 73, 67, 0.94));
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-gradient);
 }
 
 .erp-panel__name-cell {
@@ -181,7 +223,7 @@
 }
 
 .erp-panel__price-cell {
-  color: #b9ffd2;
+  color: var(--erp-success-text);
   font-weight: 700;
 }
 
@@ -190,16 +232,16 @@
   gap: 0.7rem;
   padding: 1.3rem;
   border-radius: 1rem;
-  border: 1px dashed rgba(98, 129, 255, 0.32);
-  background: linear-gradient(135deg, rgba(18, 24, 38, 0.92), rgba(24, 33, 58, 0.82));
+  border: 1px dashed var(--erp-primary-border);
+  background: var(--erp-primary-card-bg);
 }
 
 .erp-placeholder__badge {
   width: fit-content;
   padding: 0.28rem 0.65rem;
   border-radius: 999px;
-  background: rgba(98, 129, 255, 0.16);
-  color: #d8e1ff;
+  background: var(--erp-primary-soft-bg);
+  color: var(--erp-primary-soft-text);
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -257,7 +299,7 @@
   padding: 0 0.75rem;
   border-radius: 0.8rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-size: 0.9rem;
 }
@@ -301,23 +343,23 @@
   padding: 1rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(13, 18, 29, 0.9);
+  background: var(--erp-card-bg);
 }
 
 .erp-banco__card--raw {
-  border-color: rgba(120, 80, 200, 0.25);
+  border-color: var(--erp-raw-border);
 }
 
 .erp-banco__card--projecao {
-  border-color: rgba(83, 198, 160, 0.3);
+  border-color: var(--erp-success-border);
 }
 
 .erp-banco__card--controle {
-  border-color: rgba(98, 129, 255, 0.25);
+  border-color: var(--erp-primary-border);
 }
 
 .erp-banco__card--outbox {
-  border-color: rgba(200, 170, 60, 0.25);
+  border-color: var(--erp-warning-border);
 }
 
 .erp-banco__card-head {
@@ -329,7 +371,7 @@
 
 .erp-banco__table-name {
   font-size: 0.8rem;
-  color: #b8d0ff;
+  color: var(--erp-primary-soft-text);
   word-break: break-all;
 }
 
@@ -340,8 +382,8 @@
   letter-spacing: 0.07em;
   padding: 0.18rem 0.5rem;
   border-radius: 999px;
-  background: rgba(98, 129, 255, 0.14);
-  color: #c8d8ff;
+  background: var(--erp-primary-soft-bg);
+  color: var(--erp-primary-soft-text);
   white-space: nowrap;
 }
 
@@ -372,22 +414,22 @@
 }
 
 .erp-banco__live-count {
-  color: #b9ffd2;
+  color: var(--erp-success-text);
   font-size: 1.1rem;
 }
 
 .erp-banco__note {
   padding: 0.9rem 1.1rem;
   border-radius: 0.9rem;
-  border: 1px solid rgba(200, 170, 60, 0.25);
-  background: rgba(180, 140, 30, 0.1);
+  border: 1px solid var(--erp-warning-border);
+  background: var(--erp-warning-soft-bg);
   color: var(--text-muted);
   font-size: 0.82rem;
   line-height: 1.6;
 }
 
 .erp-banco__note code {
-  color: #c8d8ff;
+  color: var(--erp-primary-soft-text);
   font-size: 0.78rem;
 }
 

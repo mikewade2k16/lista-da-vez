@@ -204,7 +204,7 @@ function moveItem(itemId, direction) {
 
 <style scoped>
 .settings-card__text--muted {
-  color: rgba(148, 163, 184, 0.82);
+  color: rgb(var(--muted) / 0.82);
 }
 
 .option-row--sortable {
@@ -225,10 +225,10 @@ function moveItem(itemId, direction) {
   min-width: 28px;
   height: 28px;
   padding: 0 8px;
-  border: 1px solid rgba(129, 140, 248, 0.18);
+  border: 1px solid rgb(var(--ring) / 0.18);
   border-radius: 999px;
-  background: rgba(129, 140, 248, 0.08);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
   font-size: 0.72rem;
   font-weight: 700;
 }
@@ -245,10 +245,10 @@ function moveItem(itemId, direction) {
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgb(var(--border) / 0.72);
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.7);
-  color: #cbd5f5;
+  background: rgb(var(--surface-2) / 0.7);
+  color: rgb(var(--text) / 0.9);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -257,9 +257,9 @@ function moveItem(itemId, direction) {
 }
 
 .option-row__move:hover:not(:disabled) {
-  border-color: rgba(129, 140, 248, 0.32);
-  background: rgba(129, 140, 248, 0.12);
-  color: #eef2ff;
+  border-color: rgb(var(--ring) / 0.32);
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .option-row__move:disabled {

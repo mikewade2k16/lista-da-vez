@@ -690,8 +690,8 @@ onMounted(async () => {
   min-height: 32px;
   padding: 0 0.8rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.24);
+  border: 1px solid rgb(var(--border) / 0.78);
+  background: rgb(var(--surface-2) / 0.72);
   color: var(--text-muted);
   font-size: 0.76rem;
   text-transform: uppercase;
@@ -710,7 +710,7 @@ onMounted(async () => {
   border: 1px solid var(--line-soft);
   border-radius: 14px;
   padding: 0.75rem 0.9rem;
-  background: rgba(15, 23, 42, 0.54);
+  background: rgb(var(--surface-2) / 0.78);
   color: var(--text-main);
 }
 
@@ -736,15 +736,15 @@ onMounted(async () => {
 }
 
 .alerts-panel__metric-card--critical {
-  border-color: rgba(248, 113, 113, 0.38);
+  border-color: rgb(var(--danger) / 0.38);
 }
 
 .alerts-panel__metric-card--warning {
-  border-color: rgba(251, 191, 36, 0.34);
+  border-color: rgb(var(--primary) / 0.34);
 }
 
 .alerts-panel__metric-card--success {
-  border-color: rgba(74, 222, 128, 0.34);
+  border-color: rgb(var(--success) / 0.34);
 }
 
 .alerts-panel__filter-field {
@@ -778,33 +778,33 @@ onMounted(async () => {
 }
 
 .alerts-panel__status-badge--active {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
 }
 
 .alerts-panel__status-badge--acknowledged {
-  background: #fef3c7;
-  color: #92400e;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
 }
 
 .alerts-panel__status-badge--resolved {
-  background: #dcfce7;
-  color: #166534;
+  background: rgb(var(--success) / 0.14);
+  color: rgb(var(--success));
 }
 
 .alerts-panel__severity-badge--critical {
-  background: #fecaca;
-  color: #991b1b;
+  background: rgb(var(--danger) / 0.16);
+  color: rgb(var(--danger));
 }
 
 .alerts-panel__severity-badge--attention {
-  background: #fde68a;
-  color: #92400e;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
 }
 
 .alerts-panel__severity-badge--info {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
 }
 
 .alerts-panel__muted {
@@ -821,8 +821,8 @@ onMounted(async () => {
   overflow: auto;
   border-radius: 14px;
   padding: 0.9rem 1rem;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--text));
   white-space: pre-wrap;
   word-break: break-word;
 }

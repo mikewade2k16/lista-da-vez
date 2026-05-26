@@ -104,6 +104,29 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, ack)
 	})))
 
+	mux.Handle("PATCH /v1/settings/appearance", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		var input AppearanceSectionInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+
+		ack, err := service.SaveAppearanceSection(r.Context(), principal, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
+
 	mux.Handle("POST /v1/settings/templates/{templateId}/apply", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {

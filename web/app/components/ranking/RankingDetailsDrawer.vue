@@ -73,10 +73,8 @@ const filteredAlerts = computed(() => {
 const alertCount = computed(() => filteredAlerts.value.length)
 
 const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
-  conversion: (a) =>
-    `Conversão ${a.value.toFixed(1)}% — abaixo do mínimo de ${a.threshold}%`,
-  queueJump: (a) =>
-    `Fora da vez ${a.value.toFixed(1)}% — acima do máximo de ${a.threshold}%`,
+  conversion: (a) => `Conversão ${a.value.toFixed(1)}% — abaixo do mínimo de ${a.threshold}%`,
+  queueJump: (a) => `Fora da vez ${a.value.toFixed(1)}% — acima do máximo de ${a.threshold}%`,
   pa: (a) => `P.A. ${a.value.toFixed(2)} — abaixo do mínimo de ${a.threshold}`,
   ticket: (a) =>
     `Ticket ${formatCurrencyBRL(a.value)} — abaixo do mínimo de ${formatCurrencyBRL(a.threshold)}`,
@@ -218,7 +216,11 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
         </div>
 
         <div v-if="legacyRows && legacyRows.length" class="ranking-drawer__legacy-toggle">
-          <button type="button" class="ranking-drawer__legacy-btn" @click="showLegacy = !showLegacy">
+          <button
+            type="button"
+            class="ranking-drawer__legacy-btn"
+            @click="showLegacy = !showLegacy"
+          >
             {{ showLegacy ? 'Ocultar tabela completa' : 'Ver como tabela' }}
           </button>
         </div>
@@ -328,12 +330,12 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
 
 .ranking-drawer__title {
   font-size: 1rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .ranking-drawer__subtitle {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .ranking-drawer__header-actions {
@@ -351,20 +353,20 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
   border-radius: 0.5rem;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   cursor: pointer;
 }
 
 .ranking-drawer__icon-btn:hover {
-  background: rgba(99, 102, 241, 0.12);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .ranking-drawer__tabs {
   display: flex;
   gap: 0.25rem;
   padding: 0 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid rgb(var(--border) / 0.8);
 }
 
 .ranking-drawer__tab {
@@ -375,15 +377,15 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ranking-drawer__tab--active {
-  color: rgba(248, 250, 252, 0.96);
-  border-bottom-color: #6366f1;
+  color: rgb(var(--text) / 0.96);
+  border-bottom-color: rgb(var(--primary));
 }
 
 .ranking-drawer__tab-badge {
@@ -393,8 +395,8 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
   min-width: 1.2rem;
   padding: 0 0.35rem;
   border-radius: 999px;
-  background: rgba(244, 114, 182, 0.2);
-  color: #f9a8d4;
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
   font-size: 0.68rem;
   font-weight: 700;
 }
@@ -416,25 +418,25 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
   gap: 0.2rem;
   padding: 0.75rem;
   border-radius: 0.7rem;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgb(var(--border) / 0.72);
+  background: rgb(var(--surface-2) / 0.74);
 }
 
 .ranking-drawer__metric-label {
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .ranking-drawer__metric-value {
   font-size: 0.95rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .ranking-drawer__metric-text {
   font-size: 0.72rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .ranking-drawer__legacy-toggle {
@@ -445,16 +447,16 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
 .ranking-drawer__legacy-btn {
   padding: 0.4rem 0.85rem;
   border-radius: 0.5rem;
-  border: 1px solid rgba(125, 146, 255, 0.32);
-  background: rgba(99, 102, 241, 0.12);
-  color: #c7d2fe;
+  border: 1px solid rgb(var(--ring) / 0.32);
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
   font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .ranking-drawer__legacy-btn:hover {
-  background: rgba(99, 102, 241, 0.22);
+  background: rgb(var(--primary) / 0.22);
 }
 
 .ranking-drawer__alerts {
@@ -470,26 +472,26 @@ const ALERT_LABELS: Record<string, (alert: DrawerAlert) => string> = {
   gap: 0.2rem;
   padding: 0.6rem 0.8rem;
   border-radius: 0.6rem;
-  border: 1px solid rgba(244, 114, 182, 0.32);
-  background: rgba(244, 114, 182, 0.08);
+  border: 1px solid rgb(var(--danger) / 0.32);
+  background: rgb(var(--danger) / 0.08);
 }
 
 .ranking-drawer__alert-type {
   font-size: 0.7rem;
   text-transform: uppercase;
-  color: #f9a8d4;
+  color: rgb(var(--danger));
   font-weight: 700;
 }
 
 .ranking-drawer__alert-msg {
   font-size: 0.82rem;
-  color: rgba(248, 250, 252, 0.92);
+  color: rgb(var(--text) / 0.92);
 }
 
 .ranking-drawer__empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 @media (max-width: 900px) {

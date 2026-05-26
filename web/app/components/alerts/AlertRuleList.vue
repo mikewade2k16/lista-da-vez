@@ -120,10 +120,10 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 .empty-state {
   text-align: center;
   padding: 3rem 2rem;
-  color: #6b7280;
-  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  color: rgb(var(--muted));
+  background: linear-gradient(135deg, rgb(var(--surface)) 0%, rgb(var(--surface-2)) 100%);
   border-radius: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid rgb(var(--border) / 0.82);
 }
 
 .empty-state__icon {
@@ -135,49 +135,49 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
   margin: 0 0 0.5rem 0;
   font-size: 1.1rem;
   font-weight: 600;
-  color: #374151;
+  color: rgb(var(--text));
 }
 
 .empty-state__text {
   margin: 0 0 1rem 0;
   font-size: 0.95rem;
-  color: #6b7280;
+  color: rgb(var(--muted));
 }
 
 .empty-state__hint {
   margin: 0;
   font-size: 0.85rem;
-  color: #9ca3af;
+  color: rgb(var(--muted) / 0.72);
   font-style: italic;
 }
 
 .rules-table {
   width: 100%;
   border-collapse: collapse;
-  background: rgba(15, 23, 42, 0.4);
+  background: rgb(var(--surface) / 0.78);
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid rgb(var(--border) / 0.82);
 }
 
 .rules-table thead {
-  background: rgba(30, 41, 59, 0.6);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgb(var(--surface-2) / 0.86);
+  border-bottom: 1px solid rgb(var(--border) / 0.82);
 }
 
 .rules-table th {
   padding: 1rem;
   text-align: left;
   font-weight: 600;
-  color: #cbd5e1;
+  color: rgb(var(--text));
   font-size: 0.9rem;
 }
 
 .rules-table td {
   padding: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-  color: #e2e8f0;
+  border-bottom: 1px solid rgb(var(--border) / 0.72);
+  color: rgb(var(--text));
 }
 
 .rules-table tbody tr:last-child td {
@@ -186,11 +186,11 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 
 .rules-table tbody tr.inactive {
   opacity: 0.5;
-  background: rgba(100, 116, 139, 0.1);
+  background: rgb(var(--muted) / 0.1);
 }
 
 .rules-table tbody tr:hover {
-  background: rgba(59, 130, 246, 0.05);
+  background: rgb(var(--primary) / 0.05);
 }
 
 .name-cell {
@@ -199,12 +199,12 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 
 .rule-name {
   font-weight: 500;
-  color: #e2e8f0;
+  color: rgb(var(--text));
 }
 
 .rule-desc {
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: rgb(var(--muted));
   margin-top: 0.25rem;
 }
 
@@ -224,13 +224,13 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 }
 
 .toggle-btn.active {
-  background: #dcfce7;
-  color: #166534;
+  background: rgb(var(--success) / 0.14);
+  color: rgb(var(--success));
 }
 
 .toggle-btn.inactive {
-  background: #fee2e2;
-  color: #991b1b;
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
 }
 
 .toggle-btn:hover:not(:disabled) {
@@ -244,7 +244,7 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 
 .updated-at {
   font-size: 0.9rem;
-  color: #94a3b8;
+  color: rgb(var(--muted));
 }
 
 .actions-cell {
@@ -254,7 +254,7 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 
 .btn-icon {
   background: none;
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border: 1px solid rgb(var(--border) / 0.86);
   border-radius: 4px;
   width: 2rem;
   height: 2rem;
@@ -267,8 +267,8 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 }
 
 .btn-icon:hover:not(:disabled) {
-  border-color: rgba(148, 163, 184, 0.55);
-  background: rgba(30, 41, 59, 0.75);
+  border-color: rgb(var(--ring) / 0.38);
+  background: rgb(var(--primary) / 0.1);
 }
 
 .btn-icon:disabled {
@@ -277,29 +277,29 @@ const getDisplayLabel = (kind: string) => displayKindLabels[kind] || kind
 }
 
 .btn-icon.edit {
-  border-color: #3b82f6;
-  color: #3b82f6;
+  border-color: rgb(var(--primary));
+  color: rgb(var(--primary));
 }
 
 .btn-icon.edit:hover:not(:disabled) {
-  background: rgba(59, 130, 246, 0.16);
+  background: rgb(var(--primary) / 0.16);
 }
 
 .btn-icon.apply {
-  border-color: #f59e0b;
-  color: #f59e0b;
+  border-color: rgb(var(--primary-600));
+  color: rgb(var(--primary-600));
 }
 
 .btn-icon.apply:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.16);
+  background: rgb(var(--primary) / 0.12);
 }
 
 .btn-icon.delete {
-  border-color: #ef4444;
-  color: #ef4444;
+  border-color: rgb(var(--danger));
+  color: rgb(var(--danger));
 }
 
 .btn-icon.delete:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.16);
+  background: rgb(var(--danger) / 0.16);
 }
 </style>

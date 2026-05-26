@@ -451,6 +451,40 @@
   font-size: 0.72rem;
 }
 
+.users-access-manager__modules-cell {
+  width: 100%;
+  display: grid;
+  gap: 0.34rem;
+}
+
+.users-access-manager__modules-list {
+  display: flex;
+  gap: 0.32rem;
+  flex-wrap: wrap;
+}
+
+.users-access-manager__module-chip,
+.users-access-manager__module-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.45rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.users-access-manager__module-chip {
+  background: rgba(56, 189, 248, 0.14);
+  color: #bae6fd;
+}
+
+.users-access-manager__module-more {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-muted);
+}
+
 .users-access-manager__role-badge {
   display: inline-flex;
   align-items: center;

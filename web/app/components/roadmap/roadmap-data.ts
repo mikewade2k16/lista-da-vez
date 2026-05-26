@@ -28,6 +28,38 @@ export interface RoadmapGroup {
   description?: string;
 }
 
+export type ModuleStatus = "pending" | "in_progress" | "beta" | "done";
+export type ModulePriority = "P0" | "P1" | "P2" | "P3";
+
+export interface RoadmapModule {
+  id: string;
+  label: string;
+  route: string;
+  status: ModuleStatus;
+  priority: ModulePriority;
+  description: string;
+  scope?: string[];
+  dependsOn?: string[];
+  category?: "atendimento" | "tools" | "operacao-comercial" | "indicadores" | "manage";
+}
+
+export type RuleCategory =
+  | "frontend"
+  | "backend"
+  | "banco"
+  | "linguagens"
+  | "deploy"
+  | "padroes-gerais";
+
+export interface RoadmapRule {
+  id: string;
+  category: RuleCategory;
+  title: string;
+  body: string;
+  why?: string;
+  appliesWhen?: string;
+}
+
 export const ROADMAP_GROUPS: RoadmapGroup[] = [
   {
     id: "multi-tenant",
@@ -213,7 +245,7 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     estimateWeeks: "Coordenação contínua",
     startedAt: "2026-05-12",
     tasks: [
-      { id: "module-order", label: "Definir ordem de entrada dos módulos e confirmar o primeiro módulo", done: true, note: "Ordem atual detalhada nas Fases 11-20: Theme Studio antes dos módulos; depois Tasks, Omni, Finance, Contacts/Admin, Site, Indicators, Tools, Team e Bio." },
+      { id: "module-order", label: "Definir ordem de entrada dos módulos e confirmar o primeiro módulo", done: true, note: "Ordem atual detalhada nas Fases 11-20: Theme Studio; depois Tasks; em seguida o lote simples (Profile, Team, Site e a frente nova de Users/Clientes em paralelo ao legado); por fim os módulos mais pesados como Omni, Finance, Indicators, Tools e Bio." },
       { id: "module-components", label: "Migrar componentes específicos junto com cada módulo importado", done: false, note: "Cada fase de módulo documenta componentes vindos do web-reference e mantém Core* só para reuso real." },
       { id: "module-contract", label: "Para cada módulo: backend Module + schema + permissões + layer + nav.config.ts + aceite de habilitar/desabilitar", done: false },
       { id: "docs-loop", label: "Atualizar docs/COMPONENT_INVENTORY.md e /roadmap a cada fase concluída", done: false }
@@ -377,13 +409,33 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     verifiable: "Inbox abre, lista conversas, envia mensagem de teste, recebe atualização realtime e respeita permissões do módulo."
   },
   {
+    id: "fase-13a",
+    code: "Fase 13A",
+    title: "Lote simples do front",
+    goal: "Executar primeiro as páginas mais simples vindas do web-reference para ganhar gestão rápida no front novo sem substituir o legado operacional da fila.",
+    status: "in_progress",
+    estimateWeeks: "1-2 semanas",
+    startedAt: "2026-05-25",
+    tasks: [
+      { id: "theme-baseline", label: "Usar Theme Studio já concluído como base visual do lote simples, sem reabrir o escopo de temas", done: true, note: "Fase 11 concluída; o foco agora é aplicar o visual base nas páginas simples novas." },
+      { id: "profile", label: "Trazer primeiro o ajuste de profile, reaproveitando /perfil atual e aproximando layout/fluxo do admin/profile.vue", done: false },
+      { id: "team", label: "Trazer Team antes de finance, começando por treinamento e candidatos como recorte inicial", done: false },
+      { id: "site", label: "Trazer Site antes de finance, começando por produtos e leads com escopo front-first", done: false },
+      { id: "users-parallel", label: "Abrir frente nova de usuários no front novo reaproveitando UsersWorkspace, sem remover /usuarios legado da fila", done: false },
+      { id: "clients-parallel", label: "Abrir frente nova de clientes/tenants no front novo mantendo /clientes legado intacto até fechar a estratégia tenant", done: false },
+      { id: "sequencing", label: "Deixar finance e demais módulos pesados para depois do lote simples validado no painel", done: false }
+    ],
+    verifiable: "Roadmap deixa explícito o lote simples como próxima onda; /usuarios e /clientes atuais permanecem operacionais; finance só começa depois desse recorte ser validado."
+  },
+  {
     id: "fase-14",
     code: "Fase 14",
     title: "Módulo Finance",
-    goal: "Trazer financeiro depois de Tasks/Omni, mantendo /finance como placeholder até a fase começar.",
+    goal: "Trazer financeiro só depois do lote simples do front, mantendo /finance como placeholder até a fase começar.",
     status: "pending",
     estimateWeeks: "2-3 semanas",
     tasks: [
+      { id: "sequencing", label: "Iniciar somente após validar profile, team, site e a frente nova de users/clientes no roadmap", done: false },
       { id: "backend", label: "Criar back/internal/modules/finance/ com schema finance.*, lançamentos, categorias, recorrências e ajustes", done: false },
       { id: "frontend-layer", label: "Criar web/layers/finance/ com página admin/finance.vue portada para o path /finance", done: false },
       { id: "components", label: "Portar FinanceLineCard.vue, FinanceRecurringGroupCard.vue e OmniMoneyInput.vue no layer finance", done: false },
@@ -397,29 +449,29 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     id: "fase-15",
     code: "Fase 15",
     title: "Módulo Contacts/Admin",
-    goal: "Definir a fonte de verdade de contatos/clientes e portar as páginas de gestão apenas quando for seguro substituir o legado.",
+    goal: "Trazer a nova frente de admin/users/clientes em paralelo ao legado da fila, definindo a fonte de verdade tenant sem quebrar o operacional atual.",
     status: "pending",
     estimateWeeks: "2-3 semanas",
     tasks: [
-      { id: "decision", label: "Decidir se contacts substitui /clientes atual ou entra primeiro como módulo opcional paralelo", done: false },
+      { id: "decision", label: "Fixar a regra do rollout: /usuarios e /clientes atuais seguem operacionais; a nova frente admin entra primeiro em paralelo", done: false },
       { id: "backend", label: "Criar back/internal/modules/contacts/ com Resolver consumível por finance, omni, site e queue", done: false },
-      { id: "pages", label: "Avaliar port de admin/manage/clientes.vue, users.vue e modulos.vue sem quebrar CRUDs atuais", done: false },
-      { id: "components", label: "Portar componentes manager/clients somente se a página nova for escolhida", done: false },
+      { id: "pages", label: "Portar admin/manage/clientes.vue, users.vue e modulos.vue como frente nova de gestão, sem remover os CRUDs atuais da fila", done: false },
+      { id: "components", label: "Reaproveitar UsersWorkspace/TenantsWorkspace onde já houver base pronta e portar manager/clients só no que faltar", done: false },
       { id: "account-modules", label: "Mapear admin/manage/modulos.vue para gestão de core.account_modules no futuro", done: false },
-      { id: "acceptance", label: "Resolver de contacts funciona habilitado; consumidores fazem fallback quando desabilitado", done: false }
+      { id: "acceptance", label: "Nova frente admin funciona em paralelo; consumers fazem fallback e o legado da fila segue intacto", done: false }
     ],
-    verifiable: "Contacts pode ser habilitado por account, expõe Resolver estável e não substitui /clientes antes da decisão explícita."
+    verifiable: "Contacts pode ser habilitado por account, expõe Resolver estável e não substitui /usuarios ou /clientes atuais antes da transição explícita."
   },
   {
     id: "fase-16",
     code: "Fase 16",
     title: "Módulo Site",
-    goal: "Trazer páginas de produtos e leads do site/e-commerce para um módulo isolado.",
+    goal: "Trazer páginas de produtos e leads do site/e-commerce no lote simples, antes do financeiro e com acoplamento mínimo ao restante.",
     status: "pending",
     estimateWeeks: "1-2 semanas",
     tasks: [
       { id: "backend", label: "Criar back/internal/modules/site/ com produtos publicados, leads, configurações e permissões", done: false },
-      { id: "pages", label: "Portar admin/site/produtos.vue e admin/site/leads.vue para web/layers/site/pages/", done: false },
+      { id: "pages", label: "Portar admin/site/produtos.vue e admin/site/leads.vue para web/layers/site/pages/ como primeira entrega simples do front novo", done: false },
       { id: "contacts-integration", label: "Decidir se leads entram em contacts quando contacts estiver habilitado", done: false },
       { id: "nav", label: "Adicionar nav.config.ts do site e proteger rotas com module-enabled", done: false },
       { id: "acceptance", label: "Cadastrar produto, alternar visibilidade no site e consultar lead via API Go", done: false }
@@ -463,17 +515,17 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     id: "fase-19",
     code: "Fase 19",
     title: "Módulo Team",
-    goal: "Avaliar e portar as telas de treinamento/candidatos como módulo de equipe, se fizerem parte do produto final.",
+    goal: "Trazer Team como parte do lote simples inicial, começando por treinamento/candidatos e deixando escopos mais pesados para depois.",
     status: "pending",
     estimateWeeks: "1-2 semanas",
     tasks: [
-      { id: "product-decision", label: "Confirmar se team entra no produto ou fica fora do escopo imediato", done: false },
-      { id: "backend", label: "Modelar candidatos, treinamentos, anexos e estados de processo quando aprovado", done: false },
-      { id: "pages", label: "Portar admin/team/treinamento.vue e candidatos.vue", done: false },
+      { id: "product-decision", label: "Confirmar o recorte inicial de team: treinamento e candidatos primeiro; escalas detalhadas podem vir depois", done: false },
+      { id: "backend", label: "Modelar candidatos, treinamentos, anexos e estados de processo no recorte inicial aprovado", done: false },
+      { id: "pages", label: "Portar admin/team/treinamento.vue e candidatos.vue como uma das primeiras entregas simples do front", done: false },
       { id: "files", label: "Definir estratégia para anexos/CVs antes de subir a tela de candidatos", done: false },
       { id: "acceptance", label: "Criar candidato/treinamento e validar permissões por account", done: false }
     ],
-    verifiable: "Team só aparece se for aprovado como módulo; telas não entram como sobras soltas do web-reference."
+    verifiable: "Team entra com recorte claro (treinamento/candidatos), respeita permissões por account e não bloqueia o avanço do lote simples."
   },
   {
     id: "fase-20",
@@ -818,6 +870,29 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
   },
 
   {
+    id: "roadmap-b1",
+    code: "Roadmap B1",
+    title: "Backend de Modulos & Regras editaveis",
+    goal: "Persistir RoadmapModule e RoadmapRule via API Go (schema novo roadmap.*). UI passa de read-only para edicao inline com workspace de prioridade, status e descricao. Regenera AGENT_RULES.md a cada PUT para que agentes leiam sempre a versao canonica.",
+    status: "done",
+    estimateWeeks: "3-5 dias",
+    startedAt: "2026-05-23",
+    finishedAt: "2026-05-23",
+    group: "multi-tenant",
+    tasks: [
+      { id: "migration", label: "Migration 0115_roadmap_schema.sql: schema roadmap + tabelas modules e rules (account-scoped + global)", done: true, note: "Constraints check em status/priority/category; index parcial para registros globais." },
+      { id: "module-go", label: "back/internal/modules/roadmap/ (model/store_postgres/service/http/AGENT.md) seguindo padrao", done: true, note: "Tipo de dominio nomeado ModuleRecord para nao colidir com modules.Module do registry." },
+      { id: "endpoints", label: "GET /v1/roadmap/modules, PUT /v1/roadmap/modules/:id, GET /v1/roadmap/rules, PUT /v1/roadmap/rules/:id, POST /v1/roadmap/rules", done: true, note: "8 endpoints CRUD + GET /v1/roadmap/rules.md." },
+      { id: "seed", label: "Seed inicial a partir de ROADMAP_MODULES e ROADMAP_RULES de web/app/components/roadmap/roadmap-data.ts", done: true, note: "12 modulos + 21 regras embutidas como seed global (account_id IS NULL) na propria migration; ON CONFLICT DO NOTHING." },
+      { id: "front-store", label: "Pinia store useRoadmapStore() com fetch/update; substitui ROADMAP_MODULES/ROADMAP_RULES estaticos", done: true, note: "Store em app/stores/roadmap.ts; fallback para seeds estaticos quando backend retorna 404." },
+      { id: "front-edit", label: "Edicao inline em RoadmapModulesBoard.vue e RoadmapRulesBoard.vue (prioridade, status, descricao)", done: true, note: "Cards ganham botao Editar; abrem form com select status/priority + textarea descricao." },
+      { id: "export-md", label: "Endpoint GET /v1/roadmap/rules.md serve AGENT_RULES.md regenerado a partir do banco", done: true, note: "service.BuildMarkdown gera mesmo formato do AGENT_RULES.md raiz." },
+      { id: "agent-md", label: "Adicionar back/internal/modules/roadmap/AGENT.md", done: true }
+    ],
+    verifiable: "Login + PUT em uma regra reflete em GET /v1/roadmap/rules.md instantaneamente; UI permite editar prioridade do modulo Tracking de P1 para P0 e o valor persiste apos refresh."
+  },
+
+  {
     id: "tasks-t9",
     code: "Tasks T9",
     title: "Testes E2E + observabilidade",
@@ -841,3 +916,395 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     verifiable: "go test ./... passa (50 testes T9 no total); npm test passa (9 Vitest); smoke E2E 12 passos roteiro pronto para staging."
   }
 ];
+
+export const ROADMAP_MODULES: RoadmapModule[] = [
+  {
+    id: "tasks",
+    label: "Tasks",
+    route: "/tasks",
+    status: "beta",
+    priority: "P0",
+    category: "atendimento",
+    description:
+      "Orquestrador de tarefas multi-tenant (boards + tabela). Backend pronto (Fases T1-T9). UI em refino: rolagem vertical, performance, checklist no editor, expand/restore. Em uso interno antes de liberar para tenants.",
+    scope: [
+      "Refinar performance do board para >500 cards",
+      "Melhorar feedback de drag-and-drop entre colunas",
+      "Adicionar filtros salvos por usuario",
+      "Notificacoes in-app quando @mention"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "editor",
+    label: "Editor",
+    route: "/editor",
+    status: "beta",
+    priority: "P1",
+    category: "tools",
+    description:
+      "Editor rich-text Omni baseado em Tiptap (StarterKit + TaskList + Emoji + Mention + TextAlign). Usado em descricao de tasks. Falta: salvar/abrir documentos avulsos, versionamento, sharing.",
+    scope: [
+      "Persistir documentos avulsos (nao apenas dentro de Tasks)",
+      "Adicionar /slash commands",
+      "Suporte a colaboracao em tempo real (avaliar @tiptap/y-tiptap)"
+    ],
+    dependsOn: ["tasks"]
+  },
+  {
+    id: "tracking",
+    label: "Tracking",
+    route: "/tracking",
+    status: "pending",
+    priority: "P1",
+    category: "atendimento",
+    description:
+      "Visao de time-tracking por consultor: tempos por task, relatorios diarios/semanais. Depende de Tasks 100% (presence + tracking ja existem no backend T7).",
+    scope: [
+      "Agregacao por consultor/dia/semana",
+      "Export CSV",
+      "Comparativo Pessoa A vs B no periodo"
+    ],
+    dependsOn: ["tasks"]
+  },
+  {
+    id: "omnichannel",
+    label: "Omnichannel",
+    route: "/omnichannel",
+    status: "pending",
+    priority: "P2",
+    category: "atendimento",
+    description:
+      "Conversas unificadas WhatsApp/Instagram/Email/Webchat com handoff humano e bot. Page existe mas vazia. Escopo grande: webhook providers + threads + roteamento.",
+    scope: [
+      "Conectores WhatsApp Cloud API + Instagram Direct",
+      "Schema messaging.* com threads",
+      "Roteamento por fila + handoff",
+      "Bot simples por palavra-chave"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "team",
+    label: "Team (Equipe + Escalas)",
+    route: "/team/equipe",
+    status: "pending",
+    priority: "P2",
+    category: "operacao-comercial",
+    description:
+      "Gestao de equipe e escalas. Pagina existe mas sem CRUD real. Compartilha schema core.users + roles ja existentes.",
+    scope: [
+      "CRUD de equipe com avatar e cargo",
+      "Calendario de escalas (turnos)",
+      "Aprovacao de troca de turno"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "site",
+    label: "Site (Campanhas + Paginas + Forms)",
+    route: "/campanhas",
+    status: "pending",
+    priority: "P3",
+    category: "operacao-comercial",
+    description:
+      "Builder visual de paginas/forms + campanhas atreladas a pagina. Pagina /campanhas existe mas sem builder. Forms ainda nao implementado.",
+    scope: [
+      "Builder drag-drop simples para pagina",
+      "Geracao de form com webhook",
+      "Campanha = pagina + canal de divulgacao + meta",
+      "Tracking de conversao"
+    ],
+    dependsOn: ["site"]
+  },
+  {
+    id: "inteligencia",
+    label: "Inteligencia",
+    route: "/inteligencia",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Insights gerados por LLM sobre dados de vendas e atendimento. Cards 'Por que conversao caiu?' / 'Quais produtos faltam mais?'. Sera consumidor pesado do backend de BI.",
+    scope: [
+      "Prompts canonicos para 5 perguntas frequentes",
+      "Cache de resposta por janela (dia/semana)",
+      "Exportar insight como PDF"
+    ],
+    dependsOn: ["bi"]
+  },
+  {
+    id: "relatorios",
+    label: "Relatorios",
+    route: "/relatorios",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Reports estaticos exportaveis (PDF/CSV). Backend reports/ existe parcial. Faltam templates e UI de configuracao.",
+    scope: [
+      "Template Ranking Mensal Consultor (PDF)",
+      "Template Vendas por Loja (CSV + PDF)",
+      "Agendamento de envio recorrente por email"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "bi",
+    label: "BI",
+    route: "/bi",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Dashboards customizaveis. Modulo backend bi/ ja criado mas sem UI. Definir entre dashboard hardcoded vs builder.",
+    scope: [
+      "Decidir entre Metabase embedded vs builder proprio",
+      "MVP com 3 dashboards fixos (vendas, atendimento, estoque)",
+      "Filtros por loja/consultor/periodo"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "finance",
+    label: "Finance",
+    route: "/finance",
+    status: "pending",
+    priority: "P3",
+    category: "indicadores",
+    description:
+      "Comissoes, metas financeiras, fechamento mensal. Hoje nao existe. Depende de Vendas (ERP) ja integrada.",
+    scope: [
+      "Calculo de comissao por consultor com regras configuraveis",
+      "Fechamento mensal exportavel",
+      "Integracao com folha (fora do escopo inicial)"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "monitoramento",
+    label: "Monitoramento",
+    route: "/monitoramento",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Pagina interna de health: uptime API, jobs ERP, sync FTP, fila de atendimento em tempo real. Pega de healthz + module registry + alerts.",
+    scope: [
+      "Painel de modulos ativos (do module registry)",
+      "Historico de jobs ERP",
+      "Latencia /healthz dos ultimos 7 dias"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "qr-tools",
+    label: "Tools secundarias (QR / Encurtador / Scripts)",
+    route: "/tools/qr-code",
+    status: "pending",
+    priority: "P3",
+    category: "tools",
+    description:
+      "Ferramentas auxiliares hoje meio implementadas. Atualmente ocultas do menu. Reativar so quando tiver demanda real.",
+    scope: [
+      "QR Code com tracking de cliques",
+      "Encurtador integrado com tracking",
+      "Scripts: snippets reutilizaveis de mensagens"
+    ],
+    dependsOn: []
+  }
+];
+
+export const ROADMAP_RULES: RoadmapRule[] = [
+  {
+    id: "fe-componentes-reutilizaveis",
+    category: "frontend",
+    title: "Componentes reutilizaveis acima de tudo",
+    body: "Sempre que houver repeticao de markup ou logica visual, extrair em componente proprio em web/app/components/ ou na layer adequada. Workspaces nao podem virar arquivos gigantes; quebrar em cards/secoes/listas.",
+    why: "Evita duplicacao e drift visual entre paginas. Facilita aplicar mudanca em um lugar so.",
+    appliesWhen: "Qualquer feature nova ou refactor que adicione UI."
+  },
+  {
+    id: "fe-classes-semanticas",
+    category: "frontend",
+    title: "Classes semanticas BEM-like",
+    body: "Sempre usar nomes semanticos no estilo .nome-componente__elemento--modificador. Nao usar utility classes inline ou IDs para estilizacao.",
+    why: "Permite leitura rapida do escopo de cada estilo e evita colisao global.",
+    appliesWhen: "Estilizacao de qualquer componente novo."
+  },
+  {
+    id: "fe-sem-emojis",
+    category: "frontend",
+    title: "Sem emojis em UI nem em codigo",
+    body: "Nao usar emojis em labels, mensagens de UI, codigo, comentarios ou commits, salvo se o usuario pedir explicitamente.",
+    why: "Mantem consistencia visual e profissional do produto.",
+    appliesWhen: "Sempre."
+  },
+  {
+    id: "fe-feature-flag-hidden",
+    category: "frontend",
+    title: "Esconder pagina nao pronta via hidden no menu",
+    body: "Quando um modulo/pagina nao esta pronto, usar hidden:true em web/app/utils/sidebar-nav.ts E em web/layers/queue/nav.config.ts. Para itens em beta, usar beta:true (renderiza badge).",
+    why: "Evita que usuario navegue para pagina quebrada. Beta deixa explicito que a feature pode mudar.",
+    appliesWhen: "Adicionar/remover modulo do menu lateral."
+  },
+  {
+    id: "be-padrao-modulo-go",
+    category: "backend",
+    title: "Padrao de modulo Go",
+    body: "Cada modulo em back/internal/modules/<nome>/ tem: model.go (tipos), store_postgres.go (persistencia), service.go (regras), http.go (handlers), AGENT.md (documentacao). Modulos plugaveis se registram via Module Registry quando CORE_V2_ENABLED.",
+    why: "Consistencia entre modulos facilita onboarding e troca de agente.",
+    appliesWhen: "Criar novo modulo backend."
+  },
+  {
+    id: "be-ids-strings",
+    category: "backend",
+    title: "IDs como string, nunca uuid externo",
+    body: "Usar string para IDs no Go; nao importar pacote uuid externo. Casts e geracao ficam centralizados em internal/platform/ids/.",
+    why: "Reduz dependencia externa e facilita refatoracao do esquema de IDs.",
+    appliesWhen: "Qualquer struct nova com ID."
+  },
+  {
+    id: "be-scan-nullable-string",
+    category: "backend",
+    title: "Scan de campos NULL com *string",
+    body: "Para colunas nullable, declarar *string (ou sql.NullString se preferir) no Scan; nunca string puro.",
+    why: "Evita panic em scan de NULL.",
+    appliesWhen: "Implementar store_postgres.go."
+  },
+  {
+    id: "be-perms-no-banco",
+    category: "backend",
+    title: "Permissoes vivem no banco (RBAC dinamico)",
+    body: "Nao hardcoded permission names em codigo Go. Permissoes vivem em core.permissions + core.role_permissions; service consulta via Module Registry.",
+    why: "Permite agencia customizar role sem deploy.",
+    appliesWhen: "Implementar checagem de permissao em handler ou service."
+  },
+  {
+    id: "banco-migration-idempotente",
+    category: "banco",
+    title: "Migration idempotente (IF NOT EXISTS)",
+    body: "Toda migration usa IF NOT EXISTS / CREATE OR REPLACE. Numerar sequencialmente em back/internal/platform/database/migrations/####_nome.sql. Nunca renumerar migration ja aplicada.",
+    why: "Migrations falhas no meio precisam poder ser reaplicadas sem dropar dados.",
+    appliesWhen: "Criar migration nova."
+  },
+  {
+    id: "banco-schema-multitenant",
+    category: "banco",
+    title: "Schema-per-modulo + account_id em todas as tabelas tenant-scoped",
+    body: "Schemas: core, queue, tasks, alerts, settings, roadmap. Toda tabela tenant-scoped tem account_id NOT NULL com FK para core.accounts. Public schema pode ter VIEWS sobre tabelas dos schemas.",
+    why: "Multi-tenancy com isolamento logico e queries por schema mais previsiveis.",
+    appliesWhen: "Criar tabela nova."
+  },
+  {
+    id: "banco-view-publica",
+    category: "banco",
+    title: "Mover tabela para schema: criar view publica",
+    body: "Quando mover tabela de public.* para schema.*, criar CREATE OR REPLACE VIEW public.<tabela> AS SELECT * FROM schema.<tabela> para manter compat com codigo legado.",
+    why: "Evita quebrar queries antigas que ainda apontam para public.*.",
+    appliesWhen: "Refactor de schema."
+  },
+  {
+    id: "lang-go-version",
+    category: "linguagens",
+    title: "Go 1.26",
+    body: "Backend usa Go 1.26. Aproveitar generics, max/min builtins, slices/maps stdlib.",
+    why: "Versao alinhada com infra de CI e Docker.",
+    appliesWhen: "Backend."
+  },
+  {
+    id: "lang-vue-nuxt",
+    category: "linguagens",
+    title: "Vue 3 + Nuxt 4 + Pinia",
+    body: "Frontend usa Vue 3 (Composition API + <script setup>), Nuxt 4 (com layers em web/layers/*), Pinia para state. Tipos TS sempre que possivel.",
+    why: "Stack escolhida pelo time; layers permitem isolar dominios.",
+    appliesWhen: "Frontend."
+  },
+  {
+    id: "lang-typescript-strict",
+    category: "linguagens",
+    title: "TypeScript strict",
+    body: "Codigo TS deve passar em vue-tsc --noEmit. Evitar any. Preferir tipos explicitos em props e composables.",
+    why: "Pega bug em build time, nao em prod.",
+    appliesWhen: "Qualquer codigo TS/Vue."
+  },
+  {
+    id: "deploy-vps-caddy",
+    category: "deploy",
+    title: "VPS Hostinger com Caddy + Docker Compose",
+    body: "Deploy em VPS 85.31.62.33, user deploy. Caddy reverse proxy em /opt/omnichannel/Caddyfile. Cada projeto roda em /home/deploy/<projeto> com docker-compose.prod.yml. Nginx-style aliases por projeto na network proxy.",
+    why: "Isolamento por projeto + um Caddy gerencia todos os dominios.",
+    appliesWhen: "Deploy ou troubleshooting de prod."
+  },
+  {
+    id: "deploy-feature-flag",
+    category: "deploy",
+    title: "Feature flag CORE_V2_ENABLED em .env.production E docker-compose",
+    body: "Variaveis novas precisam de duas adicoes: .env.production (na VPS) E docker-compose.prod.yml na secao environment. Sem a segunda, o container nao recebe a variavel.",
+    why: "Compose nao propaga automaticamente .env file inteiro; precisa de declaracao explicita.",
+    appliesWhen: "Adicionar variavel de ambiente nova."
+  },
+  {
+    id: "deploy-caddy-restart",
+    category: "deploy",
+    title: "Apos mudar upstream, restart Caddy (nao reload)",
+    body: "Caddy reload mantem cache do upstream antigo em alguns casos. Para garantir, fazer docker restart omnichannel-mvp-caddy-1.",
+    why: "Sintoma classico: site continua mostrando versao antiga apos deploy.",
+    appliesWhen: "Trocar upstream Caddy ou criar novo dominio."
+  },
+  {
+    id: "geral-doc-first",
+    category: "padroes-gerais",
+    title: "Documentar antes de implementar",
+    body: "Antes de codar feature nao trivial: criar fase pending no roadmap-data.ts (status:'pending', tasks done:false), apresentar plano ao usuario, so depois codar.",
+    why: "Evita retrabalho e mantem roadmap como fonte de verdade para o agente.",
+    appliesWhen: "Tarefa com 3+ passos ou impacto em multiplas camadas."
+  },
+  {
+    id: "geral-agent-md",
+    category: "padroes-gerais",
+    title: "Atualizar AGENT.md ao alterar modulo",
+    body: "Toda mudanca em modulo backend (ou layer/area significativa do front) reflete no AGENT.md correspondente: novos endpoints, novas tabelas, novos contratos.",
+    why: "AGENT.md e a fonte que outros agentes leem para entender o modulo.",
+    appliesWhen: "PR que mexe em modulo."
+  },
+  {
+    id: "geral-sem-coauthor",
+    category: "padroes-gerais",
+    title: "Sem Co-Authored-By Claude em commits",
+    body: "Commits nao devem ter Co-Authored-By: Claude. Atribuicao fica so com o desenvolvedor humano.",
+    why: "Preferencia explicita do mantenedor.",
+    appliesWhen: "Toda criacao de commit."
+  },
+  {
+    id: "geral-local-first",
+    category: "padroes-gerais",
+    title: "Validar local antes de qualquer coisa",
+    body: "Sempre rodar e testar local antes de propor commit ou deploy. UI changes precisam de browser test, nao so type-check.",
+    why: "Type-check + test suite validam corretude de codigo, nao de feature.",
+    appliesWhen: "Sempre."
+  }
+];
+
+export const ROADMAP_MODULE_STATUS_LABEL: Record<ModuleStatus, string> = {
+  pending: "Pendente",
+  in_progress: "Em andamento",
+  beta: "Beta",
+  done: "Concluido"
+};
+
+export const ROADMAP_PRIORITY_LABEL: Record<ModulePriority, string> = {
+  P0: "P0 - Critica",
+  P1: "P1 - Alta",
+  P2: "P2 - Media",
+  P3: "P3 - Baixa"
+};
+
+export const ROADMAP_RULE_CATEGORY_LABEL: Record<RuleCategory, string> = {
+  frontend: "Frontend",
+  backend: "Backend",
+  banco: "Banco",
+  linguagens: "Linguagens",
+  deploy: "Deploy",
+  "padroes-gerais": "Padroes Gerais"
+};

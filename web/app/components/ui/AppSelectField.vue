@@ -270,7 +270,7 @@ onBeforeUnmount(() => {
 }
 
 .app-select-field__label {
-  color: rgba(219, 226, 255, 0.74);
+  color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -284,8 +284,8 @@ onBeforeUnmount(() => {
 }
 
 .app-select-field__trigger.is-filled {
-  border-color: rgba(129, 140, 248, 0.24);
-  background: rgba(129, 140, 248, 0.08);
+  border-color: rgb(var(--primary) / 0.28);
+  background: rgb(var(--primary) / 0.08);
 }
 
 .app-select-field__trigger.is-disabled {
@@ -333,11 +333,11 @@ onBeforeUnmount(() => {
 }
 
 .app-select-field__option.is-selected {
-  background: rgba(129, 140, 248, 0.12);
+  background: rgb(var(--primary) / 0.14);
 }
 
 .app-select-field__option-check {
-  color: #c7d2fe;
+  color: rgb(var(--primary));
 }
 
 .app-select-field--compact {

@@ -113,6 +113,8 @@ export interface TaskItem {
   dueDate: string
   dueEndDate: string
   archived: boolean
+  roadmapModuleId?: string | null
+  pinnedToRoadmap?: boolean
   order: number
   createdBy: string
   createdAt: string

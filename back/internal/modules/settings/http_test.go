@@ -1,13 +1,14 @@
 package settings
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
 func TestHandleDebugSettingsFailureDisabledInProduction(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/v1/settings?__debugSettingsFailure=500", nil)
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/settings?__debugSettingsFailure=500", nil)
 	recorder := httptest.NewRecorder()
 
 	handled := handleDebugSettingsFailure(recorder, request, "production")
@@ -17,7 +18,7 @@ func TestHandleDebugSettingsFailureDisabledInProduction(t *testing.T) {
 }
 
 func TestHandleDebugSettingsFailureReturnsInternalErrorInDevelopment(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/v1/settings?__debugSettingsFailure=500", nil)
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/settings?__debugSettingsFailure=500", nil)
 	recorder := httptest.NewRecorder()
 
 	handled := handleDebugSettingsFailure(recorder, request, "development")
@@ -31,7 +32,7 @@ func TestHandleDebugSettingsFailureReturnsInternalErrorInDevelopment(t *testing.
 }
 
 func TestHandleDebugSettingsFailureReadsCookieInDevelopment(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, "/v1/settings", nil)
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/settings", nil)
 	request.AddCookie(&http.Cookie{
 		Name:  "ldv_debug_settings_failure",
 		Value: "500",

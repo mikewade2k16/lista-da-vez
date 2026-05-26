@@ -355,5 +355,65 @@ export const DATABASE_SCHEMAS: DatabaseSchema[] = [
     status: "planned",
     phase: "Fase 6",
     tables: []
+  },
+  {
+    id: "roadmap",
+    label: "roadmap",
+    description: "Inventário editável de módulos/páginas pendentes e regras canônicas para agentes. Suporta override por account sobre seeds globais (account_id IS NULL).",
+    status: "implemented",
+    phase: "Roadmap B1",
+    tables: [
+      {
+        name: "modules",
+        description: "Modulos/páginas do produto (Tasks, Tracking, Omnichannel, etc.) com status, prioridade, escopo.",
+        status: "implemented",
+        phase: "Roadmap B1",
+        fields: [
+          { name: "id", type: "uuid", primaryKey: true, default: "gen_random_uuid()" },
+          { name: "source_id", type: "text", description: "identificador estável; usado para override por account" },
+          { name: "account_id", type: "uuid", nullable: true, foreignKey: { schema: "core", table: "accounts", onDelete: "cascade" }, description: "NULL = registro global (seed); preenchido = override por account" },
+          { name: "label", type: "text" },
+          { name: "route", type: "text", default: "''" },
+          { name: "status", type: "text", description: "pending / in_progress / beta / done" },
+          { name: "priority", type: "text", description: "P0 / P1 / P2 / P3" },
+          { name: "category", type: "text", default: "''" },
+          { name: "description", type: "text", default: "''" },
+          { name: "scope", type: "jsonb", default: "'[]'", description: "array de strings (sub-itens do escopo)" },
+          { name: "depends_on", type: "jsonb", default: "'[]'", description: "array de source_ids" },
+          { name: "sort_order", type: "integer", default: "100" },
+          { name: "created_at", type: "timestamptz", default: "now()" },
+          { name: "updated_at", type: "timestamptz", default: "now()" }
+        ],
+        indexes: [
+          "roadmap_modules_unique_per_account (source_id, account_id)",
+          "roadmap_modules_account_idx (account_id, priority, sort_order)",
+          "roadmap_modules_global_idx (priority, sort_order) WHERE account_id IS NULL"
+        ]
+      },
+      {
+        name: "rules",
+        description: "Regras canônicas para agentes (front, back, banco, deploy, padrões). Fonte editável do AGENT_RULES.md.",
+        status: "implemented",
+        phase: "Roadmap B1",
+        fields: [
+          { name: "id", type: "uuid", primaryKey: true, default: "gen_random_uuid()" },
+          { name: "source_id", type: "text", description: "identificador estável; usado para override por account" },
+          { name: "account_id", type: "uuid", nullable: true, foreignKey: { schema: "core", table: "accounts", onDelete: "cascade" }, description: "NULL = global; preenchido = override por account" },
+          { name: "category", type: "text", description: "frontend / backend / banco / linguagens / deploy / padroes-gerais" },
+          { name: "title", type: "text" },
+          { name: "body", type: "text" },
+          { name: "why", type: "text", default: "''" },
+          { name: "applies_when", type: "text", default: "''" },
+          { name: "sort_order", type: "integer", default: "100" },
+          { name: "created_at", type: "timestamptz", default: "now()" },
+          { name: "updated_at", type: "timestamptz", default: "now()" }
+        ],
+        indexes: [
+          "roadmap_rules_unique_per_account (source_id, account_id)",
+          "roadmap_rules_account_idx (account_id, category, sort_order)",
+          "roadmap_rules_global_idx (category, sort_order) WHERE account_id IS NULL"
+        ]
+      }
+    ]
   }
 ];

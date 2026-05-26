@@ -408,8 +408,8 @@ function updatePageSize(event: Event) {
   min-height: 2.45rem;
   padding: 0 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid rgba(129, 140, 248, 0.18);
-  background: rgba(18, 25, 38, 0.9);
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-control-bg);
   color: var(--text-main);
 }
 
@@ -424,7 +424,7 @@ function updatePageSize(event: Event) {
   padding: 0 0.95rem;
   border-radius: 0.8rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-weight: 600;
   cursor: pointer;
@@ -436,7 +436,7 @@ function updatePageSize(event: Event) {
 
 .erp-products-table__action:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(98, 129, 255, 0.35);
+  border-color: var(--erp-hover-border);
 }
 
 .erp-products-table__action:disabled {
@@ -445,8 +445,8 @@ function updatePageSize(event: Event) {
 }
 
 .erp-products-table__action--primary {
-  border-color: rgba(83, 198, 160, 0.32);
-  background: linear-gradient(135deg, rgba(13, 102, 87, 0.92), rgba(14, 73, 67, 0.94));
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-gradient);
 }
 
 .erp-products-table__counter {
@@ -455,7 +455,7 @@ function updatePageSize(event: Event) {
 }
 
 .erp-products-table__money {
-  color: #b9ffd2;
+  color: var(--erp-success-text);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -492,7 +492,7 @@ function updatePageSize(event: Event) {
   min-height: 2rem;
   border-radius: 0.65rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   padding: 0 0.55rem;
 }
@@ -502,7 +502,7 @@ function updatePageSize(event: Event) {
   padding: 0 0.75rem;
   border-radius: 0.65rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
 }
 

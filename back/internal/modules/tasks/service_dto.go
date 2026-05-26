@@ -26,6 +26,8 @@ type TaskDTO struct {
 	ClientAccountID   *string        `json:"clientAccountId,omitempty"`
 	Assignees         []UserMiniDTO  `json:"assignees,omitempty"`
 	UIMetadata        map[string]any `json:"uiMetadata"`
+	RoadmapModuleID   *string        `json:"roadmapModuleId,omitempty"`
+	PinnedToRoadmap   bool           `json:"pinnedToRoadmap"`
 	TrackingTotalMs   *int64         `json:"trackingTotalMs,omitempty"`
 	Version           int            `json:"version"`
 	CreatedAt         string         `json:"createdAt"`
@@ -47,6 +49,8 @@ func (service *Service) BuildTaskDTO(task Task, perspective Perspective) TaskDTO
 		SortOrder:         task.SortOrder,
 		ResponsibleUserID: task.ResponsibleUserID,
 		UIMetadata:        normalizeMap(task.UIMetadata),
+		RoadmapModuleID:   task.RoadmapModuleID,
+		PinnedToRoadmap:   task.PinnedToRoadmap,
 		Version:           task.Version,
 		CreatedAt:         task.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:         task.UpdatedAt.UTC().Format(time.RFC3339),

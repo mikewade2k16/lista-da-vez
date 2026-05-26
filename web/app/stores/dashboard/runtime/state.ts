@@ -65,6 +65,58 @@ export function normalizeDetailMap(details = {}) {
   )
 }
 
+export function normalizeAppearanceState(appearance = {}, fallback = null) {
+  const baseAppearance =
+    fallback && typeof fallback === 'object'
+      ? fallback
+      : {
+          activeTheme: 'light',
+          customThemeName: 'Custom',
+          overrides: {},
+        }
+
+  const activeTheme = String(appearance?.activeTheme || '').trim()
+  const resolvedTheme = ['light', 'dark', 'apple', 'custom'].includes(activeTheme)
+    ? activeTheme
+    : String(baseAppearance.activeTheme || 'light').trim() || 'light'
+  const customThemeName =
+    String(appearance?.customThemeName || '').trim() ||
+    String(baseAppearance.customThemeName || 'Custom').trim() ||
+    'Custom'
+  const rawOverrides =
+    appearance?.overrides && typeof appearance.overrides === 'object'
+      ? appearance.overrides
+      : baseAppearance.overrides
+  const overrides = {}
+
+  for (const [themeKey, values] of Object.entries(rawOverrides || {})) {
+    const normalizedThemeKey = String(themeKey || '').trim()
+    if (!['light', 'dark', 'apple', 'custom'].includes(normalizedThemeKey)) {
+      continue
+    }
+
+    if (!values || typeof values !== 'object') {
+      continue
+    }
+
+    const themeValues = Object.fromEntries(
+      Object.entries(values)
+        .map(([key, value]) => [String(key || '').trim(), String(value || '').trim()])
+        .filter(([key, value]) => key && value),
+    )
+
+    if (Object.keys(themeValues).length > 0) {
+      overrides[normalizedThemeKey] = themeValues
+    }
+  }
+
+  return {
+    activeTheme: resolvedTheme,
+    customThemeName,
+    overrides,
+  }
+}
+
 const DEFAULT_PROFILES = [
   { id: 'perfil-platform-admin', name: 'Admin Plataforma', role: 'platform_admin' },
   { id: 'perfil-proprietario', name: 'Proprietario Grupo', role: 'owner' },
@@ -377,6 +429,7 @@ export function createEmptyState() {
     lossReasonOptions: cloneValue(DEFAULT_LOSS_REASON_OPTIONS),
     professionOptions: cloneValue(DEFAULT_PROFESSION_OPTIONS),
     productCatalog: [],
+    appearance: normalizeAppearanceState(),
     modalConfig: {
       title: 'Fechar atendimento',
       finishFlowMode: 'legacy',
@@ -474,10 +527,12 @@ export function createEmptyState() {
       testModeEnabled: false,
       autoFillFinishModal: false,
       scoreWeightConversion: Number(
-        defaultTemplate?.settings?.scoreWeightConversion ?? DEFAULT_SCORE_WEIGHTS.scoreWeightConversion,
+        defaultTemplate?.settings?.scoreWeightConversion ??
+          DEFAULT_SCORE_WEIGHTS.scoreWeightConversion,
       ),
       scoreWeightSoldValue: Number(
-        defaultTemplate?.settings?.scoreWeightSoldValue ?? DEFAULT_SCORE_WEIGHTS.scoreWeightSoldValue,
+        defaultTemplate?.settings?.scoreWeightSoldValue ??
+          DEFAULT_SCORE_WEIGHTS.scoreWeightSoldValue,
       ),
       scoreWeightQuality: Number(
         defaultTemplate?.settings?.scoreWeightQuality ?? DEFAULT_SCORE_WEIGHTS.scoreWeightQuality,
@@ -486,7 +541,8 @@ export function createEmptyState() {
         defaultTemplate?.settings?.scoreWeightPa ?? DEFAULT_SCORE_WEIGHTS.scoreWeightPa,
       ),
       scoreWeightQueueDiscipline: Number(
-        defaultTemplate?.settings?.scoreWeightQueueDiscipline ?? DEFAULT_SCORE_WEIGHTS.scoreWeightQueueDiscipline,
+        defaultTemplate?.settings?.scoreWeightQueueDiscipline ??
+          DEFAULT_SCORE_WEIGHTS.scoreWeightQueueDiscipline,
       ),
       alertMinConversionRate: 0,
       alertMaxQueueJumpRate: 0,
@@ -797,6 +853,7 @@ export function hydrateState(nextState: LooseRecord = {}) {
       ...baseState.modalConfig,
       ...sourceState.modalConfig,
     },
+    appearance: normalizeAppearanceState(sourceState.appearance, baseState.appearance),
     pausedEmployees: resolvedActiveSnapshot.pausedEmployees,
     consultantActivitySessions: resolvedActiveSnapshot.consultantActivitySessions,
     consultantCurrentStatus: resolvedActiveSnapshot.consultantCurrentStatus,

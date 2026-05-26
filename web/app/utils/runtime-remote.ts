@@ -3,6 +3,7 @@ import {
   createEmptyState,
   createEmptyStoreScopedState,
   extractStoreScopedState,
+  normalizeAppearanceState,
   normalizeStoreScopedState,
 } from '~/stores/dashboard/runtime/state'
 
@@ -325,6 +326,7 @@ export function applyRemoteStoreData(
     settings: settingsBundle?.settings
       ? cloneOrFallback(settingsBundle.settings, {})
       : cloneOrFallback(currentState.settings, {}),
+    appearance: normalizeAppearanceState(settingsBundle?.appearance, currentState?.appearance),
     modalConfig: {
       ...cloneOrFallback(currentState.modalConfig, {}),
       ...cloneOrFallback(settingsBundle?.modalConfig, {}),
@@ -375,6 +377,7 @@ export function applySettingsBundleToState(currentState, storeId, settingsBundle
     settings: settingsBundle?.settings
       ? cloneOrFallback(settingsBundle.settings, {})
       : cloneOrFallback(currentState.settings, {}),
+    appearance: normalizeAppearanceState(settingsBundle?.appearance, currentState?.appearance),
     modalConfig: {
       ...cloneOrFallback(currentState.modalConfig, {}),
       ...cloneOrFallback(settingsBundle?.modalConfig, {}),
@@ -477,6 +480,7 @@ export function buildSettingsBundleFromState(state, storeId) {
     operationTemplates: cloneOrFallback(state.operationTemplates, []),
     selectedOperationTemplateId: String(state.selectedOperationTemplateId || '').trim(),
     settings: cloneOrFallback(state.settings, {}),
+    appearance: normalizeAppearanceState(state.appearance),
     modalConfig: cloneOrFallback(state.modalConfig, {}),
     visitReasonOptions: cloneOrFallback(state.visitReasonOptions, []),
     customerSourceOptions: cloneOrFallback(state.customerSourceOptions, []),

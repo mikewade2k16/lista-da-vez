@@ -2,6 +2,8 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -112,6 +114,8 @@ type Task struct {
 	ResponsibleUserID *string        `json:"responsibleUserId,omitempty"`
 	ClientAccountID   *string        `json:"clientAccountId,omitempty"`
 	UIMetadata        map[string]any `json:"uiMetadata,omitempty"`
+	RoadmapModuleID   *string        `json:"roadmapModuleId,omitempty"`
+	PinnedToRoadmap   bool           `json:"pinnedToRoadmap"`
 	Version           int            `json:"version"`
 	CreatedAt         time.Time      `json:"createdAt"`
 	UpdatedAt         time.Time      `json:"updatedAt"`
@@ -269,6 +273,8 @@ type CreateTaskInput struct {
 	ResponsibleUserID *string        `json:"responsibleUserId"`
 	ClientAccountID   *string        `json:"clientAccountId"`
 	UIMetadata        map[string]any `json:"uiMetadata"`
+	RoadmapModuleID   *string        `json:"roadmapModuleId"`
+	PinnedToRoadmap   *bool          `json:"pinnedToRoadmap"`
 }
 
 type UpdateTaskInput struct {
@@ -286,6 +292,92 @@ type UpdateTaskInput struct {
 	ResponsibleUserID **string        `json:"responsibleUserId"`
 	ClientAccountID   **string        `json:"clientAccountId"`
 	UIMetadata        *map[string]any `json:"uiMetadata"`
+	RoadmapModuleID   **string        `json:"roadmapModuleId"`
+	PinnedToRoadmap   *bool           `json:"pinnedToRoadmap"`
+}
+
+func (input *UpdateTaskInput) UnmarshalJSON(data []byte) error {
+	type updateTaskInputAlias UpdateTaskInput
+	var alias updateTaskInputAlias
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	allowed := map[string]struct{}{
+		"columnId":          {},
+		"title":             {},
+		"contentHtml":       {},
+		"status":            {},
+		"priority":          {},
+		"dueDate":           {},
+		"startDate":         {},
+		"archived":          {},
+		"sortOrder":         {},
+		"responsibleUserId": {},
+		"clientAccountId":   {},
+		"uiMetadata":        {},
+		"roadmapModuleId":   {},
+		"pinnedToRoadmap":   {},
+	}
+	for key := range raw {
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("json: unknown field %q", key)
+		}
+	}
+
+	*input = UpdateTaskInput(alias)
+	if err := decodeNullableStringUpdateField(raw, "columnId", &input.ColumnID); err != nil {
+		return err
+	}
+	if err := decodeNullableStringUpdateField(raw, "status", &input.Status); err != nil {
+		return err
+	}
+	if err := decodeNullableTimeUpdateField(raw, "dueDate", &input.DueDate); err != nil {
+		return err
+	}
+	if err := decodeNullableTimeUpdateField(raw, "startDate", &input.StartDate); err != nil {
+		return err
+	}
+	if err := decodeNullableStringUpdateField(raw, "responsibleUserId", &input.ResponsibleUserID); err != nil {
+		return err
+	}
+	if err := decodeNullableStringUpdateField(raw, "clientAccountId", &input.ClientAccountID); err != nil {
+		return err
+	}
+	if err := decodeNullableStringUpdateField(raw, "roadmapModuleId", &input.RoadmapModuleID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func decodeNullableStringUpdateField(raw map[string]json.RawMessage, key string, target ***string) error {
+	rawValue, ok := raw[key]
+	if !ok {
+		return nil
+	}
+	var value *string
+	if err := json.Unmarshal(rawValue, &value); err != nil {
+		return err
+	}
+	*target = &value
+	return nil
+}
+
+func decodeNullableTimeUpdateField(raw map[string]json.RawMessage, key string, target ***time.Time) error {
+	rawValue, ok := raw[key]
+	if !ok {
+		return nil
+	}
+	var value *time.Time
+	if err := json.Unmarshal(rawValue, &value); err != nil {
+		return err
+	}
+	*target = &value
+	return nil
 }
 
 type MoveTaskInput struct {

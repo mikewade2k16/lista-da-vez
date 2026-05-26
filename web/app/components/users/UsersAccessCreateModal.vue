@@ -105,7 +105,7 @@ const ctx = useUsersAccessContext()
           />
 
           <AppSelectField
-            v-if="ctx.auth.role === 'platform_admin'"
+            v-if="ctx.showTenantControls"
             class="users-access-manager__select"
             :model-value="ctx.createDraft.tenantId"
             :options="ctx.clientFilterOptions.filter((option) => option.value)"

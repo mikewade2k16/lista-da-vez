@@ -367,6 +367,14 @@ func (service *Service) CreateTask(ctx context.Context, access AccessContext, in
 	input.ContentHTML = strings.TrimSpace(input.ContentHTML)
 	input.Priority = defaultString(strings.TrimSpace(input.Priority), "media")
 	input.UIMetadata = normalizeTaskUIMetadata(input.UIMetadata)
+	input.RoadmapModuleID = normalizeOptionalTaskString(input.RoadmapModuleID)
+	if input.RoadmapModuleID == nil {
+		disabled := false
+		input.PinnedToRoadmap = &disabled
+	} else {
+		enabled := true
+		input.PinnedToRoadmap = &enabled
+	}
 	if input.BoardID == "" || input.Title == "" {
 		return TaskDTO{}, ErrValidation
 	}
@@ -403,10 +411,33 @@ func (service *Service) UpdateTask(ctx context.Context, access AccessContext, in
 		normalized := normalizeTaskUIMetadata(*input.UIMetadata)
 		input.UIMetadata = &normalized
 	}
+	if input.RoadmapModuleID != nil {
+		*input.RoadmapModuleID = normalizeOptionalTaskString(*input.RoadmapModuleID)
+		if *input.RoadmapModuleID == nil {
+			disabled := false
+			input.PinnedToRoadmap = &disabled
+		} else {
+			enabled := true
+			input.PinnedToRoadmap = &enabled
+		}
+	}
 
 	before, err := service.repository.GetTask(ctx, access, input.ID)
 	if err != nil {
 		return TaskDTO{}, err
+	}
+	if input.PinnedToRoadmap != nil && *input.PinnedToRoadmap {
+		roadmapModuleID := before.RoadmapModuleID
+		if input.RoadmapModuleID != nil {
+			roadmapModuleID = *input.RoadmapModuleID
+		}
+		if roadmapModuleID == nil {
+			disabled := false
+			input.PinnedToRoadmap = &disabled
+		}
+	} else if input.PinnedToRoadmap != nil && before.RoadmapModuleID != nil && input.RoadmapModuleID == nil {
+		enabled := true
+		input.PinnedToRoadmap = &enabled
 	}
 	after, err := service.repository.UpdateTask(ctx, access.AccountID, input)
 	if err != nil {
@@ -641,4 +672,15 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func normalizeOptionalTaskString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }

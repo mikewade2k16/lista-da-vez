@@ -33,6 +33,7 @@ services:
       APP_NAME: ${APP_NAME:-omni-api}
       APP_ENV: production
       APP_ADDR: :8080
+      CORE_V2_ENABLED: ${CORE_V2_ENABLED:-false}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable

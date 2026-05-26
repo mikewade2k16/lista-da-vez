@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -90,6 +91,71 @@ func TestCreateTask_AgencyHappyPath(t *testing.T) {
 	}
 }
 
+func TestCreateTask_ForwardsRoadmapLink(t *testing.T) {
+	roadmapModuleID := "00000000-0000-0000-0000-000000000321"
+	created := Task{
+		ID:              "task-roadmap",
+		BoardID:         "board-1",
+		AccountID:       "acc-agency",
+		Title:           "Publicar no roadmap",
+		Priority:        "media",
+		RoadmapModuleID: &roadmapModuleID,
+		PinnedToRoadmap: true,
+		Version:         1,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}
+	repository := &repositoryMock{
+		onCreateTask: func(_ context.Context, _ string, input CreateTaskInput, _ string) (Task, error) {
+			if input.RoadmapModuleID == nil || *input.RoadmapModuleID != roadmapModuleID {
+				t.Fatalf("CreateTask deve encaminhar roadmapModuleId normalizado; got %v", input.RoadmapModuleID)
+			}
+			if input.PinnedToRoadmap == nil || !*input.PinnedToRoadmap {
+				t.Fatalf("CreateTask deve preservar pinnedToRoadmap quando ha modulo")
+			}
+			return created, nil
+		},
+	}
+	service := NewService(repository, nil, nil, nil)
+
+	dto, err := service.CreateTask(context.Background(), agencyAccess(), CreateTaskInput{
+		BoardID:         "board-1",
+		Title:           "Publicar no roadmap",
+		RoadmapModuleID: stringPtr("  " + roadmapModuleID + "  "),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask deveria suceder; got err=%v", err)
+	}
+	if dto.RoadmapModuleID == nil || *dto.RoadmapModuleID != roadmapModuleID || !dto.PinnedToRoadmap {
+		t.Fatalf("DTO deve voltar com vinculo do roadmap; got module=%v pinned=%v", dto.RoadmapModuleID, dto.PinnedToRoadmap)
+	}
+}
+
+func TestCreateTask_PinWithoutRoadmapModuleIsDisabled(t *testing.T) {
+	repository := &repositoryMock{
+		onCreateTask: func(_ context.Context, _ string, input CreateTaskInput, _ string) (Task, error) {
+			if input.RoadmapModuleID != nil {
+				t.Fatalf("roadmapModuleId vazio deve virar nil; got %v", input.RoadmapModuleID)
+			}
+			if input.PinnedToRoadmap == nil || *input.PinnedToRoadmap {
+				t.Fatalf("pinnedToRoadmap nao deve ficar true sem modulo")
+			}
+			return Task{ID: "task-1", BoardID: "board-1", Title: "x", CreatedAt: time.Now(), UpdatedAt: time.Now()}, nil
+		},
+	}
+	service := NewService(repository, nil, nil, nil)
+
+	_, err := service.CreateTask(context.Background(), agencyAccess(), CreateTaskInput{
+		BoardID:         "board-1",
+		Title:           "x",
+		RoadmapModuleID: stringPtr("   "),
+		PinnedToRoadmap: boolPtr(true),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask deveria suceder; got err=%v", err)
+	}
+}
+
 func TestCreateTask_NoPermReturnsForbidden(t *testing.T) {
 	repository := &repositoryMock{}
 	service := NewService(repository, nil, nil, nil)
@@ -103,6 +169,138 @@ func TestCreateTask_NoPermReturnsForbidden(t *testing.T) {
 	}
 	if len(repository.auditEntries) != 0 {
 		t.Errorf("nao deve gerar audit quando permissao falha; got %d entries", len(repository.auditEntries))
+	}
+}
+
+func TestUpdateTask_ClearingRoadmapModuleDisablesPin(t *testing.T) {
+	roadmapModuleID := "00000000-0000-0000-0000-000000000321"
+	var clearedRoadmapModuleID *string
+	repository := &repositoryMock{
+		onGetTask: func(_ context.Context, _ AccessContext, _ string) (Task, error) {
+			return Task{
+				ID:              "task-1",
+				BoardID:         "board-1",
+				RoadmapModuleID: &roadmapModuleID,
+				PinnedToRoadmap: true,
+				CreatedAt:       time.Now().UTC(),
+				UpdatedAt:       time.Now().UTC(),
+			}, nil
+		},
+		onUpdateTask: func(_ context.Context, _ string, input UpdateTaskInput) (Task, error) {
+			if input.RoadmapModuleID == nil || *input.RoadmapModuleID != nil {
+				t.Fatalf("update deve solicitar limpeza do roadmapModuleId; got %v", input.RoadmapModuleID)
+			}
+			if input.PinnedToRoadmap == nil || *input.PinnedToRoadmap {
+				t.Fatalf("limpar modulo deve forcar pinnedToRoadmap=false; got %v", input.PinnedToRoadmap)
+			}
+			return Task{ID: "task-1", BoardID: "board-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}, nil
+		},
+	}
+	service := NewService(repository, nil, nil, nil)
+
+	_, err := service.UpdateTask(context.Background(), agencyAccess(), UpdateTaskInput{
+		ID:              "task-1",
+		RoadmapModuleID: &clearedRoadmapModuleID,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask deveria suceder; got err=%v", err)
+	}
+}
+
+func TestUpdateTask_SettingRoadmapModuleDefaultsPin(t *testing.T) {
+	roadmapModuleID := "00000000-0000-0000-0000-000000000321"
+	nextRoadmapModuleID := &roadmapModuleID
+	repository := &repositoryMock{
+		onGetTask: func(_ context.Context, _ AccessContext, _ string) (Task, error) {
+			return Task{
+				ID:        "task-1",
+				BoardID:   "board-1",
+				CreatedAt: time.Now().UTC(),
+				UpdatedAt: time.Now().UTC(),
+			}, nil
+		},
+		onUpdateTask: func(_ context.Context, _ string, input UpdateTaskInput) (Task, error) {
+			if input.RoadmapModuleID == nil || *input.RoadmapModuleID == nil || **input.RoadmapModuleID != roadmapModuleID {
+				t.Fatalf("update deve encaminhar roadmapModuleId; got %v", input.RoadmapModuleID)
+			}
+			if input.PinnedToRoadmap == nil || !*input.PinnedToRoadmap {
+				t.Fatalf("selecionar modulo deve fixar no roadmap por padrao; got %v", input.PinnedToRoadmap)
+			}
+			return Task{
+				ID:              "task-1",
+				BoardID:         "board-1",
+				RoadmapModuleID: &roadmapModuleID,
+				PinnedToRoadmap: true,
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+			}, nil
+		},
+	}
+	service := NewService(repository, nil, nil, nil)
+
+	dto, err := service.UpdateTask(context.Background(), agencyAccess(), UpdateTaskInput{
+		ID:              "task-1",
+		RoadmapModuleID: &nextRoadmapModuleID,
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask deveria suceder; got err=%v", err)
+	}
+	if dto.RoadmapModuleID == nil || *dto.RoadmapModuleID != roadmapModuleID || !dto.PinnedToRoadmap {
+		t.Fatalf("DTO deve voltar fixada no roadmap; got module=%v pinned=%v", dto.RoadmapModuleID, dto.PinnedToRoadmap)
+	}
+}
+
+func TestUpdateTask_CannotHideLinkedRoadmapTask(t *testing.T) {
+	roadmapModuleID := "00000000-0000-0000-0000-000000000321"
+	repository := &repositoryMock{
+		onGetTask: func(_ context.Context, _ AccessContext, _ string) (Task, error) {
+			return Task{
+				ID:              "task-1",
+				BoardID:         "board-1",
+				RoadmapModuleID: &roadmapModuleID,
+				PinnedToRoadmap: true,
+				CreatedAt:       time.Now().UTC(),
+				UpdatedAt:       time.Now().UTC(),
+			}, nil
+		},
+		onUpdateTask: func(_ context.Context, _ string, input UpdateTaskInput) (Task, error) {
+			if input.PinnedToRoadmap == nil || !*input.PinnedToRoadmap {
+				t.Fatalf("task vinculada a modulo do roadmap deve continuar visivel; got %v", input.PinnedToRoadmap)
+			}
+			return Task{
+				ID:              "task-1",
+				BoardID:         "board-1",
+				RoadmapModuleID: &roadmapModuleID,
+				PinnedToRoadmap: true,
+				CreatedAt:       time.Now(),
+				UpdatedAt:       time.Now(),
+			}, nil
+		},
+	}
+	service := NewService(repository, nil, nil, nil)
+
+	_, err := service.UpdateTask(context.Background(), agencyAccess(), UpdateTaskInput{
+		ID:              "task-1",
+		PinnedToRoadmap: boolPtr(false),
+	})
+	if err != nil {
+		t.Fatalf("UpdateTask deveria suceder; got err=%v", err)
+	}
+}
+
+func TestUpdateTaskInput_UnmarshalRoadmapNullMarksFieldPresent(t *testing.T) {
+	var input UpdateTaskInput
+	if err := json.Unmarshal([]byte(`{"roadmapModuleId":null,"pinnedToRoadmap":false}`), &input); err != nil {
+		t.Fatalf("decode UpdateTaskInput: %v", err)
+	}
+	if input.RoadmapModuleID == nil {
+		t.Fatalf("roadmapModuleId null deve ser distinguido de campo ausente")
+	}
+	if *input.RoadmapModuleID != nil {
+		t.Fatalf("roadmapModuleId null deve virar ponteiro interno nil; got %v", *input.RoadmapModuleID)
+	}
+	if input.PinnedToRoadmap == nil || *input.PinnedToRoadmap {
+		t.Fatalf("pinnedToRoadmap=false deve ser preservado; got %v", input.PinnedToRoadmap)
 	}
 }
 

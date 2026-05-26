@@ -64,7 +64,8 @@ func (repository *PostgresRepository) ListTasks(ctx context.Context, access Acce
 		select t.id::text, t.account_id::text, t.board_id::text, t.column_id::text,
 		       t.title, t.content_html, t.status, t.priority, t.due_date, t.start_date,
 		       t.archived, t.sort_order::float8, t.created_by_user_id::text,
-		       t.responsible_user_id::text, t.client_account_id::text, t.ui_metadata, t.version,
+		       t.responsible_user_id::text, t.client_account_id::text, t.ui_metadata,
+		       t.roadmap_module_id::text, t.pinned_to_roadmap, t.version,
 		       t.created_at, t.updated_at
 		from tasks.tasks t
 		where t.account_id = $1::uuid and t.board_id = $2::uuid
@@ -110,7 +111,8 @@ func (repository *PostgresRepository) GetTask(ctx context.Context, access Access
 		select t.id::text, t.account_id::text, t.board_id::text, t.column_id::text,
 		       t.title, t.content_html, t.status, t.priority, t.due_date, t.start_date,
 		       t.archived, t.sort_order::float8, t.created_by_user_id::text,
-		       t.responsible_user_id::text, t.client_account_id::text, t.ui_metadata, t.version,
+		       t.responsible_user_id::text, t.client_account_id::text, t.ui_metadata,
+		       t.roadmap_module_id::text, t.pinned_to_roadmap, t.version,
 		       t.created_at, t.updated_at
 		from tasks.tasks t
 		where t.account_id = $1::uuid and t.id = $2::uuid
@@ -128,18 +130,20 @@ func (repository *PostgresRepository) CreateTask(ctx context.Context, accountID 
 		insert into tasks.tasks (
 			account_id, board_id, column_id, title, content_html, status, priority,
 			due_date, start_date, sort_order, created_by_user_id, responsible_user_id,
-			client_account_id, ui_metadata
+			client_account_id, ui_metadata, roadmap_module_id, pinned_to_roadmap
 		) values (
 			$1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
-			$11::uuid, $12::uuid, $13::uuid, $14::jsonb
+			$11::uuid, $12::uuid, $13::uuid, $14::jsonb, $15::uuid, $16
 		)
 		returning id::text, account_id::text, board_id::text, column_id::text,
 		          title, content_html, status, priority, due_date, start_date,
 		          archived, sort_order::float8, created_by_user_id::text,
-		          responsible_user_id::text, client_account_id::text, ui_metadata, version,
+		          responsible_user_id::text, client_account_id::text, ui_metadata,
+		          roadmap_module_id::text, pinned_to_roadmap, version,
 		          created_at, updated_at
 	`, input.BoardID, input.ColumnID, input.Title, input.ContentHTML, input.Status, input.Priority,
-		input.DueDate, input.StartDate, input.SortOrder, createdByUserID, input.ResponsibleUserID, input.ClientAccountID, mustJSON(normalizeMap(input.UIMetadata)))
+		input.DueDate, input.StartDate, input.SortOrder, createdByUserID, input.ResponsibleUserID, input.ClientAccountID,
+		mustJSON(normalizeMap(input.UIMetadata)), input.RoadmapModuleID, input.PinnedToRoadmap != nil && *input.PinnedToRoadmap)
 
 	task, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -194,6 +198,12 @@ func (repository *PostgresRepository) UpdateTask(ctx context.Context, accountID 
 	if input.UIMetadata != nil {
 		task.UIMetadata = mergeMetadata(task.UIMetadata, *input.UIMetadata)
 	}
+	if input.RoadmapModuleID != nil {
+		task.RoadmapModuleID = *input.RoadmapModuleID
+	}
+	if input.PinnedToRoadmap != nil {
+		task.PinnedToRoadmap = *input.PinnedToRoadmap
+	}
 
 	return repository.updateTaskRow(ctx, accountID, task)
 }
@@ -222,7 +232,8 @@ func (repository *PostgresRepository) ArchiveTask(ctx context.Context, accountID
 		returning id::text, account_id::text, board_id::text, column_id::text,
 		          title, content_html, status, priority, due_date, start_date,
 		          archived, sort_order::float8, created_by_user_id::text,
-		          responsible_user_id::text, client_account_id::text, ui_metadata, version,
+		          responsible_user_id::text, client_account_id::text, ui_metadata,
+		          roadmap_module_id::text, pinned_to_roadmap, version,
 		          created_at, updated_at
 	`, taskID)
 	task, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
@@ -247,16 +258,20 @@ func (repository *PostgresRepository) updateTaskRow(ctx context.Context, account
 		       responsible_user_id = $12::uuid,
 		       client_account_id = $13::uuid,
 		       ui_metadata = $14::jsonb,
+		       roadmap_module_id = $15::uuid,
+		       pinned_to_roadmap = $16,
 		       version = version + 1,
 		       updated_at = now()
 		 where account_id = $1::uuid and id = $2::uuid
 		returning id::text, account_id::text, board_id::text, column_id::text,
 		          title, content_html, status, priority, due_date, start_date,
 		          archived, sort_order::float8, created_by_user_id::text,
-		          responsible_user_id::text, client_account_id::text, ui_metadata, version,
+		          responsible_user_id::text, client_account_id::text, ui_metadata,
+		          roadmap_module_id::text, pinned_to_roadmap, version,
 		          created_at, updated_at
 	`, task.ID, task.ColumnID, task.Title, task.ContentHTML, task.Status, task.Priority,
-		task.DueDate, task.StartDate, task.Archived, task.SortOrder, task.ResponsibleUserID, task.ClientAccountID, mustJSON(normalizeMap(task.UIMetadata)))
+		task.DueDate, task.StartDate, task.Archived, task.SortOrder, task.ResponsibleUserID, task.ClientAccountID, mustJSON(normalizeMap(task.UIMetadata)),
+		task.RoadmapModuleID, task.PinnedToRoadmap)
 	updated, err := scanTask(repository.pool.QueryRow(ctx, sql, args...).Scan)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Task{}, ErrTaskNotFound
@@ -284,6 +299,8 @@ func scanTask(scan func(...any) error) (Task, error) {
 		&task.ResponsibleUserID,
 		&task.ClientAccountID,
 		&uiMetadataRaw,
+		&task.RoadmapModuleID,
+		&task.PinnedToRoadmap,
 		&task.Version,
 		&task.CreatedAt,
 		&task.UpdatedAt,

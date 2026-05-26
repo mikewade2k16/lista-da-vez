@@ -11,6 +11,10 @@ func stringPtr(value string) *string {
 	return &value
 }
 
+func boolPtr(value bool) *bool {
+	return &value
+}
+
 func TestBuildTaskDTO_AgencyKeepsClientAccount(t *testing.T) {
 	service := NewService(nil, nil, nil, nil)
 
@@ -82,6 +86,28 @@ func TestBuildTaskDTO_NilUIMetadataBecomesEmptyMap(t *testing.T) {
 	}
 	if len(dto.UIMetadata) != 0 {
 		t.Fatalf("UIMetadata deve ser vazio quando entrada e nil; got %v", dto.UIMetadata)
+	}
+}
+
+func TestBuildTaskDTO_IncludesRoadmapLink(t *testing.T) {
+	service := NewService(nil, nil, nil, nil)
+
+	roadmapModuleID := "00000000-0000-0000-0000-000000000321"
+	task := Task{
+		ID:              "task-roadmap",
+		BoardID:         "board-1",
+		RoadmapModuleID: &roadmapModuleID,
+		PinnedToRoadmap: true,
+		CreatedAt:       time.Now().UTC(),
+		UpdatedAt:       time.Now().UTC(),
+	}
+
+	dto := service.BuildTaskDTO(task, PerspectiveAgency)
+	if dto.RoadmapModuleID == nil || *dto.RoadmapModuleID != roadmapModuleID {
+		t.Fatalf("DTO deve expor roadmapModuleId para o front reidratar o modal; got %v", dto.RoadmapModuleID)
+	}
+	if !dto.PinnedToRoadmap {
+		t.Fatalf("DTO deve expor pinnedToRoadmap=true para manter a task fixa no roadmap")
 	}
 }
 

@@ -56,6 +56,7 @@ func (service *Service) SaveBundle(ctx context.Context, principal auth.Principal
 func (service *Service) normalizeBundle(tenantID string, input Bundle) Bundle {
 	base := DefaultBundle(tenantID, input.SelectedOperationTemplateID)
 	base.Settings = normalizeAppSettings(input.Settings, base.Settings)
+	base.Appearance = normalizeAppearanceConfig(input.Appearance, base.Appearance)
 	base.ModalConfig = normalizeModalConfig(base.ModalConfig, input.ModalConfig)
 	base.VisitReasonOptions = normalizeOptions(input.VisitReasonOptions, base.VisitReasonOptions)
 	base.CustomerSourceOptions = normalizeOptions(input.CustomerSourceOptions, base.CustomerSourceOptions)
@@ -83,6 +84,7 @@ func recordToBundle(record Record) Bundle {
 	bundle := DefaultBundle(record.TenantID, record.SelectedOperationTemplateID)
 	bundle.SelectedOperationTemplateID = record.SelectedOperationTemplateID
 	bundle.Settings = record.Settings
+	bundle.Appearance = cloneAppearanceConfig(record.Appearance)
 	bundle.ModalConfig = record.ModalConfig
 	bundle.VisitReasonOptions = cloneOptions(record.VisitReasonOptions)
 	bundle.CustomerSourceOptions = cloneOptions(record.CustomerSourceOptions)
@@ -102,6 +104,7 @@ func bundleToRecord(bundle Bundle) Record {
 		TenantID:                    bundle.TenantID,
 		SelectedOperationTemplateID: bundle.SelectedOperationTemplateID,
 		Settings:                    bundle.Settings,
+		Appearance:                  cloneAppearanceConfig(bundle.Appearance),
 		ModalConfig:                 bundle.ModalConfig,
 		VisitReasonOptions:          cloneOptions(bundle.VisitReasonOptions),
 		CustomerSourceOptions:       cloneOptions(bundle.CustomerSourceOptions),
@@ -117,6 +120,7 @@ func bundleToRecord(bundle Bundle) Record {
 
 func materializeBundleDefaults(bundle Bundle) Bundle {
 	defaults := DefaultBundle(bundle.TenantID, bundle.SelectedOperationTemplateID)
+	bundle.Appearance = normalizeAppearanceConfig(bundle.Appearance, defaults.Appearance)
 	bundle.ModalConfig = normalizeModalConfig(defaults.ModalConfig, bundle.ModalConfig)
 
 	if len(bundle.VisitReasonOptions) == 0 {

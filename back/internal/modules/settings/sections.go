@@ -1,5 +1,7 @@
 package settings
 
+import "strings"
+
 func splitAppSettings(settings AppSettings) (OperationCoreSettings, AlertSettings) {
 	return OperationCoreSettings{
 			MaxConcurrentServices:              settings.MaxConcurrentServices,
@@ -90,6 +92,15 @@ func defaultModalSectionRecord(tenantID string, selectedTemplateID string) Modal
 	}
 }
 
+func defaultAppearanceSectionRecord(tenantID string) AppearanceSectionRecord {
+	bundle := DefaultBundle(tenantID, defaultTemplateID)
+
+	return AppearanceSectionRecord{
+		TenantID:   tenantID,
+		Appearance: cloneAppearanceConfig(bundle.Appearance),
+	}
+}
+
 func defaultOptionGroupItems(selectedTemplateID string, optionGroup string) ([]OptionItem, error) {
 	return getOptionGroupItems(DefaultBundle("", selectedTemplateID), optionGroup)
 }
@@ -121,24 +132,112 @@ func recordToModalSection(record Record) ModalSectionRecord {
 	}
 }
 
-func operationSectionToRecord(section OperationSectionRecord) Record {
-	return Record{
-		TenantID:                    section.TenantID,
-		SelectedOperationTemplateID: section.SelectedOperationTemplateID,
-		Settings:                    composeAppSettings(section.CoreSettings, section.AlertSettings),
-		CreatedAt:                   section.CreatedAt,
-		UpdatedAt:                   section.UpdatedAt,
+func recordToAppearanceSection(record Record) AppearanceSectionRecord {
+	return AppearanceSectionRecord{
+		TenantID:   record.TenantID,
+		Appearance: cloneAppearanceConfig(record.Appearance),
+		CreatedAt:  record.CreatedAt,
+		UpdatedAt:  record.UpdatedAt,
 	}
 }
 
-func modalSectionToRecord(section ModalSectionRecord) Record {
-	return Record{
-		TenantID:                    section.TenantID,
-		SelectedOperationTemplateID: section.SelectedOperationTemplateID,
-		ModalConfig:                 section.ModalConfig,
-		CreatedAt:                   section.CreatedAt,
-		UpdatedAt:                   section.UpdatedAt,
+func cloneAppearanceOverrides(input AppearanceOverrides) AppearanceOverrides {
+	if input == nil {
+		return AppearanceOverrides{}
 	}
+
+	cloned := make(AppearanceOverrides, len(input))
+	for rawTheme, values := range input {
+		theme := strings.TrimSpace(rawTheme)
+		if theme == "" || values == nil {
+			continue
+		}
+
+		nextValues := make(map[string]string, len(values))
+		for rawKey, rawValue := range values {
+			key := strings.TrimSpace(rawKey)
+			value := strings.TrimSpace(rawValue)
+			if key == "" || value == "" {
+				continue
+			}
+
+			nextValues[key] = value
+		}
+
+		if len(nextValues) == 0 {
+			continue
+		}
+
+		cloned[theme] = nextValues
+	}
+
+	return cloned
+}
+
+func cloneAppearanceConfig(input AppearanceConfig) AppearanceConfig {
+	return AppearanceConfig{
+		ActiveTheme:     strings.TrimSpace(input.ActiveTheme),
+		CustomThemeName: strings.TrimSpace(input.CustomThemeName),
+		Overrides:       cloneAppearanceOverrides(input.Overrides),
+	}
+}
+
+func normalizeAppearanceTheme(value string, fallback string) string {
+	switch strings.TrimSpace(value) {
+	case "light", "dark", "apple", "custom":
+		return strings.TrimSpace(value)
+	default:
+		if fallback == "dark" || fallback == "apple" || fallback == "custom" {
+			return fallback
+		}
+		return "light"
+	}
+}
+
+func normalizeAppearanceConfig(input AppearanceConfig, fallback AppearanceConfig) AppearanceConfig {
+	next := cloneAppearanceConfig(fallback)
+	next.ActiveTheme = normalizeAppearanceTheme(input.ActiveTheme, next.ActiveTheme)
+
+	customThemeName := strings.TrimSpace(input.CustomThemeName)
+	if customThemeName == "" {
+		customThemeName = strings.TrimSpace(next.CustomThemeName)
+	}
+	if customThemeName == "" {
+		customThemeName = defaultAppearanceConfig().CustomThemeName
+	}
+	next.CustomThemeName = customThemeName
+
+	if input.Overrides != nil {
+		next.Overrides = cloneAppearanceOverrides(input.Overrides)
+	}
+
+	if next.Overrides == nil {
+		next.Overrides = AppearanceOverrides{}
+	}
+
+	return next
+}
+
+func applyAppearanceConfigPatch(base AppearanceConfig, patch AppearanceConfigPatch) AppearanceConfig {
+	next := normalizeAppearanceConfig(base, defaultAppearanceConfig())
+
+	if patch.ActiveTheme != nil {
+		next.ActiveTheme = normalizeAppearanceTheme(*patch.ActiveTheme, next.ActiveTheme)
+	}
+
+	if patch.CustomThemeName != nil {
+		name := strings.TrimSpace(*patch.CustomThemeName)
+		if name == "" {
+			name = defaultAppearanceConfig().CustomThemeName
+		}
+		next.CustomThemeName = name
+	}
+
+	if patch.Overrides != nil {
+		next.Overrides = cloneAppearanceOverrides(*patch.Overrides)
+	}
+
+	return normalizeAppearanceConfig(next, defaultAppearanceConfig())
 }
 
 func normalizeOperationCoreSettings(input OperationCoreSettings, fallback OperationCoreSettings) OperationCoreSettings {
@@ -264,5 +363,11 @@ func normalizeModalSectionRecord(section ModalSectionRecord) ModalSectionRecord 
 	defaults := defaultModalSectionRecord(section.TenantID, section.SelectedOperationTemplateID)
 	section.SelectedOperationTemplateID = defaults.SelectedOperationTemplateID
 	section.ModalConfig = normalizeModalConfig(defaults.ModalConfig, section.ModalConfig)
+	return section
+}
+
+func normalizeAppearanceSectionRecord(section AppearanceSectionRecord) AppearanceSectionRecord {
+	defaults := defaultAppearanceSectionRecord(section.TenantID)
+	section.Appearance = normalizeAppearanceConfig(section.Appearance, defaults.Appearance)
 	return section
 }

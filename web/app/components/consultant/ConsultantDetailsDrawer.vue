@@ -145,9 +145,12 @@ function handleSimulatorUpdate(value: number | string) {
             <strong class="consultant-drawer__title">
               {{ consultant?.name || 'Consultor' }}
             </strong>
-            <span v-if="consultant?.storeName || consultant?.role" class="consultant-drawer__subtitle">
+            <span
+              v-if="consultant?.storeName || consultant?.role"
+              class="consultant-drawer__subtitle"
+            >
               <template v-if="consultant?.storeName">{{ consultant.storeName }}</template>
-              <template v-if="consultant?.storeName && consultant?.role"> · </template>
+              <template v-if="consultant?.storeName && consultant?.role">·</template>
               <template v-if="consultant?.role">{{ consultant.role }}</template>
             </span>
           </div>
@@ -231,7 +234,10 @@ function handleSimulatorUpdate(value: number | string) {
               {{ formatCurrencyBRL(stats.monthlyGoal) }}
             </strong>
             <span class="consultant-drawer__metric-text">
-              Faltam {{ formatCurrencyBRL(stats.remainingToGoal) }} ({{ formatPercent(goalPercent) }} batido)
+              Faltam {{ formatCurrencyBRL(stats.remainingToGoal) }} ({{
+                formatPercent(goalPercent)
+              }}
+              batido)
             </span>
           </article>
           <article class="consultant-drawer__metric">
@@ -347,7 +353,7 @@ function handleSimulatorUpdate(value: number | string) {
         <h3 class="consultant-drawer__section-title">Vendas dos últimos 7 dias</h3>
         <div v-if="sparklinePoints.length" class="consultant-drawer__sparkline">
           <svg viewBox="0 0 320 60" preserveAspectRatio="none" aria-hidden="true">
-            <path :d="sparklinePath" fill="none" stroke="#6366f1" stroke-width="2" />
+            <path :d="sparklinePath" fill="none" stroke="rgb(var(--primary))" stroke-width="2" />
           </svg>
           <div class="consultant-drawer__sparkline-legend">
             <span v-for="point in sparklinePoints" :key="point.day">
@@ -450,8 +456,8 @@ function handleSimulatorUpdate(value: number | string) {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.22);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
   font-weight: 700;
 }
 
@@ -463,12 +469,12 @@ function handleSimulatorUpdate(value: number | string) {
 
 .consultant-drawer__title {
   font-size: 1rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .consultant-drawer__subtitle {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .consultant-drawer__header-actions {
@@ -486,20 +492,20 @@ function handleSimulatorUpdate(value: number | string) {
   border-radius: 0.5rem;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   cursor: pointer;
 }
 
 .consultant-drawer__icon-btn:hover {
-  background: rgba(99, 102, 241, 0.12);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .consultant-drawer__tabs {
   display: flex;
   gap: 0.25rem;
   padding: 0 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  border-bottom: 1px solid rgb(var(--border) / 0.8);
 }
 
 .consultant-drawer__tab {
@@ -507,15 +513,15 @@ function handleSimulatorUpdate(value: number | string) {
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .consultant-drawer__tab--active {
-  color: rgba(248, 250, 252, 0.96);
-  border-bottom-color: #6366f1;
+  color: rgb(var(--text) / 0.96);
+  border-bottom-color: rgb(var(--primary));
 }
 
 .consultant-drawer__section {
@@ -527,7 +533,7 @@ function handleSimulatorUpdate(value: number | string) {
 .consultant-drawer__section-title {
   margin: 0;
   font-size: 0.95rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .consultant-drawer__metric-grid {
@@ -545,33 +551,33 @@ function handleSimulatorUpdate(value: number | string) {
   gap: 0.2rem;
   padding: 0.75rem;
   border-radius: 0.7rem;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgb(var(--border) / 0.72);
+  background: rgb(var(--surface-2) / 0.74);
 }
 
 .consultant-drawer__metric-label {
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .consultant-drawer__metric-value {
   font-size: 0.95rem;
-  color: rgba(248, 250, 252, 0.96);
+  color: rgb(var(--text) / 0.96);
 }
 
 .consultant-drawer__metric-text {
   font-size: 0.72rem;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 .consultant-drawer__metric-text--hit {
-  color: #86efac;
+  color: rgb(var(--success));
 }
 
 .consultant-drawer__metric-text--miss {
-  color: #fca5a5;
+  color: rgb(var(--danger));
 }
 
 .consultant-drawer__sparkline {
@@ -579,8 +585,8 @@ function handleSimulatorUpdate(value: number | string) {
   gap: 0.5rem;
   padding: 0.85rem;
   border-radius: 0.7rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgb(var(--surface-2) / 0.74);
+  border: 1px solid rgb(var(--border) / 0.72);
 }
 
 .consultant-drawer__sparkline svg {
@@ -593,14 +599,14 @@ function handleSimulatorUpdate(value: number | string) {
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.25rem;
   font-size: 0.7rem;
-  color: rgba(148, 163, 184, 0.88);
+  color: rgb(var(--muted) / 0.88);
   text-align: center;
 }
 
 .consultant-drawer__empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 
 @media (max-width: 900px) {

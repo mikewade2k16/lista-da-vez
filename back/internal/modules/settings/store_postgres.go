@@ -209,6 +209,16 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 		modalSection.UpdatedAt = operationSection.UpdatedAt
 	}
 
+	appearanceSection, appearanceFound, err := repository.GetAppearanceSection(ctx, tenantID)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if !appearanceFound {
+		appearanceSection = defaultAppearanceSectionRecord(tenantID)
+		appearanceSection.CreatedAt = operationSection.CreatedAt
+		appearanceSection.UpdatedAt = operationSection.UpdatedAt
+	}
+
 	visitReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindVisitReason)
 	if err != nil {
 		return Record{}, false, err
@@ -258,6 +268,7 @@ func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID 
 		TenantID:                    tenantID,
 		SelectedOperationTemplateID: operationSection.SelectedOperationTemplateID,
 		Settings:                    composeAppSettings(operationSection.CoreSettings, operationSection.AlertSettings),
+		Appearance:                  cloneAppearanceConfig(appearanceSection.Appearance),
 		ModalConfig:                 modalSection.ModalConfig,
 		VisitReasonOptions:          visitReasonOptions,
 		CustomerSourceOptions:       customerSourceOptions,
@@ -284,6 +295,10 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		CoreSettings:                coreSettings,
 		AlertSettings:               alertSettings,
 	})
+	appearanceSection := normalizeAppearanceSectionRecord(AppearanceSectionRecord{
+		TenantID:   record.TenantID,
+		Appearance: cloneAppearanceConfig(record.Appearance),
+	})
 	modalSection := normalizeModalSectionRecord(ModalSectionRecord{
 		TenantID:                    record.TenantID,
 		SelectedOperationTemplateID: record.SelectedOperationTemplateID,
@@ -300,6 +315,9 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		return Record{}, err
 	}
 	if err := upsertCoreSettingsToNew(ctx, tx, operationSection); err != nil {
+		return Record{}, err
+	}
+	if err := upsertAppearanceSectionToNew(ctx, tx, appearanceSection); err != nil {
 		return Record{}, err
 	}
 	if err := upsertModalSectionToNew(ctx, tx, modalSection); err != nil {
@@ -347,6 +365,7 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		TenantID:                    operationSection.TenantID,
 		SelectedOperationTemplateID: operationSection.SelectedOperationTemplateID,
 		Settings:                    composeAppSettings(operationSection.CoreSettings, operationSection.AlertSettings),
+		Appearance:                  cloneAppearanceConfig(appearanceSection.Appearance),
 		ModalConfig:                 modalSection.ModalConfig,
 		VisitReasonOptions:          cloneOptions(record.VisitReasonOptions),
 		CustomerSourceOptions:       cloneOptions(record.CustomerSourceOptions),

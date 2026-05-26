@@ -80,6 +80,6 @@ function handleOpen(consultantId) {
 .player-grid__empty {
   padding: 2rem;
   text-align: center;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
 }
 </style>

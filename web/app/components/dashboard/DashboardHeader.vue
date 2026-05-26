@@ -4,6 +4,7 @@ import { ChevronDown, LogOut, User, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
+import DashboardThemeSwitcher from '~/components/dashboard/DashboardThemeSwitcher.vue'
 import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
 import { useDashboardNav } from '~/composables/useDashboardNav'
 import { getRoleLabel } from '~/domain/utils/permissions'
@@ -225,56 +226,57 @@ onBeforeUnmount(() => {
             compact
             @update:model-value="handleProfileChange"
           />
+          <DashboardThemeSwitcher />
           <FeedbackNotificationsDropdown v-if="isAuthenticated" />
           <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
-          <button
-            class="dashboard-header__profile-trigger"
-            type="button"
-            aria-haspopup="menu"
-            :aria-expanded="profileMenuOpen ? 'true' : 'false'"
-            aria-label="Abrir menu do perfil"
-            @click="toggleProfileMenu"
-          >
-            <span class="dashboard-header__profile-avatar" aria-hidden="true">
-              <img v-if="avatarUrl" :src="avatarUrl" alt="" />
-              <span v-else>{{ profileInitial }}</span>
-            </span>
-          </button>
+            <button
+              class="dashboard-header__profile-trigger"
+              type="button"
+              aria-haspopup="menu"
+              :aria-expanded="profileMenuOpen ? 'true' : 'false'"
+              aria-label="Abrir menu do perfil"
+              @click="toggleProfileMenu"
+            >
+              <span class="dashboard-header__profile-avatar" aria-hidden="true">
+                <img v-if="avatarUrl" :src="avatarUrl" alt="" />
+                <span v-else>{{ profileInitial }}</span>
+              </span>
+            </button>
 
-          <Transition name="dashboard-header-menu">
-            <div v-if="profileMenuOpen" class="dashboard-header__profile-dropdown" role="menu">
-              <div class="dashboard-header__profile-card">
-                <span class="dashboard-header__profile-role">{{ profileRoleLabel }}</span>
-                <strong class="dashboard-header__profile-fullname">
-                  {{ displayName || 'Conta autenticada' }}
-                </strong>
-                <span class="dashboard-header__profile-email">
-                  {{ profileEmail || 'Sessao ativa' }}
-                </span>
+            <Transition name="dashboard-header-menu">
+              <div v-if="profileMenuOpen" class="dashboard-header__profile-dropdown" role="menu">
+                <div class="dashboard-header__profile-card">
+                  <span class="dashboard-header__profile-role">{{ profileRoleLabel }}</span>
+                  <strong class="dashboard-header__profile-fullname">
+                    {{ displayName || 'Conta autenticada' }}
+                  </strong>
+                  <span class="dashboard-header__profile-email">
+                    {{ profileEmail || 'Sessao ativa' }}
+                  </span>
+                </div>
+
+                <NuxtLink
+                  class="dashboard-header__menu-action"
+                  to="/perfil"
+                  role="menuitem"
+                  @click="closeProfileMenu"
+                >
+                  <User :size="16" :stroke-width="2.15" />
+                  <span>Pagina de perfil</span>
+                </NuxtLink>
+
+                <button
+                  class="dashboard-header__menu-action dashboard-header__menu-action--danger"
+                  type="button"
+                  role="menuitem"
+                  @click="handleLogout"
+                >
+                  <LogOut :size="16" :stroke-width="2.15" />
+                  <span>Sair da plataforma</span>
+                </button>
               </div>
-
-              <NuxtLink
-                class="dashboard-header__menu-action"
-                to="/perfil"
-                role="menuitem"
-                @click="closeProfileMenu"
-              >
-                <User :size="16" :stroke-width="2.15" />
-                <span>Pagina de perfil</span>
-              </NuxtLink>
-
-              <button
-                class="dashboard-header__menu-action dashboard-header__menu-action--danger"
-                type="button"
-                role="menuitem"
-                @click="handleLogout"
-              >
-                <LogOut :size="16" :stroke-width="2.15" />
-                <span>Sair da plataforma</span>
-              </button>
-            </div>
-          </Transition>
-        </div>
+            </Transition>
+          </div>
         </ClientOnly>
       </div>
     </div>
@@ -313,6 +315,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="dashboard-header__sidebar-footer">
               <ClientOnly>
+                <DashboardThemeSwitcher />
                 <FeedbackNotificationsDropdown v-if="isAuthenticated" />
                 <NuxtLink
                   v-if="isAuthenticated"
@@ -608,11 +611,11 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   overflow: hidden;
   background: linear-gradient(135deg, rgb(var(--primary) / 0.92), rgb(var(--success) / 0.9));
-  color: #f8fafc;
+  color: rgb(255 255 255);
   font-size: 0.86rem;
   font-weight: 800;
   text-transform: uppercase;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.18);
 }
 
 .dashboard-header__profile-avatar img {
@@ -692,14 +695,14 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-header__menu-action--danger {
-  color: #fecaca;
-  background: rgba(127, 29, 29, 0.18);
-  border-color: rgba(248, 113, 113, 0.16);
+  color: rgb(var(--danger));
+  background: rgb(var(--danger) / 0.12);
+  border-color: rgb(var(--danger) / 0.22);
 }
 
 .dashboard-header__menu-action--danger:hover {
-  border-color: rgba(248, 113, 113, 0.32);
-  background: rgba(127, 29, 29, 0.28);
+  border-color: rgb(var(--danger) / 0.36);
+  background: rgb(var(--danger) / 0.18);
 }
 
 .dashboard-header-menu-enter-active,
@@ -734,7 +737,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(2, 6, 23, 0.48);
+  background: rgb(3 6 12 / 0.48);
   pointer-events: auto;
 }
 

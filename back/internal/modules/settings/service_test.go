@@ -14,6 +14,7 @@ type fakeRepository struct {
 	accessible          map[string]bool
 	records             map[string]Record
 	operationSections   map[string]OperationSectionRecord
+	appearanceSections  map[string]AppearanceSectionRecord
 	modalSections       map[string]ModalSectionRecord
 	optionGroups        map[string]map[string][]OptionItem
 	productCatalogs     map[string][]ProductItem
@@ -24,25 +25,26 @@ type fakeRepository struct {
 	replaceProductCalls int
 	applyTemplateCalls  int
 
-	lastSavedRecord           Record
-	lastSavedOperationSection OperationSectionRecord
-	lastSavedModalSection     ModalSectionRecord
-	lastAppliedTemplate       OperationTemplateApplyRecord
-	lastReplacedOptionTenant  string
-	lastReplacedOptionKind    string
-	lastReplacedOptionItems   []OptionItem
-	lastUpsertedOptionTenant  string
-	lastUpsertedOptionKind    string
-	lastUpsertedOption        OptionItem
-	lastDeletedOptionTenant   string
-	lastDeletedOptionKind     string
-	lastDeletedOptionID       string
-	lastReplacedProductTenant string
-	lastReplacedProducts      []ProductItem
-	lastUpsertedProductTenant string
-	lastUpsertedProduct       ProductItem
-	lastDeletedProductTenant  string
-	lastDeletedProductID      string
+	lastSavedRecord            Record
+	lastSavedOperationSection  OperationSectionRecord
+	lastSavedAppearanceSection AppearanceSectionRecord
+	lastSavedModalSection      ModalSectionRecord
+	lastAppliedTemplate        OperationTemplateApplyRecord
+	lastReplacedOptionTenant   string
+	lastReplacedOptionKind     string
+	lastReplacedOptionItems    []OptionItem
+	lastUpsertedOptionTenant   string
+	lastUpsertedOptionKind     string
+	lastUpsertedOption         OptionItem
+	lastDeletedOptionTenant    string
+	lastDeletedOptionKind      string
+	lastDeletedOptionID        string
+	lastReplacedProductTenant  string
+	lastReplacedProducts       []ProductItem
+	lastUpsertedProductTenant  string
+	lastUpsertedProduct        ProductItem
+	lastDeletedProductTenant   string
+	lastDeletedProductID       string
 }
 
 func (repository *fakeRepository) mutationTime() time.Time {
@@ -95,6 +97,21 @@ func (repository *fakeRepository) GetOperationSection(_ context.Context, tenantI
 	}
 
 	return recordToOperationSection(record), true, nil
+}
+
+func (repository *fakeRepository) GetAppearanceSection(_ context.Context, tenantID string) (AppearanceSectionRecord, bool, error) {
+	if repository.appearanceSections != nil {
+		if section, ok := repository.appearanceSections[tenantID]; ok {
+			return section, true, nil
+		}
+	}
+
+	record, ok := repository.records[tenantID]
+	if !ok {
+		return AppearanceSectionRecord{}, false, nil
+	}
+
+	return recordToAppearanceSection(record), true, nil
 }
 
 func (repository *fakeRepository) GetModalSection(_ context.Context, tenantID string) (ModalSectionRecord, bool, error) {
@@ -154,6 +171,21 @@ func (repository *fakeRepository) UpsertOperationSection(_ context.Context, sect
 		repository.operationSections = make(map[string]OperationSectionRecord)
 	}
 	repository.operationSections[section.TenantID] = section
+
+	return section, nil
+}
+
+func (repository *fakeRepository) UpsertAppearanceSection(_ context.Context, section AppearanceSectionRecord) (AppearanceSectionRecord, error) {
+	section.UpdatedAt = repository.mutationTime()
+	if section.CreatedAt.IsZero() {
+		section.CreatedAt = section.UpdatedAt
+	}
+
+	repository.lastSavedAppearanceSection = section
+	if repository.appearanceSections == nil {
+		repository.appearanceSections = make(map[string]AppearanceSectionRecord)
+	}
+	repository.appearanceSections[section.TenantID] = section
 
 	return section, nil
 }
@@ -455,6 +487,55 @@ func TestSaveModalSectionUsesOperationTemplateDefaultsWhenModalSectionMissing(t 
 	}
 	if saved.ModalConfig.VisitReasonJustificationMinChars != 32 {
 		t.Fatalf("expected visit reason justification min chars 32, got %d", saved.ModalConfig.VisitReasonJustificationMinChars)
+	}
+}
+
+func TestSaveAppearanceSectionPersistsTenantThemeSnapshot(t *testing.T) {
+	repository := &fakeRepository{
+		savedAt: time.Date(2026, 4, 29, 16, 30, 0, 0, time.UTC),
+	}
+	service := NewService(repository, nil)
+
+	activeTheme := "custom"
+	customThemeName := "Perola Central"
+	overrides := AppearanceOverrides{
+		"custom": {
+			"primary":           "10 132 255",
+			"admin-header-text": "rgb(var(--text))",
+		},
+	}
+
+	ack, err := service.SaveAppearanceSection(context.Background(), auth.Principal{
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+		Role:     auth.RoleOwner,
+	}, AppearanceSectionInput{
+		Appearance: &AppearanceConfigPatch{
+			ActiveTheme:     &activeTheme,
+			CustomThemeName: &customThemeName,
+			Overrides:       &overrides,
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveAppearanceSection returned error: %v", err)
+	}
+
+	if ack.TenantID != "tenant-1" || !ack.SavedAt.Equal(repository.savedAt) {
+		t.Fatalf("unexpected ack: %+v", ack)
+	}
+
+	saved := repository.lastSavedAppearanceSection
+	if saved.Appearance.ActiveTheme != "custom" {
+		t.Fatalf("expected custom theme, got %q", saved.Appearance.ActiveTheme)
+	}
+	if saved.Appearance.CustomThemeName != "Perola Central" {
+		t.Fatalf("expected custom name to be persisted, got %q", saved.Appearance.CustomThemeName)
+	}
+	if saved.Appearance.Overrides["custom"]["primary"] != "10 132 255" {
+		t.Fatalf("expected primary override to be persisted, got %+v", saved.Appearance.Overrides)
+	}
+	if saved.Appearance.Overrides["custom"]["admin-header-text"] != "rgb(var(--text))" {
+		t.Fatalf("expected header text override to be persisted, got %+v", saved.Appearance.Overrides)
 	}
 }
 

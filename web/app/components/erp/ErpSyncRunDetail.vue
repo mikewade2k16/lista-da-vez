@@ -93,7 +93,7 @@ function formatNumber(value?: number | null) {
   padding: 1rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(15, 23, 36, 0.86);
+  background: var(--erp-panel-bg);
 }
 
 .erp-sync-detail__header h3,
@@ -123,7 +123,7 @@ function formatNumber(value?: number | null) {
   padding: 0.85rem 0.95rem;
   border-radius: 0.9rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
 }
 
 .erp-sync-detail__card span,

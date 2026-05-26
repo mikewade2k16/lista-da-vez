@@ -108,6 +108,7 @@ export function useDashboardNav(
   }
 
   function isItemAllowed(item: NavItem): boolean {
+    if (item.hidden) return false
     const workspaceId = String(item.workspaceId || '').trim()
     if (!workspaceId) return true
     if (!allowedWorkspaceSet.value.has(workspaceId)) return false
@@ -145,6 +146,7 @@ export function useDashboardNav(
 
   const visibleSections = computed(() =>
     navStore.sections
+      .filter((section) => !section.hidden)
       .map((section) => ({
         ...section,
         items: (section.items || []).map(filterItem).filter((i): i is NavItem => i !== null),

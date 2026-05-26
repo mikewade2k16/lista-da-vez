@@ -33,10 +33,15 @@ button {
   cursor: pointer;
 }
 
+:focus-visible {
+  outline: 2px solid rgb(var(--ring) / 0.48);
+  outline-offset: 2px;
+}
+
 /* Scrollbar global */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2d3748 transparent;
+  scrollbar-color: rgb(var(--primary) / 0.45) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -49,10 +54,10 @@ button {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #2d3748;
+  background: rgb(var(--primary) / 0.45);
   border-radius: 999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #4a5568;
+  background: rgb(var(--primary) / 0.72);
 }

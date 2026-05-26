@@ -71,12 +71,12 @@ const props = defineProps({
 }
 
 .app-panel-button--primary {
-  background: linear-gradient(135deg, #818cf8 0%, #a5b4fc 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
+  color: rgb(255 255 255);
 }
 
 .app-panel-button--secondary {
-  background: #1a2235;
+  background: rgb(var(--surface-2));
   color: var(--text-main);
 }
 

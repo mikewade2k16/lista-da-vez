@@ -382,7 +382,7 @@ onBeforeUnmount(() => {
   gap: 0.8rem;
   border: 1px solid var(--line-soft);
   border-radius: 1rem;
-  background: rgba(13, 18, 29, 0.9);
+  background: rgb(var(--surface) / 0.9);
   padding: 0.8rem;
   box-shadow: var(--shadow-card);
 }
@@ -408,13 +408,13 @@ onBeforeUnmount(() => {
   min-height: 2.45rem;
   padding: 0 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid rgba(129, 140, 248, 0.18);
-  background: rgba(18, 25, 38, 0.9);
+  border: 1px solid rgb(var(--ring) / 0.18);
+  background: rgb(var(--surface-2) / 0.9);
 }
 
 .app-entity-grid__search:focus-within {
-  border-color: rgba(129, 140, 248, 0.42);
-  box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.12);
+  border-color: rgb(var(--ring) / 0.42);
+  box-shadow: 0 0 0 3px rgb(var(--ring) / 0.12);
 }
 
 .app-entity-grid__search-icon {
@@ -434,7 +434,7 @@ onBeforeUnmount(() => {
 }
 
 .app-entity-grid__search-input::placeholder {
-  color: rgba(148, 163, 184, 0.7);
+  color: rgb(var(--muted) / 0.7);
 }
 
 .app-entity-grid__filters,
@@ -461,8 +461,8 @@ onBeforeUnmount(() => {
   min-height: 2.35rem;
   padding: 0 0.8rem;
   border-radius: 999px;
-  border: 1px solid rgba(129, 140, 248, 0.2);
-  background: rgba(18, 25, 38, 0.92);
+  border: 1px solid rgb(var(--ring) / 0.2);
+  background: rgb(var(--surface-2) / 0.92);
   color: var(--text-main);
   font-size: 0.76rem;
   font-weight: 700;
@@ -476,11 +476,11 @@ onBeforeUnmount(() => {
 }
 
 .app-entity-grid__toolbar-btn:hover {
-  border-color: rgba(129, 140, 248, 0.4);
+  border-color: rgb(var(--ring) / 0.4);
 }
 
 .app-entity-grid__toolbar-btn strong {
-  color: #ffffff;
+  color: rgb(var(--text));
 }
 
 .app-entity-grid__columns-menu {
@@ -494,8 +494,8 @@ onBeforeUnmount(() => {
   gap: 0.55rem;
   border-radius: 0.9rem;
   border: 1px solid var(--line-soft);
-  background: rgba(9, 13, 21, 0.98);
-  box-shadow: 0 24px 46px rgba(0, 0, 0, 0.38);
+  background: rgb(var(--surface) / 0.98);
+  box-shadow: var(--shadow-dropdown, 0 24px 46px rgb(15 23 42 / 0.18));
 }
 
 .app-entity-grid__columns-header {
@@ -517,7 +517,7 @@ onBeforeUnmount(() => {
 
 .app-entity-grid__columns-item input {
   margin-top: 0.2rem;
-  accent-color: var(--accent-focus);
+  accent-color: rgb(var(--primary));
 }
 
 .app-entity-grid__columns-item.is-locked {
@@ -558,14 +558,14 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 5;
   padding: 0 0.2rem 0.3rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(13, 18, 29, 0.96);
+  border-bottom: 1px solid rgb(var(--border) / 0.66);
+  background: rgb(var(--surface) / 0.96);
 }
 
 .app-entity-grid__head-cell {
   min-width: 0;
   padding: 0 0.3rem;
-  color: rgba(226, 232, 240, 0.8);
+  color: rgb(var(--muted) / 0.86);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
 }
 
 .app-entity-grid__head-cell.is-sortable:hover {
-  color: rgba(226, 232, 240, 1);
+  color: rgb(var(--text));
 }
 
 .app-entity-grid__sort-indicator {
@@ -599,8 +599,8 @@ onBeforeUnmount(() => {
   align-items: stretch;
   padding: 0.3rem;
   border-radius: 0.95rem;
-  background: rgba(18, 25, 38, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgb(var(--surface-2) / 0.7);
+  border: 1px solid rgb(var(--border) / 0.54);
 }
 
 .app-entity-grid__cell {
@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
     content: attr(data-column-label);
     display: block;
     margin-bottom: 0.28rem;
-    color: rgba(226, 232, 240, 0.64);
+    color: rgb(var(--muted) / 0.82);
     font-size: 0.63rem;
     font-weight: 700;
     letter-spacing: 0.05em;

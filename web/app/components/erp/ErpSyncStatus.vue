@@ -150,14 +150,14 @@ function formatNumber(value?: number | null) {
   padding: 0 0.95rem;
   border-radius: 0.8rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   font-weight: 600;
 }
 
 .erp-sync-status__button--primary {
-  border-color: rgba(83, 198, 160, 0.32);
-  background: linear-gradient(135deg, rgba(13, 102, 87, 0.92), rgba(14, 73, 67, 0.94));
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-gradient);
 }
 
 .erp-sync-status__grid {
@@ -172,7 +172,7 @@ function formatNumber(value?: number | null) {
   padding: 0.95rem 1rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(15, 23, 36, 0.86);
+  background: var(--erp-panel-bg);
 }
 
 .erp-sync-status__label,

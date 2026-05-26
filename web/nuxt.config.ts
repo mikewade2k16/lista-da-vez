@@ -29,6 +29,7 @@ export default defineNuxtConfig({
     '/perfil': { ssr: false },
     '/ranking': { ssr: false },
     '/relatorios': { ssr: false },
+    '/roadmap': { ssr: false },
     '/site/**': { ssr: false },
     '/tasks': { ssr: false },
     '/team/**': { ssr: false },
@@ -64,6 +65,8 @@ export default defineNuxtConfig({
         '@tiptap/extension-emoji',
         '@tiptap/extension-mention',
         '@tiptap/extension-placeholder',
+        '@tiptap/extension-task-item',
+        '@tiptap/extension-task-list',
         '@tiptap/extension-text-align',
         '@tiptap/extension-underline',
         '@tiptap/starter-kit',
@@ -71,6 +74,14 @@ export default defineNuxtConfig({
         '@tiptap/vue-3',
         'lucide-vue-next',
       ],
+    },
+    build: {
+      rollupOptions: {
+        // @tiptap/y-tiptap e peer opcional para colab Yjs. Como nao usamos
+        // collab em tempo real no editor Omni, marcamos como external para
+        // evitar bundle do Yjs/y-prosemirror desnecessariamente.
+        external: ['@tiptap/y-tiptap'],
+      },
     },
     server: {
       watch: shouldUsePollingWatcher
@@ -92,6 +103,7 @@ export default defineNuxtConfig({
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
       apiWsBase: process.env.NUXT_PUBLIC_API_WS_BASE || '',
+      themeStudioEnabled: process.env.NUXT_PUBLIC_ENABLE_THEME_STUDIO === 'true',
     },
   },
   css: [
@@ -100,6 +112,7 @@ export default defineNuxtConfig({
     '~/assets/styles/base.css',
     '~/assets/styles/layout.css',
     '~/assets/styles/components.css',
+    '~/assets/styles/tasks-modal.css',
     '~/assets/styles/presentation.css',
   ],
   app: {

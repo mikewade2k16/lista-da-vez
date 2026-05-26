@@ -1,128 +1,131 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { storeToRefs } from "pinia";
-import { CalendarDays } from "lucide-vue-next";
+import { computed, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { CalendarDays } from 'lucide-vue-next'
 
-import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
-import { useCrmStore } from "~/stores/crm";
-import type { QueueConsultantStats } from "~/stores/crm";
+import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
+import { useCrmStore } from '~/stores/crm'
+import type { QueueConsultantStats } from '~/stores/crm'
 
-const crmStore = useCrmStore();
-const { overview, pending, ready, errorMessage, dateFrom, dateTo } = storeToRefs(crmStore);
+const crmStore = useCrmStore()
+const { overview, pending, ready, errorMessage, dateFrom, dateTo } = storeToRefs(crmStore)
 
 // filtros locais (sem nova requisição)
-const selectedStore = ref("");
-const consultantSearch = ref("");
+const selectedStore = ref('')
+const consultantSearch = ref('')
 
-const summary = computed(() => overview.value?.summary || {
-  orders: 0,
-  units: 0,
-  salesCents: 0,
-  ticketAverageCents: 0,
-  valuePerProductCents: 0,
-  paScore: 0,
-  monthlyGoalCents: 0,
-  goalProgress: 0,
-  remainingToGoalCents: 0,
-  unmappedSalesCents: 0
-});
-const storeRows = computed(() => overview.value?.stores || []);
-const consultantRows = computed(() => overview.value?.consultants || []);
-const queueStats = computed(() => overview.value?.queueStats || null);
-const warnings = computed(() => overview.value?.warnings || []);
+const summary = computed(
+  () =>
+    overview.value?.summary || {
+      orders: 0,
+      units: 0,
+      salesCents: 0,
+      ticketAverageCents: 0,
+      valuePerProductCents: 0,
+      paScore: 0,
+      monthlyGoalCents: 0,
+      goalProgress: 0,
+      remainingToGoalCents: 0,
+      unmappedSalesCents: 0,
+    },
+)
+const storeRows = computed(() => overview.value?.stores || [])
+const consultantRows = computed(() => overview.value?.consultants || [])
+const queueStats = computed(() => overview.value?.queueStats || null)
+const warnings = computed(() => overview.value?.warnings || [])
 
-const managementStoreSlug = "gerencia-multiloja";
+const managementStoreSlug = 'gerencia-multiloja'
 
 const commercialStoreRows = computed(() =>
-  storeRows.value.filter((row) => row.storeSlug !== managementStoreSlug)
-);
+  storeRows.value.filter((row) => row.storeSlug !== managementStoreSlug),
+)
 const managementStoreRows = computed(() =>
-  storeRows.value.filter((row) => row.storeSlug === managementStoreSlug)
-);
+  storeRows.value.filter((row) => row.storeSlug === managementStoreSlug),
+)
 
 const storeOptions = computed(() =>
-  commercialStoreRows.value.map((s) => ({ slug: s.storeSlug, label: s.storeLabel }))
-);
+  commercialStoreRows.value.map((s) => ({ slug: s.storeSlug, label: s.storeLabel })),
+)
 
 const filteredStoreRows = computed(() => {
-  if (!selectedStore.value) return commercialStoreRows.value;
-  return commercialStoreRows.value.filter((s) => s.storeSlug === selectedStore.value);
-});
+  if (!selectedStore.value) return commercialStoreRows.value
+  return commercialStoreRows.value.filter((s) => s.storeSlug === selectedStore.value)
+})
 
 // merge ERP × fila por nome normalizado
 type MergedConsultant = (typeof consultantRows.value)[number] & {
-  queue?: QueueConsultantStats;
-  matched: boolean;
-};
+  queue?: QueueConsultantStats
+  matched: boolean
+}
 
 const queueByName = computed(() => {
-  const map = new Map<string, QueueConsultantStats>();
+  const map = new Map<string, QueueConsultantStats>()
   for (const q of queueStats.value?.byConsultant ?? []) {
-    map.set(q.personName.trim().toLowerCase(), q);
+    map.set(q.personName.trim().toLowerCase(), q)
   }
-  return map;
-});
+  return map
+})
 
 const mergedConsultants = computed<MergedConsultant[]>(() => {
-  const search = consultantSearch.value.trim().toLowerCase();
+  const search = consultantSearch.value.trim().toLowerCase()
   return consultantRows.value
     .filter((c) => c.storeSlug !== managementStoreSlug)
     .filter((c) => !selectedStore.value || c.storeSlug === selectedStore.value)
     .filter((c) => !search || c.consultantName.toLowerCase().includes(search))
     .map((c) => {
-      const queue = queueByName.value.get(c.consultantName.trim().toLowerCase());
-      return { ...c, queue, matched: !!queue };
-    });
-});
+      const queue = queueByName.value.get(c.consultantName.trim().toLowerCase())
+      return { ...c, queue, matched: !!queue }
+    })
+})
 
 const managementConsultantRows = computed(() =>
-  consultantRows.value.filter((row) => row.storeSlug === managementStoreSlug)
-);
+  consultantRows.value.filter((row) => row.storeSlug === managementStoreSlug),
+)
 
-const summaryProgressWidth = computed(() =>
-  `${Math.min(100, Number(summary.value.goalProgress || 0)).toFixed(1)}%`
-);
+const summaryProgressWidth = computed(
+  () => `${Math.min(100, Number(summary.value.goalProgress || 0)).toFixed(1)}%`,
+)
 
 // consultores ERP sem correspondente na fila
-const unmatchedCount = computed(() =>
-  mergedConsultants.value.filter((c) => !c.matched && queueStats.value).length
-);
+const unmatchedCount = computed(
+  () => mergedConsultants.value.filter((c) => !c.matched && queueStats.value).length,
+)
 
 function formatCurrencyFromCents(value?: number | null) {
-  return formatCurrencyBRL((Number(value || 0) || 0) / 100);
+  return formatCurrencyBRL((Number(value || 0) || 0) / 100)
 }
 
 function formatNumber(value?: number | null) {
-  return Number(value || 0).toLocaleString("pt-BR");
+  return Number(value || 0).toLocaleString('pt-BR')
 }
 
 function formatPA(value?: number | null) {
-  return Number(value || 0).toFixed(2);
+  return Number(value || 0).toFixed(2)
 }
 
 function formatPct(value?: number | null) {
-  const n = Number(value || 0);
-  return n ? `${n.toFixed(1)}%` : "-";
+  const n = Number(value || 0)
+  return n ? `${n.toFixed(1)}%` : '-'
 }
 
 function progressWidth(value?: number | null) {
-  return `${Math.min(100, Number(value || 0)).toFixed(1)}%`;
+  return `${Math.min(100, Number(value || 0)).toFixed(1)}%`
 }
 
 function progressClass(value?: number | null) {
-  const normalized = Number(value || 0);
-  if (normalized >= 100) return "is-hit";
-  if (normalized >= 75) return "is-near";
-  return "is-miss";
+  const normalized = Number(value || 0)
+  if (normalized >= 100) return 'is-hit'
+  if (normalized >= 75) return 'is-near'
+  return 'is-miss'
 }
 
 async function submitFilters() {
-  await crmStore.applyFilters();
+  await crmStore.applyFilters()
 }
 
 async function resetMonth() {
-  crmStore.resetCurrentMonth();
-  await crmStore.applyFilters();
+  crmStore.resetCurrentMonth()
+  await crmStore.applyFilters()
 }
 </script>
 
@@ -132,7 +135,8 @@ async function resetMonth() {
       <div>
         <h2 class="admin-panel__title">CRM comercial via ERP</h2>
         <p class="admin-panel__text">
-          Metas cadastradas no sistema cruzadas com pedidos do ERP. Leitura comercial por loja e consultor.
+          Metas cadastradas no sistema cruzadas com pedidos do ERP. Leitura comercial por loja e
+          consultor.
         </p>
       </div>
 
@@ -149,16 +153,18 @@ async function resetMonth() {
             <template #default="{ label }">
               <button type="button" class="crm-date-trigger">
                 <CalendarDays :size="14" />
-                <span>{{ label || "Todas as vendas" }}</span>
+                <span>{{ label || 'Todas as vendas' }}</span>
               </button>
             </template>
           </AppDatePicker>
         </div>
 
         <div class="crm-filters__actions">
-          <button class="crm-btn crm-btn--ghost" type="button" @click="resetMonth">Mes atual</button>
+          <button class="crm-btn crm-btn--ghost" type="button" @click="resetMonth">
+            Mes atual
+          </button>
           <button class="crm-btn" type="submit" :disabled="pending">
-            {{ pending ? "Atualizando..." : "Atualizar" }}
+            {{ pending ? 'Atualizando...' : 'Atualizar' }}
           </button>
         </div>
       </form>
@@ -166,11 +172,7 @@ async function resetMonth() {
 
     <!-- filtros de loja e consultor (local, sem nova requisição) -->
     <div v-if="ready" class="crm-local-filters">
-      <select
-        v-model="selectedStore"
-        class="crm-select"
-        title="Filtrar por loja"
-      >
+      <select v-model="selectedStore" class="crm-select" title="Filtrar por loja">
         <option value="">Todas as lojas</option>
         <option v-for="s in storeOptions" :key="s.slug" :value="s.slug">
           {{ s.label }}
@@ -189,7 +191,10 @@ async function resetMonth() {
         v-if="selectedStore || consultantSearch"
         class="crm-btn crm-btn--ghost crm-btn--sm"
         type="button"
-        @click="selectedStore = ''; consultantSearch = '';"
+        @click="
+          selectedStore = ''
+          consultantSearch = ''
+        "
       >
         Limpar filtros
       </button>
@@ -221,7 +226,7 @@ async function resetMonth() {
               class="crm-progress-card__fill"
               :class="progressClass(summary.goalProgress)"
               :style="{ width: summaryProgressWidth }"
-            />
+            ></div>
           </div>
           <div class="crm-progress-card__meta">
             <span>Falta {{ formatCurrencyFromCents(summary.remainingToGoalCents) }}</span>
@@ -236,15 +241,21 @@ async function resetMonth() {
       <section class="metric-grid crm-metrics">
         <article class="metric-card">
           <span class="metric-card__label">Vendas do periodo</span>
-          <strong class="metric-card__value">{{ formatCurrencyFromCents(summary.salesCents) }}</strong>
+          <strong class="metric-card__value">
+            {{ formatCurrencyFromCents(summary.salesCents) }}
+          </strong>
         </article>
         <article class="metric-card">
           <span class="metric-card__label">Ticket medio</span>
-          <strong class="metric-card__value">{{ formatCurrencyFromCents(summary.ticketAverageCents) }}</strong>
+          <strong class="metric-card__value">
+            {{ formatCurrencyFromCents(summary.ticketAverageCents) }}
+          </strong>
         </article>
         <article class="metric-card">
           <span class="metric-card__label">Valor por produto</span>
-          <strong class="metric-card__value">{{ formatCurrencyFromCents(summary.valuePerProductCents) }}</strong>
+          <strong class="metric-card__value">
+            {{ formatCurrencyFromCents(summary.valuePerProductCents) }}
+          </strong>
         </article>
         <article class="metric-card">
           <span class="metric-card__label">P.A.</span>
@@ -266,11 +277,15 @@ async function resetMonth() {
         <div class="metric-grid crm-queue-grid">
           <article class="metric-card crm-queue-card">
             <span class="metric-card__label">Atendimentos</span>
-            <strong class="metric-card__value">{{ formatNumber(queueStats.totalAttendances) }}</strong>
+            <strong class="metric-card__value">
+              {{ formatNumber(queueStats.totalAttendances) }}
+            </strong>
           </article>
           <article class="metric-card crm-queue-card">
             <span class="metric-card__label">Conversoes (fila)</span>
-            <strong class="metric-card__value">{{ formatNumber(queueStats.totalConversions) }}</strong>
+            <strong class="metric-card__value">
+              {{ formatNumber(queueStats.totalConversions) }}
+            </strong>
           </article>
           <article class="metric-card crm-queue-card">
             <span class="metric-card__label">Taxa de conversao</span>
@@ -281,7 +296,7 @@ async function resetMonth() {
               <div
                 class="crm-bar__fill crm-bar__fill--green"
                 :style="{ width: `${Math.min(queueStats.conversionRate, 100)}%` }"
-              />
+              ></div>
             </div>
           </article>
           <article class="metric-card crm-queue-card">
@@ -293,7 +308,7 @@ async function resetMonth() {
               <div
                 class="crm-bar__fill crm-bar__fill--red"
                 :style="{ width: `${Math.min(queueStats.cancellationRate, 100)}%` }"
-              />
+              ></div>
             </div>
           </article>
           <article v-if="summary.erpCancellations" class="metric-card crm-queue-card">
@@ -301,7 +316,9 @@ async function resetMonth() {
             <strong class="metric-card__value crm-rate--warn">
               {{ formatPct(summary.erpCancellationRate) }}
             </strong>
-            <small class="crm-metric-sub">{{ formatNumber(summary.erpCancellations) }} pedidos</small>
+            <small class="crm-metric-sub">
+              {{ formatNumber(summary.erpCancellations) }} pedidos
+            </small>
           </article>
         </div>
       </section>
@@ -316,7 +333,8 @@ async function resetMonth() {
       <!-- aviso de consultores sem match na fila -->
       <article v-if="unmatchedCount > 0" class="crm-warning-list">
         <p class="crm-warning-list__item crm-warning-list__item--info">
-          {{ unmatchedCount }} consultor(es) ERP sem correspondente identificado na fila (nomes nao coincidem).
+          {{ unmatchedCount }} consultor(es) ERP sem correspondente identificado na fila (nomes nao
+          coincidem).
         </p>
       </article>
 
@@ -352,7 +370,7 @@ async function resetMonth() {
                 <td>
                   <div class="crm-row-heading">
                     <strong>{{ row.storeLabel }}</strong>
-                    <small>{{ row.storeCode || "Sem codigo" }}</small>
+                    <small>{{ row.storeCode || 'Sem codigo' }}</small>
                   </div>
                 </td>
                 <td>{{ formatCurrencyFromCents(row.monthlyGoalCents) }}</td>
@@ -364,7 +382,7 @@ async function resetMonth() {
                         class="crm-table-progress__fill"
                         :class="progressClass(row.goalProgress)"
                         :style="{ width: progressWidth(row.goalProgress) }"
-                      />
+                      ></span>
                     </span>
                     <strong>{{ formatPercent(row.goalProgress) }}</strong>
                   </div>
@@ -378,7 +396,7 @@ async function resetMonth() {
                   <span v-if="queueStats.byStore">
                     {{
                       formatPct(
-                        queueStats.byStore.find((s) => s.storeId === row.storeSlug)?.conversionRate
+                        queueStats.byStore.find((s) => s.storeId === row.storeSlug)?.conversionRate,
                       )
                     }}
                   </span>
@@ -386,12 +404,14 @@ async function resetMonth() {
                 </td>
                 <td v-if="summary.erpCancellations">
                   <span :class="{ 'crm-rate--bad': (row.erpCancellationRate ?? 0) > 5 }">
-                    {{ row.erpCancellations ? formatPct(row.erpCancellationRate) : "-" }}
+                    {{ row.erpCancellations ? formatPct(row.erpCancellationRate) : '-' }}
                   </span>
                 </td>
               </tr>
               <tr v-if="!filteredStoreRows.length">
-                <td class="crm-empty" colspan="11">Nenhuma loja com vendas ERP no periodo selecionado.</td>
+                <td class="crm-empty" colspan="11">
+                  Nenhuma loja com vendas ERP no periodo selecionado.
+                </td>
               </tr>
             </tbody>
           </table>
@@ -444,7 +464,7 @@ async function resetMonth() {
                 <td>{{ formatPA(row.paScore) }}</td>
                 <td>{{ formatNumber(row.orders) }}</td>
                 <td :class="{ 'crm-td--queue': row.queue }">
-                  {{ row.queue ? formatNumber(row.queue.attendances) : "-" }}
+                  {{ row.queue ? formatNumber(row.queue.attendances) : '-' }}
                 </td>
                 <td>
                   <span
@@ -465,13 +485,17 @@ async function resetMonth() {
                   <span v-else class="crm-muted">-</span>
                 </td>
                 <td>
-                  <span v-if="!queueStats" class="crm-badge crm-badge--neutral">sem dados fila</span>
+                  <span v-if="!queueStats" class="crm-badge crm-badge--neutral">
+                    sem dados fila
+                  </span>
                   <span v-else-if="row.matched" class="crm-badge crm-badge--ok">identificado</span>
                   <span v-else class="crm-badge crm-badge--warn">nao identificado</span>
                 </td>
               </tr>
               <tr v-if="!mergedConsultants.length">
-                <td class="crm-empty" colspan="10">Nenhum consultor com pedidos ERP no periodo selecionado.</td>
+                <td class="crm-empty" colspan="10">
+                  Nenhum consultor com pedidos ERP no periodo selecionado.
+                </td>
               </tr>
             </tbody>
           </table>
@@ -483,7 +507,9 @@ async function resetMonth() {
         <header class="crm-section__header">
           <div>
             <h3 class="insight-card__title">Gerencia / Multi-loja</h3>
-            <p class="insight-card__text">Pedidos sem loja comercial confiavel para atribuicao direta.</p>
+            <p class="insight-card__text">
+              Pedidos sem loja comercial confiavel para atribuicao direta.
+            </p>
           </div>
           <span class="crm-section__meta">Separado do consolidado por loja</span>
         </header>
@@ -523,7 +549,9 @@ async function resetMonth() {
         <header class="crm-section__header">
           <div>
             <h3 class="insight-card__title">Gerencia / Multi-loja por consultor</h3>
-            <p class="insight-card__text">Consultores com pedidos sem loja comercial suficientemente confiavel.</p>
+            <p class="insight-card__text">
+              Consultores com pedidos sem loja comercial suficientemente confiavel.
+            </p>
           </div>
           <span class="crm-section__meta">{{ managementConsultantRows.length }} consultor(es)</span>
         </header>
@@ -600,7 +628,7 @@ async function resetMonth() {
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: rgba(15, 23, 42, 0.6);
+  color: rgb(var(--muted));
 }
 
 .crm-filters__actions {
@@ -616,9 +644,9 @@ async function resetMonth() {
   min-height: 42px;
   padding: 0 0.85rem;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
+  border: 1px solid rgb(var(--border) / 0.9);
+  background: rgb(var(--surface) / 0.95);
+  color: rgb(var(--text));
   font-size: 0.88rem;
   font-weight: 600;
   text-align: left;
@@ -639,9 +667,9 @@ async function resetMonth() {
   min-height: 38px;
   padding: 0 0.85rem;
   border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(255, 255, 255, 0.95);
-  color: #0f172a;
+  border: 1px solid rgb(var(--border) / 0.88);
+  background: rgb(var(--surface) / 0.95);
+  color: rgb(var(--text));
   font-size: 0.88rem;
 }
 
@@ -655,7 +683,7 @@ async function resetMonth() {
 }
 
 .crm-search::placeholder {
-  color: rgba(15, 23, 42, 0.45);
+  color: rgb(var(--muted) / 0.72);
 }
 
 /* botoes */
@@ -664,8 +692,8 @@ async function resetMonth() {
   border: none;
   border-radius: 12px;
   padding: 0.75rem 1rem;
-  background: #0f766e;
-  color: #f8fafc;
+  background: rgb(var(--primary));
+  color: rgb(255 255 255);
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
@@ -677,8 +705,8 @@ async function resetMonth() {
 }
 
 .crm-btn--ghost {
-  background: rgba(15, 118, 110, 0.12);
-  color: #115e59;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .crm-btn--sm {
@@ -695,8 +723,13 @@ async function resetMonth() {
   gap: 1rem;
   padding: 1.25rem;
   border-radius: 24px;
-  background: linear-gradient(135deg, #082f49 0%, #164e63 50%, #0f766e 100%);
-  color: #f8fafc;
+  background: linear-gradient(
+    135deg,
+    rgb(var(--primary-600)) 0%,
+    rgb(var(--primary)) 58%,
+    rgb(var(--success)) 100%
+  );
+  color: rgb(255 255 255);
 }
 
 .crm-hero__copy {
@@ -708,7 +741,7 @@ async function resetMonth() {
   font-size: 0.78rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(226, 232, 240, 0.82);
+  color: rgb(255 255 255 / 0.82);
 }
 
 .crm-hero__value {
@@ -718,7 +751,7 @@ async function resetMonth() {
 
 .crm-hero__text {
   max-width: 38rem;
-  color: rgba(241, 245, 249, 0.88);
+  color: rgb(255 255 255 / 0.88);
 }
 
 .crm-progress-card {
@@ -727,7 +760,7 @@ async function resetMonth() {
   gap: 0.75rem;
   padding: 1rem;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgb(255 255 255 / 0.12);
   backdrop-filter: blur(10px);
 }
 
@@ -739,7 +772,7 @@ async function resetMonth() {
   height: 12px;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(226, 232, 240, 0.24);
+  background: rgb(255 255 255 / 0.24);
 }
 
 .crm-progress-card__fill,
@@ -747,22 +780,27 @@ async function resetMonth() {
   position: absolute;
   inset: 0 auto 0 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, #fb7185 0%, #fbbf24 52%, #34d399 100%);
+  background: linear-gradient(
+    90deg,
+    rgb(var(--danger)) 0%,
+    rgb(var(--primary)) 52%,
+    rgb(var(--success)) 100%
+  );
 }
 
 .crm-progress-card__fill.is-hit,
 .crm-table-progress__fill.is-hit {
-  background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+  background: linear-gradient(90deg, rgb(var(--success) / 0.82) 0%, rgb(var(--success)) 100%);
 }
 
 .crm-progress-card__fill.is-near,
 .crm-table-progress__fill.is-near {
-  background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+  background: linear-gradient(90deg, rgb(var(--primary-600)) 0%, rgb(var(--primary)) 100%);
 }
 
 .crm-progress-card__fill.is-miss,
 .crm-table-progress__fill.is-miss {
-  background: linear-gradient(90deg, #f97316 0%, #fb7185 100%);
+  background: linear-gradient(90deg, rgb(var(--danger) / 0.82) 0%, rgb(var(--danger)) 100%);
 }
 
 .crm-progress-card__meta {
@@ -771,7 +809,7 @@ async function resetMonth() {
   gap: 0.75rem;
   flex-wrap: wrap;
   font-size: 0.92rem;
-  color: rgba(248, 250, 252, 0.88);
+  color: rgb(255 255 255 / 0.88);
 }
 
 /* métricas ERP */
@@ -790,7 +828,7 @@ async function resetMonth() {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(15, 23, 42, 0.55);
+  color: rgb(var(--muted));
   margin: 0;
 }
 
@@ -799,13 +837,13 @@ async function resetMonth() {
 }
 
 .crm-queue-card {
-  border-left: 3px solid rgba(99, 102, 241, 0.35);
+  border-left: 3px solid rgb(var(--primary) / 0.35);
 }
 
 .crm-bar {
   height: 4px;
   border-radius: 2px;
-  background: rgba(0, 0, 0, 0.08);
+  background: rgb(var(--border) / 0.68);
   overflow: hidden;
   margin-top: 0.3rem;
 }
@@ -816,31 +854,31 @@ async function resetMonth() {
 }
 
 .crm-bar__fill--green {
-  background: #0f766e;
+  background: rgb(var(--success));
 }
 
 .crm-bar__fill--red {
-  background: #dc2626;
+  background: rgb(var(--danger));
 }
 
 .crm-rate--good {
-  color: #065f46;
+  color: rgb(var(--success));
   font-weight: 700;
 }
 
 .crm-rate--warn {
-  color: #92400e;
+  color: rgb(var(--primary));
   font-weight: 700;
 }
 
 .crm-rate--bad {
-  color: #991b1b;
+  color: rgb(var(--danger));
   font-weight: 700;
 }
 
 .crm-metric-sub {
   font-size: 0.72rem;
-  color: rgba(15, 23, 42, 0.55);
+  color: rgb(var(--muted));
 }
 
 /* avisos */
@@ -853,13 +891,13 @@ async function resetMonth() {
   margin: 0;
   padding: 0.85rem 1rem;
   border-radius: 14px;
-  background: rgba(249, 115, 22, 0.12);
-  color: #9a3412;
+  background: rgb(var(--danger) / 0.12);
+  color: rgb(var(--danger));
 }
 
 .crm-warning-list__item--info {
-  background: rgba(99, 102, 241, 0.1);
-  color: #3730a3;
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
 }
 
 /* section header */
@@ -872,7 +910,7 @@ async function resetMonth() {
 }
 
 .crm-section__meta {
-  color: rgba(15, 23, 42, 0.58);
+  color: rgb(var(--muted));
   font-size: 0.88rem;
 }
 
@@ -891,17 +929,17 @@ async function resetMonth() {
 }
 
 .crm-row-heading small {
-  color: rgba(15, 23, 42, 0.6);
+  color: rgb(var(--muted));
 }
 
 .crm-empty {
   padding: 1rem;
   text-align: center;
-  color: rgba(15, 23, 42, 0.62);
+  color: rgb(var(--muted));
 }
 
 .crm-muted {
-  color: rgba(15, 23, 42, 0.4);
+  color: rgb(var(--muted) / 0.72);
 }
 
 .crm-table-progress {
@@ -915,7 +953,7 @@ async function resetMonth() {
 }
 
 .crm-td--queue {
-  color: #065f46;
+  color: rgb(var(--success));
   font-weight: 600;
 }
 
@@ -934,18 +972,18 @@ async function resetMonth() {
 }
 
 .crm-badge--ok {
-  background: rgba(5, 150, 105, 0.12);
-  color: #065f46;
+  background: rgb(var(--success) / 0.12);
+  color: rgb(var(--success));
 }
 
 .crm-badge--warn {
-  background: rgba(245, 158, 11, 0.14);
-  color: #92400e;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
 }
 
 .crm-badge--neutral {
-  background: rgba(148, 163, 184, 0.18);
-  color: rgba(15, 23, 42, 0.55);
+  background: rgb(var(--border) / 0.56);
+  color: rgb(var(--muted));
 }
 
 /* responsive */

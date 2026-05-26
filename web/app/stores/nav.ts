@@ -8,6 +8,8 @@ export interface NavItem {
   path?: string
   workspaceId?: string
   children?: NavItem[]
+  hidden?: boolean
+  beta?: boolean
 }
 
 export interface NavSection {
@@ -15,6 +17,7 @@ export interface NavSection {
   label: string
   moduleId: string
   items: NavItem[]
+  hidden?: boolean
 }
 
 export const useNavStore = defineStore('nav', () => {

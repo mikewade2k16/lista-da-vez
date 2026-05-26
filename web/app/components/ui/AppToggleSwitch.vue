@@ -73,7 +73,7 @@ function toggle() {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.2);
+  background: rgb(var(--border) / 0.7);
   transition: background 0.18s ease;
 }
 
@@ -81,13 +81,13 @@ function toggle() {
   width: 1.2rem;
   height: 1.2rem;
   border-radius: 999px;
-  background: #ffffff;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.28);
+  background: rgb(var(--surface));
+  box-shadow: 0 6px 14px rgb(var(--text) / 0.16);
   transition: transform 0.18s ease;
 }
 
 .app-toggle-switch.is-on .app-toggle-switch__track {
-  background: rgba(34, 197, 94, 0.34);
+  background: rgb(var(--success) / 0.34);
 }
 
 .app-toggle-switch.is-on .app-toggle-switch__thumb {

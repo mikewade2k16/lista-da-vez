@@ -275,8 +275,8 @@ function entityLabel(dataType?: string) {
   min-height: 2.5rem;
   padding: 0 0.95rem;
   border-radius: 0.8rem;
-  border: 1px solid rgba(98, 129, 255, 0.25);
-  background: rgba(17, 24, 39, 0.92);
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-control-bg);
   color: var(--text-main);
   text-decoration: none;
   font-weight: 600;
@@ -296,7 +296,7 @@ function entityLabel(dataType?: string) {
   padding: 1rem;
   border-radius: 1rem;
   border: 1px solid var(--line-soft);
-  background: rgba(15, 23, 36, 0.86);
+  background: var(--erp-panel-bg);
 }
 
 .erp-sync-overview__hero-card span,
@@ -352,7 +352,7 @@ function entityLabel(dataType?: string) {
   padding: 0.8rem 0.85rem;
   border-radius: 0.85rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
   color: var(--text-main);
 }
 
@@ -399,7 +399,7 @@ function entityLabel(dataType?: string) {
   padding: 0.85rem 0.9rem;
   border-radius: 0.85rem;
   border: 1px solid var(--line-soft);
-  background: rgba(17, 24, 39, 0.92);
+  background: var(--erp-control-bg);
 }
 
 .erp-sync-overview__missing-meta {

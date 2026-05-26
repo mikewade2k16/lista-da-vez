@@ -120,8 +120,8 @@ async function handleResponse(optionValue: string) {
   margin: 0;
   font-size: 3rem;
   font-weight: 900;
-  color: white;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  color: rgb(255 255 255);
+  text-shadow: 0 2px 8px rgb(3 6 12 / 0.3);
   line-height: 1.2;
 }
 
@@ -134,9 +134,9 @@ async function handleResponse(optionValue: string) {
 .fullscreen-alert__body {
   margin: 0;
   font-size: 1.5rem;
-  color: rgba(255, 255, 255, 0.95);
+  color: rgb(255 255 255 / 0.95);
   line-height: 1.6;
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  text-shadow: 0 1px 4px rgb(3 6 12 / 0.2);
 }
 
 .fullscreen-alert__footer {
@@ -150,9 +150,9 @@ async function handleResponse(optionValue: string) {
 .fullscreen-alert__action-btn {
   padding: 1rem 2.5rem;
   border-radius: 8px;
-  border: 3px solid white;
-  background: rgba(255, 255, 255, 0.15);
-  color: white;
+  border: 3px solid rgb(255 255 255);
+  background: rgb(255 255 255 / 0.15);
+  color: rgb(255 255 255);
   font-size: 1.1rem;
   font-weight: 700;
   cursor: pointer;
@@ -164,7 +164,7 @@ async function handleResponse(optionValue: string) {
 }
 
 .fullscreen-alert__action-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgb(255 255 255 / 0.25);
   transform: scale(1.05);
 }
 

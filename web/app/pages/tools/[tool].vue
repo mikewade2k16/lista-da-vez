@@ -5,7 +5,7 @@ import { getDemoPage } from '~/utils/demo-pages'
 
 definePageMeta({
   layout: 'dashboard',
-  workspaceId: '',
+  workspaceId: 'tools',
   pageLabel: 'Tools',
 })
 

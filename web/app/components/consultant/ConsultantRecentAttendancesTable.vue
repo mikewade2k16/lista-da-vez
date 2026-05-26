@@ -159,8 +159,9 @@ function normalizeProductLabel(item: unknown) {
   if (item && typeof item === 'object') {
     const record = item as Record<string, unknown>
 
-    return String(record.name || record.label || record.title || record.sku || record.id || '')
-      .trim()
+    return String(
+      record.name || record.label || record.title || record.sku || record.id || '',
+    ).trim()
   }
 
   return ''
@@ -180,7 +181,10 @@ function formatProductList(values: unknown, fallback = '') {
 
 function buildLabelMap(options: OptionItem[] | undefined) {
   return new Map(
-    (options || []).map((item) => [String(item?.id || '').trim(), String(item?.label || '').trim()]),
+    (options || []).map((item) => [
+      String(item?.id || '').trim(),
+      String(item?.label || '').trim(),
+    ]),
   )
 }
 
@@ -299,7 +303,8 @@ const rows = computed<AttendanceRow[]>(() =>
     finishedAt: Number(entry.finishedAt || 0),
     finishedAtLabel: formatDateTime(Number(entry.finishedAt || 0)),
     outcome: String(entry.finishOutcome || 'nao-compra').trim() || 'nao-compra',
-    outcomeLabel: OUTCOME_LABELS[String(entry.finishOutcome || 'nao-compra').trim()] || 'Nao compra',
+    outcomeLabel:
+      OUTCOME_LABELS[String(entry.finishOutcome || 'nao-compra').trim()] || 'Nao compra',
     saleAmount: Number(entry.saleAmount || 0),
     saleAmountLabel: formatCurrencyBRL(Number(entry.saleAmount || 0)),
     durationLabel: formatDurationValue(Number(entry.durationMs || 0)),
@@ -312,7 +317,10 @@ const rows = computed<AttendanceRow[]>(() =>
     existingCustomerLabel: entry.isExistingCustomer ? 'Recorrente' : 'Novo cliente',
     windowServiceLabel: entry.isWindowService ? 'Sim' : 'Nao',
     giftLabel: entry.isGift ? 'Sim' : 'Nao',
-    productSeenLabel: formatProductList(entry.productsSeen, entry.productSeen || entry.productDetails || ''),
+    productSeenLabel: formatProductList(
+      entry.productsSeen,
+      entry.productSeen || entry.productDetails || '',
+    ),
     productClosedLabel: formatProductList(entry.productsClosed, entry.productClosed || ''),
     visitReasonsLabel: formatListWithDetails(
       entry.visitReasons,
@@ -440,7 +448,9 @@ const detailSubtitle = computed(() => {
     return ''
   }
 
-  return [selectedRow.value.finishedAtLabel, selectedRow.value.consultantName].filter(Boolean).join(' | ')
+  return [selectedRow.value.finishedAtLabel, selectedRow.value.consultantName]
+    .filter(Boolean)
+    .join(' | ')
 })
 
 watch([activeRange, searchTerm, outcomeFilter], () => {
@@ -465,7 +475,10 @@ function handleDetailDialogChange(isOpen: boolean) {
 </script>
 
 <template>
-  <section class="consultant-attendances insight-card insight-card--wide" data-testid="consultant-attendances-table">
+  <section
+    class="consultant-attendances insight-card insight-card--wide"
+    data-testid="consultant-attendances-table"
+  >
     <header class="consultant-attendances__header intel-card__header">
       <div>
         <h3 class="insight-card__title">Ultimos atendimentos</h3>
@@ -601,7 +614,7 @@ function handleDetailDialogChange(isOpen: boolean) {
 
 .consultant-attendances__text {
   margin: 0.28rem 0 0;
-  color: rgba(148, 163, 184, 0.92);
+  color: rgb(var(--muted) / 0.92);
   font-size: 0.8rem;
   line-height: 1.45;
 }
@@ -620,18 +633,18 @@ function handleDetailDialogChange(isOpen: boolean) {
 .consultant-attendances__range {
   padding: 0.42rem 0.72rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(203, 213, 225, 0.92);
+  border: 1px solid rgb(var(--border) / 0.82);
+  background: rgb(var(--surface-2) / 0.74);
+  color: rgb(var(--muted) / 0.96);
   font-size: 0.74rem;
   font-weight: 600;
   cursor: pointer;
 }
 
 .consultant-attendances__range--active {
-  border-color: rgba(125, 146, 255, 0.42);
-  background: rgba(79, 70, 229, 0.18);
-  color: #eef2ff;
+  border-color: rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .consultant-attendances__filters {
@@ -663,18 +676,18 @@ function handleDetailDialogChange(isOpen: boolean) {
 }
 
 .consultant-attendances__badge--compra {
-  background: rgba(34, 197, 94, 0.16);
-  color: #86efac;
+  background: rgb(var(--success) / 0.16);
+  color: rgb(var(--success));
 }
 
 .consultant-attendances__badge--reserva {
-  background: rgba(59, 130, 246, 0.16);
-  color: #93c5fd;
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
 }
 
 .consultant-attendances__badge--nao-compra {
-  background: rgba(248, 113, 113, 0.14);
-  color: #fca5a5;
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
 }
 
 .consultant-attendances__action,
@@ -684,9 +697,9 @@ function handleDetailDialogChange(isOpen: boolean) {
   justify-content: center;
   padding: 0.5rem 0.8rem;
   border-radius: 0.8rem;
-  border: 1px solid rgba(125, 146, 255, 0.22);
-  background: rgba(17, 24, 39, 0.82);
-  color: #e2e8f0;
+  border: 1px solid rgb(var(--ring) / 0.22);
+  background: rgb(var(--surface-2) / 0.82);
+  color: rgb(var(--text));
   font-size: 0.76rem;
   font-weight: 700;
   cursor: pointer;
@@ -698,9 +711,9 @@ function handleDetailDialogChange(isOpen: boolean) {
 
 .consultant-attendances__action:hover,
 .consultant-attendances__page-btn:hover:not(:disabled) {
-  border-color: rgba(125, 146, 255, 0.42);
-  background: rgba(30, 41, 59, 0.95);
-  color: #ffffff;
+  border-color: rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
 }
 
 .consultant-attendances__page-btn:disabled {
@@ -716,7 +729,7 @@ function handleDetailDialogChange(isOpen: boolean) {
 }
 
 .consultant-attendances__meta {
-  color: rgba(148, 163, 184, 0.9);
+  color: rgb(var(--muted) / 0.9);
   font-size: 0.78rem;
 }
 

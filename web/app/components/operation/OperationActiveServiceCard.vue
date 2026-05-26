@@ -326,7 +326,7 @@ function handleStartParallel() {
             <span class="material-icons-round">stop_circle</span>
           </button>
           <button
-            class="column-action column-action--secondary service-card__action service-card__action-button"
+            class="column-action column-action--primary service-card__action service-card__action-button"
             type="button"
             :data-testid="`operation-finish-${service.serviceId}`"
             @click="handleFinish(service)"

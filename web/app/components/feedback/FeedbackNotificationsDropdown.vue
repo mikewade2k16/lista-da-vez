@@ -313,17 +313,18 @@ onBeforeUnmount(() => {
   width: 3rem;
   height: 3rem;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgb(var(--border) / 0.9);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #f8fafc;
+  background: rgb(var(--surface) / 0.86);
+  color: rgb(var(--text));
   cursor: pointer;
 }
 
 .feedback-notifications__trigger:hover,
 .feedback-notifications__trigger[aria-expanded='true'] {
-  border-color: rgba(118, 138, 255, 0.42);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgb(var(--primary) / 0.42);
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
 }
 
 .feedback-notifications__badge {
@@ -337,8 +338,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: #ef4444;
-  color: #ffffff;
+  background: rgb(var(--danger));
+  color: rgb(var(--surface));
   font-size: 0.62rem;
   font-weight: 800;
 }
@@ -352,10 +353,10 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.65rem;
   padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgb(var(--border) / 0.9);
   border-radius: 1rem;
-  background: rgba(8, 13, 24, 0.98);
-  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.32);
+  background: rgb(var(--surface) / 0.98);
+  box-shadow: var(--shadow-md);
   backdrop-filter: blur(18px);
 }
 
@@ -365,11 +366,11 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.1rem 0.2rem 0.35rem;
-  color: #f8fafc;
+  color: rgb(var(--text));
 }
 
 .feedback-notifications__header a {
-  color: #93c5fd;
+  color: rgb(var(--primary));
   font-size: 0.75rem;
   font-weight: 800;
   text-decoration: none;
@@ -394,16 +395,16 @@ onBeforeUnmount(() => {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.65rem;
   padding: 0.72rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgb(var(--border) / 0.78);
   border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.04);
-  color: #f8fafc;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--text));
   text-decoration: none;
 }
 
 .feedback-notifications__item-link:hover {
-  border-color: rgba(118, 138, 255, 0.28);
-  background: rgba(118, 138, 255, 0.1);
+  border-color: rgb(var(--primary) / 0.28);
+  background: rgb(var(--primary) / 0.1);
 }
 
 .feedback-notifications__dismiss {
@@ -413,17 +414,17 @@ onBeforeUnmount(() => {
   width: 2rem;
   height: 2rem;
   margin-top: 0.2rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgb(var(--border) / 0.78);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(226, 232, 240, 0.7);
+  background: rgb(var(--surface-2));
+  color: rgb(var(--muted));
   cursor: pointer;
 }
 
 .feedback-notifications__dismiss:hover {
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.12);
-  color: #fecaca;
+  border-color: rgb(var(--danger) / 0.35);
+  background: rgb(var(--danger) / 0.12);
+  color: rgb(var(--danger));
 }
 
 .feedback-notifications__icon {
@@ -432,8 +433,8 @@ onBeforeUnmount(() => {
   width: 2rem;
   height: 2rem;
   border-radius: 999px;
-  background: rgba(59, 130, 246, 0.18);
-  color: #bfdbfe;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
 }
 
 .feedback-notifications__copy {
@@ -460,12 +461,12 @@ onBeforeUnmount(() => {
 }
 
 .feedback-notifications__copy span {
-  color: rgba(226, 232, 240, 0.72);
+  color: rgb(var(--muted));
   font-size: 0.76rem;
 }
 
 .feedback-notifications__copy small {
-  color: rgba(147, 197, 253, 0.86);
+  color: rgb(var(--primary));
   font-size: 0.68rem;
 }
 
@@ -474,13 +475,14 @@ onBeforeUnmount(() => {
   gap: 0.25rem;
   padding: 1rem;
   border-radius: 0.85rem;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(226, 232, 240, 0.7);
+  border: 1px solid rgb(var(--border) / 0.72);
+  background: rgb(var(--surface-2));
+  color: rgb(var(--muted));
   font-size: 0.78rem;
 }
 
 .feedback-notifications__empty strong {
-  color: #f8fafc;
+  color: rgb(var(--text));
 }
 
 .feedback-notifications__empty-link {
@@ -488,8 +490,8 @@ onBeforeUnmount(() => {
 }
 
 .feedback-notifications__empty-link:hover {
-  border-color: rgba(118, 138, 255, 0.28);
-  background: rgba(118, 138, 255, 0.1);
+  border-color: rgb(var(--primary) / 0.28);
+  background: rgb(var(--primary) / 0.1);
 }
 
 .feedback-notifications-menu-enter-active,

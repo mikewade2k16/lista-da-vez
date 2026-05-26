@@ -130,12 +130,12 @@ function renderIcon(type) {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.96);
+  background: rgb(var(--surface) / 0.96);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(226, 232, 240, 0.1);
+  border: 1px solid rgb(var(--border) / 0.74);
   box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.3),
-    0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    0 20px 25px -5px rgb(15 23 42 / 0.18),
+    0 10px 10px -5px rgb(15 23 42 / 0.12);
   min-width: 280px;
   max-width: 360px;
   position: relative;
@@ -152,51 +152,51 @@ function renderIcon(type) {
 }
 
 .app-toast--success {
-  border-color: rgba(34, 197, 94, 0.2);
+  border-color: rgb(var(--success) / 0.24);
 }
 
 .app-toast--success .app-toast__indicator {
-  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  background: linear-gradient(180deg, rgb(var(--success)) 0%, rgb(var(--success) / 0.72) 100%);
 }
 
 .app-toast--success .app-toast__icon {
-  color: #22c55e;
+  color: rgb(var(--success));
 }
 
 .app-toast--success .app-toast__progress {
-  background: linear-gradient(90deg, #22c55e 0%, #16a34a 100%);
+  background: linear-gradient(90deg, rgb(var(--success)) 0%, rgb(var(--success) / 0.72) 100%);
 }
 
 .app-toast--error {
-  border-color: rgba(239, 68, 68, 0.2);
+  border-color: rgb(var(--danger) / 0.24);
 }
 
 .app-toast--error .app-toast__indicator {
-  background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  background: linear-gradient(180deg, rgb(var(--danger)) 0%, rgb(var(--danger) / 0.72) 100%);
 }
 
 .app-toast--error .app-toast__icon {
-  color: #ef4444;
+  color: rgb(var(--danger));
 }
 
 .app-toast--error .app-toast__progress {
-  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  background: linear-gradient(90deg, rgb(var(--danger)) 0%, rgb(var(--danger) / 0.72) 100%);
 }
 
 .app-toast--info {
-  border-color: rgba(129, 140, 248, 0.2);
+  border-color: rgb(var(--primary) / 0.24);
 }
 
 .app-toast--info .app-toast__indicator {
-  background: linear-gradient(180deg, #8194f8 0%, #6366f1 100%);
+  background: linear-gradient(180deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
 }
 
 .app-toast--info .app-toast__icon {
-  color: #8194f8;
+  color: rgb(var(--primary));
 }
 
 .app-toast--info .app-toast__progress {
-  background: linear-gradient(90deg, #8194f8 0%, #6366f1 100%);
+  background: linear-gradient(90deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
 }
 
 .app-toast__icon {
@@ -257,7 +257,7 @@ function renderIcon(type) {
   margin: 0;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #e2e8f0;
+  color: rgb(var(--text));
   word-break: break-word;
 }
 
@@ -265,7 +265,7 @@ function renderIcon(type) {
   display: block;
   margin: 0;
   font-size: 0.75rem;
-  color: #cbd5e1;
+  color: rgb(var(--muted));
   line-height: 1.3;
   word-break: break-word;
   overflow-wrap: break-word;
@@ -280,7 +280,7 @@ function renderIcon(type) {
   padding: 0;
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: rgb(var(--muted));
   cursor: pointer;
   border-radius: 4px;
   transition: all 0.2s ease;
@@ -288,8 +288,8 @@ function renderIcon(type) {
 }
 
 .app-toast__close:hover {
-  background: rgba(226, 232, 240, 0.1);
-  color: #e2e8f0;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--text));
 }
 
 .app-toast__close:active {

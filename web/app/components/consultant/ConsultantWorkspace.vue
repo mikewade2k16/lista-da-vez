@@ -166,8 +166,9 @@ function updateSimulation(amount) {
 .consultant-workspace__insight-panel {
   padding: 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(125, 146, 255, 0.16);
-  background: rgba(13, 19, 36, 0.55);
+  border: 1px solid rgb(var(--primary) / 0.16);
+  background: rgb(var(--surface) / 0.78);
+  box-shadow: var(--shadow-xs);
 }
 
 @media (max-width: 1100px) {
@@ -176,4 +177,3 @@ function updateSimulation(amount) {
   }
 }
 </style>
-

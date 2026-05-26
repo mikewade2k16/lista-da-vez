@@ -66,6 +66,9 @@ export function useUserAccessDrafts(options: UserAccessDraftOptions) {
       email: normalizeText(user.email),
       employeeCode: normalizeText(user.employeeCode),
       role: normalizeText(user.role),
+      tenantId: normalizeText(
+        user.tenantId || options.auth.activeTenantId || options.auth.tenantContext?.[0]?.id,
+      ),
       storeId: isStoreScopedRole(user.role) ? normalizeText(firstStoreId(user)) : ALL_STORES_VALUE,
     }
   }

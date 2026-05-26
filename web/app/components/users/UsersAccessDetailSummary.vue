@@ -37,7 +37,7 @@ const ctx = useUsersAccessContext()
         </strong>
       </article>
 
-      <article class="users-access-manager__detail-summary-item">
+      <article v-if="ctx.showTenantControls" class="users-access-manager__detail-summary-item">
         <span>Cliente</span>
         <strong>
           {{
@@ -46,6 +46,11 @@ const ctx = useUsersAccessContext()
             'Plataforma'
           }}
         </strong>
+      </article>
+
+      <article v-else class="users-access-manager__detail-summary-item">
+        <span>Modulos</span>
+        <strong>{{ ctx.getUserWorkspaceSummaryText(ctx.selectedDetailUser) }}</strong>
       </article>
 
       <article class="users-access-manager__detail-summary-item">

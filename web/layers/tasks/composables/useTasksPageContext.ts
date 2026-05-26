@@ -160,6 +160,9 @@ export function useTasksPageContext() {
   const columnSettingsOpen = ref(false)
   const taskEditorOpen = ref(false)
   const taskEditorMode = ref<'side' | 'center' | 'fullscreen'>('side')
+  // Memoriza o ultimo modo nao-fullscreen para o botao expand restaurar
+  // ao estado anterior quando clicado em fullscreen.
+  const previousTaskEditorMode = ref<'side' | 'center'>('side')
   const taskEditorWidth = ref(720)
   const taskEditorResizing = ref(false)
   const settingsSaving = ref(false)
@@ -227,6 +230,8 @@ export function useTasksPageContext() {
     archived: false,
     createdBy: '',
     createdAt: '',
+    roadmapModuleId: '' as string,
+    pinnedToRoadmap: false,
   })
   type TaskVideoDraft = TaskVideoItem & {
     sizeLabel: string
@@ -625,10 +630,8 @@ export function useTasksPageContext() {
     })),
   )
   const directoryUserLabels = computed(() => {
-    const users = Array.isArray(usersStore.users) ? usersStore.users : []
-    return users
-      .map((user: Record<string, unknown>) => compactUserLabel(user, 120))
-      .filter(Boolean)
+    const users = usersStore.listUsersForWorkspace('tasks')
+    return users.map((user: Record<string, unknown>) => compactUserLabel(user, 120)).filter(Boolean)
   })
   const responsibleOptions = computed<OmniSelectOption[]>(() => {
     const project = activeProject.value
@@ -1117,7 +1120,9 @@ export function useTasksPageContext() {
         nextVideos = [...nextVideos.filter((item) => item.id !== uploadedVideo.id), uploadedVideo]
       }
       const updatedTask = await persistTaskVideos(nextVideos)
-      syncTaskVideoDrafts((updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextVideos)
+      syncTaskVideoDrafts(
+        (updatedTask as (TaskItem & { videos?: TaskVideoItem[] }) | null)?.videos || nextVideos,
+      )
     } catch (error) {
       taskVideoError.value = getApiErrorMessage(error, 'Nao foi possivel enviar o video.')
     } finally {
@@ -1161,6 +1166,7 @@ export function useTasksPageContext() {
   function taskSignatureFromTask(task: TaskItem | null | undefined) {
     if (!task) return ''
     const prioritySet = Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
+    const roadmapModuleId = normalizeText(task.roadmapModuleId, 80)
     return JSON.stringify({
       id: normalizeText(task.id, 80),
       title: normalizeText(task.title, 220),
@@ -1179,6 +1185,8 @@ export function useTasksPageContext() {
       dueDate: normalizeText(task.dueDate, 30),
       dueEndDate: normalizeText(task.dueEndDate, 30),
       archived: Boolean(task.archived),
+      roadmapModuleId,
+      pinnedToRoadmap: Boolean(roadmapModuleId),
       createdBy: normalizeText(task.createdBy, 120),
     })
   }
@@ -1201,6 +1209,8 @@ export function useTasksPageContext() {
       dueDate: taskDraft.dueDate,
       dueEndDate: taskDraft.dueEndDate,
       archived: taskDraft.archived,
+      roadmapModuleId: taskDraft.roadmapModuleId || null,
+      pinnedToRoadmap: taskDraft.pinnedToRoadmap,
       order: 0,
       createdBy: taskDraft.createdBy,
       createdAt: taskDraft.createdAt,
@@ -1226,6 +1236,8 @@ export function useTasksPageContext() {
     taskDraft.priority = (task as TaskItem & { prioritySet?: boolean }).prioritySet
       ? task.priority
       : ('' as TaskPriority)
+    taskDraft.roadmapModuleId = task.roadmapModuleId || ''
+    taskDraft.pinnedToRoadmap = Boolean(task.roadmapModuleId)
     taskDraft.dueDate = task.dueDate
     taskDraft.dueEndDate = task.dueEndDate
     taskDraft.archived = task.archived
@@ -1263,6 +1275,8 @@ export function useTasksPageContext() {
     taskDraft.clientName = clientLabel(taskDraft.clientId)
     taskDraft.type = ''
     taskDraft.priority = '' as TaskPriority
+    taskDraft.roadmapModuleId = ''
+    taskDraft.pinnedToRoadmap = false
     taskDraft.dueDate = ''
     taskDraft.dueEndDate = ''
     taskDraft.archived = false
@@ -1284,6 +1298,47 @@ export function useTasksPageContext() {
     }
     syncTaskDraftFromTask(task, { clearVideos: true })
     taskEditorOpen.value = true
+  }
+
+  async function ensureTasksWorkspaceReady() {
+    if (tasksWorkspace.initialized.value) return true
+    if (!tasksWorkspace.initializing.value) {
+      await tasksWorkspace.initialize()
+      return tasksWorkspace.initialized.value
+    }
+    for (let attempt = 0; attempt < 60 && tasksWorkspace.initializing.value; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    return tasksWorkspace.initialized.value
+  }
+
+  async function openTaskEditorById(taskId: string) {
+    const id = normalizeText(taskId, 80)
+    if (!id) return false
+    await ensureTasksWorkspaceReady()
+    let task = tasksWorkspace.tasks.value.find((item) => item.id === id)
+    if (!task) {
+      await tasksWorkspace.refresh().catch(() => undefined)
+      task = tasksWorkspace.tasks.value.find((item) => item.id === id)
+    }
+    if (!task) return false
+    if (task.projectId && tasksWorkspace.activeProjectId.value !== task.projectId) {
+      tasksWorkspace.setActiveProject(task.projectId)
+      hydrateProjectDraft(activeProject.value)
+    }
+    openTaskEditor(task)
+    return true
+  }
+
+  function openTaskEditorForRoadmapModule(moduleId: string, title = '') {
+    const normalizedModuleId = normalizeText(moduleId, 80)
+    resetTaskDraft()
+    taskDraft.roadmapModuleId = normalizedModuleId
+    taskDraft.pinnedToRoadmap = Boolean(normalizedModuleId)
+    const seedTitle = clampText(title, 220)
+    if (seedTitle) taskDraft.title = seedTitle
+    taskEditorOpen.value = true
+    if (seedTitle) scheduleTaskDraftAutosave()
   }
 
   function clearTaskDraftAutosaveTimer() {
@@ -1347,6 +1402,7 @@ export function useTasksPageContext() {
   function buildTaskDraftPayload(project: TaskProjectItem) {
     const title = normalizeText(taskDraft.title, 220)
     if (!title) return null
+    const roadmapModuleId = normalizeText(taskDraft.roadmapModuleId, 80) || null
     const clientId =
       viewerUserType.value === 'client'
         ? sessionSimulation.clientId
@@ -1366,6 +1422,8 @@ export function useTasksPageContext() {
       dueEndDate: normalizeText(taskDraft.dueEndDate, 30),
       archived: Boolean(taskDraft.archived),
       createdBy: normalizeText(taskDraft.createdBy, 120) || currentUserName.value,
+      roadmapModuleId,
+      pinnedToRoadmap: Boolean(roadmapModuleId),
     }
   }
 
@@ -1392,6 +1450,8 @@ export function useTasksPageContext() {
     task.dueDate = normalizeText(taskDraft.dueDate, 30)
     task.dueEndDate = normalizeText(taskDraft.dueEndDate, 30)
     task.archived = Boolean(taskDraft.archived)
+    task.roadmapModuleId = normalizeText(taskDraft.roadmapModuleId, 80) || null
+    task.pinnedToRoadmap = Boolean(task.roadmapModuleId)
     task.createdBy = normalizeText(taskDraft.createdBy, 120) || task.createdBy
     task.updatedAt = new Date().toISOString()
   }
@@ -1524,7 +1584,7 @@ export function useTasksPageContext() {
         ],
       },
     ]
-        lastSavedTaskVideoSignature.value = taskVideoSignature(taskVideoDrafts.value)
+    lastSavedTaskVideoSignature.value = taskVideoSignature(taskVideoDrafts.value)
     try {
       const updated = await tasksWorkspace.saveProjectSettings(project.id, {
         name: normalizeText(projectSettingsDraft.name, 140) || project.name,
@@ -2224,7 +2284,21 @@ export function useTasksPageContext() {
   }
 
   function setTaskEditorMode(mode: 'side' | 'center' | 'fullscreen') {
+    if (mode !== 'fullscreen' && taskEditorMode.value !== 'fullscreen') {
+      previousTaskEditorMode.value = mode
+    }
     taskEditorMode.value = mode
+  }
+
+  function toggleTaskEditorFullscreen() {
+    if (taskEditorMode.value === 'fullscreen') {
+      taskEditorMode.value = previousTaskEditorMode.value
+      return
+    }
+    if (taskEditorMode.value === 'side' || taskEditorMode.value === 'center') {
+      previousTaskEditorMode.value = taskEditorMode.value
+    }
+    taskEditorMode.value = 'fullscreen'
   }
 
   function startTaskEditorResize(event: MouseEvent) {
@@ -2470,7 +2544,10 @@ export function useTasksPageContext() {
     if (key === 'involved') {
       const decoded = decodeStructuredPresenceDraft<unknown[]>(value)
       if (Array.isArray(decoded)) {
-        return sanitizeInvolved(decoded.map((item) => normalizeText(item, 120)).filter(Boolean), taskDraftResponsibleValue())
+        return sanitizeInvolved(
+          decoded.map((item) => normalizeText(item, 120)).filter(Boolean),
+          taskDraftResponsibleValue(),
+        )
       }
       if (typeof value === 'string' && value.trim()) {
         return sanitizeInvolved(
@@ -2488,7 +2565,9 @@ export function useTasksPageContext() {
       return Math.max(0, toNumberId(decoded ?? value))
     }
     if (key === 'dueDate') {
-      const decoded = decodeStructuredPresenceDraft<{ dueDate?: unknown; dueEndDate?: unknown }>(value)
+      const decoded = decodeStructuredPresenceDraft<{ dueDate?: unknown; dueEndDate?: unknown }>(
+        value,
+      )
       if (decoded && typeof decoded === 'object') {
         return {
           dueDate: normalizeText(decoded.dueDate, 30),
@@ -2534,9 +2613,12 @@ export function useTasksPageContext() {
 
   function presenceDraftValue(fieldKey: string) {
     const taskDraftValue = taskPresence.draftValueForField(fieldKey)
-    if (taskDraftValue != null || !taskDraft.id) return parsePresenceDraftValue(fieldKey, taskDraftValue)
+    if (taskDraftValue != null || !taskDraft.id)
+      return parsePresenceDraftValue(fieldKey, taskDraftValue)
     const boardKey = boardPresenceKey(taskDraft.id, fieldKey)
-    return boardKey ? parsePresenceDraftValue(fieldKey, boardPresence.draftValueForField(boardKey)) : null
+    return boardKey
+      ? parsePresenceDraftValue(fieldKey, boardPresence.draftValueForField(boardKey))
+      : null
   }
 
   function boardPresenceDraftValue(taskId: string, fieldKey: string) {
@@ -2668,6 +2750,29 @@ export function useTasksPageContext() {
     const nextPriority = normalizeText(value, 30) as TaskPriority | ''
     taskDraft.priority = nextPriority as TaskPriority
     schedulePresenceDraft('priority', nextPriority)
+  }
+
+  function taskDraftRoadmapModuleIdValue() {
+    return taskDraft.roadmapModuleId || ''
+  }
+
+  function updateTaskDraftRoadmapModuleId(value: unknown) {
+    taskDraft.roadmapModuleId = normalizeText(value, 80)
+    if (!taskDraft.roadmapModuleId) {
+      taskDraft.pinnedToRoadmap = false
+    } else {
+      taskDraft.pinnedToRoadmap = true
+    }
+    scheduleTaskDraftAutosave()
+  }
+
+  function taskDraftPinnedToRoadmapValue() {
+    return Boolean(taskDraft.roadmapModuleId)
+  }
+
+  function updateTaskDraftPinnedToRoadmap(value: unknown) {
+    taskDraft.pinnedToRoadmap = Boolean(taskDraft.roadmapModuleId && value)
+    scheduleTaskDraftAutosave()
   }
 
   function taskDraftTypeValue() {
@@ -2956,6 +3061,9 @@ export function useTasksPageContext() {
     hydrateProjectDraft,
     resetTaskDraft,
     openTaskEditor,
+    ensureTasksWorkspaceReady,
+    openTaskEditorById,
+    openTaskEditorForRoadmapModule,
     closeTaskEditor,
     taskDraftTitleValue,
     updateTaskDraftTitle,
@@ -2975,6 +3083,10 @@ export function useTasksPageContext() {
     updateTaskDraftDueEndDate,
     taskDraftPriorityValue,
     updateTaskDraftPriority,
+    taskDraftRoadmapModuleIdValue,
+    updateTaskDraftRoadmapModuleId,
+    taskDraftPinnedToRoadmapValue,
+    updateTaskDraftPinnedToRoadmap,
     taskDraftTypeValue,
     updateTaskDraftType,
     saveTask,
@@ -3029,6 +3141,7 @@ export function useTasksPageContext() {
     onTableCellUpdate,
     onTableRowAction,
     setTaskEditorMode,
+    toggleTaskEditorFullscreen,
     startTaskEditorResize,
     syncClientFilter,
     groupOptionsFor,

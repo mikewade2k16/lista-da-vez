@@ -124,7 +124,7 @@ async function handleDismiss() {
 .center-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgb(3 6 12 / 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -133,12 +133,14 @@ async function handleDismiss() {
 }
 
 .center-modal {
-  background: white;
+  background: rgb(var(--surface));
+  color: rgb(var(--text));
+  border: 1px solid rgb(var(--border) / 0.82);
   border-radius: 12px;
   width: 100%;
   max-width: 480px;
   padding: 2rem;
-  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-dropdown, 0 20px 25px rgb(15 23 42 / 0.18));
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -167,13 +169,13 @@ async function handleDismiss() {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1f2937;
+  color: rgb(var(--text));
 }
 
 .center-modal__close {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: rgb(var(--muted));
   cursor: pointer;
   font-size: 1.5rem;
   padding: 0;
@@ -181,13 +183,13 @@ async function handleDismiss() {
 }
 
 .center-modal__close:hover {
-  color: #6b7280;
+  color: rgb(var(--text));
 }
 
 .center-modal__body {
   margin: 0;
   font-size: 1rem;
-  color: #6b7280;
+  color: rgb(var(--muted));
   line-height: 1.6;
 }
 
@@ -202,8 +204,8 @@ async function handleDismiss() {
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
   border: none;
-  background: #e5e7eb;
-  color: #374151;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--text));
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
@@ -211,7 +213,7 @@ async function handleDismiss() {
 }
 
 .center-modal__action-btn:hover:not(:disabled) {
-  background: #d1d5db;
+  background: rgb(var(--primary) / 0.12);
 }
 
 .center-modal__action-btn:disabled {
@@ -221,7 +223,7 @@ async function handleDismiss() {
 
 .center-modal__action-btn--primary {
   background: var(--gradient);
-  color: white;
+  color: rgb(255 255 255);
 }
 
 .center-modal__action-btn--primary:hover:not(:disabled) {

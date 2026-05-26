@@ -10,6 +10,7 @@ export class MockWebSocket {
 
   readonly url: string
   readyState = MockWebSocket.CONNECTING
+  sent: string[] = []
 
   private readonly listeners = new Map<string, Set<Listener>>()
 
@@ -37,6 +38,10 @@ export class MockWebSocket {
   close() {
     this.readyState = MockWebSocket.CLOSED
     this.emit('close', { code: 1000, reason: '', wasClean: true })
+  }
+
+  send(payload: string) {
+    this.sent.push(String(payload))
   }
 
   open() {

@@ -9,7 +9,14 @@ import {
   useUsersAccessManager,
 } from '~/composables/useUsersAccessManager'
 
-const ctx = await useUsersAccessManager()
+const props = defineProps({
+  mode: {
+    type: String,
+    default: 'admin',
+  },
+})
+
+const ctx = await useUsersAccessManager({ mode: props.mode })
 provideUsersAccessContext(ctx)
 </script>
 

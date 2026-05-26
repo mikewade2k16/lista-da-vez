@@ -156,7 +156,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border: none;
-  background: rgba(3, 6, 12, 0.76);
+  background: rgb(3 6 12 / 0.76);
   backdrop-filter: blur(4px);
 }
 
@@ -168,8 +168,8 @@ onBeforeUnmount(() => {
   overscroll-behavior: contain;
   border-radius: 1.2rem;
   border: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(13, 18, 29, 0.98), rgba(8, 12, 19, 0.98));
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+  background: linear-gradient(180deg, rgb(var(--surface) / 0.98), rgb(var(--surface-2) / 0.98));
+  box-shadow: var(--shadow-dropdown, 0 30px 80px rgb(15 23 42 / 0.22));
 }
 
 .app-detail-dialog__header {
@@ -178,7 +178,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.2rem 0.9rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgb(var(--border) / 0.68);
 }
 
 .app-detail-dialog__copy {
@@ -191,12 +191,12 @@ onBeforeUnmount(() => {
   font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
+  color: rgb(var(--muted) / 0.82);
 }
 
 .app-detail-dialog__title {
   margin: 0;
-  color: #ffffff;
+  color: rgb(var(--text));
   font-size: 1.15rem;
 }
 
@@ -213,8 +213,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgb(var(--border) / 0.78);
+  background: rgb(var(--surface-2) / 0.68);
   color: var(--text-main);
   cursor: pointer;
 }
@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
 .app-detail-dialog__section-header h4 {
   margin: 0;
   font-size: 0.85rem;
-  color: #ffffff;
+  color: rgb(var(--text));
 }
 
 .app-detail-dialog__section-header p {
@@ -258,15 +258,15 @@ onBeforeUnmount(() => {
   gap: 0.28rem;
   padding: 0.85rem 0.9rem;
   border-radius: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(18, 25, 38, 0.8);
+  border: 1px solid rgb(var(--border) / 0.68);
+  background: rgb(var(--surface-2) / 0.8);
 }
 
 .app-detail-dialog__field-label {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
+  color: rgb(var(--muted) / 0.82);
 }
 
 .app-detail-dialog__field-value {

@@ -127,6 +127,11 @@ async function resetMonth() {
   crmStore.resetCurrentMonth()
   await crmStore.applyFilters()
 }
+
+function clearLocalFilters() {
+  selectedStore.value = ''
+  consultantSearch.value = ''
+}
 </script>
 
 <template>
@@ -191,10 +196,7 @@ async function resetMonth() {
         v-if="selectedStore || consultantSearch"
         class="crm-btn crm-btn--ghost crm-btn--sm"
         type="button"
-        @click="
-          selectedStore = ''
-          consultantSearch = ''
-        "
+        @click="clearLocalFilters"
       >
         Limpar filtros
       </button>

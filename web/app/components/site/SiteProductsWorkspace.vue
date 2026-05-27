@@ -2,7 +2,6 @@
 import { computed, reactive, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import AdminPageHeader from '~/layers/core/components/admin/AdminPageHeader.vue'
 import AppDetailDialog from '~/components/ui/AppDetailDialog.vue'
 import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'

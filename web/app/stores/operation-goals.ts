@@ -40,6 +40,11 @@ export type OperationGoalConsultant = {
   role: string
 }
 
+type UpdateGoalOptions = {
+  reload?: boolean
+  skipLoadingIndicator?: boolean
+}
+
 function normalizeText(value: unknown) {
   return String(value || '').trim()
 }
@@ -104,6 +109,36 @@ function emptySummary(month = currentMonth()): OperationGoalSummary {
     consultantsCovered: 0,
     totalMonthlyGoal: 0,
   }
+}
+
+function buildSummaryFromGoals(
+  rows: OperationGoalTarget[] = [],
+  month = currentMonth(),
+): OperationGoalSummary {
+  const storesCovered = new Set<string>()
+  const consultantsCovered = new Set<string>()
+  const summary = emptySummary(month)
+
+  for (const row of rows) {
+    summary.totalRows += 1
+    summary.totalMonthlyGoal += normalizeNumber(row.monthlyGoal)
+    if (row.storeId) {
+      storesCovered.add(row.storeId)
+    }
+
+    if (row.scope === 'consultant') {
+      summary.consultantRows += 1
+      if (row.consultantId) {
+        consultantsCovered.add(row.consultantId)
+      }
+    } else {
+      summary.storeRows += 1
+    }
+  }
+
+  summary.storesCovered = storesCovered.size
+  summary.consultantsCovered = consultantsCovered.size
+  return summary
 }
 
 function normalizeGoal(goal: LooseRecord = {}): OperationGoalTarget {
@@ -185,6 +220,77 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
     storeId: '',
     month: currentMonth(),
   })
+  const recentLocalMutations = ref<Record<string, number>>({})
+
+  function mutationKey(action: string, resourceId: string) {
+    const normalizedId = normalizeText(resourceId)
+    if (!normalizedId) {
+      return ''
+    }
+    return `${normalizeText(action) || 'updated'}:${normalizedId}`
+  }
+
+  function pruneRecentLocalMutations(now = Date.now()) {
+    const next: Record<string, number> = {}
+    for (const [key, timestamp] of Object.entries(recentLocalMutations.value)) {
+      if (now - timestamp <= 5000) {
+        next[key] = timestamp
+      }
+    }
+    recentLocalMutations.value = next
+  }
+
+  function markRecentLocalMutation(action: string, resourceId: string) {
+    const key = mutationKey(action, resourceId)
+    if (!key) {
+      return
+    }
+
+    pruneRecentLocalMutations()
+    recentLocalMutations.value = {
+      ...recentLocalMutations.value,
+      [key]: Date.now(),
+    }
+  }
+
+  function shouldSkipRealtimeUpdate(action: string, resourceId: string) {
+    const now = Date.now()
+    pruneRecentLocalMutations(now)
+
+    const key = mutationKey(action, resourceId)
+    if (!key) {
+      return false
+    }
+
+    return Boolean(recentLocalMutations.value[key] && now - recentLocalMutations.value[key] <= 5000)
+  }
+
+  function goalMatchesLastFilters(goal: OperationGoalTarget) {
+    const filters = lastFilters.value
+    if (filters.tenantId && normalizeText(goal.tenantId) !== normalizeText(filters.tenantId)) {
+      return false
+    }
+    if (filters.storeId && normalizeText(goal.storeId) !== normalizeText(filters.storeId)) {
+      return false
+    }
+    return normalizeMonth(goal.month) === normalizeMonth(filters.month)
+  }
+
+  function replaceGoalLocally(goal: OperationGoalTarget) {
+    if (!goal.id || !goalMatchesLastFilters(goal)) {
+      return
+    }
+
+    const index = goals.value.findIndex((item) => item.id === goal.id)
+    if (index === -1) {
+      goals.value = [...goals.value, goal]
+    } else {
+      goals.value = goals.value.map((item) => (item.id === goal.id ? goal : item))
+    }
+
+    summary.value = buildSummaryFromGoals(goals.value, lastFilters.value.month)
+    ready.value = true
+  }
 
   function clearConsultantsCache(storeId = '') {
     const normalizedStoreId = normalizeText(storeId)
@@ -296,22 +402,40 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
     }
   }
 
-  async function updateGoal(goalId: string, payload: LooseRecord = {}) {
+  async function updateGoal(
+    goalId: string,
+    payload: LooseRecord = {},
+    options: UpdateGoalOptions = {},
+  ) {
     if (!auth.isAuthenticated) {
       return { ok: false, message: 'Sessao indisponivel.' }
     }
 
+    const normalizedGoalId = normalizeText(goalId)
+    markRecentLocalMutation('updated', normalizedGoalId)
+
     saving.value = true
     try {
-      const response = await apiRequest(`/v1/operations/goals/${encodeURIComponent(goalId)}`, {
-        method: 'PATCH',
-        body: buildUpdatePayload(payload),
-      })
+      const response = await apiRequest(
+        `/v1/operations/goals/${encodeURIComponent(normalizedGoalId)}`,
+        {
+          method: 'PATCH',
+          body: buildUpdatePayload(payload),
+          skipLoadingIndicator: options.skipLoadingIndicator ?? options.reload === false,
+        },
+      )
 
-      await loadGoals(lastFilters.value)
+      const goal = normalizeGoal(response?.goal)
+
+      if (options.reload === false) {
+        replaceGoalLocally(goal)
+      } else {
+        await loadGoals(lastFilters.value)
+      }
+
       return {
         ok: true,
-        goal: normalizeGoal(response?.goal),
+        goal,
       }
     } catch (error) {
       return {
@@ -328,9 +452,12 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
       return { ok: false, message: 'Sessao indisponivel.' }
     }
 
+    const normalizedGoalId = normalizeText(goalId)
+    markRecentLocalMutation('deleted', normalizedGoalId)
+
     saving.value = true
     try {
-      await apiRequest(`/v1/operations/goals/${encodeURIComponent(goalId)}`, {
+      await apiRequest(`/v1/operations/goals/${encodeURIComponent(normalizedGoalId)}`, {
         method: 'DELETE',
       })
 
@@ -359,6 +486,7 @@ export const useOperationGoalsStore = defineStore('operation-goals', () => {
     loadGoals,
     loadConsultants,
     clearConsultantsCache,
+    shouldSkipRealtimeUpdate,
     createGoal,
     updateGoal,
     deleteGoal,

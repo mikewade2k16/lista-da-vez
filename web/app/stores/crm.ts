@@ -268,6 +268,10 @@ export const useCrmStore = defineStore('crm', () => {
     dateTo.value = nextRange.dateTo
   }
 
+  function invalidateOverview() {
+    lastLoadedKey.value = ''
+  }
+
   async function loadOperationGoalsForMonth(monthKey: string): Promise<Array<Record<string, any>>> {
     if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return []
     try {
@@ -363,6 +367,7 @@ export const useCrmStore = defineStore('crm', () => {
     dateTo,
     ensureLoaded,
     refreshOverview,
+    invalidateOverview,
     applyFilters,
     resetCurrentMonth,
     clearState,

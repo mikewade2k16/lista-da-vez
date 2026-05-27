@@ -251,12 +251,22 @@ export function useContextRealtime() {
           // Meta criada/editada/excluida em qualquer sessao do tenant.
           // Recarrega lista de metas e overview do CRM (que cruza com operation_goal_targets).
           // Nao depende de `ready`: se a store ja tem overview carregado, refresca.
+          const action = String(payload?.action || '').trim()
+          const resourceId = String(payload?.resourceId || '').trim()
+          const shouldSkipGoalsRefresh = operationGoalsStore.shouldSkipRealtimeUpdate(
+            action,
+            resourceId,
+          )
           const followUps = []
-          if (operationGoalsStore.ready || operationGoalsStore.goals?.length) {
+          if (
+            !shouldSkipGoalsRefresh &&
+            (operationGoalsStore.ready || operationGoalsStore.goals?.length)
+          ) {
             followUps.push(
               operationGoalsStore.loadGoals(operationGoalsStore.lastFilters).catch(() => null),
             )
           }
+          crmStore.invalidateOverview()
           if (crmStore.overview) {
             followUps.push(crmStore.refreshOverview().catch(() => null))
           }

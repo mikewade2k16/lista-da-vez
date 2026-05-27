@@ -30,4 +30,7 @@ export default {
 
   // Back — gofmt file-level (seguro) + golangci-lint em escopo de pacote (via wrapper)
   'back/**/*.go': ['gofmt -w', 'scripts/dev/lint-go-staged.sh'],
+
+  // Migrations — DDL deve usar schema qualificado (ex: queue.consultants, não consultants)
+  'back/internal/platform/database/migrations/*.sql': ['scripts/dev/lint-migrations-staged.sh'],
 }

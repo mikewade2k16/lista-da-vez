@@ -61,6 +61,11 @@ async function refresh() {
     const response = await apiRequest(`/v1/consultants/orphans?${params.toString()}`)
     orphans.value = Array.isArray(response?.consultants) ? response.consultants : []
   } catch (error) {
+    if (isOptionalOrphansEndpointUnavailable(error)) {
+      orphans.value = []
+      return
+    }
+
     ui.error(getApiErrorMessage(error, 'Nao foi possivel carregar consultores sem loja.'))
     orphans.value = []
   } finally {
@@ -140,13 +145,35 @@ async function reassign(consultant) {
 
     const target = (props.managedStores || []).find((s) => s.id === targetStoreId)
     ui.success(`${consultant.name} realocado para ${target?.name || 'loja selecionada'}.`)
-    delete targetStoreByConsultant[consultant.id]
+    targetStoreByConsultant[consultant.id] = ''
     await refresh()
   } catch (error) {
     ui.error(getApiErrorMessage(error, 'Nao foi possivel realocar o consultor.'))
   } finally {
     busyByConsultant[consultant.id] = false
   }
+}
+
+function getErrorStatus(error) {
+  const candidates = [
+    error?.statusCode,
+    error?.status,
+    error?.response?.status,
+    error?.data?.statusCode,
+  ]
+
+  for (const candidate of candidates) {
+    const status = Number(candidate)
+    if (Number.isFinite(status) && status > 0) {
+      return status
+    }
+  }
+
+  return 0
+}
+
+function isOptionalOrphansEndpointUnavailable(error) {
+  return [404, 405].includes(getErrorStatus(error))
 }
 
 defineExpose({ refresh })

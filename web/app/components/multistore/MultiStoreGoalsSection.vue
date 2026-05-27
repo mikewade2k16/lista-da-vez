@@ -7,7 +7,7 @@ import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
 import { useAuthStore } from '~/stores/auth'
-import { useMultiStoreStore } from '~/stores/multistore'
+import { useCrmStore } from '~/stores/crm'
 import { useOperationGoalsStore } from '~/stores/operation-goals'
 import { useUiStore } from '~/stores/ui'
 
@@ -28,26 +28,49 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  selectedMonth: {
+    type: String,
+    default: '',
+  },
+  selectedStoreId: {
+    type: String,
+    default: '',
+  },
+  showCards: {
+    type: Boolean,
+    default: true,
+  },
+  showTables: {
+    type: Boolean,
+    default: true,
+  },
+  manageDataLifecycle: {
+    type: Boolean,
+    default: true,
+  },
 })
+
+const emit = defineEmits(['update:selectedMonth', 'update:selectedStoreId'])
 
 const auth = useAuthStore()
 const ui = useUiStore()
+const crmStore = useCrmStore()
 const operationGoals = useOperationGoalsStore()
-const multiStore = useMultiStoreStore()
-const { goals, consultantsByStore, errorMessage, pending, ready, saving } =
-  storeToRefs(operationGoals)
-const { overview: multiStoreOverview } = storeToRefs(multiStore)
+const { goals, errorMessage, pending, ready, saving } = storeToRefs(operationGoals)
+const { overview: crmOverview, pending: crmPending } = storeToRefs(crmStore)
 
 const storeSearch = ref('')
 const consultantSearch = ref('')
-const selectedMonth = ref(currentMonth())
-const selectedStoreId = ref('')
+const selectedMonth = ref(normalizeMonthValue(props.selectedMonth) || currentMonth())
+const selectedStoreId = ref(normalizeText(props.selectedStoreId))
 const storeSortBy = ref('storeLabel')
 const storeSortDir = ref('asc')
 const consultantSortBy = ref('storeLabel')
 const consultantSortDir = ref('asc')
 const drafts = ref({})
 const rowBusy = reactive({})
+const rowSavePending = reactive({})
+const rowSaveInFlight = new Map()
 const bulkCreating = ref(false)
 const bulkConsultantStoreId = ref('')
 const bulkConsultantCreating = ref(false)
@@ -108,34 +131,71 @@ const canBulkConsultant = computed(
 /* ===== Cards BI (performance vs realizado) ===== */
 
 const isCurrentMonthSelected = computed(() => selectedMonth.value === currentMonth())
+const selectedMonthRange = computed(() => buildMonthDateRange(selectedMonth.value))
 
-const performanceByStoreId = computed(() => {
+const crmOverviewMatchesSelectedMonth = computed(() => {
+  const overview = crmOverview.value
+  if (!overview) return false
+  const overviewTenantId = normalizeText(overview.store?.tenantId)
+  if (overviewTenantId && normalizeText(auth.activeTenantId) !== overviewTenantId) return false
+  return (
+    normalizeText(overview.dateFrom) === selectedMonthRange.value.dateFrom &&
+    normalizeText(overview.dateTo) === selectedMonthRange.value.dateTo
+  )
+})
+
+const crmDataReady = computed(() => crmOverviewMatchesSelectedMonth.value)
+const cardsLoadingCrm = computed(() => !crmDataReady.value && crmPending.value)
+
+const crmStoreRows = computed(() =>
+  crmDataReady.value && Array.isArray(crmOverview.value?.stores) ? crmOverview.value.stores : [],
+)
+
+const crmQueueStoreRows = computed(() =>
+  crmDataReady.value && Array.isArray(crmOverview.value?.queueStats?.byStore)
+    ? crmOverview.value.queueStats.byStore
+    : [],
+)
+
+const crmStoreRowsByKey = computed(() => {
   const map = {}
-  const stores = multiStoreOverview.value?.stores || []
-  for (const s of stores) {
-    map[normalizeText(s.storeId)] = {
-      storeName: normalizeText(s.storeName),
-      soldValue: Number(s.soldValue) || 0,
-      attendances: Number(s.attendances) || 0,
-      ticketAverage: Number(s.ticketAverage) || 0,
-      conversionRate: Number(s.conversionRate) || 0,
-    }
+  for (const row of crmStoreRows.value) {
+    addStoreLookupKeys(map, row, {
+      storeId: '',
+      storeCode: row.storeCode,
+      storeSlug: row.storeSlug,
+      storeName: row.storeName || row.storeLabel,
+    })
+  }
+  return map
+})
+
+const crmQueueRowsByKey = computed(() => {
+  const map = {}
+  for (const row of crmQueueStoreRows.value) {
+    addStoreLookupKeys(map, row, {
+      storeId: row.storeId,
+      storeCode: '',
+      storeSlug: row.storeSlug,
+      storeName: row.storeLabel,
+    })
   }
   return map
 })
 
 /** Lista de lojas que têm meta > 0 cruzada com realizado */
 const performanceRows = computed(() => {
-  if (!isCurrentMonthSelected.value) return []
+  if (!crmDataReady.value) return []
   const rows = []
   for (const goal of storeGoals.value) {
     const monthlyGoal = Number(goal.monthlyGoal) || 0
     if (monthlyGoal <= 0) continue
-    const perf = performanceByStoreId.value[normalizeText(goal.storeId)]
-    const soldValue = perf?.soldValue || 0
+    const perf = buildStorePerformance(goal)
+    if (!perf) continue
+    const soldValue = Number(perf.soldValue) || 0
     rows.push({
       storeId: goal.storeId,
-      storeName: perf?.storeName || goal.storeName,
+      storeName: perf.storeName || goal.storeName,
       monthlyGoal,
       soldValue,
       completionPct: (soldValue / monthlyGoal) * 100,
@@ -224,6 +284,8 @@ const storeGridColumns = computed(() => {
       locked: true,
     },
     { id: 'monthlyGoal', label: 'Meta total', width: '140px', align: 'end', sortable: true },
+    { id: 'realizedSales', label: 'Realizado', width: '130px', align: 'end', sortable: true },
+    { id: 'goalCompletionPct', label: 'Ating.', width: '92px', align: 'end', sortable: true },
     { id: 'avgTicketGoal', label: 'Ticket medio', width: '140px', align: 'end', sortable: true },
     { id: 'conversionGoal', label: 'Conversao', width: '120px', align: 'end', sortable: true },
     { id: 'paGoal', label: 'P.A.', width: '100px', align: 'end', sortable: true },
@@ -314,10 +376,16 @@ const sortedConsultantRows = computed(() => {
 })
 
 function decorateRow(row) {
+  const performance = row.scope === 'store' ? buildStorePerformance(row) : null
+  const monthlyGoal = Number(row.monthlyGoal) || 0
+  const realizedSales = performance ? Number(performance.soldValue || 0) : null
   return {
     ...row,
     storeLabel: row.storeName,
     consultantLabel: row.consultantName || 'Meta da loja',
+    realizedSales,
+    goalCompletionPct:
+      realizedSales !== null && monthlyGoal > 0 ? (realizedSales / monthlyGoal) * 100 : null,
     updatedAtLabel: formatUpdatedAt(row.updatedAt),
   }
 }
@@ -335,6 +403,39 @@ watch(
   },
   { immediate: true, deep: true },
 )
+
+watch(
+  () => props.selectedMonth,
+  (value) => {
+    const normalizedValue = normalizeMonthValue(value)
+    if (normalizedValue && normalizedValue !== selectedMonth.value) {
+      selectedMonth.value = normalizedValue
+    }
+  },
+)
+
+watch(
+  () => props.selectedStoreId,
+  (value) => {
+    const normalizedValue = normalizeText(value)
+    if (normalizedValue !== normalizeText(selectedStoreId.value)) {
+      selectedStoreId.value = normalizedValue
+    }
+  },
+)
+
+watch(selectedMonth, (value) => {
+  const normalizedValue = normalizeMonthValue(value) || currentMonth()
+  if (normalizedValue !== value) {
+    selectedMonth.value = normalizedValue
+    return
+  }
+  emit('update:selectedMonth', normalizedValue)
+})
+
+watch(selectedStoreId, (value) => {
+  emit('update:selectedStoreId', normalizeText(value))
+})
 
 watch(
   () => [activeStores.value, fallbackStoreId.value],
@@ -368,7 +469,17 @@ watch(
 watch(
   () => [selectedMonth.value, selectedStoreId.value],
   () => {
+    if (!props.manageDataLifecycle) return
     void refreshGoals()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [auth.isAuthenticated, auth.activeTenantId, selectedMonth.value],
+  () => {
+    if (!props.manageDataLifecycle) return
+    void refreshCrmOverview()
   },
   { immediate: true },
 )
@@ -378,7 +489,7 @@ onBeforeUnmount(() => {
     if (rowBusy[row.id]) continue
     const payload = buildRowPayload(row)
     if (!isRowDirty(row, payload)) continue
-    void operationGoals.updateGoal(row.id, payload)
+    void operationGoals.updateGoal(row.id, payload, { reload: false, skipLoadingIndicator: true })
   }
 })
 
@@ -391,6 +502,23 @@ async function refreshGoals() {
       storeId: normalizeText(selectedStoreId.value),
       month: selectedMonth.value,
     })
+  } catch {
+    return null
+  }
+  return true
+}
+
+async function refreshCrmOverview() {
+  if (!auth.isAuthenticated || !normalizeText(auth.activeTenantId)) {
+    return null
+  }
+
+  const range = selectedMonthRange.value
+  crmStore.dateFrom = range.dateFrom
+  crmStore.dateTo = range.dateTo
+
+  try {
+    await crmStore.ensureLoaded()
   } catch {
     return null
   }
@@ -484,25 +612,58 @@ async function createConsultantGoalsForStore() {
 }
 
 async function saveRow(row) {
-  if (rowBusy[row.id]) return { ok: true, noChange: true }
+  const rowId = normalizeText(row?.id)
+  if (!rowId) return { ok: true, noChange: true }
 
-  const payload = buildRowPayload(row)
-  if (!isRowDirty(row, payload)) return { ok: true, noChange: true }
+  rowSavePending[rowId] = true
 
-  rowBusy[row.id] = true
-  try {
-    const result = await operationGoals.updateGoal(row.id, payload)
-    if (result?.ok === false) {
-      ui.error(result.message || 'Nao foi possivel atualizar a meta.')
-      return result
-    }
-    if (result?.goal?.id) {
-      drafts.value[result.goal.id] = createMetricDraft(result.goal)
-    }
-    return result
-  } finally {
-    rowBusy[row.id] = false
+  if (rowSaveInFlight.has(rowId)) {
+    return rowSaveInFlight.get(rowId)
   }
+
+  const promise = (async () => {
+    rowBusy[rowId] = true
+    let lastResult = { ok: true, noChange: true }
+
+    try {
+      while (rowSavePending[rowId]) {
+        rowSavePending[rowId] = false
+
+        const latestRow = goals.value.find((item) => item.id === rowId) || row
+        const payload = buildRowPayload(latestRow)
+        if (!isRowDirty(latestRow, payload)) {
+          lastResult = { ok: true, noChange: true }
+          continue
+        }
+
+        const result = await operationGoals.updateGoal(rowId, payload, {
+          reload: false,
+          skipLoadingIndicator: true,
+        })
+        if (result?.ok === false) {
+          ui.error(result.message || 'Nao foi possivel atualizar a meta.')
+          return result
+        }
+        if (result?.goal?.id && payloadMatchesDraft(result.goal.id, payload)) {
+          drafts.value[result.goal.id] = createMetricDraft(result.goal)
+        }
+        crmStore.invalidateOverview()
+        if (crmOverviewMatchesSelectedMonth.value) {
+          void refreshCrmOverview()
+        }
+        lastResult = result
+      }
+
+      return lastResult
+    } finally {
+      rowSaveInFlight.delete(rowId)
+      rowBusy[rowId] = false
+      rowSavePending[rowId] = false
+    }
+  })()
+
+  rowSaveInFlight.set(rowId, promise)
+  return promise
 }
 
 async function removeRow(row) {
@@ -635,6 +796,19 @@ function buildRowPayload(row) {
   }
 }
 
+function payloadsEqual(left, right) {
+  return (
+    normalizeMetricNumber(left?.monthlyGoal) === normalizeMetricNumber(right?.monthlyGoal) &&
+    normalizeMetricNumber(left?.avgTicketGoal) === normalizeMetricNumber(right?.avgTicketGoal) &&
+    clampPercent(left?.conversionGoal) === clampPercent(right?.conversionGoal) &&
+    normalizeMetricNumber(left?.paGoal) === normalizeMetricNumber(right?.paGoal)
+  )
+}
+
+function payloadMatchesDraft(rowId, payload) {
+  return payloadsEqual(buildRowPayload({ id: rowId }), payload)
+}
+
 function isRowDirty(row, payload) {
   return (
     payload.monthlyGoal !== normalizeMetricNumber(row?.monthlyGoal) ||
@@ -663,7 +837,16 @@ function sortValue(row, field) {
     case 'updatedAt':
       return new Date(row.updatedAt || 0).getTime()
     default:
-      if (['monthlyGoal', 'avgTicketGoal', 'conversionGoal', 'paGoal'].includes(field)) {
+      if (
+        [
+          'monthlyGoal',
+          'realizedSales',
+          'goalCompletionPct',
+          'avgTicketGoal',
+          'conversionGoal',
+          'paGoal',
+        ].includes(field)
+      ) {
         return Number(row[field] || 0) || 0
       }
       return normalizeSearch(row[field] || '')
@@ -680,6 +863,116 @@ function normalizeSearch(value) {
 
 function normalizeText(value) {
   return String(value || '').trim()
+}
+
+function normalizeLookup(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
+
+function normalizeStoreCode(value) {
+  return normalizeText(value).toUpperCase()
+}
+
+function buildMonthDateRange(month) {
+  const normalized = /^\d{4}-\d{2}$/.test(normalizeText(month))
+    ? normalizeText(month)
+    : currentMonth()
+  const [year, monthNumber] = normalized.split('-').map((part) => Number(part))
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
+
+  return {
+    dateFrom: `${normalized}-01`,
+    dateTo: `${normalized}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
+function crmStoreSlugFromCodeName(code, name) {
+  switch (normalizeStoreCode(code)) {
+    case 'RIO':
+    case 'PJ-RIO':
+      return 'riomar'
+    case 'JAR':
+    case 'PJ-JAR':
+      return 'jardins'
+    case 'GAR':
+    case 'PJ-GARCIA':
+      return 'garcia'
+    case 'TRE':
+    case 'PJ-TRE':
+      return 'treze'
+    default:
+      break
+  }
+
+  const normalizedName = normalizeLookup(name)
+  if (normalizedName.includes('riomar')) return 'riomar'
+  if (normalizedName.includes('jardins')) return 'jardins'
+  if (normalizedName.includes('garcia')) return 'garcia'
+  if (normalizedName.includes('treze')) return 'treze'
+  return ''
+}
+
+function buildStoreLookupKeys(source = {}) {
+  const keys = []
+  const storeId = normalizeText(source.storeId)
+  const storeCode = normalizeStoreCode(source.storeCode)
+  const storeName = normalizeText(source.storeName)
+  const storeSlug = normalizeText(source.storeSlug).toLowerCase()
+  const resolvedSlug = storeSlug || crmStoreSlugFromCodeName(storeCode, storeName)
+
+  if (storeId) keys.push(`id:${storeId}`)
+  if (storeCode) keys.push(`code:${storeCode}`)
+  if (resolvedSlug) keys.push(`slug:${resolvedSlug}`)
+  if (storeName) keys.push(`name:${normalizeLookup(storeName)}`)
+
+  return keys
+}
+
+function addStoreLookupKeys(map, row, source) {
+  for (const key of buildStoreLookupKeys(source)) {
+    if (!map[key]) {
+      map[key] = row
+    }
+  }
+}
+
+function findStoreLookupRow(map, goal) {
+  const keys = buildStoreLookupKeys({
+    storeId: goal?.storeId,
+    storeCode: goal?.storeCode,
+    storeName: goal?.storeName,
+  })
+
+  for (const key of keys) {
+    if (map[key]) {
+      return map[key]
+    }
+  }
+  return null
+}
+
+function moneyFromCents(value) {
+  return Math.max(0, Number(value || 0) || 0) / 100
+}
+
+function buildStorePerformance(goal) {
+  if (!crmDataReady.value) return null
+
+  const storeRow = findStoreLookupRow(crmStoreRowsByKey.value, goal)
+  const queueRow = findStoreLookupRow(crmQueueRowsByKey.value, goal)
+
+  return {
+    storeName: normalizeText(storeRow?.storeName || storeRow?.storeLabel || goal?.storeName),
+    soldValue: moneyFromCents(storeRow?.salesCents),
+    attendances: Math.max(0, Number(queueRow?.attendances ?? storeRow?.orders ?? 0) || 0),
+    ticketAverage: moneyFromCents(storeRow?.ticketAverageCents),
+    conversionRate: Math.max(0, Number(queueRow?.conversionRate || 0) || 0),
+    paScore: Math.max(0, Number(storeRow?.paScore || 0) || 0),
+  }
 }
 
 /* pt-BR: ponto = separador de milhar, vírgula = decimal */
@@ -709,6 +1002,11 @@ function clampPercent(value) {
 function currentMonth() {
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function normalizeMonthValue(value) {
+  const normalized = normalizeText(value)
+  return /^\d{4}-\d{2}$/.test(normalized) ? normalized : ''
 }
 
 /* Recebe número OU string; devolve string formatada pt-BR (ex: "40.000" ou "1.750,5") */
@@ -773,7 +1071,7 @@ function escapeCsvCell(value) {
 <template>
   <section class="multistore-goals" data-testid="multistore-goals-section">
     <!-- Cards BI: performance vs realizado -->
-    <div class="multistore-goals__cards">
+    <div v-if="showCards" class="multistore-goals__cards">
       <!-- Card 1: % cumprimento da meta vigente -->
       <article
         class="multistore-goals__card"
@@ -793,7 +1091,9 @@ function escapeCsvCell(value) {
           <small>%</small>
         </strong>
         <small class="multistore-goals__card-meta">
-          <template v-if="completionPct === null">Sem vendas registradas</template>
+          <template v-if="completionPct === null">
+            {{ cardsLoadingCrm ? 'Carregando CRM...' : 'Sem vendas registradas' }}
+          </template>
           <template v-else-if="completionPct >= 100">
             Bateu +{{ formatCurrencyBRL(totalRealized - totalGoalWithRealized) }}
           </template>
@@ -827,7 +1127,13 @@ function escapeCsvCell(value) {
         </strong>
         <small class="multistore-goals__card-meta">
           <template v-if="projectionPct === null">
-            {{ isCurrentMonthSelected ? 'Sem dados suficientes' : 'Mes nao corrente' }}
+            {{
+              cardsLoadingCrm
+                ? 'Carregando CRM...'
+                : isCurrentMonthSelected
+                  ? 'Sem dados suficientes'
+                  : 'Mes nao corrente'
+            }}
           </template>
           <template v-else-if="projectionDelta >= 0">
             Super.: {{ formatCurrencyBRL(projectionDelta) }}
@@ -848,7 +1154,9 @@ function escapeCsvCell(value) {
           {{ topStore.storeName }}
         </strong>
         <small class="multistore-goals__card-meta">
-          <template v-if="!topStore">Sem dados</template>
+          <template v-if="!topStore">
+            {{ cardsLoadingCrm ? 'Carregando CRM...' : 'Sem dados' }}
+          </template>
           <template v-else>{{ Math.round(topStore.completionPct) }}% atingido</template>
         </small>
       </article>
@@ -865,7 +1173,9 @@ function escapeCsvCell(value) {
           {{ worstGapStore.storeName }}
         </strong>
         <small class="multistore-goals__card-meta">
-          <template v-if="!worstGapStore">Sem dados</template>
+          <template v-if="!worstGapStore">
+            {{ cardsLoadingCrm ? 'Carregando CRM...' : 'Sem dados' }}
+          </template>
           <template v-else>
             {{ Math.round(worstGapStore.completionPct) }}% / faltam
             {{ formatCurrencyBRL(worstGapStore.gap) }}
@@ -875,7 +1185,7 @@ function escapeCsvCell(value) {
     </div>
 
     <!-- Tabela de lojas -->
-    <div class="multistore-goals__block">
+    <div v-if="showTables" class="multistore-goals__block">
       <header class="multistore-goals__block-head">
         <h3 class="multistore-goals__block-title">Metas por loja</h3>
         <span class="multistore-goals__block-sub">{{ sortedStoreRows.length }} registros</span>
@@ -889,7 +1199,7 @@ function escapeCsvCell(value) {
         :search-value="storeSearch"
         :sort-by="storeSortBy"
         :sort-dir="storeSortDir"
-        storage-key="multistore-goals-store-columns-v3"
+        storage-key="multistore-goals-store-columns-v4"
         empty-title="Nenhuma meta de loja"
         :empty-text="
           errorMessage && !pending
@@ -976,7 +1286,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0"
               @input="updateMetricField(row, 'monthlyGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -984,6 +1293,26 @@ function escapeCsvCell(value) {
             />
           </label>
           <span v-else>{{ formatCurrencyBRL(row.monthlyGoal) }}</span>
+        </template>
+
+        <template #cell-realizedSales="{ row }">
+          <span v-if="row.realizedSales !== null" class="multistore-goals__metric">
+            {{ formatCurrencyBRL(row.realizedSales) }}
+          </span>
+          <span v-else class="multistore-goals__muted">
+            {{ crmPending ? 'CRM...' : '-' }}
+          </span>
+        </template>
+
+        <template #cell-goalCompletionPct="{ row }">
+          <span
+            v-if="row.goalCompletionPct !== null"
+            class="multistore-goals__metric"
+            :class="`is-${pctStatus(row.goalCompletionPct)}`"
+          >
+            {{ formatPercent(row.goalCompletionPct) }}
+          </span>
+          <span v-else class="multistore-goals__muted">-</span>
         </template>
 
         <template #cell-avgTicketGoal="{ row }">
@@ -994,7 +1323,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0"
               @input="updateMetricField(row, 'avgTicketGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1011,7 +1339,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0"
               @input="updateMetricField(row, 'conversionGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1029,7 +1356,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0,00"
               @input="updateMetricField(row, 'paGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1054,6 +1380,7 @@ function escapeCsvCell(value) {
               v-else
               class="multistore-goals__icon-btn multistore-goals__icon-btn--ghost"
               type="button"
+              tabindex="-1"
               :disabled="saving"
               title="Excluir meta"
               aria-label="Excluir meta"
@@ -1067,7 +1394,7 @@ function escapeCsvCell(value) {
     </div>
 
     <!-- Bulk consultor: seleciona loja → cria metas de todos os consultores -->
-    <div v-if="canEditGoals" class="multistore-goals__bulk">
+    <div v-if="showTables && canEditGoals" class="multistore-goals__bulk">
       <UserPlus class="multistore-goals__bulk-icon" :size="14" :stroke-width="2.1" />
       <span class="multistore-goals__bulk-label">Gerar metas para consultores de:</span>
       <AppSelectField
@@ -1094,7 +1421,7 @@ function escapeCsvCell(value) {
     </div>
 
     <!-- Tabela de consultores -->
-    <div class="multistore-goals__block">
+    <div v-if="showTables" class="multistore-goals__block">
       <header class="multistore-goals__block-head">
         <h3 class="multistore-goals__block-title">Metas por consultor</h3>
         <span class="multistore-goals__block-sub">{{ sortedConsultantRows.length }} registros</span>
@@ -1156,7 +1483,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0"
               @input="updateMetricField(row, 'monthlyGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1174,7 +1500,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0"
               @input="updateMetricField(row, 'avgTicketGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1191,7 +1516,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0"
               @input="updateMetricField(row, 'conversionGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1209,7 +1533,6 @@ function escapeCsvCell(value) {
               class="multistore-goals__inline-input"
               type="text"
               inputmode="decimal"
-              :disabled="rowBusy[row.id]"
               placeholder="0,00"
               @input="updateMetricField(row, 'paGoal', $event)"
               @blur="handleInlineBlur(row)"
@@ -1234,6 +1557,7 @@ function escapeCsvCell(value) {
               v-else
               class="multistore-goals__icon-btn multistore-goals__icon-btn--ghost"
               type="button"
+              tabindex="-1"
               :disabled="saving"
               title="Excluir meta"
               aria-label="Excluir meta"
@@ -1648,6 +1972,32 @@ function escapeCsvCell(value) {
   font-weight: 700;
   color: var(--text-muted);
   letter-spacing: 0.02em;
+}
+
+.multistore-goals__metric {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.multistore-goals__metric.is-success {
+  color: rgb(34 197 94);
+}
+
+.multistore-goals__metric.is-warn {
+  color: rgb(234 179 8);
+}
+
+.multistore-goals__metric.is-danger {
+  color: rgb(239 68 68);
+}
+
+.multistore-goals__muted {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .multistore-goals__field {

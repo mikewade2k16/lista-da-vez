@@ -32,8 +32,21 @@ const scopeMode = computed(() => {
 
   return 'all'
 })
+const useTenantAlertScope = computed(() => scopeMode.value === 'all' && canSeeIntegrated.value)
 
 useOperationsRealtime({ scopeMode })
+
+async function refreshOperationAlerts() {
+  if (!auth.isAuthenticated) {
+    return
+  }
+
+  try {
+    await alertsStore.refreshAlerts({ tenantScope: useTenantAlertScope.value })
+  } catch {
+    // Alertas nao devem impedir a operacao de carregar.
+  }
+}
 
 async function loadOperationView() {
   if (!auth.isAuthenticated) {
@@ -45,11 +58,13 @@ async function loadOperationView() {
 
     if (scopeMode.value === 'all' && canSeeIntegrated.value) {
       await operationsStore.refreshOverview()
+      void refreshOperationAlerts()
       return
     }
 
     operationsStore.clearOverview()
     await operationsStore.refreshActiveStore()
+    void refreshOperationAlerts()
   } catch (error) {
     loadError.value = getApiErrorMessage(error, 'Nao foi possivel carregar a operacao.')
   }
@@ -58,7 +73,6 @@ async function loadOperationView() {
 onMounted(async () => {
   await auth.ensureSession()
   await loadOperationView()
-  void alertsStore.refreshAlerts()
 })
 
 const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore)

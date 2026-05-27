@@ -133,6 +133,10 @@ function createScopeKey(
   })
 }
 
+type AlertScopeOptions = {
+  tenantScope?: boolean
+}
+
 export const useAlertsStore = defineStore('alerts', () => {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
@@ -152,6 +156,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   const rulesLoaded = ref(false)
   const errorMessage = ref('')
   const lastLoadedKey = ref('')
+  const lastLoadedScopeOptions = ref<AlertScopeOptions>({})
   const pendingFinishForServiceId = ref<string | null>(null)
 
   const integratedScope = computed(() => Boolean(auth.isAllStoresScope))
@@ -160,26 +165,34 @@ export const useAlertsStore = defineStore('alerts', () => {
     normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id),
   )
 
-  function hasValidScope() {
+  function shouldUseTenantScope(options: AlertScopeOptions = {}) {
+    return Boolean(options.tenantScope || integratedScope.value)
+  }
+
+  function hasValidScope(options: AlertScopeOptions = {}) {
     if (!auth.isAuthenticated) {
       return false
     }
 
-    if (integratedScope.value) {
+    if (shouldUseTenantScope(options)) {
       return Boolean(activeTenantId.value)
     }
 
     return Boolean(activeStoreId.value || activeTenantId.value)
   }
 
-  function buildScopeParams({ includeFilters = true } = {}) {
+  function buildScopeParams({
+    includeFilters = true,
+    tenantScope = false,
+  }: { includeFilters?: boolean } & AlertScopeOptions = {}) {
     const params = new URLSearchParams()
+    const useTenantScope = shouldUseTenantScope({ tenantScope })
 
     if (activeTenantId.value) {
       params.set('tenantId', activeTenantId.value)
     }
 
-    if (!integratedScope.value && activeStoreId.value) {
+    if (!useTenantScope && activeStoreId.value) {
       params.set('storeId', activeStoreId.value)
     }
 
@@ -231,8 +244,8 @@ export const useAlertsStore = defineStore('alerts', () => {
     return payload
   }
 
-  function currentScopeKey() {
-    if (integratedScope.value) {
+  function currentScopeKey(options: AlertScopeOptions = {}) {
+    if (shouldUseTenantScope(options)) {
       return createScopeKey('tenant', activeTenantId.value, filters.value)
     }
 
@@ -247,6 +260,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     rulesLoaded.value = false
     errorMessage.value = ''
     lastLoadedKey.value = ''
+    lastLoadedScopeOptions.value = {}
   }
 
   function updateLocalAlert(nextAlert: Record<string, unknown>) {
@@ -261,21 +275,21 @@ export const useAlertsStore = defineStore('alerts', () => {
     return normalized
   }
 
-  async function refreshOverview() {
-    if (!hasValidScope()) {
+  async function refreshOverview(options: AlertScopeOptions = {}) {
+    if (!hasValidScope(options)) {
       overview.value = null
       return null
     }
 
     const response = await apiRequest(
-      `/v1/alerts/overview?${buildScopeParams({ includeFilters: false }).toString()}`,
+      `/v1/alerts/overview?${buildScopeParams({ ...options, includeFilters: false }).toString()}`,
     )
     overview.value = normalizeOverview(response?.overview || {})
     return overview.value
   }
 
-  async function refreshAlerts() {
-    if (!hasValidScope()) {
+  async function refreshAlerts(options: AlertScopeOptions = {}) {
+    if (!hasValidScope(options)) {
       clearState()
       return []
     }
@@ -285,8 +299,10 @@ export const useAlertsStore = defineStore('alerts', () => {
 
     try {
       const [alertsResponse, overviewResponse] = await Promise.all([
-        apiRequest(`/v1/alerts?${buildScopeParams().toString()}`),
-        apiRequest(`/v1/alerts/overview?${buildScopeParams({ includeFilters: false }).toString()}`),
+        apiRequest(`/v1/alerts?${buildScopeParams(options).toString()}`),
+        apiRequest(
+          `/v1/alerts/overview?${buildScopeParams({ ...options, includeFilters: false }).toString()}`,
+        ),
       ])
 
       items.value = Array.isArray(alertsResponse?.alerts)
@@ -294,7 +310,8 @@ export const useAlertsStore = defineStore('alerts', () => {
         : []
       overview.value = normalizeOverview(overviewResponse?.overview || {})
       ready.value = true
-      lastLoadedKey.value = currentScopeKey()
+      lastLoadedKey.value = currentScopeKey(options)
+      lastLoadedScopeOptions.value = { tenantScope: shouldUseTenantScope(options) }
 
       return items.value
     } catch (error) {
@@ -332,13 +349,13 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
   }
 
-  async function ensureLoaded() {
-    if (!hasValidScope()) {
+  async function ensureLoaded(options: AlertScopeOptions = {}) {
+    if (!hasValidScope(options)) {
       clearState()
       return false
     }
 
-    if (ready.value && lastLoadedKey.value === currentScopeKey()) {
+    if (ready.value && lastLoadedKey.value === currentScopeKey(options)) {
       if (!rulesLoaded.value && activeTenantId.value) {
         try {
           await fetchRules()
@@ -352,7 +369,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
 
     try {
-      await refreshAlerts()
+      await refreshAlerts(options)
       await fetchRules()
       await fetchRuleDefinitions()
       return true
@@ -369,7 +386,7 @@ export const useAlertsStore = defineStore('alerts', () => {
       type: normalizeText(nextFilters.type ?? filters.value.type),
     }
 
-    return refreshAlerts()
+    return refreshAlerts(lastLoadedScopeOptions.value)
   }
 
   async function acknowledgeAlert(alertId: string, note = '') {
@@ -384,7 +401,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     )
 
     const updated = updateLocalAlert(response?.alert || {})
-    await refreshOverview()
+    await refreshOverview(lastLoadedScopeOptions.value)
     return updated
   }
 
@@ -400,7 +417,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     )
 
     const updated = updateLocalAlert(response?.alert || {})
-    await refreshOverview()
+    await refreshOverview(lastLoadedScopeOptions.value)
     return updated
   }
 
@@ -454,7 +471,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     )
 
     updateLocalAlert(result?.alert || {})
-    await refreshOverview()
+    await refreshOverview(lastLoadedScopeOptions.value)
 
     if (result?.openFinishModal && result?.serviceId) {
       pendingFinishForServiceId.value = normalizeText(result.serviceId)
@@ -576,7 +593,7 @@ export const useAlertsStore = defineStore('alerts', () => {
         },
       )
       const appliedCount = Math.max(0, Number(response?.appliedCount || 0) || 0)
-      await refreshAlerts()
+      await refreshAlerts(lastLoadedScopeOptions.value)
       return { appliedCount }
     } catch (err) {
       errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel aplicar a regra agora.')
@@ -606,7 +623,7 @@ export const useAlertsStore = defineStore('alerts', () => {
     }
 
     await Promise.allSettled([
-      refreshAlerts(),
+      refreshAlerts(lastLoadedScopeOptions.value),
       rulesLoaded.value ? fetchRules() : Promise.resolve(null),
       activeTenantId.value ? fetchRuleDefinitions() : Promise.resolve([]),
     ])
@@ -635,7 +652,7 @@ export const useAlertsStore = defineStore('alerts', () => {
           previousTenantId !== tenantId ||
           previousIntegrated !== isIntegrated
         ) {
-          void ensureLoaded()
+          void ensureLoaded(lastLoadedScopeOptions.value)
         }
       },
     )

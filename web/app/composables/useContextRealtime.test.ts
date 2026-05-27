@@ -37,6 +37,18 @@ const multiStore = {
 const usersStore = {
   refreshUsers: vi.fn().mockResolvedValue(undefined),
 }
+const operationGoalsStore = {
+  ready: false,
+  goals: [],
+  lastFilters: {},
+  shouldSkipRealtimeUpdate: vi.fn().mockReturnValue(false),
+  loadGoals: vi.fn().mockResolvedValue(undefined),
+}
+const crmStore = {
+  overview: null as object | null,
+  invalidateOverview: vi.fn(),
+  refreshOverview: vi.fn().mockResolvedValue(undefined),
+}
 
 vi.mock('vue', async () => {
   const actual = await vi.importActual<typeof import('vue')>('vue')
@@ -77,6 +89,14 @@ vi.mock('~/stores/users', () => ({
   useUsersStore: () => usersStore,
 }))
 
+vi.mock('~/stores/operation-goals', () => ({
+  useOperationGoalsStore: () => operationGoalsStore,
+}))
+
+vi.mock('~/stores/crm', () => ({
+  useCrmStore: () => crmStore,
+}))
+
 vi.mock('~/utils/runtime-remote', () => ({
   refreshRuntimeStoreSettings: (...args: unknown[]) => refreshRuntimeStoreSettings(...args),
 }))
@@ -96,6 +116,11 @@ describe('useContextRealtime', () => {
     multiStore.refreshOverview.mockClear()
     multiStore.refreshManagedStores.mockClear()
     usersStore.refreshUsers.mockClear()
+    operationGoalsStore.shouldSkipRealtimeUpdate.mockClear()
+    operationGoalsStore.loadGoals.mockClear()
+    crmStore.invalidateOverview.mockClear()
+    crmStore.refreshOverview.mockClear()
+    crmStore.overview = null
     ;(globalThis as any).WebSocket = MockWebSocket
   })
 

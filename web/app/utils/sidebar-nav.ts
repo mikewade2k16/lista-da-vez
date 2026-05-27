@@ -64,12 +64,12 @@ export const SIDEBAR_NAV_SECTIONS = [
   {
     id: 'team-site',
     label: 'Operacao comercial',
-    hidden: true,
     items: [
       {
         id: 'team-menu',
         label: 'Team',
         icon: 'team',
+        hidden: true,
         children: [
           {
             id: 'consultor',
@@ -88,18 +88,39 @@ export const SIDEBAR_NAV_SECTIONS = [
         icon: 'site',
         children: [
           {
+            id: 'site-produtos',
+            label: 'Produtos',
+            icon: 'boxes',
+            path: '/site/produtos',
+            workspaceId: 'site',
+          },
+          {
+            id: 'site-leads',
+            label: 'Leads',
+            icon: 'feedback',
+            path: '/site/leads',
+            workspaceId: 'site',
+          },
+          {
             id: 'campanhas',
             label: 'Campanhas',
             icon: 'megaphone',
             path: '/campanhas',
             workspaceId: 'campanhas',
           },
-          { id: 'site-paginas', label: 'Paginas', icon: 'page', path: '/site/paginas' },
+          {
+            id: 'site-paginas',
+            label: 'Paginas',
+            icon: 'page',
+            path: '/site/paginas',
+            workspaceId: 'site',
+          },
           {
             id: 'site-formularios',
             label: 'Formularios',
             icon: 'forms',
             path: '/site/formularios',
+            workspaceId: 'site',
           },
         ],
       },

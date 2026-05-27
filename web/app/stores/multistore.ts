@@ -5,7 +5,7 @@ import { useAuthStore } from '~/stores/auth'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
-type LooseRecord = Record<string, any>
+type LooseRecord = Record<string, unknown>
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -445,18 +445,9 @@ export const useMultiStoreStore = defineStore('multistore', () => {
         storeId: response.storeId,
       }
     } catch (error) {
-      const errorData = error as LooseRecord
-      const dependencies = Array.isArray(errorData?.data?.error?.details?.dependencies)
-        ? errorData.data.error.details.dependencies
-        : []
-      const dependencyMessage = dependencies.length
-        ? ` Vinculos encontrados: ${dependencies.map((item) => `${item.label} (${item.count})`).join(', ')}.`
-        : ''
-
       return {
         ok: false,
-        blockedDependencies: dependencies,
-        message: `${getApiErrorMessage(error, 'Nao foi possivel remover loja.')}${dependencyMessage}`,
+        message: getApiErrorMessage(error, 'Nao foi possivel remover loja.'),
       }
     }
   }

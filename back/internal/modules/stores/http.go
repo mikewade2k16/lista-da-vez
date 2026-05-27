@@ -223,8 +223,6 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
-	var deleteBlocked *DeleteBlockedError
-
 	switch {
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrTenantForbidden):
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
@@ -234,17 +232,6 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "store_not_found", "Loja nao encontrada.")
 	case errors.Is(err, ErrStoreConflict):
 		httpapi.WriteError(w, r, http.StatusConflict, "store_conflict", "Ja existe uma loja com este codigo no tenant.")
-	case errors.As(err, &deleteBlocked):
-		httpapi.WriteErrorWithDetails(
-			w,
-			r,
-			http.StatusConflict,
-			"store_delete_blocked",
-			"Esta loja ainda possui vinculos e nao pode ser removida.",
-			map[string]any{
-				"dependencies": deleteBlocked.Dependencies,
-			},
-		)
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar a loja.")
 	}

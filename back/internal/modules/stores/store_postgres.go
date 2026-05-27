@@ -193,84 +193,31 @@ func (repository *PostgresRepository) Update(ctx context.Context, store Store) (
 	return updated, nil
 }
 
-func (repository *PostgresRepository) ListDeleteDependencies(ctx context.Context, storeID string) ([]DeleteDependency, error) {
-	rows, err := repository.pool.Query(ctx, `
-		with dependency_rows as (
-			select 'consultants'::text as key, 'Consultores cadastrados'::text as label, count(*)::integer as total
-			from consultants
-			where store_id = $1::uuid
-
-			union all
-
-			select 'user_store_roles'::text as key, 'Usuarios vinculados a loja'::text as label, count(*)::integer as total
-			from user_store_roles
-			where store_id = $1::uuid
-
-			union all
-
-			select 'queue_entries'::text as key, 'Consultores na fila'::text as label, count(*)::integer as total
-			from operation_queue_entries
-			where store_id = $1::uuid
-
-			union all
-
-			select 'active_services'::text as key, 'Atendimentos ativos'::text as label, count(*)::integer as total
-			from operation_active_services
-			where store_id = $1::uuid
-
-			union all
-
-			select 'paused_consultants'::text as key, 'Consultores pausados'::text as label, count(*)::integer as total
-			from operation_paused_consultants
-			where store_id = $1::uuid
-
-			union all
-
-			select 'current_status'::text as key, 'Status operacionais ativos'::text as label, count(*)::integer as total
-			from operation_current_status
-			where store_id = $1::uuid
-
-			union all
-
-			select 'status_sessions'::text as key, 'Sessoes operacionais historicas'::text as label, count(*)::integer as total
-			from operation_status_sessions
-			where store_id = $1::uuid
-
-			union all
-
-			select 'service_history'::text as key, 'Historico de atendimentos'::text as label, count(*)::integer as total
-			from operation_service_history
-			where store_id = $1::uuid
-		)
-		select key, label, total
-		from dependency_rows
-		where total > 0
-		order by label asc;
-	`, storeID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	dependencies := make([]DeleteDependency, 0)
-	for rows.Next() {
-		var dependency DeleteDependency
-		if err := rows.Scan(&dependency.Key, &dependency.Label, &dependency.Count); err != nil {
-			return nil, err
-		}
-
-		dependencies = append(dependencies, dependency)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return dependencies, nil
-}
-
 func (repository *PostgresRepository) Delete(ctx context.Context, storeID string) error {
-	commandTag, err := repository.pool.Exec(ctx, `
+	tx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	if _, err := tx.Exec(ctx, `
+		update consultants
+		set store_id = null
+		where store_id = $1::uuid;
+	`, storeID); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		delete from user_store_roles
+		where store_id = $1::uuid;
+	`, storeID); err != nil {
+		return err
+	}
+
+	commandTag, err := tx.Exec(ctx, `
 		delete from stores
 		where id = $1::uuid;
 	`, storeID)
@@ -280,6 +227,10 @@ func (repository *PostgresRepository) Delete(ctx context.Context, storeID string
 
 	if commandTag.RowsAffected() == 0 {
 		return ErrStoreNotFound
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 
 	return nil

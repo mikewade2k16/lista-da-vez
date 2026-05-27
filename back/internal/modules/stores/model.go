@@ -72,12 +72,6 @@ type UpdateInput struct {
 	IsActive          *bool
 }
 
-type DeleteDependency struct {
-	Key   string `json:"key"`
-	Label string `json:"label"`
-	Count int    `json:"count"`
-}
-
 type DeleteResult struct {
 	StoreID string    `json:"storeId"`
 	Deleted bool      `json:"deleted"`
@@ -89,7 +83,6 @@ type Repository interface {
 	FindAccessibleByID(ctx context.Context, principal auth.Principal, storeID string) (Store, error)
 	Create(ctx context.Context, store Store) (Store, error)
 	Update(ctx context.Context, store Store) (Store, error)
-	ListDeleteDependencies(ctx context.Context, storeID string) ([]DeleteDependency, error)
 	Delete(ctx context.Context, storeID string) error
 }
 

@@ -104,6 +104,10 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Prepare Nuxt (gera .nuxt/tsconfig.json necessario para Vitest)
+        working-directory: web
+        run: npx nuxt prepare
+
       - name: Run web Vitest suite
         working-directory: web
         run: npm run test

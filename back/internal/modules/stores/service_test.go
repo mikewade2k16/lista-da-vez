@@ -11,8 +11,6 @@ type repositorySpy struct {
 	listInput         ListInput
 	findStore         Store
 	findErr           error
-	deleteDeps        []DeleteDependency
-	deleteDepsErr     error
 	deleteErr         error
 	deleteCalledStore string
 }
@@ -35,13 +33,6 @@ func (spy *repositorySpy) Create(_ context.Context, store Store) (Store, error) 
 
 func (spy *repositorySpy) Update(_ context.Context, store Store) (Store, error) {
 	return store, nil
-}
-
-func (spy *repositorySpy) ListDeleteDependencies(_ context.Context, _ string) ([]DeleteDependency, error) {
-	if spy.deleteDepsErr != nil {
-		return nil, spy.deleteDepsErr
-	}
-	return spy.deleteDeps, nil
 }
 
 func (spy *repositorySpy) Delete(_ context.Context, storeID string) error {
@@ -69,20 +60,13 @@ func TestListAccessiblePassesIncludeInactive(t *testing.T) {
 	}
 }
 
-// Apos migration 0122, deletar uma loja com consultores nao bloqueia mais:
-// FK passou para ON DELETE SET NULL em consultants e CASCADE nas demais.
-// Este teste garante que a delecao prossegue mesmo quando o spy reportava
-// dependencias (ListDeleteDependencies nao e mais consultado).
-func TestDeleteProceedsEvenWhenSpyReportsDependencies(t *testing.T) {
+func TestDeleteCallsRepositoryWithoutDependencyPreflight(t *testing.T) {
 	repository := &repositorySpy{
 		findStore: Store{
 			ID:       "store-1",
 			TenantID: "tenant-1",
 			Name:     "Loja 1",
 			Code:     "LOJA1",
-		},
-		deleteDeps: []DeleteDependency{
-			{Key: "consultants", Label: "Consultores cadastrados", Count: 2},
 		},
 	}
 	service := NewService(repository, nil)

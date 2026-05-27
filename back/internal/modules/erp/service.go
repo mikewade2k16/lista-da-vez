@@ -32,7 +32,7 @@ func NewService(repository *PostgresRepository, options Options) *Service {
 }
 
 func (service *Service) Status(ctx context.Context, principal auth.Principal, tenantID string, storeCode string) (StatusResponse, error) {
-	if !canViewERP(principal) {
+	if !canViewERPAdminDetails(principal) {
 		return StatusResponse{}, ErrForbidden
 	}
 
@@ -80,7 +80,7 @@ func (service *Service) Records(ctx context.Context, principal auth.Principal, q
 }
 
 func (service *Service) RecordsStats(ctx context.Context, principal auth.Principal, query RecordsStatsQuery) (RecordsStatsResponse, error) {
-	if !canViewERP(principal) {
+	if !canViewERPAdminDetails(principal) {
 		return RecordsStatsResponse{}, ErrForbidden
 	}
 	store, err := service.resolveERPScope(ctx, principal, query.TenantID, query.StoreCode)
@@ -100,7 +100,7 @@ func (service *Service) RecordsStats(ctx context.Context, principal auth.Princip
 }
 
 func (service *Service) Runs(ctx context.Context, principal auth.Principal, query RunsQuery) (SyncRunsListResponse, error) {
-	if !canViewERP(principal) {
+	if !canViewERPAdminDetails(principal) {
 		return SyncRunsListResponse{}, ErrForbidden
 	}
 
@@ -118,7 +118,7 @@ func (service *Service) Runs(ctx context.Context, principal auth.Principal, quer
 }
 
 func (service *Service) Overview(ctx context.Context, principal auth.Principal, tenantID string, storeCode string) (SyncOverviewResponse, error) {
-	if !canViewERP(principal) {
+	if !canViewERPAdminDetails(principal) {
 		return SyncOverviewResponse{}, ErrForbidden
 	}
 
@@ -290,7 +290,76 @@ func (service *Service) CRMOverview(ctx context.Context, principal auth.Principa
 		return CRMOverviewResponse{}, err
 	}
 
-	return service.repository.GetCRMOverview(ctx, store, normalized)
+	var allowedStoreIDs []string
+	if requiresStoreScopedFilter(principal.Role) {
+		allowedStoreIDs = principal.StoreIDs
+	}
+
+	return service.repository.GetCRMOverview(ctx, store, normalized, allowedStoreIDs)
+}
+
+func (service *Service) ConsultantERPLinks(ctx context.Context, principal auth.Principal, tenantID string, storeCode string, employeeIDs []string) (ConsultantERPLinksResponse, error) {
+	if !canEditERP(principal) {
+		return ConsultantERPLinksResponse{}, ErrForbidden
+	}
+
+	store, err := service.resolveERPScope(ctx, principal, tenantID, storeCode)
+	if err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	return service.repository.ListConsultantERPLinks(ctx, store, employeeIDs)
+}
+
+func (service *Service) UpsertConsultantERPLink(ctx context.Context, principal auth.Principal, input ConsultantERPLinkUpsertInput) (ConsultantERPLinksResponse, error) {
+	if !canEditERP(principal) {
+		return ConsultantERPLinksResponse{}, ErrForbidden
+	}
+
+	store, err := service.resolveERPScope(ctx, principal, input.TenantID, input.StoreCode)
+	if err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	if err := service.repository.UpsertConsultantERPLink(ctx, store, input, principal.UserID); err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	return service.repository.ListConsultantERPLinks(ctx, store, input.EmployeeIDs)
+}
+
+func (service *Service) AutoLinkConsultantERP(ctx context.Context, principal auth.Principal, tenantID string, storeCode string, employeeIDs []string) (ConsultantERPLinksResponse, error) {
+	if !canEditERP(principal) {
+		return ConsultantERPLinksResponse{}, ErrForbidden
+	}
+
+	store, err := service.resolveERPScope(ctx, principal, tenantID, storeCode)
+	if err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	if err := service.repository.AutoLinkConsultantERP(ctx, store, principal.UserID, employeeIDs); err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	return service.repository.ListConsultantERPLinks(ctx, store, employeeIDs)
+}
+
+func (service *Service) DeleteConsultantERPLink(ctx context.Context, principal auth.Principal, input ConsultantERPLinkDeleteInput) (ConsultantERPLinksResponse, error) {
+	if !canEditERP(principal) {
+		return ConsultantERPLinksResponse{}, ErrForbidden
+	}
+
+	store, err := service.resolveERPScope(ctx, principal, input.TenantID, input.StoreCode)
+	if err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	if err := service.repository.DeleteConsultantERPLink(ctx, store, input.LinkID, principal.UserID); err != nil {
+		return ConsultantERPLinksResponse{}, err
+	}
+
+	return service.repository.ListConsultantERPLinks(ctx, store, input.EmployeeIDs)
 }
 
 func (service *Service) resolveERPScope(ctx context.Context, principal auth.Principal, tenantID string, requestedStoreCode string) (StoreScope, error) {

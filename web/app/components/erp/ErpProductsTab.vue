@@ -33,6 +33,7 @@ defineProps<{
   rawItemRows: number
   rows: ErpRecord[]
   searchValue: string
+  showAdminCards: boolean
   syncing: boolean
   total: number
 }>()
@@ -56,7 +57,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="erp-panel__tab-body">
-    <div class="erp-panel__stats">
+    <div v-if="showAdminCards" class="erp-panel__stats">
       <article class="erp-panel__stat-card">
         <span class="erp-panel__stat-label">Produtos atuais</span>
         <strong class="erp-panel__stat-value">{{ formatNumber(currentProductCount) }}</strong>

@@ -329,7 +329,32 @@ func (service *Service) loadSnapshot(
 	access AccessContext,
 	storeID string,
 ) (string, string, []ConsultantProfile, SnapshotState, error) {
-	resolvedStoreID, err := service.resolveStoreID(ctx, access, storeID)
+	return service.loadSnapshotInternal(ctx, access, storeID, false)
+}
+
+// loadSnapshotAllowArchived carrega snapshot mesmo se a loja estiver arquivada.
+// Usado por Finish para permitir encerrar atendimentos em curso apos arquivamento.
+func (service *Service) loadSnapshotAllowArchived(
+	ctx context.Context,
+	access AccessContext,
+	storeID string,
+) (string, string, []ConsultantProfile, SnapshotState, error) {
+	return service.loadSnapshotInternal(ctx, access, storeID, true)
+}
+
+func (service *Service) loadSnapshotInternal(
+	ctx context.Context,
+	access AccessContext,
+	storeID string,
+	allowArchived bool,
+) (string, string, []ConsultantProfile, SnapshotState, error) {
+	var resolvedStoreID string
+	var err error
+	if allowArchived {
+		resolvedStoreID, err = service.resolveStoreIDAllowArchived(ctx, access, storeID)
+	} else {
+		resolvedStoreID, err = service.resolveStoreID(ctx, access, storeID)
+	}
 	if err != nil {
 		return "", "", nil, SnapshotState{}, err
 	}
@@ -362,6 +387,17 @@ func (service *Service) loadSnapshotState(ctx context.Context, storeID string) (
 }
 
 func (service *Service) resolveStoreID(ctx context.Context, access AccessContext, storeID string) (string, error) {
+	return service.resolveStoreIDInternal(ctx, access, storeID, false)
+}
+
+// resolveStoreIDAllowArchived aceita lojas arquivadas. Usado pelo Finish para
+// permitir encerrar atendimentos ja em andamento mesmo apos a loja ser
+// arquivada.
+func (service *Service) resolveStoreIDAllowArchived(ctx context.Context, access AccessContext, storeID string) (string, error) {
+	return service.resolveStoreIDInternal(ctx, access, storeID, true)
+}
+
+func (service *Service) resolveStoreIDInternal(ctx context.Context, access AccessContext, storeID string, allowArchived bool) (string, error) {
 	if !canReadOperations(access) {
 		return "", ErrForbidden
 	}
@@ -371,7 +407,13 @@ func (service *Service) resolveStoreID(ctx context.Context, access AccessContext
 		return "", ErrStoreRequired
 	}
 
-	exists, err := service.repository.StoreExists(ctx, trimmedStoreID)
+	var exists bool
+	var err error
+	if allowArchived {
+		exists, err = service.repository.StoreExistsIncludingArchived(ctx, trimmedStoreID)
+	} else {
+		exists, err = service.repository.StoreExists(ctx, trimmedStoreID)
+	}
 	if err != nil {
 		return "", err
 	}

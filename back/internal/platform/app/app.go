@@ -20,6 +20,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/erp"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/reports"
@@ -91,6 +92,8 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	alertsRepository := alerts.NewPostgresRepository(pool)
 	alertsService := alerts.NewService(alertsRepository)
 	alertsService.SetContextPublisher(realtimeService)
+	operationGoalsRepository := operationgoals.NewPostgresRepository(pool)
+	operationGoalsService := operationgoals.NewService(operationGoalsRepository, storeService, realtimeService)
 	operationsRepository := operations.NewPostgresRepository(pool)
 	operationsService := operations.NewService(operationsRepository, realtimeService, newOperationsStoreScopeAdapter(storeService))
 	operationsService.SetAlertCoordinator(alertsService)
@@ -254,6 +257,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	consultants.RegisterRoutes(mux, consultantService, authMiddleware)
 	settings.RegisterRoutes(mux, settingsService, authMiddleware, cfg.Env)
 	catalog.RegisterRoutes(mux, catalogService, authMiddleware)
+	operationgoals.RegisterRoutes(mux, operationGoalsService, authMiddleware)
 	operations.RegisterRoutes(mux, operationsService, authMiddleware)
 	alerts.RegisterRoutes(mux, alertsService, authMiddleware)
 	realtime.RegisterRoutes(mux, realtimeService)

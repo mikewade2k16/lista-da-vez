@@ -94,6 +94,16 @@ export interface ErpCRMStoreMetric {
 export interface ErpCRMConsultantMetric {
   consultantId: string
   consultantName: string
+  erpEmployeeId?: string
+  profileConsultantId?: string
+  profileConsultantName?: string
+  profileUserId?: string
+  profileStoreId?: string
+  profileStoreCode?: string
+  profileStoreName?: string
+  linkStatus?: string
+  linkConfidence?: number
+  linkCandidates?: number
   storeSlug: string
   storeLabel: string
   storeCnpj?: string
@@ -110,6 +120,8 @@ export interface ErpQueueConsultantStats {
   personId: string
   personName: string
   storeId: string
+  storeSlug?: string
+  storeLabel?: string
   attendances: number
   conversions: number
   conversionRate: number
@@ -119,6 +131,8 @@ export interface ErpQueueConsultantStats {
 
 export interface ErpQueueStoreStats {
   storeId: string
+  storeSlug?: string
+  storeLabel?: string
   attendances: number
   conversions: number
   conversionRate: number
@@ -145,6 +159,38 @@ export interface ErpCRMResponse {
   consultants: ErpCRMConsultantMetric[]
   queueStats?: ErpQueueStats | null
   warnings?: string[]
+}
+
+export interface ErpConsultantLinkEmployee {
+  erpEmployeeId: string
+  erpEmployeeName: string
+  erpStoreCode?: string
+  erpStoreLabel?: string
+  erpStoreRawCode?: string
+  linkId?: string
+  linkedConsultantId?: string
+  linkedConsultantName?: string
+  linkedStoreId?: string
+  linkedStoreName?: string
+  linkStatus: string
+  linkConfidence?: number
+  linkCandidates?: number
+  note?: string
+}
+
+export interface ErpConsultantLinkOption {
+  consultantId: string
+  consultantName: string
+  storeId: string
+  storeCode?: string
+  storeName: string
+  employeeCode?: string
+}
+
+export interface ErpConsultantLinksResponse {
+  store: ErpStoreScope
+  employees: ErpConsultantLinkEmployee[]
+  consultants: ErpConsultantLinkOption[]
 }
 
 interface ErpTypeStatus {
@@ -352,7 +398,10 @@ export const useErpStore = defineStore('erp', () => {
   const totalRuns = ref(0)
   const overview = ref<ErpOverviewResponse | null>(null)
   const crm = ref<ErpCRMResponse | null>(null)
+  const consultantLinks = ref<ErpConsultantLinksResponse | null>(null)
   const loadingCrm = ref(false)
+  const loadingConsultantLinks = ref(false)
+  const savingConsultantLink = ref(false)
   const recordsStats = ref<ErpRecordsStatsResponse | null>(null)
   const recordsStatsKey = ref('')
   const recordsDataType = ref('')
@@ -1182,6 +1231,150 @@ export const useErpStore = defineStore('erp', () => {
     }
   }
 
+  async function fetchConsultantLinks(
+    payload: { tenantId?: string; storeCode?: string; employeeIds?: string[] } = {},
+  ) {
+    try {
+      loadingConsultantLinks.value = true
+      error.value = ''
+      await auth.ensureSession()
+
+      const tenantId = normalizeText(payload.tenantId || auth.activeTenantId)
+      const storeCode = normalizeText(payload.storeCode || activeStoreCode.value)
+      const params = new URLSearchParams()
+      if (storeCode) params.set('storeCode', storeCode)
+      if (tenantId) params.set('tenantId', tenantId)
+      for (const employeeId of payload.employeeIds || []) {
+        const normalizedEmployeeId = normalizeText(employeeId)
+        if (normalizedEmployeeId) params.append('employeeId', normalizedEmployeeId)
+      }
+
+      const response = (await apiRequest(
+        params.size ? `/v1/erp/consultant-links?${params.toString()}` : '/v1/erp/consultant-links',
+      )) as ErpConsultantLinksResponse
+      consultantLinks.value = response
+      return { ok: true, data: response }
+    } catch (err) {
+      const message = getApiErrorMessage(err, 'Erro ao carregar vinculos ERP dos consultores.')
+      error.value = message
+      return { ok: false, message }
+    } finally {
+      loadingConsultantLinks.value = false
+    }
+  }
+
+  async function upsertConsultantLink(payload: {
+    tenantId?: string
+    storeCode?: string
+    erpStoreCode?: string
+    erpEmployeeId: string
+    erpEmployeeName?: string
+    consultantId: string
+    employeeIds?: string[]
+    note?: string
+  }) {
+    try {
+      savingConsultantLink.value = true
+      error.value = ''
+      await auth.ensureSession()
+
+      const response = (await apiRequest('/v1/erp/consultant-links', {
+        method: 'PUT',
+        body: {
+          tenantId: normalizeText(payload.tenantId || auth.activeTenantId),
+          storeCode: normalizeText(payload.storeCode || activeStoreCode.value),
+          erpStoreCode: normalizeText(payload.erpStoreCode),
+          erpEmployeeId: normalizeText(payload.erpEmployeeId),
+          erpEmployeeName: normalizeText(payload.erpEmployeeName),
+          consultantId: normalizeText(payload.consultantId),
+          employeeIds: Array.isArray(payload.employeeIds)
+            ? payload.employeeIds.map((employeeId) => normalizeText(employeeId)).filter(Boolean)
+            : [],
+          note: normalizeText(payload.note),
+        },
+      })) as ErpConsultantLinksResponse
+      consultantLinks.value = response
+      return { ok: true, data: response }
+    } catch (err) {
+      const message = getApiErrorMessage(err, 'Erro ao salvar vinculo ERP do consultor.')
+      error.value = message
+      return { ok: false, message }
+    } finally {
+      savingConsultantLink.value = false
+    }
+  }
+
+  async function autoLinkConsultants(
+    payload: { tenantId?: string; storeCode?: string; employeeIds?: string[] } = {},
+  ) {
+    try {
+      savingConsultantLink.value = true
+      error.value = ''
+      await auth.ensureSession()
+
+      const tenantId = normalizeText(payload.tenantId || auth.activeTenantId)
+      const storeCode = normalizeText(payload.storeCode || activeStoreCode.value)
+      const params = new URLSearchParams()
+      if (storeCode) params.set('storeCode', storeCode)
+      if (tenantId) params.set('tenantId', tenantId)
+      for (const employeeId of payload.employeeIds || []) {
+        const normalizedEmployeeId = normalizeText(employeeId)
+        if (normalizedEmployeeId) params.append('employeeId', normalizedEmployeeId)
+      }
+
+      const response = (await apiRequest(
+        `/v1/erp/consultant-links/auto${params.size ? `?${params.toString()}` : ''}`,
+        { method: 'POST' },
+      )) as ErpConsultantLinksResponse
+      consultantLinks.value = response
+      return { ok: true, data: response }
+    } catch (err) {
+      const message = getApiErrorMessage(err, 'Erro ao aplicar vinculos automaticos ERP.')
+      error.value = message
+      return { ok: false, message }
+    } finally {
+      savingConsultantLink.value = false
+    }
+  }
+
+  async function deleteConsultantLink(payload: {
+    tenantId?: string
+    storeCode?: string
+    employeeIds?: string[]
+    linkId: string
+  }) {
+    try {
+      savingConsultantLink.value = true
+      error.value = ''
+      await auth.ensureSession()
+
+      const tenantId = normalizeText(payload.tenantId || auth.activeTenantId)
+      const storeCode = normalizeText(payload.storeCode || activeStoreCode.value)
+      const params = new URLSearchParams()
+      if (storeCode) params.set('storeCode', storeCode)
+      if (tenantId) params.set('tenantId', tenantId)
+      for (const employeeId of payload.employeeIds || []) {
+        const normalizedEmployeeId = normalizeText(employeeId)
+        if (normalizedEmployeeId) params.append('employeeId', normalizedEmployeeId)
+      }
+
+      const response = (await apiRequest(
+        `/v1/erp/consultant-links/${encodeURIComponent(normalizeText(payload.linkId))}${
+          params.size ? `?${params.toString()}` : ''
+        }`,
+        { method: 'DELETE' },
+      )) as ErpConsultantLinksResponse
+      consultantLinks.value = response
+      return { ok: true, data: response }
+    } catch (err) {
+      const message = getApiErrorMessage(err, 'Erro ao remover vinculo ERP do consultor.')
+      error.value = message
+      return { ok: false, message }
+    } finally {
+      savingConsultantLink.value = false
+    }
+  }
+
   function reset() {
     productsRequestSeq += 1
     recordsRequestSeq += 1
@@ -1199,6 +1392,7 @@ export const useErpStore = defineStore('erp', () => {
     totalRuns.value = 0
     overview.value = null
     crm.value = null
+    consultantLinks.value = null
     recordsStats.value = null
     recordsStatsKey.value = ''
     error.value = ''
@@ -1226,7 +1420,10 @@ export const useErpStore = defineStore('erp', () => {
     totalRuns,
     overview,
     crm,
+    consultantLinks,
     loadingCrm,
+    loadingConsultantLinks,
+    savingConsultantLink,
     recordsStats,
     recordsStatsKey,
     loadingStats,
@@ -1243,6 +1440,10 @@ export const useErpStore = defineStore('erp', () => {
     fetchStats,
     fetchCRM,
     fetchCRMSnapshot,
+    fetchConsultantLinks,
+    upsertConsultantLink,
+    autoLinkConsultants,
+    deleteConsultantLink,
     bootstrapItems,
     bootstrapDataType,
     syncStore,

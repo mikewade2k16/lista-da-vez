@@ -185,13 +185,16 @@ export const useMultiStoreStore = defineStore('multistore', () => {
     activeStoreId: String(auth.activeStoreId || runtimeState.value.activeStoreId || '').trim(),
   }))
 
-  async function ensureLoaded() {
+  async function ensureLoaded(options: LooseRecord = {}) {
+    const includeOverview = options.includeOverview !== false
     await runtime.ensure()
 
     if (auth.isAuthenticated) {
       await auth.ensureSession()
-      await refreshOverview()
       await refreshManagedStores()
+      if (includeOverview) {
+        await refreshOverview()
+      }
     }
 
     return true

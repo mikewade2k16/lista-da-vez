@@ -51,6 +51,7 @@ const {
   handleRecordsSortDir,
   handleSyncNow,
   identifierPrefixValue,
+  isERPSystemAdmin,
   lastImportedFile,
   lastRun,
   orderStats,
@@ -110,6 +111,7 @@ const {
       :raw-item-rows="rawItemRows"
       :rows="erpStore.products"
       :search-value="searchValue"
+      :show-admin-cards="isERPSystemAdmin"
       :syncing="erpStore.syncing"
       :total="erpStore.totalProducts"
       @update:search-value="searchValue = $event"
@@ -128,7 +130,7 @@ const {
     <ErpCrmWorkspace v-else-if="activeTab === 'crm'" ref="crmRef" />
 
     <ErpBancoTab
-      v-else-if="activeTab === 'banco'"
+      v-else-if="activeTab === 'banco' && isERPSystemAdmin"
       :active-banco-section="activeBancoSection"
       :active-banco-tab="activeBancoTab"
       :banco-tabs="bancoTabs"
@@ -138,7 +140,7 @@ const {
     />
 
     <ErpSyncTab
-      v-else-if="activeTab === 'sincronizacao'"
+      v-else-if="activeTab === 'sincronizacao' && isERPSystemAdmin"
       :can-sync="canSync"
       :last-imported-file="lastImportedFile"
       :last-run="lastRun"
@@ -182,6 +184,7 @@ const {
       :records-sort-dir="recordsSortDir"
       :records-specific-search-value="recordsSpecificSearchValue"
       :rows="erpStore.records"
+      :show-admin-cards="isERPSystemAdmin"
       :syncing="erpStore.syncing"
       :total="erpStore.totalRecords"
       @update:records-search-value="recordsSearchValue = $event"

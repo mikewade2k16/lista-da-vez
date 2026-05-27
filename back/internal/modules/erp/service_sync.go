@@ -99,6 +99,11 @@ func (service *Service) Bootstrap(ctx context.Context, principal auth.Principal,
 	); err != nil {
 		return BootstrapResult{}, err
 	}
+	if dataType == DataTypeEmployee && filesImported > 0 {
+		if err := service.repository.AutoLinkConsultantERP(ctx, store, principal.UserID, nil); err != nil {
+			return BootstrapResult{}, err
+		}
+	}
 
 	store.StoreCNPJ = firstNonEmpty(store.StoreCNPJ, storeCNPJ)
 	return BootstrapResult{
@@ -328,6 +333,11 @@ func (service *Service) ingestStoreResolved(ctx context.Context, store StoreScop
 		finishedAt := time.Now().UTC()
 		if err := service.repository.FinishSyncRun(ctx, run.ID, status, runFilesSeen, runFilesImported, runFilesSkipped, runRowsRead, runRowsImported, runStoreCNPJ, finishedAt, errorMessage); err != nil {
 			return IngestResult{}, err
+		}
+		if !input.DryRun && dataType == DataTypeEmployee && runFilesImported > 0 {
+			if err := service.repository.AutoLinkConsultantERP(ctx, store, "", nil); err != nil {
+				return IngestResult{}, err
+			}
 		}
 		result.FinishedAt = finishedAt
 	}

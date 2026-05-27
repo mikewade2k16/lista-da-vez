@@ -242,9 +242,9 @@ const ROLE_WORKSPACES = {
     'tools',
     'roadmap',
   ],
-  marketing: ['operacao', 'erp', 'bi', 'crm'],
-  director: ['operacao', 'erp', 'bi', 'crm'],
-  manager: ['operacao', 'erp', 'bi', 'crm', 'alertas', 'feedback'],
+  marketing: ['operacao', 'erp', 'bi', 'crm', 'multiloja'],
+  director: ['operacao', 'erp', 'bi', 'crm', 'multiloja'],
+  manager: ['operacao', 'erp', 'bi', 'crm', 'multiloja', 'alertas', 'feedback'],
   store_terminal: [
     'operacao',
     'consultor',
@@ -494,6 +494,24 @@ export function canManageStores(role, permissionKeys = [], permissionsResolved =
   return normalized === 'platform_admin' || normalized === 'owner'
 }
 
+export function canManageGoalTargets(role, permissionKeys = [], permissionsResolved = false) {
+  const normalized = normalizeAppRole(role)
+  if (SUPERUSER_ROLES.has(normalized)) {
+    return true
+  }
+
+  if (permissionsResolved && hasPermission(permissionKeys, 'workspace.multiloja.edit')) {
+    return true
+  }
+
+  return (
+    normalized === 'platform_admin' ||
+    normalized === 'owner' ||
+    normalized === 'director' ||
+    normalized === 'manager'
+  )
+}
+
 export function canAccessClients(role, permissionKeys = [], permissionsResolved = false) {
   const normalized = normalizeAppRole(role)
 
@@ -583,15 +601,16 @@ export function canAccessMultiStore(role, permissionKeys = [], permissionsResolv
     return true
   }
 
-  if (permissionsResolved) {
-    return hasPermission(permissionKeys, 'workspace.multiloja.view')
+  if (permissionsResolved && hasPermission(permissionKeys, 'workspace.multiloja.view')) {
+    return true
   }
 
   return (
     normalized === 'platform_admin' ||
     normalized === 'owner' ||
     normalized === 'director' ||
-    normalized === 'marketing'
+    normalized === 'marketing' ||
+    normalized === 'manager'
   )
 }
 

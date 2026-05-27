@@ -33,6 +33,32 @@ type crmConsultantAggregate struct {
 	ProductSalesCents int64
 }
 
+type crmConsultantLinkProfile struct {
+	ConsultantID   string
+	ConsultantName string
+	UserID         string
+	StoreID        string
+	StoreCode      string
+	StoreName      string
+	EmployeeCode   string
+}
+
+type crmConsultantManualLink struct {
+	LinkID          string
+	ERPEmployeeID   string
+	ERPEmployeeName string
+	ERPStoreCode    string
+	Note            string
+	Profile         crmConsultantLinkProfile
+}
+
+type crmConsultantResolvedLink struct {
+	Profile    crmConsultantLinkProfile
+	Status     string
+	Confidence float64
+	Candidates int
+}
+
 type crmOrderAggregate struct {
 	ExplicitStoreCNPJ string
 	FallbackStoreCNPJ string
@@ -40,6 +66,14 @@ type crmOrderAggregate struct {
 	Units             int64
 	SalesCents        int64
 	ProductSalesCents int64
+}
+
+type crmERPEmployeeLinkCandidate struct {
+	ERPEmployeeID   string
+	ERPEmployeeName string
+	ERPStoreRawCode string
+	ERPStoreCode    string
+	ERPStoreLabel   string
 }
 
 type crmCanceledStoreAggregate struct {
@@ -51,6 +85,8 @@ type crmQueueConsultantStat struct {
 	PersonID           string
 	PersonName         string
 	StoreID            string
+	StoreCode          string
+	StoreName          string
 	Attendances        int
 	Conversions        int
 	QueueCancellations int
@@ -58,12 +94,24 @@ type crmQueueConsultantStat struct {
 
 type crmQueueStoreStat struct {
 	StoreID            string
+	StoreCode          string
+	StoreName          string
 	Attendances        int
 	Conversions        int
 	QueueCancellations int
 }
 
 const crmStoreKeyManagementMultiStore = "gerencia-multiloja"
+
+const (
+	crmConsultantLinkStatusManual       = "manual"
+	crmConsultantLinkStatusEmployeeCode = "employee_code"
+	crmConsultantLinkStatusNameExact    = "name_exact"
+	crmConsultantLinkStatusAmbiguous    = "ambiguous"
+	crmConsultantLinkStatusUnmatched    = "unmatched"
+	crmConsultantLinkNoteAutoEmployee   = "system:auto_employee_code"
+	crmConsultantLinkNoteAutoName       = "system:auto_name_exact"
+)
 
 var crmStoreAliases = map[string]crmStoreAlias{
 	"31327524000115": {Slug: "riomar", Label: "Riomar"},

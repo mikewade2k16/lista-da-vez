@@ -104,6 +104,93 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, overview)
 	})))
 
+	mux.Handle("GET /v1/erp/consultant-links", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		response, err := service.ConsultantERPLinks(
+			r.Context(),
+			principal,
+			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			strings.TrimSpace(r.URL.Query().Get("storeCode")),
+			parseConsultantLinkEmployeeIDs(r),
+		)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	})))
+
+	mux.Handle("PUT /v1/erp/consultant-links", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		var input ConsultantERPLinkUpsertInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+
+		response, err := service.UpsertConsultantERPLink(r.Context(), principal, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	})))
+
+	mux.Handle("POST /v1/erp/consultant-links/auto", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		response, err := service.AutoLinkConsultantERP(
+			r.Context(),
+			principal,
+			strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			strings.TrimSpace(r.URL.Query().Get("storeCode")),
+			parseConsultantLinkEmployeeIDs(r),
+		)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	})))
+
+	mux.Handle("DELETE /v1/erp/consultant-links/{id}", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		response, err := service.DeleteConsultantERPLink(r.Context(), principal, ConsultantERPLinkDeleteInput{
+			TenantID:    strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			StoreCode:   strings.TrimSpace(r.URL.Query().Get("storeCode")),
+			EmployeeIDs: parseConsultantLinkEmployeeIDs(r),
+			LinkID:      strings.TrimSpace(r.PathValue("id")),
+		})
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	})))
+
 	mux.Handle("GET /v1/erp/runs", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
@@ -343,6 +430,24 @@ func parseRunsQuery(r *http.Request) (RunsQuery, error) {
 		Page:      page,
 		PageSize:  pageSize,
 	}, nil
+}
+
+func parseConsultantLinkEmployeeIDs(r *http.Request) []string {
+	query := r.URL.Query()
+	values := make([]string, 0, len(query["employeeId"])+1)
+	for _, value := range query["employeeId"] {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	for _, value := range strings.Split(strings.TrimSpace(query.Get("employeeIds")), ",") {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			values = append(values, trimmed)
+		}
+	}
+	return values
 }
 
 func parseCRMOverviewQuery(r *http.Request) (CRMOverviewQuery, error) {

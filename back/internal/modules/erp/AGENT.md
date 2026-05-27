@@ -50,7 +50,7 @@ Na fase 1, ele precisa sustentar:
 ## CRM 360 — Indicadores integrados com a fila (2026-05-21)
 
 - `GET /v1/erp/crm` agora retorna também `queueStats` com dados de atendimento da fila (`operation_service_history`) para o mesmo período e loja
-- `queueStats.byConsultant` agrupa por `person_id/person_name`; o merge com `consultants` (ERP) é feito no frontend por nome normalizado (sem mapeamento direto person_id → employee_id no banco)
+- `queueStats.byConsultant` agrupa por `person_id/person_name`; o merge com `consultants` (ERP) usa `consultant_erp_links`, `users.employee_code`, nome normalizado unico e fallback por nome no frontend
 - `erpCancellations` / `erpCancellationRate` adicionados em `CRMSummary` e `CRMStoreMetric` a partir de `erp_order_canceled_raw`
 - novos arquivos: `repository_crm_queue.go` (queries de fila), `repository_crm_types.go` (tipos internos adicionados)
 - taxa de conversão da fila = `finish_outcome = 'compra'` / total atendimentos; taxa de cancelamento = `cancel_reason preenchido` / total

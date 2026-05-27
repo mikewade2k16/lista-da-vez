@@ -7,7 +7,8 @@ import (
 )
 
 func (service *Service) Finish(ctx context.Context, access AccessContext, input FinishCommandInput) (MutationAck, error) {
-	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshot(ctx, access, input.StoreID)
+	// Permite encerrar atendimentos mesmo se a loja foi arquivada apos o inicio.
+	resolvedStoreID, storeName, roster, snapshotState, err := service.loadSnapshotAllowArchived(ctx, access, input.StoreID)
 	if err != nil {
 		return MutationAck{}, err
 	}

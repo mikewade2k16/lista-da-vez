@@ -203,18 +203,11 @@ func (service *Service) Delete(ctx context.Context, principal auth.Principal, st
 		return DeleteResult{}, err
 	}
 
-	dependencies, err := service.repository.ListDeleteDependencies(ctx, store.ID)
-	if err != nil {
-		return DeleteResult{}, err
-	}
-
-	if len(dependencies) > 0 {
-		return DeleteResult{}, &DeleteBlockedError{
-			StoreID:      store.ID,
-			Dependencies: dependencies,
-		}
-	}
-
+	// Politica de delecao:
+	// - consultants.store_id e nullable + ON DELETE SET NULL (migration 0122): consultores ficam orfaos.
+	// - user_store_roles e demais tabelas operacionais (queue, active services, history, etc) usam
+	//   ON DELETE CASCADE: vinculos/registros operacionais somem junto com a loja.
+	// Por isso nao bloqueamos mais a delecao baseado em dependencias.
 	if err := service.repository.Delete(ctx, store.ID); err != nil {
 		return DeleteResult{}, err
 	}

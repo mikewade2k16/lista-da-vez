@@ -3,9 +3,11 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { useAccessControlStore } from '~/stores/access-control'
 import { useAlertsStore } from '~/stores/alerts'
+import { useCrmStore } from '~/stores/crm'
 import { useUiStore } from '~/stores/ui'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { useMultiStoreStore } from '~/stores/multistore'
+import { useOperationGoalsStore } from '~/stores/operation-goals'
 import { useUsersStore } from '~/stores/users'
 import { createApiRequest, getWebSocketBase } from '~/utils/api-client'
 import { refreshRuntimeStoreSettings } from '~/utils/runtime-remote'
@@ -45,6 +47,8 @@ export function useContextRealtime() {
   const toastedAlertIds = new Set<string>()
   const multiStore = useMultiStoreStore()
   const usersStore = useUsersStore()
+  const operationGoalsStore = useOperationGoalsStore()
+  const crmStore = useCrmStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const status = ref('idle')
@@ -241,9 +245,32 @@ export function useContextRealtime() {
           return
         }
 
+        const resource = String(payload?.resource || '').trim()
+
+        if (resource === 'operationgoal') {
+          // Meta criada/editada/excluida em qualquer sessao do tenant.
+          // Recarrega lista de metas e overview do CRM (que cruza com operation_goal_targets).
+          // Nao depende de `ready`: se a store ja tem overview carregado, refresca.
+          const followUps = []
+          if (operationGoalsStore.ready || operationGoalsStore.goals?.length) {
+            followUps.push(
+              operationGoalsStore.loadGoals(operationGoalsStore.lastFilters).catch(() => null),
+            )
+          }
+          if (crmStore.overview) {
+            followUps.push(crmStore.refreshOverview().catch(() => null))
+          }
+          await Promise.allSettled(followUps)
+          return
+        }
+
         await refreshContextState()
 
-        const resource = String(payload?.resource || '').trim()
+        // Loja foi criada/atualizada/arquivada/excluida: o cruzamento do CRM por storeCode
+        // pode ter mudado (rename, archive, delete). Refresca tambem o CRM se ja carregado.
+        if (resource === 'store' && crmStore.overview) {
+          await crmStore.refreshOverview().catch(() => null)
+        }
 
         if (['access', 'user'].includes(resource)) {
           await accessControl.refreshRealtimeState()

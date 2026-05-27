@@ -326,6 +326,7 @@ type FinishCommandInput struct {
 
 type Repository interface {
 	StoreExists(ctx context.Context, storeID string) (bool, error)
+	StoreExistsIncludingArchived(ctx context.Context, storeID string) (bool, error)
 	GetStoreName(ctx context.Context, storeID string) (string, error)
 	GetMaxConcurrentServices(ctx context.Context, storeID string) (int, error)
 	GetMaxConcurrentServicesPerConsultant(ctx context.Context, storeID string) (int, error)

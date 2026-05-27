@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import OperationWorkspace from '~/components/operation/OperationWorkspace.vue'
 import AlertDisplayHost from '~/components/operation/AlertDisplayHost.vue'
+import ArchivedStoreBanner from '~/components/operation/ArchivedStoreBanner.vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
 import { useOperationsStore } from '~/stores/operations'
@@ -165,6 +166,7 @@ function handleIntegratedStoreChange(storeId) {
       </p>
     </div>
     <template v-else>
+      <ArchivedStoreBanner :store-id="bannerStoreId || ''" />
       <AlertDisplayHost
         v-if="bannerStoreId"
         :store-id="bannerStoreId"

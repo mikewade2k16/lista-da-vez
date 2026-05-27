@@ -1,123 +1,208 @@
-import { computed, ref } from "vue";
-import { defineStore } from "pinia";
+import { computed, ref } from 'vue'
+import { defineStore } from 'pinia'
 
-import { useAuthStore } from "~/stores/auth";
-import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 export type CRMSummary = {
-  orders: number;
-  units: number;
-  salesCents: number;
-  ticketAverageCents: number;
-  valuePerProductCents: number;
-  paScore: number;
-  monthlyGoalCents: number;
-  goalProgress: number;
-  remainingToGoalCents: number;
-  unmappedSalesCents?: number;
-  erpCancellations?: number;
-  erpCancellationRate?: number;
-};
+  orders: number
+  units: number
+  salesCents: number
+  ticketAverageCents: number
+  valuePerProductCents: number
+  paScore: number
+  monthlyGoalCents: number
+  goalProgress: number
+  remainingToGoalCents: number
+  unmappedSalesCents?: number
+  erpCancellations?: number
+  erpCancellationRate?: number
+}
 
 export type CRMStoreMetric = {
-  storeSlug: string;
-  storeLabel: string;
-  storeCode?: string;
-  storeName?: string;
-  storeCnpjs?: string[];
-  mapped: boolean;
-  orders: number;
-  units: number;
-  salesCents: number;
-  ticketAverageCents: number;
-  valuePerProductCents: number;
-  paScore: number;
-  monthlyGoalCents: number;
-  avgTicketGoalCents: number;
-  paGoal: number;
-  goalProgress: number;
-  remainingToGoalCents: number;
-  erpCancellations?: number;
-  erpCancellationRate?: number;
-};
+  storeSlug: string
+  storeLabel: string
+  storeCode?: string
+  storeName?: string
+  storeCnpjs?: string[]
+  mapped: boolean
+  orders: number
+  units: number
+  salesCents: number
+  ticketAverageCents: number
+  valuePerProductCents: number
+  paScore: number
+  monthlyGoalCents: number
+  avgTicketGoalCents: number
+  paGoal: number
+  goalProgress: number
+  remainingToGoalCents: number
+  erpCancellations?: number
+  erpCancellationRate?: number
+}
 
 export type CRMConsultantMetric = {
-  consultantId: string;
-  consultantName: string;
-  storeSlug: string;
-  storeLabel: string;
-  storeCnpj?: string;
-  mapped: boolean;
-  orders: number;
-  units: number;
-  salesCents: number;
-  ticketAverageCents: number;
-  valuePerProductCents: number;
-  paScore: number;
-};
+  consultantId: string
+  consultantName: string
+  erpEmployeeId?: string
+  profileConsultantId?: string
+  profileConsultantName?: string
+  profileUserId?: string
+  profileStoreId?: string
+  profileStoreCode?: string
+  profileStoreName?: string
+  linkStatus?: string
+  linkConfidence?: number
+  linkCandidates?: number
+  storeSlug: string
+  storeLabel: string
+  storeCnpj?: string
+  mapped: boolean
+  orders: number
+  units: number
+  salesCents: number
+  ticketAverageCents: number
+  valuePerProductCents: number
+  paScore: number
+}
 
 export type QueueConsultantStats = {
-  personId: string;
-  personName: string;
-  storeId: string;
-  attendances: number;
-  conversions: number;
-  conversionRate: number;
-  queueCancellations: number;
-  queueCancellationRate: number;
-};
+  personId: string
+  personName: string
+  storeId: string
+  storeSlug?: string
+  storeLabel?: string
+  attendances: number
+  conversions: number
+  conversionRate: number
+  queueCancellations: number
+  queueCancellationRate: number
+}
 
 export type QueueStoreStats = {
-  storeId: string;
-  attendances: number;
-  conversions: number;
-  conversionRate: number;
-  queueCancellations: number;
-  queueCancellationRate: number;
-};
+  storeId: string
+  storeSlug?: string
+  storeLabel?: string
+  attendances: number
+  conversions: number
+  conversionRate: number
+  queueCancellations: number
+  queueCancellationRate: number
+}
 
 export type QueueStats = {
-  totalAttendances: number;
-  totalConversions: number;
-  totalCancellations: number;
-  conversionRate: number;
-  cancellationRate: number;
-  byStore?: QueueStoreStats[];
-  byConsultant?: QueueConsultantStats[];
-};
+  totalAttendances: number
+  totalConversions: number
+  totalCancellations: number
+  conversionRate: number
+  cancellationRate: number
+  byStore?: QueueStoreStats[]
+  byConsultant?: QueueConsultantStats[]
+}
 
 export type CRMOverviewResponse = {
-  store?: Record<string, unknown> | null;
-  dateFrom: string;
-  dateTo: string;
-  summary: CRMSummary;
-  stores: CRMStoreMetric[];
-  consultants: CRMConsultantMetric[];
-  queueStats?: QueueStats | null;
-  warnings?: string[];
-};
+  store?: Record<string, unknown> | null
+  dateFrom: string
+  dateTo: string
+  summary: CRMSummary
+  stores: CRMStoreMetric[]
+  consultants: CRMConsultantMetric[]
+  queueStats?: QueueStats | null
+  warnings?: string[]
+}
 
 function formatDateInput(date: Date) {
   return [
     date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, "0"),
-    String(date.getUTCDate()).padStart(2, "0")
-  ].join("-");
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0'),
+  ].join('-')
 }
 
 function buildCurrentMonthRange() {
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+  const now = new Date()
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
 
   return {
     dateFrom: formatDateInput(monthStart),
-    dateTo: formatDateInput(monthEnd)
-  };
+    dateTo: formatDateInput(monthEnd),
+  }
 }
 
 function normalizeText(value: unknown) {
-  return String(value || "").trim();
+  return String(value || '').trim()
+}
+
+function extractMonthKey(value: string): string {
+  return String(value || '').slice(0, 7)
+}
+
+function mergeOperationGoals(
+  response: CRMOverviewResponse,
+  goals: Array<Record<string, any>>,
+): CRMOverviewResponse {
+  if (!goals || !goals.length) return response
+
+  const byCode = new Map<string, Record<string, any>>()
+  for (const goal of goals) {
+    if (goal.scope !== 'store') continue
+    const code = String(goal.storeCode || '')
+      .trim()
+      .toUpperCase()
+    if (code) byCode.set(code, goal)
+  }
+
+  if (!byCode.size) return response
+
+  let mergedTotalGoalCents = 0
+
+  const newStores = (response.stores || []).map((store) => {
+    const code = String(store.storeCode || '')
+      .trim()
+      .toUpperCase()
+    const goal = byCode.get(code)
+    if (!goal) {
+      mergedTotalGoalCents += store.monthlyGoalCents || 0
+      return store
+    }
+
+    const monthlyGoalCents = Math.round((Number(goal.monthlyGoal) || 0) * 100)
+    const avgTicketGoalCents = Math.round((Number(goal.avgTicketGoal) || 0) * 100)
+    const paGoal = Number(goal.paGoal) || 0
+    const salesCents = store.salesCents || 0
+    const remainingToGoalCents = Math.max(0, monthlyGoalCents - salesCents)
+    const goalProgress =
+      monthlyGoalCents > 0 ? Math.round((salesCents / monthlyGoalCents) * 10000) / 100 : 0
+
+    mergedTotalGoalCents += monthlyGoalCents
+
+    return {
+      ...store,
+      monthlyGoalCents,
+      avgTicketGoalCents,
+      paGoal,
+      remainingToGoalCents,
+      goalProgress,
+    }
+  })
+
+  const totalSalesCents = response.summary?.salesCents || 0
+  const summary = {
+    ...response.summary,
+    monthlyGoalCents: mergedTotalGoalCents,
+    remainingToGoalCents: Math.max(0, mergedTotalGoalCents - totalSalesCents),
+    goalProgress:
+      mergedTotalGoalCents > 0
+        ? Math.round((totalSalesCents / mergedTotalGoalCents) * 10000) / 100
+        : 0,
+  }
+
+  return {
+    ...response,
+    stores: newStores,
+    summary,
+  }
 }
 
 function createEmptyOverview(dateFrom: string, dateTo: string): CRMOverviewResponse {
@@ -135,115 +220,138 @@ function createEmptyOverview(dateFrom: string, dateTo: string): CRMOverviewRespo
       monthlyGoalCents: 0,
       goalProgress: 0,
       remainingToGoalCents: 0,
-      unmappedSalesCents: 0
+      unmappedSalesCents: 0,
     },
     stores: [],
     consultants: [],
-    warnings: []
-  };
+    warnings: [],
+  }
 }
 
-export const useCrmStore = defineStore("crm", () => {
-  const runtimeConfig = useRuntimeConfig();
-  const auth = useAuthStore();
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
-  const defaultRange = buildCurrentMonthRange();
+export const useCrmStore = defineStore('crm', () => {
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+  const defaultRange = buildCurrentMonthRange()
 
-  const overview = ref<CRMOverviewResponse | null>(null);
-  const pending = ref(false);
-  const ready = ref(false);
-  const errorMessage = ref("");
-  const lastLoadedKey = ref("");
-  const dateFrom = ref(defaultRange.dateFrom);
-  const dateTo = ref(defaultRange.dateTo);
+  const overview = ref<CRMOverviewResponse | null>(null)
+  const pending = ref(false)
+  const ready = ref(false)
+  const errorMessage = ref('')
+  const lastLoadedKey = ref('')
+  const dateFrom = ref(defaultRange.dateFrom)
+  const dateTo = ref(defaultRange.dateTo)
 
   const activeTenantId = computed(() =>
-    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id)
-  );
+    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id),
+  )
 
   function buildRequestKey() {
     return JSON.stringify({
       tenantId: activeTenantId.value,
       dateFrom: dateFrom.value,
-      dateTo: dateTo.value
-    });
+      dateTo: dateTo.value,
+    })
   }
 
   function clearState() {
-    overview.value = createEmptyOverview(dateFrom.value, dateTo.value);
-    pending.value = false;
-    ready.value = false;
-    errorMessage.value = "";
-    lastLoadedKey.value = "";
+    overview.value = createEmptyOverview(dateFrom.value, dateTo.value)
+    pending.value = false
+    ready.value = false
+    errorMessage.value = ''
+    lastLoadedKey.value = ''
   }
 
   function resetCurrentMonth() {
-    const nextRange = buildCurrentMonthRange();
-    dateFrom.value = nextRange.dateFrom;
-    dateTo.value = nextRange.dateTo;
+    const nextRange = buildCurrentMonthRange()
+    dateFrom.value = nextRange.dateFrom
+    dateTo.value = nextRange.dateTo
+  }
+
+  async function loadOperationGoalsForMonth(monthKey: string): Promise<Array<Record<string, any>>> {
+    if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return []
+    try {
+      const params = new URLSearchParams()
+      if (activeTenantId.value) params.set('tenantId', activeTenantId.value)
+      params.set('month', monthKey)
+      const response = (await apiRequest(`/v1/operations/goals?${params.toString()}`)) as {
+        items?: Array<Record<string, any>>
+      }
+      return Array.isArray(response?.items) ? response.items : []
+    } catch {
+      return []
+    }
   }
 
   async function refreshOverview() {
     if (!auth.isAuthenticated) {
-      clearState();
-      return null;
+      clearState()
+      return null
     }
 
-    pending.value = true;
-    errorMessage.value = "";
+    pending.value = true
+    errorMessage.value = ''
 
     try {
-      await auth.ensureSession();
+      await auth.ensureSession()
 
       if (!auth.isAuthenticated) {
-        clearState();
-        return null;
+        clearState()
+        return null
       }
 
-      const params = new URLSearchParams();
+      const params = new URLSearchParams()
       if (activeTenantId.value) {
-        params.set("tenantId", activeTenantId.value);
+        params.set('tenantId', activeTenantId.value)
       }
       if (dateFrom.value) {
-        params.set("dateFrom", dateFrom.value);
+        params.set('dateFrom', dateFrom.value)
       }
       if (dateTo.value) {
-        params.set("dateTo", dateTo.value);
+        params.set('dateTo', dateTo.value)
       }
 
-      const response = await apiRequest(`/v1/erp/crm?${params.toString()}`) as CRMOverviewResponse;
-      overview.value = response;
-      ready.value = true;
-      lastLoadedKey.value = buildRequestKey();
-      return response;
+      const monthKey = extractMonthKey(dateFrom.value)
+      const isSingleMonth = monthKey.length === 7 && monthKey === extractMonthKey(dateTo.value)
+
+      const [crmResponse, operationGoals] = await Promise.all([
+        apiRequest(`/v1/erp/crm?${params.toString()}`) as Promise<CRMOverviewResponse>,
+        isSingleMonth ? loadOperationGoalsForMonth(monthKey) : Promise.resolve([]),
+      ])
+
+      const merged = mergeOperationGoals(crmResponse, operationGoals)
+      overview.value = merged
+      ready.value = true
+      lastLoadedKey.value = buildRequestKey()
+      return merged
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar o CRM do ERP.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar o CRM do ERP.')
+      throw error
     } finally {
-      pending.value = false;
+      pending.value = false
     }
   }
 
   async function ensureLoaded() {
     if (!auth.isAuthenticated) {
-      clearState();
-      return false;
+      clearState()
+      return false
     }
 
     if (ready.value && lastLoadedKey.value === buildRequestKey()) {
-      return true;
+      return true
     }
 
     try {
-      await refreshOverview();
-      return true;
+      await refreshOverview()
+      return true
     } catch {
-      return false;
+      return false
     }
   }
 
   async function applyFilters() {
-    return refreshOverview();
+    return refreshOverview()
   }
 
   return {
@@ -257,6 +365,6 @@ export const useCrmStore = defineStore("crm", () => {
     refreshOverview,
     applyFilters,
     resetCurrentMonth,
-    clearState
-  };
-});
+    clearState,
+  }
+})

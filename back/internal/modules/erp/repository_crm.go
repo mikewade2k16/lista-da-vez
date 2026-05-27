@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store StoreScope, query CRMOverviewQuery) (CRMOverviewResponse, error) {
+func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store StoreScope, query CRMOverviewQuery, allowedStoreIDs []string) (CRMOverviewResponse, error) {
 	targets, err := repository.listCRMStoreTargets(ctx, store.TenantID)
 	if err != nil {
 		return CRMOverviewResponse{}, err
@@ -29,12 +29,22 @@ func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store 
 		return CRMOverviewResponse{}, err
 	}
 
-	queueStoreStats, err := repository.listCRMQueueStoreStats(ctx, store, query)
+	queueStoreStats, err := repository.listCRMQueueStoreStats(ctx, store, query, allowedStoreIDs)
 	if err != nil {
 		return CRMOverviewResponse{}, err
 	}
 
-	queueConsultantStats, err := repository.listCRMQueueConsultantStats(ctx, store, query)
+	queueConsultantStats, err := repository.listCRMQueueConsultantStats(ctx, store, query, allowedStoreIDs)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	manualConsultantLinks, err := repository.listCRMManualConsultantLinks(ctx, store.TenantID)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+
+	consultantLinkProfiles, err := repository.listCRMConsultantLinkProfiles(ctx, store.TenantID)
 	if err != nil {
 		return CRMOverviewResponse{}, err
 	}
@@ -123,6 +133,7 @@ func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store 
 		row := CRMConsultantMetric{
 			ConsultantID:   aggregate.ConsultantID,
 			ConsultantName: aggregate.ConsultantName,
+			ERPEmployeeID:  aggregate.ConsultantID,
 			StoreCNPJ:      aggregate.StoreCNPJ,
 			Mapped:         mapped,
 			Orders:         aggregate.Orders,
@@ -135,6 +146,16 @@ func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store 
 		} else {
 			row.StoreLabel = formatCRMUnknownStoreLabel(aggregate.StoreCNPJ)
 		}
+		link := resolveCRMConsultantLink(aggregate.StoreCNPJ, aggregate.ConsultantID, aggregate.ConsultantName, manualConsultantLinks, consultantLinkProfiles)
+		row.ProfileConsultantID = link.Profile.ConsultantID
+		row.ProfileConsultantName = link.Profile.ConsultantName
+		row.ProfileUserID = link.Profile.UserID
+		row.ProfileStoreID = link.Profile.StoreID
+		row.ProfileStoreCode = link.Profile.StoreCode
+		row.ProfileStoreName = link.Profile.StoreName
+		row.LinkStatus = link.Status
+		row.LinkConfidence = link.Confidence
+		row.LinkCandidates = link.Candidates
 		row.TicketAverageCents, row.ValuePerProductCents, row.PAScore = buildCRMMetricValues(aggregate.Orders, aggregate.Units, aggregate.SalesCents, aggregate.ProductSalesCents)
 		consultantRows = append(consultantRows, row)
 	}

@@ -269,3 +269,325 @@ func (repository *PostgresRepository) listCRMEmployeeNames(ctx context.Context, 
 
 	return names, nil
 }
+
+func (repository *PostgresRepository) listCRMManualConsultantLinks(ctx context.Context, tenantID string) (map[string]crmConsultantManualLink, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select
+			l.id::text,
+			trim(l.erp_employee_id) as erp_employee_id,
+			coalesce(nullif(trim(l.erp_employee_name), ''), '') as erp_employee_name,
+			coalesce(nullif(trim(l.erp_store_code), ''), '') as erp_store_code,
+			coalesce(nullif(trim(l.note), ''), '') as note,
+			c.id::text,
+			c.name,
+			coalesce(c.user_id::text, '') as user_id,
+			s.id::text,
+			s.code,
+			s.name,
+			coalesce(nullif(trim(u.employee_code), ''), '') as employee_code
+		from consultant_erp_links l
+		join consultants c
+			on c.id = l.consultant_id
+		   and c.tenant_id = l.tenant_id
+		join stores s
+			on s.id = coalesce(l.store_id, c.store_id)
+		   and s.tenant_id = l.tenant_id
+		left join users u
+			on u.id = c.user_id
+		where l.tenant_id = $1::uuid
+		  and l.is_active = true
+		  and c.is_active = true;
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	links := make(map[string]crmConsultantManualLink)
+	for rows.Next() {
+		var link crmConsultantManualLink
+		if err := rows.Scan(
+			&link.LinkID,
+			&link.ERPEmployeeID,
+			&link.ERPEmployeeName,
+			&link.ERPStoreCode,
+			&link.Note,
+			&link.Profile.ConsultantID,
+			&link.Profile.ConsultantName,
+			&link.Profile.UserID,
+			&link.Profile.StoreID,
+			&link.Profile.StoreCode,
+			&link.Profile.StoreName,
+			&link.Profile.EmployeeCode,
+		); err != nil {
+			return nil, err
+		}
+
+		key := crmManualConsultantLinkKey(link.ERPStoreCode, link.ERPEmployeeID)
+		if key == "" {
+			continue
+		}
+		links[key] = link
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return links, nil
+}
+
+func (repository *PostgresRepository) listCRMConsultantLinkProfiles(ctx context.Context, tenantID string) ([]crmConsultantLinkProfile, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select
+			c.id::text,
+			c.name,
+			coalesce(c.user_id::text, '') as user_id,
+			c.store_id::text,
+			s.code,
+			s.name,
+			coalesce(nullif(trim(u.employee_code), ''), '') as employee_code
+		from consultants c
+		join stores s
+			on s.id = c.store_id
+		   and s.tenant_id = c.tenant_id
+		left join users u
+			on u.id = c.user_id
+		where c.tenant_id = $1::uuid
+		  and c.is_active = true
+		order by c.name asc;
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	profiles := make([]crmConsultantLinkProfile, 0, 64)
+	for rows.Next() {
+		var profile crmConsultantLinkProfile
+		if err := rows.Scan(
+			&profile.ConsultantID,
+			&profile.ConsultantName,
+			&profile.UserID,
+			&profile.StoreID,
+			&profile.StoreCode,
+			&profile.StoreName,
+			&profile.EmployeeCode,
+		); err != nil {
+			return nil, err
+		}
+		profiles = append(profiles, profile)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return profiles, nil
+}
+
+func resolveCRMConsultantLink(storeKey string, employeeID string, consultantName string, manualLinks map[string]crmConsultantManualLink, profiles []crmConsultantLinkProfile) crmConsultantResolvedLink {
+	normalizedStoreKey := normalizeCRMManualStoreCode(storeKey)
+	employeeKey := normalizeCRMEmployeeID(employeeID)
+	if employeeKey != "" {
+		for _, key := range []string{
+			crmManualConsultantLinkKey(normalizedStoreKey, employeeKey),
+			crmManualConsultantLinkKey("", employeeKey),
+		} {
+			if key == "" {
+				continue
+			}
+			if manualLink, ok := manualLinks[key]; ok {
+				return crmConsultantResolvedLink{
+					Profile:    manualLink.Profile,
+					Status:     crmConsultantManualLinkStatus(manualLink),
+					Confidence: 1,
+					Candidates: 1,
+				}
+			}
+		}
+
+		employeeMatches := make([]crmConsultantLinkProfile, 0, 1)
+		for _, profile := range profiles {
+			if normalizeCRMEmployeeID(profile.EmployeeCode) == employeeKey {
+				employeeMatches = append(employeeMatches, profile)
+			}
+		}
+		if len(employeeMatches) > 1 {
+			sameStoreMatches := filterCRMProfilesByStoreKey(employeeMatches, normalizedStoreKey)
+			if len(sameStoreMatches) == 1 {
+				return crmConsultantResolvedLink{
+					Profile:    sameStoreMatches[0],
+					Status:     crmConsultantLinkStatusEmployeeCode,
+					Confidence: 0.9,
+					Candidates: len(employeeMatches),
+				}
+			}
+			if len(sameStoreMatches) > 1 {
+				return crmConsultantResolvedLink{
+					Status:     crmConsultantLinkStatusAmbiguous,
+					Confidence: 0.4,
+					Candidates: len(sameStoreMatches),
+				}
+			}
+		}
+		if len(employeeMatches) == 1 {
+			return crmConsultantResolvedLink{
+				Profile:    employeeMatches[0],
+				Status:     crmConsultantLinkStatusEmployeeCode,
+				Confidence: 0.95,
+				Candidates: 1,
+			}
+		}
+		if len(employeeMatches) > 1 {
+			return crmConsultantResolvedLink{
+				Status:     crmConsultantLinkStatusAmbiguous,
+				Confidence: 0.4,
+				Candidates: len(employeeMatches),
+			}
+		}
+	}
+
+	nameKey := normalizeCRMConsultantName(consultantName)
+	if nameKey != "" {
+		nameMatches := make([]crmConsultantLinkProfile, 0, 1)
+		for _, profile := range profiles {
+			if normalizeCRMConsultantName(profile.ConsultantName) == nameKey {
+				nameMatches = append(nameMatches, profile)
+			}
+		}
+		if len(nameMatches) > 1 {
+			sameStoreMatches := filterCRMProfilesByStoreKey(nameMatches, normalizedStoreKey)
+			if len(sameStoreMatches) == 1 {
+				return crmConsultantResolvedLink{
+					Profile:    sameStoreMatches[0],
+					Status:     crmConsultantLinkStatusNameExact,
+					Confidence: 0.8,
+					Candidates: len(nameMatches),
+				}
+			}
+			if len(sameStoreMatches) > 1 {
+				return crmConsultantResolvedLink{
+					Status:     crmConsultantLinkStatusAmbiguous,
+					Confidence: 0.35,
+					Candidates: len(sameStoreMatches),
+				}
+			}
+		}
+		if len(nameMatches) == 1 {
+			return crmConsultantResolvedLink{
+				Profile:    nameMatches[0],
+				Status:     crmConsultantLinkStatusNameExact,
+				Confidence: 0.85,
+				Candidates: 1,
+			}
+		}
+		if len(nameMatches) > 1 {
+			return crmConsultantResolvedLink{
+				Status:     crmConsultantLinkStatusAmbiguous,
+				Confidence: 0.35,
+				Candidates: len(nameMatches),
+			}
+		}
+	}
+
+	return crmConsultantResolvedLink{
+		Status: crmConsultantLinkStatusUnmatched,
+	}
+}
+
+func normalizeCRMEmployeeID(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func crmConsultantManualLinkStatus(link crmConsultantManualLink) string {
+	switch normalizeCRMEmployeeID(link.Note) {
+	case crmConsultantLinkNoteAutoEmployee:
+		return crmConsultantLinkStatusEmployeeCode
+	case crmConsultantLinkNoteAutoName:
+		return crmConsultantLinkStatusNameExact
+	default:
+		return crmConsultantLinkStatusManual
+	}
+}
+
+func crmConsultantAutoLinkNote(status string) string {
+	switch strings.TrimSpace(status) {
+	case crmConsultantLinkStatusEmployeeCode:
+		return crmConsultantLinkNoteAutoEmployee
+	case crmConsultantLinkStatusNameExact:
+		return crmConsultantLinkNoteAutoName
+	default:
+		return ""
+	}
+}
+
+func crmManualConsultantLinkKey(storeCode string, employeeID string) string {
+	employeeKey := normalizeCRMEmployeeID(employeeID)
+	if employeeKey == "" {
+		return ""
+	}
+	return normalizeCRMManualStoreCode(storeCode) + "\x00" + employeeKey
+}
+
+func normalizeCRMManualStoreCode(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if digits := onlyDigits(normalized); len(digits) >= 8 {
+		return digits
+	}
+	return normalized
+}
+
+func filterCRMProfilesByStoreKey(profiles []crmConsultantLinkProfile, storeKey string) []crmConsultantLinkProfile {
+	storeKey = normalizeCRMManualStoreCode(storeKey)
+	if storeKey == "" {
+		return nil
+	}
+
+	matches := make([]crmConsultantLinkProfile, 0, len(profiles))
+	for _, profile := range profiles {
+		if normalizeCRMManualStoreCode(crmStoreKeyFromOperationalStore(profile.StoreCode, profile.StoreName)) == storeKey {
+			matches = append(matches, profile)
+		}
+	}
+	return matches
+}
+
+func normalizeCRMConsultantName(value string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	var builder strings.Builder
+	lastWasSpace := true
+	for _, char := range normalized {
+		char = normalizeCRMConsultantNameRune(char)
+		isAlphaNum := (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')
+		if isAlphaNum {
+			builder.WriteRune(char)
+			lastWasSpace = false
+			continue
+		}
+		if !lastWasSpace {
+			builder.WriteByte(' ')
+			lastWasSpace = true
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func normalizeCRMConsultantNameRune(char rune) rune {
+	switch char {
+	case '\u00C1', '\u00C0', '\u00C2', '\u00C3', '\u00C4':
+		return 'A'
+	case '\u00C9', '\u00C8', '\u00CA', '\u00CB':
+		return 'E'
+	case '\u00CD', '\u00CC', '\u00CE', '\u00CF':
+		return 'I'
+	case '\u00D3', '\u00D2', '\u00D4', '\u00D5', '\u00D6':
+		return 'O'
+	case '\u00DA', '\u00D9', '\u00DB', '\u00DC':
+		return 'U'
+	case '\u00C7':
+		return 'C'
+	case '\u00D1':
+		return 'N'
+	default:
+		return char
+	}
+}

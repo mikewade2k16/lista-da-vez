@@ -24,6 +24,10 @@ interface PlayerCardStats {
   averageDurationMs?: number
   nonClientConversions: number
   queueJumpServices: number
+  erpOrders?: number
+  soldValueSource?: string
+  ticketAverageSource?: string
+  paScoreSource?: string
   avgTicketGoal?: number
   paGoal?: number
   conversionGoal?: number
@@ -161,15 +165,25 @@ function handleDetailsClick() {
       </div>
       <div class="player-card__gauge-side">
         <div class="player-card__goal-copy">
+          <span v-if="stats.soldValueSource === 'erp'" class="player-card__source-badge">ERP</span>
           <span class="player-card__sold-amount">{{ formatCurrencyBRL(stats.soldValue) }}</span>
           <span class="player-card__sold-of-goal">
             de {{ formatCurrencyBRL(stats.monthlyGoal) }}
+          </span>
+          <span
+            v-if="stats.soldValueSource === 'erp' && stats.erpOrders"
+            class="player-card__sold-caption"
+          >
+            {{ stats.erpOrders }} vendas ERP
           </span>
           <span class="player-card__sold-caption">{{ goalProgressText }}</span>
         </div>
 
         <div v-if="mode === 'full'" class="player-card__hero-metrics">
           <div class="player-card__hero-metric">
+            <span v-if="stats.ticketAverageSource === 'erp'" class="player-card__source-badge">
+              ERP
+            </span>
             <span class="player-card__kpi-icon" aria-hidden="true">🎯</span>
             <span class="player-card__kpi-label">Ticket</span>
             <strong class="player-card__kpi-value">
@@ -188,6 +202,7 @@ function handleDetailsClick() {
             </span>
           </div>
           <div class="player-card__hero-metric">
+            <span v-if="stats.paScoreSource === 'erp'" class="player-card__source-badge">ERP</span>
             <span class="player-card__kpi-icon" aria-hidden="true">📦</span>
             <span class="player-card__kpi-label">P.A.</span>
             <strong class="player-card__kpi-value">{{ stats.paScore.toFixed(2) }}</strong>
@@ -288,11 +303,15 @@ function handleDetailsClick() {
         <strong class="player-card__kpi-value">{{ formatPercent(stats.conversionRate) }}</strong>
       </div>
       <div class="player-card__kpi">
+        <span v-if="stats.ticketAverageSource === 'erp'" class="player-card__source-badge">
+          ERP
+        </span>
         <span class="player-card__kpi-icon" aria-hidden="true">🎯</span>
         <span class="player-card__kpi-label">Ticket</span>
         <strong class="player-card__kpi-value">{{ formatCurrencyBRL(stats.ticketAverage) }}</strong>
       </div>
       <div class="player-card__kpi">
+        <span v-if="stats.paScoreSource === 'erp'" class="player-card__source-badge">ERP</span>
         <span class="player-card__kpi-icon" aria-hidden="true">📦</span>
         <span class="player-card__kpi-label">P.A.</span>
         <strong class="player-card__kpi-value">{{ stats.paScore.toFixed(2) }}</strong>
@@ -470,8 +489,10 @@ function handleDetailsClick() {
 }
 
 .player-card__goal-copy {
+  position: relative;
   display: grid;
   gap: 0.25rem;
+  padding-right: 2.6rem;
 }
 
 .player-card__sold-amount {
@@ -494,12 +515,30 @@ function handleDetailsClick() {
 
 .player-card__hero-metric,
 .player-card__kpi {
+  position: relative;
   display: grid;
   gap: 0.15rem;
   padding: 0.55rem 0.65rem;
   border-radius: 0.7rem;
   background: rgb(var(--surface-2) / 0.76);
   border: 1px solid rgb(var(--border) / 0.72);
+}
+
+.player-card__source-badge {
+  position: absolute;
+  top: 0.42rem;
+  right: 0.45rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1rem;
+  padding: 0.1rem 0.32rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .player-card__detail-grid {

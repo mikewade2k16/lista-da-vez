@@ -3,6 +3,7 @@ package erp
 import (
 	"context"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -23,27 +24,32 @@ func crmQueueDateArgs(query CRMOverviewQuery) (any, any) {
 	return dateFromMs, dateToExclusiveMs
 }
 
-func (repository *PostgresRepository) listCRMQueueConsultantStats(ctx context.Context, store StoreScope, query CRMOverviewQuery) ([]crmQueueConsultantStat, error) {
+func (repository *PostgresRepository) listCRMQueueConsultantStats(ctx context.Context, store StoreScope, query CRMOverviewQuery, allowedStoreIDs []string) ([]crmQueueConsultantStat, error) {
 	dateFromMs, dateToExclusiveMs := crmQueueDateArgs(query)
 
 	rows, err := repository.pool.Query(ctx, `
 		select
-			person_id::text,
-			coalesce(nullif(trim(person_name), ''), 'Consultor sem nome') as person_name,
-			store_id::text,
+			h.person_id::text,
+			coalesce(nullif(trim(h.person_name), ''), 'Consultor sem nome') as person_name,
+			s.id::text,
+			coalesce(s.code, '') as store_code,
+			coalesce(s.name, '') as store_name,
 			count(*)::int                                                                            as attendances,
 			count(*) filter (where finish_outcome = 'compra')::int                                  as conversions,
 			count(*) filter (
 				where nullif(trim(coalesce(to_jsonb(h)->>'cancel_reason', '')), '') is not null
 			)::int                                                                                  as queue_cancellations
 		from operation_service_history h
-		where store_id = $1::uuid
-		  and ($2::bigint is null or finished_at >= $2::bigint)
-		  and ($3::bigint is null or finished_at < $3::bigint)
+		join stores s on s.id = h.store_id
+		where s.tenant_id = $1::uuid
+		  and s.is_active = true
+		  and ($2::uuid[] is null or s.id = any($2::uuid[]))
+		  and ($3::bigint is null or finished_at >= $3::bigint)
+		  and ($4::bigint is null or finished_at < $4::bigint)
 		  and finished_at > 0
-		group by person_id, person_name, store_id
+		group by h.person_id, h.person_name, s.id, s.code, s.name
 		order by count(*) filter (where finish_outcome = 'compra') desc, person_name asc
-	`, store.StoreID, dateFromMs, dateToExclusiveMs)
+	`, store.TenantID, crmQueueAllowedStoreIDsArg(allowedStoreIDs), dateFromMs, dateToExclusiveMs)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +58,7 @@ func (repository *PostgresRepository) listCRMQueueConsultantStats(ctx context.Co
 	stats := make([]crmQueueConsultantStat, 0, 32)
 	for rows.Next() {
 		var s crmQueueConsultantStat
-		if err := rows.Scan(&s.PersonID, &s.PersonName, &s.StoreID, &s.Attendances, &s.Conversions, &s.QueueCancellations); err != nil {
+		if err := rows.Scan(&s.PersonID, &s.PersonName, &s.StoreID, &s.StoreCode, &s.StoreName, &s.Attendances, &s.Conversions, &s.QueueCancellations); err != nil {
 			return nil, err
 		}
 		stats = append(stats, s)
@@ -63,24 +69,29 @@ func (repository *PostgresRepository) listCRMQueueConsultantStats(ctx context.Co
 	return stats, nil
 }
 
-func (repository *PostgresRepository) listCRMQueueStoreStats(ctx context.Context, store StoreScope, query CRMOverviewQuery) ([]crmQueueStoreStat, error) {
+func (repository *PostgresRepository) listCRMQueueStoreStats(ctx context.Context, store StoreScope, query CRMOverviewQuery, allowedStoreIDs []string) ([]crmQueueStoreStat, error) {
 	dateFromMs, dateToExclusiveMs := crmQueueDateArgs(query)
 
 	rows, err := repository.pool.Query(ctx, `
 		select
-			store_id::text,
+			s.id::text,
+			coalesce(s.code, '') as store_code,
+			coalesce(s.name, '') as store_name,
 			count(*)::int                                                                            as attendances,
 			count(*) filter (where finish_outcome = 'compra')::int                                  as conversions,
 			count(*) filter (
 				where nullif(trim(coalesce(to_jsonb(h)->>'cancel_reason', '')), '') is not null
 			)::int                                                                                  as queue_cancellations
 		from operation_service_history h
-		where store_id = $1::uuid
-		  and ($2::bigint is null or finished_at >= $2::bigint)
-		  and ($3::bigint is null or finished_at < $3::bigint)
+		join stores s on s.id = h.store_id
+		where s.tenant_id = $1::uuid
+		  and s.is_active = true
+		  and ($2::uuid[] is null or s.id = any($2::uuid[]))
+		  and ($3::bigint is null or finished_at >= $3::bigint)
+		  and ($4::bigint is null or finished_at < $4::bigint)
 		  and finished_at > 0
-		group by store_id
-	`, store.StoreID, dateFromMs, dateToExclusiveMs)
+		group by s.id, s.code, s.name
+	`, store.TenantID, crmQueueAllowedStoreIDsArg(allowedStoreIDs), dateFromMs, dateToExclusiveMs)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +100,7 @@ func (repository *PostgresRepository) listCRMQueueStoreStats(ctx context.Context
 	stats := make([]crmQueueStoreStat, 0, 8)
 	for rows.Next() {
 		var s crmQueueStoreStat
-		if err := rows.Scan(&s.StoreID, &s.Attendances, &s.Conversions, &s.QueueCancellations); err != nil {
+		if err := rows.Scan(&s.StoreID, &s.StoreCode, &s.StoreName, &s.Attendances, &s.Conversions, &s.QueueCancellations); err != nil {
 			return nil, err
 		}
 		stats = append(stats, s)
@@ -106,27 +117,28 @@ func buildQueueStats(storeStats []crmQueueStoreStat, consultantStats []crmQueueC
 		ByConsultant: make([]QueueConsultantStats, 0, len(consultantStats)),
 	}
 
+	storesByKey := make(map[string]*QueueStoreStats, len(storeStats))
+	consultantsByKey := make(map[string]*QueueConsultantStats, len(consultantStats))
+
 	for _, s := range storeStats {
 		result.TotalAttendances += s.Attendances
 		result.TotalConversions += s.Conversions
 		result.TotalCancellations += s.QueueCancellations
 
-		convRate := 0.0
-		if s.Attendances > 0 {
-			convRate = float64(s.Conversions) / float64(s.Attendances) * 100
+		storeSlug, storeLabel := crmStoreSlugFromOperationalStore(s.StoreCode, s.StoreName)
+		key := crmQueueStoreAggregateKey(storeSlug, s.StoreID)
+		row, ok := storesByKey[key]
+		if !ok {
+			row = &QueueStoreStats{
+				StoreID:    s.StoreID,
+				StoreSlug:  storeSlug,
+				StoreLabel: storeLabel,
+			}
+			storesByKey[key] = row
 		}
-		cancRate := 0.0
-		if s.Attendances > 0 {
-			cancRate = float64(s.QueueCancellations) / float64(s.Attendances) * 100
-		}
-		result.ByStore = append(result.ByStore, QueueStoreStats{
-			StoreID:               s.StoreID,
-			Attendances:           s.Attendances,
-			Conversions:           s.Conversions,
-			ConversionRate:        convRate,
-			QueueCancellations:    s.QueueCancellations,
-			QueueCancellationRate: cancRate,
-		})
+		row.Attendances += s.Attendances
+		row.Conversions += s.Conversions
+		row.QueueCancellations += s.QueueCancellations
 	}
 
 	if result.TotalAttendances > 0 {
@@ -135,24 +147,49 @@ func buildQueueStats(storeStats []crmQueueStoreStat, consultantStats []crmQueueC
 	}
 
 	for _, s := range consultantStats {
-		convRate := 0.0
-		if s.Attendances > 0 {
-			convRate = float64(s.Conversions) / float64(s.Attendances) * 100
+		storeSlug, storeLabel := crmStoreSlugFromOperationalStore(s.StoreCode, s.StoreName)
+		key := crmQueueConsultantAggregateKey(storeSlug, s.PersonID, s.PersonName)
+		row, ok := consultantsByKey[key]
+		if !ok {
+			row = &QueueConsultantStats{
+				PersonID:   s.PersonID,
+				PersonName: s.PersonName,
+				StoreID:    s.StoreID,
+				StoreSlug:  storeSlug,
+				StoreLabel: storeLabel,
+			}
+			consultantsByKey[key] = row
 		}
-		cancRate := 0.0
-		if s.Attendances > 0 {
-			cancRate = float64(s.QueueCancellations) / float64(s.Attendances) * 100
+		row.Attendances += s.Attendances
+		row.Conversions += s.Conversions
+		row.QueueCancellations += s.QueueCancellations
+	}
+
+	for _, row := range storesByKey {
+		if row.Attendances > 0 {
+			row.ConversionRate = float64(row.Conversions) / float64(row.Attendances) * 100
+			row.QueueCancellationRate = float64(row.QueueCancellations) / float64(row.Attendances) * 100
 		}
-		result.ByConsultant = append(result.ByConsultant, QueueConsultantStats{
-			PersonID:              s.PersonID,
-			PersonName:            s.PersonName,
-			StoreID:               s.StoreID,
-			Attendances:           s.Attendances,
-			Conversions:           s.Conversions,
-			ConversionRate:        convRate,
-			QueueCancellations:    s.QueueCancellations,
-			QueueCancellationRate: cancRate,
-		})
+		result.ByStore = append(result.ByStore, *row)
+	}
+	sort.Slice(result.ByStore, func(i, j int) bool {
+		leftLabel := result.ByStore[i].StoreLabel
+		if leftLabel == "" {
+			leftLabel = result.ByStore[i].StoreSlug
+		}
+		rightLabel := result.ByStore[j].StoreLabel
+		if rightLabel == "" {
+			rightLabel = result.ByStore[j].StoreSlug
+		}
+		return leftLabel < rightLabel
+	})
+
+	for _, row := range consultantsByKey {
+		if row.Attendances > 0 {
+			row.ConversionRate = float64(row.Conversions) / float64(row.Attendances) * 100
+			row.QueueCancellationRate = float64(row.QueueCancellations) / float64(row.Attendances) * 100
+		}
+		result.ByConsultant = append(result.ByConsultant, *row)
 	}
 
 	sort.Slice(result.ByConsultant, func(i, j int) bool {
@@ -163,4 +200,26 @@ func buildQueueStats(storeStats []crmQueueStoreStat, consultantStats []crmQueueC
 	})
 
 	return result
+}
+
+func crmQueueAllowedStoreIDsArg(allowedStoreIDs []string) any {
+	if len(allowedStoreIDs) == 0 {
+		return nil
+	}
+	return allowedStoreIDs
+}
+
+func crmQueueStoreAggregateKey(storeSlug string, storeID string) string {
+	if trimmedSlug := strings.TrimSpace(storeSlug); trimmedSlug != "" {
+		return trimmedSlug
+	}
+	return strings.TrimSpace(storeID)
+}
+
+func crmQueueConsultantAggregateKey(storeSlug string, personID string, personName string) string {
+	base := strings.TrimSpace(personID)
+	if base == "" {
+		base = strings.ToLower(strings.TrimSpace(personName))
+	}
+	return crmQueueStoreAggregateKey(storeSlug, "") + "\x00" + base
 }

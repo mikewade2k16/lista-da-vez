@@ -141,6 +141,22 @@ erDiagram
         timestamptz updated_at
     }
 
+    CONSULTANT_ERP_LINKS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid consultant_id FK
+        text erp_store_code
+        text erp_employee_id
+        text erp_employee_name
+        text note
+        boolean is_active
+        uuid created_by_user_id FK
+        uuid updated_by_user_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     STORE_OPERATION_SETTINGS {
         uuid store_id PK,FK
         text selected_operation_template_id
@@ -525,6 +541,9 @@ erDiagram
     ACCESS_PERMISSIONS ||--o{ USER_ACCESS_OVERRIDES : overridden
     TENANTS ||--o{ CONSULTANTS : scopes
     STORES ||--o{ CONSULTANTS : roster
+    TENANTS ||--o{ CONSULTANT_ERP_LINKS : scopes
+    STORES ||--o{ CONSULTANT_ERP_LINKS : commercial_store
+    CONSULTANTS ||--o{ CONSULTANT_ERP_LINKS : erp_identity
     STORES ||--|| STORE_OPERATION_SETTINGS : config
     STORES ||--o{ STORE_SETTING_OPTIONS : catalogs
     STORES ||--o{ STORE_CATALOG_PRODUCTS : catalog
@@ -589,6 +608,9 @@ erDiagram
 - `consultants`
   - roster administrativo por loja para a operacao
   - no seed MVP cada consultor ja nasce com vinculo 1:1 em `users`
+- `consultant_erp_links`
+  - vinculo manual e auditavel entre funcionario ERP (`erp_employee_id`) e consultor da Lista de Vez
+  - o CRM tenta primeiro esse vinculo manual; quando ele nao existe, usa `users.employee_code` e depois match exato de nome normalizado
 - `tenant_operation_settings`
   - fonte de verdade tenant-wide para configuracao operacional
   - inclui limites como `max_concurrent_services` e `max_concurrent_services_per_consultant`

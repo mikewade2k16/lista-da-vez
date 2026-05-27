@@ -35,6 +35,25 @@ func (repository *PostgresRepository) StoreExists(ctx context.Context, storeID s
 	return exists, nil
 }
 
+// StoreExistsIncludingArchived devolve true mesmo que a loja esteja arquivada.
+// Usado por operacoes que devem permanecer disponiveis apos arquivamento
+// (ex.: encerrar atendimento ja em andamento).
+func (repository *PostgresRepository) StoreExistsIncludingArchived(ctx context.Context, storeID string) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from stores
+			where id = $1::uuid
+		);
+	`, storeID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
 func (repository *PostgresRepository) GetStoreName(ctx context.Context, storeID string) (string, error) {
 	var name string
 	err := repository.pool.QueryRow(ctx, `

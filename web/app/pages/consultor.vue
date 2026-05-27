@@ -1,6 +1,7 @@
 <script setup>
 import { computed, watch } from 'vue'
 import ConsultantWorkspace from '~/components/consultant/ConsultantWorkspace.vue'
+import ArchivedStoreBanner from '~/components/operation/ArchivedStoreBanner.vue'
 import { storeToRefs } from 'pinia'
 import { canUseAllStoresScope } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
@@ -55,6 +56,7 @@ watch(
 
 <template>
   <div class="page-workspace">
+    <ArchivedStoreBanner v-if="!integratedScope" />
     <ConsultantWorkspace
       :state="state"
       :integrated-scope="integratedScope"

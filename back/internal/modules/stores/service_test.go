@@ -2,7 +2,6 @@ package stores
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -70,7 +69,11 @@ func TestListAccessiblePassesIncludeInactive(t *testing.T) {
 	}
 }
 
-func TestDeleteBlocksWhenDependenciesExist(t *testing.T) {
+// Apos migration 0122, deletar uma loja com consultores nao bloqueia mais:
+// FK passou para ON DELETE SET NULL em consultants e CASCADE nas demais.
+// Este teste garante que a delecao prossegue mesmo quando o spy reportava
+// dependencias (ListDeleteDependencies nao e mais consultado).
+func TestDeleteProceedsEvenWhenSpyReportsDependencies(t *testing.T) {
 	repository := &repositorySpy{
 		findStore: Store{
 			ID:       "store-1",
@@ -89,21 +92,12 @@ func TestDeleteBlocksWhenDependenciesExist(t *testing.T) {
 		Role:     auth.RoleOwner,
 		TenantID: "tenant-1",
 	}, "store-1")
-	if err == nil {
-		t.Fatalf("expected delete to fail")
+	if err != nil {
+		t.Fatalf("expected delete to succeed, got %v", err)
 	}
 
-	var blocked *DeleteBlockedError
-	if !errors.As(err, &blocked) {
-		t.Fatalf("expected DeleteBlockedError, got %v", err)
-	}
-
-	if blocked.StoreID != "store-1" {
-		t.Fatalf("expected store id store-1, got %s", blocked.StoreID)
-	}
-
-	if repository.deleteCalledStore != "" {
-		t.Fatalf("expected delete not to be called")
+	if repository.deleteCalledStore != "store-1" {
+		t.Fatalf("expected repository.Delete to be called with store-1, got %q", repository.deleteCalledStore)
 	}
 }
 

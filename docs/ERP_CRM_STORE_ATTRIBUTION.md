@@ -103,17 +103,19 @@ Casos que ja ficaram coerentes por cadastro interno ou por historico ERP:
 ## Recomendacao para bater o numero com consistencia
 
 Se o objetivo for estabilidade operacional, a forma mais simples e segura de
-cruzar esses dados e manter uma tabela de override por vendedor ERP:
+cruzar esses dados e manter uma tabela de vinculo por vendedor ERP. A base agora
+usa `consultant_erp_links` para esse ajuste manual:
 
-- chave: `tenant_id + erp_employee_id`
-- valor: loja comercial (`RIO`, `JAR`, `GAR`, `TRE`)
+- chave: `tenant_id + erp_store_code + erp_employee_id`
+- valor: `consultant_id` da Lista de Vez, com `store_id` comercial opcional
 
 Fluxo sugerido:
 
-1. tentar `store_id_raw`
-2. tentar override manual por `erp_employee_id`
-3. tentar cadastro interno por `employee_code`
-4. usar historico ERP do vendedor
-5. cair em `store_cnpj` so como ultimo recurso
+1. tentar `store_id_raw` para resolver a loja comercial da venda
+2. tentar vinculo manual `consultant_erp_links` por `erp_employee_id`
+3. tentar cadastro interno por `users.employee_code`
+4. tentar match exato por nome normalizado quando houver apenas um candidato
+5. usar historico ERP do vendedor para loja e manter o consultor como `unmatched` se a pessoa nao for identificada
+6. cair em `store_cnpj` so como ultimo recurso de loja
 
 Isso reduz bastante a fragilidade do ERP cru e deixa a regra auditavel.

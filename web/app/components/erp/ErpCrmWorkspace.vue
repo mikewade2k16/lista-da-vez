@@ -2,11 +2,14 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CalendarDays } from 'lucide-vue-next'
 import type { ErpCRMConsultantMetric, ErpCRMResponse, ErpQueueConsultantStats } from '~/stores/erp'
+import ErpConsultantLinksPanel from '~/components/erp/ErpConsultantLinksPanel.vue'
 import { useErpStore } from '~/stores/erp'
+import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import ErpProductsTable from '~/components/erp/ErpProductsTable.vue'
 
 const erpStore = useErpStore()
+const auth = useAuthStore()
 const ui = useUiStore()
 
 const searchValue = ref('')
@@ -46,18 +49,97 @@ const comparisonSummary = computed(() => comparisonCrm.value?.summary || null)
 const queueStats = computed(() => crm.value?.queueStats || null)
 const storeRows = computed(() => crm.value?.stores || [])
 const consultantRows = computed(() => crm.value?.consultants || [])
+const canManageConsultantLinks = computed(() => auth.role === 'platform_admin')
 
-// merge fila × ERP por nome normalizado
-type ConsultantRow = ErpCRMConsultantMetric & { queue?: ErpQueueConsultantStats }
-const mergedConsultants = computed<ConsultantRow[]>(() => {
-  const queueByName = new Map<string, ErpQueueConsultantStats>()
-  for (const q of queueStats.value?.byConsultant ?? []) {
-    queueByName.set(q.personName.trim().toLowerCase(), q)
+// merge fila + ERP via vinculo resolvido, com fallback por nome normalizado
+type ConsultantRow = ErpCRMConsultantMetric & {
+  queue?: ErpQueueConsultantStats
+  matched: boolean
+}
+
+function normalizeConsultantLookupKey(value: unknown) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function linkStatusLabel(status?: string | null) {
+  switch (status) {
+    case 'manual':
+      return 'manual'
+    case 'employee_code':
+      return 'codigo'
+    case 'name_exact':
+      return 'nome'
+    case 'ambiguous':
+      return 'ambiguo'
+    case 'unmatched':
+      return 'sem vinculo'
+    default:
+      return 'pendente'
   }
-  return consultantRows.value.map((c) => ({
-    ...c,
-    queue: queueByName.get(c.consultantName.trim().toLowerCase()),
-  }))
+}
+
+function linkStatusClass(status?: string | null) {
+  switch (status) {
+    case 'manual':
+    case 'employee_code':
+      return 'erp-crm__badge--ok'
+    case 'name_exact':
+      return 'erp-crm__badge--info'
+    case 'ambiguous':
+      return 'erp-crm__badge--warn'
+    default:
+      return 'erp-crm__badge--neutral'
+  }
+}
+
+const queueById = computed(() => {
+  const map = new Map<string, ErpQueueConsultantStats>()
+  for (const q of queueStats.value?.byConsultant ?? []) {
+    const key = String(q.personId || '').trim()
+    if (key) map.set(key, q)
+  }
+  return map
+})
+
+const queueByName = computed(() => {
+  const map = new Map<string, ErpQueueConsultantStats>()
+  for (const q of queueStats.value?.byConsultant ?? []) {
+    const key = normalizeConsultantLookupKey(q.personName)
+    if (key) map.set(key, q)
+  }
+  return map
+})
+
+function findQueueForConsultant(c: ErpCRMConsultantMetric) {
+  const linkedId = String(c.profileConsultantId || '').trim()
+  if (linkedId) {
+    const queueByLinkedId = queueById.value.get(linkedId)
+    if (queueByLinkedId) return queueByLinkedId
+  }
+
+  const linkedName = normalizeConsultantLookupKey(c.profileConsultantName)
+  if (linkedName) {
+    const queueByLinkedName = queueByName.value.get(linkedName)
+    if (queueByLinkedName) return queueByLinkedName
+  }
+
+  return queueByName.value.get(normalizeConsultantLookupKey(c.consultantName))
+}
+const mergedConsultants = computed<ConsultantRow[]>(() => {
+  return consultantRows.value.map((c) => {
+    const queue = findQueueForConsultant(c)
+    return {
+      ...c,
+      queue,
+      matched: !!queue,
+    }
+  })
 })
 
 function formatPct(value: number | null | undefined) {
@@ -467,6 +549,8 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
       </article>
     </div>
 
+    <ErpConsultantLinksPanel v-if="canManageConsultantLinks" @updated="loadCRM" />
+
     <!-- Indicadores por consultor -->
     <div v-if="mergedConsultants.length" class="erp-crm__section">
       <h3 class="erp-crm__section-title">Indicadores por consultor</h3>
@@ -475,6 +559,7 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
           <thead>
             <tr>
               <th class="erp-crm__th erp-crm__th--name">Consultor</th>
+              <th class="erp-crm__th">Vinculo</th>
               <th class="erp-crm__th">Loja</th>
               <th class="erp-crm__th erp-crm__th--num">Faturamento</th>
               <th class="erp-crm__th erp-crm__th--num">% Meta</th>
@@ -491,7 +576,27 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
               :key="c.consultantId + c.storeCnpj"
               class="erp-crm__tr"
             >
-              <td class="erp-crm__td erp-crm__td--name">{{ c.consultantName }}</td>
+              <td class="erp-crm__td erp-crm__td--name">
+                <div class="erp-crm__consultant-cell">
+                  <strong>{{ c.consultantName }}</strong>
+                  <small>ERP {{ c.erpEmployeeId || c.consultantId }}</small>
+                </div>
+              </td>
+              <td class="erp-crm__td">
+                <span
+                  class="erp-crm__badge"
+                  :class="linkStatusClass(c.linkStatus)"
+                  :title="
+                    c.profileConsultantName
+                      ? `Lista: ${c.profileConsultantName}`
+                      : c.linkCandidates
+                        ? `${c.linkCandidates} candidatos encontrados`
+                        : 'Sem consultor vinculado'
+                  "
+                >
+                  {{ linkStatusLabel(c.linkStatus) }}
+                </span>
+              </td>
               <td class="erp-crm__td erp-crm__td--store">{{ c.storeLabel }}</td>
               <td class="erp-crm__td erp-crm__td--num">{{ formatCurrency(c.salesCents) }}</td>
               <td class="erp-crm__td erp-crm__td--num erp-crm__td--goal">
@@ -1082,11 +1187,13 @@ defineExpose({ loadCRM, loadCRMComparison, loadCustomers })
   margin: 0;
 }
 
-background: var(--erp-hover-bg);
-overflow-x: auto;
-border-radius: 0.75rem;
-border: 1px solid var(--line-soft);
-border-top: 1px solid var(--erp-table-divider);
+.erp-crm__table-wrap {
+  background: var(--erp-hover-bg);
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-top: 1px solid var(--erp-table-divider);
+}
 
 .erp-crm__table {
   width: 100%;
@@ -1138,6 +1245,18 @@ border-top: 1px solid var(--erp-table-divider);
   font-weight: 600;
 }
 
+.erp-crm__consultant-cell {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 180px;
+}
+
+.erp-crm__consultant-cell small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
 .erp-crm__td--store {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -1166,6 +1285,45 @@ border-top: 1px solid var(--erp-table-divider);
 }
 
 .erp-crm__muted {
+  color: var(--text-muted);
+}
+
+.erp-crm__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.35rem;
+  padding: 0.16rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.erp-crm__badge--ok {
+  border-color: rgb(var(--success) / 0.34);
+  background: rgb(var(--success) / 0.12);
+  color: var(--erp-success-text);
+}
+
+.erp-crm__badge--info {
+  border-color: rgb(var(--primary) / 0.32);
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
+}
+
+.erp-crm__badge--warn {
+  border-color: rgb(var(--primary) / 0.36);
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
+}
+
+.erp-crm__badge--neutral {
+  border-color: var(--line-soft);
+  background: rgb(var(--surface-2) / 0.78);
   color: var(--text-muted);
 }
 </style>

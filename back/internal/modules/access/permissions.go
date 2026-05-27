@@ -64,16 +64,19 @@ var defaultRolePermissionMap = map[auth.Role][]string{
 		PermissionERPView,
 		PermissionFeedbackView,
 		PermissionFeedbackEdit,
+		PermissionMultiStoreView,
 	},
 	auth.RoleMarketing: {
 		PermissionOperationsView,
 		PermissionERPView,
+		PermissionMultiStoreView,
 		PermissionCampaignsView,
 		PermissionCampaignsEdit,
 	},
 	auth.RoleDirector: {
 		PermissionOperationsView,
 		PermissionERPView,
+		PermissionMultiStoreView,
 	},
 	auth.RoleOwner: {
 		PermissionOperationsView,

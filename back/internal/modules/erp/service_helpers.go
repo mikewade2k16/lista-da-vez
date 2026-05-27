@@ -351,16 +351,15 @@ func canViewERP(principal auth.Principal) bool {
 }
 
 func canEditERP(principal auth.Principal) bool {
-	if principal.PermissionsResolved {
-		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionERPEdit)
-	}
+	return isERPSystemAdmin(principal)
+}
 
-	switch principal.Role {
-	case auth.RolePlatformAdmin, auth.RoleOwner:
-		return true
-	default:
-		return false
-	}
+func canViewERPAdminDetails(principal auth.Principal) bool {
+	return isERPSystemAdmin(principal)
+}
+
+func isERPSystemAdmin(principal auth.Principal) bool {
+	return principal.Role == auth.RolePlatformAdmin
 }
 
 func firstNonEmpty(values ...string) string {

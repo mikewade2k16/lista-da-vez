@@ -26,7 +26,6 @@ import {
   type ErpOrderStats,
   type ErpRun,
 } from '~/domain/utils/erp-display'
-import { hasPermission } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useErpStore } from '~/stores/erp'
 import { useUiStore } from '~/stores/ui'
@@ -77,12 +76,13 @@ export function useErpWorkspace() {
   const erpScopeHint = computed(
     () => 'Escopo consolidado da integracao ERP; nao segue a subloja operacional do topo.',
   )
-  const canSync = computed(() => {
-    if (auth.permissionsResolved) {
-      return hasPermission(auth.permissionKeys, 'workspace.erp.edit')
-    }
-    return auth.role === 'platform_admin' || auth.role === 'owner'
-  })
+  const isERPSystemAdmin = computed(() => auth.role === 'platform_admin')
+  const canSync = computed(() => isERPSystemAdmin.value)
+  const tabs = computed(() =>
+    ERP_TABS.filter(
+      (tab) => isERPSystemAdmin.value || (tab.id !== 'banco' && tab.id !== 'sincronizacao'),
+    ),
+  )
   const activeRecordsDataType = computed(() => ERP_RECORDS_DATA_TYPE_BY_TAB[activeTab.value] || '')
   const activeRecordsColumns = computed(() => ERP_RECORDS_COLUMNS_BY_TAB[activeTab.value] || [])
   const activeRecordsBootstrapLabel = computed(
@@ -189,6 +189,7 @@ export function useErpWorkspace() {
   const { notifyAutomaticSyncRun } = useErpSyncNotifications({ erpStore, ui })
 
   async function loadStatus() {
+    if (!isERPSystemAdmin.value) return
     const result = await erpStore.fetchStatus()
     if (!result.ok && result.message) {
       ui.error(result.message)
@@ -198,6 +199,7 @@ export function useErpWorkspace() {
   }
 
   async function loadRuns() {
+    if (!isERPSystemAdmin.value) return
     const result = await erpStore.fetchRuns({ page: 1, pageSize: 20 })
     if (!result.ok && result.message) {
       ui.error(result.message)
@@ -205,6 +207,7 @@ export function useErpWorkspace() {
   }
 
   async function loadOverview() {
+    if (!isERPSystemAdmin.value) return
     const result = await erpStore.fetchOverview()
     if (!result.ok && result.message) {
       ui.error(result.message)
@@ -244,7 +247,11 @@ export function useErpWorkspace() {
   }
 
   async function loadOrderStats() {
-    if (import.meta.server || (activeTab.value !== 'pedidos' && activeTab.value !== 'cancelados')) {
+    if (
+      import.meta.server ||
+      !isERPSystemAdmin.value ||
+      (activeTab.value !== 'pedidos' && activeTab.value !== 'cancelados')
+    ) {
       return
     }
     const result = await erpStore.fetchStats({
@@ -327,7 +334,6 @@ export function useErpWorkspace() {
     }
     if (activeTab.value === 'crm') {
       await crmRef.value?.loadCRM()
-      await crmRef.value?.loadCustomers({ page: 1 })
       return
     }
     if (activeTab.value !== 'banco') {
@@ -374,6 +380,10 @@ export function useErpWorkspace() {
   )
 
   watch(activeTab, () => {
+    if (!tabs.value.some((tab) => tab.id === activeTab.value)) {
+      activeTab.value = tabs.value[0]?.id || 'produtos'
+      return
+    }
     if (activeTab.value === 'banco') {
       activeBancoTab.value = 'geral'
       return
@@ -409,6 +419,15 @@ export function useErpWorkspace() {
   watch(productsDateTo, scheduleProductsLoad)
   watch(recordsDateFrom, scheduleRecordsLoad)
   watch(recordsDateTo, scheduleRecordsLoad)
+  watch(
+    tabs,
+    (availableTabs) => {
+      if (!availableTabs.some((tab) => tab.id === activeTab.value)) {
+        activeTab.value = availableTabs[0]?.id || 'produtos'
+      }
+    },
+    { immediate: true },
+  )
   watch(
     syncRuns,
     (runs) => {
@@ -469,6 +488,7 @@ export function useErpWorkspace() {
     handleRecordsSortDir,
     handleSyncNow,
     identifierPrefixValue,
+    isERPSystemAdmin,
     lastImportedFile,
     lastRun,
     orderStats,
@@ -492,6 +512,6 @@ export function useErpWorkspace() {
     selectedSyncRun,
     selectedSyncRunId,
     syncRuns,
-    tabs: ERP_TABS,
+    tabs,
   }
 }

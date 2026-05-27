@@ -37,6 +37,7 @@ defineProps<{
   recordsSortDir: string
   recordsSpecificSearchValue: string
   rows: ErpRecord[]
+  showAdminCards: boolean
   syncing: boolean
   total: number
 }>()
@@ -61,7 +62,7 @@ const emit = defineEmits<{
 <template>
   <div class="erp-panel__tab-body">
     <div
-      v-if="activeTab === 'pedidos' || activeTab === 'cancelados'"
+      v-if="showAdminCards && (activeTab === 'pedidos' || activeTab === 'cancelados')"
       class="erp-panel__stats erp-panel__stats--orders"
     >
       <article class="erp-panel__stat-card erp-panel__stat-card--accent">
@@ -96,7 +97,7 @@ const emit = defineEmits<{
       </article>
     </div>
 
-    <div v-else class="erp-panel__stats">
+    <div v-else-if="showAdminCards" class="erp-panel__stats">
       <article class="erp-panel__stat-card">
         <span class="erp-panel__stat-label">Registros atuais</span>
         <strong class="erp-panel__stat-value">{{ formatNumber(activeRecordsTotal) }}</strong>

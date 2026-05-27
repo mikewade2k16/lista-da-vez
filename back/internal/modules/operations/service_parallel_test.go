@@ -30,6 +30,10 @@ func (repository *testOperationsRepository) StoreExists(context.Context, string)
 	return repository.storeExists, nil
 }
 
+func (repository *testOperationsRepository) StoreExistsIncludingArchived(context.Context, string) (bool, error) {
+	return repository.storeExists, nil
+}
+
 func (repository *testOperationsRepository) GetStoreName(context.Context, string) (string, error) {
 	return repository.storeName, nil
 }

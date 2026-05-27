@@ -310,26 +310,38 @@ type CRMStoreMetric struct {
 }
 
 type CRMConsultantMetric struct {
-	ConsultantID         string  `json:"consultantId"`
-	ConsultantName       string  `json:"consultantName"`
-	StoreSlug            string  `json:"storeSlug"`
-	StoreLabel           string  `json:"storeLabel"`
-	StoreCNPJ            string  `json:"storeCnpj,omitempty"`
-	Mapped               bool    `json:"mapped"`
-	Orders               int     `json:"orders"`
-	Units                int64   `json:"units"`
-	SalesCents           int64   `json:"salesCents"`
-	TicketAverageCents   int64   `json:"ticketAverageCents"`
-	ValuePerProductCents int64   `json:"valuePerProductCents"`
-	PAScore              float64 `json:"paScore"`
+	ConsultantID          string  `json:"consultantId"`
+	ConsultantName        string  `json:"consultantName"`
+	ERPEmployeeID         string  `json:"erpEmployeeId,omitempty"`
+	ProfileConsultantID   string  `json:"profileConsultantId,omitempty"`
+	ProfileConsultantName string  `json:"profileConsultantName,omitempty"`
+	ProfileUserID         string  `json:"profileUserId,omitempty"`
+	ProfileStoreID        string  `json:"profileStoreId,omitempty"`
+	ProfileStoreCode      string  `json:"profileStoreCode,omitempty"`
+	ProfileStoreName      string  `json:"profileStoreName,omitempty"`
+	LinkStatus            string  `json:"linkStatus,omitempty"`
+	LinkConfidence        float64 `json:"linkConfidence,omitempty"`
+	LinkCandidates        int     `json:"linkCandidates,omitempty"`
+	StoreSlug             string  `json:"storeSlug"`
+	StoreLabel            string  `json:"storeLabel"`
+	StoreCNPJ             string  `json:"storeCnpj,omitempty"`
+	Mapped                bool    `json:"mapped"`
+	Orders                int     `json:"orders"`
+	Units                 int64   `json:"units"`
+	SalesCents            int64   `json:"salesCents"`
+	TicketAverageCents    int64   `json:"ticketAverageCents"`
+	ValuePerProductCents  int64   `json:"valuePerProductCents"`
+	PAScore               float64 `json:"paScore"`
 }
 
-// QueueConsultantStats contém indicadores de atendimento da fila por consultor.
-// O merge com CRMConsultantMetric é feito no frontend por PersonName × ConsultantName.
+// QueueConsultantStats contem indicadores de atendimento da fila por consultor.
+// O merge com CRMConsultantMetric usa o vinculo resolvido e fallback por nome.
 type QueueConsultantStats struct {
 	PersonID              string  `json:"personId"`
 	PersonName            string  `json:"personName"`
 	StoreID               string  `json:"storeId"`
+	StoreSlug             string  `json:"storeSlug,omitempty"`
+	StoreLabel            string  `json:"storeLabel,omitempty"`
 	Attendances           int     `json:"attendances"`
 	Conversions           int     `json:"conversions"`
 	ConversionRate        float64 `json:"conversionRate"`
@@ -339,6 +351,8 @@ type QueueConsultantStats struct {
 
 type QueueStoreStats struct {
 	StoreID               string  `json:"storeId"`
+	StoreSlug             string  `json:"storeSlug,omitempty"`
+	StoreLabel            string  `json:"storeLabel,omitempty"`
 	Attendances           int     `json:"attendances"`
 	Conversions           int     `json:"conversions"`
 	ConversionRate        float64 `json:"conversionRate"`
@@ -365,6 +379,56 @@ type CRMOverviewResponse struct {
 	Consultants []CRMConsultantMetric `json:"consultants"`
 	QueueStats  *QueueStats           `json:"queueStats,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
+}
+
+type ConsultantERPLinkEmployeeRow struct {
+	ERPEmployeeID        string  `json:"erpEmployeeId"`
+	ERPEmployeeName      string  `json:"erpEmployeeName"`
+	ERPStoreCode         string  `json:"erpStoreCode,omitempty"`
+	ERPStoreLabel        string  `json:"erpStoreLabel,omitempty"`
+	ERPStoreRawCode      string  `json:"erpStoreRawCode,omitempty"`
+	LinkID               string  `json:"linkId,omitempty"`
+	LinkedConsultantID   string  `json:"linkedConsultantId,omitempty"`
+	LinkedConsultantName string  `json:"linkedConsultantName,omitempty"`
+	LinkedStoreID        string  `json:"linkedStoreId,omitempty"`
+	LinkedStoreName      string  `json:"linkedStoreName,omitempty"`
+	LinkStatus           string  `json:"linkStatus"`
+	LinkConfidence       float64 `json:"linkConfidence,omitempty"`
+	LinkCandidates       int     `json:"linkCandidates,omitempty"`
+	Note                 string  `json:"note,omitempty"`
+}
+
+type ConsultantERPLinkConsultantOption struct {
+	ConsultantID   string `json:"consultantId"`
+	ConsultantName string `json:"consultantName"`
+	StoreID        string `json:"storeId"`
+	StoreCode      string `json:"storeCode,omitempty"`
+	StoreName      string `json:"storeName"`
+	EmployeeCode   string `json:"employeeCode,omitempty"`
+}
+
+type ConsultantERPLinksResponse struct {
+	Store       StoreScope                          `json:"store"`
+	Employees   []ConsultantERPLinkEmployeeRow      `json:"employees"`
+	Consultants []ConsultantERPLinkConsultantOption `json:"consultants"`
+}
+
+type ConsultantERPLinkUpsertInput struct {
+	TenantID        string   `json:"tenantId,omitempty"`
+	StoreCode       string   `json:"storeCode,omitempty"`
+	ERPStoreCode    string   `json:"erpStoreCode,omitempty"`
+	ERPEmployeeID   string   `json:"erpEmployeeId"`
+	ERPEmployeeName string   `json:"erpEmployeeName,omitempty"`
+	ConsultantID    string   `json:"consultantId"`
+	EmployeeIDs     []string `json:"employeeIds,omitempty"`
+	Note            string   `json:"note,omitempty"`
+}
+
+type ConsultantERPLinkDeleteInput struct {
+	TenantID    string   `json:"tenantId,omitempty"`
+	StoreCode   string   `json:"storeCode,omitempty"`
+	EmployeeIDs []string `json:"employeeIds,omitempty"`
+	LinkID      string   `json:"linkId"`
 }
 
 type ItemBootstrapInput struct {

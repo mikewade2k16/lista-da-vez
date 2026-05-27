@@ -150,16 +150,55 @@ export function buildConsultantStats({
   }
 }
 
-export function buildRankingRows({ history, roster, scope = 'month' }) {
+function resolveHistoryFinishedAt(entry) {
+  return Math.max(
+    0,
+    Number(
+      entry?.finishedAt || entry?.effectiveFinishedAt || entry?.stoppedAt || entry?.startedAt || 0,
+    ) || 0,
+  )
+}
+
+function parseDateStart(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return null
+  const parsed = Date.parse(`${normalized}T00:00:00.000Z`)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseDateEndExclusive(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return null
+  const parsed = Date.parse(`${normalized}T00:00:00.000Z`)
+  if (!Number.isFinite(parsed)) return null
+  return parsed + 24 * 60 * 60 * 1000
+}
+
+export function buildRankingRows({ history, roster, scope = 'month', dateFrom = '', dateTo = '' }) {
   const now = Date.now()
   const currentMonth = getMonthStamp(now)
   const currentDay = getDayStamp(now)
+  const rangeStart = parseDateStart(dateFrom)
+  const rangeEndExclusive = parseDateEndExclusive(dateTo)
+  const hasExplicitRange = rangeStart !== null || rangeEndExclusive !== null
   const scopedHistory = history.filter((entry) => {
-    if (scope === 'today') {
-      return getDayStamp(entry.finishedAt) === currentDay
+    const finishedAt = resolveHistoryFinishedAt(entry)
+
+    if (hasExplicitRange) {
+      if (rangeStart !== null && finishedAt < rangeStart) {
+        return false
+      }
+      if (rangeEndExclusive !== null && finishedAt >= rangeEndExclusive) {
+        return false
+      }
+      return true
     }
 
-    return getMonthStamp(entry.finishedAt) === currentMonth
+    if (scope === 'today') {
+      return getDayStamp(finishedAt) === currentDay
+    }
+
+    return getMonthStamp(finishedAt) === currentMonth
   })
 
   return roster

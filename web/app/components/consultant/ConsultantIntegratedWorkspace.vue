@@ -1,5 +1,7 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { CalendarDays } from 'lucide-vue-next'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import ConsultantDetailsDrawer from '~/components/consultant/ConsultantDetailsDrawer.vue'
 import ConsultantHistoryPanel from '~/components/consultant/ConsultantHistoryPanel.vue'
@@ -9,6 +11,9 @@ import ConsultantRecentAttendancesTable from '~/components/consultant/Consultant
 import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
 import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
 import { useConsultantDetailsDrawer } from '~/composables/useConsultantDetailsDrawer'
+import { useAuthStore } from '~/stores/auth'
+import { useConsultantsStore } from '~/stores/consultants'
+import { useOperationGoalsStore } from '~/stores/operation-goals'
 
 const FILTER_ALL = 'all'
 
@@ -45,6 +50,65 @@ const statusFilter = ref(FILTER_ALL)
 const goalFilter = ref(FILTER_ALL)
 const selectedConsultantId = ref('')
 const simulationAdditionalSales = ref(0)
+const consultantsStore = useConsultantsStore()
+const { integratedDateFrom, integratedDateTo } = storeToRefs(consultantsStore)
+const auth = useAuthStore()
+const operationGoalsStore = useOperationGoalsStore()
+const { goals: operationGoalRows } = storeToRefs(operationGoalsStore)
+
+function currentMonthKey() {
+  const now = new Date()
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+async function ensureOperationGoalsLoaded() {
+  if (!auth.isAuthenticated || !auth.activeTenantId) return
+  try {
+    await operationGoalsStore.loadGoals({
+      tenantId: auth.activeTenantId,
+      month: currentMonthKey(),
+    })
+  } catch {
+    // silencioso: a tela funciona com fallback do roster
+  }
+}
+
+onMounted(() => {
+  void ensureOperationGoalsLoaded()
+})
+
+watch(
+  () => [auth.isAuthenticated, auth.activeTenantId],
+  () => {
+    void ensureOperationGoalsLoaded()
+  },
+)
+
+const goalByConsultantId = computed(() => {
+  const map = new Map()
+  for (const row of operationGoalRows.value || []) {
+    if (row?.scope !== 'consultant' || !row?.consultantId) continue
+    map.set(String(row.consultantId).trim(), Number(row.monthlyGoal) || 0)
+  }
+  return map
+})
+
+const goalByStoreId = computed(() => {
+  const map = new Map()
+  for (const row of operationGoalRows.value || []) {
+    if (row?.scope !== 'store' || !row?.storeId) continue
+    map.set(String(row.storeId).trim(), Number(row.monthlyGoal) || 0)
+  }
+  return map
+})
+
+function resolveMonthlyGoal(consultant) {
+  const consultantGoal = goalByConsultantId.value.get(String(consultant?.id || '').trim())
+  if (typeof consultantGoal === 'number' && consultantGoal > 0) return consultantGoal
+  const storeGoal = goalByStoreId.value.get(String(consultant?.storeId || '').trim())
+  if (typeof storeGoal === 'number' && storeGoal > 0) return storeGoal
+  return Math.max(0, Number(consultant?.monthlyGoal || 0) || 0)
+}
 
 function buildRowKey(storeId, consultantId) {
   return `${String(storeId || '').trim()}:${String(consultantId || '').trim()}`
@@ -153,7 +217,7 @@ const consultantRows = computed(() =>
     const liveStatus =
       statusMap.value.get(buildRowKey(consultant.storeId, consultant.id)) ||
       normalizeStatusEntry('available', 'Disponivel')
-    const monthlyGoal = Math.max(0, Number(consultant.monthlyGoal || 0) || 0)
+    const monthlyGoal = resolveMonthlyGoal(consultant)
     const soldValue = Math.max(0, Number(monthly.soldValue || 0) || 0)
     const dailySoldValue = Math.max(0, Number(daily.soldValue || 0) || 0)
     const attendances = Math.max(0, Number(monthly.attendances || 0) || 0)
@@ -172,6 +236,10 @@ const consultantRows = computed(() =>
       conversionRate: Math.max(0, Number(monthly.conversionRate || 0) || 0),
       ticketAverage: Math.max(0, Number(monthly.ticketAverage || 0) || 0),
       paScore: Math.max(0, Number(monthly.paScore || 0) || 0),
+      erpOrders: Math.max(0, Number(monthly.erpOrders || 0) || 0),
+      soldValueSource: String(monthly.soldValueSource || ''),
+      ticketAverageSource: String(monthly.ticketAverageSource || ''),
+      paScoreSource: String(monthly.paScoreSource || ''),
       qualityScore: Math.max(0, Number(monthly.qualityScore || 0) || 0),
       avgDurationMs: Math.max(0, Number(monthly.avgDurationMs || 0) || 0),
       queueJumpServices: Math.max(0, Number(monthly.queueJumpServices || 0) || 0),
@@ -313,6 +381,10 @@ const selectedStoreConsultantCard = computed(() => {
       commissionRate: Number(row.commissionRate || 0) || 0,
       ticketAverage: row.ticketAverage,
       paScore: row.paScore,
+      erpOrders: row.erpOrders,
+      soldValueSource: row.soldValueSource,
+      ticketAverageSource: row.ticketAverageSource,
+      paScoreSource: row.paScoreSource,
       conversionRate: row.conversionRate,
       conversions: row.conversions,
       nonConversions: Math.max(0, row.attendances - row.conversions),
@@ -363,6 +435,10 @@ const selectedDrawerStats = computed(() => {
     commissionRate: Number(row.commissionRate || 0) || 0,
     ticketAverage: row.ticketAverage,
     paScore: row.paScore,
+    erpOrders: row.erpOrders,
+    soldValueSource: row.soldValueSource,
+    ticketAverageSource: row.ticketAverageSource,
+    paScoreSource: row.paScoreSource,
     conversionRate: row.conversionRate,
     conversions: row.conversions,
     nonConversions: Math.max(0, row.attendances - row.conversions),
@@ -396,6 +472,15 @@ function selectConsultant(consultantId) {
 function updateSimulationAdditionalSales(value) {
   const numeric = Number(value || 0)
   simulationAdditionalSales.value = Number.isFinite(numeric) ? numeric : 0
+}
+
+async function applyPeriodFilters() {
+  await consultantsStore.applyIntegratedFilters()
+}
+
+async function resetPeriodRange() {
+  consultantsStore.resetIntegratedCurrentMonth()
+  await consultantsStore.applyIntegratedFilters()
 }
 </script>
 
@@ -450,6 +535,42 @@ function updateSimulationAdditionalSales(value) {
               @update:model-value="goalFilter = $event"
             />
           </label>
+          <div class="consultant-integrated-filters__period">
+            <label class="settings-field consultant-integrated-filters__period-field">
+              <span>Periodo</span>
+              <AppDatePicker
+                :model-value="integratedDateFrom"
+                :end-date="integratedDateTo"
+                @update:model-value="integratedDateFrom = $event"
+                @update:end-date="integratedDateTo = $event"
+              >
+                <template #default="{ label }">
+                  <button type="button" class="consultant-integrated-date-trigger">
+                    <CalendarDays :size="14" />
+                    <span>{{ label || 'Mes atual' }}</span>
+                  </button>
+                </template>
+              </AppDatePicker>
+            </label>
+            <div class="consultant-integrated-filters__actions">
+              <button
+                type="button"
+                class="consultant-integrated-btn consultant-integrated-btn--ghost"
+                :disabled="pending"
+                @click="resetPeriodRange"
+              >
+                Mes atual
+              </button>
+              <button
+                type="button"
+                class="consultant-integrated-btn"
+                :disabled="pending"
+                @click="applyPeriodFilters"
+              >
+                {{ pending ? 'Atualizando...' : 'Atualizar' }}
+              </button>
+            </div>
+          </div>
         </div>
       </article>
 
@@ -539,12 +660,68 @@ function updateSimulationAdditionalSales(value) {
 <style scoped>
 .consultant-integrated-filters__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
   gap: 0.85rem;
 }
 
 .consultant-integrated-filters__search {
   min-width: 0;
+}
+
+.consultant-integrated-filters__period {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.consultant-integrated-filters__period-field {
+  min-width: 0;
+}
+
+.consultant-integrated-date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 100%;
+  min-height: 42px;
+  padding: 0 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--border) / 0.9);
+  background: rgb(var(--surface) / 0.95);
+  color: rgb(var(--text));
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.consultant-integrated-filters__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.consultant-integrated-btn {
+  min-height: 38px;
+  border: none;
+  border-radius: 12px;
+  padding: 0.6rem 0.9rem;
+  background: rgb(var(--primary));
+  color: rgb(255 255 255);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.consultant-integrated-btn:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.consultant-integrated-btn--ghost {
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .consultant-integrated-groups {

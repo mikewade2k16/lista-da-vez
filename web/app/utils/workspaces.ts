@@ -32,6 +32,7 @@ export const QUEUE_WORKSPACES = [
   { id: 'clientes', label: 'Clientes', icon: 'apartment', path: '/operacao/clientes' },
   { id: 'erp', label: 'ERP', icon: 'inventory_2', path: '/operacao/erp' },
   { id: 'crm', label: 'CRM', icon: 'insights', path: '/operacao/crm' },
+  { id: 'multiloja', label: 'Multi-loja', icon: 'store', path: '/operacao/multiloja' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/operacao/configuracoes' },
   { id: 'alertas', label: 'Alertas', icon: 'warning', path: '/operacao/alertas' },
   { id: 'feedback', label: 'Feedback', icon: 'chat_bubble', path: '/operacao/feedback' },

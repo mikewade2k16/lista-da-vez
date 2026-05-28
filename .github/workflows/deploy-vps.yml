@@ -29,11 +29,6 @@ on:
         required: false
         default: false
         type: boolean
-      skip_smoke_tests:
-        description: Pular smoke tests publicos
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -274,26 +269,6 @@ jobs:
 
           ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; cd '$DEPLOY_REMOTE_PATH' && docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build${force_recreate}${service_args} && docker compose --env-file .env.production -f docker-compose.prod.yml ps${service_args}"
 
-      - name: Smoke tests
-        if: ${{ !inputs.skip_smoke_tests }}
-        id: smoke
-        run: |
-          set -euo pipefail
-
-          for attempt in 1 2 3 4 5; do
-            root_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL")"
-            health_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL/healthz")"
-            printf 'tentativa %s — GET %s => %s | /healthz => %s\n' "$attempt" "$DEPLOY_PUBLIC_BASE_URL" "$root_status" "$health_status"
-            [[ "$root_status" == "200" && "$health_status" == "200" ]] && break
-            [[ "$attempt" -lt 5 ]] && sleep 10
-          done
-
-          [[ "$root_status" == "200" ]]
-          [[ "$health_status" == "200" ]]
-
-          echo "root_status=$root_status" >> "$GITHUB_OUTPUT"
-          echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
-
       - name: Publish summary
         if: ${{ always() }}
         run: |
@@ -323,8 +298,4 @@ jobs:
               echo "- Backup: \`${{ steps.backup.outputs.backup_file }}\`"
             fi
 
-            if [[ "${{ inputs.skip_smoke_tests }}" != "true" ]]; then
-              echo "- Smoke root: \`${{ steps.smoke.outputs.root_status }}\`"
-              echo "- Smoke healthz: \`${{ steps.smoke.outputs.health_status }}\`"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"

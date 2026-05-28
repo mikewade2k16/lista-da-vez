@@ -166,7 +166,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          backup_file="$(ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; mkdir -p '$DEPLOY_REMOTE_PATH/backups' && docker exec listaatendimento-postgres-1 sh -c 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\"' | gzip > '$DEPLOY_REMOTE_PATH/backups/backup_\$(date +%Y%m%d_%H%M%S).sql.gz' && latest=\$(ls -t '$DEPLOY_REMOTE_PATH/backups' | head -n 1) && printf '%s\\n' '$DEPLOY_REMOTE_PATH/backups/'\"\$latest\"")"
+          cat > /tmp/remote_backup.sh << 'REMOTE_SCRIPT'
+          set -euo pipefail
+          cd /home/deploy/lista-atendimento
+          set -a; source .env.production; set +a
+          mkdir -p backups
+          ts=$(date +%Y%m%d_%H%M%S)
+          docker exec listaatendimento-postgres-1 pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+            | gzip > "backups/backup_${ts}.sql.gz"
+          latest=$(ls -t backups | head -n 1)
+          printf '/home/deploy/lista-atendimento/backups/%s\n' "$latest"
+          REMOTE_SCRIPT
+
+          backup_file="$(ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/remote_backup.sh)"
 
           echo "backup_file=$backup_file" >> "$GITHUB_OUTPUT"
 

@@ -168,9 +168,18 @@ jobs:
 
           cat > /tmp/remote_backup.sh << 'REMOTE_SCRIPT'
           set -euo pipefail
+          PG_USER=$(docker inspect listaatendimento-postgres-1 \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep '^POSTGRES_USER=' | cut -d= -f2-)
+          PG_DB=$(docker inspect listaatendimento-postgres-1 \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep '^POSTGRES_DB=' | cut -d= -f2-)
+          PG_USER="${PG_USER:-listaatendimento}"
+          PG_DB="${PG_DB:-listaatendimento}"
           mkdir -p /home/deploy/lista-atendimento/backups
           ts=$(date +%Y%m%d_%H%M%S)
-          docker exec -u postgres listaatendimento-postgres-1 pg_dumpall \
+          docker exec -u postgres listaatendimento-postgres-1 \
+            pg_dump -U "$PG_USER" -d "$PG_DB" \
             | gzip > "/home/deploy/lista-atendimento/backups/backup_${ts}.sql.gz"
           latest=$(ls -t /home/deploy/lista-atendimento/backups | head -n 1)
           printf '/home/deploy/lista-atendimento/backups/%s\n' "$latest"

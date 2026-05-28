@@ -217,6 +217,41 @@ jobs:
             . | ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "set -euo pipefail; mkdir -p '$DEPLOY_REMOTE_PATH' && find '$DEPLOY_REMOTE_PATH' -mindepth 1 -maxdepth 1 ! -name '.env.production' ! -name 'backups' -exec rm -rf {} + && tar -xzf - -C '$DEPLOY_REMOTE_PATH'"
 
+      - name: Fix POSTGRES vars in .env.production
+        run: |
+          set -euo pipefail
+
+          cat > /tmp/fix_postgres_env.sh << 'FIX_SCRIPT'
+          set -euo pipefail
+          ENV_FILE=/home/deploy/lista-atendimento/.env.production
+          DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2-)
+          if [ -z "$DB_URL" ]; then
+            echo "ERRO: DATABASE_URL ausente em .env.production" >&2
+            exit 1
+          fi
+          PG_USER=$(printf '%s' "$DB_URL" | sed 's|postgres://\([^:@]*\):.*|\1|')
+          PG_PASS=$(printf '%s' "$DB_URL" | sed 's|postgres://[^:]*:\([^@]*\)@.*|\1|')
+          PG_DB=$(printf '%s'   "$DB_URL" | sed 's|.*/||; s|?.*||')
+          if grep -q '^POSTGRES_USER=' "$ENV_FILE"; then
+            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${PG_USER}|" "$ENV_FILE"
+          else
+            printf 'POSTGRES_USER=%s\n' "$PG_USER" >> "$ENV_FILE"
+          fi
+          if grep -q '^POSTGRES_PASSWORD=' "$ENV_FILE"; then
+            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASS}|" "$ENV_FILE"
+          else
+            printf 'POSTGRES_PASSWORD=%s\n' "$PG_PASS" >> "$ENV_FILE"
+          fi
+          if grep -q '^POSTGRES_DB=' "$ENV_FILE"; then
+            sed -i "s|^POSTGRES_DB=.*|POSTGRES_DB=${PG_DB}|" "$ENV_FILE"
+          else
+            printf 'POSTGRES_DB=%s\n' "$PG_DB" >> "$ENV_FILE"
+          fi
+          echo "POSTGRES_USER e POSTGRES_DB corrigidos (senhas omitidas do log)"
+          FIX_SCRIPT
+
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/fix_postgres_env.sh
+
       - name: Validate remote compose
         run: |
           set -euo pipefail

@@ -242,7 +242,13 @@ jobs:
           else
             printf 'POSTGRES_DB=%s\n' "$PG_DB" >> "$ENV_FILE"
           fi
-          echo "POSTGRES_USER e POSTGRES_DB corrigidos (senhas omitidas do log)"
+          if grep -q '^NUXT_PUBLIC_API_BASE=' "$ENV_FILE"; then
+            val=$(grep '^NUXT_PUBLIC_API_BASE=' "$ENV_FILE" | cut -d= -f2-)
+            [ -z "$val" ] && sed -i 's|^NUXT_PUBLIC_API_BASE=.*|NUXT_PUBLIC_API_BASE=https://omni.crowvisuals.com.br|' "$ENV_FILE"
+          else
+            printf 'NUXT_PUBLIC_API_BASE=https://omni.crowvisuals.com.br\n' >> "$ENV_FILE"
+          fi
+          echo "POSTGRES vars e NUXT_PUBLIC_API_BASE corrigidos"
           FIX_SCRIPT
 
           ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/fix_postgres_env.sh

@@ -141,6 +141,22 @@ erDiagram
         timestamptz updated_at
     }
 
+    CONSULTANT_ERP_LINKS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid consultant_id FK
+        text erp_store_code
+        text erp_employee_id
+        text erp_employee_name
+        text note
+        boolean is_active
+        uuid created_by_user_id FK
+        uuid updated_by_user_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
     STORE_OPERATION_SETTINGS {
         uuid store_id PK,FK
         text selected_operation_template_id
@@ -166,19 +182,36 @@ erDiagram
         text loss_reason_label
         text loss_reason_placeholder
         text customer_section_label
+        boolean show_customer_name_field
+        boolean show_customer_phone_field
         boolean show_email_field
         boolean show_profession_field
         boolean show_notes_field
+        boolean show_product_seen_field
+        boolean show_product_closed_field
+        boolean show_visit_reason_field
+        boolean show_customer_source_field
+        boolean show_queue_jump_reason_field
+        boolean show_loss_reason_field
         text visit_reason_selection_mode
         text visit_reason_detail_mode
         text loss_reason_selection_mode
         text loss_reason_detail_mode
         text customer_source_selection_mode
         text customer_source_detail_mode
+        boolean require_customer_name_field
+        boolean require_customer_phone_field
+        boolean require_email_field
+        boolean require_profession_field
+        boolean require_notes_field
         boolean require_product
+        boolean require_product_seen_field
+        boolean require_product_closed_field
         boolean require_visit_reason
         boolean require_customer_source
         boolean require_customer_name_phone
+        boolean require_queue_jump_reason_field
+        boolean require_loss_reason_field
         timestamptz created_at
         timestamptz updated_at
     }
@@ -303,6 +336,196 @@ erDiagram
         timestamptz created_at
     }
 
+    USER_FEEDBACK {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        uuid user_id FK
+        text user_name
+        text kind
+        text status
+        text subject
+        text body
+        text admin_note
+        timestamptz user_last_read_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+      FEEDBACK_READ_STATES {
+        uuid feedback_id PK, FK
+        uuid user_id PK, FK
+        timestamptz last_read_at
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
+      ERP_SYNC_RUNS {
+        uuid id PK
+        uuid tenant_id FK
+        uuid store_id FK
+        text store_code
+        text store_cnpj
+        text data_type
+        text mode
+        text source_path
+        text status
+        integer files_seen
+        integer files_imported
+        integer files_skipped
+        integer rows_read
+        integer raw_rows_imported
+        text error_message
+        timestamptz started_at
+        timestamptz finished_at
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
+      ERP_SYNC_FILES {
+        uuid id PK
+        uuid run_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text store_code
+        text store_cnpj
+        text data_type
+        text source_name
+        text source_path
+        text source_kind
+        date source_batch_date
+        text checksum_sha256
+        integer record_count
+        text status
+        timestamptz imported_at
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
+      ERP_ITEM_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text store_code
+        text store_cnpj
+        text source_file_name
+        date source_batch_date
+        integer source_line_number
+        text sku
+        text name
+        text description
+        text supplierreference
+        text brandname
+        text seasonname
+        text category1
+        text category2
+        text category3
+        text size
+        text color
+        text unit
+        text price_raw
+        bigint price_cents
+        text identifier
+        text created_at_raw
+        text updated_at_raw
+        timestamptz created_at
+        timestamptz updated_at
+        timestamptz created_at_imported
+      }
+
+      ERP_CUSTOMER_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text cpf
+        text identifier
+        text name
+        text email
+        text tags
+        timestamptz created_at_imported
+      }
+
+      ERP_EMPLOYEE_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text original_id
+        text name
+        text is_active_raw
+        timestamptz created_at_imported
+      }
+
+      ERP_ORDER_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text order_id
+        text sku
+        bigint amount_cents
+        bigint total_amount_cents
+        timestamptz order_date
+        timestamptz created_at_imported
+      }
+
+      ERP_ORDER_CANCELED_RAW {
+        uuid id PK
+        uuid run_id FK
+        uuid file_id FK
+        uuid tenant_id FK
+        uuid store_id FK
+        text source_file_name
+        integer source_line_number
+        text order_id
+        text sku
+        bigint amount_cents
+        bigint total_amount_cents
+        timestamptz order_date
+        timestamptz created_at_imported
+      }
+
+      ERP_ITEM_CURRENT {
+        uuid tenant_id PK,FK
+        uuid store_id PK,FK
+        text sku PK
+        text identifier
+        text name
+        text description
+        text supplierreference
+        text brandname
+        text seasonname
+        text category1
+        text category2
+        text category3
+        text size
+        text color
+        text unit
+        text price_raw
+        bigint price_cents
+        text source_file_name
+        date source_batch_date
+        integer source_line_number
+        timestamptz source_created_at
+        timestamptz source_updated_at
+        uuid run_id FK
+        uuid file_id FK
+        timestamptz created_at
+        timestamptz updated_at
+      }
+
     TENANTS ||--o{ STORES : owns
     USERS ||--o| USER_PLATFORM_ROLES : has
     USERS ||--o{ USER_TENANT_ROLES : has
@@ -318,6 +541,9 @@ erDiagram
     ACCESS_PERMISSIONS ||--o{ USER_ACCESS_OVERRIDES : overridden
     TENANTS ||--o{ CONSULTANTS : scopes
     STORES ||--o{ CONSULTANTS : roster
+    TENANTS ||--o{ CONSULTANT_ERP_LINKS : scopes
+    STORES ||--o{ CONSULTANT_ERP_LINKS : commercial_store
+    CONSULTANTS ||--o{ CONSULTANT_ERP_LINKS : erp_identity
     STORES ||--|| STORE_OPERATION_SETTINGS : config
     STORES ||--o{ STORE_SETTING_OPTIONS : catalogs
     STORES ||--o{ STORE_CATALOG_PRODUCTS : catalog
@@ -333,6 +559,21 @@ erDiagram
     CONSULTANTS ||--o{ OPERATION_CURRENT_STATUS : current_status
     CONSULTANTS ||--o{ OPERATION_STATUS_SESSIONS : status_sessions
     CONSULTANTS ||--o{ OPERATION_SERVICE_HISTORY : closes
+    TENANTS ||--o{ USER_FEEDBACK : receives
+    STORES ||--o{ USER_FEEDBACK : scopes
+    USERS ||--o{ USER_FEEDBACK : submits
+    TENANTS ||--o{ ERP_SYNC_RUNS : erp_scope
+    STORES ||--o{ ERP_SYNC_RUNS : erp_scope
+    ERP_SYNC_RUNS ||--o{ ERP_SYNC_FILES : batches
+    TENANTS ||--o{ ERP_SYNC_FILES : erp_scope
+    STORES ||--o{ ERP_SYNC_FILES : erp_scope
+    ERP_SYNC_FILES ||--o{ ERP_ITEM_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_CUSTOMER_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_EMPLOYEE_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_ORDER_RAW : imports
+    ERP_SYNC_FILES ||--o{ ERP_ORDER_CANCELED_RAW : imports
+    TENANTS ||--o{ ERP_ITEM_CURRENT : erp_catalog
+    STORES ||--o{ ERP_ITEM_CURRENT : erp_catalog
 ```
 
 ## Leitura rapida
@@ -367,14 +608,33 @@ erDiagram
 - `consultants`
   - roster administrativo por loja para a operacao
   - no seed MVP cada consultor ja nasce com vinculo 1:1 em `users`
+- `consultant_erp_links`
+  - vinculo manual e auditavel entre funcionario ERP (`erp_employee_id`) e consultor da Lista de Vez
+  - o CRM tenta primeiro esse vinculo manual; quando ele nao existe, usa `users.employee_code` e depois match exato de nome normalizado
+- `tenant_operation_settings`
+  - fonte de verdade tenant-wide para configuracao operacional
+  - inclui limites como `max_concurrent_services` e `max_concurrent_services_per_consultant`
+- `tenant_setting_options`
+  - catalogos configuraveis tenant-wide para motivos, origens, pausas e correlatos
+- `tenant_catalog_products`
+  - catalogo de produtos tenant-wide consumido pelo modal e pela operacao
 - `store_operation_settings`
-  - configuracao escalar da loja para a operacao e o modal
+  - legado de transicao por loja; deve ser tratado como fallback/backfill, nao como fonte principal de escrita
 - `store_setting_options`
-  - catalogos configuraveis da loja, tipados por `kind`
+  - legado de transicao por loja, tipados por `kind`
+  - `kind` atual: `visit_reason`, `customer_source`, `pause_reason`, `queue_jump_reason`, `loss_reason`, `profession`
 - `store_catalog_products`
-  - catalogo de produtos configuravel da loja
+  - legado de transicao por loja para catalogo de produtos
 - `operation_queue_entries`
   - fila corrente por loja
+- `erp_sync_runs`
+  - trilha de execucao por tenant/loja/tipo para bootstrap, sync incremental e futuras exportacoes
+- `erp_sync_files`
+  - metadados por lote/arquivo com checksum, status e deduplicacao idempotente
+- `erp_*_raw`
+  - espelho raw do layout FTP por tipo, com metadados de lote e linha de origem
+- `erp_item_current`
+  - projecao rapida e deduplicada por `tenant_id + store_id + sku`, fonte de busca do MVP de produtos
 - `operation_active_services`
   - atendimentos em andamento
 - `operation_paused_consultants`
@@ -399,6 +659,7 @@ A migration de seed cria:
 ## Observacoes de modelagem
 
 - `settings` deixou de viver em um JSON gigante e foi normalizado por tabela
+- a fonte de verdade atual de configuracao e catalogos fica nas tabelas `tenant_*`; as tabelas `store_*` seguem apenas para compatibilidade e backfill controlado
 - `operations` usa tabelas correntes para snapshot rapido e tabelas append-only para historico
 - `reports` le o historico principalmente por `store_id` + `finished_at`, com indices dedicados para tempo, consultor e desfecho
 - `user_invitations` guarda o token em hash, nunca o token aberto

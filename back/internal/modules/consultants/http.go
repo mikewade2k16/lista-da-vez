@@ -65,6 +65,24 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
+	mux.Handle("GET /v1/consultants/orphans", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		consultants, err := service.ListOrphans(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("tenantId")))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, listResponse{
+			Consultants: consultants,
+		})
+	})))
+
 	mux.Handle("POST /v1/consultants", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
@@ -95,10 +113,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusCreated, consultantResponse{
-			Consultant: result.Consultant,
-			Access:     result.Access,
-		})
+		httpapi.WriteJSON(w, http.StatusCreated, consultantResponse(result))
 	})))
 
 	mux.Handle("PATCH /v1/consultants/{id}", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

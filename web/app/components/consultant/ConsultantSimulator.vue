@@ -1,36 +1,36 @@
 <script setup>
-import { computed } from "vue";
-import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
+import { computed } from 'vue'
+import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
 
 const props = defineProps({
   soldValue: {
     type: Number,
-    required: true
+    required: true,
   },
   monthlyGoal: {
     type: Number,
-    required: true
+    required: true,
   },
   commissionRate: {
     type: Number,
-    required: true
+    required: true,
   },
   simulationAdditionalSales: {
     type: Number,
-    required: true
-  }
-});
+    required: true,
+  },
+})
 
-const emit = defineEmits(["update:simulationAdditionalSales"]);
+const emit = defineEmits(['update:simulationAdditionalSales'])
 
-const projectedSales = computed(() => props.soldValue + props.simulationAdditionalSales);
+const projectedSales = computed(() => props.soldValue + props.simulationAdditionalSales)
 const projectedGoalPercent = computed(() =>
-  props.monthlyGoal ? (projectedSales.value / props.monthlyGoal) * 100 : 0
-);
-const projectedCommission = computed(() => projectedSales.value * props.commissionRate);
+  props.monthlyGoal ? (projectedSales.value / props.monthlyGoal) * 100 : 0,
+)
+const projectedCommission = computed(() => projectedSales.value * props.commissionRate)
 
 function handleInput(event) {
-  emit("update:simulationAdditionalSales", event.target.value);
+  emit('update:simulationAdditionalSales', event.target.value)
 }
 </script>
 
@@ -47,7 +47,7 @@ function handleInput(event) {
         data-testid="consultant-simulator-input"
         :value="simulationAdditionalSales"
         @input="handleInput"
-      >
+      />
     </label>
     <div class="metric-grid metric-grid--tight">
       <article class="metric-card metric-card--soft">

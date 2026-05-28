@@ -1,67 +1,96 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from "vue";
-import { X } from "lucide-vue-next";
+import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { X } from 'lucide-vue-next'
 
 const props = defineProps({
   modelValue: {
     type: Boolean,
-    default: false
+    default: false,
   },
   title: {
     type: String,
-    default: "Detalhes"
+    default: 'Detalhes',
   },
   subtitle: {
     type: String,
-    default: ""
+    default: '',
   },
   sections: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   width: {
     type: String,
-    default: "min(42rem, calc(100vw - 2rem))"
-  }
-});
+    default: 'min(42rem, calc(100vw - 2rem))',
+  },
+})
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(['update:modelValue'])
+let previousBodyOverflow = ''
 
 function closeDialog() {
-  emit("update:modelValue", false);
+  emit('update:modelValue', false)
+}
+
+function syncBodyScrollLock(isOpen) {
+  if (!import.meta.client) {
+    return
+  }
+
+  if (isOpen) {
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return
+  }
+
+  document.body.style.overflow = previousBodyOverflow
 }
 
 function formatValue(value) {
   if (Array.isArray(value)) {
-    return value.filter(Boolean).join(", ") || "-";
+    return value.filter(Boolean).join(', ') || '-'
   }
 
-  if (value === null || value === undefined || String(value).trim() === "") {
-    return "-";
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return '-'
   }
 
-  return String(value);
+  return String(value)
 }
 
 function handleEscape(event) {
-  if (event.key === "Escape" && props.modelValue) {
-    closeDialog();
+  if (event.key === 'Escape' && props.modelValue) {
+    closeDialog()
   }
 }
 
 onMounted(() => {
-  document.addEventListener("keydown", handleEscape);
-});
+  document.addEventListener('keydown', handleEscape)
+})
+
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    syncBodyScrollLock(isOpen)
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
-  document.removeEventListener("keydown", handleEscape);
-});
+  document.removeEventListener('keydown', handleEscape)
+  syncBodyScrollLock(false)
+})
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="modelValue" class="app-detail-dialog">
-      <button class="app-detail-dialog__scrim" type="button" aria-label="Fechar detalhes" @click="closeDialog" />
+      <button
+        class="app-detail-dialog__scrim"
+        type="button"
+        aria-label="Fechar detalhes"
+        @click="closeDialog"
+      ></button>
 
       <section class="app-detail-dialog__card" :style="{ width }">
         <header class="app-detail-dialog__header">
@@ -71,7 +100,12 @@ onBeforeUnmount(() => {
             <p v-if="subtitle" class="app-detail-dialog__subtitle">{{ subtitle }}</p>
           </div>
 
-          <button class="app-detail-dialog__close" type="button" aria-label="Fechar" @click="closeDialog">
+          <button
+            class="app-detail-dialog__close"
+            type="button"
+            aria-label="Fechar"
+            @click="closeDialog"
+          >
             <X :size="18" :stroke-width="2.1" />
           </button>
         </header>
@@ -94,12 +128,14 @@ onBeforeUnmount(() => {
                 class="app-detail-dialog__field"
               >
                 <span class="app-detail-dialog__field-label">{{ field?.label || field?.key }}</span>
-                <strong class="app-detail-dialog__field-value">{{ formatValue(field?.value) }}</strong>
+                <strong class="app-detail-dialog__field-value">
+                  {{ formatValue(field?.value) }}
+                </strong>
               </article>
             </div>
           </section>
 
-          <slot />
+          <slot></slot>
         </div>
       </section>
     </div>
@@ -120,7 +156,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   border: none;
-  background: rgba(3, 6, 12, 0.76);
+  background: rgb(3 6 12 / 0.76);
   backdrop-filter: blur(4px);
 }
 
@@ -129,10 +165,11 @@ onBeforeUnmount(() => {
   z-index: 1;
   max-height: calc(100vh - 2rem);
   overflow: auto;
+  overscroll-behavior: contain;
   border-radius: 1.2rem;
   border: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(13, 18, 29, 0.98), rgba(8, 12, 19, 0.98));
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+  background: linear-gradient(180deg, rgb(var(--surface) / 0.98), rgb(var(--surface-2) / 0.98));
+  box-shadow: var(--shadow-dropdown, 0 30px 80px rgb(15 23 42 / 0.22));
 }
 
 .app-detail-dialog__header {
@@ -141,7 +178,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 1rem;
   padding: 1.2rem 1.2rem 0.9rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgb(var(--border) / 0.68);
 }
 
 .app-detail-dialog__copy {
@@ -154,12 +191,12 @@ onBeforeUnmount(() => {
   font-size: 0.72rem;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
+  color: rgb(var(--muted) / 0.82);
 }
 
 .app-detail-dialog__title {
   margin: 0;
-  color: #ffffff;
+  color: rgb(var(--text));
   font-size: 1.15rem;
 }
 
@@ -176,8 +213,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgb(var(--border) / 0.78);
+  background: rgb(var(--surface-2) / 0.68);
   color: var(--text-main);
   cursor: pointer;
 }
@@ -201,7 +238,7 @@ onBeforeUnmount(() => {
 .app-detail-dialog__section-header h4 {
   margin: 0;
   font-size: 0.85rem;
-  color: #ffffff;
+  color: rgb(var(--text));
 }
 
 .app-detail-dialog__section-header p {
@@ -221,15 +258,15 @@ onBeforeUnmount(() => {
   gap: 0.28rem;
   padding: 0.85rem 0.9rem;
   border-radius: 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(18, 25, 38, 0.8);
+  border: 1px solid rgb(var(--border) / 0.68);
+  background: rgb(var(--surface-2) / 0.8);
 }
 
 .app-detail-dialog__field-label {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.82);
+  color: rgb(var(--muted) / 0.82);
 }
 
 .app-detail-dialog__field-value {

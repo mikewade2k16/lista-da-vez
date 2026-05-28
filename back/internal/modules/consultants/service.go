@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
@@ -27,6 +28,10 @@ func NewService(repository Repository, passwordHasher auth.PasswordHasher, acces
 }
 
 func (service *Service) ListByStore(ctx context.Context, principal auth.Principal, storeID string) ([]ConsultantView, error) {
+	if !canViewConsultants(principal) {
+		return nil, ErrForbidden
+	}
+
 	resolvedStoreID, err := service.resolveStoreID(ctx, principal, storeID)
 	if err != nil {
 		return nil, err
@@ -45,8 +50,40 @@ func (service *Service) ListByStore(ctx context.Context, principal auth.Principa
 	return views, nil
 }
 
+// ListOrphans devolve consultores ativos do tenant cuja loja foi deletada.
+// Apenas papeis que podem gerenciar lojas tem acesso (admin/owner/director).
+func (service *Service) ListOrphans(ctx context.Context, principal auth.Principal, tenantID string) ([]ConsultantView, error) {
+	if !canManageStoreAllocation(principal) {
+		return nil, ErrForbidden
+	}
+
+	resolvedTenantID := strings.TrimSpace(tenantID)
+	if resolvedTenantID == "" {
+		resolvedTenantID = strings.TrimSpace(principal.TenantID)
+	}
+	if resolvedTenantID == "" {
+		return nil, ErrValidation
+	}
+
+	if principal.Role != auth.RolePlatformAdmin && principal.TenantID != resolvedTenantID {
+		return nil, ErrForbidden
+	}
+
+	consultants, err := service.repository.ListOrphansByTenant(ctx, resolvedTenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	views := make([]ConsultantView, 0, len(consultants))
+	for _, consultant := range consultants {
+		views = append(views, consultant.View())
+	}
+
+	return views, nil
+}
+
 func (service *Service) Create(ctx context.Context, principal auth.Principal, input CreateInput) (CreateResult, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditConsultants(principal) {
 		return CreateResult{}, ErrForbidden
 	}
 
@@ -91,7 +128,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Update(ctx context.Context, principal auth.Principal, input UpdateInput) (ConsultantView, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditConsultants(principal) {
 		return ConsultantView{}, ErrForbidden
 	}
 
@@ -105,8 +142,20 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 		return ConsultantView{}, err
 	}
 
-	if err := service.ensureStoreAccess(ctx, principal, existing.StoreID); err != nil {
-		return ConsultantView{}, err
+	// Consultor orfao (loja deletada): so usuarios que podem gerenciar lojas
+	// realocam. Para o restante das edicoes em consultor com loja, mantem o
+	// fluxo padrao de checagem por loja.
+	if strings.TrimSpace(existing.StoreID) == "" {
+		if !canManageStoreAllocation(principal) {
+			return ConsultantView{}, ErrForbidden
+		}
+		if existing.TenantID != "" && principal.Role != auth.RolePlatformAdmin && principal.TenantID != existing.TenantID {
+			return ConsultantView{}, ErrForbidden
+		}
+	} else {
+		if err := service.ensureStoreAccess(ctx, principal, existing.StoreID); err != nil {
+			return ConsultantView{}, err
+		}
 	}
 
 	if input.Name != nil {
@@ -192,7 +241,7 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Archive(ctx context.Context, principal auth.Principal, consultantID string) error {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditConsultants(principal) {
 		return ErrForbidden
 	}
 
@@ -247,6 +296,40 @@ func (service *Service) ensureStoreAccess(ctx context.Context, principal auth.Pr
 	}
 
 	return ErrForbidden
+}
+
+func canViewConsultants(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionConsultantView) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionSettingsView)
+	}
+
+	return principal.Role == auth.RoleOwner ||
+		principal.Role == auth.RolePlatformAdmin ||
+		principal.Role == auth.RoleStoreTerminal
+}
+
+func canEditConsultants(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionSettingsEdit)
+	}
+
+	return principal.Role == auth.RoleOwner || principal.Role == auth.RolePlatformAdmin
+}
+
+// canManageStoreAllocation autoriza listar consultores orfaos e realoca-los.
+// Mesmo conjunto de papeis que pode gerenciar lojas.
+func canManageStoreAllocation(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionSettingsEdit)
+	}
+
+	switch principal.Role {
+	case auth.RolePlatformAdmin, auth.RoleOwner, auth.RoleDirector:
+		return true
+	default:
+		return false
+	}
 }
 
 func buildInitials(name string) string {

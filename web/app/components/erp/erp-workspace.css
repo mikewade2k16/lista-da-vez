@@ -1,0 +1,458 @@
+.erp-panel {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  --erp-card-bg: rgb(var(--surface) / 0.9);
+  --erp-panel-bg: rgb(var(--surface) / 0.86);
+  --erp-control-bg: rgb(var(--surface-2) / 0.92);
+  --erp-strong-bg: rgb(var(--surface) / 0.98);
+  --erp-primary-border: rgb(var(--primary) / 0.24);
+  --erp-hover-border: rgb(var(--primary) / 0.38);
+  --erp-hover-bg: rgb(var(--primary) / 0.08);
+  --erp-primary-soft-bg: rgb(var(--primary) / 0.14);
+  --erp-primary-soft-text: color-mix(in srgb, rgb(var(--primary)) 70%, rgb(var(--text)) 30%);
+  --erp-primary-card-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, rgb(var(--primary)) 16%, rgb(var(--surface)) 84%) 0%,
+    rgb(var(--surface-2) / 0.96) 100%
+  );
+  --erp-primary-gradient: linear-gradient(
+    135deg,
+    rgb(var(--primary)) 0%,
+    rgb(var(--primary-600)) 100%
+  );
+  --erp-success-border: rgb(var(--success) / 0.28);
+  --erp-success-text: color-mix(in srgb, rgb(var(--success)) 74%, rgb(var(--text)) 26%);
+  --erp-success-card-bg: linear-gradient(
+    135deg,
+    color-mix(in srgb, rgb(var(--success)) 18%, rgb(var(--surface)) 82%) 0%,
+    rgb(var(--surface-2) / 0.96) 100%
+  );
+  --erp-success-gradient: linear-gradient(
+    135deg,
+    rgb(var(--success)) 0%,
+    color-mix(in srgb, rgb(var(--success)) 68%, rgb(var(--primary-600)) 32%) 100%
+  );
+  --erp-danger-border: rgb(var(--danger) / 0.24);
+  --erp-danger-text: color-mix(in srgb, rgb(var(--danger)) 72%, rgb(var(--text)) 28%);
+  --erp-warning: color-mix(in srgb, rgb(var(--success)) 44%, rgb(var(--danger)) 56%);
+  --erp-warning-border: color-mix(in srgb, var(--erp-warning) 28%, rgb(var(--border)) 72%);
+  --erp-warning-soft-bg: color-mix(in srgb, var(--erp-warning) 12%, rgb(var(--surface)) 88%);
+  --erp-warning-text: color-mix(in srgb, var(--erp-warning) 72%, rgb(var(--text)) 28%);
+  --erp-raw-border: color-mix(in srgb, rgb(var(--primary-600)) 56%, rgb(var(--danger)) 44%);
+  --erp-table-divider: rgb(var(--border) / 0.24);
+  --erp-track-off: rgb(var(--border) / 0.72);
+  --erp-track-thumb: rgb(var(--surface));
+  --erp-shadow-dropdown: var(--shadow-dropdown, var(--shadow-md));
+}
+
+.erp-panel__tab-body {
+  display: grid;
+  gap: 1rem;
+}
+
+.erp-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.erp-panel__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.erp-panel__text {
+  margin: 0.35rem 0 0;
+  max-width: 52rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.erp-panel__stats,
+.erp-panel__run-meta,
+.erp-sync-tab__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+
+.erp-sync-tab {
+  display: grid;
+  gap: 1rem;
+}
+
+.erp-panel__stat-card,
+.erp-panel__run-box {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--line-soft);
+  background: var(--erp-card-bg);
+  box-shadow: var(--shadow-card);
+}
+
+.erp-panel__stat-label,
+.erp-panel__run-label {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.erp-panel__stat-value {
+  color: var(--text-main);
+  font-size: 1.7rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.erp-panel__stat-value--small {
+  font-size: 0.95rem;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.erp-panel__stat-value--currency {
+  font-size: 1.25rem;
+  color: var(--erp-success-text);
+}
+
+.erp-panel__stats--orders {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.erp-panel__stat-card--accent {
+  border-color: var(--erp-primary-border);
+  background: var(--erp-primary-card-bg);
+}
+
+.erp-panel__stat-card--green {
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-card-bg);
+}
+
+.erp-panel__run-date {
+  color: var(--text-main);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.erp-panel__stat-card small,
+.erp-panel__run-box small {
+  color: var(--text-muted);
+}
+
+.erp-panel__toolbar-actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.erp-panel__prefix-filter {
+  display: grid;
+  gap: 0.2rem;
+  min-width: min(100%, 260px);
+}
+
+.erp-panel__prefix-filter span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.erp-panel__prefix-input {
+  width: 100%;
+  min-height: 2.45rem;
+  padding: 0 0.8rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line-soft);
+  background: var(--erp-control-bg);
+  color: var(--text-main);
+}
+
+.erp-panel__toolbar-btn {
+  min-height: 2.45rem;
+  padding: 0 0.95rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line-soft);
+  background: var(--erp-control-bg);
+  color: var(--text-main);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.erp-panel__toolbar-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--erp-hover-border);
+}
+
+.erp-panel__toolbar-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.erp-panel__toolbar-btn--primary {
+  border-color: var(--erp-success-border);
+  background: var(--erp-success-gradient);
+}
+
+.erp-panel__name-cell {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.erp-panel__name-cell strong {
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.erp-panel__name-cell span,
+.erp-panel__muted-cell {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.erp-panel__price-cell {
+  color: var(--erp-success-text);
+  font-weight: 700;
+}
+
+.erp-placeholder {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.3rem;
+  border-radius: 1rem;
+  border: 1px dashed var(--erp-primary-border);
+  background: var(--erp-primary-card-bg);
+}
+
+.erp-placeholder__badge {
+  width: fit-content;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  background: var(--erp-primary-soft-bg);
+  color: var(--erp-primary-soft-text);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.erp-placeholder h3 {
+  margin: 0;
+  color: var(--text-main);
+}
+
+.erp-placeholder p {
+  margin: 0;
+  max-width: 52rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.erp-panel__store-selector {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.erp-panel__selectors-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.erp-panel__selector-group {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 14rem;
+}
+
+.erp-panel__store-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.erp-panel__store-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.erp-panel__store-select,
+.erp-panel__store-input {
+  width: 100%;
+  min-height: 2.4rem;
+  padding: 0 0.75rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--line-soft);
+  background: var(--erp-control-bg);
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.erp-panel__store-hint {
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.erp-panel__store-select--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.erp-banco {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.erp-banco__intro h3 {
+  margin: 0 0 0.5rem;
+  color: var(--text-main);
+}
+
+.erp-banco__intro p {
+  margin: 0;
+  max-width: 64rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.erp-banco__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.85rem;
+}
+
+.erp-banco__card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--line-soft);
+  background: var(--erp-card-bg);
+}
+
+.erp-banco__card--raw {
+  border-color: var(--erp-raw-border);
+}
+
+.erp-banco__card--projecao {
+  border-color: var(--erp-success-border);
+}
+
+.erp-banco__card--controle {
+  border-color: var(--erp-primary-border);
+}
+
+.erp-banco__card--outbox {
+  border-color: var(--erp-warning-border);
+}
+
+.erp-banco__card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.erp-banco__table-name {
+  font-size: 0.8rem;
+  color: var(--erp-primary-soft-text);
+  word-break: break-all;
+}
+
+.erp-banco__badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  background: var(--erp-primary-soft-bg);
+  color: var(--erp-primary-soft-text);
+  white-space: nowrap;
+}
+
+.erp-banco__card-label {
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+.erp-banco__card-desc {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.erp-banco__live {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.3rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.erp-banco__live-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.erp-banco__live-count {
+  color: var(--erp-success-text);
+  font-size: 1.1rem;
+}
+
+.erp-banco__note {
+  padding: 0.9rem 1.1rem;
+  border-radius: 0.9rem;
+  border: 1px solid var(--erp-warning-border);
+  background: var(--erp-warning-soft-bg);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.erp-banco__note code {
+  color: var(--erp-primary-soft-text);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  .erp-panel__header {
+    align-items: stretch;
+  }
+
+  .erp-panel__store-selector {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .erp-panel__toolbar-actions {
+    width: 100%;
+  }
+
+  .erp-panel__prefix-filter {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .erp-panel__toolbar-btn {
+    flex: 1 1 12rem;
+  }
+}

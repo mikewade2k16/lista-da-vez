@@ -46,8 +46,13 @@ Ele nao deve cuidar de:
 
 ## Regras de escopo
 
-- leitura: qualquer usuario com acesso a loja
+- leitura: usuarios com `workspace.consultor.view` e tambem operadores administrativos que chegam pelo fluxo de configuracoes
 - escrita: `owner` e `platform_admin`
+
+## Observacoes de integracao
+
+- `GET /v1/consultants?storeId=...` alimenta tanto a workspace `consultor` quanto a aba de consultores em `configuracoes`
+- a workspace `consultor` nao deve depender de permissao de `ranking` nem de `configuracoes` para montar seu comparativo multi-loja
 
 ## Backlog desta frente
 

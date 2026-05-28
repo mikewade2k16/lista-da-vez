@@ -67,11 +67,13 @@ type updatePasswordRequest struct {
 }
 
 type principalDTO struct {
-	UserID    string    `json:"userId"`
-	Role      Role      `json:"role"`
-	TenantID  string    `json:"tenantId,omitempty"`
-	StoreIDs  []string  `json:"storeIds,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	UserID              string    `json:"userId"`
+	Role                Role      `json:"role"`
+	TenantID            string    `json:"tenantId,omitempty"`
+	StoreIDs            []string  `json:"storeIds,omitempty"`
+	Permissions         []string  `json:"permissions"`
+	PermissionsResolved bool      `json:"permissionsResolved"`
+	ExpiresAt           time.Time `json:"expiresAt"`
 }
 
 func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *InvitationService, passwordResets *PasswordResetService, middleware *Middleware) {
@@ -94,7 +96,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		if err := passwordResets.Request(r.Context(), PasswordResetRequestInput{Email: request.Email}); err != nil {
+		if err := passwordResets.Request(r.Context(), PasswordResetRequestInput(request)); err != nil {
 			writePasswordResetError(w, r, err)
 			return
 		}
@@ -116,11 +118,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		user, err := passwordResets.Confirm(r.Context(), PasswordResetConfirmInput{
-			Email:    request.Email,
-			Code:     request.Code,
-			Password: request.Password,
-		})
+		user, err := passwordResets.Confirm(r.Context(), PasswordResetConfirmInput(request))
 		if err != nil {
 			writePasswordResetError(w, r, err)
 			return
@@ -139,10 +137,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		result, err := service.Login(r.Context(), LoginInput{
-			Email:    request.Email,
-			Password: request.Password,
-		})
+		result, err := service.Login(r.Context(), LoginInput(request))
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrInvalidCredentials):
@@ -168,6 +163,19 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 		})
 	})
 
+	// POST /v1/auth/logout — placeholder leve. Hoje o backend nao guarda sessao
+	// persistida, entao logout e idempotente e retorna 200 OK independentemente.
+	// Permite que o frontend pare de travar no logout (atualmente dispara loop
+	// de middleware quando navega para /auth/login sem confirmar invalidacao).
+	// Quando a Fase 7D introduzir PrincipalCache + core.user_sessions ativo,
+	// este handler passa a revogar a sessao do principal e publicar
+	// `user.session.revoked` no event bus.
+	mux.Handle("POST /v1/auth/logout", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		httpapi.WriteJSON(w, http.StatusOK, map[string]any{
+			"ok": true,
+		})
+	})))
+
 	mux.Handle("GET /v1/auth/me", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := PrincipalFromContext(r.Context())
 		if !ok {
@@ -189,11 +197,13 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 		httpapi.WriteJSON(w, http.StatusOK, meResponse{
 			User: user,
 			Principal: principalDTO{
-				UserID:    principal.UserID,
-				Role:      principal.Role,
-				TenantID:  principal.TenantID,
-				StoreIDs:  append([]string{}, principal.StoreIDs...),
-				ExpiresAt: principal.ExpiresAt,
+				UserID:              principal.UserID,
+				Role:                principal.Role,
+				TenantID:            principal.TenantID,
+				StoreIDs:            append([]string{}, principal.StoreIDs...),
+				Permissions:         append([]string{}, principal.Permissions...),
+				PermissionsResolved: principal.PermissionsResolved,
+				ExpiresAt:           principal.ExpiresAt,
 			},
 		})
 	})))
@@ -211,10 +221,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		user, err := service.UpdateProfile(r.Context(), principal, UpdateProfileInput{
-			DisplayName: request.DisplayName,
-			Email:       request.Email,
-		})
+		user, err := service.UpdateProfile(r.Context(), principal, UpdateProfileInput(request))
 		if err != nil {
 			writeSelfServiceError(w, r, err)
 			return
@@ -239,10 +246,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		user, err := service.ChangePassword(r.Context(), principal, ChangePasswordInput{
-			CurrentPassword: request.CurrentPassword,
-			NewPassword:     request.NewPassword,
-		})
+		user, err := service.ChangePassword(r.Context(), principal, ChangePasswordInput(request))
 		if err != nil {
 			writeSelfServiceError(w, r, err)
 			return
@@ -308,9 +312,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		httpapi.WriteJSON(w, http.StatusOK, invitationResponse{
-			Invitation: result.Invitation,
-		})
+		httpapi.WriteJSON(w, http.StatusOK, invitationResponse(result))
 	})
 
 	mux.HandleFunc("POST /v1/auth/invitations/accept", func(w http.ResponseWriter, r *http.Request) {
@@ -320,10 +322,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
-		result, err := invitations.Accept(r.Context(), InvitationAcceptInput{
-			Token:    request.Token,
-			Password: request.Password,
-		})
+		result, err := invitations.Accept(r.Context(), InvitationAcceptInput(request))
 		if err != nil {
 			writeInvitationError(w, r, err)
 			return

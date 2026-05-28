@@ -1,14 +1,14 @@
 <script setup>
 function formatPercent(value) {
-  return `${Number(value || 0).toFixed(1)}%`;
+  return `${Number(value || 0).toFixed(1)}%`
 }
 
 defineProps({
   quality: {
     type: Object,
-    required: true
-  }
-});
+    required: true,
+  },
+})
 </script>
 
 <template>
@@ -29,12 +29,16 @@ defineProps({
       <article class="metric-card metric-card--soft">
         <span class="metric-card__label">Completo + observacao</span>
         <strong class="metric-card__value">{{ formatPercent(quality.excellentRate) }}</strong>
-        <span class="metric-card__text">{{ quality.excellentCount }} atendimentos com observacoes</span>
+        <span class="metric-card__text">
+          {{ quality.excellentCount }} atendimentos com observacoes
+        </span>
       </article>
       <article class="metric-card metric-card--soft">
         <span class="metric-card__label">Incompletos</span>
         <strong class="metric-card__value">{{ formatPercent(quality.incompleteRate) }}</strong>
-        <span class="metric-card__text">{{ quality.incompleteCount }} atendimentos com falhas de preenchimento</span>
+        <span class="metric-card__text">
+          {{ quality.incompleteCount }} atendimentos com falhas de preenchimento
+        </span>
       </article>
       <article class="metric-card metric-card--soft">
         <span class="metric-card__label">Observacoes</span>

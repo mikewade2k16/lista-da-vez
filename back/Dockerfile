@@ -1,4 +1,4 @@
-FROM golang:1.24.0-bookworm AS build
+FROM golang:1.26.3-bookworm AS build
 
 WORKDIR /src
 
@@ -23,4 +23,4 @@ COPY --from=build /out/migrate /usr/local/bin/migrate
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "migrate up && api"]
+CMD ["sh", "-c", "migrate up && migrate bootstrap-erp-store && api"]

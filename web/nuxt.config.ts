@@ -1,75 +1,137 @@
-const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === "true";
+const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === 'true'
 const shouldUsePollingWatcher =
-  process.env.CHOKIDAR_USEPOLLING === "true" ||
-  process.env.WATCHPACK_POLLING === "true";
-const watcherIgnorePatterns = ["**/.output/**", "**/dist/**"];
-const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350);
+  process.env.CHOKIDAR_USEPOLLING === 'true' || process.env.WATCHPACK_POLLING === 'true'
+const watcherIgnorePatterns = ['**/.output/**', '**/dist/**']
+const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350)
 
 export default defineNuxtConfig({
-  compatibilityDate: "2026-03-23",
+  extends: ['./layers/core', './layers/queue', './layers/tasks'],
+  compatibilityDate: '2026-03-23',
   devtools: {
-    enabled: shouldEnableNuxtDevtools
+    enabled: shouldEnableNuxtDevtools,
   },
   routeRules: {
-    "/": { ssr: false },
-    "/campanhas": { ssr: false },
-    "/configuracoes": { ssr: false },
-    "/consultor": { ssr: false },
-    "/dados": { ssr: false },
-    "/inteligencia": { ssr: false },
-    "/multiloja": { ssr: false },
-    "/operacao/**": { ssr: false },
-    "/perfil": { ssr: false },
-    "/ranking": { ssr: false },
-    "/relatorios": { ssr: false },
-    "/usuarios": { ssr: false }
+    '/': { ssr: false },
+    '/campanhas': { ssr: false },
+    '/configuracoes': { ssr: false },
+    '/consultor': { ssr: false },
+    '/dados': { ssr: false },
+    '/editor': { ssr: false },
+    '/feedback': { ssr: false },
+    '/finance': { ssr: false },
+    '/inteligencia': { ssr: false },
+    '/manage/**': { ssr: false },
+    '/meus-feedbacks': { ssr: false },
+    '/monitoramento': { ssr: false },
+    '/multiloja': { ssr: false },
+    '/omnichannel': { ssr: false },
+    '/operacao/**': { ssr: false },
+    '/perfil': { ssr: false },
+    '/ranking': { ssr: false },
+    '/relatorios': { ssr: false },
+    '/roadmap': { ssr: false },
+    '/site/**': { ssr: false },
+    '/tasks': { ssr: false },
+    '/team/**': { ssr: false },
+    '/themes': { ssr: false },
+    '/tools/**': { ssr: false },
+    '/tracking': { ssr: false },
+    '/usuarios': { ssr: false },
   },
-  modules: ["@pinia/nuxt"],
+  modules: ['@nuxt/ui', '@nuxt/eslint', '@pinia/nuxt'],
+  colorMode: {
+    preference: 'dark',
+    fallback: 'dark',
+  },
+  eslint: {
+    config: {
+      stylistic: false, // Prettier cuida de estilo, evita conflito
+      standalone: true, // habilita plugins Vue e TypeScript de comunidade
+    },
+  },
+  ui: {
+    fonts: false,
+    experimental: {
+      componentDetection: true,
+    },
+  },
+  icon: {
+    provider: 'server',
+    fallbackToApi: false,
+    collections: ['lucide'],
+  },
   vite: {
+    optimizeDeps: {
+      include: [
+        '@tiptap/extension-image',
+        '@tiptap/extension-link',
+        '@tiptap/extension-drag-handle',
+        '@tiptap/extension-emoji',
+        '@tiptap/extension-mention',
+        '@tiptap/extension-placeholder',
+        '@tiptap/extension-task-item',
+        '@tiptap/extension-task-list',
+        '@tiptap/extension-text-align',
+        '@tiptap/extension-underline',
+        '@tiptap/starter-kit',
+        '@tiptap/suggestion',
+        '@tiptap/vue-3',
+        'lucide-vue-next',
+      ],
+    },
+    build: {
+      rollupOptions: {
+        // @tiptap/y-tiptap e peer opcional para colab Yjs. Como nao usamos
+        // collab em tempo real no editor Omni, marcamos como external para
+        // evitar bundle do Yjs/y-prosemirror desnecessariamente.
+        external: ['@tiptap/y-tiptap'],
+      },
+    },
     server: {
       watch: shouldUsePollingWatcher
         ? {
             ignored: watcherIgnorePatterns,
             usePolling: true,
-            interval: watcherInterval
+            interval: watcherInterval,
           }
         : {
-            ignored: watcherIgnorePatterns
-          }
-    }
+            ignored: watcherIgnorePatterns,
+          },
+    },
   },
   runtimeConfig: {
     apiInternalBase:
       process.env.NUXT_API_INTERNAL_BASE ||
       process.env.NUXT_PUBLIC_API_BASE ||
-      "http://localhost:8080",
+      'http://localhost:8080',
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8080",
-      apiWsBase: process.env.NUXT_PUBLIC_API_WS_BASE || ""
-    }
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
+      apiWsBase: process.env.NUXT_PUBLIC_API_WS_BASE || '',
+      themeStudioEnabled: process.env.NUXT_PUBLIC_ENABLE_THEME_STUDIO === 'true',
+    },
   },
   css: [
-    "~/assets/styles/tokens.css",
-    "~/assets/styles/base.css",
-    "~/assets/styles/layout.css",
-    "~/assets/styles/components.css",
-    "~/assets/styles/presentation.css"
+    '~/assets/styles/omni-design-system.css',
+    '~/assets/styles/tokens.css',
+    '~/assets/styles/base.css',
+    '~/assets/styles/layout.css',
+    '~/assets/styles/components.css',
+    '~/assets/styles/tasks-modal.css',
+    '~/assets/styles/presentation.css',
   ],
   app: {
     head: {
       htmlAttrs: {
-        lang: "pt-BR"
+        lang: 'pt-BR',
       },
-      title: "Fila de Atendimento MVP",
-      meta: [
-        { name: "viewport", content: "width=device-width, initial-scale=1" }
-      ],
+      title: 'Omni',
+      meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
       link: [
         {
-          rel: "stylesheet",
-          href: "https://fonts.googleapis.com/icon?family=Material+Icons+Round"
-        }
-      ]
-    }
-  }
-});
+          rel: 'stylesheet',
+          href: 'https://fonts.googleapis.com/icon?family=Material+Icons+Round',
+        },
+      ],
+    },
+  },
+})

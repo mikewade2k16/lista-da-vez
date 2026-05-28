@@ -1,12 +1,12 @@
-name: lista-da-vez
+name: ${COMPOSE_PROJECT_NAME:-omni}
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-lista_da_vez}
-      POSTGRES_USER: ${POSTGRES_USER:-lista_da_vez}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lista_da_vez_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-omni}
+      POSTGRES_USER: ${POSTGRES_USER:-omni}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omni_dev}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-lista_da_vez} -d ${POSTGRES_DB:-lista_da_vez}"
+          "pg_isready -U ${POSTGRES_USER:-omni} -d ${POSTGRES_DB:-omni}"
         ]
       interval: 5s
       timeout: 5s
@@ -27,15 +27,17 @@ services:
       context: ./back
       dockerfile: Dockerfile
     environment:
-      APP_NAME: lista-da-vez-api
+      APP_NAME: omni-api
       APP_ENV: docker
       APP_ADDR: :8080
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3003}
       UPLOADS_DIR: /app/data/uploads
-      DATABASE_URL: postgres://${POSTGRES_USER:-lista_da_vez}:${POSTGRES_PASSWORD:-lista_da_vez_dev}@postgres:5432/${POSTGRES_DB:-lista_da_vez}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-omni}:${POSTGRES_PASSWORD:-omni_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
+      MIGRATION_TIMEOUT: ${MIGRATION_TIMEOUT:-5m}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*,http://[::1]:*}
+      CORE_V2_ENABLED: ${CORE_V2_ENABLED:-true}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-dev-secret-change-me}
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
@@ -45,11 +47,42 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Lista da Vez}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Omni}
       SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
       SMTP_INSECURE_SKIP_VERIFY: ${SMTP_INSECURE_SKIP_VERIFY:-false}
       SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
       AUTH_BCRYPT_COST: ${AUTH_BCRYPT_COST:-10}
+      ERP_SOURCE_KIND: ${ERP_SOURCE_KIND:-local}
+      ERP_SOURCE_RECURSIVE: ${ERP_SOURCE_RECURSIVE:-false}
+      ERP_SOURCE_DIR: /app/data/erp/source
+      ERP_STORAGE_DIR: /app/data/erp/storage
+      ERP_BOOTSTRAP_ITEM_FILE: ${ERP_BOOTSTRAP_ITEM_FILE:-consolidados/184/item_184_consolidado.md}
+      ERP_FTP_HOST: ${ERP_FTP_HOST:-}
+      ERP_FTP_PORT: ${ERP_FTP_PORT:-0}
+      ERP_FTP_USER: ${ERP_FTP_USER:-}
+      ERP_FTP_PASSWORD: ${ERP_FTP_PASSWORD:-}
+      ERP_FTP_KEY_PATH: ${ERP_FTP_KEY_PATH:-}
+      ERP_FTP_REMOTE_DIR: ${ERP_FTP_REMOTE_DIR:-}
+      ERP_FTP_HOST_KEY: ${ERP_FTP_HOST_KEY:-}
+      ERP_ROOT_STORE_CODE: ${ERP_ROOT_STORE_CODE:-184}
+      ERP_ALLOW_MANUAL_SYNC: ${ERP_ALLOW_MANUAL_SYNC:-true}
+      ERP_SYNC_INTERVAL: ${ERP_SYNC_INTERVAL:-24h}
+      ERP_SYNC_HOUR_UTC: ${ERP_SYNC_HOUR_UTC:-4}
+      ERP_SYNC_AUTOMATIC_ENABLED: ${ERP_SYNC_AUTOMATIC_ENABLED:-false}
+      ERP_SYNC_DRY_RUN_DEFAULT: ${ERP_SYNC_DRY_RUN_DEFAULT:-false}
+      ERP_CSV_MAX_BYTES: ${ERP_CSV_MAX_BYTES:-134217728}
+      ERP_MANUAL_SYNC_MAX_FILES: ${ERP_MANUAL_SYNC_MAX_FILES:-100}
+      ERP_BACKFILL_MAX_FILES: ${ERP_BACKFILL_MAX_FILES:-1000}
+      ERP_MANUAL_SYNC_MIN_INTERVAL: ${ERP_MANUAL_SYNC_MIN_INTERVAL:-5m}
+      PEROLA_BI_COMPANY_KEY: ${PEROLA_BI_COMPANY_KEY:-}
+      PEROLA_BI_LOGIN: ${PEROLA_BI_LOGIN:-}
+      PEROLA_BI_PASS: ${PEROLA_BI_PASS:-}
+      PEROLA_BI_TOKEN: ${PEROLA_BI_TOKEN:-}
+      PEROLA_BI_CNPJ_EMPRESA: ${PEROLA_BI_CNPJ_EMPRESA:-}
+      PEROLA_BI_TOKEN_TTL: ${PEROLA_BI_TOKEN_TTL:-50m}
+      PEROLA_BI_REQUEST_TIMEOUT: ${PEROLA_BI_REQUEST_TIMEOUT:-12s}
+      PEROLA_BI_PAGE_LIMIT: ${PEROLA_BI_PAGE_LIMIT:-100}
+      PEROLA_BI_MAX_PAGES: ${PEROLA_BI_MAX_PAGES:-50}
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +90,8 @@ services:
       - "${API_PORT:-8080}:8080"
     volumes:
       - api_uploads:/app/data/uploads
+      - "./erp-source-local:/app/data/erp/source:ro"
+      - api_erp_storage:/app/data/erp/storage
     healthcheck:
       test:
         [
@@ -97,5 +132,6 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  api_erp_storage:
   web_node_modules:
   web_nuxt:

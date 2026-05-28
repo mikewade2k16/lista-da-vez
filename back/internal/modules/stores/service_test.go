@@ -2,7 +2,6 @@ package stores
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -12,8 +11,6 @@ type repositorySpy struct {
 	listInput         ListInput
 	findStore         Store
 	findErr           error
-	deleteDeps        []DeleteDependency
-	deleteDepsErr     error
 	deleteErr         error
 	deleteCalledStore string
 }
@@ -36,13 +33,6 @@ func (spy *repositorySpy) Create(_ context.Context, store Store) (Store, error) 
 
 func (spy *repositorySpy) Update(_ context.Context, store Store) (Store, error) {
 	return store, nil
-}
-
-func (spy *repositorySpy) ListDeleteDependencies(_ context.Context, _ string) ([]DeleteDependency, error) {
-	if spy.deleteDepsErr != nil {
-		return nil, spy.deleteDepsErr
-	}
-	return spy.deleteDeps, nil
 }
 
 func (spy *repositorySpy) Delete(_ context.Context, storeID string) error {
@@ -70,16 +60,13 @@ func TestListAccessiblePassesIncludeInactive(t *testing.T) {
 	}
 }
 
-func TestDeleteBlocksWhenDependenciesExist(t *testing.T) {
+func TestDeleteCallsRepositoryWithoutDependencyPreflight(t *testing.T) {
 	repository := &repositorySpy{
 		findStore: Store{
 			ID:       "store-1",
 			TenantID: "tenant-1",
 			Name:     "Loja 1",
 			Code:     "LOJA1",
-		},
-		deleteDeps: []DeleteDependency{
-			{Key: "consultants", Label: "Consultores cadastrados", Count: 2},
 		},
 	}
 	service := NewService(repository, nil)
@@ -89,21 +76,12 @@ func TestDeleteBlocksWhenDependenciesExist(t *testing.T) {
 		Role:     auth.RoleOwner,
 		TenantID: "tenant-1",
 	}, "store-1")
-	if err == nil {
-		t.Fatalf("expected delete to fail")
+	if err != nil {
+		t.Fatalf("expected delete to succeed, got %v", err)
 	}
 
-	var blocked *DeleteBlockedError
-	if !errors.As(err, &blocked) {
-		t.Fatalf("expected DeleteBlockedError, got %v", err)
-	}
-
-	if blocked.StoreID != "store-1" {
-		t.Fatalf("expected store id store-1, got %s", blocked.StoreID)
-	}
-
-	if repository.deleteCalledStore != "" {
-		t.Fatalf("expected delete not to be called")
+	if repository.deleteCalledStore != "store-1" {
+		t.Fatalf("expected repository.Delete to be called with store-1, got %q", repository.deleteCalledStore)
 	}
 }
 

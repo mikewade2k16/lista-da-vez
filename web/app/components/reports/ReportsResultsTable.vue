@@ -1,18 +1,18 @@
 <script setup>
-import { computed } from "vue";
+import { computed } from 'vue'
 
 const props = defineProps({
   rows: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   total: {
     type: Number,
-    default: 0
-  }
-});
+    default: 0,
+  },
+})
 
-const limitedRows = computed(() => props.rows.slice(0, 200));
+const limitedRows = computed(() => props.rows.slice(0, 200))
 </script>
 
 <template>
@@ -58,7 +58,9 @@ const limitedRows = computed(() => props.rows.slice(0, 200));
             <td>
               <span v-if="row.isWindowService" class="insight-tag insight-tag--sm">Vitrine</span>
               <span v-if="row.isGift" class="insight-tag insight-tag--sm">Presente</span>
-              <span v-if="row.isExistingCustomer" class="insight-tag insight-tag--sm">Já cliente</span>
+              <span v-if="row.isExistingCustomer" class="insight-tag insight-tag--sm">
+                Já cliente
+              </span>
               <span v-if="!row.isWindowService && !row.isGift && !row.isExistingCustomer">-</span>
             </td>
             <td>{{ row.customerName }}</td>

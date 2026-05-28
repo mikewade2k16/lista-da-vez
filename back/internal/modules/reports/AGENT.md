@@ -13,12 +13,15 @@ Hoje ele deve responder por:
 - agregacoes server-side para `/relatorios`
 - leitura paginada de resultados
 - visao de ultimos atendimentos
+- overview multiloja para gestao administrativa
 - fechamento correto de produtos fechados usando `productsClosed[]` como fonte de verdade
 
 Hoje `/relatorios` no Nuxt ja consome:
 
 - `GET /v1/reports/overview`
 - `GET /v1/reports/results`
+- `GET /v1/reports/recent-services`
+- `GET /v1/reports/multistore-overview`
 
 Ele nao deve cuidar de:
 
@@ -31,6 +34,7 @@ Ele nao deve cuidar de:
 - `GET /v1/reports/overview`
 - `GET /v1/reports/results`
 - `GET /v1/reports/recent-services`
+- `GET /v1/reports/multistore-overview`
 
 ## Regras de arquitetura
 
@@ -40,7 +44,9 @@ Ele nao deve cuidar de:
 - `overview` entrega agregados
 - `results` entrega linhas paginadas
 - `recent-services` entrega leitura administrativa dos ultimos atendimentos
+- `multistore-overview` entrega comparativo por loja com metricas historicas e contadores vivos da operacao
 - backend deve filtrar por `store_id` e acesso do usuario antes de qualquer agregacao
+- quando `storeId` for omitido, leituras agregadas devem atravessar apenas as lojas acessiveis da sessao dentro do tenant resolvido
 
 ## Regras de payload
 
@@ -53,10 +59,9 @@ Ele nao deve cuidar de:
 
 ## Evolucao esperada
 
-1. filtros por campanha com semantica final alinhada ao modulo `campaigns`
-2. agregacoes cross-store para gestao multiloja
-3. exportacao server-side
-4. cache e materializacao seletiva quando o volume crescer
+1. filtros por campanha com semantica final alinhada ao futuro modulo `campaigns`
+2. exportacao server-side
+3. cache e materializacao seletiva quando o volume crescer
 
 ## Direcao de plugabilidade
 

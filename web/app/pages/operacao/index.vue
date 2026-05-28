@@ -1,143 +1,165 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import OperationWorkspace from "~/features/operation/components/OperationWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { useAuthStore } from "~/stores/auth";
-import { useOperationsStore } from "~/stores/operations";
-import { useOperationsRealtime } from "~/composables/useOperationsRealtime";
-import { canAccessMultiStore } from "~/domain/utils/permissions";
-import { getApiErrorMessage } from "~/utils/api-client";
+import { computed, onMounted, ref, watch } from 'vue'
+import OperationWorkspace from '~/components/operation/OperationWorkspace.vue'
+import AlertDisplayHost from '~/components/operation/AlertDisplayHost.vue'
+import ArchivedStoreBanner from '~/components/operation/ArchivedStoreBanner.vue'
+import { storeToRefs } from 'pinia'
+import { useAuthStore } from '~/stores/auth'
+import { useOperationsStore } from '~/stores/operations'
+import { useAlertsStore } from '~/stores/alerts'
+import { useOperationsRealtime } from '~/composables/useOperationsRealtime'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { getApiErrorMessage } from '~/utils/api-client'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "operacao"
-});
+  layout: 'dashboard',
+  workspaceId: 'operacao',
+  supportsAllStoresScope: true,
+})
 
-const auth = useAuthStore();
-const operationsStore = useOperationsStore();
-const loadError = ref("");
-const integratedStoreId = ref("");
-const route = useRoute();
-const router = useRouter();
-const storeOptions = computed(() => auth.storeContext || []);
+const auth = useAuthStore()
+const operationsStore = useOperationsStore()
+const alertsStore = useAlertsStore()
+const loadError = ref('')
+const integratedStoreId = ref('')
+const storeOptions = computed(() => auth.storeContext || [])
 
-const canSeeIntegrated = computed(() => canAccessMultiStore(auth.role));
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
 const scopeMode = computed(() => {
   if (!canSeeIntegrated.value) {
-    return "single";
+    return 'single'
   }
 
-  return String(route.query.scope || "").trim() === "all" ? "all" : "single";
-});
+  return 'all'
+})
+const useTenantAlertScope = computed(() => scopeMode.value === 'all' && canSeeIntegrated.value)
 
-useOperationsRealtime({ scopeMode });
+useOperationsRealtime({ scopeMode })
 
-async function loadOperationView() {
+async function refreshOperationAlerts() {
   if (!auth.isAuthenticated) {
-    return;
+    return
   }
 
   try {
-    loadError.value = "";
+    await alertsStore.refreshAlerts({ tenantScope: useTenantAlertScope.value })
+  } catch {
+    // Alertas nao devem impedir a operacao de carregar.
+  }
+}
 
-    if (scopeMode.value === "all" && canSeeIntegrated.value) {
-      await operationsStore.refreshOverview();
-      return;
+async function loadOperationView() {
+  if (!auth.isAuthenticated) {
+    return
+  }
+
+  try {
+    loadError.value = ''
+
+    if (scopeMode.value === 'all' && canSeeIntegrated.value) {
+      await operationsStore.refreshOverview()
+      void refreshOperationAlerts()
+      return
     }
 
-    operationsStore.clearOverview();
-    await operationsStore.refreshActiveStore();
+    operationsStore.clearOverview()
+    await operationsStore.refreshActiveStore()
+    void refreshOperationAlerts()
   } catch (error) {
-    loadError.value = getApiErrorMessage(error, "Nao foi possivel carregar a operacao.");
+    loadError.value = getApiErrorMessage(error, 'Nao foi possivel carregar a operacao.')
   }
 }
 
 onMounted(async () => {
-  await auth.ensureSession();
-  await loadOperationView();
-});
+  await auth.ensureSession()
+  await loadOperationView()
+})
 
-const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore);
+const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore)
 
 const isRemoteRosterReady = computed(() => {
-  if (scopeMode.value === "all" && canSeeIntegrated.value) {
-    return !overviewPending.value || Boolean(overview.value);
+  if (scopeMode.value === 'all' && canSeeIntegrated.value) {
+    return !overviewPending.value || Boolean(overview.value)
   }
 
   if (!auth.isAuthenticated || loadError.value) {
-    return false;
+    return false
   }
 
-  const activeStoreId = String(auth.activeStoreId || state.value?.activeStoreId || "").trim();
-  const roster = Array.isArray(state.value?.roster) ? state.value.roster : [];
+  const activeStoreId = String(auth.activeStoreId || state.value?.activeStoreId || '').trim()
+  const roster = Array.isArray(state.value?.roster) ? state.value.roster : []
 
   if (!activeStoreId) {
-    return false;
+    return false
   }
 
   if (roster.length === 0) {
-    return true;
+    return true
   }
 
-  return roster.every((consultant) => String(consultant?.storeId || "").trim() === activeStoreId);
-});
+  return roster.every((consultant) => String(consultant?.storeId || '').trim() === activeStoreId)
+})
 
 const pageErrorMessage = computed(() => {
   if (loadError.value) {
-    return loadError.value;
+    return loadError.value
   }
 
-  if (scopeMode.value === "all" && overviewError.value) {
-    return overviewError.value;
+  if (scopeMode.value === 'all' && overviewError.value) {
+    return overviewError.value
   }
 
-  return "";
-});
+  return ''
+})
 
-watch(
-  [scopeMode, () => auth.activeStoreId, () => auth.isAuthenticated],
-  () => {
-    void loadOperationView();
-  }
-);
-
-watch(
-  canSeeIntegrated,
-  (allowed) => {
-    if (allowed || String(route.query.scope || "").trim() !== "all") {
-      return;
-    }
-
-    const nextQuery = { ...route.query };
-    delete nextQuery.scope;
-    void router.replace({ query: nextQuery });
-  }
-);
+watch([scopeMode, () => auth.activeStoreId, () => auth.isAuthenticated], () => {
+  void loadOperationView()
+})
 
 watch(
   storeOptions,
   (stores) => {
-    const normalizedFilter = String(integratedStoreId.value || "").trim();
+    const normalizedFilter = String(integratedStoreId.value || '').trim()
     if (!normalizedFilter) {
-      return;
+      return
     }
 
-    const exists = (stores || []).some((store) => String(store?.id || "").trim() === normalizedFilter);
+    const exists = (stores || []).some(
+      (store) => String(store?.id || '').trim() === normalizedFilter,
+    )
     if (!exists) {
-      integratedStoreId.value = "";
+      integratedStoreId.value = ''
     }
   },
-  { immediate: true }
-);
+  { immediate: true },
+)
 
 watch(scopeMode, (nextMode) => {
-  if (nextMode !== "all") {
-    integratedStoreId.value = "";
+  if (nextMode !== 'all') {
+    integratedStoreId.value = ''
   }
-});
+})
+
+const bannerStoreId = computed(() => {
+  if (scopeMode.value === 'single') {
+    return String(auth.activeStoreId || '').trim()
+  }
+
+  return String(integratedStoreId.value || '').trim()
+})
+
+watch(
+  () => alertsStore.pendingFinishForServiceId,
+  (serviceId) => {
+    if (serviceId) {
+      operationsStore.openFinishModal(serviceId)
+      alertsStore.pendingFinishForServiceId = null
+    }
+  },
+)
 
 function handleIntegratedStoreChange(storeId) {
-  integratedStoreId.value = String(storeId || "").trim();
+  integratedStoreId.value = String(storeId || '').trim()
 }
 </script>
 
@@ -150,18 +172,29 @@ function handleIntegratedStoreChange(storeId) {
     <div v-else-if="!isRemoteRosterReady" class="loading-state">
       <strong class="loading-state__title">Carregando operacao...</strong>
       <p class="workspace__text">
-        {{ scopeMode === "all" ? "Sincronizando a operacao integrada das lojas acessiveis." : "Sincronizando consultores, fila e atendimento da loja ativa." }}
+        {{
+          scopeMode === 'all'
+            ? 'Sincronizando a operacao integrada das lojas acessiveis.'
+            : 'Sincronizando consultores, fila e atendimento da loja ativa.'
+        }}
       </p>
     </div>
-    <OperationWorkspace
-      v-else
-      :state="state"
-      :overview="overview"
-      :scope-mode="scopeMode"
-      :can-see-integrated="canSeeIntegrated"
-      :stores="storeOptions"
-      :integrated-store-id="integratedStoreId"
-      @integrated-store-change="handleIntegratedStoreChange"
-    />
+    <template v-else>
+      <ArchivedStoreBanner :store-id="bannerStoreId || ''" />
+      <AlertDisplayHost
+        v-if="bannerStoreId"
+        :store-id="bannerStoreId"
+        class="operation-alert-banner-page"
+      />
+      <OperationWorkspace
+        :state="state"
+        :overview="overview"
+        :scope-mode="scopeMode"
+        :can-see-integrated="canSeeIntegrated"
+        :stores="storeOptions"
+        :integrated-store-id="integratedStoreId"
+        @integrated-store-change="handleIntegratedStoreChange"
+      />
+    </template>
   </div>
 </template>

@@ -1,0 +1,38 @@
+alter table store_operation_settings
+	add column if not exists show_customer_name_field boolean not null default true,
+	add column if not exists show_customer_phone_field boolean not null default true,
+	add column if not exists show_product_seen_field boolean not null default true,
+	add column if not exists show_product_closed_field boolean not null default true,
+	add column if not exists show_visit_reason_field boolean not null default true,
+	add column if not exists show_customer_source_field boolean not null default true,
+	add column if not exists show_queue_jump_reason_field boolean not null default true,
+	add column if not exists show_loss_reason_field boolean not null default true,
+	add column if not exists require_customer_name_field boolean not null default true,
+	add column if not exists require_customer_phone_field boolean not null default true,
+	add column if not exists require_email_field boolean not null default false,
+	add column if not exists require_profession_field boolean not null default false,
+	add column if not exists require_notes_field boolean not null default false,
+	add column if not exists require_product_seen_field boolean not null default true,
+	add column if not exists require_product_closed_field boolean not null default true,
+	add column if not exists require_queue_jump_reason_field boolean not null default true,
+	add column if not exists require_loss_reason_field boolean not null default true;
+
+update store_operation_settings
+set
+	show_customer_name_field = true,
+	show_customer_phone_field = true,
+	show_product_seen_field = true,
+	show_product_closed_field = true,
+	show_visit_reason_field = true,
+	show_customer_source_field = true,
+	show_queue_jump_reason_field = true,
+	show_loss_reason_field = true,
+	require_customer_name_field = require_customer_name_phone,
+	require_customer_phone_field = require_customer_name_phone,
+	require_email_field = false,
+	require_profession_field = false,
+	require_notes_field = false,
+	require_product_seen_field = require_product,
+	require_product_closed_field = require_product,
+	require_queue_jump_reason_field = true,
+	require_loss_reason_field = true;

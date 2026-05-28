@@ -1,433 +1,525 @@
-import { defineStore, storeToRefs } from "pinia";
+import { defineStore, storeToRefs } from 'pinia'
 
-import { cloneValue } from "~/domain/utils/object";
-import { useAuthStore } from "~/stores/auth";
-import { useAppRuntimeStore } from "~/stores/app-runtime";
-import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
+import { cloneValue } from '~/domain/utils/object'
+import { useAuthStore } from '~/stores/auth'
+import { useAppRuntimeStore } from '~/stores/app-runtime'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
+// Configuracoes de operacao deixaram de ser por loja: agora sao tenant-wide.
+// Os endpoints continuam aceitando storeId no payload por compatibilidade com
+// clientes antigos, mas o backend ignora esse campo e usa o tenant do principal
+// autenticado. A store envia o payload limpo, sem storeId.
 const OPTION_GROUP_PATHS = {
-  visitReasonOptions: "visit-reasons",
-  customerSourceOptions: "customer-sources",
-  queueJumpReasonOptions: "queue-jump-reasons",
-  lossReasonOptions: "loss-reasons",
-  professionOptions: "professions"
-};
-
-function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
+  visitReasonOptions: 'visit-reasons',
+  customerSourceOptions: 'customer-sources',
+  pauseReasonOptions: 'pause-reasons',
+  cancelReasonOptions: 'cancel-reasons',
+  stopReasonOptions: 'stop-reasons',
+  queueJumpReasonOptions: 'queue-jump-reasons',
+  lossReasonOptions: 'loss-reasons',
+  professionOptions: 'professions',
 }
 
-export const useSettingsStore = defineStore("settings", () => {
-  const runtimeConfig = useRuntimeConfig();
-  const runtime = useAppRuntimeStore();
-  const auth = useAuthStore();
-  const { state } = storeToRefs(runtime);
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
+type OperationPatchPayload = {
+  selectedOperationTemplateId?: string
+  settings?: Record<string, unknown>
+}
 
-  async function resolveActiveStoreId() {
-    await runtime.ensure();
+function normalizeText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+}
+
+function appendTenantQuery(path, tenantId) {
+  const normalizedTenantId = String(tenantId || '').trim()
+
+  if (!normalizedTenantId) {
+    return path
+  }
+
+  const separator = path.includes('?') ? '&' : '?'
+  return `${path}${separator}tenantId=${encodeURIComponent(normalizedTenantId)}`
+}
+
+export const useSettingsStore = defineStore('settings', () => {
+  const runtimeConfig = useRuntimeConfig()
+  const runtime = useAppRuntimeStore()
+  const auth = useAuthStore()
+  const { state } = storeToRefs(runtime)
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+
+  async function ensureAuthenticated() {
+    await runtime.ensure()
 
     if (auth.isAuthenticated) {
-      await auth.ensureSession();
+      await auth.ensureSession()
     }
 
-    return String(auth.activeStoreId || runtime.state.activeStoreId || "").trim();
+    return auth.isAuthenticated
   }
 
-  async function persistOperationSection(storeId) {
-    await apiRequest("/v1/settings/operation", {
-      method: "PATCH",
+  function resolveTenantId() {
+    return String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim()
+  }
+
+  function settingsPath(path) {
+    return appendTenantQuery(path, resolveTenantId())
+  }
+
+  async function persistOperationSection() {
+    await apiRequest(settingsPath('/v1/settings/operation'), {
+      method: 'PATCH',
       body: {
-        storeId,
-        selectedOperationTemplateId: String(runtime.state.selectedOperationTemplateId || "").trim(),
-        settings: cloneValue(runtime.state.settings || {})
-      }
-    });
+        selectedOperationTemplateId: String(runtime.state.selectedOperationTemplateId || '').trim(),
+        settings: cloneValue(runtime.state.settings || {}),
+      },
+    })
   }
 
-  async function persistOperationPatch(storeId, payload = {}) {
-    const body = {
-      storeId
-    };
+  async function persistOperationPatch(payload: OperationPatchPayload = {}) {
+    const body: OperationPatchPayload = {}
 
-    if (Object.prototype.hasOwnProperty.call(payload, "selectedOperationTemplateId")) {
-      const selectedOperationTemplateId = String(payload.selectedOperationTemplateId || "").trim();
+    if (Object.prototype.hasOwnProperty.call(payload, 'selectedOperationTemplateId')) {
+      const selectedOperationTemplateId = String(payload.selectedOperationTemplateId || '').trim()
       if (selectedOperationTemplateId) {
-        body.selectedOperationTemplateId = selectedOperationTemplateId;
+        body.selectedOperationTemplateId = selectedOperationTemplateId
       }
     }
 
     if (payload.settings && Object.keys(payload.settings).length > 0) {
-      body.settings = cloneValue(payload.settings);
+      body.settings = cloneValue(payload.settings)
     }
 
     if (!body.selectedOperationTemplateId && !body.settings) {
-      return;
+      return
     }
 
-    await apiRequest("/v1/settings/operation", {
-      method: "PATCH",
-      body
-    });
+    await apiRequest(settingsPath('/v1/settings/operation'), {
+      method: 'PATCH',
+      body,
+    })
   }
 
-  async function persistModalSection(storeId) {
-    await apiRequest("/v1/settings/modal", {
-      method: "PATCH",
+  async function persistModalSection() {
+    await apiRequest(settingsPath('/v1/settings/modal'), {
+      method: 'PATCH',
       body: {
-        storeId,
-        modalConfig: cloneValue(runtime.state.modalConfig || {})
-      }
-    });
+        modalConfig: cloneValue(runtime.state.modalConfig || {}),
+      },
+    })
   }
 
-  async function persistModalPatch(storeId, modalConfig = {}) {
+  async function persistModalPatch(modalConfig = {}) {
     if (!modalConfig || Object.keys(modalConfig).length === 0) {
-      return;
+      return
     }
 
-    await apiRequest("/v1/settings/modal", {
-      method: "PATCH",
+    await apiRequest(settingsPath('/v1/settings/modal'), {
+      method: 'PATCH',
       body: {
-        storeId,
-        modalConfig: cloneValue(modalConfig)
-      }
-    });
+        modalConfig: cloneValue(modalConfig),
+      },
+    })
   }
 
-  async function persistOptionSection(storeId, stateKey) {
-    const groupPath = OPTION_GROUP_PATHS[stateKey];
+  async function persistOperationTemplateApply(templateId) {
+    const normalizedTemplateId = String(templateId || '').trim()
+
+    if (!normalizedTemplateId) {
+      return
+    }
+
+    await apiRequest(
+      settingsPath(`/v1/settings/templates/${encodeURIComponent(normalizedTemplateId)}/apply`),
+      {
+        method: 'POST',
+      },
+    )
+  }
+
+  async function persistOptionSection(stateKey) {
+    const groupPath = OPTION_GROUP_PATHS[stateKey]
 
     if (!groupPath) {
-      return;
+      return
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}`, {
-      method: "PUT",
+    await apiRequest(settingsPath(`/v1/settings/options/${groupPath}`), {
+      method: 'PUT',
       body: {
-        storeId,
-        items: cloneValue(runtime.state[stateKey] || [])
-      }
-    });
+        items: cloneValue(runtime.state[stateKey] || []),
+      },
+    })
   }
 
-  async function persistProductSection(storeId) {
-    await apiRequest("/v1/settings/products", {
-      method: "PUT",
+  async function persistProductSection() {
+    await apiRequest(settingsPath('/v1/settings/products'), {
+      method: 'PUT',
       body: {
-        storeId,
-        items: cloneValue(runtime.state.productCatalog || [])
-      }
-    });
+        items: cloneValue(runtime.state.productCatalog || []),
+      },
+    })
   }
 
-  async function persistOptionItemCreate(storeId, stateKey, item) {
-    const groupPath = OPTION_GROUP_PATHS[stateKey];
+  async function persistOptionItemCreate(stateKey, item) {
+    const groupPath = OPTION_GROUP_PATHS[stateKey]
 
     if (!groupPath || !item?.id || !item?.label) {
-      return;
+      return
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}`, {
-      method: "POST",
+    await apiRequest(settingsPath(`/v1/settings/options/${groupPath}`), {
+      method: 'POST',
       body: {
-        storeId,
         item: {
-          id: String(item.id || "").trim(),
-          label: String(item.label || "").trim()
-        }
-      }
-    });
+          id: String(item.id || '').trim(),
+          label: String(item.label || '').trim(),
+        },
+      },
+    })
   }
 
-  async function persistOptionItemUpdate(storeId, stateKey, item) {
-    const groupPath = OPTION_GROUP_PATHS[stateKey];
+  async function persistOptionItemUpdate(stateKey, item) {
+    const groupPath = OPTION_GROUP_PATHS[stateKey]
 
     if (!groupPath || !item?.id || !item?.label) {
-      return;
+      return
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(item.id || "").trim())}`, {
-      method: "PATCH",
-      body: {
-        storeId,
-        label: String(item.label || "").trim()
-      }
-    });
+    await apiRequest(
+      settingsPath(
+        `/v1/settings/options/${groupPath}/${encodeURIComponent(String(item.id || '').trim())}`,
+      ),
+      {
+        method: 'PATCH',
+        body: {
+          label: String(item.label || '').trim(),
+        },
+      },
+    )
   }
 
-  async function persistOptionItemDelete(storeId, stateKey, itemId) {
-    const groupPath = OPTION_GROUP_PATHS[stateKey];
+  async function persistOptionItemDelete(stateKey, itemId) {
+    const groupPath = OPTION_GROUP_PATHS[stateKey]
 
     if (!groupPath || !itemId) {
-      return;
+      return
     }
 
-    await apiRequest(`/v1/settings/options/${groupPath}/${encodeURIComponent(String(itemId || "").trim())}?storeId=${encodeURIComponent(storeId)}`, {
-      method: "DELETE"
-    });
+    await apiRequest(
+      settingsPath(
+        `/v1/settings/options/${groupPath}/${encodeURIComponent(String(itemId || '').trim())}`,
+      ),
+      {
+        method: 'DELETE',
+      },
+    )
   }
 
-  async function persistProductItemCreate(storeId, item) {
+  async function persistProductItemCreate(item) {
     if (!item?.id || !item?.name) {
-      return;
+      return
     }
 
-    await apiRequest("/v1/settings/products", {
-      method: "POST",
+    await apiRequest(settingsPath('/v1/settings/products'), {
+      method: 'POST',
       body: {
-        storeId,
         item: {
-          id: String(item.id || "").trim(),
-          name: String(item.name || "").trim(),
-          code: String(item.code || "").trim().toUpperCase(),
-          category: String(item.category || "").trim(),
-          basePrice: Math.max(0, Number(item.basePrice || 0) || 0)
-        }
-      }
-    });
+          id: String(item.id || '').trim(),
+          name: String(item.name || '').trim(),
+          code: String(item.code || '')
+            .trim()
+            .toUpperCase(),
+          category: String(item.category || '').trim(),
+          basePrice: Math.max(0, Number(item.basePrice || 0) || 0),
+        },
+      },
+    })
   }
 
-  async function persistProductItemUpdate(storeId, productId, payload) {
+  async function persistProductItemUpdate(productId, payload) {
     if (!productId) {
-      return;
+      return
     }
 
-    await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}`, {
-      method: "PATCH",
-      body: {
-        storeId,
-        name: String(payload?.name || "").trim(),
-        code: String(payload?.code || "").trim().toUpperCase(),
-        category: String(payload?.category || "").trim(),
-        basePrice: Math.max(0, Number(payload?.basePrice || 0) || 0)
-      }
-    });
+    await apiRequest(
+      settingsPath(`/v1/settings/products/${encodeURIComponent(String(productId || '').trim())}`),
+      {
+        method: 'PATCH',
+        body: {
+          name: String(payload?.name || '').trim(),
+          code: String(payload?.code || '')
+            .trim()
+            .toUpperCase(),
+          category: String(payload?.category || '').trim(),
+          basePrice: Math.max(0, Number(payload?.basePrice || 0) || 0),
+        },
+      },
+    )
   }
 
-  async function persistProductItemDelete(storeId, productId) {
+  async function persistProductItemDelete(productId) {
     if (!productId) {
-      return;
+      return
     }
 
-    await apiRequest(`/v1/settings/products/${encodeURIComponent(String(productId || "").trim())}?storeId=${encodeURIComponent(storeId)}`, {
-      method: "DELETE"
-    });
+    await apiRequest(
+      settingsPath(`/v1/settings/products/${encodeURIComponent(String(productId || '').trim())}`),
+      {
+        method: 'DELETE',
+      },
+    )
   }
 
   async function mutateAndPersist(actionName, args = [], persistHandlers = []) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated()
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const localResult = await runtime.run(actionName, ...args);
+    if (!resolveTenantId()) {
+      return { ok: false, message: 'Tenant ativo nao identificado para a sessao.' }
+    }
+
+    const previousState = cloneValue(runtime.state)
+    const localResult = await runtime.run(actionName, ...args)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
     try {
       for (const persistHandler of persistHandlers) {
-        await persistHandler(storeId);
+        await persistHandler()
       }
 
-      return localResult || { ok: true };
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
 
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
   async function mutateAndPersistOptionCreate(actionName, label, stateKey) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated()
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const previousIds = new Set((previousState[stateKey] || []).map((item) => String(item?.id || "").trim()));
-    const localResult = await runtime.run(actionName, label);
+    if (!resolveTenantId()) {
+      return { ok: false, message: 'Tenant ativo nao identificado para a sessao.' }
+    }
+
+    const previousState = cloneValue(runtime.state)
+    const previousIds = new Set(
+      (previousState[stateKey] || []).map((item) => String(item?.id || '').trim()),
+    )
+    const localResult = await runtime.run(actionName, label)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
     const createdItem =
       (runtime.state[stateKey] || []).find(
-        (item) => !previousIds.has(String(item?.id || "").trim()) && normalizeText(item?.label) === normalizeText(label)
-      ) || null;
+        (item) =>
+          !previousIds.has(String(item?.id || '').trim()) &&
+          normalizeText(item?.label) === normalizeText(label),
+      ) || null
 
     if (!createdItem) {
-      return { ok: false, message: "Nao foi possivel identificar a opcao criada." };
+      return localResult || { ok: true }
     }
 
     try {
-      await persistOptionItemCreate(storeId, stateKey, createdItem);
-      return localResult || { ok: true };
+      await persistOptionItemCreate(stateKey, createdItem)
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
   async function mutateAndPersistOptionUpdate(actionName, optionId, label, stateKey) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated()
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const localResult = await runtime.run(actionName, optionId, label);
+    if (!resolveTenantId()) {
+      return { ok: false, message: 'Tenant ativo nao identificado para a sessao.' }
+    }
+
+    const previousState = cloneValue(runtime.state)
+    const localResult = await runtime.run(actionName, optionId, label)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
-    const updatedItem = (runtime.state[stateKey] || []).find((item) => String(item?.id || "").trim() === String(optionId || "").trim()) || null;
+    const updatedItem =
+      (runtime.state[stateKey] || []).find(
+        (item) => String(item?.id || '').trim() === String(optionId || '').trim(),
+      ) || null
+
     if (!updatedItem) {
-      return { ok: false, message: "Nao foi possivel identificar a opcao atualizada." };
+      return localResult || { ok: true }
     }
 
     try {
-      await persistOptionItemUpdate(storeId, stateKey, updatedItem);
-      return localResult || { ok: true };
+      await persistOptionItemUpdate(stateKey, updatedItem)
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
   async function mutateAndPersistOptionDelete(actionName, optionId, stateKey) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated()
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const localResult = await runtime.run(actionName, optionId);
+    if (!resolveTenantId()) {
+      return { ok: false, message: 'Tenant ativo nao identificado para a sessao.' }
+    }
+
+    const previousState = cloneValue(runtime.state)
+    const localResult = await runtime.run(actionName, optionId)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
     try {
-      await persistOptionItemDelete(storeId, stateKey, optionId);
-      return localResult || { ok: true };
+      await persistOptionItemDelete(stateKey, optionId)
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
-  async function mutateAndPersistProductCreate(name, category, basePrice, code) {
-    const storeId = await resolveActiveStoreId();
+  async function mutateAndPersistOptionReorder(actionName, optionIds, stateKey) {
+    return mutateAndPersist(actionName, [optionIds], [() => persistOptionSection(stateKey)])
+  }
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+  async function mutateAndPersistProductCreate(name, category, basePrice, code) {
+    const isAuthenticated = await ensureAuthenticated()
+
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const previousIds = new Set((previousState.productCatalog || []).map((item) => String(item?.id || "").trim()));
-    const localResult = await runtime.run("addCatalogProduct", name, category, basePrice, code);
+    const previousState = cloneValue(runtime.state)
+    const previousIds = new Set(
+      (previousState.productCatalog || []).map((item) => String(item?.id || '').trim()),
+    )
+    const localResult = await runtime.run('addCatalogProduct', name, category, basePrice, code)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
     const createdItem =
       (runtime.state.productCatalog || []).find(
-        (item) => !previousIds.has(String(item?.id || "").trim()) && normalizeText(item?.name) === normalizeText(name)
-      ) || null;
+        (item) =>
+          !previousIds.has(String(item?.id || '').trim()) &&
+          normalizeText(item?.name) === normalizeText(name),
+      ) || null
 
     if (!createdItem) {
-      return { ok: false, message: "Nao foi possivel identificar o produto criado." };
+      return { ok: false, message: 'Nao foi possivel identificar o produto criado.' }
     }
 
     try {
-      await persistProductItemCreate(storeId, createdItem);
-      return localResult || { ok: true };
+      await persistProductItemCreate(createdItem)
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
   async function mutateAndPersistProductUpdate(productId, payload) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated()
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const localResult = await runtime.run("updateCatalogProduct", productId, payload);
+    const previousState = cloneValue(runtime.state)
+    const localResult = await runtime.run('updateCatalogProduct', productId, payload)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
-    const updatedItem = (runtime.state.productCatalog || []).find((item) => String(item?.id || "").trim() === String(productId || "").trim()) || null;
+    const updatedItem =
+      (runtime.state.productCatalog || []).find(
+        (item) => String(item?.id || '').trim() === String(productId || '').trim(),
+      ) || null
     if (!updatedItem) {
-      return { ok: false, message: "Nao foi possivel identificar o produto atualizado." };
+      return { ok: false, message: 'Nao foi possivel identificar o produto atualizado.' }
     }
 
     try {
-      await persistProductItemUpdate(storeId, productId, updatedItem);
-      return localResult || { ok: true };
+      await persistProductItemUpdate(productId, updatedItem)
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
   async function mutateAndPersistProductDelete(productId) {
-    const storeId = await resolveActiveStoreId();
+    const isAuthenticated = await ensureAuthenticated()
 
-    if (!storeId || !auth.isAuthenticated) {
-      return { ok: false, message: "Sessao ou loja ativa indisponivel." };
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const previousState = cloneValue(runtime.state);
-    const localResult = await runtime.run("removeCatalogProduct", productId);
+    const previousState = cloneValue(runtime.state)
+    const localResult = await runtime.run('removeCatalogProduct', productId)
 
     if (localResult?.ok === false) {
-      return localResult;
+      return localResult
     }
 
     try {
-      await persistProductItemDelete(storeId, productId);
-      return localResult || { ok: true };
+      await persistProductItemDelete(productId)
+      return localResult || { ok: true }
     } catch (error) {
-      runtime.hydrate(previousState);
+      runtime.hydrate(previousState)
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel salvar as configuracoes.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar as configuracoes.'),
+      }
     }
   }
 
@@ -435,82 +527,230 @@ export const useSettingsStore = defineStore("settings", () => {
     state,
     ensure: runtime.ensure,
     updateSetting(settingId, value) {
-      return mutateAndPersist("updateSetting", [settingId, value], [
-        (storeId) => persistOperationPatch(storeId, {
-          settings: {
-            [settingId]: value
-          }
-        })
-      ]);
+      return mutateAndPersist(
+        'updateSetting',
+        [settingId, value],
+        [
+          () =>
+            persistOperationPatch({
+              settings: {
+                [settingId]: value,
+              },
+            }),
+        ],
+      )
     },
     updateModalConfig(configKey, value) {
-      return mutateAndPersist("updateModalConfig", [configKey, value], [
-        (storeId) => persistModalPatch(storeId, {
-          [configKey]: value
-        })
-      ]);
+      return mutateAndPersist(
+        'updateModalConfig',
+        [configKey, value],
+        [
+          () =>
+            persistModalPatch({
+              [configKey]: value,
+            }),
+        ],
+      )
     },
     applyOperationTemplate(templateId) {
-      return mutateAndPersist("applyOperationTemplate", [templateId], [
-        (storeId) => persistOperationSection(storeId),
-        (storeId) => persistModalSection(storeId),
-        (storeId) => persistOptionSection(storeId, "visitReasonOptions"),
-        (storeId) => persistOptionSection(storeId, "customerSourceOptions")
-      ]);
+      return mutateAndPersist(
+        'applyOperationTemplate',
+        [templateId],
+        [() => persistOperationTemplateApply(templateId)],
+      )
     },
     addVisitReasonOption(label) {
-      return mutateAndPersistOptionCreate("addVisitReasonOption", label, "visitReasonOptions");
+      return mutateAndPersistOptionCreate('addVisitReasonOption', label, 'visitReasonOptions')
     },
     updateVisitReasonOption(optionId, label) {
-      return mutateAndPersistOptionUpdate("updateVisitReasonOption", optionId, label, "visitReasonOptions");
+      return mutateAndPersistOptionUpdate(
+        'updateVisitReasonOption',
+        optionId,
+        label,
+        'visitReasonOptions',
+      )
     },
     removeVisitReasonOption(optionId) {
-      return mutateAndPersistOptionDelete("removeVisitReasonOption", optionId, "visitReasonOptions");
+      return mutateAndPersistOptionDelete('removeVisitReasonOption', optionId, 'visitReasonOptions')
+    },
+    reorderVisitReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderVisitReasonOptions',
+        optionIds,
+        'visitReasonOptions',
+      )
     },
     addCustomerSourceOption(label) {
-      return mutateAndPersistOptionCreate("addCustomerSourceOption", label, "customerSourceOptions");
+      return mutateAndPersistOptionCreate('addCustomerSourceOption', label, 'customerSourceOptions')
     },
     updateCustomerSourceOption(optionId, label) {
-      return mutateAndPersistOptionUpdate("updateCustomerSourceOption", optionId, label, "customerSourceOptions");
+      return mutateAndPersistOptionUpdate(
+        'updateCustomerSourceOption',
+        optionId,
+        label,
+        'customerSourceOptions',
+      )
     },
     removeCustomerSourceOption(optionId) {
-      return mutateAndPersistOptionDelete("removeCustomerSourceOption", optionId, "customerSourceOptions");
+      return mutateAndPersistOptionDelete(
+        'removeCustomerSourceOption',
+        optionId,
+        'customerSourceOptions',
+      )
+    },
+    reorderCustomerSourceOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderCustomerSourceOptions',
+        optionIds,
+        'customerSourceOptions',
+      )
+    },
+    addPauseReasonOption(label) {
+      return mutateAndPersistOptionCreate('addPauseReasonOption', label, 'pauseReasonOptions')
+    },
+    updatePauseReasonOption(optionId, label) {
+      return mutateAndPersistOptionUpdate(
+        'updatePauseReasonOption',
+        optionId,
+        label,
+        'pauseReasonOptions',
+      )
+    },
+    removePauseReasonOption(optionId) {
+      return mutateAndPersistOptionDelete('removePauseReasonOption', optionId, 'pauseReasonOptions')
+    },
+    reorderPauseReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderPauseReasonOptions',
+        optionIds,
+        'pauseReasonOptions',
+      )
+    },
+    addCancelReasonOption(label) {
+      return mutateAndPersistOptionCreate('addCancelReasonOption', label, 'cancelReasonOptions')
+    },
+    updateCancelReasonOption(optionId, label) {
+      return mutateAndPersistOptionUpdate(
+        'updateCancelReasonOption',
+        optionId,
+        label,
+        'cancelReasonOptions',
+      )
+    },
+    removeCancelReasonOption(optionId) {
+      return mutateAndPersistOptionDelete(
+        'removeCancelReasonOption',
+        optionId,
+        'cancelReasonOptions',
+      )
+    },
+    reorderCancelReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderCancelReasonOptions',
+        optionIds,
+        'cancelReasonOptions',
+      )
+    },
+    addStopReasonOption(label) {
+      return mutateAndPersistOptionCreate('addStopReasonOption', label, 'stopReasonOptions')
+    },
+    updateStopReasonOption(optionId, label) {
+      return mutateAndPersistOptionUpdate(
+        'updateStopReasonOption',
+        optionId,
+        label,
+        'stopReasonOptions',
+      )
+    },
+    removeStopReasonOption(optionId) {
+      return mutateAndPersistOptionDelete('removeStopReasonOption', optionId, 'stopReasonOptions')
+    },
+    reorderStopReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderStopReasonOptions',
+        optionIds,
+        'stopReasonOptions',
+      )
     },
     addQueueJumpReasonOption(label) {
-      return mutateAndPersistOptionCreate("addQueueJumpReasonOption", label, "queueJumpReasonOptions");
+      return mutateAndPersistOptionCreate(
+        'addQueueJumpReasonOption',
+        label,
+        'queueJumpReasonOptions',
+      )
     },
     updateQueueJumpReasonOption(optionId, label) {
-      return mutateAndPersistOptionUpdate("updateQueueJumpReasonOption", optionId, label, "queueJumpReasonOptions");
+      return mutateAndPersistOptionUpdate(
+        'updateQueueJumpReasonOption',
+        optionId,
+        label,
+        'queueJumpReasonOptions',
+      )
     },
     removeQueueJumpReasonOption(optionId) {
-      return mutateAndPersistOptionDelete("removeQueueJumpReasonOption", optionId, "queueJumpReasonOptions");
+      return mutateAndPersistOptionDelete(
+        'removeQueueJumpReasonOption',
+        optionId,
+        'queueJumpReasonOptions',
+      )
+    },
+    reorderQueueJumpReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderQueueJumpReasonOptions',
+        optionIds,
+        'queueJumpReasonOptions',
+      )
     },
     addLossReasonOption(label) {
-      return mutateAndPersistOptionCreate("addLossReasonOption", label, "lossReasonOptions");
+      return mutateAndPersistOptionCreate('addLossReasonOption', label, 'lossReasonOptions')
     },
     updateLossReasonOption(optionId, label) {
-      return mutateAndPersistOptionUpdate("updateLossReasonOption", optionId, label, "lossReasonOptions");
+      return mutateAndPersistOptionUpdate(
+        'updateLossReasonOption',
+        optionId,
+        label,
+        'lossReasonOptions',
+      )
     },
     removeLossReasonOption(optionId) {
-      return mutateAndPersistOptionDelete("removeLossReasonOption", optionId, "lossReasonOptions");
+      return mutateAndPersistOptionDelete('removeLossReasonOption', optionId, 'lossReasonOptions')
+    },
+    reorderLossReasonOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderLossReasonOptions',
+        optionIds,
+        'lossReasonOptions',
+      )
     },
     addProfessionOption(label) {
-      return mutateAndPersistOptionCreate("addProfessionOption", label, "professionOptions");
+      return mutateAndPersistOptionCreate('addProfessionOption', label, 'professionOptions')
     },
     updateProfessionOption(optionId, label) {
-      return mutateAndPersistOptionUpdate("updateProfessionOption", optionId, label, "professionOptions");
+      return mutateAndPersistOptionUpdate(
+        'updateProfessionOption',
+        optionId,
+        label,
+        'professionOptions',
+      )
     },
     removeProfessionOption(optionId) {
-      return mutateAndPersistOptionDelete("removeProfessionOption", optionId, "professionOptions");
+      return mutateAndPersistOptionDelete('removeProfessionOption', optionId, 'professionOptions')
+    },
+    reorderProfessionOptions(optionIds) {
+      return mutateAndPersistOptionReorder(
+        'reorderProfessionOptions',
+        optionIds,
+        'professionOptions',
+      )
     },
     addCatalogProduct(name, category, basePrice, code) {
-      return mutateAndPersistProductCreate(name, category, basePrice, code);
+      return mutateAndPersistProductCreate(name, category, basePrice, code)
     },
     updateCatalogProduct(productId, payload) {
-      return mutateAndPersistProductUpdate(productId, payload);
+      return mutateAndPersistProductUpdate(productId, payload)
     },
     removeCatalogProduct(productId) {
-      return mutateAndPersistProductDelete(productId);
-    }
-  };
-});
+      return mutateAndPersistProductDelete(productId)
+    },
+  }
+})

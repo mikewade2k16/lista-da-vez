@@ -1,5 +1,5 @@
 param(
-  [string]$Host = "85.31.62.33",
+  [string]$VpsHost = "85.31.62.33",
   [int]$Port = 22,
   [string]$User = "deploy",
   [string]$KeyPath = (Join-Path $HOME ".ssh\gh_actions_omnichannel_vps"),
@@ -28,7 +28,7 @@ if (-not (Test-Path $KeyPath)) {
 
 $resolvedKeyPath = (Resolve-Path $KeyPath).Path
 $sshArgs = @("-i", $resolvedKeyPath, "-o", "StrictHostKeyChecking=accept-new", "-p", $Port.ToString())
-$remoteTarget = "$User@$Host"
+$remoteTarget = "$User@$VpsHost"
 $serviceArgs = if ($Services.Count -gt 0) { " " + ($Services -join " ") } else { "" }
 $forceRecreateFlag = if ($ForceRecreate) { " --force-recreate" } else { "" }
 
@@ -69,8 +69,10 @@ function Invoke-RemoteCommand {
 
   Write-Host "==> $Description"
 
+  $normalizedCommand = $Command -replace "`r`n", "`n" -replace "`r", "`n"
+
   if ($CaptureOutput) {
-    $output = & ssh @sshArgs $remoteTarget $Command
+    $output = & ssh @sshArgs $remoteTarget $normalizedCommand
     if ($LASTEXITCODE -ne 0) {
       throw "Falha ao executar: $Description"
     }
@@ -78,7 +80,7 @@ function Invoke-RemoteCommand {
     return (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
   }
 
-  & ssh @sshArgs $remoteTarget $Command
+  & ssh @sshArgs $remoteTarget $normalizedCommand
   if ($LASTEXITCODE -ne 0) {
     throw "Falha ao executar: $Description"
   }
@@ -143,16 +145,24 @@ set -euo pipefail
 cd $(Convert-ToBashSingleQuoted $repoDirBash)
 tar -czf - \
     --exclude='.git' \
+    --exclude='.claude' \
+    --exclude='.playwright-mcp' \
     --exclude='.env' \
     --exclude='.env.production' \
+    --exclude='token.txt' \
+    --exclude='token_gen.js' \
+    --exclude='verify.sh' \
     --exclude='node_modules' \
     --exclude='web/node_modules' \
     --exclude='web/.nuxt' \
     --exclude='web/.output' \
     --exclude='web/dist' \
+    --exclude='web/.codex-devserver.*.log' \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='erp-source-local' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i $(Convert-ToBashSingleQuoted $keyPathBash) \
     -o StrictHostKeyChecking=accept-new \

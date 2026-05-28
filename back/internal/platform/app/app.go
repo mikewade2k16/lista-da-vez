@@ -1,31 +1,51 @@
 package app
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/alerts"
 
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/analytics"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/consultants"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/erp"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/feedback"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/reports"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/roadmap"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/settings"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tasks"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 )
 
 func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) (http.Handler, error) {
+	const operationsAlertMonitorInterval = 3 * time.Second
+	const feedbackAttachmentCleanupInterval = 6 * time.Hour
+
 	hasher := auth.NewBcryptHasher(cfg.BcryptCost)
 	userStore := auth.NewPostgresUserStore(pool)
 	tokenManager := auth.NewHMACTokenManager(cfg.AuthTokenSecret, cfg.AuthTokenTTL)
 	avatarStorage := auth.NewDiskAvatarStorage(cfg.UploadsDir)
+	feedbackImageStorage := feedback.NewDiskImageStorage(cfg.UploadsDir)
+	taskVideoStorage := tasks.NewDiskVideoStorage(cfg.UploadsDir)
 	passwordResetDelivery, err := auth.BuildPasswordResetDelivery(auth.SMTPPasswordResetDeliveryConfig{
 		AppName:            cfg.AppName,
 		Host:               cfg.SMTPHost,
@@ -43,15 +63,19 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	}
 	consultantRepository := consultants.NewPostgresRepository(pool)
 	consultantProfileSync := consultants.NewProfileSync(consultantRepository)
-	authService := auth.NewService(userStore, hasher, tokenManager, avatarStorage, nil, consultantProfileSync)
+	usersRepository := users.NewPostgresRepository(pool)
+	accessRepository := access.NewPostgresRepository(pool)
+	accessService := access.NewService(accessRepository, newAccessSubjectResolver(usersRepository))
+	authService := auth.NewService(userStore, hasher, tokenManager, avatarStorage, accessService, nil, consultantProfileSync)
 	invitationService := auth.NewInvitationService(userStore, hasher, tokenManager, cfg.WebAppURL, cfg.AuthInviteTTL)
 	passwordResetService := auth.NewPasswordResetService(userStore, userStore, hasher, passwordResetDelivery, cfg.AuthPasswordResetTTL)
 	authMiddleware := auth.NewMiddleware(authService)
 	tenantRepository := tenants.NewPostgresRepository(pool)
 	tenantService := tenants.NewService(tenantRepository)
 	realtimeHub := realtime.NewHub()
-	realtimeService := realtime.NewService(authService, nil, tenantService, cfg.CORSAllowedOrigins, realtimeHub)
+	realtimeService := realtime.NewService(authService, nil, tenantService, cfg.CORSAllowedOrigins, realtimeHub, pool)
 	authService.SetContextPublisher(realtimeService)
+	accessService.SetContextPublisher(realtimeService)
 	storeRepository := stores.NewPostgresRepository(pool)
 	storeService := stores.NewService(storeRepository, realtimeService)
 	realtimeService.SetStoreFinder(storeService)
@@ -62,15 +86,133 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		cfg.ConsultantDefaultPassword,
 	)
 	settingsRepository := settings.NewPostgresRepository(pool)
-	settingsService := settings.NewService(settingsRepository)
+	settingsService := settings.NewService(settingsRepository, realtimeService)
+	catalogRepository := catalog.NewPostgresRepository(pool)
+	catalogService := catalog.NewService(catalogRepository, newCatalogStoreFinderAdapter(storeService))
+	alertsRepository := alerts.NewPostgresRepository(pool)
+	alertsService := alerts.NewService(alertsRepository)
+	alertsService.SetContextPublisher(realtimeService)
+	operationGoalsRepository := operationgoals.NewPostgresRepository(pool)
+	operationGoalsService := operationgoals.NewService(operationGoalsRepository, storeService, realtimeService)
 	operationsRepository := operations.NewPostgresRepository(pool)
 	operationsService := operations.NewService(operationsRepository, realtimeService, newOperationsStoreScopeAdapter(storeService))
+	operationsService.SetAlertCoordinator(alertsService)
+	alertsService.SetOperationsScanner(operationsService)
+	go func() {
+		ticker := time.NewTicker(operationsAlertMonitorInterval)
+		defer ticker.Stop()
+
+		for {
+			if err := operationsService.ProcessTimedAlerts(context.Background()); err != nil {
+				logger.Warn("operations_alert_monitor_failed", "error", err)
+			}
+			<-ticker.C
+		}
+	}()
 	reportsRepository := reports.NewPostgresRepository(pool)
 	reportsService := reports.NewService(reportsRepository, storeService)
 	analyticsRepository := analytics.NewPostgresRepository(pool)
 	analyticsService := analytics.NewService(analyticsRepository, storeService)
-	usersRepository := users.NewPostgresRepository(pool)
+	feedbackRepository := feedback.NewPostgresRepository(pool)
+	feedbackService := feedback.NewService(feedbackRepository, feedbackImageStorage)
+	go func() {
+		ticker := time.NewTicker(feedbackAttachmentCleanupInterval)
+		defer ticker.Stop()
+
+		for {
+			deletedCount, err := feedbackService.CleanupExpiredAttachments(context.Background())
+			if err != nil {
+				logger.Warn("feedback_attachment_cleanup_failed", "error", err)
+			} else if deletedCount > 0 {
+				logger.Info("feedback_attachment_cleanup_completed", "deleted_count", deletedCount)
+			}
+			<-ticker.C
+		}
+	}()
+	erpRepository := erp.NewPostgresRepository(pool)
+	erpService := erp.NewService(erpRepository, erp.Options{
+		Env:                        cfg.Env,
+		SourceKind:                 cfg.ERPSourceKind,
+		SourceRecursive:            cfg.ERPSourceRecursive,
+		SourceDir:                  cfg.ERPLocalSourceDir,
+		StorageDir:                 cfg.ERPStorageDir,
+		BootstrapItemFile:          cfg.ERPBootstrapItemFile,
+		BootstrapCustomerFile:      cfg.ERPBootstrapCustomerFile,
+		BootstrapEmployeeFile:      cfg.ERPBootstrapEmployeeFile,
+		BootstrapOrderFile:         cfg.ERPBootstrapOrderFile,
+		BootstrapOrderCanceledFile: cfg.ERPBootstrapOrderCanceledFile,
+		AllowManualSync:            cfg.ERPAllowManualSync,
+		FTPHost:                    cfg.ERPFTPHost,
+		FTPPort:                    cfg.ERPFTPPort,
+		FTPUser:                    cfg.ERPFTPUser,
+		FTPPassword:                cfg.ERPFTPPassword,
+		FTPKeyPath:                 cfg.ERPFTPKeyPath,
+		FTPRemoteDir:               cfg.ERPFTPRemoteDir,
+		FTPHostKey:                 cfg.ERPFTPHostKey,
+		RootStoreCode:              cfg.ERPRootStoreCode,
+		SyncAutomaticEnabled:       cfg.ERPSyncAutomaticEnabled,
+		SyncInterval:               cfg.ERPSyncInterval,
+		SyncHourUTC:                cfg.ERPSyncHourUTC,
+		SyncDryRunDefault:          cfg.ERPSyncDryRunDefault,
+		CSVMaxBytes:                cfg.ERPCSVMaxBytes,
+		ManualSyncMaxFiles:         cfg.ERPManualSyncMaxFiles,
+		BackfillMaxFiles:           cfg.ERPBackfillMaxFiles,
+		ManualSyncMinInterval:      cfg.ERPManualSyncMinInterval,
+	})
+	if recovered, err := erpRepository.RecoverOrphanedSyncRuns(context.Background(), 2*time.Hour); err != nil {
+		logger.Warn("erp_orphan_recovery_failed", "error", err)
+	} else if recovered > 0 {
+		logger.Info("erp_orphaned_runs_recovered", "count", recovered)
+	}
+
+	if cfg.ERPSyncAutomaticEnabled {
+		logger.Info("erp_sync_scheduler_started",
+			"source_kind", cfg.ERPSourceKind,
+			"interval", cfg.ERPSyncInterval.String(),
+			"hour_utc", cfg.ERPSyncHourUTC,
+			"dry_run", cfg.ERPSyncDryRunDefault,
+		)
+		go func() {
+			if missedFor, ok := missedERPScheduledRun(time.Now().UTC(), cfg.ERPSyncInterval, cfg.ERPSyncHourUTC); ok {
+				alreadyRan, err := erpRepository.HasAutomaticCSVSyncRunSince(context.Background(), missedFor)
+				if err != nil {
+					logger.Warn("erp_automatic_sync_catchup_check_failed",
+						"scheduled_for", missedFor,
+						"error", err,
+					)
+				} else if !alreadyRan {
+					logger.Info("erp_automatic_sync_catchup_started",
+						"scheduled_for", missedFor,
+						"dry_run", cfg.ERPSyncDryRunDefault,
+					)
+					runERPAutomaticSync(context.Background(), logger, erpService, cfg.ERPSyncDryRunDefault, missedFor, "catchup")
+				}
+			}
+
+			for {
+				scheduledFor := nextERPScheduledRun(time.Now().UTC(), cfg.ERPSyncInterval, cfg.ERPSyncHourUTC)
+				wait := time.Until(scheduledFor)
+				if wait > 0 {
+					timer := time.NewTimer(wait)
+					<-timer.C
+				}
+
+				runERPAutomaticSync(context.Background(), logger, erpService, cfg.ERPSyncDryRunDefault, scheduledFor, "scheduled")
+			}
+		}()
+	}
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
+	biService := bi.NewService(bi.Options{
+		CompanyKey:         cfg.PerolaBICompanyKey,
+		Login:              cfg.PerolaBILogin,
+		Pass:               cfg.PerolaBIPass,
+		StaticToken:        cfg.PerolaBIStaticToken,
+		DefaultCNPJEmpresa: cfg.PerolaBICNPJEmpresa,
+		TokenTTL:           cfg.PerolaBITokenTTL.String(),
+		RequestTimeout:     cfg.PerolaBIRequestTimeout.String(),
+		PageLimit:          cfg.PerolaBIPageLimit,
+		MaxPages:           cfg.PerolaBIMaxPages,
+	})
 
 	mux := http.NewServeMux()
 	if strings.TrimSpace(cfg.UploadsDir) != "" {
@@ -87,33 +229,183 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				"stores",
 				"consultants",
 				"settings",
+				"catalog",
 				"operations",
 				"realtime",
 				"reports",
 				"analytics",
+				"alerts",
+				"access",
+				"feedback",
+				"erp",
+				"bi",
 				"users",
 			},
-			"tenantMode": "owner-is-client",
+			"tenantMode":    "owner-is-client",
+			"coreV2Enabled": cfg.CoreV2Enabled,
 		})
 	})
+
+	if cfg.CoreV2Enabled {
+		logger.Info("core_v2 feature flag enabled — multi-tenant refactor code paths active")
+	}
 
 	auth.RegisterRoutes(mux, authService, invitationService, passwordResetService, authMiddleware)
 	registerContextRoutes(mux, authService, authMiddleware, tenantService, storeService)
 	tenants.RegisterRoutes(mux, tenantService, authMiddleware)
 	stores.RegisterRoutes(mux, storeService, authMiddleware)
 	consultants.RegisterRoutes(mux, consultantService, authMiddleware)
-	settings.RegisterRoutes(mux, settingsService, authMiddleware)
+	settings.RegisterRoutes(mux, settingsService, authMiddleware, cfg.Env)
+	catalog.RegisterRoutes(mux, catalogService, authMiddleware)
+	operationgoals.RegisterRoutes(mux, operationGoalsService, authMiddleware)
 	operations.RegisterRoutes(mux, operationsService, authMiddleware)
+	alerts.RegisterRoutes(mux, alertsService, authMiddleware)
 	realtime.RegisterRoutes(mux, realtimeService)
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)
+	access.RegisterRoutes(mux, accessService, authMiddleware)
+	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
+	erp.RegisterRoutes(mux, erpService, authMiddleware)
+	bi.RegisterRoutes(mux, biService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)
+
+	if cfg.CoreV2Enabled {
+		ctx := context.Background()
+
+		bus := events.NewInMemoryBus(logger)
+		notificationService := notifications.NewService(
+			notifications.NewPostgresRepository(pool),
+			notifications.NewInAppAdapter(realtimeService),
+			notifications.NewEmailAdapter(),
+			notifications.NewWhatsAppAdapter(),
+			notifications.NewPushAdapter(),
+		)
+		relationRegistry := modules.NewRelationRegistry(
+			erp.NewRelationResolver(pool),
+			erp.NewCRMRelationResolver(pool),
+			operations.NewRelationResolver(pool),
+		)
+
+		registry := modules.NewRegistry(logger)
+		registry.MustRegister(core.New())
+		registry.MustRegister(notifications.New(notificationService))
+		registry.MustRegister(tasks.New(realtimeService, notificationService, relationRegistry, taskVideoStorage))
+		registry.MustRegister(roadmap.New())
+
+		catalogRepo := modules.NewPostgresCatalogRepository(pool)
+		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
+			return nil, err
+		}
+
+		moduleHandles, err := registry.Build(modules.Dependencies{
+			Pool:           pool,
+			Logger:         logger,
+			Bus:            bus,
+			AuthMiddleware: authMiddleware,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Guard fica disponivel para modulos satelites a partir da Fase 6.
+		// Modulos do registry hoje (so o core) nao usam o guard porque o core
+		// e o ponto de descoberta dos modulos habilitados.
+		_ = httpapi.NewAccountModulesGuard(pool)
+
+		for _, h := range moduleHandles {
+			h.RegisterRoutes(mux)
+			h.RegisterEventHandlers(bus)
+		}
+	}
 
 	return httpapi.Chain(
 		mux,
 		httpapi.CORS(cfg.CORSAllowedOrigins),
 		httpapi.RequestID,
+		// RateLimit antes do Logging para que requisicoes bloqueadas tambem apareçam nos logs
+		// com status 429. Identidade preferida = principal.UserID (via callback que evita import
+		// cycle com o pacote auth); fallback para IP.
+		httpapi.RateLimit(httpapi.RateLimitOptions{
+			Limit:  cfg.HTTPRateLimitRequests,
+			Window: cfg.HTTPRateLimitWindow,
+			Resolver: func(r *http.Request) string {
+				principal, ok := auth.PrincipalFromContext(r.Context())
+				if !ok {
+					return ""
+				}
+				return principal.UserID
+			},
+		}),
 		httpapi.Logging(logger),
 		httpapi.Recover(logger),
 	), nil
+}
+
+func nextERPScheduledRun(now time.Time, interval time.Duration, hourUTC int) time.Time {
+	nowUTC := now.UTC()
+	if interval > 0 && interval < 24*time.Hour {
+		return nowUTC.Add(interval)
+	}
+	if hourUTC < 0 || hourUTC > 23 {
+		hourUTC = 4
+	}
+	next := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), hourUTC, 0, 0, 0, time.UTC)
+	if !next.After(nowUTC) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
+}
+
+func missedERPScheduledRun(now time.Time, interval time.Duration, hourUTC int) (time.Time, bool) {
+	nowUTC := now.UTC()
+	if interval > 0 && interval < 24*time.Hour {
+		return time.Time{}, false
+	}
+	if hourUTC < 0 || hourUTC > 23 {
+		hourUTC = 4
+	}
+	scheduledToday := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), hourUTC, 0, 0, 0, time.UTC)
+	if scheduledToday.After(nowUTC) {
+		return time.Time{}, false
+	}
+	return scheduledToday, true
+}
+
+func runERPAutomaticSync(ctx context.Context, logger *slog.Logger, erpService *erp.Service, dryRun bool, scheduledFor time.Time, runKind string) {
+	startedAt := time.Now().UTC()
+	results, err := erpService.IngestAllStores(ctx, erp.IngestInput{
+		DryRun:      dryRun,
+		TriggeredBy: erp.SyncTriggeredByCron,
+	})
+	if err != nil {
+		logger.Warn("erp_automatic_sync_failed",
+			"scheduled_for", scheduledFor,
+			"run_kind", runKind,
+			"error", err,
+		)
+		return
+	}
+
+	storeCount, runCount, filesImported, fileFailures, rowsImported := summarizeERPAutomaticResults(results)
+	logger.Info("erp_automatic_sync_completed",
+		"scheduled_for", scheduledFor,
+		"run_kind", runKind,
+		"duration", time.Since(startedAt).String(),
+		"stores", storeCount,
+		"runs", runCount,
+		"files_imported", filesImported,
+		"file_failures", fileFailures,
+		"rows_imported", rowsImported,
+	)
+}
+
+func summarizeERPAutomaticResults(results []erp.IngestResult) (storeCount int, runCount int, filesImported int, fileFailures int, rowsImported int) {
+	storeCount = len(results)
+	for _, result := range results {
+		runCount += len(result.RunIDs)
+		filesImported += result.FilesImported
+		fileFailures += len(result.FilesFailed)
+		rowsImported += result.RowsImported
+	}
+	return storeCount, runCount, filesImported, fileFailures, rowsImported
 }

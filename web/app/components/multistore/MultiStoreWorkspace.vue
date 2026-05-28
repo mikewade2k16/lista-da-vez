@@ -1,457 +1,259 @@
 <script setup>
-import { computed, reactive, ref, watch } from "vue";
-import AppSelectField from "~/components/ui/AppSelectField.vue";
-import { formatCurrencyBRL, formatPercent } from "~/domain/utils/admin-metrics";
-import { canManageStores } from "~/domain/utils/permissions";
-import { useMultiStoreStore } from "~/stores/multistore";
-import { useUiStore } from "~/stores/ui";
+import { computed, onMounted, ref } from 'vue'
+import { ChevronDown, Flag, Store } from 'lucide-vue-next'
+
+import MultiStoreGoalsSection from '~/components/multistore/MultiStoreGoalsSection.vue'
+import MultiStoreLojasSection from '~/components/multistore/MultiStoreLojasSection.vue'
+import MultiStoreOrphanConsultants from '~/components/multistore/MultiStoreOrphanConsultants.vue'
+import {
+  canAccessMultiStore,
+  canManageGoalTargets,
+  canManageStores,
+} from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useMultiStoreStore } from '~/stores/multistore'
 
 const props = defineProps({
   state: {
     type: Object,
-    required: true
-  }
-});
-
-const multiStore = useMultiStoreStore();
-const ui = useUiStore();
-const storeDrafts = ref({});
-const newStore = reactive({
-  name: "",
-  code: "",
-  city: "",
-  cloneActiveRoster: true,
-  defaultTemplateId: "",
-  monthlyGoal: "",
-  weeklyGoal: "",
-  avgTicketGoal: "",
-  conversionGoal: "",
-  paGoal: ""
-});
-
-const activeRole = computed(() => {
-  const activeProfile =
-    (props.state.profiles || []).find((profile) => profile.id === props.state.activeProfileId) ||
-    props.state.profiles?.[0] ||
-    null;
-
-  return activeProfile?.role || "consultant";
-});
-const canEditStores = computed(() => canManageStores(activeRole.value));
-const operationTemplates = computed(() => props.state.operationTemplates || []);
-const templateOptions = computed(() => [
-  { value: "", label: "Template padrao" },
-  ...operationTemplates.value.map((template) => ({
-    value: String(template.id || "").trim(),
-    label: String(template.label || "").trim()
-  }))
-]);
-const overview = computed(() => multiStore.overview || null);
-const rows = computed(() => overview.value?.stores || []);
-const managedStores = computed(() => props.state.managedStores || props.state.stores || []);
-const activeManagedStores = computed(() => managedStores.value.filter((store) => store.isActive !== false));
-const archivedManagedStores = computed(() => managedStores.value.filter((store) => store.isActive === false));
-const summary = computed(() => overview.value?.summary || {
-  activeStores: rows.value.length,
-  totalAttendances: 0,
-  totalSoldValue: 0,
-  totalQueue: 0,
-  totalActiveServices: 0,
-  averageHealthScore: 0
-});
-
-watch(
-  () => managedStores.value,
-  (stores) => {
-    storeDrafts.value = Object.fromEntries(
-      (stores || []).map((store) => [
-        store.id,
-        {
-          name: store.name,
-          code: store.code || "",
-          city: store.city || "",
-          defaultTemplateId: store.defaultTemplateId || "",
-          monthlyGoal: store.monthlyGoal || "",
-          weeklyGoal: store.weeklyGoal || "",
-          avgTicketGoal: store.avgTicketGoal || "",
-          conversionGoal: store.conversionGoal || "",
-          paGoal: store.paGoal || ""
-        }
-      ])
-    );
+    required: true,
   },
-  { immediate: true, deep: true }
-);
+})
 
-async function saveStore(storeId) {
-  const result = await multiStore.updateStore(storeId, storeDrafts.value[storeId]);
+const multiStore = useMultiStoreStore()
+const auth = useAuthStore()
+const selectedGoalsMonth = ref('')
+const selectedGoalsStoreId = ref('')
 
-  if (result?.ok === false) {
-    ui.error(result.message || "Nao foi possivel atualizar loja.");
-    return;
-  }
+const canEditStores = computed(() =>
+  canManageStores(auth.role, auth.permissionKeys, auth.permissionsResolved),
+)
+const canViewGoalTargets = computed(() =>
+  canAccessMultiStore(auth.role, auth.permissionKeys, auth.permissionsResolved),
+)
+const canEditGoalTargets = computed(() =>
+  canManageGoalTargets(auth.role, auth.permissionKeys, auth.permissionsResolved),
+)
 
-  if (result?.noChange) {
-    ui.info("Nenhuma alteracao para salvar.");
-    return;
-  }
+const operationTemplates = computed(() => props.state.operationTemplates || [])
+const managedStores = computed(() => props.state.managedStores || props.state.stores || [])
+const activeManagedStores = computed(() =>
+  managedStores.value.filter((store) => store.isActive !== false),
+)
+const allowAllStoreScope = computed(
+  () => new Set(activeManagedStores.value.map((store) => store.id)).size > 1,
+)
 
-  ui.success("Loja atualizada.");
-}
-
-async function createStore() {
-  const result = await multiStore.createStore(newStore);
-
-  if (result?.ok === false) {
-    ui.error(result.message || "Nao foi possivel criar loja.");
-    return;
-  }
-
-  newStore.name = "";
-  newStore.code = "";
-  newStore.city = "";
-  newStore.cloneActiveRoster = true;
-  newStore.defaultTemplateId = "";
-  newStore.monthlyGoal = "";
-  newStore.weeklyGoal = "";
-  newStore.avgTicketGoal = "";
-  newStore.conversionGoal = "";
-  newStore.paGoal = "";
-  ui.success("Loja criada.");
-
-  if (result?.warningMessage) {
-    ui.info(result.warningMessage);
-  }
-}
-
-async function archiveStore(storeId) {
-  const { confirmed } = await ui.confirm({
-    title: "Arquivar loja",
-    message: "A loja sera removida da operacao ativa. Deseja continuar?",
-    confirmLabel: "Arquivar"
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  const result = await multiStore.archiveStore(storeId);
-
-  if (result?.ok === false) {
-    ui.error(result.message || "Nao foi possivel arquivar loja.");
-    return;
-  }
-
-  ui.success("Loja arquivada.");
-}
-
-async function restoreStore(storeId) {
-  const result = await multiStore.restoreStore(storeId);
-
-  if (result?.ok === false) {
-    ui.error(result.message || "Nao foi possivel restaurar loja.");
-    return;
-  }
-
-  ui.success("Loja restaurada.");
-}
-
-async function deleteStore(store) {
-  const { confirmed } = await ui.confirm({
-    title: "Excluir loja",
-    message: `A exclusao so funciona para loja sem consultores, acessos e historico operacional. Deseja tentar remover ${store?.name || "esta loja"}?`,
-    confirmLabel: "Excluir"
-  });
-
-  if (!confirmed) {
-    return;
-  }
-
-  const result = await multiStore.deleteStore(store?.id);
-
-  if (result?.ok === false) {
-    ui.error(result.message || "Nao foi possivel remover loja.");
-    return;
-  }
-
-  ui.success("Loja removida.");
-}
+onMounted(() => {
+  void multiStore.ensureLoaded({ includeOverview: false })
+})
 </script>
 
 <template>
-  <section class="admin-panel" data-testid="multistore-panel">
+  <section class="admin-panel multistore-workspace" data-testid="multistore-panel">
     <header class="admin-panel__header">
-      <h2 class="admin-panel__title">Visao consolidada multi-loja</h2>
-      <p class="admin-panel__text">Comparativo operacional para acompanhar performance entre lojas.</p>
+      <h2 class="admin-panel__title">Multi-loja</h2>
+      <p class="admin-panel__text">
+        Cadastro de lojas e metas mensais. Performance comercial fica no CRM.
+      </p>
     </header>
 
-    <article v-if="multiStore.errorMessage" class="settings-card">
-      <p class="settings-card__text">{{ multiStore.errorMessage }}</p>
+    <article v-if="!canEditStores && !canViewGoalTargets" class="settings-card">
+      <p class="settings-card__text">Seu perfil nao possui acesso a multi-loja.</p>
     </article>
 
-    <article v-else-if="multiStore.pending && !multiStore.ready" class="settings-card">
-      <p class="settings-card__text">Carregando consolidado multiloja...</p>
-    </article>
+    <MultiStoreGoalsSection
+      v-if="canViewGoalTargets"
+      :stores="activeManagedStores"
+      :active-store-id="state.activeStoreId"
+      :can-edit-goals="canEditGoalTargets"
+      :allow-all-store-scope="allowAllStoreScope"
+      :selected-month="selectedGoalsMonth"
+      :selected-store-id="selectedGoalsStoreId"
+      :show-tables="false"
+      :manage-data-lifecycle="true"
+      @update:selected-month="selectedGoalsMonth = $event"
+      @update:selected-store-id="selectedGoalsStoreId = $event"
+    />
 
-    <section class="metric-grid" data-testid="multistore-summary">
-      <article class="metric-card"><span class="metric-card__label">Lojas ativas</span><strong class="metric-card__value">{{ summary.activeStores }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Atendimentos consolidados</span><strong class="metric-card__value">{{ summary.totalAttendances }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Vendas consolidadas</span><strong class="metric-card__value">{{ formatCurrencyBRL(summary.totalSoldValue) }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Fila atual total</span><strong class="metric-card__value">{{ summary.totalQueue }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Em atendimento agora</span><strong class="metric-card__value">{{ summary.totalActiveServices }}</strong></article>
-      <article class="metric-card"><span class="metric-card__label">Score medio operacional</span><strong class="metric-card__value">{{ Math.round(summary.averageHealthScore) }}</strong></article>
-    </section>
-
-    <article class="insight-card insight-card--wide" data-testid="multistore-comparison-table">
-      <h3 class="insight-card__title">Comparativo consolidado por loja</h3>
-      <div class="insight-table-wrap">
-        <table class="insight-table">
-          <thead>
-            <tr>
-              <th>Loja</th>
-              <th>Consultores</th>
-              <th>Atendimentos</th>
-              <th>Conversao</th>
-              <th>Meta conv.</th>
-              <th>Vendas</th>
-              <th>Meta mensal</th>
-              <th>% Meta</th>
-              <th>Ticket medio</th>
-              <th>Meta ticket</th>
-              <th>P.A.</th>
-              <th>Meta P.A.</th>
-              <th>Score</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!rows.length"><td colspan="14">Sem lojas cadastradas.</td></tr>
-            <tr v-for="row in rows" :key="row.storeId">
-              <td>{{ row.storeName }}</td>
-              <td>{{ row.consultants }}</td>
-              <td>{{ row.attendances }}</td>
-              <td>{{ formatPercent(row.conversionRate) }}</td>
-              <td>{{ row.conversionGoal ? formatPercent(row.conversionGoal) : '-' }}</td>
-              <td>{{ formatCurrencyBRL(row.soldValue) }}</td>
-              <td>{{ row.monthlyGoal ? formatCurrencyBRL(row.monthlyGoal) : '-' }}</td>
-              <td>
-                <span v-if="row.monthlyGoal" :class="row.soldValue >= row.monthlyGoal ? 'multistore-goal--hit' : 'multistore-goal--miss'">
-                  {{ formatPercent(row.monthlyGoal ? (row.soldValue / row.monthlyGoal) * 100 : 0) }}
-                </span>
-                <span v-else>-</span>
-              </td>
-              <td>{{ formatCurrencyBRL(row.ticketAverage) }}</td>
-              <td>{{ row.avgTicketGoal ? formatCurrencyBRL(row.avgTicketGoal) : '-' }}</td>
-              <td>{{ row.paScore.toFixed(2) }}</td>
-              <td>{{ row.paGoal ? row.paGoal.toFixed(2) : '-' }}</td>
-              <td>{{ Math.round(row.healthScore) }}</td>
-              <td>
-                <span v-if="row.storeId === state.activeStoreId" class="insight-tag">Ativa</span>
-                <button v-else class="option-row__save" type="button" @click="multiStore.setActiveStore(row.storeId)">Abrir</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </article>
-
-    <article class="insight-card insight-card--wide" data-testid="multistore-meeting">
-      <header class="intel-card__header">
-        <h3 class="insight-card__title">Painel de reuniao gerencial</h3>
-        <span class="insight-tag">{{ rows.length }} lojas</span>
-      </header>
-      <div class="meeting-grid">
-        <div v-for="row in rows" :key="row.storeId" class="meeting-card">
-          <div class="meeting-card__header">
-            <h4 class="meeting-card__name">{{ row.storeName }}</h4>
-            <span class="meeting-card__score">Score {{ Math.round(row.healthScore) }}</span>
-          </div>
-          <div class="meeting-goal-list">
-            <div class="meeting-goal-row">
-              <span class="meeting-goal-row__label">Vendas vs meta mensal</span>
-              <div class="meeting-goal-row__bar">
-                <div class="meeting-goal-row__track">
-                  <div
-                    :class="['meeting-goal-row__fill', row.monthlyGoal && row.soldValue >= row.monthlyGoal ? 'meeting-goal-row__fill--hit' : 'meeting-goal-row__fill--miss']"
-                    :style="{ width: row.monthlyGoal ? `${Math.min(100, (row.soldValue / row.monthlyGoal) * 100).toFixed(1)}%` : '0%' }"
-                  ></div>
-                </div>
-                <span :class="['meeting-goal-row__value', row.monthlyGoal && row.soldValue >= row.monthlyGoal ? 'meeting-goal-row__value--hit' : 'meeting-goal-row__value--miss']">
-                  {{ row.monthlyGoal ? formatPercent((row.soldValue / row.monthlyGoal) * 100) : formatCurrencyBRL(row.soldValue) }}
-                </span>
-              </div>
-            </div>
-            <div class="meeting-goal-row">
-              <span class="meeting-goal-row__label">Conversao vs meta</span>
-              <div class="meeting-goal-row__bar">
-                <div class="meeting-goal-row__track">
-                  <div
-                    :class="['meeting-goal-row__fill', row.conversionGoal && row.conversionRate >= row.conversionGoal ? 'meeting-goal-row__fill--hit' : 'meeting-goal-row__fill--miss']"
-                    :style="{ width: row.conversionGoal ? `${Math.min(100, (row.conversionRate / row.conversionGoal) * 100).toFixed(1)}%` : `${Math.min(100, row.conversionRate).toFixed(1)}%` }"
-                  ></div>
-                </div>
-                <span :class="['meeting-goal-row__value', row.conversionGoal && row.conversionRate >= row.conversionGoal ? 'meeting-goal-row__value--hit' : 'meeting-goal-row__value--miss']">
-                  {{ formatPercent(row.conversionRate) }}
-                </span>
-              </div>
-            </div>
-            <div class="meeting-goal-row">
-              <span class="meeting-goal-row__label">Ticket medio vs meta</span>
-              <div class="meeting-goal-row__bar">
-                <div class="meeting-goal-row__track">
-                  <div
-                    :class="['meeting-goal-row__fill', row.avgTicketGoal && row.ticketAverage >= row.avgTicketGoal ? 'meeting-goal-row__fill--hit' : 'meeting-goal-row__fill--miss']"
-                    :style="{ width: row.avgTicketGoal ? `${Math.min(100, (row.ticketAverage / row.avgTicketGoal) * 100).toFixed(1)}%` : '0%' }"
-                  ></div>
-                </div>
-                <span :class="['meeting-goal-row__value', row.avgTicketGoal && row.ticketAverage >= row.avgTicketGoal ? 'meeting-goal-row__value--hit' : 'meeting-goal-row__value--miss']">
-                  {{ formatCurrencyBRL(row.ticketAverage) }}
-                </span>
-              </div>
-            </div>
-            <div class="meeting-goal-row">
-              <span class="meeting-goal-row__label">P.A. vs meta</span>
-              <div class="meeting-goal-row__bar">
-                <div class="meeting-goal-row__track">
-                  <div
-                    :class="['meeting-goal-row__fill', row.paGoal && row.paScore >= row.paGoal ? 'meeting-goal-row__fill--hit' : 'meeting-goal-row__fill--miss']"
-                    :style="{ width: row.paGoal ? `${Math.min(100, (row.paScore / row.paGoal) * 100).toFixed(1)}%` : '0%' }"
-                  ></div>
-                </div>
-                <span :class="['meeting-goal-row__value', row.paGoal && row.paScore >= row.paGoal ? 'meeting-goal-row__value--hit' : 'meeting-goal-row__value--miss']">
-                  {{ row.paScore.toFixed(2) }}
-                </span>
-              </div>
-            </div>
-            <div class="meeting-goal-row">
-              <span class="meeting-goal-row__label">Atendimentos</span>
-              <div class="meeting-goal-row__bar">
-                <div class="meeting-goal-row__track">
-                  <div
-                    class="meeting-goal-row__fill meeting-goal-row__fill--hit"
-                    :style="{ width: summary.totalAttendances ? `${((row.attendances / summary.totalAttendances) * 100).toFixed(1)}%` : '0%' }"
-                  ></div>
-                </div>
-                <span class="meeting-goal-row__value meeting-goal-row__value--hit">{{ row.attendances }}</span>
-              </div>
-            </div>
+    <details v-if="canEditStores || managedStores.length" class="multistore-workspace__collapse">
+      <summary class="multistore-workspace__collapse-summary">
+        <div class="multistore-workspace__collapse-copy">
+          <span class="multistore-workspace__collapse-icon-wrap">
+            <Store :size="16" :stroke-width="2.2" />
+          </span>
+          <div>
+            <strong class="multistore-workspace__collapse-title">Lojas</strong>
+            <span class="multistore-workspace__collapse-text">
+              {{ managedStores.length }} cadastrada(s) para consulta e manutencao.
+            </span>
           </div>
         </div>
-      </div>
-    </article>
-
-    <article v-if="canEditStores" class="settings-card">
-      <header class="settings-card__header">
-        <h3 class="settings-card__title">Gestao de lojas</h3>
-        <p class="settings-card__text">Identificacao, template operacional e metas por loja.</p>
-      </header>
-
-      <div class="option-list">
-        <form
-          v-for="store in activeManagedStores"
-          :key="store.id"
-          class="multistore-form"
-          @submit.prevent="saveStore(store.id)"
-        >
-          <div class="multistore-form__row">
-            <input v-model="storeDrafts[store.id].name" class="product-row__input" type="text" placeholder="Nome">
-            <input v-model="storeDrafts[store.id].code" class="product-row__input" type="text" placeholder="Codigo">
-            <input v-model="storeDrafts[store.id].city" class="product-row__input" type="text" placeholder="Cidade">
-            <AppSelectField
-              class="product-row__input"
-              :model-value="storeDrafts[store.id].defaultTemplateId"
-              :options="templateOptions"
-              placeholder="Template padrao"
-              @update:model-value="storeDrafts[store.id].defaultTemplateId = $event"
-            />
-          </div>
-          <div class="multistore-form__row">
-            <label class="multistore-form__field">
-              <span class="multistore-form__label">Meta mensal (R$)</span>
-              <input v-model="storeDrafts[store.id].monthlyGoal" class="product-row__input" type="number" min="0" step="100" placeholder="0">
-            </label>
-            <label class="multistore-form__field">
-              <span class="multistore-form__label">Meta semanal (R$)</span>
-              <input v-model="storeDrafts[store.id].weeklyGoal" class="product-row__input" type="number" min="0" step="100" placeholder="0">
-            </label>
-            <label class="multistore-form__field">
-              <span class="multistore-form__label">Ticket médio alvo (R$)</span>
-              <input v-model="storeDrafts[store.id].avgTicketGoal" class="product-row__input" type="number" min="0" step="100" placeholder="0">
-            </label>
-            <label class="multistore-form__field">
-              <span class="multistore-form__label">Conversão alvo (%)</span>
-              <input v-model="storeDrafts[store.id].conversionGoal" class="product-row__input" type="number" min="0" max="100" step="1" placeholder="0">
-            </label>
-            <label class="multistore-form__field">
-              <span class="multistore-form__label">P.A. alvo</span>
-              <input v-model="storeDrafts[store.id].paGoal" class="product-row__input" type="number" min="0" step="0.1" placeholder="0">
-            </label>
-          </div>
-          <div class="multistore-form__actions">
-            <button class="option-row__save" type="submit">Salvar</button>
-            <button class="product-row__remove" type="button" @click="archiveStore(store.id)">Arquivar</button>
-            <button class="product-row__remove" type="button" @click="deleteStore(store)">Excluir</button>
-          </div>
-        </form>
-      </div>
-
-      <div v-if="archivedManagedStores.length" class="option-list">
-        <article v-for="store in archivedManagedStores" :key="store.id" class="option-row">
-          <div class="option-row__content">
-            <strong>{{ store.name }}</strong>
-            <span class="settings-card__text">{{ store.code || "Sem codigo" }} <template v-if="store.city">• {{ store.city }}</template></span>
-          </div>
-          <div class="multistore-form__actions">
-            <button class="option-row__save" type="button" @click="restoreStore(store.id)">Restaurar</button>
-            <button class="product-row__remove" type="button" @click="deleteStore(store)">Excluir</button>
-          </div>
-        </article>
-      </div>
-
-      <form class="multistore-form multistore-form--add" @submit.prevent="createStore">
-        <div class="multistore-form__row">
-          <input v-model="newStore.name" class="product-add__input" type="text" placeholder="Nome da loja *" data-testid="multistore-new-name">
-          <input v-model="newStore.code" class="product-add__input" type="text" placeholder="Codigo curto">
-          <input v-model="newStore.city" class="product-add__input" type="text" placeholder="Cidade">
-          <AppSelectField
-            class="product-add__input"
-            :model-value="newStore.defaultTemplateId"
-            :options="templateOptions"
-            placeholder="Template padrao"
-            @update:model-value="newStore.defaultTemplateId = $event"
-          />
+        <div class="multistore-workspace__collapse-meta">
+          <span class="multistore-workspace__collapse-badge">{{ managedStores.length }}</span>
+          <ChevronDown class="multistore-workspace__chevron" :size="18" :stroke-width="2.2" />
         </div>
-        <div class="multistore-form__row">
-          <label class="multistore-form__field">
-            <span class="multistore-form__label">Meta mensal (R$)</span>
-            <input v-model="newStore.monthlyGoal" class="product-add__input" type="number" min="0" step="100" placeholder="0">
-          </label>
-          <label class="multistore-form__field">
-            <span class="multistore-form__label">Meta semanal (R$)</span>
-            <input v-model="newStore.weeklyGoal" class="product-add__input" type="number" min="0" step="100" placeholder="0">
-          </label>
-          <label class="multistore-form__field">
-            <span class="multistore-form__label">Ticket médio alvo (R$)</span>
-            <input v-model="newStore.avgTicketGoal" class="product-add__input" type="number" min="0" step="100" placeholder="0">
-          </label>
-          <label class="multistore-form__field">
-            <span class="multistore-form__label">Conversão alvo (%)</span>
-            <input v-model="newStore.conversionGoal" class="product-add__input" type="number" min="0" max="100" step="1" placeholder="0">
-          </label>
-          <label class="multistore-form__field">
-            <span class="multistore-form__label">P.A. alvo</span>
-            <input v-model="newStore.paGoal" class="product-add__input" type="number" min="0" step="0.1" placeholder="0">
-          </label>
+      </summary>
+
+      <div class="multistore-workspace__collapse-body">
+        <MultiStoreOrphanConsultants v-if="canEditStores" :managed-stores="managedStores" />
+        <MultiStoreLojasSection
+          :managed-stores="managedStores"
+          :operation-templates="operationTemplates"
+          :can-edit="canEditStores"
+        />
+      </div>
+    </details>
+
+    <details v-if="canViewGoalTargets" class="multistore-workspace__collapse">
+      <summary class="multistore-workspace__collapse-summary">
+        <div class="multistore-workspace__collapse-copy">
+          <span class="multistore-workspace__collapse-icon-wrap">
+            <Flag :size="16" :stroke-width="2.2" />
+          </span>
+          <div>
+            <strong class="multistore-workspace__collapse-title">Metas</strong>
+            <span class="multistore-workspace__collapse-text">
+              Metas por loja e consultor com edicao inline e leitura do CRM.
+            </span>
+          </div>
         </div>
-        <div class="multistore-form__actions">
-          <label class="settings-toggle">
-            <input v-model="newStore.cloneActiveRoster" type="checkbox">
-            <span>Copiar consultores da loja ativa</span>
-          </label>
-          <button class="product-add__button" type="submit" data-testid="multistore-new-submit">Adicionar loja</button>
+        <div class="multistore-workspace__collapse-meta">
+          <span class="multistore-workspace__collapse-badge">Detalhes</span>
+          <ChevronDown class="multistore-workspace__chevron" :size="18" :stroke-width="2.2" />
         </div>
-      </form>
-    </article>
+      </summary>
+
+      <div class="multistore-workspace__collapse-body">
+        <MultiStoreGoalsSection
+          :stores="activeManagedStores"
+          :active-store-id="state.activeStoreId"
+          :can-edit-goals="canEditGoalTargets"
+          :allow-all-store-scope="allowAllStoreScope"
+          :selected-month="selectedGoalsMonth"
+          :selected-store-id="selectedGoalsStoreId"
+          :show-cards="false"
+          :manage-data-lifecycle="false"
+          @update:selected-month="selectedGoalsMonth = $event"
+          @update:selected-store-id="selectedGoalsStoreId = $event"
+        />
+      </div>
+    </details>
   </section>
 </template>
 
+<style scoped>
+.admin-panel.multistore-workspace {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1rem;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.multistore-workspace__collapse {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-muted);
+  box-shadow: var(--shadow-card);
+  overflow: visible;
+}
+
+.multistore-workspace__collapse-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+}
+
+.multistore-workspace__collapse-summary::-webkit-details-marker {
+  display: none;
+}
+
+.multistore-workspace__collapse-copy {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.multistore-workspace__collapse-icon-wrap {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--primary));
+  background: rgb(var(--primary) / 0.12);
+  border: 1px solid rgb(var(--primary) / 0.2);
+  flex-shrink: 0;
+}
+
+.multistore-workspace__collapse-title {
+  display: block;
+  color: var(--text-main);
+  font-size: 0.98rem;
+  font-weight: 700;
+}
+
+.multistore-workspace__collapse-text {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.multistore-workspace__collapse-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.multistore-workspace__collapse-badge {
+  min-width: 2.5rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--primary) / 0.24);
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.multistore-workspace__chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.multistore-workspace__collapse[open] .multistore-workspace__chevron {
+  transform: rotate(180deg);
+}
+
+.multistore-workspace__collapse-body {
+  padding: 0 1rem 1rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (max-width: 820px) {
+  .multistore-workspace__collapse-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .multistore-workspace__collapse-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+</style>

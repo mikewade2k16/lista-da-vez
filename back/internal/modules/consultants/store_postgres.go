@@ -85,6 +85,37 @@ func (repository *PostgresRepository) ListByStore(ctx context.Context, storeID s
 	return consultants, nil
 }
 
+// ListOrphansByTenant retorna consultores ativos cuja loja foi deletada
+// (store_id IS NULL apos migration 0122).
+func (repository *PostgresRepository) ListOrphansByTenant(ctx context.Context, tenantID string) ([]Consultant, error) {
+	rows, err := repository.pool.Query(ctx, consultantSelectQuery()+`
+		where c.tenant_id = $1::uuid
+			and c.store_id is null
+			and c.is_active = true
+		order by c.name asc;
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	consultants := make([]Consultant, 0)
+	for rows.Next() {
+		consultant, err := scanConsultant(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		consultants = append(consultants, consultant)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return consultants, nil
+}
+
 func (repository *PostgresRepository) FindByID(ctx context.Context, consultantID string) (Consultant, error) {
 	consultant, err := scanConsultant(repository.pool.QueryRow(ctx, consultantSelectQuery()+`
 		where c.id = $1::uuid
@@ -495,7 +526,7 @@ func consultantSelectQuery() string {
 		select
 			c.id::text,
 			c.tenant_id::text,
-			c.store_id::text,
+			coalesce(c.store_id::text, '') as store_id,
 			coalesce(c.user_id::text, '') as user_id,
 			coalesce(lower(u.email), '') as access_email,
 			coalesce(u.is_active, false) as access_active,

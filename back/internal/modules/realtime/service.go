@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
@@ -32,7 +34,7 @@ type StoreFinder interface {
 }
 
 type TenantLister interface {
-	ListAccessible(ctx context.Context, principal auth.Principal) ([]tenants.TenantView, error)
+	ListAccessible(ctx context.Context, principal auth.Principal, input tenants.ListInput) ([]tenants.TenantView, error)
 }
 
 type Service struct {
@@ -41,16 +43,24 @@ type Service struct {
 	tenantLister   TenantLister
 	allowedOrigins []string
 	hub            *Hub
+	pool           *pgxpool.Pool
+	presence       *PresenceStore
 	upgrader       websocket.Upgrader
 }
 
-func NewService(authenticator TokenAuthenticator, storeFinder StoreFinder, tenantLister TenantLister, allowedOrigins []string, hub *Hub) *Service {
+func NewService(authenticator TokenAuthenticator, storeFinder StoreFinder, tenantLister TenantLister, allowedOrigins []string, hub *Hub, pool ...*pgxpool.Pool) *Service {
 	service := &Service{
 		authenticator:  authenticator,
 		storeFinder:    storeFinder,
 		tenantLister:   tenantLister,
 		allowedOrigins: append([]string{}, allowedOrigins...),
 		hub:            hub,
+	}
+	if len(pool) > 0 {
+		service.pool = pool[0]
+	}
+	if hub != nil {
+		service.presence = NewPresenceStore(hub, 30*time.Second)
 	}
 
 	service.upgrader = websocket.Upgrader{
@@ -83,6 +93,14 @@ func (service *Service) PublishOperationEvent(ctx context.Context, event operati
 		Action:   strings.TrimSpace(event.Action),
 		PersonID: strings.TrimSpace(event.PersonID),
 		SavedAt:  event.SavedAt.UTC(),
+	})
+}
+
+func (service *Service) PublishStoreEvent(ctx context.Context, storeID string, action string, savedAt time.Time) {
+	service.PublishOperationEvent(ctx, operations.PublishedEvent{
+		StoreID: strings.TrimSpace(storeID),
+		Action:  strings.TrimSpace(action),
+		SavedAt: savedAt,
 	})
 }
 
@@ -125,7 +143,12 @@ func (service *Service) HandleOperationSocket(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if !operations.CanAccessOperationsRole(string(principal.Role)) {
+	if principal.PermissionsResolved {
+		if !accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionOperationsView) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
+			return
+		}
+	} else if !operations.CanAccessOperationsRole(string(principal.Role)) {
 		httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar este recurso.")
 		return
 	}
@@ -303,7 +326,7 @@ func (service *Service) resolveContextTenantID(ctx context.Context, principal au
 		return principal.TenantID, nil
 	}
 
-	accessibleTenants, err := service.tenantLister.ListAccessible(ctx, principal)
+	accessibleTenants, err := service.tenantLister.ListAccessible(ctx, principal, tenants.ListInput{})
 	if err != nil {
 		return "", err
 	}

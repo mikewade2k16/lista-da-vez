@@ -1,38 +1,42 @@
 <script setup>
-import { computed, ref } from "vue";
-import { formatCurrencyBRL, formatDurationMinutes, formatPercent } from "~/domain/utils/admin-metrics";
+import { computed, ref } from 'vue'
+import {
+  formatCurrencyBRL,
+  formatDurationMinutes,
+  formatPercent,
+} from '~/domain/utils/admin-metrics'
 
 const props = defineProps({
   title: {
     type: String,
-    required: true
+    required: true,
   },
   rows: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   testid: {
     type: String,
-    default: ""
-  }
-});
+    default: '',
+  },
+})
 
-const sortBy = ref("soldValue");
+const sortBy = ref('soldValue')
 
 const sortOptions = [
-  { key: "soldValue", label: "Valor" },
-  { key: "conversionRate", label: "Conversao" },
-  { key: "ticketAverage", label: "Ticket" },
-  { key: "paScore", label: "P.A." },
-  { key: "qualityScore", label: "Qualidade" },
-  { key: "score360", label: "360" },
-  { key: "queueJumpServices", label: "Fora da vez" }
-];
+  { key: 'soldValue', label: 'Valor' },
+  { key: 'conversionRate', label: 'Conversao' },
+  { key: 'ticketAverage', label: 'Ticket' },
+  { key: 'paScore', label: 'P.A.' },
+  { key: 'qualityScore', label: 'Qualidade' },
+  { key: 'score360', label: '360' },
+  { key: 'queueJumpServices', label: 'Fora da vez' },
+]
 
 const rowsWith360 = computed(() => {
-  const rows = props.rows;
-  const maxSold = Math.max(...rows.map((r) => r.soldValue), 1);
-  const maxPa = Math.max(...rows.map((r) => r.paScore), 0.01);
+  const rows = props.rows
+  const maxSold = Math.max(...rows.map((r) => r.soldValue), 1)
+  const maxPa = Math.max(...rows.map((r) => r.paScore), 0.01)
 
   return rows.map((row) => ({
     ...row,
@@ -41,17 +45,17 @@ const rowsWith360 = computed(() => {
       (row.soldValue / maxSold) * 25 +
       (row.qualityScore / 100) * 20 +
       (row.paScore / maxPa) * 15 +
-      (1 - Math.min(1, row.queueJumpServices / Math.max(row.attendances, 1))) * 5
-  }));
-});
+      (1 - Math.min(1, row.queueJumpServices / Math.max(row.attendances, 1))) * 5,
+  }))
+})
 
 const sortedRows = computed(() => {
-  const key = sortBy.value;
+  const key = sortBy.value
   return [...rowsWith360.value].sort((a, b) => {
-    if (key === "queueJumpServices") return a[key] - b[key];
-    return b[key] - a[key];
-  });
-});
+    if (key === 'queueJumpServices') return a[key] - b[key]
+    return b[key] - a[key]
+  })
+})
 </script>
 
 <template>
@@ -67,7 +71,9 @@ const sortedRows = computed(() => {
           :data-testid="testid ? `${testid}-sort-${opt.key}` : undefined"
           type="button"
           @click="sortBy = opt.key"
-        >{{ opt.label }}</button>
+        >
+          {{ opt.label }}
+        </button>
       </div>
     </header>
     <div class="ranking-card__table-wrap">
@@ -91,9 +97,17 @@ const sortedRows = computed(() => {
           <tr v-if="!sortedRows.length">
             <td colspan="11">Sem dados no periodo.</td>
           </tr>
-          <tr v-for="(row, index) in sortedRows" :key="row.consultantId">
+          <tr
+            v-for="(row, index) in sortedRows"
+            :key="`${row.consultantId}-${row.storeId || 'store'}`"
+          >
             <td>{{ index + 1 }}</td>
-            <td>{{ row.consultantName }}</td>
+            <td>
+              <div class="ranking-table__consultant">
+                <span>{{ row.consultantName }}</span>
+                <small v-if="row.storeName" class="ranking-table__store">{{ row.storeName }}</small>
+              </div>
+            </td>
             <td>{{ formatCurrencyBRL(row.soldValue) }}</td>
             <td>{{ row.conversions }}/{{ row.attendances }}</td>
             <td>{{ formatPercent(row.conversionRate) }}</td>
@@ -102,10 +116,25 @@ const sortedRows = computed(() => {
             <td>{{ formatPercent(row.qualityScore) }}</td>
             <td>{{ formatDurationMinutes(row.avgDurationMs) }}</td>
             <td>{{ row.queueJumpServices }}</td>
-            <td><strong>{{ row.score360.toFixed(1) }}</strong></td>
+            <td>
+              <strong>{{ row.score360.toFixed(1) }}</strong>
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
   </article>
 </template>
+
+<style scoped>
+.ranking-table__consultant {
+  display: grid;
+  gap: 2px;
+}
+
+.ranking-table__store {
+  color: rgb(var(--muted) / 0.88);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+</style>

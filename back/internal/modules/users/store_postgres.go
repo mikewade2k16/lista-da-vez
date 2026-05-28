@@ -355,6 +355,7 @@ func baseProjectedUsersQuery() string {
 		select
 			projected.id,
 			projected.display_name,
+			projected.nick,
 			projected.email,
 			projected.employee_code,
 			projected.job_title,
@@ -374,6 +375,7 @@ func baseProjectedUsersQuery() string {
 			select
 				u.id::text as id,
 				u.display_name,
+				coalesce(u.nick, '') as nick,
 				lower(u.email) as email,
 				coalesce(u.employee_code, '') as employee_code,
 				coalesce(u.job_title, '') as job_title,
@@ -464,6 +466,7 @@ func scanUser(row pgx.Row) (User, error) {
 	err := row.Scan(
 		&user.ID,
 		&user.DisplayName,
+		&user.Nick,
 		&user.Email,
 		&user.EmployeeCode,
 		&user.JobTitle,
@@ -486,6 +489,7 @@ func scanUser(row pgx.Row) (User, error) {
 
 	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
 	user.DisplayName = strings.TrimSpace(user.DisplayName)
+	user.Nick = strings.TrimSpace(user.Nick)
 	user.Role = auth.Role(strings.TrimSpace(role))
 	user.TenantID = strings.TrimSpace(user.TenantID)
 	user.StoreIDs = cloneStringSlice(storeIDs)

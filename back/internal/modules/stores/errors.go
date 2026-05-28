@@ -9,18 +9,4 @@ var (
 	ErrStoreConflict   = errors.New("stores: store conflict")
 	ErrTenantRequired  = errors.New("stores: tenant required")
 	ErrTenantForbidden = errors.New("stores: tenant forbidden")
-	ErrDeleteBlocked   = errors.New("stores: delete blocked")
 )
-
-type DeleteBlockedError struct {
-	StoreID      string
-	Dependencies []DeleteDependency
-}
-
-func (err *DeleteBlockedError) Error() string {
-	return ErrDeleteBlocked.Error()
-}
-
-func (err *DeleteBlockedError) Unwrap() error {
-	return ErrDeleteBlocked
-}

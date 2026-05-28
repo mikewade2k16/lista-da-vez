@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Husky pre-commit hook — Omni
+#
+# Roda lint-staged que despacha:
+#   - ESLint + Prettier nos arquivos .vue/.ts/.js/.mjs/.json/.md/.css/.scss do web/
+#   - gofmt + golangci-lint (em escopo de PACOTE, via wrapper) nos .go do back/
+#
+# Para pular em emergencia: git commit --no-verify  (use com parcimonia)
+#
+# --concurrent 1: golangci-lint nao permite multiplas instancias rodando ao
+# mesmo tempo (lock por module cache). Em commits grandes, lint-staged divide
+# os arquivos em chunks e roda em paralelo, o que faz instancias paralelas de
+# golangci-lint colidirem com "parallel golangci-lint is running". Forcamos
+# execucao serial para evitar essa race condition.
+npx lint-staged --concurrent 1

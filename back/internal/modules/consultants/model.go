@@ -114,6 +114,7 @@ type Repository interface {
 	StoreExists(ctx context.Context, storeID string) (bool, error)
 	ResolveStoreAccessContext(ctx context.Context, storeID string) (StoreAccessContext, error)
 	ListByStore(ctx context.Context, storeID string) ([]Consultant, error)
+	ListOrphansByTenant(ctx context.Context, tenantID string) ([]Consultant, error)
 	FindByID(ctx context.Context, consultantID string) (Consultant, error)
 	SyncLinkedIdentity(ctx context.Context, userID string, name string, initials string) error
 	SyncLinkedAccess(ctx context.Context, input LinkedAccessSyncInput) error

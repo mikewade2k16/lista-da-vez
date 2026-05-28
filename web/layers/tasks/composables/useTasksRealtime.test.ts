@@ -1,0 +1,82 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { MockWebSocket } from '../../../test/helpers/mock-websocket'
+
+const cleanupFns: Array<() => void> = []
+const authStore = {
+  isAuthenticated: true,
+  activeTenantId: 'tenant-1',
+  tenantContext: [{ id: 'tenant-1' }],
+  principal: { tenantId: 'tenant-1' },
+  accessToken: 'token-123',
+}
+
+vi.mock('vue', async () => {
+  const actual = await vi.importActual<typeof import('vue')>('vue')
+  return {
+    ...actual,
+    onMounted: (handler: () => void) => handler(),
+    onBeforeUnmount: (handler: () => void) => {
+      cleanupFns.push(handler)
+    },
+  }
+})
+
+vi.mock('~/stores/auth', () => ({
+  useAuthStore: () => authStore,
+}))
+
+describe('useTasksRealtime', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    MockWebSocket.reset()
+    cleanupFns.length = 0
+    ;(globalThis as any).WebSocket = MockWebSocket
+    authStore.isAuthenticated = true
+    authStore.activeTenantId = 'tenant-1'
+    authStore.tenantContext = [{ id: 'tenant-1' }]
+    authStore.principal = { tenantId: 'tenant-1' }
+    authStore.accessToken = 'token-123'
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    while (cleanupFns.length > 0) {
+      cleanupFns.pop()?.()
+    }
+    vi.restoreAllMocks()
+  })
+
+  it('opens a tasks socket and forwards parsed realtime events to the consumer', async () => {
+    const onEvent = vi.fn()
+    const { useTasksRealtime } = await import('./useTasksRealtime')
+
+    const realtime = useTasksRealtime({
+      enabled: true,
+      onEvent,
+    })
+
+    const socket = MockWebSocket.instances[0]
+
+    expect(socket?.url).toContain('/v1/realtime/tasks')
+    expect(socket?.url).toContain('scope=account')
+    expect(socket?.url).toContain('accountId=tenant-1')
+    expect(socket?.url).toContain('access_token=token-123')
+
+    socket?.open()
+
+    expect(realtime.status.value).toBe('connected')
+    expect(realtime.isConnected.value).toBe(true)
+
+    socket?.message({ type: 'task.updated', taskId: 'task-1', version: 4 })
+
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'task.updated', taskId: 'task-1', version: 4 }),
+    )
+    expect(realtime.lastEvent.value).toEqual(
+      expect.objectContaining({ type: 'task.updated', taskId: 'task-1', version: 4 }),
+    )
+  })
+})

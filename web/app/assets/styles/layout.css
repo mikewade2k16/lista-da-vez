@@ -14,11 +14,35 @@
 }
 
 .workspace {
-  width: min(100%, 1300px);
+  width: min(100%, 1600px);
+
   margin: 0 auto;
   padding: 16px;
 }
 
+/*
+ * page-workspace
+ * Preset padrão para páginas do dashboard.
+ * Flex-column com overflow:hidden — restaura o comportamento
+ * idêntico ao workspace-host (suporta filhos com flex:1 e
+ * overflow-y:auto, além de body scroll natural).
+ * TODAS as páginas usam este wrapper, exceto Operação.
+ */
+.page-workspace {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.page-workspace > .admin-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+/* workspace-host: mantido para a página de Operação */
 .workspace-host {
   width: 100%;
   display: flex;
@@ -52,7 +76,13 @@
 
 .queue-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  --queue-grid-left-column: 0.85fr;
+  --queue-grid-right-column: 1.15fr;
+  --queue-grid-left-column: 1fr;
+  --queue-grid-right-column: 1fr;
+  grid-template-columns:
+    minmax(0, var(--queue-grid-left-column))
+    minmax(0, var(--queue-grid-right-column));
   gap: 12px;
   min-height: 0;
   align-items: stretch;

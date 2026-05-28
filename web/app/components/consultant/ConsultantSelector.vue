@@ -2,15 +2,15 @@
 defineProps({
   roster: {
     type: Array,
-    default: () => []
+    default: () => [],
   },
   selectedConsultantId: {
     type: String,
-    default: ""
-  }
-});
+    default: '',
+  },
+})
 
-const emit = defineEmits(["select"]);
+const emit = defineEmits(['select'])
 </script>
 
 <template>

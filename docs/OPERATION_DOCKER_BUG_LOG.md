@@ -110,7 +110,7 @@ Arquivos:
 - `back/internal/modules/operations/service.go`
 - `web/app/stores/operations.ts`
 - `back/internal/modules/operations/AGENT.md`
-- `web/app/pages/operacao/operations.md`
+- `docs/operacao/operations.md`
 
 ### 6. `IPC connection closed` recorrente no dev do Nuxt
 

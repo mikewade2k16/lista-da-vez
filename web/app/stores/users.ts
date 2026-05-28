@@ -1,54 +1,63 @@
-import { computed, ref, watch } from "vue";
-import { defineStore } from "pinia";
+import { computed, ref, watch } from 'vue'
+import { defineStore } from 'pinia'
 
-import { canManageUserPasswords, canManageUsers } from "~/domain/utils/permissions";
-import { useAuthStore } from "~/stores/auth";
-import { createApiRequest, getApiBase, getApiErrorMessage } from "~/utils/api-client";
+import {
+  canManageUserPasswords,
+  canManageUsers,
+  getAllowedWorkspaces,
+} from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+
+type LooseRecord = Record<string, any>
+type RefreshUsersOptions = {
+  silent?: boolean
+}
 
 function normalizeText(value) {
-  return String(value || "").trim();
+  return String(value || '').trim()
 }
 
 function normalizeEmail(value) {
-  return normalizeText(value).toLowerCase();
+  return normalizeText(value).toLowerCase()
 }
 
 function normalizeStoreIds(storeIds = []) {
-  const seen = new Set();
+  const seen = new Set()
   return (Array.isArray(storeIds) ? storeIds : [])
     .map((storeId) => normalizeText(storeId))
     .filter((storeId) => {
       if (!storeId || seen.has(storeId)) {
-        return false;
+        return false
       }
 
-      seen.add(storeId);
-      return true;
-    });
+      seen.add(storeId)
+      return true
+    })
 }
 
 function normalizeBoolean(value, fallback = true) {
   if (value === undefined || value === null) {
-    return fallback;
+    return fallback
   }
 
-  return Boolean(value);
+  return Boolean(value)
 }
 
-function normalizeInvitation(invitation) {
-  if (!invitation || typeof invitation !== "object") {
-    return null;
+function normalizeInvitation(invitation: LooseRecord | null) {
+  if (!invitation || typeof invitation !== 'object') {
+    return null
   }
 
   return {
     inviteUrl: normalizeText(invitation.inviteUrl),
-    invitation: invitation.invitation || null
-  };
+    invitation: invitation.invitation || null,
+  }
 }
 
-function normalizeUser(user) {
-  if (!user || typeof user !== "object") {
-    return null;
+function normalizeUser(user: LooseRecord | null): LooseRecord | null {
+  if (!user || typeof user !== 'object') {
+    return null
   }
 
   return {
@@ -63,148 +72,195 @@ function normalizeUser(user) {
     managedResourceId: normalizeText(user.managedResourceId),
     active: normalizeBoolean(user.active, true),
     onboarding: user.onboarding || {
-      status: "needs_invite",
+      status: 'needs_invite',
       hasPassword: false,
       mustChangePassword: false,
-      invitationExpiresAt: null
-    }
-  };
+      invitationExpiresAt: null,
+    },
+  }
 }
 
 function isStoreScopedRole(role) {
-  return role === "consultant" || role === "manager" || role === "store_terminal";
+  return role === 'consultant' || role === 'manager' || role === 'store_terminal'
 }
 
 function isConsultantManagedUser(user) {
-  return normalizeText(user?.managedBy) === "consultants" || normalizeText(user?.role) === "consultant";
+  return (
+    normalizeText(user?.managedBy) === 'consultants' || normalizeText(user?.role) === 'consultant'
+  )
 }
 
 function canOverrideConsultantManaged(role) {
-  return normalizeText(role) === "platform_admin";
+  return normalizeText(role) === 'platform_admin'
 }
 
-export const useUsersStore = defineStore("users", () => {
-  const runtimeConfig = useRuntimeConfig();
-  const auth = useAuthStore();
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
+export const useUsersStore = defineStore('users', () => {
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
-  const users = ref([]);
-  const roleCatalog = ref([]);
-  const pending = ref(false);
-  const ready = ref(false);
-  const errorMessage = ref("");
+  const users = ref<LooseRecord[]>([])
+  const roleCatalog = ref<LooseRecord[]>([])
+  const pending = ref(false)
+  const ready = ref(false)
+  const errorMessage = ref('')
 
-  const manageable = computed(() => canManageUsers(auth.role));
-  const activeTenantId = computed(() => normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id));
+  const manageable = computed(() =>
+    canManageUsers(auth.role, auth.permissionKeys, auth.permissionsResolved),
+  )
+  const activeTenantId = computed(() =>
+    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id),
+  )
   const availableStores = computed(() =>
-    (auth.storeContext || []).filter((store) => !activeTenantId.value || store.tenantId === activeTenantId.value)
-  );
+    (auth.storeContext || []).filter(
+      (store) => !activeTenantId.value || store.tenantId === activeTenantId.value,
+    ),
+  )
   const assignableRoles = computed(() =>
-    roleCatalog.value.filter((role) => auth.role === "platform_admin" || role.id !== "platform_admin")
-  );
+    roleCatalog.value.filter(
+      (role) => auth.role === 'platform_admin' || role.id !== 'platform_admin',
+    ),
+  )
+
+  function userHasWorkspaceAccess(user: LooseRecord | null | undefined, workspaceId: unknown) {
+    const normalizedWorkspaceId = normalizeText(workspaceId)
+    if (!normalizedWorkspaceId) {
+      return false
+    }
+
+    return getAllowedWorkspaces(normalizeText(user?.role)).includes(normalizedWorkspaceId)
+  }
+
+  function listUsersForWorkspace(workspaceId: unknown) {
+    return users.value.filter((user) => userHasWorkspaceAccess(user, workspaceId))
+  }
+
+  function upsertLocalUser(user) {
+    const normalizedUser = normalizeUser(user)
+    if (!normalizedUser) {
+      return null
+    }
+
+    const existingIndex = users.value.findIndex(
+      (currentUser) => normalizeText(currentUser?.id) === normalizeText(normalizedUser.id),
+    )
+
+    if (existingIndex >= 0) {
+      users.value.splice(existingIndex, 1, normalizedUser)
+    } else {
+      users.value = [...users.value, normalizedUser]
+    }
+
+    ready.value = true
+    return normalizedUser
+  }
 
   async function ensureRoleCatalog() {
     if (roleCatalog.value.length) {
-      return roleCatalog.value;
+      return roleCatalog.value
     }
 
-    const response = await $fetch("/v1/auth/roles", {
-      method: "GET",
-      baseURL: getApiBase(runtimeConfig)
-    });
-    roleCatalog.value = Array.isArray(response?.roles) ? response.roles : [];
-    return roleCatalog.value;
+    const response = (await apiRequest('/v1/auth/roles')) as LooseRecord
+    roleCatalog.value = Array.isArray(response?.roles) ? response.roles : []
+    return roleCatalog.value
   }
 
   function clearState() {
-    users.value = [];
-    ready.value = false;
-    errorMessage.value = "";
+    users.value = []
+    ready.value = false
+    errorMessage.value = ''
   }
 
   function buildListQuery() {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams()
 
-    if (activeTenantId.value && auth.role !== "platform_admin") {
-      params.set("tenantId", activeTenantId.value);
+    if (activeTenantId.value && auth.role !== 'platform_admin') {
+      params.set('tenantId', activeTenantId.value)
     }
-    return params.toString();
+    return params.toString()
   }
 
-  async function refreshUsers() {
-    await auth.ensureSession();
-    await ensureRoleCatalog();
+  async function refreshUsers(options: RefreshUsersOptions = {}) {
+    await auth.ensureSession()
+    await ensureRoleCatalog()
+
+    const silent = Boolean(options?.silent)
 
     if (!auth.isAuthenticated || !manageable.value) {
-      clearState();
-      return [];
+      clearState()
+      return []
     }
 
-    pending.value = true;
-    errorMessage.value = "";
+    if (!silent) {
+      pending.value = true
+    }
+    errorMessage.value = ''
 
     try {
-      const response = await apiRequest(`/v1/users?${buildListQuery()}`);
-      users.value = Array.isArray(response?.users) ? response.users.map((user) => normalizeUser(user)).filter(Boolean) : [];
-      ready.value = true;
-      return users.value;
+      const response = await apiRequest(`/v1/users?${buildListQuery()}`)
+      users.value = Array.isArray(response?.users)
+        ? response.users.map((user) => normalizeUser(user)).filter(Boolean)
+        : []
+      ready.value = true
+      return users.value
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar os usuarios.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar os usuarios.')
+      throw error
     } finally {
-      pending.value = false;
+      if (!silent) {
+        pending.value = false
+      }
     }
   }
 
   async function ensureLoaded() {
-    await ensureRoleCatalog();
+    await ensureRoleCatalog()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      clearState();
-      return false;
+      clearState()
+      return false
     }
 
     if (ready.value) {
-      return true;
+      return true
     }
 
     try {
-      await refreshUsers();
-      return true;
+      await refreshUsers()
+      return true
     } catch {
-      return false;
+      return false
     }
   }
 
-  async function createUser(payload = {}) {
-    await ensureRoleCatalog();
-    await auth.ensureSession();
+  async function createUser(payload: LooseRecord = {}) {
+    await ensureRoleCatalog()
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para gerenciar usuarios." };
+      return { ok: false, message: 'Sem permissao para gerenciar usuarios.' }
     }
 
-    const role = normalizeText(payload.role || "store_terminal");
-    const password = normalizeText(payload.password);
-    const employeeCode = normalizeText(payload.employeeCode);
-    if (role === "consultant") {
-      return { ok: false, message: "Consultores devem ser criados na gestao de consultores." };
+    const role = normalizeText(payload.role || 'store_terminal')
+    const password = normalizeText(payload.password)
+    const employeeCode = normalizeText(payload.employeeCode)
+    if (role === 'consultant') {
+      return { ok: false, message: 'Consultores devem ser criados na gestao de consultores.' }
     }
-    if (password && !canManageUserPasswords(auth.role)) {
-      return { ok: false, message: "Somente o admin da plataforma pode definir senha manualmente." };
+    if (
+      password &&
+      !canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved)
+    ) {
+      return { ok: false, message: 'Somente o admin da plataforma pode definir senha manualmente.' }
     }
 
     const tenantId =
-      role === "platform_admin"
-        ? ""
-        : normalizeText(payload.tenantId || activeTenantId.value);
-    const storeIds = isStoreScopedRole(role)
-      ? normalizeStoreIds(payload.storeIds).slice(0, 1)
-      : [];
+      role === 'platform_admin' ? '' : normalizeText(payload.tenantId || activeTenantId.value)
+    const storeIds = isStoreScopedRole(role) ? normalizeStoreIds(payload.storeIds).slice(0, 1) : []
 
     try {
-      const response = await apiRequest("/v1/users", {
-        method: "POST",
+      const response = await apiRequest('/v1/users', {
+        method: 'POST',
         body: {
           displayName: normalizeText(payload.displayName),
           email: normalizeEmail(payload.email),
@@ -213,225 +269,276 @@ export const useUsersStore = defineStore("users", () => {
           role,
           tenantId,
           storeIds,
-          active: normalizeBoolean(payload.active, true)
-        }
-      });
+          active: normalizeBoolean(payload.active, true),
+        },
+      })
 
-      await refreshUsers();
+      upsertLocalUser(response?.user)
       return {
         ok: true,
         user: response.user,
-        invitation: normalizeInvitation(response.invitation ? {
-          invitation: response.invitation.invitation,
-          inviteUrl: response.invitation.inviteUrl
-        } : response.invitation)
-      };
+        invitation: normalizeInvitation(
+          response.invitation
+            ? {
+                invitation: response.invitation.invitation,
+                inviteUrl: response.invitation.inviteUrl,
+              }
+            : response.invitation,
+        ),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel criar usuario.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel criar usuario.'),
+      }
     }
   }
 
   async function inviteUser(userId) {
-    await auth.ensureSession();
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para gerenciar usuarios." };
+      return { ok: false, message: 'Sem permissao para gerenciar usuarios.' }
     }
 
-    const currentUser = users.value.find((user) => user.id === userId);
-    if (currentUser && isConsultantManagedUser(currentUser) && !canOverrideConsultantManaged(auth.role)) {
-      return { ok: false, message: "Esse acesso de consultor usa senha inicial e deve ser gerenciado na aba Consultores." };
+    const currentUser = users.value.find((user) => user.id === userId)
+    if (
+      currentUser &&
+      isConsultantManagedUser(currentUser) &&
+      !canOverrideConsultantManaged(auth.role)
+    ) {
+      return {
+        ok: false,
+        message:
+          'Esse acesso de consultor usa senha inicial e deve ser gerenciado na aba Consultores.',
+      }
     }
 
     try {
-      const response = await apiRequest(`/v1/users/${encodeURIComponent(String(userId || "").trim())}/invite`, {
-        method: "POST"
-      });
+      const response = await apiRequest(
+        `/v1/users/${encodeURIComponent(String(userId || '').trim())}/invite`,
+        {
+          method: 'POST',
+        },
+      )
 
-      await refreshUsers();
+      upsertLocalUser(response?.user)
       return {
         ok: true,
         user: response.user,
-        invitation: normalizeInvitation(response.invitation ? {
-          invitation: response.invitation.invitation,
-          inviteUrl: response.invitation.inviteUrl
-        } : response.invitation)
-      };
+        invitation: normalizeInvitation(
+          response.invitation
+            ? {
+                invitation: response.invitation.invitation,
+                inviteUrl: response.invitation.inviteUrl,
+              }
+            : response.invitation,
+        ),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel gerar o convite.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel gerar o convite.'),
+      }
     }
   }
 
-  async function updateUser(userId, payload = {}) {
-    await ensureRoleCatalog();
-    await auth.ensureSession();
+  async function updateUser(userId, payload: LooseRecord = {}) {
+    await ensureRoleCatalog()
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para gerenciar usuarios." };
+      return { ok: false, message: 'Sem permissao para gerenciar usuarios.' }
     }
 
-    const currentUser = users.value.find((user) => user.id === userId);
+    const currentUser = users.value.find((user) => user.id === userId)
     if (!currentUser) {
-      return { ok: false, message: "Usuario nao encontrado." };
+      return { ok: false, message: 'Usuario nao encontrado.' }
     }
     if (isConsultantManagedUser(currentUser) && !canOverrideConsultantManaged(auth.role)) {
-      return { ok: false, message: "Esse acesso de consultor deve ser gerenciado na aba Consultores." };
+      return {
+        ok: false,
+        message: 'Esse acesso de consultor deve ser gerenciado na aba Consultores.',
+      }
     }
 
-    const role = normalizeText(payload.role || currentUser.role);
-    const body = {};
-    const nextDisplayName = normalizeText(payload.displayName ?? currentUser.displayName);
-    const nextEmail = normalizeEmail(payload.email ?? currentUser.email);
-    const nextEmployeeCode = normalizeText(payload.employeeCode ?? currentUser.employeeCode);
-    const nextPassword = normalizeText(payload.password);
-    const nextTenantId = role === "platform_admin"
-      ? ""
-      : normalizeText(payload.tenantId ?? currentUser.tenantId ?? activeTenantId.value);
+    const role = normalizeText(payload.role || currentUser.role)
+    const body: LooseRecord = {}
+    const nextDisplayName = normalizeText(payload.displayName ?? currentUser.displayName)
+    const nextEmail = normalizeEmail(payload.email ?? currentUser.email)
+    const nextEmployeeCode = normalizeText(payload.employeeCode ?? currentUser.employeeCode)
+    const nextPassword = normalizeText(payload.password)
+    const nextTenantId =
+      role === 'platform_admin'
+        ? ''
+        : normalizeText(payload.tenantId ?? currentUser.tenantId ?? activeTenantId.value)
     const nextStoreIds = isStoreScopedRole(role)
       ? normalizeStoreIds(payload.storeIds ?? currentUser.storeIds).slice(0, 1)
-      : [];
-    const nextActive = normalizeBoolean(payload.active, currentUser.active);
+      : []
+    const nextActive = normalizeBoolean(payload.active, currentUser.active)
 
     if (nextDisplayName !== normalizeText(currentUser.displayName)) {
-      body.displayName = nextDisplayName;
+      body.displayName = nextDisplayName
     }
 
     if (nextEmail !== normalizeEmail(currentUser.email)) {
-      body.email = nextEmail;
+      body.email = nextEmail
     }
 
     if (nextEmployeeCode !== normalizeText(currentUser.employeeCode)) {
-	  body.employeeCode = nextEmployeeCode;
-	}
+      body.employeeCode = nextEmployeeCode
+    }
 
     if (role !== normalizeText(currentUser.role)) {
-      body.role = role;
+      body.role = role
     }
 
     if (nextTenantId !== normalizeText(currentUser.tenantId)) {
-      body.tenantId = nextTenantId;
+      body.tenantId = nextTenantId
     }
 
     if (JSON.stringify(nextStoreIds) !== JSON.stringify(normalizeStoreIds(currentUser.storeIds))) {
-      body.storeIds = nextStoreIds;
+      body.storeIds = nextStoreIds
     }
 
     if (nextActive !== Boolean(currentUser.active)) {
-      body.active = nextActive;
+      body.active = nextActive
     }
 
     if (nextPassword) {
-      if (!canManageUserPasswords(auth.role)) {
-        return { ok: false, message: "Somente o admin da plataforma pode alterar senhas pelo painel." };
+      if (!canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved)) {
+        return {
+          ok: false,
+          message: 'Somente o admin da plataforma pode alterar senhas pelo painel.',
+        }
       }
-      body.password = nextPassword;
+      body.password = nextPassword
     }
 
     if (!Object.keys(body).length) {
-      return { ok: true, noChange: true };
+      return { ok: true, noChange: true }
     }
 
     try {
-      const response = await apiRequest(`/v1/users/${encodeURIComponent(String(userId || "").trim())}`, {
-        method: "PATCH",
-        body
-      });
+      const response = await apiRequest(
+        `/v1/users/${encodeURIComponent(String(userId || '').trim())}`,
+        {
+          method: 'PATCH',
+          body,
+        },
+      )
 
-      await refreshUsers();
+      upsertLocalUser(response?.user)
       return {
         ok: true,
-        user: response.user
-      };
+        user: response.user,
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel atualizar usuario.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel atualizar usuario.'),
+      }
     }
   }
 
   async function archiveUser(userId) {
-    await auth.ensureSession();
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para gerenciar usuarios." };
+      return { ok: false, message: 'Sem permissao para gerenciar usuarios.' }
     }
 
-    const currentUser = users.value.find((user) => user.id === userId);
-    if (currentUser && isConsultantManagedUser(currentUser) && !canOverrideConsultantManaged(auth.role)) {
-      return { ok: false, message: "Esse acesso de consultor deve ser inativado pela gestao de consultores." };
+    const currentUser = users.value.find((user) => user.id === userId)
+    if (
+      currentUser &&
+      isConsultantManagedUser(currentUser) &&
+      !canOverrideConsultantManaged(auth.role)
+    ) {
+      return {
+        ok: false,
+        message: 'Esse acesso de consultor deve ser inativado pela gestao de consultores.',
+      }
     }
 
     try {
-      const response = await apiRequest(`/v1/users/${encodeURIComponent(String(userId || "").trim())}/archive`, {
-        method: "POST"
-      });
+      const response = await apiRequest(
+        `/v1/users/${encodeURIComponent(String(userId || '').trim())}/archive`,
+        {
+          method: 'POST',
+        },
+      )
 
-      await refreshUsers();
+      upsertLocalUser(response?.user)
       return {
         ok: true,
-        user: response.user
-      };
+        user: response.user,
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel inativar usuario.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel inativar usuario.'),
+      }
     }
   }
 
   async function resetPassword(userId, password) {
-    await auth.ensureSession();
+    await auth.ensureSession()
 
     if (!auth.isAuthenticated || !manageable.value) {
-      return { ok: false, message: "Sem permissao para gerenciar usuarios." };
+      return { ok: false, message: 'Sem permissao para gerenciar usuarios.' }
     }
-    if (!canManageUserPasswords(auth.role)) {
-      return { ok: false, message: "Somente o admin da plataforma pode resetar senhas pelo painel." };
+    if (!canManageUserPasswords(auth.role, auth.permissionKeys, auth.permissionsResolved)) {
+      return {
+        ok: false,
+        message: 'Somente o admin da plataforma pode resetar senhas pelo painel.',
+      }
     }
 
     try {
-      const response = await apiRequest(`/v1/users/${encodeURIComponent(String(userId || "").trim())}/reset-password`, {
-        method: "POST",
-        body: {
-          password: normalizeText(password)
-        }
-      });
+      const response = await apiRequest(
+        `/v1/users/${encodeURIComponent(String(userId || '').trim())}/reset-password`,
+        {
+          method: 'POST',
+          body: {
+            password: normalizeText(password),
+          },
+        },
+      )
 
-      await refreshUsers();
+      upsertLocalUser(response?.user)
       return {
         ok: true,
         user: response.user,
-        temporaryPassword: normalizeText(response.temporaryPassword)
-      };
+        temporaryPassword: normalizeText(response.temporaryPassword),
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel redefinir a senha.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel redefinir a senha.'),
+      }
     }
   }
 
   if (import.meta.client) {
     watch(
       () => [auth.isAuthenticated, auth.activeTenantId, auth.role],
-      ([isAuthenticated, tenantId, role], [previousAuthenticated, previousTenantId, previousRole]) => {
-        if (!isAuthenticated || !canManageUsers(role)) {
-          clearState();
-          return;
+      (
+        [isAuthenticated, tenantId, role],
+        [previousAuthenticated, previousTenantId, previousRole],
+      ) => {
+        if (
+          !isAuthenticated ||
+          !canManageUsers(role, auth.permissionKeys, auth.permissionsResolved)
+        ) {
+          clearState()
+          return
         }
 
         if (!previousAuthenticated || previousTenantId !== tenantId || previousRole !== role) {
-          void refreshUsers().catch(() => {});
+          void refreshUsers().catch(() => {})
         }
-      }
-    );
+      },
+    )
   }
 
   return {
@@ -445,10 +552,12 @@ export const useUsersStore = defineStore("users", () => {
     manageable,
     ensureLoaded,
     refreshUsers,
+    listUsersForWorkspace,
     createUser,
     inviteUser,
     updateUser,
     archiveUser,
-    resetPassword
-  };
-});
+    resetPassword,
+    userHasWorkspaceAccess,
+  }
+})

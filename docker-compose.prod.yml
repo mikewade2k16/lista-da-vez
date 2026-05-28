@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:-listaatendimento}
+name: ${COMPOSE_PROJECT_NAME:-omni}
 
 services:
   postgres:
@@ -24,15 +24,16 @@ services:
       - app
 
   api:
-    image: ${COMPOSE_PROJECT_NAME:-listaatendimento}-api:latest
+    image: ${COMPOSE_PROJECT_NAME:-omni}-api:latest
     build:
       context: ./back
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      APP_NAME: ${APP_NAME:-lista-da-vez-api}
+      APP_NAME: ${APP_NAME:-omni-api}
       APP_ENV: production
       APP_ADDR: :8080
+      CORE_V2_ENABLED: ${CORE_V2_ENABLED:-false}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
@@ -48,13 +49,44 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Lista da Vez}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Omni}
       SMTP_TLS_MODE: ${SMTP_TLS_MODE:-starttls}
       SMTP_INSECURE_SKIP_VERIFY: ${SMTP_INSECURE_SKIP_VERIFY:-false}
       SMTP_TIMEOUT: ${SMTP_TIMEOUT:-10s}
       AUTH_BCRYPT_COST: ${AUTH_BCRYPT_COST:-10}
       AUTH_CONSULTANT_EMAIL_DOMAIN: ${AUTH_CONSULTANT_EMAIL_DOMAIN}
       AUTH_CONSULTANT_DEFAULT_PASSWORD: ${AUTH_CONSULTANT_DEFAULT_PASSWORD}
+      ERP_SOURCE_KIND: ${ERP_SOURCE_KIND:-local}
+      ERP_SOURCE_RECURSIVE: ${ERP_SOURCE_RECURSIVE:-false}
+      ERP_SOURCE_DIR: ${ERP_SOURCE_DIR:-/app/data/erp/source}
+      ERP_STORAGE_DIR: ${ERP_STORAGE_DIR:-/app/data/erp/storage}
+      ERP_BOOTSTRAP_ITEM_FILE: ${ERP_BOOTSTRAP_ITEM_FILE:-consolidados/184/item_184_consolidado.md}
+      ERP_BOOTSTRAP_CUSTOMER_FILE: ${ERP_BOOTSTRAP_CUSTOMER_FILE:-consolidados/184/customer_184_consolidado.md}
+      ERP_BOOTSTRAP_EMPLOYEE_FILE: ${ERP_BOOTSTRAP_EMPLOYEE_FILE:-consolidados/184/employee_184_consolidado.md}
+      ERP_BOOTSTRAP_ORDER_FILE: ${ERP_BOOTSTRAP_ORDER_FILE:-consolidados/184/order_184_consolidado.md}
+      ERP_BOOTSTRAP_ORDER_CANCELED_FILE: ${ERP_BOOTSTRAP_ORDER_CANCELED_FILE:-consolidados/184/ordercanceled_184_consolidado.md}
+      ERP_BOOTSTRAP_TENANT_ID: ${ERP_BOOTSTRAP_TENANT_ID:-}
+      ERP_BOOTSTRAP_TENANT_SLUG: ${ERP_BOOTSTRAP_TENANT_SLUG:-}
+      ERP_BOOTSTRAP_STORE_CODE: ${ERP_BOOTSTRAP_STORE_CODE:-184}
+      ERP_BOOTSTRAP_STORE_NAME: ${ERP_BOOTSTRAP_STORE_NAME:-Loja 184}
+      ERP_BOOTSTRAP_STORE_CITY: ${ERP_BOOTSTRAP_STORE_CITY:-}
+      ERP_FTP_HOST: ${ERP_FTP_HOST:-}
+      ERP_FTP_PORT: ${ERP_FTP_PORT:-0}
+      ERP_FTP_USER: ${ERP_FTP_USER:-}
+      ERP_FTP_PASSWORD: ${ERP_FTP_PASSWORD:-}
+      ERP_FTP_KEY_PATH: ${ERP_FTP_KEY_PATH:-}
+      ERP_FTP_REMOTE_DIR: ${ERP_FTP_REMOTE_DIR:-}
+      ERP_FTP_HOST_KEY: ${ERP_FTP_HOST_KEY:-}
+      ERP_ROOT_STORE_CODE: ${ERP_ROOT_STORE_CODE:-184}
+      ERP_ALLOW_MANUAL_SYNC: ${ERP_ALLOW_MANUAL_SYNC:-false}
+      ERP_SYNC_INTERVAL: ${ERP_SYNC_INTERVAL:-24h}
+      ERP_SYNC_HOUR_UTC: ${ERP_SYNC_HOUR_UTC:-4}
+      ERP_SYNC_AUTOMATIC_ENABLED: ${ERP_SYNC_AUTOMATIC_ENABLED:-false}
+      ERP_SYNC_DRY_RUN_DEFAULT: ${ERP_SYNC_DRY_RUN_DEFAULT:-false}
+      ERP_CSV_MAX_BYTES: ${ERP_CSV_MAX_BYTES:-134217728}
+      ERP_MANUAL_SYNC_MAX_FILES: ${ERP_MANUAL_SYNC_MAX_FILES:-100}
+      ERP_BACKFILL_MAX_FILES: ${ERP_BACKFILL_MAX_FILES:-1000}
+      ERP_MANUAL_SYNC_MIN_INTERVAL: ${ERP_MANUAL_SYNC_MIN_INTERVAL:-5m}
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,6 +94,8 @@ services:
       - "127.0.0.1:${API_PORT:-18080}:8080"
     volumes:
       - api_uploads:/app/data/uploads
+      - ${ERP_SOURCE_HOST_DIR:-./erp-source}:/app/data/erp/source:ro
+      - api_erp_storage:/app/data/erp/storage
     healthcheck:
       test:
         [
@@ -79,7 +113,7 @@ services:
           - ${PROXY_API_ALIAS:-lista-api}
 
   web:
-    image: ${COMPOSE_PROJECT_NAME:-listaatendimento}-web:latest
+    image: ${COMPOSE_PROJECT_NAME:-omni}-web:latest
     build:
       context: ./web
       dockerfile: Dockerfile
@@ -105,6 +139,7 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  api_erp_storage:
 
 networks:
   app:

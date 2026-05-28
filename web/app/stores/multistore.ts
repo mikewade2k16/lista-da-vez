@@ -1,19 +1,21 @@
-import { computed, ref, watch } from "vue";
-import { defineStore, storeToRefs } from "pinia";
+import { computed, ref, watch } from 'vue'
+import { defineStore, storeToRefs } from 'pinia'
 
-import { useAuthStore } from "~/stores/auth";
-import { useAppRuntimeStore } from "~/stores/app-runtime";
-import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
+import { useAuthStore } from '~/stores/auth'
+import { useAppRuntimeStore } from '~/stores/app-runtime'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+
+type LooseRecord = Record<string, unknown>
 
 function normalizeText(value) {
-  return String(value || "").trim();
+  return String(value || '').trim()
 }
 
 function normalizeCode(value) {
-  return normalizeText(value).toUpperCase();
+  return normalizeText(value).toUpperCase()
 }
 
-function normalizeStore(store = {}) {
+function normalizeStore(store: LooseRecord = {}) {
   return {
     id: normalizeText(store.id),
     tenantId: normalizeText(store.tenantId),
@@ -26,391 +28,432 @@ function normalizeStore(store = {}) {
     weeklyGoal: Math.max(0, Number(store.weeklyGoal || 0) || 0),
     avgTicketGoal: Math.max(0, Number(store.avgTicketGoal || 0) || 0),
     conversionGoal: Math.max(0, Number(store.conversionGoal || 0) || 0),
-    paGoal: Math.max(0, Number(store.paGoal || 0) || 0)
-  };
+    paGoal: Math.max(0, Number(store.paGoal || 0) || 0),
+  }
 }
 
 function normalizeNullableNumber(value) {
-  const normalized = String(value ?? "").trim();
+  const normalized = String(value ?? '').trim()
   if (!normalized) {
-    return null;
+    return null
   }
 
-  const parsed = Number(normalized);
+  const parsed = Number(normalized)
   if (!Number.isFinite(parsed)) {
-    return null;
+    return null
   }
 
-  return Math.max(0, parsed);
+  return Math.max(0, parsed)
 }
 
 function assignIfChanged(body, key, nextValue, currentValue, normalize = (value) => value) {
-  const next = normalize(nextValue);
-  const current = normalize(currentValue);
+  const next = normalize(nextValue)
+  const current = normalize(currentValue)
 
   if (next !== current) {
-    body[key] = next;
+    body[key] = next
   }
 }
 
-function buildCreatePayload(payload = {}, tenantId) {
-  const body = {
+function buildCreatePayload(payload: LooseRecord = {}, tenantId) {
+  const body: LooseRecord = {
     tenantId: normalizeText(tenantId),
     name: normalizeText(payload.name),
-    code: normalizeCode(payload.code)
-  };
+    code: normalizeCode(payload.code),
+  }
 
-  const city = normalizeText(payload.city);
-  const defaultTemplateId = normalizeText(payload.defaultTemplateId);
-  const monthlyGoal = normalizeNullableNumber(payload.monthlyGoal);
-  const weeklyGoal = normalizeNullableNumber(payload.weeklyGoal);
-  const avgTicketGoal = normalizeNullableNumber(payload.avgTicketGoal);
-  const conversionGoal = normalizeNullableNumber(payload.conversionGoal);
-  const paGoal = normalizeNullableNumber(payload.paGoal);
+  const city = normalizeText(payload.city)
+  const defaultTemplateId = normalizeText(payload.defaultTemplateId)
+  const monthlyGoal = normalizeNullableNumber(payload.monthlyGoal)
+  const weeklyGoal = normalizeNullableNumber(payload.weeklyGoal)
+  const avgTicketGoal = normalizeNullableNumber(payload.avgTicketGoal)
+  const conversionGoal = normalizeNullableNumber(payload.conversionGoal)
+  const paGoal = normalizeNullableNumber(payload.paGoal)
 
   if (city) {
-    body.city = city;
+    body.city = city
   }
 
   if (defaultTemplateId) {
-    body.defaultTemplateId = defaultTemplateId;
+    body.defaultTemplateId = defaultTemplateId
   }
 
   if (monthlyGoal !== null) {
-    body.monthlyGoal = monthlyGoal;
+    body.monthlyGoal = monthlyGoal
   }
 
   if (weeklyGoal !== null) {
-    body.weeklyGoal = weeklyGoal;
+    body.weeklyGoal = weeklyGoal
   }
 
   if (avgTicketGoal !== null) {
-    body.avgTicketGoal = avgTicketGoal;
+    body.avgTicketGoal = avgTicketGoal
   }
 
   if (conversionGoal !== null) {
-    body.conversionGoal = conversionGoal;
+    body.conversionGoal = conversionGoal
   }
 
   if (paGoal !== null) {
-    body.paGoal = paGoal;
+    body.paGoal = paGoal
   }
 
-  return body;
+  return body
 }
 
-function buildUpdatePayload(payload = {}, currentStore = {}) {
-  const body = {};
+function buildUpdatePayload(payload: LooseRecord = {}, currentStore: LooseRecord = {}) {
+  const body: LooseRecord = {}
 
-  assignIfChanged(body, "name", payload.name, currentStore.name, normalizeText);
-  assignIfChanged(body, "code", payload.code, currentStore.code, normalizeCode);
-  assignIfChanged(body, "city", payload.city, currentStore.city, normalizeText);
+  assignIfChanged(body, 'name', payload.name, currentStore.name, normalizeText)
+  assignIfChanged(body, 'code', payload.code, currentStore.code, normalizeCode)
+  assignIfChanged(body, 'city', payload.city, currentStore.city, normalizeText)
   assignIfChanged(
     body,
-    "defaultTemplateId",
+    'defaultTemplateId',
     payload.defaultTemplateId,
     currentStore.defaultTemplateId,
-    normalizeText
-  );
-  assignIfChanged(body, "monthlyGoal", payload.monthlyGoal, currentStore.monthlyGoal, normalizeNullableNumber);
-  assignIfChanged(body, "weeklyGoal", payload.weeklyGoal, currentStore.weeklyGoal, normalizeNullableNumber);
-  assignIfChanged(body, "avgTicketGoal", payload.avgTicketGoal, currentStore.avgTicketGoal, normalizeNullableNumber);
-  assignIfChanged(body, "conversionGoal", payload.conversionGoal, currentStore.conversionGoal, normalizeNullableNumber);
-  assignIfChanged(body, "paGoal", payload.paGoal, currentStore.paGoal, normalizeNullableNumber);
+    normalizeText,
+  )
+  assignIfChanged(
+    body,
+    'monthlyGoal',
+    payload.monthlyGoal,
+    currentStore.monthlyGoal,
+    normalizeNullableNumber,
+  )
+  assignIfChanged(
+    body,
+    'weeklyGoal',
+    payload.weeklyGoal,
+    currentStore.weeklyGoal,
+    normalizeNullableNumber,
+  )
+  assignIfChanged(
+    body,
+    'avgTicketGoal',
+    payload.avgTicketGoal,
+    currentStore.avgTicketGoal,
+    normalizeNullableNumber,
+  )
+  assignIfChanged(
+    body,
+    'conversionGoal',
+    payload.conversionGoal,
+    currentStore.conversionGoal,
+    normalizeNullableNumber,
+  )
+  assignIfChanged(body, 'paGoal', payload.paGoal, currentStore.paGoal, normalizeNullableNumber)
 
-  return body;
+  return body
 }
 
-function buildConsultantClonePayload(consultant = {}, storeId) {
+function buildConsultantClonePayload(consultant: LooseRecord = {}, storeId) {
   return {
     storeId,
     name: normalizeText(consultant.name),
-    role: normalizeText(consultant.role) || "Atendimento",
-    color: normalizeText(consultant.color) || "#168aad",
+    role: normalizeText(consultant.role) || 'Atendimento',
+    color: normalizeText(consultant.color) || '#168aad',
     monthlyGoal: Math.max(0, Number(consultant.monthlyGoal || 0) || 0),
     commissionRate: Math.max(0, Number(consultant.commissionRate || 0) || 0),
     conversionGoal: Math.max(0, Number(consultant.conversionGoal || 0) || 0),
     avgTicketGoal: Math.max(0, Number(consultant.avgTicketGoal || 0) || 0),
-    paGoal: Math.max(0, Number(consultant.paGoal || 0) || 0)
-  };
+    paGoal: Math.max(0, Number(consultant.paGoal || 0) || 0),
+  }
 }
 
-export const useMultiStoreStore = defineStore("multistore", () => {
-  const runtimeConfig = useRuntimeConfig();
-  const runtime = useAppRuntimeStore();
-  const auth = useAuthStore();
-  const { state: runtimeState } = storeToRefs(runtime);
-  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken);
-  const overview = ref(null);
-  const managedStores = ref([]);
-  const pending = ref(false);
-  const managedStoresPending = ref(false);
-  const ready = ref(false);
-  const errorMessage = ref("");
+export const useMultiStoreStore = defineStore('multistore', () => {
+  const runtimeConfig = useRuntimeConfig()
+  const runtime = useAppRuntimeStore()
+  const auth = useAuthStore()
+  const { state: runtimeState } = storeToRefs(runtime)
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+  const overview = ref(null)
+  const managedStores = ref([])
+  const pending = ref(false)
+  const managedStoresPending = ref(false)
+  const ready = ref(false)
+  const errorMessage = ref('')
 
   const state = computed(() => ({
     ...runtimeState.value,
     stores: auth.storeContext?.length ? auth.storeContext : runtimeState.value.stores || [],
-    managedStores: managedStores.value.length ? managedStores.value : auth.storeContext?.length ? auth.storeContext : runtimeState.value.stores || [],
-    activeStoreId: String(auth.activeStoreId || runtimeState.value.activeStoreId || "").trim()
-  }));
+    managedStores: managedStores.value.length
+      ? managedStores.value
+      : auth.storeContext?.length
+        ? auth.storeContext
+        : runtimeState.value.stores || [],
+    activeStoreId: String(auth.activeStoreId || runtimeState.value.activeStoreId || '').trim(),
+  }))
 
-  async function ensureLoaded() {
-    await runtime.ensure();
+  async function ensureLoaded(options: LooseRecord = {}) {
+    const includeOverview = options.includeOverview !== false
+    await runtime.ensure()
 
     if (auth.isAuthenticated) {
-      await auth.ensureSession();
-      await refreshOverview();
-      await refreshManagedStores();
+      await auth.ensureSession()
+      await refreshManagedStores()
+      if (includeOverview) {
+        await refreshOverview()
+      }
     }
 
-    return true;
+    return true
   }
 
   async function refreshContext() {
     if (!auth.isAuthenticated) {
-      return null;
+      return null
     }
 
-    const response = await auth.fetchContext();
-    await refreshOverview();
-    await refreshManagedStores();
-    return response;
+    const response = await auth.fetchContext()
+    await refreshOverview()
+    await refreshManagedStores()
+    return response
   }
 
   async function refreshManagedStores() {
     if (!auth.isAuthenticated) {
-      managedStores.value = [];
-      return [];
+      managedStores.value = []
+      return []
     }
 
-    managedStoresPending.value = true;
+    managedStoresPending.value = true
 
     try {
-      const params = new URLSearchParams();
-      const tenantId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id);
+      const params = new URLSearchParams()
+      const tenantId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id)
       if (tenantId) {
-        params.set("tenantId", tenantId);
+        params.set('tenantId', tenantId)
       }
-      params.set("includeInactive", "true");
+      params.set('includeInactive', 'true')
 
-      const response = await apiRequest(`/v1/stores?${params.toString()}`);
+      const response = await apiRequest(`/v1/stores?${params.toString()}`)
       managedStores.value = Array.isArray(response?.stores)
         ? response.stores.map((store) => normalizeStore(store))
-        : [];
-      return managedStores.value;
+        : []
+      return managedStores.value
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar as lojas.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar as lojas.')
+      throw error
     } finally {
-      managedStoresPending.value = false;
+      managedStoresPending.value = false
     }
   }
 
   async function refreshOverview() {
     if (!auth.isAuthenticated) {
-      overview.value = null;
-      ready.value = false;
-      errorMessage.value = "";
-      return null;
+      overview.value = null
+      ready.value = false
+      errorMessage.value = ''
+      return null
     }
 
-    pending.value = true;
-    errorMessage.value = "";
+    pending.value = true
+    errorMessage.value = ''
 
     try {
-      const params = new URLSearchParams();
-      const tenantId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id);
+      const params = new URLSearchParams()
+      const tenantId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id)
       if (tenantId) {
-        params.set("tenantId", tenantId);
+        params.set('tenantId', tenantId)
       }
 
-      const response = await apiRequest(`/v1/reports/multistore-overview?${params.toString()}`);
-      overview.value = response;
-      ready.value = true;
-      return response;
+      const response = await apiRequest(`/v1/reports/multistore-overview?${params.toString()}`)
+      overview.value = response
+      ready.value = true
+      return response
     } catch (error) {
-      errorMessage.value = getApiErrorMessage(error, "Nao foi possivel carregar a visao multiloja.");
-      throw error;
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar a visao multiloja.')
+      throw error
     } finally {
-      pending.value = false;
+      pending.value = false
     }
   }
 
-  async function createStore(payload = {}) {
-    await ensureLoaded();
+  async function createStore(payload: LooseRecord = {}) {
+    await ensureLoaded()
 
     if (!auth.isAuthenticated) {
-      return { ok: false, message: "Sessao indisponivel." };
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const tenantId = normalizeText(payload.tenantId || auth.activeTenantId || auth.tenantContext?.[0]?.id);
-    const requestBody = buildCreatePayload(payload, tenantId);
+    const tenantId = normalizeText(
+      payload.tenantId || auth.activeTenantId || auth.tenantContext?.[0]?.id,
+    )
+    const requestBody = buildCreatePayload(payload, tenantId)
 
     if (!requestBody.tenantId || !requestBody.name || !requestBody.code) {
-      return { ok: false, message: "Preencha nome, codigo e tenant da loja." };
+      return { ok: false, message: 'Preencha nome, codigo e tenant da loja.' }
     }
 
     try {
-      const response = await apiRequest("/v1/stores", {
-        method: "POST",
-        body: requestBody
-      });
+      const response = await apiRequest('/v1/stores', {
+        method: 'POST',
+        body: requestBody,
+      })
 
-      let warningMessage = "";
-      if (payload.cloneActiveRoster && Array.isArray(runtime.state.roster) && runtime.state.roster.length) {
+      let warningMessage = ''
+      if (
+        payload.cloneActiveRoster &&
+        Array.isArray(runtime.state.roster) &&
+        runtime.state.roster.length
+      ) {
         try {
           for (const consultant of runtime.state.roster) {
-            await apiRequest("/v1/consultants", {
-              method: "POST",
-              body: buildConsultantClonePayload(consultant, response.store.id)
-            });
+            await apiRequest('/v1/consultants', {
+              method: 'POST',
+              body: buildConsultantClonePayload(consultant, response.store.id),
+            })
           }
         } catch (error) {
           warningMessage = getApiErrorMessage(
             error,
-            "Loja criada, mas nao foi possivel copiar os consultores da loja ativa."
-          );
+            'Loja criada, mas nao foi possivel copiar os consultores da loja ativa.',
+          )
         }
       }
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
         store: response.store,
-        warningMessage
-      };
+        warningMessage,
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel criar loja.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel criar loja.'),
+      }
     }
   }
 
-  async function updateStore(storeId, payload = {}) {
-    await ensureLoaded();
+  async function updateStore(storeId, payload: LooseRecord = {}) {
+    await ensureLoaded()
 
     if (!auth.isAuthenticated) {
-      return { ok: false, message: "Sessao indisponivel." };
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
-    const currentStore = (managedStores.value.length ? managedStores.value : state.value.stores || []).find(
-      (store) => store.id === storeId
-    );
+    const currentStore = (
+      managedStores.value.length ? managedStores.value : state.value.stores || []
+    ).find((store) => store.id === storeId)
     if (!currentStore) {
-      return { ok: false, message: "Loja nao encontrada." };
+      return { ok: false, message: 'Loja nao encontrada.' }
     }
 
-    const requestBody = buildUpdatePayload(payload, currentStore);
+    const requestBody = buildUpdatePayload(payload, currentStore)
     if (!Object.keys(requestBody).length) {
-      return { ok: true, noChange: true };
+      return { ok: true, noChange: true }
     }
 
     try {
-      const response = await apiRequest(`/v1/stores/${encodeURIComponent(String(storeId || "").trim())}`, {
-        method: "PATCH",
-        body: requestBody
-      });
+      const response = await apiRequest(
+        `/v1/stores/${encodeURIComponent(String(storeId || '').trim())}`,
+        {
+          method: 'PATCH',
+          body: requestBody,
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        store: response.store
-      };
+        store: response.store,
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel atualizar loja.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel atualizar loja.'),
+      }
     }
   }
 
   async function archiveStore(storeId) {
-    await ensureLoaded();
+    await ensureLoaded()
 
     if (!auth.isAuthenticated) {
-      return { ok: false, message: "Sessao indisponivel." };
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
     try {
-      const response = await apiRequest(`/v1/stores/${encodeURIComponent(String(storeId || "").trim())}/archive`, {
-        method: "POST"
-      });
+      const response = await apiRequest(
+        `/v1/stores/${encodeURIComponent(String(storeId || '').trim())}/archive`,
+        {
+          method: 'POST',
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        store: response.store
-      };
+        store: response.store,
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel arquivar loja.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel arquivar loja.'),
+      }
     }
   }
 
   async function restoreStore(storeId) {
-    await ensureLoaded();
+    await ensureLoaded()
 
     if (!auth.isAuthenticated) {
-      return { ok: false, message: "Sessao indisponivel." };
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
     try {
-      const response = await apiRequest(`/v1/stores/${encodeURIComponent(String(storeId || "").trim())}/restore`, {
-        method: "POST"
-      });
+      const response = await apiRequest(
+        `/v1/stores/${encodeURIComponent(String(storeId || '').trim())}/restore`,
+        {
+          method: 'POST',
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        store: response.store
-      };
+        store: response.store,
+      }
     } catch (error) {
       return {
         ok: false,
-        message: getApiErrorMessage(error, "Nao foi possivel restaurar loja.")
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel restaurar loja.'),
+      }
     }
   }
 
   async function deleteStore(storeId) {
-    await ensureLoaded();
+    await ensureLoaded()
 
     if (!auth.isAuthenticated) {
-      return { ok: false, message: "Sessao indisponivel." };
+      return { ok: false, message: 'Sessao indisponivel.' }
     }
 
     try {
-      const response = await apiRequest(`/v1/stores/${encodeURIComponent(String(storeId || "").trim())}`, {
-        method: "DELETE"
-      });
+      const response = await apiRequest(
+        `/v1/stores/${encodeURIComponent(String(storeId || '').trim())}`,
+        {
+          method: 'DELETE',
+        },
+      )
 
-      await refreshContext();
+      await refreshContext()
       return {
         ok: true,
-        storeId: response.storeId
-      };
+        storeId: response.storeId,
+      }
     } catch (error) {
-      const dependencies = Array.isArray(error?.data?.error?.details?.dependencies)
-        ? error.data.error.details.dependencies
-        : [];
-      const dependencyMessage = dependencies.length
-        ? ` Vinculos encontrados: ${dependencies.map((item) => `${item.label} (${item.count})`).join(", ")}.`
-        : "";
-
       return {
         ok: false,
-        blockedDependencies: dependencies,
-        message: `${getApiErrorMessage(error, "Nao foi possivel remover loja.")}${dependencyMessage}`
-      };
+        message: getApiErrorMessage(error, 'Nao foi possivel remover loja.'),
+      }
     }
   }
 
   async function setActiveStore(storeId) {
-    return auth.setActiveStore(storeId);
+    return auth.setActiveStore(storeId)
   }
 
   if (import.meta.client) {
@@ -418,19 +461,19 @@ export const useMultiStoreStore = defineStore("multistore", () => {
       () => [auth.isAuthenticated, auth.activeTenantId],
       ([isAuthenticated, tenantId], [previousAuthenticated, previousTenantId]) => {
         if (!isAuthenticated) {
-          overview.value = null;
-          managedStores.value = [];
-          ready.value = false;
-          errorMessage.value = "";
-          return;
+          overview.value = null
+          managedStores.value = []
+          ready.value = false
+          errorMessage.value = ''
+          return
         }
 
         if (!previousAuthenticated || tenantId !== previousTenantId) {
-          void refreshOverview().catch(() => {});
-          void refreshManagedStores().catch(() => {});
+          void refreshOverview().catch(() => {})
+          void refreshManagedStores().catch(() => {})
         }
-      }
-    );
+      },
+    )
   }
 
   return {
@@ -449,6 +492,6 @@ export const useMultiStoreStore = defineStore("multistore", () => {
     archiveStore,
     restoreStore,
     deleteStore,
-    setActiveStore
-  };
-});
+    setActiveStore,
+  }
+})

@@ -14,6 +14,7 @@ const accessTokenPrefix = "ldv1"
 type accessTokenClaims struct {
 	Subject     string   `json:"sub"`
 	DisplayName string   `json:"name"`
+	Nick        string   `json:"nick,omitempty"`
 	Email       string   `json:"email"`
 	Role        Role     `json:"role"`
 	TenantID    string   `json:"tenantId,omitempty"`
@@ -40,6 +41,7 @@ func (manager *HMACTokenManager) Issue(user User) (SessionView, error) {
 	claims := accessTokenClaims{
 		Subject:     user.ID,
 		DisplayName: user.DisplayName,
+		Nick:        user.Nick,
 		Email:       user.Email,
 		Role:        user.Role,
 		TenantID:    user.TenantID,
@@ -100,6 +102,7 @@ func (manager *HMACTokenManager) Parse(token string) (Principal, error) {
 	return Principal{
 		UserID:      claims.Subject,
 		DisplayName: claims.DisplayName,
+		Nick:        claims.Nick,
 		Email:       claims.Email,
 		Role:        claims.Role,
 		TenantID:    claims.TenantID,

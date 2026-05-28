@@ -1,7 +1,8 @@
 {
-  "name": "lista-da-vez",
+  "name": "omni",
   "private": true,
   "scripts": {
+    "prepare": "husky",
     "dev": "docker compose up",
     "dev:detach": "docker compose up -d",
     "dev:build": "docker compose build",
@@ -30,6 +31,15 @@
     "dev:local:api:stop": "scripts\\dev\\git-bash.cmd ./scripts/dev/stop-api-local.sh",
     "build": "npm --prefix web run build",
     "generate": "npm --prefix web run generate",
-    "preview": "npm --prefix web run preview"
-  }
+    "inventory": "node scripts/dev/gen-component-inventory.mjs",
+    "preview": "npm --prefix web run preview",
+    "lint:web": "npm --prefix web run lint",
+    "lint:back": "bash -c 'cd back && golangci-lint run ./...'",
+    "lint": "npm run lint:web && npm run lint:back"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10"
+  },
+  "_lint-staged-note": "Config completa fica em lint-staged.config.mjs — precisamos transformar caminhos para ESLint/Prettier rodarem com cwd em web/"
 }

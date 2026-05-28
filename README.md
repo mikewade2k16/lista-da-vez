@@ -1,6 +1,6 @@
-# Fila de Atendimento
+# Omni
 
-Repositorio principal do produto, com frontend em Nuxt 4 dentro de `web/` e backend em Go dentro de `back/`.
+Repositorio principal do Omni, com frontend em Nuxt 4 dentro de `web/` e backend em Go dentro de `back/`.
 
 ## Estrutura
 
@@ -37,6 +37,11 @@ Esse fluxo:
 1. sobe o PostgreSQL em `http://localhost:5432`
 2. sobe a API Go em `http://localhost:8080`
 3. sobe o Nuxt em `http://localhost:3003`
+
+Ao subir o container `api`, a imagem executa `migrate up` antes de iniciar o servidor.
+Se o volume do banco vier de uma stack mais antiga e voce suspeitar de drift de schema,
+recrie a API ou rode `docker compose exec api migrate up` para reaplicar o estado esperado
+antes de depurar erros em `/v1/settings` ou `/v1/operations`.
 
 No Compose, o `web` roda em modo dev com hot reload.
 Mudancas de UI em `web/` devem atualizar sem rebuild do container.
@@ -83,6 +88,14 @@ O fluxo sem Docker continua disponivel so como contingencia:
 - `consultor@demo.local`
 - senha: `dev123456`
 
+Para o root local da plataforma no seed MVP use:
+
+- `mikewade2k16@gmail.com`
+- senha: `Mvp@2026!`
+
+Em Docker dev, a migration `0033_seed_dev_platform_admin_password.sql` reestabelece essa senha no `platform_admin` local.
+Ela e pulada em producao.
+
 ## Quando rebuildar
 
 - mudancas em `web/Dockerfile`
@@ -104,3 +117,8 @@ O onboarding inicial agora funciona por convite:
 - backend: `back/README.md`
 - arquitetura do frontend: `docs/NUXT_4_STORE_ARCHITECTURE.md`
 - backlog: `docs/BACKLOG.md`
+- roadmap multi-tenant: `docs/ROADMAP.md`
+- estado atual do projeto: `docs/ESTADO_ATUAL.md` (visual: `docs/estado-atual.html`)
+- plano de refatoracao em andamento: `docs/PLANO_REFATORACAO.md` (visual: `docs/plano-refatoracao.html`)
+- paralelizacao de agentes (Claude/Codex/Copilot): `docs/PARALELIZACAO.md` + `docs/agents/`
+- planos e atas arquivados: `docs/historico/`

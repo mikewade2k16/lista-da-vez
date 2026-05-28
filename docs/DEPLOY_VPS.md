@@ -1,7 +1,8 @@
 # Deploy na VPS
 
-Este e o unico playbook de deploy que vale para este repositorio.
-Os arquivos em `docs_depoy/` vieram de outro projeto, foram mantidos apenas como apontadores curtos e nao sao fonte de verdade daqui para frente.
+Este e o playbook completo de deploy. Para o checklist operacional curto do dia-a-dia (comandos prontos, ordem recomendada), veja [DEPLOY_CHECKLIST.md](DEPLOY_CHECKLIST.md).
+
+> Historico: a pasta `docs_depoy/` foi consolidada em 2026-05-18. Conteudo vivo migrou para este arquivo e para `DEPLOY_CHECKLIST.md`.
 
 ## O que faz sentido para este projeto
 
@@ -89,7 +90,7 @@ O registro `@` atual apontando para outro IP nao precisa ser alterado para este 
 
 ## O que fica isolado do outro app
 
-- `COMPOSE_PROJECT_NAME=listaatendimento` separa containers, rede e volumes
+- `COMPOSE_PROJECT_NAME=omni` separa containers, rede e volumes
 - banco proprio deste app
 - volume proprio do banco
 - volume proprio de uploads
@@ -118,9 +119,9 @@ Use `.env.production.example` como base.
 
 As variaveis mais importantes sao:
 
-- `COMPOSE_PROJECT_NAME=listaatendimento`
-- `POSTGRES_DB=listaatendimento`
-- `POSTGRES_USER=listaatendimento`
+- `COMPOSE_PROJECT_NAME=omni`
+- `POSTGRES_DB=omni`
+- `POSTGRES_USER=omni`
 - `POSTGRES_PASSWORD=<senha-forte>`
 - `PROXY_NETWORK_NAME=omnichannel-mvp_default`
 - `PROXY_API_ALIAS=lista-api`
@@ -131,6 +132,11 @@ As variaveis mais importantes sao:
 - `NUXT_API_INTERNAL_BASE=http://api:8080`
 - `CORS_ALLOWED_ORIGINS=https://lista.whenthelightsdie.com`
 - `AUTH_TOKEN_SECRET=<segredo-longo-e-aleatorio>`
+
+Observacao importante para a Fase 4:
+
+- o path remoto `/home/deploy/lista-atendimento` pode continuar igual nesta janela para evitar churn extra de filesystem;
+- o rename do banco em producao fica detalhado em [deploy/db-rename.md](deploy/db-rename.md).
 
 ## Portas locais desta stack
 
@@ -228,6 +234,58 @@ lista.whenthelightsdie.com {
 }
 ```
 
+### Headers de seguranca
+
+Dentro do mesmo host `lista.whenthelightsdie.com`, adicione a matriz base abaixo antes dos blocos `handle`:
+
+```caddy
+header {
+  Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  X-Content-Type-Options "nosniff"
+  X-Frame-Options "SAMEORIGIN"
+  Referrer-Policy "strict-origin-when-cross-origin"
+  Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' wss://lista.whenthelightsdie.com;"
+}
+```
+
+Exemplo completo com o bloco `header` ja encaixado:
+
+```caddy
+lista.whenthelightsdie.com {
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "SAMEORIGIN"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' wss://lista.whenthelightsdie.com;"
+  }
+
+  handle /v1/* {
+    reverse_proxy lista-api:8080
+  }
+
+  handle /uploads/* {
+    reverse_proxy lista-api:8080
+  }
+
+  handle /healthz {
+    reverse_proxy lista-api:8080
+  }
+
+  handle {
+    reverse_proxy lista-web:3003
+  }
+}
+```
+
+Observacoes praticas:
+
+- `Strict-Transport-Security` so faz sentido depois de HTTPS estavel no host publico.
+- o `Content-Security-Policy` acima assume frontend, API e WebSocket no mesmo host `lista.whenthelightsdie.com`;
+- se algum recurso legitimo do Nuxt parar de carregar depois da mudanca, valide no navegador qual diretiva bloqueou e ajuste a policy antes de endurecer mais.
+
 Esse desenho mantem tudo em `lista.whenthelightsdie.com`, inclusive API e WebSocket, sem abrir outro subdominio publico.
 
 ## O que eu consigo fazer so por SSH
@@ -300,6 +358,7 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
     -o StrictHostKeyChecking=accept-new \
@@ -350,6 +409,208 @@ Esse comando cria ou atualiza de forma idempotente:
 
 Com isso, o primeiro deploy sobe sem seed demo e com acesso inicial controlado por voce.
 
+### Bootstrap automatico da loja ERP 184
+
+A workspace ERP MVP consulta sempre a loja raiz `184`. Em producao, o migrator pula
+o seed `0036_seed_dev_erp_store_184.sql`, entao o container da API roda um passo
+idempotente no startup: `migrate up && migrate bootstrap-erp-store && api`.
+
+Com `ERP_BOOTSTRAP_STORE_CODE=184`, o deploy cria ou reativa a loja ERP no tenant
+definido por `ERP_BOOTSTRAP_TENANT_SLUG` ou `ERP_BOOTSTRAP_TENANT_ID`. Se nenhum
+dos dois estiver preenchido, o comando usa automaticamente o unico tenant ativo;
+com zero ou multiplos tenants ativos, ele apenas registra skip no log e deixa a API
+subir.
+
+No primeiro go-live, se o `bootstrap-owner` for executado depois que a API ja
+subiu, reinicie a API para rodar o bootstrap ERP:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml restart api
+```
+
+Para conferir:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+select t.slug, s.code, s.name, s.is_active
+from stores s
+join tenants t on t.id = s.tenant_id
+where s.code = '184';
+SQL
+```
+
+Se o botao de bootstrap/importacao manual for usado em producao, a pasta dos
+consolidados tambem precisa existir no host configurado por
+`ERP_SOURCE_HOST_DIR` e `ERP_ALLOW_MANUAL_SYNC` precisa estar `true` no
+`.env.production`. No baseline operacional atual (`2026-05-08`), o ERP ficou
+com sync manual ligado e scheduler FTP diario ativo em producao.
+
+### Carga ERP por dump de banco
+
+Quando os consolidados ja foram importados no Postgres local, nao subir a pasta
+`erp-source-local` (antiga `Controlle10 - ftp`) para a VPS. Gere e transfira apenas um dump comprimido das
+tabelas `erp_*`. Em 2026-04-29, os markdowns tinham cerca de 430 MB e o dump
+custom das tabelas ERP ficou com cerca de 111 MB.
+
+Tabelas do dump:
+
+- `erp_sync_runs`
+- `erp_sync_files`
+- `erp_item_raw`
+- `erp_customer_raw`
+- `erp_employee_raw`
+- `erp_order_raw`
+- `erp_order_canceled_raw`
+- `erp_item_current`
+- `erp_export_outbox`
+
+Fluxo usado em producao:
+
+1. Gerar o dump local no container Postgres:
+
+```bash
+mkdir -p tmp
+docker compose --env-file .env.docker exec -T postgres pg_dump \
+  -U omni -d omni \
+  -Fc --data-only --no-owner --no-privileges \
+  -t public.erp_sync_runs \
+  -t public.erp_sync_files \
+  -t public.erp_item_raw \
+  -t public.erp_customer_raw \
+  -t public.erp_employee_raw \
+  -t public.erp_order_raw \
+  -t public.erp_order_canceled_raw \
+  -t public.erp_item_current \
+  -t public.erp_export_outbox \
+  -f /tmp/erp_data.dump
+docker cp omni-postgres-1:/tmp/erp_data.dump ./tmp/erp_data.dump
+```
+
+2. Enviar o dump para a VPS:
+
+```bash
+scp -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
+  ./tmp/erp_data.dump \
+  deploy@85.31.62.33:/home/deploy/lista-atendimento/tmp/erp_data.dump
+```
+
+3. Antes de restaurar, criar backup completo remoto:
+
+```bash
+cd /home/deploy/lista-atendimento
+backup="backups/pre_erp_restore_$(date +%Y%m%d_%H%M%S).sql.gz"
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > "$backup"
+ls -lh "$backup"
+```
+
+4. Confirmar que a loja `184` remota esta alinhada ao dump local.
+   No snapshot de 2026-04-29, o dump local usa:
+
+```text
+tenant_id = aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+store_id  = bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0184
+storeCode = 184
+```
+
+Se a VPS tiver criado a loja `184` com outro UUID e ela nao tiver referencias em
+outras tabelas, alinhar antes do restore:
+
+```sql
+update stores
+set id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb0184'::uuid,
+    updated_at = now()
+where tenant_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid
+  and code = '184';
+```
+
+5. Limpar somente as tabelas ERP e restaurar:
+
+```bash
+cd /home/deploy/lista-atendimento
+container=$(docker compose --env-file .env.production -f docker-compose.prod.yml ps -q postgres)
+docker cp tmp/erp_data.dump "$container:/tmp/erp_data.dump"
+
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  psql -U omni -d omni -v ON_ERROR_STOP=1 <<'SQL'
+truncate table
+  erp_export_outbox,
+  erp_item_current,
+  erp_order_canceled_raw,
+  erp_order_raw,
+  erp_employee_raw,
+  erp_customer_raw,
+  erp_item_raw,
+  erp_sync_files,
+  erp_sync_runs;
+SQL
+
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  pg_restore -U omni -d omni \
+  --data-only --no-owner --no-privileges \
+  --single-transaction --exit-on-error /tmp/erp_data.dump
+```
+
+6. Validar os contadores:
+
+```sql
+select
+  (select count(*) from erp_sync_runs) as runs,
+  (select count(*) from erp_sync_files) as files,
+  (select count(*) from erp_item_raw) as item_raw,
+  (select count(*) from erp_item_current) as item_current,
+  (select count(*) from erp_customer_raw) as customer_raw,
+  (select count(*) from erp_employee_raw) as employee_raw,
+  (select count(*) from erp_order_raw) as order_raw,
+  (select count(*) from erp_order_canceled_raw) as order_canceled_raw;
+```
+
+Resultado esperado do restore feito em 2026-04-29:
+
+```text
+runs=11
+files=4255
+item_raw=1101126
+item_current=355088
+customer_raw=221764
+employee_raw=10219
+order_raw=376044
+order_canceled_raw=21648
+```
+
+7. Apagar os dumps temporarios depois da validacao:
+
+```bash
+rm -f /home/deploy/lista-atendimento/tmp/erp_data.dump
+docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+  rm -f /tmp/erp_data.dump
+rm -f ./tmp/erp_data.dump
+```
+
+Resultado validado do restore feito em `2026-05-08`:
+
+```text
+runs=54
+files=7227
+item_raw=1526022
+item_current=357619
+customer_raw=339174
+employee_raw=20695
+order_raw=757617
+order_canceled_raw=43775
+```
+
+Estado final do ERP em producao apos esse restore:
+
+- API em `ERP_SOURCE_KIND=ftp`
+- `ERP_SOURCE_RECURSIVE=false`, mantendo a rotina diaria olhando apenas a raiz `extract_files`
+- `ERP_ALLOW_MANUAL_SYNC=true`, permitindo disparo pelo painel `/erp`
+- `ERP_SYNC_AUTOMATIC_ENABLED=true`, `ERP_SYNC_INTERVAL=24h`, `ERP_SYNC_HOUR_UTC=4`
+- scheduler confirmado em log por `erp_sync_scheduler_started`
+- sync manual em producao validado com sucesso depois da ativacao
+- dump temporario apagado do host local, do host remoto e do container Postgres remoto apos a validacao
+
 ## Integracao do Caddy atual
 
 Depois que os containers deste repo estiverem no ar, adicione o bloco de `lista.whenthelightsdie.com` em `/opt/omnichannel/Caddyfile` e reaplique o proxy do outro projeto:
@@ -374,6 +635,7 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
     -o StrictHostKeyChecking=accept-new \
@@ -424,6 +686,7 @@ tar -czf - \
     --exclude='back/.logs' \
     --exclude='qa-bot/.venv' \
     --exclude='qa-bot/artifacts' \
+    --exclude='Controlle10 - ftp' \
     --exclude='tmp' \
     . | ssh -i c:/Users/Mike/.ssh/gh_actions_omnichannel_vps \
     -o StrictHostKeyChecking=accept-new \
@@ -465,6 +728,7 @@ npm run prod:deploy:vps
 Esse script usa o metodo validado neste ambiente:
 
 - empacota o workspace local por `tar`
+- exclui a pasta local `erp-source-local` (e mantém `Controlle10 - ftp` como defesa) do payload antes do envio
 - limpa o diretorio remoto preservando `.env.production` e `backups`
 - envia o codigo por SSH
 - valida `docker compose`
@@ -513,6 +777,50 @@ O workflow reutiliza exatamente o mesmo fluxo do script local:
 - `docker compose up -d --build`
 - smoke tests em `https://lista.whenthelightsdie.com`
 
+## Pendencias para o proximo deploy
+
+Itens que precisam ser revistos antes de subir o release atual para a VPS.
+Atualizar esta lista a cada release que toca em schema ou regra que precisa
+de tratamento manual no momento do deploy.
+
+### Configuracoes operacionais agora sao tenant-wide
+
+Migration `0024_tenant_operation_settings.sql` cria as tabelas
+`tenant_operation_settings`, `tenant_setting_options` e
+`tenant_catalog_products` e move o escopo de configuracao da operacao de
+loja para tenant. As tabelas legadas `store_operation_settings`,
+`store_setting_options` e `store_catalog_products` continuam no banco
+durante a transicao para servirem de fonte de backfill.
+
+Antes de subir este release:
+
+1. **Backup completo do banco antes da migration 0024.**
+   Use `npm run prod:deploy:vps -- -BackupDatabase` ou rode o backup manual
+   do bloco `Se o release tocar schema, migrations ou dados`.
+2. **Aplicar a migration 0024 no host.**
+   O backfill embutido escolhe a config da loja mais antiga de cada tenant
+   e faz uniao deduplicada das opcoes/produtos. Em ambiente local isso
+   resolve, mas em producao a regra final de uniao precisa ser confirmada
+   por humano.
+3. **Conferir o backfill manualmente em producao antes de liberar acesso.**
+   Para cada tenant, comparar `tenant_setting_options` e
+   `tenant_catalog_products` com o que existia na loja-fonte e nas demais
+   lojas. Se faltar item conhecido, completar manualmente via SQL ou
+   reaplicar via UI.
+4. **Avisar o owner que a UI de Configuracoes virou tenant-wide.**
+   O seletor de loja do header deixou de afetar a area de Configuracoes.
+   A propria tela mostra um banner reforcando isso, mas vale comunicar para
+   evitar duvida no primeiro acesso.
+5. **Nao dropar as tabelas `store_*` nesse deploy.**
+   Elas devem ser mantidas como historico/backfill ate o release seguinte
+   confirmar que o tenant-wide esta estavel.
+
+### Itens recorrentes a checar antes de subir
+
+- conferir migrations pendentes com `go run ./cmd/migrate status`
+- rodar `npm run build` e `go build ./...` localmente antes do deploy
+- registrar nesta secao qualquer release que precise de passo manual extra
+
 ## Validacao pos-deploy
 
 Checks minimos:
@@ -525,6 +833,18 @@ curl -I https://lista.whenthelightsdie.com
 curl -I https://lista.whenthelightsdie.com/healthz
 ```
 
+Checks de headers de seguranca:
+
+```bash
+curl -I https://lista.whenthelightsdie.com | grep -Ei 'strict-transport-security|x-content-type-options|x-frame-options|referrer-policy|permissions-policy|content-security-policy'
+curl -I https://lista.whenthelightsdie.com/healthz | grep -Ei 'strict-transport-security|x-content-type-options|x-frame-options|referrer-policy|permissions-policy|content-security-policy'
+```
+
+Check externo complementar:
+
+- abrir `https://securityheaders.com/` e testar `https://lista.whenthelightsdie.com`;
+- comparar o resultado com o bloco `header` aplicado no Caddy para confirmar que o proxy publico esta devolvendo a matriz esperada.
+
 Checks funcionais:
 
 1. abrir `https://lista.whenthelightsdie.com`
@@ -532,6 +852,8 @@ Checks funcionais:
 3. validar carregamento do dashboard
 4. validar uma operacao que use API autenticada
 5. validar WebSocket em operacao, se essa tela fizer parte do go-live
+6. validar no DevTools que `GET /v1/settings?tenantId={activeTenantId}` retorna `200` apos login, especialmente com usuario `platform_admin`
+7. quando o release tocar settings tenant-wide, confirmar que o usuario global sem `tenantId` no token usa o `activeTenantId` retornado por `/v1/me/context`; sem `tenantId`, a API so deve cair no fallback quando existir exatamente um tenant acessivel
 
 Checks administrativos para o primeiro bootstrap:
 

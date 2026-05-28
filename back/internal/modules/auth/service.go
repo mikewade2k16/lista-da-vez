@@ -12,6 +12,7 @@ type Service struct {
 	password           PasswordHasher
 	tokens             TokenManager
 	avatars            AvatarStorage
+	permissions        PermissionResolver
 	notifier           ContextPublisher
 	consultantProfiles ConsultantProfileSync
 }
@@ -24,12 +25,13 @@ type ConsultantProfileSync interface {
 	SyncLinkedProfile(ctx context.Context, userID string, displayName string) error
 }
 
-func NewService(users UserRepository, password PasswordHasher, tokens TokenManager, avatars AvatarStorage, notifier ContextPublisher, consultantProfiles ConsultantProfileSync) *Service {
+func NewService(users UserRepository, password PasswordHasher, tokens TokenManager, avatars AvatarStorage, permissions PermissionResolver, notifier ContextPublisher, consultantProfiles ConsultantProfileSync) *Service {
 	return &Service{
 		users:              users,
 		password:           password,
 		tokens:             tokens,
 		avatars:            avatars,
+		permissions:        permissions,
 		notifier:           notifier,
 		consultantProfiles: consultantProfiles,
 	}
@@ -94,7 +96,11 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 		return Principal{}, err
 	}
 
-	user, err := service.users.FindByID(ctx, principal.UserID)
+	// Hot-path: LoadUserForAuth consolida em 1 query o que antes era FindByID (que fazia
+	// internamente 2 round-trips: findRecord + findStoreIDs). Resultado: 4 queries por
+	// request (findRecord + findStoreIDs + ListRolePermissions + ListUserOverrides) viram
+	// 2 (LoadUserForAuth + ResolveEffectivePermissions).
+	user, err := service.users.LoadUserForAuth(ctx, principal.UserID)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
 			return Principal{}, ErrUnauthorized
@@ -108,10 +114,20 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 	}
 
 	principal.DisplayName = user.DisplayName
+	principal.Nick = user.Nick
 	principal.Email = user.Email
 	principal.Role = user.Role
 	principal.TenantID = user.TenantID
 	principal.StoreIDs = append([]string{}, user.StoreIDs...)
+	if service.permissions != nil {
+		permissionKeys, err := service.permissions.ResolveUserPermissions(ctx, user.ID, user.Role)
+		if err != nil {
+			return Principal{}, err
+		}
+
+		principal.Permissions = append([]string{}, permissionKeys...)
+		principal.PermissionsResolved = true
+	}
 
 	return principal, nil
 }

@@ -28,17 +28,17 @@ Padronizar o setup local do banco no Windows sem depender de Docker.
 - servico padrao no Windows:
   - `postgresql-x64-16`
 - data dir padrao:
-  - `%LOCALAPPDATA%\lista-da-vez\postgres16\data`
+  - `%LOCALAPPDATA%\omni\postgres16\data`
 - data dir do modo service:
   - `C:\Program Files\PostgreSQL\16\data`
 - log padrao:
-  - `%LOCALAPPDATA%\lista-da-vez\postgres16\postgres.log`
+  - `%LOCALAPPDATA%\omni\postgres16\postgres.log`
 - usuario da app:
-  - `lista_da_vez`
+  - `omni`
 - senha da app:
-  - `lista_da_vez_dev`
+  - `omni_dev`
 - banco da app:
-  - `lista_da_vez`
+  - `omni`
 
 ## Variaveis opcionais
 

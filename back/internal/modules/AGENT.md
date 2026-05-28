@@ -9,13 +9,14 @@ Estas instrucoes valem para os modulos em `back/internal/modules/`.
 Modulo e uma unidade de negocio do backend, por exemplo:
 
 - `auth`
+- `access`
 - `tenants`
 - `stores`
 - `consultants`
 - `settings`
 - `operations`
-- `campaigns`
 - `reports`
+- `analytics`
 - `users`
 
 Cada modulo deve poder crescer sem transformar `internal/platform` em lugar de regra de produto.
@@ -51,3 +52,19 @@ Preferir esta sequencia para cada modulo:
 4. repositorio em memoria ou mock tecnico
 5. repositorio PostgreSQL
 6. eventos/websocket, se fizer sentido
+
+## Modulos atuais
+
+- `auth`: identidade, token, perfil, convite, reset e middleware
+- `access`: catalogo de permissoes, grants por papel e overrides por usuario
+- `tenants`: clientes/grupos acessiveis e ciclo administrativo basico
+- `stores`: lojas acessiveis e ciclo administrativo basico
+- `consultants`: roster operacional por loja e vinculo com conta real
+- `settings`: configuracao operacional por loja, catalogos e produtos
+- `operations`: fila, atendimento, status corrente, historico e overview integrado
+- `realtime`: WebSocket de invalidacao operacional por loja e contexto administrativo por tenant
+- `reports`: relatorios server-side sobre historico operacional
+- `analytics`: agregados para ranking, dados e inteligencia
+- `users`: administracao de contas, papeis, escopo, convite e reset administrativo
+
+`campaigns` ainda nao existe como modulo Go em `back/internal/modules`; enquanto isso, seus dados aparecem como campos/filtros em historico, relatorios e analytics.

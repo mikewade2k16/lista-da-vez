@@ -5,15 +5,10 @@ import (
 	"time"
 )
 
-const (
-	DemoTenantID   = "tenant-demo"
-	StoreRiomarID  = "loja-pj-riomar"
-	StoreJardinsID = "loja-pj-jardins"
-)
-
 type User struct {
 	ID                 string
 	DisplayName        string
+	Nick               string
 	Email              string
 	PasswordHash       string
 	MustChangePassword bool
@@ -37,6 +32,7 @@ const (
 type UserView struct {
 	ID                 string   `json:"id"`
 	DisplayName        string   `json:"displayName"`
+	Nick               string   `json:"nick,omitempty"`
 	Email              string   `json:"email"`
 	AvatarPath         string   `json:"avatarPath,omitempty"`
 	MustChangePassword bool     `json:"mustChangePassword"`
@@ -47,13 +43,16 @@ type UserView struct {
 }
 
 type Principal struct {
-	UserID      string
-	DisplayName string
-	Email       string
-	Role        Role
-	TenantID    string
-	StoreIDs    []string
-	ExpiresAt   time.Time
+	UserID              string
+	DisplayName         string
+	Nick                string
+	Email               string
+	Role                Role
+	TenantID            string
+	StoreIDs            []string
+	Permissions         []string
+	PermissionsResolved bool
+	ExpiresAt           time.Time
 }
 
 type LoginInput struct {
@@ -148,6 +147,9 @@ type InvitationIssueInput struct {
 type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
+	// LoadUserForAuth retorna user + role + storeIDs em uma unica round-trip de banco.
+	// Usado no hot-path do middleware de auth; outros callers continuam usando FindByID.
+	LoadUserForAuth(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, userID string, displayName string, email string) (User, error)
 	UpdatePassword(ctx context.Context, userID string, passwordHash string, mustChangePassword bool) (User, error)
 	UpdateAvatarPath(ctx context.Context, userID string, avatarPath string) (User, error)
@@ -175,6 +177,10 @@ type TokenManager interface {
 	Parse(token string) (Principal, error)
 }
 
+type PermissionResolver interface {
+	ResolveUserPermissions(ctx context.Context, userID string, role Role) ([]string, error)
+}
+
 type PasswordResetDelivery interface {
 	DeliverPasswordResetCode(ctx context.Context, user User, code string, expiresAt time.Time) error
 }
@@ -183,6 +189,7 @@ func (user User) View() UserView {
 	return UserView{
 		ID:                 user.ID,
 		DisplayName:        user.DisplayName,
+		Nick:               user.Nick,
 		Email:              user.Email,
 		AvatarPath:         user.AvatarPath,
 		MustChangePassword: user.MustChangePassword,

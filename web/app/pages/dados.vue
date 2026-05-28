@@ -1,24 +1,41 @@
 <script setup>
-import { onMounted } from "vue";
-import DataWorkspace from "~/components/data/DataWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { useAnalyticsStore } from "~/stores/analytics";
+import { computed, watch } from 'vue'
+import DataWorkspace from '~/components/data/DataWorkspace.vue'
+import { storeToRefs } from 'pinia'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useAnalyticsStore } from '~/stores/analytics'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "dados"
-});
+  layout: 'dashboard',
+  workspaceId: 'dados',
+  alias: ['/operacao/dados'],
+  supportsAllStoresScope: true,
+})
 
-const analyticsStore = useAnalyticsStore();
-const { data, pending, errorMessage } = storeToRefs(analyticsStore);
+const auth = useAuthStore()
+const analyticsStore = useAnalyticsStore()
+const { data, pending, errorMessage } = storeToRefs(analyticsStore)
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
+const integratedScope = computed(() => canSeeIntegrated.value)
 
-onMounted(() => {
-  void analyticsStore.ensureData();
-});
+watch(
+  () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId],
+  () => {
+    analyticsStore.setIntegratedScope(integratedScope.value)
+    void analyticsStore.fetchData()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="workspace-host">
-    <DataWorkspace :report="data" :pending="pending" :error-message="errorMessage" />
+  <div class="page-workspace">
+    <DataWorkspace
+      :report="data"
+      :pending="pending"
+      :error-message="errorMessage"
+      :integrated-scope="integratedScope"
+    />
   </div>
 </template>

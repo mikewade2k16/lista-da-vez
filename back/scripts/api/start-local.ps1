@@ -1,6 +1,6 @@
 param(
   [int]$Port = 8080,
-  [string]$DatabaseUrl = "postgres://lista_da_vez:lista_da_vez_dev@localhost:5432/lista_da_vez?sslmode=disable",
+  [string]$DatabaseUrl = "postgres://omni:omni_dev@localhost:5432/omni?sslmode=disable",
   [string]$CorsAllowedOrigins = "http://localhost:*,http://127.0.0.1:*,http://[::1]:*"
 )
 

@@ -26,6 +26,7 @@ Ele nao deve cuidar de:
 - `GET /v1/analytics/ranking?storeId=...`
 - `GET /v1/analytics/data?storeId=...`
 - `GET /v1/analytics/intelligence?storeId=...`
+- os mesmos endpoints tambem aceitam `tenantId` para consolidar todas as lojas acessiveis da sessao dentro do tenant ativo
 
 ## Regras
 
@@ -33,6 +34,7 @@ Ele nao deve cuidar de:
 - o frontend deve receber payloads prontos para renderizar, nao historico bruto para recalcular tudo
 - respostas devem ser pequenas e orientadas ao caso de uso da tela
 - toda leitura deve respeitar escopo autenticado de loja/tenant
+- quando `tenantId` subir sem `storeId`, a agregacao deve atravessar apenas as lojas acessiveis da sessao, sem depender da workspace administrativa `multiloja`
 - se uma tela precisar de outro agregado, preferir abrir um endpoint especifico antes de devolver bundles genericos
 
 ## Direcao de plugabilidade

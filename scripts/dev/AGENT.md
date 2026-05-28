@@ -36,3 +36,5 @@ Esse comando deve:
 ## Observacao
 
 Se algum script precisar chamar PowerShell, usar `powershell.exe -ExecutionPolicy Bypass -File ...` com caminho convertido para Windows via `cygpath -w`.
+
+O gerador `gen-component-inventory.mjs` tambem vive aqui e deve produzir `docs/COMPONENT_INVENTORY_AUTO.md` a partir do estado atual dos componentes Vue do projeto, sem sobrescrever o inventario humano em `docs/COMPONENT_INVENTORY.md`.

@@ -35,6 +35,25 @@ func (repository *PostgresRepository) StoreExists(ctx context.Context, storeID s
 	return exists, nil
 }
 
+// StoreExistsIncludingArchived devolve true mesmo que a loja esteja arquivada.
+// Usado por operacoes que devem permanecer disponiveis apos arquivamento
+// (ex.: encerrar atendimento ja em andamento).
+func (repository *PostgresRepository) StoreExistsIncludingArchived(ctx context.Context, storeID string) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, `
+		select exists(
+			select 1
+			from stores
+			where id = $1::uuid
+		);
+	`, storeID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
 func (repository *PostgresRepository) GetStoreName(ctx context.Context, storeID string) (string, error) {
 	var name string
 	err := repository.pool.QueryRow(ctx, `
@@ -58,9 +77,15 @@ func (repository *PostgresRepository) GetMaxConcurrentServices(ctx context.Conte
 	var value int
 	err := repository.pool.QueryRow(ctx, `
 		select coalesce((
-			select max_concurrent_services
-			from store_operation_settings
-			where store_id = $1::uuid
+			select tos.max_concurrent_services
+			from stores s
+			join tenant_operation_settings tos on tos.tenant_id = s.tenant_id
+			where s.id = $1::uuid
+			limit 1
+		), (
+			select sos.max_concurrent_services
+			from store_operation_settings sos
+			where sos.store_id = $1::uuid
 			limit 1
 		), 10);
 	`, storeID).Scan(&value)
@@ -73,6 +98,97 @@ func (repository *PostgresRepository) GetMaxConcurrentServices(ctx context.Conte
 	}
 
 	return value, nil
+}
+
+func (repository *PostgresRepository) GetMaxConcurrentServicesPerConsultant(ctx context.Context, storeID string) (int, error) {
+	var value int
+	err := repository.pool.QueryRow(ctx, `
+		select coalesce((
+			select tos.max_concurrent_services_per_consultant
+			from stores s
+			join tenant_operation_settings tos on tos.tenant_id = s.tenant_id
+			where s.id = $1::uuid
+			limit 1
+		), (
+			select sos.max_concurrent_services_per_consultant
+			from store_operation_settings sos
+			where sos.store_id = $1::uuid
+			limit 1
+		), 1);
+	`, storeID).Scan(&value)
+	if err != nil {
+		return 0, err
+	}
+
+	if value < 1 {
+		return 1, nil
+	}
+
+	return value, nil
+}
+
+func (repository *PostgresRepository) ListStoresWithActiveServices(ctx context.Context) ([]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select distinct store_id::text
+		from operation_active_services
+		order by store_id::text asc;
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	storeIDs := make([]string, 0)
+	for rows.Next() {
+		var storeID string
+		if err := rows.Scan(&storeID); err != nil {
+			return nil, err
+		}
+		storeID = strings.TrimSpace(storeID)
+		if storeID == "" {
+			continue
+		}
+		storeIDs = append(storeIDs, storeID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return storeIDs, nil
+}
+
+func (repository *PostgresRepository) ListStoresWithActiveServicesByTenant(ctx context.Context, tenantID string) ([]string, error) {
+	rows, err := repository.pool.Query(ctx, `
+		select distinct oas.store_id::text
+		from operation_active_services oas
+		join stores s on s.id = oas.store_id
+		where s.tenant_id = $1::uuid
+		order by oas.store_id::text asc;
+	`, strings.TrimSpace(tenantID))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	storeIDs := make([]string, 0)
+	for rows.Next() {
+		var storeID string
+		if err := rows.Scan(&storeID); err != nil {
+			return nil, err
+		}
+		storeID = strings.TrimSpace(storeID)
+		if storeID == "" {
+			continue
+		}
+		storeIDs = append(storeIDs, storeID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return storeIDs, nil
 }
 
 func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID string) ([]ConsultantProfile, error) {
@@ -245,7 +361,13 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			queue_wait_ms,
 			queue_position_at_start,
 			start_mode,
-			skipped_people_json
+			skipped_people_json,
+			coalesce(parallel_group_id, '') as parallel_group_id,
+			parallel_start_index,
+			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
+			coalesce(start_offset_ms, 0) as start_offset_ms,
+			coalesce(stopped_at, 0) as stopped_at,
+			coalesce(stop_reason, '') as stop_reason
 		from operation_active_services
 		where store_id = $1::uuid
 		order by service_started_at asc;
@@ -259,6 +381,7 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 	for rows.Next() {
 		var item ActiveServiceState
 		var skippedPeopleRaw []byte
+		var siblingServiceIDsRaw []byte
 		if err := rows.Scan(
 			&item.ConsultantID,
 			&item.ServiceID,
@@ -268,11 +391,18 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			&item.QueuePositionAtStart,
 			&item.StartMode,
 			&skippedPeopleRaw,
+			&item.ParallelGroupID,
+			&item.ParallelStartIndex,
+			&siblingServiceIDsRaw,
+			&item.StartOffsetMs,
+			&item.StoppedAt,
+			&item.StopReason,
 		); err != nil {
 			return nil, err
 		}
 
 		item.SkippedPeople = decodeSkippedPeople(skippedPeopleRaw)
+		item.SiblingServiceIDs = decodeStringSlice(siblingServiceIDsRaw)
 		items = append(items, item)
 	}
 
@@ -373,9 +503,11 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			is_gift,
 			product_seen,
 			product_closed,
+			purchase_code,
 			product_details,
 			products_seen_json,
 			products_closed_json,
+			coalesce(products_not_found_json, '[]'::jsonb) as products_not_found_json,
 			products_seen_none,
 			visit_reasons_not_informed,
 			customer_sources_not_informed,
@@ -396,7 +528,11 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			queue_jump_reason,
 			notes,
 			campaign_matches_json,
-			campaign_bonus_total
+			campaign_bonus_total,
+			coalesce(parallel_group_id, '') as parallel_group_id,
+			parallel_start_index,
+			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
+			coalesce(start_offset_ms, 0) as start_offset_ms
 		from operation_service_history
 		where store_id = $1::uuid
 		order by started_at asc, created_at asc;
@@ -412,6 +548,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		var skippedRaw []byte
 		var seenProductsRaw []byte
 		var closedProductsRaw []byte
+		var notFoundProductsRaw []byte
 		var visitReasonsRaw []byte
 		var visitReasonDetailsRaw []byte
 		var customerSourcesRaw []byte
@@ -419,6 +556,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		var lossReasonsRaw []byte
 		var lossReasonDetailsRaw []byte
 		var campaignMatchesRaw []byte
+		var siblingServiceIDsRaw []byte
 		if err := rows.Scan(
 			&entry.ServiceID,
 			&entry.StoreID,
@@ -437,9 +575,11 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			&entry.IsGift,
 			&entry.ProductSeen,
 			&entry.ProductClosed,
+			&entry.PurchaseCode,
 			&entry.ProductDetails,
 			&seenProductsRaw,
 			&closedProductsRaw,
+			&notFoundProductsRaw,
 			&entry.ProductsSeenNone,
 			&entry.VisitReasonsNotInformed,
 			&entry.CustomerSourcesNotInformed,
@@ -461,6 +601,10 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			&entry.Notes,
 			&campaignMatchesRaw,
 			&entry.CampaignBonusTotal,
+			&entry.ParallelGroupID,
+			&entry.ParallelStartIndex,
+			&siblingServiceIDsRaw,
+			&entry.StartOffsetMs,
 		); err != nil {
 			return nil, err
 		}
@@ -468,6 +612,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		entry.SkippedPeople = decodeSkippedPeople(skippedRaw)
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)
+		entry.ProductsNotFound = decodeProducts(notFoundProductsRaw)
 		entry.VisitReasons = decodeStringSlice(visitReasonsRaw)
 		entry.VisitReasonDetails = decodeStringMap(visitReasonDetailsRaw)
 		entry.CustomerSources = decodeStringSlice(customerSourcesRaw)
@@ -475,6 +620,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		entry.LossReasons = decodeStringSlice(lossReasonsRaw)
 		entry.LossReasonDetails = decodeStringMap(lossReasonDetailsRaw)
 		entry.CampaignMatches = decodeCampaignMatches(campaignMatchesRaw)
+		entry.SiblingServiceIDs = decodeStringSlice(siblingServiceIDsRaw)
 		items = append(items, entry)
 	}
 
@@ -509,6 +655,11 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			return err
 		}
 
+		siblingIDsRaw, err := json.Marshal(item.SiblingServiceIDs)
+		if err != nil {
+			return err
+		}
+
 		if _, err := tx.Exec(ctx, `
 			insert into operation_active_services (
 				store_id,
@@ -519,9 +670,15 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 				queue_wait_ms,
 				queue_position_at_start,
 				start_mode,
-				skipped_people_json
+				skipped_people_json,
+				parallel_group_id,
+				parallel_start_index,
+				sibling_service_ids_json,
+				start_offset_ms,
+				stopped_at,
+				stop_reason
 			)
-			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb);
+			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, $13, $14, $15);
 		`,
 			storeID,
 			item.ConsultantID,
@@ -532,6 +689,12 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			item.QueuePositionAtStart,
 			item.StartMode,
 			string(skippedRaw),
+			item.ParallelGroupID,
+			item.ParallelStartIndex,
+			string(siblingIDsRaw),
+			item.StartOffsetMs,
+			item.StoppedAt,
+			strings.TrimSpace(item.StopReason),
 		); err != nil {
 			return err
 		}
@@ -608,6 +771,10 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 		if err != nil {
 			return err
 		}
+		productsNotFoundRaw, err := json.Marshal(item.ProductsNotFound)
+		if err != nil {
+			return err
+		}
 		visitReasonsRaw, err := json.Marshal(item.VisitReasons)
 		if err != nil {
 			return err
@@ -636,6 +803,10 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 		if err != nil {
 			return err
 		}
+		siblingServiceIDsRaw, err := json.Marshal(item.SiblingServiceIDs)
+		if err != nil {
+			return err
+		}
 
 		if _, err := tx.Exec(ctx, `
 			insert into operation_service_history (
@@ -656,6 +827,7 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 				is_gift,
 				product_seen,
 				product_closed,
+				purchase_code,
 				product_details,
 				products_seen_json,
 				products_closed_json,
@@ -679,13 +851,19 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 				queue_jump_reason,
 				notes,
 				campaign_matches_json,
-				campaign_bonus_total
+				campaign_bonus_total,
+				parallel_group_id,
+				parallel_start_index,
+				sibling_service_ids_json,
+				start_offset_ms,
+				products_not_found_json
 			)
 			values (
 				$1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
-				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19::jsonb, $20::jsonb,
-				$21, $22, $23, $24, $25, $26, $27, $28::jsonb, $29::jsonb, $30::jsonb,
-				$31::jsonb, $32::jsonb, $33::jsonb, $34, $35, $36, $37, $38, $39, $40::jsonb, $41
+				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, $21::jsonb,
+				$22, $23, $24, $25, $26, $27, $28, $29::jsonb, $30::jsonb, $31::jsonb,
+				$32::jsonb, $33::jsonb, $34::jsonb, $35, $36, $37, $38, $39, $40, $41::jsonb, $42,
+				$43, $44, $45::jsonb, $46, $47::jsonb
 			)
 			on conflict (store_id, service_id) do nothing;
 		`,
@@ -706,6 +884,7 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			item.IsGift,
 			item.ProductSeen,
 			item.ProductClosed,
+			item.PurchaseCode,
 			item.ProductDetails,
 			string(productsSeenRaw),
 			string(productsClosedRaw),
@@ -730,6 +909,11 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			item.Notes,
 			string(campaignMatchesRaw),
 			item.CampaignBonusTotal,
+			item.ParallelGroupID,
+			item.ParallelStartIndex,
+			string(siblingServiceIDsRaw),
+			item.StartOffsetMs,
+			string(productsNotFoundRaw),
 		); err != nil {
 			return err
 		}

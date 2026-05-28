@@ -22,8 +22,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\postgres\status-local.ps1
 Isso garante:
 
 - PostgreSQL rodando
-- banco `lista_da_vez`
-- usuario `lista_da_vez`
+- banco `omni`
+- usuario `omni`
 - migrations aplicadas
 
 ## 2. Subir a API Go
@@ -74,6 +74,11 @@ npm run dev -- --port 3001
 - `proprietario@demo.local`
 - `consultor@demo.local`
 - senha: `dev123456`
+
+Root local da plataforma no seed MVP:
+
+- `mikewade2k16@gmail.com`
+- senha: `Mvp@2026!`
 
 ## 5. Convites locais
 

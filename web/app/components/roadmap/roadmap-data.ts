@@ -1,0 +1,1405 @@
+export type PhaseStatus = "pending" | "in_progress" | "done" | "blocked";
+
+export interface RoadmapTask {
+  id: string;
+  label: string;
+  done: boolean;
+  note?: string;
+}
+
+export interface RoadmapPhase {
+  id: string;
+  code: string;
+  title: string;
+  goal: string;
+  status: PhaseStatus;
+  estimateWeeks: string;
+  startedAt?: string;
+  finishedAt?: string;
+  tasks: RoadmapTask[];
+  verifiable: string;
+  blockers?: string[];
+  group?: string;
+}
+
+export interface RoadmapGroup {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export type ModuleStatus = "pending" | "in_progress" | "beta" | "done";
+export type ModulePriority = "P0" | "P1" | "P2" | "P3";
+
+export interface RoadmapModule {
+  id: string;
+  label: string;
+  route: string;
+  status: ModuleStatus;
+  priority: ModulePriority;
+  description: string;
+  scope?: string[];
+  dependsOn?: string[];
+  category?: "atendimento" | "tools" | "operacao-comercial" | "indicadores" | "manage";
+}
+
+export type RuleCategory =
+  | "frontend"
+  | "backend"
+  | "banco"
+  | "linguagens"
+  | "deploy"
+  | "padroes-gerais";
+
+export interface RoadmapRule {
+  id: string;
+  category: RuleCategory;
+  title: string;
+  body: string;
+  why?: string;
+  appliesWhen?: string;
+}
+
+export const ROADMAP_GROUPS: RoadmapGroup[] = [
+  {
+    id: "multi-tenant",
+    label: "Reestruturação Multi-Tenant",
+    description: "Branch refactor/multi-tenant-core — schema core, RBAC, Module Registry, layers e módulos satélites."
+  },
+  {
+    id: "tasks-backend",
+    label: "Tasks Orquestrador — Backend",
+    description: "Transformar o protótipo localStorage em produto multi-tenant real: schema tasks.*, API Go, realtime, RBAC, notificações e sistema de views."
+  },
+  {
+    id: "crm-360",
+    label: "CRM 360 — Fila + ERP",
+    description: "Indicadores por consultor e loja cruzando dados de atendimento da fila com vendas do ERP: conversão, faturamento, PA, ticket médio, produto não encontrado."
+  }
+];
+
+export const ROADMAP_TITLE = "Reestruturação Multi-Tenant";
+export const ROADMAP_SUBTITLE =
+  "Acompanhamento das fases da branch refactor/multi-tenant-core. Cada fase é um deploy reversível; produção atual segue intocada em main/migracao/nuxt.";
+
+// Aviso de estado real — 2026-05-28
+//
+// Auditoria de 2026-05-28 mostrou que várias Fases marcadas como `done` neste
+// arquivo estão na verdade `in_progress` ou parciais quando confrontadas com o
+// runtime real (ver docs/ROADMAP.md → "Estado real em 2026-05-28"):
+//
+//  - Fase 2: AccountModulesGuard é instanciado e descartado (`_ =` em app.go).
+//  - Fase 3: core.user_tenant_roles / core.account_modules estão com 0 linhas.
+//  - Fase 5: menu não consulta core.account_modules — filtra por role hardcoded.
+//  - Fases 13/15/16: páginas mock (clientes-web/leads-web/produtos-web,
+//    site/*Workspace) consomem um BFF Nitro em web/server/ com seed in-memory,
+//    sem tocar Postgres.
+//
+// As notas das tarefas afetadas foram atualizadas. A fase nova
+// "multitenant-completion" abaixo é a fonte de verdade da próxima branch
+// (refactor/multi-tenant-complete) — só depois dela o lote 13/14/15/16+ retoma.
+
+export const ROADMAP_PHASES: RoadmapPhase[] = [
+  {
+    id: "fase-0",
+    code: "Fase 0",
+    title: "Fundação",
+    goal: "Preparar terreno para o trabalho da reestruturação sem quebrar nada do que já existe.",
+    status: "done",
+    estimateWeeks: "1–2 semanas",
+    startedAt: "2026-05-10",
+    finishedAt: "2026-05-10",
+    tasks: [
+      { id: "branch", label: "Criar branch refactor/multi-tenant-core a partir de migracao/nuxt", done: true },
+      { id: "contract-freeze", label: "docs/CONTRACT_FREEZE.md com interfaces que não podem quebrar até Fase 4", done: true },
+      { id: "schema-target", label: "docs/SCHEMA_TARGET.md com diagrama dos schemas Postgres alvo", done: true },
+      { id: "feature-flag", label: "Feature-flag CORE_V2_ENABLED no backend", done: true, note: "Exposta em GET /healthz e logada no boot quando ativa." }
+    ],
+    verifiable: "Projeto compila e roda igual ao main."
+  },
+  {
+    id: "fase-1",
+    code: "Fase 1",
+    title: "Schema core novo",
+    goal: "Criar tabelas core (organizations, accounts, users globais, sessions, roles, permissions) sem desligar o produto atual.",
+    status: "done",
+    estimateWeeks: "2–3 semanas",
+    startedAt: "2026-05-10",
+    finishedAt: "2026-05-10",
+    tasks: [
+      { id: "migration", label: "Migration 0100_core_schema.sql cria seção A.2 completa", done: true, note: "15 tabelas em schema core; idempotente." },
+      { id: "seed", label: "Job de seed: public.tenants → core.accounts (mesmo id) + account_users", done: true, note: "Migration 0101 com ON CONFLICT DO NOTHING." },
+      { id: "endpoint-accounts", label: "GET /v2/me/accounts (lean) sob feature-flag", done: true, note: "Lista accounts do user autenticado." },
+      { id: "endpoint-context", label: "GET /v2/me/context?accountId=... (full) sob feature-flag", done: true, note: "Roles/permissions vazios até Fase 3." },
+      { id: "module-go", label: "Módulo Go back/internal/modules/core/ (model/store/service/http/AGENT.md)", done: true },
+      { id: "legacy", label: "GET /v1/me/context legado intacto", done: true, note: "Endpoints v1 não foram modificados." }
+    ],
+    verifiable: "Login antigo funciona; com flag CORE_V2_ENABLED=true, /v2/me/accounts retorna lista de accounts e /v2/me/context retorna o contexto completo."
+  },
+  {
+    id: "fase-2",
+    code: "Fase 2",
+    title: "Module Registry e refactor do bootstrap",
+    goal: "Introduzir Registry de módulos plugáveis e event bus in-process sem mudar comportamento das rotas legadas.",
+    status: "in_progress",
+    estimateWeeks: "2 semanas",
+    startedAt: "2026-05-10",
+    tasks: [
+      { id: "registry-pkg", label: "Pacote back/internal/platform/modules/ com Module, Handle, Dependencies, Registry, CatalogRepository", done: true },
+      { id: "events-pkg", label: "Pacote back/internal/platform/events/ com Bus + InMemoryBus (causationId, correlationId, MaxDepth=10)", done: true },
+      { id: "guard", label: "Middleware AccountModulesGuard em platform/httpapi/ (cache 60s, X-Account-Id)", done: false, note: "AUDITORIA 2026-05-28: codificado mas DESCARTADO em runtime (app.go:313 instancia em `_ =`). Nenhuma rota usa RequireModule(...). Pendência transferida para a fase multitenant-completion." },
+      { id: "sync-catalog", label: "SyncCatalog no boot popula core.modules, core.permissions, core.role_templates declarativamente", done: true, note: "deprecated_at marca removidas; nunca DELETE auto." },
+      { id: "core-module", label: "Módulo core implementa interface Module (8 permissões, 3 role templates: owner/admin/member)", done: true },
+      { id: "app-integration", label: "app.go usa Registry.Build/SyncCatalog quando CORE_V2_ENABLED=true; legado intacto quando off", done: true },
+      { id: "adapters", label: "Módulos legados (auth, tenants, stores, etc.) NÃO foram embrulhados em adapters", done: true, note: "Decisão pragmática: continuam pelo wiring legado até serem reescritos na Fase 4 (queue) e Fase 6 (satélites). Infra do Registry está pronta para receber satélites quando chegarem." }
+    ],
+    verifiable: "go build ./... passa; com flag on, SyncCatalog roda no boot e popula core.modules/permissions/role_templates a partir do módulo core declarativo. Endpoints /v2/me/* continuam funcionando via handle do Registry."
+  },
+  {
+    id: "fase-3",
+    code: "Fase 3",
+    title: "RBAC dinâmico",
+    goal: "Permitir que cada Account clone cargos-template e edite suas próprias permissões.",
+    status: "in_progress",
+    estimateWeeks: "2 semanas",
+    startedAt: "2026-05-10",
+    tasks: [
+      { id: "rbac-service", label: "Service core.rbac (CloneTemplateToAccount, CreateRole, UpdateRolePermissions, AssignRoleToUser)", done: true },
+      { id: "rbac-endpoint", label: "Endpoint /v1/accounts/:id/roles CRUD + AssignRoleToUser", done: true },
+      { id: "data-migration", label: "Migração de dados: roles atuais (Owner, Manager, Director, etc.) viram core.roles por account", done: false, note: "AUDITORIA 2026-05-28: migration 0103 existe, mas core.user_tenant_roles está com 0 linhas no banco local. Seed efetivo não rodou; runtime cai em fallback legado. Reabrir na multitenant-completion." },
+      { id: "principal-resolution", label: "MeContext resolve Roles[] e Permissions[] reais de core.role_permissions (legado continua como fallback no auth)", done: false, note: "AUDITORIA 2026-05-28: enquanto core.role_permissions estiver vazio o caminho real nunca é exercido; sempre fallback legado. Concluir só quando 0103 efetivamente seedar." }
+    ],
+    verifiable: "UI de roles permite clonar template e ajustar permissões; mudança reflete no login do user."
+  },
+  {
+    id: "fase-4a",
+    code: "Fase 4A",
+    title: "Schema queue — fundação",
+    goal: "Mover tabelas estáveis (stores, consultants, settings, catalog) para schema queue sem quebrar leitores atuais.",
+    status: "done",
+    estimateWeeks: "1 semana",
+    startedAt: "2026-05-11",
+    finishedAt: "2026-05-11",
+    tasks: [
+      { id: "schema-create", label: "Criar schema queue + migrations base", done: true },
+      { id: "move-stable", label: "Migrar stores, consultants, settings, catalog → queue.* com FK para core.accounts(id)", done: true, note: "Migration 0104. FKs internas para queue.*; compat views em public.*." },
+      { id: "compat-views", label: "Views de compatibilidade public.* → queue.* durante transição", done: true, note: "Views auto-updatable (PostgreSQL) — código Go legado sem alteração." }
+    ],
+    verifiable: "Produto roda igual; queries SELECT batem nas views novas; testes existentes passam."
+  },
+  {
+    id: "fase-4b",
+    code: "Fase 4B",
+    title: "Domínio operacional principal",
+    goal: "Migrar operations e feedback (core do dia-a-dia) para o módulo queue.",
+    status: "done",
+    estimateWeeks: "1–2 semanas",
+    startedAt: "2026-05-11",
+    finishedAt: "2026-05-11",
+    tasks: [
+      { id: "move-ops", label: "Migrar operations + feedback para queue.*", done: true, note: "Migration 0105: operation_*, user_feedback, feedback_messages, feedback_read_states, tenant settings." },
+      { id: "module-rewrite", label: "Reescrever back/internal/modules/operations/ como subpacote queue/operations/", done: false, note: "Adiado: código Go continua em public.* via views compat. Será reescrito quando o módulo queue chegar do outro projeto." },
+      { id: "shape-compat", label: "Endpoints /v1/operations/* mantêm shape (front não muda)", done: true, note: "Garantido pelas views compat — Go lê public.* que aponta para queue.*." }
+    ],
+    verifiable: "Fluxo golden de operação (entrada → pausa → atendimento → fim) idêntico em staging."
+  },
+  {
+    id: "fase-4c",
+    code: "Fase 4C",
+    title: "Analytics, alertas, ERP",
+    goal: "Migrar módulos auxiliares (alerts, analytics, reports, erp) para o schema queue.",
+    status: "in_progress",
+    estimateWeeks: "1 semana",
+    startedAt: "2026-05-11",
+    tasks: [
+      { id: "move-aux", label: "Migrar alerts, analytics, reports, erp → queue.*", done: true, note: "Migration 0106: tenant_alert_settings, alert_instances, alert_actions, erp_sync_runs, erp_item_raw, erp_item_current." },
+      { id: "subpackages", label: "Cada um vira subpacote queue/<nome>/", done: false, note: "Adiado junto com rewrite do módulo operations — mesmo motivo." },
+      { id: "erp-rebuild", label: "ERP: testar rebuild de projeções com base no schema novo", done: false, note: "Pendente validação em staging após aplicar migrations 0104-0106." }
+    ],
+    verifiable: "Dashboards de relatório, alertas e sincronização ERP funcionam idênticos."
+  },
+  {
+    id: "fase-4d",
+    code: "Fase 4D",
+    title: "Frontend layer queue",
+    goal: "Mover páginas e stores da fila-atendimento para web/layers/queue/.",
+    status: "in_progress",
+    estimateWeeks: "1 semana (paralelo a 4C)",
+    startedAt: "2026-05-11",
+    tasks: [
+      { id: "layer-create", label: "Criar web/layers/queue/ com nav.config.ts", done: true, note: "nav.config.ts com todas as seções existentes; sobrescreve legado via module-registry plugin." },
+      { id: "pages-move", label: "Mover pages/stores listadas em E.4 para o layer", done: false, note: "Adiado: pages ainda em web/app/pages/. Mover quando módulo queue chegar do outro projeto." },
+      { id: "shell-minimal", label: "Shell app/ fica minimal", done: false, note: "Depende da movimentação das pages (item acima)." }
+    ],
+    verifiable: "Trocar account no AccountSwitcher recarrega menu; rota /operacao continua funcionando dentro do layer."
+  },
+  {
+    id: "fase-5",
+    code: "Fase 5",
+    title: "Frontend layers + menu dinâmico",
+    goal: "Substituir sidebar estática por menu montado a partir dos nav.config.ts dos layers.",
+    status: "in_progress",
+    estimateWeeks: "1–2 semanas (paralelo à Fase 4)",
+    startedAt: "2026-05-10",
+    tasks: [
+      { id: "plugin-registry", label: "app/plugins/module-registry.client.ts lendo nav.config.ts via import.meta.glob", done: true, note: "Injeta layers dinamicamente + fallback legado via sidebar-nav.ts enquanto layer queue não chega." },
+      { id: "core-layer", label: "layers/core/ com AccountSwitcher, PermissionGate, usePermission, useNav", done: true, note: "stores/account.ts (multi-account v2), composables/usePermission, composables/useNav, CoreAccountSwitcher.vue, CorePermissionGate.vue." },
+      { id: "delete-static", label: "Deletar web/app/utils/sidebar-nav.ts", done: false, note: "Pendente: sidebar-nav.ts ainda é fallback no plugin. Remover após validação em staging que layer queue cobre todos os itens." },
+      { id: "sidebar-rewrite", label: "DashboardSidebarNav.vue reescrito para consumir useNavStore", done: true },
+      { id: "menu-account-modules", label: "useNav consome core.account_modules para gating dinâmico (esconde itens de módulo desabilitado)", done: false, note: "AUDITORIA 2026-05-28: tabela core.account_modules está com 0 linhas; menu segue filtrando por role hardcoded. Sem isso, 'desabilitar módulo esconde item' não funciona. Transferido para multitenant-completion." }
+    ],
+    verifiable: "Trocar account no AccountSwitcher recarrega menu; desabilitar módulo no banco esconde itens."
+  },
+  {
+    id: "fase-6",
+    code: "Fase 6",
+    title: "Orquestração dos módulos satélites",
+    goal: "Transformar o inventário da Fase 10 em fases executáveis, com 1 trilha por módulo e PRs pequenos.",
+    status: "in_progress",
+    estimateWeeks: "Coordenação contínua",
+    startedAt: "2026-05-12",
+    tasks: [
+      { id: "module-order", label: "Definir ordem de entrada dos módulos e confirmar o primeiro módulo", done: true, note: "Ordem atual detalhada nas Fases 11-20: Theme Studio; depois Tasks; em seguida o lote simples (Profile, Team, Site e a frente nova de Users/Clientes em paralelo ao legado); por fim os módulos mais pesados como Omni, Finance, Indicators, Tools e Bio." },
+      { id: "module-components", label: "Migrar componentes específicos junto com cada módulo importado", done: false, note: "Cada fase de módulo documenta componentes vindos do web-reference e mantém Core* só para reuso real." },
+      { id: "module-contract", label: "Para cada módulo: backend Module + schema + permissões + layer + nav.config.ts + aceite de habilitar/desabilitar", done: false },
+      { id: "docs-loop", label: "Atualizar docs/COMPONENT_INVENTORY.md e /roadmap a cada fase concluída", done: false }
+    ],
+    verifiable: "Cada módulo tem fase própria, critérios de aceite claros e validação de account_modules: habilitar mostra menu/rotas; desabilitar esconde e bloqueia acesso."
+  },
+  {
+    id: "fase-7",
+    code: "Fase 7",
+    title: "Otimização de performance",
+    goal: "Reduzir queries por request, parar com login/navegação lentos e consertar o logout que trava.",
+    status: "in_progress",
+    estimateWeeks: "1 semana",
+    startedAt: "2026-05-11",
+    tasks: [
+      { id: "indices-stats", label: "Migration 0107 — ANALYZE pós-Fase 4 + índice cobertura sessions(id) WHERE revoked_at IS NULL", done: true },
+      { id: "load-user-fast", label: "auth.LoadUserForAuth consolida findRecord + findStoreIDs em 1 query única (LATERAL)", done: true, note: "2 round-trips → 1 no lookup de user no hot-path." },
+      { id: "resolve-perms-fast", label: "access.ResolveEffectivePermissions combina role_permissions + overrides em 1 query (UNION/EXCEPT)", done: true, note: "2 round-trips → 1 na resolução de permissões. Fallback DefaultRolePermissions preservado." },
+      { id: "auth-token-consolidated", label: "AuthenticateToken usa LoadUserForAuth + ResolveEffectivePermissions (4 → 2 queries por request autenticado)", done: true },
+      { id: "logout-endpoint", label: "POST /v1/auth/logout idempotente (preparado para revogação real na 7D)", done: true },
+      { id: "logout-frontend", label: "Frontend auth.logout() chama backend antes de clearSession; falha de rede tratada como sucesso", done: true },
+      { id: "middleware-auth-skip", label: "auth.global.ts pula ensureSession em rotas /auth/*", done: true, note: "Mata cascata de ensureSession na tela de login pós-logout." },
+      { id: "bootstrap-parallel", label: "core/account.ts paraleliza /v2/me/accounts + /v2/me/context speculativo via Promise.all", done: true, note: "Quando o accountId do cookie bate com a lista, salva 1 round-trip no bootstrap." },
+      { id: "principal-cache", label: "TTL em memória para Principal (sync.Map/ristretto) com invalidação por eventos — sessão, role, permission, account_modules", done: false, note: "Pendente: 7D. Só aplicar após medir o ganho real das 7A-7C em staging." },
+      { id: "session-revogation", label: "JWT carrega sessionId + middleware checa core.user_sessions.revoked_at no mesmo lookup", done: false, note: "Pendente: parte da 7D quando o PrincipalCache existir. Sem cache, query extra de sessão anularia o ganho da 7A." },
+      { id: "redis-cache", label: "Trocar PrincipalCache para Redis (pré-produção full)", done: false, note: "Pendente: 7E. Só quando subir produção com múltiplas instâncias." }
+    ],
+    verifiable: "Login < 500ms; navegação entre páginas sem latência perceptível; logout < 200ms sem bugs."
+  },
+  {
+    id: "fase-8",
+    code: "Fase 8",
+    title: "Split CRM + Queue",
+    goal: "Separar fila-atendimento (queue) de dados/dashboards CRM (ERP + catalog) em módulos independentes.",
+    status: "pending",
+    estimateWeeks: "2–3 semanas (bloqueada até Fase 7 entregar)",
+    tasks: [
+      { id: "migration-crm", label: "Migration 0108 — schema crm + mover erp_* de queue.* → crm.* (views compat em public.*)", done: false },
+      { id: "module-crm", label: "back/internal/modules/crm/ com erp/ + catalog/ + dashboard/ implementando interface Module", done: false },
+      { id: "resolver-crm", label: "crm.Resolver registrado em Dependencies para queue consumir opcionalmente", done: false },
+      { id: "module-queue", label: "Consolidar back/internal/modules/queue/ — operations + alerts + analytics + reports + feedback + consultants + settings", done: false, note: "Termina pendências da Fase 4 (module-rewrite, subpackages)." },
+      { id: "catalog-adapter", label: "queue/catalog_adapter.go — usa crm.Resolver se habilitado, senão entidade local", done: false },
+      { id: "layer-crm", label: "web/layers/crm/ com nav.config.ts + pages /crm, /erp", done: false },
+      { id: "nav-queue-cleanup", label: "Remover /crm, /erp do web/layers/queue/nav.config.ts", done: false },
+      { id: "docs", label: "AGENT.md de crm, queue, erp (deprecated), catalog (deprecated) + CONTRACT_FREEZE.md com crm.Resolver", done: false }
+    ],
+    verifiable: "CRM autônomo + queue consome CRM opcionalmente. Desabilitar CRM em core.account_modules: nav /crm e /erp somem; queue.catalog faz fallback local."
+  },
+  {
+    id: "fase-9",
+    code: "Fase 9",
+    title: "UX de loading / feedback visual",
+    goal: "Nunca deixar o usuário olhando para nada. Loading sempre presente (overlay global, skeleton da página, spinner local) mesmo na primeira carga.",
+    status: "in_progress",
+    estimateWeeks: "3–5 dias (paralela à Fase 7)",
+    startedAt: "2026-05-11",
+    tasks: [
+      { id: "loading-overlay", label: "CoreLoadingOverlay.vue — barra de progresso no topo + leve fade durante navegação e bootstrap", done: true, note: "Montado em app.vue; hooks page:start/page:finish ativam em mudança de rota." },
+      { id: "skeleton", label: "CoreSkeleton.vue com variantes (card / table-row / text / avatar / block) e shimmer animation", done: true },
+      { id: "use-loading", label: "useCoreLoading() — contador global push/pop; api-client.ts dispara em requests > 200ms", done: true, note: "Plugin loading-bridge.client.ts conecta store ao api-client (evita dependência circular)." },
+      { id: "apply-login", label: "Aplicar overlay no fluxo de login/bootstrap (sumiu quando context carregou)", done: true, note: "Coberto automaticamente: api-client dispara overlay > 200ms; hook page:start/finish cobre a navegação pós-login." },
+      { id: "apply-dashboard", label: "Skeleton dos cards no dashboard inicial (/)", done: false },
+      { id: "apply-operacao", label: "Skeleton da grid de stores + fila em /operacao enquanto realtime conecta", done: false },
+      { id: "apply-tables", label: "Skeleton rows em tabelas grandes (clientes, usuários, relatórios) + loading inline na paginação", done: true, note: "AppEntityGrid.vue usa CoreSkeleton variant=table-row count=6; propaga para todas as workspaces que usam o grid (clientes, usuários, ERP, relatórios, etc.)." },
+      { id: "apply-switch", label: "Overlay durante AccountSwitcher trocar account (/v2/me/context da nova account)", done: true, note: "CoreAccountSwitcher.select() chama useCoreLoadingStore.push('Trocando de account...') antes do switchAccount." },
+      { id: "empty-state", label: "CoreEmptyState.vue padronizado (ícone + título + descrição + ação opcional)", done: true },
+      { id: "error-state", label: "CoreErrorState.vue padronizado com botão de retry (mensagem amigável, sem stack)", done: true },
+      { id: "replace-hardcoded", label: "Substituir mensagens hardcoded de 'Sem dados' / 'Erro ao carregar' pelos componentes novos", done: false }
+    ],
+    verifiable: "Nenhuma página fica em branco em qualquer transição. Tempo até primeiro pixel renderizado < 300ms mesmo na primeira carga. AccountSwitcher mostra overlay até o novo context chegar."
+  },
+  {
+    id: "fase-10",
+    code: "Fase 10",
+    title: "Inventário do front de referência + design system",
+    goal: "Mapear o front em web-reference/, usar o design system/temas trazido de lá como referência e preservar o visual atual até os módulos novos entrarem.",
+    status: "done",
+    estimateWeeks: "Concluída",
+    startedAt: "2026-05-12",
+    finishedAt: "2026-05-12",
+    tasks: [
+      { id: "reference-folder", label: "web-reference/ presente e fora do build do Nuxt via .gitignore", done: true, note: "Pasta de leitura/análise; não entra no bundle do app atual." },
+      { id: "inventory", label: "docs/COMPONENT_INVENTORY.md — inventário de componentes, páginas, props/eventos, dependências e destino provável por módulo", done: true, note: "Inventário funcional concluído: 63 componentes, 35 páginas, dependências, candidatos Core e páginas por módulo." },
+      { id: "design-system-map", label: "Mapear design system do web-reference: tokens.css, useOmniTheme, useThemeStudio, /admin/themes e app/components/theme/**", done: true, note: "Documentado com Theme Studio, token defaults, page header visibility e dependências Nuxt UI/Tailwind." },
+      { id: "tokens-css", label: "Definir adaptação de tokens/variantes usando o design system do front de referência, não o design antigo do projeto atual", done: true, note: "Decisão: não trocar tokens globais atuais agora; páginas novas usam tokens do web-reference e pontes CSS só entram quando houver necessidade real." },
+      { id: "preserve-current", label: "Preservar visual e componentes das páginas atuais por enquanto; não substituir selects/tabelas/modais existentes nesta fase", done: true, note: "Atualização de design das páginas atuais fica para depois da migração dos módulos." },
+      { id: "new-pages-visual", label: "Novas páginas vindas do outro projeto entram com o visual delas dentro do layer do módulo correspondente", done: true, note: "Finance, tasks e omni foram mapeados como primeiras entradas; manager/clientes e users ficam como overlap futuro." },
+      { id: "page-decisions", label: "Criar lista de decisão por página: permanece atual, será removida/deprecada, ou receberá update de design depois", done: true, note: "Tabela de decisão por página atual adicionada em docs/COMPONENT_INVENTORY.md." },
+      { id: "core-candidates", label: "Portar para web/layers/core/components/ com prefixo Core apenas componentes realmente compartilhados ou necessários ao shell/design system", done: true, note: "Candidatos listados; decisão é não promover para Core antes de reuso real em mais de um módulo." },
+      { id: "module-components", label: "Componentes específicos migram junto com cada módulo na Fase 6 (finance, tasks, omni, site, bio, ...)", done: true, note: "Escopo transferido para a Fase 6 como regra de execução; Finance não será o primeiro módulo." }
+    ],
+    verifiable: "Inventário revisado; seção de design system/temas documentada; front atual preservado; páginas novas migram com o visual do web-reference; decisões por página registradas antes de qualquer troca visual ampla."
+  },
+  {
+    id: "fase-11",
+    code: "Fase 11",
+    title: "Design System / Theme Studio",
+    goal: "Portar a página de temas antes dos módulos para que qualquer tela nova responda corretamente a light/dark/apple/custom, tokens e overrides.",
+    status: "done",
+    estimateWeeks: "3-5 dias",
+    startedAt: "2026-05-12",
+    finishedAt: "2026-05-12",
+    tasks: [
+      { id: "theme-core", label: "Trazer useOmniTheme.ts para o layer core/design-system com inicialização global no app", done: true, note: "Plugin client inicializa tema/overrides a partir do localStorage." },
+      { id: "theme-studio", label: "Trazer useThemeStudio.ts, /admin/themes e components/theme/** para uma rota dev-only /themes", done: true, note: "Rota /themes no layout dashboard e menu dev/admin." },
+      { id: "tokens", label: "Unificar tokens do web-reference com omni-design-system.css sem quebrar shell atual", done: true, note: "Tokens light, dark, apple e custom conectados a aliases legados." },
+      { id: "page-header", label: "Restaurar AdminPageHeader com visibilidade controlada por tema", done: true },
+      { id: "shell-bridge", label: "Fazer dashboard/sidebar/header atuais consumirem os tokens ou terem ponte visual compatível", done: true, note: "Header e sidebar usam variaveis admin-header/theme." },
+      { id: "module-proof", label: "Validar /themes e /tasks nos temas light, dark, apple e custom sem contraste quebrado", done: true, note: "Validado via Docker 3003: /themes aplica light/dark/apple/custom; /tasks legivel em dark; sem warnings de console apos restart." }
+    ],
+    verifiable: "Theme Studio aplica e persiste tema; trocar tema altera tokens globais; /tasks fica visualmente consistente e legível em todos os temas; rota/menu ficam dev-only."
+  },
+  {
+    id: "fase-12",
+    code: "Fase 12",
+    title: "Tasks Orchestrator / Notion-like",
+    goal: "Evoluir /tasks de uma tela de tarefas para um orquestrador front-first de paginas, views e itens configuraveis, usando o template visual do web-reference antes de criar o backend.",
+    status: "in_progress",
+    estimateWeeks: "1-2 semanas",
+    startedAt: "2026-05-12",
+    tasks: [
+      { id: "phase12-brief", label: "Documentar conceito Tasks Orchestrator: paginas notion-like, views, campos, cards, tabela, modal e colunas configuraveis", done: true, note: "Criado docs/TASKS_ORCHESTRATOR_PHASE12.md para continuidade por agentes." },
+      { id: "frontend-layer", label: "Criar web/layers/tasks/ com pagina, composable, types, store local e componentes importados do web-reference", done: true, note: "Layer /tasks existe e esta no Nuxt extends." },
+      { id: "reference-page", label: "Portar base visual de web-reference/app/pages/admin/tasks.vue preservando Nuxt UI e tokens do Theme Studio", done: true, note: "Port inicial validado em /tasks no Docker 3003." },
+      { id: "shared-components", label: "Trazer OmniDataTable e OmniSelectMenuInput localmente, sem promover cedo demais para Core", done: true },
+      { id: "dev-access", label: "Habilitar /tasks no menu/rota apenas para acesso dev/admin inicial", done: true },
+      { id: "workspace-model", label: "Trocar modelo mental de projeto/tarefa para page/template/view/field/item, mantendo o nome inicial Tasks", done: true, note: "Base front-first adicionou columns, fields e views mantendo compatibilidade com TaskProject/TaskItem enquanto migra." },
+      { id: "page-switcher", label: "Permitir criar mais de uma pagina/base usando o mesmo template, com selecao e configuracao por pagina", done: true, note: "Seletor/criador de pagina usa o antigo seletor de projeto, ja renomeado na UI." },
+      { id: "view-config", label: "Configurar views board/tabela: nome, tipo, agrupamento, ordenacao, filtros e campos visiveis", done: true, note: "Configuracao front-first permite agrupar board por status/responsavel/cliente/tipo/prioridade, ocultar grupos/contagem e escolher campos visiveis." },
+      { id: "field-schema", label: "Definir campos editaveis por pagina: texto, select, pessoa, cliente, data, prioridade, status, numero e checkbox", done: true, note: "Schema padrao de campos esta no estado da pagina; criacao de tipos custom fica para a API/modelo final." },
+      { id: "board-columns", label: "Colunas configuraveis: renomear, colorir, reordenar por drag, adicionar/remover e mapear itens ao excluir", done: true, note: "Colunas agora sao objetos com id/label/color/order; rename propaga status dos cards." },
+      { id: "inline-board", label: "Editar dados direto no card usando OmniSelectMenuInput e inputs inline; abrir modal somente no clique neutro do card", done: true, note: "Titulo, status, responsavel, cliente, tipo, prioridade e data editam no card com click.stop." },
+      { id: "column-actions", label: "Adicionar botao de criar item na coluna, menu de edicao da coluna e movimentacao de cards/colunas", done: true, note: "Edicao de coluna agora fica em popover; drag de coluna usa handle separado do drag de cards." },
+      { id: "table-inline", label: "Tabela com edicao inline, colunas configuraveis, ordenacao e exibicao alinhadas com a view ativa", done: true, note: "Tabela usa a view para colunas visiveis, cria nova linha com foco e edita titulo/descricao/status/responsavel/cliente/tipo/prioridade/data/arquivada." },
+      { id: "card-layout", label: "Configurar quais campos aparecem no card, ordem, labels, badges, cores e densidade", done: true, note: "Card respeita campos visiveis, esconde campos vazios fora do foco e abre modal apenas em clique neutro." },
+      { id: "modal-layout", label: "Configurar quais campos aparecem no modal e em quais secoes; implementar modal depois do board/tabela", done: true, note: "Modal respeita campos visiveis, tem modos lado a lado/central/pagina inteira, resize lateral e editor rico TipTap para textos longos, imagens, HTML, emojis, links e mencoes." },
+      { id: "external-layout", label: "Mover /tasks e novos modulos fora de fila-atendimento para layout externo full-width igual ao front de referencia", done: false, note: "Essas paginas nao devem ficar presas na sidebar/layout operacional da fila." },
+      { id: "full-editor", label: "Evoluir editor para componente completo reutilizavel: scroll interno, toolbar fixa, drag por bloco, botao +, slash menu, mention menu e bubble menu", done: true, note: "Criado OmniEditor em app/components/omni com UEditor/Nuxt UI, toolbar fixa, bubble toolbar, drag handle, botao +, slash menu, @ pessoas, # clientes/tasks, emoji menu, upload/URL de imagem, HTML e pagina /editor; modal de tasks passou a usar o componente." },
+      { id: "front-persistence", label: "Persistir pages/views/fields/items em localStorage estruturado para fechar UX antes do backend", done: true, note: "Persistencia local migrada com columns/fields/views e fallback para dados antigos." },
+      { id: "split-components", label: "Quebrar tasks.vue (2955 linhas) em 5 sub-componentes + useTasksPageContext via provide/inject", done: true, note: "TasksFilterBar, TasksBoardView, TasksTableView, TasksProjectSettings, TasksTaskModal. tasks.vue ficou com 832 linhas totais no estado atual, com template fino e CSS global prefixado tasks-page__ / tasks-toolbar__." },
+      { id: "agent-docs", label: "Criar AGENT.md para tasks, notifications, realtime e web/layers/tasks antes de qualquer backend", done: true, note: "back/internal/modules/tasks/AGENT.md (scopedQuery, BuildTaskDTO, 13 perms, 3 roles, 30+ endpoints); notifications/AGENT.md (adapter pattern, MVP in-app, stubs email/wpp/push); realtime/AGENT.md atualizado (6 topicos WS, PresenceStore); web/layers/tasks/AGENT.md (migracao localStorage, composables T2-T7)." },
+      { id: "backend-deferred", label: "Criar back/internal/modules/tasks/ com migration 0108, API Go, RBAC e realtime (Fases T1-T9)", done: true, note: "T1 e T2 entregues: migration 0108, módulo Go tasks no Registry, RBAC declarativo, endpoints REST/tracking básicos e realtime WS/presence/notifications. Próxima ação: T3 notifications." }
+    ],
+    verifiable: "Em /tasks, criar paginas, views e itens; configurar board/tabela/card/modal; editar inline; mover cards e colunas; trocar agrupamento/ordenacao; tudo persistindo no front antes da API Go."
+  },
+  {
+    id: "fase-13",
+    code: "Fase 13",
+    title: "Módulo Omni",
+    goal: "Trazer omnichannel/inbox com suas páginas, realtime e auditoria em um layer próprio.",
+    status: "pending",
+    estimateWeeks: "2-4 semanas",
+    tasks: [
+      { id: "backend", label: "Criar back/internal/modules/omni/ com schema omni.*, canais, conversas, mensagens, contatos vinculados e auditoria", done: false },
+      { id: "dependencies", label: "Adicionar dependências necessárias do módulo, como socket.io-client e emoji-mart, somente nesta fase", done: false },
+      { id: "pages", label: "Portar páginas admin/omnichannel: index, inbox, operacao, auditoria e docs conforme decisão de produto", done: false },
+      { id: "components", label: "Portar OmnichannelInboxModule.vue e componentes de inbox/chat/composer/anexos/sessão", done: false },
+      { id: "realtime", label: "Integrar realtime de conversas ao backend Go, sem depender do BFF mock do web-reference", done: false },
+      { id: "acceptance", label: "Enviar/receber mensagem em conta piloto; auditoria registra ação; módulo desabilitado bloqueia rotas", done: false }
+    ],
+    verifiable: "Inbox abre, lista conversas, envia mensagem de teste, recebe atualização realtime e respeita permissões do módulo."
+  },
+  {
+    id: "fase-13a",
+    code: "Fase 13A",
+    title: "Lote simples do front",
+    goal: "Executar primeiro as páginas mais simples vindas do web-reference para ganhar gestão rápida no front novo sem substituir o legado operacional da fila.",
+    status: "blocked",
+    estimateWeeks: "1-2 semanas",
+    startedAt: "2026-05-25",
+    blockers: ["multitenant-completion"],
+    tasks: [
+      { id: "theme-baseline", label: "Usar Theme Studio já concluído como base visual do lote simples, sem reabrir o escopo de temas", done: true, note: "Fase 11 concluída; o foco agora é aplicar o visual base nas páginas simples novas." },
+      { id: "profile", label: "Trazer primeiro o ajuste de profile, reaproveitando /perfil atual e aproximando layout/fluxo do admin/profile.vue", done: false },
+      { id: "team", label: "Trazer Team antes de finance, começando por treinamento e candidatos como recorte inicial", done: false },
+      { id: "site", label: "Trazer Site antes de finance, começando por produtos e leads com escopo front-first", done: false, note: "AUDITORIA 2026-05-28: páginas SiteLeadsAdminWorkspace.vue e SiteProductsAdminWorkspace.vue foram criadas, mas consumindo BFF Nitro mock em web/server/. Reverter na multitenant-completion." },
+      { id: "users-parallel", label: "Abrir frente nova de usuários no front novo reaproveitando UsersWorkspace, sem remover /usuarios legado da fila", done: false },
+      { id: "clients-parallel", label: "Abrir frente nova de clientes/tenants no front novo mantendo /clientes legado intacto até fechar a estratégia tenant", done: false, note: "AUDITORIA 2026-05-28: tela manage/clientes-web.vue + composable useClientsManager.ts já existem, mas batem no BFF mock /api/admin/clients (web/server/utils/clients-repository.ts in-memory). Não é fonte de verdade. Será reescrito contra API Go real na multitenant-completion." },
+      { id: "sequencing", label: "Deixar finance e demais módulos pesados para depois do lote simples validado no painel", done: false }
+    ],
+    verifiable: "Roadmap deixa explícito o lote simples como próxima onda; /usuarios e /clientes atuais permanecem operacionais; finance só começa depois desse recorte ser validado."
+  },
+  {
+    id: "fase-14",
+    code: "Fase 14",
+    title: "Módulo Finance",
+    goal: "Trazer financeiro só depois do lote simples do front, mantendo /finance como placeholder até a fase começar.",
+    status: "pending",
+    estimateWeeks: "2-3 semanas",
+    tasks: [
+      { id: "sequencing", label: "Iniciar somente após validar profile, team, site e a frente nova de users/clientes no roadmap", done: false },
+      { id: "backend", label: "Criar back/internal/modules/finance/ com schema finance.*, lançamentos, categorias, recorrências e ajustes", done: false },
+      { id: "frontend-layer", label: "Criar web/layers/finance/ com página admin/finance.vue portada para o path /finance", done: false },
+      { id: "components", label: "Portar FinanceLineCard.vue, FinanceRecurringGroupCard.vue e OmniMoneyInput.vue no layer finance", done: false },
+      { id: "contacts-integration", label: "Integrar com contacts quando habilitado; usar entidade local quando contacts estiver desligado", done: false },
+      { id: "permissions", label: "Declarar permissões finance.read, finance.write, finance.recurring.manage e role templates", done: false },
+      { id: "acceptance", label: "Criar lançamento, efetivar recorrência, ajustar valor e consultar histórico via API Go", done: false }
+    ],
+    verifiable: "/finance deixa de ser placeholder, operações principais persistem no backend e o módulo respeita account_modules."
+  },
+  {
+    id: "fase-15",
+    code: "Fase 15",
+    title: "Módulo Contacts/Admin",
+    goal: "Trazer a nova frente de admin/users/clientes em paralelo ao legado da fila, definindo a fonte de verdade tenant sem quebrar o operacional atual.",
+    status: "pending",
+    estimateWeeks: "2-3 semanas",
+    tasks: [
+      { id: "decision", label: "Fixar a regra do rollout: /usuarios e /clientes atuais seguem operacionais; a nova frente admin entra primeiro em paralelo", done: false },
+      { id: "backend", label: "Criar back/internal/modules/contacts/ com Resolver consumível por finance, omni, site e queue", done: false },
+      { id: "pages", label: "Portar admin/manage/clientes.vue, users.vue e modulos.vue como frente nova de gestão, sem remover os CRUDs atuais da fila", done: false },
+      { id: "components", label: "Reaproveitar UsersWorkspace/TenantsWorkspace onde já houver base pronta e portar manager/clients só no que faltar", done: false },
+      { id: "account-modules", label: "Mapear admin/manage/modulos.vue para gestão de core.account_modules no futuro", done: false },
+      { id: "acceptance", label: "Nova frente admin funciona em paralelo; consumers fazem fallback e o legado da fila segue intacto", done: false }
+    ],
+    verifiable: "Contacts pode ser habilitado por account, expõe Resolver estável e não substitui /usuarios ou /clientes atuais antes da transição explícita."
+  },
+  {
+    id: "fase-16",
+    code: "Fase 16",
+    title: "Módulo Site",
+    goal: "Trazer páginas de produtos e leads do site/e-commerce no lote simples, antes do financeiro e com acoplamento mínimo ao restante.",
+    status: "pending",
+    estimateWeeks: "1-2 semanas",
+    tasks: [
+      { id: "backend", label: "Criar back/internal/modules/site/ com produtos publicados, leads, configurações e permissões", done: false },
+      { id: "pages", label: "Portar admin/site/produtos.vue e admin/site/leads.vue para web/layers/site/pages/ como primeira entrega simples do front novo", done: false },
+      { id: "contacts-integration", label: "Decidir se leads entram em contacts quando contacts estiver habilitado", done: false },
+      { id: "nav", label: "Adicionar nav.config.ts do site e proteger rotas com module-enabled", done: false },
+      { id: "acceptance", label: "Cadastrar produto, alternar visibilidade no site e consultar lead via API Go", done: false }
+    ],
+    verifiable: "Produtos e leads funcionam no layer site, com fallback claro para contacts e sem afetar /crm ou /erp."
+  },
+  {
+    id: "fase-17",
+    code: "Fase 17",
+    title: "Módulo Indicators",
+    goal: "Separar indicadores como módulo próprio ou acoplar conscientemente a analytics/crm, com decisão antes de portar telas.",
+    status: "pending",
+    estimateWeeks: "2-3 semanas",
+    tasks: [
+      { id: "domain-decision", label: "Decidir destino: indicators próprio, analytics ou CRM", done: false },
+      { id: "backend", label: "Criar schema e APIs para templates, avaliações, governança, evidências e exportações", done: false },
+      { id: "pages", label: "Portar admin/indicadores/index.vue e configuracoes.vue", done: false },
+      { id: "components", label: "Portar components/indicators/* e composables useIndicators* necessários", done: false },
+      { id: "live", label: "Trocar mocks/live do web-reference por dados reais do backend", done: false },
+      { id: "acceptance", label: "Criar avaliação, configurar template, filtrar período e exportar sem dados mockados", done: false }
+    ],
+    verifiable: "Indicadores rodam com dados persistidos e destino de domínio documentado antes de entrar no menu."
+  },
+  {
+    id: "fase-18",
+    code: "Fase 18",
+    title: "Módulo Tools",
+    goal: "Trazer ferramentas utilitárias como módulos pequenos e independentes.",
+    status: "pending",
+    estimateWeeks: "1-2 semanas",
+    tasks: [
+      { id: "scope", label: "Separar tools em qrcodes, short-links e scripts ou manter como um módulo tools", done: false },
+      { id: "backend", label: "Criar APIs Go para QR Code, encurtador de link e scripts, evitando BFF duplicado", done: false },
+      { id: "pages", label: "Portar admin/tools/qr-code.vue, encurtador-link.vue e scripts.vue conforme escopo aprovado", done: false },
+      { id: "permissions", label: "Declarar permissões tools.qrcode.*, tools.short_links.* e tools.scripts.*", done: false },
+      { id: "acceptance", label: "Gerar QR, criar link curto e listar scripts com persistência real", done: false }
+    ],
+    verifiable: "Ferramentas funcionam isoladas, com dependências adicionadas só quando cada ferramenta entrar."
+  },
+  {
+    id: "fase-19",
+    code: "Fase 19",
+    title: "Módulo Team",
+    goal: "Trazer Team como parte do lote simples inicial, começando por treinamento/candidatos e deixando escopos mais pesados para depois.",
+    status: "pending",
+    estimateWeeks: "1-2 semanas",
+    tasks: [
+      { id: "product-decision", label: "Confirmar o recorte inicial de team: treinamento e candidatos primeiro; escalas detalhadas podem vir depois", done: false },
+      { id: "backend", label: "Modelar candidatos, treinamentos, anexos e estados de processo no recorte inicial aprovado", done: false },
+      { id: "pages", label: "Portar admin/team/treinamento.vue e candidatos.vue como uma das primeiras entregas simples do front", done: false },
+      { id: "files", label: "Definir estratégia para anexos/CVs antes de subir a tela de candidatos", done: false },
+      { id: "acceptance", label: "Criar candidato/treinamento e validar permissões por account", done: false }
+    ],
+    verifiable: "Team entra com recorte claro (treinamento/candidatos), respeita permissões por account e não bloqueia o avanço do lote simples."
+  },
+  {
+    id: "fase-20",
+    code: "Fase 20",
+    title: "Módulo Bio",
+    goal: "Reservar a fase do módulo Bio do plano original, começando por descoberta porque não há página concreta mapeada no web-reference atual.",
+    status: "pending",
+    estimateWeeks: "A definir",
+    tasks: [
+      { id: "discovery", label: "Localizar fonte real do módulo Bio ou confirmar que será criado do zero", done: false },
+      { id: "scope", label: "Definir escopo: links, perfil público, temas, analytics e integrações com site/contacts", done: false },
+      { id: "backend", label: "Criar back/internal/modules/bio/ e schema bio.* quando o escopo estiver fechado", done: false },
+      { id: "frontend-layer", label: "Criar web/layers/bio/ somente após existir fonte visual ou especificação", done: false },
+      { id: "acceptance", label: "Página pública bio renderiza, salva links e respeita módulo habilitado por account", done: false }
+    ],
+    verifiable: "Bio não começa no escuro: a fase só vira implementação após descoberta ou especificação validada."
+  },
+
+  // ─── Tasks Orquestrador — Backend ──────────────────────────────────────────
+
+  {
+    id: "tasks-t0",
+    code: "Tasks T0",
+    title: "Documentação prévia",
+    goal: "AGENT.md para tasks/notifications/realtime/web-layer + lane no roadmap antes de qualquer código de backend.",
+    status: "done",
+    estimateWeeks: "< 1 dia",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "roadmap-lane", label: "Adicionar lane 'Tasks Orquestrador' em roadmap-data.ts com 11 cards", done: true },
+      { id: "agent-tasks", label: "Criar back/internal/modules/tasks/AGENT.md (escopo, HTTP, regras de scope, WS)", done: true },
+      { id: "agent-notifications", label: "Criar back/internal/modules/notifications/AGENT.md (MVP in-app, adapters futuros)", done: true },
+      { id: "agent-realtime", label: "Atualizar back/internal/modules/realtime/AGENT.md com canais Tasks/Presence/Notifications", done: true },
+      { id: "agent-web", label: "Criar web/layers/tasks/AGENT.md (migração localStorage → backend, composables novos)", done: true }
+    ],
+    verifiable: "/roadmap renderiza a nova lane com 11 cards; T0/T0.5/T1/T2 ficam concluídas e T3+ seguem pendentes; AGENT.md de cada módulo afetado existe."
+  },
+  {
+    id: "tasks-t05",
+    code: "Tasks T0.5",
+    title: "Quebrar tasks.vue",
+    goal: "Extrair os 2955 linhas de tasks.vue em 6 sub-componentes + useTasksPageContext antes de plugar o backend.",
+    status: "done",
+    estimateWeeks: "1 dia",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "context", label: "Criar useTasksPageContext.ts com todo o estado/lógica (provide/inject)", done: true },
+      { id: "filter-bar", label: "Extrair TasksFilterBar.vue (toolbar, filtros, troca de view)", done: true },
+      { id: "board-view", label: "Extrair TasksBoardView.vue (colunas, cards, drag/drop)", done: true },
+      { id: "table-view", label: "Extrair TasksTableView.vue (wrapper OmniDataTable)", done: true },
+      { id: "settings", label: "Extrair TasksProjectSettings.vue (slideover de configuração)", done: true },
+      { id: "modal", label: "Extrair TasksTaskModal.vue (slideover de detalhe da task)", done: true },
+      { id: "tasks-vue", label: "Reescrever tasks.vue como wrapper fino (832 linhas totais no estado atual; template enxuto)", done: true }
+    ],
+    verifiable: "/tasks renderiza identicamente ao antes; tasks.vue saiu de ~2955 para 832 linhas totais, com estado/lógica extraídos para useTasksPageContext e sub-componentes."
+  },
+  {
+    id: "tasks-t1",
+    code: "Tasks T1",
+    title: "Schema multi-tenant + módulo Go",
+    goal: "Migration 0108_tasks_schema_foundation.sql (17 tabelas) + módulo Go com scopedQuery, BuildTaskDTO, RBAC e endpoints REST.",
+    status: "done",
+    estimateWeeks: "6–8 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "migration", label: "Migration 0108: schema tasks.* com 17 tabelas, índices, constraints", done: true },
+      { id: "model", label: "tasks/model.go: Board, Column, Field, Task, TimeEntry, Comment, Relation, Share, Perspective", done: true },
+      { id: "repository", label: "tasks/repository_postgres.go: scopedQuery (panic sem accountID) + CRUD base", done: true },
+      { id: "service-dto", label: "tasks/service_dto.go: BuildTaskDTO(task, perspective) — client_viewer omite campos de agência", done: true },
+      { id: "service", label: "tasks/service.go + service_tracking.go: CRUD boards/tasks/comments/shares/relations/tracking + audit log helper", done: true },
+      { id: "http", label: "tasks/http.go + http_tracking.go: endpoints REST básicos com RequireAuth + withPermission", done: true },
+      { id: "module", label: "tasks/module.go: registrar no Module Registry (13 permissões, 3 role templates)", done: true },
+      { id: "permissions", label: "SyncCatalog popula core.permissions e core.role_templates com keys tasks.* quando CORE_V2_ENABLED=true", done: true }
+    ],
+    verifiable: "go test ./... em back/ passa. Em runtime com CORE_V2_ENABLED=true, SyncCatalog registra tasks; aplicar migration fresh e smoke curl ficam para validação de ambiente/staging."
+  },
+  {
+    id: "tasks-t2",
+    code: "Tasks T2",
+    title: "Realtime para tasks",
+    goal: "Estender back/internal/modules/realtime/ com canais tasks:account, tasks:board, tasks:task e presence sem quebrar operations/context.",
+    status: "done",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "service-tasks", label: "realtime/service_tasks.go: HandleTasksSocket, HandlePresenceSocket, HandleNotificationsSocket", done: true },
+      { id: "presence", label: "realtime/presence.go: PresenceStore em memória (TTL 30s, heartbeat 15s)", done: true },
+      { id: "publisher", label: "realtime/service_tasks.go: implementa tasks.Publisher (PublishTaskEvent, PublishBoardEvent, PublishPresenceEvent)", done: true },
+      { id: "events", label: "realtime/model.go: 25+ EventType* novos (task.created, presence.snapshot, notification.created…)", done: true },
+      { id: "auth-ws", label: "Autorização do canal: validate accountID + tasks.tasks.view/tasks.client_view antes do upgrade WS", done: true }
+    ],
+    verifiable: "go test ./... em back/ passa. Runtime esperado: mutation REST publica em tasks:account/board/task; WS rejeita cross-account antes do upgrade; presence envia snapshot/join/left/field lock e expira em 30s sem heartbeat."
+  },
+  {
+    id: "tasks-t3",
+    code: "Tasks T3",
+    title: "Módulo notifications",
+    goal: "Migration 0109 + módulo Go com InAppAdapter funcional e stubs email/WhatsApp/push; triggers internos em tasks (assign, mention, move).",
+    status: "done",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "migration", label: "Migration 0109: schema notifications.* (user_notifications, channels, delivery_log, mutes)", done: true },
+      { id: "adapter", label: "InAppAdapter: persiste user_notifications, publica notification.created/read e usa o canal notifications:user:{userId}", done: true },
+      { id: "stubs", label: "Stubs EmailAdapter, WhatsAppAdapter, PushAdapter retornam ErrNotConfigured", done: true },
+      { id: "triggers", label: "tasks/service.go: assign/status-change/comment mention|subscriber/move disparam notifications sem bloquear a mutation", done: true },
+      { id: "endpoints", label: "GET /v1/notifications, POST read, mark-all-read, preferences e mute", done: true }
+    ],
+    verifiable: "go test ./... em back/ passa. Runtime esperado: assign/comment/move gravam notifications.user_notifications, InAppAdapter publica notification.created/read em notifications:user:{userId}, mute TTL silencia resourceType/resourceId e stubs externos seguem retornando ErrNotConfigured."
+  },
+  {
+    id: "tasks-t4",
+    code: "Tasks T4",
+    title: "Registry de resolvers cross-module",
+    goal: "Interface RelationResolver em platform/modules/ + implementações em crm, erp, operations; endpoint /relations:expand com cache 60s.",
+    status: "done",
+    estimateWeeks: "2 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "interface", label: "platform/modules/relations.go: RelationRegistry + RelationResolver + RelationRef/Result", done: true },
+      { id: "crm-resolver", label: "erp/relations_resolver.go: alias crm resolve contact e lead sobre ERP raw", done: true },
+      { id: "erp-resolver", label: "erp/relations_resolver.go: resolver bulk para customer, employee, order e record", done: true },
+      { id: "ops-resolver", label: "operations/relations_resolver.go: resolver para service_history com fallback active", done: true },
+      { id: "endpoint", label: "GET /v1/tasks/:id/relations:expand — resolve por modulo, atualiza label_cache/metadata_cache/refreshed_at (TTL 60s)", done: true }
+    ],
+    verifiable: "go test ./... em back/ passa. GET /v1/tasks/:id/relations:expand resolve por modulo, reaproveita cache fresco por 60s e grava label/url/status em metadata_cache; recurso fora da account retorna status='unknown'."
+  },
+  {
+    id: "tasks-t5",
+    code: "Tasks T5",
+    title: "Front: localStorage → backend",
+    goal: "Substituir useTasksWorkspace (localStorage) pelo Pinia store + API Go; wipe do storage legado com aviso single-shot.",
+    status: "done",
+    estimateWeeks: "7–10 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "store", label: "web/layers/tasks/stores/tasks.ts: Pinia store com fetchBoards, fetchBoard, createTask, moveTask, applyRealtimeEvent", done: true },
+      { id: "realtime", label: "useTasksRealtime.ts: clone de useOperationsRealtime, tópicos tasks:account + tasks:board, reconexão exponencial", done: true },
+      { id: "tracking", label: "useTaskTracking.ts: server-backed, clockOffset, tick local 1s", done: true },
+      { id: "relations", label: "useTaskRelations.ts: lazy load + cache + re-fetch em task.relation_added", done: true },
+      { id: "can", label: "useCan.ts: computed contra useMeContext().permissions", done: true },
+      { id: "wipe", label: "Boot detecta localStorage legado (omni.admin.tasks.workspace.v1) e descarta com aviso", done: true },
+      { id: "pagination", label: "Paginação cursor-based (backend keyset + front loop ate esgotar); infinite scroll na table view fica para T5.1", done: true },
+      { id: "client-view", label: "Perspective derivada de permissões reais; servidor filtra; front não esconde dados", done: true }
+    ],
+    verifiable: "/tasks carrega via REST, zero localStorage; drag → REST+WS < 300ms; F5 mantém estado; client_viewer vê só boards com share."
+  },
+  {
+    id: "tasks-t6",
+    code: "Tasks T6",
+    title: "Tracking server-side autoritativo",
+    goal: "StartTracking/PauseTracking/ResumeTracking/StopTracking persistidos no banco; timer sincronizado por WS com clockOffset.",
+    status: "done",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-14",
+    finishedAt: "2026-05-14",
+    group: "tasks-backend",
+    tasks: [
+      { id: "service", label: "tasks/service_tracking.go: 6 métodos + partial unique (user_id, task_id) WHERE stopped_at IS NULL", done: true },
+      { id: "optimistic-lock", label: "version check em transação com FOR UPDATE; ErrVersionConflict → 409", done: true },
+      { id: "ws-events", label: "task.time_started/paused/resumed/stopped publicados no WS após cada mutation", done: true },
+      { id: "frontend", label: "useTaskTracking.ts: tick local com serverOffset; reconcilia via WS; modal + card mostram timer", done: true }
+    ],
+    verifiable: "User A inicia → User B vê timer correndo; servidor reinicia → timer correto; máquina travada 5min → valor real do server."
+  },
+  {
+    id: "tasks-t7",
+    code: "Tasks T7",
+    title: "Presence (avatares + field locking)",
+    goal: "PresenceStore em memória com TTL 30s; protocolo heartbeat/field_focus/field_blur; front exibe avatares e badge 'editando campo X'; lock exclusivo por campo e identidade via nick.",
+    status: "in_progress",
+    estimateWeeks: "2–3 dias",
+    group: "tasks-backend",
+    tasks: [
+      { id: "presence-store", label: "realtime/presence.go: PresenceStore TTL 30s + ticker de limpeza + publish presence.user_left", done: true },
+      { id: "protocol", label: "Protocolo cliente→server: presence.heartbeat, field_focus, field_blur", done: true },
+      { id: "frontend", label: "useTaskPresence.ts: abre presence:task:{id} ao abrir modal; heartbeat 15s", done: true },
+      { id: "badge", label: "Front exibe badge 'Fulano editando título' (trava input com :disabled enquanto outro user está nele)", done: true },
+      { id: "future-yjs", label: "tasks.task_doc_snapshots vazia criada para futuro cursor Y.js/Tiptap", done: false },
+      { id: "lock-exclusivo", label: "presence.go: LockField recusa lock se outro user já está no fieldKey e republica o lock atual para recuperar clients defasados", done: true },
+      { id: "nick-infra", label: "Migration 0111 + Nick em User/Principal/UserView/tokens; users module e presence priorizam nick (fallback display_name)", done: true },
+      { id: "input-espaco", label: "Front: clampText (slice puro) vs normalizeText (trim+colapso) — permite espaço no final ao renomear card inline", done: true },
+      { id: "presence-sem-guard-local", label: "useTaskPresence: sem guard local por usersForField; envia field_focus, preserva lock em reconnect e libera em blur/aba oculta", done: true },
+      { id: "board-realtime", label: "useTasksRealtime: assinar account + board ativo; canal board garante sync entre usuarios em escopos/contas diferentes", done: true },
+      { id: "patch-local-realtime", label: "useTasksRealtime: manter refresh full debounced; patch local/hydrateTask revertido", done: false, note: "REVERTIDO em 2026-05-15. O patch local quebrava sincronizacao entre abas quando a task remota nao existia no store local (caso comum). Voltamos ao padrao do useOperationsRealtime: SEMPRE refresh full debounced (200ms) para qualquer evento task.*/board.*/field.*. Funciona em todos os casos; flicker do board e' aceitavel — operations roda assim ha meses sem queixas." }
+    ],
+    verifiable: "Abrir modal em 2 abas → avatares mútuos visíveis com nick; focar campo → badge na outra aba; segundo user vê input :disabled e não consegue 'roubar' o lock; renomear card inline com 'palavra ' (espaço no final) funciona; editar campo em uma aba reflete na outra via refresh full debounced."
+  },
+  {
+    id: "tasks-t8",
+    code: "Tasks T8",
+    title: "Segurança, audit, hardening",
+    goal: "Audit log com retention, rate limit WS+REST, validação rigorosa de IDs, defense in depth em 3 camadas confirmada por testes.",
+    status: "done",
+    estimateWeeks: "2 dias",
+    startedAt: "2026-05-15",
+    finishedAt: "2026-05-15",
+    group: "tasks-backend",
+    tasks: [
+      { id: "audit-endpoint", label: "GET /v1/tasks/:id/audit (perm tasks.boards.manage); retention 180d para não-premium", done: true, note: "Endpoint pronto na T1; retention 180d fica para job futuro." },
+      { id: "rate-limit", label: "WS: 30 events/s por conexão (close 1008); REST: 60 req/min; metrics: 1 req/3s", done: true, note: "WS pronto na T2; REST 60/min via httpapi.RateLimit (token bucket por user+IP); metrics dedicada fica para T9." },
+      { id: "validation", label: "Nunca aceitar account_id do body — sempre derivar do Principal; client_account_id via share OU manage", done: true, note: "withPermission resolve accountID do header X-Account-Id → query → principal.TenantID; service ignora campos AccountID dos inputs." },
+      { id: "404-not-403", label: "Cross-account → 404 (nunca 403); integration test confirma em todos os endpoints", done: true, note: "ResolveAccessContext devolve ErrAccountNotFound; scopedQuery retorna pgx.ErrNoRows. 403 reservado para perm faltando na mesma account. Integration test em T9." },
+      { id: "logs", label: "slog estruturado em cada mutation: accountId, taskId, userId; erros sem IDs de outras accounts", done: true, note: "service.audit() agora dispara slog.LogAttrs com action/account_id/user_id/resource em todas as 13 mutations." }
+    ],
+    verifiable: "Fuzz 100 IDs de outros tenants → 100% 404 (T9); 70 requisicoes em 60s contra /v1/tasks → a 61a recebe 429 com Retry-After; tail -f no log do app mostra tasks.mutation com account_id/user_id/resource em cada CRUD."
+  },
+  // ─── CRM 360 — Fila + ERP ─────────────────────────────────────────────────
+
+  {
+    id: "crm-c1",
+    code: "CRM C1",
+    title: "Indicadores por consultor — backend",
+    goal: "Novo endpoint que funde dados de atendimento da fila (conversão, cancelamento) com dados de vendas do ERP (faturamento, PA, ticket médio, % meta).",
+    status: "in_progress",
+    estimateWeeks: "3–5 dias",
+    startedAt: "2026-05-21",
+    group: "crm-360",
+    tasks: [
+      { id: "model-queue-stats", label: "Adicionar QueueStats (atendimentos, conversões, taxa conversão, taxa cancelamento fila) ao CRMConsultantMetric e CRMStoreMetric", done: false },
+      { id: "query-fusion", label: "Query SQL em repository_crm_aggregates.go que agrega operation_service_history por consultor/loja no período", done: false },
+      { id: "service-fusion", label: "service.CRMOverview inclui dados de fila; taxa cancelamento ERP (ordercanceled/order) calculada separadamente", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/erp/AGENT.md com novos campos e query de fusão", done: false }
+    ],
+    verifiable: "GET /v1/erp/crm retorna atendimentos, taxaConversao e taxaCancelamentoFila por consultor; go test ./... passa."
+  },
+  {
+    id: "crm-c2",
+    code: "CRM C2",
+    title: "Produto não encontrado — modelo e modal",
+    goal: "Separar campo 'produto que o cliente queria mas a loja não tinha' de 'produto visto' no modelo da fila. Adicionar distinção de motivo de perda: preço vs falta de estoque.",
+    status: "in_progress",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-21",
+    group: "crm-360",
+    tasks: [
+      { id: "migration", label: "Migration SQL: adicionar products_not_found_json em operation_service_history", done: false },
+      { id: "model-go", label: "Adicionar ProductsNotFound []ProductEntry ao FinishCommandInput e ServiceHistoryEntry em operations/model.go", done: false },
+      { id: "store-postgres", label: "Persistir e ler products_not_found_json em operations/store_postgres.go", done: false },
+      { id: "frontend-modal", label: "Adicionar seção 'Produto procurado / não encontrado' no OperationFinishModal.vue separada de produtos vistos", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/operations/CONCURRENT_SERVICES.md e AGENT.md com novo campo", done: false }
+    ],
+    verifiable: "Finalizar atendimento com produto não encontrado persiste no banco; histórico retorna o campo; modal mostra seção distinta."
+  },
+  {
+    id: "crm-c3",
+    code: "CRM C3",
+    title: "Painel CRM — gráficos e 360",
+    goal: "ErpCrmWorkspace com gráficos de faturamento, % meta, conversão e cancelamento por consultor e por loja. Cards de indicadores com comparativo.",
+    status: "pending",
+    estimateWeeks: "4–6 dias",
+    group: "crm-360",
+    tasks: [
+      { id: "ts-types", label: "Atualizar tipos TypeScript no CRM store com novos campos de QueueStats", done: false },
+      { id: "chart-consultant", label: "Gráficos por consultor: faturamento, % meta, PA, ticket médio, taxa conversão, taxa cancelamento", done: false },
+      { id: "chart-store", label: "Comparativo por loja: mesmos indicadores + ranking", done: false },
+      { id: "products-not-found", label: "Seção de produto não encontrado no painel CRM com agrupamento por SKU/motivo", done: false },
+      { id: "360-checklist", label: "Aba 360 com indicadores + atendimento + metas + não compra (estrutura inicial)", done: false },
+      { id: "agent-md", label: "Atualizar web/app/components/erp/AGENT.md com novos componentes de gráficos", done: false }
+    ],
+    verifiable: "Painel CRM exibe gráficos com dados reais do novo endpoint; filtro de período funciona; sem erros de console."
+  },
+  {
+    id: "crm-c4",
+    code: "CRM C4",
+    title: "Consultor gamificado — player card + drawer",
+    goal: "Substituir o painel de cards planos da workspace Consultor por player card (gauge dominante + 4 KPIs core + badges) e mover métricas secundárias + simulador para drawer lateral. Visão all-stores vira grid de mini-cards.",
+    status: "in_progress",
+    estimateWeeks: "4–6 dias",
+    startedAt: "2026-05-22",
+    group: "crm-360",
+    tasks: [
+      { id: "agent-md", label: "Atualizar web/app/components/consultant/AGENT.md com contrato dos novos componentes (player card, drawer, grid)", done: false },
+      { id: "gamification-config-composable", label: "useGamificationConfig() composable com defaults hardcoded para badges + Score 360 weights (preparado para C6 plugar fonte real)", done: false },
+      { id: "player-card-component", label: "ConsultantPlayerCard.vue (modos full e mini) — gauge SVG, 4 KPIs core (Vendido, Ticket, PA, Conversão), slot de badges", done: false },
+      { id: "badges-component", label: "ConsultantBadges.vue puro recebe stats + badgesConfig — defaults: Meta batida, Top N, Conversão > média loja, Ticket > meta, PA > meta", done: false },
+      { id: "drawer-shell", label: "ConsultantDetailsDrawer.vue com USlideover (modos center/fullscreen/side igual TasksTaskModal) + composable useConsultantDetailsDrawer()", done: false },
+      { id: "drawer-tabs", label: "Drawer com 3 tabs: Visão geral (todos KPIs incluindo cancelamento/fora-da-vez/tempo médio), Histórico (sparkline 7d), Simulador (move ConsultantSimulator atual)", done: false },
+      { id: "single-store-wire", label: "ConsultantWorkspace.vue (single-store) usa ConsultantPlayerCard full + drawer", done: false },
+      { id: "multi-store-grid", label: "ConsultantPlayerGrid.vue substitui tabela 'Comparativo completo' por grid de mini-cards filtráveis", done: false },
+      { id: "cancellation-wire", label: "Garantir cancellationRate no DTO consumido por consultants/analytics stores (já calculado em repository_crm_queue.go)", done: false },
+      { id: "delete-old-metrics", label: "Remover ConsultantMetrics.vue após migração completa", done: false }
+    ],
+    verifiable: "/consultor em loja única mostra player card + drawer abrindo via 'Ver detalhes'. Visão all-stores mostra grid de mini-cards; click no card abre drawer. Sem erros de console; npm test passa."
+  },
+  {
+    id: "crm-c5",
+    code: "CRM C5",
+    title: "Ranking gamificado — pódio + leaderboard + drawer",
+    goal: "Substituir as duas tabelas de 11 colunas por pódio dos 3 primeiros + leaderboard de cards horizontais para o resto. Tabs Lojas/Consultores/Por-loja. Score 360 vira sort default. Detalhes (breakdown 360 + alertas) em drawer lateral.",
+    status: "in_progress",
+    estimateWeeks: "5–7 dias",
+    startedAt: "2026-05-22",
+    group: "crm-360",
+    tasks: [
+      { id: "agent-md", label: "Criar web/app/components/ranking/AGENT.md com contrato do novo workspace", done: false },
+      { id: "tabs-header", label: "RankingTabsHeader.vue (3 tabs Lojas/Consultores/Por-loja + chips de sort, Score 360 default)", done: false },
+      { id: "podium-component", label: "RankingPodium.vue — top-3 visual (2º-1º-3º) com avatar, nome/loja, número grande da métrica ativa", done: false },
+      { id: "leaderboard-card", label: "RankingLeaderboardCard.vue — card horizontal (4º+) com posição, métrica grande, barra meta, badge variação ↑/↓", done: false },
+      { id: "variation-derivation", label: "Derivar variação vs período anterior client-side (comparar monthlyRows com snapshot mês anterior já disponível)", done: false },
+      { id: "stores-tab", label: "Agregação por loja para tab Lojas: totalSoldValue, Score 360 ponderado por attendances (decisão fechada), consultantsAtGoal", done: false },
+      { id: "per-store-tab", label: "Tab 'Por loja' com combobox de loja + pódio + leaderboard filtrados", done: false },
+      { id: "drawer-ranking", label: "RankingDetailsDrawer.vue com USlideover (center/fullscreen/side) + tabs Visão geral / Breakdown 360 / Alertas. Mover alertas do topo do RankingWorkspace para drawer (manter contador)", done: false },
+      { id: "score-breakdown", label: "Componente de barra stackeada para breakdown do Score 360 — pesos vêm de useGamificationConfig() (defaults 35/25/20/15/5 até C6 plugar fonte real)", done: false },
+      { id: "legacy-table", label: "Manter RankingTable.vue acessível como 'Ver como tabela' dentro do drawer para usuários que preferem formato denso", done: false }
+    ],
+    verifiable: "/ranking mostra pódio + leaderboard cards; tabs trocam agrupamento; click no card abre drawer com breakdown 360. ESC/overlay/X fecham. Alertas continuam acessíveis via drawer. npm test passa; sem regressões."
+  },
+  {
+    id: "crm-c6",
+    code: "CRM C6",
+    title: "Backend de gamificação — config de badges + Score 360 weights",
+    goal: "Permitir que cada tenant configure regras de badges (Meta batida, Top N, Conversão > média loja, etc.) e os pesos do Score 360 (Conversão/Valor/Qualidade/PA/Queue-jump). Plugar no composable useGamificationConfig() do front (criado em C4) substituindo defaults hardcoded.",
+    status: "pending",
+    estimateWeeks: "3–5 dias",
+    group: "crm-360",
+    tasks: [
+      { id: "model-go", label: "Adicionar GamificationConfig (BadgeRules []BadgeRule + ScoreWeights ScoreWeights) ao settings.Bundle e Record", done: false },
+      { id: "migration", label: "Migration SQL: tabela settings_gamification (tenant_id, badge_rules_json, score_weights_json)", done: false },
+      { id: "store-postgres", label: "Persistir e ler GamificationConfig em settings store_postgres.go", done: false },
+      { id: "defaults", label: "settings/defaults.go com defaults de GamificationConfig (mesmos hardcoded usados em C4/C5)", done: false },
+      { id: "http-endpoint", label: "PATCH /v1/settings/gamification com perm settings.write; GET expõe junto com o bundle existente", done: false },
+      { id: "frontend-settings-ui", label: "Seção 'Gamificação' na página de configurações para editar badges (CRUD lista) e weights (5 sliders que somam 100%)", done: false },
+      { id: "wire-composable", label: "useGamificationConfig() passa a ler do settings store (com fallback para defaults se config não existir)", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/settings/AGENT.md com novo bundle field e endpoint", done: false }
+    ],
+    verifiable: "PATCH /v1/settings/gamification persiste; GET /v1/settings retorna gamificationConfig no bundle; UI permite editar badges e weights; após salvar, player cards e ranking refletem mudanças sem recarregar. go test ./... passa."
+  },
+
+  {
+    id: "roadmap-b1",
+    code: "Roadmap B1",
+    title: "Backend de Modulos & Regras editaveis",
+    goal: "Persistir RoadmapModule e RoadmapRule via API Go (schema novo roadmap.*). UI passa de read-only para edicao inline com workspace de prioridade, status e descricao. Regenera AGENT_RULES.md a cada PUT para que agentes leiam sempre a versao canonica.",
+    status: "done",
+    estimateWeeks: "3-5 dias",
+    startedAt: "2026-05-23",
+    finishedAt: "2026-05-23",
+    group: "multi-tenant",
+    tasks: [
+      { id: "migration", label: "Migration 0115_roadmap_schema.sql: schema roadmap + tabelas modules e rules (account-scoped + global)", done: true, note: "Constraints check em status/priority/category; index parcial para registros globais." },
+      { id: "module-go", label: "back/internal/modules/roadmap/ (model/store_postgres/service/http/AGENT.md) seguindo padrao", done: true, note: "Tipo de dominio nomeado ModuleRecord para nao colidir com modules.Module do registry." },
+      { id: "endpoints", label: "GET /v1/roadmap/modules, PUT /v1/roadmap/modules/:id, GET /v1/roadmap/rules, PUT /v1/roadmap/rules/:id, POST /v1/roadmap/rules", done: true, note: "8 endpoints CRUD + GET /v1/roadmap/rules.md." },
+      { id: "seed", label: "Seed inicial a partir de ROADMAP_MODULES e ROADMAP_RULES de web/app/components/roadmap/roadmap-data.ts", done: true, note: "12 modulos + 21 regras embutidas como seed global (account_id IS NULL) na propria migration; ON CONFLICT DO NOTHING." },
+      { id: "front-store", label: "Pinia store useRoadmapStore() com fetch/update; substitui ROADMAP_MODULES/ROADMAP_RULES estaticos", done: true, note: "Store em app/stores/roadmap.ts; fallback para seeds estaticos quando backend retorna 404." },
+      { id: "front-edit", label: "Edicao inline em RoadmapModulesBoard.vue e RoadmapRulesBoard.vue (prioridade, status, descricao)", done: true, note: "Cards ganham botao Editar; abrem form com select status/priority + textarea descricao." },
+      { id: "export-md", label: "Endpoint GET /v1/roadmap/rules.md serve AGENT_RULES.md regenerado a partir do banco", done: true, note: "service.BuildMarkdown gera mesmo formato do AGENT_RULES.md raiz." },
+      { id: "agent-md", label: "Adicionar back/internal/modules/roadmap/AGENT.md", done: true }
+    ],
+    verifiable: "Login + PUT em uma regra reflete em GET /v1/roadmap/rules.md instantaneamente; UI permite editar prioridade do modulo Tracking de P1 para P0 e o valor persiste apos refresh."
+  },
+
+  {
+    id: "tasks-t9",
+    code: "Tasks T9",
+    title: "Testes E2E + observabilidade",
+    goal: "Cobertura > 70% no service Go (scope, DTO, tracking, version conflict); testes Vitest no front (store, realtime, useCan); smoke E2E 12 passos.",
+    status: "done",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-05-15",
+    finishedAt: "2026-05-15",
+    group: "tasks-backend",
+    tasks: [
+      { id: "dto-test", label: "tasks/dto_test.go: snapshot JSON agency vs client_viewer (campos ausentes, não escondidos)", done: true, note: "4 testes: agency mantem clientAccountId, client_viewer omite, uiMetadata sempre nao-nil, ISO dates." },
+      { id: "cursor-test", label: "tasks/cursor_test.go: round-trip + base64url-safe + decode invalido nao panica", done: true, note: "4 testes cobrindo encode/decode opaco do listTasksCursor (paginacao T5)." },
+      { id: "presence-test", label: "realtime/presence_test.go: lock exclusivo (T7.2), TTL, snapshot, leave decrementa", done: true, note: "6 testes: user_joined unico, LockField exclusivo por fieldKey, owner reclaim, UnlockField publica, Leave decrementa, TTL expira." },
+      { id: "rate-limit-test", label: "httpapi/rate_limit_test.go: bucket, reset, identity resolver, X-Forwarded-For", done: true, note: "6 testes cobrindo o middleware da T8." },
+      { id: "service-test", label: "tasks/service_test.go: CRUD com 3 perspectives (agency, client_viewer, outro tenant)", done: true, note: "10 testes com repository_mock_test.go (Repository mock leve com hooks): CreateTask happy/no-perm/validation, GetTask perspective, ListTasks default-limit/clamp/no-perm/perspective/nextCursor." },
+      { id: "scope-test", label: "tasks/scope_test.go: fuzz 100 IDs de outros accounts → 100% 404", done: true, note: "8 testes: accountID vazio, account inexistente, cross-account = 404 (nunca 403), platform_admin bypass, client_viewer perspective, manage override, fuzz 100 IDs cross-account 100% 404, scopedQuery panica sem accountID." },
+      { id: "tracking-test", label: "tasks/tracking_test.go: version conflict, 1 entry ativa por (user, task)", done: true, note: "8 testes: no-perm/task-not-found/happy-path (publica WS + audita), PauseTracking propaga ErrVersionConflict, ResumeTracking passa expectedVersion, StopTracking 404 nao publica nem audita." },
+      { id: "front-tests", label: "Vitest: clampText/normalizeText + setup para composables completos (futuro)", done: true, note: "Vitest 2.1 configurado em web/. 9 testes em utils/text.test.ts cobrindo o caso T7.2 (espaco no final preservado). Composables Vue completos ficam para quando @nuxt/test-utils for adicionado." },
+      { id: "smoke-e2e", label: "Smoke E2E 12 passos: migrate fresh → seed → login agência → criar task → WS → presence → tracking → share → curl 404 → inspect payload", done: true, note: "Roteiro documentado em docs/TASKS_ORCHESTRATOR_PHASE12.md (secao 'Smoke E2E 12 passos') para o usuario rodar manualmente em staging." }
+    ],
+    verifiable: "go test ./... passa (50 testes T9 no total); npm test passa (9 Vitest); smoke E2E 12 passos roteiro pronto para staging."
+  },
+
+  // ─── Multi-Tenant Completion (branch refactor/multi-tenant-complete) ──────
+  //
+  // Fase crítica criada em 2026-05-28 após auditoria descobrir que o
+  // esqueleto multi-tenant (Fases 0-5) está codificado mas inerte em runtime,
+  // e que páginas de admin (clientes/leads/produtos) foram criadas como BFF
+  // mock em web/server/ em vez de bater na API Go. Plano canônico:
+  // docs/MULTITENANT_COMPLETION_PLAN.md.
+
+  {
+    id: "multitenant-completion",
+    code: "MT",
+    title: "Multi-Tenant Completion (do início ao fim)",
+    goal: "Tornar o multi-tenant a única fonte de verdade do painel: AccountModulesGuard ativo, core.account_modules editável pelo front, web/server/ removido, BFF mock e session-simulation extintos, painel admin real de clientes substituindo o mock atual.",
+    status: "pending",
+    estimateWeeks: "3-5 semanas",
+    group: "multi-tenant",
+    tasks: [
+      // C1 — Schema completo do que falta
+      { id: "mig-billing", label: "Migration 0123_core_accounts_billing.sql — colunas billing/contact/webhook em core.accounts (substitui campos inventados do mock)", done: false },
+      { id: "mig-seed-modules", label: "Migration 0124_core_account_modules_seed.sql — popula core.account_modules para Pérola/Duby com módulos default", done: false },
+      { id: "mig-seed-roles", label: "Migration 0125_core_roles_backfill.sql — clona role_templates em core.roles + mapeia user_tenant_roles → core.user_role_assignments", done: false },
+      // C2 — Ativar fundação inerte
+      { id: "guard-wire", label: "app.go: plugar AccountModulesGuard no chain dos módulos satélites (parar de descartar com `_ =`)", done: false },
+      { id: "principal-header", label: "Middleware de auth resolve Principal.AccountID a partir de X-Account-Id em toda rota autenticada (valida membership em core.account_users)", done: false },
+      { id: "contract-freeze", label: "Reforçar CONTRACT_FREEZE.md: nenhum handler aceita account_id do body — só via Principal", done: false },
+      // C3 — Endpoints admin (substituem BFF Nitro)
+      { id: "api-accounts-crud", label: "GET/POST/PATCH/DELETE /v1/admin/accounts — CRUD real de account (platform admin)", done: false },
+      { id: "api-account-modules", label: "GET/PUT /v1/admin/accounts/:id/modules — habilita/desabilita módulos + evento account.modules.changed", done: false },
+      { id: "api-account-stores", label: "GET/PUT /v1/admin/accounts/:id/stores — vinculação de billing por loja", done: false },
+      { id: "api-account-webhook", label: "POST /v1/admin/accounts/:id/webhook/rotate — rotaciona chave do webhook", done: false },
+      { id: "api-me-accounts", label: "GET /v1/me/accounts (lean) + GET /v1/me/context?accountId= (full) com Roles[]/Permissions[] reais", done: false },
+      // C4 — Finalizar Fase 4 (reorganização do queue em Go)
+      { id: "queue-subpackages", label: "Mover back/internal/modules/{operations,alerts,analytics,reports,feedback,consultants,settings} para queue/* com queue/module.go consolidando", done: false },
+      // C5 — Finalizar Fase 8 (split CRM)
+      { id: "crm-subpackages", label: "Mover back/internal/modules/{erp,catalog} para crm/* + crm/module.go implementando Module interface", done: false },
+      { id: "crm-resolver", label: "crm.Resolver registrado em Dependencies; queue/catalog_adapter.go usa Resolver com fallback local", done: false },
+      // C6 — Performance Fase 7 (terminar)
+      { id: "principal-cache", label: "PrincipalCache em memória com invalidação por eventos (sessão, role, permission, account_modules) — fecha Fase 7D", done: false },
+      { id: "session-revogation", label: "JWT.sessionId + middleware checa core.user_sessions.revoked_at no mesmo lookup do Principal (fecha 7B)", done: false },
+      // C7 — Remoção do BFF Nitro
+      { id: "rm-bff-clients", label: "Apagar web/server/api/admin/clients/ inteiro + web/server/utils/clients-repository.ts", done: false },
+      { id: "rm-bff-products", label: "Apagar web/server/api/admin/products/ inteiro + web/server/utils/products-repository.ts", done: false },
+      { id: "rm-bff-leads", label: "Apagar web/server/api/admin/leads/ inteiro + web/server/utils/leads-repository.ts", done: false },
+      { id: "rm-bff-shared", label: "Apagar web/server/utils/reference-admin-access.ts + web/app/composables/useBffFetch.ts", done: false },
+      { id: "rm-server-dir", label: "Apagar web/server/ inteiro (decisão fechada 2026-05-28: sem BFF Nitro no produto)", done: false },
+      // C8 — Remover fontes paralelas de cliente
+      { id: "rm-session-sim", label: "Apagar web/app/stores/session-simulation.ts (lista hardcoded de 6 clientes 101-106 que não existem no banco)", done: false },
+      { id: "rm-admin-session", label: "Apagar/reescrever web/app/composables/useAdminSession.ts se for parte do esquema mock", done: false },
+      { id: "rm-fake-headers", label: "Trocar todos os usos de x-client-id / x-tenant-id falsos por X-Account-Id real vindo de useAccountStore()", done: false },
+      { id: "tasks-real-context", label: "useTasksPageContext: consumir contexto real de useAccountStore em vez do session-simulation", done: false },
+      // C9 — Reescrever páginas mock contra a API Go real
+      { id: "rewrite-clients-manager", label: "useClientsManager.ts chamando /v1/admin/accounts (não /api/admin/clients)", done: false },
+      { id: "rewrite-leads-manager", label: "useLeadsManager.ts chamando API Go real (criar endpoint se não existir)", done: false },
+      { id: "rewrite-products-manager", label: "useProductsManager.ts chamando API Go real do crm/catalog", done: false },
+      { id: "consolidate-page", label: "Consolidar manage/clientes-web.vue + /clientes da fila numa única tela admin (decidir fonte canônica)", done: false },
+      // C10 — UI real de CRUD de cliente
+      { id: "ui-list", label: "Tela lista de accounts (filtros, busca, status, paginação)", done: false },
+      { id: "ui-modal-card-mirror", label: "Modal + board card de account espelhados (regra do usuário: mudanças em um aplicam no outro)", done: false },
+      { id: "ui-create", label: "Form de criar account: módulos contratados, billing, admin inicial", done: false },
+      { id: "ui-modules", label: "Painel de habilitar/desabilitar módulos por account (com confirmação)", done: false },
+      { id: "ui-billing", label: "Painel de billing por account (single + per_store com lista de lojas)", done: false },
+      { id: "ui-roles", label: "Painel de cargos por account (clonar template, editar permissões)", done: false },
+      // C11 — Menu dinâmico real
+      { id: "use-nav-real", label: "useNav consome useAccountStore().enabledModules em vez de nav.config.ts estático filtrado por role", done: false },
+      { id: "middleware-module", label: "Middleware Nuxt module-enabled.global.ts: bloqueia rota se módulo não está habilitado", done: false },
+      { id: "account-switcher-real", label: "AccountSwitcher consome GET /v1/me/accounts real (em vez da lista hardcoded)", done: false },
+      // C12 — Smoke tests + migração de dados
+      { id: "smoke-tenants", label: "Pérola e Duby aparecem na lista nova com módulos contratados corretos via API Go", done: false },
+      { id: "smoke-billing", label: "Backfill manual dos campos novos de billing para Pérola (Duby fica com defaults)", done: false },
+      { id: "smoke-switch", label: "Trocar account no AccountSwitcher → menu recarrega; desabilitar módulo no banco → item some da UI sem reload", done: false },
+      // C13 — Documentação
+      { id: "doc-adr", label: "docs/adr/0002-remove-bff-nitro-mock.md formalizando a remoção do BFF Nitro", done: false },
+      { id: "doc-contract", label: "Atualizar docs/CONTRACT_FREEZE.md com X-Account-Id ativado", done: false },
+      { id: "doc-agents", label: "Atualizar AGENT.md de cada módulo tocado (back/platform/app, httpapi, core; web; web/layers)", done: false },
+      { id: "doc-roadmap-flip", label: "Reverter para `done` no roadmap as fases 0-5, 7, 8 só DEPOIS da multitenant-completion estar 100%", done: false }
+    ],
+    blockers: [],
+    verifiable: "1) GET /v1/admin/accounts retorna Pérola e Duby do banco real (não do mock). 2) Habilitar módulo via UI grava em core.account_modules e o item aparece no menu sem reload. 3) Desabilitar módulo retorna 403 module_disabled na rota dele. 4) Diretório web/server/ não existe. 5) Apenas 1 fonte de cliente no painel inteiro. 6) Roadmap volta a refletir verdade: Fases 0-5/7/8 efetivamente `done`."
+  }
+];
+
+export const ROADMAP_MODULES: RoadmapModule[] = [
+  {
+    id: "tasks",
+    label: "Tasks",
+    route: "/tasks",
+    status: "beta",
+    priority: "P0",
+    category: "atendimento",
+    description:
+      "Orquestrador de tarefas multi-tenant (boards + tabela). Backend pronto (Fases T1-T9). UI em refino: rolagem vertical, performance, checklist no editor, expand/restore. Em uso interno antes de liberar para tenants.",
+    scope: [
+      "Refinar performance do board para >500 cards",
+      "Melhorar feedback de drag-and-drop entre colunas",
+      "Adicionar filtros salvos por usuario",
+      "Notificacoes in-app quando @mention"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "editor",
+    label: "Editor",
+    route: "/editor",
+    status: "beta",
+    priority: "P1",
+    category: "tools",
+    description:
+      "Editor rich-text Omni baseado em Tiptap (StarterKit + TaskList + Emoji + Mention + TextAlign). Usado em descricao de tasks. Falta: salvar/abrir documentos avulsos, versionamento, sharing.",
+    scope: [
+      "Persistir documentos avulsos (nao apenas dentro de Tasks)",
+      "Adicionar /slash commands",
+      "Suporte a colaboracao em tempo real (avaliar @tiptap/y-tiptap)"
+    ],
+    dependsOn: ["tasks"]
+  },
+  {
+    id: "tracking",
+    label: "Tracking",
+    route: "/tracking",
+    status: "pending",
+    priority: "P1",
+    category: "atendimento",
+    description:
+      "Visao de time-tracking por consultor: tempos por task, relatorios diarios/semanais. Depende de Tasks 100% (presence + tracking ja existem no backend T7).",
+    scope: [
+      "Agregacao por consultor/dia/semana",
+      "Export CSV",
+      "Comparativo Pessoa A vs B no periodo"
+    ],
+    dependsOn: ["tasks"]
+  },
+  {
+    id: "omnichannel",
+    label: "Omnichannel",
+    route: "/omnichannel",
+    status: "pending",
+    priority: "P2",
+    category: "atendimento",
+    description:
+      "Conversas unificadas WhatsApp/Instagram/Email/Webchat com handoff humano e bot. Page existe mas vazia. Escopo grande: webhook providers + threads + roteamento.",
+    scope: [
+      "Conectores WhatsApp Cloud API + Instagram Direct",
+      "Schema messaging.* com threads",
+      "Roteamento por fila + handoff",
+      "Bot simples por palavra-chave"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "team",
+    label: "Team (Equipe + Escalas)",
+    route: "/team/equipe",
+    status: "pending",
+    priority: "P2",
+    category: "operacao-comercial",
+    description:
+      "Gestao de equipe e escalas. Pagina existe mas sem CRUD real. Compartilha schema core.users + roles ja existentes.",
+    scope: [
+      "CRUD de equipe com avatar e cargo",
+      "Calendario de escalas (turnos)",
+      "Aprovacao de troca de turno"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "site",
+    label: "Site (Campanhas + Paginas + Forms)",
+    route: "/campanhas",
+    status: "pending",
+    priority: "P3",
+    category: "operacao-comercial",
+    description:
+      "Builder visual de paginas/forms + campanhas atreladas a pagina. Pagina /campanhas existe mas sem builder. Forms ainda nao implementado.",
+    scope: [
+      "Builder drag-drop simples para pagina",
+      "Geracao de form com webhook",
+      "Campanha = pagina + canal de divulgacao + meta",
+      "Tracking de conversao"
+    ],
+    dependsOn: ["site"]
+  },
+  {
+    id: "inteligencia",
+    label: "Inteligencia",
+    route: "/inteligencia",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Insights gerados por LLM sobre dados de vendas e atendimento. Cards 'Por que conversao caiu?' / 'Quais produtos faltam mais?'. Sera consumidor pesado do backend de BI.",
+    scope: [
+      "Prompts canonicos para 5 perguntas frequentes",
+      "Cache de resposta por janela (dia/semana)",
+      "Exportar insight como PDF"
+    ],
+    dependsOn: ["bi"]
+  },
+  {
+    id: "relatorios",
+    label: "Relatorios",
+    route: "/relatorios",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Reports estaticos exportaveis (PDF/CSV). Backend reports/ existe parcial. Faltam templates e UI de configuracao.",
+    scope: [
+      "Template Ranking Mensal Consultor (PDF)",
+      "Template Vendas por Loja (CSV + PDF)",
+      "Agendamento de envio recorrente por email"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "bi",
+    label: "BI",
+    route: "/bi",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Dashboards customizaveis. Modulo backend bi/ ja criado mas sem UI. Definir entre dashboard hardcoded vs builder.",
+    scope: [
+      "Decidir entre Metabase embedded vs builder proprio",
+      "MVP com 3 dashboards fixos (vendas, atendimento, estoque)",
+      "Filtros por loja/consultor/periodo"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "finance",
+    label: "Finance",
+    route: "/finance",
+    status: "pending",
+    priority: "P3",
+    category: "indicadores",
+    description:
+      "Comissoes, metas financeiras, fechamento mensal. Hoje nao existe. Depende de Vendas (ERP) ja integrada.",
+    scope: [
+      "Calculo de comissao por consultor com regras configuraveis",
+      "Fechamento mensal exportavel",
+      "Integracao com folha (fora do escopo inicial)"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "monitoramento",
+    label: "Monitoramento",
+    route: "/monitoramento",
+    status: "pending",
+    priority: "P2",
+    category: "indicadores",
+    description:
+      "Pagina interna de health: uptime API, jobs ERP, sync FTP, fila de atendimento em tempo real. Pega de healthz + module registry + alerts.",
+    scope: [
+      "Painel de modulos ativos (do module registry)",
+      "Historico de jobs ERP",
+      "Latencia /healthz dos ultimos 7 dias"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "qr-tools",
+    label: "Tools secundarias (QR / Encurtador / Scripts)",
+    route: "/tools/qr-code",
+    status: "pending",
+    priority: "P3",
+    category: "tools",
+    description:
+      "Ferramentas auxiliares hoje meio implementadas. Atualmente ocultas do menu. Reativar so quando tiver demanda real.",
+    scope: [
+      "QR Code com tracking de cliques",
+      "Encurtador integrado com tracking",
+      "Scripts: snippets reutilizaveis de mensagens"
+    ],
+    dependsOn: []
+  }
+];
+
+export const ROADMAP_RULES: RoadmapRule[] = [
+  {
+    id: "fe-componentes-reutilizaveis",
+    category: "frontend",
+    title: "Componentes reutilizaveis acima de tudo",
+    body: "Sempre que houver repeticao de markup ou logica visual, extrair em componente proprio em web/app/components/ ou na layer adequada. Workspaces nao podem virar arquivos gigantes; quebrar em cards/secoes/listas.",
+    why: "Evita duplicacao e drift visual entre paginas. Facilita aplicar mudanca em um lugar so.",
+    appliesWhen: "Qualquer feature nova ou refactor que adicione UI."
+  },
+  {
+    id: "fe-classes-semanticas",
+    category: "frontend",
+    title: "Classes semanticas BEM-like",
+    body: "Sempre usar nomes semanticos no estilo .nome-componente__elemento--modificador. Nao usar utility classes inline ou IDs para estilizacao.",
+    why: "Permite leitura rapida do escopo de cada estilo e evita colisao global.",
+    appliesWhen: "Estilizacao de qualquer componente novo."
+  },
+  {
+    id: "fe-sem-emojis",
+    category: "frontend",
+    title: "Sem emojis em UI nem em codigo",
+    body: "Nao usar emojis em labels, mensagens de UI, codigo, comentarios ou commits, salvo se o usuario pedir explicitamente.",
+    why: "Mantem consistencia visual e profissional do produto.",
+    appliesWhen: "Sempre."
+  },
+  {
+    id: "fe-feature-flag-hidden",
+    category: "frontend",
+    title: "Esconder pagina nao pronta via hidden no menu",
+    body: "Quando um modulo/pagina nao esta pronto, usar hidden:true em web/app/utils/sidebar-nav.ts E em web/layers/queue/nav.config.ts. Para itens em beta, usar beta:true (renderiza badge).",
+    why: "Evita que usuario navegue para pagina quebrada. Beta deixa explicito que a feature pode mudar.",
+    appliesWhen: "Adicionar/remover modulo do menu lateral."
+  },
+  {
+    id: "be-padrao-modulo-go",
+    category: "backend",
+    title: "Padrao de modulo Go",
+    body: "Cada modulo em back/internal/modules/<nome>/ tem: model.go (tipos), store_postgres.go (persistencia), service.go (regras), http.go (handlers), AGENT.md (documentacao). Modulos plugaveis se registram via Module Registry quando CORE_V2_ENABLED.",
+    why: "Consistencia entre modulos facilita onboarding e troca de agente.",
+    appliesWhen: "Criar novo modulo backend."
+  },
+  {
+    id: "be-ids-strings",
+    category: "backend",
+    title: "IDs como string, nunca uuid externo",
+    body: "Usar string para IDs no Go; nao importar pacote uuid externo. Casts e geracao ficam centralizados em internal/platform/ids/.",
+    why: "Reduz dependencia externa e facilita refatoracao do esquema de IDs.",
+    appliesWhen: "Qualquer struct nova com ID."
+  },
+  {
+    id: "be-scan-nullable-string",
+    category: "backend",
+    title: "Scan de campos NULL com *string",
+    body: "Para colunas nullable, declarar *string (ou sql.NullString se preferir) no Scan; nunca string puro.",
+    why: "Evita panic em scan de NULL.",
+    appliesWhen: "Implementar store_postgres.go."
+  },
+  {
+    id: "be-perms-no-banco",
+    category: "backend",
+    title: "Permissoes vivem no banco (RBAC dinamico)",
+    body: "Nao hardcoded permission names em codigo Go. Permissoes vivem em core.permissions + core.role_permissions; service consulta via Module Registry.",
+    why: "Permite agencia customizar role sem deploy.",
+    appliesWhen: "Implementar checagem de permissao em handler ou service."
+  },
+  {
+    id: "banco-migration-idempotente",
+    category: "banco",
+    title: "Migration idempotente (IF NOT EXISTS)",
+    body: "Toda migration usa IF NOT EXISTS / CREATE OR REPLACE. Numerar sequencialmente em back/internal/platform/database/migrations/####_nome.sql. Nunca renumerar migration ja aplicada.",
+    why: "Migrations falhas no meio precisam poder ser reaplicadas sem dropar dados.",
+    appliesWhen: "Criar migration nova."
+  },
+  {
+    id: "banco-schema-multitenant",
+    category: "banco",
+    title: "Schema-per-modulo + account_id em todas as tabelas tenant-scoped",
+    body: "Schemas: core, queue, tasks, alerts, settings, roadmap. Toda tabela tenant-scoped tem account_id NOT NULL com FK para core.accounts. Public schema pode ter VIEWS sobre tabelas dos schemas.",
+    why: "Multi-tenancy com isolamento logico e queries por schema mais previsiveis.",
+    appliesWhen: "Criar tabela nova."
+  },
+  {
+    id: "banco-view-publica",
+    category: "banco",
+    title: "Mover tabela para schema: criar view publica",
+    body: "Quando mover tabela de public.* para schema.*, criar CREATE OR REPLACE VIEW public.<tabela> AS SELECT * FROM schema.<tabela> para manter compat com codigo legado.",
+    why: "Evita quebrar queries antigas que ainda apontam para public.*.",
+    appliesWhen: "Refactor de schema."
+  },
+  {
+    id: "lang-go-version",
+    category: "linguagens",
+    title: "Go 1.26",
+    body: "Backend usa Go 1.26. Aproveitar generics, max/min builtins, slices/maps stdlib.",
+    why: "Versao alinhada com infra de CI e Docker.",
+    appliesWhen: "Backend."
+  },
+  {
+    id: "lang-vue-nuxt",
+    category: "linguagens",
+    title: "Vue 3 + Nuxt 4 + Pinia",
+    body: "Frontend usa Vue 3 (Composition API + <script setup>), Nuxt 4 (com layers em web/layers/*), Pinia para state. Tipos TS sempre que possivel.",
+    why: "Stack escolhida pelo time; layers permitem isolar dominios.",
+    appliesWhen: "Frontend."
+  },
+  {
+    id: "lang-typescript-strict",
+    category: "linguagens",
+    title: "TypeScript strict",
+    body: "Codigo TS deve passar em vue-tsc --noEmit. Evitar any. Preferir tipos explicitos em props e composables.",
+    why: "Pega bug em build time, nao em prod.",
+    appliesWhen: "Qualquer codigo TS/Vue."
+  },
+  {
+    id: "deploy-vps-caddy",
+    category: "deploy",
+    title: "VPS Hostinger com Caddy + Docker Compose",
+    body: "Deploy em VPS 85.31.62.33, user deploy. Caddy reverse proxy em /opt/omnichannel/Caddyfile. Cada projeto roda em /home/deploy/<projeto> com docker-compose.prod.yml. Nginx-style aliases por projeto na network proxy.",
+    why: "Isolamento por projeto + um Caddy gerencia todos os dominios.",
+    appliesWhen: "Deploy ou troubleshooting de prod."
+  },
+  {
+    id: "deploy-feature-flag",
+    category: "deploy",
+    title: "Feature flag CORE_V2_ENABLED em .env.production E docker-compose",
+    body: "Variaveis novas precisam de duas adicoes: .env.production (na VPS) E docker-compose.prod.yml na secao environment. Sem a segunda, o container nao recebe a variavel.",
+    why: "Compose nao propaga automaticamente .env file inteiro; precisa de declaracao explicita.",
+    appliesWhen: "Adicionar variavel de ambiente nova."
+  },
+  {
+    id: "deploy-caddy-restart",
+    category: "deploy",
+    title: "Apos mudar upstream, restart Caddy (nao reload)",
+    body: "Caddy reload mantem cache do upstream antigo em alguns casos. Para garantir, fazer docker restart omnichannel-mvp-caddy-1.",
+    why: "Sintoma classico: site continua mostrando versao antiga apos deploy.",
+    appliesWhen: "Trocar upstream Caddy ou criar novo dominio."
+  },
+  {
+    id: "geral-doc-first",
+    category: "padroes-gerais",
+    title: "Documentar antes de implementar",
+    body: "Antes de codar feature nao trivial: criar fase pending no roadmap-data.ts (status:'pending', tasks done:false), apresentar plano ao usuario, so depois codar.",
+    why: "Evita retrabalho e mantem roadmap como fonte de verdade para o agente.",
+    appliesWhen: "Tarefa com 3+ passos ou impacto em multiplas camadas."
+  },
+  {
+    id: "geral-agent-md",
+    category: "padroes-gerais",
+    title: "Atualizar AGENT.md ao alterar modulo",
+    body: "Toda mudanca em modulo backend (ou layer/area significativa do front) reflete no AGENT.md correspondente: novos endpoints, novas tabelas, novos contratos.",
+    why: "AGENT.md e a fonte que outros agentes leem para entender o modulo.",
+    appliesWhen: "PR que mexe em modulo."
+  },
+  {
+    id: "geral-sem-coauthor",
+    category: "padroes-gerais",
+    title: "Sem Co-Authored-By Claude em commits",
+    body: "Commits nao devem ter Co-Authored-By: Claude. Atribuicao fica so com o desenvolvedor humano.",
+    why: "Preferencia explicita do mantenedor.",
+    appliesWhen: "Toda criacao de commit."
+  },
+  {
+    id: "geral-local-first",
+    category: "padroes-gerais",
+    title: "Validar local antes de qualquer coisa",
+    body: "Sempre rodar e testar local antes de propor commit ou deploy. UI changes precisam de browser test, nao so type-check.",
+    why: "Type-check + test suite validam corretude de codigo, nao de feature.",
+    appliesWhen: "Sempre."
+  }
+];
+
+export const ROADMAP_MODULE_STATUS_LABEL: Record<ModuleStatus, string> = {
+  pending: "Pendente",
+  in_progress: "Em andamento",
+  beta: "Beta",
+  done: "Concluido"
+};
+
+export const ROADMAP_PRIORITY_LABEL: Record<ModulePriority, string> = {
+  P0: "P0 - Critica",
+  P1: "P1 - Alta",
+  P2: "P2 - Media",
+  P3: "P3 - Baixa"
+};
+
+export const ROADMAP_RULE_CATEGORY_LABEL: Record<RuleCategory, string> = {
+  frontend: "Frontend",
+  backend: "Backend",
+  banco: "Banco",
+  linguagens: "Linguagens",
+  deploy: "Deploy",
+  "padroes-gerais": "Padroes Gerais"
+};

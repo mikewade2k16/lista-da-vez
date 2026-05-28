@@ -133,7 +133,7 @@ func (config SMTPPasswordResetDeliveryConfig) normalized() SMTPPasswordResetDeli
 	}
 
 	if normalized.AppName == "" {
-		normalized.AppName = "Lista da Vez"
+		normalized.AppName = "Omni"
 	}
 
 	return normalized

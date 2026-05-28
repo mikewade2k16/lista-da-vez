@@ -32,10 +32,12 @@ type MigrationOptions struct {
 }
 
 var dataSeedMigrationNames = map[string]struct{}{
-	"0002_seed_demo_auth.sql":                  {},
-	"0004_seed_demo_consultants.sql":           {},
-	"0015_mvp_access_foundation.sql":           {},
-	"0018_seed_default_password_since1967.sql": {},
+	"0002_seed_demo_auth.sql":                   {},
+	"0004_seed_demo_consultants.sql":            {},
+	"0015_mvp_access_foundation.sql":            {},
+	"0018_seed_default_password_since1967.sql":  {},
+	"0033_seed_dev_platform_admin_password.sql": {},
+	"0036_seed_dev_erp_store_184.sql":           {},
 }
 
 func LoadMigrations() ([]Migration, error) {

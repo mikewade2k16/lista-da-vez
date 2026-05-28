@@ -1,64 +1,64 @@
 function escapeCsvCell(value) {
-  const text = String(value ?? "");
+  const text = String(value ?? '')
 
   if (/[",;\n]/.test(text)) {
-    return `"${text.replace(/"/g, '""')}"`;
+    return `"${text.replace(/"/g, '""')}"`
   }
 
-  return text;
+  return text
 }
 
 function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
 }
 
 function downloadText(content, filename, mimeType) {
-  if (typeof window === "undefined") {
-    return;
+  if (typeof window === 'undefined') {
+    return
   }
 
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
 
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
 
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(url)
 }
 
 function buildCsvContent(reportData) {
   const headers = [
-    "Loja",
-    "ID atendimento",
-    "Data/Hora",
-    "Consultor",
-    "Desfecho",
-    "Valor",
-    "Duracao (min)",
-    "Espera fila (min)",
-    "Modo",
-    "Cliente",
-    "Telefone",
-    "Email",
-    "Profissao",
-    "Produto visto",
-    "Produto fechado",
-    "Preenchimento",
-    "Motivos",
-    "Origens",
-    "Motivo fora da vez",
-    "Observacoes",
-    "Campanhas",
-    "Bonus campanha"
-  ];
-  const lines = [headers.map(escapeCsvCell).join(";")];
+    'Loja',
+    'ID atendimento',
+    'Data/Hora',
+    'Consultor',
+    'Desfecho',
+    'Valor',
+    'Duracao (min)',
+    'Espera fila (min)',
+    'Modo',
+    'Cliente',
+    'Telefone',
+    'Email',
+    'Profissao',
+    'Produto visto',
+    'Produto fechado',
+    'Preenchimento',
+    'Motivos',
+    'Origens',
+    'Motivo fora da vez',
+    'Observacoes',
+    'Campanhas',
+    'Bonus campanha',
+  ]
+  const lines = [headers.map(escapeCsvCell).join(';')]
 
   reportData.rows.forEach((row) => {
     lines.push(
@@ -84,23 +84,23 @@ function buildCsvContent(reportData) {
         row.queueJumpReason,
         row.notes,
         row.campaignNamesLabel,
-        row.campaignBonusTotal.toFixed(2)
+        row.campaignBonusTotal.toFixed(2),
       ]
         .map(escapeCsvCell)
-        .join(";")
-    );
-  });
+        .join(';'),
+    )
+  })
 
-  return lines.join("\n");
+  return lines.join('\n')
 }
 
 export function exportReportCsv(reportData) {
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const filename = `relatorio-nexo-${timestamp}.csv`;
-  const content = buildCsvContent(reportData);
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+  const filename = `relatorio-nexo-${timestamp}.csv`
+  const content = buildCsvContent(reportData)
 
-  downloadText(content, filename, "text/csv;charset=utf-8;");
-  return true;
+  downloadText(content, filename, 'text/csv;charset=utf-8;')
+  return true
 }
 
 function buildPdfHtml(reportData) {
@@ -117,10 +117,13 @@ function buildPdfHtml(reportData) {
           <td>${escapeHtml(row.queueWaitLabel)}</td>
           <td>${escapeHtml(row.campaignNamesLabel)}</td>
         </tr>
-      `
+      `,
     )
-    .join("");
-  const generatedAt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(new Date());
+    .join('')
+  const generatedAt = new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date())
 
   return `
     <!doctype html>
@@ -173,24 +176,24 @@ function buildPdfHtml(reportData) {
         </table>
       </body>
     </html>
-  `;
+  `
 }
 
 export function exportReportPdf(reportData) {
-  if (typeof window === "undefined") {
-    return false;
+  if (typeof window === 'undefined') {
+    return false
   }
 
-  const printWindow = window.open("", "_blank", "width=1200,height=900");
+  const printWindow = window.open('', '_blank', 'width=1200,height=900')
 
   if (!printWindow) {
-    return false;
+    return false
   }
 
-  printWindow.document.open();
-  printWindow.document.write(buildPdfHtml(reportData));
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
-  return true;
+  printWindow.document.open()
+  printWindow.document.write(buildPdfHtml(reportData))
+  printWindow.document.close()
+  printWindow.focus()
+  printWindow.print()
+  return true
 }

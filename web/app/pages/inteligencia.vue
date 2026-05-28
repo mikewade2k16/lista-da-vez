@@ -1,24 +1,41 @@
 <script setup>
-import { onMounted } from "vue";
-import IntelligenceWorkspace from "~/components/intelligence/IntelligenceWorkspace.vue";
-import { storeToRefs } from "pinia";
-import { useAnalyticsStore } from "~/stores/analytics";
+import { computed, watch } from 'vue'
+import IntelligenceWorkspace from '~/components/intelligence/IntelligenceWorkspace.vue'
+import { storeToRefs } from 'pinia'
+import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
+import { useAnalyticsStore } from '~/stores/analytics'
 
 definePageMeta({
-  layout: "dashboard",
-  workspaceId: "inteligencia"
-});
+  layout: 'dashboard',
+  workspaceId: 'inteligencia',
+  alias: ['/operacao/inteligencia'],
+  supportsAllStoresScope: true,
+})
 
-const analyticsStore = useAnalyticsStore();
-const { intelligence, pending, errorMessage } = storeToRefs(analyticsStore);
+const auth = useAuthStore()
+const analyticsStore = useAnalyticsStore()
+const { intelligence, pending, errorMessage } = storeToRefs(analyticsStore)
+const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
+const integratedScope = computed(() => canSeeIntegrated.value)
 
-onMounted(() => {
-  void analyticsStore.ensureIntelligence();
-});
+watch(
+  () => [integratedScope.value, auth.activeStoreId, auth.activeTenantId],
+  () => {
+    analyticsStore.setIntegratedScope(integratedScope.value)
+    void analyticsStore.fetchIntelligence()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="workspace-host">
-    <IntelligenceWorkspace :report="intelligence" :pending="pending" :error-message="errorMessage" />
+  <div class="page-workspace">
+    <IntelligenceWorkspace
+      :report="intelligence"
+      :pending="pending"
+      :error-message="errorMessage"
+      :integrated-scope="integratedScope"
+    />
   </div>
 </template>

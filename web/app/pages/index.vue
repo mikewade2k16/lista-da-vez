@@ -1,11 +1,11 @@
 <script setup>
-import { useAuthStore } from "~/stores/auth";
+import { useAuthStore } from '~/stores/auth'
 
 definePageMeta({
-  layout: false
-});
+  layout: false,
+})
 
-const auth = useAuthStore();
-await auth.ensureSession();
-await navigateTo(auth.isAuthenticated ? auth.homePath : "/auth/login");
+const auth = useAuthStore()
+await auth.ensureSession()
+await navigateTo(auth.isAuthenticated ? auth.homePath : '/auth/login')
 </script>

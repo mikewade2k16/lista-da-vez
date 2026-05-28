@@ -7,8 +7,47 @@ web/.nuxt/
 web/.output/
 web/dist/
 back/bin/
+back/api
+back/api.exe
+*.exe
 qa-bot/.venv/
 qa-bot/artifacts/
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
+!.env.*.example
+back/.env
+back/.env.*
+!back/.env.example
+!back/.env.*.example
 .env.production
+
+# Local ERP/FTP working data
+erp-source-local/
+# Defesa em profundidade: mantém o nome antigo por 1 ciclo após o rename (Fase 5 / 2026-05-21)
+Controlle10 - ftp/
+
+# Front do outro projeto trazido apenas para analise/referencia (Fase 10)
+web-reference/
+
+# Local assistant/browser artifacts
+.claude/
+.codex-logs/
+.playwright-mcp/
+web/.codex-devserver.*.log
+
+# Local working area (logs, throwaway scripts, tokens, payloads)
+tmp/
+scripts/dev/token-helpers/
+
+# Defesa em profundidade: garante que mesmo se reaparecerem na raiz, não vão para o git
+token.txt
+token_gen.js
+token_gen_real.js
+gen_token.js
+full_token.txt
+payload.b64
+secret.key
+verify.sh

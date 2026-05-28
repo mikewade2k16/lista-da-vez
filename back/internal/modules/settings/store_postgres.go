@@ -2,18 +2,22 @@ package settings
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
 const (
 	optionKindVisitReason    = "visit_reason"
 	optionKindCustomerSource = "customer_source"
+	optionKindPauseReason    = "pause_reason"
+	optionKindCancelReason   = "cancel_reason"
+	optionKindStopReason     = "stop_reason"
 	optionKindQueueJump      = "queue_jump_reason"
 	optionKindLossReason     = "loss_reason"
 	optionKindProfession     = "profession"
@@ -21,10 +25,6 @@ const (
 
 type PostgresRepository struct {
 	pool *pgxpool.Pool
-}
-
-type rowQueryer interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 type execQueryer interface {
@@ -36,15 +36,15 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
-func (repository *PostgresRepository) StoreExists(ctx context.Context, storeID string) (bool, error) {
+func (repository *PostgresRepository) TenantExists(ctx context.Context, tenantID string) (bool, error) {
 	var exists bool
 	err := repository.pool.QueryRow(ctx, `
 		select exists(
 			select 1
-			from stores
+			from tenants
 			where id = $1::uuid
 		);
-	`, storeID).Scan(&exists)
+	`, tenantID).Scan(&exists)
 	if err != nil {
 		return false, err
 	}
@@ -52,112 +52,280 @@ func (repository *PostgresRepository) StoreExists(ctx context.Context, storeID s
 	return exists, nil
 }
 
-func (repository *PostgresRepository) GetByStore(ctx context.Context, storeID string) (Record, bool, error) {
-	record, err := scanConfigRow(repository.pool.QueryRow(ctx, `
-		select
-			store_id::text,
-			selected_operation_template_id,
-			max_concurrent_services,
-			timing_fast_close_minutes,
-			timing_long_service_minutes,
-			timing_low_sale_amount,
-			test_mode_enabled,
-			auto_fill_finish_modal,
-			alert_min_conversion_rate,
-			alert_max_queue_jump_rate,
-			alert_min_pa_score,
-			alert_min_ticket_average,
-			title,
-			product_seen_label,
-			product_seen_placeholder,
-			product_closed_label,
-			product_closed_placeholder,
-			notes_label,
-			notes_placeholder,
-			queue_jump_reason_label,
-			queue_jump_reason_placeholder,
-			loss_reason_label,
-			loss_reason_placeholder,
-			customer_section_label,
-			show_email_field,
-			show_profession_field,
-			show_notes_field,
-			visit_reason_selection_mode,
-			visit_reason_detail_mode,
-			loss_reason_selection_mode,
-			loss_reason_detail_mode,
-			customer_source_selection_mode,
-			customer_source_detail_mode,
-			require_product,
-			require_visit_reason,
-			require_customer_source,
-			require_customer_name_phone,
-			created_at,
-			updated_at
-		from store_operation_settings
-		where store_id = $1::uuid
-		limit 1;
-	`, storeID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Record{}, false, nil
-		}
-
-		return Record{}, false, err
+func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, principal auth.Principal, tenantID string) (bool, error) {
+	normalizedTenantID := strings.TrimSpace(tenantID)
+	if normalizedTenantID == "" {
+		return false, nil
 	}
 
-	visitReasonOptions, err := repository.loadOptionsByKind(ctx, storeID, optionKindVisitReason)
-	if err != nil {
-		return Record{}, false, err
+	if principalTenantID := strings.TrimSpace(principal.TenantID); principalTenantID != "" {
+		return principalTenantID == normalizedTenantID, nil
 	}
 
-	customerSourceOptions, err := repository.loadOptionsByKind(ctx, storeID, optionKindCustomerSource)
-	if err != nil {
-		return Record{}, false, err
+	var (
+		query string
+		args  []any
+	)
+
+	switch principal.Role {
+	case auth.RolePlatformAdmin:
+		query = `
+			select exists(
+				select 1
+				from tenants t
+				where t.id::text = $1
+					and t.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID}
+	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
+		query = `
+			select exists(
+				select 1
+				from tenants t
+				join user_tenant_roles utr on utr.tenant_id = t.id
+				where t.id::text = $1
+					and utr.user_id::text = $2
+					and t.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID, strings.TrimSpace(principal.UserID)}
+	default:
+		query = `
+			select exists(
+				select 1
+				from tenants t
+				join stores s on s.tenant_id = t.id
+				join user_store_roles usr on usr.store_id = s.id
+				where t.id::text = $1
+					and usr.user_id::text = $2
+					and t.is_active = true
+					and s.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID, strings.TrimSpace(principal.UserID)}
 	}
 
-	queueJumpReasonOptions, err := repository.loadOptionsByKind(ctx, storeID, optionKindQueueJump)
-	if err != nil {
-		return Record{}, false, err
+	var allowed bool
+	if err := repository.pool.QueryRow(ctx, query, args...).Scan(&allowed); err != nil {
+		return false, err
 	}
 
-	lossReasonOptions, err := repository.loadOptionsByKind(ctx, storeID, optionKindLossReason)
-	if err != nil {
-		return Record{}, false, err
-	}
-
-	professionOptions, err := repository.loadOptionsByKind(ctx, storeID, optionKindProfession)
-	if err != nil {
-		return Record{}, false, err
-	}
-
-	products, err := repository.loadProducts(ctx, storeID)
-	if err != nil {
-		return Record{}, false, err
-	}
-
-	record.VisitReasonOptions = visitReasonOptions
-	record.CustomerSourceOptions = customerSourceOptions
-	record.QueueJumpReasonOptions = queueJumpReasonOptions
-	record.LossReasonOptions = lossReasonOptions
-	record.ProfessionOptions = professionOptions
-	record.ProductCatalog = products
-
-	return record, true, nil
+	return allowed, nil
 }
 
+func (repository *PostgresRepository) ResolveDefaultTenantID(ctx context.Context, principal auth.Principal) (string, error) {
+	if tenantID := strings.TrimSpace(principal.TenantID); tenantID != "" {
+		return tenantID, nil
+	}
+
+	var (
+		query string
+		args  []any
+	)
+
+	switch principal.Role {
+	case auth.RolePlatformAdmin:
+		query = `
+			select t.id::text
+			from tenants t
+			where t.is_active = true
+			  and exists (
+				select 1 from stores s
+				where s.tenant_id = t.id and s.is_active = true
+			  )
+			order by t.name asc, t.created_at asc, t.id asc
+			limit 2;
+		`
+	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
+		query = `
+			select distinct t.id::text
+			from tenants t
+			join user_tenant_roles utr on utr.tenant_id = t.id
+			where utr.user_id = $1::uuid
+				and t.is_active = true
+			order by t.id asc
+			limit 2;
+		`
+		args = []any{principal.UserID}
+	default:
+		query = `
+			select distinct t.id::text
+			from tenants t
+			join stores s on s.tenant_id = t.id
+			join user_store_roles usr on usr.store_id = s.id
+			where usr.user_id = $1::uuid
+				and t.is_active = true
+				and s.is_active = true
+			order by t.id asc
+			limit 2;
+		`
+		args = []any{principal.UserID}
+	}
+
+	rows, err := repository.pool.Query(ctx, query, args...)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	tenantIDs := make([]string, 0, 2)
+	for rows.Next() {
+		var tenantID string
+		if err := rows.Scan(&tenantID); err != nil {
+			return "", err
+		}
+
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	if len(tenantIDs) != 1 {
+		return "", ErrTenantRequired
+	}
+
+	return tenantIDs[0], nil
+}
+
+func (repository *PostgresRepository) GetByTenant(ctx context.Context, tenantID string) (Record, bool, error) {
+	operationSection, found, err := repository.GetOperationSection(ctx, tenantID)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if !found {
+		return Record{}, false, nil
+	}
+
+	modalSection, modalFound, err := repository.GetModalSection(ctx, tenantID)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if !modalFound {
+		modalSection = defaultModalSectionRecord(tenantID, operationSection.SelectedOperationTemplateID)
+		modalSection.CreatedAt = operationSection.CreatedAt
+		modalSection.UpdatedAt = operationSection.UpdatedAt
+	}
+
+	appearanceSection, appearanceFound, err := repository.GetAppearanceSection(ctx, tenantID)
+	if err != nil {
+		return Record{}, false, err
+	}
+	if !appearanceFound {
+		appearanceSection = defaultAppearanceSectionRecord(tenantID)
+		appearanceSection.CreatedAt = operationSection.CreatedAt
+		appearanceSection.UpdatedAt = operationSection.UpdatedAt
+	}
+
+	visitReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindVisitReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	customerSourceOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindCustomerSource)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	pauseReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindPauseReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	cancelReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindCancelReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	stopReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindStopReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	queueJumpReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindQueueJump)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	lossReasonOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindLossReason)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	professionOptions, err := repository.GetOptionGroup(ctx, tenantID, optionKindProfession)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	products, err := repository.GetProductCatalog(ctx, tenantID)
+	if err != nil {
+		return Record{}, false, err
+	}
+
+	return Record{
+		TenantID:                    tenantID,
+		SelectedOperationTemplateID: operationSection.SelectedOperationTemplateID,
+		Settings:                    composeAppSettings(operationSection.CoreSettings, operationSection.AlertSettings),
+		Appearance:                  cloneAppearanceConfig(appearanceSection.Appearance),
+		ModalConfig:                 modalSection.ModalConfig,
+		VisitReasonOptions:          visitReasonOptions,
+		CustomerSourceOptions:       customerSourceOptions,
+		PauseReasonOptions:          pauseReasonOptions,
+		CancelReasonOptions:         cancelReasonOptions,
+		StopReasonOptions:           stopReasonOptions,
+		QueueJumpReasonOptions:      queueJumpReasonOptions,
+		LossReasonOptions:           lossReasonOptions,
+		ProfessionOptions:           professionOptions,
+		ProductCatalog:              products,
+		CreatedAt:                   operationSection.CreatedAt,
+		UpdatedAt:                   operationSection.UpdatedAt,
+	}, true, nil
+}
+
+// Upsert salva o bundle completo nas tabelas novas.
+// Fase 9: escrita legada em tenant_operation_settings removida;
+// a linha ancora FK permanece via ensureConfigRow para opcoes e catalogo.
 func (repository *PostgresRepository) Upsert(ctx context.Context, record Record) (Record, error) {
+	coreSettings, alertSettings := splitAppSettings(record.Settings)
+	operationSection := normalizeOperationSectionRecord(OperationSectionRecord{
+		TenantID:                    record.TenantID,
+		SelectedOperationTemplateID: record.SelectedOperationTemplateID,
+		CoreSettings:                coreSettings,
+		AlertSettings:               alertSettings,
+	})
+	appearanceSection := normalizeAppearanceSectionRecord(AppearanceSectionRecord{
+		TenantID:   record.TenantID,
+		Appearance: cloneAppearanceConfig(record.Appearance),
+	})
+	modalSection := normalizeModalSectionRecord(ModalSectionRecord{
+		TenantID:                    record.TenantID,
+		SelectedOperationTemplateID: record.SelectedOperationTemplateID,
+		ModalConfig:                 record.ModalConfig,
+	})
+
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return Record{}, err
 	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	if err := upsertAlertSettingsToNew(ctx, tx, record.TenantID, operationSection.AlertSettings); err != nil {
+		return Record{}, err
+	}
+	if err := upsertCoreSettingsToNew(ctx, tx, operationSection); err != nil {
+		return Record{}, err
+	}
+	if err := upsertAppearanceSectionToNew(ctx, tx, appearanceSection); err != nil {
+		return Record{}, err
+	}
+	if err := upsertModalSectionToNew(ctx, tx, modalSection); err != nil {
+		return Record{}, err
+	}
 
-	savedRecord, err := upsertConfigRow(ctx, tx, record)
-	if err != nil {
+	// Garante linha ancora em tenant_operation_settings para FK de opcoes e catalogo.
+	if err := ensureConfigRow(ctx, tx, record.TenantID); err != nil {
 		return Record{}, err
 	}
 
@@ -167,18 +335,25 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 	}{
 		{kind: optionKindVisitReason, items: record.VisitReasonOptions},
 		{kind: optionKindCustomerSource, items: record.CustomerSourceOptions},
+		{kind: optionKindPauseReason, items: record.PauseReasonOptions},
+		{kind: optionKindCancelReason, items: record.CancelReasonOptions},
+		{kind: optionKindStopReason, items: record.StopReasonOptions},
 		{kind: optionKindQueueJump, items: record.QueueJumpReasonOptions},
 		{kind: optionKindLossReason, items: record.LossReasonOptions},
 		{kind: optionKindProfession, items: record.ProfessionOptions},
 	}
-
 	for _, group := range optionGroups {
-		if err := replaceOptionGroupTx(ctx, tx, record.StoreID, group.kind, group.items); err != nil {
+		if err := replaceOptionGroupTx(ctx, tx, record.TenantID, group.kind, group.items); err != nil {
 			return Record{}, err
 		}
 	}
 
-	if err := replaceProductsTx(ctx, tx, record.StoreID, record.ProductCatalog); err != nil {
+	if err := replaceProductsTx(ctx, tx, record.TenantID, record.ProductCatalog); err != nil {
+		return Record{}, err
+	}
+
+	updatedAt, err := touchConfigRow(ctx, tx, record.TenantID)
+	if err != nil {
 		return Record{}, err
 	}
 
@@ -186,21 +361,26 @@ func (repository *PostgresRepository) Upsert(ctx context.Context, record Record)
 		return Record{}, err
 	}
 
-	savedRecord.VisitReasonOptions = cloneOptions(record.VisitReasonOptions)
-	savedRecord.CustomerSourceOptions = cloneOptions(record.CustomerSourceOptions)
-	savedRecord.QueueJumpReasonOptions = cloneOptions(record.QueueJumpReasonOptions)
-	savedRecord.LossReasonOptions = cloneOptions(record.LossReasonOptions)
-	savedRecord.ProfessionOptions = cloneOptions(record.ProfessionOptions)
-	savedRecord.ProductCatalog = cloneProducts(record.ProductCatalog)
-
-	return savedRecord, nil
+	return Record{
+		TenantID:                    operationSection.TenantID,
+		SelectedOperationTemplateID: operationSection.SelectedOperationTemplateID,
+		Settings:                    composeAppSettings(operationSection.CoreSettings, operationSection.AlertSettings),
+		Appearance:                  cloneAppearanceConfig(appearanceSection.Appearance),
+		ModalConfig:                 modalSection.ModalConfig,
+		VisitReasonOptions:          cloneOptions(record.VisitReasonOptions),
+		CustomerSourceOptions:       cloneOptions(record.CustomerSourceOptions),
+		PauseReasonOptions:          cloneOptions(record.PauseReasonOptions),
+		CancelReasonOptions:         cloneOptions(record.CancelReasonOptions),
+		StopReasonOptions:           cloneOptions(record.StopReasonOptions),
+		QueueJumpReasonOptions:      cloneOptions(record.QueueJumpReasonOptions),
+		LossReasonOptions:           cloneOptions(record.LossReasonOptions),
+		ProfessionOptions:           cloneOptions(record.ProfessionOptions),
+		ProductCatalog:              cloneProducts(record.ProductCatalog),
+		UpdatedAt:                   updatedAt,
+	}, nil
 }
 
-func (repository *PostgresRepository) UpsertConfig(ctx context.Context, record Record) (Record, error) {
-	return upsertConfigRow(ctx, repository.pool, record)
-}
-
-func (repository *PostgresRepository) ReplaceOptionGroup(ctx context.Context, storeID string, kind string, options []OptionItem) (time.Time, error) {
+func (repository *PostgresRepository) ReplaceOptionGroup(ctx context.Context, tenantID string, kind string, options []OptionItem) (time.Time, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -210,15 +390,15 @@ func (repository *PostgresRepository) ReplaceOptionGroup(ctx context.Context, st
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := ensureConfigRow(ctx, tx, storeID); err != nil {
+	if err := ensureConfigRow(ctx, tx, tenantID); err != nil {
 		return time.Time{}, err
 	}
 
-	if err := replaceOptionGroupTx(ctx, tx, storeID, kind, options); err != nil {
+	if err := replaceOptionGroupTx(ctx, tx, tenantID, kind, options); err != nil {
 		return time.Time{}, err
 	}
 
-	updatedAt, err := touchConfigRow(ctx, tx, storeID)
+	updatedAt, err := touchConfigRow(ctx, tx, tenantID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -230,7 +410,7 @@ func (repository *PostgresRepository) ReplaceOptionGroup(ctx context.Context, st
 	return updatedAt, nil
 }
 
-func (repository *PostgresRepository) UpsertOption(ctx context.Context, storeID string, kind string, option OptionItem) (time.Time, error) {
+func (repository *PostgresRepository) UpsertOption(ctx context.Context, tenantID string, kind string, option OptionItem) (time.Time, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -240,15 +420,15 @@ func (repository *PostgresRepository) UpsertOption(ctx context.Context, storeID 
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := ensureConfigRow(ctx, tx, storeID); err != nil {
+	if err := ensureConfigRow(ctx, tx, tenantID); err != nil {
 		return time.Time{}, err
 	}
 
-	if err := upsertOptionTx(ctx, tx, storeID, kind, option); err != nil {
+	if err := upsertOptionTx(ctx, tx, tenantID, kind, option); err != nil {
 		return time.Time{}, err
 	}
 
-	updatedAt, err := touchConfigRow(ctx, tx, storeID)
+	updatedAt, err := touchConfigRow(ctx, tx, tenantID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -260,7 +440,7 @@ func (repository *PostgresRepository) UpsertOption(ctx context.Context, storeID 
 	return updatedAt, nil
 }
 
-func (repository *PostgresRepository) DeleteOption(ctx context.Context, storeID string, kind string, optionID string) (time.Time, error) {
+func (repository *PostgresRepository) DeleteOption(ctx context.Context, tenantID string, kind string, optionID string) (time.Time, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -270,20 +450,20 @@ func (repository *PostgresRepository) DeleteOption(ctx context.Context, storeID 
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := ensureConfigRow(ctx, tx, storeID); err != nil {
+	if err := ensureConfigRow(ctx, tx, tenantID); err != nil {
 		return time.Time{}, err
 	}
 
 	if _, err := tx.Exec(ctx, `
-		delete from store_setting_options
-		where store_id = $1::uuid
+		delete from tenant_setting_options
+		where tenant_id = $1::uuid
 		  and kind = $2
 		  and option_id = $3;
-	`, storeID, kind, strings.TrimSpace(optionID)); err != nil {
+	`, tenantID, kind, strings.TrimSpace(optionID)); err != nil {
 		return time.Time{}, err
 	}
 
-	updatedAt, err := touchConfigRow(ctx, tx, storeID)
+	updatedAt, err := touchConfigRow(ctx, tx, tenantID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -295,7 +475,7 @@ func (repository *PostgresRepository) DeleteOption(ctx context.Context, storeID 
 	return updatedAt, nil
 }
 
-func (repository *PostgresRepository) ReplaceProducts(ctx context.Context, storeID string, products []ProductItem) (time.Time, error) {
+func (repository *PostgresRepository) ReplaceProducts(ctx context.Context, tenantID string, products []ProductItem) (time.Time, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -305,15 +485,15 @@ func (repository *PostgresRepository) ReplaceProducts(ctx context.Context, store
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := ensureConfigRow(ctx, tx, storeID); err != nil {
+	if err := ensureConfigRow(ctx, tx, tenantID); err != nil {
 		return time.Time{}, err
 	}
 
-	if err := replaceProductsTx(ctx, tx, storeID, products); err != nil {
+	if err := replaceProductsTx(ctx, tx, tenantID, products); err != nil {
 		return time.Time{}, err
 	}
 
-	updatedAt, err := touchConfigRow(ctx, tx, storeID)
+	updatedAt, err := touchConfigRow(ctx, tx, tenantID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -325,7 +505,7 @@ func (repository *PostgresRepository) ReplaceProducts(ctx context.Context, store
 	return updatedAt, nil
 }
 
-func (repository *PostgresRepository) UpsertProduct(ctx context.Context, storeID string, product ProductItem) (time.Time, error) {
+func (repository *PostgresRepository) UpsertProduct(ctx context.Context, tenantID string, product ProductItem) (time.Time, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -335,15 +515,15 @@ func (repository *PostgresRepository) UpsertProduct(ctx context.Context, storeID
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := ensureConfigRow(ctx, tx, storeID); err != nil {
+	if err := ensureConfigRow(ctx, tx, tenantID); err != nil {
 		return time.Time{}, err
 	}
 
-	if err := upsertProductTx(ctx, tx, storeID, product); err != nil {
+	if err := upsertProductTx(ctx, tx, tenantID, product); err != nil {
 		return time.Time{}, err
 	}
 
-	updatedAt, err := touchConfigRow(ctx, tx, storeID)
+	updatedAt, err := touchConfigRow(ctx, tx, tenantID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -355,7 +535,7 @@ func (repository *PostgresRepository) UpsertProduct(ctx context.Context, storeID
 	return updatedAt, nil
 }
 
-func (repository *PostgresRepository) DeleteProduct(ctx context.Context, storeID string, productID string) (time.Time, error) {
+func (repository *PostgresRepository) DeleteProduct(ctx context.Context, tenantID string, productID string) (time.Time, error) {
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return time.Time{}, err
@@ -365,19 +545,19 @@ func (repository *PostgresRepository) DeleteProduct(ctx context.Context, storeID
 		_ = tx.Rollback(ctx)
 	}()
 
-	if err := ensureConfigRow(ctx, tx, storeID); err != nil {
+	if err := ensureConfigRow(ctx, tx, tenantID); err != nil {
 		return time.Time{}, err
 	}
 
 	if _, err := tx.Exec(ctx, `
-		delete from store_catalog_products
-		where store_id = $1::uuid
+		delete from tenant_catalog_products
+		where tenant_id = $1::uuid
 		  and product_id = $2;
-	`, storeID, strings.TrimSpace(productID)); err != nil {
+	`, tenantID, strings.TrimSpace(productID)); err != nil {
 		return time.Time{}, err
 	}
 
-	updatedAt, err := touchConfigRow(ctx, tx, storeID)
+	updatedAt, err := touchConfigRow(ctx, tx, tenantID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -389,16 +569,16 @@ func (repository *PostgresRepository) DeleteProduct(ctx context.Context, storeID
 	return updatedAt, nil
 }
 
-func (repository *PostgresRepository) loadOptionsByKind(ctx context.Context, storeID string, kind string) ([]OptionItem, error) {
+func (repository *PostgresRepository) loadOptionsByKind(ctx context.Context, tenantID string, kind string) ([]OptionItem, error) {
 	rows, err := repository.pool.Query(ctx, `
 		select
 			option_id,
 			label
-		from store_setting_options
-		where store_id = $1::uuid
+		from tenant_setting_options
+		where tenant_id = $1::uuid
 		  and kind = $2
 		order by sort_order asc, label asc;
-	`, storeID, kind)
+	`, tenantID, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +601,7 @@ func (repository *PostgresRepository) loadOptionsByKind(ctx context.Context, sto
 	return options, nil
 }
 
-func (repository *PostgresRepository) loadProducts(ctx context.Context, storeID string) ([]ProductItem, error) {
+func (repository *PostgresRepository) loadProducts(ctx context.Context, tenantID string) ([]ProductItem, error) {
 	rows, err := repository.pool.Query(ctx, `
 		select
 			product_id,
@@ -429,10 +609,10 @@ func (repository *PostgresRepository) loadProducts(ctx context.Context, storeID 
 			code,
 			category,
 			base_price
-		from store_catalog_products
-		where store_id = $1::uuid
+		from tenant_catalog_products
+		where tenant_id = $1::uuid
 		order by sort_order asc, name asc;
-	`, storeID)
+	`, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -461,23 +641,23 @@ func (repository *PostgresRepository) loadProducts(ctx context.Context, storeID 
 	return products, nil
 }
 
-func ensureConfigRow(ctx context.Context, queryer execQueryer, storeID string) error {
+func ensureConfigRow(ctx context.Context, queryer execQueryer, tenantID string) error {
 	_, err := queryer.Exec(ctx, `
-		insert into store_operation_settings (store_id)
+		insert into tenant_operation_settings (tenant_id)
 		values ($1::uuid)
-		on conflict (store_id) do nothing;
-	`, storeID)
+		on conflict (tenant_id) do nothing;
+	`, tenantID)
 	return err
 }
 
-func touchConfigRow(ctx context.Context, queryer execQueryer, storeID string) (time.Time, error) {
+func touchConfigRow(ctx context.Context, queryer execQueryer, tenantID string) (time.Time, error) {
 	var updatedAt time.Time
 	err := queryer.QueryRow(ctx, `
-		update store_operation_settings
+		update tenant_operation_settings
 		set updated_at = now()
-		where store_id = $1::uuid
+		where tenant_id = $1::uuid
 		returning updated_at;
-	`, storeID).Scan(&updatedAt)
+	`, tenantID).Scan(&updatedAt)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -485,19 +665,19 @@ func touchConfigRow(ctx context.Context, queryer execQueryer, storeID string) (t
 	return updatedAt, nil
 }
 
-func replaceOptionGroupTx(ctx context.Context, tx pgx.Tx, storeID string, kind string, options []OptionItem) error {
+func replaceOptionGroupTx(ctx context.Context, tx pgx.Tx, tenantID string, kind string, options []OptionItem) error {
 	if _, err := tx.Exec(ctx, `
-		delete from store_setting_options
-		where store_id = $1::uuid
+		delete from tenant_setting_options
+		where tenant_id = $1::uuid
 		  and kind = $2;
-	`, storeID, kind); err != nil {
+	`, tenantID, kind); err != nil {
 		return err
 	}
 
 	for index, option := range options {
 		if _, err := tx.Exec(ctx, `
-			insert into store_setting_options (
-				store_id,
+			insert into tenant_setting_options (
+				tenant_id,
 				kind,
 				option_id,
 				label,
@@ -505,7 +685,7 @@ func replaceOptionGroupTx(ctx context.Context, tx pgx.Tx, storeID string, kind s
 			)
 			values ($1::uuid, $2, $3, $4, $5);
 		`,
-			storeID,
+			tenantID,
 			kind,
 			strings.TrimSpace(option.ID),
 			strings.TrimSpace(option.Label),
@@ -518,10 +698,10 @@ func replaceOptionGroupTx(ctx context.Context, tx pgx.Tx, storeID string, kind s
 	return nil
 }
 
-func upsertOptionTx(ctx context.Context, tx pgx.Tx, storeID string, kind string, option OptionItem) error {
+func upsertOptionTx(ctx context.Context, tx pgx.Tx, tenantID string, kind string, option OptionItem) error {
 	_, err := tx.Exec(ctx, `
-		insert into store_setting_options (
-			store_id,
+		insert into tenant_setting_options (
+			tenant_id,
 			kind,
 			option_id,
 			label,
@@ -535,23 +715,23 @@ func upsertOptionTx(ctx context.Context, tx pgx.Tx, storeID string, kind string,
 			coalesce(
 				(
 					select sort_order
-					from store_setting_options
-					where store_id = $1::uuid
+					from tenant_setting_options
+					where tenant_id = $1::uuid
 					  and kind = $2
 					  and option_id = $3
 				),
 				(
 					select coalesce(max(sort_order) + 1, 0)
-					from store_setting_options
-					where store_id = $1::uuid
+					from tenant_setting_options
+					where tenant_id = $1::uuid
 					  and kind = $2
 				)
 			)
 		)
-		on conflict (store_id, kind, option_id) do update
+		on conflict (tenant_id, kind, option_id) do update
 		set label = excluded.label;
 	`,
-		storeID,
+		tenantID,
 		kind,
 		strings.TrimSpace(option.ID),
 		strings.TrimSpace(option.Label),
@@ -559,18 +739,18 @@ func upsertOptionTx(ctx context.Context, tx pgx.Tx, storeID string, kind string,
 	return err
 }
 
-func replaceProductsTx(ctx context.Context, tx pgx.Tx, storeID string, products []ProductItem) error {
+func replaceProductsTx(ctx context.Context, tx pgx.Tx, tenantID string, products []ProductItem) error {
 	if _, err := tx.Exec(ctx, `
-		delete from store_catalog_products
-		where store_id = $1::uuid;
-	`, storeID); err != nil {
+		delete from tenant_catalog_products
+		where tenant_id = $1::uuid;
+	`, tenantID); err != nil {
 		return err
 	}
 
 	for index, product := range products {
 		if _, err := tx.Exec(ctx, `
-			insert into store_catalog_products (
-				store_id,
+			insert into tenant_catalog_products (
+				tenant_id,
 				product_id,
 				name,
 				code,
@@ -580,7 +760,7 @@ func replaceProductsTx(ctx context.Context, tx pgx.Tx, storeID string, products 
 			)
 			values ($1::uuid, $2, $3, $4, $5, $6, $7);
 		`,
-			storeID,
+			tenantID,
 			strings.TrimSpace(product.ID),
 			strings.TrimSpace(product.Name),
 			strings.ToUpper(strings.TrimSpace(product.Code)),
@@ -595,10 +775,10 @@ func replaceProductsTx(ctx context.Context, tx pgx.Tx, storeID string, products 
 	return nil
 }
 
-func upsertProductTx(ctx context.Context, tx pgx.Tx, storeID string, product ProductItem) error {
+func upsertProductTx(ctx context.Context, tx pgx.Tx, tenantID string, product ProductItem) error {
 	_, err := tx.Exec(ctx, `
-		insert into store_catalog_products (
-			store_id,
+		insert into tenant_catalog_products (
+			tenant_id,
 			product_id,
 			name,
 			code,
@@ -616,25 +796,25 @@ func upsertProductTx(ctx context.Context, tx pgx.Tx, storeID string, product Pro
 			coalesce(
 				(
 					select sort_order
-					from store_catalog_products
-					where store_id = $1::uuid
+					from tenant_catalog_products
+					where tenant_id = $1::uuid
 					  and product_id = $2
 				),
 				(
 					select coalesce(max(sort_order) + 1, 0)
-					from store_catalog_products
-					where store_id = $1::uuid
+					from tenant_catalog_products
+					where tenant_id = $1::uuid
 				)
 			)
 		)
-		on conflict (store_id, product_id) do update
+		on conflict (tenant_id, product_id) do update
 		set
 			name = excluded.name,
 			code = excluded.code,
 			category = excluded.category,
 			base_price = excluded.base_price;
 	`,
-		storeID,
+		tenantID,
 		strings.TrimSpace(product.ID),
 		strings.TrimSpace(product.Name),
 		strings.ToUpper(strings.TrimSpace(product.Code)),
@@ -642,254 +822,4 @@ func upsertProductTx(ctx context.Context, tx pgx.Tx, storeID string, product Pro
 		product.BasePrice,
 	)
 	return err
-}
-
-func upsertConfigRow(ctx context.Context, queryer rowQueryer, record Record) (Record, error) {
-	return scanConfigRow(queryer.QueryRow(ctx, `
-		insert into store_operation_settings (
-			store_id,
-			selected_operation_template_id,
-			max_concurrent_services,
-			timing_fast_close_minutes,
-			timing_long_service_minutes,
-			timing_low_sale_amount,
-			test_mode_enabled,
-			auto_fill_finish_modal,
-			alert_min_conversion_rate,
-			alert_max_queue_jump_rate,
-			alert_min_pa_score,
-			alert_min_ticket_average,
-			title,
-			product_seen_label,
-			product_seen_placeholder,
-			product_closed_label,
-			product_closed_placeholder,
-			notes_label,
-			notes_placeholder,
-			queue_jump_reason_label,
-			queue_jump_reason_placeholder,
-			loss_reason_label,
-			loss_reason_placeholder,
-			customer_section_label,
-			show_email_field,
-			show_profession_field,
-			show_notes_field,
-			visit_reason_selection_mode,
-			visit_reason_detail_mode,
-			loss_reason_selection_mode,
-			loss_reason_detail_mode,
-			customer_source_selection_mode,
-			customer_source_detail_mode,
-			require_product,
-			require_visit_reason,
-			require_customer_source,
-			require_customer_name_phone
-		)
-		values (
-			$1::uuid,
-			$2,
-			$3,
-			$4,
-			$5,
-			$6,
-			$7,
-			$8,
-			$9,
-			$10,
-			$11,
-			$12,
-			$13,
-			$14,
-			$15,
-			$16,
-			$17,
-			$18,
-			$19,
-			$20,
-			$21,
-			$22,
-			$23,
-			$24,
-			$25,
-			$26,
-			$27,
-			$28,
-			$29,
-			$30,
-			$31,
-			$32,
-			$33,
-			$34,
-			$35,
-			$36,
-			$37
-		)
-		on conflict (store_id) do update
-		set
-			selected_operation_template_id = excluded.selected_operation_template_id,
-			max_concurrent_services = excluded.max_concurrent_services,
-			timing_fast_close_minutes = excluded.timing_fast_close_minutes,
-			timing_long_service_minutes = excluded.timing_long_service_minutes,
-			timing_low_sale_amount = excluded.timing_low_sale_amount,
-			test_mode_enabled = excluded.test_mode_enabled,
-			auto_fill_finish_modal = excluded.auto_fill_finish_modal,
-			alert_min_conversion_rate = excluded.alert_min_conversion_rate,
-			alert_max_queue_jump_rate = excluded.alert_max_queue_jump_rate,
-			alert_min_pa_score = excluded.alert_min_pa_score,
-			alert_min_ticket_average = excluded.alert_min_ticket_average,
-			title = excluded.title,
-			product_seen_label = excluded.product_seen_label,
-			product_seen_placeholder = excluded.product_seen_placeholder,
-			product_closed_label = excluded.product_closed_label,
-			product_closed_placeholder = excluded.product_closed_placeholder,
-			notes_label = excluded.notes_label,
-			notes_placeholder = excluded.notes_placeholder,
-			queue_jump_reason_label = excluded.queue_jump_reason_label,
-			queue_jump_reason_placeholder = excluded.queue_jump_reason_placeholder,
-			loss_reason_label = excluded.loss_reason_label,
-			loss_reason_placeholder = excluded.loss_reason_placeholder,
-			customer_section_label = excluded.customer_section_label,
-			show_email_field = excluded.show_email_field,
-			show_profession_field = excluded.show_profession_field,
-			show_notes_field = excluded.show_notes_field,
-			visit_reason_selection_mode = excluded.visit_reason_selection_mode,
-			visit_reason_detail_mode = excluded.visit_reason_detail_mode,
-			loss_reason_selection_mode = excluded.loss_reason_selection_mode,
-			loss_reason_detail_mode = excluded.loss_reason_detail_mode,
-			customer_source_selection_mode = excluded.customer_source_selection_mode,
-			customer_source_detail_mode = excluded.customer_source_detail_mode,
-			require_product = excluded.require_product,
-			require_visit_reason = excluded.require_visit_reason,
-			require_customer_source = excluded.require_customer_source,
-			require_customer_name_phone = excluded.require_customer_name_phone,
-			updated_at = now()
-		returning
-			store_id::text,
-			selected_operation_template_id,
-			max_concurrent_services,
-			timing_fast_close_minutes,
-			timing_long_service_minutes,
-			timing_low_sale_amount,
-			test_mode_enabled,
-			auto_fill_finish_modal,
-			alert_min_conversion_rate,
-			alert_max_queue_jump_rate,
-			alert_min_pa_score,
-			alert_min_ticket_average,
-			title,
-			product_seen_label,
-			product_seen_placeholder,
-			product_closed_label,
-			product_closed_placeholder,
-			notes_label,
-			notes_placeholder,
-			queue_jump_reason_label,
-			queue_jump_reason_placeholder,
-			loss_reason_label,
-			loss_reason_placeholder,
-			customer_section_label,
-			show_email_field,
-			show_profession_field,
-			show_notes_field,
-			visit_reason_selection_mode,
-			visit_reason_detail_mode,
-			loss_reason_selection_mode,
-			loss_reason_detail_mode,
-			customer_source_selection_mode,
-			customer_source_detail_mode,
-			require_product,
-			require_visit_reason,
-			require_customer_source,
-			require_customer_name_phone,
-			created_at,
-			updated_at;
-	`,
-		record.StoreID,
-		record.SelectedOperationTemplateID,
-		record.Settings.MaxConcurrentServices,
-		record.Settings.TimingFastCloseMinutes,
-		record.Settings.TimingLongServiceMinutes,
-		record.Settings.TimingLowSaleAmount,
-		record.Settings.TestModeEnabled,
-		record.Settings.AutoFillFinishModal,
-		record.Settings.AlertMinConversionRate,
-		record.Settings.AlertMaxQueueJumpRate,
-		record.Settings.AlertMinPaScore,
-		record.Settings.AlertMinTicketAverage,
-		record.ModalConfig.Title,
-		record.ModalConfig.ProductSeenLabel,
-		record.ModalConfig.ProductSeenPlaceholder,
-		record.ModalConfig.ProductClosedLabel,
-		record.ModalConfig.ProductClosedPlaceholder,
-		record.ModalConfig.NotesLabel,
-		record.ModalConfig.NotesPlaceholder,
-		record.ModalConfig.QueueJumpReasonLabel,
-		record.ModalConfig.QueueJumpReasonPlaceholder,
-		record.ModalConfig.LossReasonLabel,
-		record.ModalConfig.LossReasonPlaceholder,
-		record.ModalConfig.CustomerSectionLabel,
-		record.ModalConfig.ShowEmailField,
-		record.ModalConfig.ShowProfessionField,
-		record.ModalConfig.ShowNotesField,
-		record.ModalConfig.VisitReasonSelectionMode,
-		record.ModalConfig.VisitReasonDetailMode,
-		record.ModalConfig.LossReasonSelectionMode,
-		record.ModalConfig.LossReasonDetailMode,
-		record.ModalConfig.CustomerSourceSelectionMode,
-		record.ModalConfig.CustomerSourceDetailMode,
-		record.ModalConfig.RequireProduct,
-		record.ModalConfig.RequireVisitReason,
-		record.ModalConfig.RequireCustomerSource,
-		record.ModalConfig.RequireCustomerNamePhone,
-	))
-}
-
-func scanConfigRow(row pgx.Row) (Record, error) {
-	var record Record
-	err := row.Scan(
-		&record.StoreID,
-		&record.SelectedOperationTemplateID,
-		&record.Settings.MaxConcurrentServices,
-		&record.Settings.TimingFastCloseMinutes,
-		&record.Settings.TimingLongServiceMinutes,
-		&record.Settings.TimingLowSaleAmount,
-		&record.Settings.TestModeEnabled,
-		&record.Settings.AutoFillFinishModal,
-		&record.Settings.AlertMinConversionRate,
-		&record.Settings.AlertMaxQueueJumpRate,
-		&record.Settings.AlertMinPaScore,
-		&record.Settings.AlertMinTicketAverage,
-		&record.ModalConfig.Title,
-		&record.ModalConfig.ProductSeenLabel,
-		&record.ModalConfig.ProductSeenPlaceholder,
-		&record.ModalConfig.ProductClosedLabel,
-		&record.ModalConfig.ProductClosedPlaceholder,
-		&record.ModalConfig.NotesLabel,
-		&record.ModalConfig.NotesPlaceholder,
-		&record.ModalConfig.QueueJumpReasonLabel,
-		&record.ModalConfig.QueueJumpReasonPlaceholder,
-		&record.ModalConfig.LossReasonLabel,
-		&record.ModalConfig.LossReasonPlaceholder,
-		&record.ModalConfig.CustomerSectionLabel,
-		&record.ModalConfig.ShowEmailField,
-		&record.ModalConfig.ShowProfessionField,
-		&record.ModalConfig.ShowNotesField,
-		&record.ModalConfig.VisitReasonSelectionMode,
-		&record.ModalConfig.VisitReasonDetailMode,
-		&record.ModalConfig.LossReasonSelectionMode,
-		&record.ModalConfig.LossReasonDetailMode,
-		&record.ModalConfig.CustomerSourceSelectionMode,
-		&record.ModalConfig.CustomerSourceDetailMode,
-		&record.ModalConfig.RequireProduct,
-		&record.ModalConfig.RequireVisitReason,
-		&record.ModalConfig.RequireCustomerSource,
-		&record.ModalConfig.RequireCustomerNamePhone,
-		&record.CreatedAt,
-		&record.UpdatedAt,
-	)
-	if err != nil {
-		return Record{}, err
-	}
-
-	return record, nil
 }

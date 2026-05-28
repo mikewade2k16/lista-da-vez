@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
@@ -56,7 +57,7 @@ func (service *Service) FindAccessible(ctx context.Context, principal auth.Princ
 }
 
 func (service *Service) Create(ctx context.Context, principal auth.Principal, input CreateInput) (StoreView, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditStores(principal) {
 		return StoreView{}, ErrForbidden
 	}
 
@@ -104,7 +105,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 }
 
 func (service *Service) Update(ctx context.Context, principal auth.Principal, input UpdateInput) (StoreView, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditStores(principal) {
 		return StoreView{}, ErrForbidden
 	}
 
@@ -188,7 +189,7 @@ func (service *Service) Restore(ctx context.Context, principal auth.Principal, s
 }
 
 func (service *Service) Delete(ctx context.Context, principal auth.Principal, storeID string) (DeleteResult, error) {
-	if principal.Role != auth.RoleOwner && principal.Role != auth.RolePlatformAdmin {
+	if !canEditStores(principal) {
 		return DeleteResult{}, ErrForbidden
 	}
 
@@ -202,18 +203,11 @@ func (service *Service) Delete(ctx context.Context, principal auth.Principal, st
 		return DeleteResult{}, err
 	}
 
-	dependencies, err := service.repository.ListDeleteDependencies(ctx, store.ID)
-	if err != nil {
-		return DeleteResult{}, err
-	}
-
-	if len(dependencies) > 0 {
-		return DeleteResult{}, &DeleteBlockedError{
-			StoreID:      store.ID,
-			Dependencies: dependencies,
-		}
-	}
-
+	// Politica de delecao:
+	// - consultants.store_id e nullable + ON DELETE SET NULL (migration 0122): consultores ficam orfaos.
+	// - user_store_roles e demais tabelas operacionais (queue, active services, history, etc) usam
+	//   ON DELETE CASCADE: vinculos/registros operacionais somem junto com a loja.
+	// Por isso nao bloqueamos mais a delecao baseado em dependencias.
 	if err := service.repository.Delete(ctx, store.ID); err != nil {
 		return DeleteResult{}, err
 	}
@@ -296,6 +290,14 @@ func resolveTenantForWrite(principal auth.Principal, requestedTenantID string) (
 	default:
 		return "", ErrForbidden
 	}
+}
+
+func canEditStores(principal auth.Principal) bool {
+	if principal.PermissionsResolved {
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionMultiStoreEdit)
+	}
+
+	return principal.Role == auth.RoleOwner || principal.Role == auth.RolePlatformAdmin
 }
 
 func maxFloat(value float64, minimum float64) float64 {

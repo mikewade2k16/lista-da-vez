@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Husky pre-push hook — Omni
+#
+# Antes de enviar para o remoto, valida o build de producao do web.
+# Isso pega erros que passam por lint/format mas quebram o deploy.
+
+npm run build

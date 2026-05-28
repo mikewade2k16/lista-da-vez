@@ -280,11 +280,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          root_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL")"
-          health_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL/healthz")"
-
-          printf 'GET %s => %s\n' "$DEPLOY_PUBLIC_BASE_URL" "$root_status"
-          printf 'GET %s/healthz => %s\n' "$DEPLOY_PUBLIC_BASE_URL" "$health_status"
+          for attempt in 1 2 3 4 5; do
+            root_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL")"
+            health_status="$(curl -sS -o /dev/null -w '%{http_code}' "$DEPLOY_PUBLIC_BASE_URL/healthz")"
+            printf 'tentativa %s — GET %s => %s | /healthz => %s\n' "$attempt" "$DEPLOY_PUBLIC_BASE_URL" "$root_status" "$health_status"
+            [[ "$root_status" == "200" && "$health_status" == "200" ]] && break
+            [[ "$attempt" -lt 5 ]] && sleep 10
+          done
 
           [[ "$root_status" == "200" ]]
           [[ "$health_status" == "200" ]]

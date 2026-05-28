@@ -33,7 +33,15 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 - Endpoints `/v2/me/accounts` e `/v2/me/context` continuam servidos pelo handle
   retornado de `Module.Build()` — mesmas rotas, mesmo shape.
 
-### Fase 3 — RBAC dinamico (concluida)
+### Fase 3 — RBAC dinamico (codigo entregue, runtime parcial)
+
+> **Aviso 2026-05-28**: a auditoria descobriu que apesar de tudo abaixo estar
+> implementado em codigo, `core.user_tenant_roles` no banco local esta com
+> 0 linhas — o seed efetivo nao rodou. Sem isso, `Principal.Permissions`
+> em runtime cai no fallback legado (`access.Service.ResolveUserPermissions`).
+> A finalizacao real esta planejada em
+> [docs/MULTITENANT_COMPLETION_PLAN.md → C1 mig-seed-roles](../../../../docs/MULTITENANT_COMPLETION_PLAN.md)
+> e branch `refactor/multi-tenant-complete`.
 
 - Migration `0102_rbac_locked_templates.sql` adiciona `is_locked` em `core.role_templates`.
 - `RoleTemplateDef.IsLocked` propagado de `platform/modules/module.go` ate `catalog_postgres.go`.
@@ -55,7 +63,7 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 | Verbo | Path | Resposta | Status |
 |---|---|---|---|
 | GET | `/v2/me/accounts` | `MeAccountsResponse` (accounts lean) | implementado |
-| GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | roles/permissions reais via core.role_permissions (Fase 3) |
+| GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | roles/permissions reais via core.role_permissions QUANDO seedado; hoje retorna vazio porque core.user_tenant_roles=0 linhas (ver aviso da Fase 3) |
 | POST | `/v2/me/active-account` | — | nao implementado (frontend gerencia cookie ate Fase 5) |
 
 `/v2/me/context` valida que o user e membership ativo da account (defesa
@@ -68,11 +76,16 @@ para nao vazar existencia.
 - `account_id` SO vem do middleware (a partir do Principal) para handlers
   legados v1. Em endpoints v2 expostos aqui, `accountId` chega na query
   porque a especificacao ainda nao implementou o middleware `X-Account-Id`
-  (chega na Fase 2/3). Validacao de membership e feita no service.
+  (chega na multitenant-completion C2). Validacao de membership e feita no service.
 - Repository nunca recebe `account_id` direto vindo do request body — sempre
   passa pelo service que valida membership primeiro.
 - Nao introduzir FK de `core.*` para schemas satelites (`queue.*`, `finance.*`).
   Se precisar de dado, abstrair via interface in-process.
+- `core.account_modules` e a fonte de verdade para "esse cliente contratou o
+  modulo X?". Hoje tabela esta vazia. Quando seedada (multitenant-completion
+  C1 mig-seed-modules) e o `AccountModulesGuard` for ativado
+  (multitenant-completion C2), nenhuma rota de modulo satelite pode ser
+  acessada sem entry correspondente.
 
 ## Arquivos
 

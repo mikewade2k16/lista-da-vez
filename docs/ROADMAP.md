@@ -5,6 +5,47 @@
 
 ---
 
+## Estado real em 2026-05-28 (leia antes do resto)
+
+Diagnóstico do código vs. o que o ROADMAP/roadmap-data.ts marcavam como ✅:
+
+| Fase | Marcado como | Estado real |
+|---|---|---|
+| **Fase 2** (Module Registry) | done | Guard `AccountModulesGuard` **codificado mas descartado em runtime** ([back/internal/platform/app/app.go:313](../back/internal/platform/app/app.go#L313): `_ = httpapi.NewAccountModulesGuard(pool)`). Nenhuma rota usa `RequireModule(...)`. |
+| **Fase 3** (RBAC dinâmico) | done | Service existe; migration `0103` rodou; mas `core.user_tenant_roles` está com **0 linhas** no banco local — RBAC dinâmico não foi efetivamente seedado, runtime cai em fallback legado. |
+| **Fase 4** (mover queue) | parcial | Tabelas moveram via views compat (4A/4B/4C). Código Go **não foi reorganizado** em subpackage `queue/*` — `module-rewrite` e `subpackages` permanecem `false` no roadmap-data. |
+| **Fase 5** (menu dinâmico) | in_progress | Menu **não lê** `core.account_modules` — tabela está com **0 linhas**. Filtragem segue por role hardcoded; layer queue ainda é placeholder de nav.config.ts. |
+| **Fase 7** (performance) | in_progress | 7A-7C fechadas (queries + logout + bootstrap). 7D (`PrincipalCache`) e revogação de sessão real ainda pendentes. |
+| **Fase 8** (CRM/Queue split) | pending | OK como pending. Schemas `crm.*`/`queue.*` criados via migrations, código Go não reorganizado. |
+| **Fase 13/15/16** (módulos satélites) | pending | Mas o working tree **já contém** páginas (`manage/clientes-web.vue`, `manage/leads-web.vue`, `manage/produtos-web.vue`, `site/Site*Workspace.vue`) **consumindo um BFF Nitro mock** em `web/server/` que **não toca Postgres**. |
+
+### Pivô gravíssimo descoberto em 2026-05-28
+
+`web/server/` é um BFF Nitro **paralelo à API Go** trazido do `web-reference/`. Implementa CRUD in-memory (`globalThis.__omni_clients_repo__`) com seed hardcoded (`crow`, `Perola`, `Dr Antonio`, `Zen as Fuck`, `Duby`, `sdfsodifho` — IDs 101-106 que **não existem** em `public.tenants`). Há campos inventados que nem migration têm: `billingMode`, `monthlyPaymentAmount`, `paymentDueDay`, `webhookEnabled`, `webhookKey`, `contactPhone`, `contactSite`, `contactAddress`, `requireUserStoreLink`, `requireUserRegistration`, `moduleCodes`.
+
+Paralelo a isso, [web/app/stores/session-simulation.ts](../web/app/stores/session-simulation.ts) injeta a **mesma lista hardcoded** via header `x-client-id` / `x-tenant-id` (que viola `CONTRACT_FREEZE.md` — o `Principal.AccountID` deveria vir só do middleware via `X-Account-Id`).
+
+Resultado: **três fontes de cliente convivem** sem uma fonte de verdade:
+1. `/clientes` (fila) — lê `public.tenants` real → única correta hoje.
+2. `/tasks` — lê de `session-simulation.ts` (mock hardcoded).
+3. `/manage/clientes-web` — lê de `web/server/utils/clients-repository.ts` (BFF mock in-memory).
+
+### Decisão de execução (2026-05-28)
+
+1. **Snapshot da branch `refactor/multi-tenant-core` é mergeado para `main`** como está — apesar dos gaps, o produto operacional segue funcional via `public.tenants` real e API Go.
+2. **Nova branch `refactor/multi-tenant-complete`** assume o trabalho de finalização do multi-tenant **do início ao fim**. Nenhuma fase nova de módulo satélite (13/14/15/16/17/18/19/20) avança até que essa branch entregue:
+   - `AccountModulesGuard` ativo em todas as rotas de módulos satélites.
+   - Middleware injetando `Principal.AccountID` real.
+   - `core.account_modules` seedado e editável pelo painel.
+   - `web/server/` removido por completo (decisão fechada).
+   - `session-simulation.ts` removido.
+   - Painel admin real (`/admin/accounts` ou equivalente) como **única** fonte de verdade para CRUD de cliente, billing e módulos contratados.
+3. **Plano canônico da nova branch**: [MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md).
+
+A partir daqui, o plano original abaixo continua válido como referência de arquitetura, **mas o status por fase deve ser lido em conjunto com a tabela acima**.
+
+---
+
 ## Contexto
 
 A plataforma hoje é um modular monolith bem organizado em Go (`back/internal/modules/` com 15 módulos) servindo um produto único (fila de atendimento), com tenancy **flat** (`tenant → store → user`), roles **hardcoded** em código, permissões granulares já vivas em banco mas com catálogo fixo via migrations, e um Nuxt 4 SPA com menu **estático** filtrado por role.

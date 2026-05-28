@@ -4,6 +4,56 @@
 
 Estas instrucoes valem para todo o frontend dentro de `web/`.
 
+## Aviso 2026-05-28 — web/server/ e session-simulation.ts sao temporarios
+
+Auditoria descobriu que o working tree contem:
+
+- `web/server/` (Nitro BFF) com `api/admin/clients/`, `api/admin/products/`,
+  `api/admin/leads/` consumidos por `manage/clientes-web.vue`,
+  `manage/leads-web.vue`, `manage/produtos-web.vue` e
+  `site/Site*AdminWorkspace.vue`. O BFF tem repositorios in-memory
+  (`web/server/utils/{clients,leads,products}-repository.ts`) com seed
+  hardcoded — **nao toca Postgres**. Os campos `billingMode`,
+  `monthlyPaymentAmount`, `webhookEnabled`, `webhookKey`, `contactPhone`,
+  `contactSite`, `contactAddress`, `requireUserStoreLink`,
+  `requireUserRegistration`, `moduleCodes` so existem nesse mock.
+- `web/app/stores/session-simulation.ts` com lista hardcoded de 6 clientes
+  (IDs 101-106) que nao existem em `public.tenants` (banco real tem Perola
+  e Duby com UUID). O store injeta headers `x-client-id` e `x-tenant-id`
+  falsos — viola a regra de `CONTRACT_FREEZE.md` (Principal.AccountID so
+  via middleware com `X-Account-Id`).
+- `web/app/composables/useBffFetch.ts` — wrapper do BFF Nitro mock.
+
+**Decisao fechada (2026-05-28)**:
+
+- O BFF Nitro vai ser **apagado inteiro** (decisao: sem BFF, tudo direto na
+  API Go).
+- `session-simulation.ts` vai ser **apagado**.
+- Paginas mock viram substituidas por paginas reais que consomem a API Go
+  em `/v1/admin/accounts*`.
+
+Plano canonico:
+[docs/MULTITENANT_COMPLETION_PLAN.md](../docs/MULTITENANT_COMPLETION_PLAN.md)
+secoes C7, C8, C9, C10. Branch alvo: `refactor/multi-tenant-complete`
+(a criar depois do merge do snapshot atual da `refactor/multi-tenant-core`
+em `main`).
+
+Enquanto isso (snapshot atual em `main`):
+
+- `/clientes` da fila (que le `tenants.ts` store via API Go) continua sendo a
+  **unica fonte de verdade** real para cliente.
+- `/manage/clientes-web`, `/manage/leads-web`, `/manage/produtos-web` e
+  `/site/*` rodam contra o BFF mock — funcionam para demo mas **nao
+  refletem o banco**. Nao basear decisoes operacionais nessas telas.
+
+### Regras enquanto o mock ainda existe
+
+- **Nao adicionar feature nova** em `web/server/` — entra direto na multitenant-completion.
+- **Nao criar pagina nova** que dependa de `useBffFetch` ou
+  `session-simulation`.
+- Trabalho novo em CRUD admin de cliente/loja/usuario espera a branch
+  `refactor/multi-tenant-complete` abrir.
+
 ## Stack atual
 
 - Nuxt 4

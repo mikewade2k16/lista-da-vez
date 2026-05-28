@@ -82,6 +82,23 @@ export const ROADMAP_TITLE = "Reestruturação Multi-Tenant";
 export const ROADMAP_SUBTITLE =
   "Acompanhamento das fases da branch refactor/multi-tenant-core. Cada fase é um deploy reversível; produção atual segue intocada em main/migracao/nuxt.";
 
+// Aviso de estado real — 2026-05-28
+//
+// Auditoria de 2026-05-28 mostrou que várias Fases marcadas como `done` neste
+// arquivo estão na verdade `in_progress` ou parciais quando confrontadas com o
+// runtime real (ver docs/ROADMAP.md → "Estado real em 2026-05-28"):
+//
+//  - Fase 2: AccountModulesGuard é instanciado e descartado (`_ =` em app.go).
+//  - Fase 3: core.user_tenant_roles / core.account_modules estão com 0 linhas.
+//  - Fase 5: menu não consulta core.account_modules — filtra por role hardcoded.
+//  - Fases 13/15/16: páginas mock (clientes-web/leads-web/produtos-web,
+//    site/*Workspace) consomem um BFF Nitro em web/server/ com seed in-memory,
+//    sem tocar Postgres.
+//
+// As notas das tarefas afetadas foram atualizadas. A fase nova
+// "multitenant-completion" abaixo é a fonte de verdade da próxima branch
+// (refactor/multi-tenant-complete) — só depois dela o lote 13/14/15/16+ retoma.
+
 export const ROADMAP_PHASES: RoadmapPhase[] = [
   {
     id: "fase-0",
@@ -124,14 +141,13 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 2",
     title: "Module Registry e refactor do bootstrap",
     goal: "Introduzir Registry de módulos plugáveis e event bus in-process sem mudar comportamento das rotas legadas.",
-    status: "done",
+    status: "in_progress",
     estimateWeeks: "2 semanas",
     startedAt: "2026-05-10",
-    finishedAt: "2026-05-10",
     tasks: [
       { id: "registry-pkg", label: "Pacote back/internal/platform/modules/ com Module, Handle, Dependencies, Registry, CatalogRepository", done: true },
       { id: "events-pkg", label: "Pacote back/internal/platform/events/ com Bus + InMemoryBus (causationId, correlationId, MaxDepth=10)", done: true },
-      { id: "guard", label: "Middleware AccountModulesGuard em platform/httpapi/ (cache 60s, X-Account-Id)", done: true, note: "Disponível para módulos satélites; não aplicado a rotas v2/me/* do core (são ponto de descoberta)." },
+      { id: "guard", label: "Middleware AccountModulesGuard em platform/httpapi/ (cache 60s, X-Account-Id)", done: false, note: "AUDITORIA 2026-05-28: codificado mas DESCARTADO em runtime (app.go:313 instancia em `_ =`). Nenhuma rota usa RequireModule(...). Pendência transferida para a fase multitenant-completion." },
       { id: "sync-catalog", label: "SyncCatalog no boot popula core.modules, core.permissions, core.role_templates declarativamente", done: true, note: "deprecated_at marca removidas; nunca DELETE auto." },
       { id: "core-module", label: "Módulo core implementa interface Module (8 permissões, 3 role templates: owner/admin/member)", done: true },
       { id: "app-integration", label: "app.go usa Registry.Build/SyncCatalog quando CORE_V2_ENABLED=true; legado intacto quando off", done: true },
@@ -144,15 +160,14 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 3",
     title: "RBAC dinâmico",
     goal: "Permitir que cada Account clone cargos-template e edite suas próprias permissões.",
-    status: "done",
+    status: "in_progress",
     estimateWeeks: "2 semanas",
     startedAt: "2026-05-10",
-    finishedAt: "2026-05-10",
     tasks: [
       { id: "rbac-service", label: "Service core.rbac (CloneTemplateToAccount, CreateRole, UpdateRolePermissions, AssignRoleToUser)", done: true },
       { id: "rbac-endpoint", label: "Endpoint /v1/accounts/:id/roles CRUD + AssignRoleToUser", done: true },
-      { id: "data-migration", label: "Migração de dados: roles atuais (Owner, Manager, Director, etc.) viram core.roles por account", done: true, note: "Migration 0103. Requer boot com CORE_V2_ENABLED=true antes de executar." },
-      { id: "principal-resolution", label: "MeContext resolve Roles[] e Permissions[] reais de core.role_permissions (legado continua como fallback no auth)", done: true }
+      { id: "data-migration", label: "Migração de dados: roles atuais (Owner, Manager, Director, etc.) viram core.roles por account", done: false, note: "AUDITORIA 2026-05-28: migration 0103 existe, mas core.user_tenant_roles está com 0 linhas no banco local. Seed efetivo não rodou; runtime cai em fallback legado. Reabrir na multitenant-completion." },
+      { id: "principal-resolution", label: "MeContext resolve Roles[] e Permissions[] reais de core.role_permissions (legado continua como fallback no auth)", done: false, note: "AUDITORIA 2026-05-28: enquanto core.role_permissions estiver vazio o caminho real nunca é exercido; sempre fallback legado. Concluir só quando 0103 efetivamente seedar." }
     ],
     verifiable: "UI de roles permite clonar template e ajustar permissões; mudança reflete no login do user."
   },
@@ -193,10 +208,9 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 4C",
     title: "Analytics, alertas, ERP",
     goal: "Migrar módulos auxiliares (alerts, analytics, reports, erp) para o schema queue.",
-    status: "done",
+    status: "in_progress",
     estimateWeeks: "1 semana",
     startedAt: "2026-05-11",
-    finishedAt: "2026-05-11",
     tasks: [
       { id: "move-aux", label: "Migrar alerts, analytics, reports, erp → queue.*", done: true, note: "Migration 0106: tenant_alert_settings, alert_instances, alert_actions, erp_sync_runs, erp_item_raw, erp_item_current." },
       { id: "subpackages", label: "Cada um vira subpacote queue/<nome>/", done: false, note: "Adiado junto com rewrite do módulo operations — mesmo motivo." },
@@ -209,10 +223,9 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 4D",
     title: "Frontend layer queue",
     goal: "Mover páginas e stores da fila-atendimento para web/layers/queue/.",
-    status: "done",
+    status: "in_progress",
     estimateWeeks: "1 semana (paralelo a 4C)",
     startedAt: "2026-05-11",
-    finishedAt: "2026-05-11",
     tasks: [
       { id: "layer-create", label: "Criar web/layers/queue/ com nav.config.ts", done: true, note: "nav.config.ts com todas as seções existentes; sobrescreve legado via module-registry plugin." },
       { id: "pages-move", label: "Mover pages/stores listadas em E.4 para o layer", done: false, note: "Adiado: pages ainda em web/app/pages/. Mover quando módulo queue chegar do outro projeto." },
@@ -232,7 +245,8 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "plugin-registry", label: "app/plugins/module-registry.client.ts lendo nav.config.ts via import.meta.glob", done: true, note: "Injeta layers dinamicamente + fallback legado via sidebar-nav.ts enquanto layer queue não chega." },
       { id: "core-layer", label: "layers/core/ com AccountSwitcher, PermissionGate, usePermission, useNav", done: true, note: "stores/account.ts (multi-account v2), composables/usePermission, composables/useNav, CoreAccountSwitcher.vue, CorePermissionGate.vue." },
       { id: "delete-static", label: "Deletar web/app/utils/sidebar-nav.ts", done: false, note: "Pendente: sidebar-nav.ts ainda é fallback no plugin. Remover após validação em staging que layer queue cobre todos os itens." },
-      { id: "sidebar-rewrite", label: "DashboardSidebarNav.vue reescrito para consumir useNavStore", done: true }
+      { id: "sidebar-rewrite", label: "DashboardSidebarNav.vue reescrito para consumir useNavStore", done: true },
+      { id: "menu-account-modules", label: "useNav consome core.account_modules para gating dinâmico (esconde itens de módulo desabilitado)", done: false, note: "AUDITORIA 2026-05-28: tabela core.account_modules está com 0 linhas; menu segue filtrando por role hardcoded. Sem isso, 'desabilitar módulo esconde item' não funciona. Transferido para multitenant-completion." }
     ],
     verifiable: "Trocar account no AccountSwitcher recarrega menu; desabilitar módulo no banco esconde itens."
   },
@@ -413,16 +427,17 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "Fase 13A",
     title: "Lote simples do front",
     goal: "Executar primeiro as páginas mais simples vindas do web-reference para ganhar gestão rápida no front novo sem substituir o legado operacional da fila.",
-    status: "in_progress",
+    status: "blocked",
     estimateWeeks: "1-2 semanas",
     startedAt: "2026-05-25",
+    blockers: ["multitenant-completion"],
     tasks: [
       { id: "theme-baseline", label: "Usar Theme Studio já concluído como base visual do lote simples, sem reabrir o escopo de temas", done: true, note: "Fase 11 concluída; o foco agora é aplicar o visual base nas páginas simples novas." },
       { id: "profile", label: "Trazer primeiro o ajuste de profile, reaproveitando /perfil atual e aproximando layout/fluxo do admin/profile.vue", done: false },
       { id: "team", label: "Trazer Team antes de finance, começando por treinamento e candidatos como recorte inicial", done: false },
-      { id: "site", label: "Trazer Site antes de finance, começando por produtos e leads com escopo front-first", done: false },
+      { id: "site", label: "Trazer Site antes de finance, começando por produtos e leads com escopo front-first", done: false, note: "AUDITORIA 2026-05-28: páginas SiteLeadsAdminWorkspace.vue e SiteProductsAdminWorkspace.vue foram criadas, mas consumindo BFF Nitro mock em web/server/. Reverter na multitenant-completion." },
       { id: "users-parallel", label: "Abrir frente nova de usuários no front novo reaproveitando UsersWorkspace, sem remover /usuarios legado da fila", done: false },
-      { id: "clients-parallel", label: "Abrir frente nova de clientes/tenants no front novo mantendo /clientes legado intacto até fechar a estratégia tenant", done: false },
+      { id: "clients-parallel", label: "Abrir frente nova de clientes/tenants no front novo mantendo /clientes legado intacto até fechar a estratégia tenant", done: false, note: "AUDITORIA 2026-05-28: tela manage/clientes-web.vue + composable useClientsManager.ts já existem, mas batem no BFF mock /api/admin/clients (web/server/utils/clients-repository.ts in-memory). Não é fonte de verdade. Será reescrito contra API Go real na multitenant-completion." },
       { id: "sequencing", label: "Deixar finance e demais módulos pesados para depois do lote simples validado no painel", done: false }
     ],
     verifiable: "Roadmap deixa explícito o lote simples como próxima onda; /usuarios e /clientes atuais permanecem operacionais; finance só começa depois desse recorte ser validado."
@@ -914,6 +929,86 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "smoke-e2e", label: "Smoke E2E 12 passos: migrate fresh → seed → login agência → criar task → WS → presence → tracking → share → curl 404 → inspect payload", done: true, note: "Roteiro documentado em docs/TASKS_ORCHESTRATOR_PHASE12.md (secao 'Smoke E2E 12 passos') para o usuario rodar manualmente em staging." }
     ],
     verifiable: "go test ./... passa (50 testes T9 no total); npm test passa (9 Vitest); smoke E2E 12 passos roteiro pronto para staging."
+  },
+
+  // ─── Multi-Tenant Completion (branch refactor/multi-tenant-complete) ──────
+  //
+  // Fase crítica criada em 2026-05-28 após auditoria descobrir que o
+  // esqueleto multi-tenant (Fases 0-5) está codificado mas inerte em runtime,
+  // e que páginas de admin (clientes/leads/produtos) foram criadas como BFF
+  // mock em web/server/ em vez de bater na API Go. Plano canônico:
+  // docs/MULTITENANT_COMPLETION_PLAN.md.
+
+  {
+    id: "multitenant-completion",
+    code: "MT",
+    title: "Multi-Tenant Completion (do início ao fim)",
+    goal: "Tornar o multi-tenant a única fonte de verdade do painel: AccountModulesGuard ativo, core.account_modules editável pelo front, web/server/ removido, BFF mock e session-simulation extintos, painel admin real de clientes substituindo o mock atual.",
+    status: "pending",
+    estimateWeeks: "3-5 semanas",
+    group: "multi-tenant",
+    tasks: [
+      // C1 — Schema completo do que falta
+      { id: "mig-billing", label: "Migration 0123_core_accounts_billing.sql — colunas billing/contact/webhook em core.accounts (substitui campos inventados do mock)", done: false },
+      { id: "mig-seed-modules", label: "Migration 0124_core_account_modules_seed.sql — popula core.account_modules para Pérola/Duby com módulos default", done: false },
+      { id: "mig-seed-roles", label: "Migration 0125_core_roles_backfill.sql — clona role_templates em core.roles + mapeia user_tenant_roles → core.user_role_assignments", done: false },
+      // C2 — Ativar fundação inerte
+      { id: "guard-wire", label: "app.go: plugar AccountModulesGuard no chain dos módulos satélites (parar de descartar com `_ =`)", done: false },
+      { id: "principal-header", label: "Middleware de auth resolve Principal.AccountID a partir de X-Account-Id em toda rota autenticada (valida membership em core.account_users)", done: false },
+      { id: "contract-freeze", label: "Reforçar CONTRACT_FREEZE.md: nenhum handler aceita account_id do body — só via Principal", done: false },
+      // C3 — Endpoints admin (substituem BFF Nitro)
+      { id: "api-accounts-crud", label: "GET/POST/PATCH/DELETE /v1/admin/accounts — CRUD real de account (platform admin)", done: false },
+      { id: "api-account-modules", label: "GET/PUT /v1/admin/accounts/:id/modules — habilita/desabilita módulos + evento account.modules.changed", done: false },
+      { id: "api-account-stores", label: "GET/PUT /v1/admin/accounts/:id/stores — vinculação de billing por loja", done: false },
+      { id: "api-account-webhook", label: "POST /v1/admin/accounts/:id/webhook/rotate — rotaciona chave do webhook", done: false },
+      { id: "api-me-accounts", label: "GET /v1/me/accounts (lean) + GET /v1/me/context?accountId= (full) com Roles[]/Permissions[] reais", done: false },
+      // C4 — Finalizar Fase 4 (reorganização do queue em Go)
+      { id: "queue-subpackages", label: "Mover back/internal/modules/{operations,alerts,analytics,reports,feedback,consultants,settings} para queue/* com queue/module.go consolidando", done: false },
+      // C5 — Finalizar Fase 8 (split CRM)
+      { id: "crm-subpackages", label: "Mover back/internal/modules/{erp,catalog} para crm/* + crm/module.go implementando Module interface", done: false },
+      { id: "crm-resolver", label: "crm.Resolver registrado em Dependencies; queue/catalog_adapter.go usa Resolver com fallback local", done: false },
+      // C6 — Performance Fase 7 (terminar)
+      { id: "principal-cache", label: "PrincipalCache em memória com invalidação por eventos (sessão, role, permission, account_modules) — fecha Fase 7D", done: false },
+      { id: "session-revogation", label: "JWT.sessionId + middleware checa core.user_sessions.revoked_at no mesmo lookup do Principal (fecha 7B)", done: false },
+      // C7 — Remoção do BFF Nitro
+      { id: "rm-bff-clients", label: "Apagar web/server/api/admin/clients/ inteiro + web/server/utils/clients-repository.ts", done: false },
+      { id: "rm-bff-products", label: "Apagar web/server/api/admin/products/ inteiro + web/server/utils/products-repository.ts", done: false },
+      { id: "rm-bff-leads", label: "Apagar web/server/api/admin/leads/ inteiro + web/server/utils/leads-repository.ts", done: false },
+      { id: "rm-bff-shared", label: "Apagar web/server/utils/reference-admin-access.ts + web/app/composables/useBffFetch.ts", done: false },
+      { id: "rm-server-dir", label: "Apagar web/server/ inteiro (decisão fechada 2026-05-28: sem BFF Nitro no produto)", done: false },
+      // C8 — Remover fontes paralelas de cliente
+      { id: "rm-session-sim", label: "Apagar web/app/stores/session-simulation.ts (lista hardcoded de 6 clientes 101-106 que não existem no banco)", done: false },
+      { id: "rm-admin-session", label: "Apagar/reescrever web/app/composables/useAdminSession.ts se for parte do esquema mock", done: false },
+      { id: "rm-fake-headers", label: "Trocar todos os usos de x-client-id / x-tenant-id falsos por X-Account-Id real vindo de useAccountStore()", done: false },
+      { id: "tasks-real-context", label: "useTasksPageContext: consumir contexto real de useAccountStore em vez do session-simulation", done: false },
+      // C9 — Reescrever páginas mock contra a API Go real
+      { id: "rewrite-clients-manager", label: "useClientsManager.ts chamando /v1/admin/accounts (não /api/admin/clients)", done: false },
+      { id: "rewrite-leads-manager", label: "useLeadsManager.ts chamando API Go real (criar endpoint se não existir)", done: false },
+      { id: "rewrite-products-manager", label: "useProductsManager.ts chamando API Go real do crm/catalog", done: false },
+      { id: "consolidate-page", label: "Consolidar manage/clientes-web.vue + /clientes da fila numa única tela admin (decidir fonte canônica)", done: false },
+      // C10 — UI real de CRUD de cliente
+      { id: "ui-list", label: "Tela lista de accounts (filtros, busca, status, paginação)", done: false },
+      { id: "ui-modal-card-mirror", label: "Modal + board card de account espelhados (regra do usuário: mudanças em um aplicam no outro)", done: false },
+      { id: "ui-create", label: "Form de criar account: módulos contratados, billing, admin inicial", done: false },
+      { id: "ui-modules", label: "Painel de habilitar/desabilitar módulos por account (com confirmação)", done: false },
+      { id: "ui-billing", label: "Painel de billing por account (single + per_store com lista de lojas)", done: false },
+      { id: "ui-roles", label: "Painel de cargos por account (clonar template, editar permissões)", done: false },
+      // C11 — Menu dinâmico real
+      { id: "use-nav-real", label: "useNav consome useAccountStore().enabledModules em vez de nav.config.ts estático filtrado por role", done: false },
+      { id: "middleware-module", label: "Middleware Nuxt module-enabled.global.ts: bloqueia rota se módulo não está habilitado", done: false },
+      { id: "account-switcher-real", label: "AccountSwitcher consome GET /v1/me/accounts real (em vez da lista hardcoded)", done: false },
+      // C12 — Smoke tests + migração de dados
+      { id: "smoke-tenants", label: "Pérola e Duby aparecem na lista nova com módulos contratados corretos via API Go", done: false },
+      { id: "smoke-billing", label: "Backfill manual dos campos novos de billing para Pérola (Duby fica com defaults)", done: false },
+      { id: "smoke-switch", label: "Trocar account no AccountSwitcher → menu recarrega; desabilitar módulo no banco → item some da UI sem reload", done: false },
+      // C13 — Documentação
+      { id: "doc-adr", label: "docs/adr/0002-remove-bff-nitro-mock.md formalizando a remoção do BFF Nitro", done: false },
+      { id: "doc-contract", label: "Atualizar docs/CONTRACT_FREEZE.md com X-Account-Id ativado", done: false },
+      { id: "doc-agents", label: "Atualizar AGENT.md de cada módulo tocado (back/platform/app, httpapi, core; web; web/layers)", done: false },
+      { id: "doc-roadmap-flip", label: "Reverter para `done` no roadmap as fases 0-5, 7, 8 só DEPOIS da multitenant-completion estar 100%", done: false }
+    ],
+    blockers: [],
+    verifiable: "1) GET /v1/admin/accounts retorna Pérola e Duby do banco real (não do mock). 2) Habilitar módulo via UI grava em core.account_modules e o item aparece no menu sem reload. 3) Desabilitar módulo retorna 403 module_disabled na rota dele. 4) Diretório web/server/ não existe. 5) Apenas 1 fonte de cliente no painel inteiro. 6) Roadmap volta a refletir verdade: Fases 0-5/7/8 efetivamente `done`."
   }
 ];
 

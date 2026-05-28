@@ -193,6 +193,27 @@ export default {
               workspaceId: 'clientes',
             },
             {
+              id: 'manage-clientes-web',
+              label: 'Clientes Web',
+              icon: 'manage',
+              path: '/manage/clientes-web',
+              workspaceId: 'clientes_web',
+            },
+            {
+              id: 'manage-produtos-web',
+              label: 'Produtos Web',
+              icon: 'page',
+              path: '/manage/produtos-web',
+              workspaceId: 'site_produtos_web',
+            },
+            {
+              id: 'manage-leads-web',
+              label: 'Leads Web',
+              icon: 'page',
+              path: '/manage/leads-web',
+              workspaceId: 'site_leads_web',
+            },
+            {
               id: 'usuarios',
               label: 'Usuarios',
               icon: 'users',

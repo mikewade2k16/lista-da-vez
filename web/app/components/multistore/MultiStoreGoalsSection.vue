@@ -394,11 +394,23 @@ function decorateRow(row) {
 
 watch(
   () => goals.value,
-  (rows) => {
+  (rows, prevRows) => {
     const next = {}
+    const prevMap = new Map((prevRows || []).map((r) => [r.id, r]))
+
     for (const row of rows) {
-      next[row.id] = drafts.value[row.id] ?? createMetricDraft(row)
+      const existingDraft = drafts.value[row.id]
+      const prevRow = prevMap.get(row.id)
+
+      if (existingDraft && prevRow && !payloadsEqual(existingDraft, prevRow)) {
+        // Draft foi modificado pelo usuário (não bate com valor anterior do servidor) → preserva
+        next[row.id] = existingDraft
+      } else {
+        // Sem draft, primeira carga, ou draft igual ao servidor anterior → sincroniza com novo valor
+        next[row.id] = createMetricDraft(row)
+      }
     }
+
     drafts.value = next
   },
   { immediate: true, deep: true },

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { UserMinus, ArrowRight } from 'lucide-vue-next'
+import { UserMinus, ArrowRight, Trash2 } from 'lucide-vue-next'
 
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { useAuthStore } from '~/stores/auth'
@@ -154,6 +154,28 @@ async function reassign(consultant) {
   }
 }
 
+async function archive(consultant) {
+  const { confirmed } = await ui.confirm({
+    title: 'Arquivar consultor',
+    message: `"${consultant.name}" sera desativado e removido desta lista. Use esta opcao para consultores de teste ou cadastros duplicados. Continuar?`,
+    confirmLabel: 'Arquivar',
+  })
+  if (!confirmed) return
+
+  busyByConsultant[consultant.id] = true
+  try {
+    await apiRequest(`/v1/consultants/${encodeURIComponent(consultant.id)}/archive`, {
+      method: 'POST',
+    })
+    ui.success(`${consultant.name} arquivado.`)
+    await refresh()
+  } catch (error) {
+    ui.error(getApiErrorMessage(error, 'Nao foi possivel arquivar o consultor.'))
+  } finally {
+    busyByConsultant[consultant.id] = false
+  }
+}
+
 function getErrorStatus(error) {
   const candidates = [
     error?.statusCode,
@@ -255,6 +277,15 @@ defineExpose({ refresh })
         >
           {{ busyByConsultant[consultant.id] ? 'Realocando...' : 'Realocar' }}
           <ArrowRight v-if="!busyByConsultant[consultant.id]" :size="13" :stroke-width="2.2" />
+        </button>
+        <button
+          class="orphan-consultants__archive-btn"
+          type="button"
+          :disabled="busyByConsultant[consultant.id]"
+          :title="`Arquivar ${consultant.name}`"
+          @click="archive(consultant)"
+        >
+          <Trash2 :size="14" :stroke-width="2" />
         </button>
       </article>
     </div>
@@ -422,6 +453,33 @@ defineExpose({ refresh })
 
 .orphan-consultants__cta:disabled {
   opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.orphan-consultants__archive-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.95rem;
+  height: 1.95rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(239 68 68 / 0.3);
+  background: transparent;
+  color: rgb(239 68 68 / 0.6);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.orphan-consultants__archive-btn:hover:not(:disabled) {
+  background: rgb(239 68 68 / 0.12);
+  color: rgb(239 68 68);
+}
+
+.orphan-consultants__archive-btn:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
 }
 

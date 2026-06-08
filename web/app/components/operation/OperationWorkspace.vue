@@ -296,33 +296,37 @@ const isFinishModalOpen = computed(() =>
 </script>
 
 <template>
-  <OperationScopeBar
-    :state="props.state"
-    :scope-mode="scopeMode"
-    :stores="stores"
-    :integrated-store-id="integratedStoreId"
-    @integrated-store-change="emit('integrated-store-change', $event)"
-  />
-  <div v-if="!canOperate" class="insight-card">
-    <p class="settings-card__text">
-      Este perfil acompanha a operacao em tempo real, mas nao executa fila, pausas nem
-      encerramentos.
-    </p>
-  </div>
-  <OperationQueueColumns
-    :state="displayState"
-    :read-only="!canOperate"
-    :integrated-mode="showIntegratedView"
-  />
-  <OperationConsultantStrip
-    v-if="canOperate"
-    :state="displayState"
-    :integrated-mode="showIntegratedView"
-  />
-  <Suspense v-if="isFinishModalOpen">
-    <OperationFinishModal :state="displayState" />
-    <template #fallback>
-      <CoreLoadingOverlay />
-    </template>
-  </Suspense>
+  <section class="operation-workspace">
+    <OperationScopeBar
+      :state="props.state"
+      :scope-mode="scopeMode"
+      :stores="stores"
+      :integrated-store-id="integratedStoreId"
+      @integrated-store-change="emit('integrated-store-change', $event)"
+    />
+    <div v-if="!canOperate" class="insight-card">
+      <p class="settings-card__text">
+        Este perfil acompanha a operacao em tempo real, mas nao executa fila, pausas nem
+        encerramentos.
+      </p>
+    </div>
+    <div class="operation-workspace__main">
+      <OperationQueueColumns
+        :state="displayState"
+        :read-only="!canOperate"
+        :integrated-mode="showIntegratedView"
+      />
+      <OperationConsultantStrip
+        v-if="canOperate"
+        :state="displayState"
+        :integrated-mode="showIntegratedView"
+      />
+    </div>
+    <Suspense v-if="isFinishModalOpen">
+      <OperationFinishModal :state="displayState" />
+      <template #fallback>
+        <CoreLoadingOverlay />
+      </template>
+    </Suspense>
+  </section>
 </template>

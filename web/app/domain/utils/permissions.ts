@@ -401,6 +401,15 @@ export function hasPermission(permissionKeys, permissionKey) {
   return normalizePermissionKeys(permissionKeys).includes(normalizedPermission)
 }
 
+function hasAnyOperationAccessPermission(permissionKeys = []) {
+  return (
+    hasPermission(permissionKeys, 'workspace.operacao.view') ||
+    hasPermission(permissionKeys, 'workspace.operacao.edit') ||
+    hasPermission(permissionKeys, 'queue.dashboard.read') ||
+    hasPermission(permissionKeys, 'queue.operations.manage')
+  )
+}
+
 function hasAnyAlertAccessPermission(permissionKeys = []) {
   return (
     hasPermission(permissionKeys, 'workspace.alertas.view') ||
@@ -421,12 +430,7 @@ function hasAnyReportsAccessPermission(permissionKeys = []) {
 function hasWorkspaceAccessAlias(workspaceId, permissionKeys = [], roleDefaults = new Set()) {
   switch (String(workspaceId || '').trim()) {
     case 'operacao':
-      return (
-        hasPermission(permissionKeys, 'workspace.operacao.view') ||
-        hasPermission(permissionKeys, 'workspace.operacao.edit') ||
-        hasPermission(permissionKeys, 'queue.dashboard.read') ||
-        hasPermission(permissionKeys, 'queue.operations.manage')
-      )
+      return hasAnyOperationAccessPermission(permissionKeys)
     case 'consultor':
       return (
         hasPermission(permissionKeys, 'workspace.consultor.view') ||

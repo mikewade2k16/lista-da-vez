@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   canAccessReports,
+  canMutateOperations,
   canViewAlerts,
   getAllowedWorkspaces,
   getWorkspaceAccessDefinition,
@@ -69,5 +70,19 @@ describe('permissions utils', () => {
     expect(canAccessReports('store_terminal', permissions, true)).toBe(true)
     expect(allowedWorkspaces).toEqual(expect.arrayContaining(['operacao', 'alertas', 'relatorios']))
     expect(allowedWorkspaces).not.toContain('multiloja')
+  })
+
+  it('requires resolved operation edit to mutate operations; view-only stays read-only', () => {
+    expect(canMutateOperations('consultant', ['workspace.operacao.view'], true)).toBe(false)
+    expect(canMutateOperations('consultant', ['workspace.operacao.edit'], true)).toBe(true)
+    expect(canMutateOperations('director', ['workspace.operacao.view'], true)).toBe(false)
+  })
+
+  it('keeps tenant operator roles able to mutate operations in legacy role mode', () => {
+    expect(canMutateOperations('consultant', [], false)).toBe(true)
+    expect(canMutateOperations('store_terminal', [], false)).toBe(true)
+    expect(canMutateOperations('manager', [], false)).toBe(true)
+    expect(canMutateOperations('director', [], false)).toBe(false)
+    expect(canMutateOperations('marketing', [], false)).toBe(false)
   })
 })

@@ -133,6 +133,22 @@ function normalizeConsultants(consultants = []) {
     .filter((consultant) => consultant.id && consultant.name)
 }
 
+// O roster da faixa de consultores vem de /v1/consultants (gestao, restrito a
+// papeis com consultor.view/settings.view). Papeis operadores sem essa permissao
+// (ex.: consultor) NAO buscam esse endpoint; nesse caso usamos o roster ENXUTO
+// que o snapshot da operacao ja entrega (id/nome/iniciais/cor). Assim toda role
+// que pode operar a fila recebe a faixa, sem vazar meta/comissao/e-mail. O roster
+// completo (quando presente) sempre vence, para nao perder metas de quem ja tem
+// a permissao de gestao.
+function resolveOperationRoster(consultants, operationSnapshot) {
+  const managedRoster = normalizeConsultants(consultants)
+  if (managedRoster.length) {
+    return managedRoster
+  }
+
+  return normalizeConsultants(operationSnapshot?.roster)
+}
+
 function resolveSelectedConsultantId(currentState, storeId, roster) {
   const currentSnapshot = currentState.storeSnapshots?.[storeId] || {}
   const preferredId =
@@ -237,12 +253,17 @@ export function applyOperationSnapshotToState(
     normalizedStoreId === currentState?.activeStoreId
       ? extractStoreScopedState(currentState || {})
       : cloneOrFallback(currentState?.storeSnapshots?.[normalizedStoreId], {})
-  const roster =
+  const existingRoster =
     Array.isArray(activeScopedState?.roster) && activeScopedState.roster.length
       ? activeScopedState.roster
       : normalizedStoreId === currentState?.activeStoreId
         ? cloneOrFallback(currentState?.roster, [])
         : []
+  // Sem roster de gestao (papel operador sem consultor.view), usa o roster
+  // enxuto que vem dentro do snapshot da operacao para manter a faixa viva.
+  const roster = existingRoster.length
+    ? existingRoster
+    : normalizeConsultants(operationSnapshot?.roster)
   const fallbackScopedState = normalizeStoreScopedState(
     {
       ...cloneOrFallback(activeScopedState, {}),
@@ -290,7 +311,7 @@ export function applyRemoteStoreData(
   consultants,
   operationSnapshot = null,
 ) {
-  const roster = normalizeConsultants(consultants)
+  const roster = resolveOperationRoster(consultants, operationSnapshot)
   const storeDescriptor =
     (Array.isArray(currentState?.stores) ? currentState.stores : []).find(
       (store) => store.id === storeId,

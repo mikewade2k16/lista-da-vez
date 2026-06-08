@@ -146,8 +146,24 @@ type CampaignMatch struct {
 	BonusAmount float64 `json:"bonusAmount"`
 }
 
+// RosterMember e a projecao ENXUTA do consultor exposta dentro do snapshot da
+// operacao. So carrega o que a faixa de consultores precisa para operar a fila
+// (id/nome/iniciais/cor/papel); NUNCA inclui meta, comissao ou e-mail de acesso.
+// Assim qualquer papel que pode ler a operacao (consultor/terminal/gerente)
+// recebe a faixa sem precisar da permissao de gestao de consultores
+// (`/v1/consultants`), que continua restrita.
+type RosterMember struct {
+	ID       string `json:"id"`
+	StoreID  string `json:"storeId,omitempty"`
+	Name     string `json:"name"`
+	Role     string `json:"role"`
+	Initials string `json:"initials"`
+	Color    string `json:"color"`
+}
+
 type Snapshot struct {
 	StoreID                    string                      `json:"storeId"`
+	Roster                     []RosterMember              `json:"roster"`
 	WaitingList                []QueueEntry                `json:"waitingList"`
 	ActiveServices             []ActiveService             `json:"activeServices"`
 	PausedEmployees            []PausedEmployee            `json:"pausedEmployees"`

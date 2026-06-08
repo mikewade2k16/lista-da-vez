@@ -6,6 +6,18 @@ import (
 
 func buildSnapshotView(storeID string, storeName string, roster []ConsultantProfile, snapshotState SnapshotState) Snapshot {
 	rosterByID := mapRosterByID(roster)
+	rosterView := make([]RosterMember, 0, len(roster))
+	for _, person := range roster {
+		rosterView = append(rosterView, RosterMember{
+			ID:       person.ID,
+			StoreID:  person.StoreID,
+			Name:     person.Name,
+			Role:     person.Role,
+			Initials: person.Initials,
+			Color:    person.Color,
+		})
+	}
+
 	waitingList := make([]QueueEntry, 0, len(snapshotState.WaitingList))
 	for _, item := range snapshotState.WaitingList {
 		person, ok := rosterByID[item.ConsultantID]
@@ -81,6 +93,7 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 
 	return Snapshot{
 		StoreID:                    storeID,
+		Roster:                     rosterView,
 		WaitingList:                waitingList,
 		ActiveServices:             activeServices,
 		PausedEmployees:            pausedEmployees,

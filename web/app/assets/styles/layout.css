@@ -58,6 +58,31 @@
   min-height: 0;
 }
 
+.operation-workspace {
+  width: 100%;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.operation-workspace__main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.operation-workspace__main > .queue-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.operation-workspace__main > .employee-strip {
+  flex: 0 0 auto;
+}
+
 .workspace__intro {
   display: grid;
   gap: 6px;

@@ -191,6 +191,16 @@ Princípio: **carregar primeiro o essencial da tela, lazy-load do resto; payload
 
 ---
 
+### [2026-06-08] Faixa de consultores sumiu para operador `consultant` (roster so vinha do endpoint de gestao)
+
+**O que aconteceu:** Em producao, o usuario de loja que opera a fila (papel `consultant`, ex.: "Terminal Perola Riomar") via a coluna "Lista da vez" interativa, mas a **faixa de consultores** do rodape (entrar na fila, pausar, retomar, tirar da fila) vinha **vazia** — sem ela, nao da pra girar a operacao. O `platform_admin` via a faixa normal, entao parecia permissao de mutacao. O Codex tentou e nao resolveu (mexeu em `v-if`/permissoes de mutacao).
+
+**Causa raiz:** A faixa renderiza `state.roster`. O `roster` (consultores disponiveis) so era populado por `GET /v1/consultants` (endpoint de GESTAO), gateado por `canViewConsultants`, que NAO inclui `consultant` em nenhum dos dois mundos: (a) modo legado `permissionsResolved=false` -> fallback so `owner/platform_admin/store_terminal`; (b) modo core -> `consultant` so tem `workspace.operacao.view/edit`, nao `consultor.view`/`settings.view`. A coluna da fila aparecia porque o **snapshot** (`/v1/operations/snapshot`, que o consultor PODE ler) ja embute nome/iniciais de quem esta em fila/atendimento — mas o snapshot NAO trazia os consultores **disponiveis**. Logo: fila com gente, faixa vazia.
+
+**Correcao (dois mundos, sem vazar dado):** o snapshot da operacao passou a expor um `roster` ENXUTO (`id/storeId/name/role/initials/color` — sem meta/comissao/e-mail) em `buildSnapshotView` (back) e o front (`runtime-remote.ts`) usa esse roster como fallback quando `/v1/consultants` vem vazio. Assim qualquer papel que pode OPERAR ganha a faixa, sem abrir o endpoint de gestao. De quebra, revertida uma regressao de seguranca introduzida na tentativa anterior (mutacao liberada com permissao so de `view`, e `director`/`marketing` ganhando comando) — mutacao volta a exigir `workspace.operacao.edit`.
+
+**Regra criada:** dado que a faixa precisa do roster, todo papel operador (`consultant`, `store_terminal`, `manager`...) precisa do roster **pela via que ele ja pode ler (o snapshot da operacao)**, nunca dependendo do endpoint de gestao de consultores. Ao diagnosticar "componente sumiu", checar PRIMEIRO se a FONTE DE DADOS dele chega aquele papel (gate de fetch), nao so o `v-if` de render. E nunca colapsar `view==edit` para resolver UI — view nao muta.
+
 ## Referência cruzada
 
 - Plano canônico da branch atual → [MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md)

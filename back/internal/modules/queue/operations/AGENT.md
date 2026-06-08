@@ -98,7 +98,7 @@ Se o host nao quiser realtime, o modulo continua funcionando com publisher noop.
 
 Regra de resposta:
 
-- `GET /v1/operations/snapshot` devolve o snapshot operacional completo da loja
+- `GET /v1/operations/snapshot` devolve o snapshot operacional completo da loja, incluindo `roster` (projecao ENXUTA dos consultores da loja: `id`, `storeId`, `name`, `role`, `initials`, `color`). O `roster` existe para a faixa de consultores funcionar para papeis operadores que NAO tem a permissao de gestao `/v1/consultants` (ex.: `consultant`). NUNCA inclua meta/comissao/e-mail no `roster` do snapshot — esses ficam so no endpoint de gestao
 - `GET /v1/operations/overview` devolve a visao operacional integrada das lojas acessiveis da sessao autenticada
 - comandos `POST` devolvem apenas `ack` minimo (`ok`, `storeId`, `savedAt`, `action`, `personId`)
 - o frontend deve revalidar o snapshot por `GET /v1/operations/snapshot` apos mutacao bem-sucedida
@@ -109,7 +109,8 @@ Regra de resposta:
 ## Regras de escopo
 
 - leitura: `consultant`, `store_terminal`, `manager`, `marketing`, `director`, `owner` e `platform_admin`
-- comando: `consultant`, `manager`, `owner` e `platform_admin`
+- comando (mutacao): `consultant`, `store_terminal`, `manager`, `owner` e `platform_admin` — `marketing` e `director` sao read-only (acompanham, nao operam)
+- quando as permissoes ja vierem resolvidas: `workspace.operacao.view` libera LEITURA; `workspace.operacao.edit` libera COMANDOS. View sozinho NAO muta (least-privilege)
 - leitura integrada multi-loja: qualquer sessao com mais de uma loja acessivel
 - sempre validar `store_id` contra o principal autenticado
 

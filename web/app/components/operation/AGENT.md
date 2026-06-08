@@ -159,6 +159,7 @@ Alertas com `displayKind === 'toast'` são controlados por `useContextRealtime.t
 
 - Alertas respeitam autorização do backend
 - Frontend confia na filtragem feita por `alertsStore.activeAlertsForStore(storeId)`
+- `OperationConsultantStrip` lista os consultores a partir de `state.roster`. Esse roster vem de `/v1/consultants` (endpoint de GESTAO, restrito a `consultor.view`/`settings.view`); papeis operadores sem essa permissao (ex.: `consultant`) NAO buscam esse endpoint, entao o roster cai para a projecao ENXUTA que o snapshot da operacao ja entrega (`snapshot.roster`, montada em `applyOperationSnapshotToState`/`applyRemoteStoreData` no `runtime-remote.ts`). Assim TODO papel que pode operar a fila enxerga a faixa, sem vazar meta/comissao/e-mail (que o snapshot nao inclui). A faixa segue gateada por `canOperate` (`canMutateOperations`), entao papel read-only (director/marketing) nao ve botoes de mutacao. Bug historico: consultor de loja via a fila mas a faixa vinha vazia porque o roster so existia via `/v1/consultants`.
 
 ## Teste esperado
 

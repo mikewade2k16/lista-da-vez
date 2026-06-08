@@ -27,3 +27,24 @@ func TestCanMutateOperationsAllowsStoreTerminal(t *testing.T) {
 		t.Fatalf("expected role %s to mutate operations", RoleStoreTerminal)
 	}
 }
+
+// A faixa de consultores precisa do roster para qualquer papel operador; o
+// roster vai DENTRO do snapshot (canReadOperations), entao a mutacao continua
+// exigindo a permissao de edicao — view resolvido NAO muta.
+func TestCanMutateOperationsRequiresResolvedOperationEdit(t *testing.T) {
+	viewOnly := AccessContext{
+		Permissions:         []string{"workspace.operacao.view"},
+		PermissionsResolved: true,
+	}
+	if canMutateOperations(viewOnly) {
+		t.Fatal("expected resolved operation view-only permission to stay read-only")
+	}
+
+	canEdit := AccessContext{
+		Permissions:         []string{"workspace.operacao.edit"},
+		PermissionsResolved: true,
+	}
+	if !canMutateOperations(canEdit) {
+		t.Fatal("expected resolved operation edit permission to mutate operations")
+	}
+}

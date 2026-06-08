@@ -272,7 +272,8 @@ func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.P
 
 func canViewReports(principal auth.Principal) bool {
 	if principal.PermissionsResolved {
-		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionReportsView)
+		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionReportsView) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionQueueReportsRead)
 	}
 
 	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner || principal.Role == auth.RoleStoreTerminal

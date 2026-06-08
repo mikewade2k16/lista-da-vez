@@ -236,12 +236,14 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
       ...processedOptions,
       headers,
     })
+    let requestPromise = fetchPromise
 
     if (requestKey) {
       const trackedPromise = fetchPromise.finally(() => {
         inflightGetRequests.delete(requestKey)
       })
       inflightGetRequests.set(requestKey, trackedPromise)
+      requestPromise = trackedPromise
     }
 
     // Fase 9A — feedback visual: se a requisicao passar de LOADING_THRESHOLD_MS,
@@ -255,14 +257,16 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
         pushed = true
       }, LOADING_THRESHOLD_MS)
 
-      fetchPromise.finally(() => {
+      const settleLoading = () => {
         clearTimeout(timer)
         if (pushed) {
           loadingHooks?.pop()
         }
-      })
+      }
+
+      void requestPromise.then(settleLoading, settleLoading)
     }
 
-    return requestKey ? inflightGetRequests.get(requestKey) || fetchPromise : fetchPromise
+    return requestPromise
   }
 }

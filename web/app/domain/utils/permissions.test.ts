@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  canAccessReports,
+  canViewAlerts,
   getAllowedWorkspaces,
   getWorkspaceAccessDefinition,
   writeWorkspaceAccessState,
@@ -45,5 +47,27 @@ describe('permissions utils', () => {
     expect(allowedWorkspaces).toEqual(
       expect.arrayContaining(['site', 'site_produtos_web', 'site_leads_web', 'site_tracking_web']),
     )
+  })
+
+  it('treats alert action permission as enough to view alert notifications', () => {
+    const permissions = ['alerts.actions.manage']
+
+    expect(canViewAlerts('store_terminal', permissions, true)).toBe(true)
+    expect(getAllowedWorkspaces('store_terminal', permissions, true)).toContain('alertas')
+  })
+
+  it('maps legacy queue permissions to current queue workspaces', () => {
+    const permissions = [
+      'queue.dashboard.read',
+      'queue.operations.manage',
+      'queue.alerts.manage',
+      'queue.reports.read',
+    ]
+    const allowedWorkspaces = getAllowedWorkspaces('store_terminal', permissions, true)
+
+    expect(canViewAlerts('store_terminal', permissions, true)).toBe(true)
+    expect(canAccessReports('store_terminal', permissions, true)).toBe(true)
+    expect(allowedWorkspaces).toEqual(expect.arrayContaining(['operacao', 'alertas', 'relatorios']))
+    expect(allowedWorkspaces).not.toContain('multiloja')
   })
 })

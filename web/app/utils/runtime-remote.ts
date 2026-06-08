@@ -505,6 +505,15 @@ function isConsultantsAccessDenied(error) {
   return getApiErrorStatusCode(error) === 403
 }
 
+// Erro de snapshot que NAO deve derrubar o login/boot: conta sem o modulo queue
+// (403 module_disabled), papel sem escopo na loja (403 forbidden) ou loja ainda
+// nao resolvida/loja de outra account (400 validation). Esses degradam para
+// snapshot vazio; so erros inesperados (5xx/rede) sobem e quebram o boot.
+function isStoreSnapshotRecoverable(error) {
+  const status = getApiErrorStatusCode(error)
+  return status === 400 || status === 403
+}
+
 function resolveRuntimeRole(currentState) {
   const activeProfileId = String(currentState?.activeProfileId || '').trim()
   const profiles = Array.isArray(currentState?.profiles) ? currentState.profiles : []
@@ -553,9 +562,24 @@ export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '', o
     throw consultantsResult.reason
   }
 
-  if (operationsSnapshotResult.status === 'rejected') {
+  // operations/snapshot e o dado central da operacao, mas NAO pode derrubar o
+  // login: usuario novo/terminal cuja account nao tem o modulo queue, papel sem
+  // escopo na loja ou loja stale (de sessao anterior no mesmo browser) faziam o
+  // boot lancar e jogar de volta pro login com "Modulo nao habilitado". Agora
+  // degrada para snapshot vazio (applyRemoteStoreData tolera null) e o login
+  // completa; a tela re-resolve a loja correta depois.
+  const operationsSnapshotRecoverable =
+    operationsSnapshotResult.status === 'rejected' &&
+    isStoreSnapshotRecoverable(operationsSnapshotResult.reason)
+
+  if (operationsSnapshotResult.status === 'rejected' && !operationsSnapshotRecoverable) {
     throw operationsSnapshotResult.reason
   }
+
+  const operationsSnapshot =
+    operationsSnapshotResult.status === 'fulfilled' ? operationsSnapshotResult.value : null
+  const operationsSnapshotLoadState =
+    operationsSnapshotResult.status === 'fulfilled' ? 'loaded' : 'degraded'
 
   const settingsLoadState =
     settingsResult.status === 'fulfilled'
@@ -581,10 +605,11 @@ export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '', o
       Array.isArray(consultantsResult.value?.consultants)
         ? consultantsResult.value.consultants
         : [],
-    operationsSnapshot: operationsSnapshotResult.value,
+    operationsSnapshot,
     settingsLoadState,
     settingsErrorMessage,
     consultantsLoadState,
+    operationsSnapshotLoadState,
   }
 }
 

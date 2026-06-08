@@ -1,11 +1,20 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore, storeToRefs } from 'pinia'
+import { canAccessMultiStore } from '~/domain/utils/permissions'
 import { normalizeReportFilters } from '~/domain/utils/reports'
 import { useAuthStore } from '~/stores/auth'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 const RESULTS_PAGE_SIZE = 200
+
+function getApiErrorStatusCode(error) {
+  return Number(error?.statusCode ?? error?.status ?? error?.response?.status)
+}
+
+function isForbiddenError(error) {
+  return getApiErrorStatusCode(error) === 403
+}
 
 export const useReportsStore = defineStore('reports', () => {
   const runtimeConfig = useRuntimeConfig()
@@ -30,6 +39,9 @@ export const useReportsStore = defineStore('reports', () => {
   )
   const activeTenantId = computed(() =>
     String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim(),
+  )
+  const canLoadMultiStoreOverview = computed(() =>
+    canAccessMultiStore(auth.role, auth.permissionKeys, auth.permissionsResolved),
   )
   const activeStoreName = computed(() => {
     if (integratedScope.value) {
@@ -196,12 +208,20 @@ export const useReportsStore = defineStore('reports', () => {
     try {
       const reportParams = buildMultiStoreRequestParams(tenantId, RESULTS_PAGE_SIZE).toString()
       const recentParams = buildMultiStoreRequestParams(tenantId, 12).toString()
+      const multiStoreOverviewRequest = canLoadMultiStoreOverview.value
+        ? apiRequest(`/v1/reports/multistore-overview?${reportParams}`).catch((error) => {
+            if (isForbiddenError(error)) {
+              return null
+            }
+            throw error
+          })
+        : Promise.resolve(null)
       const [overviewResponse, resultsResponse, recentServicesResponse, multiStoreResponse] =
         await Promise.all([
           apiRequest(`/v1/reports/overview?${reportParams}`),
           apiRequest(`/v1/reports/results?${reportParams}`),
           apiRequest(`/v1/reports/recent-services?${recentParams}`),
-          apiRequest(`/v1/reports/multistore-overview?${reportParams}`),
+          multiStoreOverviewRequest,
         ])
 
       overview.value = overviewResponse

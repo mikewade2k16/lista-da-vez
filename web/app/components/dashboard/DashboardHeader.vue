@@ -216,66 +216,68 @@ onBeforeUnmount(() => {
           {{ state.serviceHistory.length }} finalizados
         </span>
         <ClientOnly>
-          <AppSelectField
-            v-if="showOperationsContext && !isAuthenticated"
-            class="summary-select"
-            :model-value="state.activeProfileId"
-            :options="profileSelectOptions"
-            placeholder="Selecionar perfil"
-            :show-leading-icon="false"
-            compact
-            @update:model-value="handleProfileChange"
-          />
-          <DashboardThemeSwitcher />
-          <FeedbackNotificationsDropdown v-if="isAuthenticated" />
-          <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
-            <button
-              class="dashboard-header__profile-trigger"
-              type="button"
-              aria-haspopup="menu"
-              :aria-expanded="profileMenuOpen ? 'true' : 'false'"
-              aria-label="Abrir menu do perfil"
-              @click="toggleProfileMenu"
-            >
-              <span class="dashboard-header__profile-avatar" aria-hidden="true">
-                <img v-if="avatarUrl" :src="avatarUrl" alt="" />
-                <span v-else>{{ profileInitial }}</span>
-              </span>
-            </button>
+          <div class="dashboard-header__client-actions">
+            <AppSelectField
+              v-if="showOperationsContext && !isAuthenticated"
+              class="summary-select"
+              :model-value="state.activeProfileId"
+              :options="profileSelectOptions"
+              placeholder="Selecionar perfil"
+              :show-leading-icon="false"
+              compact
+              @update:model-value="handleProfileChange"
+            />
+            <DashboardThemeSwitcher />
+            <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+            <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
+              <button
+                class="dashboard-header__profile-trigger"
+                type="button"
+                aria-haspopup="menu"
+                :aria-expanded="profileMenuOpen ? 'true' : 'false'"
+                aria-label="Abrir menu do perfil"
+                @click="toggleProfileMenu"
+              >
+                <span class="dashboard-header__profile-avatar" aria-hidden="true">
+                  <img v-if="avatarUrl" :src="avatarUrl" alt="" />
+                  <span v-else>{{ profileInitial }}</span>
+                </span>
+              </button>
 
-            <Transition name="dashboard-header-menu">
-              <div v-if="profileMenuOpen" class="dashboard-header__profile-dropdown" role="menu">
-                <div class="dashboard-header__profile-card">
-                  <span class="dashboard-header__profile-role">{{ profileRoleLabel }}</span>
-                  <strong class="dashboard-header__profile-fullname">
-                    {{ displayName || 'Conta autenticada' }}
-                  </strong>
-                  <span class="dashboard-header__profile-email">
-                    {{ profileEmail || 'Sessao ativa' }}
-                  </span>
+              <Transition name="dashboard-header-menu">
+                <div v-if="profileMenuOpen" class="dashboard-header__profile-dropdown" role="menu">
+                  <div class="dashboard-header__profile-card">
+                    <span class="dashboard-header__profile-role">{{ profileRoleLabel }}</span>
+                    <strong class="dashboard-header__profile-fullname">
+                      {{ displayName || 'Conta autenticada' }}
+                    </strong>
+                    <span class="dashboard-header__profile-email">
+                      {{ profileEmail || 'Sessao ativa' }}
+                    </span>
+                  </div>
+
+                  <NuxtLink
+                    class="dashboard-header__menu-action"
+                    to="/perfil"
+                    role="menuitem"
+                    @click="closeProfileMenu"
+                  >
+                    <User :size="16" :stroke-width="2.15" />
+                    <span>Pagina de perfil</span>
+                  </NuxtLink>
+
+                  <button
+                    class="dashboard-header__menu-action dashboard-header__menu-action--danger"
+                    type="button"
+                    role="menuitem"
+                    @click="handleLogout"
+                  >
+                    <LogOut :size="16" :stroke-width="2.15" />
+                    <span>Sair da plataforma</span>
+                  </button>
                 </div>
-
-                <NuxtLink
-                  class="dashboard-header__menu-action"
-                  to="/perfil"
-                  role="menuitem"
-                  @click="closeProfileMenu"
-                >
-                  <User :size="16" :stroke-width="2.15" />
-                  <span>Pagina de perfil</span>
-                </NuxtLink>
-
-                <button
-                  class="dashboard-header__menu-action dashboard-header__menu-action--danger"
-                  type="button"
-                  role="menuitem"
-                  @click="handleLogout"
-                >
-                  <LogOut :size="16" :stroke-width="2.15" />
-                  <span>Sair da plataforma</span>
-                </button>
-              </div>
-            </Transition>
+              </Transition>
+            </div>
           </div>
         </ClientOnly>
       </div>
@@ -315,24 +317,26 @@ onBeforeUnmount(() => {
             </div>
             <div class="dashboard-header__sidebar-footer">
               <ClientOnly>
-                <DashboardThemeSwitcher />
-                <FeedbackNotificationsDropdown v-if="isAuthenticated" />
-                <NuxtLink
-                  v-if="isAuthenticated"
-                  class="dashboard-header__sidebar-profile"
-                  aria-label="Abrir perfil"
-                  to="/perfil"
-                  @click="closeSidebar"
-                >
-                  <span class="dashboard-header__profile-avatar" aria-hidden="true">
-                    <img v-if="avatarUrl" :src="avatarUrl" alt="" />
-                    <span v-else>{{ profileInitial }}</span>
-                  </span>
-                  <span class="dashboard-header__sidebar-profile-copy">
-                    <strong>{{ displayName || 'Conta autenticada' }}</strong>
-                    <small>{{ profileRoleLabel }}</small>
-                  </span>
-                </NuxtLink>
+                <div class="dashboard-header__client-actions">
+                  <DashboardThemeSwitcher />
+                  <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+                  <NuxtLink
+                    v-if="isAuthenticated"
+                    class="dashboard-header__sidebar-profile"
+                    aria-label="Abrir perfil"
+                    to="/perfil"
+                    @click="closeSidebar"
+                  >
+                    <span class="dashboard-header__profile-avatar" aria-hidden="true">
+                      <img v-if="avatarUrl" :src="avatarUrl" alt="" />
+                      <span v-else>{{ profileInitial }}</span>
+                    </span>
+                    <span class="dashboard-header__sidebar-profile-copy">
+                      <strong>{{ displayName || 'Conta autenticada' }}</strong>
+                      <small>{{ profileRoleLabel }}</small>
+                    </span>
+                  </NuxtLink>
+                </div>
               </ClientOnly>
             </div>
           </aside>
@@ -574,6 +578,14 @@ onBeforeUnmount(() => {
 .dashboard-header__store-select :deep(.app-select-field__trigger.is-filled) {
   border-color: rgb(var(--ring) / 0.42);
   background: var(--admin-header-active-bg);
+}
+
+.dashboard-header__client-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
 }
 
 .dashboard-header__profile-menu {

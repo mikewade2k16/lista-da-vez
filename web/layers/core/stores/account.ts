@@ -74,6 +74,15 @@ export const useCoreAccountStore = defineStore('core/account', () => {
       activeAccountId.value =
         found?.id ?? accountsData.defaultAccountId ?? accounts.value[0]?.id ?? ''
 
+      // Cookie stale de sessao anterior (outro usuario/account no mesmo browser):
+      // se o id salvo nao pertence a este usuario, corrige o cookie para a account
+      // resolvida. Sem isso, o X-Account-Id global (account-id-bridge le este
+      // store) poderia carregar a account de outra sessao e gerar 403/module
+      // disabled nas rotas de queue/crm.
+      if (savedId && !found) {
+        activeAccountCookie.value = activeAccountId.value || null
+      }
+
       const speculativeAccountId = speculativeContext?.context?.account?.id ?? ''
       if (
         speculativeContext &&

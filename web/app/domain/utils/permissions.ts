@@ -401,6 +401,69 @@ export function hasPermission(permissionKeys, permissionKey) {
   return normalizePermissionKeys(permissionKeys).includes(normalizedPermission)
 }
 
+function hasAnyAlertAccessPermission(permissionKeys = []) {
+  return (
+    hasPermission(permissionKeys, 'workspace.alertas.view') ||
+    hasPermission(permissionKeys, 'workspace.alertas.edit') ||
+    hasPermission(permissionKeys, 'alerts.actions.manage') ||
+    hasPermission(permissionKeys, 'alerts.rules.manage') ||
+    hasPermission(permissionKeys, 'queue.alerts.manage')
+  )
+}
+
+function hasAnyReportsAccessPermission(permissionKeys = []) {
+  return (
+    hasPermission(permissionKeys, 'workspace.relatorios.view') ||
+    hasPermission(permissionKeys, 'queue.reports.read')
+  )
+}
+
+function hasWorkspaceAccessAlias(workspaceId, permissionKeys = [], roleDefaults = new Set()) {
+  switch (String(workspaceId || '').trim()) {
+    case 'operacao':
+      return (
+        hasPermission(permissionKeys, 'workspace.operacao.view') ||
+        hasPermission(permissionKeys, 'workspace.operacao.edit') ||
+        hasPermission(permissionKeys, 'queue.dashboard.read') ||
+        hasPermission(permissionKeys, 'queue.operations.manage')
+      )
+    case 'consultor':
+      return (
+        hasPermission(permissionKeys, 'workspace.consultor.view') ||
+        (roleDefaults.has('consultor') && hasPermission(permissionKeys, 'queue.consultants.manage'))
+      )
+    case 'ranking':
+    case 'dados':
+    case 'inteligencia':
+      return hasPermission(permissionKeys, 'queue.analytics.read')
+    case 'relatorios':
+      return hasAnyReportsAccessPermission(permissionKeys)
+    case 'multiloja':
+      return (
+        hasPermission(permissionKeys, 'workspace.multiloja.view') ||
+        hasPermission(permissionKeys, 'workspace.multiloja.edit') ||
+        roleDefaults.has('multiloja')
+      )
+    case 'configuracoes':
+      return (
+        hasPermission(permissionKeys, 'workspace.configuracoes.view') ||
+        hasPermission(permissionKeys, 'workspace.configuracoes.edit') ||
+        (roleDefaults.has('configuracoes') &&
+          hasPermission(permissionKeys, 'queue.settings.manage'))
+      )
+    case 'alertas':
+      return hasAnyAlertAccessPermission(permissionKeys)
+    case 'feedback':
+      return (
+        hasPermission(permissionKeys, 'workspace.feedback.view') ||
+        hasPermission(permissionKeys, 'workspace.feedback.edit') ||
+        hasPermission(permissionKeys, 'queue.feedback.read')
+      )
+    default:
+      return false
+  }
+}
+
 export function getWorkspaceAccessDefinition(workspaceId) {
   return (
     WORKSPACE_ACCESS_DEFINITIONS.find(
@@ -498,6 +561,9 @@ export function getAllowedWorkspaces(role, permissionKeys = [], permissionsResol
     if (!viewPermission) {
       return roleDefaults.has(workspace.id)
     }
+    if (hasWorkspaceAccessAlias(workspace.id, permissionKeys, roleDefaults)) {
+      return true
+    }
     return hasPermission(permissionKeys, viewPermission)
   }).map((workspace) => workspace.id)
 }
@@ -509,7 +575,11 @@ export function canManageSettings(role, permissionKeys = [], permissionsResolved
   }
 
   if (permissionsResolved) {
-    return hasPermission(permissionKeys, 'workspace.configuracoes.edit')
+    return (
+      hasPermission(permissionKeys, 'workspace.configuracoes.edit') ||
+      ((normalized === 'platform_admin' || normalized === 'owner') &&
+        hasPermission(permissionKeys, 'queue.settings.manage'))
+    )
   }
 
   return normalized === 'platform_admin' || normalized === 'owner'
@@ -522,7 +592,11 @@ export function canManageConsultants(role, permissionKeys = [], permissionsResol
   }
 
   if (permissionsResolved) {
-    return hasPermission(permissionKeys, 'workspace.configuracoes.edit')
+    return (
+      hasPermission(permissionKeys, 'workspace.configuracoes.edit') ||
+      ((normalized === 'platform_admin' || normalized === 'owner') &&
+        hasPermission(permissionKeys, 'queue.consultants.manage'))
+    )
   }
 
   return normalized === 'platform_admin' || normalized === 'owner'
@@ -537,7 +611,8 @@ export function canViewConsultants(role, permissionKeys = [], permissionsResolve
   if (permissionsResolved) {
     return (
       hasPermission(permissionKeys, 'workspace.consultor.view') ||
-      hasPermission(permissionKeys, 'workspace.configuracoes.view')
+      hasPermission(permissionKeys, 'workspace.configuracoes.view') ||
+      hasPermission(permissionKeys, 'queue.consultants.manage')
     )
   }
 
@@ -553,10 +628,7 @@ export function canViewAlerts(role, permissionKeys = [], permissionsResolved = f
   }
 
   if (permissionsResolved) {
-    return (
-      hasPermission(permissionKeys, 'workspace.alertas.view') ||
-      hasPermission(permissionKeys, 'workspace.alertas.edit')
-    )
+    return hasAnyAlertAccessPermission(permissionKeys)
   }
 
   return (
@@ -574,7 +646,7 @@ export function canAccessReports(role, permissionKeys = [], permissionsResolved 
   }
 
   if (permissionsResolved) {
-    return hasPermission(permissionKeys, 'workspace.relatorios.view')
+    return hasAnyReportsAccessPermission(permissionKeys)
   }
 
   return (

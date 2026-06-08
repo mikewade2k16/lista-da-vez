@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
 import { useAuthStore } from '~/stores/auth'
+import { hasPermission } from '~/domain/utils/permissions'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { normalizeAlertHexColor } from '~/utils/alert-colors'
 
@@ -25,6 +26,20 @@ function normalizeBoolean(value: unknown, fallback = false) {
   }
 
   return fallback
+}
+
+function getApiErrorStatusCode(error: unknown) {
+  const apiError = error as {
+    status?: unknown
+    statusCode?: unknown
+    response?: { status?: unknown }
+  }
+
+  return Number(apiError?.statusCode ?? apiError?.status ?? apiError?.response?.status)
+}
+
+function isForbiddenError(error: unknown) {
+  return getApiErrorStatusCode(error) === 403
 }
 
 function normalizeDate(value: unknown) {
@@ -252,6 +267,21 @@ export const useAlertsStore = defineStore('alerts', () => {
     return createScopeKey('store', activeStoreId.value, filters.value)
   }
 
+  function canManageRuleDefinitions() {
+    const role = normalizeText(auth.role)
+
+    if (auth.permissionsResolved) {
+      return (
+        hasPermission(auth.permissionKeys, 'alerts.rules.manage') ||
+        hasPermission(auth.permissionKeys, 'workspace.alertas.edit') ||
+        (['owner', 'platform_admin'].includes(role) &&
+          hasPermission(auth.permissionKeys, 'queue.alerts.manage'))
+      )
+    }
+
+    return role === 'owner' || role === 'platform_admin'
+  }
+
   function clearState() {
     items.value = []
     overview.value = null
@@ -281,11 +311,21 @@ export const useAlertsStore = defineStore('alerts', () => {
       return null
     }
 
-    const response = await apiRequest(
-      `/v1/alerts/overview?${buildScopeParams({ ...options, includeFilters: false }).toString()}`,
-    )
-    overview.value = normalizeOverview(response?.overview || {})
-    return overview.value
+    try {
+      const response = await apiRequest(
+        `/v1/alerts/overview?${buildScopeParams({ ...options, includeFilters: false }).toString()}`,
+      )
+      overview.value = normalizeOverview(response?.overview || {})
+      return overview.value
+    } catch (error) {
+      // Papel sem permissao de alertas recebe 403: degrada silencioso (sem
+      // uncaught no console). Outros erros sobem.
+      if (isForbiddenError(error)) {
+        overview.value = null
+        return null
+      }
+      throw error
+    }
   }
 
   async function refreshAlerts(options: AlertScopeOptions = {}) {
@@ -315,6 +355,12 @@ export const useAlertsStore = defineStore('alerts', () => {
 
       return items.value
     } catch (error) {
+      // 403 = papel sem permissao de alertas: degrada para lista vazia sem
+      // propagar (evita uncaught e alerta de erro na pagina). Demais erros sobem.
+      if (isForbiddenError(error)) {
+        clearState()
+        return []
+      }
       errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar os alertas.')
       throw error
     } finally {
@@ -339,6 +385,13 @@ export const useAlertsStore = defineStore('alerts', () => {
       rulesLoaded.value = true
       return rules.value
     } catch (error) {
+      if (isForbiddenError(error)) {
+        rules.value = null
+        rulesLoaded.value = true
+        errorMessage.value = ''
+        return null
+      }
+
       errorMessage.value = getApiErrorMessage(
         error,
         'Nao foi possivel carregar as regras de alertas.',
@@ -483,7 +536,7 @@ export const useAlertsStore = defineStore('alerts', () => {
   async function fetchRuleDefinitions(
     filters: { triggerType?: string; onlyActive?: boolean } = {},
   ) {
-    if (!activeTenantId.value) {
+    if (!activeTenantId.value || !canManageRuleDefinitions()) {
       ruleDefinitions.value = []
       return []
     }
@@ -507,6 +560,12 @@ export const useAlertsStore = defineStore('alerts', () => {
       ruleDefinitions.value = rules
       return rules
     } catch (err) {
+      if (isForbiddenError(err)) {
+        ruleDefinitions.value = []
+        errorMessage.value = ''
+        return []
+      }
+
       errorMessage.value = getApiErrorMessage(err, 'Nao foi possivel carregar as regras.')
       return []
     } finally {

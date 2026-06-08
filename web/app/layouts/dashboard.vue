@@ -24,13 +24,15 @@ function handleProfileChange(profileId) {
 <template>
   <main class="shell">
     <section class="app-surface">
-      <DashboardHeader
-        :state="state"
-        :show-operations-context="false"
-        :active-workspace="activeWorkspaceId"
-        :allowed-workspaces="allowedWorkspaces"
-        @profile-change="handleProfileChange"
-      />
+      <ClientOnly>
+        <DashboardHeader
+          :state="state"
+          :show-operations-context="false"
+          :active-workspace="activeWorkspaceId"
+          :allowed-workspaces="allowedWorkspaces"
+          @profile-change="handleProfileChange"
+        />
+      </ClientOnly>
       <div
         v-if="runtimeSettingsNotice"
         class="runtime-settings-banner"

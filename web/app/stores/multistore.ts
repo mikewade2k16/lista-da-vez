@@ -263,6 +263,17 @@ export const useMultiStoreStore = defineStore('multistore', () => {
       ready.value = true
       return response
     } catch (error) {
+      // Multiloja e uma ABA do modulo fila com acesso por role: papel sem
+      // permissao (ex.: store_terminal) recebe 403. Isso NAO e' erro de pagina —
+      // degrada silencioso (visao vazia) para nao poluir o console com uncaught
+      // nem mostrar alerta de erro. Outros erros (rede/5xx) sobem normalmente.
+      const status = Number(error?.statusCode ?? error?.status ?? error?.response?.status)
+      if (status === 403) {
+        overview.value = null
+        ready.value = false
+        errorMessage.value = ''
+        return null
+      }
       errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar a visao multiloja.')
       throw error
     } finally {

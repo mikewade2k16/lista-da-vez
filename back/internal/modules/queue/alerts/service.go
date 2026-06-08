@@ -562,12 +562,21 @@ func (service *Service) operationalSignalsToInputs(signals []operations.Operatio
 
 func canViewAlerts(principal auth.Principal) bool {
 	if principal.PermissionsResolved {
+		// Alertas sao notificacoes operacionais: QUALQUER permissao de alertas
+		// (ver/editar/agir/regras) habilita a leitura. Quem pode dar acknowledge
+		// ou responder um alerta (actions.manage) obviamente precisa ver a lista —
+		// exigir alerts.view separado era inconsistente e barrava o store_terminal,
+		// que tem actions.manage mas (por drift no core.role_permissions) nem sempre
+		// recebe alerts.view.
 		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsView) ||
-			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit)
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsActionsManage) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsRulesManage) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionQueueAlertsManage)
 	}
 
 	switch principal.Role {
-	case auth.RolePlatformAdmin, auth.RoleOwner, auth.RoleManager, auth.RoleStoreTerminal:
+	case auth.RolePlatformAdmin, auth.RoleOwner, auth.RoleManager, auth.RoleStoreTerminal, auth.RoleConsultant:
 		return true
 	default:
 		return false
@@ -575,9 +584,15 @@ func canViewAlerts(principal auth.Principal) bool {
 }
 
 func canManageAlertRules(principal auth.Principal) bool {
+	if principal.Role == auth.RolePlatformAdmin {
+		return true
+	}
+
 	if principal.PermissionsResolved {
 		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsRulesManage) ||
-			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit)
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit) ||
+			(principal.Role == auth.RoleOwner &&
+				accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionQueueAlertsManage))
 	}
 
 	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner
@@ -586,7 +601,8 @@ func canManageAlertRules(principal auth.Principal) bool {
 func canRespondToAlert(principal auth.Principal) bool {
 	if principal.PermissionsResolved {
 		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsActionsManage) ||
-			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit)
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionQueueAlertsManage)
 	}
 
 	switch principal.Role {
@@ -600,7 +616,8 @@ func canRespondToAlert(principal auth.Principal) bool {
 func canManageAlertActions(principal auth.Principal) bool {
 	if principal.PermissionsResolved {
 		return accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsActionsManage) ||
-			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit)
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionAlertsEdit) ||
+			accesscontrol.HasPermission(principal.Permissions, accesscontrol.PermissionQueueAlertsManage)
 	}
 
 	switch principal.Role {

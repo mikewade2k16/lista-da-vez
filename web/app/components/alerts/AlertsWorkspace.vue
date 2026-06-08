@@ -58,7 +58,9 @@ const canManageRules = computed(() => {
   if (auth.permissionsResolved) {
     return (
       hasPermission(auth.permissionKeys, 'alerts.rules.manage') ||
-      hasPermission(auth.permissionKeys, 'workspace.alertas.edit')
+      hasPermission(auth.permissionKeys, 'workspace.alertas.edit') ||
+      (['owner', 'platform_admin'].includes(String(auth.role || '')) &&
+        hasPermission(auth.permissionKeys, 'queue.alerts.manage'))
     )
   }
 
@@ -69,7 +71,8 @@ const canManageActions = computed(() => {
   if (auth.permissionsResolved) {
     return (
       hasPermission(auth.permissionKeys, 'alerts.actions.manage') ||
-      hasPermission(auth.permissionKeys, 'workspace.alertas.edit')
+      hasPermission(auth.permissionKeys, 'workspace.alertas.edit') ||
+      hasPermission(auth.permissionKeys, 'queue.alerts.manage')
     )
   }
 

@@ -37,6 +37,8 @@ const (
 	PermissionAlertsEdit          = "workspace.alertas.edit"
 	PermissionAlertsRulesManage   = "alerts.rules.manage"
 	PermissionAlertsActionsManage = "alerts.actions.manage"
+	PermissionQueueAlertsManage   = "queue.alerts.manage"
+	PermissionQueueReportsRead    = "queue.reports.read"
 	PermissionFeedbackView        = "workspace.feedback.view"
 	PermissionFeedbackEdit        = "workspace.feedback.edit"
 	PermissionToolsView           = "workspace.tools.view"

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 )
@@ -316,6 +317,36 @@ func TestRulesReturnModuleDefaults(t *testing.T) {
 	}
 	if rules.Source != "module-defaults" {
 		t.Fatalf("expected source module-defaults, got %q", rules.Source)
+	}
+}
+
+func TestRulesAcceptLegacyQueueAlertsPermission(t *testing.T) {
+	service := NewService(&fakeRepository{})
+
+	_, err := service.Rules(context.Background(), auth.Principal{
+		Role:                auth.RoleStoreTerminal,
+		TenantID:            "tenant-1",
+		PermissionsResolved: true,
+		Permissions:         []string{accesscontrol.PermissionQueueAlertsManage},
+	}, "")
+	if err != nil {
+		t.Fatalf("expected Rules to accept legacy queue alert permission, got %v", err)
+	}
+}
+
+func TestUpdateRulesRejectsLegacyQueueAlertsPermissionForStoreTerminal(t *testing.T) {
+	service := NewService(&fakeRepository{})
+	minutes := 35
+
+	_, err := service.UpdateRules(context.Background(), auth.Principal{
+		Role:                auth.RoleStoreTerminal,
+		TenantID:            "tenant-1",
+		UserID:              "user-1",
+		PermissionsResolved: true,
+		Permissions:         []string{accesscontrol.PermissionQueueAlertsManage},
+	}, "", UpdateRulesInput{LongOpenServiceMinutes: &minutes})
+	if err != ErrForbidden {
+		t.Fatalf("expected ErrForbidden, got %v", err)
 	}
 }
 

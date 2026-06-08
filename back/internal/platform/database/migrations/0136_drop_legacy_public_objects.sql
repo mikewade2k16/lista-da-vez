@@ -60,9 +60,24 @@ begin
 end $$;
 
 -- 2) Dropar as views compat (folhas: nada FK a uma view).
-drop view if exists public.users;
-drop view if exists public.stores;
-drop view if exists public.consultants;
+-- Usa DO block para ser seguro tanto em DB novo (onde users/stores/consultants
+-- sao views criadas pela unify_users_view.sql) quanto em upgrade da VPS
+-- (onde podem ainda ser tabelas, caso o script manual nao tenha rodado).
+do $$
+begin
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+               where n.nspname='public' and c.relname='users' and c.relkind='v') then
+        drop view public.users;
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+               where n.nspname='public' and c.relname='stores' and c.relkind='v') then
+        drop view public.stores;
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+               where n.nspname='public' and c.relname='consultants' and c.relkind='v') then
+        drop view public.consultants;
+    end if;
+end $$;
 
 -- 3) Dropar a tabela legada (sem mais FKs apontando para ela).
 drop table if exists public.tenants;

@@ -147,6 +147,55 @@ NUNCA alterar `password_hash`, nem rodar migration/seed/bootstrap/view-swap que 
 
 ---
 
+## Qualidade de codigo — lint Go, SQL e TypeScript/Vue
+
+O projeto roda `golangci-lint` (Go), linter de migrations SQL e ESLint (web) no pre-commit via Husky/lint-staged. Todo codigo gerado por agente JA deve respeitar as regras abaixo.
+
+### Go — padroes obrigatorios
+
+| Situacao | Errado | Certo |
+|---|---|---|
+| Permissao de diretorio (`os.MkdirAll`) | `0o755` | `0o750` |
+| Permissao de arquivo (`os.WriteFile`) | `0o644` | `0o600` |
+| Cadeia if/else-if com 3+ ramos booleanos | `if a {} else if b {} else if c {}` | `switch { case a: ... case b: ... default: ... }` |
+| Switch em variavel simples | `if x == "a" {} else if x == "b" {}` | `switch x { case "a": ... case "b": ... }` |
+| Conversao redundante de tipo | `http.HandlerFunc(h)` quando `h` ja e' `http.HandlerFunc` | `h` direto |
+| Request em teste sem context | `httptest.NewRequest(method, path, nil)` | `httptest.NewRequestWithContext(context.Background(), method, path, nil)` |
+| Codigo morto / tipo nao usado | declarar struct/func sem usar | apagar ou nao criar |
+| Falso-positivo gosec verificado | — | `//nolint:gosec` na linha especifica |
+
+Linters ativos: `gosec` (G301/G306 perms, G602 slice), `gocritic` (ifElseChain), `staticcheck` (QF1003), `unconvert`, `noctx`, `unused`. Configuracao: `back/.golangci.yml`.
+
+- **Por que:** `golangci-lint` audita TODOS os arquivos do pacote quando qualquer arquivo dele e' staged — erros pre-existentes aparecem. Escrever certo na primeira vez evita fixup commits.
+
+### SQL — schema sempre qualificado
+
+Todo DDL dentro de `back/internal/platform/database/migrations/*.sql` deve qualificar o schema explicitamente:
+
+| Situacao | Errado | Certo |
+|---|---|---|
+| Tabela em `public` | `drop table if exists user_store_roles` | `drop table if exists public.user_store_roles` |
+| Tabela em schema proprio | `create table consultants (...)` | `create table queue.consultants (...)` |
+| Referencia de FK | `references users(id)` | `references public.users(id)` |
+
+O linter `scripts/dev/lint-migrations-staged.sh` bloqueia o commit se encontrar DDL sem schema qualificado.
+
+- **Por que:** O PostgreSQL resolve nomes sem schema pelo `search_path` (que pode mudar); schema explicito garante execucao igual em qualquer ambiente.
+
+### TypeScript/Vue — padroes obrigatorios
+
+| Situacao | Errado | Certo |
+|---|---|---|
+| Regex com caracter de controle (null byte etc.) | `/ /g` puro | `// eslint-disable-next-line no-control-regex` na linha anterior |
+| `console.log` em codigo de producao | `console.log(x)` | `console.warn(x)` ou `console.error(x)` |
+| Arquivo com mais de 500 linhas | arquivo unico gigante | dividir em composables/componentes menores |
+| Variavel declarada mas nao usada | `const x = ...` sem uso | apagar ou prefixar com `_` |
+| `any` explicito | `param: any` | tipo especifico ou `unknown` |
+
+Linters ativos: `no-control-regex`, `no-console` (permite warn/error), `max-lines` (500 linhas), `unused-imports/no-unused-vars`, `@typescript-eslint/no-explicit-any`. Configuracao: `web/eslint.config.*`.
+
+---
+
 ## Linguagens
 
 ### Go 1.26

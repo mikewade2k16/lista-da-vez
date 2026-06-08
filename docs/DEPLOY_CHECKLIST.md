@@ -2,9 +2,41 @@
 
 Guia curto de operacao pelo terminal — comandos prontos, ordem recomendada.
 
-Para o playbook completo (arquitetura, troubleshooting, contexto da VPS), ver [DEPLOY_VPS.md](DEPLOY_VPS.md).
+Para o playbook completo (arquitetura, contexto da VPS, rollback, ERP), ver [DEPLOY_VPS.md](DEPLOY_VPS.md).
 
 > Historico: este arquivo viveu em `docs_depoy/deploy-producao-checklist.md` ate 2026-05-18, movido na Fase 2 do PLANO_REFATORACAO.
+
+---
+
+## RELEASE ESPECIAL — multitenant-complete (refactor/multi-tenant-complete)
+
+**Este release e' diferente dos normais.** Tem 37 novas migrations (0100-0136),
+dropa tabelas publicas irreversivelmente e tem uma armadilha conhecida (0124).
+Ordem obrigatoria — nao pular passos:
+
+| # | Passo | Comando |
+|---|---|---|
+| 1 | Verificar migrations existentes na VPS | SSH + `select version from schema_migrations order by version desc limit 5` |
+| 2 | **Backup completo** (irreversivel sem isso) | `npm run prod:deploy:vps -- -BackupDatabase -SkipSmokeTests` |
+| 3 | Verificar divergencia de password_hash | SSH + SQL (ver DEPLOY_VPS.md passo 3) |
+| 4 | Sincronizar + subir API | SSH + `docker compose up -d --build api` |
+| 5 | Aguardar migrations completarem | `docker compose logs -f --tail=100 api` |
+| 6 | **Reseed core.account_modules** (armadilha 0124) | SSH + INSERT manual (ver DEPLOY_VPS.md passo 7) |
+| 7 | Subir frontend | SSH + `docker compose up -d --build web` |
+| 8 | Smoke HTTP | `curl -I https://lista.whenthelightsdie.com/healthz` |
+| 9 | Smoke de browser | Login + navegar /tasks /operacao /erp (voce faz) |
+
+Comandos completos com detalhes: [DEPLOY_VPS.md — Release multitenant-complete](DEPLOY_VPS.md#release-multitenant-complete-branch-refactormulti-tenant-complete--2026-06-08)
+
+**Armadilha 0124 resumida:** a seed de `core.account_modules` roda antes do
+`SyncCatalog` (que popula `core.modules`), entao insere 0 linhas. Sem o reseed
+manual do passo 6, o guard de modulos bloqueia todas as rotas de operacao.
+
+**Riscos principais:**
+- migration 0136 e' irreversivel — backup do passo 2 e' obrigatorio
+- password_hash divergente tranca o owner (checar passo 3 antes de subir)
+
+---
 
 ## 1. O que precisa existir uma vez
 

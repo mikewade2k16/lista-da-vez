@@ -783,37 +783,204 @@ Itens que precisam ser revistos antes de subir o release atual para a VPS.
 Atualizar esta lista a cada release que toca em schema ou regra que precisa
 de tratamento manual no momento do deploy.
 
-### Configuracoes operacionais agora sao tenant-wide
+### Release multitenant-complete (branch refactor/multi-tenant-complete) — 2026-06-08
 
-Migration `0024_tenant_operation_settings.sql` cria as tabelas
-`tenant_operation_settings`, `tenant_setting_options` e
-`tenant_catalog_products` e move o escopo de configuracao da operacao de
-loja para tenant. As tabelas legadas `store_operation_settings`,
-`store_setting_options` e `store_catalog_products` continuam no banco
-durante a transicao para servirem de fonte de backfill.
+Este e' o release mais critico ja feito: 37 novas migrations (0100-0136), reescrita
+de FKs e DROP de tabelas publicas. Leia inteiro antes de executar qualquer passo.
 
-Antes de subir este release:
+#### Risco principal: migration 0136 e' IRREVERSIVEL sem backup
 
-1. **Backup completo do banco antes da migration 0024.**
-   Use `npm run prod:deploy:vps -- -BackupDatabase` ou rode o backup manual
-   do bloco `Se o release tocar schema, migrations ou dados`.
-2. **Aplicar a migration 0024 no host.**
-   O backfill embutido escolhe a config da loja mais antiga de cada tenant
-   e faz uniao deduplicada das opcoes/produtos. Em ambiente local isso
-   resolve, mas em producao a regra final de uniao precisa ser confirmada
-   por humano.
-3. **Conferir o backfill manualmente em producao antes de liberar acesso.**
-   Para cada tenant, comparar `tenant_setting_options` e
-   `tenant_catalog_products` com o que existia na loja-fonte e nas demais
-   lojas. Se faltar item conhecido, completar manualmente via SQL ou
-   reaplicar via UI.
-4. **Avisar o owner que a UI de Configuracoes virou tenant-wide.**
-   O seletor de loja do header deixou de afetar a area de Configuracoes.
-   A propria tela mostra um banner reforcando isso, mas vale comunicar para
-   evitar duvida no primeiro acesso.
-5. **Nao dropar as tabelas `store_*` nesse deploy.**
-   Elas devem ser mantidas como historico/backfill ate o release seguinte
-   confirmar que o tenant-wide esta estavel.
+`0136_drop_public_tenant_tables.sql` dropa `public.tenants`, `public.users`,
+`public.stores` e `public.consultants` depois de repontrar todas as FKs para `core.*`.
+**Sem backup pre-deploy nao ha rollback.**
+
+#### Armadilha 0124 — core.account_modules fica vazio no primeiro boot
+
+`0124_core_account_modules_seed.sql` usa `CROSS JOIN core.modules` — mas
+`core.modules` e' populado pelo `SyncCatalog` que roda DEPOIS que as migrations
+completam. Resultado: a migration insere 0 linhas. O guard de modulos (`RequireModuleByPath`)
+vai bloquear tudo ate que o reseed seja feito manualmente (passo 7 abaixo).
+
+#### Sequencia obrigatoria de deploy
+
+**Passo 1 — Confirmar que as migrations anteriores (0001-0059) ja existem na VPS.**
+A VPS deve ter o historico ate 0059 (baseline pre-multitenant). Verificar:
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+   psql -U omni -d omni -c 'select version from schema_migrations order by version desc limit 5;'"
+```
+
+Esperado: ultima versao e' `0059` ou superior (mas menor que `0100`).
+
+**Passo 2 — Backup completo do banco ANTES de qualquer coisa.**
+
+```bash
+npm run prod:deploy:vps -- -BackupDatabase -SkipComposeConfig -SkipSmokeTests -Services postgres
+```
+
+Ou manualmente via SSH:
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   mkdir -p backups && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+   sh -lc 'pg_dump -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -Fc' \
+   > backups/backup_pre_multitenant_\$(date +%Y%m%d_%H%M%S).dump && \
+   ls -lh backups/"
+```
+
+Confirmar que o arquivo `.dump` foi criado e tem tamanho > 0.
+
+**Passo 3 — Conferir divergencia de password_hash entre public.users e core.users.**
+
+Se a seed 0101 ja rodou na VPS em algum momento anterior, `core.users` pode ter
+`password_hash` stale (congelado no seed). A migration 0136 vai transformar
+`public.users` em view de `core.users` — se o hash do `core.users` for diferente
+do `public.users`, o owner fica trancado fora.
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+   psql -U omni -d omni -c \
+   'select p.id, p.email,
+           left(p.password_hash,20) as pub_hash,
+           left(c.password_hash,20) as core_hash,
+           (p.password_hash = c.password_hash) as match
+    from public.users p
+    join core.users c on c.id = p.id
+    where p.password_hash != c.password_hash;'"
+```
+
+Se retornar linhas: **reconciliar antes de prosseguir** com:
+
+```sql
+update core.users c
+set password_hash = p.password_hash
+from public.users p
+where p.id = c.id
+  and p.password_hash != c.password_hash;
+```
+
+**Passo 4 — Sincronizar o codigo para a VPS (sem subir ainda).**
+
+```bash
+npm run prod:deploy:vps -- -SkipSmokeTests -Services api
+```
+
+Isso faz o sync do codigo mas o compose up vai rodar as migrations automaticamente
+ao subir a API. Aguardar o passo seguinte antes.
+
+Ou, se preferir separar sync de deploy:
+
+```bash
+# So sync (sem up):
+cd ~/Documents/Projects/fila-atendimento
+tar -czf - \
+    --exclude='.git' --exclude='.claude' --exclude='.env' --exclude='.env.production' \
+    --exclude='node_modules' --exclude='web/node_modules' \
+    --exclude='web/.nuxt' --exclude='web/.output' --exclude='web/dist' \
+    --exclude='back/.logs' --exclude='qa-bot/.venv' \
+    --exclude='erp-source-local' --exclude='Controlle10 - ftp' --exclude='tmp' \
+    . | ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+    deploy@85.31.62.33 \
+    "find /home/deploy/lista-atendimento -mindepth 1 -maxdepth 1 \
+     ! -name '.env.production' ! -name 'backups' -exec rm -rf {} + && \
+     tar -xzf - -C /home/deploy/lista-atendimento"
+```
+
+**Passo 5 — Subir a API (migrations rodam automaticamente no startup).**
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build api"
+```
+
+**Passo 6 — Acompanhar o log da API ate as migrations completarem.**
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml logs -f --tail=100 api"
+```
+
+Aguardar mensagem indicando que as migrations rodaram e a API esta ouvindo.
+Sinais de sucesso: `migrations applied`, `server listening`, `healthz ok`.
+
+**Passo 7 — Reseed obrigatorio de core.account_modules (armadilha 0124).**
+
+Depois que a API esta saudavel (`/healthz` retorna 200), o `SyncCatalog` ja
+populou `core.modules`. Rodar o reseed:
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+   psql -U omni -d omni -c \
+   'insert into core.account_modules (account_id, module_id, enabled)
+    select a.id, m.id, true
+    from core.accounts a
+    cross join core.modules m
+    where a.is_active = true
+    on conflict (account_id, module_id) do nothing;
+    select count(*) as rows_inserted from core.account_modules;'"
+```
+
+Esperado: `rows_inserted` > 0. Se retornar 0 na segunda query, verificar se
+`core.modules` esta' populado: `select count(*) from core.modules;`.
+
+**Passo 8 — Subir o frontend.**
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build web"
+```
+
+**Passo 9 — Smoke tests finais.**
+
+```bash
+# Publico
+curl -I https://lista.whenthelightsdie.com
+curl -I https://lista.whenthelightsdie.com/healthz
+
+# Headers de seguranca
+curl -sI https://lista.whenthelightsdie.com \
+  | grep -Ei 'strict-transport|x-content-type|x-frame|referrer|permissions|content-security'
+```
+
+**Passo 10 — Smoke de browser (voce faz manualmente):**
+- Login com owner da Pérola → navegar em /tasks, /operacao, /erp → tudo carrega (200, sem 403)
+- Verificar console DevTools: zero erros de CORS ou 403
+
+#### Se algo der errado: rollback
+
+```bash
+ssh -i ~/.ssh/gh_actions_omnichannel_vps -o StrictHostKeyChecking=accept-new \
+  deploy@85.31.62.33 \
+  "cd /home/deploy/lista-atendimento && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml stop api web && \
+   backup_file=$(ls -t backups/*.dump | head -1) && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+   sh -lc 'dropdb -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\" && createdb -U \"\$POSTGRES_USER\" \"\$POSTGRES_DB\"' && \
+   docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+   pg_restore -U omni -d omni --no-owner \"\$backup_file\""
+```
+
+Nota: rollback so e' possivel enquanto o backup existir e as migrations 0136 nao
+tiverem apagado dados que nao estao no backup.
 
 ### Itens recorrentes a checar antes de subir
 

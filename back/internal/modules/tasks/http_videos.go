@@ -28,7 +28,6 @@ func readTaskVideoUpload(r *http.Request, fieldName string) (*TaskVideoUpload, e
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
 		return nil, ErrInvalidVideo
 	}
-	// #nosec G120 -- limite controlado por maxTaskVideoMultipartMemory acima
 	if err := r.ParseMultipartForm(maxTaskVideoMultipartMemory); err != nil {
 		return nil, ErrInvalidVideo
 	}

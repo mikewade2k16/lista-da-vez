@@ -1,4 +1,5 @@
 import { cloneValue } from '~/domain/utils/object'
+import { canViewConsultants } from '~/domain/utils/permissions'
 import {
   createEmptyState,
   createEmptyStoreScopedState,
@@ -504,21 +505,47 @@ function isConsultantsAccessDenied(error) {
   return getApiErrorStatusCode(error) === 403
 }
 
-export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '') {
+function resolveRuntimeRole(currentState) {
+  const activeProfileId = String(currentState?.activeProfileId || '').trim()
+  const profiles = Array.isArray(currentState?.profiles) ? currentState.profiles : []
+  const activeProfile = profiles.find(
+    (profile) => String(profile?.id || '').trim() === activeProfileId,
+  )
+
+  return String(activeProfile?.role || '').trim()
+}
+
+function resolveCanFetchConsultants(currentState, options = {}) {
+  if (typeof options?.canViewConsultants === 'boolean') {
+    return options.canViewConsultants
+  }
+
+  return canViewConsultants(
+    options?.role || resolveRuntimeRole(currentState),
+    options?.permissionKeys || [],
+    Boolean(options?.permissionsResolved),
+  )
+}
+
+export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '', options = {}) {
   const normalizedStoreId = String(storeId || '').trim()
   const storeQuery = encodeURIComponent(normalizedStoreId)
   const normalizedTenantId = String(tenantId || '').trim()
+  const shouldFetchConsultants = options?.canFetchConsultants !== false
   const requestResults = await Promise.allSettled([
     hasResolvedTenantId(normalizedTenantId)
       ? apiRequest(withTenantQuery('/v1/settings', normalizedTenantId))
       : Promise.reject(new Error('Tenant ativo nao resolvido para carregar configuracoes.')),
-    apiRequest(`/v1/consultants?storeId=${storeQuery}`),
+    shouldFetchConsultants
+      ? apiRequest(`/v1/consultants?storeId=${storeQuery}`)
+      : Promise.resolve({ consultants: [] }),
     apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`),
   ])
   const [settingsResult, consultantsResult, operationsSnapshotResult] = requestResults
 
-  const consultantsLoadState =
-    consultantsResult.status === 'rejected' && isConsultantsAccessDenied(consultantsResult.reason)
+  const consultantsLoadState = !shouldFetchConsultants
+    ? 'skipped'
+    : consultantsResult.status === 'rejected' && isConsultantsAccessDenied(consultantsResult.reason)
       ? 'degraded'
       : 'loaded'
 
@@ -577,7 +604,9 @@ export async function hydrateRuntimeStoreContext(
   await runtime.ensure()
 
   const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreID, tenantId)
-  const remoteData = await fetchRemoteStoreData(apiRequest, normalizedStoreID, resolvedTenantId)
+  const remoteData = await fetchRemoteStoreData(apiRequest, normalizedStoreID, resolvedTenantId, {
+    canFetchConsultants: resolveCanFetchConsultants(runtime.state, options),
+  })
   const settingsBundle =
     remoteData.settingsLoadState === SETTINGS_LOAD_STATE_LOADED
       ? remoteData.settingsBundle

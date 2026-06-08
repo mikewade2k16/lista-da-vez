@@ -1,40 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref, unref, watch } from 'vue'
+import { computed, inject, unref } from 'vue'
 import { getApiBase } from '~/utils/api-client'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
 import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
 import OmniEditor from '../../../app/components/omni/OmniEditor.vue'
-import { useRoadmapStore } from '~/stores/roadmap'
-import { ROADMAP_PRIORITY_LABEL, type ModulePriority } from '~/components/roadmap/roadmap-data'
-
-const roadmapStore = useRoadmapStore()
-onMounted(() => {
-  if (!roadmapStore.modules.length) {
-    void roadmapStore.fetchAll()
-  }
-})
-
-const roadmapModuleOptions = computed(() => [
-  { value: '', label: 'Sem modulo' },
-  ...roadmapStore.modules.map((m) => ({ value: m.id, label: m.label })),
-])
-
-const ROADMAP_MODULE_PRIORITY_OPTIONS: ModulePriority[] = ['P0', 'P1', 'P2', 'P3']
-const ROADMAP_MODULE_CATEGORY_OPTIONS = [
-  { value: 'tools', label: 'Tools' },
-  { value: 'atendimento', label: 'Atendimento' },
-  { value: 'operacao-comercial', label: 'Operacao comercial' },
-  { value: 'indicadores', label: 'Indicadores' },
-  { value: 'manage', label: 'Manage' },
-]
-const roadmapModuleCreateOpen = ref(false)
-const roadmapModuleCreating = ref(false)
-const roadmapModuleCreateError = ref('')
-const roadmapModuleName = ref('')
-const roadmapModuleRoute = ref('')
-const roadmapModulePriority = ref<ModulePriority>('P2')
-const roadmapModuleCategory = ref('tools')
 
 const ctx = inject(TASKS_PAGE_CONTEXT_KEY)!
 const {
@@ -42,7 +12,6 @@ const {
   taskEditorMode,
   closeTaskEditor,
   setTaskEditorMode,
-  toggleTaskEditorFullscreen,
   modalModeOptions,
   taskDraft,
   taskDraftTitleValue,
@@ -63,9 +32,6 @@ const {
   updateTaskDraftDueEndDate,
   taskDraftPriorityValue,
   updateTaskDraftPriority,
-  taskDraftRoadmapModuleIdValue,
-  updateTaskDraftRoadmapModuleId,
-  taskDraftPinnedToRoadmapValue,
   taskDraftTypeValue,
   updateTaskDraftType,
   taskRelations,
@@ -109,15 +75,6 @@ const {
   deleteCurrentDraftTask,
 } = ctx
 
-watch(
-  () => unref(taskSaving),
-  (saving, previous) => {
-    if (previous && !saving && roadmapStore.backendAvailable) {
-      void roadmapStore.fetchDashboard()
-    }
-  },
-)
-
 const presenceViewingParticipants = computed(() =>
   (Array.isArray(unref(presenceParticipants)) ? unref(presenceParticipants) : []).filter(
     (participant) => !participant.fieldKey,
@@ -125,108 +82,6 @@ const presenceViewingParticipants = computed(() =>
 )
 
 const runtimeConfig = useRuntimeConfig()
-
-function normalizeModalText(value: unknown, max = 160) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max)
-}
-
-function slugifyRoadmapModule(value: unknown) {
-  return normalizeModalText(value, 120)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
-function textFromHtml(value: unknown) {
-  return normalizeModalText(
-    String(value ?? '')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<[^>]+>/g, ' '),
-    360,
-  )
-}
-
-function uniqueRoadmapSourceId(base: string) {
-  const normalizedBase = base || 'novo-modulo'
-  const existing = new Set(roadmapStore.modules.map((module) => module.sourceId))
-  if (!existing.has(normalizedBase)) return normalizedBase
-  let index = 2
-  while (existing.has(`${normalizedBase}-${index}`)) index += 1
-  return `${normalizedBase}-${index}`
-}
-
-function openRoadmapModuleCreate() {
-  const fallbackName = normalizeModalText(taskDraft.title || taskDraftTitleValue(), 120)
-  const name = fallbackName || 'Novo modulo'
-  roadmapModuleName.value = name
-  roadmapModuleRoute.value = `/${slugifyRoadmapModule(name) || 'novo-modulo'}`
-  roadmapModulePriority.value = 'P2'
-  roadmapModuleCategory.value = 'tools'
-  roadmapModuleCreateError.value = ''
-  roadmapModuleCreateOpen.value = true
-}
-
-function updateRoadmapModuleName(value: unknown) {
-  const previousSlug = slugifyRoadmapModule(roadmapModuleName.value)
-  const currentRouteSlug = slugifyRoadmapModule(roadmapModuleRoute.value)
-  roadmapModuleName.value = normalizeModalText(value, 120)
-  if (!currentRouteSlug || currentRouteSlug === previousSlug) {
-    roadmapModuleRoute.value = `/${slugifyRoadmapModule(roadmapModuleName.value) || 'novo-modulo'}`
-  }
-}
-
-async function createRoadmapModuleFromTask() {
-  const label = normalizeModalText(roadmapModuleName.value, 120)
-  const routeSlug = slugifyRoadmapModule(roadmapModuleRoute.value || label)
-  if (!label || !routeSlug) {
-    roadmapModuleCreateError.value = 'Informe nome e rota.'
-    return
-  }
-  if (!normalizeModalText(taskDraft.title, 220)) {
-    updateTaskDraftTitle(label)
-  }
-
-  const route = `/${routeSlug}`
-  const existing = roadmapStore.modules.find(
-    (module) => module.sourceId === routeSlug || module.route === route,
-  )
-  if (existing) {
-    updateTaskDraftRoadmapModuleId(existing.id)
-    roadmapModuleCreateOpen.value = false
-    return
-  }
-
-  roadmapModuleCreating.value = true
-  roadmapModuleCreateError.value = ''
-  try {
-    const description = textFromHtml(taskDraft.contentHtml) || label
-    const created = await roadmapStore.createModule({
-      sourceId: uniqueRoadmapSourceId(routeSlug),
-      label,
-      route,
-      status: 'pending',
-      priority: roadmapModulePriority.value,
-      category: roadmapModuleCategory.value,
-      description,
-      scope: [label],
-      dependsOn: [],
-    })
-    updateTaskDraftRoadmapModuleId(created.id)
-    roadmapModuleCreateOpen.value = false
-    void roadmapStore.fetchDashboard()
-  } catch (error) {
-    console.error('roadmap.module.create_from_task failed', error)
-    roadmapModuleCreateError.value = 'Nao foi possivel criar o modulo.'
-  } finally {
-    roadmapModuleCreating.value = false
-  }
-}
 
 function taskVideoSrc(path: unknown) {
   const normalizedPath = String(path || '').trim()
@@ -271,12 +126,12 @@ const presenceViewingLabel = computed(() => {
             @click="closeTaskEditor"
           />
           <UButton
-            :icon="taskEditorMode === 'fullscreen' ? 'i-lucide-minimize-2' : 'i-lucide-expand'"
+            icon="i-lucide-expand"
             color="neutral"
             variant="ghost"
             size="xs"
-            :title="taskEditorMode === 'fullscreen' ? 'Restaurar' : 'Pagina inteira'"
-            @click="toggleTaskEditorFullscreen"
+            title="Pagina inteira"
+            @click="setTaskEditorMode('fullscreen')"
           />
           <UPopover :content="{ side: 'bottom', align: 'start' }">
             <UButton
@@ -637,108 +492,6 @@ const presenceViewingLabel = computed(() => {
             />
           </div>
 
-          <div class="tasks-page__task-property-row">
-            <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-map" />
-              Modulo Roadmap
-            </span>
-            <div class="tasks-page__roadmap-control">
-              <OmniSelectMenuInput
-                :model-value="taskDraftRoadmapModuleIdValue()"
-                class="tasks-page__task-property-control"
-                :items="roadmapModuleOptions"
-                placeholder="Sem modulo"
-                :searchable="true"
-                :full-content-width="true"
-                item-display-mode="text"
-                color="neutral"
-                variant="none"
-                :highlight="false"
-                clear
-                @update:model-value="updateTaskDraftRoadmapModuleId"
-              />
-              <UButton
-                icon="i-lucide-plus"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                title="Criar modulo"
-                @click="openRoadmapModuleCreate"
-              />
-            </div>
-          </div>
-
-          <div
-            v-if="roadmapModuleCreateOpen"
-            class="tasks-page__task-property-row tasks-page__task-property-row--roadmap-create"
-          >
-            <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-box" />
-              Novo modulo
-            </span>
-            <form class="tasks-page__roadmap-create" @submit.prevent="createRoadmapModuleFromTask">
-              <div class="tasks-page__roadmap-create-grid">
-                <UInput
-                  :model-value="roadmapModuleName"
-                  variant="none"
-                  placeholder="Nome"
-                  @update:model-value="updateRoadmapModuleName"
-                />
-                <UInput v-model="roadmapModuleRoute" variant="none" placeholder="/rota" />
-                <select v-model="roadmapModuleCategory" class="tasks-page__roadmap-priority">
-                  <option
-                    v-for="category in ROADMAP_MODULE_CATEGORY_OPTIONS"
-                    :key="category.value"
-                    :value="category.value"
-                  >
-                    {{ category.label }}
-                  </option>
-                </select>
-                <select v-model="roadmapModulePriority" class="tasks-page__roadmap-priority">
-                  <option
-                    v-for="priority in ROADMAP_MODULE_PRIORITY_OPTIONS"
-                    :key="priority"
-                    :value="priority"
-                  >
-                    {{ ROADMAP_PRIORITY_LABEL[priority] }}
-                  </option>
-                </select>
-              </div>
-              <p v-if="roadmapModuleCreateError" class="tasks-page__roadmap-create-error">
-                {{ roadmapModuleCreateError }}
-              </p>
-              <div class="tasks-page__roadmap-create-actions">
-                <UButton
-                  type="button"
-                  label="Cancelar"
-                  color="neutral"
-                  variant="ghost"
-                  size="xs"
-                  @click="roadmapModuleCreateOpen = false"
-                />
-                <UButton
-                  type="submit"
-                  label="Criar e vincular"
-                  color="primary"
-                  variant="soft"
-                  size="xs"
-                  :loading="roadmapModuleCreating"
-                />
-              </div>
-            </form>
-          </div>
-
-          <div v-if="taskDraftRoadmapModuleIdValue()" class="tasks-page__task-property-row">
-            <span class="tasks-page__task-property-label">
-              <UIcon name="i-lucide-map-pinned" />
-              Roadmap
-            </span>
-            <span class="tasks-page__roadmap-visible">
-              <UIcon name="i-lucide-check" />
-              {{ taskDraftPinnedToRoadmapValue() ? 'Aparece em /roadmap' : 'Modulo vinculado' }}
-            </span>
-          </div>
-
           <div v-if="taskDraft.id" class="tasks-page__task-property-row">
             <span class="tasks-page__task-property-label">
               <UIcon name="i-lucide-timer" />
@@ -807,7 +560,7 @@ const presenceViewingLabel = computed(() => {
               class="tasks-page__task-property-control"
               :items="typeOptions"
               placeholder="Nao definido"
-              :creatable="true"
+              :creatable="{ when: 'always', position: 'bottom' }"
               :searchable="true"
               :full-content-width="true"
               item-display-mode="text"

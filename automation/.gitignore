@@ -1,0 +1,6 @@
+# Segredos — NÃO comitar (contêm API keys)
+.mcp.json
+export/credentials.decrypted.json
+
+# Scripts temporários (uso único, já removidos)
+_*.js

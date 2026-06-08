@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import OmniMinimalPopover from '~/components/omni/overlay/OmniMinimalPopover.vue'
-import type { ClientItem } from '~/types/clients'
+import type { AccountItem } from '~/types/accounts'
 
 const props = defineProps<{
-  client: ClientItem
+  account: AccountItem
   busy?: boolean
 }>()
 
@@ -26,10 +26,10 @@ watch(
       return
     }
 
-    logo.value = String(props.client.logo || '')
-    phone.value = String(props.client.contactPhone || '')
-    site.value = String(props.client.contactSite || '')
-    address.value = String(props.client.contactAddress || '')
+    logo.value = String(props.account.logo || '')
+    phone.value = String(props.account.contactPhone || '')
+    site.value = String(props.account.contactSite || '')
+    address.value = String(props.account.contactAddress || '')
   },
 )
 

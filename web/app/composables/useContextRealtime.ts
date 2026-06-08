@@ -9,15 +9,9 @@ import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { useMultiStoreStore } from '~/stores/multistore'
 import { useOperationGoalsStore } from '~/stores/operation-goals'
 import { useUsersStore } from '~/stores/users'
-import { createApiRequest, getWebSocketBase } from '~/utils/api-client'
+import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
+import { createApiRequest } from '~/utils/api-client'
 import { refreshRuntimeStoreSettings } from '~/utils/runtime-remote'
-
-function buildSocketURL(runtimeConfig, tenantId, accessToken) {
-  const url = new URL('/v1/realtime/context', getWebSocketBase(runtimeConfig))
-  url.searchParams.set('tenantId', String(tenantId || '').trim())
-  url.searchParams.set('access_token', String(accessToken || '').trim())
-  return url.toString()
-}
 
 /**
  * Sincroniza o contexto global do tenant via WebSocket e dispara refresh dos stores transversais.
@@ -59,6 +53,7 @@ export function useContextRealtime() {
   let reconnectAttempt = 0
   let stopWatcher = null
   let currentConnectionKey = ''
+  let connectionGeneration = 0
   let intentionallyClosed = false
   let refreshPromise = null
   let refreshQueued = false
@@ -152,6 +147,7 @@ export function useContextRealtime() {
   }
 
   function disconnect() {
+    connectionGeneration += 1
     intentionallyClosed = true
     clearReconnectTimer()
 
@@ -174,11 +170,11 @@ export function useContextRealtime() {
     const delayMs = Math.min(10000, 1000 * Math.max(1, 2 ** reconnectAttempt))
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null
-      connect()
+      void connect()
     }, delayMs)
   }
 
-  function connect() {
+  async function connect() {
     if (import.meta.server) {
       return
     }
@@ -210,8 +206,40 @@ export function useContextRealtime() {
 
     currentConnectionKey = nextConnectionKey
     status.value = 'connecting'
+    const requestGeneration = (connectionGeneration += 1)
 
-    const nextSocket = new WebSocket(buildSocketURL(runtimeConfig, tenantId, accessToken))
+    let socketURL = ''
+    try {
+      socketURL = await buildRealtimeSocketURL(
+        runtimeConfig,
+        '/v1/realtime/context',
+        { tenantId },
+        accessToken,
+      )
+    } catch (error) {
+      if (
+        requestGeneration === connectionGeneration &&
+        currentConnectionKey === nextConnectionKey
+      ) {
+        currentConnectionKey = ''
+        status.value = 'error'
+      }
+      if (import.meta.client) {
+        console.warn('[context-ws] ticket request failed; socket not opened', error)
+      }
+      return
+    }
+
+    if (
+      requestGeneration !== connectionGeneration ||
+      currentConnectionKey !== nextConnectionKey ||
+      !auth.isAuthenticated ||
+      String(auth.accessToken || '').trim() !== accessToken
+    ) {
+      return
+    }
+
+    const nextSocket = new WebSocket(socketURL)
     socket = nextSocket
 
     nextSocket.addEventListener('open', () => {
@@ -339,7 +367,7 @@ export function useContextRealtime() {
     stopWatcher = watch(
       [() => auth.isAuthenticated, () => auth.activeTenantId, () => auth.accessToken],
       () => {
-        connect()
+        void connect()
       },
       {
         immediate: true,

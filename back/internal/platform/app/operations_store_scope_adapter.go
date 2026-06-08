@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
-	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 )
 

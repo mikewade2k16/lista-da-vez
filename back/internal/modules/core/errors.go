@@ -34,4 +34,23 @@ var (
 
 	// ErrRoleIsLocked e retornado ao tentar deletar um role com is_locked=true.
 	ErrRoleIsLocked = errors.New("core: role is locked and cannot be deleted")
+
+	// ErrAccountSlugConflict e retornado quando ja existe uma account com o mesmo slug.
+	ErrAccountSlugConflict = errors.New("core: account slug already exists")
+
+	// ErrAdminUserNotFound e retornado ao criar account quando o adminEmail
+	// nao corresponde a nenhum usuario ativo em core.users.
+	ErrAdminUserNotFound = errors.New("core: admin user not found in core.users")
+
+	// ErrUserEmailConflict e retornado ao criar/atualizar user quando o email
+	// (lowercased) ja existe em core.users.
+	ErrUserEmailConflict = errors.New("core: user email already exists")
+
+	// ErrLastPlatformAdmin e retornado ao tentar rebaixar/desativar o ultimo
+	// platform_admin ativo. Safeguard para evitar perder acesso total.
+	ErrLastPlatformAdmin = errors.New("core: cannot remove the last active platform admin")
+
+	// ErrOrganizationSlugConflict e retornado quando ja existe uma organization
+	// com o mesmo slug.
+	ErrOrganizationSlugConflict = errors.New("core: organization slug already exists")
 )

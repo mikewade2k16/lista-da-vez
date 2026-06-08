@@ -42,7 +42,19 @@ Ele nao deve cuidar de:
 ### Persistencia
 
 - usuarios vivem no PostgreSQL
-- memberships tenant/store sao lidas de:
+- identidade vive em `core.users` (fonte única; a view compat `public.users` foi DROPADA na 0136 — o auth lê `core.users` direto)
+- papel/escopo no auth e resolvido por `AUTH_ROLES_SOURCE`:
+  - `core` = apenas `core.*` (**default e UNICO valido em prod desde o U4c**)
+  - `legacy` = apenas `user_*_roles` — **QUEBRADO**: as tabelas foram dropadas (0135)
+  - `core_with_fallback` = tenta `core.*` e cai no legado — **QUEBRADO** pelo mesmo motivo
+- **U4c (2026-06-06):** `findRecord` (`legacyRoleProjection()`) so referencia `user_*_roles` quando `source != core`; em `core` os campos legados saem vazios (o resolvedor core os ignora). Sem isso, qualquer login quebrava com 500 apos o DROP. O codigo de fallback legado (`resolveLegacyAuthRoleScope`/`findStoreIDs`) segue presente mas so executa em `legacy`/`core_with_fallback` (nunca em prod).
+- fonte core de papel/escopo:
+  - `core.users.is_platform_admin`
+  - `core.account_users`
+  - `core.user_role_assignments`
+  - `core.roles`
+  - `core.user_module_settings(module_id='queue').config.storeIdsByAccount` para store scope
+- fallback legado ainda le:
   - `users`
   - `user_invitations`
   - `user_platform_roles`
@@ -50,18 +62,42 @@ Ele nao deve cuidar de:
   - `user_store_roles`
 - a migration demo continua semeando usuarios para smoke local
 
-### Hot-path do middleware (Fase 7A)
+### Fonte de roles U2
 
-- `AuthenticateToken` usa `LoadUserForAuth` em vez de `FindByID`. Reduz 2 round-trips ao banco em 1 ao consolidar `findRecord` + `findStoreIDs` em uma unica query com `LATERAL` joins.
+- Migration `0133_backfill_legacy_roles_to_core.sql` cria/copia roles core para compatibilidade:
+  - `owner` -> `queue.owner` (template `queue.supervisor`) -> coarse `owner`
+  - `director` -> `queue.director` (template `queue.supervisor`) -> coarse `director`
+  - `marketing` -> `queue.marketing` (template `queue.consultant`) -> coarse `marketing`
+  - `manager` -> `queue.manager` (template `queue.supervisor`) -> coarse `manager`
+  - `consultant` -> `queue.consultant` (template `queue.consultant`) -> coarse `consultant`
+  - `store_terminal` -> `queue.store_terminal` (template `queue.supervisor`) -> coarse `store_terminal`
+- Compatibilidade para roles core antigos/genericos:
+  - `core.owner` -> `owner`
+  - `core.admin` ou `queue.supervisor` -> `director`
+  - `core.member` -> `consultant`
+- Nao remover o fallback legado nem o sync em `admin_users_repository.CreateUser` antes do U4.
+
+### Hot-path do middleware (Fase 7A + U2)
+
+- `AuthenticateToken` usa `LoadUserForAuth` para centralizar identidade + papel + escopo.
+- Desde U2, `LoadUserForAuth` usa o resolvedor configurado por `AUTH_ROLES_SOURCE`; o default `core_with_fallback` prioriza `core.*` e preserva login de usuarios ainda so no legado.
 - A resolucao de permissoes usa `access.Service.ResolveUserPermissions` que delega para `Repository.ResolveEffectivePermissions` (1 query unica consolidando `access_role_permissions` + `user_access_overrides`).
-- Resultado: requests autenticados fazem 2 round-trips ao banco no hot-path em vez de 4. Caminhos administrativos (update perfil, troca de senha) continuam usando `FindByID` para nao mudar shape.
+- Caminhos administrativos (update perfil, troca de senha) tambem passam pelo mesmo resolvedor ao remontar `User`.
 
 ### Token
 
 - token assinado via HMAC
 - `tenant_id`, `store_ids` e `role` ja vao no token
+- `sid` (session UUID) incluido em novos tokens emitidos apos C6; tokens legados sem `sid` continuam validos
 - ainda nao existe refresh token
-- ainda nao existe sessao persistida por dispositivo
+- sessao persistida em `core.user_sessions` — `SessionRepository` LIGADO no boot (P0.2)
+
+### Sessao e revogacao — estado real (P0.2, 2026-06-07)
+
+- `auth.Service.SetSessionRepository(repo)` e chamado no `app.go`: `Login` cria linha em `core.user_sessions` + emite `sid`; `Authenticate` checa `IsRevoked` (revoked_at) por request; `Logout` revoga o `sid`.
+- Logout invalida o token no servidor de verdade: token com `sid` revogado -> 401 no proximo request. (Antes era no-op client-side.)
+- Tokens legados sem `sid` ignoram o check de sessao (validos ate expirar).
+- **PrincipalCache NAO ligado.** A interface `PrincipalCacheStore` + `SetPrincipalCache` existem, mas nenhuma impl concreta foi wired — `Authenticate` consulta `IsRevoked` no DB a cada request (lookup por PK, barato na escala atual). Cache com TTL + invalidacao por evento (`user.session.revoked`, `role.permissions.changed`, ...) fica como item de PERFORMANCE para quando escalar — NAO confundir com o que ja esta ativo.
 
 ### Roles atuais
 
@@ -85,7 +121,7 @@ Ele nao deve cuidar de:
 
 - `GET /v1/auth/roles`
 - `POST /v1/auth/login`
-- `POST /v1/auth/logout` (idempotente; Fase 7D vai revogar `core.user_sessions`)
+- `POST /v1/auth/logout` (revoga o `sid` em `core.user_sessions`; idempotente p/ tokens legados sem `sid`)
 - `POST /v1/auth/password-reset/request`
 - `POST /v1/auth/password-reset/confirm`
 - `GET /v1/auth/me`
@@ -140,15 +176,20 @@ Quando este modulo crescer, a ordem certa e:
 
 ## Arquivos atuais
 
-- `model.go`
+- `model.go` — structs, interfaces (incluindo `PrincipalCacheStore`, `SessionRepository`, `TokenManager`)
 - `roles.go`
-- `service.go`
-- `tokens.go`
+- `service.go` — `AuthenticateToken` consulta cache antes do DB; `Login` cria sessao em `core.user_sessions`
+- `sessions.go` — `PostgresSessionRepository`: Create/IsRevoked/Revoke/Touch em `core.user_sessions`
+- `tokens.go` — JWT HMAC com claim `sid` (session UUID); `Issue(sessionID, user)` — sessionID pode ser ""
 - `middleware.go`
 - `http.go`
 - `store_postgres.go`
+- `core_role_resolver.go` — resolvedor `core|legacy|core_with_fallback` e mapeamento core role -> role coarse
 - `passwords.go`
 - `errors.go`
+- `account_checker.go`
+- `invitations.go`
+- `password_reset.go`
 
 > `store_memory.go` foi removido na Fase 3 (2026-05-21). A persistência roda 100% no Postgres; o seed de usuários demo vive na migration `0002_seed_demo_auth.sql`. Se voltar a precisar de um store em memória pra testes, escreva como fake no próprio `_test.go` do consumidor — não exporte uma implementação pública.
 

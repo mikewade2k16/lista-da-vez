@@ -8,7 +8,7 @@ import { useAuthStore } from '~/stores/auth'
 import { useOperationsStore } from '~/stores/operations'
 import { useAlertsStore } from '~/stores/alerts'
 import { useOperationsRealtime } from '~/composables/useOperationsRealtime'
-import { canUseAllStoresScope } from '~/domain/utils/permissions'
+import { canUseAllStoresScope, canViewAlerts } from '~/domain/utils/permissions'
 import { getApiErrorMessage } from '~/utils/api-client'
 
 definePageMeta({
@@ -33,11 +33,14 @@ const scopeMode = computed(() => {
   return 'all'
 })
 const useTenantAlertScope = computed(() => scopeMode.value === 'all' && canSeeIntegrated.value)
+const canLoadAlerts = computed(() =>
+  canViewAlerts(auth.role, auth.permissionKeys, auth.permissionsResolved),
+)
 
 useOperationsRealtime({ scopeMode })
 
 async function refreshOperationAlerts() {
-  if (!auth.isAuthenticated) {
+  if (!auth.isAuthenticated || !canLoadAlerts.value) {
     return
   }
 
@@ -182,7 +185,7 @@ function handleIntegratedStoreChange(storeId) {
     <template v-else>
       <ArchivedStoreBanner :store-id="bannerStoreId || ''" />
       <AlertDisplayHost
-        v-if="bannerStoreId"
+        v-if="bannerStoreId && canLoadAlerts"
         :store-id="bannerStoreId"
         class="operation-alert-banner-page"
       />

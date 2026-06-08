@@ -1,4 +1,5 @@
 import { useAuthStore } from '~/stores/auth'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { AUTH_TOKEN_COOKIE } from '~/utils/api-client'
 
 export default defineNuxtRouteMiddleware(async (to) => {
@@ -27,6 +28,16 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // auth.isAuthenticated (que reflete o estado local em memoria).
   if (!isAuthRoute) {
     await auth.ensureSession()
+    // C11.3 — Apos auth confirmada, hidrata accounts do user via API real
+    // /v2/me/accounts (popula useCoreAccountStore.accounts para o AccountSwitcher
+    // e useCoreAccountStore.enabledModules para o useDashboardNav).
+    // No-op se ja hidratado (fetchAccounts e idempotente — sobrescreve a lista).
+    if (auth.isAuthenticated) {
+      const accountStore = useCoreAccountStore()
+      if (accountStore.accounts.length === 0) {
+        await accountStore.fetchAccounts()
+      }
+    }
   }
 
   if (isAuthRoute) {

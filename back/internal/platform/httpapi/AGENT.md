@@ -3,12 +3,14 @@
 ## Escopo
 
 Pacote `back/internal/platform/httpapi/`. Middlewares HTTP compartilhados
-entre todos os módulos: chain, CORS, RequestID, RateLimit, Logging,
-`AccountModulesGuard` (multi-tenant), helpers de erro padronizados.
+entre todos os módulos: chain, SecurityHeaders, CORS, RequestID, RateLimit,
+Logging, Gzip, `AccountModulesGuard` (multi-tenant), helpers de erro padronizados.
 
 ## Peças
 
-- `chain.go` — `Chain(handler, middlewares...)` para empilhar middlewares.
+- `chain.go` — `Chain(handler, middlewares...)` para empilhar middlewares (índice 0 = mais externo).
+- `security_headers.go` — `SecurityHeaders(enableHSTS)` (P1.10): X-Content-Type-Options, X-Frame-Options, Referrer-Policy, COOP e CSP (`default-src 'none'; frame-ancestors 'none'`) em toda resposta; HSTS só em produção. Mais externo no Chain.
+- `compress.go` — `Gzip()` (P1.16): comprime respostas quando o cliente aceita gzip; pula WebSocket (Hijack), uploads/binários (Content-Type não-comprimível) e respostas sem corpo (204/304/1xx). Preserva Flush/Hijack. Mais interno (após Logging, para o status logado ser o real).
 - `cors.go` — `CORS(allowedOrigins)`.
 - `request_id.go` — `RequestID` injeta X-Request-Id e logging structure key.
 - `rate_limit.go` — `RateLimit(opts)`: token bucket por identidade (preferida
@@ -18,58 +20,66 @@ entre todos os módulos: chain, CORS, RequestID, RateLimit, Logging,
   lê `core.account_modules` e bloqueia rotas de módulos desabilitados.
 - `error.go` / `response.go` — `WriteError`, `WriteJSON` padronizados.
 
-## `AccountModulesGuard` — estado real em 2026-05-28
+## `AccountModulesGuard` — ATIVO desde 2026-06-04 (C20)
 
-> **O guard está codificado mas DESCARTADO em runtime.**
+> O guard estava codificado mas **descartado** (`_ = httpapi.NewAccountModulesGuard(pool)`)
+> até 2026-06-04. A multitenant-completion C20 ativou de verdade.
 
-[../app/app.go:313](../app/app.go#L313) faz:
+[../app/app.go](../app/app.go) agora:
+
+1. Instancia **uma** `modulesGuard := httpapi.NewAccountModulesGuard(pool)` e a
+   passa via `Dependencies.ModulesGuard` (parar de descartar).
+2. Aplica `modulesGuard.RequireModuleByPath(moduleGatingRules())` como middleware
+   no `Chain` (último/mais interno, para o Logging capturar o 403).
+3. Assina `account.modules.changed` no bus → `modulesGuard.Invalidate(accountID)`.
+4. Chama `authMiddleware.SetAccountChecker(...)` (habilita `RequireAuthWithAccount`).
+
+### `RequireModuleByPath` (gate-list por prefixo)
+
+Em vez de embrulhar cada handler dos ~9 módulos legados, um único middleware
+mapeia prefixo de path → módulo (espelha o `MODULE_PATH_GUARDS` do front em
+`web/app/middleware/module-enabled.global.ts`):
 
 ```go
-_ = httpapi.NewAccountModulesGuard(pool)
+queue:  /v1/operations, /v1/alerts, /v1/reports, /v1/analytics,
+        /v1/feedback, /v1/consultants, /v1/settings, /v1/stores
+crm:    /v1/erp, /v1/catalog
+tasks:  /v1/tasks, /v1/task-boards
 ```
 
-Nenhuma chamada a `guard.RequireModule(...)` em qualquer rota do binário.
-Consequência: a checagem multi-tenant existe só no papel — habilitar ou
-desabilitar módulo no banco não tem efeito até essa pendência fechar na
-[multitenant-completion](../../../../docs/MULTITENANT_COMPLETION_PLAN.md).
+Rotas não listadas (auth, me, **admin**, users, notifications, access, tenants,
+webhooks, realtime, bi, roadmap, uploads, healthz) **passam direto** (fail-open
+p/ não listadas; fail-closed só nas gateadas). As rotas `/v1/admin/*` (gestão
+platform_admin) **não** são gateadas — inclui os endpoints admin do módulo
+`site`, que não está na seed 0124.
 
-### Contrato esperado quando ele for ativado
-
-```go
-guard := httpapi.NewAccountModulesGuard(pool)
-
-mux.Handle("GET /v1/finance/invoices", guard.RequireModule("finance")(handler))
-mux.Handle("GET /v1/omni/conversations", guard.RequireModule("omni")(handler))
-// ... etc para cada módulo satélite
-```
-
-Regras inegociáveis (já implementadas em `account_guard.go`):
+Regras (em `account_guard.go`):
 
 1. Lê `X-Account-Id` do header. Ausente em rota gateada → `400 missing_account_id`.
-2. Consulta `core.account_modules WHERE account_id = $1 AND enabled = true`.
+2. Consulta `core.account_modules WHERE account_id = $1::uuid AND enabled = true`.
 3. Cache em memória (60s TTL) com `Invalidate(accountID)` e `InvalidateAll()`.
-4. Quando o módulo está habilitado, prossegue. Quando não, retorna
-   `403 module_disabled`.
-5. Se `core` ou schema novo ainda não existir, interpreta como "nenhum módulo
-   habilitado" (fail-closed, não fail-open).
+4. Módulo habilitado → prossegue; senão → `403 module_disabled`.
+5. Schema `core` inexistente → "nenhum módulo habilitado" (fail-closed).
 
-### Quando o guard fica realmente ligado
+**Bypass platform_admin (`SetBypass`):** o guard roda no Chain ANTES do `RequireAuth`
+por rota (principal ainda não está no contexto), então o app.go injeta um predicado
+via `modulesGuard.SetBypass(fn)` que autentica o token e libera quando o papel é
+`platform_admin`. Motivo: o admin gerencia TODAS as accounts e não está preso aos
+módulos de uma account ativa — sem isto, se a account ativa dele estiver sem o
+módulo, todas as rotas de uso dão 403 e o front entra em loop de redirect (painel
+em branco). Espelha a isenção equivalente no `module-enabled.global.ts` do front.
 
-Plano em [docs/MULTITENANT_COMPLETION_PLAN.md → C2 (mt-c2-guard-wire)](../../../../docs/MULTITENANT_COMPLETION_PLAN.md).
-Pré-requisitos: migration `0124_core_account_modules_seed.sql` rodar para
-popular pelo menos `queue` e `crm` para Pérola/Duby. Sem seed, ativar o
-guard quebra o produto.
+**Pré-requisito:** seed `0124_core_account_modules_seed.sql` aplicada (queue/tasks/crm
+para todas as accounts ativas) — e `queue.New()`/`crm.New()` registrados no Registry
+para que `core.modules` contenha as entradas. Sem isso, o gating fail-close quebra
+o produto.
 
 ## Invalidação reativa do cache
 
-Quando `account.modules.changed` é publicado no event bus (após
-`PUT /v1/admin/accounts/:id/modules`), o handler do evento **deve** chamar
-`guard.Invalidate(accountID)` para descartar o cache daquele account. Sem
-isso, a UI mostra o módulo habilitado mas o backend continua bloqueando até
-60s.
-
-Esse wiring de evento → invalidate ainda não existe. Entra como parte da
-C2/C3 da multitenant-completion.
+`PUT /v1/admin/accounts/:id/modules` → `AdminService` publica `account.modules.changed`
+→ o handler em `app.go` chama `modulesGuard.Invalidate(accountID)`, descartando o
+cache na hora (403 sem esperar o TTL de 60s). O `AdminService` também recebe o
+mesmo guard via `Dependencies.ModulesGuard` (Invalidate redundante, defensivo).
 
 ## Padrões de erro
 
@@ -82,8 +92,15 @@ C2/C3 da multitenant-completion.
 
 ## Rate limit
 
-Padrão atual: 60 req/min por identidade. Configurável via env. Aplicado
+Padrão atual: 60 req/min por identidade + **300 req/min por tenant** (P1·11).
+Configurável via env (`HTTPRateLimitRequests`/`HTTPRateLimitWindow`). Aplicado
 **antes** do logging para que 429 também apareça nos logs.
+
+`RateLimitOptions.AccountResolver` extrai `X-Account-Id` do header e aplica uma
+segunda cota de `AccountLimit` (padrão `Limit×5`) por account. Impede
+noisy-neighbor: um tenant com muitos usuários não degrada vizinhos. As duas cotas
+(user + account) compartilham a mesma `Window`; qualquer estouro retorna 429.
+Testes: `rate_limit_test.go` — `TestRateLimit_AccountQuota*`.
 
 ## Quando atualizar este AGENT.md
 

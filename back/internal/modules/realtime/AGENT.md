@@ -34,10 +34,19 @@ Ele nao deve cuidar de:
 
 ## Contrato atual
 
-- `GET /v1/realtime/operations?storeId=...&access_token=...`
-- `GET /v1/realtime/context?tenantId=...&access_token=...`
+- `POST /v1/ws/ticket` autenticado por `Authorization: Bearer ...`
+- `GET /v1/realtime/operations?storeId=...&ticket=...`
+- `GET /v1/realtime/context?tenantId=...&ticket=...`
+- `GET /v1/realtime/tasks?scope=...&accountId=...&ticket=...`
+- `GET /v1/realtime/presence?scope=...&accountId=...&ticket=...`
+- `GET /v1/realtime/notifications?userId=...&accountId=...&ticket=...`
 
-O token tambem pode vir por header `Authorization: Bearer ...`, util para clientes que nao precisam passar token na query string.
+O ticket WS e efemero, fica apenas em memoria do processo, expira em 30s e e consumido com `LoadAndDelete`
+antes do upgrade WebSocket. Ele e single-use: reconexao precisa pedir um ticket novo.
+
+Fallback temporario por 1 release: `access_token`, `token` e header `Authorization: Bearer ...` ainda sao
+aceitos nos handlers WS, mas uso de token em query string emite log de deprecacao. O frontend oficial nao deve
+usar fallback; se `POST /v1/ws/ticket` falhar, deve logar o erro e nao abrir WebSocket.
 
 Eventos atuais:
 
@@ -78,7 +87,9 @@ Shape atual do evento:
 
 ## Regras de seguranca
 
-- toda conexao precisa autenticar token valido
+- toda conexao precisa resolver um principal autenticado antes do upgrade
+- conexoes WebSocket oficiais usam `ticket` efemero em vez de JWT longo na query string
+- tickets WebSocket nao usam Redis, persistencia nem multiplos usos; a implementacao atual e mapa em memoria por processo
 - toda conexao precisa validar acesso do usuario a `store_id`
 - a conexao operacional exige permissao efetiva `workspace.operacao.view` quando o principal ja vem com matriz resolvida; sem matriz resolvida, cai no fallback por papel operacional
 - a conexao de contexto resolve o tenant pelo principal; `platform_admin` pode informar `tenantId`, e usuarios tenant-scoped nao podem assinar outro tenant

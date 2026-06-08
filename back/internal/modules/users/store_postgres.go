@@ -78,7 +78,7 @@ func (repository *PostgresRepository) ResolveStoreScopes(ctx context.Context, st
 			id::text,
 			tenant_id::text,
 			is_active
-		from stores
+		from queue.stores
 		where id in (` + strings.Join(placeholders, ", ") + `);
 	`
 
@@ -117,7 +117,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, user User, pas
 
 	var created User
 	err = tx.QueryRow(ctx, `
-		insert into users (
+		insert into core.users (
 			email,
 			display_name,
 			employee_code,
@@ -180,7 +180,7 @@ func (repository *PostgresRepository) Update(ctx context.Context, user User, pas
 	}()
 
 	query := `
-		update users
+		update core.users
 		set
 			email = $2,
 			display_name = $3,
@@ -259,205 +259,18 @@ func (repository *PostgresRepository) Update(ctx context.Context, user User, pas
 }
 
 func upsertAssignmentsTx(ctx context.Context, tx pgx.Tx, user User) error {
-	if _, err := tx.Exec(ctx, `delete from user_platform_roles where user_id = $1::uuid;`, user.ID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `delete from user_tenant_roles where user_id = $1::uuid;`, user.ID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `delete from user_store_roles where user_id = $1::uuid;`, user.ID); err != nil {
-		return err
-	}
-
-	switch user.Role {
-	case auth.RolePlatformAdmin:
-		_, err := tx.Exec(ctx, `
-			insert into user_platform_roles (user_id, role)
-			values ($1::uuid, 'platform_admin');
-		`, user.ID)
-		return err
-	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
-		_, err := tx.Exec(ctx, `
-			insert into user_tenant_roles (user_id, tenant_id, role)
-			values ($1::uuid, $2::uuid, $3);
-		`, user.ID, user.TenantID, string(user.Role))
-		return err
-	case auth.RoleManager, auth.RoleConsultant, auth.RoleStoreTerminal:
-		for _, storeID := range user.StoreIDs {
-			if _, err := tx.Exec(ctx, `
-				insert into user_store_roles (user_id, store_id, role)
-				values ($1::uuid, $2::uuid, $3);
-			`, user.ID, storeID, string(user.Role)); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	default:
-		return ErrValidation
-	}
-}
-
-func buildScopedQuery(principal auth.Principal, input ListInput, userID string) (string, []any) {
-	query := baseProjectedUsersQuery()
-	clauses := []string{"projected.effective_role <> ''"}
-	args := make([]any, 0)
-
-	if principal.Role == auth.RoleOwner {
-		args = append(args, principal.TenantID)
-		clauses = append(clauses, fmt.Sprintf("projected.tenant_id = $%d", len(args)))
-	}
-
-	if strings.TrimSpace(input.TenantID) != "" {
-		args = append(args, strings.TrimSpace(input.TenantID))
-		clauses = append(clauses, fmt.Sprintf("projected.tenant_id = $%d", len(args)))
-	}
-
-	if strings.TrimSpace(input.StoreID) != "" {
-		args = append(args, strings.TrimSpace(input.StoreID))
-		clauses = append(clauses, fmt.Sprintf("$%d = any(projected.store_ids)", len(args)))
-	}
-
-	if input.Role != "" {
-		args = append(args, string(input.Role))
-		clauses = append(clauses, fmt.Sprintf("projected.effective_role = $%d", len(args)))
-	}
-
-	if input.Active != nil {
-		args = append(args, *input.Active)
-		clauses = append(clauses, fmt.Sprintf("projected.is_active = $%d", len(args)))
-	}
-
-	if strings.TrimSpace(userID) != "" {
-		args = append(args, strings.TrimSpace(userID))
-		clauses = append(clauses, fmt.Sprintf("projected.id = $%d", len(args)))
-	}
-
-	query += `
-		where ` + strings.Join(clauses, " and ") + `
-		order by projected.created_at desc, projected.email asc
-	`
-
-	if strings.TrimSpace(userID) != "" {
-		query += `
-			limit 1
-		`
-	}
-
-	query += `;
-	`
-
-	return query, args
-}
-
-func baseProjectedUsersQuery() string {
-	return `
-		select
-			projected.id,
-			projected.display_name,
-			projected.nick,
-			projected.email,
-			projected.employee_code,
-			projected.job_title,
-			projected.effective_role,
-			projected.tenant_id,
-			projected.store_ids,
-			projected.is_active,
-			projected.has_password,
-			projected.must_change_password,
-			projected.managed_by,
-			projected.managed_resource_id,
-			projected.invitation_status,
-			projected.invitation_expires_at,
-			projected.created_at,
-			projected.updated_at
-		from (
-			select
-				u.id::text as id,
-				u.display_name,
-				coalesce(u.nick, '') as nick,
-				lower(u.email) as email,
-				coalesce(u.employee_code, '') as employee_code,
-				coalesce(u.job_title, '') as job_title,
-				u.is_active,
-				coalesce(nullif(trim(u.password_hash), ''), '') <> '' as has_password,
-				u.must_change_password,
-				u.created_at,
-				u.updated_at,
-				coalesce(platform_role.role, tenant_role.role, store_role.role, '') as effective_role,
-				coalesce(tenant_role.tenant_id, store_role.tenant_id, '') as tenant_id,
-				coalesce(store_role.store_ids, array[]::text[]) as store_ids,
-				case
-					when coalesce(consultant_link.consultant_id, '') <> '' and coalesce(consultant_link.is_active, false) then 'consultants'
-					else ''
-				end as managed_by,
-				coalesce(consultant_link.consultant_id, '') as managed_resource_id,
-				coalesce(invitation.status, '') as invitation_status,
-				invitation.expires_at as invitation_expires_at
-			from users u
-			left join lateral (
-				select upr.role
-				from user_platform_roles upr
-				where upr.user_id = u.id
-				limit 1
-			) as platform_role on true
-			left join lateral (
-				select
-					utr.role,
-					utr.tenant_id::text as tenant_id
-				from user_tenant_roles utr
-				where utr.user_id = u.id
-				order by case
-					when utr.role = 'owner' then 1
-					when utr.role = 'director' then 2
-					when utr.role = 'marketing' then 3
-					else 99
-				end,
-				utr.created_at asc
-				limit 1
-			) as tenant_role on true
-			left join lateral (
-				select
-					(array_agg(usr.role order by case
-						when usr.role = 'manager' then 1
-						when usr.role = 'consultant' then 2
-						when usr.role = 'store_terminal' then 3
-						else 99
-					end))[1] as role,
-					min(s.tenant_id::text) as tenant_id,
-					array_agg(distinct usr.store_id::text order by usr.store_id::text) as store_ids
-				from user_store_roles usr
-				join stores s on s.id = usr.store_id
-				where usr.user_id = u.id
-			) as store_role on true
-			left join lateral (
-				select
-					coalesce(c.id::text, '') as consultant_id,
-					c.is_active
-				from consultants c
-				where c.user_id = u.id
-				order by c.is_active desc, c.updated_at desc
-				limit 1
-			) as consultant_link on true
-			left join lateral (
-				select
-					case
-						when ui.status = 'pending' and ui.expires_at < now() then 'expired'
-						else ui.status
-					end as status,
-					ui.expires_at
-				from user_invitations ui
-				where ui.user_id = u.id
-				order by ui.created_at desc
-				limit 1
-			) as invitation on true
-		) as projected
-	`
+	// U4b: papel/escopo gravados SO em core via upsertCoreAssignmentsTx (cobre
+	// platform_admin via is_platform_admin; tenant e store-scoped via
+	// account_users + user_role_assignments + user_module_settings storeIds, e
+	// limpa assignments antigos). Writes legados em user_*_roles removidos —
+	// auth e /operacao/usuarios ja leem de core.
+	return upsertCoreAssignmentsTx(ctx, tx, user)
 }
 
 func scanUser(row pgx.Row) (User, error) {
 	var user User
-	var role string
+	var roleCode string
+	var roleTemplateID string
 	var storeIDs []string
 	var managedBy string
 	var managedResourceID string
@@ -470,7 +283,8 @@ func scanUser(row pgx.Row) (User, error) {
 		&user.Email,
 		&user.EmployeeCode,
 		&user.JobTitle,
-		&role,
+		&roleCode,
+		&roleTemplateID,
 		&user.TenantID,
 		&storeIDs,
 		&user.Active,
@@ -490,7 +304,7 @@ func scanUser(row pgx.Row) (User, error) {
 	user.Email = strings.ToLower(strings.TrimSpace(user.Email))
 	user.DisplayName = strings.TrimSpace(user.DisplayName)
 	user.Nick = strings.TrimSpace(user.Nick)
-	user.Role = auth.Role(strings.TrimSpace(role))
+	user.Role = auth.CoarseRoleFromCoreRole(roleCode, roleTemplateID)
 	user.TenantID = strings.TrimSpace(user.TenantID)
 	user.StoreIDs = cloneStringSlice(storeIDs)
 	user.ManagedBy = strings.TrimSpace(managedBy)

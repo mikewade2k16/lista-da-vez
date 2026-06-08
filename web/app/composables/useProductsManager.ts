@@ -1,399 +1,224 @@
 import type {
+  ProductCreateInput,
   ProductFieldKey,
   ProductItem,
-  ProductMutationResponse,
-  ProductsListResponse,
+  ProductStatus,
 } from '~/types/products'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
-interface UpdateFieldOptions {
-  immediate?: boolean
+const PATCH_DELAY_MS = 380
+
+const FIELD_TO_PATCH: Record<ProductFieldKey, string> = {
+  name: 'name',
+  code: 'code',
+  description: 'description',
+  image: 'image',
+  categories: 'categories',
+  campaigns: 'campaigns',
+  price: 'price',
+  fator: 'fator',
+  tipo: 'tipo',
+  stock: 'stock',
+  status: 'status',
 }
 
-interface CreateProductPayload {
-  name?: string
-  code?: string
-  image?: string
-}
-
-const UPDATE_DELAY_MS = 340
-const DEFAULT_FETCH_LIMIT = 80
-
-function normalizeText(value: unknown, max = 255) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max)
-}
-
-function normalizeCode(value: unknown) {
-  return normalizeText(value, 50)
-}
-
-function normalizeStatus(value: unknown): ProductItem['status'] {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  return normalized === 'active' ? 'active' : 'desactive'
-}
-
-function normalizeStock(value: unknown) {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  if (['1', 'true', 'on', 'yes', 'sim', 'active'].includes(normalized)) {
-    return 1
+function normalizeProduct(raw: Record<string, unknown>): ProductItem {
+  const status = String(raw.status ?? 'active')
+  const valid: ProductStatus = status === 'inactive' ? 'inactive' : 'active'
+  return {
+    id: String(raw.id ?? ''),
+    accountId: String(raw.accountId ?? ''),
+    sourceId: String(raw.sourceId ?? ''),
+    sourceLabel: String(raw.sourceLabel ?? ''),
+    name: String(raw.name ?? ''),
+    code: String(raw.code ?? ''),
+    description: String(raw.description ?? ''),
+    image: String(raw.image ?? ''),
+    categories: Array.isArray(raw.categories) ? (raw.categories as string[]) : [],
+    campaigns: Array.isArray(raw.campaigns) ? (raw.campaigns as string[]) : [],
+    price: Number(raw.price ?? 0) || 0,
+    fator: Number(raw.fator ?? 1) || 1,
+    tipo: String(raw.tipo ?? ''),
+    stock: Number(raw.stock ?? 0) || 0,
+    status: valid,
+    createdAt: String(raw.createdAt ?? ''),
+    updatedAt: String(raw.updatedAt ?? ''),
   }
-  if (['0', 'false', 'off', 'no', 'nao', 'desactive', 'inactive'].includes(normalized)) {
-    return 0
-  }
-
-  const parsed = Number.parseInt(String(value ?? ''), 10)
-  if (!Number.isFinite(parsed)) {
-    return 0
-  }
-
-  return parsed > 0 ? 1 : 0
-}
-
-function normalizeNumber(value: unknown, decimals = 2) {
-  const parsed = Number(String(value ?? '').replace(',', '.'))
-  if (!Number.isFinite(parsed)) {
-    return 0
-  }
-
-  const safe = Math.max(0, parsed)
-  return Number(safe.toFixed(decimals))
-}
-
-function splitListText(value: unknown) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => normalizeText(item, 120))
-      .filter(Boolean)
-      .slice(0, 30)
-  }
-
-  return String(value ?? '')
-    .split(/[\n,;|]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 30)
-}
-
-function joinListText(values: string[]) {
-  return values.join(', ')
-}
-
-function uniqueSorted(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }
 
 export function useProductsManager() {
-  const sessionSimulation = useSessionSimulationStore()
-  const { bffFetch } = useBffFetch()
-  const realtime = useTenantRealtime()
-  realtime.start()
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+
+  function accountHeaders() {
+    return auth.activeTenantId ? { 'X-Account-Id': auth.activeTenantId } : {}
+  }
 
   const products = ref<ProductItem[]>([])
-  const campaignOptions = ref<string[]>([])
-  const categoryOptions = ref<string[]>([])
-
+  const filters = reactive({
+    q: '',
+    status: '' as '' | ProductStatus,
+    category: '',
+  })
   const loading = ref(false)
   const creating = ref(false)
-  const deletingId = ref<number | null>(null)
+  const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
   const savingMap = ref<Record<string, boolean>>({})
+  const canResetFilters = computed(() => Boolean(filters.q || filters.status || filters.category))
 
-  const pendingFieldTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function keyFor(id: number, field: ProductFieldKey | 'create' | 'delete') {
-    return `${id}:${field}`
-  }
+  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   function setSaving(key: string, value: boolean) {
     const next = { ...savingMap.value }
-    if (value) {
-      next[key] = true
-    } else {
-      delete next[key]
-    }
-
+    if (value) next[key] = true
+    else delete next[key]
     savingMap.value = next
   }
 
-  function syncFilterOptionsFromRows() {
-    campaignOptions.value = uniqueSorted(products.value.flatMap((item) => item.campaigns || []))
-    categoryOptions.value = uniqueSorted(products.value.flatMap((item) => item.categories || []))
+  function rowIsSaving(id: string) {
+    return Object.keys(savingMap.value).some((k) => k.startsWith(`${id}:`))
   }
 
-  function replaceProductRow(payload: ProductItem) {
-    const index = products.value.findIndex((product) => product.id === payload.id)
-    if (index < 0) {
-      products.value.unshift(payload)
-      syncFilterOptionsFromRows()
-      return
-    }
-
-    products.value[index] = payload
-    syncFilterOptionsFromRows()
+  function applyPatch(id: string, raw: Record<string, unknown>) {
+    const idx = products.value.findIndex((p) => p.id === id)
+    if (idx >= 0) products.value[idx] = normalizeProduct(raw)
   }
 
-  function patchProductLocally(id: number, patch: Partial<ProductItem>) {
-    const target = products.value.find((product) => product.id === id)
-    if (!target) {
-      return
-    }
-
-    Object.assign(target, patch)
-    syncFilterOptionsFromRows()
+  function patchLocal(id: string, field: ProductFieldKey, value: unknown) {
+    const idx = products.value.findIndex((p) => p.id === id)
+    if (idx < 0) return
+    ;(products.value[idx] as Record<string, unknown>)[field] = value
   }
 
   async function fetchProducts() {
     loading.value = true
     errorMessage.value = ''
-
     try {
-      const response = await bffFetch<ProductsListResponse>('/api/admin/products', {
-        query: {
-          page: 1,
-          limit: DEFAULT_FETCH_LIMIT,
-          withDeleted: '1',
-        },
-      })
-
-      products.value = Array.isArray(response.data) ? response.data : []
-      campaignOptions.value = Array.isArray(response.filters?.campaigns)
-        ? response.filters.campaigns
-        : []
-      categoryOptions.value = Array.isArray(response.filters?.categories)
-        ? response.filters.categories
-        : []
-      if (campaignOptions.value.length === 0 || categoryOptions.value.length === 0) {
-        syncFilterOptionsFromRows()
-      }
-    } catch {
-      errorMessage.value = 'Falha ao carregar produtos.'
+      const query = new URLSearchParams()
+      if (filters.q) query.set('q', filters.q)
+      if (filters.status) query.set('status', filters.status)
+      if (filters.category) query.set('category', filters.category)
+      const path = `/v1/admin/products${query.toString() ? `?${query.toString()}` : ''}`
+      const resp = await apiRequest(path, { headers: accountHeaders() })
+      products.value = (resp.products as Record<string, unknown>[]).map(normalizeProduct)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao carregar produtos.')
     } finally {
       loading.value = false
     }
   }
 
-  async function persistField(id: number, field: ProductFieldKey, value: unknown) {
-    const savingKey = keyFor(id, field)
-    setSaving(savingKey, true)
-    errorMessage.value = ''
-
+  async function persistPatch(id: string, fieldKey: string, patch: Record<string, unknown>) {
+    const key = `${id}:${fieldKey}`
+    setSaving(key, true)
     try {
-      const response = await bffFetch<ProductMutationResponse>(`/api/admin/products/${id}`, {
+      const resp = await apiRequest(`/v1/admin/products/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        body: {
-          field,
-          value,
-        },
+        body: patch,
+        headers: accountHeaders(),
       })
-
-      replaceProductRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao salvar alteracao do produto.'
-      await fetchProducts()
+      applyPatch(id, resp as Record<string, unknown>)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao salvar.')
     } finally {
-      setSaving(savingKey, false)
+      setSaving(key, false)
     }
-  }
-
-  function queueFieldPersist(
-    id: number,
-    field: ProductFieldKey,
-    value: unknown,
-    options: UpdateFieldOptions = {},
-  ) {
-    const timerKey = keyFor(id, field)
-    const existingTimer = pendingFieldTimers.get(timerKey)
-    if (existingTimer) {
-      clearTimeout(existingTimer)
-      pendingFieldTimers.delete(timerKey)
-    }
-
-    const run = () => {
-      pendingFieldTimers.delete(timerKey)
-      void persistField(id, field, value)
-    }
-
-    if (options.immediate) {
-      run()
-      return
-    }
-
-    const timer = setTimeout(run, UPDATE_DELAY_MS)
-    pendingFieldTimers.set(timerKey, timer)
   }
 
   function updateField(
-    id: number,
+    id: string,
     field: ProductFieldKey,
     value: unknown,
-    options: UpdateFieldOptions = {},
+    opts?: { immediate?: boolean },
   ) {
-    if (field === 'name') {
-      patchProductLocally(id, { name: normalizeText(value, 100) })
+    patchLocal(id, field, value)
+    const backendField = FIELD_TO_PATCH[field]
+    if (!backendField) return
+
+    const patch = { [backendField]: value }
+    const timerKey = `${id}:${field}`
+
+    if (pendingTimers.has(timerKey)) clearTimeout(pendingTimers.get(timerKey)!)
+
+    if (opts?.immediate) {
+      void persistPatch(id, field, patch)
+      return
     }
 
-    if (field === 'code') {
-      patchProductLocally(id, { code: normalizeCode(value) })
-    }
-
-    if (field === 'image') {
-      patchProductLocally(id, { image: normalizeText(value, 255) })
-    }
-
-    if (field === 'description') {
-      patchProductLocally(id, { description: normalizeText(value, 4000) })
-    }
-
-    if (field === 'categories' || field === 'categoriesText') {
-      const nextList = splitListText(value)
-      patchProductLocally(id, {
-        categories: nextList,
-        categoriesText: joinListText(nextList),
-      })
-    }
-
-    if (field === 'campaigns' || field === 'campaignsText') {
-      const nextList = splitListText(value)
-      patchProductLocally(id, {
-        campaigns: nextList,
-        campaignsText: joinListText(nextList),
-      })
-    }
-
-    if (field === 'price') {
-      patchProductLocally(id, { price: normalizeNumber(value, 2) })
-    }
-
-    if (field === 'fator') {
-      patchProductLocally(id, { fator: normalizeNumber(value, 2) })
-    }
-
-    if (field === 'tipo') {
-      patchProductLocally(id, { tipo: normalizeText(value, 50) })
-    }
-
-    if (field === 'stock') {
-      patchProductLocally(id, { stock: normalizeStock(value) })
-    }
-
-    if (field === 'status') {
-      patchProductLocally(id, { status: normalizeStatus(value) })
-    }
-
-    queueFieldPersist(id, field, value, options)
+    pendingTimers.set(
+      timerKey,
+      setTimeout(() => {
+        pendingTimers.delete(timerKey)
+        void persistPatch(id, field, patch)
+      }, PATCH_DELAY_MS),
+    )
   }
 
-  async function createProduct(payload?: CreateProductPayload) {
+  async function createProduct(input: ProductCreateInput): Promise<string | null> {
     creating.value = true
-    setSaving(keyFor(0, 'create'), true)
     errorMessage.value = ''
-
     try {
-      const response = await bffFetch<ProductMutationResponse>('/api/admin/products', {
+      const resp = await apiRequest('/v1/admin/products', {
         method: 'POST',
-        body: {
-          name: normalizeText(payload?.name ?? 'Novo Produto', 100),
-          code: normalizeCode(payload?.code ?? ''),
-          image: normalizeText(payload?.image ?? '', 255),
-        },
+        body: input,
+        headers: accountHeaders(),
       })
-
-      products.value.unshift(response.data)
-      syncFilterOptionsFromRows()
-      return response.data.id
-    } catch {
-      errorMessage.value = 'Falha ao criar produto.'
+      const created = normalizeProduct(resp as Record<string, unknown>)
+      products.value.unshift(created)
+      return created.id
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao criar produto.')
       return null
     } finally {
       creating.value = false
-      setSaving(keyFor(0, 'create'), false)
     }
   }
 
-  async function deleteProduct(id: number) {
+  async function deleteProduct(id: string) {
     deletingId.value = id
-    setSaving(keyFor(id, 'delete'), true)
+    setSaving(`${id}:delete`, true)
     errorMessage.value = ''
-
     try {
-      const response = await bffFetch<ProductMutationResponse>(`/api/admin/products/${id}`, {
+      await apiRequest(`/v1/admin/products/${encodeURIComponent(id)}`, {
         method: 'DELETE',
+        headers: accountHeaders(),
       })
-
-      replaceProductRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao excluir produto.'
+      products.value = products.value.filter((p) => p.id !== id)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao excluir produto.')
     } finally {
       deletingId.value = null
-      setSaving(keyFor(id, 'delete'), false)
+      setSaving(`${id}:delete`, false)
     }
   }
 
-  async function uploadImage(id: number, file: File) {
-    const savingKey = keyFor(id, 'image')
-    setSaving(savingKey, true)
-    errorMessage.value = ''
-
-    try {
-      const form = new FormData()
-      form.append('file', file)
-
-      const response = await bffFetch<ProductMutationResponse>(`/api/admin/products/${id}/image`, {
-        method: 'POST',
-        body: form,
-      })
-
-      replaceProductRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao enviar imagem do produto.'
-      await fetchProducts()
-    } finally {
-      setSaving(savingKey, false)
-    }
+  function resetFilters() {
+    filters.q = ''
+    filters.status = ''
+    filters.category = ''
   }
 
   onBeforeUnmount(() => {
-    for (const timer of pendingFieldTimers.values()) {
-      clearTimeout(timer)
-    }
-
-    pendingFieldTimers.clear()
-  })
-
-  watch(
-    () => sessionSimulation.requestContextHash,
-    () => {
-      void fetchProducts()
-    },
-  )
-
-  const stopRealtimeSubscription = realtime.subscribeEntity('products', () => {
-    void fetchProducts()
-  })
-
-  onScopeDispose(() => {
-    stopRealtimeSubscription()
+    for (const timer of pendingTimers.values()) clearTimeout(timer)
+    pendingTimers.clear()
   })
 
   return {
     products,
-    campaignOptions,
-    categoryOptions,
+    filters,
     loading,
     creating,
     deletingId,
     errorMessage,
     savingMap,
+    canResetFilters,
+    rowIsSaving,
     fetchProducts,
     updateField,
-    uploadImage,
     createProduct,
     deleteProduct,
+    resetFilters,
   }
 }

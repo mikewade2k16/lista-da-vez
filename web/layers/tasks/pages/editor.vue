@@ -6,7 +6,7 @@ import { useTasksWorkspace } from '../composables/useTasksWorkspace'
 
 definePageMeta({
   layout: 'dashboard',
-  workspaceId: 'tools',
+  workspaceId: '',
   pageLabel: 'Editor',
 })
 

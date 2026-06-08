@@ -36,6 +36,7 @@ import {
 } from 'lucide-vue-next'
 import type { NavItem } from '~/stores/nav'
 import { useNavStore } from '~/stores/nav'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { QUEUE_ONLY_WORKSPACE_IDS } from '~/utils/workspaces'
 
 export const NAV_ICON_MAP: Record<string, unknown> = {
@@ -99,8 +100,10 @@ export function useDashboardNav(
 ) {
   const navStore = useNavStore()
   const route = useRoute()
+  const accountStore = useCoreAccountStore()
 
   const allowedWorkspaceSet = computed(() => new Set(allowedWorkspaces.value || []))
+  const enabledModulesSet = computed(() => new Set(accountStore.enabledModules))
   const currentPath = computed(() => normalizePath(route.path))
 
   function normalizePath(path: string) {
@@ -109,6 +112,15 @@ export function useDashboardNav(
 
   function isItemAllowed(item: NavItem): boolean {
     if (item.hidden) return false
+    // C11: filtro por modulo habilitado. Se item declara moduleId e o modulo
+    // nao esta em useCoreAccountStore().enabledModules, item some do menu.
+    // Quando enabledModulesSet esta vazio (sem account ativa ainda), nao filtra
+    // por modulo — deixa permissoes (role/workspace) decidirem. Evita "menu
+    // vazio" durante o hidrate inicial. Modulo `core` nunca e filtrado.
+    const moduleId = String(item.moduleId || '').trim()
+    if (moduleId && moduleId !== 'core' && enabledModulesSet.value.size > 0) {
+      if (!enabledModulesSet.value.has(moduleId)) return false
+    }
     const workspaceId = String(item.workspaceId || '').trim()
     if (!workspaceId) return true
     if (!allowedWorkspaceSet.value.has(workspaceId)) return false

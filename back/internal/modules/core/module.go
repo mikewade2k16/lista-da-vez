@@ -149,7 +149,8 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 	}
 }
 
-// Build conecta o Service e o RBACService do core ao Handle do Registry.
+// Build conecta o Service, RBACService, AdminService, AdminUserService e
+// AdminOrganizationService do core ao Handle do Registry.
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	repo := NewPostgresRepository(deps.Pool)
 	rbacRepo := NewPostgresRBACRepository(deps.Pool)
@@ -158,10 +159,22 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	svc := NewService(repo)
 	svc.WithRBAC(rbacSvc)
 
+	adminRepo := NewPostgresAdminRepository(deps.Pool)
+	adminSvc := NewAdminService(adminRepo, deps.Bus, deps.ModulesGuard)
+
+	adminUserRepo := NewPostgresAdminUserRepository(adminRepo)
+	adminUserSvc := NewAdminUserService(adminUserRepo, deps.PasswordHasher)
+
+	adminOrgRepo := NewPostgresAdminOrganizationRepository(adminRepo)
+	adminOrgSvc := NewAdminOrganizationService(adminOrgRepo)
+
 	m.handle = &handle{
-		service:        svc,
-		rbacService:    rbacSvc,
-		authMiddleware: deps.AuthMiddleware,
+		service:                  svc,
+		rbacService:              rbacSvc,
+		adminService:             adminSvc,
+		adminUserService:         adminUserSvc,
+		adminOrganizationService: adminOrgSvc,
+		authMiddleware:           deps.AuthMiddleware,
 	}
 	return m.handle, nil
 }
@@ -171,17 +184,24 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 // ============================================================================
 
 type handle struct {
-	service        *Service
-	rbacService    *RBACService
-	authMiddleware *auth.Middleware
+	service                  *Service
+	rbacService              *RBACService
+	adminService             *AdminService
+	adminUserService         *AdminUserService
+	adminOrganizationService *AdminOrganizationService
+	authMiddleware           *auth.Middleware
 }
 
 func (h *handle) ID() string { return "core" }
 
-// RegisterRoutes monta /v2/me/accounts, /v2/me/context e os endpoints RBAC.
+// RegisterRoutes monta /v2/me/accounts, /v2/me/context, endpoints RBAC,
+// admin de accounts, admin de users e admin de organizations.
 func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterRoutes(mux, h.service, h.authMiddleware)
 	RegisterRBACRoutes(mux, h.rbacService, h.authMiddleware)
+	RegisterAdminRoutes(mux, h.adminService, h.authMiddleware)
+	RegisterAdminUsersRoutes(mux, h.adminUserService, h.authMiddleware)
+	RegisterAdminOrganizationsRoutes(mux, h.adminOrganizationService, h.authMiddleware)
 }
 
 // RegisterEventHandlers — core nao consome eventos por enquanto (publica

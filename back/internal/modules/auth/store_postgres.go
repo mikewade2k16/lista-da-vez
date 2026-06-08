@@ -13,7 +13,8 @@ import (
 )
 
 type PostgresUserStore struct {
-	pool *pgxpool.Pool
+	pool        *pgxpool.Pool
+	rolesSource authRolesSource
 }
 
 type userRecord struct {
@@ -59,7 +60,10 @@ type passwordResetRecord struct {
 }
 
 func NewPostgresUserStore(pool *pgxpool.Pool) *PostgresUserStore {
-	return &PostgresUserStore{pool: pool}
+	return &PostgresUserStore{
+		pool:        pool,
+		rolesSource: authRolesSourceFromEnv(),
+	}
 }
 
 func (store *PostgresUserStore) FindByEmail(ctx context.Context, email string) (User, error) {
@@ -88,103 +92,10 @@ func (store *PostgresUserStore) FindByID(ctx context.Context, id string) (User, 
 	return store.buildUser(ctx, record)
 }
 
-// LoadUserForAuth resolve em UMA unica query: dados base do user + role (platform/tenant/store)
-// + tenantID + storeIDs. Usado no hot-path do middleware de auth para evitar as 2 idas ao
-// banco (findRecord + findStoreIDs) feitas pelo FindByID. Outros callers (FindByEmail, Update*)
-// continuam usando o caminho original.
+// LoadUserForAuth carrega o usuario e resolve role/tenant/store pelo resolvedor configurado
+// (core, legado ou core com fallback). Usado no hot-path do middleware de auth.
 func (store *PostgresUserStore) LoadUserForAuth(ctx context.Context, userID string) (User, error) {
-	query := `
-		select
-			u.id::text,
-			lower(u.email) as email,
-			u.display_name,
-			coalesce(u.nick, '') as nick,
-			u.password_hash,
-			u.must_change_password,
-			coalesce(u.avatar_path, '') as avatar_path,
-			u.is_active,
-			u.created_at,
-			coalesce(platform_role.role, '') as platform_role,
-			coalesce(tenant_role.role, '') as tenant_role,
-			coalesce(tenant_role.tenant_id, '') as tenant_id,
-			coalesce(store_role.role, '') as store_role,
-			coalesce(store_role.tenant_id, '') as store_tenant_id,
-			coalesce(stores_for_role.store_ids, '{}'::text[]) as store_ids,
-			coalesce(stores_for_tenant.store_ids, '{}'::text[]) as tenant_store_ids
-		from users u
-		left join lateral (
-			select upr.role
-			from user_platform_roles upr
-			where upr.user_id = u.id
-			limit 1
-		) as platform_role on true
-		left join lateral (
-			select
-				utr.role,
-				utr.tenant_id::text as tenant_id
-			from user_tenant_roles utr
-			where utr.user_id = u.id
-			order by case
-				when utr.role = 'owner' then 1
-				when utr.role = 'director' then 2
-				when utr.role = 'marketing' then 3
-				else 99
-			end,
-			utr.created_at asc
-			limit 1
-		) as tenant_role on true
-		left join lateral (
-			select
-				(array_agg(usr.role order by case
-					when usr.role = 'manager' then 1
-					when usr.role = 'consultant' then 2
-					when usr.role = 'store_terminal' then 3
-					else 99
-				end))[1] as role,
-				min(s.tenant_id::text) as tenant_id
-			from user_store_roles usr
-			join stores s on s.id = usr.store_id
-			where usr.user_id = u.id
-		) as store_role on true
-		left join lateral (
-			select array_agg(usr.store_id::text order by s.created_at asc, s.code asc) as store_ids
-			from user_store_roles usr
-			join stores s on s.id = usr.store_id
-			where usr.user_id = u.id
-				and s.is_active = true
-		) as stores_for_role on true
-		left join lateral (
-			select array_agg(s.id::text order by s.created_at asc, s.code asc) as store_ids
-			from stores s
-			where s.tenant_id = (tenant_role.tenant_id)::uuid
-				and s.is_active = true
-		) as stores_for_tenant on tenant_role.tenant_id <> ''
-		where u.id = $1::uuid
-		limit 1;
-	`
-
-	var record userRecord
-	var passwordHash pgtype.Text
-	var storesForRole []string
-	var storesForTenant []string
-	err := store.pool.QueryRow(ctx, query, strings.TrimSpace(userID)).Scan(
-		&record.ID,
-		&record.Email,
-		&record.DisplayName,
-		&record.Nick,
-		&passwordHash,
-		&record.MustChangePassword,
-		&record.AvatarPath,
-		&record.Active,
-		&record.CreatedAt,
-		&record.PlatformRole,
-		&record.TenantRole,
-		&record.TenantID,
-		&record.StoreRole,
-		&record.StoreTenantID,
-		&storesForRole,
-		&storesForTenant,
-	)
+	record, err := store.findRecord(ctx, "u.id = $1::uuid", strings.TrimSpace(userID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return User{}, ErrUnauthorized
@@ -193,48 +104,7 @@ func (store *PostgresUserStore) LoadUserForAuth(ctx context.Context, userID stri
 		return User{}, err
 	}
 
-	if passwordHash.Valid {
-		record.PasswordHash = strings.TrimSpace(passwordHash.String)
-	}
-
-	role, tenantID := resolveRole(record)
-	if role == "" {
-		return User{}, ErrInvalidRoleScope
-	}
-
-	// Tenant-scoped roles (owner/director/marketing) precisam de todas as stores ativas do tenant;
-	// store-scoped roles (manager/consultant/store_terminal) precisam apenas das stores atribuidas.
-	var storeIDs []string
-	switch role {
-	case RoleOwner, RoleDirector, RoleMarketing:
-		storeIDs = storesForTenant
-	case RoleManager, RoleConsultant, RoleStoreTerminal:
-		storeIDs = storesForRole
-	}
-	if storeIDs == nil {
-		storeIDs = []string{}
-	}
-
-	user := User{
-		ID:                 record.ID,
-		DisplayName:        record.DisplayName,
-		Nick:               strings.TrimSpace(record.Nick),
-		Email:              strings.ToLower(strings.TrimSpace(record.Email)),
-		PasswordHash:       strings.TrimSpace(record.PasswordHash),
-		MustChangePassword: record.MustChangePassword,
-		AvatarPath:         strings.TrimSpace(record.AvatarPath),
-		Role:               role,
-		TenantID:           tenantID,
-		StoreIDs:           storeIDs,
-		Active:             record.Active,
-		CreatedAt:          record.CreatedAt,
-	}
-
-	if err := ValidateUserScope(user); err != nil {
-		return User{}, err
-	}
-
-	return user, nil
+	return store.buildUser(ctx, record)
 }
 
 func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string, arg string) (userRecord, error) {
@@ -249,62 +119,8 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 			coalesce(u.avatar_path, '') as avatar_path,
 			u.is_active,
 			u.created_at,
-			coalesce((
-				select upr.role
-				from user_platform_roles upr
-				where upr.user_id = u.id
-				limit 1
-			), '') as platform_role,
-			coalesce((
-				select utr.role
-				from user_tenant_roles utr
-				where utr.user_id = u.id
-				order by case
-					when utr.role = 'owner' then 1
-					when utr.role = 'director' then 2
-					when utr.role = 'marketing' then 3
-					else 99
-				end
-				limit 1
-			), '') as tenant_role,
-			coalesce((
-				select utr.tenant_id::text
-				from user_tenant_roles utr
-				where utr.user_id = u.id
-				order by case
-					when utr.role = 'owner' then 1
-					when utr.role = 'director' then 2
-					when utr.role = 'marketing' then 3
-					else 99
-				end
-				limit 1
-			), '') as tenant_id,
-			coalesce((
-				select usr.role
-				from user_store_roles usr
-				where usr.user_id = u.id
-				order by case
-					when usr.role = 'manager' then 1
-					when usr.role = 'consultant' then 2
-					when usr.role = 'store_terminal' then 3
-					else 99
-				end
-				limit 1
-			), '') as store_role,
-			coalesce((
-				select s.tenant_id::text
-				from user_store_roles usr
-				join stores s on s.id = usr.store_id
-				where usr.user_id = u.id
-				order by case
-					when usr.role = 'manager' then 1
-					when usr.role = 'consultant' then 2
-					when usr.role = 'store_terminal' then 3
-					else 99
-				end
-				limit 1
-			), '') as store_tenant_id
-		from users u
+			` + store.legacyRoleProjection() + `
+		from core.users u
 		where ` + predicate + `
 		limit 1;
 	`
@@ -338,15 +154,79 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 	return record, nil
 }
 
-func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord) (User, error) {
-	role, tenantID := resolveRole(record)
-	if role == "" {
-		return User{}, ErrInvalidRoleScope
+// legacyRoleProjection retorna a projecao de papel/escopo legado do findRecord.
+// Em AUTH_ROLES_SOURCE=core as tabelas user_*_roles foram dropadas (U4c) e NAO
+// podem ser referenciadas: os campos legados ficam vazios (o resolvedor core nao
+// os usa). Em legacy/core_with_fallback mantem as subqueries originais.
+func (store *PostgresUserStore) legacyRoleProjection() string {
+	if store.rolesSource == authRolesSourceCore {
+		return `'' as platform_role, '' as tenant_role, '' as tenant_id, '' as store_role, '' as store_tenant_id`
 	}
 
-	storeIDs, err := store.findStoreIDs(ctx, record.ID, role, tenantID)
+	return `coalesce((
+			select upr.role
+			from user_platform_roles upr
+			where upr.user_id = u.id
+			limit 1
+		), '') as platform_role,
+		coalesce((
+			select utr.role
+			from user_tenant_roles utr
+			where utr.user_id = u.id
+			order by case
+				when utr.role = 'owner' then 1
+				when utr.role = 'director' then 2
+				when utr.role = 'marketing' then 3
+				else 99
+			end
+			limit 1
+		), '') as tenant_role,
+		coalesce((
+			select utr.tenant_id::text
+			from user_tenant_roles utr
+			where utr.user_id = u.id
+			order by case
+				when utr.role = 'owner' then 1
+				when utr.role = 'director' then 2
+				when utr.role = 'marketing' then 3
+				else 99
+			end
+			limit 1
+		), '') as tenant_id,
+		coalesce((
+			select usr.role
+			from user_store_roles usr
+			where usr.user_id = u.id
+			order by case
+				when usr.role = 'manager' then 1
+				when usr.role = 'consultant' then 2
+				when usr.role = 'store_terminal' then 3
+				else 99
+			end
+			limit 1
+		), '') as store_role,
+		coalesce((
+			select s.tenant_id::text
+			from user_store_roles usr
+			join queue.stores s on s.id = usr.store_id
+			where usr.user_id = u.id
+			order by case
+				when usr.role = 'manager' then 1
+				when usr.role = 'consultant' then 2
+				when usr.role = 'store_terminal' then 3
+				else 99
+			end
+			limit 1
+		), '') as store_tenant_id`
+}
+
+func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord) (User, error) {
+	scope, err := store.resolveAuthRoleScope(ctx, record)
 	if err != nil {
 		return User{}, err
+	}
+	if scope.Role == "" {
+		return User{}, ErrInvalidRoleScope
 	}
 
 	user := User{
@@ -357,9 +237,9 @@ func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord
 		PasswordHash:       strings.TrimSpace(record.PasswordHash),
 		MustChangePassword: record.MustChangePassword,
 		AvatarPath:         strings.TrimSpace(record.AvatarPath),
-		Role:               role,
-		TenantID:           tenantID,
-		StoreIDs:           storeIDs,
+		Role:               scope.Role,
+		TenantID:           scope.TenantID,
+		StoreIDs:           append([]string{}, scope.StoreIDs...),
 		Active:             record.Active,
 		CreatedAt:          record.CreatedAt,
 	}
@@ -376,7 +256,7 @@ func (store *PostgresUserStore) findStoreIDs(ctx context.Context, userID string,
 	case RoleOwner, RoleDirector, RoleMarketing:
 		rows, err := store.pool.Query(ctx, `
 			select s.id::text
-			from stores s
+			from queue.stores s
 			where s.tenant_id = $1::uuid
 				and s.is_active = true
 			order by s.created_at asc, s.code asc;
@@ -405,7 +285,7 @@ func (store *PostgresUserStore) findStoreIDs(ctx context.Context, userID string,
 		rows, err := store.pool.Query(ctx, `
 			select usr.store_id::text
 			from user_store_roles usr
-			join stores s on s.id = usr.store_id
+			join queue.stores s on s.id = usr.store_id
 			where usr.user_id = $1::uuid
 				and s.is_active = true
 			group by usr.store_id
@@ -506,7 +386,7 @@ func (store *PostgresUserStore) ReplacePendingInvitation(ctx context.Context, us
 
 func (store *PostgresUserStore) UpdateProfile(ctx context.Context, userID string, displayName string, email string) (User, error) {
 	if _, err := store.pool.Exec(ctx, `
-		update users
+		update core.users
 		set
 			display_name = $2,
 			email = $3,
@@ -525,7 +405,7 @@ func (store *PostgresUserStore) UpdateProfile(ctx context.Context, userID string
 
 func (store *PostgresUserStore) UpdatePassword(ctx context.Context, userID string, passwordHash string, mustChangePassword bool) (User, error) {
 	if _, err := store.pool.Exec(ctx, `
-		update users
+		update core.users
 		set
 			password_hash = $2,
 			must_change_password = $3,
@@ -540,7 +420,7 @@ func (store *PostgresUserStore) UpdatePassword(ctx context.Context, userID strin
 
 func (store *PostgresUserStore) UpdateAvatarPath(ctx context.Context, userID string, avatarPath string) (User, error) {
 	if _, err := store.pool.Exec(ctx, `
-		update users
+		update core.users
 		set
 			avatar_path = $2,
 			updated_at = now()
@@ -631,7 +511,7 @@ func (store *PostgresUserStore) AcceptInvitation(ctx context.Context, invitation
 	}
 
 	if _, err := tx.Exec(ctx, `
-		update users
+		update core.users
 		set
 			password_hash = $2,
 			must_change_password = false,
@@ -782,7 +662,7 @@ func (store *PostgresUserStore) ConsumePasswordReset(ctx context.Context, passwo
 	}
 
 	if _, err := tx.Exec(ctx, `
-		update users
+		update core.users
 		set
 			password_hash = $2,
 			must_change_password = false,

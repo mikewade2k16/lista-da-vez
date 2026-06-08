@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
+import OmniMinimalPopover from '~/components/omni/overlay/OmniMinimalPopover.vue'
 import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
-import type { ProductFieldKey, ProductItem } from '~/types/products'
+import WebhookSourcesDrawer from '~/components/site/WebhookSourcesDrawer.vue'
+import type { ProductCreateInput, ProductFieldKey, ProductItem } from '~/types/products'
 import type {
   OmniFilterDefinition,
   OmniFocusCell,
   OmniTableCellUpdate,
   OmniTableColumn,
-  OmniTableImageUpload,
 } from '~/types/omni/collection'
 
 const {
   products,
-  campaignOptions,
-  categoryOptions,
   loading,
   creating,
   deletingId,
@@ -21,403 +20,254 @@ const {
   savingMap,
   fetchProducts,
   updateField,
-  uploadImage,
   createProduct,
   deleteProduct,
 } = useProductsManager()
-const sessionSimulation = useSessionSimulationStore()
-const isAdminViewer = computed(() => sessionSimulation.userType === 'admin')
+
+const auth = useAuthStore()
+const canCreate = computed(
+  () =>
+    auth.role === 'platform_admin' ||
+    auth.role === 'owner' ||
+    auth.role === 'director' ||
+    auth.role === 'manager',
+)
+const canDelete = computed(() => canCreate.value)
 
 const selectedIds = ref<Array<string | number>>([])
 const focusCell = ref<OmniFocusCell | null>(null)
-const descriptionModalOpen = ref(false)
-const descriptionDraft = ref('')
-const descriptionRowId = ref<number | null>(null)
-const descriptionProductName = ref('')
 
 const filtersState = ref<Record<string, unknown>>({
   query: '',
-  campaignFilter: '',
+  statusFilter: '',
   categoryFilter: '',
-  clientIdFilter: '',
-  withDeletedFilter: false,
 })
-
-const campaignSelectOptions = computed(() =>
-  campaignOptions.value.map((item) => ({ label: item, value: item })),
-)
-const categorySelectOptions = computed(() =>
-  categoryOptions.value.map((item) => ({ label: item, value: item })),
-)
-const clientSelectOptions = computed(() => {
-  const options = new Map<number, { label: string; value: number }>()
-  products.value.forEach((item) => {
-    const id = Number(item.clientId)
-    if (!Number.isFinite(id) || id <= 0 || options.has(id)) {
-      return
-    }
-
-    const label = String(item.clientName || '').trim() || `Cliente #${id}`
-    options.set(id, { label, value: id })
-  })
-
-  return [...options.values()].sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
-})
-
-function normalizeSearch(value: unknown) {
-  return String(value ?? '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
-
-function formatListValue(value: unknown) {
-  if (!Array.isArray(value) || value.length === 0) {
-    return '-'
-  }
-
-  return value
-    .map((item) => String(item ?? ''))
-    .filter(Boolean)
-    .join(', ')
-}
-
-function descriptionPreview(value: unknown) {
-  const text = String(value ?? '').trim()
-  if (!text) {
-    return 'Adicionar descricao'
-  }
-  if (text.length <= 74) {
-    return text
-  }
-
-  return `${text.slice(0, 74)}...`
-}
 
 const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
   {
     key: 'query',
     label: 'Buscar',
     type: 'text',
-    placeholder: 'Pesquisar por nome ou codigo',
-    mode: 'columns',
-    columns: ['name', 'code', 'categoriesText', 'campaignsText', 'description', 'tipo'],
+    placeholder: 'Nome, codigo, descricao...',
+    mode: 'all',
   },
   {
-    key: 'campaignFilter',
-    label: 'Campanhas',
+    key: 'statusFilter',
+    label: 'Status',
     type: 'select',
-    placeholder: 'Campanhas',
-    options: campaignSelectOptions.value,
-    customPredicate: (row, filterValue) => {
-      const target = normalizeSearch(filterValue)
-      const campaigns = Array.isArray(row.campaigns) ? row.campaigns : []
-      return campaigns.some((item) => normalizeSearch(item) === target)
-    },
-  },
-  {
-    key: 'categoryFilter',
-    label: 'Categorias',
-    type: 'select',
-    placeholder: 'Categorias',
-    options: categorySelectOptions.value,
-    customPredicate: (row, filterValue) => {
-      const target = normalizeSearch(filterValue)
-      const categories = Array.isArray(row.categories) ? row.categories : []
-      return categories.some((item) => normalizeSearch(item) === target)
-    },
-  },
-  {
-    key: 'clientIdFilter',
-    label: 'Cliente',
-    adminOnly: true,
-    type: 'select',
-    placeholder: 'Cliente',
-    options: clientSelectOptions.value,
-    accessor: (row) => row.clientId,
-  },
-  {
-    key: 'withDeletedFilter',
-    label: 'Mostrar deletados',
-    type: 'switch',
-    switchOnValue: true,
-    switchOffValue: false,
+    placeholder: 'Status',
+    options: [
+      { label: 'Ativo', value: 'active' },
+      { label: 'Inativo', value: 'inactive' },
+    ],
+    accessor: (row) => row.status,
   },
 ])
-
-const filterDefinitionsForApply = computed(() =>
-  filterDefinitions.value.filter((filter) => filter.key !== 'withDeletedFilter'),
-)
 
 const allTableColumns = computed<OmniTableColumn[]>(() => [
   {
-    key: 'clientName',
-    label: 'Cliente',
-    adminOnly: true,
+    key: 'name',
+    label: 'Nome',
     type: 'text',
-    editable: false,
-    minWidth: 170,
-  },
-  { key: 'name', label: 'Nome', type: 'text', editable: true, minWidth: 220, focusOnCreate: true },
-  { key: 'code', label: 'Codigo', type: 'text', editable: true, minWidth: 170 },
-  {
-    key: 'categories',
-    label: 'Categorias',
-    type: 'multiselect',
     editable: true,
-    minWidth: 180,
-    maxWidth: 200,
-    creatable: true,
-    placeholder: 'Selecione ou crie categorias',
-    options: categorySelectOptions.value,
-    formatter: (value) => formatListValue(value),
+    minWidth: 220,
+    focusOnCreate: true,
+    locked: true,
+    defaultOrder: 10,
   },
-  {
-    key: 'campaigns',
-    label: 'Campanhas',
-    type: 'multiselect',
-    editable: true,
-    minWidth: 180,
-    maxWidth: 250,
-    creatable: true,
-    placeholder: 'Selecione ou crie campanhas',
-    options: campaignSelectOptions.value,
-    formatter: (value) => formatListValue(value),
-  },
-  { key: 'image', label: 'Imagem', type: 'image', editable: true, minWidth: 270, align: 'center' },
-  {
-    key: 'stock',
-    label: 'Disponivel',
-    type: 'switch',
-    editable: true,
-    immediate: true,
-    switchOnValue: 1,
-    switchOffValue: 0,
-    minWidth: 90,
-    align: 'center',
-  },
+  { key: 'code', label: 'Codigo', type: 'text', editable: true, minWidth: 140, defaultOrder: 20 },
   {
     key: 'status',
-    label: 'Mostrar no Site',
-    type: 'switch',
+    label: 'Status',
+    type: 'select',
     editable: true,
     immediate: true,
-    switchOnValue: 'active',
-    switchOffValue: 'desactive',
-    minWidth: 90,
+    minWidth: 120,
+    defaultOrder: 30,
+    options: [
+      { label: 'Ativo', value: 'active' },
+      { label: 'Inativo', value: 'inactive' },
+    ],
+  },
+  { key: 'price', label: 'Preco', type: 'money', editable: true, minWidth: 140, defaultOrder: 40 },
+  { key: 'fator', label: 'Fator', type: 'number', editable: true, minWidth: 100, defaultOrder: 50 },
+  {
+    key: 'stock',
+    label: 'Estoque',
+    type: 'number',
+    editable: true,
+    minWidth: 110,
+    defaultOrder: 60,
+  },
+  { key: 'tipo', label: 'Tipo', type: 'text', editable: true, minWidth: 130, defaultOrder: 70 },
+  {
+    key: 'sourceLabel',
+    label: 'Fonte',
+    type: 'text',
+    editable: false,
+    minWidth: 140,
+    defaultOrder: 80,
+  },
+  {
+    key: 'actions',
+    label: 'Opcoes',
+    type: 'custom',
+    minWidth: 150,
     align: 'center',
+    defaultOrder: 1000,
   },
-  { key: 'price', label: 'Preco', type: 'money', editable: true, minWidth: 140 },
-  { key: 'fator', label: 'Fator', type: 'number', editable: true, minWidth: 120 },
-  { key: 'tipo', label: 'Tipo', type: 'text', editable: true, minWidth: 130 },
-  { key: 'description', label: 'Descricao', type: 'custom', editable: false, minWidth: 240 },
-  {
-    key: 'createdAt',
-    label: 'Criado em',
-    type: 'text',
-    editable: false,
-    minWidth: 170,
-    formatter: (value) => formatDate(String(value ?? '')),
-  },
-  {
-    key: 'updatedAt',
-    label: 'Atualizado em',
-    type: 'text',
-    editable: false,
-    minWidth: 170,
-    formatter: (value) => formatDate(String(value ?? '')),
-  },
-  {
-    key: 'deletedAt',
-    label: 'Deletado em',
-    type: 'text',
-    editable: false,
-    minWidth: 170,
-    formatter: (value) => formatDate(String(value ?? '')),
-  },
-  { key: 'actions', label: 'Opcoes', type: 'custom', minWidth: 120, align: 'center' },
 ])
 
 const columnExcludeKeys = ['actions']
-const alwaysVisibleColumnKeys = new Set(['actions'])
-const defaultVisibleColumnKeys = [
-  'clientName',
-  'name',
-  'code',
-  'categories',
-  'campaigns',
-  'image',
-  'stock',
-  'status',
-]
-const { visibleColumnKeys, tableColumns } = useOmniVisibleColumns({
-  preferenceKey: 'admin.site.products',
-  allColumns: allTableColumns,
-  columnExcludeKeys,
-  alwaysVisibleColumnKeys,
-  defaultVisibleColumnKeys,
-})
+const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
+  useOmniVisibleColumns({
+    preferenceKey: 'admin.site.products',
+    allColumns: allTableColumns,
+    columnExcludeKeys,
+  })
 
 const filteredRows = computed(() => {
-  const showDeleted = Boolean(filtersState.value.withDeletedFilter)
-  const sourceRows = showDeleted
-    ? products.value
-    : products.value.filter((product) => !product.isDeleted)
+  const rows = products.value as unknown as Array<Record<string, unknown>>
+  return applyOmniFilters(rows, filtersState.value, filterDefinitions.value)
+})
 
-  return applyOmniFilters(
-    sourceRows as unknown as Array<Record<string, unknown>>,
-    filtersState.value,
-    filterDefinitionsForApply.value,
-  )
+const tableRows = computed(() => {
+  const seen = new Set<string>()
+  return filteredRows.value.filter((row) => {
+    const id = String((row as Record<string, unknown>).id ?? '').trim()
+    if (!id || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
 })
 
 const updatableFields = new Set<ProductFieldKey>([
   'name',
   'code',
-  'categories',
-  'categoriesText',
-  'campaigns',
-  'campaignsText',
+  'description',
   'image',
   'price',
   'fator',
   'tipo',
   'stock',
   'status',
-  'description',
 ])
 
 function toProduct(row: Record<string, unknown>) {
   return row as unknown as ProductItem
 }
 
-function rowIdValue(row: Record<string, unknown>) {
-  const parsed = Number(row.id)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function formatDate(value: string) {
-  const raw = String(value ?? '').trim()
-  if (!raw) {
-    return '-'
-  }
-
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) {
-    return raw
-  }
-
-  return date.toLocaleString('pt-BR')
+function rowId(row: Record<string, unknown>) {
+  return String(row.id ?? '').trim()
 }
 
 function onCellUpdate(payload: OmniTableCellUpdate) {
+  const id = String(payload.rowId).trim()
+  if (!id) return
   const field = String(payload.key) as ProductFieldKey
-  if (!updatableFields.has(field)) {
-    return
-  }
-
-  const id = Number(payload.rowId)
-  if (!Number.isFinite(id) || id <= 0) {
-    return
-  }
-
+  if (!updatableFields.has(field)) return
   updateField(id, field, payload.value, { immediate: payload.immediate })
 }
 
-async function onImageUpload(payload: OmniTableImageUpload) {
-  if (String(payload.key) !== 'image') {
-    return
-  }
+const createDialogOpen = ref(false)
+const createForm = reactive<ProductCreateInput>({
+  name: '',
+  code: '',
+  description: '',
+  image: '',
+  categories: [],
+  campaigns: [],
+  price: 0,
+  fator: 1,
+  tipo: '',
+  stock: 0,
+})
 
-  const id = Number(payload.rowId)
-  if (!Number.isFinite(id) || id <= 0) {
-    return
-  }
-
-  await uploadImage(id, payload.file)
+function openCreate() {
+  createForm.name = ''
+  createForm.code = ''
+  createForm.description = ''
+  createForm.image = ''
+  createForm.categories = []
+  createForm.campaigns = []
+  createForm.price = 0
+  createForm.fator = 1
+  createForm.tipo = ''
+  createForm.stock = 0
+  createDialogOpen.value = true
 }
 
-function openDescriptionModal(row: Record<string, unknown>) {
-  const product = toProduct(row)
-  descriptionRowId.value = product.id
-  descriptionProductName.value = product.name
-  descriptionDraft.value = product.description || ''
-  descriptionModalOpen.value = true
-}
-
-function onSaveDescription() {
-  const id = Number(descriptionRowId.value ?? 0)
-  if (!Number.isFinite(id) || id <= 0) {
-    return
-  }
-
-  updateField(id, 'description', descriptionDraft.value, { immediate: true })
-  descriptionModalOpen.value = false
-}
-
-async function onCreateProduct() {
-  const createdId = await createProduct({ name: 'Novo Produto' })
-  if (!createdId) {
-    return
-  }
-
+async function submitCreate() {
+  if (!canCreate.value) return
+  const createdId = await createProduct({ ...createForm })
+  if (!createdId) return
+  createDialogOpen.value = false
   focusCell.value = { rowId: createdId, columnKey: 'name', token: Date.now() }
 }
 
 function onResetFilters() {
-  filtersState.value = {
-    query: '',
-    campaignFilter: '',
-    categoryFilter: '',
-    clientIdFilter: '',
-    withDeletedFilter: false,
-  }
+  filtersState.value = { query: '', statusFilter: '', categoryFilter: '' }
 }
 
-async function onDeleteProduct(id: number) {
-  if (import.meta.client) {
-    const confirmed = window.confirm('Excluir este produto? O item sera marcado como deletado.')
-    if (!confirmed) {
-      return
-    }
-  }
-
+async function onDeleteProduct(id: string) {
+  if (!canDelete.value) return
+  if (import.meta.client && !window.confirm('Excluir este produto?')) return
   await deleteProduct(id)
 }
 
+const openInfoFor = ref<string | null>(null)
+function infoOpen(id: string) {
+  return openInfoFor.value === id
+}
+function setInfoOpen(id: string, v: boolean) {
+  openInfoFor.value = v ? id : null
+}
+
+const sourcesDrawerOpen = ref(false)
+
 onMounted(() => {
-  sessionSimulation.initialize()
   void fetchProducts()
 })
 </script>
 
 <template>
-  <section class="space-y-4">
+  <section class="site-products-workspace flex h-full min-h-0 flex-col gap-4 overflow-hidden">
     <AdminPageHeader
       eyebrow="Site"
       title="Produtos"
-      description="Gestao de produtos em modo teste usando os componentes genericos de filtros e tabela."
+      description="Catalogo de produtos do site (manual ou ingerido por webhook). Ligado a API real /v1/admin/products."
     />
 
     <OmniCollectionFilters
       v-model="filtersState"
       v-model:visible-columns="visibleColumnKeys"
+      v-model:locked-columns="lockedColumnKeys"
+      v-model:column-order="columnOrder"
+      :viewer-user-type="canCreate ? 'admin' : 'client'"
       :filters="filterDefinitions"
       :table-columns="allTableColumns"
-      :viewer-user-type="isAdminViewer ? 'admin' : 'client'"
       :column-exclude-keys="columnExcludeKeys"
       :loading="loading"
       @reset="onResetFilters"
+      @reset-columns="resetToDefaults"
     >
       <template #actions>
         <UBadge color="neutral" variant="soft">Selecionados: {{ selectedIds.length }}</UBadge>
         <UButton
+          v-if="canCreate"
+          icon="i-lucide-webhook"
+          label="Fontes"
+          color="neutral"
+          variant="soft"
+          @click="sourcesDrawerOpen = true"
+        />
+        <UButton
           icon="i-lucide-plus"
           label="Novo produto"
-          color="success"
+          color="primary"
           :loading="creating"
-          :disabled="creating"
-          @click="onCreateProduct"
+          :disabled="creating || !canCreate"
+          @click="openCreate"
         />
       </template>
     </OmniCollectionFilters>
@@ -431,153 +281,186 @@ onMounted(() => {
       :description="errorMessage"
     />
 
-    <OmniDataTable
-      v-model="selectedIds"
-      :rows="filteredRows"
-      :columns="tableColumns"
-      :viewer-user-type="isAdminViewer ? 'admin' : 'client'"
-      row-key="id"
-      :loading="loading"
-      :focus-cell="focusCell"
-      empty-text="Nenhum produto encontrado com os filtros atuais."
-      @update:cell="onCellUpdate"
-      @upload:image="onImageUpload"
-    >
-      <template #cell-description="{ row }">
-        <button
-          type="button"
-          class="max-w-full text-left text-xs text-[rgb(var(--text))] underline-offset-2 hover:underline"
-          :title="toProduct(row).description || 'Adicionar descricao'"
-          @click="openDescriptionModal(row)"
-        >
-          <span class="line-clamp-2 break-words">
-            {{ descriptionPreview(toProduct(row).description) }}
-          </span>
-        </button>
-      </template>
-
-      <template #cell-actions="{ row }">
-        <div class="flex items-center justify-end gap-1">
-          <UButton
-            icon="i-lucide-message-square"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            aria-label="Editar descricao"
-            @click="openDescriptionModal(row)"
-          />
-
-          <UPopover :content="{ align: 'end', side: 'bottom' }">
-            <UButton
-              icon="i-lucide-info"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              aria-label="Info"
-            />
-            <template #content>
-              <div class="w-[320px] space-y-1 p-3 text-xs">
-                <p>
-                  <strong>ID:</strong>
-                  {{ toProduct(row).id }}
-                </p>
-                <p>
-                  <strong>Cliente:</strong>
-                  {{ toProduct(row).clientName || `Cliente #${toProduct(row).clientId}` }}
-                </p>
+    <div class="site-products-workspace__scroll flex-1 min-h-0 overflow-y-auto">
+      <OmniDataTable
+        v-model="selectedIds"
+        :rows="tableRows"
+        :columns="tableColumns"
+        row-key="id"
+        :loading="loading"
+        :focus-cell="focusCell"
+        empty-text="Nenhum produto encontrado."
+        @update:cell="onCellUpdate"
+      >
+        <template #cell-actions="{ row }">
+          <div class="flex items-center justify-end gap-1">
+            <OmniMinimalPopover
+              :open="infoOpen(rowId(row))"
+              title="Detalhes do produto"
+              width-class="w-[320px] max-w-[90vw]"
+              @update:open="setInfoOpen(rowId(row), $event)"
+            >
+              <template #trigger>
+                <UButton
+                  icon="i-lucide-info"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  title="Detalhes"
+                  aria-label="Info"
+                />
+              </template>
+              <div class="space-y-1 text-xs">
                 <p>
                   <strong>Nome:</strong>
                   {{ toProduct(row).name }}
                 </p>
                 <p>
                   <strong>Codigo:</strong>
-                  {{ toProduct(row).code }}
+                  {{ toProduct(row).code || '-' }}
                 </p>
                 <p>
                   <strong>Status:</strong>
                   {{ toProduct(row).status }}
                 </p>
                 <p>
-                  <strong>Stock:</strong>
-                  {{ toProduct(row).stock ? 'Disponivel' : 'Indisponivel' }}
+                  <strong>Preco:</strong>
+                  R$ {{ toProduct(row).price.toFixed(2) }}
+                </p>
+                <p>
+                  <strong>Fator:</strong>
+                  {{ toProduct(row).fator }}
+                </p>
+                <p>
+                  <strong>Estoque:</strong>
+                  {{ toProduct(row).stock }}
+                </p>
+                <p>
+                  <strong>Tipo:</strong>
+                  {{ toProduct(row).tipo || '-' }}
                 </p>
                 <p>
                   <strong>Categorias:</strong>
-                  {{ toProduct(row).categoriesText || '-' }}
+                  {{ toProduct(row).categories.join(', ') || '-' }}
                 </p>
                 <p>
                   <strong>Campanhas:</strong>
-                  {{ toProduct(row).campaignsText || '-' }}
+                  {{ toProduct(row).campaigns.join(', ') || '-' }}
                 </p>
                 <p>
+                  <strong>Fonte:</strong>
+                  {{ toProduct(row).sourceLabel || '-' }}
+                </p>
+                <p v-if="toProduct(row).description">
                   <strong>Descricao:</strong>
-                  {{ toProduct(row).description || '-' }}
-                </p>
-                <p>
-                  <strong>Criado:</strong>
-                  {{ formatDate(toProduct(row).createdAt) }}
-                </p>
-                <p>
-                  <strong>Atualizado:</strong>
-                  {{ formatDate(toProduct(row).updatedAt) }}
-                </p>
-                <p>
-                  <strong>Deletado:</strong>
-                  {{ formatDate(toProduct(row).deletedAt) }}
+                  {{ toProduct(row).description }}
                 </p>
               </div>
-            </template>
-          </UPopover>
+            </OmniMinimalPopover>
 
-          <UButton
-            icon="i-lucide-trash-2"
-            color="error"
-            variant="ghost"
-            size="sm"
-            aria-label="Excluir"
-            :disabled="toProduct(row).isDeleted"
-            :loading="
-              deletingId === rowIdValue(row) ||
-              Boolean(savingMap[`${rowIdValue(row)}:delete`]) ||
-              Boolean(savingMap[`${rowIdValue(row)}:image`])
-            "
-            @click="onDeleteProduct(rowIdValue(row))"
-          />
-        </div>
-      </template>
-    </OmniDataTable>
+            <UButton
+              v-if="canDelete"
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              title="Excluir produto"
+              aria-label="Excluir"
+              :loading="deletingId === rowId(row)"
+              @click="onDeleteProduct(rowId(row))"
+            />
+          </div>
+        </template>
+      </OmniDataTable>
+    </div>
 
-    <UModal
-      v-model:open="descriptionModalOpen"
-      title="Descricao do produto"
-      :description="descriptionProductName || 'Editar descricao'"
-      :ui="{ content: 'max-w-xl' }"
-    >
-      <template #body>
-        <UTextarea
-          v-model="descriptionDraft"
-          :rows="7"
-          class="w-full"
-          placeholder="Digite a descricao..."
-        />
-      </template>
-
-      <template #footer>
-        <div class="flex w-full items-center justify-end gap-2">
-          <UButton
-            label="Cancelar"
-            color="neutral"
-            variant="ghost"
-            @click="descriptionModalOpen = false"
-          />
-          <UButton
-            label="Salvar descricao"
-            color="primary"
-            :loading="Boolean(descriptionRowId && savingMap[`${descriptionRowId}:description`])"
-            @click="onSaveDescription"
-          />
-        </div>
+    <UModal v-model:open="createDialogOpen">
+      <template #content>
+        <UCard>
+          <template #header>
+            <h3 class="text-base font-semibold">Novo produto</h3>
+          </template>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nome</label>
+              <UInput
+                :model-value="createForm.name"
+                @update:model-value="createForm.name = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Codigo</label>
+              <UInput
+                :model-value="createForm.code"
+                @update:model-value="createForm.code = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Descricao</label>
+              <UInput
+                :model-value="createForm.description"
+                @update:model-value="createForm.description = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Image URL</label>
+              <UInput
+                :model-value="createForm.image"
+                placeholder="https://..."
+                @update:model-value="createForm.image = String($event ?? '')"
+              />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-[rgb(var(--muted))] mb-1">Preco</label>
+                <UInput
+                  type="number"
+                  :model-value="createForm.price"
+                  @update:model-value="createForm.price = Number($event ?? 0)"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-[rgb(var(--muted))] mb-1">Fator</label>
+                <UInput
+                  type="number"
+                  :model-value="createForm.fator"
+                  @update:model-value="createForm.fator = Number($event ?? 1)"
+                />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-[rgb(var(--muted))] mb-1">Estoque</label>
+                <UInput
+                  type="number"
+                  :model-value="createForm.stock"
+                  @update:model-value="createForm.stock = Number($event ?? 0)"
+                />
+              </div>
+              <div>
+                <label class="block text-xs text-[rgb(var(--muted))] mb-1">Tipo</label>
+                <UInput
+                  :model-value="createForm.tipo"
+                  @update:model-value="createForm.tipo = String($event ?? '')"
+                />
+              </div>
+            </div>
+          </div>
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancelar"
+                color="neutral"
+                variant="ghost"
+                @click="createDialogOpen = false"
+              />
+              <UButton label="Criar" color="primary" :loading="creating" @click="submitCreate" />
+            </div>
+          </template>
+        </UCard>
       </template>
     </UModal>
+
+    <WebhookSourcesDrawer v-model:open="sourcesDrawerOpen" default-entity="products" />
   </section>
 </template>

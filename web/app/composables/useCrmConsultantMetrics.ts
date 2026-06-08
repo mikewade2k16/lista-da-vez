@@ -17,8 +17,6 @@ export type MergedCrmConsultant = CRMConsultantMetric & {
 type UseCrmConsultantMetricsOptions = {
   consultantRows: ComputedRef<CRMConsultantMetric[]>
   queueStats: ComputedRef<QueueStats | null>
-  selectedStore: Ref<string>
-  consultantSearch: Ref<string>
   ready: Ref<boolean>
   canManageConsultantLinks: ComputedRef<boolean>
 }
@@ -204,19 +202,8 @@ export function useCrmConsultantMetrics(options: UseCrmConsultantMetricsOptions)
   }
 
   const mergedConsultants = computed<MergedCrmConsultant[]>(() => {
-    const search = normalizeConsultantLookupKey(options.consultantSearch.value)
     return options.consultantRows.value
       .filter((row) => row.storeSlug !== managementStoreSlug)
-      .filter(
-        (row) => !options.selectedStore.value || row.storeSlug === options.selectedStore.value,
-      )
-      .filter(
-        (row) =>
-          !search ||
-          normalizeConsultantLookupKey(row.consultantName).includes(search) ||
-          normalizeConsultantLookupKey(row.profileConsultantName).includes(search) ||
-          normalizeConsultantLookupKey(row.erpEmployeeId || row.consultantId).includes(search),
-      )
       .map((row) => {
         const queue = findQueueForConsultant(row)
         return { ...row, queue, matched: !!queue, linkEmployee: findConsultantLinkEmployee(row) }

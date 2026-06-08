@@ -38,6 +38,7 @@ var dataSeedMigrationNames = map[string]struct{}{
 	"0018_seed_default_password_since1967.sql":  {},
 	"0033_seed_dev_platform_admin_password.sql": {},
 	"0036_seed_dev_erp_store_184.sql":           {},
+	"0130_seed_dev_site_tracking_source.sql":    {},
 }
 
 func LoadMigrations() ([]Migration, error) {

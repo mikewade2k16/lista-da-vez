@@ -1,32 +1,29 @@
-export type ProductStatus = 'active' | 'desactive'
+export type ProductStatus = 'active' | 'inactive'
 
 export type ProductFieldKey =
   | 'name'
   | 'code'
-  | 'categories'
-  | 'categoriesText'
-  | 'campaigns'
-  | 'campaignsText'
+  | 'description'
   | 'image'
+  | 'categories'
+  | 'campaigns'
   | 'price'
   | 'fator'
   | 'tipo'
   | 'stock'
   | 'status'
-  | 'description'
 
 export interface ProductItem {
-  id: number
-  clientId: number
-  clientName: string
+  id: string
+  accountId: string
+  sourceId: string
+  sourceLabel: string
   name: string
   code: string
-  image: string
   description: string
+  image: string
   categories: string[]
-  categoriesText: string
   campaigns: string[]
-  campaignsText: string
   price: number
   fator: number
   tipo: string
@@ -34,31 +31,24 @@ export interface ProductItem {
   status: ProductStatus
   createdAt: string
   updatedAt: string
-  deletedAt: string
-  isDeleted: boolean
 }
 
-export interface ProductsListMeta {
-  page: number
-  limit: number
-  total: number
-  totalPages: number
-  hasMore: boolean
-}
-
-export interface ProductsListFilters {
-  campaigns: string[]
+export interface ProductCreateInput {
+  name: string
+  code: string
+  description: string
+  image: string
   categories: string[]
+  campaigns: string[]
+  price: number
+  fator: number
+  tipo: string
+  stock: number
 }
 
 export interface ProductsListResponse {
-  status: 'success'
-  data: ProductItem[]
-  meta: ProductsListMeta
-  filters: ProductsListFilters
-}
-
-export interface ProductMutationResponse {
-  status: 'success'
-  data: ProductItem
+  products: ProductItem[]
+  total: number
+  page: number
+  perPage: number
 }

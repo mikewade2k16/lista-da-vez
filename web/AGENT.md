@@ -4,55 +4,19 @@
 
 Estas instrucoes valem para todo o frontend dentro de `web/`.
 
-## Aviso 2026-05-28 — web/server/ e session-simulation.ts sao temporarios
+## Estado atual — branch refactor/multi-tenant-complete (2026-06-01)
 
-Auditoria descobriu que o working tree contem:
+Migracao multi-tenant concluida em `refactor/multi-tenant-complete`:
 
-- `web/server/` (Nitro BFF) com `api/admin/clients/`, `api/admin/products/`,
-  `api/admin/leads/` consumidos por `manage/clientes-web.vue`,
-  `manage/leads-web.vue`, `manage/produtos-web.vue` e
-  `site/Site*AdminWorkspace.vue`. O BFF tem repositorios in-memory
-  (`web/server/utils/{clients,leads,products}-repository.ts`) com seed
-  hardcoded — **nao toca Postgres**. Os campos `billingMode`,
-  `monthlyPaymentAmount`, `webhookEnabled`, `webhookKey`, `contactPhone`,
-  `contactSite`, `contactAddress`, `requireUserStoreLink`,
-  `requireUserRegistration`, `moduleCodes` so existem nesse mock.
-- `web/app/stores/session-simulation.ts` com lista hardcoded de 6 clientes
-  (IDs 101-106) que nao existem em `public.tenants` (banco real tem Perola
-  e Duby com UUID). O store injeta headers `x-client-id` e `x-tenant-id`
-  falsos — viola a regra de `CONTRACT_FREEZE.md` (Principal.AccountID so
-  via middleware com `X-Account-Id`).
-- `web/app/composables/useBffFetch.ts` — wrapper do BFF Nitro mock.
+- `web/server/` (Nitro BFF mock) **apagado** — C7.
+- Store de simulacao de sessao (lista hardcoded de 6 clientes com IDs fictícios) **apagado** — C8. Tasks-layer migrou para `tasks-client.ts`.
+- `web/app/composables/useBffFetch.ts` **apagado** — C7.
+- Stores de tasks-layer migrados: `web/layers/tasks/stores/tasks-client.ts` substitui o antigo store de simulacao; campo `clientId` em tasks ainda e integer legado (requer tasks-refactor-v2 para usar UUID).
+- `/manage/clientes-web`, `/manage/leads-web`, `/manage/produtos-web`, `/manage/users`, `/manage/organizations` consomem API Go real (`/v1/admin/*`).
+- `/site/leads`, `/site/produtos` e `/site/tracking` sao as superficies canonicas do menu `Site`; os atalhos equivalentes em `/manage/*-web` ficam apenas como compatibilidade tecnica e nao como navegacao principal.
+- `web/server/` nao existe mais. Nao recriar BFF Nitro — decisao arquitetural documentada em `docs/adr/0002-remove-bff-nitro-mock.md`.
 
-**Decisao fechada (2026-05-28)**:
-
-- O BFF Nitro vai ser **apagado inteiro** (decisao: sem BFF, tudo direto na
-  API Go).
-- `session-simulation.ts` vai ser **apagado**.
-- Paginas mock viram substituidas por paginas reais que consomem a API Go
-  em `/v1/admin/accounts*`.
-
-Plano canonico:
-[docs/MULTITENANT_COMPLETION_PLAN.md](../docs/MULTITENANT_COMPLETION_PLAN.md)
-secoes C7, C8, C9, C10. Branch alvo: `refactor/multi-tenant-complete`
-(a criar depois do merge do snapshot atual da `refactor/multi-tenant-core`
-em `main`).
-
-Enquanto isso (snapshot atual em `main`):
-
-- `/clientes` da fila (que le `tenants.ts` store via API Go) continua sendo a
-  **unica fonte de verdade** real para cliente.
-- `/manage/clientes-web`, `/manage/leads-web`, `/manage/produtos-web` e
-  `/site/*` rodam contra o BFF mock — funcionam para demo mas **nao
-  refletem o banco**. Nao basear decisoes operacionais nessas telas.
-
-### Regras enquanto o mock ainda existe
-
-- **Nao adicionar feature nova** em `web/server/` — entra direto na multitenant-completion.
-- **Nao criar pagina nova** que dependa de `useBffFetch` ou
-  `session-simulation`.
-- Trabalho novo em CRUD admin de cliente/loja/usuario espera a branch
-  `refactor/multi-tenant-complete` abrir.
+Plano canonico: [docs/MULTITENANT_COMPLETION_PLAN.md](../docs/MULTITENANT_COMPLETION_PLAN.md)
 
 ## Stack atual
 
@@ -127,11 +91,13 @@ Toda implementacao nova em `web/` deve:
 - os cronometros exibidos em `/operacao` continuam sendo apenas representacao visual do estado atual; a decisao de disparar ou resolver alerta temporal pertence ao backend em `operations`.
 - mudancas em `settings` devem continuar propagando sem refresh via `context.updated` com `resource=settings` e `resourceId={tenantId}`.
 - `web/app/utils/runtime-remote.ts` hidrata consultores, settings e operations remotos para a loja ativa.
+- `web/app/plugins/account-id-bridge.client.ts` injeta `X-Account-Id` a partir de `useCoreAccountStore().activeAccountId`; ha fallback temporario para `auth.activeTenantId` apenas durante o boot antes da account ativa hidratar.
 - toda chamada a `hydrateRuntimeStoreContext`, `refreshRuntimeStoreSettings` ou `fetchRemoteStoreData` deve repassar o `tenantId` (ex.: `auth.activeTenantId`); sem ele a query `tenantId` some e usuarios `platform_admin` com mais de um tenant acessivel recebem 400 `validation_error` em `/v1/settings`.
 - `web/app/stores/dashboard.ts` e apenas uma facade temporaria de compatibilidade.
 - O runtime de compatibilidade foi fatiado em `web/app/stores/dashboard/runtime/shared.ts`, `state.ts`, `status.ts` e `actions/*`.
 - Se precisar tocar esse runtime, editar o menor modulo responsavel e nao voltar a concentrar regra em `create-dashboard-runtime.ts`.
 - Se precisar de novo dominio, criar um store proprio em `app/stores`.
+- Ao adicionar workspace novo no dashboard, sincronizar sempre `workspaces.ts`, `permissions.ts`, `sidebar-nav.ts` e `web/layers/*/nav.config.ts`; no caso do menu `Site`, ids irmaos nao podem compartilhar o mesmo `workspaceId` ou o item ativo fica incorreto.
 
 ### 2. SSR e Pinia
 

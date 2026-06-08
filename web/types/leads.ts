@@ -1,13 +1,12 @@
-export interface LeadClientOption {
-  id: number
-  name: string
-}
+export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'lost'
+
+export type LeadFieldKey = 'nome' | 'email' | 'telefone' | 'status' | 'notes'
 
 export interface LeadItem {
-  id: number
-  clientId: number
-  sourceLeadId: number | null
-  source: string
+  id: string
+  accountId: string
+  sourceId: string
+  sourceLabel: string
   nome: string
   email: string
   telefone: string
@@ -16,27 +15,28 @@ export interface LeadItem {
   consent: boolean
   consentLabel: string
   trackingData: string
-  payloadJson: string
-  formattedDate: string
+  payloadRaw: string
+  status: LeadStatus
+  notes: string
   createdAt: string
-  clientName: string
+  updatedAt: string
 }
 
-export interface LeadsListMeta {
-  page: number
-  limit: number
-  total: number
-  totalPages: number
-  hasMore: boolean
-}
-
-export interface LeadsListFilters {
-  clients: LeadClientOption[]
+export interface LeadCreateInput {
+  nome: string
+  email: string
+  telefone: string
+  page: string
+  cupom: string
+  consent: boolean
+  consentLabel: string
+  sourceLabel: string
+  notes: string
 }
 
 export interface LeadsListResponse {
-  status: 'success'
-  data: LeadItem[]
-  meta: LeadsListMeta
-  filters: LeadsListFilters
+  leads: LeadItem[]
+  total: number
+  page: number
+  perPage: number
 }

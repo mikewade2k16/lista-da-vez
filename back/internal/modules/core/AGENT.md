@@ -36,12 +36,16 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 ### Fase 3 — RBAC dinamico (codigo entregue, runtime parcial)
 
 > **Aviso 2026-05-28**: a auditoria descobriu que apesar de tudo abaixo estar
-> implementado em codigo, `core.user_tenant_roles` no banco local esta com
-> 0 linhas — o seed efetivo nao rodou. Sem isso, `Principal.Permissions`
-> em runtime cai no fallback legado (`access.Service.ResolveUserPermissions`).
-> A finalizacao real esta planejada em
-> [docs/MULTITENANT_COMPLETION_PLAN.md → C1 mig-seed-roles](../../../../docs/MULTITENANT_COMPLETION_PLAN.md)
-> e branch `refactor/multi-tenant-complete`.
+> implementado em codigo, `core.user_role_assignments` no banco local estava com
+> 0 linhas — o seed efetivo nao rodou (a 0103 rodou antes do primeiro boot
+> bem-sucedido do SyncCatalog, com catalogo vazio -> CROSS JOIN vazio -> no-op).
+> Sem isso, `Principal.Permissions` em runtime cai no fallback legado
+> (`access.Service.ResolveUserPermissions`).
+>
+> **Correcao (multitenant-completion C1, migration 0125)**: re-executa o backfill
+> agora que o catalogo esta vivo. Diferenca vs 0103: clona templates de TODOS
+> os modulos (nao so 'core'), entao cada account ja sai com a matriz completa
+> de roles disponivel para o painel C10. Idempotente — re-executar e seguro.
 
 - Migration `0102_rbac_locked_templates.sql` adiciona `is_locked` em `core.role_templates`.
 - `RoleTemplateDef.IsLocked` propagado de `platform/modules/module.go` ate `catalog_postgres.go`.
@@ -60,16 +64,56 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 ## Endpoints expostos (gated por `CORE_V2_ENABLED`)
 
-| Verbo | Path | Resposta | Status |
-|---|---|---|---|
-| GET | `/v2/me/accounts` | `MeAccountsResponse` (accounts lean) | implementado |
-| GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | roles/permissions reais via core.role_permissions QUANDO seedado; hoje retorna vazio porque core.user_tenant_roles=0 linhas (ver aviso da Fase 3) |
-| POST | `/v2/me/active-account` | — | nao implementado (frontend gerencia cookie ate Fase 5) |
+### /me — contexto do usuario autenticado
 
-`/v2/me/context` valida que o user e membership ativo da account (defesa
-em profundidade contra spoofing de `accountId` na query). Resposta
-`account_not_found` cobre tanto "nao existe" quanto "nao e membership"
-para nao vazar existencia.
+| Verbo | Path | Resposta | Notas |
+|---|---|---|---|
+| GET | `/v2/me/accounts` | `MeAccountsResponse` (lean) | lista accounts do usuario |
+| GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | contexto completo do account |
+
+> `/v1/me/context` continua servido pelo legado em `platform/app/context_http.go` com shape `{user, principal, context: {tenants, stores}}` esperado pelo frontend. Quando o frontend migrar para o shape v2 (com `account`/`roles`/`permissions`), o alias v1 pode voltar aqui. Os aliases v1 do core foram removidos em 2026-05-29 (post-C9) por causarem conflito de rota + mismatch de shape.
+
+### /v1/admin/accounts — CRUD admin de accounts (C3, todos exigem platform_admin)
+
+| Verbo | Path | Resposta | Notas |
+|---|---|---|---|
+| GET | `/v1/admin/accounts` | `AdminListAccountsResponse` | filtros: q, status, organizationId, page, perPage. Resposta inclui userCount/userNicks/projectCount/projectSegments/modules/stores agregados (C9, 2026-05-29) |
+| POST | `/v1/admin/accounts` | `AccountAdminView` | cria account + clona roles + membership do adminEmail + **seed dos modulos default (queue/tasks/crm, igual 0124)** — sem isto a conta nasce com `account_modules` vazio e o guard barra todas as rotas |
+| GET | `/v1/admin/accounts/{id}` | `AccountAdminView` | detalhe completo com billing/contact + agregados |
+| PATCH | `/v1/admin/accounts/{id}` | `AccountAdminView` | patch semantico (campos nil ignorados). Aceita `active` (toggle status) desde C9 |
+| DELETE | `/v1/admin/accounts/{id}` | 204 | soft delete (is_active=false) |
+| GET | `/v1/admin/accounts/{id}/modules` | `AdminModulesResponse` | lista todos os modulos com enabled/disabled |
+| PUT | `/v1/admin/accounts/{id}/modules` | `AdminModulesResponse` | habilita/desabilita; invalida cache do guard; publica account.modules.changed |
+| GET | `/v1/admin/accounts/{id}/stores` | `AdminStoresResponse` | lojas da account com billing_amount por loja |
+| PUT | `/v1/admin/accounts/{id}/stores` | `AdminStoresResponse` | atualiza billing_amount por loja (modo per_store) |
+| POST | `/v1/admin/accounts/{id}/webhook/rotate` | `AdminWebhookRotateResponse` | gera novo webhook_key (64 hex chars) |
+
+### /v1/admin/users — CRUD admin de users (C14, todos exigem platform_admin)
+
+| Verbo | Path | Resposta | Notas |
+|---|---|---|---|
+| GET | `/v1/admin/users` | `AdminUserListResponse` | filtros: q (email/nome/nick), status (active/inactive), platformAdmin (true/false), page, perPage. Resposta inclui `accountCount` e `accountNames` (nomes das accounts, não slugs — renomeado em 2026-05-29) via `core.account_users` JOIN `core.accounts`. |
+| POST | `/v1/admin/users` | `AdminUserView` | cria user. Senha opcional — se vazia, `must_change_password=true` (precisa convite). |
+| GET | `/v1/admin/users/{id}` | `AdminUserView` | detalhe completo com agregados. |
+| PATCH | `/v1/admin/users/{id}` | `AdminUserView` | patch semantico. Safeguard: nao permite rebaixar/desativar ultimo platform_admin ativo (`ErrLastPlatformAdmin`, HTTP 409). |
+| DELETE | `/v1/admin/users/{id}` | 204 | soft delete (`is_active=false`). Mesmo safeguard do PATCH. |
+| GET | `/v1/admin/users/{id}/memberships` | `AdminMembershipsResponse` | lista contas (`accountId`, `slug`, `name`, `isActive`, `joinedAt`) em que o user e membro. |
+
+### /v1/admin/organizations — CRUD admin de organizations (C15, todos exigem platform_admin)
+
+| Verbo | Path | Resposta | Notas |
+|---|---|---|---|
+| GET | `/v1/admin/organizations` | `AdminOrganizationListResponse` | filtros: q (nome/slug), status, page, perPage. Resposta inclui `accountCount` + `accountNames` (nomes das accounts, não slugs — renomeado em 2026-05-29) via `core.accounts WHERE organization_id`. |
+| POST | `/v1/admin/organizations` | `OrganizationAdminView` | cria org. Slug ≥2 chars, lowercase forçado. |
+| GET | `/v1/admin/organizations/{id}` | `OrganizationAdminView` | detalhe com agregados. |
+| PATCH | `/v1/admin/organizations/{id}` | `OrganizationAdminView` | patch semantico (`slug`, `name`, `isActive` opcionais). |
+| DELETE | `/v1/admin/organizations/{id}` | 204 | soft delete (`is_active=false`). Accounts vinculadas continuam funcionando — só perdem o agrupamento. |
+
+`PATCH /v1/admin/accounts/{id}` agora aceita `organizationId` no body: string vazia (`""`) → desvincula (NULL); UUID válido → vincula. C15.
+
+`/v2/me/context` valida que o user e membership ativo da account (defesa em profundidade
+contra spoofing de `accountId`). Resposta `account_not_found` cobre tanto "nao existe" quanto
+"nao e membership" para nao vazar existencia.
 
 ## Regras inegociaveis (vide `docs/CONTRACT_FREEZE.md`)
 
@@ -82,23 +126,49 @@ para nao vazar existencia.
 - Nao introduzir FK de `core.*` para schemas satelites (`queue.*`, `finance.*`).
   Se precisar de dado, abstrair via interface in-process.
 - `core.account_modules` e a fonte de verdade para "esse cliente contratou o
-  modulo X?". Hoje tabela esta vazia. Quando seedada (multitenant-completion
-  C1 mig-seed-modules) e o `AccountModulesGuard` for ativado
-  (multitenant-completion C2), nenhuma rota de modulo satelite pode ser
-  acessada sem entry correspondente.
+  modulo X?". Seed inicial via migration 0124 (multitenant-completion C1):
+  popula `queue`, `tasks` e `crm` como habilitados para toda account ativa.
+  Quando o `AccountModulesGuard` for ativado (multitenant-completion C2),
+  nenhuma rota de modulo satelite pode ser acessada sem entry correspondente
+  com `enabled=true`.
 
 ## Arquivos
 
-- `model.go` — structs (Account, Organization, User), DTOs (Summary, Context),
-  interface `Repository`.
-- `errors.go` — erros padronizados: identidade, account, RBAC.
+- `model.go` — structs (Account, Organization, User), DTOs (Summary, Context), interface `Repository`.
+- `errors.go` — erros padronizados: identidade, account, RBAC, admin.
 - `store_postgres.go` — `PostgresRepository` implementando `Repository`.
-- `service.go` — orquestra leituras, valida membership.
-- `http.go` — handlers, registro de rotas.
+- `service.go` — orquestra leituras de /me, valida membership.
+- `http.go` — handlers /v2/me/accounts e /v2/me/context. Aliases v1 removidos pós-C9 (conflito de rota com legacy + shape diferente).
 - `rbac_model.go` — structs `RoleTemplate` e `Role`, `RoleSummary`.
-- `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository` (seed, CRUD, atribuicao, resolucao, validacao).
+- `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository`.
 - `rbac_service.go` — `RBACService` completo.
 - `rbac_http.go` — 7 endpoints RBAC (list/create/get/patch/delete roles + assign/remove).
+- `admin_model.go` — DTOs admin (AccountAdminView com agregados, filtros, modules, stores, webhook) + interface `AdminRepository`.
+- `admin_repository.go` — `PostgresAdminRepository`: CRUD de accounts (List/Find/Create/Update/SoftDelete). Update aceita `Active *bool`. List e Find chamam `enrichAccounts` para popular agregados.
+- `admin_repository_aggregates.go` — loaders batch (`loadUserAggregates`, `loadProjectAggregates`, `loadModulesByAccount`, `loadStoresByAccount`) + `enrichAccounts` que mescla tudo. Chamados por List e Find. Evita N+1 — uma query por agregado independente do número de accounts.
+- `admin_repository_secondary.go` — métodos secundários: modules (`GetAccountModules`, `SetAccountModuleEnabled`), stores (`GetAccountStores`, `SetStoreBillingAmount`), webhook (`RotateWebhookKey`).
+- `admin_users_model.go` — DTOs admin de users (`AdminUserView`, `AdminUserListFilter`, `AdminCreateUserInput`, `AdminUpdateUserInput`, `AccountMembershipView`) + interface `AdminUserRepository`.
+- `admin_users_repository.go` — `PostgresAdminUserRepository`: List com `accountCount`/`accountSlugs` agregados via LATERAL join; Find; Create (com hash de senha); Update; SoftDelete; GetMemberships; CountActivePlatformAdmins (safeguard).
+- `admin_users_service.go` — `AdminUserService`: valida unicidade de email (via constraint), hash de senha (`auth.BcryptHasher`) e safeguard do ultimo platform_admin antes de update/delete.
+- `admin_users_http.go` — `RegisterAdminUsersRoutes`: 6 endpoints `/v1/admin/users*` (exigem platform_admin).
+- `nick.go` — `BuildNickname(displayName, maxLength)`: helper que espelha 1-para-1 `web/app/domain/utils/person-display.ts > buildNickname` (primeiro nome + inicial do segundo + ponto). Usado por `AdminUserService.CreateUser` para auto-gerar quando vazio. Mudança aqui exige mudança paralela no front (e vice-versa) — drift entre camadas gera nicks diferentes.
+- `admin_organizations_model.go` — DTOs admin de organizations (`OrganizationAdminView` com agregados accountCount/accountSlugs) + interface `AdminOrganizationRepository`.
+- `admin_organizations_repository.go` — `PostgresAdminOrganizationRepository` (embeda `PostgresAdminRepository`): List com agregados via LATERAL join em `core.accounts`; Find; Create (com slug lowercased + uniqueness); Update; SoftDelete.
+- `admin_organizations_service.go` — `AdminOrganizationService`: valida slug ≥2 chars + nome obrigatorio + lowercase.
+- `admin_organizations_http.go` — `RegisterAdminOrganizationsRoutes`: 5 endpoints `/v1/admin/organizations*` (exigem platform_admin).
+- `admin_service.go` — `AdminService`: regras de negocio, validacao, publicacao de eventos, invalidacao de cache.
+- `admin_http.go` — `RegisterAdminRoutes`: 10 endpoints /v1/admin/accounts (todos exigem platform_admin).
+
+### Origem dos agregados (C9)
+
+| Campo | Fonte | Query |
+|---|---|---|
+| `userCount` | `core.account_users` | `count(distinct user_id) where is_active=true` |
+| `userNicks` | `core.users` JOIN `core.account_users` | `string_agg(coalesce(nullif(nick,''), display_name), ', ')` |
+| `projectCount` | `tasks.boards` | `count(*) where archived=false` |
+| `projectSegments` | `tasks.boards` | `string_agg(name, ', ' order by name)` |
+| `modules[]` | `core.modules` LEFT JOIN `core.account_modules` | uma row por módulo, enabled coalesce false |
+| `stores[]` | `queue.stores` | todas as lojas onde `tenant_id = accountID` |
 
 ## Como testar manualmente
 

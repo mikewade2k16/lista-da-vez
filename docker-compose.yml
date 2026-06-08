@@ -42,6 +42,7 @@ services:
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
       AUTH_PASSWORD_RESET_TTL: ${AUTH_PASSWORD_RESET_TTL:-30m}
+      AUTH_ROLES_SOURCE: ${AUTH_ROLES_SOURCE:-core}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
@@ -129,9 +130,62 @@ services:
       - web_node_modules:/app/node_modules
       - web_nuxt:/app/.nuxt
 
+  # Automacao WhatsApp/IA (n8n + WAHA + Redis) — modulo automation/.
+  # Sobe so com `docker compose --profile automation up -d` (fica fora do dev normal).
+  # Mesma rede do projeto: WAHA fala com o n8n por http://n8n:5678; o n8n alcanca
+  # o postgres do Omni por postgres:5432 (integracao CRM/Etapa 2, ainda futura).
+  # Runbook completo em docs/automation/SETUP.md.
+  redis:
+    image: redis:8-alpine
+    profiles: ["automation"]
+    command: redis-server --requirepass ${AUTOMATION_REDIS_PASSWORD:-default}
+    environment:
+      REDIS_PASSWORD: ${AUTOMATION_REDIS_PASSWORD:-default}
+    ports:
+      - "${AUTOMATION_REDIS_PORT:-6380}:6379"
+    volumes:
+      - automation_redis:/data
+
+  waha:
+    image: devlikeapro/waha:2026.5.1
+    profiles: ["automation"]
+    environment:
+      WHATSAPP_HOOK_URL: http://n8n:5678/webhook/webhook
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WHATSAPP_HOOK_EVENTS: message
+      WAHA_NO_API_KEY: "true"
+      WAHA_DASHBOARD_NO_PASSWORD: "true"
+      WHATSAPP_SWAGGER_NO_PASSWORD: "true"
+    volumes:
+      - automation_waha_sessions:/app/.sessions
+      - automation_waha_media:/app/.media
+    ports:
+      - "${AUTOMATION_WAHA_PORT:-3010}:3000"
+
+  n8n:
+    image: n8nio/n8n:2.23.2
+    profiles: ["automation"]
+    environment:
+      N8N_HOST: localhost
+      WEBHOOK_URL: http://localhost:${AUTOMATION_N8N_PORT:-5680}
+      GENERIC_TIMEZONE: America/Sao_Paulo
+      N8N_LOG_LEVEL: debug
+      N8N_SECURE_COOKIE: "false"
+      N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE: "true"
+    volumes:
+      - automation_n8n_data:/home/node/.n8n
+    ports:
+      - "${AUTOMATION_N8N_PORT:-5680}:5678"
+    depends_on:
+      - redis
+
 volumes:
   postgres_data:
   api_uploads:
   api_erp_storage:
   web_node_modules:
   web_nuxt:
+  automation_redis:
+  automation_waha_sessions:
+  automation_waha_media:
+  automation_n8n_data:

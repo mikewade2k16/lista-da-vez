@@ -49,6 +49,13 @@ export interface OmniTableColumn {
   focusOnCreate?: boolean
   formatter?: (value: unknown, row: Record<string, unknown>) => string
   actions?: OmniTableAction[]
+  // C16: admin pode marcar colunas como "travadas" (sempre visíveis,
+  // ninguém esconde via UI). Default opcional declarado no workspace;
+  // override persistido por user em localStorage via useOmniVisibleColumns.
+  locked?: boolean
+  // C16: posição padrão sugerida; usuário admin pode reordenar via drag-n-drop
+  // e a ordem final fica em localStorage.
+  defaultOrder?: number
 }
 
 export interface OmniFocusCell {

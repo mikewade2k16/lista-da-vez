@@ -100,9 +100,33 @@ As 4 colisoes abaixo ficam congeladas porque renomear arquivos quebra o migrator
 
 Bancos em producao e dev ja tem essas migrations gravadas com o nome exato. Trocar nome = bug imediato.
 
+## Dois Postgres em desenvolvimento local (ARMADILHA)
+
+Em desenvolvimento local existem **dois** servidores PostgreSQL rodando simultaneamente:
+
+| Servidor | Porta host | Uso |
+|---|---|---|
+| `omni-postgres-1` (container Docker) | **5433** | banco real do produto — apps conectam aqui |
+| PostgreSQL nativo Windows | 5432 | banco legado/dev antigo — **NÃO usar pra migrations do projeto** |
+
+O `back/.env` aponta para `localhost:5433` (correto). Se por qualquer motivo mudar para 5432, o `migrate up` vai aplicar migrations num banco errado sem aviso.
+
+Antes de rodar qualquer `go run ./cmd/migrate`, confirmar:
+```bash
+echo $DATABASE_URL   # deve conter :5433
+```
+
 ## Comandos uteis
 
 ```bash
+# A partir do diretório back/
+export DATABASE_URL="postgres://omni:omni_dev@localhost:5433/omni?sslmode=disable"
 go run ./cmd/migrate up
 go run ./cmd/migrate status
 ```
+
+## Notas recentes de schema
+
+- `0129_site_tracking_events.sql` adiciona `site.tracking_events` e amplia
+  `site.webhook_sources.entity_type` para `tracking`. O receptor usa HMAC
+  com timestamp e idempotencia por `source_id + source_event_id`.

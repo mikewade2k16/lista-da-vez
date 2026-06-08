@@ -15,11 +15,18 @@ type authContextKey string
 const principalContextKey authContextKey = "auth.principal"
 
 type Middleware struct {
-	service *Service
+	service        *Service
+	accountChecker AccountMemberChecker
 }
 
 func NewMiddleware(service *Service) *Middleware {
 	return &Middleware{service: service}
+}
+
+// SetAccountChecker habilita RequireAuthWithAccount. Deve ser chamado antes
+// de registrar rotas multi-tenant.
+func (middleware *Middleware) SetAccountChecker(checker AccountMemberChecker) {
+	middleware.accountChecker = checker
 }
 
 func (middleware *Middleware) RequireAuth(next http.Handler) http.Handler {
@@ -60,6 +67,50 @@ func (middleware *Middleware) RequireRoles(next http.Handler, roles ...Role) htt
 func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	principal, ok := ctx.Value(principalContextKey).(Principal)
 	return principal, ok
+}
+
+// RequireAuthWithAccount autentica o usuario E valida que ele e membro ativo
+// da account informada em X-Account-Id. Injeta AccountID no Principal do
+// contexto para que handlers downstream leiam via PrincipalFromContext.
+//
+// Erros retornados:
+//   - 401 unauthorized: token ausente ou invalido.
+//   - 400 missing_account_id: header X-Account-Id ausente.
+//   - 403 account_not_member: user nao e membro ativo da account.
+//   - 500 internal_error: falha de banco ou checker nao configurado.
+func (middleware *Middleware) RequireAuthWithAccount(next http.Handler) http.Handler {
+	return middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		if middleware.accountChecker == nil {
+			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Account checker nao configurado.")
+			return
+		}
+
+		accountID := strings.TrimSpace(r.Header.Get("X-Account-Id"))
+		if accountID == "" {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "missing_account_id", "Header X-Account-Id e obrigatorio.")
+			return
+		}
+
+		member, err := middleware.accountChecker.IsMember(r.Context(), accountID, principal.UserID)
+		if err != nil {
+			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao validar membership.")
+			return
+		}
+		if !member {
+			httpapi.WriteError(w, r, http.StatusForbidden, "account_not_member", "Sem acesso a esta account.")
+			return
+		}
+
+		principal.AccountID = accountID
+		ctx := context.WithValue(r.Context(), principalContextKey, principal)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}))
 }
 
 func ExtractBearerToken(header string) (string, error) {

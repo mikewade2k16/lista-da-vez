@@ -13,6 +13,7 @@ const accessTokenPrefix = "ldv1"
 
 type accessTokenClaims struct {
 	Subject     string   `json:"sub"`
+	SessionID   string   `json:"sid,omitempty"` // UUID de core.user_sessions; ausente em tokens legados
 	DisplayName string   `json:"name"`
 	Nick        string   `json:"nick,omitempty"`
 	Email       string   `json:"email"`
@@ -35,11 +36,12 @@ func NewHMACTokenManager(secret string, ttl time.Duration) *HMACTokenManager {
 	}
 }
 
-func (manager *HMACTokenManager) Issue(user User) (SessionView, error) {
+func (manager *HMACTokenManager) Issue(sessionID string, user User) (SessionView, error) {
 	now := time.Now().UTC()
 	expiresAt := now.Add(manager.ttl)
 	claims := accessTokenClaims{
 		Subject:     user.ID,
+		SessionID:   sessionID,
 		DisplayName: user.DisplayName,
 		Nick:        user.Nick,
 		Email:       user.Email,
@@ -101,6 +103,7 @@ func (manager *HMACTokenManager) Parse(token string) (Principal, error) {
 
 	return Principal{
 		UserID:      claims.Subject,
+		SessionID:   claims.SessionID,
 		DisplayName: claims.DisplayName,
 		Nick:        claims.Nick,
 		Email:       claims.Email,

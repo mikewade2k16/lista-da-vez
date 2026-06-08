@@ -84,7 +84,7 @@ func (repository *PostgresRepository) ListAllRolePermissions(ctx context.Context
 func (repository *PostgresRepository) ListActiveTenantIDs(ctx context.Context) ([]string, error) {
 	rows, err := repository.pool.Query(ctx, `
 		select id::text
-		from tenants
+		from core.accounts
 		where is_active = true
 		order by name asc;
 	`)

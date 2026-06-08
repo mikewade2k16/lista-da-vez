@@ -21,12 +21,21 @@ type IdentityResolver func(r *http.Request) string
 // permitidas dentro da janela (Window). Resolver opcional para usar identidade do usuario
 // (ex: principal.UserID) em vez do IP — fallback automatico quando vazio.
 //
-// Buckets vivem em memoria e sao limpos periodicamente. Nao serve para deploy multi-instancia
-// sem broker — aceitavel ate T9 trazer observabilidade real.
+// AccountResolver e AccountLimit adicionam uma segunda cota por tenant (account_id). Quando
+// configurados, o middleware verifica AMBAS as cotas; qualquer estouro retorna 429. Isso impede
+// que um tenant com muitos usuarios degrade vizinhos (noisy-neighbor). Buckets vivem em memoria
+// e sao limpos periodicamente. Nao serve para deploy multi-instancia sem broker.
 type RateLimitOptions struct {
 	Limit    int
 	Window   time.Duration
 	Resolver IdentityResolver
+
+	// AccountResolver extrai o account_id do request (ex: r.Header.Get("X-Account-Id")).
+	// Quando vazio, a cota por tenant nao e' aplicada.
+	AccountResolver IdentityResolver
+	// AccountLimit e' o maximo de requisicoes por account dentro da Window.
+	// Quando zero e AccountResolver estiver definido, usa 5x o Limit como padrao.
+	AccountLimit int
 }
 
 // DefaultRESTRateLimit aplica 60 req/min por identidade, alinhado com a T8 do roadmap.
@@ -97,6 +106,9 @@ func (store *rateLimiterStore) cleanupLoop() {
 // ultimo cai para o IP do client. Isso importa porque este middleware roda antes dos handlers
 // autenticados injetarem o principal no contexto.
 //
+// Quando AccountResolver estiver configurado, aplica uma segunda cota por account_id (tenant):
+// ambas as cotas precisam passar; qualquer estouro retorna 429.
+//
 // Quando o limite e' excedido, responde 429 com header `Retry-After` em segundos.
 func RateLimit(options RateLimitOptions) Middleware {
 	if options.Limit <= 0 {
@@ -106,25 +118,51 @@ func RateLimit(options RateLimitOptions) Middleware {
 		options.Window = time.Minute
 	}
 
+	accountLimit := options.AccountLimit
+	if options.AccountResolver != nil && accountLimit <= 0 {
+		accountLimit = options.Limit * 5
+	}
+
 	store := newRateLimiterStore()
+	accountStore := newRateLimiterStore()
 	resolver := options.Resolver
+	accountResolver := options.AccountResolver
+
+	accountOptions := RateLimitOptions{Limit: accountLimit, Window: options.Window}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			now := time.Now()
+
 			identity := resolveRateLimitIdentity(r, resolver)
-			allowed, retryAfter := store.allow(identity, options, time.Now())
+			allowed, retryAfter := store.allow(identity, options, now)
 			if !allowed {
-				seconds := int(retryAfter.Round(time.Second).Seconds())
-				if seconds < 1 {
-					seconds = 1
-				}
-				w.Header().Set("Retry-After", strconv.Itoa(seconds))
-				WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitas requisicoes. Tente novamente em instantes.")
+				writeRateLimitError(w, r, retryAfter)
 				return
 			}
+
+			if accountResolver != nil {
+				if accountID := strings.TrimSpace(accountResolver(r)); accountID != "" {
+					accountAllowed, accountRetryAfter := accountStore.allow("account:"+accountID, accountOptions, now)
+					if !accountAllowed {
+						writeRateLimitError(w, r, accountRetryAfter)
+						return
+					}
+				}
+			}
+
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func writeRateLimitError(w http.ResponseWriter, r *http.Request, retryAfter time.Duration) {
+	seconds := int(retryAfter.Round(time.Second).Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+	WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitas requisicoes. Tente novamente em instantes.")
 }
 
 func resolveRateLimitIdentity(r *http.Request, resolver IdentityResolver) string {

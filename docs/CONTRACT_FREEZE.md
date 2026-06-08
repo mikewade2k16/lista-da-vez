@@ -1,8 +1,8 @@
 # Contract Freeze — Reestruturação Multi-Tenant
 
-Branch: `refactor/multi-tenant-core`
-Status: ativo até a conclusão da Fase 4 (mover módulo `queue`).
-Plano de referência: `~/.claude/plans/preciso-que-analise-nosso-ancient-orbit.md`.
+Branch atual: `refactor/multi-tenant-complete`
+Status: ativo e expandido — regras da `refactor/multi-tenant-core` + adições do C2 (multitenant-completion).
+Plano de referência: [docs/MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md).
 
 Este documento lista as **interfaces, contratos e regras arquiteturais** que NÃO podem ser quebradas durante o trabalho da reestruturação. Quebras intencionais exigem PR dedicado, atualização deste doc e aprovação explícita.
 
@@ -68,16 +68,22 @@ Pacote: `back/internal/modules/realtime/`
 
 Estas regras valem da Fase 0 ao fim do trabalho. Reviewer rejeita PR que viole.
 
-### 2.1 `account_id` (ex-`tenant_id`) vem só do `Principal`
+### 2.1 `account_id` vem só do `Principal` — ATIVADO no C2
 
-Nenhum handler, service ou repository aceita `account_id` (ou `tenant_id` enquanto durar) vindo do request body, query string ou path param. Sempre é resolvido pelo middleware a partir do header `X-Account-Id` (após Fase 1) ou do JWT (antes da Fase 1) e injetado no `Principal`.
+**Ativo a partir do C2 (2026-05-28, branch `refactor/multi-tenant-complete`).**
 
-**Por quê**: previne escalonamento horizontal entre tenants — se o atacante autenticado conseguir mandar `account_id` arbitrário em um body, vê dados de outro cliente.
+`X-Account-Id` está ativado. `auth.Middleware.RequireAuthWithAccount` lê o header, valida membership em `core.account_users` e injeta `Principal.AccountID`. Handlers de módulos satélites usam `auth.PrincipalFromContext(r.Context()).AccountID`.
+
+Nenhum handler, service ou repository aceita `account_id` vindo do request body, query string ou path param. Reviewer rejeita PR com essa violação.
+
+**Por quê**: previne escalonamento horizontal entre tenants — atacante autenticado mandando `account_id` arbitrário no body vê dados de outro cliente.
 
 **Como aplicar**:
-- Repositories recebem `accountID string` como parâmetro, mas a origem dele é sempre `principal.TenantID` (ou `principal.AccountID` após Fase 1).
-- Services aceitam `Principal` (ou `AccessContext`), nunca `accountID` solto vindo de fora do middleware.
-- Endpoints administrativos (ex: platform admin agindo sobre outro account) usam path param `:accountId` mas validam que `principal.IsPlatformAdmin == true` antes.
+- Rotas multi-tenant: `deps.AuthMiddleware.RequireAuthWithAccount(handler)`.
+- Rotas que também precisam de módulo: `deps.ModulesGuard.RequireModule("queue")(deps.AuthMiddleware.RequireAuthWithAccount(handler))`.
+- Repositories recebem `accountID string` como parâmetro — sempre vem de `principal.AccountID`, nunca do request.
+- Endpoints de platform admin agindo sobre outro account: path param `:accountId` + validação `principal.Role == auth.RolePlatformAdmin`.
+- Rotas LEGADAS (v1 das lojas, operations, tenants): continuam com `RequireAuth` até a migração completa. Não usar `RequireAuthWithAccount` nelas ainda.
 
 ### 2.2 FKs cross-schema só entre módulo satélite e `core`
 
@@ -136,6 +142,61 @@ Cache `(userID, accountID) → []permKey` em memória, **TTL = 2 minutos**, NUNC
 - `account.modules.changed`
 
 Razão do TTL curto: JWT vive 12h, permissão removida não pode ficar ativa por horas.
+
+---
+
+### 2.9 Shape de `AdminUserView` + `OrganizationAdminView` (C14/C15 + addendum 2026-05-29)
+
+- `AdminUserView` (GET `/v1/admin/users`):
+  - Agregados: `accountCount` (int) + `accountNames` (string agregada, "Pérola, Duby"). **Antes** o campo era `accountSlugs` (string com slugs separados por vírgula) — renomeado em 2026-05-29 porque slug é identificador interno e nome é melhor para o UI. Quem consumir versões anteriores precisa ajustar.
+  - Demais campos (id, email, displayName, nick, isActive, isPlatformAdmin, mustChangePassword, avatarPath, createdAt, updatedAt) refletem `core.users` 1-para-1.
+
+- `OrganizationAdminView` (GET `/v1/admin/organizations`):
+  - Mesmo padrão: `accountCount` + `accountNames` (mesma renomeação).
+  - Demais campos refletem `core.organizations`.
+
+- `AdminUpdateAccountInput.organizationId *string` (PATCH `/v1/admin/accounts/{id}`):
+  - String vazia (`""`) → SET `organization_id = NULL` (desvincula).
+  - UUID válido → SET `organization_id = $uuid` (vincula).
+  - Omitido (campo `nil`) → não altera (semântica padrão de patch).
+
+### 2.8 Shape de `AccountAdminView` é contrato após C9 (2026-05-29)
+
+A resposta de `GET /v1/admin/accounts` (e `/{id}`, e mutations) tem shape fixo:
+
+```json
+{
+  "id": "uuid",
+  "slug": "string",
+  "name": "string",
+  "active": true,
+  "planCode": "string",
+  "billingMode": "single | per_store",
+  "monthlyPaymentAmount": 0,
+  "paymentDueDay": null,
+  "webhookEnabled": false,
+  "contactPhone": "string",
+  "contactSite": "string",
+  "contactAddress": "string",
+  "logoPath": "string",
+  "requireUserStoreLink": false,
+  "requireUserRegistration": false,
+  "userCount": 0,
+  "userNicks": "string (agregado, fallback display_name quando nick vazio)",
+  "projectCount": 0,
+  "projectSegments": "string (agregado de nomes de tasks.boards)",
+  "modules": [{"moduleId":"","label":"","isCore":false,"enabled":false}],
+  "stores": [{"id":"","code":"","name":"","city":"","active":true,"billingAmount":0}],
+  "createdAt": "iso",
+  "updatedAt": "iso"
+}
+```
+
+- `userCount`/`userNicks` vêm de `core.account_users` JOIN `core.users`.
+- `projectCount`/`projectSegments` vêm de `tasks.boards`.
+- `modules[]` sempre inclui TODOS os módulos registrados (cross-join + left join em `core.account_modules`).
+- `stores[]` inclui todas as lojas onde `queue.stores.tenant_id = accountID` (independente de `billingMode`).
+- Adicionar campo novo: ok desde que `omitempty` esteja correto. Remover ou renomear campo: quebra contrato com `useClientsManager` no front — exige PR coordenado.
 
 ---
 

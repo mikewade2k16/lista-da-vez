@@ -33,6 +33,26 @@ Ele nao deve cuidar de:
 - `POST /v1/users/{id}/reset-password`
 - `POST /v1/users/{id}/archive`
 
+## Fonte única de usuários — unificação 2026-06 (CONCLUÍDA)
+
+Historicamente havia DUAS tabelas de usuário que divergiam:
+- `public.users` (legado, 0001) + `consultants` → lida por este módulo.
+- `core.users` (0100) → lida pelo admin global (`/manage/users`, módulo core).
+
+**Unificação (core.users = fonte única) — FINALIZADA (itens 2&3, migration 0136):**
+- Todo o Go (auth, consultants, users, bootstrap) lê/escreve `core.users` direto — `store_postgres.go` agora faz `from core.users`/`update core.users`/`insert into core.users`.
+- A VIEW `public.users` + triggers `INSTEAD OF` foram **DROPADOS** (0136). Não existe mais camada de compat — fonte única é `core.users`.
+- `0131_backfill_users_into_core.sql` consolidou o drift histórico antes do drop.
+- Resultado: as duas telas (`/manage/users` e `/operacao/usuarios`) leem a MESMA verdade (cada uma com sua projeção), sem view legada no meio.
+
+**U3 (2026-06-05): `/operacao/usuarios` le core.**
+- Listagem (`GET /v1/users`) monta usuarios a partir de `core.account_users`, `core.users`, `core.user_role_assignments`, `core.roles` e `core.user_module_settings(module_id='queue')`.
+- O papel coarse reutiliza o mapeamento exportado de `auth.CoarseRoleFromCoreRole` / `auth.CoreRoleCodesForCoarse`; nao duplicar esse mapeamento aqui.
+- `storeIds` da Fila vem de `core.user_module_settings.config.storeIdsByAccount[accountId]`.
+- `employee_code` e `job_title` continuam em `core.users`.
+- `consultants` ainda fornece a indicacao `managedBy=consultants` / `managedResourceId` para contas vinculadas ao roster.
+- Create/update ainda dual-gravam `user_tenant_roles`/`user_store_roles`/`user_platform_roles` por compatibilidade ate U4, mas tambem garantem `core.account_users`, `core.roles` compat, `core.user_role_assignments` e `core.user_module_settings`.
+
 ## Regras de escopo
 
 - `platform_admin` pode administrar usuarios de qualquer tenant, inclusive outros `platform_admin`
@@ -44,13 +64,14 @@ Ele nao deve cuidar de:
 ## Regras de modelagem
 
 - o sistema trabalha com um papel efetivo por usuario
-- papeis de tenant usam `user_tenant_roles`
-- papeis de loja usam `user_store_roles`
+- papeis efetivos da listagem usam `core.user_role_assignments` + `core.roles`
+- papeis de tenant ainda sao dual-gravados em `user_tenant_roles` ate U4
+- papeis de loja ainda sao dual-gravados em `user_store_roles` ate U4
   - `consultant`
   - `manager`
   - `store_terminal`
-- `platform_admin` usa `user_platform_roles`
-- mutacoes devem limpar atribuicoes antigas e regravar apenas o escopo valido para o novo papel
+- `platform_admin` usa `core.users.is_platform_admin` e ainda dual-grava `user_platform_roles` ate U4
+- mutacoes devem limpar atribuicoes antigas de compatibilidade e regravar apenas o escopo valido para o novo papel
 - papeis de loja devem ficar vinculados a uma unica loja por usuario nesta fase
 - criar usuario sem senha deve preferir convite, nao senha placeholder
 - criar usuario com senha manual nao deve gerar convite

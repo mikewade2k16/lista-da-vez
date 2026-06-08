@@ -526,6 +526,71 @@ erDiagram
         timestamptz updated_at
       }
 
+    ACCOUNTS {
+        uuid id PK
+        text slug
+        text name
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SITE_WEBHOOK_SOURCES {
+        uuid id PK
+        uuid account_id FK
+        text slug
+        text name
+        text entity_type
+        text secret
+        boolean is_active
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SITE_LEADS {
+        uuid id PK
+        uuid account_id FK
+        uuid source_id FK
+        text nome
+        text email
+        text telefone
+        text status
+        jsonb raw_payload
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SITE_PRODUCTS {
+        uuid id PK
+        uuid account_id FK
+        uuid source_id FK
+        text name
+        text code
+        numeric price
+        text status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SITE_TRACKING_EVENTS {
+        uuid id PK
+        uuid account_id FK
+        uuid source_id FK
+        text source_event_id
+        text visitor_id
+        text session_id
+        text event_type
+        text event_name
+        text page_path
+        text referrer
+        text device_type
+        integer active_seconds
+        jsonb event_data
+        jsonb raw_payload
+        timestamptz sent_at
+        timestamptz received_at
+    }
+
     TENANTS ||--o{ STORES : owns
     USERS ||--o| USER_PLATFORM_ROLES : has
     USERS ||--o{ USER_TENANT_ROLES : has
@@ -574,7 +639,20 @@ erDiagram
     ERP_SYNC_FILES ||--o{ ERP_ORDER_CANCELED_RAW : imports
     TENANTS ||--o{ ERP_ITEM_CURRENT : erp_catalog
     STORES ||--o{ ERP_ITEM_CURRENT : erp_catalog
+    ACCOUNTS ||--o{ SITE_WEBHOOK_SOURCES : owns
+    ACCOUNTS ||--o{ SITE_LEADS : owns
+    ACCOUNTS ||--o{ SITE_PRODUCTS : owns
+    ACCOUNTS ||--o{ SITE_TRACKING_EVENTS : owns
+    SITE_WEBHOOK_SOURCES ||--o{ SITE_LEADS : ingests
+    SITE_WEBHOOK_SOURCES ||--o{ SITE_PRODUCTS : ingests
+    SITE_WEBHOOK_SOURCES ||--o{ SITE_TRACKING_EVENTS : ingests
 ```
+
+> Nota: o diagrama acima ainda usa o modelo legado `tenants/stores`. O schema
+> multi-tenant `core.*` (accounts, organizations, users globais, roles) e os
+> demais schemas (`queue.*`, `crm.*`) ainda nao foram desenhados aqui — `ACCOUNTS`
+> entra como ancora minima para posicionar o schema `site`. Redesenho completo do
+> ERD para o modelo `core.*` fica como tarefa de documentacao dedicada.
 
 ## Leitura rapida
 
@@ -645,6 +723,14 @@ erDiagram
   - trilha append-only das transicoes de status
 - `operation_service_history`
   - historico append-only do fechamento operacional
+- `site.webhook_sources`
+  - fontes externas do modulo Site; `entity_type` aceita `leads`, `products` e `tracking`
+  - `secret` fica em claro porque e chave HMAC; nunca deve aparecer em listagens ou logs
+- `site.leads` / `site.products`
+  - dados administrativos do site publico, criados manualmente ou por webhook
+- `site.tracking_events`
+  - eventos brutos de analytics do site, recebidos em lote assinado por HMAC
+  - idempotencia por `source_id + source_event_id` para retries do outbox
 
 ## Seeds atuais
 

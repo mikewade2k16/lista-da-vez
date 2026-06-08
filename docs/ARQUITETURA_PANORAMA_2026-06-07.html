@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Panorama de Arquitetura · 2026-06-07</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Panorama de Arquitetura</h1>
+        <div class="sub">Fotografia em 2026-06-07 — banco, backend Go, Nuxt, realtime, multi-tenant, segurança e plano de evolução</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="panorama">Panorama</button>
+      <button data-tab="arq">Arquitetura</button>
+      <button data-tab="seg">Multi-tenant &amp; Segurança</button>
+      <button data-tab="perf">Performance</button>
+      <button data-tab="plano">Plano de melhoria</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ PANORAMA ============ -->
+<section class="tab active" id="panorama">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">Onde o sistema está hoje: fundação modular sólida, multi-tenant funcional, com um conjunto claro de frentes de endurecimento antes de escalar e fazer o deploy.</p>
+
+  <div class="grid g4" style="margin-bottom:18px">
+    <div class="stat"><div class="n ind">87</div><div class="l">tabelas base no banco</div></div>
+    <div class="stat"><div class="n cyan">7</div><div class="l">schemas de domínio</div></div>
+    <div class="stat"><div class="n">4 / 66</div><div class="l">accounts / usuários (local)</div></div>
+    <div class="stat"><div class="n green">0136</div><div class="l">migration atual (public.* removido)</div></div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>MATURIDADE DA FUNDAÇÃO</h3>
+      <div class="gauge">
+        <div class="ring" style="--p:85;position:relative;display:grid;place-items:center"><b>8.5</b></div>
+        <div style="font-size:13.5px;color:var(--muted)">
+          <b style="color:var(--txt)">Early-SaaS bem arquitetado.</b> Acima da média para o estágio.
+          Os P0 + P1 levam a ~8.5 ("pronto para primeiros clientes reais"). O tier "milhões de acessos" é um investimento maior e, em boa parte, <b style="color:var(--txt)">prematuro agora</b>.
+        </div>
+      </div>
+      <div class="legend">
+        <span><span class="dot g"></span>Sólido</span>
+        <span><span class="dot y"></span>Endurecer</span>
+        <span><span class="dot r"></span>Gap crítico</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>STACK</h3>
+      <ul class="clean">
+        <li><span class="dot b"></span><div><b>Backend</b> · Go (<code>net/http</code>, <code>pgx/v5</code>, <code>gorilla/websocket</code>), modular por <code>internal/modules</code></div></li>
+        <li><span class="dot b"></span><div><b>Frontend</b> · Nuxt 4 + Vue 3 + Pinia + Nuxt UI + Tailwind 4, layers <code>core/queue/tasks</code></div></li>
+        <li><span class="dot b"></span><div><b>Banco</b> · PostgreSQL 16 (Docker), migrations SQL embedadas no Go</div></li>
+        <li><span class="dot b"></span><div><b>Realtime</b> · WebSocket, hub em memória (1 instância)</div></li>
+        <li><span class="dot b"></span><div><b>Portas</b> · API <code>9091</code> · web <code>3003</code> · Postgres <code>5432</code></div></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>✅ O QUE JÁ ESTÁ SÓLIDO</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Arquitetura em camadas limpa (handler → service → repository)</li>
+        <li><span class="dot g"></span>SQL 100% parametrizado — zero superfície de SQLi</li>
+        <li><span class="dot g"></span>Isolamento defense-in-depth: membership + escopo validado + FK</li>
+        <li><span class="dot g"></span>JWT assinado (HMAC) + bcrypt; revogação de senha forte</li>
+        <li><span class="dot g"></span>RBAC dinâmico no banco (<code>core.role_permissions</code>)</li>
+        <li><span class="dot g"></span>Schemas por domínio; índices em hot paths</li>
+        <li><span class="dot g"></span>Rate limit (fallback por IP), CORS allowlist</li>
+        <li><span class="dot g"></span><code>public.*</code> legado eliminado (migration 0136)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>🚨 GAPS CRÍTICOS (resumo)</h3>
+      <ul class="clean">
+        <li><span class="dot y"></span>Senha em <code>localStorage</code> (<code>ldv_remembered_login</code>) — <span class="pill p2">ADIADO</span> por decisão</li>
+        <li><span class="dot g"></span><s>Sessão/revogação de logout não ligada</s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (logout revoga o sid)</li>
+        <li><span class="dot g"></span><s>Defaults de prod divergentes</s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (Core V2 on + roles core)</li>
+        <li><span class="dot g"></span><s><code>X-Account-Id</code> de <code>activeTenantId</code></s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (agora <code>activeAccountId</code>)</li>
+        <li><span class="dot g"></span><s>Módulos <code>site/roadmap/operationgoals</code> sem backend</s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (registrados; 404→200)</li>
+        <li><span class="dot r"></span>Sem RLS no Postgres (isolamento só na aplicação)</li>
+        <li><span class="dot y"></span>Realtime/event bus em memória — não escala horizontal</li>
+        <li><span class="dot y"></span>Sem observabilidade (métricas/tracing/SLO)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">📌 <b>Leitura:</b> a fundação é real e boa. O trabalho agora é <b>fechar as frestas entre o contrato antigo e o novo</b> (account×tenant, Core V2×legado, catálogo×rotas, token×sessão, app×banco) — e isso destrava o deploy que está atrasado. Veja a aba <b>Plano de melhoria</b>.</div>
+</section>
+
+<!-- ============ ARQUITETURA ============ -->
+<section class="tab" id="arq">
+  <h2 class="section">Arquitetura</h2>
+  <p class="lead">Fluxo de uma requisição e o inventário de domínios. O backend é modular; nem todo módulo do catálogo está com rotas registradas no bootstrap atual.</p>
+
+  <div class="card" style="margin-bottom:18px">
+    <h3>FLUXO DE UMA REQUISIÇÃO</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Browser</b><span class="m">Nuxt SPA (SSR off nas telas autenticadas)</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>api-client.ts</b><span class="m">Bearer + <code>X-Account-Id</code> (de activeTenantId ⚠️)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>CORS · RateLimit · Log · Recover</b><span class="m">middlewares do Chain</span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node"><b>RequireModuleByPath</b><span class="m">gating de módulo (platform_admin isento)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>RequireAuth / WithAccount</b><span class="m">valida membership em <code>core.account_users</code></span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>service → repository</b><span class="m"><code>resolveTenantScope</code> + filtro <code>tenant_id</code></span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node acc"><b>PostgreSQL 16</b><span class="m">schemas core/queue/tasks/site/...  · sem RLS ⚠️</span></div>
+        <div class="arrow">↔</div>
+        <div class="node warn"><b>WebSocket hub (memória)</b><span class="m">token na query string ⚠️ · 1 instância</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>SCHEMAS DO BANCO</h3>
+      <table>
+        <tr><th>Schema</th><th>Tabelas</th><th>Domínio</th></tr>
+        <tr><td><code>core</code></td><td>16</td><td>accounts, users, RBAC, módulos, sessões</td></tr>
+        <tr><td><code>queue</code></td><td>26</td><td>fila, lojas, consultores, operação, ERP</td></tr>
+        <tr><td><code>tasks</code></td><td>17</td><td>boards, tasks, campos, comentários</td></tr>
+        <tr><td><code>site</code></td><td>4</td><td>leads, produtos, tracking, webhooks</td></tr>
+        <tr><td><code>notifications</code></td><td>4</td><td>notificações, canais, mutes</td></tr>
+        <tr><td><code>roadmap</code></td><td>2</td><td>módulos/regras de roadmap</td></tr>
+        <tr><td><code>public</code></td><td>18</td><td>residual/compat (reset, ERP raw, access)</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h3>CATÁLOGO DE MÓDULOS · registro no boot</h3>
+      <table>
+        <tr><th>Módulo</th><th>Catálogo</th><th>Rotas no boot</th></tr>
+        <tr><td><code>core</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
+        <tr><td><code>tasks</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
+        <tr><td><code>notifications</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
+        <tr><td><code>queue</code></td><td>✅</td><td><span class="tag">catálogo + wiring legado</span></td></tr>
+        <tr><td><code>crm</code></td><td>✅</td><td><span class="tag">catálogo + wiring legado</span></td></tr>
+        <tr><td><code>site</code></td><td>✅</td><td><span class="pill p1">não registrado</span></td></tr>
+        <tr><td><code>roadmap</code></td><td>✅</td><td><span class="pill p1">não registrado</span></td></tr>
+        <tr><td><code>operationgoals</code></td><td>—</td><td><span class="pill p1">não registrado</span></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>DRIFT DE VERSÃO / CONFIG (reconciliar)</h3>
+    <ul class="clean">
+      <li><span class="dot y"></span><code>go.mod</code> declara <code>go 1.25.0</code>, mas <code>Dockerfile</code> usa <code>golang:1.26.3</code></li>
+      <li><span class="dot r"></span>Prod: <code>CORE_V2_ENABLED=false</code> + <code>AUTH_ROLES_SOURCE=core_with_fallback</code> — e a 0135 removeu as tabelas de role legadas</li>
+      <li><span class="dot y"></span>Ledger de migrations com prefixos duplicados (<code>0015a</code>, múltiplos <code>0019/0031/0039/0110</code>, <code>0126</code>) — congelar convenção</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ SEGURANÇA ============ -->
+<section class="tab" id="seg">
+  <h2 class="section">Multi-tenant &amp; Segurança</h2>
+  <p class="lead">Objetivo do produto: <b>um usuário nunca vê dado de outra account/loja</b>, e nenhum payload/parâmetro forjado contorna isso. Hoje o isolamento é em profundidade — mas todo na aplicação.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>🛡️ CAMADAS DE ISOLAMENTO ATIVAS</h3>
+      <div class="layer"><div class="num">1</div><div class="txt"><b>JWT assinado (HMAC)</b> — role/tenant não-forjáveis</div></div>
+      <div class="layer"><div class="num">2</div><div class="txt"><b>Membership por account</b> — <code>X-Account-Id</code> validado em <code>core.account_users</code></div></div>
+      <div class="layer"><div class="num">3</div><div class="txt"><b>Gating de módulo</b> por rota (front + back)</div></div>
+      <div class="layer"><div class="num">4</div><div class="txt"><b>Escopo validado no service</b> — pedir tenant/loja alheio → <code>Forbidden</code></div></div>
+      <div class="layer"><div class="num">5</div><div class="txt"><b>Filtro <code>tenant_id</code> na query</b> — defesa em profundidade (retorna vazio)</div></div>
+      <div class="layer"><div class="num">6</div><div class="txt"><b>RBAC por permissão</b> — <code>core.role_permissions</code></div></div>
+      <div class="layer gap"><div class="num">!</div><div class="txt"><b>RLS no Postgres</b> — <b>AUSENTE.</b> Se um handler novo esquecer o escopo, vaza. É a rede final que falta.</div></div>
+    </div>
+    <div class="card">
+      <h3>🚨 GAPS DE SEGURANÇA</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Senha em localStorage</b> — qualquer XSS/extensão lê em texto claro <span class="pill p0">P0</span></li>
+        <li><span class="dot g"></span><s><b>Logout não revoga no servidor</b></s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (sessão ligada; logout revoga o sid → 401)</li>
+        <li><span class="dot r"></span><b>Sem RLS</b> — isolamento 100% na aplicação <span class="pill p1">P1</span></li>
+        <li><span class="dot y"></span><b>403 vs 404</b> vaza existência de recurso de outro tenant</li>
+        <li><span class="dot y"></span><b>Sem lockout de conta</b> (só throttle por IP) — brute-force distribuído</li>
+        <li><span class="dot y"></span><b>Token do WS na query string</b> — aparece em logs/proxy</li>
+        <li><span class="dot g"></span><s><b>Sem security headers</b></s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (HSTS/CSP/X-Frame/nosniff via middleware)</li>
+        <li><span class="dot y"></span><b>Sem audit trail</b> de ações administrativas sensíveis</li>
+        <li><span class="dot g"></span><s><b>Sem testes automatizados de IDOR/cross-tenant</b></s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (cross_tenant_test.go em alerts + settings; rate limit por account)</li>
+        <li><span class="dot b"></span>Secrets no <code>.env</code>; verificar DB role least-privilege</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">🔒 <b>Prioridade de segurança:</b> os 2 P0 (senha no storage, logout sem revogação) protegem o produto <b>agora</b>. RLS + testes cross-tenant são a rede que torna o isolamento à prova de erro humano em handler novo. O resto é endurecimento progressivo.</div>
+</section>
+
+<!-- ============ PERFORMANCE ============ -->
+<section class="tab" id="perf">
+  <h2 class="section">Performance &amp; Escala</h2>
+  <p class="lead">Princípio: carregar primeiro o essencial da tela, lazy-load do resto, payload mínimo, e UI que responde no clique. Volume local é pequeno — medir antes de otimizar demais.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>⚡ ACHADOS DE OTIMIZAÇÃO</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>N+1 em <code>MeAccounts</code>/<code>MeContext</code></b> — 1 query de módulos por account</li>
+        <li><span class="dot g"></span><s><b>Front pede o que a role não vê</b></s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (gate por permissão antes do fetch)</li>
+        <li><span class="dot g"></span><s><b>Sem compressão</b> gzip</s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (middleware gzip, pula WS/uploads)</li>
+        <li><span class="dot y"></span><b>Sem field selection</b> — listas devolvem o objeto inteiro</li>
+        <li><span class="dot y"></span><b>Paginação offset</b> (<code>OFFSET</code>+<code>COUNT</code>) em listas que crescem</li>
+        <li><span class="dot y"></span><b>Dedupe de GET</b> no front ignora <code>query</code> — pode colar respostas erradas</li>
+        <li><span class="dot b"></span>Detalhe (memberships/stores) carregado junto da listagem</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>📈 ESCALA (quando crescer)</h3>
+      <ul class="clean">
+        <li><span class="dot y"></span><b>Realtime horizontal</b> — hub em memória; 2 réplicas não trocam eventos. Precisa Redis pub/sub</li>
+        <li><span class="dot y"></span><b>Cache do guard em memória</b> — invalidação não propaga entre réplicas</li>
+        <li><span class="dot y"></span><b>Graceful shutdown</b> — <code>ListenAndServe</code> sem <code>SIGTERM</code>; jobs com <code>context.Background()</code></li>
+        <li><span class="dot b"></span><b>Outbox</b> para eventos críticos (não perder em restart)</li>
+        <li><span class="dot b"></span>Particionamento de tabelas time-series (<code>erp_*_raw</code>, <code>tracking_events</code>)</li>
+        <li><span class="dot b"></span>Read replicas, <code>statement_timeout</code>, tuning de pool</li>
+        <li><span class="dot b"></span>Load testing (k6) + <code>EXPLAIN ANALYZE</code> nos hot paths</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">⚖️ <b>Calibragem honesta:</b> com 4 accounts, read replica/particionamento/tracing distribuído são <b>prematuros</b>. O que vale agora: N+1, gzip, não pedir o que não se usa, dedupe GET, e <b>medir</b> os hot paths reais antes de otimizar no escuro.</div>
+</section>
+
+<!-- ============ PLANO ============ -->
+<section class="tab" id="plano">
+  <h2 class="section">Plano de melhoria — backlog unificado</h2>
+  <p class="lead">Consolidação dos dois sweeps (estado + melhorias) e da auditoria de segurança/otimização, deduplicado. Filtre por prioridade ou área. Cada item abre com problema / ação / aceite.</p>
+
+  <div class="note" style="background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.35);color:#a7f3d0">
+    ✅ <b>Progresso 2026-06-07:</b> 11 itens concluídos — <b>todos os P0</b> (P0·2/3/4/5/6; P0·1 adiado por decisão) + <b>P1·8/10/11/12/15/16</b> (testes IDOR, security headers, rate limit por tenant, WS ticket efêmero, front-gate 403, gzip). Paralelo Claude (P1·8/11) + Codex (P1·12). ⏳ Falta o <b>smoke geral de verificação</b> (pendente até o usuário liberar).
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todos</button>
+    <button data-f="p0">🔴 P0 · agora</button>
+    <button data-f="p1">🟡 P1 · em breve</button>
+    <button data-f="p2">🔵 P2 · ao longo do tempo</button>
+    <button data-f="seg">Segurança</button>
+    <button data-f="perf">Performance</button>
+    <button data-f="deploy">Deploy/Config</button>
+  </div>
+
+  <div id="backlog">
+
+    <!-- P0 -->
+    <details class="item" data-p="p0" data-area="seg">
+      <summary><span class="id">P0·1</span><span class="ttl">Remover senha do localStorage</span><span class="pill p2">ADIADO</span><span class="when">decisão: depois</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>⏸️ Adiado por decisão (2026-06-07):</b> mantido como está por ora — é uma conveniência de auto-login do estado atual. Flag mantida para revisitar.</p>
+        <p><b>Problema:</b> <code>auth.ts</code> grava email+senha em <code>ldv_remembered_login</code>. XSS/extensão lê em texto claro.</p>
+        <p><b>Melhor forma futura (mesma conveniência, sem senha):</b> trocar por <b>refresh token</b> longo e revogável (auto-login sem guardar senha) — exige suporte no backend.</p>
+        <p><b>Aceite (quando retomar):</b> localStorage nunca guarda senha; teste garante que <code>saveRememberedLogin</code> não persiste password.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p0" data-area="seg">
+      <summary><span class="id">P0·2</span><span class="ttl">Ligar sessões reais + revogação no logout</span><span class="pill ok">✅ FEITO</span><span class="when">Claude · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>core.user_sessions</code> e o repo existem, mas <code>SetSessionRepository</code>/<code>SetPrincipalCache</code> não são chamados no boot. Logout é só client-side.</p>
+        <p><b>Ação:</b> no <code>app.go</code>, criar o session repo + PrincipalCache (TTL curto + invalidação); login emite <code>sid</code>; logout preenche <code>revoked_at</code>; invalidar cache em logout/troca de role/desativação/mudança de membership.</p>
+        <p><b>Aceite:</b> token com <code>sid</code> revogado → 401; teste cobre revogação e cache.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p0" data-area="deploy">
+      <summary><span class="id">P0·3</span><span class="ttl">Alinhar defaults de produção (bloqueia deploy)</span><span class="pill ok">✅ FEITO</span><span class="when">Codex · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> prod usa <code>CORE_V2_ENABLED=false</code> + <code>AUTH_ROLES_SOURCE=core_with_fallback</code>, mas a 0135 removeu as tabelas de role legadas → o fallback quebra e o guard fica inativo.</p>
+        <p><b>Ação:</b> <code>docker-compose.prod.yml</code> e <code>.env.production.example</code> → <code>CORE_V2_ENABLED=true</code> e <code>AUTH_ROLES_SOURCE=core</code>; smoke de login/roles/modules/switch em ambiente limpo.</p>
+        <p><b>Aceite:</b> ambiente novo sobe sem tabela legada; dev e prod compartilham o mesmo caminho de auth/RBAC.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p0" data-area="seg">
+      <summary><span class="id">P0·4</span><span class="ttl">Alinhar X-Account-Id (activeAccountId)</span><span class="pill ok">✅ FEITO</span><span class="when">Codex · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o provider global lê <code>auth.activeTenantId</code> (legado) enquanto o Core V2 tem <code>activeAccountId</code>. Funciona por coincidência (account.id == tenant.id).</p>
+        <p><b>Ação:</b> provider lê <code>useCoreAccountStore().activeAccountId</code>; cookie <code>ldv_active_account_id</code> como fonte; renomear "tenant"→"account" na UI nova.</p>
+        <p><b>Aceite:</b> trocar account no switcher muda o header na hora; teste de front cobre.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p0" data-area="deploy">
+      <summary><span class="id">P0·5</span><span class="ttl">Fechar drift de módulos (site/roadmap/operationgoals)</span><span class="pill ok">✅ FEITO</span><span class="when">Claude · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> front mostra rotas de <code>site</code>; módulos Go existem; mas não estão registrados no <code>app.go</code> → menu sem backend (404).</p>
+        <p><b>Ação:</b> por módulo, registrar de verdade (<code>site.New()</code> + guard) ou esconder do catálogo/front; decidir se <code>roadmap</code> é core; integrar <code>operationgoals</code> em queue ou registrar.</p>
+        <p><b>Aceite:</b> toda rota no menu tem endpoint ativo; <code>core.modules</code> reflete só módulos vivos.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p0" data-area="perf">
+      <summary><span class="id">P0·6</span><span class="ttl">Corrigir dedupe de GET no frontend</span><span class="pill ok">✅ FEITO</span><span class="when">Codex · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>api-client.ts</code> deduplica por baseURL+path+headers; dois GET no mesmo path com <code>query</code> diferente podem compartilhar a promise errada.</p>
+        <p><b>Ação:</b> incluir método+path+query+params na chave; teste unitário.</p>
+        <p><b>Aceite:</b> <code>/v1/tasks?board=a</code> e <code>?board=b</code> nunca compartilham resposta.</p>
+      </div>
+    </details>
+
+    <!-- P1 segurança -->
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·7</span><span class="ttl">RLS no Postgres por etapas</span><span class="pill p1">P1</span><span class="when">30–90d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> isolamento 100% na aplicação; handler novo que esquece o escopo vaza.</p>
+        <p><b>Ação:</b> <code>ENABLE/FORCE RLS</code> + policy <code>USING (tenant_id = current_setting('app.account_id')::uuid)</code>; helper de transação seta <code>SET LOCAL app.account_id</code>; começar por <code>site/notifications</code>, depois <code>queue/tasks</code>; bypass para platform_admin.</p>
+        <p><b>Aceite:</b> query sem o GUC não retorna dado cross-account, mesmo removendo o filtro do repo (teste de regressão).</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·8</span><span class="ttl">Testes automatizados cross-tenant / IDOR</span><span class="pill ok">✅ FEITO</span><span class="when">Claude · 06-07 (alerts + settings; expandir p/ crm/erp)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o risco que mais importa (ver dado de outro) hoje depende de revisão humana.</p>
+        <p><b>Ação:</b> suíte que, para cada recurso, tenta acessar id de outra account e exige 404; rodar no CI.</p>
+        <p><b>Aceite:</b> PR que quebra isolamento multi-tenant falha antes do merge.</p>
+        <p><b>Feito:</b> <code>cross_tenant_test.go</code> em <code>queue/alerts</code> (resolveTenantScope, resolveStoreScope, canAccessAlert, service.List/Overview) e <code>queue/settings</code> (resolveTenantID — bloqueio antes do DB, plataform_admin passa, não-membro bloqueado). 10 testes, todos verdes.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·9</span><span class="ttl">Erro 404 uniforme cross-tenant</span><span class="pill p1">P1</span><span class="when">30d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>403</code> em recurso de outro tenant revela que ele existe (enumeration).</p>
+        <p><b>Ação:</b> fora do escopo → <code>404 not_found</code>; manter <code>403</code> só para RBAC dentro da account correta.</p>
+        <p><b>Aceite:</b> id inexistente e id de outra account respondem igual.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·10</span><span class="ttl">Security headers + estratégia CSRF</span><span class="pill ok">✅ FEITO</span><span class="when">Claude · 06-07 (headers; CSRF pendente)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> middleware <code>SecurityHeaders</code> (HSTS prod, <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>/<code>frame-ancestors</code>, <code>Referrer-Policy</code>, CSP); se migrar token p/ cookie httpOnly, adicionar CSRF/double-submit.</p>
+        <p><b>Aceite:</b> headers nas respostas; front continua funcionando.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·11</span><span class="ttl">Lockout de conta + rate limit por tenant</span><span class="pill ok">✅ FEITO</span><span class="when">Claude · 06-07 (quota/tenant via X-Account-Id; lockout pós-deploy)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> só throttle por IP; brute-force distribuído contra uma conta passa. Rate limit é por usuário, não por tenant (noisy neighbor).</p>
+        <p><b>Ação:</b> backoff/lockout após N falhas por conta; quota por <code>account_id</code>.</p>
+        <p><b>Aceite:</b> N senhas erradas trava a conta temporariamente; estouro de uma account não afeta outra.</p>
+        <p><b>Feito (parte 1):</b> <code>RateLimitOptions.AccountResolver</code> + <code>AccountLimit</code> em <code>httpapi/rate_limit.go</code>; bucket separado por <code>account:</code> + <code>X-Account-Id</code>; padrão <code>Limit×5</code>; wired em <code>app.go</code>. Testes: <code>TestRateLimit_AccountQuota*</code>. Lockout por falhas de login: pós-deploy.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·12</span><span class="ttl">Token fora da query string do WebSocket</span><span class="pill ok">✅ FEITO</span><span class="when">Codex · 06-07 (ticket efêmero TTL 30s, single-use)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>access_token</code> na URL do WS aparece em logs/proxy/APM.</p>
+        <p><b>Ação:</b> ticket efêmero one-time por user/account/store (<code>/v1/realtime/ticket</code>); socket usa <code>?ticket=</code>, não o bearer principal.</p>
+        <p><b>Aceite:</b> URL do WS não carrega token reutilizável.</p>
+        <p><b>Feito:</b> <code>POST /v1/ws/ticket</code> em <code>realtime/tickets.go</code> (sync.Map, TTL 30s, LoadAndDelete single-use); WS aceita <code>?ticket=</code>; fallback <code>access_token</code>/<code>Authorization</code> com log de depreciação. Front: <code>useRealtimeConnection.ts</code> pede ticket antes de abrir WS; operations/context/tasks/presence atualizados. AGENT.md + testes Go + Jest atualizados.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·13</span><span class="ttl">Auditoria de ações sensíveis</span><span class="pill p1">P1</span><span class="when">30–60d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> log padrão para login/logout, mudança de role/permissão, enable/disable de módulo, billing/webhook, criar/desativar user, rotação de secret. Campos: <code>account_id, actor_user_id, action, resource, before, after, ip, user_agent, created_at</code>.</p>
+        <p><b>Aceite:</b> toda mudança administrativa crítica é rastreável.</p>
+      </div>
+    </details>
+
+    <!-- P1 performance -->
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·14</span><span class="ttl">N+1 MeAccounts/MeContext + medir hot paths</span><span class="pill p1">P1</span><span class="when">30d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> 1 query de módulos por account no loop.</p>
+        <p><b>Ação:</b> 1 query agregada <code>WHERE account_id = ANY($1)</code>; instrumentar latência p50/p95/p99 + query count por endpoint; <code>EXPLAIN ANALYZE</code> em snapshot/reports/me/listas.</p>
+        <p><b>Aceite:</b> nº de queries constante; backlog de índices baseado em dados reais.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·15</span><span class="ttl">Front não pede o que a role não vê</span><span class="pill ok">✅ FEITO</span><span class="when">Codex · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> bootstrap dispara <code>/v1/alerts</code>, <code>/v1/consultants</code> p/ roles sem acesso → 403 + round-trip.</p>
+        <p><b>Ação:</b> helper <code>canViewAlerts</code>/<code>canViewConsultants</code> no front (espelha o back); gatear o fetch antes.</p>
+        <p><b>Aceite:</b> logado como marketing, zero request a alerts/consultants no boot.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·16</span><span class="ttl">Compressão gzip/brotli</span><span class="pill ok">✅ FEITO</span><span class="when">Claude · 06-07</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> middleware gzip respeitando <code>Accept-Encoding</code>; pular respostas pequenas e WebSocket.</p>
+        <p><b>Aceite:</b> JSON grande sai com <code>Content-Encoding: gzip</code>.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·17</span><span class="ttl">Cursor pagination + payload lean</span><span class="pill p1">P1</span><span class="when">60d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> trocar offset por cursor em users/tasks/leads/histórico/notificações; response de resumo p/ lista + endpoint separado p/ detalhe; não carregar relações pesadas na listagem.</p>
+        <p><b>Aceite:</b> listar página N não fica mais caro por <code>OFFSET</code>; payload só com campos da tabela/card.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·18</span><span class="ttl">Realtime horizontal (Redis pub/sub)</span><span class="pill p1">P1</span><span class="when">60d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> hub/event bus em memória; com 2 réplicas, evento da réplica A não chega na B (vale também p/ invalidação do cache do guard).</p>
+        <p><b>Ação:</b> broker pub/sub (Redis curto prazo; NATS/Kafka se exigir garantias); manter o contrato WS; separar invalidação de evento de domínio.</p>
+        <p><b>Aceite:</b> duas instâncias entregam o mesmo evento.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·19</span><span class="ttl">Graceful shutdown</span><span class="pill p1">P1</span><span class="when">30d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> capturar <code>SIGTERM/SIGINT</code>, <code>server.Shutdown(ctx)</code>, passar contexto da app para schedulers, fechar WS com close frame.</p>
+        <p><b>Aceite:</b> container para sem cortar requests; jobs encerram limpos.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1" data-area="perf">
+      <summary><span class="id">P1·20</span><span class="ttl">Outbox para eventos críticos</span><span class="pill p2">P1/P2</span><span class="when">60d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> transactional outbox — grava dado e evento na mesma tx; worker publica e marca entregue/retry.</p>
+        <p><b>Aceite:</b> mudanças importantes não somem em restart.</p>
+      </div>
+    </details>
+
+    <!-- P2 -->
+    <details class="item" data-p="p2" data-area="perf">
+      <summary><span class="id">P2·21</span><span class="ttl">Observabilidade completa</span><span class="pill p2">P2</span><span class="when">60–90d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> logs com <code>request_id/account_id/user_id/module/op</code>; métricas Prometheus/OpenTelemetry; dashboards (latência, erros por módulo, conexões WS, pool Postgres, jobs); error tracking (Sentry); alertas de SLO.</p>
+        <p><b>Aceite:</b> incidente investigável sem acessar o container.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2" data-area="deploy">
+      <summary><span class="id">P2·22</span><span class="ttl">CI/CD com gates de qualidade</span><span class="pill p2">P2</span><span class="when">60–90d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> <code>go test</code> + <code>web test/typecheck/lint</code> + migration check + smoke de API com banco limpo + teste cross-tenant + SAST/SCA/secret-scan; build de imagem reprodutível.</p>
+        <p><b>Aceite:</b> PR que quebra contrato multi-tenant falha antes do merge.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2" data-area="deploy">
+      <summary><span class="id">P2·23</span><span class="ttl">ERD + dicionário de dados atualizados</span><span class="pill p2">P2</span><span class="when">30–60d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> atualizar ERD com schemas atuais; dicionário por tabela/coluna; owner por módulo; marcar o que em <code>public</code> é compat vs fonte oficial.</p>
+        <p><b>Aceite:</b> pessoa nova entende o modelo sem ler migrations antigas.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2" data-area="deploy">
+      <summary><span class="id">P2·24</span><span class="ttl">Congelar convenção de migrations</span><span class="pill p2">P2</span><span class="when">30d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> formato único <code>NNNN_descricao.sql</code>; proibir prefixo duplicado; check no CI; nunca editar migration aplicada.</p>
+        <p><b>Aceite:</b> ambiente limpo aplica na mesma ordem que dev/prod.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2" data-area="deploy">
+      <summary><span class="id">P2·25</span><span class="ttl">Revisar public residual + backups/PITR</span><span class="pill p2">P2</span><span class="when">60–90d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> classificar cada <code>public.*</code> (necessário / compat temporária / removível / sistema); política de backup diário + WAL/PITR + restore testado mensal + runbook.</p>
+        <p><b>Aceite:</b> cada objeto public tem dono e plano; restore testado em banco novo com tempo medido.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2" data-area="seg">
+      <summary><span class="id">P2·26</span><span class="ttl">Secrets fora do .env + DB role least-privilege</span><span class="pill p2">P2</span><span class="when">60–90d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> mover segredos para Vault/KMS; confirmar que o app conecta com role sem DDL/superuser; criptografia de PII em repouso onde aplicável.</p>
+        <p><b>Aceite:</b> rotação de secret sem rebuild; comprometer o app não dá poder de schema no banco.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2" data-area="deploy">
+      <summary><span class="id">P2·27</span><span class="ttl">Vocabulário + módulo como contrato</span><span class="pill p2">P2</span><span class="when">90d</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Ação:</b> fixar <code>account</code>=cliente, <code>store</code>=loja, <code>organization</code>=grupo; evitar <code>tenant</code> no front novo. Cada módulo: catálogo + permissões + templates + rotas + guards (front/back) + nav + docs; teste que compara nav↔guards↔catálogo.</p>
+        <p><b>Aceite:</b> nenhum endpoint mistura tenantId/accountId; menu sem módulo morto, rota sem módulo.</p>
+      </div>
+    </details>
+
+  </div>
+
+  <div class="note">🗺️ <b>1ª onda paralela sugerida (zero conflito de arquivo):</b> P0·1 (front) + P0·2 (auth/app.go) + P0·3 (compose) podem ir em 3 frentes. P0·4/P0·6 são front. RLS (P1·7) precisa de design dedicado — abrir sozinho. Detalhe do mapa de conflito em <code>docs/SECURITY_OPTIMIZATION_BACKLOG.md</code>.</div>
+</section>
+
+<div class="foot wrap">
+  Gerado em 2026-06-07 · consolida <code>ARQUITETURA_ESTADO_ATUAL</code> + <code>ARQUITETURA_MELHORIAS</code> + <code>ENGINEERING_PRINCIPLES §10</code> + <code>SECURITY_OPTIMIZATION_BACKLOG</code>.<br>
+  Fotografia do estado local em disco/banco — não é promessa do que está em produção.
+</div>
+</main>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — n8n WhatsApp</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  body{background:#0d1117}
+  .navbar{background:linear-gradient(120deg,#1b1340,#0d1117 70%)!important;border-bottom:1px solid #2b3340}
+  .md h1{display:none}
+  .md h2{font-size:1.25rem;margin-top:1.8rem;border-bottom:1px solid #2b3340;padding-bottom:.4rem}
+  .md table{width:100%}
+  .md pre{background:#0b0f15;border:1px solid #2b3340;border-radius:.5rem;padding:1rem;overflow:auto;font-size:.85rem}
+  .md code{color:#7ee787}
+  .md pre code{color:#c9d1d9}
+  .md blockquote{border-left:3px solid #7c5cff;padding:.5rem 1rem;color:#8b949e;background:#161b22;border-radius:0 .5rem .5rem 0}
+  .accordion-button{font-weight:600}
+  .accordion-body :last-child{margin-bottom:0}
+  .accordion-body ul{margin-bottom:.3rem}
+  main{max-width:960px}
+</style>
+</head>
+<body>
+<nav class="navbar sticky-top px-3 px-md-4 py-3">
+  <span class="navbar-brand mb-0 h1">🗺️ Roadmap — n8n WhatsApp</span>
+  <div class="d-flex align-items-center gap-3 ms-auto">
+    <small class="text-secondary" id="updated">carregando…</small>
+    <button class="btn btn-sm btn-outline-light" onclick="load(true)">↻ Atualizar</button>
+  </div>
+</nav>
+
+<main class="container py-4">
+  <div id="err" class="alert alert-danger d-none">
+    Não consegui ler o <code>ROADMAP.md</code> (provável abertura via <code>file://</code>).
+    Rode <code>node docs/n8n/roadmap-server.js</code> (a partir da raiz do projeto) e abra <code>http://localhost:8088/roadmap.html</code>.
+  </div>
+  <div id="pre" class="md"></div>
+  <div id="etapas" class="my-3"></div>
+  <div id="post" class="md"></div>
+</main>
+<footer class="container text-secondary small pb-5">Gerada automaticamente do ROADMAP.md · auto-atualiza a cada 15s.</footer>
+
+<script>
+function colorize(html){
+  return html
+    .replace(/✅/g,'<span class="text-success">✅</span>')
+    .replace(/⏳/g,'<span class="text-secondary">⏳</span>')
+    .replace(/🚧/g,'<span class="text-warning">🚧</span>')
+    .replace(/❌/g,'<span class="text-danger">❌</span>');
+}
+function styleTables(el){
+  el.querySelectorAll('table').forEach(t=>t.classList.add('table','table-dark','table-striped','table-bordered','align-middle'));
+}
+function statusOf(title){
+  if(title.includes('✅')) return ['Feito','text-bg-success'];
+  if(title.includes('🚧')) return ['Em andamento','text-bg-warning'];
+  if(title.includes('⏸️')) return ['Adiado','text-bg-light'];
+  if(title.includes('❌')) return ['Não','text-bg-danger'];
+  return ['Planejado','text-bg-secondary'];
+}
+function buildAccordion(block){
+  const lines = block.split('\n');
+  const items = []; let cur = null;
+  for(const ln of lines){
+    const m = ln.match(/^###\s+(.*)/);
+    if(m){ if(cur) items.push(cur); cur = { title: m[1].trim(), body: [] }; }
+    else if(cur){ cur.body.push(ln); }
+  }
+  if(cur) items.push(cur);
+  let html = '<div class="accordion" id="acc">';
+  items.forEach((it,i)=>{
+    const [label,cls] = statusOf(it.title);
+    const title = it.title.replace(/⏸️/g,'').replace(/[✅⏳🚧❌]/g,'').trim();
+    const body = marked.parse(it.body.join('\n'));
+    html += `<div class="accordion-item">
+      <h2 class="accordion-header">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#et${i}" aria-expanded="false">
+          <span class="badge ${cls} me-2">${label}</span>${title}
+        </button>
+      </h2>
+      <div id="et${i}" class="accordion-collapse collapse">
+        <div class="accordion-body md">${body}</div>
+      </div>
+    </div>`;
+  });
+  return html + '</div>';
+}
+let lastMd = '';
+async function load(force){
+  try{
+    const res = await fetch('ROADMAP.md?ts=' + Date.now());
+    if(!res.ok) throw new Error(res.status);
+    const md = await res.text();
+    document.getElementById('err').classList.add('d-none');
+    document.getElementById('updated').textContent = 'atualizado às ' + new Date().toLocaleTimeString('pt-BR');
+    if(md === lastMd && !force) return;          // sem mudança: não re-renderiza (preserva collapses abertos)
+    lastMd = md;
+    const s = md.indexOf('<!--ETAPAS-->'), e = md.indexOf('<!--/ETAPAS-->');
+    let pre = md, etapas = '', post = '';
+    if(s >= 0 && e > s){ pre = md.slice(0, s); etapas = md.slice(s + 13, e); post = md.slice(e + 14); }
+    const preEl = document.getElementById('pre'), postEl = document.getElementById('post');
+    preEl.innerHTML = colorize(marked.parse(pre));
+    document.getElementById('etapas').innerHTML = etapas ? buildAccordion(etapas) : '';
+    postEl.innerHTML = colorize(marked.parse(post));
+    styleTables(preEl); styleTables(postEl);
+  }catch(err){
+    document.getElementById('err').classList.remove('d-none');
+    document.getElementById('updated').textContent = 'erro ao ler';
+  }
+}
+load();
+setInterval(() => load(false), 15000);
+</script>
+</body>
+</html>

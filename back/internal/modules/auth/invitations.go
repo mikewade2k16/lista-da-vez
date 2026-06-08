@@ -98,7 +98,7 @@ func (service *InvitationService) Accept(ctx context.Context, input InvitationAc
 		return LoginResult{}, err
 	}
 
-	session, err := service.tokens.Issue(updatedUser)
+	session, err := service.tokens.Issue("", updatedUser)
 	if err != nil {
 		return LoginResult{}, err
 	}

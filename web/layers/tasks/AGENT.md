@@ -10,7 +10,7 @@ migrar para backend Go nas Fases T1–T5.
 - `web/layers/tasks/pages/tasks.vue` — protótipo monolítico (foi ~2955 linhas, agora dividido em sub-componentes)
 - `web/layers/tasks/composables/useTasksWorkspace.ts` — CRUD localStorage, chave `omni.admin.tasks.workspace.v1`
 - `web/layers/tasks/composables/useTimeTracking.ts` — timer localStorage, chave `tasks-tracking-v1`
-- `web/layers/tasks/stores/session-simulation.ts` — simulação de RBAC (será deletado na Fase T5)
+- `web/layers/tasks/stores/tasks-client.ts` — store de contexto do cliente (userType/clientId derivados do `useAuthStore().role`). Substituiu o antigo store de simulação de sessão (shim de re-export removido em 2026-06-04, critério 5 da multitenant-completion). `clientId`/`clientOptions` ainda são placeholders até a API de contatos do CRM.
 - `web/layers/tasks/composables/useTasksPageContext.ts` — contexto compartilhado via provide/inject (Fase T0.5)
 
 ## Backend disponível após Fase T1
@@ -39,7 +39,7 @@ web/layers/tasks/
     useTaskRelations.ts                  (Fase T4) lazy load + cache cross-module
     useCan.ts                            (Fase T5) computed contra useMeContext().permissions
   stores/
-    session-simulation.ts               simulação RBAC (deletar na Fase T5)
+    tasks-client.ts                      contexto do cliente (userType/clientId) derivado do auth real
     tasks.ts                             (Fase T5) Pinia store real
   components/
     TasksFilterBar.vue                   toolbar: project selector, filtros, view toggle

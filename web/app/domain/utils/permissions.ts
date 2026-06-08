@@ -79,15 +79,22 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
   },
   {
     id: 'site_produtos_web',
-    label: 'Produtos Web',
-    description: 'Pagina administrativa trazida do web-reference para validacao visual.',
+    label: 'Produtos do Site',
+    description: 'Superficie canonica de produtos do site dentro do menu Site.',
     viewPermission: '',
     editPermission: '',
   },
   {
     id: 'site_leads_web',
-    label: 'Leads Web',
-    description: 'Pagina administrativa de leads trazida do web-reference para validacao visual.',
+    label: 'Leads do Site',
+    description: 'Superficie canonica de leads do site dentro do menu Site.',
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
+    id: 'site_tracking_web',
+    label: 'Tracking do Site',
+    description: 'Listagem administrativa dos eventos brutos de tracking do site.',
     viewPermission: '',
     editPermission: '',
   },
@@ -140,6 +147,21 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     description: 'Usuarios, overrides e matriz de acesso.',
     viewPermission: 'workspace.usuarios.view',
     editPermission: 'workspace.usuarios.edit',
+  },
+  {
+    id: 'usuarios_admin',
+    label: 'Usuarios Admin',
+    description: 'Visao cross-account de todos os users em core.users (so platform_admin).',
+    viewPermission: 'workspace.usuarios_admin.view',
+    editPermission: 'workspace.usuarios_admin.edit',
+  },
+  {
+    id: 'organizations_admin',
+    label: 'Organizations',
+    description:
+      'Gerencia agencias (core.organizations) e vinculos com accounts (so platform_admin).',
+    viewPermission: 'workspace.organizations_admin.view',
+    editPermission: 'workspace.organizations_admin.edit',
   },
   {
     id: 'manage',
@@ -236,6 +258,7 @@ const ROLE_WORKSPACES = {
     'site',
     'site_produtos_web',
     'site_leads_web',
+    'site_tracking_web',
     'clientes',
     'clientes_web',
     'erp',
@@ -243,6 +266,8 @@ const ROLE_WORKSPACES = {
     'crm',
     'multiloja',
     'usuarios',
+    'usuarios_admin',
+    'organizations_admin',
     'manage',
     'configuracoes',
     'themes',
@@ -262,6 +287,9 @@ const ROLE_WORKSPACES = {
     'relatorios',
     'campanhas',
     'site',
+    'site_produtos_web',
+    'site_leads_web',
+    'site_tracking_web',
     'clientes',
     'erp',
     'bi',
@@ -276,9 +304,42 @@ const ROLE_WORKSPACES = {
     'tools',
     'roadmap',
   ],
-  marketing: ['operacao', 'campanhas', 'site', 'erp', 'bi', 'crm', 'multiloja'],
-  director: ['operacao', 'site', 'erp', 'bi', 'crm', 'multiloja'],
-  manager: ['operacao', 'site', 'erp', 'bi', 'crm', 'multiloja', 'alertas', 'feedback'],
+  marketing: [
+    'operacao',
+    'campanhas',
+    'site',
+    'site_produtos_web',
+    'site_leads_web',
+    'site_tracking_web',
+    'erp',
+    'bi',
+    'crm',
+    'multiloja',
+  ],
+  director: [
+    'operacao',
+    'site',
+    'site_produtos_web',
+    'site_leads_web',
+    'site_tracking_web',
+    'erp',
+    'bi',
+    'crm',
+    'multiloja',
+  ],
+  manager: [
+    'operacao',
+    'site',
+    'site_produtos_web',
+    'site_leads_web',
+    'site_tracking_web',
+    'erp',
+    'bi',
+    'crm',
+    'multiloja',
+    'alertas',
+    'feedback',
+  ],
   store_terminal: [
     'operacao',
     'consultor',
@@ -299,6 +360,9 @@ const ROLE_WORKSPACES = {
     'relatorios',
     'campanhas',
     'site',
+    'site_produtos_web',
+    'site_leads_web',
+    'site_tracking_web',
     'clientes',
     'erp',
     'bi',
@@ -462,6 +526,45 @@ export function canManageConsultants(role, permissionKeys = [], permissionsResol
   }
 
   return normalized === 'platform_admin' || normalized === 'owner'
+}
+
+export function canViewConsultants(role, permissionKeys = [], permissionsResolved = false) {
+  const normalized = normalizeAppRole(role)
+  if (SUPERUSER_ROLES.has(normalized)) {
+    return true
+  }
+
+  if (permissionsResolved) {
+    return (
+      hasPermission(permissionKeys, 'workspace.consultor.view') ||
+      hasPermission(permissionKeys, 'workspace.configuracoes.view')
+    )
+  }
+
+  return (
+    normalized === 'platform_admin' || normalized === 'owner' || normalized === 'store_terminal'
+  )
+}
+
+export function canViewAlerts(role, permissionKeys = [], permissionsResolved = false) {
+  const normalized = normalizeAppRole(role)
+  if (SUPERUSER_ROLES.has(normalized)) {
+    return true
+  }
+
+  if (permissionsResolved) {
+    return (
+      hasPermission(permissionKeys, 'workspace.alertas.view') ||
+      hasPermission(permissionKeys, 'workspace.alertas.edit')
+    )
+  }
+
+  return (
+    normalized === 'platform_admin' ||
+    normalized === 'owner' ||
+    normalized === 'manager' ||
+    normalized === 'store_terminal'
+  )
 }
 
 export function canAccessReports(role, permissionKeys = [], permissionsResolved = false) {

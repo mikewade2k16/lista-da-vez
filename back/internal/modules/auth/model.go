@@ -53,6 +53,18 @@ type Principal struct {
 	Permissions         []string
 	PermissionsResolved bool
 	ExpiresAt           time.Time
+	// AccountID e resolvido pelo middleware RequireAuthWithAccount a partir de
+	// X-Account-Id. Vazio em rotas legadas que nao usam o middleware multi-tenant.
+	AccountID string
+	// SessionID e o UUID registrado em core.user_sessions ao emitir o token.
+	// Vazio em tokens legados emitidos antes da C6; nesses casos o cache e ignorado.
+	SessionID string
+}
+
+// AccountMemberChecker valida membership de um user em uma account.
+// Implementado em account_checker.go; testavel via mock.
+type AccountMemberChecker interface {
+	IsMember(ctx context.Context, accountID, userID string) (bool, error)
 }
 
 type LoginInput struct {
@@ -147,8 +159,8 @@ type InvitationIssueInput struct {
 type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (User, error)
 	FindByID(ctx context.Context, id string) (User, error)
-	// LoadUserForAuth retorna user + role + storeIDs em uma unica round-trip de banco.
-	// Usado no hot-path do middleware de auth; outros callers continuam usando FindByID.
+	// LoadUserForAuth retorna user + role + storeIDs pelo resolvedor de auth configurado.
+	// Usado no hot-path do middleware de auth.
 	LoadUserForAuth(ctx context.Context, id string) (User, error)
 	UpdateProfile(ctx context.Context, userID string, displayName string, email string) (User, error)
 	UpdatePassword(ctx context.Context, userID string, passwordHash string, mustChangePassword bool) (User, error)
@@ -173,7 +185,10 @@ type PasswordHasher interface {
 }
 
 type TokenManager interface {
-	Issue(user User) (SessionView, error)
+	// Issue emite um token para o usuario. sessionID pode ser "" para tokens
+	// legados (nao persistidos em core.user_sessions); nesse caso o campo
+	// SessionID fica ausente no JWT e o PrincipalCache nao e consultado.
+	Issue(sessionID string, user User) (SessionView, error)
 	Parse(token string) (Principal, error)
 }
 

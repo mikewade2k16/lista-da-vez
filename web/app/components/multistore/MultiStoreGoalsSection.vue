@@ -36,6 +36,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  selectedPeriod: {
+    type: String,
+    default: 'month',
+  },
   showCards: {
     type: Boolean,
     default: true,
@@ -50,7 +54,11 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:selectedMonth', 'update:selectedStoreId'])
+const emit = defineEmits([
+  'update:selectedMonth',
+  'update:selectedStoreId',
+  'update:selectedPeriod',
+])
 
 const auth = useAuthStore()
 const ui = useUiStore()
@@ -63,6 +71,7 @@ const storeSearch = ref('')
 const consultantSearch = ref('')
 const selectedMonth = ref(normalizeMonthValue(props.selectedMonth) || currentMonth())
 const selectedStoreId = ref(normalizeText(props.selectedStoreId))
+const selectedPeriod = ref(normalizePeriodValue(props.selectedPeriod))
 const storeSortBy = ref('storeLabel')
 const storeSortDir = ref('asc')
 const consultantSortBy = ref('storeLabel')
@@ -74,6 +83,14 @@ const rowSaveInFlight = new Map()
 const bulkCreating = ref(false)
 const bulkConsultantStoreId = ref('')
 const bulkConsultantCreating = ref(false)
+
+const periodOptions = [
+  { value: 'month', label: 'Mes' },
+  { value: 'p1', label: 'Semana 1' },
+  { value: 'p2', label: 'Semana 2' },
+  { value: 'p3', label: 'Semana 3' },
+  { value: 'p4', label: 'Semana 4' },
+]
 
 /* ===== Lojas e opções ===== */
 
@@ -131,7 +148,12 @@ const canBulkConsultant = computed(
 /* ===== Cards BI (performance vs realizado) ===== */
 
 const isCurrentMonthSelected = computed(() => selectedMonth.value === currentMonth())
-const selectedMonthRange = computed(() => buildMonthDateRange(selectedMonth.value))
+const selectedPeriodRange = computed(() =>
+  buildGoalPeriodDateRange(selectedMonth.value, selectedPeriod.value),
+)
+const selectedPeriodLabel = computed(() => selectedPeriodRange.value.label)
+const selectedPeriodRatio = computed(() => selectedPeriodRange.value.goalRatio)
+const isFullMonthPeriod = computed(() => selectedPeriod.value === 'month')
 
 const crmOverviewMatchesSelectedMonth = computed(() => {
   const overview = crmOverview.value
@@ -139,8 +161,8 @@ const crmOverviewMatchesSelectedMonth = computed(() => {
   const overviewTenantId = normalizeText(overview.store?.tenantId)
   if (overviewTenantId && normalizeText(auth.activeTenantId) !== overviewTenantId) return false
   return (
-    normalizeText(overview.dateFrom) === selectedMonthRange.value.dateFrom &&
-    normalizeText(overview.dateTo) === selectedMonthRange.value.dateTo
+    normalizeText(overview.dateFrom) === selectedPeriodRange.value.dateFrom &&
+    normalizeText(overview.dateTo) === selectedPeriodRange.value.dateTo
   )
 })
 
@@ -188,7 +210,7 @@ const performanceRows = computed(() => {
   if (!crmDataReady.value) return []
   const rows = []
   for (const goal of storeGoals.value) {
-    const monthlyGoal = Number(goal.monthlyGoal) || 0
+    const monthlyGoal = (Number(goal.monthlyGoal) || 0) * selectedPeriodRatio.value
     if (monthlyGoal <= 0) continue
     const perf = buildStorePerformance(goal)
     if (!perf) continue
@@ -224,7 +246,8 @@ const completionRemaining = computed(() => {
 
 /** Card 2: Projeção de fechamento (ritmo atual) */
 const projectionPct = computed(() => {
-  if (!isCurrentMonthSelected.value || !totalGoalWithRealized.value) return null
+  if (!isCurrentMonthSelected.value || !isFullMonthPeriod.value || !totalGoalWithRealized.value)
+    return null
   const now = new Date()
   const currentDay = now.getDate()
   const totalDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
@@ -271,7 +294,7 @@ const storeGridColumns = computed(() => {
   const columns = [
     {
       id: 'month',
-      label: 'Periodo',
+      label: 'Mes',
       width: '88px',
       sortable: true,
       defaultVisible: false,
@@ -284,6 +307,17 @@ const storeGridColumns = computed(() => {
       locked: true,
     },
     { id: 'monthlyGoal', label: 'Meta total', width: '140px', align: 'end', sortable: true },
+    ...(isFullMonthPeriod.value
+      ? []
+      : [
+          {
+            id: 'periodGoal',
+            label: 'Meta semana',
+            width: '130px',
+            align: 'end',
+            sortable: true,
+          },
+        ]),
     { id: 'realizedSales', label: 'Realizado', width: '130px', align: 'end', sortable: true },
     { id: 'goalCompletionPct', label: 'Ating.', width: '92px', align: 'end', sortable: true },
     { id: 'avgTicketGoal', label: 'Ticket medio', width: '140px', align: 'end', sortable: true },
@@ -307,7 +341,7 @@ const consultantGridColumns = computed(() => {
   const columns = [
     {
       id: 'month',
-      label: 'Periodo',
+      label: 'Mes',
       width: '88px',
       sortable: true,
       defaultVisible: false,
@@ -378,14 +412,16 @@ const sortedConsultantRows = computed(() => {
 function decorateRow(row) {
   const performance = row.scope === 'store' ? buildStorePerformance(row) : null
   const monthlyGoal = Number(row.monthlyGoal) || 0
+  const periodGoal = monthlyGoal * selectedPeriodRatio.value
   const realizedSales = performance ? Number(performance.soldValue || 0) : null
   return {
     ...row,
     storeLabel: row.storeName,
     consultantLabel: row.consultantName || 'Meta da loja',
+    periodGoal,
     realizedSales,
     goalCompletionPct:
-      realizedSales !== null && monthlyGoal > 0 ? (realizedSales / monthlyGoal) * 100 : null,
+      realizedSales !== null && periodGoal > 0 ? (realizedSales / periodGoal) * 100 : null,
     updatedAtLabel: formatUpdatedAt(row.updatedAt),
   }
 }
@@ -436,6 +472,16 @@ watch(
   },
 )
 
+watch(
+  () => props.selectedPeriod,
+  (value) => {
+    const normalizedValue = normalizePeriodValue(value)
+    if (normalizedValue !== selectedPeriod.value) {
+      selectedPeriod.value = normalizedValue
+    }
+  },
+)
+
 watch(selectedMonth, (value) => {
   const normalizedValue = normalizeMonthValue(value) || currentMonth()
   if (normalizedValue !== value) {
@@ -447,6 +493,15 @@ watch(selectedMonth, (value) => {
 
 watch(selectedStoreId, (value) => {
   emit('update:selectedStoreId', normalizeText(value))
+})
+
+watch(selectedPeriod, (value) => {
+  const normalizedValue = normalizePeriodValue(value)
+  if (normalizedValue !== value) {
+    selectedPeriod.value = normalizedValue
+    return
+  }
+  emit('update:selectedPeriod', normalizedValue)
 })
 
 watch(
@@ -488,7 +543,7 @@ watch(
 )
 
 watch(
-  () => [auth.isAuthenticated, auth.activeTenantId, selectedMonth.value],
+  () => [auth.isAuthenticated, auth.activeTenantId, selectedMonth.value, selectedPeriod.value],
   () => {
     if (!props.manageDataLifecycle) return
     void refreshCrmOverview()
@@ -525,7 +580,7 @@ async function refreshCrmOverview() {
     return null
   }
 
-  const range = selectedMonthRange.value
+  const range = selectedPeriodRange.value
   crmStore.dateFrom = range.dateFrom
   crmStore.dateTo = range.dateTo
 
@@ -681,7 +736,7 @@ async function saveRow(row) {
 async function removeRow(row) {
   const { confirmed } = await ui.confirm({
     title: 'Excluir meta',
-    message: `A meta de ${row.consultantName || row.storeName} sera removida deste periodo. Deseja continuar?`,
+    message: `A meta de ${row.consultantName || row.storeName} sera removida deste mes. Deseja continuar?`,
     confirmLabel: 'Excluir',
   })
   if (!confirmed) return
@@ -721,6 +776,7 @@ function clearFilters() {
   storeSearch.value = ''
   consultantSearch.value = ''
   selectedMonth.value = currentMonth()
+  selectedPeriod.value = 'month'
   selectedStoreId.value =
     props.allowAllStoreScope && activeStores.value.length > 1 ? '' : fallbackStoreId.value
 }
@@ -751,7 +807,7 @@ function exportCsv(target) {
   }
 
   const lines = [
-    'Periodo;Escopo;Loja;Codigo loja;Consultor;Meta total;Ticket medio;Conversao;PA;Atualizado em',
+    'Mes;Escopo;Loja;Codigo loja;Consultor;Meta total;Ticket medio;Conversao;PA;Atualizado em',
   ]
   for (const row of rows) {
     lines.push(
@@ -852,6 +908,7 @@ function sortValue(row, field) {
       if (
         [
           'monthlyGoal',
+          'periodGoal',
           'realizedSales',
           'goalCompletionPct',
           'avgTicketGoal',
@@ -899,6 +956,39 @@ function buildMonthDateRange(month) {
   return {
     dateFrom: `${normalized}-01`,
     dateTo: `${normalized}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
+function buildGoalPeriodDateRange(month, period) {
+  const monthRange = buildMonthDateRange(month)
+  const normalizedPeriod = normalizePeriodValue(period)
+  if (normalizedPeriod === 'month') {
+    const totalDays = Number(monthRange.dateTo.slice(-2)) || 1
+    return {
+      ...monthRange,
+      label: 'Mes',
+      shortLabel: 'Mes',
+      goalRatio: 1,
+      dayCount: totalDays,
+      totalDays,
+    }
+  }
+
+  const normalizedMonth = monthRange.dateFrom.slice(0, 7)
+  const totalDays = Number(monthRange.dateTo.slice(-2)) || 1
+  const periodIndex = Number(normalizedPeriod.replace('p', '')) || 1
+  const startDay = Math.min(totalDays, (periodIndex - 1) * 7 + 1)
+  const endDay = periodIndex >= 4 ? totalDays : Math.min(totalDays, startDay + 6)
+  const dayCount = Math.max(1, endDay - startDay + 1)
+
+  return {
+    dateFrom: `${normalizedMonth}-${String(startDay).padStart(2, '0')}`,
+    dateTo: `${normalizedMonth}-${String(endDay).padStart(2, '0')}`,
+    label: `Semana ${periodIndex}`,
+    shortLabel: `S${periodIndex}`,
+    goalRatio: dayCount / totalDays,
+    dayCount,
+    totalDays,
   }
 }
 
@@ -1021,6 +1111,11 @@ function normalizeMonthValue(value) {
   return /^\d{4}-\d{2}$/.test(normalized) ? normalized : ''
 }
 
+function normalizePeriodValue(value) {
+  const normalized = normalizeText(value)
+  return ['month', 'p1', 'p2', 'p3', 'p4'].includes(normalized) ? normalized : 'month'
+}
+
 /* Recebe número OU string; devolve string formatada pt-BR (ex: "40.000" ou "1.750,5") */
 function formatEditableValue(value) {
   if (value === null || value === undefined || value === '') return ''
@@ -1082,6 +1177,34 @@ function escapeCsvCell(value) {
 
 <template>
   <section class="multistore-goals" data-testid="multistore-goals-section">
+    <div v-if="showCards" class="multistore-goals__period-bar">
+      <label class="multistore-goals__month-chip">
+        <input v-model="selectedMonth" type="month" />
+      </label>
+
+      <AppSelectField
+        class="multistore-goals__toolbar-select"
+        :model-value="selectedStoreId"
+        :options="storeFilterOptions"
+        :show-leading-icon="false"
+        compact
+        @update:model-value="selectedStoreId = $event"
+      />
+
+      <div class="multistore-goals__period-tabs" role="tablist" aria-label="Semana da meta">
+        <button
+          v-for="option in periodOptions"
+          :key="option.value"
+          class="multistore-goals__period-tab"
+          :class="{ 'is-active': selectedPeriod === option.value }"
+          type="button"
+          @click="selectedPeriod = option.value"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+    </div>
+
     <!-- Cards BI: performance vs realizado -->
     <div v-if="showCards" class="multistore-goals__cards">
       <!-- Card 1: % cumprimento da meta vigente -->
@@ -1090,11 +1213,11 @@ function escapeCsvCell(value) {
         :class="`is-${pctStatus(completionPct)}`"
         :title="
           completionPct === null
-            ? 'Sem dados de vendas para o periodo'
+            ? 'Sem dados de vendas para a semana'
             : `R$ ${formatCurrencyBRL(totalRealized).replace('R$', '').trim()} de R$ ${formatCurrencyBRL(totalGoalWithRealized).replace('R$', '').trim()}`
         "
       >
-        <span class="multistore-goals__card-label">Cumprimento da meta</span>
+        <span class="multistore-goals__card-label">Cumprimento - {{ selectedPeriodLabel }}</span>
         <strong v-if="completionPct === null" class="multistore-goals__card-value is-muted">
           —
         </strong>
@@ -1143,7 +1266,9 @@ function escapeCsvCell(value) {
               cardsLoadingCrm
                 ? 'Carregando CRM...'
                 : isCurrentMonthSelected
-                  ? 'Sem dados suficientes'
+                  ? isFullMonthPeriod
+                    ? 'Sem dados suficientes'
+                    : 'Disponivel no mes completo'
                   : 'Mes nao corrente'
             }}
           </template>
@@ -1160,7 +1285,7 @@ function escapeCsvCell(value) {
         :class="topStore ? `is-${pctStatus(topStore.completionPct)}` : 'is-neutral'"
         title="Loja com maior % de cumprimento da meta"
       >
-        <span class="multistore-goals__card-label">Top do mes</span>
+        <span class="multistore-goals__card-label">Top - {{ selectedPeriodLabel }}</span>
         <strong v-if="!topStore" class="multistore-goals__card-value is-muted">—</strong>
         <strong v-else class="multistore-goals__card-value multistore-goals__card-value--name">
           {{ topStore.storeName }}
@@ -1227,6 +1352,19 @@ function escapeCsvCell(value) {
           <label class="multistore-goals__month-chip">
             <input v-model="selectedMonth" type="month" />
           </label>
+
+          <div class="multistore-goals__period-tabs" role="tablist" aria-label="Semana da meta">
+            <button
+              v-for="option in periodOptions"
+              :key="option.value"
+              class="multistore-goals__period-tab"
+              :class="{ 'is-active': selectedPeriod === option.value }"
+              type="button"
+              @click="selectedPeriod = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
 
           <AppSelectField
             class="multistore-goals__toolbar-select"
@@ -1305,6 +1443,12 @@ function escapeCsvCell(value) {
             />
           </label>
           <span v-else>{{ formatCurrencyBRL(row.monthlyGoal) }}</span>
+        </template>
+
+        <template #cell-periodGoal="{ row }">
+          <span class="multistore-goals__metric">
+            {{ formatCurrencyBRL(row.periodGoal) }}
+          </span>
         </template>
 
         <template #cell-realizedSales="{ row }">
@@ -1818,6 +1962,49 @@ function escapeCsvCell(value) {
 /* Filtros e botões */
 .multistore-goals__toolbar-select {
   min-width: 8.5rem;
+}
+
+.multistore-goals__period-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 0.1rem;
+}
+
+.multistore-goals__period-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-height: 2rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--ring) / 0.14);
+  background: rgb(var(--surface-2) / 0.72);
+  flex: 0 0 auto;
+}
+
+.multistore-goals__period-tab {
+  min-height: 1.7rem;
+  padding: 0 0.55rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.multistore-goals__period-tab:hover {
+  color: var(--text-main);
+}
+
+.multistore-goals__period-tab.is-active {
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
 }
 
 .multistore-goals__month-chip {

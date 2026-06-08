@@ -50,6 +50,12 @@ const crmStore = {
   refreshOverview: vi.fn().mockResolvedValue(undefined),
 }
 
+async function flushRealtimeTicket() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 vi.mock('vue', async () => {
   const actual = await vi.importActual<typeof import('vue')>('vue')
   return {
@@ -122,6 +128,7 @@ describe('useContextRealtime', () => {
     crmStore.refreshOverview.mockClear()
     crmStore.overview = null
     ;(globalThis as any).WebSocket = MockWebSocket
+    ;(globalThis as any).$fetch.mockResolvedValue({ ticket: 'ticket-context' })
   })
 
   afterEach(() => {
@@ -135,10 +142,21 @@ describe('useContextRealtime', () => {
     const { useContextRealtime } = await import('./useContextRealtime')
 
     const realtime = useContextRealtime()
+    await flushRealtimeTicket()
+
     const socket = MockWebSocket.instances[0]
 
+    expect((globalThis as any).$fetch).toHaveBeenCalledWith(
+      '/v1/ws/ticket',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
     expect(socket?.url).toContain('/v1/realtime/context')
     expect(socket?.url).toContain('tenantId=tenant-1')
+    expect(socket?.url).toContain('ticket=ticket-context')
+    expect(socket?.url).not.toContain('access_token=')
 
     socket?.open()
     socket?.message({

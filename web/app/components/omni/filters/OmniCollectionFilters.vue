@@ -19,6 +19,9 @@ const props = withDefaults(
     showColumnFilter?: boolean
     loading?: boolean
     showReset?: boolean
+    // C16: estado de lock + ordem das colunas (admin configura).
+    lockedColumns?: string[]
+    columnOrder?: string[]
   }>(),
   {
     viewerUserType: 'admin',
@@ -29,12 +32,17 @@ const props = withDefaults(
     showColumnFilter: true,
     loading: false,
     showReset: true,
+    lockedColumns: () => [],
+    columnOrder: () => [],
   },
 )
 
 const emit = defineEmits<{
   'update:modelValue': [value: Record<string, unknown>]
   'update:visibleColumns': [value: string[]]
+  'update:lockedColumns': [value: string[]]
+  'update:columnOrder': [value: string[]]
+  'reset-columns': []
   reset: []
 }>()
 
@@ -254,7 +262,13 @@ function onReset() {
         :columns="visibleTableColumns"
         :exclude-keys="props.columnExcludeKeys"
         :label="props.columnFilterLabel"
+        :locked-keys="props.lockedColumns"
+        :column-order="props.columnOrder"
+        :viewer-user-type="props.viewerUserType"
         @update:model-value="onVisibleColumnsUpdate"
+        @update:locked-keys="emit('update:lockedColumns', $event)"
+        @update:column-order="emit('update:columnOrder', $event)"
+        @reset="emit('reset-columns')"
       />
 
       <slot name="actions"></slot>

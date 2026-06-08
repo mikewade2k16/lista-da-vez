@@ -11,6 +11,12 @@ const authStore = {
   accessToken: 'token-123',
 }
 
+async function flushRealtimeTicket() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 vi.mock('vue', async () => {
   const actual = await vi.importActual<typeof import('vue')>('vue')
   return {
@@ -37,6 +43,7 @@ describe('useTasksRealtime', () => {
     authStore.tenantContext = [{ id: 'tenant-1' }]
     authStore.principal = { tenantId: 'tenant-1' }
     authStore.accessToken = 'token-123'
+    ;(globalThis as any).$fetch.mockResolvedValue({ ticket: 'ticket-tasks' })
     vi.spyOn(console, 'info').mockImplementation(() => undefined)
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -57,13 +64,22 @@ describe('useTasksRealtime', () => {
       enabled: true,
       onEvent,
     })
+    await flushRealtimeTicket()
 
     const socket = MockWebSocket.instances[0]
 
+    expect((globalThis as any).$fetch).toHaveBeenCalledWith(
+      '/v1/ws/ticket',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
     expect(socket?.url).toContain('/v1/realtime/tasks')
     expect(socket?.url).toContain('scope=account')
     expect(socket?.url).toContain('accountId=tenant-1')
-    expect(socket?.url).toContain('access_token=token-123')
+    expect(socket?.url).toContain('ticket=ticket-tasks')
+    expect(socket?.url).not.toContain('access_token=')
 
     socket?.open()
 

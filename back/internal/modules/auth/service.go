@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// PrincipalCacheStore e a interface minima que o Service usa para cachear Principals.
+// Mantida aqui para evitar importar httpapi (ciclo de importacao).
+type PrincipalCacheStore interface {
+	Get(sessionID string) (Principal, bool)
+	Set(sessionID, userID string, p Principal)
+}
+
 type Service struct {
 	users              UserRepository
 	password           PasswordHasher
@@ -15,6 +22,8 @@ type Service struct {
 	permissions        PermissionResolver
 	notifier           ContextPublisher
 	consultantProfiles ConsultantProfileSync
+	sessions           SessionRepository   // opcional; nil = nao persiste sessoes
+	principalCache     PrincipalCacheStore // opcional; nil = sem cache
 }
 
 type ContextPublisher interface {
@@ -39,6 +48,16 @@ func NewService(users UserRepository, password PasswordHasher, tokens TokenManag
 
 func (service *Service) SetContextPublisher(notifier ContextPublisher) {
 	service.notifier = notifier
+}
+
+// SetSessionRepository habilita criacao e verificacao de sessoes em core.user_sessions.
+func (service *Service) SetSessionRepository(sessions SessionRepository) {
+	service.sessions = sessions
+}
+
+// SetPrincipalCache habilita o cache de Principals com TTL para reduzir DB round-trips.
+func (service *Service) SetPrincipalCache(cache PrincipalCacheStore) {
+	service.principalCache = cache
 }
 
 func (service *Service) Login(ctx context.Context, input LoginInput) (LoginResult, error) {
@@ -70,7 +89,16 @@ func (service *Service) Login(ctx context.Context, input LoginInput) (LoginResul
 		return LoginResult{}, ErrInvalidCredentials
 	}
 
-	session, err := service.tokens.Issue(user)
+	var sessionID string
+	if service.sessions != nil {
+		id, err := service.sessions.Create(ctx, user.ID, "", "")
+		if err != nil {
+			return LoginResult{}, err
+		}
+		sessionID = id
+	}
+
+	session, err := service.tokens.Issue(sessionID, user)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -79,6 +107,17 @@ func (service *Service) Login(ctx context.Context, input LoginInput) (LoginResul
 		User:    user.View(),
 		Session: session,
 	}, nil
+}
+
+// Logout revoga a sessao do principal em core.user_sessions, invalidando o token
+// ja emitido (Authenticate passa a retornar 401 para esse `sid`). Idempotente e
+// no-op para tokens legados sem `sid` ou quando o repo de sessao nao esta ligado.
+func (service *Service) Logout(ctx context.Context, principal Principal) error {
+	if service.sessions == nil || strings.TrimSpace(principal.SessionID) == "" {
+		return nil
+	}
+
+	return service.sessions.Revoke(ctx, principal.SessionID)
 }
 
 func (service *Service) Authenticate(ctx context.Context, authorizationHeader string) (Principal, error) {
@@ -96,10 +135,27 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 		return Principal{}, err
 	}
 
-	// Hot-path: LoadUserForAuth consolida em 1 query o que antes era FindByID (que fazia
-	// internamente 2 round-trips: findRecord + findStoreIDs). Resultado: 4 queries por
-	// request (findRecord + findStoreIDs + ListRolePermissions + ListUserOverrides) viram
-	// 2 (LoadUserForAuth + ResolveEffectivePermissions).
+	// Cache hit: evitar DB se Principal ainda e valido (TTL 2min).
+	// Tokens legados (sem SessionID) ignoram o cache.
+	if principal.SessionID != "" && service.principalCache != nil {
+		if cached, ok := service.principalCache.Get(principal.SessionID); ok {
+			return cached, nil
+		}
+	}
+
+	// Cache miss ou token legado: checar se sessao foi revogada antes de ir ao banco.
+	if principal.SessionID != "" && service.sessions != nil {
+		revoked, err := service.sessions.IsRevoked(ctx, principal.SessionID)
+		if err != nil {
+			return Principal{}, err
+		}
+		if revoked {
+			return Principal{}, ErrUnauthorized
+		}
+	}
+
+	// Hot-path: LoadUserForAuth centraliza user + role + escopo usando a fonte configurada
+	// (core, legado ou core com fallback) antes de resolver permissoes efetivas.
 	user, err := service.users.LoadUserForAuth(ctx, principal.UserID)
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
@@ -127,6 +183,11 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 
 		principal.Permissions = append([]string{}, permissionKeys...)
 		principal.PermissionsResolved = true
+	}
+
+	// Armazenar no cache para proximas requests.
+	if principal.SessionID != "" && service.principalCache != nil {
+		service.principalCache.Set(principal.SessionID, principal.UserID, principal)
 	}
 
 	return principal, nil

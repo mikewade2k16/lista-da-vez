@@ -82,7 +82,7 @@ function toPxNumber(value: string) {
 </script>
 
 <template>
-  <section class="space-y-4">
+  <section class="themes-page space-y-4">
     <AdminPageHeader
       eyebrow="Admin"
       title="Theme Studio"
@@ -190,3 +190,12 @@ function toPxNumber(value: string) {
     />
   </section>
 </template>
+
+<style scoped>
+.themes-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 1rem;
+}
+</style>

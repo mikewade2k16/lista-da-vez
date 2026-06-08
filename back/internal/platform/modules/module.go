@@ -19,6 +19,7 @@ import (
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
 // Module e a unidade plugavel da plataforma.
@@ -124,6 +125,17 @@ type Dependencies struct {
 	// fonte de Principal nos endpoints v1 e v2 ate que JWT v3 com sessionId
 	// (Fase futura) o substitua.
 	AuthMiddleware *auth.Middleware
+
+	// ModulesGuard valida que o modulo da rota esta habilitado para a account
+	// em X-Account-Id. Modulos satelites (queue, crm, finance, ...) devem
+	// envolver suas rotas com guard.RequireModule("queue").
+	// O modulo "core" NAO usa o guard — suas rotas de discovery sao pre-requisito
+	// para que o guard saiba quais modulos estao habilitados.
+	ModulesGuard *httpapi.AccountModulesGuard
+
+	// PasswordHasher e o BcryptHasher compartilhado para gerar/verificar hashes
+	// de senha. Usado por modulos que criam usuarios (ex.: core /v1/admin/users).
+	PasswordHasher *auth.BcryptHasher
 }
 
 // PermissionDef declara uma permissao do catalogo do modulo.

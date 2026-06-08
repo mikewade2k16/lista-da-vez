@@ -8,10 +8,27 @@ function normalizeText(value) {
   return String(value || '').trim()
 }
 
+function formatDateInput(date: Date) {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0'),
+  ].join('-')
+}
+
+function buildCurrentMonthRange() {
+  const now = new Date()
+  return {
+    dateFrom: formatDateInput(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+    dateTo: formatDateInput(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))),
+  }
+}
+
 export const useAnalyticsStore = defineStore('analytics', () => {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
+  const defaultRange = buildCurrentMonthRange()
 
   const ranking = ref(null)
   const data = ref(null)
@@ -23,13 +40,16 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   const rankingScopeKey = ref('')
   const dataScopeKey = ref('')
   const intelligenceScopeKey = ref('')
+  const dateFrom = ref(defaultRange.dateFrom)
+  const dateTo = ref(defaultRange.dateTo)
 
   const currentScopeKey = computed(() => {
+    const dateScope = `:${normalizeText(dateFrom.value)}:${normalizeText(dateTo.value)}`
     if (integratedScope.value) {
-      return `tenant:${normalizeText(auth.activeTenantId)}`
+      return `tenant:${normalizeText(auth.activeTenantId)}${dateScope}`
     }
 
-    return `store:${normalizeText(auth.activeStoreId)}`
+    return `store:${normalizeText(auth.activeStoreId)}${dateScope}`
   })
 
   function clearState() {
@@ -44,13 +64,26 @@ export const useAnalyticsStore = defineStore('analytics', () => {
   }
 
   function buildScopeQuery() {
+    const params = new URLSearchParams()
     if (integratedScope.value) {
       const tenantId = normalizeText(auth.activeTenantId)
-      return tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''
+      if (tenantId) params.set('tenantId', tenantId)
+    } else {
+      const storeId = normalizeText(auth.activeStoreId)
+      if (storeId) params.set('storeId', storeId)
     }
 
-    const storeId = normalizeText(auth.activeStoreId)
-    return storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''
+    if (dateFrom.value) params.set('dateFrom', dateFrom.value)
+    if (dateTo.value) params.set('dateTo', dateTo.value)
+
+    const query = params.toString()
+    return query ? `?${query}` : ''
+  }
+
+  function resetCurrentMonth() {
+    const nextRange = buildCurrentMonthRange()
+    dateFrom.value = nextRange.dateFrom
+    dateTo.value = nextRange.dateTo
   }
 
   async function ensureBase() {
@@ -87,6 +120,10 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     } finally {
       pending.value = false
     }
+  }
+
+  async function applyRankingFilters() {
+    return fetchRanking()
   }
 
   async function fetchData() {
@@ -207,13 +244,17 @@ export const useAnalyticsStore = defineStore('analytics', () => {
     ready,
     errorMessage,
     integratedScope,
+    dateFrom,
+    dateTo,
     clearState,
     fetchRanking,
+    applyRankingFilters,
     fetchData,
     fetchIntelligence,
     ensureRanking,
     ensureData,
     ensureIntelligence,
     setIntegratedScope,
+    resetCurrentMonth,
   }
 })

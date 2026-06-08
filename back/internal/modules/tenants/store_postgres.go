@@ -60,7 +60,7 @@ func (repository *PostgresRepository) FindAccessibleByID(ctx context.Context, pr
 
 func (repository *PostgresRepository) Create(ctx context.Context, tenant Tenant) (Tenant, error) {
 	created, err := scanTenant(repository.pool.QueryRow(ctx, `
-		insert into tenants (
+		insert into core.accounts (
 			slug,
 			name,
 			is_active
@@ -91,7 +91,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, tenant Tenant)
 
 func (repository *PostgresRepository) Update(ctx context.Context, tenant Tenant) (Tenant, error) {
 	updated, err := scanTenant(repository.pool.QueryRow(ctx, `
-		update tenants
+		update core.accounts
 		set
 			slug = $2,
 			name = $3,
@@ -118,109 +118,6 @@ func (repository *PostgresRepository) Update(ctx context.Context, tenant Tenant)
 	}
 
 	return updated, nil
-}
-
-func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string, []any) {
-	activeClause := " and t.is_active = true"
-	activeClauseForStore := " and t.is_active = true"
-	if input.IncludeInactive {
-		activeClause = ""
-		activeClauseForStore = ""
-	}
-
-	switch principal.Role {
-	case auth.RolePlatformAdmin:
-		return `
-			select
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			where 1 = 1` + activeClause + `
-			order by t.name asc;
-		`, nil
-	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
-		return `
-			select distinct
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			join user_tenant_roles utr on utr.tenant_id = t.id
-			where utr.user_id = $1::uuid
-			` + activeClause + `
-			order by t.name asc;
-		`, []any{principal.UserID}
-	default:
-		return `
-			select distinct
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			join stores s on s.tenant_id = t.id
-			join user_store_roles usr on usr.store_id = s.id
-			where usr.user_id = $1::uuid
-				and s.is_active = true
-				` + activeClauseForStore + `
-			order by t.name asc;
-		`, []any{principal.UserID}
-	}
-}
-
-func buildFindAccessibleQuery(principal auth.Principal, tenantID string) (string, []any) {
-	switch principal.Role {
-	case auth.RolePlatformAdmin:
-		return `
-			select
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			where t.id = $1::uuid;
-		`, []any{tenantID}
-	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
-		return `
-			select distinct
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			join user_tenant_roles utr on utr.tenant_id = t.id
-			where t.id = $1::uuid
-				and utr.user_id = $2::uuid;
-		`, []any{tenantID, principal.UserID}
-	default:
-		return `
-			select distinct
-				t.id::text,
-				t.slug,
-				t.name,
-				t.is_active,
-				t.created_at,
-				t.updated_at
-			from tenants t
-			join stores s on s.tenant_id = t.id
-			join user_store_roles usr on usr.store_id = s.id
-			where t.id = $1::uuid
-				and usr.user_id = $2::uuid;
-		`, []any{tenantID, principal.UserID}
-	}
 }
 
 func scanTenant(row pgx.Row) (Tenant, error) {

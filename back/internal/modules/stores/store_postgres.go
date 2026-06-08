@@ -61,7 +61,7 @@ func (repository *PostgresRepository) FindAccessibleByID(ctx context.Context, pr
 
 func (repository *PostgresRepository) Create(ctx context.Context, store Store) (Store, error) {
 	query := `
-		insert into stores (
+		insert into queue.stores (
 			tenant_id,
 			code,
 			name,
@@ -132,7 +132,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, store Store) (
 
 func (repository *PostgresRepository) Update(ctx context.Context, store Store) (Store, error) {
 	query := `
-		update stores
+		update queue.stores
 		set
 			code = $2,
 			name = $3,
@@ -203,22 +203,21 @@ func (repository *PostgresRepository) Delete(ctx context.Context, storeID string
 	}()
 
 	if _, err := tx.Exec(ctx, `
-		update consultants
+		update queue.consultants
 		set store_id = null
 		where store_id = $1::uuid;
 	`, storeID); err != nil {
 		return err
 	}
 
-	if _, err := tx.Exec(ctx, `
-		delete from user_store_roles
-		where store_id = $1::uuid;
-	`, storeID); err != nil {
+	// U4b: o legado `delete from user_store_roles where store_id` foi removido;
+	// a limpeza do escopo da loja agora e so em core (deleteCoreStoreScopeTx).
+	if err := deleteCoreStoreScopeTx(ctx, tx, storeID); err != nil {
 		return err
 	}
 
 	commandTag, err := tx.Exec(ctx, `
-		delete from stores
+		delete from queue.stores
 		where id = $1::uuid;
 	`, storeID)
 	if err != nil {
@@ -234,205 +233,6 @@ func (repository *PostgresRepository) Delete(ctx context.Context, storeID string
 	}
 
 	return nil
-}
-
-func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string, []any) {
-	tenantID := strings.TrimSpace(input.TenantID)
-	activeClause := ""
-	if !input.IncludeInactive {
-		activeClause = " and s.is_active = true"
-	}
-
-	switch principal.Role {
-	case auth.RolePlatformAdmin:
-		if tenantID != "" {
-			return `
-				select
-					s.id::text,
-					s.tenant_id::text,
-					s.code,
-					s.name,
-					s.city,
-					s.default_template_id,
-					s.monthly_goal,
-					s.weekly_goal,
-					s.avg_ticket_goal,
-					s.conversion_goal,
-					s.pa_goal,
-					s.is_active,
-					s.created_at,
-					s.updated_at
-				from stores s
-				where s.tenant_id = $1::uuid
-				` + activeClause + `
-				order by s.created_at asc, s.code asc;
-			`, []any{tenantID}
-		}
-
-		return `
-			select
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			where 1 = 1
-			` + activeClause + `
-			order by s.created_at asc, s.code asc;
-		`, nil
-	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
-		query := `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_tenant_roles utr on utr.tenant_id = s.tenant_id
-			where utr.user_id = $1::uuid
-		`
-		query += activeClause
-		args := []any{principal.UserID}
-		if tenantID != "" {
-			query += `
-				and s.tenant_id = $2::uuid
-			`
-			args = append(args, tenantID)
-		}
-
-		query += `
-			order by s.created_at asc, s.code asc;
-		`
-
-		return query, args
-	default:
-		query := `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_store_roles usr on usr.store_id = s.id
-			where usr.user_id = $1::uuid
-		`
-		query += activeClause
-		args := []any{principal.UserID}
-		if tenantID != "" {
-			query += `
-				and s.tenant_id = $2::uuid
-			`
-			args = append(args, tenantID)
-		}
-
-		query += `
-			order by s.created_at asc, s.code asc;
-		`
-
-		return query, args
-	}
-}
-
-func buildFindAccessibleQuery(principal auth.Principal, storeID string) (string, []any) {
-	switch principal.Role {
-	case auth.RolePlatformAdmin:
-		return `
-			select
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			where s.id = $1::uuid
-			limit 1;
-		`, []any{storeID}
-	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
-		return `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_tenant_roles utr on utr.tenant_id = s.tenant_id
-			where s.id = $1::uuid
-				and utr.user_id = $2::uuid
-			limit 1;
-		`, []any{storeID, principal.UserID}
-	default:
-		return `
-			select distinct
-				s.id::text,
-				s.tenant_id::text,
-				s.code,
-				s.name,
-				s.city,
-				s.default_template_id,
-				s.monthly_goal,
-				s.weekly_goal,
-				s.avg_ticket_goal,
-				s.conversion_goal,
-				s.pa_goal,
-				s.is_active,
-				s.created_at,
-				s.updated_at
-			from stores s
-			join user_store_roles usr on usr.store_id = s.id
-			where s.id = $1::uuid
-				and usr.user_id = $2::uuid
-			limit 1;
-		`, []any{storeID, principal.UserID}
-	}
 }
 
 func scanStore(row pgx.Row) (Store, error) {

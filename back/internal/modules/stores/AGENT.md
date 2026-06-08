@@ -40,18 +40,16 @@ Ele nao deve cuidar de:
 - `owner` pode listar e administrar lojas do proprio tenant
 - `marketing` e `director` podem listar lojas do proprio tenant, mas nao administrar
 - `manager` e `consultant` listam apenas as lojas a que pertencem
+- leituras de escopo de usuario devem vir de `core.account_users`, `core.user_role_assignments`/`core.roles` e `core.user_module_settings(module_id='queue').config.storeIdsByAccount`
+- `user_store_roles` e legado temporario: manter somente dual-write/limpeza enquanto U4c nao remove as tabelas
 
 ## Regras operacionais obrigatorias
 
+- persistencia de lojas usa `queue.stores`; limpeza de vinculos operacionais usa `queue.consultants`; nao voltar aos aliases publicos `stores`/`consultants`
 - o contexto operacional normal deve continuar lendo apenas lojas ativas
 - a visao administrativa pode pedir `includeInactive=true` quando precisar trabalhar com lojas arquivadas
-- exclusao de loja nunca deve depender apenas do `on delete cascade`
-- antes de excluir, o modulo deve bloquear a operacao se ainda existirem:
-  - consultores vinculados
-  - usuarios vinculados por `user_store_roles`
-  - fila, atendimento, pausa ou status operacional
-  - historico operacional
-- o bloqueio deve voltar para a UI com detalhes estruturados, para o admin entender o motivo
+- ao excluir loja, remover tambem o id da loja em `core.user_module_settings` para todos os usuarios com escopo naquele account
+- manter a limpeza em `user_store_roles` enquanto existir o dual-write legado
 
 ## Regras de compatibilidade com o front
 

@@ -14,6 +14,16 @@ const props = defineProps<{
 const summaryProgressWidth = computed(
   () => `${Math.min(100, Number(props.summary.goalProgress || 0)).toFixed(1)}%`,
 )
+const erpQueueConversionRate = computed(() => {
+  const attendances = Number(props.queueStats?.totalAttendances || 0)
+  if (!attendances) return 0
+  return (Number(props.summary.orders || 0) / attendances) * 100
+})
+const queueUsageRate = computed(() => {
+  const orders = Number(props.summary.orders || 0)
+  if (!orders) return 0
+  return (Number(props.queueStats?.totalAttendances || 0) / orders) * 100
+})
 
 function formatCurrencyFromCents(value?: number | null) {
   return formatCurrencyBRL((Number(value || 0) || 0) / 100)
@@ -113,14 +123,41 @@ function progressClass(value?: number | null) {
         <strong class="metric-card__value">{{ formatNumber(queueStats.totalConversions) }}</strong>
       </article>
       <article class="metric-card crm-queue-card">
-        <span class="metric-card__label">Taxa de conversao</span>
+        <span class="metric-card__label">Taxa interna</span>
         <strong class="metric-card__value crm-rate--good">
           {{ formatPct(queueStats.conversionRate) }}
         </strong>
+        <small class="crm-metric-sub">Conversoes / atendimentos da lista</small>
         <div class="crm-bar">
           <div
             class="crm-bar__fill crm-bar__fill--green"
             :style="{ width: `${Math.min(queueStats.conversionRate, 100)}%` }"
+          ></div>
+        </div>
+      </article>
+      <article class="metric-card crm-queue-card">
+        <span class="metric-card__label">ERP x fila</span>
+        <strong class="metric-card__value crm-rate--good">
+          {{ formatPct(erpQueueConversionRate) }}
+        </strong>
+        <small class="crm-metric-sub">Pedidos Controle 10 / atendimentos</small>
+        <div class="crm-bar">
+          <div
+            class="crm-bar__fill crm-bar__fill--green"
+            :style="{ width: `${Math.min(erpQueueConversionRate, 100)}%` }"
+          ></div>
+        </div>
+      </article>
+      <article class="metric-card crm-queue-card">
+        <span class="metric-card__label">Uso da lista</span>
+        <strong class="metric-card__value crm-rate--good">
+          {{ formatPct(queueUsageRate) }}
+        </strong>
+        <small class="crm-metric-sub">Atendimentos / pedidos ERP</small>
+        <div class="crm-bar">
+          <div
+            class="crm-bar__fill crm-bar__fill--green"
+            :style="{ width: `${Math.min(queueUsageRate, 100)}%` }"
           ></div>
         </div>
       </article>

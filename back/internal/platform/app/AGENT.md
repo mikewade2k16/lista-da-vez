@@ -17,83 +17,37 @@ Logging) e retorna o handler HTTP final.
 - `*_adapter.go` — adapters finos entre módulos legados (ex:
   `operations_store_scope_adapter.go`).
 
-## Estado real do multi-tenant — 2026-05-28
+## Estado do multi-tenant — atualizado 2026-06-04 (C20 — guard ATIVO)
 
-> **Aviso crítico**: o esqueleto multi-tenant existe em código mas **NÃO está
-> efetivamente plugado no runtime**. Ver
-> [docs/MULTITENANT_COMPLETION_PLAN.md](../../../../docs/MULTITENANT_COMPLETION_PLAN.md)
-> para o plano da finalização.
+### O que está ativo agora
 
-Pontos onde o runtime ignora o que o ROADMAP marca como "done":
+- **`AccountModulesGuard` ATIVO** — instanciado uma vez como `modulesGuard`, passado via `Dependencies.ModulesGuard` (parou de ser descartado com `_ =`) E aplicado no `Chain` via `modulesGuard.RequireModuleByPath(moduleGatingRules())`. O gating é centralizado por prefixo de path (gate-list), não por wrapper em cada handler — ver `moduleGatingRules()` neste pacote e [httpapi/AGENT.md](../httpapi/AGENT.md).
+- **Invalidação reativa** — `app.go` assina `account.modules.changed` → `modulesGuard.Invalidate(accountID)` (403 sem esperar o TTL de 60s).
+- **`SetAccountChecker` chamado** — `authMiddleware.SetAccountChecker(auth.NewPostgresAccountMemberChecker(pool))` habilita `RequireAuthWithAccount` (membership em `core.account_users`).
+- **`queue.New()` e `crm.New()` registrados no Registry** — sem isso `core.modules` não teria as entradas `queue`/`crm`, a seed 0124 viraria no-op e o guard fail-close quebraria queue/crm. Rotas continuam no wiring legado (`Build` retorna handle sem rotas).
+- **`core.account_modules` seedado** — migrations 0124/0125 populam `queue`, `tasks`, `crm` para accounts ativas.
 
-### `AccountModulesGuard` está descartado
+### Gating por path (espelha o front)
 
-[app.go:313](app.go#L313) faz literalmente:
+Gateados: `queue` (`/v1/operations,/v1/alerts,/v1/reports,/v1/analytics,/v1/feedback,/v1/consultants,/v1/settings,/v1/stores`), `crm` (`/v1/erp,/v1/catalog`), `tasks` (`/v1/tasks,/v1/task-boards`). Rotas não listadas (auth, me, **admin**, users, notifications, access, tenants, webhooks, realtime, bi, roadmap) passam direto. O front injeta `X-Account-Id = auth.activeTenantId` em todo request via `createApiRequest` (plugin `account-id-bridge.client.ts`).
 
-```go
-// Guard fica disponivel para modulos satelites a partir da Fase 6.
-// Modulos do registry hoje (so o core) nao usam o guard porque o core
-// e o ponto de descoberta dos modulos habilitados.
-_ = httpapi.NewAccountModulesGuard(pool)
-```
+### O que ainda está pendente
 
-Consequência: nenhuma rota está gateada por `core.account_modules`. Habilitar
-ou desabilitar um módulo no banco **não tem efeito** em runtime. A
-[Fase 2 do ROADMAP](../../../../docs/ROADMAP.md) está marcada como `done`
-no `roadmap-data.ts` mas funcionalmente é parcial.
+- `CORE_V2_ENABLED=false`: Registry não roda; `modulesGuard` fica nil; o gating é pulado (modo legado sem multi-tenant) e endpoints `/v2/me/*` não existem.
+- `RequireModule("site")` nas rotas admin do site segue deferido (site não está na seed 0124; rotas `/v1/admin/*` não são gateadas).
 
-### `core.account_modules` está vazio
-
-Migrations `0100`-`0103` criaram o schema e seedaram `core.accounts` /
-`core.users` a partir de `public.tenants` / `public.users`, mas
-**`core.account_modules` nunca foi seedado**. Mesmo se o guard fosse
-plugado, qualquer rota retornaria `403 module_disabled` porque nenhum
-módulo está habilitado para nenhum account.
-
-### `Principal.AccountID` ainda vem do legado
-
-O middleware atual deriva `Principal.AccountID` do JWT v1 (`tenantId`), não
-do header `X-Account-Id`. Endpoints `/v2/me/context` aceitam `accountId` na
-query como atalho documentado em
-[modules/core/AGENT.md](../../modules/core/AGENT.md). A regra inegociável de
-`CONTRACT_FREEZE.md` (account_id só via Principal) está ativa só nas rotas
-v2/me/*.
-
-## Quando essas pendências saem daqui
-
-Plano canônico:
-[docs/MULTITENANT_COMPLETION_PLAN.md](../../../../docs/MULTITENANT_COMPLETION_PLAN.md)
-seções **C1**, **C2**, **C3**. Branch alvo: `refactor/multi-tenant-complete`
-(a criar depois do merge do snapshot atual para `main`).
-
-Resumo do que muda aqui dentro:
-
-1. Remover o `_ =` da linha 313, criando o guard como variável real e
-   passando ao chain dos módulos satélites.
-2. Trocar a derivação de `Principal.AccountID` para vir de `X-Account-Id` em
-   toda rota multi-tenant, com validação de membership em `core.account_users`.
-3. Quando módulos `queue`/`crm` virarem subpackages com `Module` interface
-   (C4/C5 do plano), trocar o wiring manual dos módulos legados (`operations`,
-   `alerts`, `erp`, etc.) por `registry.MustRegister(queue.New())` /
-   `crm.New()`.
-
-## Regras gerais ao mexer aqui
+## Regras ao mexer aqui
 
 - Não introduzir feature flag nova sem registrar em [config/AGENT.md](../config/AGENT.md).
-- Wiring manual de módulos legados continua válido **enquanto** não houver
-  `Module` interface implementada para eles. Não criar adapters intermediários
-  sem necessidade — vai ser jogado fora na C4/C5.
-- Não importar nada de `web/server/` no Go. O BFF Nitro está marcado para
-  remoção integral.
+- Rota nova de módulo que deve ser gateada por contratação: adicionar o prefixo em `moduleGatingRules()` (mapa prefixo → moduleId). O front precisa enviar `X-Account-Id` (já automático via `createApiRequest`).
+- Rotas de gestão platform_admin (`/v1/admin/*`) NÃO entram no gate-list — são gestão, não uso por tenant.
+- Não importar nada de `web/server/` no Go (BFF Nitro marcado para remoção em C7).
 
 ## Comportamento sem feature-flag
 
-`CORE_V2_ENABLED=false` (default): nem o Registry nem `SyncCatalog` rodam.
-Apenas wiring legado de módulos. Endpoints `/v2/me/*` não existem.
+`CORE_V2_ENABLED=false` (default): Registry e guard não existem. Apenas wiring legado.
 
-`CORE_V2_ENABLED=true`: Registry roda, `SyncCatalog` popula `core.modules` /
-`core.permissions` / `core.role_templates`. Endpoints `/v2/me/*` ficam
-disponíveis. Guard continua descartado (ver acima).
+`CORE_V2_ENABLED=true`: Registry roda, SyncCatalog popula catálogos, guard ativo, `RequireAuthWithAccount` disponível.
 
 ## Referências
 

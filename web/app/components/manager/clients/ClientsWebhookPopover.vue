@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import OmniMinimalPopover from '~/components/omni/overlay/OmniMinimalPopover.vue'
-import type { ClientItem } from '~/types/clients'
+import type { AccountItem } from '~/types/accounts'
 
 const props = defineProps<{
-  client: ClientItem
+  account: AccountItem
   busy?: boolean
 }>()
 
@@ -22,7 +22,7 @@ watch(
       return
     }
 
-    enabled.value = Boolean(props.client.webhookEnabled)
+    enabled.value = Boolean(props.account.webhookEnabled)
   },
 )
 
@@ -31,7 +31,7 @@ function copyKey() {
     return
   }
 
-  const value = String(props.client.webhookKey || '').trim()
+  const value = String(props.account.webhookKey || '').trim()
   if (!value) {
     return
   }
@@ -96,7 +96,7 @@ function onCancelShortcut() {
       >
         <p class="mb-1 text-[rgb(var(--muted))]">Chave atual</p>
         <code class="block break-all text-[rgb(var(--text))]">
-          {{ props.client.webhookKey || '-' }}
+          {{ props.account.webhookKey || '-' }}
         </code>
       </div>
 

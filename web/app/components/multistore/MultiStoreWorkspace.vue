@@ -24,6 +24,7 @@ const multiStore = useMultiStoreStore()
 const auth = useAuthStore()
 const selectedGoalsMonth = ref('')
 const selectedGoalsStoreId = ref('')
+const selectedGoalsPeriod = ref('month')
 
 const canEditStores = computed(() =>
   canManageStores(auth.role, auth.permissionKeys, auth.permissionsResolved),
@@ -70,10 +71,12 @@ onMounted(() => {
       :allow-all-store-scope="allowAllStoreScope"
       :selected-month="selectedGoalsMonth"
       :selected-store-id="selectedGoalsStoreId"
+      :selected-period="selectedGoalsPeriod"
       :show-tables="false"
       :manage-data-lifecycle="true"
       @update:selected-month="selectedGoalsMonth = $event"
       @update:selected-store-id="selectedGoalsStoreId = $event"
+      @update:selected-period="selectedGoalsPeriod = $event"
     />
 
     <details v-if="canEditStores || managedStores.length" class="multistore-workspace__collapse">
@@ -132,10 +135,12 @@ onMounted(() => {
           :allow-all-store-scope="allowAllStoreScope"
           :selected-month="selectedGoalsMonth"
           :selected-store-id="selectedGoalsStoreId"
+          :selected-period="selectedGoalsPeriod"
           :show-cards="false"
           :manage-data-lifecycle="false"
           @update:selected-month="selectedGoalsMonth = $event"
           @update:selected-store-id="selectedGoalsStoreId = $event"
+          @update:selected-period="selectedGoalsPeriod = $event"
         />
       </div>
     </details>

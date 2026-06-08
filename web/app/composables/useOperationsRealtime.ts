@@ -3,18 +3,12 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { useAuthStore } from '~/stores/auth'
 import { useOperationsStore } from '~/stores/operations'
-import { createApiRequest, getWebSocketBase } from '~/utils/api-client'
+import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
+import { createApiRequest } from '~/utils/api-client'
 import { refreshRuntimeStoreSettings } from '~/utils/runtime-remote'
 
 type OperationsRealtimeOptions = {
   scopeMode?: unknown
-}
-
-function buildSocketURL(runtimeConfig, storeId, accessToken) {
-  const url = new URL('/v1/realtime/operations', getWebSocketBase(runtimeConfig))
-  url.searchParams.set('storeId', String(storeId || '').trim())
-  url.searchParams.set('access_token', String(accessToken || '').trim())
-  return url.toString()
 }
 
 function resolveSourceValue(source, fallback = 'single') {
@@ -249,14 +243,14 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
     const delayMs = Math.min(10000, 1000 * Math.max(1, 2 ** attempt))
     const timer = window.setTimeout(() => {
       reconnectTimers.delete(storeId)
-      ensureSocket(storeId)
+      void ensureSocket(storeId)
     }, delayMs)
 
     reconnectTimers.set(storeId, timer)
     updateStatus()
   }
 
-  function ensureSocket(storeId) {
+  async function ensureSocket(storeId) {
     const normalizedStoreId = String(storeId || '').trim()
     const accessToken = String(auth.accessToken || '').trim()
 
@@ -280,7 +274,49 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
       disconnectStore(normalizedStoreId)
     }
 
-    const nextSocket = new WebSocket(buildSocketURL(runtimeConfig, normalizedStoreId, accessToken))
+    let socketURL = ''
+    try {
+      socketURL = await buildRealtimeSocketURL(
+        runtimeConfig,
+        '/v1/realtime/operations',
+        { storeId: normalizedStoreId },
+        accessToken,
+      )
+    } catch (error) {
+      if (
+        desiredStoreIds().includes(normalizedStoreId) &&
+        String(auth.accessToken || '').trim() === accessToken
+      ) {
+        status.value = 'error'
+      }
+      if (import.meta.client) {
+        console.warn('[operations-ws] ticket request failed; socket not opened', error)
+      }
+      return
+    }
+
+    if (
+      !desiredStoreIds().includes(normalizedStoreId) ||
+      String(auth.accessToken || '').trim() !== accessToken
+    ) {
+      updateStatus()
+      return
+    }
+
+    const entryAfterTicket = sockets.get(normalizedStoreId)
+    if (
+      entryAfterTicket &&
+      entryAfterTicket.key === connectionKey &&
+      entryAfterTicket.socket.readyState <= WebSocket.OPEN
+    ) {
+      updateStatus()
+      return
+    }
+    if (entryAfterTicket) {
+      disconnectStore(normalizedStoreId)
+    }
+
+    const nextSocket = new WebSocket(socketURL)
     sockets.set(normalizedStoreId, {
       key: connectionKey,
       socket: nextSocket,
@@ -371,7 +407,7 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
     }
 
     for (const storeId of expectedStoreIds) {
-      ensureSocket(storeId)
+      void ensureSocket(storeId)
     }
 
     updateStatus()

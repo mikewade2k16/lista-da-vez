@@ -113,8 +113,6 @@ interface BackendTask {
   assignees?: BackendUserMini[]
   uiMetadata?: Record<string, any>
   trackingTotalMs?: number | null
-  roadmapModuleId?: string | null
-  pinnedToRoadmap?: boolean
   version?: number
   createdAt?: string
   updatedAt?: string
@@ -729,7 +727,6 @@ function mapTaskToStoreItem(
   )
   const uiClientId = Number(resolvedTaskUi?.clientId || 0)
   const contentHtml = sanitizeTaskContentHtml(task.contentHtml)
-  const roadmapModuleId = normalizeText(task.roadmapModuleId, 80) || null
   return {
     id: normalizeText(task.id, 80),
     projectId: normalizeText(task.boardId, 80) || project.id,
@@ -763,8 +760,6 @@ function mapTaskToStoreItem(
     clientAccountId: clientAccountId || undefined,
     trackingTotalMs:
       task.trackingTotalMs == null ? undefined : Math.max(0, Number(task.trackingTotalMs) || 0),
-    roadmapModuleId,
-    pinnedToRoadmap: Boolean(roadmapModuleId && task.pinnedToRoadmap),
   }
 }
 
@@ -1433,8 +1428,6 @@ export const useTasksStore = defineStore('tasks', () => {
     const column = findColumnByStatus(project, status)
     const taskUiPatch = taskUiPatchFromPayload(payload as Record<string, any>)
     const contentHtml = sanitizeTaskContentHtml(payload.contentHtml || payload.description)
-    const roadmapModuleId =
-      normalizeText((payload as TasksStoreTaskItem).roadmapModuleId, 80) || null
     const response = await request(`/v1/tasks/boards/${encodeURIComponent(project.id)}/tasks`, {
       method: 'POST',
       body: {
@@ -1452,8 +1445,6 @@ export const useTasksStore = defineStore('tasks', () => {
           ? (payload as TasksStoreTaskItem).clientAccountId
           : null,
         uiMetadata: taskUiPatch,
-        roadmapModuleId,
-        pinnedToRoadmap: Boolean(roadmapModuleId),
       },
     })
     const task = response?.task as BackendTask | undefined
@@ -1586,16 +1577,6 @@ export const useTasksStore = defineStore('tasks', () => {
     if (Object.prototype.hasOwnProperty.call(patch, 'videos')) {
       optimisticTask.videos = normalizeTaskVideos((patch as TasksStoreTaskItem).videos)
     }
-    if (Object.prototype.hasOwnProperty.call(patch, 'roadmapModuleId')) {
-      optimisticTask.roadmapModuleId =
-        normalizeText((patch as TasksStoreTaskItem).roadmapModuleId, 80) || null
-      optimisticTask.pinnedToRoadmap = Boolean(optimisticTask.roadmapModuleId)
-    }
-    if (Object.prototype.hasOwnProperty.call(patch, 'pinnedToRoadmap')) {
-      optimisticTask.pinnedToRoadmap = Boolean(
-        optimisticTask.roadmapModuleId && (patch as TasksStoreTaskItem).pinnedToRoadmap,
-      )
-    }
     replaceTask(optimisticTask)
     let response: any
     const taskUiPatch = taskUiPatchFromPayload(patch as Record<string, any>)
@@ -1603,18 +1584,6 @@ export const useTasksStore = defineStore('tasks', () => {
       Object.prototype.hasOwnProperty.call(patch, 'contentHtml') ||
       Object.prototype.hasOwnProperty.call(patch, 'description')
         ? sanitizeTaskContentHtml(patch.contentHtml || patch.description)
-        : undefined
-    const patchRoadmapModuleId = Object.prototype.hasOwnProperty.call(patch, 'roadmapModuleId')
-      ? normalizeText((patch as TasksStoreTaskItem).roadmapModuleId, 80) || null
-      : undefined
-    const patchPinnedToRoadmap = Object.prototype.hasOwnProperty.call(patch, 'pinnedToRoadmap')
-      ? Boolean(
-          (patchRoadmapModuleId === undefined
-            ? currentTask.roadmapModuleId
-            : patchRoadmapModuleId) && (patch as TasksStoreTaskItem).pinnedToRoadmap,
-        )
-      : patchRoadmapModuleId !== undefined
-        ? Boolean(patchRoadmapModuleId)
         : undefined
     const requestBody = {
       columnId:
@@ -1653,8 +1622,6 @@ export const useTasksStore = defineStore('tasks', () => {
             : null
           : undefined,
       uiMetadata: hasUiPatch(taskUiPatch) ? taskUiPatch : undefined,
-      roadmapModuleId: patchRoadmapModuleId,
-      pinnedToRoadmap: patchPinnedToRoadmap,
     }
     const sendPatch = (version?: number) =>
       request(`/v1/tasks/${encodeURIComponent(currentTask.id)}`, {

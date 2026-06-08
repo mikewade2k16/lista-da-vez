@@ -1,4 +1,4 @@
-import { computed, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
+﻿import { computed, reactive, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { useUsersStore } from '~/stores/users'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
@@ -45,7 +45,7 @@ function normalizeText(value: unknown, max = 240) {
 }
 
 function normalizeDraft(value: unknown, max = 4000) {
-  // eslint-disable-next-line no-control-regex -- remove NUL que quebra Postgres
+  // eslint-disable-next-line no-control-regex
   const text = String(value ?? '').replace(/\u0000/g, '')
   return text.length <= max ? text : text.slice(0, max)
 }
@@ -247,7 +247,9 @@ export function useTaskComments(options: TaskCommentsOptions) {
     options.scheduleDraft?.(nextDraft)
   }
 
-  const canSubmit = computed(() => Boolean(commentBodyHtmlFromText(draft.value)) && status.value !== 'saving')
+  const canSubmit = computed(
+    () => Boolean(commentBodyHtmlFromText(draft.value)) && status.value !== 'saving',
+  )
 
   watch(
     () => ({

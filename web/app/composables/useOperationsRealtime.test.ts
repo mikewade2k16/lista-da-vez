@@ -20,6 +20,12 @@ const operationsStore = {
   refreshOverview: vi.fn().mockResolvedValue(null),
 }
 
+async function flushRealtimeTicket() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 vi.mock('vue', async () => {
   const actual = await vi.importActual<typeof import('vue')>('vue')
   return {
@@ -51,6 +57,7 @@ describe('useOperationsRealtime', () => {
     operationsStore.refreshOperationSnapshot.mockClear()
     operationsStore.refreshOverview.mockClear()
     ;(globalThis as any).WebSocket = MockWebSocket
+    ;(globalThis as any).$fetch.mockResolvedValue({ ticket: 'ticket-operations' })
   })
 
   afterEach(() => {
@@ -64,10 +71,21 @@ describe('useOperationsRealtime', () => {
     const { useOperationsRealtime } = await import('./useOperationsRealtime')
 
     const realtime = useOperationsRealtime()
+    await flushRealtimeTicket()
+
     const socket = MockWebSocket.instances[0]
 
+    expect((globalThis as any).$fetch).toHaveBeenCalledWith(
+      '/v1/ws/ticket',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer token-123' }),
+      }),
+    )
     expect(socket?.url).toContain('/v1/realtime/operations')
     expect(socket?.url).toContain('storeId=store-1')
+    expect(socket?.url).toContain('ticket=ticket-operations')
+    expect(socket?.url).not.toContain('access_token=')
 
     socket?.open()
     socket?.message({
@@ -87,5 +105,18 @@ describe('useOperationsRealtime', () => {
         action: 'service-started',
       }),
     )
+  })
+
+  it('does not open a socket when the ticket request fails', async () => {
+    ;(globalThis as any).$fetch.mockRejectedValue(new Error('ticket failed'))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    const { useOperationsRealtime } = await import('./useOperationsRealtime')
+
+    const realtime = useOperationsRealtime()
+    await flushRealtimeTicket()
+
+    expect(MockWebSocket.instances).toHaveLength(0)
+    expect(realtime.status.value).toBe('error')
   })
 })

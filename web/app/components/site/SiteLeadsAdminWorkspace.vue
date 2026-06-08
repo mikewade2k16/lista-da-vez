@@ -1,222 +1,271 @@
 <script setup lang="ts">
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
+import OmniMinimalPopover from '~/components/omni/overlay/OmniMinimalPopover.vue'
 import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
-import type { LeadItem } from '~/types/leads'
-import type { OmniFilterDefinition, OmniTableColumn } from '~/types/omni/collection'
+import WebhookSourcesDrawer from '~/components/site/WebhookSourcesDrawer.vue'
+import type { LeadCreateInput, LeadFieldKey, LeadItem } from '~/types/leads'
+import type {
+  OmniFilterDefinition,
+  OmniFocusCell,
+  OmniTableCellUpdate,
+  OmniTableColumn,
+} from '~/types/omni/collection'
 
 const {
   leads,
-  clientOptions,
   loading,
+  creating,
   deletingId,
   errorMessage,
   savingMap,
   fetchLeads,
+  updateField,
+  createLead,
   deleteLead,
 } = useLeadsManager()
-const sessionSimulation = useSessionSimulationStore()
-const isAdminViewer = computed(() => sessionSimulation.userType === 'admin')
+
+const auth = useAuthStore()
+const canCreate = computed(
+  () =>
+    auth.role === 'platform_admin' ||
+    auth.role === 'owner' ||
+    auth.role === 'director' ||
+    auth.role === 'manager',
+)
+const canDelete = computed(() => canCreate.value)
 
 const selectedIds = ref<Array<string | number>>([])
+const focusCell = ref<OmniFocusCell | null>(null)
 
 const filtersState = ref<Record<string, unknown>>({
   query: '',
-  clientIdFilter: '',
+  statusFilter: '',
 })
 
-const clientSelectOptions = computed(() =>
-  clientOptions.value.map((item) => ({
-    label: String(item.name || `Cliente #${item.id}`),
-    value: Number(item.id),
-  })),
-)
-
-const filterDefinitions = computed<OmniFilterDefinition[]>(() => {
-  const definitions: OmniFilterDefinition[] = [
-    {
-      key: 'query',
-      label: 'Buscar',
-      type: 'text',
-      placeholder: 'Pesquisar por nome, email, telefone, cupom...',
-      mode: 'columns',
-      columns: [
-        'clientName',
-        'nome',
-        'email',
-        'telefone',
-        'source',
-        'page',
-        'cupom',
-        'consentLabel',
-        'formattedDate',
-        'payloadJson',
-        'trackingData',
-      ],
-    },
-  ]
-
-  if (clientSelectOptions.value.length > 0) {
-    definitions.push({
-      key: 'clientIdFilter',
-      label: 'Cliente',
-      adminOnly: true,
-      type: 'select',
-      placeholder: 'Cliente',
-      options: clientSelectOptions.value,
-      accessor: (row) => row.clientId,
-    })
-  }
-
-  return definitions
-})
+const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
+  {
+    key: 'query',
+    label: 'Buscar',
+    type: 'text',
+    placeholder: 'Nome, email, telefone, cupom...',
+    mode: 'all',
+  },
+  {
+    key: 'statusFilter',
+    label: 'Status',
+    type: 'select',
+    placeholder: 'Status',
+    options: [
+      { label: 'Novo', value: 'new' },
+      { label: 'Contatado', value: 'contacted' },
+      { label: 'Qualificado', value: 'qualified' },
+      { label: 'Perdido', value: 'lost' },
+    ],
+    accessor: (row) => row.status,
+  },
+])
 
 const allTableColumns = computed<OmniTableColumn[]>(() => [
   {
-    key: 'clientName',
-    label: 'Cliente',
-    adminOnly: true,
+    key: 'nome',
+    label: 'Nome',
+    type: 'text',
+    editable: true,
+    minWidth: 200,
+    focusOnCreate: true,
+    locked: true,
+    defaultOrder: 10,
+  },
+  { key: 'email', label: 'Email', type: 'text', editable: true, minWidth: 220, defaultOrder: 20 },
+  {
+    key: 'telefone',
+    label: 'Telefone',
+    type: 'text',
+    editable: true,
+    minWidth: 160,
+    defaultOrder: 30,
+  },
+  {
+    key: 'status',
+    label: 'Status',
+    type: 'select',
+    editable: true,
+    immediate: true,
+    minWidth: 140,
+    defaultOrder: 40,
+    options: [
+      { label: 'Novo', value: 'new' },
+      { label: 'Contatado', value: 'contacted' },
+      { label: 'Qualificado', value: 'qualified' },
+      { label: 'Perdido', value: 'lost' },
+    ],
+  },
+  {
+    key: 'sourceLabel',
+    label: 'Fonte',
     type: 'text',
     editable: false,
-    minWidth: 170,
+    minWidth: 160,
+    defaultOrder: 50,
   },
-  { key: 'nome', label: 'Nome', type: 'text', editable: false, minWidth: 190 },
-  { key: 'email', label: 'Email', type: 'text', editable: false, minWidth: 220 },
-  { key: 'telefone', label: 'Telefone', type: 'text', editable: false, minWidth: 150 },
-  { key: 'source', label: 'Origem', type: 'text', editable: false, minWidth: 130 },
-  { key: 'page', label: 'Pagina', type: 'text', editable: false, minWidth: 140 },
-  { key: 'cupom', label: 'Cupom', type: 'text', editable: false, minWidth: 130 },
-  { key: 'consentLabel', label: 'Consentimento', type: 'text', editable: false, minWidth: 140 },
-  { key: 'formattedDate', label: 'Data cadastro', type: 'text', editable: false, minWidth: 160 },
-  { key: 'actions', label: 'Opcoes', type: 'custom', minWidth: 170, align: 'center' },
+  { key: 'page', label: 'Pagina', type: 'text', editable: false, minWidth: 140, defaultOrder: 60 },
+  { key: 'cupom', label: 'Cupom', type: 'text', editable: false, minWidth: 130, defaultOrder: 70 },
+  {
+    key: 'createdAt',
+    label: 'Captado em',
+    type: 'text',
+    editable: false,
+    minWidth: 160,
+    defaultOrder: 80,
+  },
+  {
+    key: 'actions',
+    label: 'Opcoes',
+    type: 'custom',
+    minWidth: 150,
+    align: 'center',
+    defaultOrder: 1000,
+  },
 ])
 
 const columnExcludeKeys = ['actions']
-const alwaysVisibleColumnKeys = new Set(['actions'])
-const { visibleColumnKeys, tableColumns } = useOmniVisibleColumns({
-  preferenceKey: 'admin.site.leads',
-  allColumns: allTableColumns,
-  columnExcludeKeys,
-  alwaysVisibleColumnKeys,
-})
+const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
+  useOmniVisibleColumns({
+    preferenceKey: 'admin.site.leads',
+    allColumns: allTableColumns,
+    columnExcludeKeys,
+  })
 
 const filteredRows = computed(() => {
   const rows = leads.value as unknown as Array<Record<string, unknown>>
   return applyOmniFilters(rows, filtersState.value, filterDefinitions.value)
 })
 
+const tableRows = computed(() => {
+  const seen = new Set<string>()
+  return filteredRows.value.filter((row) => {
+    const id = String((row as Record<string, unknown>).id ?? '').trim()
+    if (!id || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+})
+
+const updatableFields = new Set<LeadFieldKey>(['nome', 'email', 'telefone', 'status', 'notes'])
+
 function toLead(row: Record<string, unknown>) {
   return row as unknown as LeadItem
 }
 
-function rowIdValue(row: Record<string, unknown>) {
-  const parsed = Number(row.id)
-  return Number.isFinite(parsed) ? parsed : 0
+function rowId(row: Record<string, unknown>) {
+  return String(row.id ?? '').trim()
 }
 
-function parseBlock(value: unknown) {
-  const raw = String(value ?? '').trim()
-  if (!raw) {
-    return '-'
-  }
-
-  try {
-    const parsed = JSON.parse(raw)
-    return JSON.stringify(parsed, null, 2)
-  } catch {
-    return raw
-  }
+function onCellUpdate(payload: OmniTableCellUpdate) {
+  const id = String(payload.rowId).trim()
+  if (!id) return
+  const field = String(payload.key) as LeadFieldKey
+  if (!updatableFields.has(field)) return
+  updateField(id, field, payload.value, { immediate: payload.immediate })
 }
 
-function normalizePhoneForWhats(raw: unknown) {
-  let digits = String(raw ?? '').replace(/\D+/g, '')
-  if (!digits) {
-    return ''
-  }
+const createDialogOpen = ref(false)
+const createForm = reactive<LeadCreateInput>({
+  nome: '',
+  email: '',
+  telefone: '',
+  page: '',
+  cupom: '',
+  consent: false,
+  consentLabel: '',
+  sourceLabel: 'manual',
+  notes: '',
+})
 
-  if (digits.length <= 11) {
-    digits = `55${digits}`
-  }
-
-  return digits
+function openCreate() {
+  createForm.nome = ''
+  createForm.email = ''
+  createForm.telefone = ''
+  createForm.page = ''
+  createForm.cupom = ''
+  createForm.consent = false
+  createForm.consentLabel = ''
+  createForm.sourceLabel = 'manual'
+  createForm.notes = ''
+  createDialogOpen.value = true
 }
 
-function openWhatsapp(phone: unknown) {
-  if (!import.meta.client) {
-    return
-  }
-
-  const normalized = normalizePhoneForWhats(phone)
-  if (!normalized) {
-    return
-  }
-
-  window.open(`https://wa.me/${normalized}`, '_blank', 'noopener,noreferrer')
-}
-
-function openEmail(email: unknown) {
-  if (!import.meta.client) {
-    return
-  }
-
-  const normalized = String(email ?? '').trim()
-  if (!normalized) {
-    return
-  }
-
-  window.open(`mailto:${encodeURIComponent(normalized)}`, '_blank')
+async function submitCreate() {
+  if (!canCreate.value) return
+  const createdId = await createLead({ ...createForm })
+  if (!createdId) return
+  createDialogOpen.value = false
+  focusCell.value = { rowId: createdId, columnKey: 'nome', token: Date.now() }
 }
 
 function onResetFilters() {
-  filtersState.value = {
-    query: '',
-    clientIdFilter: '',
-  }
+  filtersState.value = { query: '', statusFilter: '' }
 }
 
-async function onDeleteLead(id: number) {
-  if (import.meta.client) {
-    const confirmed = window.confirm('Excluir este lead? Esta acao nao pode ser desfeita.')
-    if (!confirmed) {
-      return
-    }
-  }
-
+async function onDeleteLead(id: string) {
+  if (!canDelete.value) return
+  if (import.meta.client && !window.confirm('Excluir este lead?')) return
   await deleteLead(id)
 }
 
+const openInfoFor = ref<string | null>(null)
+function infoOpen(id: string) {
+  return openInfoFor.value === id
+}
+function setInfoOpen(id: string, v: boolean) {
+  openInfoFor.value = v ? id : null
+}
+
+const sourcesDrawerOpen = ref(false)
+
 onMounted(() => {
-  sessionSimulation.initialize()
   void fetchLeads()
 })
 </script>
 
 <template>
-  <section class="space-y-4">
+  <section class="site-leads-workspace flex h-full min-h-0 flex-col gap-4 overflow-hidden">
     <AdminPageHeader
       eyebrow="Site"
       title="Leads"
-      description="Tabela de leads em modo teste usando os componentes genericos para validar o layout antes da API final."
+      description="Leads captados pelo site (via webhook ou criacao manual). Ligado a API real /v1/admin/leads."
     />
 
     <OmniCollectionFilters
       v-model="filtersState"
       v-model:visible-columns="visibleColumnKeys"
+      v-model:locked-columns="lockedColumnKeys"
+      v-model:column-order="columnOrder"
+      :viewer-user-type="canCreate ? 'admin' : 'client'"
       :filters="filterDefinitions"
-      :viewer-user-type="isAdminViewer ? 'admin' : 'client'"
       :table-columns="allTableColumns"
       :column-exclude-keys="columnExcludeKeys"
       :loading="loading"
       @reset="onResetFilters"
+      @reset-columns="resetToDefaults"
     >
       <template #actions>
         <UBadge color="neutral" variant="soft">Selecionados: {{ selectedIds.length }}</UBadge>
         <UButton
-          icon="i-lucide-refresh-cw"
-          label="Atualizar"
+          v-if="canCreate"
+          icon="i-lucide-webhook"
+          label="Fontes"
           color="neutral"
           variant="soft"
-          :loading="loading"
-          @click="fetchLeads"
+          @click="sourcesDrawerOpen = true"
+        />
+        <UButton
+          icon="i-lucide-plus"
+          label="Novo lead"
+          color="primary"
+          :loading="creating"
+          :disabled="creating || !canCreate"
+          @click="openCreate"
         />
       </template>
     </OmniCollectionFilters>
@@ -230,54 +279,36 @@ onMounted(() => {
       :description="errorMessage"
     />
 
-    <OmniDataTable
-      v-model="selectedIds"
-      :rows="filteredRows"
-      :columns="tableColumns"
-      :viewer-user-type="isAdminViewer ? 'admin' : 'client'"
-      row-key="id"
-      :loading="loading"
-      empty-text="Nenhum lead encontrado com os filtros atuais."
-    >
-      <template #cell-actions="{ row }">
-        <div class="flex items-center justify-end gap-1">
-          <UButton
-            v-if="toLead(row).telefone"
-            icon="i-lucide-message-circle"
-            color="success"
-            variant="ghost"
-            size="sm"
-            aria-label="Abrir WhatsApp"
-            @click="openWhatsapp(toLead(row).telefone)"
-          />
-          <UButton
-            v-if="toLead(row).email"
-            icon="i-lucide-mail"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            aria-label="Enviar email"
-            @click="openEmail(toLead(row).email)"
-          />
-
-          <UPopover :content="{ align: 'end', side: 'bottom' }">
-            <UButton
-              icon="i-lucide-info"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              aria-label="Info"
-            />
-            <template #content>
-              <div class="w-[360px] space-y-2 p-3 text-xs">
-                <p>
-                  <strong>ID:</strong>
-                  {{ toLead(row).id }}
-                </p>
-                <p>
-                  <strong>Cliente:</strong>
-                  {{ toLead(row).clientName }}
-                </p>
+    <div class="site-leads-workspace__scroll flex-1 min-h-0 overflow-y-auto">
+      <OmniDataTable
+        v-model="selectedIds"
+        :rows="tableRows"
+        :columns="tableColumns"
+        row-key="id"
+        :loading="loading"
+        :focus-cell="focusCell"
+        empty-text="Nenhum lead encontrado."
+        @update:cell="onCellUpdate"
+      >
+        <template #cell-actions="{ row }">
+          <div class="flex items-center justify-end gap-1">
+            <OmniMinimalPopover
+              :open="infoOpen(rowId(row))"
+              title="Detalhes do lead"
+              width-class="w-[320px] max-w-[90vw]"
+              @update:open="setInfoOpen(rowId(row), $event)"
+            >
+              <template #trigger>
+                <UButton
+                  icon="i-lucide-info"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  title="Detalhes"
+                  aria-label="Info"
+                />
+              </template>
+              <div class="space-y-1 text-xs">
                 <p>
                   <strong>Nome:</strong>
                   {{ toLead(row).nome || '-' }}
@@ -291,8 +322,12 @@ onMounted(() => {
                   {{ toLead(row).telefone || '-' }}
                 </p>
                 <p>
-                  <strong>Origem:</strong>
-                  {{ toLead(row).source || '-' }}
+                  <strong>Status:</strong>
+                  {{ toLead(row).status }}
+                </p>
+                <p>
+                  <strong>Fonte:</strong>
+                  {{ toLead(row).sourceLabel || '-' }}
                 </p>
                 <p>
                   <strong>Pagina:</strong>
@@ -303,46 +338,102 @@ onMounted(() => {
                   {{ toLead(row).cupom || '-' }}
                 </p>
                 <p>
-                  <strong>Consentimento:</strong>
-                  {{ toLead(row).consentLabel }}
+                  <strong>Consent:</strong>
+                  {{ toLead(row).consent ? 'sim' : 'nao' }}
                 </p>
                 <p>
-                  <strong>Data cadastro:</strong>
-                  {{ toLead(row).formattedDate || '-' }}
+                  <strong>Captado:</strong>
+                  {{ toLead(row).createdAt }}
                 </p>
-
-                <div class="space-y-1">
-                  <p class="font-semibold">Tracking data</p>
-                  <pre
-                    class="max-h-[140px] overflow-auto rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-2 text-[11px]"
-                    >{{ parseBlock(toLead(row).trackingData) }}</pre
-                  >
-                </div>
-
-                <div class="space-y-1">
-                  <p class="font-semibold">Payload</p>
-                  <pre
-                    class="max-h-[190px] overflow-auto rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] p-2 text-[11px]"
-                    >{{ parseBlock(toLead(row).payloadJson) }}</pre
-                  >
-                </div>
+                <p v-if="toLead(row).notes">
+                  <strong>Notas:</strong>
+                  {{ toLead(row).notes }}
+                </p>
               </div>
-            </template>
-          </UPopover>
+            </OmniMinimalPopover>
 
-          <UButton
-            icon="i-lucide-trash-2"
-            color="error"
-            variant="ghost"
-            size="sm"
-            aria-label="Excluir"
-            :loading="
-              deletingId === rowIdValue(row) || Boolean(savingMap[`${rowIdValue(row)}:delete`])
-            "
-            @click="onDeleteLead(rowIdValue(row))"
-          />
-        </div>
+            <UButton
+              v-if="canDelete"
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              title="Excluir lead"
+              aria-label="Excluir"
+              :loading="deletingId === rowId(row)"
+              @click="onDeleteLead(rowId(row))"
+            />
+          </div>
+        </template>
+      </OmniDataTable>
+    </div>
+
+    <UModal v-model:open="createDialogOpen">
+      <template #content>
+        <UCard>
+          <template #header>
+            <h3 class="text-base font-semibold">Novo lead</h3>
+          </template>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nome</label>
+              <UInput
+                :model-value="createForm.nome"
+                @update:model-value="createForm.nome = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Email</label>
+              <UInput
+                :model-value="createForm.email"
+                type="email"
+                @update:model-value="createForm.email = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Telefone</label>
+              <UInput
+                :model-value="createForm.telefone"
+                @update:model-value="createForm.telefone = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Pagina de origem</label>
+              <UInput
+                :model-value="createForm.page"
+                @update:model-value="createForm.page = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Cupom</label>
+              <UInput
+                :model-value="createForm.cupom"
+                @update:model-value="createForm.cupom = String($event ?? '')"
+              />
+            </div>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Notas</label>
+              <UInput
+                :model-value="createForm.notes"
+                @update:model-value="createForm.notes = String($event ?? '')"
+              />
+            </div>
+          </div>
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancelar"
+                color="neutral"
+                variant="ghost"
+                @click="createDialogOpen = false"
+              />
+              <UButton label="Criar" color="primary" :loading="creating" @click="submitCreate" />
+            </div>
+          </template>
+        </UCard>
       </template>
-    </OmniDataTable>
+    </UModal>
+
+    <WebhookSourcesDrawer v-model:open="sourcesDrawerOpen" default-entity="leads" />
   </section>
 </template>

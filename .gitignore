@@ -42,6 +42,11 @@ web/.codex-devserver.*.log
 tmp/
 scripts/dev/token-helpers/
 
+# Modulo automation (n8n/WAHA) — segredos. Já há .gitignore dentro de automation/;
+# aqui é defesa em profundidade caso o arquivo seja referenciado da raiz.
+automation/.mcp.json
+automation/export/credentials.decrypted.json
+
 # Defesa em profundidade: garante que mesmo se reaparecerem na raiz, não vão para o git
 token.txt
 token_gen.js

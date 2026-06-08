@@ -27,21 +27,23 @@ describe('permissions utils', () => {
         'site',
         'site_produtos_web',
         'site_leads_web',
+        'site_tracking_web',
         'clientes',
         'clientes_web',
       ]),
     )
   })
 
-  it('does not expose deprecated reference workspaces to owner', () => {
+  it('keeps site admin surfaces for owner without exposing deprecated reference workspaces', () => {
     const allowedWorkspaces = getAllowedWorkspaces('owner')
 
     expect(allowedWorkspaces).not.toContain('reference_preview')
     expect(allowedWorkspaces).not.toContain('reference_site_products')
     expect(allowedWorkspaces).not.toContain('reference_site_leads')
     expect(allowedWorkspaces).not.toContain('reference_clients')
-    expect(allowedWorkspaces).not.toContain('site_produtos_web')
-    expect(allowedWorkspaces).not.toContain('site_leads_web')
     expect(allowedWorkspaces).not.toContain('clientes_web')
+    expect(allowedWorkspaces).toEqual(
+      expect.arrayContaining(['site', 'site_produtos_web', 'site_leads_web', 'site_tracking_web']),
+    )
   })
 })

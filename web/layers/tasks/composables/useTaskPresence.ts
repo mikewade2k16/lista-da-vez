@@ -1,6 +1,6 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef, type Ref } from 'vue'
+﻿import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { useAuthStore } from '~/stores/auth'
-import { getWebSocketBase } from '~/utils/api-client'
 
 type PresenceSource<T> = T | Ref<T> | ComputedRef<T> | (() => T)
 
@@ -63,7 +63,7 @@ function normalizeFieldKey(value: unknown) {
 }
 
 function normalizeDraftValue(value: unknown, max = 24000) {
-  // eslint-disable-next-line no-control-regex -- remove NUL que quebra Postgres
+  // eslint-disable-next-line no-control-regex
   const text = String(value ?? '').replace(/\u0000/g, '')
   return text.length <= max ? text : text.slice(0, max)
 }
@@ -133,25 +133,6 @@ function resolveCurrentUserId(auth: ReturnType<typeof useAuthStore>) {
   )
 }
 
-function buildSocketURL(
-  runtimeConfig: ReturnType<typeof useRuntimeConfig>,
-  params: {
-    scope: 'task' | 'board'
-    accountId: string
-    boardId: string
-    taskId: string
-    accessToken: string
-  },
-) {
-  const url = new URL('/v1/realtime/presence', getWebSocketBase(runtimeConfig))
-  url.searchParams.set('scope', params.scope)
-  url.searchParams.set('accountId', params.accountId)
-  if (params.boardId) url.searchParams.set('boardId', params.boardId)
-  if (params.taskId) url.searchParams.set('taskId', params.taskId)
-  url.searchParams.set('access_token', params.accessToken)
-  return url.toString()
-}
-
 export function useTaskPresence(options: TaskPresenceOptions) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
@@ -164,9 +145,10 @@ export function useTaskPresence(options: TaskPresenceOptions) {
 
   let socket: WebSocket | null = null
   let socketKey = ''
+  let connectionGeneration = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
-  let draftTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const draftTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let reconnectAttempts = 0
   const silencedSockets = new WeakSet<WebSocket>()
 
@@ -372,6 +354,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
   }
 
   function disconnect(clearParticipants = true, preserveActiveField = false) {
+    connectionGeneration += 1
     clearTimers()
     clearDraftTimers()
 
@@ -398,12 +381,12 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     const delayMs = Math.min(10000, 1000 * Math.max(1, 2 ** reconnectAttempts))
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
-      ensureConnection()
+      void ensureConnection()
     }, delayMs)
     updateStatus()
   }
 
-  function ensureConnection() {
+  async function ensureConnection() {
     if (import.meta.server) return
 
     const desired = desiredConnection()
@@ -421,7 +404,48 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     disconnect(false, preserveActiveField)
     participantsById.value = {}
     socketKey = desired.key
-    const nextSocket = new WebSocket(buildSocketURL(runtimeConfig, desired))
+    status.value = 'connecting'
+    const requestGeneration = (connectionGeneration += 1)
+
+    let socketURL = ''
+    try {
+      socketURL = await buildRealtimeSocketURL(
+        runtimeConfig,
+        '/v1/realtime/presence',
+        {
+          scope: desired.scope,
+          accountId: desired.accountId,
+          boardId: desired.boardId,
+          taskId: desired.taskId,
+        },
+        desired.accessToken,
+      )
+    } catch (error) {
+      if (requestGeneration === connectionGeneration && socketKey === desired.key) {
+        socketKey = ''
+        status.value = 'error'
+      }
+      presenceLog('error', 'ticket ERROR; socket nao aberto', {
+        scope: desired.scope,
+        accountId: desired.accountId,
+        boardId: desired.boardId,
+        taskId: desired.taskId,
+        error,
+      })
+      return
+    }
+
+    const latest = desiredConnection()
+    if (
+      requestGeneration !== connectionGeneration ||
+      !latest ||
+      latest.key !== desired.key ||
+      socketKey !== desired.key
+    ) {
+      return
+    }
+
+    const nextSocket = new WebSocket(socketURL)
     socket = nextSocket
     updateStatus()
 
@@ -569,7 +593,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
         () => auth.activeTenantId,
         () => auth.principal?.tenantId,
       ],
-      () => ensureConnection(),
+      () => void ensureConnection(),
       { immediate: true },
     )
   })

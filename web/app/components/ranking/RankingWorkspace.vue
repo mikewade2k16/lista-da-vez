@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { CalendarDays } from 'lucide-vue-next'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { computeScore360, useGamificationConfig } from '~/composables/useGamificationConfig'
 import { useRankingDetailsDrawer } from '~/composables/useRankingDetailsDrawer'
@@ -34,7 +35,23 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  dateFrom: {
+    type: String,
+    default: '',
+  },
+  dateTo: {
+    type: String,
+    default: '',
+  },
 })
+
+const emit = defineEmits([
+  'update:dateFrom',
+  'update:dateTo',
+  'applyPeriod',
+  'setCurrentMonth',
+  'setPreviousMonth',
+])
 
 const { scoreWeights } = useGamificationConfig()
 const drawer = useRankingDetailsDrawer()
@@ -464,8 +481,42 @@ function updateMetric(next) {
     </article>
 
     <template v-else>
-      <article class="settings-card ranking-workspace__filters">
+      <form class="settings-card ranking-workspace__filters" @submit.prevent="emit('applyPeriod')">
         <div class="ranking-workspace__filters-grid">
+          <div class="settings-field ranking-workspace__period">
+            <span>Periodo</span>
+            <AppDatePicker
+              :model-value="dateFrom"
+              :end-date="dateTo"
+              @update:model-value="emit('update:dateFrom', $event)"
+              @update:end-date="emit('update:dateTo', $event)"
+            >
+              <template #default="{ label }">
+                <button type="button" class="ranking-workspace__date-trigger">
+                  <CalendarDays :size="14" />
+                  <span>{{ label || 'Todas as datas' }}</span>
+                </button>
+              </template>
+            </AppDatePicker>
+          </div>
+
+          <div class="ranking-workspace__period-actions">
+            <button
+              class="ranking-workspace__filter-btn ranking-workspace__filter-btn--ghost"
+              type="button"
+              @click="emit('setPreviousMonth')"
+            >
+              Mes anterior
+            </button>
+            <button
+              class="ranking-workspace__filter-btn ranking-workspace__filter-btn--ghost"
+              type="button"
+              @click="emit('setCurrentMonth')"
+            >
+              Mes atual
+            </button>
+          </div>
+
           <label class="settings-field ranking-workspace__search">
             <span>Buscar</span>
             <input v-model="searchTerm" type="text" placeholder="Consultor ou loja" />
@@ -490,8 +541,14 @@ function updateMetric(next) {
               @update:model-value="updateMetric"
             />
           </label>
+
+          <div class="ranking-workspace__submit">
+            <button class="ranking-workspace__filter-btn" type="submit" :disabled="pending">
+              {{ pending ? 'Atualizando...' : 'Atualizar' }}
+            </button>
+          </div>
         </div>
-      </article>
+      </form>
 
       <template v-if="integratedScope && !singleStoreMode">
         <section class="ranking-workspace__section ranking-workspace__section--static">
@@ -578,7 +635,7 @@ function updateMetric(next) {
                 }}
               </h3>
               <p class="ranking-workspace__section-text">
-                {{ currentMetricLabel }} no recorte mensal atual.
+                {{ currentMetricLabel }} no recorte selecionado.
               </p>
             </div>
             <span class="insight-tag">{{ sortedSingleStoreRows.length }} consultores</span>
@@ -633,8 +690,69 @@ function updateMetric(next) {
 <style scoped>
 .ranking-workspace__filters-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(0, 1fr));
+  grid-template-columns:
+    minmax(13rem, 0.95fr)
+    auto
+    minmax(12rem, 1.3fr)
+    repeat(2, minmax(10rem, 0.85fr))
+    auto;
+  align-items: end;
   gap: 0.85rem;
+}
+
+.ranking-workspace__period {
+  min-width: 0;
+}
+
+.ranking-workspace__period-actions {
+  display: flex;
+  gap: 0.45rem;
+  align-items: end;
+}
+
+.ranking-workspace__date-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 0.85rem;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--border) / 0.9);
+  background: rgb(var(--surface) / 0.95);
+  color: rgb(var(--text));
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ranking-workspace__filter-btn {
+  min-height: 42px;
+  padding: 0 0.95rem;
+  border: none;
+  border-radius: 12px;
+  background: rgb(var(--primary));
+  color: rgb(255 255 255);
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ranking-workspace__filter-btn:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.ranking-workspace__filter-btn--ghost {
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+}
+
+.ranking-workspace__submit {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .ranking-workspace__search {
@@ -713,6 +831,11 @@ function updateMetric(next) {
 @media (max-width: 980px) {
   .ranking-workspace__filters-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ranking-workspace__period-actions,
+  .ranking-workspace__submit {
+    justify-content: flex-start;
   }
 }
 

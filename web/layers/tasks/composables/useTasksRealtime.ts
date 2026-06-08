@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef, type Ref } from 'vue'
+import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { useAuthStore } from '~/stores/auth'
-import { getWebSocketBase } from '~/utils/api-client'
 
 type RealtimeSource<T> = T | Ref<T> | ComputedRef<T> | (() => T)
 
@@ -63,25 +63,6 @@ function resolveAccountId(auth: ReturnType<typeof useAuthStore>, explicitAccount
   )
 }
 
-function buildSocketURL(
-  runtimeConfig: ReturnType<typeof useRuntimeConfig>,
-  params: {
-    scope: TasksRealtimeScope
-    accountId: string
-    boardId: string
-    taskId: string
-    accessToken: string
-  },
-) {
-  const url = new URL('/v1/realtime/tasks', getWebSocketBase(runtimeConfig))
-  url.searchParams.set('scope', params.scope)
-  url.searchParams.set('accountId', params.accountId)
-  if (params.boardId) url.searchParams.set('boardId', params.boardId)
-  if (params.taskId) url.searchParams.set('taskId', params.taskId)
-  url.searchParams.set('access_token', params.accessToken)
-  return url.toString()
-}
-
 export function useTasksRealtime(options: TasksRealtimeOptions) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
@@ -91,6 +72,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
 
   let socket: WebSocket | null = null
   let socketKey = ''
+  let connectionGeneration = 0
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectAttempts = 0
   const silencedSockets = new WeakSet<WebSocket>()
@@ -142,6 +124,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
   }
 
   function disconnect() {
+    connectionGeneration += 1
     clearReconnectTimer()
     if (socket) {
       silencedSockets.add(socket)
@@ -162,7 +145,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
     const delayMs = Math.min(10000, 1000 * Math.max(1, 2 ** reconnectAttempts))
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
-      ensureConnection()
+      void ensureConnection()
     }, delayMs)
     updateStatus()
   }
@@ -172,7 +155,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
     options.onEvent?.(payload)
   }
 
-  function ensureConnection() {
+  async function ensureConnection() {
     if (import.meta.server) return
 
     const desired = desiredConnection()
@@ -188,7 +171,42 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
 
     disconnect()
     socketKey = desired.key
-    const nextSocket = new WebSocket(buildSocketURL(runtimeConfig, desired))
+    status.value = 'connecting'
+    const requestGeneration = (connectionGeneration += 1)
+
+    let socketURL = ''
+    try {
+      socketURL = await buildRealtimeSocketURL(
+        runtimeConfig,
+        '/v1/realtime/tasks',
+        {
+          scope: desired.scope,
+          accountId: desired.accountId,
+          boardId: desired.boardId,
+          taskId: desired.taskId,
+        },
+        desired.accessToken,
+      )
+    } catch (error) {
+      if (requestGeneration === connectionGeneration && socketKey === desired.key) {
+        socketKey = ''
+        status.value = 'error'
+      }
+      if (import.meta.client) console.error('[tasks-ws] ticket ERROR', error)
+      return
+    }
+
+    const latest = desiredConnection()
+    if (
+      requestGeneration !== connectionGeneration ||
+      !latest ||
+      latest.key !== desired.key ||
+      socketKey !== desired.key
+    ) {
+      return
+    }
+
+    const nextSocket = new WebSocket(socketURL)
     socket = nextSocket
     updateStatus()
 
@@ -252,7 +270,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
         () => auth.activeTenantId,
         () => auth.principal?.tenantId,
       ],
-      () => ensureConnection(),
+      () => void ensureConnection(),
       { immediate: true },
     )
   })

@@ -12,7 +12,7 @@ import (
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
-	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -45,6 +45,7 @@ type Service struct {
 	hub            *Hub
 	pool           *pgxpool.Pool
 	presence       *PresenceStore
+	tickets        realtimeTicketStore
 	upgrader       websocket.Upgrader
 }
 
@@ -121,25 +122,8 @@ func (service *Service) PublishContextEvent(_ context.Context, tenantID string, 
 }
 
 func (service *Service) HandleOperationSocket(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimSpace(r.URL.Query().Get("access_token"))
-	if token == "" {
-		authorizationHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-		if authorizationHeader != "" {
-			bearerToken, err := auth.ExtractBearerToken(authorizationHeader)
-			if err == nil {
-				token = bearerToken
-			}
-		}
-	}
-
-	principal, err := service.authenticator.AuthenticateToken(r.Context(), token)
-	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrUnauthorized), errors.Is(err, auth.ErrUserInactive):
-			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
-		default:
-			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao validar a sessao.")
-		}
+	principal, ok := service.authenticateRealtimeRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -225,25 +209,8 @@ func (service *Service) HandleOperationSocket(w http.ResponseWriter, r *http.Req
 }
 
 func (service *Service) HandleContextSocket(w http.ResponseWriter, r *http.Request) {
-	token := strings.TrimSpace(r.URL.Query().Get("access_token"))
-	if token == "" {
-		authorizationHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-		if authorizationHeader != "" {
-			bearerToken, err := auth.ExtractBearerToken(authorizationHeader)
-			if err == nil {
-				token = bearerToken
-			}
-		}
-	}
-
-	principal, err := service.authenticator.AuthenticateToken(r.Context(), token)
-	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrUnauthorized), errors.Is(err, auth.ErrUserInactive):
-			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
-		default:
-			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao validar a sessao.")
-		}
+	principal, ok := service.authenticateRealtimeRequest(w, r)
+	if !ok {
 		return
 	}
 

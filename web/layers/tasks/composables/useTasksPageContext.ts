@@ -2,7 +2,7 @@ import type { InjectionKey } from 'vue'
 import { useCoreLoading } from '../../core/composables/useCoreLoading'
 import { useAuthStore } from '~/stores/auth'
 import { useUsersStore } from '~/stores/users'
-import { useSessionSimulationStore } from '../stores/session-simulation'
+import { useTasksClientStore } from '../stores/tasks-client'
 import { useCan } from './useCan'
 import { useTaskPresence } from './useTaskPresence'
 import { useTasksRealtime, type TasksRealtimeEvent } from './useTasksRealtime'
@@ -35,7 +35,7 @@ export function useTasksPageContext() {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const usersStore = useUsersStore()
-  const sessionSimulation = useSessionSimulationStore()
+  const tasksClient = useTasksClientStore()
   const tasksWorkspace = useTasksWorkspace()
   const taskVideoRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const pageLoading = useCoreLoading()
@@ -160,9 +160,6 @@ export function useTasksPageContext() {
   const columnSettingsOpen = ref(false)
   const taskEditorOpen = ref(false)
   const taskEditorMode = ref<'side' | 'center' | 'fullscreen'>('side')
-  // Memoriza o ultimo modo nao-fullscreen para o botao expand restaurar
-  // ao estado anterior quando clicado em fullscreen.
-  const previousTaskEditorMode = ref<'side' | 'center'>('side')
   const taskEditorWidth = ref(720)
   const taskEditorResizing = ref(false)
   const settingsSaving = ref(false)
@@ -230,8 +227,6 @@ export function useTasksPageContext() {
     archived: false,
     createdBy: '',
     createdAt: '',
-    roadmapModuleId: '' as string,
-    pinnedToRoadmap: false,
   })
   type TaskVideoDraft = TaskVideoItem & {
     sizeLabel: string
@@ -305,8 +300,7 @@ export function useTasksPageContext() {
   }
   function clientLabel(clientId: number) {
     return (
-      sessionSimulation.clientOptions.find((c) => c.value === clientId)?.label ||
-      `Cliente #${clientId}`
+      tasksClient.clientOptions.find((c) => c.value === clientId)?.label || `Cliente #${clientId}`
     )
   }
   function taskSort(a: TaskItem, b: TaskItem) {
@@ -366,7 +360,7 @@ export function useTasksPageContext() {
     tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
   )
   const clientOptions = computed(() =>
-    sessionSimulation.clientOptions.map((c) => ({ label: c.label, value: c.value })),
+    tasksClient.clientOptions.map((c) => ({ label: c.label, value: c.value })),
   )
   const currentUserName = computed(
     () =>
@@ -379,7 +373,7 @@ export function useTasksPageContext() {
           email: auth.user?.email || auth.principal?.email,
         },
         120,
-      ) || (viewerUserType.value === 'client' ? sessionSimulation.activeClientLabel : 'Usuario'),
+      ) || (viewerUserType.value === 'client' ? tasksClient.activeClientLabel : 'Usuario'),
   )
   const taskEditorCssVars = computed(() => ({
     '--tasks-editor-width': `${taskEditorWidth.value}px`,
@@ -630,7 +624,7 @@ export function useTasksPageContext() {
     })),
   )
   const directoryUserLabels = computed(() => {
-    const users = usersStore.listUsersForWorkspace('tasks')
+    const users = Array.isArray(usersStore.users) ? usersStore.users : []
     return users.map((user: Record<string, unknown>) => compactUserLabel(user, 120)).filter(Boolean)
   })
   const responsibleOptions = computed<OmniSelectOption[]>(() => {
@@ -762,7 +756,7 @@ export function useTasksPageContext() {
   function valueForGroup(task: TaskItem, fieldKey: string) {
     if (fieldKey === 'clientId') return String(task.clientId || '')
     if (fieldKey === 'priority') return task.priority
-    return normalizeText((task as unknown as Record<string, unknown>)[fieldKey], 140)
+    return normalizeText((task as Record<string, unknown>)[fieldKey], 140)
   }
 
   function labelForGroup(fieldKey: string, value: string) {
@@ -1166,7 +1160,6 @@ export function useTasksPageContext() {
   function taskSignatureFromTask(task: TaskItem | null | undefined) {
     if (!task) return ''
     const prioritySet = Boolean((task as TaskItem & { prioritySet?: boolean }).prioritySet)
-    const roadmapModuleId = normalizeText(task.roadmapModuleId, 80)
     return JSON.stringify({
       id: normalizeText(task.id, 80),
       title: normalizeText(task.title, 220),
@@ -1185,8 +1178,6 @@ export function useTasksPageContext() {
       dueDate: normalizeText(task.dueDate, 30),
       dueEndDate: normalizeText(task.dueEndDate, 30),
       archived: Boolean(task.archived),
-      roadmapModuleId,
-      pinnedToRoadmap: Boolean(roadmapModuleId),
       createdBy: normalizeText(task.createdBy, 120),
     })
   }
@@ -1209,8 +1200,6 @@ export function useTasksPageContext() {
       dueDate: taskDraft.dueDate,
       dueEndDate: taskDraft.dueEndDate,
       archived: taskDraft.archived,
-      roadmapModuleId: taskDraft.roadmapModuleId || null,
-      pinnedToRoadmap: taskDraft.pinnedToRoadmap,
       order: 0,
       createdBy: taskDraft.createdBy,
       createdAt: taskDraft.createdAt,
@@ -1236,8 +1225,6 @@ export function useTasksPageContext() {
     taskDraft.priority = (task as TaskItem & { prioritySet?: boolean }).prioritySet
       ? task.priority
       : ('' as TaskPriority)
-    taskDraft.roadmapModuleId = task.roadmapModuleId || ''
-    taskDraft.pinnedToRoadmap = Boolean(task.roadmapModuleId)
     taskDraft.dueDate = task.dueDate
     taskDraft.dueEndDate = task.dueEndDate
     taskDraft.archived = task.archived
@@ -1260,10 +1247,10 @@ export function useTasksPageContext() {
     const responsible = project?.defaults.responsibleFromCreator ? currentUserName.value : ''
     const clientId =
       viewerUserType.value === 'client'
-        ? sessionSimulation.clientId
+        ? tasksClient.clientId
         : project?.defaults.clientFromSession
-          ? sessionSimulation.clientId
-          : toNumberId(filters.clientId) || sessionSimulation.clientId
+          ? tasksClient.clientId
+          : toNumberId(filters.clientId) || tasksClient.clientId
     taskDraft.id = ''
     taskDraft.title = ''
     taskDraft.description = ''
@@ -1275,8 +1262,6 @@ export function useTasksPageContext() {
     taskDraft.clientName = clientLabel(taskDraft.clientId)
     taskDraft.type = ''
     taskDraft.priority = '' as TaskPriority
-    taskDraft.roadmapModuleId = ''
-    taskDraft.pinnedToRoadmap = false
     taskDraft.dueDate = ''
     taskDraft.dueEndDate = ''
     taskDraft.archived = false
@@ -1298,47 +1283,6 @@ export function useTasksPageContext() {
     }
     syncTaskDraftFromTask(task, { clearVideos: true })
     taskEditorOpen.value = true
-  }
-
-  async function ensureTasksWorkspaceReady() {
-    if (tasksWorkspace.initialized.value) return true
-    if (!tasksWorkspace.initializing.value) {
-      await tasksWorkspace.initialize()
-      return tasksWorkspace.initialized.value
-    }
-    for (let attempt = 0; attempt < 60 && tasksWorkspace.initializing.value; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-    return tasksWorkspace.initialized.value
-  }
-
-  async function openTaskEditorById(taskId: string) {
-    const id = normalizeText(taskId, 80)
-    if (!id) return false
-    await ensureTasksWorkspaceReady()
-    let task = tasksWorkspace.tasks.value.find((item) => item.id === id)
-    if (!task) {
-      await tasksWorkspace.refresh().catch(() => undefined)
-      task = tasksWorkspace.tasks.value.find((item) => item.id === id)
-    }
-    if (!task) return false
-    if (task.projectId && tasksWorkspace.activeProjectId.value !== task.projectId) {
-      tasksWorkspace.setActiveProject(task.projectId)
-      hydrateProjectDraft(activeProject.value)
-    }
-    openTaskEditor(task)
-    return true
-  }
-
-  function openTaskEditorForRoadmapModule(moduleId: string, title = '') {
-    const normalizedModuleId = normalizeText(moduleId, 80)
-    resetTaskDraft()
-    taskDraft.roadmapModuleId = normalizedModuleId
-    taskDraft.pinnedToRoadmap = Boolean(normalizedModuleId)
-    const seedTitle = clampText(title, 220)
-    if (seedTitle) taskDraft.title = seedTitle
-    taskEditorOpen.value = true
-    if (seedTitle) scheduleTaskDraftAutosave()
   }
 
   function clearTaskDraftAutosaveTimer() {
@@ -1402,11 +1346,10 @@ export function useTasksPageContext() {
   function buildTaskDraftPayload(project: TaskProjectItem) {
     const title = normalizeText(taskDraft.title, 220)
     if (!title) return null
-    const roadmapModuleId = normalizeText(taskDraft.roadmapModuleId, 80) || null
     const clientId =
       viewerUserType.value === 'client'
-        ? sessionSimulation.clientId
-        : Math.max(1, toNumberId(taskDraft.clientId) || sessionSimulation.clientId)
+        ? tasksClient.clientId
+        : Math.max(1, toNumberId(taskDraft.clientId) || tasksClient.clientId)
     return {
       title,
       description: normalizeText(taskDraft.description, 5000),
@@ -1422,8 +1365,6 @@ export function useTasksPageContext() {
       dueEndDate: normalizeText(taskDraft.dueEndDate, 30),
       archived: Boolean(taskDraft.archived),
       createdBy: normalizeText(taskDraft.createdBy, 120) || currentUserName.value,
-      roadmapModuleId,
-      pinnedToRoadmap: Boolean(roadmapModuleId),
     }
   }
 
@@ -1434,8 +1375,8 @@ export function useTasksPageContext() {
     if (!task) return
     const clientId =
       viewerUserType.value === 'client'
-        ? sessionSimulation.clientId
-        : toNumberId(taskDraft.clientId) || task.clientId || sessionSimulation.clientId
+        ? tasksClient.clientId
+        : toNumberId(taskDraft.clientId) || task.clientId || tasksClient.clientId
     task.title = normalizeText(taskDraft.title, 220)
     task.description = normalizeText(taskDraft.description, 5000)
     task.contentHtml = taskDraft.contentHtml
@@ -1450,8 +1391,6 @@ export function useTasksPageContext() {
     task.dueDate = normalizeText(taskDraft.dueDate, 30)
     task.dueEndDate = normalizeText(taskDraft.dueEndDate, 30)
     task.archived = Boolean(taskDraft.archived)
-    task.roadmapModuleId = normalizeText(taskDraft.roadmapModuleId, 80) || null
-    task.pinnedToRoadmap = Boolean(task.roadmapModuleId)
     task.createdBy = normalizeText(taskDraft.createdBy, 120) || task.createdBy
     task.updatedAt = new Date().toISOString()
   }
@@ -1707,10 +1646,10 @@ export function useTasksPageContext() {
     const project = activeProject.value
     const clientId =
       viewerUserType.value === 'client'
-        ? sessionSimulation.clientId
+        ? tasksClient.clientId
         : project?.defaults.clientFromSession
-          ? sessionSimulation.clientId
-          : toNumberId(filters.clientId) || sessionSimulation.clientId
+          ? tasksClient.clientId
+          : toNumberId(filters.clientId) || tasksClient.clientId
     const responsible = project?.defaults.responsibleFromCreator ? currentUserName.value : ''
     const base = {
       status: boardGroupBy.value === 'status' ? column.status : statuses.value[0] || 'Raw',
@@ -2180,12 +2119,12 @@ export function useTasksPageContext() {
       involved: [],
       clientId:
         viewerUserType.value === 'client'
-          ? sessionSimulation.clientId
-          : toNumberId(filters.clientId) || sessionSimulation.clientId,
+          ? tasksClient.clientId
+          : toNumberId(filters.clientId) || tasksClient.clientId,
       clientName: clientLabel(
         viewerUserType.value === 'client'
-          ? sessionSimulation.clientId
-          : toNumberId(filters.clientId) || sessionSimulation.clientId,
+          ? tasksClient.clientId
+          : toNumberId(filters.clientId) || tasksClient.clientId,
       ),
       createdBy: currentUserName.value,
     })
@@ -2284,21 +2223,7 @@ export function useTasksPageContext() {
   }
 
   function setTaskEditorMode(mode: 'side' | 'center' | 'fullscreen') {
-    if (mode !== 'fullscreen' && taskEditorMode.value !== 'fullscreen') {
-      previousTaskEditorMode.value = mode
-    }
     taskEditorMode.value = mode
-  }
-
-  function toggleTaskEditorFullscreen() {
-    if (taskEditorMode.value === 'fullscreen') {
-      taskEditorMode.value = previousTaskEditorMode.value
-      return
-    }
-    if (taskEditorMode.value === 'side' || taskEditorMode.value === 'center') {
-      previousTaskEditorMode.value = taskEditorMode.value
-    }
-    taskEditorMode.value = 'fullscreen'
   }
 
   function startTaskEditorResize(event: MouseEvent) {
@@ -2752,29 +2677,6 @@ export function useTasksPageContext() {
     schedulePresenceDraft('priority', nextPriority)
   }
 
-  function taskDraftRoadmapModuleIdValue() {
-    return taskDraft.roadmapModuleId || ''
-  }
-
-  function updateTaskDraftRoadmapModuleId(value: unknown) {
-    taskDraft.roadmapModuleId = normalizeText(value, 80)
-    if (!taskDraft.roadmapModuleId) {
-      taskDraft.pinnedToRoadmap = false
-    } else {
-      taskDraft.pinnedToRoadmap = true
-    }
-    scheduleTaskDraftAutosave()
-  }
-
-  function taskDraftPinnedToRoadmapValue() {
-    return Boolean(taskDraft.roadmapModuleId)
-  }
-
-  function updateTaskDraftPinnedToRoadmap(value: unknown) {
-    taskDraft.pinnedToRoadmap = Boolean(taskDraft.roadmapModuleId && value)
-    scheduleTaskDraftAutosave()
-  }
-
   function taskDraftTypeValue() {
     const remoteDraft = presenceDraftValue('type')
     return typeof remoteDraft === 'string' ? remoteDraft : taskDraft.type
@@ -2900,13 +2802,13 @@ export function useTasksPageContext() {
       document.addEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
     try {
       await pageLoading.withLoading('Carregando tasks...', async () => {
-        sessionSimulation.initialize()
+        tasksClient.initialize()
         await tasksWorkspace.initialize()
         await Promise.all([
           usersStore.ensureLoaded().catch(() => false),
           refreshActiveTracking(true).catch(() => undefined),
         ])
-        if (sessionSimulation.isAdmin) await sessionSimulation.refreshClientOptions()
+        if (tasksClient.isAdmin) await tasksClient.refreshClientOptions()
         if (!activeProject.value && tasksWorkspace.projects.value.length > 0)
           tasksWorkspace.setActiveProject(tasksWorkspace.projects.value[0]!.id)
         hydrateProjectDraft(activeProject.value)
@@ -3061,9 +2963,6 @@ export function useTasksPageContext() {
     hydrateProjectDraft,
     resetTaskDraft,
     openTaskEditor,
-    ensureTasksWorkspaceReady,
-    openTaskEditorById,
-    openTaskEditorForRoadmapModule,
     closeTaskEditor,
     taskDraftTitleValue,
     updateTaskDraftTitle,
@@ -3083,10 +2982,6 @@ export function useTasksPageContext() {
     updateTaskDraftDueEndDate,
     taskDraftPriorityValue,
     updateTaskDraftPriority,
-    taskDraftRoadmapModuleIdValue,
-    updateTaskDraftRoadmapModuleId,
-    taskDraftPinnedToRoadmapValue,
-    updateTaskDraftPinnedToRoadmap,
     taskDraftTypeValue,
     updateTaskDraftType,
     saveTask,
@@ -3141,7 +3036,6 @@ export function useTasksPageContext() {
     onTableCellUpdate,
     onTableRowAction,
     setTaskEditorMode,
-    toggleTaskEditorFullscreen,
     startTaskEditorResize,
     syncClientFilter,
     groupOptionsFor,

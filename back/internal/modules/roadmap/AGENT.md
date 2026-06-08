@@ -2,7 +2,7 @@
 
 Inventario editavel de modulos/paginas pendentes e regras canonicas para agentes.
 
-Plugado no Module Registry quando `CORE_V2_ENABLED=true`. Schema `roadmap.*` criado em [0115_roadmap_schema.sql](../../platform/database/migrations/0115_roadmap_schema.sql).
+Rotas `/v1/roadmap/modules` e `/v1/roadmap/rules` registradas no `app.go` via `roadmap.RegisterRoutes` (P0.5, 2026-06-07 — antes existiam no codigo mas NAO eram montadas e o front recebia 404; nao sao gateadas por modulo). Schema `roadmap.*` criado em [0115_roadmap_schema.sql](../../platform/database/migrations/0115_roadmap_schema.sql).
 
 ## Modelos
 

@@ -109,12 +109,9 @@ export interface TaskItem {
   clientName: string
   type: string
   priority: TaskPriority
-  prioritySet?: boolean
   dueDate: string
   dueEndDate: string
   archived: boolean
-  roadmapModuleId?: string | null
-  pinnedToRoadmap?: boolean
   order: number
   createdBy: string
   createdAt: string

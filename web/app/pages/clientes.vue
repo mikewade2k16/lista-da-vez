@@ -8,6 +8,10 @@ definePageMeta({
   layout: 'dashboard',
   workspaceId: 'clientes',
   alias: ['/operacao/clientes'],
+  // Path canonico passou a ser /operacao/clientes (decisao 2026-05-29:
+  // essa tela e do modulo Fila/queue e fica dentro de /operacao).
+  // O alias mantem /clientes funcionando para URLs antigas.
+  // Admin global de accounts (multi-tenant) fica em /manage/clientes-web.
 })
 
 const tenantsStore = useTenantsStore()

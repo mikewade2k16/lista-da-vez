@@ -48,7 +48,7 @@ func BootstrapERPStore(ctx context.Context, pool *pgxpool.Pool, input ERPStoreBo
 
 	var storeID string
 	if err := pool.QueryRow(ctx, `
-		insert into stores (
+		insert into queue.stores (
 			tenant_id,
 			code,
 			name,
@@ -86,7 +86,7 @@ func resolveERPBootstrapTenant(ctx context.Context, pool *pgxpool.Pool, input ER
 	if tenantID != "" {
 		return resolveERPBootstrapTenantByQuery(ctx, pool, `
 			select id::text
-			from tenants
+			from core.accounts
 			where id = $1::uuid
 			  and is_active = true
 			limit 1;
@@ -97,7 +97,7 @@ func resolveERPBootstrapTenant(ctx context.Context, pool *pgxpool.Pool, input ER
 	if tenantSlug != "" {
 		return resolveERPBootstrapTenantByQuery(ctx, pool, `
 			select id::text
-			from tenants
+			from core.accounts
 			where slug = $1
 			  and is_active = true
 			limit 1;
@@ -106,7 +106,7 @@ func resolveERPBootstrapTenant(ctx context.Context, pool *pgxpool.Pool, input ER
 
 	rows, err := pool.Query(ctx, `
 		select id::text
-		from tenants
+		from core.accounts
 		where is_active = true
 		order by created_at asc, id asc
 		limit 2;

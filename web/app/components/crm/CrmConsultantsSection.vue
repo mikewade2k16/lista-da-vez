@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
+import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
 import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
 import type { CRMConsultantMetric } from '~/stores/crm'
 import type { ErpConsultantLinkOption } from '~/stores/erp'
@@ -27,6 +28,168 @@ const emit = defineEmits<{
 }>()
 
 const expandedRowKey = ref('')
+const sortBy = ref('salesCents')
+const sortDir = ref<'asc' | 'desc'>('desc')
+const linkFilter = ref('all')
+const queueFilter = ref('all')
+const storeFilter = ref('all')
+const tableSearch = ref('')
+const salesFilter = ref('')
+const ticketFilter = ref('')
+const ordersFilter = ref('')
+
+const consultantGridColumns = [
+  {
+    id: 'consultantName',
+    label: 'Consultor',
+    width: 'minmax(190px, 1.3fr)',
+    sortable: true,
+    locked: true,
+  },
+  { id: 'linkStatusValue', label: 'Vinculo', width: 'minmax(190px, 1fr)', sortable: true },
+  { id: 'storeLabel', label: 'Loja', width: '110px', sortable: true },
+  { id: 'salesCents', label: 'Vendido', width: '130px', align: 'end', sortable: true },
+  {
+    id: 'ticketAverageCents',
+    label: 'Ticket medio',
+    width: '120px',
+    align: 'end',
+    sortable: true,
+  },
+  { id: 'paScore', label: 'P.A.', width: '78px', align: 'end', sortable: true },
+  { id: 'orders', label: 'Pedidos', width: '82px', align: 'end', sortable: true },
+  {
+    id: 'attendancesValue',
+    label: 'Atend. (F)',
+    width: '92px',
+    align: 'end',
+    sortable: true,
+  },
+  {
+    id: 'conversionRateValue',
+    label: 'Taxa interna',
+    width: '110px',
+    align: 'end',
+    sortable: true,
+  },
+  {
+    id: 'erpQueueRateValue',
+    label: 'ERP/fila',
+    width: '100px',
+    align: 'end',
+    sortable: true,
+  },
+  {
+    id: 'queueUsageRateValue',
+    label: 'Uso lista',
+    width: '100px',
+    align: 'end',
+    sortable: true,
+  },
+  {
+    id: 'queueCancellationRateValue',
+    label: 'Canc. fila',
+    width: '100px',
+    align: 'end',
+    sortable: true,
+  },
+  { id: 'queueStatusValue', label: 'Status fila', width: '150px', sortable: true },
+]
+
+const averageQueueUsageRate = computed(() => {
+  const rates = props.mergedConsultants
+    .map((row) => queueUsageRate(row))
+    .filter((rate) => Number.isFinite(rate))
+  if (!rates.length) return 0
+  return rates.reduce((sum, rate) => sum + rate, 0) / rates.length
+})
+
+const tableStoreOptions = computed(() => {
+  const stores = new Map<string, string>()
+  for (const row of props.mergedConsultants) {
+    const storeSlug = String(row.storeSlug || '').trim()
+    const storeLabel = String(row.storeLabel || row.storeName || '').trim()
+    if (storeSlug && storeLabel && !stores.has(storeSlug)) {
+      stores.set(storeSlug, storeLabel)
+    }
+  }
+
+  return [
+    { value: 'all', label: 'Loja: todas' },
+    ...[...stores.entries()]
+      .map(([value, label]) => ({ value, label }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
+  ]
+})
+
+const decoratedConsultants = computed(() =>
+  props.mergedConsultants.map((row) => {
+    const attendances = queueAttendances(row)
+    const conversionRate = queueInternalRate(row)
+    const erpQueueRate = erpToQueueRate(row)
+    const usageRate = queueUsageRate(row)
+    const cancellationRate = queueCancellationRate(row)
+    const queueStatus = queueStatusValue(row)
+
+    return {
+      ...row,
+      rowKey: tableRowKey(row),
+      linkStatusValue: props.linkStatusLabel(row.linkStatus),
+      queueStatusKey: queueStatus,
+      queueStatusValue: queueStatusLabel(row),
+      attendancesValue: attendances,
+      conversionRateValue: conversionRate,
+      erpQueueRateValue: erpQueueRate,
+      queueUsageRateValue: usageRate,
+      queueCancellationRateValue: cancellationRate,
+      belowAverageQueueUse:
+        Number(row.orders || 0) > 0 &&
+        averageQueueUsageRate.value > 0 &&
+        usageRate < averageQueueUsageRate.value,
+    }
+  }),
+)
+
+const filteredConsultants = computed(() =>
+  decoratedConsultants.value.filter((row) => {
+    if (storeFilter.value !== 'all' && String(row.storeSlug || '') !== storeFilter.value) {
+      return false
+    }
+    if (linkFilter.value !== 'all' && String(row.linkStatus || 'pending') !== linkFilter.value) {
+      return false
+    }
+    if (queueFilter.value !== 'all' && row.queueStatusKey !== queueFilter.value) {
+      return false
+    }
+    if (
+      tableSearch.value &&
+      !matchesSearch(tableSearch.value, [
+        row.consultantName,
+        row.profileConsultantName,
+        row.erpEmployeeId || row.consultantId,
+        row.storeLabel,
+      ])
+    ) {
+      return false
+    }
+    if (!matchesNumberFilter(row.salesCents, salesFilter.value, 100)) {
+      return false
+    }
+    if (!matchesNumberFilter(row.ticketAverageCents, ticketFilter.value, 100)) {
+      return false
+    }
+    if (!matchesNumberFilter(row.orders, ordersFilter.value)) {
+      return false
+    }
+    return true
+  }),
+)
+
+const sortedConsultants = computed(() => {
+  const rows = [...filteredConsultants.value]
+  rows.sort((left, right) => compareRows(left, right, sortBy.value, sortDir.value))
+  return rows
+})
 
 function formatCurrencyFromCents(value?: number | null) {
   return formatCurrencyBRL((Number(value || 0) || 0) / 100)
@@ -43,6 +206,102 @@ function formatPA(value?: number | null) {
 function formatPct(value?: number | null) {
   const n = Number(value || 0)
   return n ? `${n.toFixed(1)}%` : '-'
+}
+
+function formatPctValue(value?: number | null) {
+  return `${Number(value || 0).toFixed(1)}%`
+}
+
+function normalizeSearch(value: unknown) {
+  return String(value || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function matchesSearch(search: unknown, values: unknown[]) {
+  const normalizedSearch = normalizeSearch(search)
+  if (!normalizedSearch) return true
+  return values.some((value) => normalizeSearch(value).includes(normalizedSearch))
+}
+
+function parseNumberToken(value: string) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return null
+
+  let numeric = normalized.replace(/[^\d,.-]/g, '')
+  if (!numeric || numeric === '-' || numeric === '.' || numeric === ',') return null
+
+  if (numeric.includes(',')) {
+    numeric = numeric.replace(/\./g, '').replace(',', '.')
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(numeric)) {
+    numeric = numeric.replace(/\./g, '')
+  }
+
+  const parsed = Number(numeric)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseRangeFilter(value: string, multiplier = 1) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return null
+
+  const tokens = normalized.match(/\d+(?:[.,]\d+)*/g) || []
+  const parsed = tokens
+    .map((token) => parseNumberToken(token))
+    .filter((token): token is number => token !== null)
+
+  if (!parsed.length) return null
+
+  if (parsed.length === 1) {
+    const exact = parsed[0] * multiplier
+    return { exact, min: exact, max: exact }
+  }
+
+  const first = parsed[0] * multiplier
+  const second = parsed[1] * multiplier
+  return {
+    exact: null,
+    min: Math.min(first, second),
+    max: Math.max(first, second),
+  }
+}
+
+function matchesNumberFilter(value: unknown, filter: string, multiplier = 1) {
+  const range = parseRangeFilter(filter, multiplier)
+  if (!range) return true
+
+  const numericValue = Number(value || 0)
+  if (!Number.isFinite(numericValue)) return false
+
+  if (range.exact !== null) {
+    return Math.round(numericValue) === Math.round(range.exact)
+  }
+
+  return numericValue >= range.min && numericValue <= range.max
+}
+
+function hasTableFilters() {
+  return (
+    storeFilter.value !== 'all' ||
+    linkFilter.value !== 'all' ||
+    queueFilter.value !== 'all' ||
+    tableSearch.value.trim() ||
+    salesFilter.value.trim() ||
+    ticketFilter.value.trim() ||
+    ordersFilter.value.trim()
+  )
+}
+
+function clearTableFilters() {
+  storeFilter.value = 'all'
+  linkFilter.value = 'all'
+  queueFilter.value = 'all'
+  tableSearch.value = ''
+  salesFilter.value = ''
+  ticketFilter.value = ''
+  ordersFilter.value = ''
 }
 
 function tableRowKey(row: MergedCrmConsultant | CRMConsultantMetric) {
@@ -94,6 +353,72 @@ function queueStatusClass(row: MergedCrmConsultant) {
   return 'crm-badge--warn'
 }
 
+function queueStatusValue(row: MergedCrmConsultant) {
+  if (!props.queueStatsAvailable) return 'no-data'
+  if (row.queue) return 'identified'
+  if (String(row.profileConsultantId || row.profileConsultantName || '').trim()) {
+    return 'no-attendance'
+  }
+  return 'unidentified'
+}
+
+function queueAttendances(row: MergedCrmConsultant) {
+  return Number(row.queue?.attendances || 0)
+}
+
+function queueInternalRate(row: MergedCrmConsultant) {
+  return Number(row.queue?.conversionRate || 0)
+}
+
+function erpToQueueRate(row: MergedCrmConsultant) {
+  const attendances = queueAttendances(row)
+  if (!attendances) return 0
+  return (Number(row.orders || 0) / attendances) * 100
+}
+
+function queueUsageRate(row: MergedCrmConsultant) {
+  const orders = Number(row.orders || 0)
+  if (!orders) return 0
+  return (queueAttendances(row) / orders) * 100
+}
+
+function queueCancellationRate(row: MergedCrmConsultant) {
+  return Number(row.queue?.queueCancellationRate || 0)
+}
+
+function sortValue(row: Record<string, unknown>, field: string) {
+  const value = row?.[field]
+  if (typeof value === 'number') return value
+  if (value === null || value === undefined) return ''
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function compareRows(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  field: string,
+  direction: 'asc' | 'desc',
+) {
+  const multiplier = direction === 'asc' ? 1 : -1
+  const leftValue = sortValue(left, field)
+  const rightValue = sortValue(right, field)
+  if (leftValue < rightValue) return -1 * multiplier
+  if (leftValue > rightValue) return 1 * multiplier
+  return 0
+}
+
+function toggleSort(columnId: string) {
+  if (sortBy.value === columnId) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+    return
+  }
+  sortBy.value = columnId
+  sortDir.value = columnId === 'consultantName' || columnId === 'storeLabel' ? 'asc' : 'desc'
+}
+
 function handleSave(row: MergedCrmConsultant) {
   emit('save-link', row)
   expandedRowKey.value = ''
@@ -116,7 +441,9 @@ function handleRemove(row: MergedCrmConsultant) {
         </p>
       </div>
       <div class="crm-section__side">
-        <span class="crm-section__meta">{{ mergedConsultants.length }} consultor(es)</span>
+        <span class="crm-section__meta">
+          {{ sortedConsultants.length }} de {{ mergedConsultants.length }} consultor(es)
+        </span>
         <div v-if="canManageConsultantLinks" class="crm-inline-link-toolbar">
           <button
             type="button"
@@ -138,130 +465,216 @@ function handleRemove(row: MergedCrmConsultant) {
       </div>
     </header>
 
-    <div class="insight-table-wrap">
-      <table class="insight-table crm-table crm-table--consultants">
-        <thead>
-          <tr>
-            <th>Consultor</th>
-            <th>Vinculo</th>
-            <th>Loja</th>
-            <th>Vendido</th>
-            <th>Ticket medio</th>
-            <th>P.A.</th>
-            <th>Pedidos</th>
-            <th>Atend. (F)</th>
-            <th>Conversao (F)</th>
-            <th>Canc. fila (F)</th>
-            <th>Status fila</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="row in mergedConsultants"
-            :key="tableRowKey(row)"
-            :class="{ 'crm-tr--unmatched': !row.queue && queueStatsAvailable }"
-          >
-            <td>
-              <div class="crm-row-heading">
-                <strong>{{ row.consultantName }}</strong>
-                <small class="crm-muted">ERP {{ row.erpEmployeeId || row.consultantId }}</small>
-              </div>
-            </td>
-            <td>
-              <div class="crm-link-cell">
-                <div class="crm-link-summary">
-                  <span class="crm-badge" :class="linkStatusClass(row.linkStatus)">
-                    {{ linkStatusLabel(row.linkStatus) }}
-                  </span>
-                  <button
-                    v-if="canManageConsultantLinks"
-                    type="button"
-                    class="crm-link-toggle"
-                    :disabled="loadingConsultantLinks || savingConsultantLink"
-                    @click="toggleEditor(row)"
-                  >
-                    {{ isExpanded(row) ? 'Fechar' : 'Editar' }}
-                  </button>
-                </div>
+    <AppEntityGrid
+      :columns="consultantGridColumns"
+      :rows="sortedConsultants"
+      :row-key="(row) => row.rowKey"
+      :search-value="''"
+      :show-search="false"
+      :sort-by="sortBy"
+      :sort-dir="sortDir"
+      storage-key="crm-consultants-columns-v2"
+      empty-title="Nenhum consultor"
+      empty-text="Nenhum consultor com pedidos ERP no periodo selecionado."
+      testid="crm-consultants-grid"
+      class="crm-consultants-grid"
+      @sort="toggleSort"
+    >
+      <template #toolbar-filters>
+        <input
+          v-model="tableSearch"
+          class="crm-table-filter crm-table-filter--input crm-table-filter--search"
+          type="search"
+          placeholder="Buscar consultor..."
+          autocomplete="off"
+        />
 
-                <small class="crm-link-caption">{{ currentLinkedLabel(row) }}</small>
+        <select v-model="storeFilter" class="crm-table-filter" title="Filtrar loja">
+          <option v-for="option in tableStoreOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
 
-                <template v-if="canManageConsultantLinks && isExpanded(row)">
-                  <select
-                    class="crm-link-select"
-                    :value="consultantLinkDrafts[draftKeyForRow(row)] || ''"
-                    :disabled="loadingConsultantLinks || savingConsultantLink"
-                    @change="updateDraft(row, $event)"
-                  >
-                    <option value="">Selecionar consultor</option>
-                    <option
-                      v-for="consultant in consultantLinkOptions"
-                      :key="consultant.consultantId"
-                      :value="consultant.consultantId"
-                    >
-                      {{ consultant.consultantName }} - {{ consultant.storeName }}
-                    </option>
-                  </select>
+        <select v-model="queueFilter" class="crm-table-filter" title="Filtrar status da fila">
+          <option value="all">Status: todos</option>
+          <option value="identified">Identificados</option>
+          <option value="no-attendance">Sem atendimento</option>
+          <option value="unidentified">Nao identificados</option>
+        </select>
 
-                  <div class="crm-link-actions">
-                    <button
-                      type="button"
-                      class="crm-btn crm-btn--ghost crm-btn--xs"
-                      :disabled="savingConsultantLink"
-                      @click="handleSave(row)"
-                    >
-                      Salvar
-                    </button>
-                    <button
-                      v-if="row.linkEmployee?.linkId"
-                      type="button"
-                      class="crm-btn crm-btn--ghost crm-btn--xs"
-                      :disabled="savingConsultantLink"
-                      @click="handleRemove(row)"
-                    >
-                      Remover
-                    </button>
-                  </div>
-                </template>
-              </div>
-            </td>
-            <td>{{ row.storeLabel }}</td>
-            <td>{{ formatCurrencyFromCents(row.salesCents) }}</td>
-            <td>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</td>
-            <td>{{ formatPA(row.paScore) }}</td>
-            <td>{{ formatNumber(row.orders) }}</td>
-            <td :class="{ 'crm-td--queue': row.queue }">
-              {{ row.queue ? formatNumber(row.queue.attendances) : '-' }}
-            </td>
-            <td>
-              <span v-if="row.queue" :class="{ 'crm-rate--good': row.queue.conversionRate >= 30 }">
-                {{ formatPct(row.queue.conversionRate) }}
-              </span>
-              <span v-else class="crm-muted">-</span>
-            </td>
-            <td>
-              <span
-                v-if="row.queue"
-                :class="{ 'crm-rate--bad': row.queue.queueCancellationRate > 10 }"
+        <select v-model="linkFilter" class="crm-table-filter" title="Filtrar vinculo ERP">
+          <option value="all">Vinculo: todos</option>
+          <option value="manual">Manual</option>
+          <option value="employee_code">Codigo</option>
+          <option value="name_exact">Nome</option>
+          <option value="ambiguous">Ambiguo</option>
+          <option value="unmatched">Sem vinculo</option>
+        </select>
+
+        <input
+          v-model="salesFilter"
+          class="crm-table-filter crm-table-filter--input crm-table-filter--number"
+          type="text"
+          inputmode="decimal"
+          placeholder="Vendido: 1000 ou 1000-5000"
+          title="Filtrar valor vendido por numero unico ou faixa"
+        />
+
+        <input
+          v-model="ticketFilter"
+          class="crm-table-filter crm-table-filter--input crm-table-filter--number"
+          type="text"
+          inputmode="decimal"
+          placeholder="Ticket: 1500 ou 1000-2000"
+          title="Filtrar ticket medio por numero unico ou faixa"
+        />
+
+        <input
+          v-model="ordersFilter"
+          class="crm-table-filter crm-table-filter--input crm-table-filter--number"
+          type="text"
+          inputmode="numeric"
+          placeholder="Pedidos: 10 ou 10-40"
+          title="Filtrar pedidos por numero unico ou faixa"
+        />
+
+        <button
+          v-if="hasTableFilters()"
+          type="button"
+          class="crm-table-filter crm-table-filter--button"
+          @click="clearTableFilters"
+        >
+          Limpar
+        </button>
+      </template>
+
+      <template #cell-consultantName="{ row }">
+        <div class="crm-row-heading">
+          <strong>{{ row.consultantName }}</strong>
+          <small class="crm-muted">ERP {{ row.erpEmployeeId || row.consultantId }}</small>
+        </div>
+      </template>
+
+      <template #cell-linkStatusValue="{ row }">
+        <div class="crm-link-cell">
+          <div class="crm-link-summary">
+            <span class="crm-badge" :class="linkStatusClass(row.linkStatus)">
+              {{ linkStatusLabel(row.linkStatus) }}
+            </span>
+            <button
+              v-if="canManageConsultantLinks"
+              type="button"
+              class="crm-link-toggle"
+              :disabled="loadingConsultantLinks || savingConsultantLink"
+              @click="toggleEditor(row)"
+            >
+              {{ isExpanded(row) ? 'Fechar' : 'Editar' }}
+            </button>
+          </div>
+
+          <small class="crm-link-caption">{{ currentLinkedLabel(row) }}</small>
+
+          <template v-if="canManageConsultantLinks && isExpanded(row)">
+            <select
+              class="crm-link-select"
+              :value="consultantLinkDrafts[draftKeyForRow(row)] || ''"
+              :disabled="loadingConsultantLinks || savingConsultantLink"
+              @change="updateDraft(row, $event)"
+            >
+              <option value="">Selecionar consultor</option>
+              <option
+                v-for="consultant in consultantLinkOptions"
+                :key="consultant.consultantId"
+                :value="consultant.consultantId"
               >
-                {{ formatPct(row.queue.queueCancellationRate) }}
-              </span>
-              <span v-else class="crm-muted">-</span>
-            </td>
-            <td>
-              <span class="crm-badge" :class="queueStatusClass(row)">
-                {{ queueStatusLabel(row) }}
-              </span>
-            </td>
-          </tr>
-          <tr v-if="!mergedConsultants.length">
-            <td class="crm-empty" colspan="11">
-              Nenhum consultor com pedidos ERP no periodo selecionado.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                {{ consultant.consultantName }} - {{ consultant.storeName }}
+              </option>
+            </select>
+
+            <div class="crm-link-actions">
+              <button
+                type="button"
+                class="crm-btn crm-btn--ghost crm-btn--xs"
+                :disabled="savingConsultantLink"
+                @click="handleSave(row)"
+              >
+                Salvar
+              </button>
+              <button
+                v-if="row.linkEmployee?.linkId"
+                type="button"
+                class="crm-btn crm-btn--ghost crm-btn--xs"
+                :disabled="savingConsultantLink"
+                @click="handleRemove(row)"
+              >
+                Remover
+              </button>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <template #cell-salesCents="{ row }">
+        <span>{{ formatCurrencyFromCents(row.salesCents) }}</span>
+      </template>
+
+      <template #cell-ticketAverageCents="{ row }">
+        <span>{{ formatCurrencyFromCents(row.ticketAverageCents) }}</span>
+      </template>
+
+      <template #cell-paScore="{ row }">
+        <span>{{ formatPA(row.paScore) }}</span>
+      </template>
+
+      <template #cell-orders="{ row }">
+        <span>{{ formatNumber(row.orders) }}</span>
+      </template>
+
+      <template #cell-attendancesValue="{ row }">
+        <span :class="{ 'crm-td--queue': row.queue }">
+          {{ row.queue ? formatNumber(row.attendancesValue) : '-' }}
+        </span>
+      </template>
+
+      <template #cell-conversionRateValue="{ row }">
+        <span v-if="row.queue" :class="{ 'crm-rate--good': row.conversionRateValue >= 30 }">
+          {{ formatPct(row.conversionRateValue) }}
+        </span>
+        <span v-else class="crm-muted">-</span>
+      </template>
+
+      <template #cell-erpQueueRateValue="{ row }">
+        <span v-if="row.queue">{{ formatPctValue(row.erpQueueRateValue) }}</span>
+        <span v-else class="crm-muted">-</span>
+      </template>
+
+      <template #cell-queueUsageRateValue="{ row }">
+        <span
+          v-if="row.orders"
+          class="crm-usage-rate"
+          :class="{ 'crm-rate--bad': row.belowAverageQueueUse }"
+        >
+          {{ formatPctValue(row.queueUsageRateValue) }}
+        </span>
+        <span v-else class="crm-muted">-</span>
+      </template>
+
+      <template #cell-queueCancellationRateValue="{ row }">
+        <span v-if="row.queue" :class="{ 'crm-rate--bad': row.queueCancellationRateValue > 10 }">
+          {{ formatPct(row.queueCancellationRateValue) }}
+        </span>
+        <span v-else class="crm-muted">-</span>
+      </template>
+
+      <template #cell-queueStatusValue="{ row }">
+        <div class="crm-status-cell">
+          <span class="crm-badge" :class="queueStatusClass(row)">
+            {{ queueStatusLabel(row) }}
+          </span>
+          <small v-if="row.belowAverageQueueUse" class="crm-usage-flag">abaixo da media</small>
+        </div>
+      </template>
+    </AppEntityGrid>
   </article>
 </template>
 
@@ -327,6 +740,85 @@ function handleRemove(row: MergedCrmConsultant) {
   padding: 0.42rem 0.68rem;
   border-radius: 10px;
   font-size: 0.76rem;
+}
+
+.crm-consultants-grid {
+  --crm-grid-min-width: 1280px;
+  padding: 0.65rem;
+  gap: 0.55rem;
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__toolbar) {
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__toolbar-main) {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex: 1 1 auto;
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__filters) {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__viewport) {
+  overflow-x: auto;
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__canvas) {
+  min-width: var(--crm-grid-min-width);
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__head) {
+  background: rgb(var(--surface) / 0.98);
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__row) {
+  align-items: center;
+  padding: 0.45rem 0.3rem;
+  border-radius: 0;
+  border-width: 0 0 1px;
+  background: transparent;
+}
+
+.crm-consultants-grid :deep(.app-entity-grid__cell) {
+  min-height: 2.35rem;
+  font-size: 0.8rem;
+}
+
+.crm-table-filter {
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--border) / 0.76);
+  background: rgb(var(--surface) / 0.95);
+  color: rgb(var(--text));
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.crm-table-filter--input {
+  outline: none;
+}
+
+.crm-table-filter--input::placeholder {
+  color: rgb(var(--muted) / 0.72);
+}
+
+.crm-table-filter--search {
+  width: min(16rem, 100%);
+}
+
+.crm-table-filter--number {
+  width: 12.5rem;
+}
+
+.crm-table-filter--button {
+  cursor: pointer;
 }
 
 .crm-table {
@@ -447,6 +939,26 @@ function handleRemove(row: MergedCrmConsultant) {
 .crm-rate--bad {
   color: rgb(var(--danger));
   font-weight: 700;
+}
+
+.crm-usage-rate.crm-rate--bad {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.crm-status-cell {
+  display: grid;
+  justify-items: start;
+  gap: 0.25rem;
+}
+
+.crm-usage-flag {
+  color: rgb(var(--danger));
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 @media (max-width: 860px) {

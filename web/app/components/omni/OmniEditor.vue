@@ -9,8 +9,6 @@ import type {
 } from '@nuxt/ui'
 import { mapEditorItems } from '@nuxt/ui/utils/editor'
 import { Emoji, gitHubEmojis } from '@tiptap/extension-emoji'
-import { TaskItem } from '@tiptap/extension-task-item'
-import { TaskList } from '@tiptap/extension-task-list'
 import { TextAlign } from '@tiptap/extension-text-align'
 import type { Editor, JSONContent } from '@tiptap/vue-3'
 
@@ -231,7 +229,6 @@ const fixedToolbarItems = [
       items: [
         { kind: 'bulletList', icon: 'i-lucide-list', label: 'Bullet list' },
         { kind: 'orderedList', icon: 'i-lucide-list-ordered', label: 'Numbered list' },
-        { kind: 'taskList', icon: 'i-lucide-list-checks', label: 'Checklist' },
       ],
     },
     {
@@ -342,7 +339,6 @@ const bubbleToolbarItems = computed(
             { kind: 'heading', level: 3, label: 'Heading 3', icon: 'i-lucide-heading-3' },
             { kind: 'bulletList', label: 'Bullet list', icon: 'i-lucide-list' },
             { kind: 'orderedList', label: 'Numbered list', icon: 'i-lucide-list-ordered' },
-            { kind: 'taskList', label: 'Checklist', icon: 'i-lucide-list-checks' },
             { kind: 'blockquote', label: 'Blockquote', icon: 'i-lucide-text-quote' },
             { kind: 'codeBlock', label: 'Code block', icon: 'i-lucide-square-code' },
           ],
@@ -507,7 +503,6 @@ function handleItems(editor: Editor): DropdownMenuItem[][] {
             { kind: 'heading', level: 3, label: 'Heading 3', icon: 'i-lucide-heading-3' },
             { kind: 'bulletList', label: 'Bullet list', icon: 'i-lucide-list' },
             { kind: 'orderedList', label: 'Numbered list', icon: 'i-lucide-list-ordered' },
-            { kind: 'taskList', label: 'Checklist', icon: 'i-lucide-list-checks' },
             { kind: 'blockquote', label: 'Blockquote', icon: 'i-lucide-text-quote' },
             { kind: 'codeBlock', label: 'Code block', icon: 'i-lucide-square-code' },
           ],
@@ -617,12 +612,7 @@ function onImageFileChange(event: Event) {
       :model-value="props.modelValue || ''"
       :editable="props.editable"
       :content-type="contentType"
-      :extensions="[
-        Emoji,
-        TextAlign.configure({ types: ['heading', 'paragraph'] }),
-        TaskList,
-        TaskItem.configure({ nested: true }),
-      ]"
+      :extensions="[Emoji, TextAlign.configure({ types: ['heading', 'paragraph'] })]"
       :handlers="customHandlers"
       :placeholder="{ placeholder, mode: 'everyLine', includeChildren: true }"
       :image="{ allowBase64: true, HTMLAttributes: { class: 'omni-editor__image' } }"
@@ -910,53 +900,6 @@ function onImageFileChange(event: Event) {
 
 .omni-editor :deep(.tiptap > * + *) {
   margin-top: 0.7rem;
-}
-
-/* Checklist (Tiptap TaskList/TaskItem) */
-.omni-editor :deep(.tiptap ul[data-type='taskList']) {
-  list-style: none;
-  padding-left: 0;
-  margin: 0.25rem 0;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] li) {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
-  margin: 0.15rem 0;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] li > label) {
-  flex: 0 0 auto;
-  margin-top: 0.2rem;
-  cursor: pointer;
-  user-select: none;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] li > label > input[type='checkbox']) {
-  width: 1rem;
-  height: 1rem;
-  accent-color: rgb(99, 102, 241);
-  cursor: pointer;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] li > div) {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] li > div > p) {
-  margin: 0;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] li[data-checked='true'] > div) {
-  color: rgba(148, 163, 184, 0.78);
-  text-decoration: line-through;
-}
-
-.omni-editor :deep(.tiptap ul[data-type='taskList'] ul[data-type='taskList']) {
-  padding-left: 1.25rem;
-  margin: 0.15rem 0 0;
 }
 
 .omni-editor :deep(.tiptap h1) {

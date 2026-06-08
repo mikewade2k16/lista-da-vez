@@ -10,6 +10,11 @@ export interface NavItem {
   children?: NavItem[]
   hidden?: boolean
   beta?: boolean
+  // C11: id do modulo (`core`, `queue`, `tasks`, `crm`, `site`, `roadmap`,
+  // `notifications`). Quando preenchido, o item so aparece se o modulo esta
+  // habilitado em useCoreAccountStore().enabledModules. Sem moduleId = sempre
+  // visivel (itens do `core` ou utilitarios).
+  moduleId?: string
 }
 
 export interface NavSection {

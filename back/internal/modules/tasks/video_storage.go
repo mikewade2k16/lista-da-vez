@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	maxTaskVideoBytes          = 100 * 1024 * 1024
+	maxTaskVideoBytes           = 100 * 1024 * 1024
 	maxTaskVideoMultipartMemory = 8 * 1024 * 1024
 )
 

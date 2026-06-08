@@ -39,9 +39,9 @@ type realtimeSubscription struct {
 }
 
 type presenceClientMessage struct {
-	Type     string `json:"type"`
-	FieldKey string `json:"fieldKey"`
-	LockID   string `json:"lockId"`
+	Type       string `json:"type"`
+	FieldKey   string `json:"fieldKey"`
+	LockID     string `json:"lockId"`
 	DraftValue string `json:"draftValue"`
 }
 
@@ -320,32 +320,6 @@ func (service *Service) HandleNotificationsSocket(w http.ResponseWriter, r *http
 	}, nil, nil, service.readPumpWithRateLimit)
 }
 
-func (service *Service) authenticateRealtimeRequest(w http.ResponseWriter, r *http.Request) (auth.Principal, bool) {
-	token := strings.TrimSpace(r.URL.Query().Get("access_token"))
-	if token == "" {
-		authorizationHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-		if authorizationHeader != "" {
-			bearerToken, err := auth.ExtractBearerToken(authorizationHeader)
-			if err == nil {
-				token = bearerToken
-			}
-		}
-	}
-
-	principal, err := service.authenticator.AuthenticateToken(r.Context(), token)
-	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrUnauthorized), errors.Is(err, auth.ErrUserInactive):
-			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
-		default:
-			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao validar a sessao.")
-		}
-		return auth.Principal{}, false
-	}
-
-	return principal, true
-}
-
 func (service *Service) resolveTasksSubscription(ctx context.Context, principal auth.Principal, r *http.Request) (realtimeSubscription, error) {
 	query := r.URL.Query()
 	topic := strings.TrimSpace(query.Get("topic"))
@@ -497,7 +471,10 @@ func (service *Service) resolveRealtimeAccountID(principal auth.Principal, reque
 		return requestedAccountID, nil
 	}
 
-	principalAccountID := strings.TrimSpace(principal.TenantID)
+	principalAccountID := strings.TrimSpace(principal.AccountID)
+	if principalAccountID == "" {
+		principalAccountID = strings.TrimSpace(principal.TenantID)
+	}
 	if principalAccountID == "" {
 		return "", errRealtimeForbidden
 	}

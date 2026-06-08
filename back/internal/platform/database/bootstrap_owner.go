@@ -44,7 +44,7 @@ func BootstrapInitialOwner(ctx context.Context, pool *pgxpool.Pool, input Initia
 
 	var tenantID string
 	err = tx.QueryRow(ctx, `
-		insert into tenants (slug, name, is_active)
+		insert into core.accounts (slug, name, is_active)
 		values ($1, $2, true)
 		on conflict (slug) do update
 		set
@@ -59,7 +59,7 @@ func BootstrapInitialOwner(ctx context.Context, pool *pgxpool.Pool, input Initia
 
 	var storeID string
 	err = tx.QueryRow(ctx, `
-		insert into stores (
+		insert into queue.stores (
 			tenant_id,
 			code,
 			name,
@@ -87,7 +87,7 @@ func BootstrapInitialOwner(ctx context.Context, pool *pgxpool.Pool, input Initia
 
 	var userID string
 	err = tx.QueryRow(ctx, `
-		insert into users (
+		insert into core.users (
 			email,
 			display_name,
 			employee_code,
@@ -119,21 +119,45 @@ func BootstrapInitialOwner(ctx context.Context, pool *pgxpool.Pool, input Initia
 		return fmt.Errorf("bootstrap initial owner: upsert owner user: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `delete from user_platform_roles where user_id = $1::uuid;`, userID); err != nil {
-		return fmt.Errorf("bootstrap initial owner: clear platform roles: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `delete from user_store_roles where user_id = $1::uuid;`, userID); err != nil {
-		return fmt.Errorf("bootstrap initial owner: clear store roles: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `delete from user_tenant_roles where user_id = $1::uuid;`, userID); err != nil {
-		return fmt.Errorf("bootstrap initial owner: clear tenant roles: %w", err)
-	}
-
+	// U4b: papel/membership do owner inicial em core.* (sem legado).
+	// accountId == tenantId (core.accounts.id == public.tenants.id na 0101).
 	if _, err := tx.Exec(ctx, `
-		insert into user_tenant_roles (user_id, tenant_id, role)
-		values ($1::uuid, $2::uuid, 'owner');
-	`, userID, tenantID); err != nil {
-		return fmt.Errorf("bootstrap initial owner: assign owner role: %w", err)
+		insert into core.account_users (account_id, user_id, is_active, joined_at)
+		values ($1::uuid, $2::uuid, true, now())
+		on conflict (account_id, user_id) do nothing
+	`, tenantID, userID); err != nil {
+		return fmt.Errorf("bootstrap initial owner: core membership: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		with ins as (
+			insert into core.roles (account_id, cloned_from_template_id, code, label, description, is_locked)
+			select $1::uuid, rt.id, 'queue.owner', rt.label, rt.description, rt.is_locked
+			from core.role_templates rt
+			where rt.id = 'queue.supervisor'
+			on conflict (account_id, code) do nothing
+			returning id
+		),
+		resolved as (
+			select id from ins
+			union
+			select id from core.roles where account_id = $1::uuid and code = 'queue.owner'
+		)
+		insert into core.user_role_assignments (account_id, user_id, role_id)
+		select $1::uuid, $2::uuid, (select id from resolved limit 1)
+		where (select id from resolved limit 1) is not null
+		on conflict (account_id, user_id, role_id) do nothing
+	`, tenantID, userID); err != nil {
+		return fmt.Errorf("bootstrap initial owner: core role assignment: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		insert into core.role_permissions (role_id, permission_key)
+		select r.id, rtp.permission_key
+		from core.roles r
+		join core.role_template_permissions rtp on rtp.role_template_id = r.cloned_from_template_id
+		where r.account_id = $1::uuid and r.code = 'queue.owner'
+		on conflict do nothing
+	`, tenantID); err != nil {
+		return fmt.Errorf("bootstrap initial owner: core role permissions: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `

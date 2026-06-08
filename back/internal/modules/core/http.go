@@ -9,15 +9,16 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
 
-// RegisterRoutes registra os endpoints v2 do core. Deve ser chamado APENAS
+// RegisterRoutes registra os endpoints do core. Deve ser chamado APENAS
 // quando cfg.CoreV2Enabled e true. Quando off, o mux nem conhece as rotas
 // (callers recebem 404 padrao).
 //
-// Endpoints expostos:
+// Endpoints expostos (somente v2 — o /v1/me/context legado continua servido
+// por platform/app/context_http.go com shape diferente esperado pelo frontend):
 //   GET  /v2/me/accounts                 → lista accounts do user (lean)
 //   GET  /v2/me/context?accountId=<id>   → contexto completo do account
 func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
-	mux.Handle("GET /v2/me/accounts", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	meAccountsHandler := middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -29,11 +30,10 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			writeServiceError(w, r, err)
 			return
 		}
-
 		httpapi.WriteJSON(w, http.StatusOK, response)
-	})))
+	}))
 
-	mux.Handle("GET /v2/me/context", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	meContextHandler := middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -51,9 +51,11 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			writeServiceError(w, r, err)
 			return
 		}
-
 		httpapi.WriteJSON(w, http.StatusOK, response)
-	})))
+	}))
+
+	mux.Handle("GET /v2/me/accounts", meAccountsHandler)
+	mux.Handle("GET /v2/me/context", meContextHandler)
 }
 
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {

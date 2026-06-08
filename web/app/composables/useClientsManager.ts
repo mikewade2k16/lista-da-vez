@@ -1,823 +1,332 @@
 import type {
-  ClientBillingMode,
-  ClientFieldKey,
-  ClientItem,
-  ClientMutationResponse,
-  ClientsListResponse,
-  ClientStatus,
-  ClientStoreCharge,
-} from '~/types/clients'
+  AccountFieldKey,
+  AccountItem,
+  AccountModuleAccess,
+  AccountStore,
+} from '~/types/accounts'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
-interface ClientFilters {
-  q: string
-  status: 'all' | ClientStatus
+const PATCH_DELAY_MS = 380
+
+// Mapeia campo frontend → campo do PATCH (backend AdminUpdateAccountInput).
+// `status` mapeia para `active` (bool). Campos read-only (userCount, etc.) e
+// `modules` (que usa endpoint dedicado /modules) NÃO entram aqui.
+const FIELD_TO_PATCH: Partial<Record<AccountFieldKey, string>> = {
+  name: 'name',
+  slug: 'slug',
+  organizationId: 'organizationId',
+  billingMode: 'billingMode',
+  monthlyPaymentAmount: 'monthlyPaymentAmount',
+  paymentDueDay: 'paymentDueDay',
+  logo: 'logoPath',
+  webhookEnabled: 'webhookEnabled',
+  contactPhone: 'contactPhone',
+  contactSite: 'contactSite',
+  contactAddress: 'contactAddress',
+  requireUserStoreLink: 'requireUserStoreLink',
+  requireUserRegistration: 'requireUserRegistration',
 }
 
-interface UpdateFieldOptions {
-  immediate?: boolean
-}
-
-interface ClientContactPayload {
-  logo: string
-  contactPhone: string
-  contactSite: string
-  contactAddress: string
-}
-
-interface CreateClientPayload {
-  name?: string
-  status?: ClientStatus
-  adminName?: string
-  adminEmail?: string
-  adminPassword?: string
-}
-
-const UPDATE_DELAY_MS = 380
-const DEFAULT_FETCH_LIMIT = 80
-const KNOWN_MODULE_LABELS: Record<string, string> = {
-  core_panel: 'Core Panel',
-  atendimento: 'Atendimento',
-  'fila-atendimento': 'Fila de Atendimento',
-  indicators: 'Indicadores',
-  finance: 'Finance',
-  kanban: 'Kanban',
-}
-
-function normalizeModuleCode(value: unknown) {
-  return String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
-}
-
-function normalizeModuleCodes(value: unknown) {
-  const source = Array.isArray(value) ? value : String(value ?? '').split(/[\n,;|]+/)
-
-  const dedupe = new Set<string>()
-  const output: string[] = []
-
-  for (const entry of source) {
-    const code = normalizeModuleCode(
-      typeof entry === 'string'
-        ? entry
-        : entry && typeof entry === 'object' && 'code' in entry
-          ? (entry as { code?: unknown }).code
-          : entry,
-    )
-
-    if (!code || dedupe.has(code)) {
-      continue
-    }
-
-    dedupe.add(code)
-    output.push(code)
-  }
-
-  if (!dedupe.has('core_panel')) {
-    output.unshift('core_panel')
-  }
-
-  return output.slice(0, 24)
-}
-
-function moduleLabelByCode(code: string) {
-  const normalized = normalizeModuleCode(code)
-  if (!normalized) {
-    return ''
-  }
-
-  return KNOWN_MODULE_LABELS[normalized] || normalized.replace(/_/g, ' ')
-}
-
-function parseAmount(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.max(0, Number(value.toFixed(2)))
-  }
-
-  const raw = String(value ?? '').trim()
-  if (!raw) {
-    return 0
-  }
-
-  let normalized = raw
-    .replace(/\s+/g, '')
-    .replace(/^R\$/i, '')
-    .replace(/[^\d,.-]/g, '')
-
-  const hasComma = normalized.includes(',')
-  const hasDot = normalized.includes('.')
-
-  if (hasComma && hasDot) {
-    if (normalized.lastIndexOf(',') > normalized.lastIndexOf('.')) {
-      normalized = normalized.replace(/\./g, '').replace(',', '.')
-    } else {
-      normalized = normalized.replace(/,/g, '')
-    }
-  } else if (hasComma) {
-    normalized = normalized.replace(/\./g, '').replace(',', '.')
-  }
-
-  const parsed = Number(normalized)
-  if (!Number.isFinite(parsed)) {
-    return 0
-  }
-
-  return Math.max(0, Number(parsed.toFixed(2)))
-}
-
-function normalizeDueDay(value: unknown) {
-  const digits = String(value ?? '')
-    .replace(/\D/g, '')
-    .slice(0, 2)
-  if (!digits) {
-    return ''
-  }
-
-  const parsed = Number(digits)
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return ''
-  }
-
-  return String(Math.min(parsed, 31)).padStart(2, '0')
-}
-
-function normalizeInteger(value: unknown) {
-  const parsed = Number.parseInt(String(value ?? '').replace(/\D/g, ''), 10)
-  if (!Number.isFinite(parsed)) {
-    return 0
-  }
-
-  return Math.max(0, parsed)
-}
-
-function normalizeListText(value: unknown) {
-  return String(value ?? '')
-    .split(/[\n,;|]+/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 30)
-    .join(', ')
-}
-
-function normalizeBillingMode(value: unknown): ClientBillingMode {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  return normalized === 'per_store' ? 'per_store' : 'single'
-}
-
-function normalizeSite(value: unknown) {
-  const raw = String(value ?? '')
-    .trim()
-    .slice(0, 255)
-  if (!raw) {
-    return ''
-  }
-  if (/^https?:\/\//i.test(raw)) {
-    return raw
-  }
-
-  return `https://${raw.replace(/^\/+/, '')}`
-}
-
-function normalizeStatus(value: unknown): ClientStatus {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  return normalized === 'inactive' ? 'inactive' : 'active'
-}
-
-function normalizeWebhookEnabled(value: unknown) {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  return ['1', 'true', 'on', 'enabled', 'active', 'sim'].includes(normalized)
-}
-
-function normalizeBooleanLike(value: unknown, fallback = false) {
-  if (typeof value === 'boolean') {
-    return value
-  }
-
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-  if (!normalized) {
-    return fallback
-  }
-
-  return ['1', 'true', 'on', 'enabled', 'active', 'sim'].includes(normalized)
-}
-
-function cloneStores(stores: ClientStoreCharge[]) {
-  return stores.map((store) => ({
-    id: String(store.id),
-    name: String(store.name || '').trim(),
-    amount: parseAmount(store.amount),
+function normalizeModules(raw: unknown): AccountModuleAccess[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((m: Record<string, unknown>) => ({
+    code: String(m.moduleId ?? ''),
+    name: String(m.label ?? m.moduleId ?? ''),
+    status: m.enabled ? 'active' : 'inactive',
   }))
 }
 
-function normalizeStores(stores: ClientStoreCharge[]) {
-  const dedupe = new Set<string>()
-  return cloneStores(stores).filter((store) => {
-    if (!store.name) {
-      return false
-    }
-
-    const key = store.name.toLowerCase()
-    if (dedupe.has(key)) {
-      return false
-    }
-
-    dedupe.add(key)
-    return true
-  })
+function normalizeStores(raw: unknown): AccountStore[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((s: Record<string, unknown>) => ({
+    id: String(s.id ?? ''),
+    code: String(s.code ?? ''),
+    name: String(s.name ?? ''),
+    city: String(s.city ?? ''),
+    active: Boolean(s.active),
+    amount: Number(s.billingAmount ?? 0) || 0,
+  }))
 }
 
-function storesTotal(stores: ClientStoreCharge[]) {
-  return Number(stores.reduce((sum, store) => sum + parseAmount(store.amount), 0).toFixed(2))
-}
-
-function normalizeClientItem(item: ClientItem): ClientItem {
-  const stores = Array.isArray(item.stores) ? normalizeStores(item.stores) : []
-  const modules = Array.isArray(item.modules)
-    ? item.modules
-        .map((module) => {
-          const code = normalizeModuleCode(module?.code)
-          if (!code) {
-            return null
-          }
-
-          return {
-            code,
-            name: String(module?.name ?? '').trim() || moduleLabelByCode(code),
-            status:
-              String(module?.status ?? 'active')
-                .trim()
-                .toLowerCase() || 'active',
-          }
-        })
-        .filter((module): module is NonNullable<typeof module> => Boolean(module))
-    : []
-
-  const activeModules = modules.filter((module) => module.status === 'active')
-  const billingMode = normalizeBillingMode(item.billingMode)
-
+function normalizeAccount(raw: Record<string, unknown>): AccountItem {
+  const modules = normalizeModules(raw.modules)
   return {
-    ...item,
-    coreTenantId: String(item.coreTenantId ?? '').trim() || String(item.id),
-    billingMode,
-    monthlyPaymentAmount:
-      billingMode === 'per_store' ? storesTotal(stores) : parseAmount(item.monthlyPaymentAmount),
-    stores,
-    storesCount: stores.length,
-    requireUserStoreLink: normalizeBooleanLike(item.requireUserStoreLink, true),
-    requireUserRegistration: normalizeBooleanLike(item.requireUserRegistration, true),
-    modules: activeModules,
-    moduleCodes: normalizeModuleCodes(activeModules.map((module) => module.code)),
+    id: String(raw.id ?? ''),
+    slug: String(raw.slug ?? ''),
+    name: String(raw.name ?? ''),
+    status: raw.active ? 'active' : 'inactive',
+    planCode: String(raw.planCode ?? ''),
+    billingMode: raw.billingMode === 'per_store' ? 'per_store' : 'single',
+    monthlyPaymentAmount: Number(raw.monthlyPaymentAmount ?? 0) || 0,
+    paymentDueDay: raw.paymentDueDay != null ? Number(raw.paymentDueDay) : null,
+    webhookEnabled: Boolean(raw.webhookEnabled),
+    webhookKey: String(raw.webhookKey ?? ''),
+    contactPhone: String(raw.contactPhone ?? ''),
+    contactSite: String(raw.contactSite ?? ''),
+    contactAddress: String(raw.contactAddress ?? ''),
+    logo: String(raw.logoPath ?? ''),
+    organizationId: String(raw.organizationId ?? ''),
+    requireUserStoreLink: Boolean(raw.requireUserStoreLink),
+    requireUserRegistration: Boolean(raw.requireUserRegistration),
+    userCount: Number(raw.userCount ?? 0) || 0,
+    userNicks: String(raw.userNicks ?? ''),
+    projectCount: Number(raw.projectCount ?? 0) || 0,
+    projectSegments: String(raw.projectSegments ?? ''),
+    modules,
+    moduleCodes: modules.filter((m) => m.status === 'active').map((m) => m.code),
+    stores: normalizeStores(raw.stores),
+    createdAt: String(raw.createdAt ?? ''),
+    updatedAt: String(raw.updatedAt ?? ''),
   }
 }
 
 export function useClientsManager() {
-  const sessionSimulation = useSessionSimulationStore()
-  const { bffFetch } = useBffFetch()
-  const { coreToken, hydrate } = useAdminSession()
-  const realtime = useTenantRealtime()
-  realtime.start()
+  const runtimeConfig = useRuntimeConfig()
+  const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
-  const clients = ref<ClientItem[]>([])
-  const filters = reactive<ClientFilters>({
-    q: '',
-    status: 'all',
-  })
-
+  const clients = ref<AccountItem[]>([])
+  const filters = reactive({ q: '', status: '' as '' | 'active' | 'inactive' })
   const loading = ref(false)
   const creating = ref(false)
-  const deletingId = ref<number | null>(null)
+  const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
   const savingMap = ref<Record<string, boolean>>({})
+  const canResetFilters = computed(() => Boolean(filters.q || filters.status))
 
-  const canResetFilters = computed(() => filters.q.trim() !== '' || filters.status !== 'all')
-
-  const pendingFieldTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  let searchTimer: ReturnType<typeof setTimeout> | null = null
-
-  function keyFor(id: number, field: ClientFieldKey | 'stores' | 'delete' | 'create') {
-    return `${id}:${field}`
-  }
-
-  function isAbortError(error: unknown) {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'name' in error &&
-      (error as { name?: string }).name === 'AbortError'
-    )
-  }
-
-  function extractStatusCode(error: unknown) {
-    if (typeof error !== 'object' || error === null) {
-      return 0
-    }
-
-    const statusCode = Number((error as { statusCode?: unknown }).statusCode)
-    if (Number.isFinite(statusCode) && statusCode > 0) {
-      return statusCode
-    }
-
-    const status = Number((error as { status?: unknown }).status)
-    if (Number.isFinite(status) && status > 0) {
-      return status
-    }
-
-    return 0
-  }
+  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   function setSaving(key: string, value: boolean) {
     const next = { ...savingMap.value }
-    if (value) {
-      next[key] = true
-    } else {
-      delete next[key]
-    }
-
+    if (value) next[key] = true
+    else delete next[key]
     savingMap.value = next
   }
 
-  function getClientRouteId(id: number) {
-    const target = clients.value.find((client) => client.id === id)
-    return String(target?.coreTenantId ?? id).trim()
+  function rowIsSaving(id: string) {
+    return Object.keys(savingMap.value).some((k) => k.startsWith(`${id}:`))
   }
 
-  function rowIsSaving(id: number) {
-    const prefix = `${id}:`
-    return Object.keys(savingMap.value).some((key) => key.startsWith(prefix))
+  function applyPatch(id: string, raw: Record<string, unknown>) {
+    const idx = clients.value.findIndex((a) => a.id === id)
+    if (idx >= 0) clients.value[idx] = normalizeAccount(raw)
   }
 
-  function syncSimulationClientOptions() {
-    sessionSimulation.replaceClientOptions(
-      clients.value.map((client) => ({
-        value: Number(client.id),
-        label: String(client.name ?? '').trim() || `Cliente #${client.id}`,
-        coreTenantId: String(client.coreTenantId ?? '').trim(),
-        moduleCodes: normalizeModuleCodes(client.moduleCodes),
-      })),
-    )
-  }
-
-  function replaceClientRow(payload: ClientItem) {
-    const normalized = normalizeClientItem(payload)
-    const index = clients.value.findIndex((client) => client.id === payload.id)
-    if (index < 0) {
-      clients.value.unshift(normalized)
-      syncSimulationClientOptions()
-      return
-    }
-
-    clients.value[index] = normalized
-    syncSimulationClientOptions()
-  }
-
-  function patchClientLocally(id: number, patch: Partial<ClientItem>) {
-    const target = clients.value.find((client) => client.id === id)
-    if (!target) {
-      return
-    }
-
-    Object.assign(target, patch)
-  }
-
-  async function ensureSessionScopeReady() {
-    hydrate()
-    sessionSimulation.initialize()
-
-    if (!coreToken.value) {
-      return
-    }
-
-    if (!sessionSimulation.clientOptionsSynced) {
-      await sessionSimulation.refreshClientOptions()
-    }
+  function patchLocal(id: string, field: AccountFieldKey, value: unknown) {
+    const idx = clients.value.findIndex((a) => a.id === id)
+    if (idx < 0) return
+    ;(clients.value[idx] as Record<string, unknown>)[field] = value
   }
 
   async function fetchClients() {
     loading.value = true
     errorMessage.value = ''
-
     try {
-      await ensureSessionScopeReady()
-
-      const response = await bffFetch<ClientsListResponse>('/api/admin/clients', {
-        query: {
-          q: filters.q.trim() || undefined,
-          status: filters.status !== 'all' ? filters.status : undefined,
-          page: 1,
-          limit: DEFAULT_FETCH_LIMIT,
-        },
-      })
-
-      clients.value = Array.isArray(response.data)
-        ? response.data.map((item) => normalizeClientItem(item))
-        : []
-      syncSimulationClientOptions()
-    } catch (error) {
-      if (isAbortError(error)) {
-        return
-      }
-
-      const statusCode = extractStatusCode(error)
-      if (statusCode === 401 || statusCode === 403) {
-        errorMessage.value = 'Voce nao tem permissao para acessar clientes nesta sessao.'
-      } else {
-        errorMessage.value = 'Falha ao carregar clientes.'
-      }
+      const resp = await apiRequest('/v1/admin/accounts')
+      clients.value = (resp.accounts as Record<string, unknown>[]).map(normalizeAccount)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao carregar contas.')
     } finally {
       loading.value = false
     }
   }
 
-  async function persistField(id: number, field: ClientFieldKey, value: unknown) {
-    const savingKey = keyFor(id, field)
-    setSaving(savingKey, true)
-    errorMessage.value = ''
-
+  async function persistPatch(id: string, fieldKey: string, patch: Record<string, unknown>) {
+    const key = `${id}:${fieldKey}`
+    setSaving(key, true)
     try {
-      const routeId = getClientRouteId(id)
-      if (!routeId) {
-        throw new Error('Cliente sem routeId para atualizacao.')
-      }
-
-      const response = await bffFetch<ClientMutationResponse>(
-        `/api/admin/clients/${encodeURIComponent(routeId)}`,
-        {
-          method: 'PATCH',
-          body: {
-            field,
-            value,
-          },
-        },
-      )
-
-      replaceClientRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao salvar alteracao do cliente.'
-      await fetchClients()
+      const resp = await apiRequest(`/v1/admin/accounts/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: patch,
+      })
+      applyPatch(id, resp as Record<string, unknown>)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao salvar.')
     } finally {
-      setSaving(savingKey, false)
+      setSaving(key, false)
     }
   }
 
-  function queueFieldPersist(
-    id: number,
-    field: ClientFieldKey,
-    value: unknown,
-    options: UpdateFieldOptions = {},
-  ) {
-    const timerKey = keyFor(id, field)
-    const existingTimer = pendingFieldTimers.get(timerKey)
-    if (existingTimer) {
-      clearTimeout(existingTimer)
-      pendingFieldTimers.delete(timerKey)
-    }
+  async function persistModules(id: string, nextCodes: string[]) {
+    const key = `${id}:modules`
+    setSaving(key, true)
+    try {
+      const account = clients.value.find((a) => a.id === id)
+      const currentEnabled = (account?.modules ?? [])
+        .filter((m) => m.status === 'active')
+        .map((m) => m.code)
+      const nextSet = new Set(nextCodes)
+      const currentSet = new Set(currentEnabled)
+      const enable = [...nextSet].filter((c) => !currentSet.has(c))
+      const disable = [...currentSet].filter((c) => !nextSet.has(c))
+      if (enable.length === 0 && disable.length === 0) return
 
-    const run = () => {
-      pendingFieldTimers.delete(timerKey)
-      void persistField(id, field, value)
+      await apiRequest(`/v1/admin/accounts/${encodeURIComponent(id)}/modules`, {
+        method: 'PUT',
+        body: { enable, disable },
+      })
+      // Re-fetch account para pegar lista atualizada com novos enabled flags.
+      const resp = await apiRequest(`/v1/admin/accounts/${encodeURIComponent(id)}`)
+      applyPatch(id, resp as Record<string, unknown>)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao atualizar modulos.')
+    } finally {
+      setSaving(key, false)
     }
-
-    if (options.immediate) {
-      run()
-      return
-    }
-
-    const timer = setTimeout(run, UPDATE_DELAY_MS)
-    pendingFieldTimers.set(timerKey, timer)
   }
 
   function updateField(
-    id: number,
-    field: ClientFieldKey,
+    id: string,
+    field: AccountFieldKey,
     value: unknown,
-    options: UpdateFieldOptions = {},
+    opts?: { immediate?: boolean },
   ) {
-    const target = clients.value.find((client) => client.id === id)
-
-    if (field === 'name') {
-      patchClientLocally(id, { name: String(value ?? '').slice(0, 120) })
-      syncSimulationClientOptions()
-    }
-
-    if (field === 'status') {
-      patchClientLocally(id, { status: normalizeStatus(value) })
-    }
-
-    if (field === 'userCount') {
-      patchClientLocally(id, { userCount: normalizeInteger(value) })
-    }
-
-    if (field === 'userNicks') {
-      patchClientLocally(id, { userNicks: normalizeListText(value) })
-    }
-
-    if (field === 'projectCount') {
-      patchClientLocally(id, { projectCount: normalizeInteger(value) })
-    }
-
-    if (field === 'projectSegments') {
-      patchClientLocally(id, { projectSegments: normalizeListText(value) })
-    }
-
-    if (field === 'billingMode') {
-      const mode = normalizeBillingMode(value)
-      const nextPatch: Partial<ClientItem> = {
-        billingMode: mode,
-      }
-      if (mode === 'single') {
-        nextPatch.stores = []
-      } else {
-        nextPatch.monthlyPaymentAmount = storesTotal(target?.stores || [])
-      }
-
-      patchClientLocally(id, nextPatch)
-    }
-
-    if (field === 'monthlyPaymentAmount') {
-      if (target?.billingMode === 'per_store') {
-        patchClientLocally(id, { monthlyPaymentAmount: storesTotal(target.stores || []) })
-        return
-      }
-
-      patchClientLocally(id, { monthlyPaymentAmount: parseAmount(value) })
-    }
-
-    if (field === 'paymentDueDay') {
-      patchClientLocally(id, { paymentDueDay: normalizeDueDay(value) })
-    }
-
-    if (field === 'logo') {
-      patchClientLocally(id, {
-        logo: String(value ?? '')
-          .trim()
-          .slice(0, 255),
-      })
-    }
-
-    if (field === 'webhookEnabled') {
-      patchClientLocally(id, { webhookEnabled: normalizeWebhookEnabled(value) })
-    }
-
-    if (field === 'contactPhone') {
-      patchClientLocally(id, {
-        contactPhone: String(value ?? '')
-          .trim()
-          .slice(0, 60),
-      })
-    }
-
-    if (field === 'contactSite') {
-      patchClientLocally(id, { contactSite: normalizeSite(value) })
-    }
-
-    if (field === 'contactAddress') {
-      patchClientLocally(id, {
-        contactAddress: String(value ?? '')
-          .trim()
-          .slice(0, 255),
-      })
-    }
-
-    if (field === 'requireUserStoreLink') {
-      patchClientLocally(id, { requireUserStoreLink: normalizeBooleanLike(value, true) })
-    }
-
-    if (field === 'requireUserRegistration') {
-      patchClientLocally(id, { requireUserRegistration: normalizeBooleanLike(value, true) })
-    }
-
+    // 'modules' NAO passa por patchLocal: `value` e string[] (codes), mas
+    // account.modules e {code,name,status}[]. Patchar corromperia o tipo e
+    // zeraria o currentEnabled do persistModules -> o diff de `disable` nunca
+    // dispararia (adicionar funciona, remover nao). persistModules le os modules
+    // intactos, calcula o diff enable/disable e re-busca o account.
     if (field === 'modules') {
-      const moduleCodes = normalizeModuleCodes(value)
-      patchClientLocally(id, {
-        moduleCodes,
-        modules: moduleCodes.map((code) => ({
-          code,
-          name: moduleLabelByCode(code),
-          status: 'active',
-        })),
-      })
-      syncSimulationClientOptions()
+      const codes = Array.isArray(value) ? (value as string[]) : []
+      void persistModules(id, codes)
+      return
     }
 
-    queueFieldPersist(id, field, value, options)
-  }
+    patchLocal(id, field, value)
 
-  async function saveContactAndLogo(id: number, payload: ClientContactPayload) {
-    const normalizedPayload = {
-      logo: String(payload.logo ?? '')
-        .trim()
-        .slice(0, 255),
-      contactPhone: String(payload.contactPhone ?? '')
-        .trim()
-        .slice(0, 60),
-      contactSite: normalizeSite(payload.contactSite),
-      contactAddress: String(payload.contactAddress ?? '')
-        .trim()
-        .slice(0, 255),
+    // status → active (bool no backend)
+    const patchKey = field === 'status' ? 'active' : FIELD_TO_PATCH[field]
+    if (!patchKey) return
+
+    const patchValue = field === 'status' ? value === 'active' : value
+    const patch = { [patchKey]: patchValue }
+    const timerKey = `${id}:${field}`
+
+    if (pendingTimers.has(timerKey)) clearTimeout(pendingTimers.get(timerKey)!)
+
+    if (opts?.immediate) {
+      void persistPatch(id, field, patch)
+      return
     }
 
-    patchClientLocally(id, normalizedPayload)
-
-    const keys: Array<{ field: ClientFieldKey; value: string }> = [
-      { field: 'logo', value: normalizedPayload.logo },
-      { field: 'contactPhone', value: normalizedPayload.contactPhone },
-      { field: 'contactSite', value: normalizedPayload.contactSite },
-      { field: 'contactAddress', value: normalizedPayload.contactAddress },
-    ]
-
-    await Promise.all(
-      keys.map(async ({ field, value }) => {
-        await persistField(id, field, value)
-      }),
+    pendingTimers.set(
+      timerKey,
+      setTimeout(() => {
+        pendingTimers.delete(timerKey)
+        void persistPatch(id, field, patch)
+      }, PATCH_DELAY_MS),
     )
   }
 
-  async function saveWebhookEnabled(id: number, enabled: boolean) {
-    await persistField(id, 'webhookEnabled', enabled ? 'true' : 'false')
+  async function saveContactAndLogo(
+    id: string,
+    payload: { logo: string; contactPhone: string; contactSite: string; contactAddress: string },
+  ) {
+    await persistPatch(id, 'contactPhone', {
+      logoPath: payload.logo,
+      contactPhone: payload.contactPhone,
+      contactSite: payload.contactSite,
+      contactAddress: payload.contactAddress,
+    })
   }
 
-  async function rotateWebhookKey(id: number) {
-    const savingKey = keyFor(id, 'webhookEnabled')
-    setSaving(savingKey, true)
-    errorMessage.value = ''
-
-    try {
-      const routeId = getClientRouteId(id)
-      if (!routeId) {
-        throw new Error('Cliente sem routeId para webhook.')
-      }
-
-      const response = await bffFetch<ClientMutationResponse>(
-        `/api/admin/clients/${encodeURIComponent(routeId)}/webhook/rotate`,
-        {
-          method: 'POST',
-        },
-      )
-
-      replaceClientRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao gerar nova chave webhook.'
-      await fetchClients()
-    } finally {
-      setSaving(savingKey, false)
-    }
+  async function saveWebhookEnabled(id: string, enabled: boolean) {
+    await persistPatch(id, 'webhookEnabled', { webhookEnabled: enabled })
   }
 
-  async function saveStores(id: number, stores: ClientStoreCharge[]) {
-    const normalizedStores = normalizeStores(stores)
-    const savingKey = keyFor(id, 'stores')
-
-    const nextPatch: Partial<ClientItem> = {
-      stores: normalizedStores,
-      monthlyPaymentAmount: normalizedStores.length ? storesTotal(normalizedStores) : 0,
-    }
-    if (normalizedStores.length > 0) {
-      nextPatch.billingMode = 'per_store'
-    }
-
-    patchClientLocally(id, nextPatch)
-
-    setSaving(savingKey, true)
-    errorMessage.value = ''
-
+  async function rotateWebhookKey(id: string) {
+    const key = `${id}:webhookKey`
+    setSaving(key, true)
     try {
-      const routeId = getClientRouteId(id)
-      if (!routeId) {
-        throw new Error('Cliente sem routeId para lojas.')
-      }
-
-      const response = await bffFetch<ClientMutationResponse>(
-        `/api/admin/clients/${encodeURIComponent(routeId)}/stores`,
-        {
-          method: 'PUT',
-          body: {
-            stores: normalizedStores,
-          },
-        },
-      )
-
-      replaceClientRow(response.data)
-    } catch {
-      errorMessage.value = 'Falha ao salvar lojas do cliente.'
-      await fetchClients()
-    } finally {
-      setSaving(savingKey, false)
-    }
-  }
-
-  async function createClient(payload: CreateClientPayload = {}) {
-    creating.value = true
-    setSaving(keyFor(0, 'create'), true)
-    errorMessage.value = ''
-
-    try {
-      const response = await bffFetch<ClientMutationResponse>('/api/admin/clients', {
+      const resp = await apiRequest(`/v1/admin/accounts/${encodeURIComponent(id)}/webhook/rotate`, {
         method: 'POST',
-        body: {
-          name: payload.name ?? 'Novo cliente',
-          status: payload.status ?? 'active',
-          adminName: payload.adminName ?? '',
-          adminEmail: payload.adminEmail ?? '',
-          adminPassword: payload.adminPassword ?? '',
-        },
       })
+      const idx = clients.value.findIndex((a) => a.id === id)
+      if (idx >= 0)
+        clients.value[idx]!.webhookKey = String((resp as { webhookKey?: string }).webhookKey ?? '')
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao rotacionar chave.')
+    } finally {
+      setSaving(key, false)
+    }
+  }
 
-      clients.value.unshift(normalizeClientItem(response.data))
-      syncSimulationClientOptions()
-      return response.data.id
-    } catch {
-      errorMessage.value = 'Falha ao criar cliente.'
+  async function saveStores(id: string, stores: AccountStore[]) {
+    const key = `${id}:stores`
+    setSaving(key, true)
+    try {
+      await apiRequest(`/v1/admin/accounts/${encodeURIComponent(id)}/stores`, {
+        method: 'PUT',
+        body: { stores: stores.map((s) => ({ id: s.id, amount: s.amount })) },
+      })
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao salvar lojas.')
+    } finally {
+      setSaving(key, false)
+    }
+  }
+
+  // Criação de account via POST /v1/admin/accounts (C10). O admin inicial deve
+  // já existir em core.users; o backend clona roles de template + membership owner.
+  async function createClient(input?: {
+    name: string
+    slug: string
+    planCode?: string
+    adminEmail: string
+  }): Promise<string | null> {
+    if (!input) {
+      errorMessage.value = 'Informe nome, slug e e-mail do admin para criar a conta.'
+      return null
+    }
+    const name = input.name.trim()
+    const slug = input.slug.trim().toLowerCase()
+    const adminEmail = input.adminEmail.trim().toLowerCase()
+    const planCode = (input.planCode ?? 'standard').trim() || 'standard'
+    if (!name || !slug || !adminEmail) {
+      errorMessage.value = 'Nome, slug e e-mail do admin sao obrigatorios.'
+      return null
+    }
+    creating.value = true
+    errorMessage.value = ''
+    try {
+      const raw = await apiRequest('/v1/admin/accounts', {
+        method: 'POST',
+        body: { slug, name, planCode, adminEmail },
+      })
+      const account = normalizeAccount(raw as Record<string, unknown>)
+      clients.value = [account, ...clients.value.filter((a) => a.id !== account.id)]
+      return account.id
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao criar conta.')
       return null
     } finally {
       creating.value = false
-      setSaving(keyFor(0, 'create'), false)
     }
   }
 
-  async function deleteClient(id: number) {
+  async function deleteClient(id: string) {
     deletingId.value = id
-    setSaving(keyFor(id, 'delete'), true)
+    setSaving(`${id}:delete`, true)
     errorMessage.value = ''
-
     try {
-      const routeId = getClientRouteId(id)
-      if (!routeId) {
-        throw new Error('Cliente sem routeId para exclusao.')
-      }
-
-      await bffFetch<{ status: 'success' }>(`/api/admin/clients/${encodeURIComponent(routeId)}`, {
-        method: 'DELETE',
-      })
-
-      clients.value = clients.value.filter((client) => client.id !== id)
-      syncSimulationClientOptions()
-    } catch {
-      errorMessage.value = 'Falha ao excluir cliente.'
+      await apiRequest(`/v1/admin/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      clients.value = clients.value.filter((a) => a.id !== id)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao excluir conta.')
     } finally {
       deletingId.value = null
-      setSaving(keyFor(id, 'delete'), false)
+      setSaving(`${id}:delete`, false)
     }
   }
 
   function resetFilters() {
     filters.q = ''
-    filters.status = 'all'
-    void fetchClients()
+    filters.status = ''
   }
 
-  watch(
-    () => filters.status,
-    () => {
-      void fetchClients()
-    },
-  )
-
-  watch(
-    () => filters.q,
-    () => {
-      if (searchTimer) {
-        clearTimeout(searchTimer)
-      }
-
-      searchTimer = setTimeout(() => {
-        void fetchClients()
-      }, 280)
-    },
-  )
-
-  watch(
-    () => sessionSimulation.requestContextHash,
-    () => {
-      void fetchClients()
-    },
-  )
-
-  const stopRealtimeSubscription = realtime.subscribeEntity('clients', () => {
-    void fetchClients()
-  })
-
-  onScopeDispose(() => {
-    stopRealtimeSubscription()
-  })
-
   onBeforeUnmount(() => {
-    if (searchTimer) {
-      clearTimeout(searchTimer)
-    }
-
-    for (const timer of pendingFieldTimers.values()) {
-      clearTimeout(timer)
-    }
-
-    pendingFieldTimers.clear()
+    for (const timer of pendingTimers.values()) clearTimeout(timer)
+    pendingTimers.clear()
   })
 
   return {

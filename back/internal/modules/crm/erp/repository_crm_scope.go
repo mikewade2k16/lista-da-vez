@@ -41,10 +41,10 @@ func resolveCRMOrderStoreKey(explicitStoreKey string, fallbackStoreCNPJ string, 
 		if specialKey := crmEmployeeSpecialStoreKey(normalizedEmployeeID); specialKey != "" {
 			return specialKey
 		}
-		if normalized := onlyDigits(employeeStoreFallbacks[normalizedEmployeeID]); normalized != "" {
+		if normalized := onlyDigits(employeeDominantStoreKeys[normalizedEmployeeID]); normalized != "" {
 			return normalized
 		}
-		if normalized := onlyDigits(employeeDominantStoreKeys[normalizedEmployeeID]); normalized != "" {
+		if normalized := onlyDigits(employeeStoreFallbacks[normalizedEmployeeID]); normalized != "" {
 			return normalized
 		}
 	}

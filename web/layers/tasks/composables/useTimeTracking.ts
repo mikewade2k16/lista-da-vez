@@ -49,15 +49,17 @@ function toMs(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function updateServerOffset(entry: BackendTimeEntry) {
-  const serverNow = toMs(entry.updatedAt || entry.pausedAt || entry.resumedAt || entry.startedAt)
-  if (serverNow > 0) _serverOffsetMs.value = serverNow - Date.now()
+// Offset real de relogio: "server now" (vindo do backend) menos o clock do cliente. Com isso o
+// tempo decorrido fica IDENTICO para todos os clientes e nao reinicia ao hidratar. O anterior usava
+// o `updatedAt` do entry como "agora" — o que zerava o segmento em execucao a cada carga (bug).
+function applyServerNow(serverNow: unknown) {
+  const serverMs = toMs(serverNow)
+  if (serverMs > 0) _serverOffsetMs.value = serverMs - Date.now()
 }
 
 function entryFromBackend(entry: BackendTimeEntry): TrackingEntry | null {
   const taskId = normalizeText(entry.taskId, 80)
   if (!taskId || entry.stoppedAt) return null
-  updateServerOffset(entry)
   const paused = Boolean(entry.pausedAt)
   const anchor = toMs(entry.resumedAt || entry.startedAt)
   return {
@@ -146,6 +148,7 @@ export function useTimeTracking() {
     _hydratePromise = (async () => {
       try {
         const response = await requestTracking('/v1/tasks/tracking/active')
+        applyServerNow(response?.serverNow)
         replaceFromBackend(Array.isArray(response?.entries) ? response.entries : [])
         _hydrated = true
         _lastError.value = ''

@@ -173,13 +173,16 @@ export function useCrmConsultantMetrics(options: UseCrmConsultantMetricsOptions)
 
   function findQueueForConsultant(row: CRMConsultantMetric) {
     const storeKey = row.storeSlug
+    const allowGlobalQueueFallback = !String(storeKey || '').trim()
     const linkedId = String(row.profileConsultantId || '').trim()
     if (linkedId) {
       const scopedQueue = queueById.value.get(queueConsultantKey(storeKey, linkedId))
       if (scopedQueue) return scopedQueue
 
-      const globalQueue = queueById.value.get(queueConsultantKey('', linkedId))
-      if (globalQueue) return globalQueue
+      if (allowGlobalQueueFallback) {
+        const globalQueue = queueById.value.get(queueConsultantKey('', linkedId))
+        if (globalQueue) return globalQueue
+      }
     }
 
     const linkedName = normalizeConsultantLookupKey(row.profileConsultantName)
@@ -187,18 +190,23 @@ export function useCrmConsultantMetrics(options: UseCrmConsultantMetricsOptions)
       const scopedQueue = queueByName.value.get(queueConsultantKey(storeKey, linkedName))
       if (scopedQueue) return scopedQueue
 
-      const globalQueue = queueByName.value.get(queueConsultantKey('', linkedName))
-      if (globalQueue) return globalQueue
+      if (allowGlobalQueueFallback) {
+        const globalQueue = queueByName.value.get(queueConsultantKey('', linkedName))
+        if (globalQueue) return globalQueue
+      }
     }
 
     const consultantName = normalizeConsultantLookupKey(row.consultantName)
     if (!consultantName) return null
 
-    return (
-      queueByName.value.get(queueConsultantKey(storeKey, consultantName)) ||
-      queueByName.value.get(queueConsultantKey('', consultantName)) ||
-      null
-    )
+    const scopedQueue = queueByName.value.get(queueConsultantKey(storeKey, consultantName))
+    if (scopedQueue) return scopedQueue
+
+    if (allowGlobalQueueFallback) {
+      return queueByName.value.get(queueConsultantKey('', consultantName)) || null
+    }
+
+    return null
   }
 
   const mergedConsultants = computed<MergedCrmConsultant[]>(() => {

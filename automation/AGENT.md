@@ -89,6 +89,14 @@ escanear QR, ativar) em [docs/automation/SETUP.md](../docs/automation/SETUP.md).
 Escolhidas para nao colidir com o Omni (api 9091, web 3003, postgres 5432). Nao
 mudar as portas do Omni. Defaults documentados em `.env.docker.example`.
 
+**Producao (VPS):** mesma stack no `docker-compose.prod.yml` (profile `automation`),
+**mesmos nomes de servico** (`redis`/`waha`/`n8n`) para o workflow/credenciais rodarem
+igual local e prod. Sem portas publicas: `n8n`/`waha` na rede `proxy` (aliases
+`automation-n8n`/`automation-waha`) atras do Caddy com basic auth; `redis` so na rede
+`app` (`redis:6379`, disponivel para a API do Omni depois). Binds `127.0.0.1:15680/13010/
+16380` so para tunel SSH. Vars no `.env.production.example` (bloco `AUTOMATION_*`).
+Runbook: docs/automation/SETUP.md secao 8.
+
 ## Integracao com o Omni
 
 - **Rede:** mesmo projeto Compose (`omni`) -> mesma rede default. A WAHA fala com o
@@ -105,8 +113,12 @@ mudar as portas do Omni. Defaults documentados em `.env.docker.example`.
 
 ## Fases futuras (resumo)
 
-> Plano canonico da integracao (schema, endpoints, painel, n8n config-driven, deploy VPS,
-> fases A1-A10): [docs/automation/PLANO_INTEGRACAO_OMNI.md](../docs/automation/PLANO_INTEGRACAO_OMNI.md).
+> **Visao de plataforma (multi-tenant):** cada cliente cria N automacoes (robos), BYOK,
+> RAG, super-robo — [docs/automation/PLATAFORMA_AUTOMACAO.md](../docs/automation/PLATAFORMA_AUTOMACAO.md).
+> Modelo de dados **automation-centric** (`automation_id` central). Construir multi-tenant
+> desde o dia 1.
+> Detalhe da 1a automacao (atendimento) — schema, endpoints, painel, n8n config-driven,
+> deploy VPS, fases A1-A10: [docs/automation/PLANO_INTEGRACAO_OMNI.md](../docs/automation/PLANO_INTEGRACAO_OMNI.md).
 > Visao do bot no n8n: docs/automation/WORKFLOW.md. Espelho de status: roadmap-data.ts.
 
 - **Etapa 2 — mini-CRM no Postgres do Omni:** schema dedicado `automation.*` (tenant-aware,
@@ -146,10 +158,57 @@ ambiente, considerar rotacionar as chaves.
 
 ## Notas de Deploy
 
-- A stack `automation` esta apenas no `docker-compose.yml` (dev local). NAO foi
-  adicionada ao `docker-compose.prod.yml` — deploy na VPS e fase posterior (decisao em
-  aberto em docs/automation/AGENTS.md).
-- Sem migration Go nesta etapa (so infra + pastas + docs). A Etapa 2 (schema
-  `automation.*`) tera migration propria quando for implementada.
-- Vars novas (opcionais, com default): `AUTOMATION_N8N_PORT`, `AUTOMATION_WAHA_PORT`,
-  `AUTOMATION_REDIS_PORT`, `AUTOMATION_REDIS_PASSWORD` — documentadas em `.env.docker.example`.
+- A stack `automation` esta no `docker-compose.yml` (dev local) **e** no
+  `docker-compose.prod.yml` (profile `automation`, infra preparada 2026-06-08). O deploy
+  na VPS em si (Caddy, DNS, QR, ativacao, backups) e do Mike — passo a passo em
+  docs/automation/SETUP.md secao 8.
+- Decisao de prod (2026-06-08): exposicao via **Caddy + basic auth** (subdominios `n8n.`/
+  `waha.`); **Redis so disponivel** na rede `app` (sem mexer na API Go ainda).
+- Sem migration Go nesta etapa (so infra + docs). A Etapa 2/A1 (schema `automation.*`)
+  tera migration propria quando for implementada — **bloqueada pela multitenant-completion**.
+- Vars novas: local em `.env.docker.example` (`AUTOMATION_N8N_PORT`, `AUTOMATION_WAHA_PORT`,
+  `AUTOMATION_REDIS_PORT`, `AUTOMATION_REDIS_PASSWORD`); prod em `.env.production.example`
+  (`AUTOMATION_N8N_HOST`, `AUTOMATION_N8N_WEBHOOK_URL`, `AUTOMATION_N8N_ENCRYPTION_KEY`,
+  `AUTOMATION_WAHA_HOST`, `AUTOMATION_WAHA_DASHBOARD_USER/PASSWORD`, aliases de proxy).
+
+## Pendencias acumuladas (env / VPS / modulo) — ir marcando
+
+> Checklist vivo: tudo que precisa ser feito conforme o modulo evolui. Detalhe e ordem na
+> [PLATAFORMA_AUTOMACAO.md](../docs/automation/PLATAFORMA_AUTOMACAO.md) §6/§8.
+
+**Ambiente / env**
+- [x] Ajustes 1/2/4 **aplicados no `workflow-whatsapp.json`** (2026-06-08, patch programatico):
+      nó Dados +`msgTimestamp`/`isSticker`/`isForwarded`/`isReply`/`quotedText`; Dedupe +boot
+      cutoff 5min; Juntar +prefixo de contexto (figurinha/encaminhada/reply); AI Agent emoji
+      endurecido (re-sync). Mesma mudanca em guardrails-resposta.md (fonte).
+- [ ] **Validar ao vivo** apos importar: 1 figurinha + 1 reply + 1 msg antiga (boot). Os campos
+      `isForwarded`/`isReply` dependem do que o engine **GOWS** entrega no payload (`_data.*`);
+      se nao detectar, ajustar o caminho no nó Dados (guards `(obj||{})` ja evitam erro).
+- [ ] Se o n8n ja tiver o workflow importado, **re-importar** para pegar os ajustes acima.
+- [ ] Prod: preencher `AUTOMATION_*` no `.env.production` (gerar `N8N_ENCRYPTION_KEY`, nao mudar depois).
+- [ ] Futuro (BYOK): `AUTOMATION_CRED_ENC_KEY` (master key de cripto das chaves dos clientes).
+
+**VPS / deploy**
+- [ ] Rotas Caddy `n8n.`/`waha.` (basic auth) no projeto do proxy + DNS dos subdominios.
+- [ ] Subir `--profile automation` na prod, importar workflow/credenciais, escanear QR, ativar (confirmar com o Mike).
+- [ ] Backup dos volumes `automation_n8n_data` e `automation_waha_sessions`.
+- [ ] Multi-numero: avaliar **WAHA Plus** (licenca) quando precisar de >1 sessao por account.
+
+**Modulo Go / banco (multitenant-completion fechada — desbloqueado 2026-06-09)**
+- [x] **M1 entregue (2026-06-09):** modulo Go `automation` (Module Registry) + migration
+      `0140_automation_schema.sql` (automations/channels) + painel `/automation`
+      (Status/Conectar WhatsApp via proxy WAHA + liga/desliga). Gated `platform_admin`.
+      Doc: back/internal/modules/automation/AGENT.md.
+- [x] **M2 entregue (2026-06-09):** runtime-config — persona vive no banco (`automation.personas`,
+      seed Tony/Crow via go:embed) + guardrails montados no back; n8n consome
+      `GET /v1/runtime/automation/config` (no `Get runtime config` + `Bot ligado?` gate);
+      on/off passa a valer. Persona fonte: docs/automation/persona-tony-crowvisuals.md (verbatim).
+      Ativacao exige rebuild da api + `AUTOMATION_RUNTIME_TOKEN` (ver back AGENT.md Notas de Deploy).
+- [x] **M3 entregue (2026-06-09):** editor de **persona pelo painel** (`/automation` -> card
+      Comportamento: nome + system_prompt). `GET/PUT /v1/automation/persona`; salvar muda o bot
+      sem tocar no n8n (runtime-config le do banco). Guardrails seguem anexados pelo back.
+- [ ] M3+: separar `knowledge_documents` por doc no painel + RAG (P8) p/ knowledge grande.
+- [ ] Persona/knowledge da Crow: embutida no system_prompt (~4k tokens). RAG so quando o knowledge crescer.
+- [ ] P8: pgvector — trocar imagem `postgres:16-alpine` -> `pgvector/pgvector:pg16` (dev+prod)
+      antes da migration `CREATE EXTENSION vector`. Esboco: docs/automation/schema_automation_sketch.sql.
+- [ ] Redis ja disponivel (`redis:6379` na rede app) — decidir primeiro uso pela API Go.

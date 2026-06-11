@@ -523,6 +523,49 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  async function updateCrmCommercialPolicy(payload: Record<string, unknown> = {}) {
+    const isAuthenticated = await ensureAuthenticated()
+
+    if (!isAuthenticated) {
+      return { ok: false, message: 'Sessao indisponivel.' }
+    }
+
+    if (!resolveTenantId()) {
+      return { ok: false, message: 'Tenant ativo nao identificado para a sessao.' }
+    }
+
+    const body = {
+      crmListUsageTiers: cloneValue(payload.crmListUsageTiers || []),
+      crmListUsageMinOrdersForHighlight: Math.max(
+        1,
+        Math.trunc(Number(payload.crmListUsageMinOrdersForHighlight || 0) || 0),
+      ),
+      crmGoalPayoutPolicy: cloneValue(payload.crmGoalPayoutPolicy || {}),
+    }
+    const previousState = cloneValue(runtime.state)
+
+    runtime.replace({
+      ...runtime.state,
+      settings: {
+        ...(runtime.state.settings || {}),
+        ...body,
+      },
+    })
+
+    try {
+      await persistOperationPatch({
+        settings: body,
+      })
+      return { ok: true }
+    } catch (error) {
+      runtime.hydrate(previousState)
+      return {
+        ok: false,
+        message: getApiErrorMessage(error, 'Nao foi possivel salvar a politica comercial do CRM.'),
+      }
+    }
+  }
+
   return {
     state,
     ensure: runtime.ensure,
@@ -540,6 +583,7 @@ export const useSettingsStore = defineStore('settings', () => {
         ],
       )
     },
+    updateCrmCommercialPolicy,
     updateModalConfig(configKey, value) {
       return mutateAndPersist(
         'updateModalConfig',

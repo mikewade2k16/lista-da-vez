@@ -39,6 +39,9 @@ func TestCoreSettingsScanRowColumnsMatchDTO(t *testing.T) {
 			score_weight_quality,
 			score_weight_pa,
 			score_weight_queue_discipline,
+			crm_list_usage_tiers,
+			crm_list_usage_min_orders_for_highlight,
+			crm_goal_payout_policy,
 			updated_at
 		from tenant_operation_core_settings
 		where tenant_id = $1::uuid

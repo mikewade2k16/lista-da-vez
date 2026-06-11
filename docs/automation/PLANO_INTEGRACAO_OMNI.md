@@ -1,5 +1,11 @@
 # Plano de Integracao — Automacao WhatsApp/IA no Omni
 
+> **Visao maior:** este doc e o detalhe da PRIMEIRA automacao (`atendimento`). A visao de
+> plataforma multi-tenant (cada cliente cria N automacoes, BYOK, RAG, super-robo) esta em
+> [PLATAFORMA_AUTOMACAO.md](PLATAFORMA_AUTOMACAO.md), que **generaliza** o modelo de dados
+> abaixo para ser **automation-centric** (`automation_id` central, N por account). Onde este
+> doc assume "1 sessao default -> 1 account", a plataforma usa "sessao -> automacao -> account".
+
 > Status: **design** (pending). Fonte de verdade da integracao do bot com o Omni.
 > Espelhado em [roadmap-data.ts](../../web/app/components/roadmap/roadmap-data.ts) (fase
 > `automation-whatsapp`) e [automation/AGENT.md](../../automation/AGENT.md).
@@ -175,15 +181,24 @@ A config no banco garante mesmo comportamento nos dois ambientes; cada n8n le da
 seu ambiente. Nao se edita o n8n na mao.
 
 - **Local**: profile `automation` no `docker-compose.yml` (ja feito). API em `http://api:8080`.
-- **VPS** (fase A10, depois do local validado):
-  - Adicionar `n8n`/`waha`/`redis` ao `docker-compose.prod.yml` (`restart: unless-stopped`,
-    volumes nomeados, **sem portas publicas** alem do necessario via Caddy).
-  - Caddy: rota protegida (basic auth/SSO) para o editor do n8n; webhook WAHA->n8n fica na
-    rede interna. Seguir AGENT_RULES (deploy): var nova em `.env.production` **E** no
-    `docker-compose.prod.yml`; apos trocar upstream, `restart` do Caddy.
-  - n8n aponta para a API interna (`http://api:8080`) + service token da account.
-  - Backups dos volumes (sessao WAHA, dados do n8n, Postgres).
-  - Importacao do workflow no deploy (script) para nao depender de import manual.
+- **VPS** — infra **preparada em 2026-06-08** (compose.prod + env + runbook prontos; deploy
+  em si e do Mike). Decisao de exposicao: **Caddy + basic auth** nos subdominios `n8n.` e
+  `waha.`; Redis **so disponivel** na rede `app` (sem mexer na API Go ainda).
+  - `redis`/`waha`/`n8n` ja adicionados ao `docker-compose.prod.yml` (profile `automation`,
+    `restart: unless-stopped`, volumes nomeados). **Mesmos nomes de servico do dev**
+    (`redis`/`waha`/`n8n`) para o workflow e as credenciais rodarem igual local e prod.
+  - **Sem portas publicas**: `n8n`/`waha` entram na rede `proxy` (alias `automation-n8n` /
+    `automation-waha`) e o Caddy roteia por subdominio com basic auth. Binds `127.0.0.1`
+    so para tunel SSH. Webhook WAHA->n8n fica interno (`http://n8n:5678`).
+  - `redis` so na rede `app` (nunca publico), pronto para a API Go do Omni consumir depois
+    (`redis:6379`) — quando a multitenant-completion liberar A1+.
+  - Vars novas no `.env.production.example` (bloco `AUTOMATION_*`): host/webhook do n8n,
+    `N8N_ENCRYPTION_KEY`, hosts/aliases, dashboard da WAHA, `AUTOMATION_REDIS_PASSWORD`.
+  - Runbook de deploy: [SETUP.md](SETUP.md) secao 8 (Caddy, env, subir, QR, backups).
+  - **Pendente (do Mike)**: snippet do Caddy no projeto do proxy, DNS dos subdominios,
+    subir na VPS, escanear QR, ativar. Backups dos volumes (`automation_n8n_data`,
+    `automation_waha_sessions`). n8n aponta para a API interna (`http://api:8080`) +
+    service token quando A2/A3 existirem; hoje a persona/modelo ainda vivem no workflow.
 
 ---
 
@@ -201,20 +216,39 @@ seu ambiente. Nao se edita o n8n na mao.
 | A7 | CRM persistente (contacts/messages/lead_state/long_memory) + n8n grava | A2 |
 | A8 | Tools do agente (catalog/stock/price, leads/orders) via API | A7 |
 | A9 | Motor proativo (follow-ups, pos-venda, nurture) — Etapa 3 | A7 |
-| A10 | Deploy VPS (compose.prod + Caddy + auth + backups) | A3..A8 |
+| A10 | Deploy VPS (compose.prod + Caddy + auth + backups) — **infra preparada 2026-06-08** (bot standalone, sem integracao Go ainda); deploy/QR/ativacao pendentes do Mike | — (infra independe de A1+) |
 
 ---
 
 ## 10. Notas de Deploy
 
-- Migration nova `automation.*` (idempotente). Permissoes `automation.*` seedadas pelo
-  Module Registry no boot (`CORE_V2_ENABLED`). Rebuild da API obrigatorio (codigo Go novo):
-  `docker compose up -d --build api`.
-- Token de servico do n8n por account: gerar no painel, colar na credencial Header Auth do
-  n8n. Rotacionavel. Nunca em log.
-- Vars: `AUTOMATION_*` (portas) ja existem. n8n precisa da base da API
-  (`http://api:8080`) + service token (na credencial, nao em env). VPS: `.env.production`
-  + `docker-compose.prod.yml`.
+- **Infra prod (A10) — feito 2026-06-08, deploy pendente do Mike.** Ordem na VPS:
+  1. Preencher o bloco `AUTOMATION_*` no `.env.production` (gerar `N8N_ENCRYPTION_KEY` com
+     `openssl rand -hex 24` e **nao** muda-lo depois; senhas fortes em Redis/WAHA dashboard).
+  2. Adicionar as rotas Caddy (`n8n.` e `waha.`) com basic auth (`caddy hash-password`) no
+     projeto do proxy e apontar os DNS; recarregar o Caddy.
+  3. `docker compose -f docker-compose.prod.yml --profile automation up -d`.
+  4. Primeiro acesso: criar conta dona do n8n, instalar community node `n8n-nodes-waha`,
+     importar credenciais+workflow (CLI), escanear QR na WAHA, ativar (confirma com o Mike —
+     responde no WhatsApp real). Detalhe: SETUP.md secao 8.
+  5. Backup dos volumes `automation_n8n_data` e `automation_waha_sessions`.
+  - Idempotencia: `up -d` e seguro repetir; o estado vive nos volumes. Trocar
+    `N8N_ENCRYPTION_KEY` depois de salvar credenciais **quebra** a decriptacao (nao mudar).
+- **Migrations M-series (2026-06-09/10, idempotentes) — feito localmente, deploy pendente:**
+  - `0140_automation_schema.sql` — tabelas `automation.automations` + `automation.channels`.
+  - `0141_automation_personas.sql` — tabela `automation.personas`; seed Tony/Crow Visuals.
+  - `0142_automation_knowledge_docs.sql` — tabela `automation.knowledge_documents`; indice por `(automation_id, sort_order)`.
+  - `0143_automation_contacts.sql` — tabela `automation.contacts`; memoria de conversa por chatId no Postgres (substitui staticData do n8n). UNIQUE `(automation_id, chat_id)`.
+  - **Rebuild obrigatorio apos cada deploy:** `docker compose up -d --build api`.
+  - **Reimport do workflow (uma unica vez apos 0143):** `n8n import:workflow --input=automation/export/workflow-whatsapp.json --overwrite`. A memoria agora vive no Postgres; o workflow le/escreve via `GET/PUT /v1/runtime/automation/memory`. Nao e necessario reimportar novamente quando docs forem editados/deletados.
+- **Migration nova `automation.*`** (A1, idempotente). Permissoes `automation.*` seedadas
+  pelo Module Registry no boot (`CORE_V2_ENABLED`). Rebuild da API obrigatorio (codigo Go
+  novo): `docker compose up -d --build api`. **Bloqueado pela multitenant-completion.**
+- Token de servico do n8n por account (A2+): gerar no painel, colar na credencial Header
+  Auth do n8n. Rotacionavel. Nunca em log.
+- Vars: bloco `AUTOMATION_*` local em `.env.docker.example` e prod em
+  `.env.production.example`. Quando A2/A3 existirem, o n8n consome a API interna
+  (`http://api:8080`) + service token (na credencial, nao em env).
 
 ---
 

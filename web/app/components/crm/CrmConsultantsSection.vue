@@ -2,6 +2,20 @@
 import { computed, ref } from 'vue'
 
 import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
+import {
+  crmListUsageAttendances,
+  crmListUsageCoverageRate,
+  crmListUsageOrders,
+  crmListUsageStatus,
+  crmListUsageStatusLabel,
+} from '~/domain/utils/crm-list-usage'
+import {
+  calculateCrmGoalPayout,
+  classifyCrmListUsageRate,
+  type CrmGoalPayoutPolicy,
+  type CrmGoalPayoutRule,
+  type CrmListUsageTier,
+} from '~/domain/utils/crm-performance-policy'
 import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
 import type { CRMConsultantMetric } from '~/stores/crm'
 import type { ErpConsultantLinkOption } from '~/stores/erp'
@@ -10,6 +24,9 @@ import type { MergedCrmConsultant } from '~/composables/useCrmConsultantMetrics'
 const props = defineProps<{
   mergedConsultants: MergedCrmConsultant[]
   managementConsultantRows: CRMConsultantMetric[]
+  storeGoalProgressBySlug: Record<string, number>
+  goalPayoutPolicy: CrmGoalPayoutPolicy
+  listUsageTiers: CrmListUsageTier[]
   canManageConsultantLinks: boolean
   loadingConsultantLinks: boolean
   savingConsultantLink: boolean
@@ -67,22 +84,15 @@ const consultantGridColumns = [
   },
   {
     id: 'conversionRateValue',
-    label: 'Taxa interna',
-    width: '110px',
-    align: 'end',
-    sortable: true,
-  },
-  {
-    id: 'erpQueueRateValue',
-    label: 'ERP/fila',
+    label: 'Conv. fila',
     width: '100px',
     align: 'end',
     sortable: true,
   },
   {
     id: 'queueUsageRateValue',
-    label: 'Uso lista',
-    width: '100px',
+    label: 'Cobertura lista',
+    width: '130px',
     align: 'end',
     sortable: true,
   },
@@ -93,22 +103,21 @@ const consultantGridColumns = [
     align: 'end',
     sortable: true,
   },
+  {
+    id: 'goalPayoutCentsValue',
+    label: 'Recebimento',
+    width: '132px',
+    align: 'end',
+    sortable: true,
+  },
   { id: 'queueStatusValue', label: 'Status fila', width: '150px', sortable: true },
 ]
-
-const averageQueueUsageRate = computed(() => {
-  const rates = props.mergedConsultants
-    .map((row) => queueUsageRate(row))
-    .filter((rate) => Number.isFinite(rate))
-  if (!rates.length) return 0
-  return rates.reduce((sum, rate) => sum + rate, 0) / rates.length
-})
 
 const tableStoreOptions = computed(() => {
   const stores = new Map<string, string>()
   for (const row of props.mergedConsultants) {
     const storeSlug = String(row.storeSlug || '').trim()
-    const storeLabel = String(row.storeLabel || row.storeName || '').trim()
+    const storeLabel = String(row.storeLabel || '').trim()
     if (storeSlug && storeLabel && !stores.has(storeSlug)) {
       stores.set(storeSlug, storeLabel)
     }
@@ -126,10 +135,18 @@ const decoratedConsultants = computed(() =>
   props.mergedConsultants.map((row) => {
     const attendances = queueAttendances(row)
     const conversionRate = queueInternalRate(row)
-    const erpQueueRate = erpToQueueRate(row)
-    const usageRate = queueUsageRate(row)
     const cancellationRate = queueCancellationRate(row)
     const queueStatus = queueStatusValue(row)
+    const listStatus = queueUsageStatus(row)
+    const usageRate = crmListUsageCoverageRate(row)
+    const listTier = classifyCrmListUsageRate(usageRate, props.listUsageTiers)
+    const storeGoalProgress = storeGoalProgressForRow(row)
+    const goalPayout = calculateCrmGoalPayout(
+      row.salesCents,
+      storeGoalProgress,
+      props.goalPayoutPolicy,
+      'consultant',
+    )
 
     return {
       ...row,
@@ -139,13 +156,17 @@ const decoratedConsultants = computed(() =>
       queueStatusValue: queueStatusLabel(row),
       attendancesValue: attendances,
       conversionRateValue: conversionRate,
-      erpQueueRateValue: erpQueueRate,
       queueUsageRateValue: usageRate,
+      queueUsageStatusValue: listStatus,
+      queueUsageStatusLabel: crmListUsageStatusLabel(listStatus),
+      queueUsageTierLabel: listTier.label,
+      queueUsageOrdersValue: crmListUsageOrders(row),
+      queueUsageAttendancesValue: crmListUsageAttendances(row),
       queueCancellationRateValue: cancellationRate,
-      belowAverageQueueUse:
-        Number(row.orders || 0) > 0 &&
-        averageQueueUsageRate.value > 0 &&
-        usageRate < averageQueueUsageRate.value,
+      goalPayoutCentsValue: goalPayout.amountCents,
+      goalPayoutRuleLabel: goalPayoutRuleLabel(goalPayout.rule),
+      storeGoalProgressValue: storeGoalProgress,
+      belowAverageQueueUse: listStatus === 'partial' || listStatus === 'unused',
     }
   }),
 )
@@ -206,10 +227,6 @@ function formatPA(value?: number | null) {
 function formatPct(value?: number | null) {
   const n = Number(value || 0)
   return n ? `${n.toFixed(1)}%` : '-'
-}
-
-function formatPctValue(value?: number | null) {
-  return `${Number(value || 0).toFixed(1)}%`
 }
 
 function normalizeSearch(value: unknown) {
@@ -370,20 +387,22 @@ function queueInternalRate(row: MergedCrmConsultant) {
   return Number(row.queue?.conversionRate || 0)
 }
 
-function erpToQueueRate(row: MergedCrmConsultant) {
-  const attendances = queueAttendances(row)
-  if (!attendances) return 0
-  return (Number(row.orders || 0) / attendances) * 100
-}
-
-function queueUsageRate(row: MergedCrmConsultant) {
-  const orders = Number(row.orders || 0)
-  if (!orders) return 0
-  return (queueAttendances(row) / orders) * 100
+function queueUsageStatus(row: MergedCrmConsultant) {
+  return crmListUsageStatus(row)
 }
 
 function queueCancellationRate(row: MergedCrmConsultant) {
   return Number(row.queue?.queueCancellationRate || 0)
+}
+
+function storeGoalProgressForRow(row: MergedCrmConsultant) {
+  return Number(props.storeGoalProgressBySlug?.[String(row.storeSlug || '').trim()] || 0)
+}
+
+function goalPayoutRuleLabel(rule: CrmGoalPayoutRule | null) {
+  if (!rule) return 'sem faixa'
+  if (rule.mode === 'amount') return formatCurrencyBRL(rule.value)
+  return `${rule.value.toFixed(1)}%`
 }
 
 function sortValue(row: Record<string, unknown>, field: string) {
@@ -473,7 +492,7 @@ function handleRemove(row: MergedCrmConsultant) {
       :show-search="false"
       :sort-by="sortBy"
       :sort-dir="sortDir"
-      storage-key="crm-consultants-columns-v2"
+      storage-key="crm-consultants-columns-v4"
       empty-title="Nenhum consultor"
       empty-text="Nenhum consultor com pedidos ERP no periodo selecionado."
       testid="crm-consultants-grid"
@@ -643,19 +662,20 @@ function handleRemove(row: MergedCrmConsultant) {
         <span v-else class="crm-muted">-</span>
       </template>
 
-      <template #cell-erpQueueRateValue="{ row }">
-        <span v-if="row.queue">{{ formatPctValue(row.erpQueueRateValue) }}</span>
-        <span v-else class="crm-muted">-</span>
-      </template>
-
       <template #cell-queueUsageRateValue="{ row }">
-        <span
-          v-if="row.orders"
-          class="crm-usage-rate"
-          :class="{ 'crm-rate--bad': row.belowAverageQueueUse }"
-        >
-          {{ formatPctValue(row.queueUsageRateValue) }}
-        </span>
+        <div v-if="row.orders" class="crm-list-use-cell">
+          <strong
+            class="crm-list-use-cell__status"
+            :class="`crm-list-use-cell__status--${row.queueUsageStatusValue}`"
+          >
+            {{ formatPct(row.queueUsageRateValue) }}
+          </strong>
+          <span class="crm-list-use-cell__tier">{{ row.queueUsageTierLabel }}</span>
+          <small>
+            {{ row.queueUsageStatusLabel }} - {{ formatNumber(row.queueUsageAttendancesValue) }} /
+            {{ formatNumber(row.queueUsageOrdersValue) }} pedidos
+          </small>
+        </div>
         <span v-else class="crm-muted">-</span>
       </template>
 
@@ -666,12 +686,22 @@ function handleRemove(row: MergedCrmConsultant) {
         <span v-else class="crm-muted">-</span>
       </template>
 
+      <template #cell-goalPayoutCentsValue="{ row }">
+        <div class="crm-payout-cell">
+          <strong>{{ formatCurrencyFromCents(row.goalPayoutCentsValue) }}</strong>
+          <small>
+            {{ row.goalPayoutRuleLabel }} / meta
+            {{ formatPct(row.storeGoalProgressValue) }}
+          </small>
+        </div>
+      </template>
+
       <template #cell-queueStatusValue="{ row }">
         <div class="crm-status-cell">
           <span class="crm-badge" :class="queueStatusClass(row)">
             {{ queueStatusLabel(row) }}
           </span>
-          <small v-if="row.belowAverageQueueUse" class="crm-usage-flag">abaixo da media</small>
+          <small v-if="row.belowAverageQueueUse" class="crm-usage-flag">cobertura incompleta</small>
         </div>
       </template>
     </AppEntityGrid>
@@ -743,7 +773,7 @@ function handleRemove(row: MergedCrmConsultant) {
 }
 
 .crm-consultants-grid {
-  --crm-grid-min-width: 1280px;
+  --crm-grid-min-width: 1420px;
   padding: 0.65rem;
   gap: 0.55rem;
 }
@@ -941,10 +971,53 @@ function handleRemove(row: MergedCrmConsultant) {
   font-weight: 700;
 }
 
-.crm-usage-rate.crm-rate--bad {
-  text-decoration: underline;
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
+.crm-list-use-cell {
+  display: grid;
+  justify-items: end;
+  gap: 0.12rem;
+}
+
+.crm-list-use-cell small {
+  color: rgb(var(--muted));
+  font-size: 0.68rem;
+}
+
+.crm-list-use-cell__status {
+  font-weight: 800;
+}
+
+.crm-list-use-cell__tier {
+  color: rgb(var(--text));
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.crm-list-use-cell__status--covered {
+  color: rgb(var(--success));
+}
+
+.crm-list-use-cell__status--partial {
+  color: rgb(var(--primary));
+}
+
+.crm-list-use-cell__status--unused {
+  color: rgb(var(--danger));
+}
+
+.crm-payout-cell {
+  display: grid;
+  justify-items: end;
+  gap: 0.12rem;
+}
+
+.crm-payout-cell strong {
+  color: rgb(var(--success));
+  font-weight: 800;
+}
+
+.crm-payout-cell small {
+  color: rgb(var(--muted));
+  font-size: 0.68rem;
 }
 
 .crm-status-cell {

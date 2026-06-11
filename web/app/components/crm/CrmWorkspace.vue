@@ -4,13 +4,22 @@ import { storeToRefs } from 'pinia'
 import { CalendarDays } from 'lucide-vue-next'
 
 import { useAuthStore } from '~/stores/auth'
+import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { useCrmStore } from '~/stores/crm'
 import { useCrmConsultantMetrics } from '~/composables/useCrmConsultantMetrics'
+import { buildCrmListUsageSummary } from '~/domain/utils/crm-list-usage'
+import {
+  normalizeCrmGoalPayoutPolicy,
+  normalizeCrmListUsageMinOrders,
+  normalizeCrmListUsageTiers,
+} from '~/domain/utils/crm-performance-policy'
 import type { CRMSummary, QueueStats } from '~/stores/crm'
 
 const crmStore = useCrmStore()
+const runtime = useAppRuntimeStore()
 const auth = useAuthStore()
 const { overview, pending, ready, errorMessage, dateFrom, dateTo } = storeToRefs(crmStore)
+const { state: runtimeState } = storeToRefs(runtime)
 
 const managementStoreSlug = 'gerencia-multiloja'
 const selectedStore = ref('')
@@ -28,6 +37,8 @@ const summary = computed(
       goalProgress: 0,
       remainingToGoalCents: 0,
       unmappedSalesCents: 0,
+      erpCancellations: 0,
+      erpCancellationRate: 0,
     },
 )
 const canManageConsultantLinks = computed(() => auth.role === 'platform_admin')
@@ -35,6 +46,7 @@ const storeRows = computed(() => overview.value?.stores || [])
 const consultantRows = computed(() => overview.value?.consultants || [])
 const queueStats = computed(() => overview.value?.queueStats || null)
 const warnings = computed(() => overview.value?.warnings || [])
+const runtimeSettings = computed(() => runtimeState.value?.settings || {})
 
 const commercialStoreRows = computed(() =>
   storeRows.value.filter((row) => row.storeSlug !== managementStoreSlug),
@@ -93,6 +105,34 @@ const {
   ready,
   canManageConsultantLinks,
 })
+
+const displayMergedConsultants = computed(() => {
+  if (!selectedStore.value) return mergedConsultants.value
+  return mergedConsultants.value.filter((row) => row.storeSlug === selectedStore.value)
+})
+
+const listUsageTiers = computed(() =>
+  normalizeCrmListUsageTiers(runtimeSettings.value.crmListUsageTiers),
+)
+const listUsageMinOrdersForHighlight = computed(() =>
+  normalizeCrmListUsageMinOrders(runtimeSettings.value.crmListUsageMinOrdersForHighlight),
+)
+const goalPayoutPolicy = computed(() =>
+  normalizeCrmGoalPayoutPolicy(runtimeSettings.value.crmGoalPayoutPolicy),
+)
+const listUsageSummary = computed(() =>
+  buildCrmListUsageSummary(displayMergedConsultants.value, {
+    tiers: listUsageTiers.value,
+    minOrdersForHighlight: listUsageMinOrdersForHighlight.value,
+  }),
+)
+const storeGoalProgressBySlug = computed(() =>
+  Object.fromEntries(
+    storeRows.value
+      .map((row) => [String(row.storeSlug || '').trim(), Number(row.goalProgress || 0)])
+      .filter(([slug]) => slug),
+  ),
+)
 
 async function submitFilters() {
   await crmStore.applyFilters()
@@ -192,8 +232,6 @@ function buildQueueStatsForStore(stats: QueueStats, storeSlug: string): QueueSta
     0,
   )
 
-  if (!totalAttendances && !byConsultant.length) return null
-
   return {
     totalAttendances,
     totalConversions,
@@ -287,6 +325,7 @@ function buildQueueStatsForStore(stats: QueueStats, storeSlug: string): QueueSta
       <CrmSummarySection
         :summary="displaySummary"
         :queue-stats="displayQueueStats"
+        :list-usage-summary="listUsageSummary"
         :warnings="warnings"
         :unmatched-count="unmatchedCount"
       />
@@ -301,8 +340,11 @@ function buildQueueStatsForStore(stats: QueueStats, storeSlug: string): QueueSta
       />
 
       <CrmConsultantsSection
-        :merged-consultants="mergedConsultants"
+        :merged-consultants="displayMergedConsultants"
         :management-consultant-rows="managementConsultantRows"
+        :store-goal-progress-by-slug="storeGoalProgressBySlug"
+        :goal-payout-policy="goalPayoutPolicy"
+        :list-usage-tiers="listUsageTiers"
         :can-manage-consultant-links="canManageConsultantLinks"
         :loading-consultant-links="erpStore.loadingConsultantLinks"
         :saving-consultant-link="erpStore.savingConsultantLink"

@@ -63,6 +63,14 @@ func (service *Service) resolveWritableTenantID(ctx context.Context, principal a
 	return service.resolveTenantID(ctx, principal, requestedTenantID)
 }
 
+func (service *Service) resolveCommercialPolicyTenantID(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, error) {
+	if !canEditCRMCommercialPolicy(principal) {
+		return "", ErrForbidden
+	}
+
+	return service.resolveTenantID(ctx, principal, requestedTenantID)
+}
+
 func (service *Service) finalizeMutation(ctx context.Context, ack MutationAck, err error) (MutationAck, error) {
 	if err != nil {
 		return MutationAck{}, err
@@ -102,6 +110,15 @@ func canEditSettings(principal auth.Principal) bool {
 	}
 
 	return principal.Role == auth.RoleOwner || principal.Role == auth.RolePlatformAdmin
+}
+
+func canEditCRMCommercialPolicy(principal auth.Principal) bool {
+	switch principal.Role {
+	case auth.RolePlatformAdmin, auth.RoleDirector:
+		return true
+	default:
+		return false
+	}
 }
 
 func newMutationAck(tenantID string, savedAt time.Time) MutationAck {

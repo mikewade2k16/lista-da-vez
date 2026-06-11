@@ -1,6 +1,47 @@
 package settings
 
+import "encoding/json"
+
 const defaultTemplateID = "joalheria-padrao"
+const defaultCRMListUsageMinOrdersForHighlight = 5
+
+const defaultCRMListUsageTiersJSON = `[
+	{"id":"pessimo","label":"Pessimo","minRate":0},
+	{"id":"ruim","label":"Ruim","minRate":10},
+	{"id":"normal","label":"Normal","minRate":50},
+	{"id":"bom","label":"Bom","minRate":65},
+	{"id":"otimo","label":"Otimo","minRate":80},
+	{"id":"perfeito","label":"Perfeito","minRate":100}
+]`
+
+const defaultCRMGoalPayoutPolicyJSON = `{
+	"consultant":[
+		{"threshold":80,"value":1,"mode":"percent"},
+		{"threshold":90,"value":2,"mode":"percent"},
+		{"threshold":100,"value":3,"mode":"percent"},
+		{"threshold":120,"value":3.2,"mode":"percent"}
+	],
+	"manager":[
+		{"threshold":80,"value":0.8,"mode":"percent"},
+		{"threshold":90,"value":0.9,"mode":"percent"},
+		{"threshold":100,"value":1,"mode":"percent"},
+		{"threshold":120,"value":1.2,"mode":"percent"}
+	],
+	"support":[
+		{"threshold":80,"value":80,"mode":"amount"},
+		{"threshold":90,"value":90,"mode":"amount"},
+		{"threshold":100,"value":100,"mode":"amount"},
+		{"threshold":120,"value":120,"mode":"amount"}
+	]
+}`
+
+func defaultCRMListUsageTiers() json.RawMessage {
+	return json.RawMessage(defaultCRMListUsageTiersJSON)
+}
+
+func defaultCRMGoalPayoutPolicy() json.RawMessage {
+	return json.RawMessage(defaultCRMGoalPayoutPolicyJSON)
+}
 
 var defaultOperationTemplates = []OperationTemplate{
 	{
@@ -19,6 +60,9 @@ var defaultOperationTemplates = []OperationTemplate{
 			ScoreWeightQuality:                 20,
 			ScoreWeightPa:                      15,
 			ScoreWeightQueueDiscipline:         5,
+			CRMListUsageTiers:                  defaultCRMListUsageTiers(),
+			CRMListUsageMinOrdersForHighlight:  defaultCRMListUsageMinOrdersForHighlight,
+			CRMGoalPayoutPolicy:                defaultCRMGoalPayoutPolicy(),
 		},
 		ModalConfig: ModalConfig{
 			ShowCustomerNameField:           true,
@@ -95,6 +139,9 @@ var defaultOperationTemplates = []OperationTemplate{
 			ScoreWeightQuality:                 20,
 			ScoreWeightPa:                      15,
 			ScoreWeightQueueDiscipline:         5,
+			CRMListUsageTiers:                  defaultCRMListUsageTiers(),
+			CRMListUsageMinOrdersForHighlight:  defaultCRMListUsageMinOrdersForHighlight,
+			CRMGoalPayoutPolicy:                defaultCRMGoalPayoutPolicy(),
 		},
 		ModalConfig: ModalConfig{
 			ShowCustomerNameField:           true,
@@ -167,6 +214,9 @@ var defaultOperationTemplates = []OperationTemplate{
 			ScoreWeightQuality:                 20,
 			ScoreWeightPa:                      15,
 			ScoreWeightQueueDiscipline:         5,
+			CRMListUsageTiers:                  defaultCRMListUsageTiers(),
+			CRMListUsageMinOrdersForHighlight:  defaultCRMListUsageMinOrdersForHighlight,
+			CRMGoalPayoutPolicy:                defaultCRMGoalPayoutPolicy(),
 		},
 		ModalConfig: ModalConfig{
 			ShowCustomerNameField:           true,
@@ -244,6 +294,9 @@ func DefaultBundle(tenantID string, selectedTemplateID string) Bundle {
 			ScoreWeightQuality:                 template.Settings.ScoreWeightQuality,
 			ScoreWeightPa:                      template.Settings.ScoreWeightPa,
 			ScoreWeightQueueDiscipline:         template.Settings.ScoreWeightQueueDiscipline,
+			CRMListUsageTiers:                  normalizeRawJSON(template.Settings.CRMListUsageTiers, defaultCRMListUsageTiers()),
+			CRMListUsageMinOrdersForHighlight:  maxInt(template.Settings.CRMListUsageMinOrdersForHighlight, defaultCRMListUsageMinOrdersForHighlight),
+			CRMGoalPayoutPolicy:                normalizeRawJSON(template.Settings.CRMGoalPayoutPolicy, defaultCRMGoalPayoutPolicy()),
 			AlertMinConversionRate:             0,
 			AlertMaxQueueJumpRate:              0,
 			AlertMinPaScore:                    0,

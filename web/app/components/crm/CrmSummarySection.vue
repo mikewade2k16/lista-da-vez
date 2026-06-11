@@ -2,11 +2,13 @@
 import { computed } from 'vue'
 
 import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
+import type { CrmListUsageSummary } from '~/domain/utils/crm-list-usage'
 import type { CRMSummary, QueueStats } from '~/stores/crm'
 
 const props = defineProps<{
   summary: CRMSummary
   queueStats: QueueStats | null
+  listUsageSummary: CrmListUsageSummary
   warnings: string[]
   unmatchedCount: number
 }>()
@@ -14,16 +16,23 @@ const props = defineProps<{
 const summaryProgressWidth = computed(
   () => `${Math.min(100, Number(props.summary.goalProgress || 0)).toFixed(1)}%`,
 )
-const erpQueueConversionRate = computed(() => {
-  const attendances = Number(props.queueStats?.totalAttendances || 0)
-  if (!attendances) return 0
-  return (Number(props.summary.orders || 0) / attendances) * 100
-})
-const queueUsageRate = computed(() => {
-  const orders = Number(props.summary.orders || 0)
-  if (!orders) return 0
-  return (Number(props.queueStats?.totalAttendances || 0) / orders) * 100
-})
+const queueTotals = computed<QueueStats>(
+  () =>
+    props.queueStats || {
+      totalAttendances: 0,
+      totalConversions: 0,
+      totalCancellations: 0,
+      conversionRate: 0,
+      cancellationRate: 0,
+      byStore: [],
+      byConsultant: [],
+    },
+)
+const hasErpCancellationMetric = computed(
+  () =>
+    Object.prototype.hasOwnProperty.call(props.summary, 'erpCancellations') ||
+    Number(props.summary.orders || 0) > 0,
+)
 
 function formatCurrencyFromCents(value?: number | null) {
   return formatCurrencyBRL((Number(value || 0) || 0) / 100)
@@ -33,9 +42,8 @@ function formatNumber(value?: number | null) {
   return Number(value || 0).toLocaleString('pt-BR')
 }
 
-function formatPct(value?: number | null) {
-  const n = Number(value || 0)
-  return n ? `${n.toFixed(1)}%` : '-'
+function formatPctValue(value?: number | null) {
+  return `${Number(value || 0).toFixed(1)}%`
 }
 
 function formatPA(value?: number | null) {
@@ -111,74 +119,126 @@ function progressClass(value?: number | null) {
     </article>
   </section>
 
-  <section v-if="queueStats" class="crm-queue-metrics">
+  <section class="crm-queue-metrics">
     <h3 class="crm-section-label">Fila de atendimento - periodo selecionado</h3>
     <div class="metric-grid crm-queue-grid">
       <article class="metric-card crm-queue-card">
         <span class="metric-card__label">Atendimentos</span>
-        <strong class="metric-card__value">{{ formatNumber(queueStats.totalAttendances) }}</strong>
+        <strong class="metric-card__value">{{ formatNumber(queueTotals.totalAttendances) }}</strong>
       </article>
       <article class="metric-card crm-queue-card">
-        <span class="metric-card__label">Conversoes (fila)</span>
-        <strong class="metric-card__value">{{ formatNumber(queueStats.totalConversions) }}</strong>
-      </article>
-      <article class="metric-card crm-queue-card">
-        <span class="metric-card__label">Taxa interna</span>
+        <span class="metric-card__label">Conversao</span>
         <strong class="metric-card__value crm-rate--good">
-          {{ formatPct(queueStats.conversionRate) }}
+          {{ formatPctValue(queueTotals.conversionRate) }}
         </strong>
-        <small class="crm-metric-sub">Conversoes / atendimentos da lista</small>
+        <small class="crm-metric-sub">
+          {{ formatNumber(queueTotals.totalConversions) }} conversoes na fila
+        </small>
         <div class="crm-bar">
           <div
             class="crm-bar__fill crm-bar__fill--green"
-            :style="{ width: `${Math.min(queueStats.conversionRate, 100)}%` }"
-          ></div>
-        </div>
-      </article>
-      <article class="metric-card crm-queue-card">
-        <span class="metric-card__label">ERP x fila</span>
-        <strong class="metric-card__value crm-rate--good">
-          {{ formatPct(erpQueueConversionRate) }}
-        </strong>
-        <small class="crm-metric-sub">Pedidos Controle 10 / atendimentos</small>
-        <div class="crm-bar">
-          <div
-            class="crm-bar__fill crm-bar__fill--green"
-            :style="{ width: `${Math.min(erpQueueConversionRate, 100)}%` }"
+            :style="{ width: `${Math.min(queueTotals.conversionRate, 100)}%` }"
           ></div>
         </div>
       </article>
       <article class="metric-card crm-queue-card">
         <span class="metric-card__label">Uso da lista</span>
         <strong class="metric-card__value crm-rate--good">
-          {{ formatPct(queueUsageRate) }}
+          {{ formatPctValue(listUsageSummary.usageRate) }}
         </strong>
-        <small class="crm-metric-sub">Atendimentos / pedidos ERP</small>
+        <small class="crm-metric-sub">
+          <template v-if="listUsageSummary.totalConsultants">
+            {{ listUsageSummary.coveredConsultants }} de
+            {{ listUsageSummary.totalConsultants }} consultores cobertos
+          </template>
+          <template v-else>Sem vendedores ERP no periodo</template>
+        </small>
         <div class="crm-bar">
           <div
             class="crm-bar__fill crm-bar__fill--green"
-            :style="{ width: `${Math.min(queueUsageRate, 100)}%` }"
+            :style="{ width: `${Math.min(listUsageSummary.usageRate, 100)}%` }"
           ></div>
         </div>
       </article>
-      <article class="metric-card crm-queue-card">
-        <span class="metric-card__label">Cancelamento (fila)</span>
-        <strong class="metric-card__value crm-rate--warn">
-          {{ formatPct(queueStats.cancellationRate) }}
-        </strong>
-        <div class="crm-bar">
-          <div
-            class="crm-bar__fill crm-bar__fill--red"
-            :style="{ width: `${Math.min(queueStats.cancellationRate, 100)}%` }"
-          ></div>
-        </div>
-      </article>
-      <article v-if="summary.erpCancellations" class="metric-card crm-queue-card">
+      <article v-if="hasErpCancellationMetric" class="metric-card crm-queue-card">
         <span class="metric-card__label">Cancelamento ERP</span>
         <strong class="metric-card__value crm-rate--warn">
-          {{ formatPct(summary.erpCancellationRate) }}
+          {{ formatPctValue(summary.erpCancellationRate) }}
         </strong>
         <small class="crm-metric-sub">{{ formatNumber(summary.erpCancellations) }} pedidos</small>
+      </article>
+      <article v-if="listUsageSummary.bestStore" class="metric-card crm-queue-card">
+        <span class="metric-card__label">
+          {{
+            listUsageSummary.hasPositiveStoreHighlight
+              ? 'Melhor loja na lista'
+              : 'Lojas abaixo do normal'
+          }}
+        </span>
+        <strong class="metric-card__value crm-metric-store">
+          <template v-if="listUsageSummary.hasPositiveStoreHighlight">
+            {{ listUsageSummary.bestStore.storeLabel }}
+          </template>
+          <template v-else>Todas ruins</template>
+        </strong>
+        <small class="crm-metric-sub">
+          {{ listUsageSummary.bestStore.storeLabel }}:
+          {{ formatPctValue(listUsageSummary.bestStore.usageRate) }}
+          {{ listUsageSummary.bestStore.tierLabel }}
+        </small>
+      </article>
+      <article
+        v-if="
+          listUsageSummary.worstStore &&
+          listUsageSummary.worstStore.storeSlug !== listUsageSummary.bestStore?.storeSlug
+        "
+        class="metric-card crm-queue-card"
+      >
+        <span class="metric-card__label">Pior loja na lista</span>
+        <strong class="metric-card__value crm-metric-store">
+          {{ listUsageSummary.worstStore.storeLabel }}
+        </strong>
+        <small class="crm-metric-sub">
+          {{ formatPctValue(listUsageSummary.worstStore.usageRate) }}
+          {{ listUsageSummary.worstStore.tierLabel }}
+        </small>
+      </article>
+      <article v-if="listUsageSummary.bestConsultant" class="metric-card crm-queue-card">
+        <span class="metric-card__label">
+          {{
+            listUsageSummary.hasPositiveConsultantHighlight
+              ? 'Melhor consultor na lista'
+              : 'Consultores abaixo do normal'
+          }}
+        </span>
+        <strong class="metric-card__value crm-metric-store">
+          <template v-if="listUsageSummary.hasPositiveConsultantHighlight">
+            {{ listUsageSummary.bestConsultant.consultantName }}
+          </template>
+          <template v-else>Sem destaque</template>
+        </strong>
+        <small class="crm-metric-sub">
+          {{ listUsageSummary.bestConsultant.consultantName }}:
+          {{ formatPctValue(listUsageSummary.bestConsultant.usageRate) }}
+          {{ listUsageSummary.bestConsultant.tierLabel }}
+        </small>
+      </article>
+      <article
+        v-if="
+          listUsageSummary.worstConsultant &&
+          listUsageSummary.worstConsultant.consultantKey !==
+            listUsageSummary.bestConsultant?.consultantKey
+        "
+        class="metric-card crm-queue-card"
+      >
+        <span class="metric-card__label">Pior consultor na lista</span>
+        <strong class="metric-card__value crm-metric-store">
+          {{ listUsageSummary.worstConsultant.consultantName }}
+        </strong>
+        <small class="crm-metric-sub">
+          {{ formatPctValue(listUsageSummary.worstConsultant.usageRate) }}
+          {{ listUsageSummary.worstConsultant.tierLabel }}
+        </small>
       </article>
     </div>
   </section>
@@ -330,10 +390,6 @@ function progressClass(value?: number | null) {
   background: rgb(var(--success));
 }
 
-.crm-bar__fill--red {
-  background: rgb(var(--danger));
-}
-
 .crm-rate--good {
   color: rgb(var(--success));
   font-weight: 700;
@@ -347,6 +403,11 @@ function progressClass(value?: number | null) {
 .crm-metric-sub {
   font-size: 0.72rem;
   color: rgb(var(--muted));
+}
+
+.crm-metric-store {
+  font-size: 1.05rem;
+  line-height: 1.15;
 }
 
 .crm-warning-list {

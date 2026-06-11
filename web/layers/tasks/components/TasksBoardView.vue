@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { inject } from 'vue'
+import { inject, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
 import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
 
 const ctx = inject(TASKS_PAGE_CONTEXT_KEY)!
 const {
+  activeProject,
   boardColumns,
   columnColorClass,
   dropTarget,
@@ -51,12 +52,9 @@ const {
   involvedOptionsForResponsible,
   clientOptionsAvatar,
   clientLabel,
-  toNumberId,
   typeOptions,
   PRIORITY_OPTIONS,
   toPriority,
-  formatElapsed,
-  getElapsedMs,
   dateLabel,
   focusTaskCardPresence,
   blurTaskCardPresence,
@@ -73,6 +71,71 @@ const {
   draftAvailableFields,
   addDraftField,
 } = ctx
+
+// Render progressivo: cada coluna pinta os primeiros INITIAL_RENDER cards na hora (above-the-fold)
+// e o resto entra em lotes via requestIdleCallback, depois do primeiro paint. Num board com
+// centenas de tasks (cada card monta varios selects pesados), isso destrava a primeira pintura sem
+// montar tudo de uma vez. Reseta ao trocar de board.
+const INITIAL_RENDER = 15
+const RENDER_BATCH = 25
+const renderLimit = ref(INITIAL_RENDER)
+type BoardColumnView = (typeof boardColumns.value)[number]
+let rampHandle: ReturnType<typeof setTimeout> | number | null = null
+let rampIsIdle = false
+
+function maxColumnTaskCount() {
+  return boardColumns.value.reduce((max, column) => Math.max(max, column.tasks.length), 0)
+}
+
+function cancelRamp() {
+  if (rampHandle == null) return
+  if (rampIsIdle && typeof cancelIdleCallback !== 'undefined') {
+    cancelIdleCallback(rampHandle as number)
+  } else {
+    clearTimeout(rampHandle as ReturnType<typeof setTimeout>)
+  }
+  rampHandle = null
+}
+
+function scheduleRamp() {
+  if (rampHandle != null) return
+  const step = () => {
+    rampHandle = null
+    if (renderLimit.value < maxColumnTaskCount()) {
+      renderLimit.value += RENDER_BATCH
+      scheduleRamp()
+    }
+  }
+  if (typeof requestIdleCallback !== 'undefined') {
+    rampIsIdle = true
+    rampHandle = requestIdleCallback(step, { timeout: 200 })
+  } else {
+    rampIsIdle = false
+    rampHandle = setTimeout(step, 32)
+  }
+}
+
+function visibleColumnTasks(column: BoardColumnView) {
+  return renderLimit.value >= column.tasks.length
+    ? column.tasks
+    : column.tasks.slice(0, renderLimit.value)
+}
+
+function hiddenCountFor(column: BoardColumnView) {
+  return Math.max(0, column.tasks.length - renderLimit.value)
+}
+
+onMounted(scheduleRamp)
+onBeforeUnmount(cancelRamp)
+// Ao trocar de board, volta ao cap inicial para a primeira pintura do novo board ser rapida.
+watch(
+  () => activeProject.value?.id,
+  () => {
+    cancelRamp()
+    renderLimit.value = INITIAL_RENDER
+    scheduleRamp()
+  },
+)
 </script>
 
 <template>
@@ -252,7 +315,7 @@ const {
 
         <div class="tasks-page__board-column-body gap-2 p-2">
           <article
-            v-for="(task, index) in column.tasks"
+            v-for="(task, index) in visibleColumnTasks(column)"
             :key="task.id"
             class="tasks-page__board-card cursor-pointer rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-3 transition-colors hover:border-primary"
             draggable="true"
@@ -294,55 +357,45 @@ const {
                 @focusout="blurTaskCardPresence(task.id, 'title', $event)"
                 @update:model-value="updateTaskCardTitle(task, $event)"
               />
-              <div class="tasks-page__board-card-actions flex items-center gap-0.5" @click.stop>
+              <div class="tasks-page__board-card-track flex items-center gap-0.5" @click.stop>
                 <UButton
                   v-if="!isTracking(task.id)"
-                  color="neutral"
-                  variant="ghost"
+                  icon="i-lucide-play"
+                  color="primary"
+                  variant="soft"
                   size="xs"
                   title="Iniciar tracking"
                   @click="startTracking(task.id)"
-                >
-                  <template #leading>
-                    <span class="iconify i-lucide:play shrink-0 size-3" aria-hidden="true"></span>
-                  </template>
-                </UButton>
+                />
                 <UButton
                   v-if="isRunning(task.id)"
-                  color="neutral"
-                  variant="ghost"
+                  icon="i-lucide-pause"
+                  color="warning"
+                  variant="soft"
                   size="xs"
                   title="Pausar tracking"
                   @click="pauseTracking(task.id)"
-                >
-                  <template #leading>
-                    <span class="iconify i-lucide:pause shrink-0 size-3" aria-hidden="true"></span>
-                  </template>
-                </UButton>
+                />
                 <UButton
                   v-if="isTracking(task.id) && !isRunning(task.id)"
-                  color="neutral"
-                  variant="ghost"
+                  icon="i-lucide-play"
+                  color="primary"
+                  variant="soft"
                   size="xs"
                   title="Retomar tracking"
                   @click="startTracking(task.id)"
-                >
-                  <template #leading>
-                    <span class="iconify i-lucide:play shrink-0 size-3" aria-hidden="true"></span>
-                  </template>
-                </UButton>
+                />
                 <UButton
                   v-if="isTracking(task.id)"
+                  icon="i-lucide-square"
                   color="neutral"
                   variant="ghost"
                   size="xs"
                   title="Parar tracking"
                   @click="stopTracking(task.id)"
-                >
-                  <template #leading>
-                    <span class="iconify i-lucide:square shrink-0 size-3" aria-hidden="true"></span>
-                  </template>
-                </UButton>
+                />
+              </div>
+              <div class="tasks-page__board-card-actions flex items-center gap-0.5" @click.stop>
                 <UButton
                   color="neutral"
                   variant="ghost"
@@ -523,8 +576,8 @@ const {
                 "
                 @update:model-value="
                   updateTaskInline(task, {
-                    clientId: toNumberId($event) || task.clientId,
-                    clientName: clientLabel(toNumberId($event) || task.clientId),
+                    clientId: String($event ?? '') || task.clientId,
+                    clientName: clientLabel(String($event ?? '') || task.clientId),
                   })
                 "
               />
@@ -617,11 +670,6 @@ const {
               </template>
             </AppDatePicker>
 
-            <div v-if="isTracking(task.id)" class="tasks-page__board-card-timer mt-1" @click.stop>
-              <UIcon name="i-lucide-timer" class="h-3 w-3 shrink-0" />
-              <span>{{ formatElapsed(getElapsedMs(task.id)) }}</span>
-            </div>
-
             <div
               v-if="isCardFieldVisible(task, 'createdAt')"
               class="tasks-page__board-card-date mt-1 flex items-center gap-1 text-xs text-[rgb(var(--muted))]"
@@ -630,6 +678,14 @@ const {
               <span>{{ dateLabel(task.createdAt) }}</span>
             </div>
           </article>
+
+          <div
+            v-if="hiddenCountFor(column) > 0"
+            class="tasks-page__board-card-more flex items-center justify-center gap-1.5 py-2 text-xs text-[rgb(var(--muted))]"
+          >
+            <UIcon name="i-lucide-loader-circle" class="h-3.5 w-3.5 animate-spin" />
+            <span>Carregando mais {{ hiddenCountFor(column) }}…</span>
+          </div>
 
           <article
             v-if="creatingCards[column.id]"
@@ -722,7 +778,7 @@ const {
                 option-edit-mode="color"
                 @update:model-value="
                   creatingCards[column.id].clientName = clientLabel(
-                    toNumberId($event) || creatingCards[column.id].clientId,
+                    String($event ?? '') || creatingCards[column.id].clientId,
                   )
                 "
                 @update:open="setDraftFieldOpen(column.id, 'clientId', $event)"

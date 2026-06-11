@@ -81,6 +81,38 @@ _Histórico:_
 
 ---
 
+## 4. Clientes de Tasks (`clientId` integer mock) — `band-aid` (front migrado p/ UUID real 2026-06-10, aguarda validação no browser)
+
+**ATUALIZAÇÃO 2026-06-10 (tarde):** os 4 clientes foram criados em `core.accounts` e o front foi
+migrado: o seletor de cliente de task agora PUXA `/v1/tenants` (UUID real) e grava em
+`clientAccountId`. `TaskItem.clientId` virou `string` (contém o UUID). O `DEFAULT_CLIENT_OPTIONS`
+hardcoded foi REMOVIDO. Restam como band-aid: (a) tasks ANTIGAS ainda têm `clientId` integer no
+ui_metadata — elas mostram o cliente como legado (badge MOCK, via `isMockClient` = não-UUID) até
+serem reatribuídas a um cliente real; (b) `tracking.vue` ainda não consome `/v1/tasks/tracking/metrics`;
+(c) o seletor puxa TODOS os tenants ativos (falta o flag "aparece em tasks" na página de clientes).
+_Histórico do estado anterior abaixo._
+
+
+
+**O que é:** o seletor de "Cliente" de uma task usa uma lista **fixa de 4 clientes fictícios** em `web/layers/tasks/stores/tasks-client.ts` (`DEFAULT_CLIENT_OPTIONS`: crow=106, Perola=101, Dr Antonio Tavares=104, UNO=105), com `clientId` **integer**. Persistido só no `ui_metadata` (localStorage), não no `clientAccountId` real da task.
+
+**Onde dói:**
+- 3 dos 4 não existem em `core.accounts`; o único parecido (Perola) tem **id UUID** real, incompatível com o integer `101`.
+- O backend de tasks já tem `clientAccountId` (UUID) e o `GET /v1/tasks/tracking/metrics` agrega por ele — enquanto o front gravar `clientId` integer mock, a **inteligência de tempo por cliente da página de tracking não casa** com nenhum cliente real.
+
+**Sinalização (feita 2026-06-10):** cada option ganhou `isMock: true` + helper `tasksClient.isMockClient(id)`. No front, **só para `platform_admin`**: o dropdown de cliente mostra `description: "MOCK"` e o label "Cliente" na modal (`TasksTaskModal.vue`) mostra badge `MOCK`. O pipeline integer foi **mantido funcionando** de propósito (decisão do usuário) até os clientes reais serem criados.
+
+**Alvo / como remover:**
+1. Criar os clientes reais em `core.accounts` (já expostos por `GET /v1/tenants` + `useTenantsStore`).
+2. Linkar cada mock ao account real (mapa `clientId integer → clientAccountId UUID`).
+3. Trocar a fonte de `clientOptions` para os tenants reais; gravar no `clientAccountId` (UUID) da task em vez do `ui_metadata.clientId`.
+4. Religar `tracking.vue` ao `GET /v1/tasks/tracking/metrics` (agrega por `clientAccountId`).
+5. Remover `DEFAULT_CLIENT_OPTIONS`/`isMock` e o badge. Sai desta lista.
+
+**Fonte de verdade confirmada:** `core.accounts` (a tabela `public.tenants` foi dropada — item 3). Ver memória `project_tasks_client_source`.
+
+---
+
 ## Infra do princípio
 - [x] **Marcador visível no front (só `platform_admin`)** — `web/app/components/admin/LegacyMarker.vue` (badge "LEGADO"/"MOCK"/"localStorage", visível só p/ platform_admin). Plugado em `/operacao/usuarios` (item 1). **Plugar nas demais telas que dependem de legado/mock conforme forem encontradas.**
 - [x] `core.user_module_settings (user_id, module_id, config jsonb)` criada (migration 0132) — destino da config por módulo (estágio U1 do [USER_MODEL_UNIFICATION_PLAN.md](USER_MODEL_UNIFICATION_PLAN.md)).

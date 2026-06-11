@@ -41,6 +41,7 @@ Ele nao deve cuidar de:
 - `GET /v1/settings`
 - `PUT /v1/settings`
 - `PATCH /v1/settings/operation`
+- `PATCH /v1/settings/crm-policy`
 - `PATCH /v1/settings/modal`
 - `POST /v1/settings/templates/{templateId}/apply`
 - `POST /v1/settings/options/{group}`
@@ -60,7 +61,8 @@ enviar `tenantId` do contexto ativo quando o principal for global. Nunca usar
 ## Regras de escopo
 
 - leitura: qualquer usuario com acesso ao tenant
-- escrita: `owner` e `platform_admin`
+- escrita geral: `owner` e `platform_admin`
+- escrita da politica comercial CRM (`PATCH /v1/settings/crm-policy`): `platform_admin` e `director`; essa rota altera apenas `crmListUsageTiers`, `crmListUsageMinOrdersForHighlight` e `crmGoalPayoutPolicy`
 - escopo de leitura/gravacao: `tenantId` explicito validado contra o acesso do principal, ou `principal.TenantID` quando o usuario ja for tenant-scoped
 - para principals globais como `platform_admin`, a UI deve chamar `/v1/settings?tenantId={activeTenantId}` e enviar esse mesmo query param nas escritas
 - se um principal global omitir `tenantId`, o fallback so pode resolver automaticamente quando existir exatamente um tenant acessivel; zero ou multiplos tenants devem falhar por escopo ambiguo. `ResolveDefaultTenantID` para `platform_admin` filtra a lista por `exists (... stores ativas)` antes de aplicar o `limit 2`: tenants sem stores ativas nao contam para a desambiguacao
@@ -115,6 +117,7 @@ tabela larga atual.
 - `tenant_operation_core_settings`
   - configuracoes operacionais estaveis e tipadas
   - exemplos: limites de concorrencia, tempos, ticket minimo, janela de cancelamento, template selecionado
+  - tambem guarda a politica comercial CRM em colunas JSON controladas: `crm_list_usage_tiers`, `crm_list_usage_min_orders_for_highlight`, `crm_goal_payout_policy`
 - `tenant_finish_modal_settings`
   - configuracao do modal de encerramento
   - deve usar `finish_flow_mode` + `schema_version` + `config jsonb`

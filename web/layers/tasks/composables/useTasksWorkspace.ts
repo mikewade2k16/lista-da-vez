@@ -26,6 +26,8 @@ export function useTasksWorkspace() {
     initialize: store.initialize,
     refresh: store.refresh,
     setActiveProject: store.setActiveProject,
+    ensureBoardTasksLoaded: store.ensureBoardTasksLoaded,
+    ensureArchivedTasksLoaded: store.ensureArchivedTasksLoaded,
     createProject: store.createProject,
     deleteProject: store.deleteProject,
     saveProjectSettings: store.saveProjectSettings,

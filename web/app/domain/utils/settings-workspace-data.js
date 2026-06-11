@@ -3,6 +3,7 @@ export const settingsTabs = [
   { id: 'modal', label: 'Modal', icon: 'edit_note' },
   { id: 'produtos', label: 'Produtos', icon: 'inventory_2' },
   { id: 'consultores', label: 'Consultores', icon: 'group' },
+  { id: 'metas-crm', label: 'Metas CRM', icon: 'flag' },
   { id: 'motivos', label: 'Motivos', icon: 'fact_check' },
   { id: 'cancelamento', label: 'Cancelamento', icon: 'undo' },
   { id: 'parada', label: 'Parada', icon: 'pause' },

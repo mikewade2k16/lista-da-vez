@@ -34,6 +34,39 @@ func (service *Service) SaveOperationSection(ctx context.Context, principal auth
 	return service.finalizeMutation(ctx, newMutationAck(tenantID, savedSection.UpdatedAt), nil)
 }
 
+func (service *Service) SaveCRMCommercialPolicy(ctx context.Context, principal auth.Principal, input CRMCommercialPolicyInput) (MutationAck, error) {
+	tenantID, currentSection, err := service.loadCommercialPolicyOperationSection(ctx, principal, input.TenantID)
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	if input.CRMListUsageTiers != nil {
+		currentSection.CoreSettings.CRMListUsageTiers = normalizeRawJSON(
+			*input.CRMListUsageTiers,
+			currentSection.CoreSettings.CRMListUsageTiers,
+		)
+	}
+	if input.CRMListUsageMinOrdersForHighlight != nil {
+		currentSection.CoreSettings.CRMListUsageMinOrdersForHighlight = maxInt(
+			*input.CRMListUsageMinOrdersForHighlight,
+			1,
+		)
+	}
+	if input.CRMGoalPayoutPolicy != nil {
+		currentSection.CoreSettings.CRMGoalPayoutPolicy = normalizeRawJSON(
+			*input.CRMGoalPayoutPolicy,
+			currentSection.CoreSettings.CRMGoalPayoutPolicy,
+		)
+	}
+
+	savedSection, err := service.repository.UpsertOperationSection(ctx, normalizeOperationSectionRecord(currentSection))
+	if err != nil {
+		return MutationAck{}, err
+	}
+
+	return service.finalizeMutation(ctx, newMutationAck(tenantID, savedSection.UpdatedAt), nil)
+}
+
 func (service *Service) SaveModalSection(ctx context.Context, principal auth.Principal, input ModalSectionInput) (MutationAck, error) {
 	tenantID, currentSection, err := service.loadWritableModalSection(ctx, principal, input.TenantID)
 	if err != nil {
@@ -122,6 +155,24 @@ func (service *Service) ApplyOperationTemplate(ctx context.Context, principal au
 
 func (service *Service) loadWritableOperationSection(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, OperationSectionRecord, error) {
 	tenantID, err := service.resolveWritableTenantID(ctx, principal, requestedTenantID)
+	if err != nil {
+		return "", OperationSectionRecord{}, err
+	}
+
+	section, found, err := service.repository.GetOperationSection(ctx, tenantID)
+	if err != nil {
+		return "", OperationSectionRecord{}, err
+	}
+
+	if !found {
+		return tenantID, defaultOperationSectionRecord(tenantID, defaultTemplateID), nil
+	}
+
+	return tenantID, normalizeOperationSectionRecord(section), nil
+}
+
+func (service *Service) loadCommercialPolicyOperationSection(ctx context.Context, principal auth.Principal, requestedTenantID string) (string, OperationSectionRecord, error) {
+	tenantID, err := service.resolveCommercialPolicyTenantID(ctx, principal, requestedTenantID)
 	if err != nil {
 		return "", OperationSectionRecord{}, err
 	}

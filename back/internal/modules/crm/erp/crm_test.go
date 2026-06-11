@@ -174,8 +174,8 @@ func TestResolveCRMOrderStoreKey(t *testing.T) {
 		t.Fatalf("expected management multi-store key for employee 16, got %q", got)
 	}
 
-	if got := resolveCRMOrderStoreKey("", "12583959000186", "888", employeeStoreFallbacks, employeeDominantStoreKeys); got != "53578278000107" {
-		t.Fatalf("expected current internal fallback to win over dominant ERP store, got %q", got)
+	if got := resolveCRMOrderStoreKey("", "12583959000186", "888", employeeStoreFallbacks, employeeDominantStoreKeys); got != "56173889000163" {
+		t.Fatalf("expected dominant ERP store to win over current internal fallback, got %q", got)
 	}
 
 	if got := resolveCRMOrderStoreKey("", "12583959000186", "259", employeeStoreFallbacks, employeeDominantStoreKeys); got != "53578278000107" {

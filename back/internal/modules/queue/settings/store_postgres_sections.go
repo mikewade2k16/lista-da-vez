@@ -29,6 +29,9 @@ type coreSettingsScanRow struct {
 	ScoreWeightQuality                 float64   `db:"score_weight_quality"`
 	ScoreWeightPa                      float64   `db:"score_weight_pa"`
 	ScoreWeightQueueDiscipline         float64   `db:"score_weight_queue_discipline"`
+	CRMListUsageTiers                  []byte    `db:"crm_list_usage_tiers"`
+	CRMListUsageMinOrdersForHighlight  int       `db:"crm_list_usage_min_orders_for_highlight"`
+	CRMGoalPayoutPolicy                []byte    `db:"crm_goal_payout_policy"`
 	UpdatedAt                          time.Time `db:"updated_at"`
 }
 
@@ -82,6 +85,9 @@ func (repository *PostgresRepository) getCoreSettingsFromNew(ctx context.Context
 			score_weight_quality,
 			score_weight_pa,
 			score_weight_queue_discipline,
+			crm_list_usage_tiers,
+			crm_list_usage_min_orders_for_highlight,
+			crm_goal_payout_policy,
 			updated_at
 		from tenant_operation_core_settings
 		where tenant_id = $1::uuid
@@ -114,6 +120,9 @@ func (repository *PostgresRepository) getCoreSettingsFromNew(ctx context.Context
 			ScoreWeightQuality:                 row.ScoreWeightQuality,
 			ScoreWeightPa:                      row.ScoreWeightPa,
 			ScoreWeightQueueDiscipline:         row.ScoreWeightQueueDiscipline,
+			CRMListUsageTiers:                  normalizeRawJSON(row.CRMListUsageTiers, defaultCRMListUsageTiers()),
+			CRMListUsageMinOrdersForHighlight:  maxInt(row.CRMListUsageMinOrdersForHighlight, defaultCRMListUsageMinOrdersForHighlight),
+			CRMGoalPayoutPolicy:                normalizeRawJSON(row.CRMGoalPayoutPolicy, defaultCRMGoalPayoutPolicy()),
 		},
 		CreatedAt: row.UpdatedAt,
 		UpdatedAt: row.UpdatedAt,
@@ -291,9 +300,12 @@ func upsertCoreSettingsToNew(ctx context.Context, queryer execQueryer, section O
 			score_weight_quality,
 			score_weight_pa,
 			score_weight_queue_discipline,
+			crm_list_usage_tiers,
+			crm_list_usage_min_orders_for_highlight,
+			crm_goal_payout_policy,
 			updated_at
 		)
-		values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+		values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17, $18::jsonb, now())
 		on conflict (tenant_id) do update
 		set
 			selected_operation_template_id         = excluded.selected_operation_template_id,
@@ -310,6 +322,9 @@ func upsertCoreSettingsToNew(ctx context.Context, queryer execQueryer, section O
 			score_weight_quality                   = excluded.score_weight_quality,
 			score_weight_pa                        = excluded.score_weight_pa,
 			score_weight_queue_discipline          = excluded.score_weight_queue_discipline,
+			crm_list_usage_tiers                   = excluded.crm_list_usage_tiers,
+			crm_list_usage_min_orders_for_highlight = excluded.crm_list_usage_min_orders_for_highlight,
+			crm_goal_payout_policy                 = excluded.crm_goal_payout_policy,
 			updated_at                             = now();
 	`,
 		section.TenantID,
@@ -327,6 +342,9 @@ func upsertCoreSettingsToNew(ctx context.Context, queryer execQueryer, section O
 		section.CoreSettings.ScoreWeightQuality,
 		section.CoreSettings.ScoreWeightPa,
 		section.CoreSettings.ScoreWeightQueueDiscipline,
+		normalizeRawJSON(section.CoreSettings.CRMListUsageTiers, defaultCRMListUsageTiers()),
+		section.CoreSettings.CRMListUsageMinOrdersForHighlight,
+		normalizeRawJSON(section.CoreSettings.CRMGoalPayoutPolicy, defaultCRMGoalPayoutPolicy()),
 	)
 	return err
 }

@@ -50,6 +50,30 @@ Sempre usar nomes semanticos no estilo `.nome-componente__elemento--modificador`
 - **Por que:** Permite leitura rapida do escopo de cada estilo e evita colisao global.
 - **Aplica quando:** Estilizacao de qualquer componente novo.
 
+### Seguir o design system — usar as variaveis de cor, nunca hex hardcoded
+O projeto TEM design system (tokens em `web/app/assets/styles/omni-tokens.css` + aliases em `tokens.css`). Toda cor/borda/sombra/raio de componente novo usa as variaveis existentes — **nunca** hex/rgb cravado e **nunca** inventar nome de variavel.
+
+| Situacao | Errado | Certo |
+|---|---|---|
+| Cor cheia | `#16a34a`, `var(--color-primary, #16a34a)` | `rgb(var(--primary))` |
+| Cor com transparencia | `rgba(99,102,241,.16)` | `rgb(var(--primary) / 0.16)` |
+| Texto / texto fraco | `#111827` / `#6b7280` | `var(--text-main)` / `var(--text-muted)` |
+| Borda | `1px solid #e5e7eb` | `1px solid var(--line-soft)` |
+| Fundo de card/input | `#fff` | `rgb(var(--surface) / 0.9)` / `rgb(var(--surface-2) / 0.76)` |
+| Sombra / raio | `0 8px 24px rgba(...)` / `0.75rem` | `var(--shadow-card)` / `var(--radius-card)` |
+| Botao primario | `background: var(--color-primary)` | `linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600)))` |
+
+Tokens base (triplet RGB): `--bg --surface --surface-2 --border --text --muted --primary --primary-600 --success --danger --ring`. Aliases prontos: `--text-main --text-muted --line-soft --line-strong --shadow-card --shadow-shell --radius-card --radius-soft --accent-warning`. Os tokens ja viram dark mode / temas (`.dark`, `.theme-apple-blue`) sozinhos.
+
+- **Por que:** Aconteceu (AutomationWorkspace.vue): o CSS usava `var(--color-primary, #16a34a)` etc. — esses nomes `--color-*` NAO existem no design system, entao caia sempre no fallback hex e o componente ignorava o tema (ficava verde/claro fora do dark mode do resto do painel). Hex hardcoded = componente que nao acompanha tema nem rebranding.
+- **Aplica quando:** Qualquer `<style>` de componente novo ou refactor. Conferir o nome do token em `omni-tokens.css`/`tokens.css` antes de usar; se a cor que voce precisa nao existe como token, perguntar/adicionar token — nao cravar hex.
+
+### Pagina nova precisa rolar como as outras (overflow do layout)
+O layout `dashboard` envolve a pagina em `.module-workspace-full` que e `overflow: hidden`. O componente-raiz da pagina precisa ser o container de rolagem: `flex: 1; min-height: 0; overflow-y: auto` (ou usar o wrapper `.page-workspace`). Sem isso o conteudo que passa da altura fica **cortado, sem scroll**.
+
+- **Por que:** Aconteceu (AutomationWorkspace.vue): a raiz so tinha `padding`, sem `flex/overflow`, entao o editor de persona longo ficava cortado e a pagina nao rolava como todas as outras.
+- **Aplica quando:** Criar componente-raiz de pagina/workspace nova no layout dashboard.
+
 ### Sem emojis em UI nem em codigo
 Nao usar emojis em labels, mensagens de UI, codigo, comentarios ou commits, salvo se o usuario pedir explicitamente.
 

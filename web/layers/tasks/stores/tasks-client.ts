@@ -1,16 +1,30 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
+import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
-const DEFAULT_CLIENT_OPTIONS = [
-  { label: 'crow', value: 106 },
-  { label: 'Perola', value: 101 },
-  { label: 'Dr Antonio Tavares', value: 104 },
-  { label: 'UNO', value: 105 },
-]
+// Fonte de verdade: core.accounts, exposta por GET /v1/tenants. O "cliente" de uma task e o id
+// UUID do account (gravado em clientAccountId). NAO ha mais lista mock — ver docs/LEGADO.md §4 +
+// memoria project_tasks_client_source.
+interface TaskClientOption {
+  label: string
+  value: string
+}
+
+interface BackendTenant {
+  id?: string
+  name?: string
+  slug?: string
+  active?: boolean
+  isActive?: boolean
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export const useTasksClientStore = defineStore('tasks-client', () => {
+  const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   // Derived from real auth role. consultant = client viewer; everyone else = admin.
   const userType = computed<'admin' | 'client'>(() =>
@@ -18,37 +32,64 @@ export const useTasksClientStore = defineStore('tasks-client', () => {
   )
   const userLevel = computed(() => auth.role || 'admin')
 
-  // TODO tasks-refactor-v2: clientId e clientOptions virão da API de contatos do CRM.
-  // O campo clientId em tasks é legado (integer), requer migração de backend antes de usar UUID.
-  const clientId = ref(106)
-  const clientOptions = ref([...DEFAULT_CLIENT_OPTIONS])
+  // clientId selecionado por padrao (UUID; vazio = nenhum). Por ora puxa TODOS os tenants ativos;
+  // futuramente filtrar por flag "aparece em tasks" na pagina de clientes.
+  const clientId = ref('')
+  const clientOptions = ref<TaskClientOption[]>([])
   const loadingClientOptions = ref(false)
   const clientOptionsSynced = ref(false)
+  const clientOptionsError = ref('')
 
   const isAdmin = computed(() => userType.value === 'admin')
   const activeClientLabel = computed(
-    () =>
-      clientOptions.value.find((client) => client.value === clientId.value)?.label ||
-      `Cliente #${clientId.value}`,
+    () => clientOptions.value.find((client) => client.value === clientId.value)?.label || 'Cliente',
   )
 
   function initialize() {
-    clientOptionsSynced.value = true
+    if (isAdmin.value && !clientOptionsSynced.value) {
+      void refreshClientOptions()
+    }
   }
 
   async function refreshClientOptions() {
-    // TODO tasks-refactor-v2: buscar da API real de contatos/accounts
+    if (loadingClientOptions.value) {
+      return
+    }
     loadingClientOptions.value = true
-    clientOptions.value = [...DEFAULT_CLIENT_OPTIONS]
-    clientOptionsSynced.value = true
-    loadingClientOptions.value = false
+    clientOptionsError.value = ''
+    try {
+      const response = await apiRequest('/v1/tenants')
+      const list = Array.isArray(response?.tenants) ? (response.tenants as BackendTenant[]) : []
+      clientOptions.value = list
+        .filter((tenant) => tenant?.id && (tenant.active ?? tenant.isActive ?? true))
+        .map((tenant) => ({
+          label: String(tenant.name || '').trim() || `Cliente ${String(tenant.id).slice(0, 8)}`,
+          value: String(tenant.id),
+        }))
+      clientOptionsSynced.value = true
+    } catch (error) {
+      clientOptionsError.value = getApiErrorMessage(error, 'Nao foi possivel carregar os clientes.')
+    } finally {
+      loadingClientOptions.value = false
+    }
   }
 
   function setClientId(nextClientId: number | string) {
-    const parsed = Number(nextClientId)
-    if (Number.isFinite(parsed) && parsed > 0) {
+    const parsed = String(nextClientId ?? '').trim()
+    if (parsed) {
       clientId.value = parsed
     }
+  }
+
+  // isMockClient: true quando o valor NAO e um UUID — ou seja, e o clientId integer LEGADO de tasks
+  // antigas (ui_metadata.clientId) que ainda nao foi reatribuido a um cliente real. Mantem o badge
+  // "MOCK" util durante a transicao; clientes reais (UUID) nunca disparam.
+  function isMockClient(value: number | string) {
+    const normalized = String(value ?? '').trim()
+    if (!normalized) {
+      return false
+    }
+    return !UUID_RE.test(normalized)
   }
 
   return {
@@ -58,10 +99,12 @@ export const useTasksClientStore = defineStore('tasks-client', () => {
     clientOptions,
     loadingClientOptions,
     clientOptionsSynced,
+    clientOptionsError,
     isAdmin,
     activeClientLabel,
     initialize,
     refreshClientOptions,
     setClientId,
+    isMockClient,
   }
 })

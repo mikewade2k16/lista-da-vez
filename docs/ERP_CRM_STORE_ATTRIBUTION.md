@@ -46,9 +46,9 @@ Para cada pedido ativo no periodo:
    - `units = sum(quantity)` usando `1` quando `quantity <= 0`
 4. Resolver a loja comercial nesta ordem:
    - `store_id_raw` do pedido, quando preenchido
-  - override especial por vendedor ERP quando a pessoa atua em multi-loja
-  - loja do vendedor no cadastro interno: `orders.employee_id` -> `users.employee_code` -> `consultants` ou `user_store_roles` -> `stores`
-  - loja dominante do historico ERP do vendedor, olhando pedidos antigos com `store_id_raw` preenchido
+   - override especial por vendedor ERP quando a pessoa atua em multi-loja
+   - loja dominante do historico ERP do vendedor, olhando pedidos antigos com `store_id_raw` preenchido
+   - loja do vendedor no cadastro interno: `orders.employee_id` -> `users.employee_code` -> `consultants` ou `core.user_module_settings(queue)` -> `stores`
    - `store_cnpj` como ultimo fallback
 5. Agregar os pedidos resolvidos por loja e por consultor.
 
@@ -113,9 +113,32 @@ Fluxo sugerido:
 
 1. tentar `store_id_raw` para resolver a loja comercial da venda
 2. tentar vinculo manual `consultant_erp_links` por `erp_employee_id`
-3. tentar cadastro interno por `users.employee_code`
-4. tentar match exato por nome normalizado quando houver apenas um candidato
-5. usar historico ERP do vendedor para loja e manter o consultor como `unmatched` se a pessoa nao for identificada
+3. usar historico ERP do vendedor para loja e manter o consultor como `unmatched` se a pessoa nao for identificada
+4. tentar cadastro interno por `users.employee_code`
+5. tentar match exato por nome normalizado quando houver apenas um candidato
 6. cair em `store_cnpj` so como ultimo recurso de loja
 
 Isso reduz bastante a fragilidade do ERP cru e deixa a regra auditavel.
+
+## Uso da lista no CRM
+
+O card `Uso da lista` nao usa mais `atendimentos / pedidos ERP`, porque essa
+razao passa de 100% quando uma pessoa atende mais clientes do que os pedidos
+fechados no ERP. A metrica agora mede cobertura operacional:
+
+- denominador: consultores com pelo menos 1 pedido ERP no periodo/loja filtrado;
+- numerador: consultores cujo total de atendimentos na fila e maior ou igual ao
+  total de pedidos ERP no mesmo recorte;
+- status por consultor: porcentagem capped em 100% + faixa configuravel
+  (`Pessimo`, `Ruim`, `Normal`, `Bom`, `Otimo`, `Perfeito` por default);
+- melhor/pior loja: media da cobertura capped por consultor da loja. Se nenhuma
+  loja atingir a faixa `Normal`, o card vira diagnostico (`Todas ruins`) e nao
+  destaque positivo;
+- melhor/pior consultor: mesma cobertura capped por consultor, respeitando o
+  minimo de pedidos configurado para nao destacar amostra pequena.
+
+Exemplo: se 100 consultores venderam no periodo e 10 tiveram atendimentos na
+fila suficientes para cobrir seus pedidos, o uso da lista exibido e `10%`.
+
+As faixas e o minimo de pedidos sao editados em `Configuracoes > Metas CRM` e
+persistidos nas settings de operacao via `PATCH /v1/settings/operation`.

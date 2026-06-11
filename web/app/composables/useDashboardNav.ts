@@ -110,6 +110,29 @@ export function useDashboardNav(
     return String(path || '').replace(/\/+$/, '') || '/'
   }
 
+  // Conjunto de todos os paths declarados no menu (itens + filhos). Usado para decidir quando a
+  // rota atual corresponde a um item especifico — nesse caso o match por workspaceId nao deve
+  // acender outros itens do mesmo workspace (ex.: Tasks e Tracking compartilham workspaceId 'tasks').
+  const knownPaths = computed(() => {
+    const paths = new Set<string>()
+    const collect = (items?: NavItem[]) => {
+      for (const item of items || []) {
+        if (item.path) paths.add(normalizePath(item.path))
+        collect(item.children)
+      }
+    }
+    for (const section of navStore.sections || []) collect(section.items)
+    return paths
+  })
+
+  const routeMatchesKnownPath = computed(() => {
+    const current = currentPath.value
+    for (const path of knownPaths.value) {
+      if (current === path || current.startsWith(`${path}/`)) return true
+    }
+    return false
+  })
+
   function isItemAllowed(item: NavItem): boolean {
     if (item.hidden) return false
     // C11: filtro por modulo habilitado. Se item declara moduleId e o modulo
@@ -139,12 +162,19 @@ export function useDashboardNav(
   }
 
   function isItemActive(item: NavItem): boolean {
-    const workspaceId = String(item.workspaceId || '').trim()
     const itemPath = normalizePath(item.path || '')
-    if (workspaceId && activeWorkspace.value === workspaceId) return true
-    return (
-      Boolean(item.path) &&
+    // Path exato/prefixo vence — distingue itens que compartilham workspaceId.
+    if (
+      item.path &&
       (currentPath.value === itemPath || currentPath.value.startsWith(`${itemPath}/`))
+    ) {
+      return true
+    }
+    // Fallback por workspace: so quando a rota atual NAO corresponde a nenhum item do menu
+    // (ex.: rotas-alias cujo path difere). Evita acender dois itens do mesmo workspace.
+    const workspaceId = String(item.workspaceId || '').trim()
+    return Boolean(
+      workspaceId && activeWorkspace.value === workspaceId && !routeMatchesKnownPath.value,
     )
   }
 

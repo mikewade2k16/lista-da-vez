@@ -44,7 +44,7 @@ Na fase 1, ele precisa sustentar:
 - o FTP real em `extract_files` já foi validado com arquivos `item`, `customer`, `employee`, `order` e `ordercanceled`
 - o codigo `184` aparece nos arquivos observados do ERP, mas o modulo nao deve tratar isso como escopo fixo de UI nem como tenant separado
 - `ResolveDefaultTenantID` para `platform_admin` filtra `tenants` por `exists (... stores ativas)` antes do `limit 2`. Isso evita 404 "Loja nao encontrada" quando existem tenants vazios (sem stores) que apareceriam alfabeticamente antes do tenant real do ERP. A regra de "exatamente 1 tenant acessivel ou `ErrTenantRequired`" continua valendo apos o filtro
-- `GET /v1/erp/crm` agrega vendas ERP por loja comercial e consultor no escopo raiz do ERP, resolvendo a loja nesta ordem: `store_id_raw`, cadastro interno do vendedor (`users` + `consultants`/`core.user_module_settings(queue)` lojas do usuario; migrado de `user_store_roles` no U4a), loja dominante do historico ERP do vendedor e `store_cnpj` como ultimo fallback; ver tambem `docs/ERP_CRM_STORE_ATTRIBUTION.md`
+- `GET /v1/erp/crm` agrega vendas ERP por loja comercial e consultor no escopo raiz do ERP, resolvendo a loja nesta ordem: `store_id_raw`, override especial de multi-loja, loja dominante do historico ERP do vendedor, cadastro interno do vendedor (`users` + `consultants`/`core.user_module_settings(queue)` lojas do usuario; migrado de `user_store_roles` no U4a) e `store_cnpj` como ultimo fallback; ver tambem `docs/ERP_CRM_STORE_ATTRIBUTION.md`
 - repositorio PostgreSQL fatiado por responsabilidade; manter novos metodos perto do arquivo tematico correspondente em vez de voltar a concentrar em `repository_postgres.go`
 
 ## CRM 360 — Indicadores integrados com a fila (2026-05-21)
@@ -54,6 +54,7 @@ Na fase 1, ele precisa sustentar:
 - `erpCancellations` / `erpCancellationRate` adicionados em `CRMSummary` e `CRMStoreMetric` a partir de `erp_order_canceled_raw`
 - novos arquivos: `repository_crm_queue.go` (queries de fila), `repository_crm_types.go` (tipos internos adicionados)
 - taxa de conversão da fila = `finish_outcome = 'compra'` / total atendimentos; taxa de cancelamento = `cancel_reason preenchido` / total
+- o uso da lista no frontend e cobertura por consultor/loja (`atendimentos >= pedidos ERP`), nao a razao bruta `atendimentos / pedidos`, para evitar KPIs acima de 100%
 
 ## Invariantes novos
 

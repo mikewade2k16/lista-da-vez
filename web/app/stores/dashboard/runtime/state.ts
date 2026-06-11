@@ -10,6 +10,11 @@ import {
 } from '~/domain/data/operation-templates'
 import { DEFAULT_PROFESSION_OPTIONS } from '~/domain/data/profession-options'
 import { normalizeCampaign } from '~/domain/utils/campaigns'
+import {
+  DEFAULT_CRM_GOAL_PAYOUT_POLICY,
+  DEFAULT_CRM_LIST_USAGE_MIN_ORDERS_FOR_HIGHLIGHT,
+  DEFAULT_CRM_LIST_USAGE_TIERS,
+} from '~/domain/utils/crm-performance-policy'
 import { cloneValue } from '~/domain/utils/object'
 import { getAllowedWorkspaces } from '~/domain/utils/permissions'
 import { DEFAULT_REPORT_FILTERS, normalizeReportFilters } from '~/domain/utils/reports'
@@ -548,6 +553,9 @@ export function createEmptyState() {
       alertMaxQueueJumpRate: 0,
       alertMinPaScore: 0,
       alertMinTicketAverage: 0,
+      crmListUsageTiers: cloneValue(DEFAULT_CRM_LIST_USAGE_TIERS),
+      crmListUsageMinOrdersForHighlight: DEFAULT_CRM_LIST_USAGE_MIN_ORDERS_FOR_HIGHLIGHT,
+      crmGoalPayoutPolicy: cloneValue(DEFAULT_CRM_GOAL_PAYOUT_POLICY),
     },
     serviceHistory: scopedState.serviceHistory,
     finishModalServiceId: null,

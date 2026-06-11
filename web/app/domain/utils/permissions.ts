@@ -36,6 +36,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: '',
   },
   {
+    id: 'automation',
+    label: 'Automacao',
+    description: 'Assistente de WhatsApp/IA (n8n + WAHA). Conectar numero e ligar/desligar.',
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'ranking',
     label: 'Ranking',
     description: 'Leitura de performance comercial.',
@@ -276,6 +283,7 @@ const ROLE_WORKSPACES = {
     'tools',
     'banco',
     'roadmap',
+    'automation',
   ],
   owner: [
     'operacao',
@@ -326,6 +334,7 @@ const ROLE_WORKSPACES = {
     'bi',
     'crm',
     'multiloja',
+    'configuracoes',
   ],
   manager: [
     'operacao',
@@ -453,7 +462,8 @@ function hasWorkspaceAccessAlias(workspaceId, permissionKeys = [], roleDefaults 
         hasPermission(permissionKeys, 'workspace.configuracoes.view') ||
         hasPermission(permissionKeys, 'workspace.configuracoes.edit') ||
         (roleDefaults.has('configuracoes') &&
-          hasPermission(permissionKeys, 'queue.settings.manage'))
+          (hasPermission(permissionKeys, 'queue.settings.manage') ||
+            hasPermission(permissionKeys, 'workspace.operacao.view')))
       )
     case 'alertas':
       return hasAnyAlertAccessPermission(permissionKeys)
@@ -587,6 +597,15 @@ export function canManageSettings(role, permissionKeys = [], permissionsResolved
   }
 
   return normalized === 'platform_admin' || normalized === 'owner'
+}
+
+export function canManageCrmCommercialPolicy(
+  role,
+  _permissionKeys = [],
+  _permissionsResolved = false,
+) {
+  const normalized = normalizeAppRole(role)
+  return normalized === 'platform_admin' || normalized === 'director'
 }
 
 export function canManageConsultants(role, permissionKeys = [], permissionsResolved = false) {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/automation"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bi"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm"
@@ -323,6 +324,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// Rotas continuam no wiring legado abaixo (Build retorna handle sem rotas).
 		registry.MustRegister(queue.New())
 		registry.MustRegister(crm.New())
+		// automation: painel de WhatsApp/IA. Rotas montadas via handle.RegisterRoutes
+		// (loop abaixo); gating em moduleGatingRules (/v1/automation -> automation).
+		registry.MustRegister(automation.New())
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -439,6 +443,9 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// tasks
 		{Prefix: "/v1/tasks", ModuleID: "tasks"},
 		{Prefix: "/v1/task-boards", ModuleID: "tasks"},
+		// automation (painel WhatsApp/IA). platform_admin tem bypass; contas sem o
+		// modulo habilitado levam 403 module_disabled.
+		{Prefix: "/v1/automation", ModuleID: "automation"},
 	}
 }
 

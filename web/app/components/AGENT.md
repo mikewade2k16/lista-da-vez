@@ -34,6 +34,15 @@ Antes de criar componente novo:
   Workspace da tela de campanhas. Centraliza CRUD, regras, metas e configuracao comercial.
   Em `Todas as lojas`, deve consolidar o historico das lojas acessiveis usando filtro local da propria tela, sem depender de seletor global no header.
 
+### `crm`
+
+- [CrmWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/crm/CrmWorkspace.vue)
+  Workspace CRM comercial via ERP. Cruza vendas ERP, metas por loja e fila de atendimento.
+- [CrmSummarySection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/crm/CrmSummarySection.vue)
+  Cards consolidados. `Uso da lista` e cobertura por consultor (`atendimentos >= pedidos ERP`), nao razao bruta de volumes. Melhor loja/consultor nao deve virar premio quando tudo esta abaixo da faixa `Normal`.
+- [CrmConsultantsSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/crm/CrmConsultantsSection.vue)
+  Grade ERP + fila por consultor. Em vendedor multi-loja, nao usar atendimento global de outra loja quando a linha ERP ja tem loja comercial. Coluna `Recebimento` usa meta da loja + politica `crmGoalPayoutPolicy`.
+
 ### `ranking`
 
 - [RankingWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ranking/RankingWorkspace.vue)
@@ -140,6 +149,8 @@ explicito de override por loja.
   Navegacao interna por abas de configuracao.
 - [SettingsConsultantManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsConsultantManager.vue)
   CRUD de consultores/configuracao do roster.
+- [SettingsCrmGoalsSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/sections/SettingsCrmGoalsSection.vue)
+  Politica comercial do CRM: faixas de uso da lista, minimo de pedidos para destaque e recebimento por meta. Edicao apenas para `platform_admin` e `director`.
 - [SettingsOperationTemplateManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsOperationTemplateManager.vue)
   Aplicacao e gerenciamento de templates operacionais.
 - [SettingsOptionManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsOptionManager.vue)

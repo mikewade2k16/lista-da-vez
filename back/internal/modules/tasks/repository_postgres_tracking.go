@@ -104,38 +104,118 @@ func (repository *PostgresRepository) StopTracking(ctx context.Context, accountI
 }
 
 func (repository *PostgresRepository) TrackingMetrics(ctx context.Context, accountID string, input TrackingMetricsInput) (TrackingMetrics, error) {
-	query := strings.Builder{}
-	query.WriteString(`
-		select coalesce(sum(duration_ms), 0)::bigint, count(*)::bigint
+	var metrics TrackingMetrics
+	metrics.ByClient = []TrackingMetricsBucket{}
+	metrics.ByUser = []TrackingMetricsBucket{}
+	metrics.ByType = []TrackingMetricsBucket{}
+
+	// Total escalar respeita todos os filtros (userId, clientAccountId, from, to).
+	totalWhere, totalArgs := trackingMetricsFilter(accountID, input, true)
+	totalSQL := `select coalesce(sum(e.duration_ms), 0)::bigint, count(*)::bigint
 		from tasks.task_time_entries e
 		join tasks.tasks t on t.id = e.task_id
-		where e.account_id = $1::uuid
-	`)
+		where ` + totalWhere
+	if err := repository.pool.QueryRow(ctx, totalSQL, totalArgs...).Scan(&metrics.TotalDurationMs, &metrics.EntryCount); err != nil {
+		return TrackingMetrics{}, err
+	}
+
+	// Breakdowns respeitam periodo (+userId), mas NAO o clientAccountId, para listar todos os
+	// clientes/usuarios/tipos do periodo num unico round-trip (elimina o N+1 do front).
+	where, args := trackingMetricsFilter(accountID, input, false)
+
+	byClient, err := repository.trackingMetricsBuckets(ctx, `
+		select coalesce(t.client_account_id::text, ''),
+		       coalesce(nullif(trim(a.name), ''), 'Sem cliente'),
+		       coalesce(sum(e.duration_ms), 0)::bigint, count(*)::bigint
+		from tasks.task_time_entries e
+		join tasks.tasks t on t.id = e.task_id
+		left join core.accounts a on a.id = t.client_account_id
+		where `+where+`
+		group by t.client_account_id, a.name
+		order by 3 desc`, args)
+	if err != nil {
+		return TrackingMetrics{}, err
+	}
+	metrics.ByClient = byClient
+
+	byUser, err := repository.trackingMetricsBuckets(ctx, `
+		select e.user_id::text,
+		       coalesce(nullif(trim(u.nick), ''), nullif(trim(u.display_name), ''), u.email, e.user_id::text),
+		       coalesce(sum(e.duration_ms), 0)::bigint, count(*)::bigint
+		from tasks.task_time_entries e
+		join tasks.tasks t on t.id = e.task_id
+		left join core.users u on u.id = e.user_id
+		where `+where+`
+		group by e.user_id, u.nick, u.display_name, u.email
+		order by 3 desc`, args)
+	if err != nil {
+		return TrackingMetrics{}, err
+	}
+	metrics.ByUser = byUser
+
+	byType, err := repository.trackingMetricsBuckets(ctx, `
+		select coalesce(nullif(trim(t.ui_metadata->>'type'), ''), 'Sem tipo'),
+		       coalesce(nullif(trim(t.ui_metadata->>'type'), ''), 'Sem tipo'),
+		       coalesce(sum(e.duration_ms), 0)::bigint, count(*)::bigint
+		from tasks.task_time_entries e
+		join tasks.tasks t on t.id = e.task_id
+		where `+where+`
+		group by coalesce(nullif(trim(t.ui_metadata->>'type'), ''), 'Sem tipo')
+		order by 3 desc`, args)
+	if err != nil {
+		return TrackingMetrics{}, err
+	}
+	metrics.ByType = byType
+
+	return metrics, nil
+}
+
+// trackingMetricsFilter monta o WHERE parametrizado compartilhado pelas queries de tracking.
+// includeClient controla se o filtro de clientAccountId entra (so no total escalar; nos breakdowns
+// ele e omitido para nao colapsar o agrupamento a um unico cliente).
+func trackingMetricsFilter(accountID string, input TrackingMetricsInput, includeClient bool) (string, []any) {
+	clause := strings.Builder{}
+	clause.WriteString("e.account_id = $1::uuid")
 	args := []any{accountID}
 	position := 2
 	if input.UserID != "" {
-		fmt.Fprintf(&query, " and e.user_id = $%d::uuid", position)
+		fmt.Fprintf(&clause, " and e.user_id = $%d::uuid", position)
 		args = append(args, input.UserID)
 		position++
 	}
-	if input.ClientAccountID != "" {
-		fmt.Fprintf(&query, " and t.client_account_id = $%d::uuid", position)
+	if includeClient && input.ClientAccountID != "" {
+		fmt.Fprintf(&clause, " and t.client_account_id = $%d::uuid", position)
 		args = append(args, input.ClientAccountID)
 		position++
 	}
 	if input.From != nil {
-		fmt.Fprintf(&query, " and e.started_at >= $%d", position)
+		fmt.Fprintf(&clause, " and e.started_at >= $%d", position)
 		args = append(args, *input.From)
 		position++
 	}
 	if input.To != nil {
-		fmt.Fprintf(&query, " and e.started_at <= $%d", position)
+		fmt.Fprintf(&clause, " and e.started_at <= $%d", position)
 		args = append(args, *input.To)
 	}
+	return clause.String(), args
+}
 
-	var metrics TrackingMetrics
-	err := repository.pool.QueryRow(ctx, query.String(), args...).Scan(&metrics.TotalDurationMs, &metrics.EntryCount)
-	return metrics, err
+func (repository *PostgresRepository) trackingMetricsBuckets(ctx context.Context, sql string, args []any) ([]TrackingMetricsBucket, error) {
+	rows, err := repository.pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	buckets := make([]TrackingMetricsBucket, 0)
+	for rows.Next() {
+		var bucket TrackingMetricsBucket
+		if err := rows.Scan(&bucket.Key, &bucket.Label, &bucket.TotalDurationMs, &bucket.EntryCount); err != nil {
+			return nil, err
+		}
+		buckets = append(buckets, bucket)
+	}
+	return buckets, rows.Err()
 }
 
 func (repository *PostgresRepository) updateTracking(

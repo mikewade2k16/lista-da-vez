@@ -105,7 +105,9 @@ export interface TaskItem {
   status: string
   responsible: string
   involved: string[]
-  clientId: number
+  // clientId = UUID do cliente (core.accounts), gravado em clientAccountId no backend. String vazia
+  // = sem cliente. Tasks antigas podem trazer um clientId integer LEGADO (ver tasksClient.isMockClient).
+  clientId: string
   clientName: string
   type: string
   priority: TaskPriority

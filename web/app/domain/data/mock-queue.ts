@@ -10,6 +10,11 @@ import {
 } from './operation-templates'
 import { DEFAULT_PROFESSION_OPTIONS } from './profession-options'
 import { normalizeCampaign } from '../utils/campaigns'
+import {
+  DEFAULT_CRM_GOAL_PAYOUT_POLICY,
+  DEFAULT_CRM_LIST_USAGE_MIN_ORDERS_FOR_HIGHLIGHT,
+  DEFAULT_CRM_LIST_USAGE_TIERS,
+} from '../utils/crm-performance-policy'
 import { DEFAULT_REPORT_FILTERS } from '../utils/reports'
 
 const defaultTemplate = getOperationTemplateById(DEFAULT_OPERATION_TEMPLATE_ID)
@@ -311,7 +316,8 @@ export const mockQueueState = {
     timingLongServiceMinutes: Number(defaultTemplate?.settings?.timingLongServiceMinutes || 25),
     timingLowSaleAmount: Number(defaultTemplate?.settings?.timingLowSaleAmount || 1200),
     scoreWeightConversion: Number(
-      defaultTemplate?.settings?.scoreWeightConversion ?? DEFAULT_SCORE_WEIGHTS.scoreWeightConversion,
+      defaultTemplate?.settings?.scoreWeightConversion ??
+        DEFAULT_SCORE_WEIGHTS.scoreWeightConversion,
     ),
     scoreWeightSoldValue: Number(
       defaultTemplate?.settings?.scoreWeightSoldValue ?? DEFAULT_SCORE_WEIGHTS.scoreWeightSoldValue,
@@ -319,12 +325,18 @@ export const mockQueueState = {
     scoreWeightQuality: Number(
       defaultTemplate?.settings?.scoreWeightQuality ?? DEFAULT_SCORE_WEIGHTS.scoreWeightQuality,
     ),
-    scoreWeightPa: Number(defaultTemplate?.settings?.scoreWeightPa ?? DEFAULT_SCORE_WEIGHTS.scoreWeightPa),
+    scoreWeightPa: Number(
+      defaultTemplate?.settings?.scoreWeightPa ?? DEFAULT_SCORE_WEIGHTS.scoreWeightPa,
+    ),
     scoreWeightQueueDiscipline: Number(
-      defaultTemplate?.settings?.scoreWeightQueueDiscipline ?? DEFAULT_SCORE_WEIGHTS.scoreWeightQueueDiscipline,
+      defaultTemplate?.settings?.scoreWeightQueueDiscipline ??
+        DEFAULT_SCORE_WEIGHTS.scoreWeightQueueDiscipline,
     ),
     testModeEnabled: true,
     autoFillFinishModal: true,
+    crmListUsageTiers: DEFAULT_CRM_LIST_USAGE_TIERS,
+    crmListUsageMinOrdersForHighlight: DEFAULT_CRM_LIST_USAGE_MIN_ORDERS_FOR_HIGHLIGHT,
+    crmGoalPayoutPolicy: DEFAULT_CRM_GOAL_PAYOUT_POLICY,
   },
   serviceHistory: activeSnapshot.serviceHistory,
   roster: activeSnapshot.roster,

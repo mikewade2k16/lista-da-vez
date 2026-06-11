@@ -136,7 +136,7 @@ export function useTasksPageContext() {
         status: string
         responsible: string
         involved: string[]
-        clientId: number
+        clientId: string
         clientName: string
         type: string
         priority: TaskPriority
@@ -218,7 +218,7 @@ export function useTasksPageContext() {
     status: '',
     responsible: '',
     involved: [] as string[],
-    clientId: 0,
+    clientId: '',
     clientName: '',
     type: '',
     priority: '' as TaskPriority,
@@ -298,9 +298,11 @@ export function useTasksPageContext() {
   function columnColorClass(color: string) {
     return `tasks-page__board-column--${normalizeKey(color) || 'indigo'}`
   }
-  function clientLabel(clientId: number) {
+  function clientLabel(clientId: string) {
+    const id = String(clientId ?? '').trim()
+    if (!id) return ''
     return (
-      tasksClient.clientOptions.find((c) => c.value === clientId)?.label || `Cliente #${clientId}`
+      tasksClient.clientOptions.find((c) => c.value === id)?.label || `Cliente ${id.slice(0, 8)}`
     )
   }
   function taskSort(a: TaskItem, b: TaskItem) {
@@ -328,7 +330,7 @@ export function useTasksPageContext() {
     if (fieldKey === 'responsible') return { responsible: value }
     if (fieldKey === 'type') return { type: value }
     if (fieldKey === 'clientId') {
-      const clientId = toNumberId(value)
+      const clientId = normalizeText(value, 80)
       return clientId ? { clientId, clientName: clientLabel(clientId) } : {}
     }
     if (fieldKey === 'priority') return { priority: toPriority(value) }
@@ -359,8 +361,18 @@ export function useTasksPageContext() {
   const projectOptions = computed(() =>
     tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
   )
+  // Marcador de mock visivel SO para platform_admin (regra AGENT_RULES: legado/mock sinalizado no
+  // front). Enquanto o cliente nao for criado em core.accounts e linkado, a option ganha
+  // description "MOCK" (renderizada no dropdown) e a label da modal mostra badge.
+  const isPlatformAdmin = computed(() => String(auth.role || '') === 'platform_admin')
   const clientOptions = computed(() =>
-    tasksClient.clientOptions.map((c) => ({ label: c.label, value: c.value })),
+    tasksClient.clientOptions.map((c) => ({
+      label: c.label,
+      value: c.value,
+      ...(isPlatformAdmin.value && tasksClient.isMockClient(c.value)
+        ? { description: 'MOCK' }
+        : {}),
+    })),
   )
   const currentUserName = computed(
     () =>
@@ -723,7 +735,7 @@ export function useTasksPageContext() {
     const search = normalizeText(filters.search, 180).toLowerCase()
     const fResponsible = normalizeText(filters.responsible, 120)
     const fType = normalizeText(filters.type, 120)
-    const fClient = toNumberId(filters.clientId)
+    const fClient = normalizeText(filters.clientId, 80)
     return projectTasks.value
       .filter((t) => {
         if (project.filters.hideArchived && filters.hideArchived && t.archived) return false
@@ -744,7 +756,7 @@ export function useTasksPageContext() {
         if (
           viewerUserType.value === 'admin' &&
           project.filters.client &&
-          fClient > 0 &&
+          fClient &&
           t.clientId !== fClient
         )
           return false
@@ -761,7 +773,7 @@ export function useTasksPageContext() {
 
   function labelForGroup(fieldKey: string, value: string) {
     if (!value) return `Sem ${fieldLabel(fieldKey).toLowerCase()}`
-    if (fieldKey === 'clientId') return clientLabel(toNumberId(value))
+    if (fieldKey === 'clientId') return clientLabel(value)
     if (fieldKey === 'priority') return priorityLabel(toPriority(value))
     return value
   }
@@ -1170,7 +1182,7 @@ export function useTasksPageContext() {
       involved: [...(task.involved || [])]
         .map((person) => normalizeText(person, 120))
         .filter(Boolean),
-      clientId: toNumberId(task.clientId),
+      clientId: normalizeText(task.clientId, 80),
       clientName: normalizeText(task.clientName, 140),
       type: normalizeText(task.type, 120),
       priority: prioritySet ? normalizeText(task.priority, 30) : '',
@@ -1250,7 +1262,7 @@ export function useTasksPageContext() {
         ? tasksClient.clientId
         : project?.defaults.clientFromSession
           ? tasksClient.clientId
-          : toNumberId(filters.clientId) || tasksClient.clientId
+          : normalizeText(filters.clientId, 80) || tasksClient.clientId
     taskDraft.id = ''
     taskDraft.title = ''
     taskDraft.description = ''
@@ -1349,7 +1361,7 @@ export function useTasksPageContext() {
     const clientId =
       viewerUserType.value === 'client'
         ? tasksClient.clientId
-        : Math.max(1, toNumberId(taskDraft.clientId) || tasksClient.clientId)
+        : normalizeText(taskDraft.clientId, 80) || tasksClient.clientId
     return {
       title,
       description: normalizeText(taskDraft.description, 5000),
@@ -1376,7 +1388,7 @@ export function useTasksPageContext() {
     const clientId =
       viewerUserType.value === 'client'
         ? tasksClient.clientId
-        : toNumberId(taskDraft.clientId) || task.clientId || tasksClient.clientId
+        : normalizeText(taskDraft.clientId, 80) || task.clientId || tasksClient.clientId
     task.title = normalizeText(taskDraft.title, 220)
     task.description = normalizeText(taskDraft.description, 5000)
     task.contentHtml = taskDraft.contentHtml
@@ -1649,7 +1661,7 @@ export function useTasksPageContext() {
         ? tasksClient.clientId
         : project?.defaults.clientFromSession
           ? tasksClient.clientId
-          : toNumberId(filters.clientId) || tasksClient.clientId
+          : normalizeText(filters.clientId, 80) || tasksClient.clientId
     const responsible = project?.defaults.responsibleFromCreator ? currentUserName.value : ''
     const base = {
       status: boardGroupBy.value === 'status' ? column.status : statuses.value[0] || 'Raw',
@@ -1762,7 +1774,7 @@ export function useTasksPageContext() {
     if (draftAddedFields[columnId]?.includes(fieldKey)) return true
     if (fieldKey === 'responsible') return !!draft.responsible
     if (fieldKey === 'involved') return draft.involved.length > 0
-    if (fieldKey === 'clientId') return draft.clientId > 0
+    if (fieldKey === 'clientId') return !!draft.clientId
     if (fieldKey === 'type') return !!draft.type
     if (fieldKey === 'dueDate') return !!draft.dueDate
     return false
@@ -2120,11 +2132,11 @@ export function useTasksPageContext() {
       clientId:
         viewerUserType.value === 'client'
           ? tasksClient.clientId
-          : toNumberId(filters.clientId) || tasksClient.clientId,
+          : normalizeText(filters.clientId, 80) || tasksClient.clientId,
       clientName: clientLabel(
         viewerUserType.value === 'client'
           ? tasksClient.clientId
-          : toNumberId(filters.clientId) || tasksClient.clientId,
+          : normalizeText(filters.clientId, 80) || tasksClient.clientId,
       ),
       createdBy: currentUserName.value,
     })
@@ -2139,8 +2151,8 @@ export function useTasksPageContext() {
     const key = normalizeText(payload.key, 120)
     if (!id || !key) return
     if (key === 'clientId') {
-      const clientId = toNumberId(payload.value)
-      if (clientId) tasksWorkspace.updateTask(id, { clientId, clientName: clientLabel(clientId) })
+      const clientId = normalizeText(payload.value, 80)
+      tasksWorkspace.updateTask(id, { clientId, clientName: clientLabel(clientId) })
       return
     }
     if (key === 'priority') {
@@ -2445,7 +2457,7 @@ export function useTasksPageContext() {
       return encodeStructuredPresenceDraft(nextInvolved)
     }
     if (key === 'clientId') {
-      return encodeStructuredPresenceDraft(Math.max(0, toNumberId(value)))
+      return encodeStructuredPresenceDraft(normalizeText(value, 80))
     }
     if (key === 'dueDate') {
       const payload =
@@ -2487,7 +2499,7 @@ export function useTasksPageContext() {
     }
     if (key === 'clientId') {
       const decoded = decodeStructuredPresenceDraft<number | string>(value)
-      return Math.max(0, toNumberId(decoded ?? value))
+      return normalizeText(decoded ?? value, 80)
     }
     if (key === 'dueDate') {
       const decoded = decodeStructuredPresenceDraft<{ dueDate?: unknown; dueEndDate?: unknown }>(
@@ -2622,12 +2634,12 @@ export function useTasksPageContext() {
 
   function taskDraftClientIdValue() {
     const remoteDraft = presenceDraftValue('clientId')
-    return typeof remoteDraft === 'number' ? remoteDraft : taskDraft.clientId
+    return typeof remoteDraft === 'string' && remoteDraft ? remoteDraft : taskDraft.clientId
   }
 
   function updateTaskDraftClientId(value: unknown) {
     if (isPresenceFieldLocked('clientId')) return
-    const nextClientId = Math.max(0, toNumberId(value))
+    const nextClientId = normalizeText(value, 80)
     taskDraft.clientId = nextClientId
     taskDraft.clientName = clientLabel(nextClientId)
     schedulePresenceDraft('clientId', nextClientId)
@@ -2797,6 +2809,19 @@ export function useTasksPageContext() {
     { immediate: true },
   )
 
+  // Lazy-load das arquivadas: por padrao o board carrega so nao-arquivadas (performance §6).
+  // Quando o usuario desativa "ocultar arquivadas", busca as arquivadas do board ativo sob
+  // demanda, sem recarregar os outros boards.
+  watch(
+    () => [tasksWorkspace.activeProjectId.value, filters.hideArchived] as const,
+    ([projectId, hideArchived]) => {
+      if (pageBootstrapping.value || hideArchived) return
+      const id = normalizeText(projectId, 80)
+      if (!id) return
+      void tasksWorkspace.ensureArchivedTasksLoaded(id).catch(() => undefined)
+    },
+  )
+
   onMounted(async () => {
     if (import.meta.client)
       document.addEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
@@ -2879,6 +2904,7 @@ export function useTasksPageContext() {
     taskDraft,
     // computed
     viewerUserType,
+    isPlatformAdmin,
     activeProject,
     projectOptions,
     clientOptions,
@@ -2956,6 +2982,7 @@ export function useTasksPageContext() {
     toPriority,
     columnColorClass,
     clientLabel,
+    isMockClient: tasksClient.isMockClient,
     taskSort,
     fieldLabel,
     fieldSwitchValue,

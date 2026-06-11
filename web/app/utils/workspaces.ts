@@ -50,6 +50,7 @@ export const WORKSPACES = [
   { id: 'feedback', label: 'Feedback', icon: 'chat_bubble', path: '/feedback' },
   { id: 'tools', label: 'Tools', icon: 'build', path: '/editor' },
   { id: 'banco', label: 'Banco', icon: 'storage', path: '/banco' },
+  { id: 'automation', label: 'Automacao', icon: 'psychology', path: '/automation' },
 ]
 
 export const QUEUE_WORKSPACES = [

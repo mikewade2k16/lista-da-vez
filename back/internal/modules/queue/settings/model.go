@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -48,6 +49,9 @@ type OperationCoreSettings struct {
 	ScoreWeightQuality                 float64
 	ScoreWeightPa                      float64
 	ScoreWeightQueueDiscipline         float64
+	CRMListUsageTiers                  json.RawMessage
+	CRMListUsageMinOrdersForHighlight  int
+	CRMGoalPayoutPolicy                json.RawMessage
 }
 
 type OperationCoreSettingsPatch struct {
@@ -64,6 +68,9 @@ type OperationCoreSettingsPatch struct {
 	ScoreWeightQuality                 *float64
 	ScoreWeightPa                      *float64
 	ScoreWeightQueueDiscipline         *float64
+	CRMListUsageTiers                  *json.RawMessage
+	CRMListUsageMinOrdersForHighlight  *int
+	CRMGoalPayoutPolicy                *json.RawMessage
 }
 
 type AlertSettings struct {
@@ -81,43 +88,49 @@ type AlertSettingsPatch struct {
 }
 
 type AppSettings struct {
-	MaxConcurrentServices              int     `json:"maxConcurrentServices"`
-	MaxConcurrentServicesPerConsultant int     `json:"maxConcurrentServicesPerConsultant"`
-	TimingFastCloseMinutes             int     `json:"timingFastCloseMinutes"`
-	TimingLongServiceMinutes           int     `json:"timingLongServiceMinutes"`
-	TimingLowSaleAmount                float64 `json:"timingLowSaleAmount"`
-	ServiceCancelWindowSeconds         int     `json:"serviceCancelWindowSeconds"`
-	TestModeEnabled                    bool    `json:"testModeEnabled"`
-	AutoFillFinishModal                bool    `json:"autoFillFinishModal"`
-	ScoreWeightConversion              float64 `json:"scoreWeightConversion"`
-	ScoreWeightSoldValue               float64 `json:"scoreWeightSoldValue"`
-	ScoreWeightQuality                 float64 `json:"scoreWeightQuality"`
-	ScoreWeightPa                      float64 `json:"scoreWeightPa"`
-	ScoreWeightQueueDiscipline         float64 `json:"scoreWeightQueueDiscipline"`
-	AlertMinConversionRate             float64 `json:"alertMinConversionRate"`
-	AlertMaxQueueJumpRate              float64 `json:"alertMaxQueueJumpRate"`
-	AlertMinPaScore                    float64 `json:"alertMinPaScore"`
-	AlertMinTicketAverage              float64 `json:"alertMinTicketAverage"`
+	MaxConcurrentServices              int             `json:"maxConcurrentServices"`
+	MaxConcurrentServicesPerConsultant int             `json:"maxConcurrentServicesPerConsultant"`
+	TimingFastCloseMinutes             int             `json:"timingFastCloseMinutes"`
+	TimingLongServiceMinutes           int             `json:"timingLongServiceMinutes"`
+	TimingLowSaleAmount                float64         `json:"timingLowSaleAmount"`
+	ServiceCancelWindowSeconds         int             `json:"serviceCancelWindowSeconds"`
+	TestModeEnabled                    bool            `json:"testModeEnabled"`
+	AutoFillFinishModal                bool            `json:"autoFillFinishModal"`
+	ScoreWeightConversion              float64         `json:"scoreWeightConversion"`
+	ScoreWeightSoldValue               float64         `json:"scoreWeightSoldValue"`
+	ScoreWeightQuality                 float64         `json:"scoreWeightQuality"`
+	ScoreWeightPa                      float64         `json:"scoreWeightPa"`
+	ScoreWeightQueueDiscipline         float64         `json:"scoreWeightQueueDiscipline"`
+	CRMListUsageTiers                  json.RawMessage `json:"crmListUsageTiers"`
+	CRMListUsageMinOrdersForHighlight  int             `json:"crmListUsageMinOrdersForHighlight"`
+	CRMGoalPayoutPolicy                json.RawMessage `json:"crmGoalPayoutPolicy"`
+	AlertMinConversionRate             float64         `json:"alertMinConversionRate"`
+	AlertMaxQueueJumpRate              float64         `json:"alertMaxQueueJumpRate"`
+	AlertMinPaScore                    float64         `json:"alertMinPaScore"`
+	AlertMinTicketAverage              float64         `json:"alertMinTicketAverage"`
 }
 
 type AppSettingsPatch struct {
-	MaxConcurrentServices              *int     `json:"maxConcurrentServices,omitempty"`
-	MaxConcurrentServicesPerConsultant *int     `json:"maxConcurrentServicesPerConsultant,omitempty"`
-	TimingFastCloseMinutes             *int     `json:"timingFastCloseMinutes,omitempty"`
-	TimingLongServiceMinutes           *int     `json:"timingLongServiceMinutes,omitempty"`
-	TimingLowSaleAmount                *float64 `json:"timingLowSaleAmount,omitempty"`
-	ServiceCancelWindowSeconds         *int     `json:"serviceCancelWindowSeconds,omitempty"`
-	TestModeEnabled                    *bool    `json:"testModeEnabled,omitempty"`
-	AutoFillFinishModal                *bool    `json:"autoFillFinishModal,omitempty"`
-	ScoreWeightConversion              *float64 `json:"scoreWeightConversion,omitempty"`
-	ScoreWeightSoldValue               *float64 `json:"scoreWeightSoldValue,omitempty"`
-	ScoreWeightQuality                 *float64 `json:"scoreWeightQuality,omitempty"`
-	ScoreWeightPa                      *float64 `json:"scoreWeightPa,omitempty"`
-	ScoreWeightQueueDiscipline         *float64 `json:"scoreWeightQueueDiscipline,omitempty"`
-	AlertMinConversionRate             *float64 `json:"alertMinConversionRate,omitempty"`
-	AlertMaxQueueJumpRate              *float64 `json:"alertMaxQueueJumpRate,omitempty"`
-	AlertMinPaScore                    *float64 `json:"alertMinPaScore,omitempty"`
-	AlertMinTicketAverage              *float64 `json:"alertMinTicketAverage,omitempty"`
+	MaxConcurrentServices              *int             `json:"maxConcurrentServices,omitempty"`
+	MaxConcurrentServicesPerConsultant *int             `json:"maxConcurrentServicesPerConsultant,omitempty"`
+	TimingFastCloseMinutes             *int             `json:"timingFastCloseMinutes,omitempty"`
+	TimingLongServiceMinutes           *int             `json:"timingLongServiceMinutes,omitempty"`
+	TimingLowSaleAmount                *float64         `json:"timingLowSaleAmount,omitempty"`
+	ServiceCancelWindowSeconds         *int             `json:"serviceCancelWindowSeconds,omitempty"`
+	TestModeEnabled                    *bool            `json:"testModeEnabled,omitempty"`
+	AutoFillFinishModal                *bool            `json:"autoFillFinishModal,omitempty"`
+	ScoreWeightConversion              *float64         `json:"scoreWeightConversion,omitempty"`
+	ScoreWeightSoldValue               *float64         `json:"scoreWeightSoldValue,omitempty"`
+	ScoreWeightQuality                 *float64         `json:"scoreWeightQuality,omitempty"`
+	ScoreWeightPa                      *float64         `json:"scoreWeightPa,omitempty"`
+	ScoreWeightQueueDiscipline         *float64         `json:"scoreWeightQueueDiscipline,omitempty"`
+	CRMListUsageTiers                  *json.RawMessage `json:"crmListUsageTiers,omitempty"`
+	CRMListUsageMinOrdersForHighlight  *int             `json:"crmListUsageMinOrdersForHighlight,omitempty"`
+	CRMGoalPayoutPolicy                *json.RawMessage `json:"crmGoalPayoutPolicy,omitempty"`
+	AlertMinConversionRate             *float64         `json:"alertMinConversionRate,omitempty"`
+	AlertMaxQueueJumpRate              *float64         `json:"alertMaxQueueJumpRate,omitempty"`
+	AlertMinPaScore                    *float64         `json:"alertMinPaScore,omitempty"`
+	AlertMinTicketAverage              *float64         `json:"alertMinTicketAverage,omitempty"`
 }
 
 type ModalConfig struct {
@@ -373,6 +386,14 @@ type OperationSectionInput struct {
 	TenantID                    string            `json:"tenantId,omitempty"`
 	SelectedOperationTemplateID *string           `json:"selectedOperationTemplateId,omitempty"`
 	Settings                    *AppSettingsPatch `json:"settings,omitempty"`
+}
+
+type CRMCommercialPolicyInput struct {
+	StoreID                           string           `json:"storeId,omitempty"`
+	TenantID                          string           `json:"tenantId,omitempty"`
+	CRMListUsageTiers                 *json.RawMessage `json:"crmListUsageTiers,omitempty"`
+	CRMListUsageMinOrdersForHighlight *int             `json:"crmListUsageMinOrdersForHighlight,omitempty"`
+	CRMGoalPayoutPolicy               *json.RawMessage `json:"crmGoalPayoutPolicy,omitempty"`
 }
 
 type ModalSectionInput struct {

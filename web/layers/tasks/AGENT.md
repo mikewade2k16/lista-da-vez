@@ -169,6 +169,18 @@ O store `tasks.ts` mantem a mesma distincao: optimistic update do titulo usa `cl
 - Tabela view futura (T5.1) pode lazy-load via `fetchMoreTasks(boardId, cursor)` separado para infinite scroll. Por enquanto, mesma logica do board.
 - Nao confundir com `task_doc_snapshots` (T7 future-yjs) — cursor de tasks e' independente do cursor de blocos no editor.
 
+### Lazy-load por board + skeleton (performance §6 — 2026-06-10)
+
+Boot da pagina de Tasks nao pode bloquear ate carregar TODOS os boards e TODAS as tasks. Regra:
+
+- **Skeleton imediato**: `pages/tasks.vue` ja renderiza skeleton enquanto `pageBootstrapping` (inicia `true` em `useTasksPageContext`); a primeira pintura nao espera a API.
+- **Above-the-fold primeiro**: `store.refresh()` carrega a lista de boards + detalhes de todos, mas busca as **tasks somente do board ativo**. Os demais boards ficam lazy.
+- **Lazy por board**: `setActiveProject(id)` dispara `ensureBoardTasksLoaded(id)` (fire-and-forget) para buscar as tasks do board que virou ativo. `loadedBoardIds`/`archivedBoardIds` (refs `Set<string>`) registram o que ja foi carregado e evitam refetch. Trocar de board faz `force` para garantir dados frescos; aborta o fetch do board anterior via `AbortController` (`boardLoadControllers`).
+- **Arquivadas sob demanda**: `listBoardTasks` agora usa `archived=false` por padrao. Quando o usuario desativa "ocultar arquivadas" (`filters.hideArchived = false`), um watcher em `useTasksPageContext` chama `ensureArchivedTasksLoaded(activeBoardId)` (que faz `force` com `includeArchived`). Nao recarrega os outros boards.
+- **Refresh do realtime**: o `refresh()` debounced preserva verbatim as tasks de boards nao-ativos ja carregados (sem refetch nem remap, pra nao perder labels resolvidos do backend); so o board ativo e' re-buscado.
+- Novos metodos publicos do store: `ensureBoardTasksLoaded(boardId, { includeArchived, force })`, `ensureArchivedTasksLoaded(boardId)`; novos refs: `loadedBoardIds`, `archivedBoardIds` (expostos tambem em `useTasksWorkspace`).
+- Cuidado: `normalizeLegacyDefaultProject` agora chama `ensureBoardTasksLoaded` antes de decidir reescrever colunas legadas (board nao-ativo pode ter tasks ainda nao carregadas).
+
 ### useTaskTracking (Fase T6)
 
 Server-backed com clock offset. O front nao deve voltar para `localStorage`; usar:

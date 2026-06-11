@@ -372,6 +372,19 @@ type Repository interface {
 }
 
 type TrackingMetrics struct {
-	TotalDurationMs int64 `json:"totalDurationMs"`
-	EntryCount      int64 `json:"entryCount"`
+	TotalDurationMs int64                   `json:"totalDurationMs"`
+	EntryCount      int64                   `json:"entryCount"`
+	ByClient        []TrackingMetricsBucket `json:"byClient"`
+	ByUser          []TrackingMetricsBucket `json:"byUser"`
+	ByType          []TrackingMetricsBucket `json:"byType"`
+}
+
+// TrackingMetricsBucket e uma linha de breakdown (por cliente/usuario/tipo) agregada no banco.
+// Key e o id estavel (clientAccountId/userId) ou o proprio tipo; Label e o nome amigavel ja
+// resolvido por join (evita N+1 e lookup no front).
+type TrackingMetricsBucket struct {
+	Key             string `json:"key"`
+	Label           string `json:"label"`
+	TotalDurationMs int64  `json:"totalDurationMs"`
+	EntryCount      int64  `json:"entryCount"`
 }

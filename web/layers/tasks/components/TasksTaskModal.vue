@@ -26,6 +26,8 @@ const {
   updateTaskDraftInvolved,
   taskDraftClientIdValue,
   updateTaskDraftClientId,
+  isMockClient,
+  isPlatformAdmin,
   taskDraftDueDateValue,
   taskDraftDueEndDateValue,
   updateTaskDraftDueDate,
@@ -48,8 +50,6 @@ const {
   startTracking,
   pauseTracking,
   stopTracking,
-  formatElapsed,
-  getElapsedMs,
   presenceParticipants,
   focusPresenceField,
   blurPresenceField,
@@ -79,6 +79,11 @@ const presenceViewingParticipants = computed(() =>
   (Array.isArray(unref(presenceParticipants)) ? unref(presenceParticipants) : []).filter(
     (participant) => !participant.fieldKey,
   ),
+)
+
+// Cliente selecionado ainda e mock (nao ligado a core.accounts). Badge so para platform_admin.
+const clientDraftIsMock = computed(
+  () => unref(isPlatformAdmin) && isMockClient(taskDraftClientIdValue()),
 )
 
 const runtimeConfig = useRuntimeConfig()
@@ -380,6 +385,15 @@ const presenceViewingLabel = computed(() => {
               <span class="tasks-page__task-property-label-main">
                 <UIcon name="i-lucide-circle-dot" />
                 Cliente
+                <UBadge
+                  v-if="clientDraftIsMock"
+                  color="warning"
+                  variant="soft"
+                  size="xs"
+                  title="Cliente ficticio — ainda nao ligado a core.accounts. Criar e linkar."
+                >
+                  MOCK
+                </UBadge>
               </span>
               <span v-if="presenceFieldLabel('clientId')" class="tasks-page__presence-field">
                 {{ presenceFieldLabel('clientId') }}
@@ -495,12 +509,9 @@ const presenceViewingLabel = computed(() => {
           <div v-if="taskDraft.id" class="tasks-page__task-property-row">
             <span class="tasks-page__task-property-label">
               <UIcon name="i-lucide-timer" />
-              Cronometro
+              Tracking
             </span>
             <div class="tasks-page__task-tracking-controls flex items-center gap-1.5">
-              <span v-if="isTracking(taskDraft.id)" class="tasks-page__task-tracking-timer">
-                {{ formatElapsed(getElapsedMs(taskDraft.id)) }}
-              </span>
               <UButton
                 v-if="!isTracking(taskDraft.id)"
                 icon="i-lucide-play"

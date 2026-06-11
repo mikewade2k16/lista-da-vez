@@ -899,6 +899,46 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
   },
 
   {
+    id: "crm-c7",
+    code: "CRM C7",
+    title: "CRM 360 — atribuicao multi-loja e uso da lista",
+    goal: "Corrigir atribuicao de vendas ERP para consultores multi-loja e substituir o uso da lista por uma metrica de cobertura que nao passa de 100%.",
+    status: "done",
+    estimateWeeks: "1 dia",
+    startedAt: "2026-06-08",
+    finishedAt: "2026-06-08",
+    group: "crm-360",
+    tasks: [
+      { id: "store-attribution", label: "Priorizar loja explicita do ERP e historico dominante antes do cadastro atual do vendedor", done: true },
+      { id: "list-usage-contract", label: "Definir cobertura da lista como consultores com atendimentos >= pedidos ERP no periodo", done: true },
+      { id: "summary-cards", label: "Remover cards confusos e exibir atendimentos, conversao, uso da lista e cancelamento ERP", done: true },
+      { id: "consultant-grid", label: "Trocar coluna percentual de uso por status de cobertura da lista por consultor", done: true },
+      { id: "docs-tests", label: "Atualizar AGENT/docs e cobrir calculos com testes", done: true }
+    ],
+    verifiable: "Maio/2026 separa vendas por loja de consultores multi-loja; card Uso da lista mostra cobertura 0-100%; tabela destaca Coberto/Parcial/Sem uso; go test do pacote CRM e testes web de util passam."
+  },
+
+  {
+    id: "crm-c8",
+    code: "CRM C8",
+    title: "CRM 360 — politica comercial de lista e recebimento",
+    goal: "Evitar falsos destaques quando uso da lista esta ruim, configurar faixas de cobertura e mostrar recebimento por atingimento de meta na grade de consultores.",
+    status: "done",
+    estimateWeeks: "1 dia",
+    startedAt: "2026-06-08",
+    finishedAt: "2026-06-08",
+    group: "crm-360",
+    tasks: [
+      { id: "list-rankings", label: "Trocar melhor loja/consultor por diagnostico quando todos estao abaixo da faixa Normal", done: true },
+      { id: "config-tab", label: "Criar aba Metas CRM para faixas de uso da lista e recebimento por meta", done: true },
+      { id: "settings-contract", label: "Persistir politica comercial nas settings de operacao com edicao para platform_admin e director", done: true },
+      { id: "consultant-payout", label: "Adicionar recebimento na grade de consultores calculado pela meta da loja", done: true },
+      { id: "docs-tests", label: "Atualizar AGENT/docs e cobrir calculos com testes", done: true }
+    ],
+    verifiable: "Cards nao exibem melhor loja/consultor como premio quando tudo esta ruim; Configuracoes > Metas CRM edita faixas e recebimentos; coluna Recebimento aparece na grade; testes crm-list-usage/crm-performance-policy e settings passam."
+  },
+
+  {
     id: "roadmap-b1",
     code: "Roadmap B1",
     title: "Backend de Modulos & Regras editaveis",
@@ -1038,6 +1078,15 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "doc-agents", label: "AGENT.md atualizado em core (admin_users/orgs + nick.go), site (novo), omni/ (novo)", done: true },
       { id: "doc-roadmap-flip", label: "Reverter para `done` no roadmap as fases 0-5, 7, 8 — executado 2026-06-01", done: true },
       { id: "tasks-client-rename", label: "Renomear stores/session-simulation.ts → tasks-client.ts na tasks-layer; grep session-simulation = 0 ocorrências", done: true, note: "Fechado de verdade 2026-06-04 (ver mt-session-sim-kill): shim deletado, useTasksPageContext usa useTasksClientStore. Código runtime = 0 refs (sobram só labels/AGENT que descrevem a remoção)." },
+      { id: "tasks-client-mock-badge", label: "Sinalizar clientes mock de Tasks com badge MOCK (só platform_admin)", done: true, note: "2026-06-10: DEFAULT_CLIENT_OPTIONS marcados isMock + tasksClient.isMockClient(); dropdown mostra description 'MOCK' e label da modal mostra UBadge MOCK, gateados por platform_admin. Pipeline integer mantido funcionando de propósito até o link real. Ver docs/LEGADO.md §4." },
+      { id: "tasks-client-real-link", label: "Ligar cliente de Tasks ao real: trocar clientId integer mock por clientAccountId (UUID de core.accounts via /v1/tenants), linkar os 4 mocks aos accounts reais e religar tracking.vue ao GET /v1/tasks/tracking/metrics", done: false, note: "2026-06-10: os 4 clientes (crow/Pérola/Dr Antonio Tavares/UNO) criados em core.accounts. Front passa a puxar TODOS os tenants ativos de /v1/tenants (sem filtro por ora). Fonte de verdade = core.accounts (public.tenants foi dropada). Destrava a inteligência de tempo por cliente da página de tracking. Ver docs/LEGADO.md §4 + memória project_tasks_client_source." },
+      { id: "tasks-client-visibility-flag", label: "Página de clientes: toggle por cliente 'aparece em tasks' (account não marcado some do seletor de Tasks), para não despejar contas de teste/internas no seletor", done: false, note: "Pedido 2026-06-10. Por ora o seletor de tasks puxa todos os tenants ativos; este flag substitui o 'puxa todos' por filtro por visibilidade." },
+      { id: "agency-tenant-architecture", label: "Arquitetura Agência→Clientes (tenants): org Crow Visuals dona das contas-cliente; conta-agência dona do board Tasks; acesso por nível; switcher ligado ao contexto do Tasks. Ver docs/AGENCY_TENANT_ARCHITECTURE.md", done: false, note: "2026-06-10: descoberto ao corrigir o 'dono' do board. core.organizations existe mas vazia; contas soltas (organization_id null). Plano em 5 estágios (doc-first). ORDEM CRÍTICA: Estágio 1 = ligar troca de conta ao auth.activeTenantId que o Tasks lê, ANTES de mover board (mover antes quebrou e foi revertido do backup). Multitenant-completion." },
+      { id: "tasks-loading-optimization", label: "Otimizar carregamento da página de Tasks: skeleton imediato (<100ms), carregar só o board ativo above-the-fold + lazy-load dos demais, parar de puxar arquivadas no boot", done: true, note: "2026-06-10 (agente paralelo): refresh() carrega só as tasks do board ativo; ensureBoardTasksLoaded/ensureArchivedTasksLoaded sob demanda; archived=false no boot; AbortController ao trocar board; realtime preserva boards de fundo. + render progressivo no TasksBoardView (15 cards/coluna no 1o paint, resto em lotes via requestIdleCallback, reseta ao trocar board). ESLint 0 errors." },
+      { id: "tasks-board-render-improve", label: "Melhorar render do board no futuro (já USÁVEL): montar os selects pesados do card só ao clicar (hoje cada card monta vários OmniSelectMenuInput de uma vez) e/ou windowing real por viewport", done: false, note: "2026-06-10: o render progressivo deixou usável; o próximo nível de perf é não montar os editores pesados em todos os cards. Não-bloqueante." },
+      { id: "tracking-board-redesign", label: "Página Tracking com layout de board igual ao Tasks: só tasks em play/pause, card focado em nome/tempo/cliente/responsável (configurável), clique abre o modal da task", done: true, note: "2026-06-10: tracking.vue reescrita provendo o contexto do Tasks (TASKS_PAGE_CONTEXT_KEY) + novo TrackingBoardView.vue (board com mesmas colunas, filtrado a isTracking=play/pause; card enxuto nome/tempo/cliente/responsável; clique -> openTaskEditor abre o modal; play/pause/stop no card). Config de campos (Tempo/Cliente/Responsável) via popover, persistida em localStorage (pref de visão). Seletor de projeto. ESLint 0 errors. A inteligência (useTrackingMetrics.ts + GROUP BY) fica PARADA/pronta para virar uma visão/aba complementar depois (não está mais na página)." },
+      { id: "tasks-tracking-metrics", label: "Tracking: religar tracking.vue ao GET /v1/tasks/tracking/metrics (tempo por cliente/usuário/período)", done: true, note: "2026-06-10: useTrackingMetrics.ts + tracking.vue com abas Inteligência/Em andamento, período via AppDatePicker, gate por tasks.tracking.view_all. Após o GROUP BY (tasks-tracking-metrics-groupby), o front faz UMA chamada e lê byClient/byUser/byType prontos (N+1 eliminado); 'Por tipo' agora é real (por período), não mais só timers ativos. ESLint 0 errors." },
+      { id: "tasks-tracking-metrics-groupby", label: "BACKEND: GROUP BY no GET /v1/tasks/tracking/metrics (breakdown por cliente/usuário/tipo em 1 query)", done: true, note: "2026-06-10: TrackingMetrics ganhou ByClient/ByUser/ByType (TrackingMetricsBucket key/label/total/count); repository faz 3 group-by server-side com label resolvido por join (core.accounts/core.users); total escalar respeita todos os filtros, breakdowns respeitam período. go build+test+vet+gosec OK (0 novos). Elimina o N+1 do front (ENGINEERING_PRINCIPLES §10.3). EXIGE rebuild da api: docker compose up -d --build api. NOTA: trackingTotalMs por task NÃO foi populado no ListTasks de propósito (somar duração por task no hot path do board contraria a otimização de carregamento); fica sob demanda se necessário." },
       { id: "site-account-id-fix", label: "Fix accountIDFromContext em site/http_admin.go: lê X-Account-Id header primeiro (fallback TenantID); useLeads/ProductsManager passam X-Account-Id em todos os requests", done: true },
       // C14 — Users admin global (/manage/users)
       { id: "c14-backend-users", label: "Backend: admin_users_model/repo/service/http no módulo core; 6 endpoints /v1/admin/users + GET /{id}/memberships; safeguard último platform_admin; hasher via Dependencies", done: true },
@@ -1114,7 +1163,7 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     id: "automation-whatsapp",
     code: "AUT",
     title: "Automação WhatsApp/IA (n8n) dentro do Omni",
-    goal: "Trazer a assistente de WhatsApp (n8n + WAHA, persona Tony) para o projeto Omni e, por fases, conectá-la ao banco/back/front: mini-CRM no Postgres do Omni, tools do agente via API Go (catálogo/ERP), motor proativo e painel de configuração.",
+    goal: "Evoluir a automação de WhatsApp/IA de '1 bot atendimento no n8n' para uma PLATAFORMA multi-tenant: cada cliente cria N automações (robôs), cada uma com número, comportamento (persona/instruções/knowledge RAG), modelos de IA por etapa, tools e BYOK (chave/créditos do próprio cliente). Multi-tenant desde o dia 1 (automation_id central). Visão: docs/automation/PLATAFORMA_AUTOMACAO.md.",
     status: "in_progress",
     startedAt: "2026-06-04",
     estimateWeeks: "2-4 semanas (após multitenant-completion)",
@@ -1124,7 +1173,7 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-merge-infra", label: "Containers n8n + WAHA + Redis mesclados no docker-compose.yml da raiz sob profiles:[automation] (sem postgres dedicado; WAHA fala com n8n via rede interna; portas 5680/3010/6380)", done: true, note: "Concluído 2026-06-04. Validado com docker compose --profile automation config." },
       { id: "aut-move-folder", label: "Pasta 'n8n Whatsapp' migrada para automation/ (export + .mcp.json + .gitignore + docker-compose.reference.yml) e docs para docs/automation/", done: true, note: "Concluído 2026-06-04." },
       { id: "aut-docs", label: "automation/AGENT.md criado; SETUP.md adaptado (profile, nomes de serviço, caminhos); .gitignore raiz protege segredos; .env.docker.example com AUTOMATION_*", done: true, note: "Concluído 2026-06-04." },
-      { id: "aut-runbook-validate", label: "Subir profile automation, instalar community node, importar credenciais+workflow, escanear QR e validar 1 mensagem real (depende do usuário; ativar responde no WhatsApp real)", done: false },
+      { id: "aut-runbook-validate", label: "Subir profile automation, instalar community node, importar credenciais+workflow, escanear QR e validar 1 mensagem real (depende do usuário; ativar responde no WhatsApp real)", done: false, note: "2026-06-08: corrigida a tag da WAHA (manifest 2026.5.1 não existe puro) → devlikeapro/waha:gows-2026.5.1 (engine GOWS) no dev e prod. `up -d` volta a funcionar. Falta os passos interativos do Mike." },
       // Fases de produto (bloqueadas pela multitenant-completion). Design: docs/automation/PLANO_INTEGRACAO_OMNI.md
       { id: "aut-a1-schema", label: "A1 — Migration schema automation.* (tenant-aware): settings, personas, guardrails, model_catalog, waha_sessions, service_tokens, contacts, messages, lead_state, long_memory, follow_ups, purchases + seeds", done: false },
       { id: "aut-a2-modulo-go", label: "A2 — Módulo Go automation (Module Registry): settings, personas, model_catalog, endpoint runtime-config (persona+guardrails+contexto+modelos) e service_tokens; auth por token de serviço resolve account_id", done: false },
@@ -1135,9 +1184,25 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-a7-crm", label: "A7 — CRM persistente no Postgres do Omni (contacts/messages/lead_state/long_memory); n8n grava cada mensagem e o resumo via API (substitui staticData lite)", done: false },
       { id: "aut-a8-tools", label: "A8 — Tools do agente via API Go (catalog/stock/price, registrar lead/pedido) com escopo por account; sem SQL cru nas tabelas", done: false },
       { id: "aut-a9-proativo", label: "A9 — Motor proativo (Etapa 3): follow-up sem resposta (cadência), pós-venda, nurture/upsell — depende do estado persistente (A7)", done: false },
-      { id: "aut-a10-deploy-vps", label: "A10 — Deploy VPS: n8n/waha/redis no docker-compose.prod.yml + Caddy (auth no editor, webhook interno) + .env.production + backups dos volumes", done: false }
+      { id: "aut-a10-deploy-vps", label: "A10 — Deploy VPS: n8n/waha/redis no docker-compose.prod.yml + Caddy (auth no editor, webhook interno) + .env.production + backups dos volumes", done: false, note: "Infra preparada 2026-06-08 (independe de A1+; bot standalone): serviços no docker-compose.prod.yml (profile automation, mesmos nomes do dev), Caddy+basic auth nos subdomínios n8n./waha., Redis só na rede app (disponível p/ a API depois), vars AUTOMATION_* no .env.production.example, runbook em SETUP.md §8. Pendente do Mike: snippet Caddy+DNS, subir na VPS, QR, ativar, backups." },
+      // ─── Plataforma multi-tenant (P) — generaliza A1-A10. Visão: docs/automation/PLATAFORMA_AUTOMACAO.md ───
+      // A entidade central passa a ser "automation" (o robô): N por account, cada uma com número,
+      // comportamento, modelos por etapa, tools e BYOK. Multi-tenant desde o dia 1. Também bloqueado pela multitenant-completion.
+      { id: "aut-p1-schema-automation-centric", label: "P1 — Migration automation-centric: tabela automations (N por account) + entitlements (gating/quotas) + channels (sessão WAHA→automação); persona/CRM/modelos passam a ter automation_id. Generaliza A1", done: false },
+      { id: "aut-p2-byok", label: "P2 — BYOK: provider_credentials por account (chave do cliente criptografada at-rest AES-GCM, master key AUTOMATION_CRED_ENC_KEY; só últimos 4 no painel). Cada automação escolhe provider+credencial; créditos são do cliente", done: false },
+      { id: "aut-p6-modelos-por-no", label: "P6 — Modelos de IA por etapa/nó por automação (chat/visão/áudio/classificador/triagem) configurados no painel; catálogo provider-agnostico (OpenAI + Anthropic/Claude)", done: false },
+      { id: "aut-p8-rag", label: "P8 — Knowledge/RAG por automação (comportamento estilo GPT): pgvector no Postgres do Omni (extensão vector), upload→chunk→embed→retrieval por automation_id. Alternativa avaliada: Vector Store do provedor", done: false },
+      { id: "aut-p9-tools-cross-data", label: "P9 — Tools cruzando dados: agente consulta CRM/ERP/métricas de outros módulos via API Go, escopo por account (base para decisões com dados do banco)", done: false },
+      { id: "aut-p11-multi-numero", label: "P11 — Multi-número: N channels por account (WAHA Plus multi-sessão; decisão de custo da licença). Schema já modela channel por sessão desde o P1", done: false },
+      { id: "aut-p12-super-robo", label: "P12 — Super-robô interno do time (automation_type 'super'): cruza dados cross-account (CRM/ERP/métricas), admin-gated (automation.platform.admin). Pode ser surface no painel, não WhatsApp", done: false },
+      { id: "aut-p13-metering", label: "P13 — Metering/cotas: usage_log (tokens/custo estimado por automação) visível no painel; cota opcional por entitlement", done: false },
+      // ─── Painel /automation (M1, entregue 2026-06-09 após multitenant-completion) ───
+      { id: "aut-m1-painel-status", label: "M1 — Módulo Go automation (Module Registry) + migration 0140 (automations/channels) + painel /automation: Status + Conectar WhatsApp (QR via proxy WAHA) + liga/desliga. Gated platform_admin (você+irmão). Endpoints /v1/automation*; gating moduleGatingRules + bypass admin", done: true, note: "2026-06-09: back (model/waha_client/store/service/http/module) build+gofmt+vet+golangci-lint 0 issues; migration validada em rollback no banco real; front (página + useAutomation + AutomationWorkspace BEM) eslint 0 erros + vue-tsc limpo. liga/desliga só persiste status (enforcement no M2)." },
+      { id: "aut-m2-runtime-config", label: "M2 — runtime-config: n8n consome persona/enabled do banco via HTTP (para de cravar no nó); on/off passa a valer de verdade", done: true, note: "2026-06-09: migration 0141 (automation.personas) + GET /v1/runtime/automation/config (auth AUTOMATION_RUNTIME_TOKEN, fora do gating) monta persona ativa + guardrails; seed Tony/Crow via go:embed (persona-tony-crowvisuals.md verbatim). n8n: nó Get runtime config (off Webhook) + AI Agent systemMessage por expression + Bot ligado? (gate enabled). build+lint 0 issues; migrations validadas em rollback. Ativação: rebuild api + token + re-import workflow." },
+      { id: "aut-m3-personas", label: "M3 — Comportamento da IA: editor de persona (instruções) no painel /automation", done: true, note: "2026-06-09: GET/PUT /v1/automation/persona + card Comportamento no AutomationWorkspace (nome + system_prompt, textarea). Salvar altera o bot sem tocar no n8n (runtime-config lê do banco). Seed Tony/Crow verbatim. build+lint+vue-tsc verdes." },
+      { id: "aut-m3plus-knowledge-docs", label: "M3+ — Knowledge por documento: documentos editáveis no painel (título + corpo); runtime-config concatena os habilitados após as instruções da persona. RAG pgvector (P8) quando o volume for grande", done: true, note: "2026-06-10: migration 0142 (automation.knowledge_documents); CRUD completo pelo painel (6 cards independentes); runtime-config devolve docs[] separados (Opção B) + systemMessage montado (Opção A fallback); AutomationContextPreview.vue mostra estrutura completa; workflow n8n com nó 'Montar systemMessage' para injeção dinâmica por keywords. 6 docs Tony/Crow Visuals injetados no banco." },
     ],
-    blockers: ["multitenant-completion"],
+    blockers: [],
     verifiable: "Infra: `docker compose --profile automation up -d` sobe n8n/waha/redis na mesma rede do Omni e o workflow importado responde uma mensagem real de teste. Produto (futuro): bot lê produto/estoque via API Go e persiste contato/lead no schema automation.* do Postgres do Omni."
   }
 ];
@@ -1373,6 +1438,22 @@ export const ROADMAP_RULES: RoadmapRule[] = [
     body: "Sempre usar nomes semanticos no estilo .nome-componente__elemento--modificador. Nao usar utility classes inline ou IDs para estilizacao.",
     why: "Permite leitura rapida do escopo de cada estilo e evita colisao global.",
     appliesWhen: "Estilizacao de qualquer componente novo."
+  },
+  {
+    id: "fe-design-system-tokens",
+    category: "frontend",
+    title: "Seguir o design system — usar as variaveis de cor, nunca hex hardcoded",
+    body: "O projeto TEM design system (tokens em web/app/assets/styles/omni-tokens.css + aliases em tokens.css). Toda cor/borda/sombra/raio usa as variaveis existentes: rgb(var(--primary)), rgb(var(--primary) / 0.16), var(--text-main), var(--text-muted), var(--line-soft), rgb(var(--surface) / 0.9), var(--shadow-card), var(--radius-card). NUNCA hex/rgb cravado nem inventar nome de variavel (ex.: --color-primary nao existe). Botao primario = linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600))).",
+    why: "Aconteceu (AutomationWorkspace.vue): o CSS usava var(--color-primary, #16a34a) etc.; esses nomes --color-* nao existem, entao caia no fallback hex e o componente ignorava o tema/dark mode do resto do painel.",
+    appliesWhen: "Qualquer <style> de componente novo ou refactor. Conferir o token em omni-tokens.css/tokens.css; se a cor nao existe como token, perguntar/adicionar token, nunca cravar hex."
+  },
+  {
+    id: "fe-pagina-rolagem",
+    category: "frontend",
+    title: "Pagina nova precisa rolar como as outras",
+    body: "O layout dashboard envolve a pagina em .module-workspace-full que e overflow:hidden. O componente-raiz da pagina precisa ser o container de rolagem (flex:1; min-height:0; overflow-y:auto) ou usar o wrapper .page-workspace. Sem isso o conteudo que passa da altura fica cortado, sem scroll.",
+    why: "Aconteceu (AutomationWorkspace.vue): a raiz so tinha padding, sem flex/overflow, entao o editor de persona longo ficava cortado e a pagina nao rolava.",
+    appliesWhen: "Criar componente-raiz de pagina/workspace nova no layout dashboard."
   },
   {
     id: "fe-sem-emojis",

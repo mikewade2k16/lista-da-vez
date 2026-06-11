@@ -38,6 +38,12 @@ services:
       MIGRATION_TIMEOUT: ${MIGRATION_TIMEOUT:-5m}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:*,http://127.0.0.1:*,http://[::1]:*}
       CORE_V2_ENABLED: ${CORE_V2_ENABLED:-true}
+      # Modulo automation: base interna da WAHA (rede do compose). So usada quando
+      # o profile automation esta no ar; senao o painel cai no ultimo status salvo.
+      AUTOMATION_WAHA_INTERNAL_URL: ${AUTOMATION_WAHA_INTERNAL_URL:-http://waha:3000}
+      # Token de servico que o n8n usa no GET /v1/runtime/automation/config (M2).
+      # Deve bater com o AUTOMATION_RUNTIME_TOKEN do servico n8n.
+      AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN:-dev-automation-runtime-token}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-dev-secret-change-me}
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
@@ -147,7 +153,7 @@ services:
       - automation_redis:/data
 
   waha:
-    image: devlikeapro/waha:2026.5.1
+    image: devlikeapro/waha:gows-2026.5.1
     profiles: ["automation"]
     environment:
       WHATSAPP_HOOK_URL: http://n8n:5678/webhook/webhook
@@ -172,6 +178,11 @@ services:
       N8N_LOG_LEVEL: debug
       N8N_SECURE_COOKIE: "false"
       N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE: "true"
+      # Libera $env.* em expressoes do n8n (necessario para o AUTOMATION_RUNTIME_TOKEN
+      # chegar ao no "Get runtime config" sem "access to env vars denied").
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Token de servico p/ o workflow ler o runtime-config da API ($env no n8n).
+      AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN:-dev-automation-runtime-token}
     volumes:
       - automation_n8n_data:/home/node/.n8n
     ports:

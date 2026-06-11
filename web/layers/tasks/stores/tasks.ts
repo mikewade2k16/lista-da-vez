@@ -631,8 +631,13 @@ function taskUiPatchFromPayload(payload: Record<string, any>): TaskUiMetadata {
     }
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'clientId')) {
-    const clientId = Number(payload.clientId || 0)
-    patch.clientId = Number.isFinite(clientId) && clientId > 0 ? clientId : 0
+    // clientId UUID (cliente real) NAO entra no ui_metadata — vai para clientAccountId. So o
+    // integer LEGADO ainda e persistido aqui (compat com tasks antigas).
+    const rawClientId = payload.clientId
+    const clientId = Number(rawClientId)
+    if (!looksLikeUUID(rawClientId) && Number.isFinite(clientId) && clientId > 0) {
+      patch.clientId = clientId
+    }
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'clientName')) {
     patch.clientName = normalizeText(payload.clientName, 140)
@@ -725,7 +730,13 @@ function mapTaskToStoreItem(
   const normalizedInvolvedLabels = uniqueStrings(involvedLabels).filter(
     (label) => normalizeKey(label) !== normalizeKey(responsibleLabel),
   )
-  const uiClientId = Number(resolvedTaskUi?.clientId || 0)
+  // clientId (UI) = clientAccountId (UUID real). Se a task ainda nao tem clientAccountId mas carrega
+  // um clientId integer LEGADO no ui_metadata, expoe esse integer como string para o badge "MOCK"
+  // sinalizar que precisa ser reatribuido a um cliente real.
+  const legacyClientId = Number(resolvedTaskUi?.clientId || 0)
+  const clientIdValue =
+    clientAccountId ||
+    (Number.isFinite(legacyClientId) && legacyClientId > 0 ? String(legacyClientId) : '')
   const contentHtml = sanitizeTaskContentHtml(task.contentHtml)
   return {
     id: normalizeText(task.id, 80),
@@ -736,7 +747,7 @@ function mapTaskToStoreItem(
     status,
     responsible: responsibleLabel,
     involved: normalizedInvolvedLabels,
-    clientId: Number.isFinite(uiClientId) && uiClientId > 0 ? uiClientId : 0,
+    clientId: clientIdValue,
     clientName:
       normalizeText(resolvedTaskUi?.clientName, 140) ||
       (clientAccountId ? `Conta ${clientAccountId.slice(0, 8)}` : ''),
@@ -828,6 +839,17 @@ export const useTasksStore = defineStore('tasks', () => {
   const activeProjectId = ref('')
   const legacyMigrationNotice = ref(false)
   const uiMetadata = ref<TasksUiMetadata>(readUiMetadata())
+
+  // Lazy-load de tasks por board (performance §6: skeleton + above-the-fold primeiro). O boot
+  // carrega tasks apenas do board ativo; os demais sao buscados sob demanda em `setActiveProject`
+  // ou via `ensureBoardTasksLoaded`. `loadedBoardIds` registra quais boards ja tiveram as tasks
+  // (nao-arquivadas) carregadas; `archivedBoardIds`, quais ja incluiram as arquivadas. Esses Sets
+  // sao reativos para a UI poder distinguir "board sem tasks" de "board ainda nao carregado".
+  const loadedBoardIds = ref<Set<string>>(new Set())
+  const archivedBoardIds = ref<Set<string>>(new Set())
+  // Fetch em voo por board, para cancelar ao trocar de board/rota e evitar respostas obsoletas
+  // sobrescrevendo o board ativo.
+  const boardLoadControllers = new Map<string, AbortController>()
 
   if (uiMetadata.value.activeProjectId) {
     activeProjectId.value = uiMetadata.value.activeProjectId
@@ -961,23 +983,35 @@ export const useTasksStore = defineStore('tasks', () => {
   // listBoardTasks segue a paginacao cursor-based do backend (T4/T5). Para a UI de board kanban
   // precisamos de todas as tasks do board, entao iteramos `nextCursor` ate esgotar; o pageSize
   // de 100 reduz numero de round-trips sem estourar o cap de 200 do backend.
-  async function listBoardTasks(boardId: string) {
+  // `includeArchived=false` por padrao (performance §6): o boot e a troca de board nao puxam
+  // arquivadas; elas so entram quando o usuario ativa "mostrar arquivadas". `signal` permite
+  // cancelar o fetch ao trocar de board/rota.
+  async function listBoardTasks(
+    boardId: string,
+    options: { includeArchived?: boolean; signal?: AbortSignal } = {},
+  ) {
     const normalizedBoardId = normalizeText(boardId, 80)
     if (!normalizedBoardId) {
       return []
     }
-    const pageSize = 100
+    const includeArchived = options.includeArchived === true
+    // pageSize no cap do backend (200) para reduzir round-trips no board grande (boot).
+    const pageSize = 200
     const collected: BackendTask[] = []
     let cursor = ''
     // Hard ceiling: 100 paginas (10k tasks). Se chegar la, ha algo errado — preferimos parar a
     // loopar indefinidamente.
     for (let page = 0; page < 100; page += 1) {
+      if (options.signal?.aborted) {
+        break
+      }
       const params = new URLSearchParams()
       params.set('limit', String(pageSize))
-      params.set('archived', 'true')
+      params.set('archived', includeArchived ? 'true' : 'false')
       if (cursor) params.set('cursor', cursor)
       const response = await request(
         `/v1/tasks/boards/${encodeURIComponent(normalizedBoardId)}/tasks?${params.toString()}`,
+        { signal: options.signal, dedupe: false },
       )
       const pageTasks = Array.isArray(response?.tasks) ? (response.tasks as BackendTask[]) : []
       collected.push(...pageTasks)
@@ -986,6 +1020,95 @@ export const useTasksStore = defineStore('tasks', () => {
       cursor = nextCursor
     }
     return collected
+  }
+
+  // Substitui no store as tasks de um board especifico pelas recem-carregadas, preservando as
+  // dos demais boards. Centraliza o mapeamento BackendTask -> store item.
+  function applyBoardTasks(board: BackendBoard | undefined, backendTasks: BackendTask[]) {
+    const boardId = normalizeText(board?.id, 80)
+    if (!boardId) {
+      return
+    }
+    const project =
+      projects.value.find((item) => item.id === boardId) ||
+      (board ? buildProject(board, undefined, [], uiMetadata.value.projects[boardId]) : undefined)
+    if (!project) {
+      return
+    }
+    const mappedTasks = backendTasks.map((task) =>
+      mapTaskToStoreItem(
+        task,
+        project,
+        uiMetadata.value.tasks[normalizeText(task.id, 80)],
+        auth.user,
+      ),
+    )
+    const others = tasks.value.filter((task) => task.projectId !== boardId)
+    tasks.value = sortTasks([...others, ...mappedTasks])
+  }
+
+  function abortBoardLoad(boardId: string) {
+    const controller = boardLoadControllers.get(boardId)
+    if (controller) {
+      controller.abort()
+      boardLoadControllers.delete(boardId)
+    }
+  }
+
+  // ensureBoardTasksLoaded carrega (uma unica vez) as tasks de um board sob demanda. Usado pelo
+  // boot para o board ativo e por `setActiveProject` ao trocar de board. `force` recarrega mesmo
+  // se ja estiver no cache; `includeArchived` puxa tambem arquivadas (toggle "mostrar arquivadas").
+  async function ensureBoardTasksLoaded(
+    boardId: string,
+    options: { includeArchived?: boolean; force?: boolean } = {},
+  ) {
+    const normalizedBoardId = normalizeText(boardId, 80)
+    if (!normalizedBoardId) {
+      return
+    }
+    const includeArchived = options.includeArchived === true
+    const alreadyLoaded = loadedBoardIds.value.has(normalizedBoardId)
+    const archivedSatisfied = !includeArchived || archivedBoardIds.value.has(normalizedBoardId)
+    if (!options.force && alreadyLoaded && archivedSatisfied) {
+      return
+    }
+    abortBoardLoad(normalizedBoardId)
+    const controller = new AbortController()
+    boardLoadControllers.set(normalizedBoardId, controller)
+    try {
+      const backendTasks = await listBoardTasks(normalizedBoardId, {
+        includeArchived,
+        signal: controller.signal,
+      })
+      if (controller.signal.aborted) {
+        return
+      }
+      applyBoardTasks(
+        projects.value.find((item) => item.id === normalizedBoardId) || {
+          id: normalizedBoardId,
+        },
+        backendTasks,
+      )
+      loadedBoardIds.value = new Set(loadedBoardIds.value).add(normalizedBoardId)
+      if (includeArchived) {
+        archivedBoardIds.value = new Set(archivedBoardIds.value).add(normalizedBoardId)
+      }
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError' || controller.signal.aborted) {
+        return
+      }
+      throw error
+    } finally {
+      if (boardLoadControllers.get(normalizedBoardId) === controller) {
+        boardLoadControllers.delete(normalizedBoardId)
+      }
+    }
+  }
+
+  // Carrega as arquivadas do board sob demanda (toggle "mostrar arquivadas" da toolbar), sem
+  // recarregar os outros boards nem perder as nao-arquivadas ja em tela.
+  async function ensureArchivedTasksLoaded(boardId: string) {
+    await ensureBoardTasksLoaded(boardId, { includeArchived: true, force: true })
   }
 
   async function loadBoardDetails(board: BackendBoard) {
@@ -1007,6 +1130,10 @@ export const useTasksStore = defineStore('tasks', () => {
     return (response?.board as BackendBoard | undefined) || board
   }
 
+  // refresh carrega os boards (above-the-fold) e as tasks APENAS do board ativo. Os demais boards
+  // ficam com as tasks lazy: sao buscadas em `setActiveProject`/`ensureBoardTasksLoaded`. As tasks
+  // dos boards ja carregados anteriormente sao preservadas e remapeadas com os projetos novos para
+  // manter consistencia sem refetch desnecessario (importante no refresh debounced do realtime).
   async function refresh() {
     pending.value = true
     errorMessage.value = ''
@@ -1015,48 +1142,93 @@ export const useTasksStore = defineStore('tasks', () => {
       const currentProjects = new Map(
         projects.value.map((project) => [project.id, project] as const),
       )
+      const previousLoaded = loadedBoardIds.value
+      const previousArchived = archivedBoardIds.value
+      const previousTasks = tasks.value
       const response = await request('/v1/tasks/boards')
       const boards = Array.isArray(response?.boards)
         ? (response.boards as BackendBoard[]).filter((board) => !board?.archived)
         : []
       const detailedBoards = await Promise.all(boards.map((board) => loadBoardDetails(board)))
-      const taskEntries = await Promise.all(
-        detailedBoards.map(
-          async (board) =>
-            [
-              normalizeText(board.id, 80),
-              await listBoardTasks(normalizeText(board.id, 80)),
-            ] as const,
-        ),
-      )
-      const boardTasksMap = new Map<string, TasksStoreTaskItem[]>()
-      const nextProjects = detailedBoards.map((board) => {
-        const boardId = normalizeText(board.id, 80)
-        const projectUi = uiMetadata.value.projects[boardId]
-        const placeholderProject = buildProject(board, currentProjects.get(boardId), [], projectUi)
-        const mappedTasks = (
-          taskEntries.find(([entryBoardId]) => entryBoardId === boardId)?.[1] || []
-        ).map((task) =>
-          mapTaskToStoreItem(
-            task,
-            placeholderProject,
-            uiMetadata.value.tasks[normalizeText(task.id, 80)],
-            auth.user,
-          ),
-        )
-        boardTasksMap.set(boardId, mappedTasks)
-        return buildProject(board, currentProjects.get(boardId), mappedTasks, projectUi)
-      })
-      projects.value = nextProjects
-      tasks.value = sortTasks(
-        nextProjects.flatMap((project) => boardTasksMap.get(project.id) || []),
-      )
-      if (!projects.value.some((project) => project.id === activeProjectId.value)) {
+      const boardIds = new Set(detailedBoards.map((board) => normalizeText(board.id, 80)))
+
+      // Determina o board ativo ja com a lista nova de boards, para carregar so as tasks dele.
+      let nextActiveId = normalizeText(activeProjectId.value, 80)
+      if (!boardIds.has(nextActiveId)) {
         const rememberedProjectId = normalizeText(uiMetadata.value.activeProjectId, 80)
-        activeProjectId.value = projects.value.some((project) => project.id === rememberedProjectId)
+        nextActiveId = boardIds.has(rememberedProjectId)
           ? rememberedProjectId
-          : projects.value[0]?.id || ''
+          : normalizeText(detailedBoards[0]?.id, 80)
       }
+
+      const activeBoard = detailedBoards.find(
+        (board) => normalizeText(board.id, 80) === nextActiveId,
+      )
+      const activeBoardTasks = activeBoard
+        ? await listBoardTasks(nextActiveId, {
+            includeArchived: previousArchived.has(nextActiveId),
+          })
+        : []
+
+      // Boards cujas tasks ja estavam carregadas continuam carregados; remapeamos as tasks que ja
+      // tinhamos para os projetos novos. O board ativo e sempre recarregado do servidor.
+      const boardTasksMap = new Map<string, TasksStoreTaskItem[]>()
+      const placeholderProjects = new Map<string, TaskProjectItem>()
+      detailedBoards.forEach((board) => {
+        const boardId = normalizeText(board.id, 80)
+        placeholderProjects.set(
+          boardId,
+          buildProject(board, currentProjects.get(boardId), [], uiMetadata.value.projects[boardId]),
+        )
+      })
+      detailedBoards.forEach((board) => {
+        const boardId = normalizeText(board.id, 80)
+        const placeholderProject = placeholderProjects.get(boardId)!
+        if (boardId === nextActiveId) {
+          boardTasksMap.set(
+            boardId,
+            activeBoardTasks.map((task) =>
+              mapTaskToStoreItem(
+                task,
+                placeholderProject,
+                uiMetadata.value.tasks[normalizeText(task.id, 80)],
+                auth.user,
+              ),
+            ),
+          )
+        } else if (previousLoaded.has(boardId)) {
+          // Reaproveita verbatim as tasks ja carregadas dos boards nao-ativos (sem refetch e sem
+          // remap, para nao perder labels resolvidos do backend). Quando esse board virar ativo de
+          // novo, `ensureBoardTasksLoaded(force)` busca a versao autoritativa.
+          boardTasksMap.set(
+            boardId,
+            previousTasks.filter((task) => task.projectId === boardId),
+          )
+        }
+      })
+
+      projects.value = detailedBoards.map((board) => {
+        const boardId = normalizeText(board.id, 80)
+        return buildProject(
+          board,
+          currentProjects.get(boardId),
+          boardTasksMap.get(boardId) || [],
+          uiMetadata.value.projects[boardId],
+        )
+      })
+      tasks.value = sortTasks(Array.from(boardTasksMap.values()).flat())
+      activeProjectId.value = nextActiveId
+
+      // Atualiza os Sets de cache: mantemos apenas boards ainda existentes; o ativo passa a estar
+      // carregado.
+      const nextLoaded = new Set<string>()
+      const nextArchived = new Set<string>()
+      boardTasksMap.forEach((_value, boardId) => nextLoaded.add(boardId))
+      previousArchived.forEach((boardId) => {
+        if (nextLoaded.has(boardId)) nextArchived.add(boardId)
+      })
+      loadedBoardIds.value = nextLoaded
+      archivedBoardIds.value = nextArchived
       pruneUiMetadata()
     } catch (error) {
       errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar as tasks.')
@@ -1098,6 +1270,10 @@ export const useTasksStore = defineStore('tasks', () => {
     if (!hasLegacyDefaultColumns(project)) {
       return false
     }
+    // Com lazy-load por board, as tasks de boards nao-ativos podem ainda nao estar em
+    // `tasks.value`. Garante o carregamento antes de decidir reescrever as colunas legadas —
+    // caso contrario um board legado com tasks seria normalizado por engano.
+    await ensureBoardTasksLoaded(project.id).catch(() => undefined)
     if (tasks.value.some((task) => task.projectId === project.id && !task.archived)) {
       return false
     }
@@ -1154,9 +1330,23 @@ export const useTasksStore = defineStore('tasks', () => {
     if (!projects.value.some((project) => project.id === targetId)) {
       return
     }
+    const previousId = normalizeText(activeProjectId.value, 80)
     activeProjectId.value = targetId
     uiMetadata.value.activeProjectId = targetId
     persistUiMetadata()
+    // Cancela carregamento do board anterior (se ainda em voo) e busca as tasks do novo board
+    // sob demanda. Fire-and-forget: a UI ja reage ao board ativo via projects/tasks reativos.
+    if (previousId && previousId !== targetId) {
+      abortBoardLoad(previousId)
+    }
+    // `force` quando ja estava carregado garante dados autoritativos frescos ao reabrir o board
+    // (o cache verbatim de boards de fundo pode ter divergido apos um refresh do realtime).
+    void ensureBoardTasksLoaded(targetId, {
+      includeArchived: archivedBoardIds.value.has(targetId),
+      force: loadedBoardIds.value.has(targetId),
+    }).catch((error) => {
+      errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar as tasks.')
+    })
   }
 
   function buildBoardSlug(name: unknown) {
@@ -1441,9 +1631,11 @@ export const useTasksStore = defineStore('tasks', () => {
           ? Number(payload.order)
           : nextOrder(project.id, status, undefined, 0),
         responsibleUserId: resolveResponsibleUserId(undefined, payload.responsible),
-        clientAccountId: looksLikeUUID((payload as TasksStoreTaskItem).clientAccountId)
-          ? (payload as TasksStoreTaskItem).clientAccountId
-          : null,
+        clientAccountId: looksLikeUUID(payload.clientId)
+          ? payload.clientId
+          : looksLikeUUID((payload as TasksStoreTaskItem).clientAccountId)
+            ? (payload as TasksStoreTaskItem).clientAccountId
+            : null,
         uiMetadata: taskUiPatch,
       },
     })
@@ -1568,8 +1760,12 @@ export const useTasksStore = defineStore('tasks', () => {
         ? patch.involved.map((item) => normalizeText(item, 120)).filter(Boolean)
         : []
     }
-    if (Object.prototype.hasOwnProperty.call(patch, 'clientId'))
-      optimisticTask.clientId = Number(patch.clientId || 0) || currentTask.clientId
+    if (Object.prototype.hasOwnProperty.call(patch, 'clientId')) {
+      optimisticTask.clientId = normalizeText(patch.clientId, 80)
+      optimisticTask.clientAccountId = looksLikeUUID(patch.clientId)
+        ? normalizeText(patch.clientId, 80)
+        : undefined
+    }
     if (Object.prototype.hasOwnProperty.call(patch, 'clientName'))
       optimisticTask.clientName = normalizeText(patch.clientName, 140)
     if (Object.prototype.hasOwnProperty.call(patch, 'type'))
@@ -1617,9 +1813,11 @@ export const useTasksStore = defineStore('tasks', () => {
         Object.prototype.hasOwnProperty.call(patch, 'clientName') ||
         Object.prototype.hasOwnProperty.call(patch, 'clientId') ||
         Object.prototype.hasOwnProperty.call(patch as object, 'clientAccountId')
-          ? looksLikeUUID((patch as TasksStoreTaskItem).clientAccountId)
-            ? (patch as TasksStoreTaskItem).clientAccountId
-            : null
+          ? looksLikeUUID(patch.clientId)
+            ? patch.clientId
+            : looksLikeUUID((patch as TasksStoreTaskItem).clientAccountId)
+              ? (patch as TasksStoreTaskItem).clientAccountId
+              : null
           : undefined,
       uiMetadata: hasUiPatch(taskUiPatch) ? taskUiPatch : undefined,
     }
@@ -1915,9 +2113,13 @@ export const useTasksStore = defineStore('tasks', () => {
     tasks,
     activeProjectId,
     legacyMigrationNotice,
+    loadedBoardIds,
+    archivedBoardIds,
     initialize,
     refresh,
     setActiveProject,
+    ensureBoardTasksLoaded,
+    ensureArchivedTasksLoaded,
     createProject,
     deleteProject,
     saveProjectSettings,

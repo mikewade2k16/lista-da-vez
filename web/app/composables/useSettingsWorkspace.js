@@ -12,7 +12,18 @@ import {
   reasonInputSectionConfigs,
   settingsTabs,
 } from '~/domain/utils/settings-workspace-data'
-import { canManageConsultants, canManageSettings } from '~/domain/utils/permissions'
+import {
+  DEFAULT_CRM_GOAL_PAYOUT_POLICY,
+  DEFAULT_CRM_LIST_USAGE_TIERS,
+  normalizeCrmGoalPayoutPolicy,
+  normalizeCrmListUsageMinOrders,
+  normalizeCrmListUsageTiers,
+} from '~/domain/utils/crm-performance-policy'
+import {
+  canManageCrmCommercialPolicy,
+  canManageConsultants,
+  canManageSettings,
+} from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useConsultantsStore } from '~/stores/consultants'
 import { useSettingsStore } from '~/stores/settings'
@@ -39,8 +50,20 @@ export function useSettingsWorkspace(props) {
   const canEditSettings = computed(() =>
     canManageSettings(auth.role, auth.permissionKeys, auth.permissionsResolved),
   )
+  const canEditCrmCommercialPolicy = computed(() =>
+    canManageCrmCommercialPolicy(auth.role, auth.permissionKeys, auth.permissionsResolved),
+  )
   const canEditConsultants = computed(() =>
     canManageConsultants(auth.role, auth.permissionKeys, auth.permissionsResolved),
+  )
+  const crmListUsageTiers = computed(() =>
+    normalizeCrmListUsageTiers(state.value.settings?.crmListUsageTiers),
+  )
+  const crmListUsageMinOrdersForHighlight = computed(() =>
+    normalizeCrmListUsageMinOrders(state.value.settings?.crmListUsageMinOrdersForHighlight),
+  )
+  const crmGoalPayoutPolicy = computed(() =>
+    normalizeCrmGoalPayoutPolicy(state.value.settings?.crmGoalPayoutPolicy),
   )
   const maxParallelPerConsultantLimit = computed(() =>
     Math.min(5, Math.max(1, Number(state.value.settings?.maxConcurrentServices || 1) || 1)),
@@ -73,6 +96,89 @@ export function useSettingsWorkspace(props) {
   async function updateBooleanSetting(settingId, value) {
     const result = await settingsStore.updateSetting(settingId, Boolean(value))
     if (result?.ok === false) ui.error(result.message || 'Nao foi possivel salvar a configuracao.')
+  }
+
+  async function updateCrmCommercialPolicy(patch) {
+    const nextPayload = {
+      crmListUsageTiers: crmListUsageTiers.value,
+      crmListUsageMinOrdersForHighlight: crmListUsageMinOrdersForHighlight.value,
+      crmGoalPayoutPolicy: crmGoalPayoutPolicy.value,
+      ...patch,
+    }
+    const result = await settingsStore.updateCrmCommercialPolicy(nextPayload)
+    if (result?.ok === false) {
+      ui.error(result.message || 'Nao foi possivel salvar a politica comercial do CRM.')
+    }
+    return result || { ok: true }
+  }
+
+  async function updateCrmListUsageTier(index, field, value) {
+    const tiers = crmListUsageTiers.value.map((tier) => ({ ...tier }))
+    if (!tiers[index]) return
+    tiers[index][field] = field === 'minRate' ? Number(value) : String(value || '').trim()
+    await updateCrmCommercialPolicy({ crmListUsageTiers: normalizeCrmListUsageTiers(tiers) })
+  }
+
+  async function addCrmListUsageTier() {
+    const tiers = [
+      ...crmListUsageTiers.value,
+      { id: `faixa-${Date.now()}`, label: 'Nova faixa', minRate: 0 },
+    ]
+    await updateCrmCommercialPolicy({ crmListUsageTiers: normalizeCrmListUsageTiers(tiers) })
+  }
+
+  async function removeCrmListUsageTier(index) {
+    const tiers = crmListUsageTiers.value.filter((_, itemIndex) => itemIndex !== index)
+    await updateCrmCommercialPolicy({
+      crmListUsageTiers: normalizeCrmListUsageTiers(
+        tiers.length ? tiers : DEFAULT_CRM_LIST_USAGE_TIERS,
+      ),
+    })
+  }
+
+  async function updateCrmListUsageMinOrders(value) {
+    await updateCrmCommercialPolicy({
+      crmListUsageMinOrdersForHighlight: normalizeCrmListUsageMinOrders(value),
+    })
+  }
+
+  async function updateCrmGoalPayoutRule(group, index, field, value) {
+    const policy = normalizeCrmGoalPayoutPolicy(crmGoalPayoutPolicy.value)
+    const rules = Array.isArray(policy[group]) ? policy[group].map((rule) => ({ ...rule })) : []
+    if (!rules[index]) return
+    rules[index][field] = field === 'mode' ? String(value || 'percent') : Number(value)
+    await updateCrmCommercialPolicy({
+      crmGoalPayoutPolicy: normalizeCrmGoalPayoutPolicy({
+        ...policy,
+        [group]: rules,
+      }),
+    })
+  }
+
+  async function addCrmGoalPayoutRule(group) {
+    const policy = normalizeCrmGoalPayoutPolicy(crmGoalPayoutPolicy.value)
+    const fallback = DEFAULT_CRM_GOAL_PAYOUT_POLICY[group]?.[0] || {
+      threshold: 80,
+      value: 1,
+      mode: 'percent',
+    }
+    await updateCrmCommercialPolicy({
+      crmGoalPayoutPolicy: normalizeCrmGoalPayoutPolicy({
+        ...policy,
+        [group]: [...(policy[group] || []), { ...fallback }],
+      }),
+    })
+  }
+
+  async function removeCrmGoalPayoutRule(group, index) {
+    const policy = normalizeCrmGoalPayoutPolicy(crmGoalPayoutPolicy.value)
+    const rules = (policy[group] || []).filter((_, itemIndex) => itemIndex !== index)
+    await updateCrmCommercialPolicy({
+      crmGoalPayoutPolicy: normalizeCrmGoalPayoutPolicy({
+        ...policy,
+        [group]: rules.length ? rules : DEFAULT_CRM_GOAL_PAYOUT_POLICY[group],
+      }),
+    })
   }
 
   async function updateModalConfigValue(configKey, value) {
@@ -354,13 +460,19 @@ export function useSettingsWorkspace(props) {
 
   return reactive({
     activeTab,
+    addCrmGoalPayoutRule,
+    addCrmListUsageTier,
     addConsultant,
     addOption,
     addProduct,
     applyTemplate,
     archiveConsultant,
     canEditConsultants,
+    canEditCrmCommercialPolicy,
     canEditSettings,
+    crmGoalPayoutPolicy,
+    crmListUsageMinOrdersForHighlight,
+    crmListUsageTiers,
     fieldDetailModeOptions,
     fieldSelectionOptions,
     getFinishFlowMode,
@@ -385,6 +497,8 @@ export function useSettingsWorkspace(props) {
     optionTabConfigs,
     reasonInputModeOptions,
     reasonInputSectionConfigs,
+    removeCrmGoalPayoutRule,
+    removeCrmListUsageTier,
     removeOption,
     removeProduct,
     reorderOption,
@@ -392,6 +506,10 @@ export function useSettingsWorkspace(props) {
     state,
     updateBooleanSetting,
     updateConsultant,
+    updateCrmCommercialPolicy,
+    updateCrmGoalPayoutRule,
+    updateCrmListUsageMinOrders,
+    updateCrmListUsageTier,
     updateModalConfigNumberValue,
     updateModalConfigValue,
     updateNumericSetting,

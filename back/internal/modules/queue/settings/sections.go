@@ -1,6 +1,9 @@
 package settings
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 func splitAppSettings(settings AppSettings) (OperationCoreSettings, AlertSettings) {
 	return OperationCoreSettings{
@@ -17,6 +20,9 @@ func splitAppSettings(settings AppSettings) (OperationCoreSettings, AlertSetting
 			ScoreWeightQuality:                 settings.ScoreWeightQuality,
 			ScoreWeightPa:                      settings.ScoreWeightPa,
 			ScoreWeightQueueDiscipline:         settings.ScoreWeightQueueDiscipline,
+			CRMListUsageTiers:                  settings.CRMListUsageTiers,
+			CRMListUsageMinOrdersForHighlight:  settings.CRMListUsageMinOrdersForHighlight,
+			CRMGoalPayoutPolicy:                settings.CRMGoalPayoutPolicy,
 		}, AlertSettings{
 			AlertMinConversionRate: settings.AlertMinConversionRate,
 			AlertMaxQueueJumpRate:  settings.AlertMaxQueueJumpRate,
@@ -40,6 +46,9 @@ func composeAppSettings(core OperationCoreSettings, alerts AlertSettings) AppSet
 		ScoreWeightQuality:                 core.ScoreWeightQuality,
 		ScoreWeightPa:                      core.ScoreWeightPa,
 		ScoreWeightQueueDiscipline:         core.ScoreWeightQueueDiscipline,
+		CRMListUsageTiers:                  core.CRMListUsageTiers,
+		CRMListUsageMinOrdersForHighlight:  core.CRMListUsageMinOrdersForHighlight,
+		CRMGoalPayoutPolicy:                core.CRMGoalPayoutPolicy,
 		AlertMinConversionRate:             alerts.AlertMinConversionRate,
 		AlertMaxQueueJumpRate:              alerts.AlertMaxQueueJumpRate,
 		AlertMinPaScore:                    alerts.AlertMinPaScore,
@@ -62,6 +71,9 @@ func splitAppSettingsPatch(patch AppSettingsPatch) (OperationCoreSettingsPatch, 
 			ScoreWeightQuality:                 patch.ScoreWeightQuality,
 			ScoreWeightPa:                      patch.ScoreWeightPa,
 			ScoreWeightQueueDiscipline:         patch.ScoreWeightQueueDiscipline,
+			CRMListUsageTiers:                  patch.CRMListUsageTiers,
+			CRMListUsageMinOrdersForHighlight:  patch.CRMListUsageMinOrdersForHighlight,
+			CRMGoalPayoutPolicy:                patch.CRMGoalPayoutPolicy,
 		}, AlertSettingsPatch{
 			AlertMinConversionRate: patch.AlertMinConversionRate,
 			AlertMaxQueueJumpRate:  patch.AlertMaxQueueJumpRate,
@@ -182,6 +194,16 @@ func cloneAppearanceConfig(input AppearanceConfig) AppearanceConfig {
 	}
 }
 
+func normalizeRawJSON(input json.RawMessage, fallback json.RawMessage) json.RawMessage {
+	if len(input) > 0 && json.Valid(input) {
+		return append(json.RawMessage(nil), input...)
+	}
+	if len(fallback) > 0 && json.Valid(fallback) {
+		return append(json.RawMessage(nil), fallback...)
+	}
+	return json.RawMessage(`null`)
+}
+
 func normalizeAppearanceTheme(value string, fallback string) string {
 	switch strings.TrimSpace(value) {
 	case "light", "dark", "apple", "custom":
@@ -259,6 +281,9 @@ func normalizeOperationCoreSettings(input OperationCoreSettings, fallback Operat
 	fallback.ScoreWeightQuality = maxFloat(input.ScoreWeightQuality, 0)
 	fallback.ScoreWeightPa = maxFloat(input.ScoreWeightPa, 0)
 	fallback.ScoreWeightQueueDiscipline = maxFloat(input.ScoreWeightQueueDiscipline, 0)
+	fallback.CRMListUsageTiers = normalizeRawJSON(input.CRMListUsageTiers, fallback.CRMListUsageTiers)
+	fallback.CRMListUsageMinOrdersForHighlight = maxInt(input.CRMListUsageMinOrdersForHighlight, 1)
+	fallback.CRMGoalPayoutPolicy = normalizeRawJSON(input.CRMGoalPayoutPolicy, fallback.CRMGoalPayoutPolicy)
 	return fallback
 }
 
@@ -314,6 +339,15 @@ func applyOperationCoreSettingsPatch(base OperationCoreSettings, patch Operation
 	if patch.ScoreWeightQueueDiscipline != nil {
 		base.ScoreWeightQueueDiscipline = maxFloat(*patch.ScoreWeightQueueDiscipline, 0)
 	}
+	if patch.CRMListUsageTiers != nil {
+		base.CRMListUsageTiers = normalizeRawJSON(*patch.CRMListUsageTiers, base.CRMListUsageTiers)
+	}
+	if patch.CRMListUsageMinOrdersForHighlight != nil {
+		base.CRMListUsageMinOrdersForHighlight = maxInt(*patch.CRMListUsageMinOrdersForHighlight, 1)
+	}
+	if patch.CRMGoalPayoutPolicy != nil {
+		base.CRMGoalPayoutPolicy = normalizeRawJSON(*patch.CRMGoalPayoutPolicy, base.CRMGoalPayoutPolicy)
+	}
 
 	return base
 }
@@ -331,6 +365,12 @@ func applyOperationTemplateCoreSettings(base OperationCoreSettings, template Ope
 	next.ScoreWeightQuality = template.ScoreWeightQuality
 	next.ScoreWeightPa = template.ScoreWeightPa
 	next.ScoreWeightQueueDiscipline = template.ScoreWeightQueueDiscipline
+	next.CRMListUsageTiers = normalizeRawJSON(template.CRMListUsageTiers, defaultCRMListUsageTiers())
+	next.CRMListUsageMinOrdersForHighlight = maxInt(
+		template.CRMListUsageMinOrdersForHighlight,
+		defaultCRMListUsageMinOrdersForHighlight,
+	)
+	next.CRMGoalPayoutPolicy = normalizeRawJSON(template.CRMGoalPayoutPolicy, defaultCRMGoalPayoutPolicy())
 	return normalizeOperationCoreSettings(next, next)
 }
 

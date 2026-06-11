@@ -2,6 +2,7 @@
 import SettingsConsultantManager from '~/components/settings/SettingsConsultantManager.vue'
 import SettingsProductManager from '~/components/settings/SettingsProductManager.vue'
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
+import SettingsCrmGoalsSection from '~/components/settings/sections/SettingsCrmGoalsSection.vue'
 import SettingsAlertsSection from '~/components/settings/sections/SettingsAlertsSection.vue'
 import SettingsModalSection from '~/components/settings/sections/SettingsModalSection.vue'
 import SettingsOperationSection from '~/components/settings/sections/SettingsOperationSection.vue'
@@ -62,6 +63,8 @@ const ctx = useSettingsWorkspace(props)
       @update="ctx.updateConsultant"
       @archive="ctx.archiveConsultant"
     />
+
+    <SettingsCrmGoalsSection v-else-if="ctx.activeTab === 'metas-crm'" :ctx="ctx" />
 
     <SettingsAlertsSection v-else-if="ctx.activeTab === 'alertas'" :ctx="ctx" />
 

@@ -3,6 +3,7 @@ package tasks
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -23,7 +24,12 @@ func (handler *HTTPHandler) listActiveTracking(w http.ResponseWriter, r *http.Re
 		writeServiceError(w, r, err)
 		return
 	}
-	httpapi.WriteJSON(w, http.StatusOK, map[string]any{"entries": entries})
+	// serverNow permite ao front calcular o offset real de relogio (server x cliente) e exibir o
+	// MESMO tempo decorrido para todos, sem reiniciar o cronometro a cada hidratacao.
+	httpapi.WriteJSON(w, http.StatusOK, map[string]any{
+		"entries":   entries,
+		"serverNow": time.Now().UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func (handler *HTTPHandler) startTracking(w http.ResponseWriter, r *http.Request, ctx taskHTTPContext) {

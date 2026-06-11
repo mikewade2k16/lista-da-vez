@@ -74,13 +74,17 @@ async function saveNew() {
   const doc = await createDoc(newTitle.value, newBody.value)
   newSaving.value = false
   if (doc) {
-    showNew.value = false
-    newTitle.value = ''
-    newBody.value = ''
+    cancelNew()
     emit('change')
   } else {
     newError.value = 'Erro ao criar o documento.'
   }
+}
+
+function cancelNew() {
+  showNew.value = false
+  newTitle.value = ''
+  newBody.value = ''
 }
 
 onMounted(() => void loadDocs())
@@ -113,18 +117,7 @@ onMounted(() => void loadDocs())
           placeholder="Nome do documento (ex.: Tabela de Precos)"
           autofocus
         />
-        <button
-          type="button"
-          class="kd-icon-btn"
-          title="Cancelar"
-          @click="
-            showNew = false
-            newTitle = ''
-            newBody = ''
-          "
-        >
-          ✕
-        </button>
+        <button type="button" class="kd-icon-btn" title="Cancelar" @click="cancelNew">✕</button>
       </header>
       <textarea
         v-model="newBody"
@@ -138,17 +131,7 @@ onMounted(() => void loadDocs())
         <button type="button" class="kd-btn kd-btn--primary" :disabled="newSaving" @click="saveNew">
           {{ newSaving ? 'Criando...' : 'Criar documento' }}
         </button>
-        <button
-          type="button"
-          class="kd-btn kd-btn--ghost"
-          @click="
-            showNew = false
-            newTitle = ''
-            newBody = ''
-          "
-        >
-          Cancelar
-        </button>
+        <button type="button" class="kd-btn kd-btn--ghost" @click="cancelNew">Cancelar</button>
       </footer>
     </article>
 

@@ -1,190 +1,18 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore, storeToRefs } from 'pinia'
 
-import { buildRankingRows } from '~/domain/utils/admin-metrics'
 import { useAuthStore } from '~/stores/auth'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import { normalizeServiceHistoryList } from '~/stores/dashboard/runtime/state'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { hydrateRuntimeStoreContext } from '~/utils/runtime-remote'
-
-function normalizeText(value) {
-  return String(value || '').trim()
-}
-
-function formatDateInput(date) {
-  return [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, '0'),
-    String(date.getUTCDate()).padStart(2, '0'),
-  ].join('-')
-}
-
-function buildCurrentMonthRange() {
-  const now = new Date()
-  return {
-    dateFrom: formatDateInput(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
-    dateTo: formatDateInput(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))),
-  }
-}
-
-function parseDateStartMs(value) {
-  const normalized = normalizeText(value)
-  if (!normalized) return null
-  const parsed = Date.parse(`${normalized}T00:00:00.000Z`)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function parseDateEndExclusiveMs(value) {
-  const normalized = normalizeText(value)
-  if (!normalized) return null
-  const parsed = Date.parse(`${normalized}T00:00:00.000Z`)
-  if (!Number.isFinite(parsed)) return null
-  return parsed + 24 * 60 * 60 * 1000
-}
-
-function resolveHistoryFinishedAt(entry) {
-  return Math.max(
-    0,
-    Number(
-      entry?.finishedAt || entry?.effectiveFinishedAt || entry?.stoppedAt || entry?.startedAt || 0,
-    ) || 0,
-  )
-}
-
-function filterHistoryByDateRange(history = [], dateFrom = '', dateTo = '') {
-  const rangeStart = parseDateStartMs(dateFrom)
-  const rangeEndExclusive = parseDateEndExclusiveMs(dateTo)
-  const hasExplicitRange = rangeStart !== null || rangeEndExclusive !== null
-
-  if (!hasExplicitRange) {
-    return Array.isArray(history) ? history : []
-  }
-
-  return (Array.isArray(history) ? history : []).filter((entry) => {
-    const finishedAt = resolveHistoryFinishedAt(entry)
-    if (rangeStart !== null && finishedAt < rangeStart) {
-      return false
-    }
-    if (rangeEndExclusive !== null && finishedAt >= rangeEndExclusive) {
-      return false
-    }
-    return true
-  })
-}
-
-function buildRowKey(storeId, consultantId) {
-  return `${normalizeText(storeId)}:${normalizeText(consultantId)}`
-}
-
-function normalizeConsultantList(consultants = [], fallbackStore = {}) {
-  return (Array.isArray(consultants) ? consultants : [])
-    .map((consultant) => ({
-      id: normalizeText(consultant?.id),
-      storeId: normalizeText(consultant?.storeId) || normalizeText(fallbackStore?.id),
-      storeName: normalizeText(fallbackStore?.name),
-      storeCode: normalizeText(fallbackStore?.code),
-      storeCity: normalizeText(fallbackStore?.city),
-      name: normalizeText(consultant?.name),
-      role: normalizeText(consultant?.role) || 'Atendimento',
-      initials: normalizeText(consultant?.initials),
-      color: normalizeText(consultant?.color) || '#168aad',
-      monthlyGoal: Math.max(0, Number(consultant?.monthlyGoal || 0) || 0),
-      commissionRate: Math.max(0, Number(consultant?.commissionRate || 0) || 0),
-      conversionGoal: Math.max(0, Number(consultant?.conversionGoal || 0) || 0),
-      avgTicketGoal: Math.max(0, Number(consultant?.avgTicketGoal || 0) || 0),
-      paGoal: Math.max(0, Number(consultant?.paGoal || 0) || 0),
-      active: Boolean(consultant?.active ?? true),
-      access:
-        consultant?.access && typeof consultant.access === 'object'
-          ? {
-              userId: normalizeText(consultant.access?.userId),
-              email: normalizeText(consultant.access?.email).toLowerCase(),
-              active: Boolean(consultant.access?.active ?? false),
-            }
-          : null,
-    }))
-    .filter((consultant) => consultant.id && consultant.name)
-}
-
-function buildErpMetricsByConsultant(erpCrm = null) {
-  const metrics = new Map()
-  for (const row of Array.isArray(erpCrm?.consultants) ? erpCrm.consultants : []) {
-    const consultantId = normalizeText(row?.profileConsultantId)
-    if (!consultantId) continue
-
-    const metric = {
-      soldValue: Math.max(0, Number(row?.salesCents || 0) || 0) / 100,
-      ticketAverage: Math.max(0, Number(row?.ticketAverageCents || 0) || 0) / 100,
-      paScore: Math.max(0, Number(row?.paScore || 0) || 0),
-      erpOrders: Math.max(0, Number(row?.orders || 0) || 0),
-    }
-
-    metrics.set(buildRowKey(row?.profileStoreId, consultantId), metric)
-    if (!metrics.has(buildRowKey('', consultantId))) {
-      metrics.set(buildRowKey('', consultantId), metric)
-    }
-  }
-  return metrics
-}
-
-function buildIntegratedRankingResponse(
-  tenantId,
-  roster = [],
-  serviceHistory = [],
-  erpCrm = null,
-  dateFrom = '',
-  dateTo = '',
-) {
-  const rosterByConsultantId = new Map(
-    (Array.isArray(roster) ? roster : []).map((consultant) => [
-      normalizeText(consultant?.id),
-      consultant,
-    ]),
-  )
-  const erpMetricsByConsultant = buildErpMetricsByConsultant(erpCrm)
-  const mapRows = (rows) =>
-    rows.map((row) => {
-      const consultant = rosterByConsultantId.get(normalizeText(row?.consultantId))
-      const erpMetric =
-        erpMetricsByConsultant.get(buildRowKey(consultant?.storeId, row?.consultantId)) ||
-        erpMetricsByConsultant.get(buildRowKey('', row?.consultantId)) ||
-        null
-
-      const mergedRow = {
-        ...row,
-        storeId: normalizeText(consultant?.storeId),
-        storeName: normalizeText(consultant?.storeName),
-      }
-
-      if (!erpMetric) {
-        return mergedRow
-      }
-
-      return {
-        ...mergedRow,
-        soldValue: erpMetric.soldValue,
-        ticketAverage: erpMetric.ticketAverage,
-        paScore: erpMetric.paScore,
-        erpOrders: erpMetric.erpOrders,
-        soldValueSource: 'erp',
-        ticketAverageSource: 'erp',
-        paScoreSource: 'erp',
-      }
-    })
-
-  return {
-    storeId: '',
-    tenantId: normalizeText(tenantId),
-    monthlyRows: mapRows(
-      buildRankingRows({ history: serviceHistory, roster, scope: 'month', dateFrom, dateTo }),
-    ),
-    dailyRows: mapRows(
-      buildRankingRows({ history: serviceHistory, roster, scope: 'today', dateFrom, dateTo }),
-    ),
-    alerts: [],
-  }
-}
+import {
+  normalizeText,
+  buildCurrentMonthRange,
+  filterHistoryByDateRange,
+  normalizeConsultantList,
+} from '~/domain/utils/consultant-transforms'
+import { buildIntegratedRankingResponse } from '~/domain/utils/consultant-integrated-view'
 
 export const useConsultantsStore = defineStore('consultants', () => {
   const runtimeConfig = useRuntimeConfig()
@@ -197,6 +25,16 @@ export const useConsultantsStore = defineStore('consultants', () => {
   const integratedRanking = ref(null)
   const integratedOverview = ref(null)
   const integratedHistory = ref([])
+  const integratedStaff = ref<
+    Array<{
+      id: string
+      name: string
+      role: string
+      roleLabel: string
+      storeId: string
+      storeName: string
+    }>
+  >([])
   const integratedPending = ref(false)
   const integratedReady = ref(false)
   const integratedError = ref('')
@@ -232,7 +70,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     return String(auth.activeStoreId || runtime.state.activeStoreId || '').trim()
   }
 
-  function canArchiveConsultantLocally(consultantId) {
+  function canArchiveConsultantLocally(consultantId: string) {
     const currentState = runtime.state
     const isInQueue = (currentState.waitingList || []).some((item) => item.id === consultantId)
     const isInService = (currentState.activeServices || []).some((item) => item.id === consultantId)
@@ -250,7 +88,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     return { ok: true }
   }
 
-  function normalizeConsultantPayload(payload = {}) {
+  function normalizeConsultantPayload(payload: Record<string, unknown> = {}) {
     return {
       name: String(payload?.name || '').trim(),
       role: String(payload?.role || '').trim(),
@@ -285,6 +123,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     integratedRanking.value = null
     integratedOverview.value = null
     integratedHistory.value = []
+    integratedStaff.value = []
     integratedPending.value = false
     integratedReady.value = false
     integratedError.value = ''
@@ -336,7 +175,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
       if (integratedDateTo.value) {
         crmParams.set('dateTo', integratedDateTo.value)
       }
-      const [overviewResponse, storeResponses, erpCrmResponse] = await Promise.all([
+      const [overviewResponse, storeResponses, erpCrmResponse, staffResponse] = await Promise.all([
         apiRequest('/v1/operations/overview'),
         Promise.all(
           stores.map(async (store) => {
@@ -355,7 +194,19 @@ export const useConsultantsStore = defineStore('consultants', () => {
           }),
         ),
         apiRequest(`/v1/erp/crm?${crmParams.toString()}`).catch(() => null),
+        apiRequest('/v1/store-staff').catch(() => ({ items: [] })),
       ])
+
+      integratedStaff.value = (Array.isArray(staffResponse?.items) ? staffResponse.items : []).map(
+        (item: Record<string, unknown>) => ({
+          id: normalizeText(item?.id),
+          name: normalizeText(item?.name),
+          role: normalizeText(item?.role),
+          roleLabel: normalizeText(item?.roleLabel),
+          storeId: normalizeText(item?.storeId),
+          storeName: normalizeText(item?.storeName),
+        }),
+      )
 
       integratedRoster.value = storeResponses.flatMap(({ store, consultants }) =>
         normalizeConsultantList(consultants, store),
@@ -419,7 +270,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     return refreshIntegratedView()
   }
 
-  async function createConsultantProfile(payload) {
+  async function createConsultantProfile(payload: Record<string, unknown>) {
     const storeId = await resolveActiveStoreId()
 
     if (!storeId || !auth.isAuthenticated) {
@@ -455,7 +306,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     }
   }
 
-  async function updateConsultantProfile(consultantId, payload) {
+  async function updateConsultantProfile(consultantId: string, payload: Record<string, unknown>) {
     const storeId = await resolveActiveStoreId()
 
     if (!storeId || !auth.isAuthenticated) {
@@ -484,7 +335,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     }
   }
 
-  async function archiveConsultantProfile(consultantId) {
+  async function archiveConsultantProfile(consultantId: string) {
     const storeId = await resolveActiveStoreId()
 
     if (!storeId || !auth.isAuthenticated) {
@@ -548,6 +399,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     integratedRanking,
     integratedOverview,
     integratedHistory,
+    integratedStaff,
     integratedPending,
     integratedReady,
     integratedError,
@@ -560,10 +412,10 @@ export const useConsultantsStore = defineStore('consultants', () => {
     applyIntegratedFilters,
     clearIntegratedView,
     resetIntegratedCurrentMonth,
-    setSelectedConsultant(personId) {
+    setSelectedConsultant(personId: string) {
       return runtime.run('setSelectedConsultant', personId)
     },
-    setConsultantSimulationAdditionalSales(amount) {
+    setConsultantSimulationAdditionalSales(amount: number) {
       return runtime.run('setConsultantSimulationAdditionalSales', amount)
     },
     createConsultantProfile,

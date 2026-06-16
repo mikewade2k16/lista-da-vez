@@ -4,6 +4,7 @@ import SettingsProductManager from '~/components/settings/SettingsProductManager
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
 import SettingsCrmGoalsSection from '~/components/settings/sections/SettingsCrmGoalsSection.vue'
 import SettingsAlertsSection from '~/components/settings/sections/SettingsAlertsSection.vue'
+import SettingsGamificationSection from '~/components/settings/sections/SettingsGamificationSection.vue'
 import SettingsModalSection from '~/components/settings/sections/SettingsModalSection.vue'
 import SettingsOperationSection from '~/components/settings/sections/SettingsOperationSection.vue'
 import SettingsOptionTabSection from '~/components/settings/sections/SettingsOptionTabSection.vue'
@@ -65,6 +66,8 @@ const ctx = useSettingsWorkspace(props)
     />
 
     <SettingsCrmGoalsSection v-else-if="ctx.activeTab === 'metas-crm'" :ctx="ctx" />
+
+    <SettingsGamificationSection v-else-if="ctx.activeTab === 'gamificacao'" :ctx="ctx" />
 
     <SettingsAlertsSection v-else-if="ctx.activeTab === 'alertas'" :ctx="ctx" />
 

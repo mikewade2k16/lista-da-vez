@@ -153,6 +153,34 @@ Permissoes (em `core.permissions`, seedadas pelo Module Registry):
 - **Persistencia**: nos HTTP para `POST /messages` e `PUT /memory` (substitui o staticData).
 - A **sessao WAHA** no webhook resolve a account no backend (via `waha_sessions`).
 
+### A6/A7 — ligar modelos + persistencia no n8n (passo a passo, 2026-06-11)
+
+> Back pronto (A6 modelos, A7 messages/lead_state). Falta ligar no workflow + testar 1 msg real.
+> Pre: `docker compose up -d --build api`; `AUTOMATION_RUNTIME_TOKEN` igual na api e na credencial
+> Header Auth do n8n; escolher os modelos no painel `/automation` (card Modelos). Base interna do
+> n8n -> api: `http://api:8080`. Para curl do host: `http://localhost:9091`.
+
+**A6 (modelos config-driven).** O `runtime-config` agora traz `models[]`
+(`{role,provider,modelId,label,requiresResponsesApi,acceptsTemperature,visionOk,params}`; roles
+`chat|vision|audio|classifier`). No no **OpenAI Chat Model**, campo *Model* por expression (n8n nao
+suporta `?.`, use `(obj||{})`):
+`{{ ((($('Get runtime config').first().json.models||[]).find(m=>m.role==='chat'))||{}).modelId || 'gpt-4o-mini' }}`
+Visao = role `'vision'` (fallback `gpt-4o`); classificador = role `'classifier'`. **Cuidado:** so
+modelos de chat normal trocam por expression direto. Raciocinio (`gpt-5*`/o-series:
+`requiresResponsesApi=true`, sem temperature, nao roda no no de imagem) exige modo Responses +
+**Switch** pela flag. V1 = so chat.
+
+**A7 (persistir).** Reusar a credencial Header Auth e o mesmo `session`/`chatId` dos nos de memoria.
+- Entrada: HTTP `POST http://api:8080/v1/runtime/automation/messages?session=default`, body
+  `{ "contactId": "<chatId>", "direction": "in", "type": "text", "content": "...", "mediaUrl": "", "segment": "" }` apos o classificador.
+- Saida: idem com `"direction": "out"`, `content` = resposta, apos o AI Agent.
+- lead-state (opcional, base do A9): `GET/PUT /v1/runtime/automation/lead-state?session=&contactId=`,
+  PUT body `{ "status": "engaged", "followUpCount": 0 }`.
+
+**Testar:** `curl -H "Authorization: Bearer $TOKEN" ".../config?session=default" | jq .models`; POST de
+uma mensagem; conferir `select * from automation.messages order by created_at desc limit 5;`. Depois
+**exportar** o workflow: `n8n export:workflow --id=<id> --output=automation/export/workflow-whatsapp.json`.
+
 ---
 
 ## 7. Painel (front Omni)
@@ -212,8 +240,8 @@ seu ambiente. Nao se edita o n8n na mao.
 | A3 | n8n consome runtime-config (systemMessage/modelos/contexto/enabled dinamicos) | A2 |
 | A4 | Painel: Status (WhatsApp connect/QR) + liga/desliga + contexto temporario | A2 |
 | A5 | Painel: Personas/Prompts CRUD + ativa (guardrails auto-anexados) | A2 |
-| A6 | Painel: Modelos (catalogo + regras MODELOS.md) | A2 |
-| A7 | CRM persistente (contacts/messages/lead_state/long_memory) + n8n grava | A2 |
+| A6 | Painel: Modelos (catalogo + regras MODELOS.md) — **FEITO 2026-06-11** (0144) | A2 |
+| A7 | CRM persistente (contacts/messages/lead_state/long_memory) — **back FEITO 2026-06-11** (0145 + endpoints runtime); n8n gravar = passo de workflow | A2 |
 | A8 | Tools do agente (catalog/stock/price, leads/orders) via API | A7 |
 | A9 | Motor proativo (follow-ups, pos-venda, nurture) — Etapa 3 | A7 |
 | A10 | Deploy VPS (compose.prod + Caddy + auth + backups) — **infra preparada 2026-06-08** (bot standalone, sem integracao Go ainda); deploy/QR/ativacao pendentes do Mike | — (infra independe de A1+) |
@@ -241,6 +269,12 @@ seu ambiente. Nao se edita o n8n na mao.
   - `0143_automation_contacts.sql` — tabela `automation.contacts`; memoria de conversa por chatId no Postgres (substitui staticData do n8n). UNIQUE `(automation_id, chat_id)`.
   - **Rebuild obrigatorio apos cada deploy:** `docker compose up -d --build api`.
   - **Reimport do workflow (uma unica vez apos 0143):** `n8n import:workflow --input=automation/export/workflow-whatsapp.json --overwrite`. A memoria agora vive no Postgres; o workflow le/escreve via `GET/PUT /v1/runtime/automation/memory`. Nao e necessario reimportar novamente quando docs forem editados/deletados.
+- **A6/A7 (2026-06-11, idempotentes) — feito localmente, deploy pendente:**
+  - `0144_automation_models.sql` — `automation.model_catalog` (global, provider-agnostico OpenAI+Anthropic, flags requires_responses_api/accepts_temperature/vision_ok) + `automation.automation_models` (modelo por automacao+funcao). Seed `ON CONFLICT DO NOTHING`.
+  - `0145_automation_conversation.sql` — `automation.messages` + `automation.lead_state`.
+  - `0147_automation_contacts_fix.sql` — **recria `automation.contacts`**. A 0143 tem bug: usa marcadores `-- +goose Up/Down`, mas o migrator (`migrator.go`) roda o arquivo INTEIRO como script, entao o `DROP TABLE` do bloco Down dropava a tabela no mesmo boot. Aplicar antes de usar memoria/CRM. (A 0135 foi auditada: OK — DROP intencional de tabelas legadas, sem goose.)
+  - **Contrato runtime-config mudou:** `GET /v1/runtime/automation/config` agora devolve `models[]` (`{role,provider,modelId,label,requiresResponsesApi,acceptsTemperature,visionOk,params}`) alem de enabled/systemMessage/persona/guardrails/docs[] (intactos). Novos endpoints runtime: `POST /v1/runtime/automation/messages`, `GET/PUT /v1/runtime/automation/lead-state` (mesmo `AUTOMATION_RUNTIME_TOKEN`). Painel: `GET/PUT /v1/automation/models`.
+  - **Rebuild obrigatorio:** `docker compose up -d --build api`. Reimport do workflow n8n so quando os nos passarem a consumir `models[]` / gravar messages.
 - **Migration nova `automation.*`** (A1, idempotente). Permissoes `automation.*` seedadas
   pelo Module Registry no boot (`CORE_V2_ENABLED`). Rebuild da API obrigatorio (codigo Go
   novo): `docker compose up -d --build api`. **Bloqueado pela multitenant-completion.**

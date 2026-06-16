@@ -2,6 +2,7 @@
 import { inject, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
 import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
+import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
 
 const ctx = inject(TASKS_PAGE_CONTEXT_KEY)!
@@ -462,7 +463,7 @@ watch(
               class="tasks-page__board-card-inline mt-2 flex flex-col items-start gap-1"
               @click.stop
             >
-              <OmniSelectMenuInput
+              <OmniLazySelectMenuInput
                 v-if="isCardFieldVisible(task, 'status')"
                 :model-value="task.status"
                 :items="statusOptions"
@@ -487,7 +488,7 @@ watch(
                   updateTaskInline(task, { status: normalizeText($event, 120) || task.status })
                 "
               />
-              <OmniSelectMenuInput
+              <OmniLazySelectMenuInput
                 v-if="isCardFieldVisible(task, 'responsible')"
                 class="tasks-page__board-card-people"
                 :model-value="task.responsible"
@@ -516,7 +517,7 @@ watch(
                   updateTaskInline(task, { responsible: normalizeText($event, 120) })
                 "
               />
-              <OmniSelectMenuInput
+              <OmniLazySelectMenuInput
                 v-if="isCardFieldVisible(task, 'involved')"
                 class="tasks-page__board-card-people"
                 :model-value="task.involved"
@@ -550,7 +551,7 @@ watch(
                   })
                 "
               />
-              <OmniSelectMenuInput
+              <OmniLazySelectMenuInput
                 v-if="isCardFieldVisible(task, 'client')"
                 class="tasks-page__board-card-people"
                 :model-value="task.clientId || null"
@@ -581,7 +582,7 @@ watch(
                   })
                 "
               />
-              <OmniSelectMenuInput
+              <OmniLazySelectMenuInput
                 v-if="isCardFieldVisible(task, 'type')"
                 :model-value="task.type"
                 :items="typeOptions"
@@ -606,7 +607,7 @@ watch(
                 "
                 @update:model-value="updateTaskInline(task, { type: normalizeText($event, 120) })"
               />
-              <OmniSelectMenuInput
+              <OmniLazySelectMenuInput
                 v-if="isCardFieldVisible(task, 'priority')"
                 :model-value="task.priority"
                 :items="PRIORITY_OPTIONS"

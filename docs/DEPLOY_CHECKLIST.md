@@ -8,6 +8,72 @@ Para o playbook completo (arquitetura, contexto da VPS, rollback, ERP), ver [DEP
 
 ---
 
+## Deploy RAPIDO (build local, sem git) — recomendado pro dia a dia
+
+Equivalente ao incremental do crow-php, adaptado pro Omni: builda as imagens na
+SUA maquina (RAM de sobra), `docker push` (so as camadas que mudaram sobem) e a
+VPS so faz `pull`. **Sem git, sem CI, sem build na VPS.** Um comando:
+
+```bash
+npm run deploy:fast                 # build local + push GHCR + deploy em STAGING
+npm run deploy:fast:prod            # idem, direto em PROD (com backup do banco)
+```
+
+Variacoes:
+
+```bash
+# tag fixa rolante (sobrescreve sempre a mesma) em vez do timestamp:
+npm run deploy:fast -- -Tag dev
+# rebuildar so um servico (a tag precisa ja ter o outro no GHCR; rode 'both' 1x antes):
+npm run deploy:fast -- -Tag dev -Service api
+# rollback: aponta a VPS pra uma tag anterior, sem rebuildar:
+powershell.exe -ExecutionPolicy Bypass -File scripts/deploy/deploy-pull.ps1 -Environment prod -Tag local-<anterior>
+```
+
+Pre-requisito one-time: `docker login ghcr.io` na sua maquina (PAT com `write:packages`)
+e na VPS (PAT `read:packages`). Depois disso, o `push`/`pull` e' incremental:
+so a 1a vez sobe a imagem inteira; nas seguintes sobem so as camadas alteradas
+(binario Go ~MBs, `.output` do Nuxt) — sem o problema de tamanho/comando-longo do git.
+
+Por que nao buildar na VPS (como o crow-php faz): o build do Nuxt pede 4GB de heap
+e a VPS tem ~6GB com prod no ar — buildar la arrisca OOM. Por isso o build fica
+na sua maquina e a VPS so puxa a imagem pronta.
+
+---
+
+## Deploy via registry pelo GitHub Actions (opcao completa/rastreavel)
+
+Build no GitHub Actions -> GHCR -> a VPS so faz `pull`. Use quando quiser o gate
+de testes do CI e a rastreabilidade por SHA do git (release de prod formal). Plano:
+[deploy/REGISTRY_STAGING_DEPLOY_PLAN.md](deploy/REGISTRY_STAGING_DEPLOY_PLAN.md);
+staging: [deploy/STAGING_SETUP.md](deploy/STAGING_SETUP.md).
+
+| # | Passo | Comando |
+|---|---|---|
+| 1 | Buildar e publicar as imagens (CI) | push da branch, ou `gh workflow run build-images.yml --repo mikewade2k16/lista-da-vez` |
+| 2 | Pegar o SHA publicado | resumo da run do `build-images.yml` (tag `sha-<40hex>`) |
+| 3 | Subir em staging e testar | `npm run deploy:staging -- -Tag sha-<40hex>` |
+| 4 | Validar staging | `curl -I https://preview.whenthelightsdie.com/healthz` + browser |
+| 5 | Promover a MESMA imagem pra prod | `npm run deploy:promote` |
+| 6 | Validar prod | `curl -I https://lista.whenthelightsdie.com/healthz` |
+| 7 | Rollback (se preciso) | `powershell -File scripts/deploy/deploy-pull.ps1 -Environment prod -Tag sha-<anterior>` |
+| - | Derrubar staging quando ocioso | `npm run deploy:staging:down` |
+
+Pre-requisitos one-time: `.env.production` e `.env.staging` na VPS, DNS `A staging.lista`,
+bloco Caddy do staging, `docker login ghcr.io` na VPS (PAT read-only). Detalhe em STAGING_SETUP.md.
+
+Pelo GitHub Actions (em vez dos scripts locais):
+
+```bash
+gh workflow run deploy-vps.yml --repo mikewade2k16/lista-da-vez \
+  -f environment=staging -f image_tag=sha-<40hex> -f backup_database=false
+```
+
+> O fluxo legado (tar + build na VPS, secao 2 abaixo, `npm run prod:deploy:vps`) segue como
+> fallback ate o pipeline registry ser validado em runtime.
+
+---
+
 ## RELEASE ESPECIAL — multitenant-complete (refactor/multi-tenant-complete)
 
 **Este release e' diferente dos normais.** Tem 37 novas migrations (0100-0136),

@@ -51,6 +51,10 @@ export interface AccountItem {
   name: string
   status: AccountStatus
   planCode: string
+  // Conta-workspace da agência (core.accounts.is_agency). O backend já EXCLUI
+  // contas is_agency=true da listagem /v1/admin/accounts; este campo espelha o
+  // contrato e permite filtro defensivo no front. Não é um cliente.
+  isAgency: boolean
   billingMode: AccountBillingMode
   monthlyPaymentAmount: number
   paymentDueDay: number | null

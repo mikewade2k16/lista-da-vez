@@ -10,15 +10,47 @@ import (
 
 // Service orquestra regras do modulo site (leads, products, webhook sources).
 type Service struct {
-	leads    LeadRepository
-	products ProductRepository
-	sources  WebhookSourceRepository
-	tracking TrackingRepository
+	leads          LeadRepository
+	products       ProductRepository
+	sources        WebhookSourceRepository
+	tracking       TrackingRepository
+	productSources ProductSourceRepository
+	productErp     ProductErpRepository
+	sourceClient   productSourceFetcher
+	imageCache     *ImageCache
+}
+
+// productSourceFetcher abstrai o cliente HTTP da fonte externa (testavel).
+type productSourceFetcher interface {
+	FetchAll(ctx context.Context, baseURL string) ([]ProductUpsertItem, error)
 }
 
 // NewService cria o service.
 func NewService(leads LeadRepository, products ProductRepository, sources WebhookSourceRepository, tracking TrackingRepository) *Service {
 	return &Service{leads: leads, products: products, sources: sources, tracking: tracking}
+}
+
+// WithProductSync injeta o repo de fontes externas e o cliente HTTP usados por
+// SyncProducts. Mantido como setter para nao quebrar callers de NewService.
+func (s *Service) WithProductSync(repo ProductSourceRepository, client productSourceFetcher) *Service {
+	s.productSources = repo
+	s.sourceClient = client
+	return s
+}
+
+// WithImageCache injeta o cache de imagens (baixa as imagens externas dos
+// produtos no sync e serve localmente). Opcional: sem ele, o sync mantem as URLs
+// externas (hotlink). Setter para nao quebrar callers de NewService.
+func (s *Service) WithImageCache(cache *ImageCache) *Service {
+	s.imageCache = cache
+	return s
+}
+
+// WithProductErp injeta o repo de cruzamento com o ERP (erp_item_current).
+// Setter para nao quebrar callers de NewService.
+func (s *Service) WithProductErp(repo ProductErpRepository) *Service {
+	s.productErp = repo
+	return s
 }
 
 // ============================================================================
@@ -124,6 +156,181 @@ func (s *Service) UpdateProduct(ctx context.Context, accountID, id string, input
 
 func (s *Service) DeleteProduct(ctx context.Context, accountID, id string) error {
 	return s.products.SoftDelete(ctx, accountID, id)
+}
+
+// UploadProductImage grava a imagem enviada (multipart) em /uploads e atualiza o
+// produto para apontar pra ela. Requer o cache de imagens (UPLOADS_DIR) configurado.
+func (s *Service) UploadProductImage(ctx context.Context, accountID, productID, filename, contentType string, content []byte) (ProductView, error) {
+	if s.imageCache == nil {
+		return ProductView{}, errors.New("site: image storage unavailable")
+	}
+	rel, err := s.imageCache.SaveUpload(accountID, filename, contentType, content)
+	if err != nil {
+		return ProductView{}, err
+	}
+	return s.products.Update(ctx, accountID, productID, ProductUpdateInput{Image: &rel})
+}
+
+// SyncProducts puxa os produtos das fontes externas habilitadas da account e
+// faz upsert em site.products. Retorna {inserted, updated, skipped} agregado.
+func (s *Service) SyncProducts(ctx context.Context, accountID string) (ProductSyncResult, error) {
+	if s.productSources == nil || s.sourceClient == nil {
+		return ProductSyncResult{}, ErrProductSyncUnavailable
+	}
+	srcs, err := s.productSources.ListByAccount(ctx, accountID)
+	if err != nil {
+		return ProductSyncResult{}, err
+	}
+
+	total := ProductSyncResult{}
+	synced := false
+	for _, src := range srcs {
+		if !src.Enabled || strings.TrimSpace(src.BaseURL) == "" {
+			continue
+		}
+		synced = true
+		items, err := s.sourceClient.FetchAll(ctx, src.BaseURL)
+		if err != nil {
+			return ProductSyncResult{}, err
+		}
+		// Baixa as imagens externas e reescreve item.Image para o path local
+		// (/uploads/site/products/...) ANTES do upsert. Falha => mantem a URL
+		// externa (fallback). So roda se o cache estiver configurado.
+		if s.imageCache != nil {
+			total.ImagesCached += s.imageCache.CacheItems(ctx, accountID, items)
+		}
+		res, err := s.productSources.UpsertProducts(ctx, accountID, items)
+		if err != nil {
+			return ProductSyncResult{}, err
+		}
+		total.Inserted += res.Inserted
+		total.Updated += res.Updated
+		total.Skipped += res.Skipped
+	}
+	if !synced {
+		return ProductSyncResult{}, ErrNoProductSource
+	}
+	return total, nil
+}
+
+// ============================================================================
+// Product source toggle (local XAMPP / online)
+// ============================================================================
+
+// productSourceModeFromBaseURL deriva o modo a partir do base_url da fonte:
+// contem host.docker.internal -> local; contem o host da Perola -> online;
+// senao -> custom.
+func productSourceModeFromBaseURL(baseURL string) string {
+	switch {
+	case strings.Contains(baseURL, dockerInternalHost):
+		return productSourceModeLocal
+	case strings.Contains(baseURL, "perolajoias.com"):
+		return productSourceModeOnline
+	default:
+		return productSourceModeCustom
+	}
+}
+
+// GetProductSource le a fonte external_api da account e deriva o modo do
+// base_url. Sem fonte configurada => {mode: "online", baseUrl: ""}.
+func (s *Service) GetProductSource(ctx context.Context, accountID string) (ProductSourceView, error) {
+	if s.productSources == nil {
+		return ProductSourceView{}, ErrProductSyncUnavailable
+	}
+	src, err := s.productSources.GetAccountSource(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, ErrNoProductSource) {
+			return ProductSourceView{Mode: productSourceModeOnline, BaseURL: ""}, nil
+		}
+		return ProductSourceView{}, err
+	}
+	return ProductSourceView{
+		Mode:    productSourceModeFromBaseURL(src.BaseURL),
+		BaseURL: src.BaseURL,
+	}, nil
+}
+
+// SetProductSourceMode troca o base_url da fonte external_api da account para a
+// URL conhecida do modo (local/online). Modo invalido => ErrInvalidProductSourceMode.
+func (s *Service) SetProductSourceMode(ctx context.Context, accountID, mode string) (ProductSourceView, error) {
+	if s.productSources == nil {
+		return ProductSourceView{}, ErrProductSyncUnavailable
+	}
+	var baseURL string
+	switch mode {
+	case productSourceModeLocal:
+		baseURL = productSourceURLLocal
+	case productSourceModeOnline:
+		baseURL = productSourceURLOnline
+	default:
+		return ProductSourceView{}, ErrInvalidProductSourceMode
+	}
+	if err := s.productSources.SetAccountSourceBaseURL(ctx, accountID, baseURL); err != nil {
+		return ProductSourceView{}, err
+	}
+	return ProductSourceView{Mode: mode, BaseURL: baseURL}, nil
+}
+
+// ============================================================================
+// ERP cross-match
+// ============================================================================
+
+// MatchERP cruza os produtos ativos da account com erp_item_current e
+// materializa o resultado em site.product_erp_links. Retorna {matched, products}.
+func (s *Service) MatchERP(ctx context.Context, accountID string) (ErpMatchResult, error) {
+	if s.productErp == nil {
+		return ErpMatchResult{}, ErrProductSyncUnavailable
+	}
+	return s.productErp.MatchERP(ctx, accountID)
+}
+
+// ListUnmatchedErp lista itens do ERP da account que ainda nao casam com nenhum
+// segmento de code de produto ativo.
+func (s *Service) ListUnmatchedErp(ctx context.Context, filter ErpUnmatchedFilter) (ErpUnmatchedListResponse, error) {
+	if s.productErp == nil {
+		return ErpUnmatchedListResponse{}, ErrProductSyncUnavailable
+	}
+	items, total, err := s.productErp.ListUnmatched(ctx, filter)
+	if err != nil {
+		return ErpUnmatchedListResponse{}, err
+	}
+	page := filter.Page
+	if page < 1 {
+		page = 1
+	}
+	perPage := filter.PerPage
+	if perPage < 1 {
+		perPage = 50
+	}
+	if perPage > 200 {
+		perPage = 200
+	}
+	return ErpUnmatchedListResponse{Items: items, Total: total, Page: page, PerPage: perPage}, nil
+}
+
+// CreateProductFromErp cria um site.products a partir de um item do ERP (sku) e
+// roda o cruzamento para aquele produto, removendo-o do erp-unmatched. O sku tem
+// de existir no ERP da account (senao ErrErpItemNotFound).
+func (s *Service) CreateProductFromErp(ctx context.Context, accountID string, input ProductFromErpInput) (ProductView, error) {
+	if s.productErp == nil {
+		return ProductView{}, ErrProductSyncUnavailable
+	}
+	sku := strings.TrimSpace(input.Sku)
+	if sku == "" {
+		return ProductView{}, errors.New("sku is required")
+	}
+	item, err := s.productErp.FindErpItem(ctx, accountID, sku)
+	if err != nil {
+		return ProductView{}, err
+	}
+	view, err := s.products.CreateFromErp(ctx, accountID, item)
+	if err != nil {
+		return ProductView{}, err
+	}
+	if err := s.productErp.MatchERPForProduct(ctx, accountID, view.ID); err != nil {
+		return ProductView{}, err
+	}
+	return s.products.Find(ctx, accountID, view.ID)
 }
 
 // ============================================================================

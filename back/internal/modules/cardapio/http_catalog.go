@@ -1,0 +1,279 @@
+package cardapio
+
+import (
+	"net/http"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+)
+
+// RegisterCatalogRoutes monta os endpoints de catalogo do painel (categorias,
+// produtos e avaliacoes).
+func RegisterCatalogRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
+	wrap := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(h)
+	}
+
+	mux.Handle("GET /v1/cardapio/restaurants/{id}/categories", wrap(handleListCategories(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/categories", wrap(handleCreateCategory(svc)))
+	mux.Handle("PATCH /v1/cardapio/categories/{id}", wrap(handleUpdateCategory(svc)))
+	mux.Handle("DELETE /v1/cardapio/categories/{id}", wrap(handleDeleteCategory(svc)))
+
+	mux.Handle("GET /v1/cardapio/restaurants/{id}/products", wrap(handleListProducts(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/products", wrap(handleCreateProduct(svc)))
+	mux.Handle("GET /v1/cardapio/products/{id}", wrap(handleGetProduct(svc)))
+	mux.Handle("PATCH /v1/cardapio/products/{id}", wrap(handleUpdateProduct(svc)))
+	mux.Handle("DELETE /v1/cardapio/products/{id}", wrap(handleDeleteProduct(svc)))
+
+	mux.Handle("GET /v1/cardapio/products/{id}/reviews", wrap(handleListReviews(svc)))
+	mux.Handle("POST /v1/cardapio/products/{id}/reviews", wrap(handleCreateReview(svc)))
+	mux.Handle("PATCH /v1/cardapio/reviews/{id}", wrap(handleUpdateReview(svc)))
+	mux.Handle("DELETE /v1/cardapio/reviews/{id}", wrap(handleDeleteReview(svc)))
+}
+
+// ============================================================================
+// Categories
+// ============================================================================
+
+func handleListCategories(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		items, err := svc.ListCategories(r.Context(), accountID, r.PathValue("id"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]any{"categories": items})
+	}
+}
+
+func handleCreateCategory(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in CategoryInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.CreateCategory(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, view)
+	}
+}
+
+func handleUpdateCategory(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in CategoryInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.UpdateCategory(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+func handleDeleteCategory(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := svc.DeleteCategory(r.Context(), accountID, r.PathValue("id")); err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ============================================================================
+// Products
+// ============================================================================
+
+func handleListProducts(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		items, err := svc.ListProducts(r.Context(), accountID, r.PathValue("id"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]any{"products": items})
+	}
+}
+
+func handleCreateProduct(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in ProductInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.CreateProduct(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, view)
+	}
+}
+
+func handleGetProduct(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		view, err := svc.GetProduct(r.Context(), accountID, r.PathValue("id"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+func handleUpdateProduct(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in ProductInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.UpdateProduct(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+func handleDeleteProduct(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := svc.DeleteProduct(r.Context(), accountID, r.PathValue("id")); err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ============================================================================
+// Reviews
+// ============================================================================
+
+func handleListReviews(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		items, err := svc.ListReviews(r.Context(), accountID, r.PathValue("id"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]any{"reviews": items})
+	}
+}
+
+func handleCreateReview(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in ReviewInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.CreateReview(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, view)
+	}
+}
+
+func handleUpdateReview(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in ReviewInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.UpdateReview(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+func handleDeleteReview(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := svc.DeleteReview(r.Context(), accountID, r.PathValue("id")); err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}

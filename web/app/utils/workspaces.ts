@@ -25,6 +25,18 @@ export const WORKSPACES = [
     icon: 'dashboard_customize',
     path: '/site/tracking',
   },
+  {
+    id: 'site_bio_web',
+    label: 'Bio',
+    icon: 'dashboard_customize',
+    path: '/site/bio',
+  },
+  {
+    id: 'cardapio_web',
+    label: 'Cardápio Online',
+    icon: 'dashboard_customize',
+    path: '/cardapio',
+  },
   { id: 'clientes', label: 'Clientes', icon: 'apartment', path: '/operacao/clientes' },
   {
     id: 'clientes_web',
@@ -51,6 +63,8 @@ export const WORKSPACES = [
   { id: 'tools', label: 'Tools', icon: 'build', path: '/editor' },
   { id: 'banco', label: 'Banco', icon: 'storage', path: '/banco' },
   { id: 'automation', label: 'Automacao', icon: 'psychology', path: '/automation' },
+  { id: 'meta_ads', label: 'Meta Ads', icon: 'campaign', path: '/meta-ads' },
+  { id: 'performance', label: 'Performance', icon: 'speed', path: '/performance' },
 ]
 
 export const QUEUE_WORKSPACES = [

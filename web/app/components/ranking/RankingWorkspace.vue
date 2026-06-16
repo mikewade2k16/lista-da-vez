@@ -1,10 +1,9 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { CalendarDays } from 'lucide-vue-next'
-import AppSelectField from '~/components/ui/AppSelectField.vue'
-import { computeScore360, useGamificationConfig } from '~/composables/useGamificationConfig'
 import { useRankingDetailsDrawer } from '~/composables/useRankingDetailsDrawer'
+import { getMetricValue, normalizeSearch, useRankingData } from '~/composables/useRankingData'
 import RankingDetailsDrawer from '~/components/ranking/RankingDetailsDrawer.vue'
+import RankingFilters from '~/components/ranking/RankingFilters.vue'
 import RankingLeaderboardCard from '~/components/ranking/RankingLeaderboardCard.vue'
 import RankingPodium from '~/components/ranking/RankingPodium.vue'
 
@@ -18,242 +17,63 @@ const METRIC_OPTIONS = [
   { value: 'qualityScore', label: 'Qualidade' },
 ]
 
-const props = defineProps({
-  report: {
-    type: Object,
-    default: null,
+const props = withDefaults(
+  defineProps<{
+    report?: object | null
+    pending?: boolean
+    errorMessage?: string
+    integratedScope?: boolean
+    dateFrom?: string
+    dateTo?: string
+  }>(),
+  {
+    report: null,
+    pending: false,
+    errorMessage: '',
+    integratedScope: false,
+    dateFrom: '',
+    dateTo: '',
   },
-  pending: {
-    type: Boolean,
-    default: false,
-  },
-  errorMessage: {
-    type: String,
-    default: '',
-  },
-  integratedScope: {
-    type: Boolean,
-    default: false,
-  },
-  dateFrom: {
-    type: String,
-    default: '',
-  },
-  dateTo: {
-    type: String,
-    default: '',
-  },
-})
+)
 
-const emit = defineEmits([
-  'update:dateFrom',
-  'update:dateTo',
-  'applyPeriod',
-  'setCurrentMonth',
-  'setPreviousMonth',
-])
+const emit = defineEmits<{
+  'update:dateFrom': [value: string]
+  'update:dateTo': [value: string]
+  applyPeriod: []
+  setCurrentMonth: []
+  setPreviousMonth: []
+}>()
 
-const { scoreWeights } = useGamificationConfig()
 const drawer = useRankingDetailsDrawer()
-
 const metric = ref('score360')
 const searchTerm = ref('')
 const storeFilter = ref(FILTER_ALL)
 
-const monthlyRows = computed(() => props.report?.monthlyRows || [])
-const dailyRows = computed(() => props.report?.dailyRows || [])
-const alerts = computed(() => props.report?.alerts || [])
+const reportData = computed(() => props.report as Record<string, unknown> | null | undefined)
+const monthlyRows = computed(() => (reportData.value?.monthlyRows as unknown[]) || [])
+const dailyRows = computed(() => (reportData.value?.dailyRows as unknown[]) || [])
+const alerts = computed(() => (reportData.value?.alerts as unknown[]) || [])
 
-const monthlyConsultantMaxSold = computed(() =>
-  Math.max(...monthlyRows.value.map((row) => Number(row.soldValue || 0)), 1),
-)
-const monthlyConsultantMaxPa = computed(() =>
-  Math.max(...monthlyRows.value.map((row) => Number(row.paScore || 0)), 0.01),
-)
-
-function buildRowKey(row) {
-  return `${String(row.storeId || '').trim()}:${String(row.consultantId || '').trim()}`
-}
-
-function normalizeText(value) {
-  return String(value || '').trim()
-}
-
-function normalizeSearch(value) {
-  return normalizeText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-}
-
-function matchesSearch(searchValue, candidates) {
-  if (!searchValue) {
-    return true
-  }
-
-  return candidates.some((candidate) => normalizeSearch(candidate).includes(searchValue))
-}
-
-const enrichedMonthly = computed(() =>
-  monthlyRows.value.map((row) => {
-    const score360 = computeScore360(
-      {
-        conversionRate: Number(row.conversionRate || 0),
-        soldValue: Number(row.soldValue || 0),
-        qualityScore: Number(row.qualityScore || 0),
-        paScore: Number(row.paScore || 0),
-        queueJumpServices: Number(row.queueJumpServices || 0),
-        attendances: Number(row.attendances || 0),
-      },
-      {
-        maxSold: monthlyConsultantMaxSold.value,
-        maxPa: monthlyConsultantMaxPa.value,
-        weights: scoreWeights.value,
-      },
-    )
-    return {
-      ...row,
-      rowKey: buildRowKey(row),
-      consultantName: normalizeText(row.consultantName) || 'Consultor sem nome',
-      storeId: normalizeText(row.storeId),
-      storeName: normalizeText(row.storeName) || 'Loja sem nome',
-      score360,
-    }
-  }),
+const { enrichedMonthly, monthlyStoreRows, variationFor, storeVariationFor } = useRankingData(
+  monthlyRows,
+  dailyRows,
 )
 
-const enrichedDaily = computed(() =>
-  dailyRows.value.map((row) => ({
-    ...row,
-    rowKey: buildRowKey(row),
-    consultantName: normalizeText(row.consultantName) || 'Consultor sem nome',
-    storeId: normalizeText(row.storeId),
-    storeName: normalizeText(row.storeName) || 'Loja sem nome',
-    score360: computeScore360(
-      {
-        conversionRate: Number(row.conversionRate || 0),
-        soldValue: Number(row.soldValue || 0),
-        qualityScore: Number(row.qualityScore || 0),
-        paScore: Number(row.paScore || 0),
-        queueJumpServices: Number(row.queueJumpServices || 0),
-        attendances: Number(row.attendances || 0),
-      },
-      {
-        maxSold: monthlyConsultantMaxSold.value,
-        maxPa: monthlyConsultantMaxPa.value,
-        weights: scoreWeights.value,
-      },
-    ),
-  })),
-)
-
-const dailyScoreMap = computed(() => {
-  const map = new Map()
-  enrichedDaily.value.forEach((row) => {
-    map.set(row.rowKey, row.score360)
-  })
-  return map
-})
-
-function variationFor(rowKey, monthlyScore) {
-  const daily = dailyScoreMap.value.get(rowKey)
-  if (typeof daily !== 'number' || daily === 0 || monthlyScore === 0) return null
-  return ((daily - monthlyScore) / monthlyScore) * 100
+function normalizeText(v: unknown) {
+  return String(v || '').trim()
 }
 
-function buildStoreAggregates(rows) {
-  const grouped = new Map()
-
-  rows.forEach((row) => {
-    const storeId = normalizeText(row.storeId)
-    if (!storeId) {
-      return
-    }
-
-    const weight = Math.max(1, Number(row.attendances || 0))
-    const current = grouped.get(storeId) || {
-      rowKey: `store:${storeId}`,
-      consultantId: storeId,
-      consultantName: normalizeText(row.storeName) || 'Loja sem nome',
-      storeId,
-      storeName: normalizeText(row.storeName) || 'Loja sem nome',
-      attendances: 0,
-      conversions: 0,
-      soldValue: 0,
-      score360Weighted: 0,
-      score360Weight: 0,
-      ticketAverageWeighted: 0,
-      ticketAverageWeight: 0,
-      totalPieces: 0,
-      qualityWeighted: 0,
-      qualityWeight: 0,
-      avgDurationTotal: 0,
-      queueJumpServices: 0,
-      consultantCount: 0,
-    }
-
-    current.attendances += Number(row.attendances || 0)
-    current.conversions += Number(row.conversions || 0)
-    current.soldValue += Number(row.soldValue || 0)
-    current.score360Weighted += Number(row.score360 || 0) * weight
-    current.score360Weight += weight
-    current.ticketAverageWeighted += Number(row.ticketAverage || 0) * weight
-    current.ticketAverageWeight += weight
-    current.totalPieces += Math.max(
-      Number(row.conversions || 0),
-      Number(row.paScore || 0) * Number(row.conversions || 0),
-    )
-    current.qualityWeighted += Number(row.qualityScore || 0) * weight
-    current.qualityWeight += weight
-    current.avgDurationTotal += Number(row.avgDurationMs || 0) * Number(row.attendances || 0)
-    current.queueJumpServices += Number(row.queueJumpServices || 0)
-    current.consultantCount += 1
-
-    grouped.set(storeId, current)
-  })
-
-  return [...grouped.values()].map((entry) => ({
-    rowKey: entry.rowKey,
-    consultantId: entry.consultantId,
-    consultantName: entry.consultantName,
-    storeId: entry.storeId,
-    storeName: entry.storeName,
-    attendances: entry.attendances,
-    conversions: entry.conversions,
-    soldValue: entry.soldValue,
-    conversionRate: entry.attendances > 0 ? (entry.conversions / entry.attendances) * 100 : 0,
-    ticketAverage:
-      entry.ticketAverageWeight > 0 ? entry.ticketAverageWeighted / entry.ticketAverageWeight : 0,
-    paScore: entry.conversions > 0 ? Math.max(1, entry.totalPieces / entry.conversions) : 0,
-    qualityScore: entry.qualityWeight > 0 ? entry.qualityWeighted / entry.qualityWeight : 0,
-    avgDurationMs: entry.attendances > 0 ? entry.avgDurationTotal / entry.attendances : 0,
-    queueJumpServices: entry.queueJumpServices,
-    score360: entry.score360Weight > 0 ? entry.score360Weighted / entry.score360Weight : 0,
-    consultantCount: entry.consultantCount,
-  }))
-}
-
-const monthlyStoreRows = computed(() => buildStoreAggregates(enrichedMonthly.value))
-const dailyStoreScoreMap = computed(() => {
-  const map = new Map()
-  buildStoreAggregates(enrichedDaily.value).forEach((row) => {
-    map.set(row.rowKey, row.score360)
-  })
-  return map
-})
-
-function getMetricValue(row, key) {
-  if (key === 'score360') return row.score360 || 0
-  return Number(row[key] || 0)
+function matchesSearch(term: string, candidates: unknown[]) {
+  if (!term) return true
+  return candidates.some((c) => normalizeSearch(c).includes(term))
 }
 
 const storeOptions = computed(() => {
-  const stores = new Map()
+  const stores = new Map<string, { value: string; label: string }>()
   enrichedMonthly.value.forEach((row) => {
-    const storeId = normalizeText(row.storeId)
-    const storeName = normalizeText(row.storeName)
-    if (!storeId || !storeName || stores.has(storeId)) return
-    stores.set(storeId, { value: storeId, label: storeName })
+    const id = normalizeText(row.storeId)
+    const name = normalizeText(row.storeName)
+    if (id && name && !stores.has(id)) stores.set(id, { value: id, label: name })
   })
   return [
     { value: FILTER_ALL, label: 'Todas as lojas' },
@@ -262,201 +82,162 @@ const storeOptions = computed(() => {
 })
 
 const singleStoreMode = computed(() => props.integratedScope && storeFilter.value !== FILTER_ALL)
-
-const selectedStoreLabel = computed(() => {
-  if (storeFilter.value === FILTER_ALL) {
-    return 'Todas as lojas'
-  }
-
-  return (
-    storeOptions.value.find((option) => option.value === storeFilter.value)?.label ||
-    'Loja selecionada'
-  )
-})
-
+const selectedStoreLabel = computed(() =>
+  storeFilter.value === FILTER_ALL
+    ? 'Todas as lojas'
+    : storeOptions.value.find((o) => o.value === storeFilter.value)?.label || 'Loja selecionada',
+)
 const normalizedSearchTerm = computed(() => normalizeSearch(searchTerm.value))
 
-const filteredConsultantRows = computed(() => {
-  return enrichedMonthly.value.filter((row) => {
+const filteredConsultantRows = computed(() =>
+  enrichedMonthly.value.filter((row) => {
     if (
       props.integratedScope &&
       storeFilter.value !== FILTER_ALL &&
       row.storeId !== storeFilter.value
-    ) {
+    )
       return false
-    }
-
     return matchesSearch(normalizedSearchTerm.value, [row.consultantName, row.storeName])
-  })
-})
+  }),
+)
 
-function sortRows(rows, key) {
-  return [...rows].sort((left, right) => {
-    const diff = getMetricValue(right, key) - getMetricValue(left, key)
-    if (diff !== 0) {
-      return diff
-    }
-
-    const leftName = String(left.consultantName || '')
-    const rightName = String(right.consultantName || '')
-
-    return leftName.localeCompare(rightName)
+function sortRows<T extends Record<string, unknown>>(rows: T[], key: string) {
+  return [...rows].sort((l, r) => {
+    const diff = getMetricValue(r, key) - getMetricValue(l, key)
+    return diff !== 0
+      ? diff
+      : String(l.consultantName || '').localeCompare(String(r.consultantName || ''))
   })
 }
 
 const sortedSingleStoreRows = computed(() => sortRows(filteredConsultantRows.value, metric.value))
 const sortedStoreRows = computed(() => {
-  if (!props.integratedScope || singleStoreMode.value) {
-    return []
-  }
-
-  const matchingStoreIds = new Set(
-    filteredConsultantRows.value.map((row) => normalizeText(row.storeId)).filter(Boolean),
+  if (!props.integratedScope || singleStoreMode.value) return []
+  const ids = new Set(
+    filteredConsultantRows.value.map((r) => normalizeText(r.storeId)).filter(Boolean),
   )
-
   return sortRows(
-    monthlyStoreRows.value.filter((row) => matchingStoreIds.has(normalizeText(row.storeId))),
+    monthlyStoreRows.value.filter((r) => ids.has(normalizeText(r.storeId))),
     metric.value,
   )
 })
 
-function buildPodiumRows(rows, subtitleResolver) {
+function buildPodiumRows(
+  rows: Array<Record<string, unknown>>,
+  subtitleFn: ((r: Record<string, unknown>) => string) | null,
+) {
   return rows.slice(0, 3).map((row) => ({
-    key: row.rowKey,
-    name: row.consultantName,
-    subtitle: typeof subtitleResolver === 'function' ? subtitleResolver(row) : subtitleResolver,
+    key: String(row.rowKey || ''),
+    name: String(row.consultantName || ''),
+    subtitle: subtitleFn ? subtitleFn(row) : undefined,
     metricValue: getMetricValue(row, metric.value),
-    score360: row.score360,
-    soldValue: row.soldValue,
+    score360: Number(row.score360 || 0),
+    soldValue: Number(row.soldValue || 0),
   }))
 }
 
-function buildLeaderboardRows(rows, options = {}) {
-  const { subtitleResolver = null, showVariation = true, storeVariation = false } = options
-
-  return rows.slice(3).map((row, index) => {
-    const position = index + 4
-    const variation = showVariation
-      ? storeVariation
-        ? (() => {
-            const daily = dailyStoreScoreMap.value.get(row.rowKey)
-            if (typeof daily !== 'number' || daily === 0 || row.score360 === 0) return null
-            return ((daily - row.score360) / row.score360) * 100
-          })()
-        : variationFor(row.rowKey, row.score360)
-      : null
-
-    return {
-      ...row,
-      position,
-      variation,
-      subtitle: typeof subtitleResolver === 'function' ? subtitleResolver(row) : subtitleResolver,
-    }
-  })
+function buildLeaderboardRows(
+  rows: Array<Record<string, unknown>>,
+  subtitleFn: ((r: Record<string, unknown>) => string) | null = null,
+  isStore = false,
+) {
+  return rows.slice(3).map((row, i) => ({
+    ...row,
+    position: i + 4,
+    subtitle: subtitleFn ? subtitleFn(row) : undefined,
+    variation: isStore
+      ? storeVariationFor(String(row.rowKey || ''), Number(row.score360 || 0))
+      : variationFor(String(row.rowKey || ''), Number(row.score360 || 0)),
+  }))
 }
 
 const singleStorePodiumRows = computed(() => buildPodiumRows(sortedSingleStoreRows.value, null))
 const singleStoreLeaderboardRows = computed(() => buildLeaderboardRows(sortedSingleStoreRows.value))
 
 const groupOrderMap = computed(
-  () => new Map(sortedStoreRows.value.map((row, index) => [normalizeText(row.storeId), index])),
+  () => new Map(sortedStoreRows.value.map((r, i) => [normalizeText(r.storeId), i])),
 )
-
 const groupedConsultantRows = computed(() => {
-  if (!props.integratedScope || singleStoreMode.value) {
-    return []
-  }
-
-  const groups = new Map()
-
+  if (!props.integratedScope || singleStoreMode.value) return []
+  const groups = new Map<
+    string,
+    { storeId: string; storeName: string; rows: typeof enrichedMonthly.value }
+  >()
   filteredConsultantRows.value.forEach((row) => {
-    const storeId = normalizeText(row.storeId)
-    const current = groups.get(storeId) || {
-      storeId,
+    const id = normalizeText(row.storeId)
+    const current = groups.get(id) || {
+      storeId: id,
       storeName: normalizeText(row.storeName) || 'Loja sem nome',
       rows: [],
     }
-
     current.rows.push(row)
-    groups.set(storeId, current)
+    groups.set(id, current)
   })
-
   return [...groups.values()]
-    .map((group) => {
-      const rows = sortRows(group.rows, metric.value)
-
+    .map((g) => {
+      const rows = sortRows(g.rows, metric.value)
       return {
-        ...group,
+        ...g,
         rows,
         podiumRows: buildPodiumRows(rows, null),
         leaderboardRows: buildLeaderboardRows(rows),
       }
     })
     .sort(
-      (left, right) =>
-        (groupOrderMap.value.get(left.storeId) ?? Number.MAX_SAFE_INTEGER) -
-        (groupOrderMap.value.get(right.storeId) ?? Number.MAX_SAFE_INTEGER),
+      (l, r) =>
+        (groupOrderMap.value.get(l.storeId) ?? Number.MAX_SAFE_INTEGER) -
+        (groupOrderMap.value.get(r.storeId) ?? Number.MAX_SAFE_INTEGER),
     )
 })
 
 const storePodiumRows = computed(() =>
-  buildPodiumRows(sortedStoreRows.value, (row) => `${row.consultantCount || 0} consultor(es)`),
+  buildPodiumRows(sortedStoreRows.value, (r) => `${r.consultantCount || 0} consultor(es)`),
 )
 const storeLeaderboardRows = computed(() =>
-  buildLeaderboardRows(sortedStoreRows.value, {
-    subtitleResolver: (row) => `${row.consultantCount || 0} consultor(es)`,
-    storeVariation: true,
-  }),
+  buildLeaderboardRows(
+    sortedStoreRows.value,
+    (r) => `${r.consultantCount || 0} consultor(es)`,
+    true,
+  ),
 )
 
 const selectedDrawerRow = computed(() => {
   const key = drawer.currentRowKey.value
   if (!key) return null
-  return filteredConsultantRows.value.find((row) => row.rowKey === key) || null
+  return (
+    (filteredConsultantRows.value.find((r) => r.rowKey === key) as Record<string, unknown>) || null
+  )
 })
 
 const maxSold = computed(() =>
-  Math.max(...filteredConsultantRows.value.map((row) => Number(row.soldValue || 0)), 1),
+  Math.max(...filteredConsultantRows.value.map((r) => Number(r.soldValue || 0)), 1),
 )
 const maxPa = computed(() =>
-  Math.max(...filteredConsultantRows.value.map((row) => Number(row.paScore || 0)), 0.01),
+  Math.max(...filteredConsultantRows.value.map((r) => Number(r.paScore || 0)), 0.01),
 )
-
-const selectedLegacyRows = computed(() => sortRows(filteredConsultantRows.value, metric.value))
+const selectedLegacyRows = computed(
+  () => sortRows(filteredConsultantRows.value, metric.value) as Array<Record<string, unknown>>,
+)
 const currentMetricLabel = computed(
-  () => METRIC_OPTIONS.find((option) => option.value === metric.value)?.label || 'Score 360',
+  () => METRIC_OPTIONS.find((o) => o.value === metric.value)?.label || 'Score 360',
 )
 
 watch(
   () => props.integratedScope,
-  (value) => {
-    if (!value) {
-      storeFilter.value = FILTER_ALL
-    }
+  (v) => {
+    if (!v) storeFilter.value = FILTER_ALL
   },
   { immediate: true },
 )
-
-watch(storeOptions, (options) => {
-  if (storeFilter.value === FILTER_ALL) {
-    return
-  }
-
-  const exists = options.some((option) => option.value === storeFilter.value)
-  if (!exists) {
+watch(storeOptions, (opts) => {
+  if (storeFilter.value !== FILTER_ALL && !opts.some((o) => o.value === storeFilter.value))
     storeFilter.value = FILTER_ALL
-  }
 })
 
-function openDrawer(rowKey) {
+function openDrawer(rowKey: string) {
   drawer.open(rowKey)
 }
-
 function noop() {}
-
-function updateMetric(next) {
-  metric.value = String(next || 'score360')
-}
 </script>
 
 <template>
@@ -467,7 +248,7 @@ function updateMetric(next) {
         {{
           integratedScope
             ? 'Comparativo consolidado das lojas e consultores do tenant ativo.'
-            : 'Comparativo de consultores da loja ativa por Score 360 e métricas core.'
+            : 'Comparativo de consultores da loja ativa por Score 360 e metricas core.'
         }}
       </p>
     </header>
@@ -475,80 +256,30 @@ function updateMetric(next) {
     <article v-if="errorMessage" class="insight-card">
       <p class="settings-card__text">{{ errorMessage }}</p>
     </article>
-
     <article v-else-if="pending && !monthlyRows.length" class="insight-card">
       <p class="settings-card__text">Carregando ranking...</p>
     </article>
 
     <template v-else>
-      <form class="settings-card ranking-workspace__filters" @submit.prevent="emit('applyPeriod')">
-        <div class="ranking-workspace__filters-grid">
-          <div class="settings-field ranking-workspace__period">
-            <span>Periodo</span>
-            <AppDatePicker
-              :model-value="dateFrom"
-              :end-date="dateTo"
-              @update:model-value="emit('update:dateFrom', $event)"
-              @update:end-date="emit('update:dateTo', $event)"
-            >
-              <template #default="{ label }">
-                <button type="button" class="ranking-workspace__date-trigger">
-                  <CalendarDays :size="14" />
-                  <span>{{ label || 'Todas as datas' }}</span>
-                </button>
-              </template>
-            </AppDatePicker>
-          </div>
-
-          <div class="ranking-workspace__period-actions">
-            <button
-              class="ranking-workspace__filter-btn ranking-workspace__filter-btn--ghost"
-              type="button"
-              @click="emit('setPreviousMonth')"
-            >
-              Mes anterior
-            </button>
-            <button
-              class="ranking-workspace__filter-btn ranking-workspace__filter-btn--ghost"
-              type="button"
-              @click="emit('setCurrentMonth')"
-            >
-              Mes atual
-            </button>
-          </div>
-
-          <label class="settings-field ranking-workspace__search">
-            <span>Buscar</span>
-            <input v-model="searchTerm" type="text" placeholder="Consultor ou loja" />
-          </label>
-
-          <label v-if="integratedScope" class="settings-field">
-            <span>Loja</span>
-            <AppSelectField
-              :model-value="storeFilter"
-              :options="storeOptions"
-              placeholder="Todas as lojas"
-              @update:model-value="storeFilter = String($event || FILTER_ALL)"
-            />
-          </label>
-
-          <label class="settings-field">
-            <span>Ordenar por</span>
-            <AppSelectField
-              :model-value="metric"
-              :options="METRIC_OPTIONS"
-              placeholder="Score 360"
-              @update:model-value="updateMetric"
-            />
-          </label>
-
-          <div class="ranking-workspace__submit">
-            <button class="ranking-workspace__filter-btn" type="submit" :disabled="pending">
-              {{ pending ? 'Atualizando...' : 'Atualizar' }}
-            </button>
-          </div>
-        </div>
-      </form>
+      <RankingFilters
+        :date-from="dateFrom"
+        :date-to="dateTo"
+        :search-term="searchTerm"
+        :store-filter="storeFilter"
+        :metric="metric"
+        :store-options="storeOptions"
+        :metric-options="METRIC_OPTIONS"
+        :integrated-scope="integratedScope"
+        :pending="pending"
+        @update:date-from="emit('update:dateFrom', $event)"
+        @update:date-to="emit('update:dateTo', $event)"
+        @update:search-term="searchTerm = $event"
+        @update:store-filter="storeFilter = $event"
+        @update:metric="metric = $event"
+        @apply-period="emit('applyPeriod')"
+        @set-current-month="emit('setCurrentMonth')"
+        @set-previous-month="emit('setPreviousMonth')"
+      />
 
       <template v-if="integratedScope && !singleStoreMode">
         <section class="ranking-workspace__section ranking-workspace__section--static">
@@ -556,27 +287,25 @@ function updateMetric(next) {
             <div>
               <h3 class="ranking-workspace__section-title">Ranking de lojas</h3>
               <p class="ranking-workspace__section-text">
-                Consolidado por loja no tenant ativo usando {{ currentMetricLabel.toLowerCase() }}.
+                Consolidado por loja usando {{ currentMetricLabel.toLowerCase() }}.
               </p>
             </div>
             <span class="insight-tag">{{ sortedStoreRows.length }} lojas</span>
           </header>
-
           <div v-if="sortedStoreRows.length">
             <div class="ranking-workspace__store-ranking">
               <RankingPodium :rows="storePodiumRows" :metric="metric" @select="noop" />
-
               <div v-if="storeLeaderboardRows.length" class="ranking-workspace__leaderboard">
                 <RankingLeaderboardCard
                   v-for="row in storeLeaderboardRows"
-                  :key="row.rowKey"
-                  :row-key="row.rowKey"
-                  :position="row.position"
-                  :name="row.consultantName"
+                  :key="String(row.rowKey)"
+                  :row-key="String(row.rowKey)"
+                  :position="Number(row.position)"
+                  :name="String(row.consultantName)"
                   :subtitle="row.subtitle"
                   :metric="metric"
                   :metric-value="getMetricValue(row, metric)"
-                  :variation="row.variation"
+                  :variation="typeof row.variation === 'number' ? row.variation : null"
                   @select="noop"
                 />
               </div>
@@ -601,25 +330,22 @@ function updateMetric(next) {
                 </p>
               </div>
             </header>
-
             <RankingPodium :rows="group.podiumRows" :metric="metric" @select="openDrawer" />
-
             <div v-if="group.leaderboardRows.length" class="ranking-workspace__leaderboard">
               <RankingLeaderboardCard
                 v-for="row in group.leaderboardRows"
-                :key="row.rowKey"
-                :row-key="row.rowKey"
-                :position="row.position"
-                :name="row.consultantName"
+                :key="String(row.rowKey)"
+                :row-key="String(row.rowKey)"
+                :position="Number(row.position)"
+                :name="String(row.consultantName)"
                 :metric="metric"
                 :metric-value="getMetricValue(row, metric)"
-                :variation="row.variation"
+                :variation="typeof row.variation === 'number' ? row.variation : null"
                 @select="openDrawer"
               />
             </div>
           </section>
         </div>
-
         <div v-else class="player-grid__empty">
           Nenhum consultor encontrado para os filtros atuais.
         </div>
@@ -640,21 +366,19 @@ function updateMetric(next) {
             </div>
             <span class="insight-tag">{{ sortedSingleStoreRows.length }} consultores</span>
           </header>
-
           <div v-if="sortedSingleStoreRows.length">
             <RankingPodium :rows="singleStorePodiumRows" :metric="metric" @select="openDrawer" />
-
             <div v-if="singleStoreLeaderboardRows.length" class="ranking-workspace__leaderboard">
               <RankingLeaderboardCard
                 v-for="row in singleStoreLeaderboardRows"
-                :key="row.rowKey"
-                :row-key="row.rowKey"
-                :position="row.position"
-                :name="row.consultantName"
-                :subtitle="integratedScope ? undefined : row.storeName"
+                :key="String(row.rowKey)"
+                :row-key="String(row.rowKey)"
+                :position="Number(row.position)"
+                :name="String(row.consultantName)"
+                :subtitle="integratedScope ? undefined : String(row.storeName || '')"
                 :metric="metric"
                 :metric-value="getMetricValue(row, metric)"
-                :variation="row.variation"
+                :variation="typeof row.variation === 'number' ? row.variation : null"
                 @select="openDrawer"
               />
             </div>
@@ -663,7 +387,6 @@ function updateMetric(next) {
             Nenhum consultor encontrado para os filtros atuais.
           </div>
         </section>
-
         <div
           v-if="alerts.length && !integratedScope"
           class="ranking-workspace__alerts-hint"
@@ -688,130 +411,46 @@ function updateMetric(next) {
 </template>
 
 <style scoped>
-.ranking-workspace__filters-grid {
-  display: grid;
-  grid-template-columns:
-    minmax(13rem, 0.95fr)
-    auto
-    minmax(12rem, 1.3fr)
-    repeat(2, minmax(10rem, 0.85fr))
-    auto;
-  align-items: end;
-  gap: 0.85rem;
-}
-
-.ranking-workspace__period {
-  min-width: 0;
-}
-
-.ranking-workspace__period-actions {
-  display: flex;
-  gap: 0.45rem;
-  align-items: end;
-}
-
-.ranking-workspace__date-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  width: 100%;
-  min-height: 42px;
-  padding: 0 0.85rem;
-  border-radius: 12px;
-  border: 1px solid rgb(var(--border) / 0.9);
-  background: rgb(var(--surface) / 0.95);
-  color: rgb(var(--text));
-  font-size: 0.88rem;
-  font-weight: 700;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.ranking-workspace__filter-btn {
-  min-height: 42px;
-  padding: 0 0.95rem;
-  border: none;
-  border-radius: 12px;
-  background: rgb(var(--primary));
-  color: rgb(255 255 255);
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.ranking-workspace__filter-btn:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-
-.ranking-workspace__filter-btn--ghost {
-  background: rgb(var(--primary) / 0.12);
-  color: rgb(var(--primary));
-}
-
-.ranking-workspace__submit {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.ranking-workspace__search {
-  min-width: 0;
-}
-
-.ranking-workspace__search input {
-  width: 100%;
-}
-
 .ranking-workspace__groups {
   display: grid;
   gap: 1rem;
 }
-
 .ranking-workspace__section {
   display: grid;
   gap: 0.85rem;
 }
-
 .ranking-workspace__section--static {
   padding-bottom: 0.15rem;
 }
-
 .ranking-workspace__section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
-
 .ranking-workspace__section-title {
   margin: 0;
   font-size: 1rem;
   color: rgb(var(--text) / 0.96);
 }
-
 .ranking-workspace__section-text {
   margin: 0.2rem 0 0;
   font-size: 0.78rem;
   color: rgb(var(--muted) / 0.92);
 }
-
 .ranking-workspace__store-ranking {
   pointer-events: none;
   opacity: 0.96;
 }
-
 .ranking-workspace__leaderboard {
   display: grid;
   gap: 0.55rem;
 }
-
 .player-grid__empty {
   padding: 2rem;
   text-align: center;
   color: rgb(var(--muted) / 0.92);
 }
-
 .ranking-workspace__alerts-hint {
   display: grid;
   gap: 0.25rem;
@@ -822,28 +461,11 @@ function updateMetric(next) {
   color: rgb(var(--text) / 0.92);
   font-size: 0.82rem;
 }
-
 .ranking-workspace__alerts-hint-text {
   color: rgb(var(--muted) / 0.92);
   font-size: 0.74rem;
 }
-
-@media (max-width: 980px) {
-  .ranking-workspace__filters-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .ranking-workspace__period-actions,
-  .ranking-workspace__submit {
-    justify-content: flex-start;
-  }
-}
-
 @media (max-width: 720px) {
-  .ranking-workspace__filters-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .ranking-workspace__section-header {
     flex-direction: column;
     align-items: flex-start;

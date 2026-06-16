@@ -78,14 +78,12 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 	}
 
 	args = append(args, perPage, (page-1)*perPage)
-	dataSQL := fmt.Sprintf(`
-		select
-			u.id, u.email, u.display_name, u.nick, u.avatar_path,
-			u.is_active, u.is_platform_admin, u.must_change_password,
-			u.created_at, u.updated_at,
-			coalesce(agg.account_count, 0),
-			coalesce(agg.account_names, '')
-		from core.users u
+
+	// Projecao lean: quando IncludeAccounts e false, nao agregamos contas por user
+	// (sem lateral join). A tela carrega o detalhe de contas sob interacao
+	// (popover de memberships). Espelha AGENT_RULES "pedir so o necessario".
+	accountSelect := "coalesce(agg.account_count, 0), coalesce(agg.account_names, '')"
+	accountJoin := `
 		left join lateral (
 			select
 				count(distinct au.account_id) as account_count,
@@ -93,11 +91,23 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 			from core.account_users au
 			join core.accounts a on a.id = au.account_id
 			where au.user_id = u.id and au.is_active = true and a.is_active = true
-		) agg on true
+		) agg on true`
+	if !filter.IncludeAccounts {
+		accountSelect = "0, ''"
+		accountJoin = ""
+	}
+
+	dataSQL := fmt.Sprintf(`
+		select
+			u.id, u.email, u.display_name, u.nick, u.avatar_path,
+			u.is_active, u.is_platform_admin, u.must_change_password,
+			u.created_at, u.updated_at,
+			%s
+		from core.users u%s
 		where %s
 		order by lower(u.display_name) asc
 		limit $%d offset $%d
-	`, where, n, n+1)
+	`, accountSelect, accountJoin, where, n, n+1)
 
 	rows, err := r.pool.Query(ctx, dataSQL, args...)
 	if err != nil {

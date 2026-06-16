@@ -12,11 +12,14 @@ import type {
 
 const {
   users,
+  filters,
+  page,
+  perPage,
+  total,
   loading,
   creating,
   deletingId,
   errorMessage,
-  savingMap,
   fetchUsers,
   updateField,
   createUser,
@@ -25,6 +28,7 @@ const {
 } = useAdminUsersManager()
 
 const auth = useAuthStore()
+const canViewUsers = computed(() => auth.role === 'platform_admin')
 const canCreateUser = computed(() => auth.role === 'platform_admin')
 const canDeleteUser = computed(() => auth.role === 'platform_admin')
 
@@ -155,20 +159,59 @@ const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToD
     columnExcludeKeys,
   })
 
-const filteredRows = computed(() => {
-  const rows = users.value as unknown as Array<Record<string, unknown>>
-  return applyOmniFilters(rows, filtersState.value, filterDefinitions.value)
-})
-
+// Os filtros sao aplicados NO SERVIDOR (q/status/platformAdmin). Aqui so
+// deduplicamos por id por seguranca; nao ha filtragem client-side sobre o
+// conjunto inteiro (que antes exigia baixar todos os usuarios).
 const tableRows = computed(() => {
   const seen = new Set<string>()
-  return filteredRows.value.filter((row) => {
+  return (users.value as unknown as Array<Record<string, unknown>>).filter((row) => {
     const id = String((row as Record<string, unknown>).id ?? '').trim()
     if (!id || seen.has(id)) return false
     seen.add(id)
     return true
   })
 })
+
+// Traduz o estado dos filtros da UI -> parametros do backend e dispara o fetch
+// (debounced). statusFilter/platformAdminFilter sao boolean | '' na UI.
+function syncFiltersToBackend() {
+  filters.q = String(filtersState.value.query ?? '')
+  const status = filtersState.value.statusFilter
+  filters.status = status === true ? 'active' : status === false ? 'inactive' : ''
+  const admin = filtersState.value.platformAdminFilter
+  filters.platformAdmin = admin === true ? 'true' : admin === false ? 'false' : ''
+}
+
+let filterTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  filtersState,
+  () => {
+    if (!canViewUsers.value) return
+    if (filterTimer) clearTimeout(filterTimer)
+    filterTimer = setTimeout(() => {
+      syncFiltersToBackend()
+      void fetchUsers({ page: 1 })
+    }, 300)
+  },
+  { deep: true },
+)
+
+onBeforeUnmount(() => {
+  if (filterTimer) clearTimeout(filterTimer)
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / perPage.value)))
+const rangeLabel = computed(() => {
+  if (total.value === 0) return 'Nenhum usuario'
+  const start = (page.value - 1) * perPage.value + 1
+  const end = Math.min(page.value * perPage.value, total.value)
+  return `${start}-${end} de ${total.value}`
+})
+
+function onPageChange(next: number) {
+  if (!canViewUsers.value) return
+  void fetchUsers({ page: next })
+}
 
 const updatableFields = new Set<AdminUserFieldKey>([
   'email',
@@ -230,6 +273,8 @@ async function submitCreate() {
 
 function onResetFilters() {
   filtersState.value = { query: '', statusFilter: '', platformAdminFilter: '' }
+  syncFiltersToBackend()
+  void fetchUsers({ page: 1 })
 }
 
 async function onDeleteUser(id: string) {
@@ -265,7 +310,9 @@ function setPopoverOpen(rowId: string, type: 'memberships' | 'info', value: bool
 }
 
 onMounted(() => {
-  void fetchUsers()
+  // Gate por permissao ANTES de disparar o fetch (espelha o back: rota exige
+  // platform_admin). Evita 403 de ruido no bootstrap.
+  if (canViewUsers.value) void fetchUsers()
 })
 </script>
 
@@ -428,6 +475,23 @@ onMounted(() => {
           </div>
         </template>
       </OmniDataTable>
+    </div>
+
+    <div
+      v-if="totalPages > 1 || total > 0"
+      class="admin-users-workspace__pagination flex items-center justify-between gap-3 px-1 py-2"
+    >
+      <span class="text-xs text-[rgb(var(--muted))]">{{ rangeLabel }}</span>
+      <UPagination
+        v-if="totalPages > 1"
+        :page="page"
+        :total="total"
+        :items-per-page="perPage"
+        :sibling-count="1"
+        show-edges
+        size="sm"
+        @update:page="onPageChange"
+      />
     </div>
 
     <UModal v-model:open="createDialogOpen">

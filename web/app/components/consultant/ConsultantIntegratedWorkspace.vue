@@ -1,7 +1,8 @@
-<script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { CalendarDays } from 'lucide-vue-next'
+import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import ConsultantDetailsDrawer from '~/components/consultant/ConsultantDetailsDrawer.vue'
 import ConsultantHistoryPanel from '~/components/consultant/ConsultantHistoryPanel.vue'
@@ -10,39 +11,50 @@ import ConsultantPlayerGrid from '~/components/consultant/ConsultantPlayerGrid.v
 import ConsultantRecentAttendancesTable from '~/components/consultant/ConsultantRecentAttendancesTable.vue'
 import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
 import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
+import ConsultantStaffPayoutCard from '~/components/consultant/ConsultantStaffPayoutCard.vue'
 import { useConsultantDetailsDrawer } from '~/composables/useConsultantDetailsDrawer'
-import { useAuthStore } from '~/stores/auth'
+import {
+  useConsultantIntegratedRows,
+  type ConsultantRosterItem,
+} from '~/composables/useConsultantIntegratedRows'
+import { useCrmGoalPayoutPolicy } from '~/composables/useCrmGoalPayoutPolicy'
+import {
+  calculateStoreGoalPayout,
+  type CrmGoalPayoutRule,
+} from '~/domain/utils/crm-performance-policy'
 import { useConsultantsStore } from '~/stores/consultants'
-import { useOperationGoalsStore } from '~/stores/operation-goals'
+
+interface StaffItem {
+  id: string
+  name: string
+  role?: string
+  roleLabel?: string
+  storeId?: string
+  storeName?: string
+}
 
 const FILTER_ALL = 'all'
 
-const props = defineProps({
-  roster: {
-    type: Array,
-    default: () => [],
+const props = withDefaults(
+  defineProps<{
+    roster?: ConsultantRosterItem[]
+    staff?: StaffItem[]
+    ranking?: Record<string, unknown> | null
+    overview?: Record<string, unknown> | null
+    history?: Array<Record<string, unknown>>
+    pending?: boolean
+    errorMessage?: string
+  }>(),
+  {
+    roster: () => [],
+    staff: () => [],
+    ranking: null,
+    overview: null,
+    history: () => [],
+    pending: false,
+    errorMessage: '',
   },
-  ranking: {
-    type: Object,
-    default: null,
-  },
-  overview: {
-    type: Object,
-    default: null,
-  },
-  history: {
-    type: Array,
-    default: () => [],
-  },
-  pending: {
-    type: Boolean,
-    default: false,
-  },
-  errorMessage: {
-    type: String,
-    default: '',
-  },
-})
+)
 
 const searchTerm = ref('')
 const storeFilter = ref(FILTER_ALL)
@@ -50,151 +62,54 @@ const statusFilter = ref(FILTER_ALL)
 const goalFilter = ref(FILTER_ALL)
 const selectedConsultantId = ref('')
 const simulationAdditionalSales = ref(0)
+
 const consultantsStore = useConsultantsStore()
 const { integratedDateFrom, integratedDateTo } = storeToRefs(consultantsStore)
-const auth = useAuthStore()
-const operationGoalsStore = useOperationGoalsStore()
-const { goals: operationGoalRows } = storeToRefs(operationGoalsStore)
 
-function currentMonthKey() {
-  const now = new Date()
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
-}
+const rosterRef = computed(() => props.roster || [])
+const rankingRef = computed(() => props.ranking || null)
+const overviewRef = computed(() => props.overview || null)
 
-async function ensureOperationGoalsLoaded() {
-  if (!auth.isAuthenticated || !auth.activeTenantId) return
-  try {
-    await operationGoalsStore.loadGoals({
-      tenantId: auth.activeTenantId,
-      month: currentMonthKey(),
-    })
-  } catch {
-    // silencioso: a tela funciona com fallback do roster
-  }
-}
+const {
+  consultantRows,
+  storeConversionAvgByStoreId,
+  rankingPositionByKey,
+  storeProgressByStoreId,
+} = useConsultantIntegratedRows(rosterRef, rankingRef, overviewRef)
 
-onMounted(() => {
-  void ensureOperationGoalsLoaded()
-})
+const { policy: payoutPolicy } = useCrmGoalPayoutPolicy()
 
-watch(
-  () => [auth.isAuthenticated, auth.activeTenantId],
-  () => {
-    void ensureOperationGoalsLoaded()
-  },
-)
-
-const goalByConsultantId = computed(() => {
-  const map = new Map()
-  for (const row of operationGoalRows.value || []) {
-    if (row?.scope !== 'consultant' || !row?.consultantId) continue
-    map.set(String(row.consultantId).trim(), Number(row.monthlyGoal) || 0)
-  }
+const staffByStoreId = computed(() => {
+  const map: Record<string, StaffItem[]> = {}
+  ;(props.staff || []).forEach((member) => {
+    const sid = String(member.storeId || '').trim()
+    if (!sid) return
+    if (!map[sid]) map[sid] = []
+    map[sid].push(member)
+  })
   return map
 })
 
-const goalByStoreId = computed(() => {
-  const map = new Map()
-  for (const row of operationGoalRows.value || []) {
-    if (row?.scope !== 'store' || !row?.storeId) continue
-    map.set(String(row.storeId).trim(), Number(row.monthlyGoal) || 0)
-  }
-  return map
-})
-
-function resolveMonthlyGoal(consultant) {
-  const consultantGoal = goalByConsultantId.value.get(String(consultant?.id || '').trim())
-  if (typeof consultantGoal === 'number' && consultantGoal > 0) return consultantGoal
-  const storeGoal = goalByStoreId.value.get(String(consultant?.storeId || '').trim())
-  if (typeof storeGoal === 'number' && storeGoal > 0) return storeGoal
-  return Math.max(0, Number(consultant?.monthlyGoal || 0) || 0)
+function payoutRuleLabel(rule: CrmGoalPayoutRule | null) {
+  if (!rule) return 'Sem faixa'
+  if (rule.mode === 'amount') return `${formatCurrencyBRL(rule.value)} fixo`
+  return `${Number(rule.value).toLocaleString('pt-BR')}% da loja`
 }
 
-function buildRowKey(storeId, consultantId) {
-  return `${String(storeId || '').trim()}:${String(consultantId || '').trim()}`
-}
-
-function normalizeStatusEntry(code, label) {
-  return {
-    code,
-    label,
-  }
-}
-
-function resolveRankingRow(map, consultant) {
-  return (
-    map.get(buildRowKey(consultant.storeId, consultant.id)) ||
-    map.get(buildRowKey('', consultant.id)) ||
-    null
-  )
-}
-
-const monthlyRowsMap = computed(
-  () =>
-    new Map(
-      (props.ranking?.monthlyRows || []).map((row) => [
-        buildRowKey(row.storeId, row.consultantId),
-        row,
-      ]),
-    ),
-)
-const dailyRowsMap = computed(
-  () =>
-    new Map(
-      (props.ranking?.dailyRows || []).map((row) => [
-        buildRowKey(row.storeId, row.consultantId),
-        row,
-      ]),
-    ),
-)
-const statusMap = computed(() => {
-  const nextMap = new Map()
-
-  ;(props.overview?.activeServices || []).forEach((item) => {
-    nextMap.set(
-      buildRowKey(item.storeId, item.personId),
-      normalizeStatusEntry('service', 'Em atendimento'),
-    )
-  })
-  ;(props.overview?.waitingList || []).forEach((item) => {
-    nextMap.set(buildRowKey(item.storeId, item.personId), normalizeStatusEntry('queue', 'Na fila'))
-  })
-  ;(props.overview?.pausedEmployees || []).forEach((item) => {
-    const code = String(item.pauseKind || '').trim() === 'assignment' ? 'assignment' : 'paused'
-    const label = code === 'assignment' ? 'Em tarefa' : 'Pausado'
-    nextMap.set(buildRowKey(item.storeId, item.personId), normalizeStatusEntry(code, label))
-  })
-  ;(props.overview?.availableConsultants || []).forEach((item) => {
-    nextMap.set(
-      buildRowKey(item.storeId, item.personId),
-      normalizeStatusEntry('available', 'Disponivel'),
-    )
-  })
-
-  return nextMap
-})
 const storeOptions = computed(() => {
-  const storesById = new Map()
-
-  ;(props.roster || []).forEach((consultant) => {
-    const storeId = String(consultant.storeId || '').trim()
-    const storeName = String(consultant.storeName || '').trim()
-
-    if (!storeId || !storeName || storesById.has(storeId)) {
-      return
-    }
-
-    storesById.set(storeId, {
-      value: storeId,
-      label: storeName,
-    })
+  const storesById = new Map<string, { value: string; label: string }>()
+  rosterRef.value.forEach((c) => {
+    const storeId = String(c.storeId || '').trim()
+    const storeName = String(c.storeName || '').trim()
+    if (storeId && storeName && !storesById.has(storeId))
+      storesById.set(storeId, { value: storeId, label: storeName })
   })
-
   return [
     { value: FILTER_ALL, label: 'Todas as lojas' },
-    ...[...storesById.values()].sort((left, right) => left.label.localeCompare(right.label)),
+    ...[...storesById.values()].sort((a, b) => a.label.localeCompare(b.label)),
   ]
 })
+
 const statusOptions = [
   { value: FILTER_ALL, label: 'Todos os status' },
   { value: 'available', label: 'Disponivel' },
@@ -210,152 +125,58 @@ const goalOptions = [
   { value: 'no-goal', label: 'Sem meta cadastrada' },
 ]
 
-const consultantRows = computed(() =>
-  (props.roster || []).map((consultant) => {
-    const monthly = resolveRankingRow(monthlyRowsMap.value, consultant) || {}
-    const daily = resolveRankingRow(dailyRowsMap.value, consultant) || {}
-    const liveStatus =
-      statusMap.value.get(buildRowKey(consultant.storeId, consultant.id)) ||
-      normalizeStatusEntry('available', 'Disponivel')
-    const monthlyGoal = resolveMonthlyGoal(consultant)
-    const soldValue = Math.max(0, Number(monthly.soldValue || 0) || 0)
-    const dailySoldValue = Math.max(0, Number(daily.soldValue || 0) || 0)
-    const attendances = Math.max(0, Number(monthly.attendances || 0) || 0)
-    const conversions = Math.max(0, Number(monthly.conversions || 0) || 0)
-    const progress = monthlyGoal > 0 ? (soldValue / monthlyGoal) * 100 : 0
-
-    return {
-      ...consultant,
-      liveStatusCode: liveStatus.code,
-      liveStatusLabel: liveStatus.label,
-      monthlyGoal,
-      soldValue,
-      dailySoldValue,
-      attendances,
-      conversions,
-      conversionRate: Math.max(0, Number(monthly.conversionRate || 0) || 0),
-      ticketAverage: Math.max(0, Number(monthly.ticketAverage || 0) || 0),
-      paScore: Math.max(0, Number(monthly.paScore || 0) || 0),
-      erpOrders: Math.max(0, Number(monthly.erpOrders || 0) || 0),
-      soldValueSource: String(monthly.soldValueSource || ''),
-      ticketAverageSource: String(monthly.ticketAverageSource || ''),
-      paScoreSource: String(monthly.paScoreSource || ''),
-      qualityScore: Math.max(0, Number(monthly.qualityScore || 0) || 0),
-      avgDurationMs: Math.max(0, Number(monthly.avgDurationMs || 0) || 0),
-      queueJumpServices: Math.max(0, Number(monthly.queueJumpServices || 0) || 0),
-      progress,
-      hitGoal: monthlyGoal > 0 && soldValue >= monthlyGoal,
-      remainingToGoal: Math.max(0, monthlyGoal - soldValue),
-    }
-  }),
-)
-
 const filteredRows = computed(() => {
-  const normalizedSearch = String(searchTerm.value || '')
+  const term = String(searchTerm.value || '')
     .trim()
     .toLowerCase()
-
   return consultantRows.value.filter((row) => {
-    if (storeFilter.value !== FILTER_ALL && row.storeId !== storeFilter.value) {
-      return false
-    }
-
-    if (statusFilter.value !== FILTER_ALL && row.liveStatusCode !== statusFilter.value) {
-      return false
-    }
-
-    if (goalFilter.value === 'at-goal' && !row.hitGoal) {
-      return false
-    }
-
-    if (goalFilter.value === 'off-goal' && (row.hitGoal || row.monthlyGoal <= 0)) {
-      return false
-    }
-
-    if (goalFilter.value === 'no-goal' && row.monthlyGoal > 0) {
-      return false
-    }
-
-    if (!normalizedSearch) {
-      return true
-    }
-
-    return [row.name, row.storeName, row.storeCode, row.storeCity, row.role].some((value) =>
-      String(value || '')
+    if (storeFilter.value !== FILTER_ALL && row.storeId !== storeFilter.value) return false
+    if (statusFilter.value !== FILTER_ALL && row.liveStatusCode !== statusFilter.value) return false
+    if (goalFilter.value === 'at-goal' && !row.hitGoal) return false
+    if (goalFilter.value === 'off-goal' && (row.hitGoal || row.monthlyGoal <= 0)) return false
+    if (goalFilter.value === 'no-goal' && row.monthlyGoal > 0) return false
+    if (!term) return true
+    return [row.name, row.storeName, row.storeCode, row.storeCity, row.role].some((v) =>
+      String(v || '')
         .toLowerCase()
-        .includes(normalizedSearch),
+        .includes(term),
     )
   })
 })
 
 const singleStoreMode = computed(() => storeFilter.value !== FILTER_ALL)
-
 const singleStoreRows = computed(() => filteredRows.value)
 
-const storeConversionAvgByStoreId = computed(() => {
-  const map = {}
-  const grouped = new Map()
-
-  consultantRows.value.forEach((row) => {
-    const storeId = row.storeId
-    const current = grouped.get(storeId) || { attendances: 0, conversions: 0 }
-    current.attendances += row.attendances
-    current.conversions += row.conversions
-    grouped.set(storeId, current)
-  })
-
-  grouped.forEach((value, storeId) => {
-    map[storeId] = value.attendances > 0 ? (value.conversions / value.attendances) * 100 : 0
-  })
-
-  return map
-})
-
-const rankingPositionByKey = computed(() => {
-  const positions = {}
-  const sorted = [...consultantRows.value].sort((a, b) => b.soldValue - a.soldValue)
-  sorted.forEach((row, index) => {
-    positions[`${row.storeId}:${row.id}`] = index + 1
-  })
-  return positions
-})
-
 const groupedRows = computed(() => {
-  const groups = new Map()
-
+  const groups = new Map<
+    string,
+    { storeId: string; storeName: string; rows: typeof consultantRows.value }
+  >()
   filteredRows.value.forEach((row) => {
-    const storeId = String(row.storeId || '').trim()
-    const current = groups.get(storeId) || {
-      storeId,
-      storeName: String(row.storeName || 'Loja sem nome').trim() || 'Loja sem nome',
+    const sid = String(row.storeId || '').trim()
+    const cur = groups.get(sid) || {
+      storeId: sid,
+      storeName: String(row.storeName || 'Loja sem nome').trim(),
       rows: [],
     }
-
-    current.rows.push(row)
-    groups.set(storeId, current)
+    cur.rows.push(row)
+    groups.set(sid, cur)
   })
-
   return [...groups.values()]
-    .map((group) => ({
-      ...group,
-      rows: [...group.rows].sort((left, right) => {
-        if (right.soldValue !== left.soldValue) {
-          return right.soldValue - left.soldValue
-        }
-
-        return String(left.name || '').localeCompare(String(right.name || ''))
-      }),
+    .map((g) => ({
+      ...g,
+      rows: [...g.rows].sort(
+        (a, b) =>
+          b.soldValue - a.soldValue || String(a.name || '').localeCompare(String(b.name || '')),
+      ),
     }))
-    .sort((left, right) => left.storeName.localeCompare(right.storeName))
+    .sort((a, b) => a.storeName.localeCompare(b.storeName))
 })
 
 const selectedStoreConsultant = computed(() => {
-  if (!singleStoreRows.value.length) {
-    return null
-  }
-
+  if (!singleStoreRows.value.length) return null
   return (
-    singleStoreRows.value.find((row) => row.id === selectedConsultantId.value) ||
+    singleStoreRows.value.find((r) => r.id === selectedConsultantId.value) ||
     singleStoreRows.value[0]
   )
 })
@@ -363,7 +184,13 @@ const selectedStoreConsultant = computed(() => {
 const selectedStoreConsultantCard = computed(() => {
   const row = selectedStoreConsultant.value
   if (!row) return null
-
+  const store = storeProgressByStoreId.value[String(row.storeId || '')] ?? null
+  const payout = calculateStoreGoalPayout({
+    storeSold: store?.storeSold ?? 0,
+    storeProgress: store?.progress ?? 0,
+    policy: payoutPolicy.value,
+    role: row.role,
+  })
   return {
     consultant: {
       id: row.id,
@@ -377,8 +204,8 @@ const selectedStoreConsultantCard = computed(() => {
       monthlyGoal: row.monthlyGoal,
       soldValue: row.soldValue,
       remainingToGoal: row.remainingToGoal,
-      estimatedCommission: row.soldValue * (Number(row.commissionRate || 0) || 0),
-      commissionRate: Number(row.commissionRate || 0) || 0,
+      estimatedCommission: row.soldValue * Number(row.commissionRate || 0),
+      commissionRate: Number(row.commissionRate || 0),
       ticketAverage: row.ticketAverage,
       paScore: row.paScore,
       erpOrders: row.erpOrders,
@@ -394,10 +221,36 @@ const selectedStoreConsultantCard = computed(() => {
       avgTicketGoal: Number(row.avgTicketGoal || 0),
       paGoal: Number(row.paGoal || 0),
       conversionGoal: Number(row.conversionGoal || 0),
+      cancellationRate: row.cancellationRate,
     },
-    storeConversionAvg: storeConversionAvgByStoreId.value[row.storeId] ?? null,
-    rankingPosition: rankingPositionByKey.value[`${row.storeId}:${row.id}`] ?? null,
+    storeConversionAvg: storeConversionAvgByStoreId.value[String(row.storeId || '')] ?? null,
+    rankingPosition:
+      rankingPositionByKey.value[`${String(row.storeId || '')}:${String(row.id || '')}`] ?? null,
+    storeGoalProgress: store ? store.progress : null,
+    goalPayoutAmount: payout.amount,
+    goalPayoutLabel: payoutRuleLabel(payout.rule),
   }
+})
+
+const selectedStoreStaff = computed(() => {
+  if (!singleStoreMode.value) return []
+  const sid = String(selectedStoreConsultant.value?.storeId || '').trim()
+  if (!sid) return []
+  const store = storeProgressByStoreId.value[sid] ?? null
+  return (staffByStoreId.value[sid] || []).map((member) => {
+    const payout = calculateStoreGoalPayout({
+      storeSold: store?.storeSold ?? 0,
+      storeProgress: store?.progress ?? 0,
+      policy: payoutPolicy.value,
+      role: member.role,
+    })
+    return {
+      member,
+      storeGoalProgress: store ? store.progress : null,
+      payoutAmount: payout.amount,
+      payoutLabel: payoutRuleLabel(payout.rule),
+    }
+  })
 })
 
 watch(
@@ -407,12 +260,17 @@ watch(
       selectedConsultantId.value = ''
       return
     }
-
-    if (!rows.some((row) => row.id === selectedConsultantId.value)) {
-      selectedConsultantId.value = rows[0].id
-    }
+    if (!rows.some((r) => r.id === selectedConsultantId.value))
+      selectedConsultantId.value = String(rows[0].id || '')
   },
   { immediate: true },
+)
+
+watch(
+  () => selectedStoreConsultant.value?.id || '',
+  () => {
+    simulationAdditionalSales.value = 0
+  },
 )
 
 const drawer = useConsultantDetailsDrawer()
@@ -420,19 +278,18 @@ const drawer = useConsultantDetailsDrawer()
 const selectedDrawerConsultant = computed(() => {
   const id = drawer.currentConsultantId.value
   if (!id) return null
-  return consultantRows.value.find((row) => row.id === id) || null
+  return consultantRows.value.find((r) => r.id === id) || null
 })
 
 const selectedDrawerStats = computed(() => {
   const row = selectedDrawerConsultant.value
   if (!row) return null
-
   return {
     monthlyGoal: row.monthlyGoal,
     soldValue: row.soldValue,
     remainingToGoal: row.remainingToGoal,
-    estimatedCommission: row.soldValue * (Number(row.commissionRate || 0) || 0),
-    commissionRate: Number(row.commissionRate || 0) || 0,
+    estimatedCommission: row.soldValue * Number(row.commissionRate || 0),
+    commissionRate: Number(row.commissionRate || 0),
     ticketAverage: row.ticketAverage,
     paScore: row.paScore,
     erpOrders: row.erpOrders,
@@ -448,36 +305,24 @@ const selectedDrawerStats = computed(() => {
     avgTicketGoal: Number(row.avgTicketGoal || 0),
     paGoal: Number(row.paGoal || 0),
     conversionGoal: Number(row.conversionGoal || 0),
-    monthEntries: (props.history || []).filter(
-      (entry) => String(entry?.personId || '').trim() === row.id,
-    ),
+    cancellationRate: row.cancellationRate,
+    monthEntries: (props.history || []).filter((e) => String(e?.personId || '').trim() === row.id),
   }
 })
 
-watch(
-  () => selectedStoreConsultant.value?.id || '',
-  () => {
-    simulationAdditionalSales.value = 0
-  },
-)
-
-function openDetails(consultantId) {
+function openDetails(consultantId: string) {
   drawer.open(consultantId)
 }
-
-function selectConsultant(consultantId) {
+function selectConsultant(consultantId: string) {
   selectedConsultantId.value = String(consultantId || '').trim()
 }
-
-function updateSimulationAdditionalSales(value) {
-  const numeric = Number(value || 0)
-  simulationAdditionalSales.value = Number.isFinite(numeric) ? numeric : 0
+function updateSimulationAdditionalSales(value: number) {
+  const n = Number(value || 0)
+  simulationAdditionalSales.value = Number.isFinite(n) ? n : 0
 }
-
 async function applyPeriodFilters() {
   await consultantsStore.applyIntegratedFilters()
 }
-
 async function resetPeriodRange() {
   consultantsStore.resetIntegratedCurrentMonth()
   await consultantsStore.applyIntegratedFilters()
@@ -496,7 +341,6 @@ async function resetPeriodRange() {
     <article v-if="errorMessage" class="insight-card">
       <p class="settings-card__text">{{ errorMessage }}</p>
     </article>
-
     <article v-else-if="pending && !consultantRows.length" class="insight-card">
       <p class="settings-card__text">Carregando comparativo consolidado dos consultores...</p>
     </article>
@@ -581,24 +425,24 @@ async function resetPeriodRange() {
           :selected-consultant-id="selectedStoreConsultant?.id || ''"
           @select="selectConsultant"
         />
-
         <ConsultantPlayerCard
           v-if="selectedStoreConsultantCard"
           :consultant="selectedStoreConsultantCard.consultant"
           :stats="selectedStoreConsultantCard.stats"
           :store-conversion-avg="selectedStoreConsultantCard.storeConversionAvg"
           :ranking-position="selectedStoreConsultantCard.rankingPosition"
+          :store-goal-progress="selectedStoreConsultantCard.storeGoalProgress"
+          :goal-payout-amount="selectedStoreConsultantCard.goalPayoutAmount"
+          :goal-payout-label="selectedStoreConsultantCard.goalPayoutLabel"
           mode="full"
           :show-details-button="false"
         />
-
         <div v-if="selectedStoreConsultantCard" class="consultant-integrated-insights">
           <ConsultantHistoryPanel
             :consultant-id="selectedStoreConsultantCard.consultant.id"
             :store-id="selectedStoreConsultant?.storeId"
             :entries="props.history || []"
           />
-
           <section class="consultant-integrated-insight-panel">
             <ConsultantSimulator
               :sold-value="selectedStoreConsultantCard.stats.soldValue"
@@ -609,6 +453,24 @@ async function resetPeriodRange() {
             />
           </section>
         </div>
+        <section v-if="selectedStoreStaff.length" class="consultant-integrated-staff">
+          <header class="consultant-integrated-staff__header">
+            <h3 class="consultant-integrated-staff__title">Equipe da loja (sem fila)</h3>
+            <p class="consultant-integrated-staff__text">
+              Recebem pela meta da loja; nao atendem na fila.
+            </p>
+          </header>
+          <div class="consultant-integrated-staff__grid">
+            <ConsultantStaffPayoutCard
+              v-for="item in selectedStoreStaff"
+              :key="`staff:${item.member.storeId}:${item.member.id}`"
+              :staff="item.member"
+              :store-goal-progress="item.storeGoalProgress"
+              :payout-amount="item.payoutAmount"
+              :payout-label="item.payoutLabel"
+            />
+          </div>
+        </section>
 
         <ConsultantRecentAttendancesTable
           v-if="selectedStoreConsultant"
@@ -618,7 +480,6 @@ async function resetPeriodRange() {
           :store-name="selectedStoreConsultant.storeName"
           :entries="props.history || []"
         />
-
         <div v-else class="player-grid__empty" data-testid="player-grid-empty">
           Nenhum consultor encontrado para os filtros selecionados.
         </div>
@@ -638,16 +499,17 @@ async function resetPeriodRange() {
               </p>
             </div>
           </header>
-
           <ConsultantPlayerGrid
             :rows="group.rows"
+            :staff="staffByStoreId[group.storeId] || []"
             :store-conversion-avg-by-store-id="storeConversionAvgByStoreId"
             :ranking-position-by-key="rankingPositionByKey"
+            :store-progress-by-store-id="storeProgressByStoreId"
+            :payout-policy="payoutPolicy"
             @open-details="openDetails"
           />
         </section>
       </div>
-
       <div v-else class="player-grid__empty" data-testid="player-grid-empty">
         Nenhum consultor encontrado para os filtros selecionados.
       </div>
@@ -663,21 +525,17 @@ async function resetPeriodRange() {
   grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
   gap: 0.85rem;
 }
-
 .consultant-integrated-filters__search {
   min-width: 0;
 }
-
 .consultant-integrated-filters__period {
   display: grid;
   gap: 0.65rem;
   min-width: 0;
 }
-
 .consultant-integrated-filters__period-field {
   min-width: 0;
 }
-
 .consultant-integrated-date-trigger {
   display: inline-flex;
   align-items: center;
@@ -695,13 +553,11 @@ async function resetPeriodRange() {
   cursor: pointer;
   white-space: nowrap;
 }
-
 .consultant-integrated-filters__actions {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
 }
-
 .consultant-integrated-btn {
   min-height: 38px;
   border: none;
@@ -713,29 +569,24 @@ async function resetPeriodRange() {
   cursor: pointer;
   white-space: nowrap;
 }
-
 .consultant-integrated-btn:disabled {
   cursor: wait;
   opacity: 0.72;
 }
-
 .consultant-integrated-btn--ghost {
   background: rgb(var(--primary) / 0.12);
   color: rgb(var(--primary));
 }
-
 .consultant-integrated-groups {
   display: grid;
   gap: 1rem;
 }
-
 .consultant-integrated-insights {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   gap: 0.85rem;
   align-items: start;
 }
-
 .consultant-integrated-insight-panel {
   padding: 1rem;
   border-radius: 1rem;
@@ -743,12 +594,33 @@ async function resetPeriodRange() {
   background: rgb(var(--surface) / 0.78);
   box-shadow: var(--shadow-xs);
 }
-
+.consultant-integrated-staff {
+  display: grid;
+  gap: 0.65rem;
+}
+.consultant-integrated-staff__header {
+  display: grid;
+  gap: 0.15rem;
+}
+.consultant-integrated-staff__title {
+  margin: 0;
+  font-size: 0.95rem;
+  color: rgb(var(--text) / 0.96);
+}
+.consultant-integrated-staff__text {
+  margin: 0;
+  font-size: 0.76rem;
+  color: rgb(var(--muted) / 0.9);
+}
+.consultant-integrated-staff__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 0.85rem;
+}
 .consultant-integrated-group {
   display: grid;
   gap: 0.85rem;
 }
-
 .consultant-integrated-group__header {
   display: flex;
   align-items: center;
@@ -757,32 +629,27 @@ async function resetPeriodRange() {
   padding-bottom: 0.35rem;
   border-bottom: 1px solid rgb(var(--border) / 0.72);
 }
-
 .consultant-integrated-group__title {
   margin: 0;
   font-size: 1rem;
   color: rgb(var(--text) / 0.96);
 }
-
 .consultant-integrated-group__text {
   margin: 0.2rem 0 0;
   font-size: 0.78rem;
   color: rgb(var(--muted) / 0.9);
 }
-
 .player-grid__empty {
   padding: 2rem;
   text-align: center;
   color: rgb(var(--muted) / 0.92);
 }
-
 @media (max-width: 1100px) {
   .consultant-integrated-insights,
   .consultant-integrated-filters__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-
 @media (max-width: 720px) {
   .consultant-integrated-insights,
   .consultant-integrated-filters__grid {

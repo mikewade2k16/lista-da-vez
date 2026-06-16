@@ -295,6 +295,11 @@ const filteredRows = computed(() => {
 const tableRows = computed(() => {
   const seen = new Set<string>()
   return filteredRows.value.filter((row) => {
+    // Defesa em profundidade: o backend já exclui contas is_agency=true da
+    // listagem /v1/admin/accounts (a conta-agência não é cliente). Este filtro
+    // garante que, mesmo se a agência vazar para a resposta, ela não apareça
+    // na tabela nem no board de clientes.
+    if ((row as Record<string, unknown>).isAgency === true) return false
     const id = String((row as Record<string, unknown>).id ?? '').trim()
     if (!id || seen.has(id)) return false
     seen.add(id)

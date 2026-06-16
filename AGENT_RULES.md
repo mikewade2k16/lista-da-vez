@@ -68,6 +68,18 @@ Tokens base (triplet RGB): `--bg --surface --surface-2 --border --text --muted -
 - **Por que:** Aconteceu (AutomationWorkspace.vue): o CSS usava `var(--color-primary, #16a34a)` etc. — esses nomes `--color-*` NAO existem no design system, entao caia sempre no fallback hex e o componente ignorava o tema (ficava verde/claro fora do dark mode do resto do painel). Hex hardcoded = componente que nao acompanha tema nem rebranding.
 - **Aplica quando:** Qualquer `<style>` de componente novo ou refactor. Conferir o nome do token em `omni-tokens.css`/`tokens.css` antes de usar; se a cor que voce precisa nao existe como token, perguntar/adicionar token — nao cravar hex.
 
+### Layout compacto — horizontal, minimiza scroll vertical
+Em editores/workspaces, preferir layout HORIZONTAL e denso ao inves de uma-propriedade-por-linha. Agrupar campos relacionados de um mesmo item na MESMA linha via grid responsivo (`grid-template-columns: repeat(auto-fit, minmax(...))`). Listas de itens repetidos (lojas, slides, links) ficam em GRID de cards lado a lado, nao empilhados um por linha. Reduzir o gap vertical entre blocos. Colapsar para coluna em telas estreitas (o `auto-fit`/`minmax` ja faz isso). **Barras de acao em UMA linha**: botoes cujo significado o icone ja transmite ficam **so com icone** (sem label), com o nome no **hover** (`title`/tooltip); reservar label de texto so para a acao primaria. Padding/altura das barras enxutos — nada de barra alta com muito espaco vazio.
+
+- **Por que:** Editor de bio tinha cada campo numa linha e cada loja/slide empilhado, gerando scroll vertical longo so para ver poucas opcoes. Layout horizontal/denso cabe muito mais em tela sem rolar e da visao do conjunto.
+- **Aplica quando:** Qualquer editor/workspace com varios campos ou lista de itens repetidos.
+
+### Blocos de edicao colapsaveis (accordion)
+Blocos de edicao com varios campos ou listas (Menu do topo, Links, Slides, Lojas, carrossel, etc.) devem ser COLAPSAVEIS: o usuario abre so o bloco que vai mexer e os demais ficam recolhidos (mostrando so o titulo + um resumo, ex.: contagem de itens). Cada bloco guarda seu estado aberto/fechado.
+
+- **Por que:** Com todos os blocos abertos, o editor vira um scroll vertical sem fim. Colapsar da a visao do conjunto e foca no que esta sendo editado — junto da regra de layout compacto.
+- **Aplica quando:** Qualquer editor/workspace com multiplos blocos/secoes de campos repetidos.
+
 ### Pagina nova precisa rolar como as outras (overflow do layout)
 O layout `dashboard` envolve a pagina em `.module-workspace-full` que e `overflow: hidden`. O componente-raiz da pagina precisa ser o container de rolagem: `flex: 1; min-height: 0; overflow-y: auto` (ou usar o wrapper `.page-workspace`). Sem isso o conteudo que passa da altura fica **cortado, sem scroll**.
 
@@ -85,6 +97,18 @@ Quando um modulo/pagina nao esta pronto, usar `hidden: true` em `web/app/utils/s
 
 - **Por que:** Evita que usuario navegue para pagina quebrada. Beta deixa explicito que a feature pode mudar.
 - **Aplica quando:** Adicionar/remover modulo do menu lateral.
+
+### Cabecalho de pagina admin SEMPRE via `AdminPageHeader` (respeita o toggle global)
+O eyebrow/titulo/descricao do topo de QUALQUER pagina admin tem que vir do componente compartilhado `AdminPageHeader` — que consome `useAdminPageHeaderVisibility` (layer core) e respeita o toggle GLOBAL de cabecalho (themes > "PAGE HEADERS": eyebrow/title/description / "Desativar tudo"). NUNCA renderizar eyebrow/titulo/descricao a mao (markup proprio) numa pagina, senao o "desativar" nao funciona naquela pagina.
+
+- **Por que:** Aconteceu (2026-06-14): `/site/produtos` mostrava o cabecalho mesmo com o toggle desligado em themes, porque o `AdminPageHeader` resolvido por auto-import (`layers/tasks/...`) nao chamava `useAdminPageHeaderVisibility` (so o do core chamava). Resultado: drift — umas paginas respeitavam o toggle, outras nao. Os dois `AdminPageHeader` (core e tasks) agora chamam o composable; o ideal e consolidar num so.
+- **Aplica quando:** Criar pagina/workspace admin nova OU revisar uma existente. Verificar: a pagina usa `AdminPageHeader` (nao markup proprio de header) e, ao desligar em themes > PAGE HEADERS, o cabecalho some. Auditar as paginas existentes contra esse padrao.
+
+### Dropdown/popover/menu SEMPRE fecha no clique-fora e no Esc
+Todo dropdown, popover, menu suspenso ou seletor aberto por clique DEVE fechar quando: (1) o usuario clica em QUALQUER lugar fora dele, (2) o usuario seleciona uma opcao/aperta um botao de dentro dele, (3) o usuario aperta `Esc`. Implementar com listener `pointerdown` no `document` que fecha se o alvo nao esta dentro do root do componente (`rootRef.contains(target)`), + listener de `keydown` para `Escape`, ambos removidos no `onBeforeUnmount`. Componentes prontos (UPopover/USelectMenu do Nuxt UI) ja fazem isso — a regra vale para dropdown FEITO A MAO (markup proprio + `open` ref).
+
+- **Por que:** Aconteceu (CoreAccountSwitcher): o dropdown so fechava ao selecionar item ou clicar no trigger; clicar fora deixava ele aberto/preso. Dropdown que nao fecha no clique-fora atrapalha a navegacao e parece travado.
+- **Aplica quando:** Criar OU revisar QUALQUER pagina/componente com dropdown/popover/menu feito a mao. Ao entrar numa pagina que tem dropdown, VERIFICAR esse comportamento (fecha fora/opcao/Esc) antes de considerar pronto.
 
 ---
 
@@ -244,6 +268,12 @@ Codigo TS deve passar em `vue-tsc --noEmit`. Evitar `any`. Preferir tipos explic
 
 ## Deploy
 
+### Deploy via registry (GHCR) — a VPS NUNCA builda
+As imagens (Go api + Nuxt web) sao publicadas no GHCR (`ghcr.io/mikewade2k16/omni-{api,web}:<tag>`) e a VPS so faz `docker compose pull` + `up -d --no-build` — nunca `--build`. DOIS caminhos para a MESMA esteira de imagens: (1) **rapido, sem git** — `deploy-fast.ps1` builda na maquina LOCAL e da push (dia a dia; npm `deploy:fast`); (2) **completo/rastreavel** — `build-images.yml` builda no GitHub Actions com gate de testes + tag por SHA (release formal). Staging roda na mesma VPS no projeto `omni-staging` (volumes/subdominio proprios), sob demanda. Scripts: `scripts/deploy/{deploy-fast,deploy-pull,staging-up,staging-down,promote}.ps1`.
+
+- **Por que:** o build do Nuxt pede 4GB de heap; numa VPS de ~6GB com prod no ar isso causa sobrecarga/OOM. O build fica fora da VPS (maquina local OU CI); a VPS so puxa a imagem pronta. `docker push/pull` e' incremental (so camadas que mudaram) — resolve o "deploy rapido sem git" sem o problema de tamanho/comando do git. Plano: [docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md](docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md).
+- **Aplica quando:** qualquer deploy ou mudanca em script/workflow de deploy. NUNCA reintroduzir `up -d --build` na VPS como caminho padrao (nem buildar o Nuxt na VPS).
+
 ### VPS Hostinger com Caddy + Docker Compose
 Deploy em VPS `85.31.62.33`, user `deploy`. Caddy reverse proxy em `/opt/omnichannel/Caddyfile`. Cada projeto roda em `/home/deploy/<projeto>` com `docker-compose.prod.yml`. Aliases por projeto na network proxy.
 
@@ -293,6 +323,12 @@ Commits nao devem ter `Co-Authored-By: Claude`. Atribuicao fica so com o desenvo
 
 - **Por que:** Preferencia explicita do mantenedor.
 - **Aplica quando:** Toda criacao de commit.
+
+### NUNCA remover funcionalidade existente para resolver um problema — features coexistem
+Ao corrigir um bug ou adicionar um comportamento, **NAO desligar/remover uma funcionalidade ja construida** como atalho. Se sao DUAS funcionalidades diferentes (ex.: abrir dropdown por **hover** E **fechar no clique-fora**), elas **TEM QUE COEXISTIR** — somam, nao se substituem. So e permitido remover/trocar quando: (a) uma nao pode existir sem quebrar a outra (mutuamente exclusivas tecnicamente), ou (b) e uma mudanca DELIBERADA de regra de negocio (ex.: trocar a formula de um calculo que antes era de um jeito e o time decidiu mudar). Nesses dois casos: **AVISAR e PERGUNTAR antes de remover** — nunca remover por conta propria.
+
+- **Por que:** Aconteceu (DashboardHeader, 2026-06-15): ao adicionar "fechar dropdown no clique-fora", troquei a abertura por **hover** (CSS) por abertura so-no-clique — removi uma feature que o usuario usava para resolver outra. Eram duas coisas independentes que deviam coexistir (hover abre + clique-fora fecha).
+- **Aplica quando:** QUALQUER correcao/refactor que toque comportamento existente. Antes de apagar/desligar/substituir algo que ja funcionava, confirmar que e mesmo inevitavel; se for, perguntar ao usuario primeiro.
 
 ### Validar local antes de qualquer coisa
 Sempre rodar e testar local antes de propor commit ou deploy. UI changes precisam de browser test, nao so type-check.

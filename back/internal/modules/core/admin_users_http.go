@@ -41,12 +41,17 @@ func handleListUsers(svc *AdminUserService) http.HandlerFunc {
 		page, _ := strconv.Atoi(q.Get("page"))
 		perPage, _ := strconv.Atoi(q.Get("perPage"))
 
+		// includeAccounts default true (mantem contrato antigo). Apenas o valor
+		// explicito "false" ativa a projecao lean sem o agregado de contas.
+		includeAccounts := strings.TrimSpace(q.Get("includeAccounts")) != "false"
+
 		filter := AdminUserListFilter{
-			Q:             strings.TrimSpace(q.Get("q")),
-			Status:        strings.TrimSpace(q.Get("status")),
-			PlatformAdmin: strings.TrimSpace(q.Get("platformAdmin")),
-			Page:          page,
-			PerPage:       perPage,
+			Q:               strings.TrimSpace(q.Get("q")),
+			Status:          strings.TrimSpace(q.Get("status")),
+			PlatformAdmin:   strings.TrimSpace(q.Get("platformAdmin")),
+			Page:            page,
+			PerPage:         perPage,
+			IncludeAccounts: includeAccounts,
 		}
 
 		resp, err := svc.ListUsers(r.Context(), filter)

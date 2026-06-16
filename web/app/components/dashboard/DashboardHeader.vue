@@ -6,6 +6,8 @@ import AppSelectField from '~/components/ui/AppSelectField.vue'
 import DashboardSidebarNav from '~/components/dashboard/DashboardSidebarNav.vue'
 import DashboardThemeSwitcher from '~/components/dashboard/DashboardThemeSwitcher.vue'
 import FeedbackNotificationsDropdown from '~/components/feedback/FeedbackNotificationsDropdown.vue'
+import CoreAccountSwitcher from '../../../layers/core/components/CoreAccountSwitcher.vue'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 import { useDashboardNav } from '~/composables/useDashboardNav'
 import { getRoleLabel } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
@@ -32,12 +34,47 @@ const props = defineProps({
 
 const emit = defineEmits(['store-change', 'profile-change'])
 const auth = useAuthStore()
+const accountStore = useCoreAccountStore()
 const { isAuthenticated, user, role } = storeToRefs(auth)
 const runtimeConfig = useRuntimeConfig()
+
+// Seletor de conta (switcher v2) so aparece quando ha mais de uma account
+// acessivel — agencia/platform_admin. Cliente de conta unica nao ve o botao.
+const hasMultipleAccounts = computed(() => accountStore.accounts.length > 1)
 const sidebarOpen = ref(false)
 const profileMenuRef = ref(null)
 const profileMenuOpen = ref(false)
+const navRef = ref(null)
+// Dropdowns do menu (Tools/Site/Manage) agora sao CLICK-controlados (id aberto).
+// Fecham no clique-fora, no Esc e ao escolher um item — regra de dropdown do
+// AGENT_RULES (antes eram hover puro e ficavam abertos/instaveis no clique).
+const openNavId = ref('')
 const route = useRoute()
+
+// hoverSuppressed: id do dropdown cujo HOVER esta temporariamente suprimido.
+// Ao clicar num item que navega, o mouse pode continuar sobre o dropdown e o
+// :hover reabriria o popover; suprimimos o hover ate o mouse sair (mouseleave),
+// sem remover a funcionalidade de hover (so a segura ate o ponteiro sair).
+const hoverSuppressed = ref('')
+
+function toggleNav(id) {
+  openNavId.value = openNavId.value === id ? '' : id
+}
+
+function closeNav() {
+  openNavId.value = ''
+}
+
+function onNavItemClick(id) {
+  closeNav()
+  hoverSuppressed.value = id
+}
+
+function onDropdownLeave(id) {
+  if (hoverSuppressed.value === id) {
+    hoverSuppressed.value = ''
+  }
+}
 
 const { headerItems, resolveIcon, isItemActive, isGroupActive } = useDashboardNav(
   computed(() => props.activeWorkspace),
@@ -84,13 +121,12 @@ async function handleLogout() {
 }
 
 function handlePointerDown(event) {
-  if (!profileMenuOpen.value) {
-    return
-  }
-
   const target = event.target
-  if (profileMenuRef.value && !profileMenuRef.value.contains(target)) {
+  if (profileMenuOpen.value && profileMenuRef.value && !profileMenuRef.value.contains(target)) {
     closeProfileMenu()
+  }
+  if (openNavId.value && navRef.value && !navRef.value.contains(target)) {
+    closeNav()
   }
 }
 
@@ -98,6 +134,7 @@ function handleEscape(event) {
   if (event.key === 'Escape') {
     closeProfileMenu()
     closeSidebar()
+    closeNav()
   }
 }
 
@@ -106,6 +143,7 @@ watch(
   () => {
     closeProfileMenu()
     closeSidebar()
+    closeNav()
   },
 )
 
@@ -139,13 +177,24 @@ onBeforeUnmount(() => {
         </picture>
       </div>
 
-      <nav class="dashboard-header__nav" aria-label="Menu principal">
+      <nav ref="navRef" class="dashboard-header__nav" aria-label="Menu principal">
         <template v-for="item in headerItems" :key="item.id">
-          <div v-if="item.children" class="dashboard-header__nav-dropdown">
+          <div
+            v-if="item.children"
+            class="dashboard-header__nav-dropdown"
+            :class="{
+              'is-open': openNavId === item.id,
+              'is-suppressed': hoverSuppressed === item.id,
+            }"
+            @mouseleave="onDropdownLeave(item.id)"
+          >
             <button
               class="dashboard-header__nav-link"
               :class="{ 'is-active': isGroupActive(item) }"
               type="button"
+              :aria-expanded="openNavId === item.id ? 'true' : 'false'"
+              aria-haspopup="true"
+              @click="toggleNav(item.id)"
             >
               <component
                 :is="resolveIcon(item.icon)"
@@ -170,6 +219,7 @@ onBeforeUnmount(() => {
                 :to="child.path"
                 class="dashboard-header__nav-popover-item"
                 :class="{ 'is-active': isItemActive(child) }"
+                @click="onNavItemClick(item.id)"
               >
                 <component
                   :is="resolveIcon(child.icon)"
@@ -229,6 +279,9 @@ onBeforeUnmount(() => {
             />
             <DashboardThemeSwitcher />
             <FeedbackNotificationsDropdown v-if="isAuthenticated" />
+            <CoreAccountSwitcher
+              v-if="isAuthenticated && hasMultipleAccounts && role === 'platform_admin'"
+            />
             <div v-if="isAuthenticated" ref="profileMenuRef" class="dashboard-header__profile-menu">
               <button
                 class="dashboard-header__profile-trigger"
@@ -452,7 +505,7 @@ onBeforeUnmount(() => {
 .dashboard-header__nav-link:focus-visible::after,
 .dashboard-header__nav-link.is-active::after,
 .dashboard-header__nav-dropdown:hover .dashboard-header__nav-link::after,
-.dashboard-header__nav-dropdown:focus-within .dashboard-header__nav-link::after {
+.dashboard-header__nav-dropdown.is-open .dashboard-header__nav-link::after {
   transform: scaleX(1);
 }
 
@@ -476,25 +529,45 @@ onBeforeUnmount(() => {
   padding-block: 0.4rem;
 }
 
+/* Abre no HOVER (comportamento original, mantido) E no clique (.is-open, que
+   "fixa" aberto). As duas funcionalidades coexistem: o hover abre ao passar o
+   mouse; o clique fixa e o clique-fora/Esc/opcao fecham (handlers em JS). Sem
+   :focus-within (era o que deixava preso aberto apos clicar e nao fechava no
+   clique-fora). */
 .dashboard-header__nav-dropdown:hover .dashboard-header__nav-link,
-.dashboard-header__nav-dropdown:focus-within .dashboard-header__nav-link {
+.dashboard-header__nav-dropdown.is-open .dashboard-header__nav-link {
   background: transparent;
   box-shadow: none;
   color: var(--admin-header-text);
 }
 
 .dashboard-header__nav-dropdown:hover .dashboard-header__nav-chevron,
-.dashboard-header__nav-dropdown:focus-within .dashboard-header__nav-chevron {
+.dashboard-header__nav-dropdown.is-open .dashboard-header__nav-chevron {
   transform: rotate(180deg);
   color: rgb(var(--primary));
 }
 
 .dashboard-header__nav-dropdown:hover .dashboard-header__nav-popover,
-.dashboard-header__nav-dropdown:focus-within .dashboard-header__nav-popover {
+.dashboard-header__nav-dropdown.is-open .dashboard-header__nav-popover {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
   pointer-events: auto;
+}
+
+/* Apos clicar num item (navegacao), segura o hover fechado ate o mouse sair —
+   senao o :hover reabriria o popover com o ponteiro ainda sobre o dropdown.
+   Especificidade maior (.is-suppressed:hover) vence a regra de :hover acima. */
+.dashboard-header__nav-dropdown.is-suppressed:hover .dashboard-header__nav-popover {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-0.35rem);
+  pointer-events: none;
+}
+
+.dashboard-header__nav-dropdown.is-suppressed:hover .dashboard-header__nav-chevron {
+  transform: none;
+  color: var(--admin-header-muted);
 }
 
 .dashboard-header__nav-popover {

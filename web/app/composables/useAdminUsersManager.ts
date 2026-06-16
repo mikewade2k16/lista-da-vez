@@ -55,6 +55,12 @@ export function useAdminUsersManager() {
     status: '' as '' | 'active' | 'inactive',
     platformAdmin: '' as '' | 'true' | 'false',
   })
+  // Paginacao server-side: a tela busca UMA pagina por vez com os filtros
+  // aplicados no backend (q/status/platformAdmin), em vez de baixar todos os
+  // usuarios e filtrar no cliente. Espelha AGENT_RULES "lista grande -> paginacao".
+  const page = ref(1)
+  const perPage = ref(50)
+  const total = ref(0)
   const loading = ref(false)
   const creating = ref(false)
   const deletingId = ref<string | null>(null)
@@ -88,26 +94,29 @@ export function useAdminUsersManager() {
     ;(users.value[idx] as Record<string, unknown>)[field] = value
   }
 
-  async function fetchUsers() {
+  function buildListQuery(): string {
+    const params = new URLSearchParams()
+    params.set('page', String(page.value))
+    params.set('perPage', String(perPage.value))
+    if (filters.q.trim()) params.set('q', filters.q.trim())
+    if (filters.status) params.set('status', filters.status)
+    if (filters.platformAdmin) params.set('platformAdmin', filters.platformAdmin)
+    return params.toString()
+  }
+
+  async function fetchUsers(opts?: { page?: number }) {
+    if (opts?.page) page.value = opts.page
     loading.value = true
     errorMessage.value = ''
     try {
-      // O endpoint pagina (default 20, cap 100). A tela nao tem UI de paginacao,
-      // entao buscamos TODAS as paginas (perPage=100) ate cobrir o total — senao
-      // usuarios alem da pagina 1 "somem" da listagem.
-      const perPage = 100
-      const collected: Record<string, unknown>[] = []
-      let page = 1
-      let total = Infinity
-      while (collected.length < total) {
-        const resp = await apiRequest(`/v1/admin/users?page=${page}&perPage=${perPage}`)
-        const batch = (resp.users as Record<string, unknown>[]) ?? []
-        collected.push(...batch)
-        total = Number(resp.total ?? collected.length)
-        if (batch.length < perPage) break
-        page += 1
-      }
-      users.value = collected.map(normalizeUser)
+      // UMA pagina por vez, filtrada no servidor. A tela renderiza exatamente o
+      // que o backend devolve (sem filtro client-side sobre o conjunto inteiro).
+      const resp = await apiRequest(`/v1/admin/users?${buildListQuery()}`)
+      const batch = (resp.users as Record<string, unknown>[]) ?? []
+      users.value = batch.map(normalizeUser)
+      total.value = Number(resp.total ?? batch.length)
+      page.value = Number(resp.page ?? page.value) || 1
+      perPage.value = Number(resp.perPage ?? perPage.value) || perPage.value
     } catch (e) {
       errorMessage.value = getApiErrorMessage(e, 'Falha ao carregar usuarios.')
     } finally {
@@ -171,6 +180,7 @@ export function useAdminUsersManager() {
       })
       const created = normalizeUser(resp as Record<string, unknown>)
       users.value.unshift(created)
+      total.value += 1
       return created.id
     } catch (e) {
       errorMessage.value = getApiErrorMessage(e, 'Falha ao criar usuario.')
@@ -186,7 +196,9 @@ export function useAdminUsersManager() {
     errorMessage.value = ''
     try {
       await apiRequest(`/v1/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
-      users.value = users.value.filter((u) => u.id !== id)
+      // Soft-delete (is_active=false). Recarrega a pagina atual para refletir o
+      // estado real do servidor (filtros/paginacao server-side).
+      await fetchUsers()
     } catch (e) {
       errorMessage.value = getApiErrorMessage(e, 'Falha ao excluir usuario.')
     } finally {
@@ -210,6 +222,7 @@ export function useAdminUsersManager() {
     filters.q = ''
     filters.status = ''
     filters.platformAdmin = ''
+    page.value = 1
   }
 
   onBeforeUnmount(() => {
@@ -220,6 +233,9 @@ export function useAdminUsersManager() {
   return {
     users,
     filters,
+    page,
+    perPage,
+    total,
     loading,
     creating,
     deletingId,

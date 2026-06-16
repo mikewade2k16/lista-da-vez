@@ -21,11 +21,21 @@ func (service *Service) GetBundle(ctx context.Context, principal auth.Principal,
 		return Bundle{}, err
 	}
 
+	var bundle Bundle
 	if !found {
-		return DefaultBundle(tenantID, defaultTemplateID), nil
+		bundle = DefaultBundle(tenantID, defaultTemplateID)
+	} else {
+		bundle = materializeBundleDefaults(recordToBundle(record))
 	}
 
-	return materializeBundleDefaults(recordToBundle(record)), nil
+	// BadgeRules sao armazenadas em tabela propria; injetadas em settings.badgeRules
+	// para que o frontend receba via runtime.state.settings.badgeRules.
+	gamSection, gamFound, gamErr := service.repository.GetGamificationSection(ctx, tenantID)
+	if gamErr == nil && gamFound {
+		bundle.Settings.BadgeRules = encodeBadgeRules(gamSection.Config.BadgeRules)
+	}
+
+	return bundle, nil
 }
 
 func (service *Service) SaveBundle(ctx context.Context, principal auth.Principal, input Bundle) (MutationAck, error) {

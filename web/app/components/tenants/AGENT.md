@@ -34,6 +34,16 @@ Todos os campos editáveis existem em `core.accounts` e persistem via
 `status` → `active` (bool). `modules` usa endpoint dedicado `/modules` (diff
 enable/disable). Agregados (`userCount`, `projectCount`, ...) são read-only.
 
+### Conta-agência fora da lista (`isAgency`, Trilho 2 / migration 0158)
+
+A conta-agência "Crow Visuals" (slug `crow`, `core.accounts.is_agency=true`) é o
+WORKSPACE da agência (dona do board geral de Tasks), **não um cliente**. O backend
+já a EXCLUI da listagem `/v1/admin/accounts`. O tipo `AccountItem.isAgency`
+(`web/types/accounts.ts`) espelha o contrato, e `ClientsAdminWorkspace.vue` aplica
+um filtro defensivo (`row.isAgency === true → fora`) em `tableRows` — defesa em
+profundidade, sem duplicar a lógica do backend. Não há filtro de UI extra: confiar
+na exclusão do backend, o filtro do front é só rede de segurança.
+
 ## Quando atualizar este AGENT.md
 
 - Adicionar/remover campo em `account-fields.ts`.

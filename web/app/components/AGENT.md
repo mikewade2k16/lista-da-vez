@@ -169,6 +169,27 @@ explicito de override por loja.
   Permitir filtros por tipo (sugestao, duvida, problema) e status (aberto, em analise, resolvido, fechado).
   Acessivel apenas para owner, manager e platform_admin.
 
+### `performance`
+
+Pagina `/performance` (workspace `performance`, so `platform_admin`). Mostra os
+resultados da auditoria de navegacao do painel sem precisar re-rodar nada: a
+fonte de dados e um modulo TS tipado regenerado pelo `qa-bot/perf_audit.py`
+(funcao `write_perf_data_ts`, chamada junto de `write_reports`). Re-rodar a
+auditoria sobrescreve `perf-data.ts` e a pagina reflete na hora.
+
+- [perf-data.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/performance/perf-data.ts)
+  AUTOGERADO. `PerfRow { path; mode: 'inapp'|'cold'; t1; t2; t3; capped }` + `PERF_RUN { stamp, baseUrl }` + `PERF_ROWS`. Tempos em ms, media por (rota, modo). Nao editar a mao.
+- [usePerformanceData.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/performance/usePerformanceData.ts)
+  Deriva as linhas por rota (in-app + cold lado a lado, ordenadas pela mais lenta), os summaries por modo e os destaques (rota mais lenta, total, realtime capadas).
+- [PerformanceWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/performance/PerformanceWorkspace.vue)
+  Orquestrador: `AdminPageHeader`, cards de resumo, tabela por rota, ranking in-app/cold e o bloco de warm-up.
+- [PerformanceRouteTable.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/performance/PerformanceRouteTable.vue)
+  Tabela por rota com T1/T2/T3 nos dois modos, filtro por path e destaque de T3 lento (>=1.5s aviso, >=3s critico).
+- [PerformanceRanking.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/performance/PerformanceRanking.vue)
+  Ranking das rotas mais lentas por T3 num modo (barra proporcional + flag de realtime/cap).
+- [PerformanceWarmupNote.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/performance/PerformanceWarmupNote.vue)
+  Bloco explicativo pt-BR do warm-up de dev (custo de compilacao do Vite), dos marcos T1/T2/T3 e do cap de 15s das rotas realtime.
+
 ### `ui`
 
 - [AppDialogHost.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppDialogHost.vue)

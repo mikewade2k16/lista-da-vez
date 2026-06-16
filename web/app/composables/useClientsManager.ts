@@ -56,6 +56,7 @@ function normalizeAccount(raw: Record<string, unknown>): AccountItem {
     name: String(raw.name ?? ''),
     status: raw.active ? 'active' : 'inactive',
     planCode: String(raw.planCode ?? ''),
+    isAgency: Boolean(raw.isAgency),
     billingMode: raw.billingMode === 'per_store' ? 'per_store' : 'single',
     monthlyPaymentAmount: Number(raw.monthlyPaymentAmount ?? 0) || 0,
     paymentDueDay: raw.paymentDueDay != null ? Number(raw.paymentDueDay) : null,

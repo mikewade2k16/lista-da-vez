@@ -89,10 +89,7 @@ function normalizeWeight(value: unknown, fallback: number) {
 
 function resolveScoreWeights(settings: Record<string, unknown> = {}): ScoreWeights {
   return {
-    conversion: normalizeWeight(
-      settings.scoreWeightConversion,
-      DEFAULT_SCORE_WEIGHTS.conversion,
-    ),
+    conversion: normalizeWeight(settings.scoreWeightConversion, DEFAULT_SCORE_WEIGHTS.conversion),
     soldValue: normalizeWeight(settings.scoreWeightSoldValue, DEFAULT_SCORE_WEIGHTS.soldValue),
     quality: normalizeWeight(settings.scoreWeightQuality, DEFAULT_SCORE_WEIGHTS.quality),
     pa: normalizeWeight(settings.scoreWeightPa, DEFAULT_SCORE_WEIGHTS.pa),
@@ -103,10 +100,42 @@ function resolveScoreWeights(settings: Record<string, unknown> = {}): ScoreWeigh
   }
 }
 
+/**
+ * Resolve as badge rules a partir de runtime.state.settings.badgeRules (fonte primária —
+ * vem do backend via GET /v1/settings, campo settings.badgeRules injetado no bundle).
+ * Fallback nos DEFAULT_BADGES quando o campo estiver ausente ou vazio.
+ */
+function resolveBadgeRules(settings: Record<string, unknown> = {}): BadgeRule[] {
+  const raw = settings.badgeRules
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return DEFAULT_BADGES
+  }
+
+  const resolved: BadgeRule[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const id = String((item as Record<string, unknown>).id ?? '').trim() as BadgeRuleId
+    if (!id) continue
+    resolved.push({
+      id,
+      label: String((item as Record<string, unknown>).label ?? id).trim(),
+      icon: String((item as Record<string, unknown>).icon ?? '').trim(),
+      description: String((item as Record<string, unknown>).description ?? '').trim(),
+      enabled: Boolean((item as Record<string, unknown>).enabled),
+      threshold:
+        typeof (item as Record<string, unknown>).threshold === 'number'
+          ? Number((item as Record<string, unknown>).threshold)
+          : undefined,
+    })
+  }
+
+  return resolved.length > 0 ? resolved : DEFAULT_BADGES
+}
+
 export function useGamificationConfig() {
   const runtime = useAppRuntimeStore()
   const config = computed<GamificationConfig>(() => ({
-    badges: DEFAULT_BADGES,
+    badges: resolveBadgeRules(runtime.state?.settings || {}),
     scoreWeights: resolveScoreWeights(runtime.state?.settings || {}),
   }))
 
@@ -135,8 +164,7 @@ export function computeScore360(
   const { weights, maxSold, maxPa } = context
   const safeMaxSold = Math.max(maxSold, 1)
   const safeMaxPa = Math.max(maxPa, 0.01)
-  const queueShare =
-    row.attendances > 0 ? Math.min(1, row.queueJumpServices / row.attendances) : 0
+  const queueShare = row.attendances > 0 ? Math.min(1, row.queueJumpServices / row.attendances) : 0
 
   return (
     (row.conversionRate / 100) * weights.conversion +
@@ -161,8 +189,7 @@ export function scoreBreakdown(
   const { weights, maxSold, maxPa } = context
   const safeMaxSold = Math.max(maxSold, 1)
   const safeMaxPa = Math.max(maxPa, 0.01)
-  const queueShare =
-    row.attendances > 0 ? Math.min(1, row.queueJumpServices / row.attendances) : 0
+  const queueShare = row.attendances > 0 ? Math.min(1, row.queueJumpServices / row.attendances) : 0
 
   return [
     {

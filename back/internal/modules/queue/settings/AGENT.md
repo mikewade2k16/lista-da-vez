@@ -43,6 +43,7 @@ Ele nao deve cuidar de:
 - `PATCH /v1/settings/operation`
 - `PATCH /v1/settings/crm-policy`
 - `PATCH /v1/settings/modal`
+- `PATCH /v1/settings/gamification`
 - `POST /v1/settings/templates/{templateId}/apply`
 - `POST /v1/settings/options/{group}`
 - `PATCH /v1/settings/options/{group}/{itemId}`
@@ -107,6 +108,21 @@ enviar `tenantId` do contexto ativo quando o principal for global. Nunca usar
   - `resource = settings`, `action = updated`, `resourceId = {tenantId}`
   - todos os clientes do tenant revalidam o bundle apos receber esse evento
   - o canal `operation.updated` deixou de ser usado por settings; o canal de contexto ja chega a todos os atendentes do tenant
+
+## Gamificacao (2026-06-11)
+
+As badge rules de gamificacao sao persistidas em `public.tenant_gamification_settings`
+(migration 0144). O campo `badge_rules jsonb` armazena a lista serializada de `BadgeRule`.
+
+- Leitura: `GetGamificationSection` em `store_postgres_gamification.go`
+- Escrita: `UpsertGamificationSection` + endpoint `PATCH /v1/settings/gamification`
+- Bundle: `GetBundle` injeta os badge rules em `settings.badgeRules` (json.RawMessage dentro de
+  AppSettings) para que o frontend receba via `runtime.state.settings.badgeRules`
+- Permissao de escrita: `settings.write` (mesmo padrao das demais secoes — `canEditSettings`)
+- Fallback: quando nenhuma linha existe para o tenant, retorna os defaults definidos em
+  `defaultBadgeRules()` (espelho dos `DEFAULT_BADGES` do frontend)
+- Os pesos do Score 360 (`scoreWeight*`) NAO foram alterados — continuam em
+  `tenant_operation_core_settings` como antes
 
 ## Arquitetura alvo da refatoracao
 

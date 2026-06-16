@@ -1,62 +1,165 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import ConsultantPlayerCard from '~/components/consultant/ConsultantPlayerCard.vue'
+import ConsultantStaffPayoutCard from '~/components/consultant/ConsultantStaffPayoutCard.vue'
+import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
+import {
+  calculateStoreGoalPayout,
+  type CrmGoalPayoutPolicy,
+  type CrmGoalPayoutRule,
+} from '~/domain/utils/crm-performance-policy'
 
-const props = defineProps({
-  rows: {
-    type: Array,
-    default: () => [],
-  },
-  storeConversionAvgByStoreId: {
-    type: Object,
-    default: () => ({}),
-  },
-  rankingPositionByKey: {
-    type: Object,
-    default: () => ({}),
-  },
-})
+interface GridRow {
+  id: string
+  name: string
+  storeId?: string
+  role?: string
+  storeName?: string
+  liveStatusCode?: string
+  liveStatusLabel?: string
+  monthlyGoal?: number
+  soldValue?: number
+  remainingToGoal?: number
+  ticketAverage?: number
+  paScore?: number
+  erpOrders?: number
+  soldValueSource?: string
+  ticketAverageSource?: string
+  paScoreSource?: string
+  conversionRate?: number
+  avgDurationMs?: number
+  avgTicketGoal?: number
+  paGoal?: number
+  cancellationRate?: number
+  [key: string]: unknown
+}
 
-const emit = defineEmits(['open-details'])
+interface StaffRow {
+  id: string
+  name: string
+  role?: string
+  roleLabel?: string
+  storeId?: string
+  storeName?: string
+}
 
-const enrichedRows = computed(() =>
-  props.rows.map((row) => ({
-    consultant: {
-      id: row.id,
-      name: row.name,
-      role: row.role,
-      storeName: row.storeName,
-      liveStatusCode: row.liveStatusCode,
-      liveStatusLabel: row.liveStatusLabel,
-    },
-    stats: {
-      monthlyGoal: row.monthlyGoal,
-      soldValue: row.soldValue,
-      remainingToGoal: row.remainingToGoal,
-      ticketAverage: row.ticketAverage,
-      paScore: row.paScore,
-      erpOrders: row.erpOrders,
-      soldValueSource: row.soldValueSource,
-      ticketAverageSource: row.ticketAverageSource,
-      paScoreSource: row.paScoreSource,
-      conversionRate: row.conversionRate,
-      averageDurationMs: row.avgDurationMs,
-      avgTicketGoal: row.avgTicketGoal,
-      paGoal: row.paGoal,
-    },
-    storeConversionAvg: props.storeConversionAvgByStoreId[row.storeId] ?? null,
-    rankingPosition: props.rankingPositionByKey[`${row.storeId}:${row.id}`] ?? null,
-    key: `${row.storeId}:${row.id}`,
-  })),
+interface StoreProgress {
+  storeSold: number
+  storeGoal: number
+  progress: number
+}
+
+const props = withDefaults(
+  defineProps<{
+    rows?: GridRow[]
+    staff?: StaffRow[]
+    storeConversionAvgByStoreId?: Record<string, number>
+    rankingPositionByKey?: Record<string, number>
+    storeProgressByStoreId?: Record<string, StoreProgress>
+    payoutPolicy?: CrmGoalPayoutPolicy | null
+  }>(),
+  {
+    rows: () => [],
+    staff: () => [],
+    storeConversionAvgByStoreId: () => ({}),
+    rankingPositionByKey: () => ({}),
+    storeProgressByStoreId: () => ({}),
+    payoutPolicy: null,
+  },
 )
 
-function handleOpen(consultantId) {
+const emit = defineEmits<{
+  (e: 'open-details', consultantId: string): void
+}>()
+
+function payoutRuleLabel(rule: CrmGoalPayoutRule | null) {
+  if (!rule) return 'Sem faixa'
+  if (rule.mode === 'amount') return `${formatCurrencyBRL(rule.value)} fixo`
+  return `${Number(rule.value).toLocaleString('pt-BR')}% da loja`
+}
+
+function storeProgressFor(storeId?: string): StoreProgress | null {
+  return props.storeProgressByStoreId[storeId ?? ''] ?? null
+}
+
+const enrichedRows = computed(() =>
+  props.rows.map((row) => {
+    const store = storeProgressFor(row.storeId)
+    const payout = props.payoutPolicy
+      ? calculateStoreGoalPayout({
+          storeSold: store?.storeSold ?? 0,
+          storeProgress: store?.progress ?? 0,
+          policy: props.payoutPolicy,
+          role: row.role,
+        })
+      : null
+
+    return {
+      consultant: {
+        id: row.id,
+        name: row.name,
+        role: row.role,
+        storeName: row.storeName,
+        liveStatusCode: row.liveStatusCode,
+        liveStatusLabel: row.liveStatusLabel,
+      },
+      stats: {
+        monthlyGoal: row.monthlyGoal ?? 0,
+        soldValue: row.soldValue ?? 0,
+        remainingToGoal: row.remainingToGoal ?? 0,
+        ticketAverage: row.ticketAverage ?? 0,
+        paScore: row.paScore ?? 0,
+        erpOrders: row.erpOrders,
+        soldValueSource: row.soldValueSource,
+        ticketAverageSource: row.ticketAverageSource,
+        paScoreSource: row.paScoreSource,
+        conversionRate: row.conversionRate ?? 0,
+        averageDurationMs: row.avgDurationMs ?? 0,
+        avgTicketGoal: row.avgTicketGoal,
+        paGoal: row.paGoal,
+        cancellationRate: row.cancellationRate,
+      },
+      storeConversionAvg: props.storeConversionAvgByStoreId[row.storeId ?? ''] ?? null,
+      rankingPosition: props.rankingPositionByKey[`${row.storeId}:${row.id}`] ?? null,
+      storeGoalProgress: store ? store.progress : null,
+      goalPayoutAmount: payout ? payout.amount : null,
+      goalPayoutLabel: payout ? payoutRuleLabel(payout.rule) : '',
+      key: `${row.storeId}:${row.id}`,
+    }
+  }),
+)
+
+const enrichedStaff = computed(() =>
+  props.staff.map((member) => {
+    const store = storeProgressFor(member.storeId)
+    const payout = props.payoutPolicy
+      ? calculateStoreGoalPayout({
+          storeSold: store?.storeSold ?? 0,
+          storeProgress: store?.progress ?? 0,
+          policy: props.payoutPolicy,
+          role: member.role,
+        })
+      : null
+
+    return {
+      member,
+      storeGoalProgress: store ? store.progress : null,
+      payoutAmount: payout ? payout.amount : null,
+      payoutLabel: payout ? payoutRuleLabel(payout.rule) : '',
+      key: `staff:${member.storeId}:${member.id}`,
+    }
+  }),
+)
+
+const hasCards = computed(() => enrichedRows.value.length > 0 || enrichedStaff.value.length > 0)
+
+function handleOpen(consultantId: string) {
   emit('open-details', consultantId)
 }
 </script>
 
 <template>
-  <div v-if="enrichedRows.length" class="player-grid" data-testid="player-grid">
+  <div v-if="hasCards" class="player-grid" data-testid="player-grid">
     <ConsultantPlayerCard
       v-for="row in enrichedRows"
       :key="row.key"
@@ -64,9 +167,20 @@ function handleOpen(consultantId) {
       :stats="row.stats"
       :store-conversion-avg="row.storeConversionAvg"
       :ranking-position="row.rankingPosition"
+      :store-goal-progress="row.storeGoalProgress"
+      :goal-payout-amount="row.goalPayoutAmount"
+      :goal-payout-label="row.goalPayoutLabel"
       mode="mini"
       :show-details-button="false"
       @open-details="handleOpen"
+    />
+    <ConsultantStaffPayoutCard
+      v-for="item in enrichedStaff"
+      :key="item.key"
+      :staff="item.member"
+      :store-goal-progress="item.storeGoalProgress"
+      :payout-amount="item.payoutAmount"
+      :payout-label="item.payoutLabel"
     />
   </div>
   <div v-else class="player-grid__empty" data-testid="player-grid-empty">

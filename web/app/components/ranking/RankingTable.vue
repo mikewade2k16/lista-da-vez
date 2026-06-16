@@ -1,25 +1,43 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
   formatCurrencyBRL,
   formatDurationMinutes,
   formatPercent,
 } from '~/domain/utils/admin-metrics'
+import { computeScore360, useGamificationConfig } from '~/composables/useGamificationConfig'
 
-const props = defineProps({
-  title: {
-    type: String,
-    required: true,
+interface TableRow {
+  consultantId?: string
+  consultantName?: string
+  storeId?: string
+  storeName?: string
+  soldValue: number
+  attendances: number
+  conversions?: number
+  conversionRate: number
+  ticketAverage: number
+  paScore: number
+  qualityScore: number
+  avgDurationMs?: number
+  queueJumpServices: number
+  score360?: number
+  [key: string]: unknown
+}
+
+const props = withDefaults(
+  defineProps<{
+    title: string
+    rows?: TableRow[]
+    testid?: string
+  }>(),
+  {
+    rows: () => [],
+    testid: '',
   },
-  rows: {
-    type: Array,
-    default: () => [],
-  },
-  testid: {
-    type: String,
-    default: '',
-  },
-})
+)
+
+const { scoreWeights } = useGamificationConfig()
 
 const sortBy = ref('soldValue')
 
@@ -41,19 +59,28 @@ const rowsWith360 = computed(() => {
   return rows.map((row) => ({
     ...row,
     score360:
-      (row.conversionRate / 100) * 35 +
-      (row.soldValue / maxSold) * 25 +
-      (row.qualityScore / 100) * 20 +
-      (row.paScore / maxPa) * 15 +
-      (1 - Math.min(1, row.queueJumpServices / Math.max(row.attendances, 1))) * 5,
+      row.score360 ??
+      computeScore360(
+        {
+          conversionRate: Number(row.conversionRate || 0),
+          soldValue: Number(row.soldValue || 0),
+          qualityScore: Number(row.qualityScore || 0),
+          paScore: Number(row.paScore || 0),
+          queueJumpServices: Number(row.queueJumpServices || 0),
+          attendances: Number(row.attendances || 0),
+        },
+        { maxSold, maxPa, weights: scoreWeights.value },
+      ),
   }))
 })
 
 const sortedRows = computed(() => {
   const key = sortBy.value
   return [...rowsWith360.value].sort((a, b) => {
-    if (key === 'queueJumpServices') return a[key] - b[key]
-    return b[key] - a[key]
+    const aVal = Number((a as Record<string, unknown>)[key] || 0)
+    const bVal = Number((b as Record<string, unknown>)[key] || 0)
+    if (key === 'queueJumpServices') return aVal - bVal
+    return bVal - aVal
   })
 })
 </script>

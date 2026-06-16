@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import OperationWorkspace from '~/components/operation/OperationWorkspace.vue'
+import OperationSkeleton from '~/components/operation/OperationSkeleton.vue'
 import AlertDisplayHost from '~/components/operation/AlertDisplayHost.vue'
 import ArchivedStoreBanner from '~/components/operation/ArchivedStoreBanner.vue'
 import { storeToRefs } from 'pinia'
@@ -172,16 +173,7 @@ function handleIntegratedStoreChange(storeId) {
       <strong class="loading-state__title">Nao foi possivel carregar a operacao</strong>
       <p class="workspace__text">{{ pageErrorMessage }}</p>
     </div>
-    <div v-else-if="!isRemoteRosterReady" class="loading-state">
-      <strong class="loading-state__title">Carregando operacao...</strong>
-      <p class="workspace__text">
-        {{
-          scopeMode === 'all'
-            ? 'Sincronizando a operacao integrada das lojas acessiveis.'
-            : 'Sincronizando consultores, fila e atendimento da loja ativa.'
-        }}
-      </p>
-    </div>
+    <OperationSkeleton v-else-if="!isRemoteRosterReady" :scope-mode="scopeMode" />
     <template v-else>
       <ArchivedStoreBanner :store-id="bannerStoreId || ''" />
       <AlertDisplayHost

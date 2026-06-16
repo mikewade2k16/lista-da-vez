@@ -1,7 +1,8 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+import { useCoreAccountStore } from '../../core/stores/account'
 import { sanitizeTaskContentHtml, stripHtmlToText } from '../utils/content'
 import { compactUserLabel } from '../utils/user-label'
 import type {
@@ -828,6 +829,10 @@ function buildProject(
 export const useTasksStore = defineStore('tasks', () => {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
+  // Switcher v2: o account ativo vem do Core (CoreAccountSwitcher), igual ao
+  // account-id-bridge.client.ts. Fallback para o tenant legado do login enquanto
+  // o boot do store v2 ainda nao populou `activeAccountId`.
+  const accountStore = useCoreAccountStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const initialized = ref(false)
@@ -856,7 +861,10 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   const accountId = computed(() =>
-    normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80),
+    normalizeText(
+      accountStore.activeAccountId || auth.activeTenantId || auth.tenantContext?.[0]?.id,
+      80,
+    ),
   )
   const canManageBoards = computed(
     () => auth.role === 'platform_admin' || auth.permissionKeys.includes('tasks.boards.manage'),
@@ -1238,10 +1246,18 @@ export const useTasksStore = defineStore('tasks', () => {
     }
   }
 
-  async function initialize() {
+  // allowAutoCreate=false ao recarregar por TROCA de conta (switcher v2): nunca
+  // cria board default na conta de destino. Alem disso, mesmo no boot, o
+  // auto-create so vale para usuario de CONTA UNICA (cliente real, na sua propria
+  // workspace) — uma agencia/platform_admin (varias contas) NAO deve auto-criar
+  // board ao cair numa conta-cliente vazia. Sem essas duas barreiras, o boot/troca
+  // caindo numa account vazia auto-criava um board "Tasks" fantasma (poluiu a
+  // am-malls em 2026-06-15, quando o org-aware passou a listar todas as contas).
+  async function initialize(options: { allowAutoCreate?: boolean } = {}) {
     if (initialized.value || initializing.value) {
       return
     }
+    const allowAutoCreate = options.allowAutoCreate !== false && accountStore.accounts.length === 1
     initializing.value = true
     try {
       showLegacyNoticeIfNeeded()
@@ -1250,7 +1266,7 @@ export const useTasksStore = defineStore('tasks', () => {
       if (canManageBoards.value) {
         normalizedLegacyColumns = await normalizeLegacyDefaultProjects()
       }
-      if (projects.value.length === 0 && canManageBoards.value) {
+      if (allowAutoCreate && projects.value.length === 0 && canManageBoards.value) {
         const created = await createProject(DEFAULT_TASKS_PROJECT_NAME)
         if (created) {
           normalizedLegacyColumns =
@@ -1265,6 +1281,35 @@ export const useTasksStore = defineStore('tasks', () => {
       initializing.value = false
     }
   }
+
+  // Switcher v2: ao trocar de conta no CoreAccountSwitcher, `accountId` muda e o board precisa
+  // recarregar com os dados da nova conta. Limpa o estado dos boards (cancelando fetches em voo
+  // pelo padrao existente de AbortController) e refaz o boot. O `watch` ignora o primeiro setup e
+  // qualquer transicao para vazio (logout/boot ainda sem account) — so recarrega quando ha um valor
+  // novo e diferente, evitando reload espurio no carregamento inicial.
+  async function reloadForAccountSwitch() {
+    for (const controller of boardLoadControllers.values()) {
+      controller.abort()
+    }
+    boardLoadControllers.clear()
+    loadedBoardIds.value = new Set()
+    archivedBoardIds.value = new Set()
+    tasks.value = []
+    projects.value = []
+    activeProjectId.value = ''
+    initialized.value = false
+    await initialize({ allowAutoCreate: false })
+  }
+
+  watch(accountId, (next, previous) => {
+    if (!next || next === previous) {
+      return
+    }
+    if (!initialized.value && !initializing.value) {
+      return
+    }
+    void reloadForAccountSwitch()
+  })
 
   async function normalizeLegacyDefaultProject(project: TaskProjectItem) {
     if (!hasLegacyDefaultColumns(project)) {

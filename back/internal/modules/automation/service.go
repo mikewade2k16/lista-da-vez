@@ -147,12 +147,21 @@ func (s *Service) RuntimeConfig(ctx context.Context, session string) (RuntimeCon
 	for i, d := range docs {
 		docViews[i] = toKnowledgeDocView(d)
 	}
+	catalog, err := s.store.ListCatalog(ctx)
+	if err != nil {
+		return RuntimeConfigView{}, err
+	}
+	models, err := s.resolveSelection(ctx, a.ID, catalog)
+	if err != nil {
+		return RuntimeConfigView{}, err
+	}
 	return RuntimeConfigView{
 		Enabled:       a.Status == statusActive,
 		SystemMessage: buildSystemMessage(persona.SystemPrompt, docs),
 		Persona:       persona.SystemPrompt,
 		Guardrails:    defaultGuardrails,
 		Docs:          docViews,
+		Models:        models,
 	}, nil
 }
 

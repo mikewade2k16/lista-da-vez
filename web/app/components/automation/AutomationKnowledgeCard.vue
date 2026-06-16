@@ -57,6 +57,9 @@ async function remove(id: string) {
   emit('change')
 }
 
+// Colapso do card (aberto por padrao — e o painel da propria secao)
+const open = ref(true)
+
 // Novo documento
 const showNew = ref(false)
 const newTitle = ref('')
@@ -93,127 +96,195 @@ onMounted(() => void loadDocs())
 <template>
   <section class="kd-section">
     <header class="kd-section__head">
-      <div>
-        <h2 class="kd-section__title">Conhecimento</h2>
-        <p class="kd-section__subtitle">
-          Cada documento e injetado separadamente no contexto do bot.
-        </p>
-      </div>
-      <button v-if="!showNew" type="button" class="kd-add-btn" @click="showNew = true">
+      <button type="button" class="kd-section__toggle" :aria-expanded="open" @click="open = !open">
+        <span
+          class="kd-section__chevron"
+          :class="{ 'kd-section__chevron--open': open }"
+          aria-hidden="true"
+        ></span>
+        <span class="kd-section__head-text">
+          <span class="kd-section__title">Conhecimento</span>
+          <span class="kd-section__subtitle">Documentos injetados no contexto do bot</span>
+        </span>
+        <span v-if="docs.length" class="kd-section__count">{{ docs.length }}</span>
+      </button>
+      <button v-if="open && !showNew" type="button" class="kd-add-btn" @click="showNew = true">
         + Novo documento
       </button>
     </header>
 
-    <p v-if="globalError" class="kd-global-error">{{ globalError }}</p>
-    <p v-if="loading" class="kd-muted">Carregando...</p>
+    <div v-show="open" class="kd-section__body">
+      <p v-if="globalError" class="kd-global-error">{{ globalError }}</p>
+      <p v-if="loading" class="kd-muted">Carregando...</p>
 
-    <!-- Card de novo documento -->
-    <article v-if="showNew" class="kd-card kd-card--new">
-      <header class="kd-card__head">
-        <input
-          v-model="newTitle"
-          type="text"
-          class="kd-card__title-input"
-          placeholder="Nome do documento (ex.: Tabela de Precos)"
-          autofocus
-        />
-        <button type="button" class="kd-icon-btn" title="Cancelar" @click="cancelNew">✕</button>
-      </header>
-      <textarea
-        v-model="newBody"
-        class="kd-card__textarea"
-        rows="12"
-        spellcheck="false"
-        placeholder="Conteudo do documento..."
-      ></textarea>
-      <p v-if="newError" class="kd-card__error">{{ newError }}</p>
-      <footer class="kd-card__foot">
-        <button type="button" class="kd-btn kd-btn--primary" :disabled="newSaving" @click="saveNew">
-          {{ newSaving ? 'Criando...' : 'Criar documento' }}
-        </button>
-        <button type="button" class="kd-btn kd-btn--ghost" @click="cancelNew">Cancelar</button>
-      </footer>
-    </article>
+      <!-- Card de novo documento -->
+      <article v-if="showNew" class="kd-card kd-card--new">
+        <header class="kd-card__head">
+          <input
+            v-model="newTitle"
+            type="text"
+            class="kd-card__title-input"
+            placeholder="Nome do documento (ex.: Tabela de Precos)"
+            autofocus
+          />
+          <button type="button" class="kd-icon-btn" title="Cancelar" @click="cancelNew">✕</button>
+        </header>
+        <textarea
+          v-model="newBody"
+          class="kd-card__textarea"
+          rows="12"
+          spellcheck="false"
+          placeholder="Conteudo do documento..."
+        ></textarea>
+        <p v-if="newError" class="kd-card__error">{{ newError }}</p>
+        <footer class="kd-card__foot">
+          <button
+            type="button"
+            class="kd-btn kd-btn--primary"
+            :disabled="newSaving"
+            @click="saveNew"
+          >
+            {{ newSaving ? 'Criando...' : 'Criar documento' }}
+          </button>
+          <button type="button" class="kd-btn kd-btn--ghost" @click="cancelNew">Cancelar</button>
+        </footer>
+      </article>
 
-    <!-- Um card por documento -->
-    <article
-      v-for="doc in docs"
-      :key="doc.id"
-      class="kd-card"
-      :class="{ 'kd-card--off': !doc.enabled }"
-    >
-      <header class="kd-card__head">
-        <input
+      <!-- Um card por documento -->
+      <article
+        v-for="doc in docs"
+        :key="doc.id"
+        class="kd-card"
+        :class="{ 'kd-card--off': !doc.enabled }"
+      >
+        <header class="kd-card__head">
+          <input
+            v-if="local[doc.id]"
+            v-model="local[doc.id].title"
+            type="text"
+            class="kd-card__title-input"
+            placeholder="Nome do documento"
+          />
+          <div class="kd-card__head-actions">
+            <!-- Toggle habilitado -->
+            <button
+              type="button"
+              class="kd-switch"
+              :class="{ 'kd-switch--on': doc.enabled }"
+              :title="doc.enabled ? 'Desabilitar' : 'Habilitar'"
+              @click="toggleEnabled(doc).then(() => emit('change'))"
+            >
+              <span class="kd-switch__track"><span class="kd-switch__thumb"></span></span>
+              <span class="kd-switch__label">{{ doc.enabled ? 'Ativo' : 'Inativo' }}</span>
+            </button>
+            <button
+              type="button"
+              class="kd-icon-btn kd-icon-btn--danger"
+              title="Excluir"
+              @click="remove(doc.id)"
+            >
+              ✕
+            </button>
+          </div>
+        </header>
+
+        <textarea
           v-if="local[doc.id]"
-          v-model="local[doc.id].title"
-          type="text"
-          class="kd-card__title-input"
-          placeholder="Nome do documento"
-        />
-        <div class="kd-card__head-actions">
-          <!-- Toggle habilitado -->
+          v-model="local[doc.id].body"
+          class="kd-card__textarea"
+          rows="14"
+          spellcheck="false"
+        ></textarea>
+
+        <p v-if="local[doc.id]?.error" class="kd-card__error">{{ local[doc.id].error }}</p>
+
+        <footer class="kd-card__foot">
           <button
             type="button"
-            class="kd-switch"
-            :class="{ 'kd-switch--on': doc.enabled }"
-            :title="doc.enabled ? 'Desabilitar' : 'Habilitar'"
-            @click="toggleEnabled(doc).then(() => emit('change'))"
+            class="kd-btn kd-btn--primary"
+            :disabled="local[doc.id]?.saving"
+            @click="save(doc)"
           >
-            <span class="kd-switch__track"><span class="kd-switch__thumb"></span></span>
-            <span class="kd-switch__label">{{ doc.enabled ? 'Ativo' : 'Inativo' }}</span>
+            {{ local[doc.id]?.saving ? 'Salvando...' : 'Salvar' }}
           </button>
-          <button
-            type="button"
-            class="kd-icon-btn kd-icon-btn--danger"
-            title="Excluir"
-            @click="remove(doc.id)"
-          >
-            ✕
-          </button>
-        </div>
-      </header>
+          <span v-if="local[doc.id]?.saved" class="kd-saved-badge">Salvo</span>
+        </footer>
+      </article>
 
-      <textarea
-        v-if="local[doc.id]"
-        v-model="local[doc.id].body"
-        class="kd-card__textarea"
-        rows="14"
-        spellcheck="false"
-      ></textarea>
-
-      <p v-if="local[doc.id]?.error" class="kd-card__error">{{ local[doc.id].error }}</p>
-
-      <footer class="kd-card__foot">
-        <button
-          type="button"
-          class="kd-btn kd-btn--primary"
-          :disabled="local[doc.id]?.saving"
-          @click="save(doc)"
-        >
-          {{ local[doc.id]?.saving ? 'Salvando...' : 'Salvar' }}
-        </button>
-        <span v-if="local[doc.id]?.saved" class="kd-saved-badge">Salvo</span>
-      </footer>
-    </article>
-
-    <p v-if="!loading && docs.length === 0 && !showNew" class="kd-muted">
-      Nenhum documento ainda. Clique em "+ Novo documento" para adicionar.
-    </p>
+      <p v-if="!loading && docs.length === 0 && !showNew" class="kd-muted">
+        Nenhum documento ainda. Clique em "+ Novo documento" para adicionar.
+      </p>
+    </div>
   </section>
 </template>
 
 <style scoped>
 .kd-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: rgb(var(--surface) / 0.9);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .kd-section__head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.95rem 1.1rem;
+}
+
+.kd-section__toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.kd-section__chevron {
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-left: 6px solid var(--text-muted);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  transition: transform 0.15s ease;
+}
+
+.kd-section__chevron--open {
+  transform: rotate(90deg);
+}
+
+.kd-section__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.kd-section__count {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgb(var(--surface-2) / 0.8);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+
+.kd-section__body {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+  padding: 0 1.1rem 1.1rem;
 }
 
 .kd-section__title {

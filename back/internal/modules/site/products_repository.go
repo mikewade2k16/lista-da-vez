@@ -46,6 +46,11 @@ func (r *PostgresProductRepository) List(ctx context.Context, filter ProductList
 		args = append(args, filter.Category)
 		n++
 	}
+	if filter.Campaign != "" {
+		conds = append(conds, fmt.Sprintf("p.campaigns @> to_jsonb(array[$%d::text])", n))
+		args = append(args, filter.Campaign)
+		n++
+	}
 
 	where := strings.Join(conds, " and ")
 
@@ -65,8 +70,11 @@ func (r *PostgresProductRepository) List(ctx context.Context, filter ProductList
 	if perPage < 1 {
 		perPage = 50
 	}
-	if perPage > 200 {
-		perPage = 200
+	// Cap alto: o admin de produtos carrega o catalogo inteiro de uma vez (filtros
+	// e dropdowns sao client-side e precisam ver tudo). Imagens sao locais (cache),
+	// entao listar tudo nao martela a origem.
+	if perPage > 5000 {
+		perPage = 5000
 	}
 
 	args = append(args, perPage, (page-1)*perPage)
@@ -75,10 +83,18 @@ func (r *PostgresProductRepository) List(ctx context.Context, filter ProductList
 		       p.name, p.code, p.description, p.image,
 		       p.categories::text, p.campaigns::text,
 		       p.price, p.fator, p.tipo, p.stock, p.status,
+		       (erp.erp_sku is not null) as erp_synced, erp.erp_name, erp.erp_description,
 		       p.created_at, p.updated_at
 		from site.products p
+		left join lateral (
+		    select l.erp_sku, l.erp_name, l.erp_description
+		    from site.product_erp_links l
+		    where l.product_id = p.id
+		    order by l.erp_sku
+		    limit 1
+		) erp on true
 		where %s
-		order by lower(p.name) asc
+		order by p.created_at desc, p.id desc
 		limit $%d offset $%d
 	`, where, n, n+1)
 
@@ -105,8 +121,16 @@ func (r *PostgresProductRepository) Find(ctx context.Context, accountID, product
 		       p.name, p.code, p.description, p.image,
 		       p.categories::text, p.campaigns::text,
 		       p.price, p.fator, p.tipo, p.stock, p.status,
+		       (erp.erp_sku is not null) as erp_synced, erp.erp_name, erp.erp_description,
 		       p.created_at, p.updated_at
 		from site.products p
+		left join lateral (
+		    select l.erp_sku, l.erp_name, l.erp_description
+		    from site.product_erp_links l
+		    where l.product_id = p.id
+		    order by l.erp_sku
+		    limit 1
+		) erp on true
 		where p.account_id = $1::uuid and p.id = $2::uuid and p.is_active = true
 	`
 	row := r.pool.QueryRow(ctx, query, accountID, productID)
@@ -138,6 +162,28 @@ func (r *PostgresProductRepository) Create(ctx context.Context, accountID string
 	`, accountID, input.Name, input.Code, input.Description, input.Image,
 		string(categoriesJSON), string(campaignsJSON),
 		input.Price, input.Fator, input.Tipo, input.Stock).Scan(&id)
+	if err != nil {
+		return ProductView{}, err
+	}
+	return r.Find(ctx, accountID, id)
+}
+
+// CreateFromErp cria um produto a partir de um item do ERP: name/description do
+// ERP, code = sku, source = 'erp', sem external_id, status active e ativo.
+func (r *PostgresProductRepository) CreateFromErp(ctx context.Context, accountID string, item ErpUnmatchedItem) (ProductView, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `
+		insert into site.products (
+		    account_id, source_label, source, name, code, description, image,
+		    categories, campaigns, price, fator, tipo, stock,
+		    status, is_active, created_at, updated_at
+		) values (
+		    $1::uuid, '', 'erp', $2, $3, $4, '',
+		    '[]'::jsonb, '[]'::jsonb, 0, 1, '', 0,
+		    'active', true, now(), now()
+		)
+		returning id
+	`, accountID, item.Name, item.Sku, item.Description).Scan(&id)
 	if err != nil {
 		return ProductView{}, err
 	}
@@ -294,18 +340,25 @@ func (r *PostgresProductRepository) SoftDelete(ctx context.Context, accountID, p
 
 func scanProduct(row scannable) (ProductView, error) {
 	var v ProductView
-	var sourceID, categoriesJSON, campaignsJSON *string
+	var sourceID, categoriesJSON, campaignsJSON, erpName, erpDescription *string
 	if err := row.Scan(
 		&v.ID, &v.AccountID, &sourceID, &v.SourceLabel,
 		&v.Name, &v.Code, &v.Description, &v.Image,
 		&categoriesJSON, &campaignsJSON,
 		&v.Price, &v.Fator, &v.Tipo, &v.Stock, &v.Status,
+		&v.ErpSynced, &erpName, &erpDescription,
 		&v.CreatedAt, &v.UpdatedAt,
 	); err != nil {
 		return ProductView{}, err
 	}
 	if sourceID != nil {
 		v.SourceID = *sourceID
+	}
+	if erpName != nil {
+		v.ErpName = *erpName
+	}
+	if erpDescription != nil {
+		v.ErpDescription = *erpDescription
 	}
 	if categoriesJSON != nil && *categoriesJSON != "" {
 		_ = json.Unmarshal([]byte(*categoriesJSON), &v.Categories)

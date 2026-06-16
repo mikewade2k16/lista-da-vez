@@ -385,6 +385,29 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		httpapi.WriteJSON(w, http.StatusOK, ack)
 	})))
+
+	mux.Handle("PATCH /v1/settings/gamification", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		var input GamificationSectionInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+
+		ack, err := service.SaveGamificationSection(r.Context(), principal, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
 }
 
 func requestTenantID(r *http.Request) string {

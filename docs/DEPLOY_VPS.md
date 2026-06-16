@@ -4,6 +4,41 @@ Este e o playbook completo de deploy. Para o checklist operacional curto do dia-
 
 > Historico: a pasta `docs_depoy/` foi consolidada em 2026-05-18. Conteudo vivo migrou para este arquivo e para `DEPLOY_CHECKLIST.md`.
 
+## Deploy atual — registry (GHCR) + staging (a partir de 2026-06-15)
+
+> Plano canonico: [deploy/REGISTRY_STAGING_DEPLOY_PLAN.md](deploy/REGISTRY_STAGING_DEPLOY_PLAN.md).
+> Setup do staging (Caddy/DNS/up-down): [deploy/STAGING_SETUP.md](deploy/STAGING_SETUP.md).
+
+O modelo de deploy mudou de "tar + build na VPS" para **build-once no GitHub Actions + pull na VPS**:
+
+- O CI (`.github/workflows/build-images.yml`) builda Go (api) e Nuxt (web) e publica
+  `ghcr.io/mikewade2k16/omni-{api,web}:<sha>` no GHCR. **A VPS nunca compila** (o build do
+  Nuxt pede 4GB de heap numa VPS de ~6GB — era a sobrecarga que queriamos eliminar).
+- Deploy = `docker compose pull` + `up -d --no-build`. A VPS so precisa do `docker-compose.prod.yml`
+  (enviado por `scp` a cada deploy) e do `.env.<ambiente>` (que ja vive na VPS).
+- **Staging** roda na mesma VPS, projeto `omni-staging` (volumes/rede/subdominio proprios), sob demanda.
+- **Promocao** sobe pra producao a MESMA imagem (mesmo SHA) testada em staging; **rollback** = SHA anterior.
+
+Fluxo curto (da maquina local):
+
+```bash
+# 1. CI publica as imagens (push da branch ou workflow_dispatch de build-images.yml)
+# 2. sobe o SHA candidato em staging e testa
+npm run deploy:staging -- -Tag sha-<40hex>
+# 3. valida em https://preview.whenthelightsdie.com  e entao promove a MESMA imagem
+npm run deploy:promote
+# rollback de prod, se preciso:
+powershell.exe -ExecutionPolicy Bypass -File scripts/deploy/deploy-pull.ps1 -Environment prod -Tag sha-<anterior>
+```
+
+Pre-requisitos one-time: `.env.production` e `.env.staging` na VPS (a partir dos `.example`),
+DNS `A staging.lista -> 85.31.62.33`, bloco Caddy do staging (ver STAGING_SETUP.md) e
+`docker login ghcr.io` na VPS com um PAT read-only (imagens privadas).
+
+> O fluxo legado abaixo (tar + `docker compose up -d --build` na VPS, via `npm run prod:deploy:vps`)
+> continua funcionando como fallback e sera removido quando o pipeline registry estiver validado
+> em runtime (primeiro build no CI + primeiro pull em staging/prod).
+
 ## O que faz sentido para este projeto
 
 Este repositorio sobe sozinho, com stack propria:
@@ -747,6 +782,35 @@ npm run prod:deploy:vps -- -BackupDatabase
 Arquivo do script:
 
 - `scripts/deploy/deploy-vps-fast.ps1`
+
+### Deploy incremental (so arquivos alterados)
+
+Mesmo modelo simples do `crow-php`: em vez de reenviar o workspace inteiro, le
+um manifest remoto (`find` com tamanho/mtime), compara com o local e sobe **so
+os arquivos novos/alterados** por `scp`. Depois roda `up -d --build` (o codigo e
+copiado pra dentro da imagem no build, entao o rebuild continua necessario — o
+que encurta e' o ENVIO, nao o build do Nuxt na VPS).
+
+```bash
+npm run prod:deploy:vps:inc      # incremental COM backup do Postgres (padrao)
+npm run prod:deploy:vps:quick    # incremental SEM backup (-NoBackup)
+npm run prod:deploy:vps:dry      # so mostra o que subiria, nao envia nada (-DryRun)
+```
+
+Flags extras (passadas com `--`):
+
+```bash
+npm run prod:deploy:vps:inc -- -Services api      # so a API
+npm run prod:deploy:vps:inc -- -DeleteRemoved     # apaga na VPS o que sumiu local
+npm run prod:deploy:vps:inc -- -ForceRecreate     # recria os containers
+```
+
+Arquivo do script:
+
+- `scripts/deploy/deploy-vps-incremental.ps1`
+
+Diferenca pro `crow-php`: aqui os `*.sql` sao migrations (vao no deploy), entao o
+script **nao** exclui `.sql` — o conjunto de exclusoes e o mesmo do deploy-fast.
 
 ### Workflow manual por GitHub Actions
 

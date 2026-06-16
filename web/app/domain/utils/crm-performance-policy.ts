@@ -80,27 +80,32 @@ function normalizePayoutMode(value: unknown): CrmGoalPayoutMode {
   return normalizeText(value) === 'amount' ? 'amount' : 'percent'
 }
 
-function normalizePayoutRule(rule: Partial<CrmGoalPayoutRule>): CrmGoalPayoutRule | null {
-  const threshold = positiveRate(rule?.threshold)
-  const value = positiveRate(rule?.value)
-  if (threshold <= 0 || value <= 0) return null
+function normalizePayoutRule(
+  rule: Partial<CrmGoalPayoutRule> | null | undefined,
+): CrmGoalPayoutRule | null {
+  if (!rule || typeof rule !== 'object') return null
   return {
-    threshold,
-    value,
-    mode: normalizePayoutMode(rule?.mode),
+    threshold: positiveRate(rule.threshold),
+    value: positiveRate(rule.value),
+    mode: normalizePayoutMode(rule.mode),
   }
 }
 
+// Preserva array vazio EXPLICITO (usuario removeu todas as faixas do grupo) — so cai no
+// fallback de defaults quando o campo vem AUSENTE/nao-array. Sem isso, "remover ate zero" na
+// pagina de Metas CRM voltava sempre aos defaults.
 function normalizePayoutRules(
   rules: Partial<CrmGoalPayoutRule>[] | undefined,
   fallback: CrmGoalPayoutRule[],
 ) {
-  const normalized = (Array.isArray(rules) ? rules : [])
+  if (!Array.isArray(rules)) {
+    return fallback.map((rule) => ({ ...rule }))
+  }
+
+  return rules
     .map(normalizePayoutRule)
     .filter((rule): rule is CrmGoalPayoutRule => Boolean(rule))
     .sort((left, right) => left.threshold - right.threshold)
-
-  return normalized.length ? normalized : fallback.map((rule) => ({ ...rule }))
 }
 
 export function normalizeCrmListUsageTiers(value: unknown): CrmListUsageTier[] {
@@ -186,4 +191,62 @@ export function calculateCrmGoalPayout(
     amountCents: Math.round(Math.max(0, Number(salesCents || 0) || 0) * (rule.value / 100)),
     rule,
   }
+}
+
+// Mapeia o papel do membro da loja para o grupo de recebimento da politica.
+// gerente -> manager; caixa/auxiliar -> support; qualquer outro (operador da fila) -> consultant.
+const MANAGER_ROLE_TOKENS = ['manager', 'gerente', 'gerencia', 'subgerente', 'lider', 'leader']
+const SUPPORT_ROLE_TOKENS = [
+  'support',
+  'caixa',
+  'cashier',
+  'auxiliar',
+  'assistant',
+  'estoquista',
+  'estoque',
+  'financeiro',
+  'recepcao',
+]
+
+export function mapRoleToPayoutGroup(role: unknown): keyof CrmGoalPayoutPolicy {
+  const normalized = normalizeText(role)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+  if (!normalized) return 'consultant'
+  if (MANAGER_ROLE_TOKENS.some((token) => normalized.includes(token))) return 'manager'
+  if (SUPPORT_ROLE_TOKENS.some((token) => normalized.includes(token))) return 'support'
+  return 'consultant'
+}
+
+export type StoreGoalPayoutInput = {
+  storeSold: number
+  storeProgress: number
+  policy: unknown
+  role?: unknown
+}
+
+export type StoreGoalPayoutResult = {
+  amount: number
+  rule: CrmGoalPayoutRule | null
+  group: keyof CrmGoalPayoutPolicy
+}
+
+// Recebimento por atingimento de meta, calculado SEMPRE pela meta da LOJA:
+// - a faixa (threshold) e escolhida pelo % de atingimento da loja (storeProgress);
+// - quando a faixa e percentual, o % incide sobre o TOTAL vendido da loja (storeSold);
+// - quando a faixa e valor fixo (amount), retorna o valor em reais.
+// Trabalha em reais (storeSold em reais -> amount em reais).
+export function calculateStoreGoalPayout(input: StoreGoalPayoutInput): StoreGoalPayoutResult {
+  const group = mapRoleToPayoutGroup(input.role)
+  const normalizedPolicy = normalizeCrmGoalPayoutPolicy(input.policy)
+  const rule = resolveCrmGoalPayoutRule(input.storeProgress, normalizedPolicy[group])
+  if (!rule) return { amount: 0, rule: null, group }
+
+  if (rule.mode === 'amount') {
+    return { amount: Math.max(0, rule.value), rule, group }
+  }
+
+  const base = Math.max(0, Number(input.storeSold || 0) || 0)
+  return { amount: base * (rule.value / 100), rule, group }
 }

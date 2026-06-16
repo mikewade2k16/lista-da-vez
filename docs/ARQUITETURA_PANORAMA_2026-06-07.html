@@ -109,7 +109,7 @@
       <div class="logo">Ω</div>
       <div>
         <h1>Omni · Panorama de Arquitetura</h1>
-        <div class="sub">Fotografia em 2026-06-07 — banco, backend Go, Nuxt, realtime, multi-tenant, segurança e plano de evolução</div>
+        <div class="sub">Fotografia em 2026-06-07 · atualizado 2026-06-11 — banco, backend Go, Nuxt, realtime, multi-tenant, segurança e plano de evolução</div>
       </div>
     </div>
     <nav class="tabs">
@@ -187,6 +187,7 @@
         <li><span class="dot g"></span><s>Defaults de prod divergentes</s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (Core V2 on + roles core)</li>
         <li><span class="dot g"></span><s><code>X-Account-Id</code> de <code>activeTenantId</code></s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (agora <code>activeAccountId</code>)</li>
         <li><span class="dot g"></span><s>Módulos <code>site/roadmap/operationgoals</code> sem backend</s> — <b style="color:var(--green)">✅ resolvido 06-07</b> (registrados; 404→200)</li>
+        <li><span class="dot g"></span><s>Board de Tasks com "dono == cliente" (board da agência dentro de conta-cliente)</s> — <b style="color:var(--green)">✅ resolvido 06-15</b> (org Crow Visuals dona das 11 contas; board movido p/ a conta-agência <code>crow</code>; acesso org-aware leitura+<code>IsMember</code>; ver <code>AGENCY_TENANT_ARCHITECTURE.md</code>)</li>
         <li><span class="dot r"></span>Sem RLS no Postgres (isolamento só na aplicação)</li>
         <li><span class="dot y"></span>Realtime/event bus em memória — não escala horizontal</li>
         <li><span class="dot y"></span>Sem observabilidade (métricas/tracing/SLO)</li>
@@ -236,6 +237,8 @@
         <tr><td><code>queue</code></td><td>26</td><td>fila, lojas, consultores, operação, ERP</td></tr>
         <tr><td><code>tasks</code></td><td>17</td><td>boards, tasks, campos, comentários</td></tr>
         <tr><td><code>site</code></td><td>4</td><td>leads, produtos, tracking, webhooks</td></tr>
+        <tr><td><code>bio</code></td><td>3</td><td>bios (draft/published jsonb), defaults, media — migration 0152 pendente de aplicar</td></tr>
+        <tr><td><code>cardapio</code></td><td>10</td><td>restaurants, domains, categories, products, variations, addons, reviews, orders, order_items, events — migration 0153 pendente de aplicar</td></tr>
         <tr><td><code>notifications</code></td><td>4</td><td>notificações, canais, mutes</td></tr>
         <tr><td><code>roadmap</code></td><td>2</td><td>módulos/regras de roadmap</td></tr>
         <tr><td><code>public</code></td><td>18</td><td>residual/compat (reset, ERP raw, access)</td></tr>
@@ -250,6 +253,10 @@
         <tr><td><code>notifications</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
         <tr><td><code>queue</code></td><td>✅</td><td><span class="tag">catálogo + wiring legado</span></td></tr>
         <tr><td><code>crm</code></td><td>✅</td><td><span class="tag">catálogo + wiring legado</span></td></tr>
+        <tr><td><code>automation</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
+        <tr><td><code>meta_ads</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
+        <tr><td><code>bio</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">aguarda migration 0152 + rebuild</span></td></tr>
+        <tr><td><code>cardapio</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">aguarda migration 0153 + rebuild</span></td></tr>
         <tr><td><code>site</code></td><td>✅</td><td><span class="pill p1">não registrado</span></td></tr>
         <tr><td><code>roadmap</code></td><td>✅</td><td><span class="pill p1">não registrado</span></td></tr>
         <tr><td><code>operationgoals</code></td><td>—</td><td><span class="pill p1">não registrado</span></td></tr>
@@ -263,6 +270,7 @@
       <li><span class="dot y"></span><code>go.mod</code> declara <code>go 1.25.0</code>, mas <code>Dockerfile</code> usa <code>golang:1.26.3</code></li>
       <li><span class="dot r"></span>Prod: <code>CORE_V2_ENABLED=false</code> + <code>AUTH_ROLES_SOURCE=core_with_fallback</code> — e a 0135 removeu as tabelas de role legadas</li>
       <li><span class="dot y"></span>Ledger de migrations com prefixos duplicados (<code>0015a</code>, múltiplos <code>0019/0031/0039/0110</code>, <code>0126</code>) — congelar convenção</li>
+      <li><span class="dot r"></span><b>Migrator ignora marcadores goose</b> — <code>migrator.go</code> roda o <code>.sql</code> inteiro; <code>-- +goose Down</code> + <code>DROP</code> se auto-destrói. A <code>0143</code> dropava <code>automation.contacts</code> no boot (corrigido pela <code>0147</code>); revisar convenção das futuras</li>
     </ul>
   </div>
 </section>
@@ -548,10 +556,11 @@
     </details>
 
     <details class="item" data-p="p2" data-area="deploy">
-      <summary><span class="id">P2·22</span><span class="ttl">CI/CD com gates de qualidade</span><span class="pill p2">P2</span><span class="when">60–90d</span><span class="chev">›</span></summary>
+      <summary><span class="id">P2·22</span><span class="ttl">CI/CD com gates de qualidade</span><span class="pill p2">P2</span><span class="when">60–90d</span><span class="tag">pipeline GHCR escrito · 06-15</span><span class="chev">›</span></summary>
       <div class="body">
         <p><b>Ação:</b> <code>go test</code> + <code>web test/typecheck/lint</code> + migration check + smoke de API com banco limpo + teste cross-tenant + SAST/SCA/secret-scan; build de imagem reprodutível.</p>
         <p><b>Aceite:</b> PR que quebra contrato multi-tenant falha antes do merge.</p>
+        <p><b>Parcial (06-15):</b> pipeline de deploy reescrito — build no GitHub Actions (<code>build-images.yml</code>) que publica <code>ghcr.io/mikewade2k16/omni-{api,web}:&lt;sha&gt;</code> no GHCR; a VPS só faz <code>pull</code> + <code>up --no-build</code> (nunca compila). Inclui <b>staging</b> isolado sob demanda (<code>omni-staging</code>) e promoção do mesmo SHA testado. Plano: <code>docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md</code>. Falta validar em runtime (1º build no CI + 1º pull em staging/prod) e os gates SAST/SCA/secret-scan.</p>
       </div>
     </details>
 

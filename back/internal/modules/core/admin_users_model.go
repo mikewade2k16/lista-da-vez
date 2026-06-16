@@ -39,6 +39,11 @@ type AdminUserListFilter struct {
 	PlatformAdmin string // "true" | "false" | "" (todos)
 	Page          int
 	PerPage       int
+	// IncludeAccounts: quando true (default), a listagem agrega accountCount e
+	// accountNames por user (lateral join). Quando false, devolve a projecao lean
+	// (sem o agregado) — usado pela tela acima-da-dobra, que carrega o detalhe de
+	// contas sob interacao (popover de memberships). Espelha "pedir so o necessario".
+	IncludeAccounts bool
 }
 
 // AdminUserListResponse e o body de GET /v1/admin/users.

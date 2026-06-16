@@ -25,6 +25,7 @@ const props = defineProps<{
   mergedConsultants: MergedCrmConsultant[]
   managementConsultantRows: CRMConsultantMetric[]
   storeGoalProgressBySlug: Record<string, number>
+  storeSoldCentsBySlug: Record<string, number>
   goalPayoutPolicy: CrmGoalPayoutPolicy
   listUsageTiers: CrmListUsageTier[]
   canManageConsultantLinks: boolean
@@ -141,8 +142,11 @@ const decoratedConsultants = computed(() =>
     const usageRate = crmListUsageCoverageRate(row)
     const listTier = classifyCrmListUsageRate(usageRate, props.listUsageTiers)
     const storeGoalProgress = storeGoalProgressForRow(row)
+    // Base do recebimento = total vendido da LOJA (decisao de negocio): a faixa e
+    // destravada pelo % da meta da loja e o % incide sobre o total da loja, nao sobre
+    // as vendas do consultor. Mesmo modelo dos cards de consultor.
     const goalPayout = calculateCrmGoalPayout(
-      row.salesCents,
+      storeSoldCentsForRow(row),
       storeGoalProgress,
       props.goalPayoutPolicy,
       'consultant',
@@ -397,6 +401,10 @@ function queueCancellationRate(row: MergedCrmConsultant) {
 
 function storeGoalProgressForRow(row: MergedCrmConsultant) {
   return Number(props.storeGoalProgressBySlug?.[String(row.storeSlug || '').trim()] || 0)
+}
+
+function storeSoldCentsForRow(row: MergedCrmConsultant) {
+  return Number(props.storeSoldCentsBySlug?.[String(row.storeSlug || '').trim()] || 0)
 }
 
 function goalPayoutRuleLabel(rule: CrmGoalPayoutRule | null) {

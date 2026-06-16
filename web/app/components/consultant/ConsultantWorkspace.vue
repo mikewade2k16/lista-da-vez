@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { buildConsultantStats } from '~/domain/utils/admin-metrics'
 import ConsultantHistoryPanel from '~/components/consultant/ConsultantHistoryPanel.vue'
@@ -9,40 +9,52 @@ import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
 import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
 import { useConsultantsStore } from '~/stores/consultants'
 
-const props = defineProps({
-  state: {
-    type: Object,
-    required: true,
+interface RosterItem {
+  id: string
+  name: string
+  storeId?: string
+  storeName?: string
+  monthlyGoal?: number
+  commissionRate?: number
+  conversionGoal?: number
+  avgTicketGoal?: number
+  paGoal?: number
+  [key: string]: unknown
+}
+
+interface WorkspaceState {
+  roster?: RosterItem[]
+  selectedConsultantId?: string
+  serviceHistory?: Array<Record<string, unknown>>
+  consultantSimulationAdditionalSales?: number
+  visitReasonOptions?: unknown[]
+  customerSourceOptions?: unknown[]
+  [key: string]: unknown
+}
+
+const props = withDefaults(
+  defineProps<{
+    state: WorkspaceState
+    integratedScope?: boolean
+    integratedRoster?: unknown[]
+    integratedStaff?: unknown[]
+    integratedRanking?: object | null
+    integratedOverview?: object | null
+    integratedHistory?: unknown[]
+    integratedPending?: boolean
+    integratedError?: string
+  }>(),
+  {
+    integratedScope: false,
+    integratedRoster: () => [],
+    integratedStaff: () => [],
+    integratedRanking: null,
+    integratedOverview: null,
+    integratedHistory: () => [],
+    integratedPending: false,
+    integratedError: '',
   },
-  integratedScope: {
-    type: Boolean,
-    default: false,
-  },
-  integratedRoster: {
-    type: Array,
-    default: () => [],
-  },
-  integratedRanking: {
-    type: Object,
-    default: null,
-  },
-  integratedOverview: {
-    type: Object,
-    default: null,
-  },
-  integratedHistory: {
-    type: Array,
-    default: () => [],
-  },
-  integratedPending: {
-    type: Boolean,
-    default: false,
-  },
-  integratedError: {
-    type: String,
-    default: '',
-  },
-})
+)
 
 const consultantsStore = useConsultantsStore()
 
@@ -81,11 +93,11 @@ const storeConversionAvg = computed(() => {
   return (converted.length / inStore.length) * 100
 })
 
-function selectConsultant(consultantId) {
+function selectConsultant(consultantId: string) {
   void consultantsStore.setSelectedConsultant(consultantId)
 }
 
-function updateSimulation(amount) {
+function updateSimulation(amount: number) {
   void consultantsStore.setConsultantSimulationAdditionalSales(amount)
 }
 </script>
@@ -94,6 +106,7 @@ function updateSimulation(amount) {
   <ConsultantIntegratedWorkspace
     v-if="integratedScope"
     :roster="integratedRoster"
+    :staff="integratedStaff"
     :ranking="integratedRanking"
     :overview="integratedOverview"
     :history="integratedHistory"

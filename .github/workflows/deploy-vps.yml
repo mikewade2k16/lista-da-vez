@@ -1,31 +1,50 @@
 name: Deploy VPS
 
-# Antes de disparar este workflow, revisar a secao
-# "Pendencias para o proximo deploy" em docs/DEPLOY_VPS.md.
-# Releases que tocam schema (ex: migration 0024 que move settings para
-# escopo de tenant) precisam de backup_database=true e validacao manual do
-# backfill em producao antes de liberar acesso.
+# Deploy por PULL de imagem (sem build na VPS). As imagens sao buildadas e
+# publicadas no GHCR pelo workflow build-images.yml; aqui so fazemos
+# `docker compose pull` + `up --no-build` no ambiente escolhido.
+#
+# Pre-requisitos:
+# - build-images.yml ja publicou a tag escolhida (ghcr.io/.../omni-{api,web}:<tag>);
+# - a VPS ja tem `docker login ghcr.io` valido (PAT read-only) para puxar imagens privadas;
+# - o .env do ambiente (.env.production / .env.staging) ja existe no path remoto.
+#
+# Migrations: a imagem da api roda `migrate up` no boot. Release que toca schema
+# precisa de backup_database=true. Ver docs/DEPLOY_VPS.md.
 
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: Ambiente alvo
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - prod
+      image_tag:
+        description: "Tag da imagem no GHCR (ex. sha-<40hex>). Vazio => sha-<HEAD do git_ref>."
+        required: false
+        default: ""
+        type: string
       git_ref:
-        description: Git ref para deploy (revisar docs/DEPLOY_VPS.md secao "Pendencias para o proximo deploy")
+        description: Git ref de onde sai o docker-compose.prod.yml
         required: false
         default: main
         type: string
-      services:
-        description: Servicos para subir separados por espaco
-        required: false
-        default: api web
-        type: string
       backup_database:
-        description: Gerar backup remoto do postgres antes do deploy
+        description: Backup do Postgres antes do deploy (obrigatorio em release de schema)
         required: false
         default: true
         type: boolean
       force_recreate:
-        description: Forcar recreate dos servicos selecionados
+        description: Forcar recreate dos servicos
+        required: false
+        default: false
+        type: boolean
+      skip_smoke_tests:
+        description: Pular smoke tests publicos
         required: false
         default: false
         type: boolean
@@ -34,274 +53,137 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-lista-atendimento-prod
+  group: deploy-lista-atendimento-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
-  test-migrations:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: testdb
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 5432:5432
-    steps:
-      - name: Checkout target ref
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.git_ref }}
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.26.3
-          cache-dependency-path: back/go.sum
-
-      - name: Run migration integration test
-        working-directory: back
-        env:
-          TEST_DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb
-        run: |
-          go test ./internal/platform/database/... -run TestAllMigrationsApply -v -timeout 120s
-
   deploy:
     runs-on: ubuntu-latest
-    needs: [test-migrations]
     env:
       DEPLOY_HOST: 85.31.62.33
       DEPLOY_PORT: "22"
       DEPLOY_USER: deploy
-      DEPLOY_REMOTE_PATH: /home/deploy/lista-atendimento
-      DEPLOY_PUBLIC_BASE_URL: https://lista.whenthelightsdie.com
     steps:
       - name: Checkout target ref
         uses: actions/checkout@v5
         with:
           ref: ${{ inputs.git_ref }}
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.11.1
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
-
-      - name: Prepare Nuxt (gera .nuxt/tsconfig.json necessario para Vitest)
-        working-directory: web
-        run: npx nuxt prepare
-
-      - name: Run web Vitest suite
-        working-directory: web
-        run: npm run test
-
-      - name: Audit root npm dependencies
-        run: npm audit --package-lock-only --audit-level=high
-
-      - name: Audit web npm dependencies
-        id: web_npm_audit
-        continue-on-error: true
-        working-directory: web
-        run: npm audit --package-lock-only --audit-level=high
-
-      - name: Warn about current web audit baseline
-        if: ${{ steps.web_npm_audit.outcome == 'failure' }}
+      - name: Resolve environment + image tag
         run: |
-          echo "::warning title=web npm audit::High severity vulnerabilities are still present in web/package-lock.json. This audit is warning-only until the frontend dependencies are upgraded."
+          set -euo pipefail
+          if [[ "${{ inputs.environment }}" == "prod" ]]; then
+            echo "REMOTE_PATH=/home/deploy/lista-atendimento" >> "$GITHUB_ENV"
+            echo "ENV_FILE=.env.production" >> "$GITHUB_ENV"
+            echo "PUBLIC_BASE_URL=https://lista.whenthelightsdie.com" >> "$GITHUB_ENV"
+          else
+            echo "REMOTE_PATH=/home/deploy/lista-atendimento-staging" >> "$GITHUB_ENV"
+            echo "ENV_FILE=.env.staging" >> "$GITHUB_ENV"
+            echo "PUBLIC_BASE_URL=https://preview.whenthelightsdie.com" >> "$GITHUB_ENV"
+          fi
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.26.3
-          cache-dependency-path: back/go.sum
-
-      - name: Run Go tests
-        working-directory: back
-        run: go test ./...
-
-      - name: List Go module updates
-        working-directory: back
-        run: go list -m -u all
-
-      - name: Run govulncheck
-        working-directory: back
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+          tag="${{ inputs.image_tag }}"
+          if [[ -z "$tag" ]]; then
+            tag="sha-$(git rev-parse HEAD)"
+            echo "image_tag vazio; usando $tag (build-images.yml precisa ter publicado essa tag)."
+          fi
+          echo "IMAGE_TAG=$tag" >> "$GITHUB_ENV"
 
       - name: Configure SSH access
         env:
           DEPLOY_VPS_SSH_KEY: ${{ secrets.DEPLOY_VPS_SSH_KEY }}
         run: |
           set -euo pipefail
-
           if [[ -z "$DEPLOY_VPS_SSH_KEY" ]]; then
             echo "Secret DEPLOY_VPS_SSH_KEY ausente." >&2
             exit 1
           fi
-
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_VPS_SSH_KEY" > ~/.ssh/deploy_vps
           chmod 600 ~/.ssh/deploy_vps
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Backup remote database
-        if: ${{ inputs.backup_database }}
-        id: backup
+      - name: Copy docker-compose.prod.yml to VPS
         run: |
           set -euo pipefail
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH'"
+          scp -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" docker-compose.prod.yml "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_PATH/docker-compose.prod.yml"
 
-          cat > /tmp/remote_backup.sh << 'REMOTE_SCRIPT'
-          set -euo pipefail
-          PG_USER=$(docker inspect listaatendimento-postgres-1 \
-            --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            | grep '^POSTGRES_USER=' | cut -d= -f2-)
-          PG_DB=$(docker inspect listaatendimento-postgres-1 \
-            --format '{{range .Config.Env}}{{println .}}{{end}}' \
-            | grep '^POSTGRES_DB=' | cut -d= -f2-)
-          PG_USER="${PG_USER:-listaatendimento}"
-          PG_DB="${PG_DB:-listaatendimento}"
-          mkdir -p /home/deploy/lista-atendimento/backups
-          ts=$(date +%Y%m%d_%H%M%S)
-          docker exec -u postgres listaatendimento-postgres-1 \
-            pg_dump -U "$PG_USER" -d "$PG_DB" \
-            | gzip > "/home/deploy/lista-atendimento/backups/backup_${ts}.sql.gz"
-          latest=$(ls -t /home/deploy/lista-atendimento/backups | head -n 1)
-          printf '/home/deploy/lista-atendimento/backups/%s\n' "$latest"
-          REMOTE_SCRIPT
-
-          backup_file="$(ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/remote_backup.sh)"
-
-          echo "backup_file=$backup_file" >> "$GITHUB_OUTPUT"
-
-      - name: Sync workspace to VPS
+      - name: Set IMAGE_TAG in remote env
         run: |
           set -euo pipefail
-
-          tar -czf - \
-            --exclude='.git' \
-            --exclude='.claude' \
-            --exclude='.playwright-mcp' \
-            --exclude='.env' \
-            --exclude='.env.production' \
-            --exclude='token.txt' \
-            --exclude='token_gen.js' \
-            --exclude='verify.sh' \
-            --exclude='node_modules' \
-            --exclude='web/node_modules' \
-            --exclude='web/.nuxt' \
-            --exclude='web/.output' \
-            --exclude='web/dist' \
-            --exclude='web/.codex-devserver.*.log' \
-            --exclude='back/.logs' \
-            --exclude='qa-bot/.venv' \
-            --exclude='qa-bot/artifacts' \
-            --exclude='erp-source-local' \
-            --exclude='Controlle10 - ftp' \
-            --exclude='tmp' \
-            . | ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
-            "set -euo pipefail; mkdir -p '$DEPLOY_REMOTE_PATH' && find '$DEPLOY_REMOTE_PATH' -mindepth 1 -maxdepth 1 ! -name '.env.production' ! -name 'backups' -exec rm -rf {} + && tar -xzf - -C '$DEPLOY_REMOTE_PATH'"
-
-      - name: Fix POSTGRES vars in .env.production
-        run: |
+          cat > /tmp/set_tag.sh << REMOTE_SCRIPT
           set -euo pipefail
-
-          cat > /tmp/fix_postgres_env.sh << 'FIX_SCRIPT'
-          set -euo pipefail
-          ENV_FILE=/home/deploy/lista-atendimento/.env.production
-          DB_URL=$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2-)
-          if [ -z "$DB_URL" ]; then
-            echo "ERRO: DATABASE_URL ausente em .env.production" >&2
+          cd "$REMOTE_PATH"
+          if [ ! -f "$ENV_FILE" ]; then
+            echo "ERRO: $ENV_FILE nao existe em $REMOTE_PATH. Crie-o a partir do .example." >&2
             exit 1
           fi
-          PG_USER=$(printf '%s' "$DB_URL" | sed 's|postgres://\([^:@]*\):.*|\1|')
-          PG_PASS=$(printf '%s' "$DB_URL" | sed 's|postgres://[^:]*:\([^@]*\)@.*|\1|')
-          PG_DB=$(printf '%s'   "$DB_URL" | sed 's|.*/||; s|?.*||')
-          if grep -q '^POSTGRES_USER=' "$ENV_FILE"; then
-            sed -i "s|^POSTGRES_USER=.*|POSTGRES_USER=${PG_USER}|" "$ENV_FILE"
+          if grep -q '^IMAGE_TAG=' "$ENV_FILE"; then
+            sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$IMAGE_TAG|" "$ENV_FILE"
           else
-            printf 'POSTGRES_USER=%s\n' "$PG_USER" >> "$ENV_FILE"
+            printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG" >> "$ENV_FILE"
           fi
-          if grep -q '^POSTGRES_PASSWORD=' "$ENV_FILE"; then
-            sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${PG_PASS}|" "$ENV_FILE"
-          else
-            printf 'POSTGRES_PASSWORD=%s\n' "$PG_PASS" >> "$ENV_FILE"
-          fi
-          if grep -q '^POSTGRES_DB=' "$ENV_FILE"; then
-            sed -i "s|^POSTGRES_DB=.*|POSTGRES_DB=${PG_DB}|" "$ENV_FILE"
-          else
-            printf 'POSTGRES_DB=%s\n' "$PG_DB" >> "$ENV_FILE"
-          fi
-          if grep -q '^NUXT_PUBLIC_API_BASE=' "$ENV_FILE"; then
-            val=$(grep '^NUXT_PUBLIC_API_BASE=' "$ENV_FILE" | cut -d= -f2-)
-            [ -z "$val" ] && sed -i 's|^NUXT_PUBLIC_API_BASE=.*|NUXT_PUBLIC_API_BASE=https://omni.crowvisuals.com.br|' "$ENV_FILE"
-          else
-            printf 'NUXT_PUBLIC_API_BASE=https://omni.crowvisuals.com.br\n' >> "$ENV_FILE"
-          fi
-          echo "POSTGRES vars e NUXT_PUBLIC_API_BASE corrigidos"
-          FIX_SCRIPT
+          grep '^IMAGE_TAG=' "$ENV_FILE"
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/set_tag.sh
 
-          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/fix_postgres_env.sh
-
-      - name: Validate remote compose
+      - name: Backup remote database
+        if: ${{ inputs.backup_database }}
         run: |
           set -euo pipefail
+          cat > /tmp/backup.sh << REMOTE_SCRIPT
+          set -euo pipefail
+          cd "$REMOTE_PATH"
+          mkdir -p backups
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml exec -T postgres \
+            sh -lc 'pg_dump -U "\$POSTGRES_USER" -d "\$POSTGRES_DB"' \
+            | gzip > "backups/backup_\$(date +%Y%m%d_%H%M%S).sql.gz"
+          latest=\$(ls -t backups | head -n 1)
+          printf '%s\n' "$REMOTE_PATH/backups/\$latest"
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/backup.sh
 
-          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; cd '$DEPLOY_REMOTE_PATH' && docker compose --env-file .env.production -f docker-compose.prod.yml config"
-
-      - name: Deploy selected services
+      - name: Pull and up (no build)
         run: |
           set -euo pipefail
-
-          service_args=""
-          if [[ -n "${{ inputs.services }}" ]]; then
-            service_args=" ${{ inputs.services }}"
-          fi
-
-          force_recreate=""
+          force=""
           if [[ "${{ inputs.force_recreate }}" == "true" ]]; then
-            force_recreate=" --force-recreate"
+            force=" --force-recreate"
           fi
+          cat > /tmp/deploy.sh << REMOTE_SCRIPT
+          set -euo pipefail
+          cd "$REMOTE_PATH"
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml pull api web
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml up -d --no-build${force} api web
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml ps api web
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/deploy.sh
 
-          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; cd '$DEPLOY_REMOTE_PATH' && docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build${force_recreate}${service_args} && docker compose --env-file .env.production -f docker-compose.prod.yml ps${service_args}"
+      - name: Smoke tests
+        if: ${{ !inputs.skip_smoke_tests }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/smoke.sh << REMOTE_SCRIPT
+          set -euo pipefail
+          root=\$(curl -sS -o /dev/null -w "%{http_code}" "$PUBLIC_BASE_URL")
+          health=\$(curl -sS -o /dev/null -w "%{http_code}" "$PUBLIC_BASE_URL/healthz")
+          printf "GET %s => %s\n" "$PUBLIC_BASE_URL" "\$root"
+          printf "GET %s/healthz => %s\n" "$PUBLIC_BASE_URL" "\$health"
+          [ "\$root" = "200" ] && [ "\$health" = "200" ]
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/smoke.sh
 
       - name: Publish summary
         if: ${{ always() }}
         run: |
-          web_audit_outcome="${{ steps.web_npm_audit.outcome }}"
-
           {
-            echo "## Deploy VPS"
+            echo "## Deploy VPS (pull)"
             echo ""
-            echo "- Ref: \`${{ inputs.git_ref }}\`"
-            echo "- Services: \`${{ inputs.services }}\`"
+            echo "- Ambiente: \`${{ inputs.environment }}\`"
+            echo "- Imagem: \`$IMAGE_TAG\`"
             echo "- Host: \`$DEPLOY_HOST\`"
-            echo "- Remote path: \`$DEPLOY_REMOTE_PATH\`"
-            echo "- Web tests: blocking (\`npm run test\` em \`web/\`)"
-            echo "- Root npm audit: blocking (`npm audit --package-lock-only --audit-level=high`)"
-
-            if [[ "$web_audit_outcome" == "success" ]]; then
-              echo "- Web npm audit: clean (`npm audit --package-lock-only --audit-level=high`)"
-            else
-              echo "- Web npm audit: warning-only for now (current frontend baseline still has advisories to upgrade)"
-            fi
-
-            echo "- Go tests: blocking (\`go test ./...\` em \`back/\`)"
-            echo "- Go module updates: informational (`go list -m -u all`)"
-            echo "- govulncheck: blocking (`go run golang.org/x/vuln/cmd/govulncheck@latest ./...`) with Go 1.26.3 to mirror the backend Docker build"
-
-            if [[ "${{ inputs.backup_database }}" == "true" && -n "${{ steps.backup.outputs.backup_file }}" ]]; then
-              echo "- Backup: \`${{ steps.backup.outputs.backup_file }}\`"
-            fi
-
+            echo "- Remote path: \`$REMOTE_PATH\`"
+            echo "- Backup: \`${{ inputs.backup_database }}\`"
+            echo "- A VPS nao buildou nada: pull do GHCR + up --no-build."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,195 @@
+name: Build Images
+
+# Builda as imagens Go (api) e Nuxt (web) no GitHub Actions e publica no GHCR.
+# A VPS nunca compila: ela so faz "docker pull" das tags geradas aqui.
+# Fase D1 do plano docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md (secoes 3, 4.1, 8, 11).
+#
+# Os gates do job "test" sao os MESMOS bloqueantes do deploy-vps.yml
+# (migration test, go test ./..., web vitest, govulncheck; audits warning-only
+# no web como ja e la). O build so roda se os testes passarem (needs: [test]).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - refactor/multitenant-complete
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # Um build por ref; um push novo cancela o build anterior da mesma branch.
+  group: build-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Imagens publicadas no GHCR (ver docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md secao 11).
+  API_IMAGE: ghcr.io/mikewade2k16/omni-api
+  WEB_IMAGE: ghcr.io/mikewade2k16/omni-web
+  # Liga o pacote ao repositorio no GHCR (source label do OCI).
+  IMAGE_SOURCE: https://github.com/mikewade2k16/lista-da-vez
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.3
+          cache-dependency-path: back/go.sum
+
+      - name: Run migration integration test
+        working-directory: back
+        env:
+          TEST_DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb
+        run: |
+          go test ./internal/platform/database/... -run TestAllMigrationsApply -v -timeout 120s
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Prepare Nuxt (gera .nuxt/tsconfig.json necessario para Vitest)
+        working-directory: web
+        run: npx nuxt prepare
+
+      - name: Run web Vitest suite
+        working-directory: web
+        run: npm run test
+
+      - name: Audit root npm dependencies
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Audit web npm dependencies
+        id: web_npm_audit
+        continue-on-error: true
+        working-directory: web
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Warn about current web audit baseline
+        if: ${{ steps.web_npm_audit.outcome == 'failure' }}
+        run: |
+          echo "::warning title=web npm audit::High severity vulnerabilities are still present in web/package-lock.json. This audit is warning-only until the frontend dependencies are upgraded."
+
+      - name: Run Go tests
+        working-directory: back
+        run: go test ./...
+
+      - name: List Go module updates
+        working-directory: back
+        run: go list -m -u all
+
+      - name: Run govulncheck
+        working-directory: back
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Tags da api: :<sha-completo> (imutavel, usado na promocao) + :<branch>.
+      # type=sha,format=long gera o SHA de 40 chars (rastreavel e estavel).
+      # type=ref,event=branch sanitiza barras: refactor/multitenant-complete vira
+      # refactor-multitenant-complete na tag.
+      - name: Docker metadata (api)
+        id: meta_api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.API_IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+
+      - name: Docker metadata (web)
+        id: meta_web
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.WEB_IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+          labels: |
+            org.opencontainers.image.source=${{ env.IMAGE_SOURCE }}
+
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: ./back
+          push: true
+          tags: ${{ steps.meta_api.outputs.tags }}
+          labels: ${{ steps.meta_api.outputs.labels }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      # web: sem "target" — o stage final do web/Dockerfile JA e o de producao.
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          push: true
+          tags: ${{ steps.meta_web.outputs.tags }}
+          labels: ${{ steps.meta_web.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Publish summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Build Images (GHCR)"
+            echo ""
+            echo "Imagens publicadas (copie o SHA para o deploy-pull / promote):"
+            echo ""
+            echo "### api (\`${API_IMAGE}\`)"
+            echo '```'
+            echo "${{ steps.meta_api.outputs.tags }}"
+            echo '```'
+            echo "### web (\`${WEB_IMAGE}\`)"
+            echo '```'
+            echo "${{ steps.meta_web.outputs.tags }}"
+            echo '```'
+            echo "- Commit SHA: \`${{ github.sha }}\`"
+            echo "- Branch/ref: \`${{ github.ref_name }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

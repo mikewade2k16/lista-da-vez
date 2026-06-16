@@ -1,27 +1,17 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
 
-const props = defineProps({
-  soldValue: {
-    type: Number,
-    required: true,
-  },
-  monthlyGoal: {
-    type: Number,
-    required: true,
-  },
-  commissionRate: {
-    type: Number,
-    required: true,
-  },
-  simulationAdditionalSales: {
-    type: Number,
-    required: true,
-  },
-})
+const props = defineProps<{
+  soldValue: number
+  monthlyGoal: number
+  commissionRate: number
+  simulationAdditionalSales: number
+}>()
 
-const emit = defineEmits(['update:simulationAdditionalSales'])
+const emit = defineEmits<{
+  (e: 'update:simulationAdditionalSales', value: number): void
+}>()
 
 const projectedSales = computed(() => props.soldValue + props.simulationAdditionalSales)
 const projectedGoalPercent = computed(() =>
@@ -29,8 +19,9 @@ const projectedGoalPercent = computed(() =>
 )
 const projectedCommission = computed(() => projectedSales.value * props.commissionRate)
 
-function handleInput(event) {
-  emit('update:simulationAdditionalSales', event.target.value)
+function handleInput(event: Event) {
+  const target = event.target as HTMLInputElement | null
+  emit('update:simulationAdditionalSales', Number(target?.value || 0))
 }
 </script>
 

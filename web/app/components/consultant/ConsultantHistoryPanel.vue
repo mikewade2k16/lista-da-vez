@@ -6,6 +6,7 @@ type RangeKey = 'today' | '7d' | '30d' | 'month'
 
 interface HistoryEntry {
   personId?: string
+  storeId?: string
   finishedAt?: number
   saleAmount?: number
   finishOutcome?: string

@@ -14,6 +14,23 @@ Este diretório cuida da renderização visual da operação, incluindo:
 - Alertas operacionais em diversos formatos
 - Modais e diálogos operacionais
 
+## Skeleton de carregamento (Fase 9 — apply-operacao)
+
+`OperationSkeleton.vue` (novo) e o estado de loading visual da pagina `pages/operacao/index.vue`.
+
+**Objetivo:** "responde na hora" — ao abrir `/operacao` o skeleton aparece imediatamente (sem tela vazia) ENQUANTO o realtime/snapshot conecta, e e descartado quando os dados chegam.
+
+**Props:**
+
+- `scopeMode: string` (`single` | `all`) — apenas para a mensagem de leitor de tela (texto descritivo do que esta sincronizando).
+
+**Onde entra/sai (estado loading):**
+
+- A pagina renderiza `<OperationSkeleton>` no ramo `v-else-if="!isRemoteRosterReady"`, substituindo o antigo bloco textual `loading-state` "Carregando operacao...".
+- Some assim que `isRemoteRosterReady` vira `true` (snapshot confiavel via `_operationSnapshotFetchedAt` no modo single, ou `overview`/`!overviewPending` no modo all). O ramo de erro (`pageErrorMessage`) e o conteudo real (`OperationWorkspace`) ficam intactos.
+
+**Regra:** e ADITIVO. Nao toca realtime (`useOperationsRealtime`), faixa de consultores (`OperationConsultantStrip`) nem o roster — apenas pinta o placeholder do layout (scopebar + 2 colunas de fila + faixa de avatares) usando `CoreSkeleton` (variantes `block`/`card`/`avatar`/`text`) e design tokens.
+
 ## Fechamento de atendimento (Fase 7)
 
 `OperationFinishModal.vue` agora funciona como orquestrador fino do wizard de encerramento.

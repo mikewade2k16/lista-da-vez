@@ -9,42 +9,44 @@ import (
 )
 
 type fakeRepository struct {
-	defaultTenantID     string
-	resolveErr          error
-	accessible          map[string]bool
-	records             map[string]Record
-	operationSections   map[string]OperationSectionRecord
-	appearanceSections  map[string]AppearanceSectionRecord
-	modalSections       map[string]ModalSectionRecord
-	optionGroups        map[string]map[string][]OptionItem
-	productCatalogs     map[string][]ProductItem
-	savedAt             time.Time
-	upsertOptionCalls   int
-	replaceOptionCalls  int
-	upsertProductCalls  int
-	replaceProductCalls int
-	applyTemplateCalls  int
+	defaultTenantID      string
+	resolveErr           error
+	accessible           map[string]bool
+	records              map[string]Record
+	operationSections    map[string]OperationSectionRecord
+	appearanceSections   map[string]AppearanceSectionRecord
+	modalSections        map[string]ModalSectionRecord
+	gamificationSections map[string]GamificationSectionRecord
+	optionGroups         map[string]map[string][]OptionItem
+	productCatalogs      map[string][]ProductItem
+	savedAt              time.Time
+	upsertOptionCalls    int
+	replaceOptionCalls   int
+	upsertProductCalls   int
+	replaceProductCalls  int
+	applyTemplateCalls   int
 
-	lastSavedRecord            Record
-	lastSavedOperationSection  OperationSectionRecord
-	lastSavedAppearanceSection AppearanceSectionRecord
-	lastSavedModalSection      ModalSectionRecord
-	lastAppliedTemplate        OperationTemplateApplyRecord
-	lastReplacedOptionTenant   string
-	lastReplacedOptionKind     string
-	lastReplacedOptionItems    []OptionItem
-	lastUpsertedOptionTenant   string
-	lastUpsertedOptionKind     string
-	lastUpsertedOption         OptionItem
-	lastDeletedOptionTenant    string
-	lastDeletedOptionKind      string
-	lastDeletedOptionID        string
-	lastReplacedProductTenant  string
-	lastReplacedProducts       []ProductItem
-	lastUpsertedProductTenant  string
-	lastUpsertedProduct        ProductItem
-	lastDeletedProductTenant   string
-	lastDeletedProductID       string
+	lastSavedRecord              Record
+	lastSavedOperationSection    OperationSectionRecord
+	lastSavedAppearanceSection   AppearanceSectionRecord
+	lastSavedModalSection        ModalSectionRecord
+	lastSavedGamificationSection GamificationSectionRecord
+	lastAppliedTemplate          OperationTemplateApplyRecord
+	lastReplacedOptionTenant     string
+	lastReplacedOptionKind       string
+	lastReplacedOptionItems      []OptionItem
+	lastUpsertedOptionTenant     string
+	lastUpsertedOptionKind       string
+	lastUpsertedOption           OptionItem
+	lastDeletedOptionTenant      string
+	lastDeletedOptionKind        string
+	lastDeletedOptionID          string
+	lastReplacedProductTenant    string
+	lastReplacedProducts         []ProductItem
+	lastUpsertedProductTenant    string
+	lastUpsertedProduct          ProductItem
+	lastDeletedProductTenant     string
+	lastDeletedProductID         string
 }
 
 func (repository *fakeRepository) mutationTime() time.Time {
@@ -317,6 +319,27 @@ func (repository *fakeRepository) DeleteProduct(_ context.Context, tenantID stri
 	}
 
 	return repository.mutationTime(), nil
+}
+
+func (repository *fakeRepository) GetGamificationSection(_ context.Context, tenantID string) (GamificationSectionRecord, bool, error) {
+	if repository.gamificationSections != nil {
+		if section, ok := repository.gamificationSections[tenantID]; ok {
+			return section, true, nil
+		}
+	}
+	return GamificationSectionRecord{}, false, nil
+}
+
+func (repository *fakeRepository) UpsertGamificationSection(_ context.Context, section GamificationSectionRecord) (GamificationSectionRecord, error) {
+	section.UpdatedAt = repository.mutationTime()
+
+	repository.lastSavedGamificationSection = section
+	if repository.gamificationSections == nil {
+		repository.gamificationSections = make(map[string]GamificationSectionRecord)
+	}
+	repository.gamificationSections[section.TenantID] = section
+
+	return section, nil
 }
 
 func TestGetBundleResolvesDefaultTenantForGlobalPrincipal(t *testing.T) {

@@ -9,6 +9,12 @@ export interface AccountSummary {
   organizationId: string
   planCode: string
   modules: string[]
+  // Contrato com /v2/me/accounts (backend multitenant): isAgency marca a conta
+  // que e o workspace da agencia (ex.: Crow Visuals); organizationName e o nome
+  // da org da conta ('' quando nenhuma). Ambos podem vir undefined ate o backend
+  // + rebuild entrarem — normalizados com default em fetchAccounts.
+  isAgency: boolean
+  organizationName: string
 }
 
 export interface RoleSummary {
@@ -38,6 +44,11 @@ export const useCoreAccountStore = defineStore('core/account', () => {
   const context = ref<AccountContext | null>(null)
   const loading = ref(false)
   const error = ref<string>('')
+  // platformView: contexto SUPER-ADMIN/DEV (so platform_admin). Quando ativo, o
+  // menu revela itens em desenvolvimento/`hidden` que nao foram liberados nem
+  // para a conta-agencia (Crow Visuals). Escopo de API usa a conta-agencia (tem
+  // todos os modulos). Selecionar qualquer org/cliente desliga este modo.
+  const platformView = ref(false)
 
   const activeAccount = computed(
     () => accounts.value.find((a) => a.id === activeAccountId.value) ?? null,
@@ -68,7 +79,18 @@ export const useCoreAccountStore = defineStore('core/account', () => {
         speculativeContextPromise,
       ])
 
-      accounts.value = accountsData.accounts ?? []
+      // Normaliza os campos novos do contrato (isAgency/organizationName) com
+      // defaults defensivos: ate o backend + rebuild entrarem eles vem undefined.
+      const rawAccounts: Partial<AccountSummary>[] = Array.isArray(accountsData.accounts)
+        ? accountsData.accounts
+        : []
+      accounts.value = rawAccounts.map(
+        (a): AccountSummary => ({
+          ...(a as AccountSummary),
+          isAgency: Boolean(a?.isAgency),
+          organizationName: a?.organizationName ?? '',
+        }),
+      )
 
       const found = accounts.value.find((a) => a.id === savedId)
       activeAccountId.value =
@@ -110,9 +132,23 @@ export const useCoreAccountStore = defineStore('core/account', () => {
   }
 
   async function switchAccount(accountId: string) {
+    // Sair do modo dev ao escolher uma conta real (org ou cliente).
+    platformView.value = false
     activeAccountId.value = accountId
     activeAccountCookie.value = accountId
     await fetchContext(accountId)
+  }
+
+  // enterPlatformView ativa o contexto super-admin/dev: escopa na conta-agencia
+  // (X-Account-Id valido, todos os modulos) e liga o flag que revela os itens em
+  // desenvolvimento/`hidden`. So faz sentido para platform_admin (o switcher ja
+  // e gateado a esse papel).
+  async function enterPlatformView() {
+    const agency = accounts.value.find((a) => a.isAgency)
+    if (agency && agency.id !== activeAccountId.value) {
+      await switchAccount(agency.id)
+    }
+    platformView.value = true
   }
 
   function hasPermission(key: string): boolean {
@@ -124,6 +160,7 @@ export const useCoreAccountStore = defineStore('core/account', () => {
     activeAccountId.value = ''
     context.value = null
     error.value = ''
+    platformView.value = false
   }
 
   return {
@@ -135,8 +172,10 @@ export const useCoreAccountStore = defineStore('core/account', () => {
     error,
     permissions,
     enabledModules,
+    platformView,
     fetchAccounts,
     switchAccount,
+    enterPlatformView,
     hasPermission,
     reset,
   }

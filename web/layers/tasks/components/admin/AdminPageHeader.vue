@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAdminPageHeaderVisibility } from '../../../core/composables/useAdminPageHeaderVisibility'
+
 interface AdminPageHeaderProps {
   eyebrow?: string
   title?: string
@@ -11,13 +13,21 @@ const props = withDefaults(defineProps<AdminPageHeaderProps>(), {
   description: '',
 })
 
+// Respeita o toggle GLOBAL de cabecalho (themes > PAGE HEADERS): eyebrow/title/
+// description so aparecem se ligados no tema. Espelha o AdminPageHeader do core —
+// paginas que usam este (via auto-import, ex.: /site/produtos) agora seguem o
+// mesmo padrao de tasks. Ver useAdminPageHeaderVisibility.
+const pageHeaderVisibility = useAdminPageHeaderVisibility()
+
 const hasEyebrow = computed(() => props.eyebrow.trim().length > 0)
 const hasTitle = computed(() => props.title.trim().length > 0)
 const hasDescription = computed(() => props.description.trim().length > 0)
 
-const showEyebrow = computed(() => hasEyebrow.value)
-const showTitle = computed(() => hasTitle.value)
-const showDescription = computed(() => hasDescription.value)
+const showEyebrow = computed(() => pageHeaderVisibility.showEyebrow.value && hasEyebrow.value)
+const showTitle = computed(() => pageHeaderVisibility.showTitle.value && hasTitle.value)
+const showDescription = computed(
+  () => pageHeaderVisibility.showDescription.value && hasDescription.value,
+)
 const showHeader = computed(() => showEyebrow.value || showTitle.value || showDescription.value)
 </script>
 

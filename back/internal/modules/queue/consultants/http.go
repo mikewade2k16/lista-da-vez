@@ -14,6 +14,10 @@ type listResponse struct {
 	Consultants []ConsultantView `json:"consultants"`
 }
 
+type storeStaffResponse struct {
+	Items []StoreStaffView `json:"items"`
+}
+
 type consultantResponse struct {
 	Consultant ConsultantView     `json:"consultant"`
 	Access     *ProvisionedAccess `json:"access,omitempty"`
@@ -62,6 +66,24 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		httpapi.WriteJSON(w, http.StatusOK, listResponse{
 			Consultants: consultants,
+		})
+	})))
+
+	mux.Handle("GET /v1/store-staff", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+
+		members, err := service.ListStoreStaff(r.Context(), principal, strings.TrimSpace(r.URL.Query().Get("storeId")))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, storeStaffResponse{
+			Items: members,
 		})
 	})))
 

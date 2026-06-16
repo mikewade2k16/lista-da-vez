@@ -201,6 +201,50 @@ Princípio: **carregar primeiro o essencial da tela, lazy-load do resto; payload
 
 **Regra criada:** dado que a faixa precisa do roster, todo papel operador (`consultant`, `store_terminal`, `manager`...) precisa do roster **pela via que ele ja pode ler (o snapshot da operacao)**, nunca dependendo do endpoint de gestao de consultores. Ao diagnosticar "componente sumiu", checar PRIMEIRO se a FONTE DE DADOS dele chega aquele papel (gate de fetch), nao so o `v-if` de render. E nunca colapsar `view==edit` para resolver UI — view nao muta.
 
+### [2026-06-13] USelect (Reka UI) explode com SelectItem de value vazio (500 na tela)
+
+**O que aconteceu:** Ao abrir `/site/bio` como admin, a tela dava `500: A <SelectItem /> must have a value prop that is not an empty string`. O filtro de status e o de cliente (`BioListWorkspace.vue`) tinham um item placeholder `{ label: 'Todos os status', value: '' }` / `{ label: 'Todos os clientes', value: '' }`.
+
+**Causa raiz:** O `USelect` do Nuxt UI (Reka UI por baixo) reserva o value vazio (`''`) para o estado "sem selecao" (mostra o placeholder) — entao **proibe** um `SelectItem` com `value=""`. `<select>`/`<option>` HTML nativo aceita `value=""` numa boa; por isso os componentes do cardapio (que usam select nativo) nao quebraram, so o bio (que usa `USelect`).
+
+**Correcao:** Item "Todos/Selecione" usa um sentinela nao-vazio (`value: 'all'`); o estado do filtro inicia em `'all'`; ao montar a query pro backend converte `'all'` -> `''` (sem filtro). `model-value=""` continua valido (e o jeito de limpar e mostrar placeholder) — o proibido e o **item** ter value vazio.
+
+**Regra criada:** Em qualquer `USelect`/`USelectMenu`, NUNCA usar `value: ''` num item (placeholder "Todos"/"Selecione"). Usar sentinela (`'all'`, `'none'`) e converter na borda, OU usar a prop `placeholder` com `model-value` vazio e sem item-placeholder. Vale para todo componente do painel.
+
+### [2026-06-13] Sync de API externa do cliente falhava com 406 (WAF bloqueia User-Agent do Go)
+
+**O que aconteceu:** O sync de produtos da Pérola (`POST /v1/admin/products/sync` → cliente Go lê `perolajoias.com/api/products`) retornava `406 Not Acceptable`. A API da Pérola responde 200 a `curl`, mas o WAF/host do cliente bloqueia o User-Agent padrão do Go (`Go-http-client/1.1`) — e até `Mozilla/5.0` genérico — com 406.
+
+**Causa raiz:** `http.Client` do Go não seta User-Agent customizado; o default `Go-http-client/...` cai numa regra de WAF (ModSecurity-like) do servidor do cliente.
+
+**Correção:** `req.Header.Set("User-Agent", "OmniSync/1.0 (+https://omni)")` (descritivo, honesto) no `perola_client.go`. UA próprio passou (200), assim como `curl/x`; só `Go-http-client` e `Mozilla/5.0` genérico davam 406.
+
+**Regra criada:** Todo cliente HTTP Go que consome API de terceiro (integração de cliente) deve setar um `User-Agent` descritivo próprio (`OmniSync/1.0 (+url)`) + `Accept`. Não confiar no UA default do Go — WAFs o bloqueiam. Ao integrar um cliente novo, testar o endpoint com `curl -A` antes (UA é a causa nº1 de 403/406 em sync externo).
+
+### [2026-06-15] Visibilidade de account em DOIS caminhos que podem divergir (org-aware)
+
+**O que aconteceu:** Ao tornar o acesso da agência org-aware (AGENCY_TENANT plan, Etapa 3), o spec
+cobriu só a LEITURA (`core.ListAccountsForUser`/`FindAccountIfMember`, que alimenta `/v2/me/accounts`
+= o que o switcher lista). Faltou o ENFORCEMENT: `auth.PostgresAccountMemberChecker.IsMember`, o
+portão de `RequireAuthWithAccount` que valida `X-Account-Id` em TODA rota de módulo (queue/crm/tasks),
+ainda consultava só `core.account_users`. Resultado seria: o switcher LISTA a conta-agência Crow, mas
+ao usá-la (carregar o board Tasks com `X-Account-Id=crow`) o login-agência levaria `403
+account_not_member` — o board "some" ao trocar de conta, repetindo o incidente de 2026-06-10 por outro
+motivo. Pego no Gate 1 (antes de mover dado), não em produção.
+
+**Causa raiz:** duas fontes de verdade para "quais accounts o user acessa" — uma de leitura (módulo
+`core`) e uma de enforcement (`auth` middleware) — em pacotes diferentes (`auth` não importa `core`,
+para evitar ciclo). Mudar uma sem a outra cria drift silencioso (compila, passa nos testes do pacote).
+
+**Correção:** `IsMember` recebeu a MESMA regra org-aware (platform_admin / agency_owner / membership),
+replicando a cláusula SQL em `accountAccessibleQuery` (const, com teste de contrato). Provado no banco:
+`platform_admin→qualquer conta=true`; `cliente→conta de outra org=false`.
+
+**Regra criada:** ao mudar a regra de visibilidade/escopo de account, alterar OS DOIS caminhos juntos —
+`core.ListAccountsForUser`/`FindAccountIfMember` (leitura) E `auth.PostgresAccountMemberChecker.IsMember`
+(enforcement do middleware). Um teste de contrato em cada lado documenta que a regra existe. Antes de
+mover dado de tenant entre accounts, validar no Gate que o portão de membership aceita o novo dono.
+
 ## Referência cruzada
 
 - Plano canônico da branch atual → [MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md)

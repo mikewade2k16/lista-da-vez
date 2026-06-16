@@ -1,16 +1,24 @@
-<script setup>
-defineProps({
-  roster: {
-    type: Array,
-    default: () => [],
-  },
-  selectedConsultantId: {
-    type: String,
-    default: '',
-  },
-})
+<script setup lang="ts">
+interface RosterEntry {
+  id: string
+  name: string
+  [key: string]: unknown
+}
 
-const emit = defineEmits(['select'])
+withDefaults(
+  defineProps<{
+    roster?: RosterEntry[]
+    selectedConsultantId?: string
+  }>(),
+  {
+    roster: () => [],
+    selectedConsultantId: '',
+  },
+)
+
+const emit = defineEmits<{
+  (e: 'select', consultantId: string): void
+}>()
 </script>
 
 <template>

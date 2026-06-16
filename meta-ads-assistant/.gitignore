@@ -1,0 +1,3 @@
+# Tokens OAuth proprios do runner (access/refresh) e registro DCR. NUNCA versionar.
+.auth/
+node_modules/

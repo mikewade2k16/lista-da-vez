@@ -2,7 +2,7 @@
 import { computed, inject, unref } from 'vue'
 import { getApiBase } from '~/utils/api-client'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
-import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
+import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
 import OmniEditor from '../../../app/components/omni/OmniEditor.vue'
 
@@ -272,7 +272,7 @@ const presenceViewingLabel = computed(() => {
                 {{ presenceFieldLabel('status') }}
               </span>
             </span>
-            <OmniSelectMenuInput
+            <OmniLazySelectMenuInput
               :model-value="taskDraftStatusValue()"
               class="tasks-page__task-property-control"
               :items="statusOptions"
@@ -309,7 +309,7 @@ const presenceViewingLabel = computed(() => {
                 {{ presenceFieldLabel('responsible') }}
               </span>
             </span>
-            <OmniSelectMenuInput
+            <OmniLazySelectMenuInput
               :model-value="taskDraftResponsibleValue()"
               class="tasks-page__task-property-control"
               :items="responsibleOptionsAvatar"
@@ -349,7 +349,7 @@ const presenceViewingLabel = computed(() => {
                 {{ presenceFieldLabel('involved') }}
               </span>
             </span>
-            <OmniSelectMenuInput
+            <OmniLazySelectMenuInput
               :model-value="taskDraftInvolvedValue()"
               class="tasks-page__task-property-control"
               :items="involvedOptionsForResponsible(taskDraftResponsibleValue())"
@@ -399,7 +399,7 @@ const presenceViewingLabel = computed(() => {
                 {{ presenceFieldLabel('clientId') }}
               </span>
             </span>
-            <OmniSelectMenuInput
+            <OmniLazySelectMenuInput
               :model-value="taskDraftClientIdValue()"
               class="tasks-page__task-property-control"
               :items="clientOptionsAvatar"
@@ -483,7 +483,7 @@ const presenceViewingLabel = computed(() => {
                 {{ presenceFieldLabel('priority') }}
               </span>
             </span>
-            <OmniSelectMenuInput
+            <OmniLazySelectMenuInput
               :model-value="taskDraftPriorityValue()"
               class="tasks-page__task-property-control"
               :items="PRIORITY_OPTIONS"
@@ -566,7 +566,7 @@ const presenceViewingLabel = computed(() => {
                 {{ presenceFieldLabel('type') }}
               </span>
             </span>
-            <OmniSelectMenuInput
+            <OmniLazySelectMenuInput
               :model-value="taskDraftTypeValue()"
               class="tasks-page__task-property-control"
               :items="typeOptions"

@@ -19,6 +19,7 @@ const consultantsStore = useConsultantsStore()
 const {
   state,
   integratedRoster,
+  integratedStaff,
   integratedRanking,
   integratedOverview,
   integratedHistory,
@@ -61,6 +62,7 @@ watch(
       :state="state"
       :integrated-scope="integratedScope"
       :integrated-roster="integratedRoster"
+      :integrated-staff="integratedStaff"
       :integrated-ranking="integratedRanking"
       :integrated-overview="integratedOverview"
       :integrated-history="integratedHistory"

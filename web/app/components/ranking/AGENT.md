@@ -41,3 +41,10 @@ Workspace `ranking` — comparativo gamificado de desempenho entre consultores e
 - Fase **CRM C6** pendente: backend `GamificationConfig` (badges + score weights) que sera plugado em `useGamificationConfig()` sem refactor de componentes.
 
 Plano historico: `~/.claude/plans/consultor-ranking-gamificado.md`.
+
+## Mudancas recentes (auditoria gamificacao)
+
+- `RankingTable.vue`: bug critico corrigido — pesos do Score 360 estavam hardcoded (35/25/20/15/5 fixos); agora usa `computeScore360()` com `scoreWeights.value` de `useGamificationConfig()`.
+- `RankingWorkspace.vue`: reescrito com `<script setup lang="ts">`. Reducao de 853 linhas para 340. Logica de enriquecimento e agregacao de lojas extraida para `~/composables/useRankingData.ts`.
+- Novo componente: `RankingFilters.vue` — form de filtros extraido de `RankingWorkspace.vue`. Props: `dateFrom/dateTo/searchTerm/storeFilter/metric/storeOptions/metricOptions/integratedScope/pending`. Emits v-model para cada campo + `applyPeriod/setCurrentMonth/setPreviousMonth`.
+- Novo composable: `~/composables/useRankingData.ts` — exporta tipos `RankingRow`, `EnrichedRow`, `StoreAggRow` e funcoes `buildRowKey`, `getMetricValue`, `normalizeSearch`, `buildStoreAggregates`, `useRankingData(monthlyRows, dailyRows)`. Calcula Score 360 via `computeScore360()` com pesos da config.

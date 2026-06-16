@@ -187,7 +187,7 @@ Quando este modulo crescer, a ordem certa e:
 - `core_role_resolver.go` — resolvedor `core|legacy|core_with_fallback` e mapeamento core role -> role coarse
 - `passwords.go`
 - `errors.go`
-- `account_checker.go`
+- `account_checker.go` — `PostgresAccountMemberChecker.IsMember` (portão do `RequireAuthWithAccount` que valida `X-Account-Id`). **Org-aware desde 2026-06-15 (AGENCY_TENANT plan, Etapa 3):** account acessível quando ativa E (a) user é `platform_admin`, OU (b) `agency_owner` em `core.organization_users` da org da account, OU (c) membership ativa em `core.account_users`. Espelha `core.ListAccountsForUser` — sem isso o login-agência veria a conta no switcher mas levaria 403 ao usar o módulo (ex.: board Tasks na conta-agência Crow). Query em `accountAccessibleQuery` (const, testada em `account_checker_test.go`).
 - `invitations.go`
 - `password_reset.go`
 

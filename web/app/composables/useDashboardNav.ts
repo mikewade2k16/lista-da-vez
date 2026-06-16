@@ -134,14 +134,28 @@ export function useDashboardNav(
   })
 
   function isItemAllowed(item: NavItem): boolean {
+    // Modo super-admin/dev (platformView): revela TUDO, inclusive itens `hidden`
+    // (modulos/telas em desenvolvimento nao liberados nem para a conta-agencia).
+    // So o platform_admin entra nesse modo (switcher > "Plataforma (dev)").
+    if (accountStore.platformView) return true
     if (item.hidden) return false
-    // C11: filtro por modulo habilitado. Se item declara moduleId e o modulo
-    // nao esta em useCoreAccountStore().enabledModules, item some do menu.
-    // Quando enabledModulesSet esta vazio (sem account ativa ainda), nao filtra
-    // por modulo — deixa permissoes (role/workspace) decidirem. Evita "menu
-    // vazio" durante o hidrate inicial. Modulo `core` nunca e filtrado.
+    // Admin-global (Manage da plataforma): so aparece quando a conta ativa do
+    // switcher e a agencia. Em qualquer conta-cliente (view-as) esses itens
+    // somem. Espelhado no module-enabled.global.ts (AGENCY_ONLY_PATHS).
+    if (item.agencyOnly && !accountStore.activeAccount?.isAgency) return false
+    // C11 / view-as: filtro por modulo contratado pela conta ativa do switcher.
+    // O switcher e ferramenta do admin para "ver como o cliente" — ao selecionar
+    // uma conta, o menu reflete SO os modulos que ela contratou (igual o cliente
+    // veria), inclusive para platform_admin.
+    //
+    // Gate de "conta carregada": filtra sempre que houver uma activeAccount
+    // resolvida (accountStore.activeAccount). Conta com 0 modulos → esconde todos
+    // os itens de modulo (sobra so core/Manage). Durante o hidrate inicial (sem
+    // activeAccount ainda) NAO filtra — evita flash de menu vazio; nesse momento
+    // permissoes (role/workspace) decidem. Itens sem moduleId ou com `core`
+    // nunca sao filtrados (Manage, perfil, etc.).
     const moduleId = String(item.moduleId || '').trim()
-    if (moduleId && moduleId !== 'core' && enabledModulesSet.value.size > 0) {
+    if (moduleId && moduleId !== 'core' && accountStore.activeAccount) {
       if (!enabledModulesSet.value.has(moduleId)) return false
     }
     const workspaceId = String(item.workspaceId || '').trim()

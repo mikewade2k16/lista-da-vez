@@ -28,7 +28,10 @@ func NewPostgresAdminRepository(pool *pgxpool.Pool) *PostgresAdminRepository {
 
 func (r *PostgresAdminRepository) ListAccounts(ctx context.Context, filter AdminListFilter) ([]AccountAdminView, int, error) {
 	args := []any{}
-	conds := []string{"1=1"}
+	// A conta-agência (is_agency=true) é o workspace da agência, não um cliente:
+	// fica fora da LISTAGEM de /v1/admin/accounts. O GET por id (FindAdminAccount)
+	// não aplica este filtro de propósito — a agência continua acessível no detalhe.
+	conds := []string{"a.is_agency = false"}
 	n := 1
 
 	if filter.Q != "" {
@@ -74,6 +77,7 @@ func (r *PostgresAdminRepository) ListAccounts(ctx context.Context, filter Admin
 	args = append(args, perPage, (page-1)*perPage)
 	dataSQL := fmt.Sprintf(`
 		select a.id, a.organization_id, a.slug, a.name, a.plan_code, a.is_active,
+		       a.is_agency,
 		       a.billing_mode, a.monthly_payment_amount, a.payment_due_day,
 		       a.webhook_enabled, a.contact_phone, a.contact_site, a.contact_address,
 		       a.logo_path, a.require_user_store_link, a.require_user_registration,
@@ -115,6 +119,7 @@ func (r *PostgresAdminRepository) ListAccounts(ctx context.Context, filter Admin
 func (r *PostgresAdminRepository) FindAdminAccount(ctx context.Context, accountID string) (AccountAdminView, error) {
 	const query = `
 		select id, organization_id, slug, name, plan_code, is_active,
+		       is_agency,
 		       billing_mode, monthly_payment_amount, payment_due_day,
 		       webhook_enabled, contact_phone, contact_site, contact_address,
 		       logo_path, require_user_store_link, require_user_registration,
@@ -327,6 +332,7 @@ func (r *PostgresAdminRepository) UpdateAccount(ctx context.Context, accountID s
 		set %s
 		where id = $1::uuid
 		returning id, organization_id, slug, name, plan_code, is_active,
+		          is_agency,
 		          billing_mode, monthly_payment_amount, payment_due_day,
 		          webhook_enabled, contact_phone, contact_site, contact_address,
 		          logo_path, require_user_store_link, require_user_registration,
@@ -383,6 +389,7 @@ func scanAdminAccount(row scannable) (AccountAdminView, error) {
 
 	if err := row.Scan(
 		&a.ID, &orgID, &a.Slug, &a.Name, &a.PlanCode, &a.Active,
+		&a.IsAgency,
 		&a.BillingMode, &a.MonthlyPaymentAmount, &paymentDueDay,
 		&a.WebhookEnabled, &contactPhone, &contactSite, &contactAddress,
 		&logoPath, &a.RequireUserStoreLink, &a.RequireUserRegistration,

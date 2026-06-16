@@ -4,6 +4,7 @@ export const settingsTabs = [
   { id: 'produtos', label: 'Produtos', icon: 'inventory_2' },
   { id: 'consultores', label: 'Consultores', icon: 'group' },
   { id: 'metas-crm', label: 'Metas CRM', icon: 'flag' },
+  { id: 'gamificacao', label: 'Gamificacao', icon: 'emoji_events' },
   { id: 'motivos', label: 'Motivos', icon: 'fact_check' },
   { id: 'cancelamento', label: 'Cancelamento', icon: 'undo' },
   { id: 'parada', label: 'Parada', icon: 'pause' },

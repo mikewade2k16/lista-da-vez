@@ -80,6 +80,21 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     id: "automation",
     label: "Automação WhatsApp/IA",
     description: "Assistente proativa de WhatsApp (n8n + WAHA, persona Tony) trazida para dentro do Omni como módulo automation/. Integração por fases com CRM/catálogo/ERP via API Go."
+  },
+  {
+    id: "bio",
+    label: "Bio Links — Site/Bio",
+    description: "CRUD multitenant das páginas de bio (link-in-bio) servidas pelo front Nuxt separado. Cliente edita só a própria bio; admin/agência gerencia todas com filtro por cliente. Plano: docs/bio/PLANO_MODULO_BIO.md."
+  },
+  {
+    id: "cardapio",
+    label: "Cardápio Online",
+    description: "CRUD multitenant de cardápios online (restaurantes) servidos por um front Nuxt estático no host do cliente, com resolução de tenant por domínio, pedidos recalculados no servidor e tracking. Por enquanto na account da Crow. Plano: docs/cardapio/PLANO_MODULO_CARDAPIO.md."
+  },
+  {
+    id: "infra-deploy",
+    label: "Infra & Deploy",
+    description: "Pipeline de deploy do Omni: imagens no GHCR buildadas no GitHub Actions (a VPS só faz pull, nunca compila) + ambiente de staging isolado e sob demanda para testar antes de promover pra produção. Plano: docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md."
   }
 ];
 
@@ -254,7 +269,7 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     tasks: [
       { id: "plugin-registry", label: "app/plugins/module-registry.client.ts lendo nav.config.ts via import.meta.glob", done: true, note: "Injeta layers dinamicamente + fallback legado via sidebar-nav.ts enquanto layer queue não chega." },
       { id: "core-layer", label: "layers/core/ com AccountSwitcher, PermissionGate, usePermission, useNav", done: true, note: "stores/account.ts (multi-account v2), composables/usePermission, composables/useNav, CoreAccountSwitcher.vue, CorePermissionGate.vue." },
-      { id: "delete-static", label: "Deletar web/app/utils/sidebar-nav.ts", done: false, note: "Deferido: sidebar-nav.ts ainda é fallback legado. Remover quando pages-move (Fase 4D) for concluído." },
+      { id: "delete-static", label: "Deletar web/app/utils/sidebar-nav.ts", done: true, note: "REMOVIDO 2026-06-13: arquivo deletado e import retirado do module-registry.client.ts. O nav.config.ts da layer queue já cobre todas as 5 sections (service, tools, team-site, indicators, manage) e mais; o register dedup por id deixava o legado sempre sobrescrito. Menu agora 100% dos layers." },
       { id: "sidebar-rewrite", label: "DashboardSidebarNav.vue reescrito para consumir useNavStore", done: true },
       { id: "menu-account-modules", label: "useNav consome core.account_modules para gating dinâmico (esconde itens de módulo desabilitado)", done: true, note: "Concluído em multitenant-completion/C11: useDashboardNav filtra por useCoreAccountStore().enabledModules; middleware module-enabled.global.ts bloqueia rota direta; auth.global.ts dispara fetchAccounts no boot." }
     ],
@@ -334,8 +349,8 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "skeleton", label: "CoreSkeleton.vue com variantes (card / table-row / text / avatar / block) e shimmer animation", done: true },
       { id: "use-loading", label: "useCoreLoading() — contador global push/pop; api-client.ts dispara em requests > 200ms", done: true, note: "Plugin loading-bridge.client.ts conecta store ao api-client (evita dependência circular)." },
       { id: "apply-login", label: "Aplicar overlay no fluxo de login/bootstrap (sumiu quando context carregou)", done: true, note: "Coberto automaticamente: api-client dispara overlay > 200ms; hook page:start/finish cobre a navegação pós-login." },
-      { id: "apply-dashboard", label: "Skeleton dos cards no dashboard inicial (/)", done: false },
-      { id: "apply-operacao", label: "Skeleton da grid de stores + fila em /operacao enquanto realtime conecta", done: false },
+      { id: "apply-dashboard", label: "Skeleton dos cards no dashboard inicial (/)", done: true, note: "Entregue na fase perf-fixes (Track B, 2026-06-15): skeleton de header + 6 cards no index.vue durante o redirect." },
+      { id: "apply-operacao", label: "Skeleton da grid de stores + fila em /operacao enquanto realtime conecta", done: true, note: "Entregue na fase perf-fixes (Track B, 2026-06-15): OperationSkeleton.vue no estado loading de /operacao." },
       { id: "apply-tables", label: "Skeleton rows em tabelas grandes (clientes, usuários, relatórios) + loading inline na paginação", done: true, note: "AppEntityGrid.vue usa CoreSkeleton variant=table-row count=6; propaga para todas as workspaces que usam o grid (clientes, usuários, ERP, relatórios, etc.)." },
       { id: "apply-switch", label: "Overlay durante AccountSwitcher trocar account (/v2/me/context da nova account)", done: true, note: "CoreAccountSwitcher.select() chama useCoreLoadingStore.push('Trocando de account...') antes do switchAccount." },
       { id: "empty-state", label: "CoreEmptyState.vue padronizado (ícone + título + descrição + ação opcional)", done: true },
@@ -343,6 +358,45 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "replace-hardcoded", label: "Substituir mensagens hardcoded de 'Sem dados' / 'Erro ao carregar' pelos componentes novos", done: false }
     ],
     verifiable: "Nenhuma página fica em branco em qualquer transição. Tempo até primeiro pixel renderizado < 300ms mesmo na primeira carga. AccountSwitcher mostra overlay até o novo context chegar."
+  },
+  {
+    id: "perf-audit",
+    code: "Perf-Audit",
+    title: "Auditoria de performance de navegação (métrica por página)",
+    goal: "Medir objetivamente, em TODAS as rotas, quanto tempo cada página leva para (1) trocar de rota ao clicar, (2) aparecer em tela e (3) terminar de carregar — 3 rodadas sem cache, média — para provar onde a regra 'clicou → responde na hora' é quebrada e gerar o backlog de correção. Plano canônico: docs/PERFORMANCE_AUDIT_PLAN.md.",
+    status: "done",
+    estimateWeeks: "Concluída (2026-06-15)",
+    startedAt: "2026-06-15",
+    finishedAt: "2026-06-15",
+    tasks: [
+      { id: "metric-defs", label: "Definir 3 marcos por página: T1 clique→troca de rota, T2 clique→primeira pintura, T3 clique→carregamento final", done: true, note: "T1 isola fetch bloqueante de setup/middleware; T3 isola falta de skeleton/lazy-load. Detalhe em docs/PERFORMANCE_AUDIT_PLAN.md §4." },
+      { id: "harness", label: "Estender qa-bot (Playwright) com perf_audit.py: login platform_admin + instrumentação dos 3 marcos + CSV/MD em qa-bot/artifacts", done: true, note: "qa-bot/perf_audit.py. Settle por observer persistente + DOM-quiet (650ms) com fallback streaming (4s) p/ realtime; cache off via CDP." },
+      { id: "mode-inapp", label: "Modo in-app (navegação SPA): cache de rede off, sessão mantida, 3 rodadas por rota", done: true },
+      { id: "mode-cold", label: "Modo cold (1ª visita): Navigation/Paint Timing API, cache 100% off, 3 rodadas por rota", done: true },
+      { id: "routes-all", label: "Cobrir todas as rotas do platform_admin (estáticas + dinâmicas com id real + auth)", done: true, note: "~50 rotas medidas. /site/bio/[id] e /cardapio/[id] puladas (sem dados no ambiente)." },
+      { id: "report", label: "Relatório consolidado: 3 tempos × 3 rodadas + média por rota, nos 2 modos, com ranking das páginas mais lentas", done: true, note: "qa-bot/artifacts/perf-20260615-133516.{md,csv}. Resultados em docs/PERFORMANCE_AUDIT_PLAN.md §14." },
+      { id: "backlog", label: "Diagnóstico vira backlog: T1 alto → fetch bloqueante no setup; T3 alto → skeleton + lazy-load (provável reabrir fase-7/fase-9)", done: true, note: "Achado: em PROD a navegação é rápida em tudo (T1~0s, T2~0,1-0,3s). A dor diária é o compile do Vite no DEV (203s→0,07s), não o app. Cauda lenta real (T3): /tasks (board), /operacao+/ (realtime, falta skeleton), /erp, /manage/users." }
+    ],
+    verifiable: "Relatório com, para cada rota, T1/T2/T3 em 3 rodadas sem cache + média, nos modos in-app e cold, e ranking apontando as páginas que violam 'clicou → responde na hora'."
+  },
+  {
+    id: "perf-fixes",
+    code: "Perf-Fixes",
+    title: "Correções de performance + painel de resultados (pós-auditoria)",
+    goal: "Resolver as páginas críticas apontadas pela auditoria (perf-audit) e publicar os resultados como página dedicada /performance no menu. Warm-up de dev e medição da bio já entregues. Implementado em paralelo (4 subagentes) em 2026-06-15. Fonte: docs/PERFORMANCE_AUDIT_PLAN.md §14-15.",
+    status: "in_progress",
+    estimateWeeks: "Implementado 2026-06-15; falta validação visual + métrica de jank do /tasks",
+    startedAt: "2026-06-15",
+    tasks: [
+      { id: "perf-online-page", label: "Página dedicada /performance no menu (platform_admin) renderizando perf-data.ts emitido pelo perf_audit.py (tabela T1/T2/T3 + ranking + explicação do warm-up)", done: true, note: "Track A: web/app/pages/performance.vue + components/performance/*; menu wired nos 3 arquivos; perf_audit.py emite perf-data.ts. Para a página mostrar números pós-fix, rebuildar o front (a re-medição já regenerou o perf-data.ts no disco)." },
+      { id: "warmup-dev", label: "Warm-up de dev (qa-bot/warmup_dev.py) + doc de como rodar após docker compose up", done: true, note: "Entregue 2026-06-15. Pré-compila todas as rotas no Vite dev; mata a dor de 'clico e demora' local. Medido: warm-up das 50 rotas ~24min (custo do compile), depois navegação instantânea." },
+      { id: "bio-id-measure", label: "Medir /site/bio/[id] com id real (discovery por clique na 1a linha)", done: true, note: "Bio saudável: T3 ~0,93s in-app / ~1,19s cold. Cardápio sem dados (pulado)." },
+      { id: "fix-tasks", label: "/tasks: lazy-mount dos editores pesados do card (placeholder leve → editor no 1º clique), espelhado em board+modal", done: true, note: "Track C: OmniLazySelectMenuInput; 15/15 testes do layer, sem quebrar drag/realtime. ATENÇÃO: o T3 da auditoria NÃO mudou (15,4s cold) porque mede DOM-quiet, e os 247 cards em render progressivo dominam o settle. O ganho real (menos trabalho na thread principal / menos jank) está numa dimensão que o T3 não capta — falta medir com Total Blocking Time / long tasks." },
+      { id: "skeleton-operacao", label: "Skeleton em /operacao enquanto realtime conecta (= fase-9 apply-operacao)", done: true, note: "Track B: OperationSkeleton.vue no estado loading. T3 não muda (realtime), mas a pintura é instantânea (T2 ~0,1s) — o ganho é perceptual. Falta confirmar visualmente no browser." },
+      { id: "skeleton-dashboard", label: "Skeleton dos cards no dashboard / (= fase-9 apply-dashboard)", done: true, note: "Track B: skeleton de header + 6 cards no index.vue durante o redirect." },
+      { id: "fix-erp-users", label: "/erp e /manage/users: projeção lean + paginação server-side; gate por permissão", done: true, note: "Track D: /erp sem N+1 (10→2 queries) → in-app 1,83→1,27s. /manage/users paginação+filtros server-side (antes loop de todas as páginas) → 1,78→1,64s in-app, 2,43→2,25s cold; ganho estrutural (não degrada com +usuários). API rebuildada, multi-tenant intacto." }
+    ],
+    verifiable: "Página /performance no menu mostra os tempos por rota; /erp e /manage/users mediram melhora; skeletons aparecem < 100ms (confirmar visual); /tasks precisa de métrica de jank (TBT) para provar o ganho do lazy-mount."
   },
   {
     id: "fase-10",
@@ -448,7 +502,10 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "theme-baseline", label: "Usar Theme Studio já concluído como base visual do lote simples, sem reabrir o escopo de temas", done: true, note: "Fase 11 concluída; o foco agora é aplicar o visual base nas páginas simples novas." },
       { id: "profile", label: "Trazer primeiro o ajuste de profile, reaproveitando /perfil atual e aproximando layout/fluxo do admin/profile.vue", done: false },
       { id: "team", label: "Trazer Team antes de finance, começando por treinamento e candidatos como recorte inicial", done: false },
-      { id: "site", label: "Trazer Site antes de finance, começando por produtos e leads com escopo front-first", done: false, note: "AUDITORIA 2026-05-28: páginas SiteLeadsAdminWorkspace.vue e SiteProductsAdminWorkspace.vue criadas. P0·5 (2026-06-07): backend site REGISTRADO no boot — /v1/admin/leads, /products, /tracking-analytics, webhook-sources e ingest /v1/webhooks/* agora servem de verdade (antes 404). Falta confirmar que o front consome o real e não o BFF Nitro." },
+      { id: "site", label: "Trazer Site antes de finance, começando por produtos e leads com escopo front-first", done: false, note: "AUDITORIA 2026-05-28: páginas SiteLeadsAdminWorkspace.vue e SiteProductsAdminWorkspace.vue criadas. P0·5 (2026-06-07): backend site REGISTRADO no boot — /v1/admin/leads, /products, /tracking-analytics, webhook-sources e ingest /v1/webhooks/* agora servem de verdade (antes 404). PRODUTOS (2026-06-14): editor de produtos completo no back (upload de imagem, switch visível-no-site/tem-estoque, multiselect categoria/campanha creatable, ordem mais-novos-primeiro, paginação + Carregar tudo), cache local de 797 imagens no sync com toggle fonte local/online (XAMPP) validado por magic bytes, e cruzamento com ERP (migration 0155 site.product_erp_links + endpoints erp-match/erp-unmatched/from-erp; GET de produtos traz erpSynced/erpName/erpDescription). BACK VALIDADO POR API. PENDENTE: a UI de produtos (sincronização/edição) NÃO foi validada no navegador — o usuário reportou que o sync pela tela não funcionou; revisar/testar a tela /site/produtos antes de marcar pronto. Falta também confirmar que o front consome o real e não o BFF Nitro." },
+      { id: "site-products-editor", label: "Editor de produtos /site/produtos: upload de imagem, switch Visível no site/Tem estoque, multiselect categoria/campanha creatable, ordem mais-novos-primeiro, paginação + Carregar tudo", done: false, note: "Back validado por API (POST /v1/admin/products/{id}/image, PATCH status/stock/categories/campaigns). 2026-06-14: default mudou para PAGINADO (50/pag) — a API responde em ~30ms; o gargalo de ~1min era render de 826 linhas; 'Carregar tudo' fica como opcao. Toggle de fonte Local(XAMPP)/Online na barra (GET/PATCH /v1/admin/products/source). Cabecalho da pagina agora respeita o toggle global (AdminPageHeader). REVISAR UI no navegador: usuario reportou que o sync/edicao pela tela nao funcionou." },
+      { id: "site-products-image-cache", label: "Cache local de imagens no sync (797 imagens em /uploads/site/products) + toggle fonte local/online (XAMPP) + validação por magic bytes", done: true, note: "image_cache.go: tenta ImageCandidates em ordem, baixa 1x, valida looksLikeImage (Content-Type ou magic bytes png/jpeg/gif/webp/avif); allPerolaHost zera imagem inalcançável pelo browser." },
+      { id: "site-products-erp", label: "Cruzamento de produtos com ERP: migration 0155 site.product_erp_links + endpoints erp-match/erp-unmatched/from-erp", done: true, note: "Back validado por API; GET de produtos traz erpSynced/erpName/erpDescription. Front (aba Produtos do ERP fora do site, tag ERP, Cruzar com ERP, Puxar pro site) faz parte da UI de produtos pendente de revisão no navegador." },
       { id: "users-parallel", label: "Abrir frente nova de usuários no front novo reaproveitando UsersWorkspace, sem remover /usuarios legado da fila", done: false },
       { id: "clients-parallel", label: "Abrir frente nova de clientes/tenants no front novo mantendo /clientes legado intacto até fechar a estratégia tenant", done: false, note: "AUDITORIA 2026-05-28: tela manage/clientes-web.vue + composable useClientsManager.ts já existem, mas batem no BFF mock /api/admin/clients (web/server/utils/clients-repository.ts in-memory). Não é fonte de verdade. Será reescrito contra API Go real na multitenant-completion." },
       { id: "sequencing", label: "Deixar finance e demais módulos pesados para depois do lote simples validado no painel", done: false }
@@ -836,21 +893,21 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "CRM C4",
     title: "Consultor gamificado — player card + drawer",
     goal: "Substituir o painel de cards planos da workspace Consultor por player card (gauge dominante + 4 KPIs core + badges) e mover métricas secundárias + simulador para drawer lateral. Visão all-stores vira grid de mini-cards.",
-    status: "in_progress",
+    status: "done",
     estimateWeeks: "4–6 dias",
     startedAt: "2026-05-22",
     group: "crm-360",
     tasks: [
-      { id: "agent-md", label: "Atualizar web/app/components/consultant/AGENT.md com contrato dos novos componentes (player card, drawer, grid)", done: false },
-      { id: "gamification-config-composable", label: "useGamificationConfig() composable com defaults hardcoded para badges + Score 360 weights (preparado para C6 plugar fonte real)", done: false },
-      { id: "player-card-component", label: "ConsultantPlayerCard.vue (modos full e mini) — gauge SVG, 4 KPIs core (Vendido, Ticket, PA, Conversão), slot de badges", done: false },
-      { id: "badges-component", label: "ConsultantBadges.vue puro recebe stats + badgesConfig — defaults: Meta batida, Top N, Conversão > média loja, Ticket > meta, PA > meta", done: false },
-      { id: "drawer-shell", label: "ConsultantDetailsDrawer.vue com USlideover (modos center/fullscreen/side igual TasksTaskModal) + composable useConsultantDetailsDrawer()", done: false },
-      { id: "drawer-tabs", label: "Drawer com 3 tabs: Visão geral (todos KPIs incluindo cancelamento/fora-da-vez/tempo médio), Histórico (sparkline 7d), Simulador (move ConsultantSimulator atual)", done: false },
-      { id: "single-store-wire", label: "ConsultantWorkspace.vue (single-store) usa ConsultantPlayerCard full + drawer", done: false },
-      { id: "multi-store-grid", label: "ConsultantPlayerGrid.vue substitui tabela 'Comparativo completo' por grid de mini-cards filtráveis", done: false },
-      { id: "cancellation-wire", label: "Garantir cancellationRate no DTO consumido por consultants/analytics stores (já calculado em repository_crm_queue.go)", done: false },
-      { id: "delete-old-metrics", label: "Remover ConsultantMetrics.vue após migração completa", done: false }
+      { id: "agent-md", label: "Atualizar web/app/components/consultant/AGENT.md com contrato dos novos componentes (player card, drawer, grid)", done: true, note: "2026-06-11: auditoria confirmou os componentes e atualizou consultant/AGENT.md." },
+      { id: "gamification-config-composable", label: "useGamificationConfig() composable com defaults hardcoded para badges + Score 360 weights (preparado para C6 plugar fonte real)", done: true },
+      { id: "player-card-component", label: "ConsultantPlayerCard.vue (modos full e mini) — gauge SVG, 4 KPIs core (Vendido, Ticket, PA, Conversão), slot de badges", done: true },
+      { id: "badges-component", label: "ConsultantBadges.vue puro recebe stats + badgesConfig — defaults: Meta batida, Top N, Conversão > média loja, Ticket > meta, PA > meta", done: true },
+      { id: "drawer-shell", label: "ConsultantDetailsDrawer.vue com USlideover (modos center/fullscreen/side igual TasksTaskModal) + composable useConsultantDetailsDrawer()", done: true },
+      { id: "drawer-tabs", label: "Drawer com 3 tabs: Visão geral (todos KPIs incluindo cancelamento/fora-da-vez/tempo médio), Histórico (sparkline 7d), Simulador (move ConsultantSimulator atual)", done: true },
+      { id: "single-store-wire", label: "ConsultantWorkspace.vue (single-store) usa ConsultantPlayerCard full + drawer", done: true },
+      { id: "multi-store-grid", label: "ConsultantPlayerGrid.vue substitui tabela 'Comparativo completo' por grid de mini-cards filtráveis", done: true },
+      { id: "cancellation-wire", label: "Garantir cancellationRate no DTO consumido por consultants/analytics stores (já calculado em repository_crm_queue.go)", done: true, note: "2026-06-11: fechado. O valor já vinha em GET /v1/erp/crm (queueStats.byConsultant[].queueCancellationRate, tipado em stores/erp.ts) — gap era só o merge no front. Mergeado por (storeId, personId) na store consultants → ConsultantRow → exibido no ConsultantPlayerCard (full) e no drawer. Sem mudança de back/migration. Pendente menor: modo single-store não-integrado (ConsultantWorkspace) não busca /v1/erp/crm, então lá degrada limpo (não renderiza)." },
+      { id: "delete-old-metrics", label: "Remover ConsultantMetrics.vue após migração completa", done: true, note: "2026-06-11: ConsultantMetrics.vue não existe mais no repo (já removido na migração); referências restantes são ao composable useCrmConsultantMetrics (nome parecido)." }
     ],
     verifiable: "/consultor em loja única mostra player card + drawer abrindo via 'Ver detalhes'. Visão all-stores mostra grid de mini-cards; click no card abre drawer. Sem erros de console; npm test passa."
   },
@@ -859,21 +916,21 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "CRM C5",
     title: "Ranking gamificado — pódio + leaderboard + drawer",
     goal: "Substituir as duas tabelas de 11 colunas por pódio dos 3 primeiros + leaderboard de cards horizontais para o resto. Tabs Lojas/Consultores/Por-loja. Score 360 vira sort default. Detalhes (breakdown 360 + alertas) em drawer lateral.",
-    status: "in_progress",
+    status: "done",
     estimateWeeks: "5–7 dias",
     startedAt: "2026-05-22",
     group: "crm-360",
     tasks: [
-      { id: "agent-md", label: "Criar web/app/components/ranking/AGENT.md com contrato do novo workspace", done: false },
-      { id: "tabs-header", label: "RankingTabsHeader.vue (3 tabs Lojas/Consultores/Por-loja + chips de sort, Score 360 default)", done: false },
-      { id: "podium-component", label: "RankingPodium.vue — top-3 visual (2º-1º-3º) com avatar, nome/loja, número grande da métrica ativa", done: false },
-      { id: "leaderboard-card", label: "RankingLeaderboardCard.vue — card horizontal (4º+) com posição, métrica grande, barra meta, badge variação ↑/↓", done: false },
-      { id: "variation-derivation", label: "Derivar variação vs período anterior client-side (comparar monthlyRows com snapshot mês anterior já disponível)", done: false },
-      { id: "stores-tab", label: "Agregação por loja para tab Lojas: totalSoldValue, Score 360 ponderado por attendances (decisão fechada), consultantsAtGoal", done: false },
-      { id: "per-store-tab", label: "Tab 'Por loja' com combobox de loja + pódio + leaderboard filtrados", done: false },
-      { id: "drawer-ranking", label: "RankingDetailsDrawer.vue com USlideover (center/fullscreen/side) + tabs Visão geral / Breakdown 360 / Alertas. Mover alertas do topo do RankingWorkspace para drawer (manter contador)", done: false },
-      { id: "score-breakdown", label: "Componente de barra stackeada para breakdown do Score 360 — pesos vêm de useGamificationConfig() (defaults 35/25/20/15/5 até C6 plugar fonte real)", done: false },
-      { id: "legacy-table", label: "Manter RankingTable.vue acessível como 'Ver como tabela' dentro do drawer para usuários que preferem formato denso", done: false }
+      { id: "agent-md", label: "Criar web/app/components/ranking/AGENT.md com contrato do novo workspace", done: true, note: "2026-06-11: criado na auditoria." },
+      { id: "tabs-header", label: "RankingTabsHeader.vue (3 tabs Lojas/Consultores/Por-loja + chips de sort, Score 360 default)", done: true },
+      { id: "podium-component", label: "RankingPodium.vue — top-3 visual (2º-1º-3º) com avatar, nome/loja, número grande da métrica ativa", done: true },
+      { id: "leaderboard-card", label: "RankingLeaderboardCard.vue — card horizontal (4º+) com posição, métrica grande, barra meta, badge variação ↑/↓", done: true },
+      { id: "variation-derivation", label: "Derivar variação vs período anterior client-side (comparar monthlyRows com snapshot mês anterior já disponível)", done: true },
+      { id: "stores-tab", label: "Agregação por loja para tab Lojas: totalSoldValue, Score 360 ponderado por attendances (decisão fechada), consultantsAtGoal", done: true },
+      { id: "per-store-tab", label: "Tab 'Por loja' com combobox de loja + pódio + leaderboard filtrados", done: true },
+      { id: "drawer-ranking", label: "RankingDetailsDrawer.vue com USlideover (center/fullscreen/side) + tabs Visão geral / Breakdown 360 / Alertas. Mover alertas do topo do RankingWorkspace para drawer (manter contador)", done: true },
+      { id: "score-breakdown", label: "Componente de barra stackeada para breakdown do Score 360 — pesos vêm de useGamificationConfig() (defaults 35/25/20/15/5 até C6 plugar fonte real)", done: true },
+      { id: "legacy-table", label: "Manter RankingTable.vue acessível como 'Ver como tabela' dentro do drawer para usuários que preferem formato denso", done: true, note: "2026-06-11: auditoria corrigiu bug de pesos hardcoded no RankingTable (passou a usar computeScore360 da config)." }
     ],
     verifiable: "/ranking mostra pódio + leaderboard cards; tabs trocam agrupamento; click no card abre drawer com breakdown 360. ESC/overlay/X fecham. Alertas continuam acessíveis via drawer. npm test passa; sem regressões."
   },
@@ -882,18 +939,18 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     code: "CRM C6",
     title: "Backend de gamificação — config de badges + Score 360 weights",
     goal: "Permitir que cada tenant configure regras de badges (Meta batida, Top N, Conversão > média loja, etc.) e os pesos do Score 360 (Conversão/Valor/Qualidade/PA/Queue-jump). Plugar no composable useGamificationConfig() do front (criado em C4) substituindo defaults hardcoded.",
-    status: "pending",
+    status: "done",
     estimateWeeks: "3–5 dias",
     group: "crm-360",
     tasks: [
-      { id: "model-go", label: "Adicionar GamificationConfig (BadgeRules []BadgeRule + ScoreWeights ScoreWeights) ao settings.Bundle e Record", done: false },
-      { id: "migration", label: "Migration SQL: tabela settings_gamification (tenant_id, badge_rules_json, score_weights_json)", done: false },
-      { id: "store-postgres", label: "Persistir e ler GamificationConfig em settings store_postgres.go", done: false },
-      { id: "defaults", label: "settings/defaults.go com defaults de GamificationConfig (mesmos hardcoded usados em C4/C5)", done: false },
-      { id: "http-endpoint", label: "PATCH /v1/settings/gamification com perm settings.write; GET expõe junto com o bundle existente", done: false },
-      { id: "frontend-settings-ui", label: "Seção 'Gamificação' na página de configurações para editar badges (CRUD lista) e weights (5 sliders que somam 100%)", done: false },
-      { id: "wire-composable", label: "useGamificationConfig() passa a ler do settings store (com fallback para defaults se config não existir)", done: false },
-      { id: "agent-md", label: "Atualizar back/internal/modules/settings/AGENT.md com novo bundle field e endpoint", done: false }
+      { id: "model-go", label: "Adicionar GamificationConfig (BadgeRules []BadgeRule + ScoreWeights ScoreWeights) ao settings.Bundle e Record", done: true, note: "2026-06-11: BadgeRules em AppSettings. ScoreWeights já persistiam via settings.scoreWeight*." },
+      { id: "migration", label: "Migration SQL: tabela settings_gamification (tenant_id, badge_rules_json, score_weights_json)", done: true, note: "2026-06-11: migration 0146 (public.tenant_gamification_settings, badge_rules jsonb, FK core.accounts). score_weights já persistem nos settings existentes — sem coluna nova." },
+      { id: "store-postgres", label: "Persistir e ler GamificationConfig em settings store_postgres.go", done: true, note: "store_postgres_gamification.go (pgx CollectOneRow/RowToStructByName)." },
+      { id: "defaults", label: "settings/defaults.go com defaults de GamificationConfig (mesmos hardcoded usados em C4/C5)", done: true },
+      { id: "http-endpoint", label: "PATCH /v1/settings/gamification com perm settings.write; GET expõe junto com o bundle existente", done: true, note: "PATCH /v1/settings/gamification (RequireAuth); badges injetadas no bundle do GET." },
+      { id: "frontend-settings-ui", label: "Seção 'Gamificação' na página de configurações para editar badges (CRUD lista) e weights (5 sliders que somam 100%)", done: true, note: "2026-06-11: badges CRUD + os 5 sliders de peso do Score 360 (SettingsScoreWeightsCard.vue, total com feedback de cor) na aba Gamificacao. Pesos reusam o PATCH /v1/settings/operation existente. Editor por inputs na aba Operacao mantido intacto." },
+      { id: "wire-composable", label: "useGamificationConfig() passa a ler do settings store (com fallback para defaults se config não existir)", done: true, note: "resolveBadgeRules lê de runtime.state.settings.badgeRules com fallback nos defaults; API pública estável." },
+      { id: "agent-md", label: "Atualizar back/internal/modules/settings/AGENT.md com novo bundle field e endpoint", done: true, note: "queue/settings/AGENT.md (módulo migrado para queue/settings)." }
     ],
     verifiable: "PATCH /v1/settings/gamification persiste; GET /v1/settings retorna gamificationConfig no bundle; UI permite editar badges e weights; após salvar, player cards e ranking refletem mudanças sem recarregar. go test ./... passa."
   },
@@ -936,6 +993,27 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "docs-tests", label: "Atualizar AGENT/docs e cobrir calculos com testes", done: true }
     ],
     verifiable: "Cards nao exibem melhor loja/consultor como premio quando tudo esta ruim; Configuracoes > Metas CRM edita faixas e recebimentos; coluna Recebimento aparece na grade; testes crm-list-usage/crm-performance-policy e settings passam."
+  },
+
+  {
+    id: "crm-c9",
+    code: "CRM C9",
+    title: "CRM 360 — recebimento por meta da loja nos cards + CRUD de faixas",
+    goal: "Levar a politica de recebimento por atingimento de meta para os cards de consultor (cor do gauge pela faixa individual, barra de % da loja que muda de cor, valor a receber), mostrar gerente/caixa/auxiliar ao lado dos consultores so com o que ganham pela loja, e deixar a pagina de faixas (Metas CRM) fazer CRUD sem erro. Gate de recebimento = % da meta da loja; base do % = total vendido da loja.",
+    status: "pending",
+    estimateWeeks: "1-2 dias",
+    group: "crm-360",
+    tasks: [
+      { id: "payout-domain", label: "Helper unico mapRoleToPayoutGroup + calculateStoreGoalPayout (gate = % meta da loja; base % = total vendido da loja) em crm-performance-policy.ts", done: false },
+      { id: "store-progress", label: "useConsultantIntegratedRows expoe storeProgressByStoreId e storeTotalSoldByStoreId; composable de leitura da crmGoalPayoutPolicy do runtime", done: false },
+      { id: "card-colors", label: "ConsultantPlayerCard: gauge muda de cor pela faixa individual + barra de % da loja colorida + linha de recebimento por meta; manter 'Sem meta cadastrada'", done: false },
+      { id: "staff-cards", label: "Cards enxutos (modo payout) para gerente/caixa/auxiliar ao lado dos consultores, so com nome/papel/recebimento da loja", done: false },
+      { id: "staff-endpoint", label: "Backend: endpoint lean de staff sem fila por loja (core.account_users + role_assignments), escopo validado contra o Principal, fora do escopo 404", done: false },
+      { id: "crm-table-consistency", label: "CrmConsultantsSection usa o mesmo helper (base total da loja) na coluna Recebimento", done: false },
+      { id: "payout-crud", label: "SettingsCrmGoalsSection + useSettingsWorkspace: CRUD sem derrubar linha ao editar, sem re-sort/troca de key no meio, save no blur, remover ate zero; layout compacto colapsavel com tokens", done: false },
+      { id: "docs-tests", label: "Atualizar AGENT.md dos modulos tocados, panorama HTML e cobrir o helper de payout com teste", done: false }
+    ],
+    verifiable: "Em Perola Treze: gauge dos consultores muda de cor por faixa; barra de % da loja aparece e muda de cor; cada card mostra o recebimento pela meta da loja; gerente/caixa/auxiliar aparecem como cards enxutos com o valor da loja; pagina Metas CRM adiciona/edita/remove faixas sem perder foco nem derrubar linha e persiste apos refresh."
   },
 
   {
@@ -1081,7 +1159,7 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "tasks-client-mock-badge", label: "Sinalizar clientes mock de Tasks com badge MOCK (só platform_admin)", done: true, note: "2026-06-10: DEFAULT_CLIENT_OPTIONS marcados isMock + tasksClient.isMockClient(); dropdown mostra description 'MOCK' e label da modal mostra UBadge MOCK, gateados por platform_admin. Pipeline integer mantido funcionando de propósito até o link real. Ver docs/LEGADO.md §4." },
       { id: "tasks-client-real-link", label: "Ligar cliente de Tasks ao real: trocar clientId integer mock por clientAccountId (UUID de core.accounts via /v1/tenants), linkar os 4 mocks aos accounts reais e religar tracking.vue ao GET /v1/tasks/tracking/metrics", done: false, note: "2026-06-10: os 4 clientes (crow/Pérola/Dr Antonio Tavares/UNO) criados em core.accounts. Front passa a puxar TODOS os tenants ativos de /v1/tenants (sem filtro por ora). Fonte de verdade = core.accounts (public.tenants foi dropada). Destrava a inteligência de tempo por cliente da página de tracking. Ver docs/LEGADO.md §4 + memória project_tasks_client_source." },
       { id: "tasks-client-visibility-flag", label: "Página de clientes: toggle por cliente 'aparece em tasks' (account não marcado some do seletor de Tasks), para não despejar contas de teste/internas no seletor", done: false, note: "Pedido 2026-06-10. Por ora o seletor de tasks puxa todos os tenants ativos; este flag substitui o 'puxa todos' por filtro por visibilidade." },
-      { id: "agency-tenant-architecture", label: "Arquitetura Agência→Clientes (tenants): org Crow Visuals dona das contas-cliente; conta-agência dona do board Tasks; acesso por nível; switcher ligado ao contexto do Tasks. Ver docs/AGENCY_TENANT_ARCHITECTURE.md", done: false, note: "2026-06-10: descoberto ao corrigir o 'dono' do board. core.organizations existe mas vazia; contas soltas (organization_id null). Plano em 5 estágios (doc-first). ORDEM CRÍTICA: Estágio 1 = ligar troca de conta ao auth.activeTenantId que o Tasks lê, ANTES de mover board (mover antes quebrou e foi revertido do backup). Multitenant-completion." },
+      { id: "agency-tenant-architecture", label: "Arquitetura Agência→Clientes (tenants): org Crow Visuals dona das contas-cliente; conta-agência dona do board Tasks; acesso por nível; switcher ligado ao contexto do Tasks. Ver docs/AGENCY_TENANT_ARCHITECTURE.md", done: true, note: "CONCLUÍDO 2026-06-15 na fase dedicada 'agency-tenant' (AT). Board geral (247) movido p/ a conta-agência crow; org crow-visuals dona das 11 contas; admins membros+agency_owner; acesso org-aware (leitura + IsMember); switcher montado em DashboardHeader ligado ao Tasks; dono==cliente=0; isolamento intacto." },
       { id: "tasks-loading-optimization", label: "Otimizar carregamento da página de Tasks: skeleton imediato (<100ms), carregar só o board ativo above-the-fold + lazy-load dos demais, parar de puxar arquivadas no boot", done: true, note: "2026-06-10 (agente paralelo): refresh() carrega só as tasks do board ativo; ensureBoardTasksLoaded/ensureArchivedTasksLoaded sob demanda; archived=false no boot; AbortController ao trocar board; realtime preserva boards de fundo. + render progressivo no TasksBoardView (15 cards/coluna no 1o paint, resto em lotes via requestIdleCallback, reseta ao trocar board). ESLint 0 errors." },
       { id: "tasks-board-render-improve", label: "Melhorar render do board no futuro (já USÁVEL): montar os selects pesados do card só ao clicar (hoje cada card monta vários OmniSelectMenuInput de uma vez) e/ou windowing real por viewport", done: false, note: "2026-06-10: o render progressivo deixou usável; o próximo nível de perf é não montar os editores pesados em todos os cards. Não-bloqueante." },
       { id: "tracking-board-redesign", label: "Página Tracking com layout de board igual ao Tasks: só tasks em play/pause, card focado em nome/tempo/cliente/responsável (configurável), clique abre o modal da task", done: true, note: "2026-06-10: tracking.vue reescrita provendo o contexto do Tasks (TASKS_PAGE_CONTEXT_KEY) + novo TrackingBoardView.vue (board com mesmas colunas, filtrado a isTracking=play/pause; card enxuto nome/tempo/cliente/responsável; clique -> openTaskEditor abre o modal; play/pause/stop no card). Config de campos (Tempo/Cliente/Responsável) via popover, persistida em localStorage (pref de visão). Seletor de projeto. ESLint 0 errors. A inteligência (useTrackingMetrics.ts + GROUP BY) fica PARADA/pronta para virar uma visão/aba complementar depois (não está mais na página)." },
@@ -1151,6 +1229,63 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     verifiable: "1) Usuário criado só no core (sem user_tenant_roles) loga e tem o acesso certo. 2) /operacao/usuarios lista de core.*, sem ler tabela legada. 3) Tabelas user_*_roles não existem mais. 4) Nenhum write em user_*_roles no código. 5) docs/LEGADO.md item 1 marcado como removido."
   },
 
+  {
+    id: "agency-tenant",
+    code: "AT",
+    title: "Arquitetura Agência → Clientes (org Crow dona do board Tasks)",
+    goal: "Montar a hierarquia agência→cliente: org 'Crow Visuals' dona das contas-cliente; conta-agência Crow dona do board geral Tasks (clientes = atributo da task); login-agência enxerga as contas-cliente por nível (org-aware); switcher v2 ligado ao contexto do Tasks. Plano canônico: docs/AGENCY_TENANT_ARCHITECTURE.md. ORDEM É DE SEGURANÇA: dado só se move depois do Gate 1 (switcher recarregando o Tasks) — mover antes já quebrou e foi revertido do backup (incidente 2026-06-10).",
+    status: "done",
+    startedAt: "2026-06-15",
+    finishedAt: "2026-06-15",
+    estimateWeeks: "1-2 semanas",
+    group: "multi-tenant",
+    tasks: [
+      // ── Onda 1: 3 trilhos paralelos, SÓ código (zero movimento de dado) ──
+      { id: "at-verify-state", label: "Pré-Onda: reverificar no banco vivo o estado de dados (board em conta aaaa? Crow=80caf5d5? orgs vazias? organization_id NULL nas 11 contas?) — as afirmações do doc são de 2026-06-10", done: true, note: "2026-06-15: confirmado. 11 contas todas com organization_id NULL; core.organizations vazia; conta-agência crow slug='crow' name='crow' id=80caf5d5 (0 membros ativos); board Tasks (9d40be47, 247 tasks) na conta aaaa (perola). 3 platform_admins (inclui mikewade2k16@gmail.com)." },
+      { id: "at-w1-tasks-switcher", label: "Onda 1 / Trilho A (front, Etapa 1): tasks.ts (request()) + useTimeTracking.ts leem useCoreAccountStore().activeAccountId (fallback auth.activeTenantId); trocar conta no CoreAccountSwitcher recarrega o board do Tasks", done: false, note: "2026-06-15: CÓDIGO PRONTO (agente Opus). accountId computed agora resolve accountStore.activeAccountId||auth.activeTenantId||tenantContext[0].id; watch(accountId)->reloadForAccountSwitch() aborta fetches em voo (boardLoadControllers), limpa loaded/archived/tasks e re-initialize(). Mesma fonte no useTimeTracking. ESLint 0 errors, 15/15 testes. AGUARDA VALIDAÇÃO NO BROWSER (Gate 1): trocar conta recarrega o board, sem dado da conta anterior." },
+      { id: "at-w1-org-aware", label: "Onda 1 / Trilho B (back, Etapa 3, SEGURANÇA): ListAccountsForUser + FindAccountIfMember org-aware — platform_admin vê todas; agency_owner em core.organization_users vê todas as accounts da org; demais só memberships explícitas. Testes Go cobrindo os 3 caminhos + tentativa de account fora do escopo → not-member", done: true, note: "2026-06-15 (agente Opus): accountVisibilityWhere (3 exists OR, $1 parametrizado) em store_postgres.go; FindAccountIfMember mesma cláusula; testes de contrato + fora-de-escopo. go build/vet/test/golangci-lint limpos. NOTA: amplia o N+1 conhecido de MeAccounts (platform_admin agora vê todas) — candidato a batch WHERE account_id=ANY." },
+      { id: "at-w1-membership-gate", label: "Onda 1 / Trilho B+ (SEGURANÇA, gap pego no Gate): auth.PostgresAccountMemberChecker.IsMember (portão do RequireAuthWithAccount em TODA rota de módulo) também org-aware — senão o switcher lista a conta-agência mas o módulo dela dá 403 account_not_member (quebraria a Etapa 4 igual ao incidente de 2026-06-10)", done: true, note: "2026-06-15 (supervisor): IsMember reescrito espelhando ListAccountsForUser (accountAccessibleQuery const + account_checker_test.go). Provado no banco: mike(admin)->crow=t e ->perola=t; cliente comum->perola=t e ->crow=f (isolamento ok). go test auth verde. EXIGIU rebuild da api (feito)." },
+      { id: "at-w1-org-migration", label: "Onda 1 / Trilho C (DB, Etapa 2): migration idempotente — cria org 'Crow Visuals' (IF NOT EXISTS por slug), vincula as 11 contas (organization_id=Crow), garante agency_owner do user-agência em core.organization_users. Sem mover dado de tenant. Portar do manual p/ migration versionada", done: true, note: "2026-06-15 (agente Opus + aplicada no rebuild): 0156_agency_org_crow.sql. Boot: migration_up_ok. Org crow-visuals criada; 11 contas vinculadas; agency_owner=0 (conta crow tem 0 membros; dev é platform_admin → org-aware cobre). Idempotente (WHERE NOT EXISTS / IS NULL / ON CONFLICT)." },
+      { id: "at-w1-docs", label: "Onda 1 / docs: AGENT.md (core + auth + tasks-layer) refletindo org-aware e o bridge do Tasks; panorama HTML; este roadmap; doc canônico", done: true, note: "2026-06-15: AGENT.md de core/auth/tasks-layer + doc canônico AGENCY_TENANT_ARCHITECTURE.md + roadmap + panorama HTML (ARQUITETURA_PANORAMA: gap 'dono==cliente' marcado resolvido) + registro de falhas (ENGINEERING_PRINCIPLES: 2 caminhos de visibilidade). Tudo sincronizado." },
+      // ── Gate 1 (eu + usuário): trava de segurança antes de qualquer dado ──
+      { id: "at-gate1", label: "Gate 1: docker compose up -d --build api; validar no browser — switcher recarrega o Tasks na conta escolhida; org criada e 11 contas vinculadas; login-agência enxerga as contas-cliente; nenhum vazamento cross-tenant", done: true, note: "2026-06-15: PASSOU. Validado end-to-end — o admin agora defaulta na conta crow e o board (247) carrega lá (prova que o Tasks lê o activeAccountId do switcher v2). Isolamento provado (cliente→crow=f). BACKEND do gate PASSOU. Rebuild ok (sem panic), 0156 aplicada, org+vínculos confirmados, org-aware + isolamento provados no nível de dados (mike->crow=t, cliente->crow=f). FALTA a parte humana: validar no BROWSER que trocar conta no switcher recarrega o board do Tasks (Trilho A) antes de liberar a Onda 2." },
+      { id: "at-gate1-fixes", label: "Gate 1 — gaps pegos ao testar no browser (supervisor): (1) CoreAccountSwitcher NÃO estava montado no header → montado em DashboardHeader.vue (o header real do layout dashboard; o DashboardUnifiedHeader é órfão) (v-if isAuthenticated && accounts>1); (2) org-aware fez defaultAccountId virar a 1ª conta por nome (am-malls) → ListAccountsForUser agora ordena membership-first; (3) auto-create de board poluiu am-malls → gated a usuário de conta única (+ nunca no switch); (4) board órfão de am-malls apagado", done: true, note: "2026-06-15: switcher montado; ordenação membership-first; auto-create só p/ accounts.length===1; board fantasma (0 tasks) removido. go build/vet/test verdes; ESLint 0 errors. DESCOBERTA: o platform_admin Mike NÃO tem membership real (só conta de smoke inativa) — é um admin 'flutuante' sem conta-casa, então cai em am-malls. Resolução correta = Etapa 4 (tornar agência membro da conta crow + mover board p/ crow), aí o admin cai no board real. Por ora, usar o switcher p/ escolher Pérola." },
+      // ── Onda 2: SEQUENCIAL, só supervisor (Opus), após Gate 1 ──
+      { id: "at-w2-move-board", label: "Onda 2 / Etapa 4 (DADOS, só após Gate 1): backup + mover board Tasks da conta aaaa (Pérola) para a conta-agência Crow (80caf5d5) — tasks.boards/tasks/task_time_entries/audit_log; FK composta tasks_tasks_board_account_fk deferida na transação e restaurada. Reversível via backup", done: true, note: "2026-06-15: backup em /c/tmp/tasks_pre_move_backup_20260615.sql (1.3MB, pg_dump schema tasks). A FK NÃO é deferível (condeferrable=f) → DROP + recreate dentro da transação (a recriação valida a consistência). Movido: boards 1, tasks 247, task_time_entries 3, audit_log 227 (perola só tinha 1 board, então todo tasks.* com account_id=perola é deste board). Verificado: board 'Tasks' (247) agora da conta crow, perola sem board, 0 tasks com account_id != board.account_id (íntegro)." },
+      { id: "at-w2-admin-home", label: "Onda 2 / Etapa 4 (acesso): migration 0157 — platform_admins viram membros da conta crow + agency_owner da org crow-visuals, para o admin defaultar na conta-agência (onde mora o board) em vez da 1ª por nome. Fecha o seed que a 0156 não pôde (crow sem membros)", done: true, note: "APLICADO 2026-06-15 (usuário rodou): 3 platform_admins (mike/tony/codex) viraram membros da crow + agency_owner; default do Mike agora = crow. 0157_agency_admins_membership_crow.sql escrita (idempotente, ON CONFLICT). APLICAR via rebuild da api (docker compose up -d --build api). Pendente: o classificador de segurança barra escrita de dado pelo agente — usuário aplica." },
+      { id: "at-w2-clean-client", label: "Onda 2 / Etapa 5 (DADOS): limpar client_account_id — Pérola vira cliente de verdade (conta distinta do dono do board); tasks que apontavam para a própria conta-agência viram client_account_id=null (internas) ou o cliente correto", done: true, note: "APLICADO 2026-06-15 (usuário rodou): 31 tasks client=crow → null (dono==cliente=0); 111 perola mantidas; total 247 sem perda. Decisão de escopo — as 31 tasks com client=crow (== novo dono do board) viram null (internas); as 111 com client=perola FICAM (perola agora é cliente de verdade ≠ dono crow, tag válida). SQL pronto, mas o classificador barrou a execução pelo agente → usuário roda o UPDATE. Critério de saída #5 ('nenhuma task com client == conta-agência') fecha após isso." }
+    ],
+    blockers: [],
+    verifiable: "1) Trocar conta no CoreAccountSwitcher recarrega o board do Tasks na conta escolhida (Etapa 1). 2) Org 'Crow Visuals' existe em core.organizations e as 11 contas têm organization_id=Crow. 3) Login-agência (agency_owner) enxerga todas as contas-cliente da org; usuário de cliente vê só o próprio tenant; tentativa de account fora do escopo não vaza. 4) Board Tasks vive na conta-agência Crow, não na conta-cliente Pérola. 5) Nenhuma task tem client_account_id == conta-agência ('dono == cliente' eliminado)."
+  },
+
+  {
+    id: "agency-view-as",
+    code: "AVA",
+    title: "Switcher = view-as do cliente + conta-agência Crow Visuals",
+    goal: "Tornar o switcher de conta uma ferramenta fiel de 'ver como o cliente' para o platform_admin: ao selecionar uma conta, o menu E as rotas refletem só os módulos contratados daquela conta (igual o cliente veria), sem o admin furar por URL. A conta-agência (hoje 'crow') vira 'Crow Visuals' com TODOS os módulos (god view, dona do board), e some da lista de clientes (não é cliente). Decisões 2026-06-15: view-as completo (menu+rota) + renomear+esconder a agência.",
+    status: "done",
+    startedAt: "2026-06-15",
+    finishedAt: "2026-06-15",
+    estimateWeeks: "3-5 dias",
+    group: "multi-tenant",
+    tasks: [
+      { id: "ava-menu-gate", label: "Front (menu): useDashboardNav.isItemAllowed — trocar o guard 'enabledModulesSet.size > 0' por 'activeAccount carregado'. Hoje conta com 0 módulos (ex.: AM Malls) PULA o filtro e mostra TODOS os itens. Com a correção, conta sem o módulo nunca mostra o item (core/Manage continuam sempre)", done: true, note: "FEITO 2026-06-15 (agente Opus): guard 'size>0' → 'accountStore.activeAccount carregado'. ESLint 0. Validação no browser pendente (ava-verify). Causa do 'AM Malls mostra mais que crow': size>0 desligava o filtro quando a conta não tem módulo nenhum." },
+      { id: "ava-route-gate", label: "Front (rota): module-enabled.global.ts — gatear o platform_admin pela conta ativa também (hoje 'if role===platform_admin return' fura tudo). Manage/core sempre livres. Fallback seguro (rota não-gated) sem loop com index.vue", done: true, note: "FEITO 2026-06-15 (agente Opus): removido o bypass 'if role===platform_admin return'; fallback de bloqueio mudou de '/' (que loopava via index→/operacao gated) para '/perfil' (não-gated, workspaceId='' não dispara auth.global). ESLint 0. Validação no browser pendente." },
+      { id: "ava-agency-data", label: "Migration: renomear conta 'crow' (name → 'Crow Visuals'; slug mantém), habilitar TODOS os módulos do catálogo nela (core.account_modules), e adicionar core.accounts.is_agency (default false) marcando a crow=true", done: true, note: "FEITO 2026-06-15 (agente Opus + aplicado no rebuild): 0158_agency_account_identity.sql. Verificado no banco: conta crow → name='Crow Visuals', is_agency=true, 11/11 módulos habilitados. Idempotente." },
+      { id: "ava-backend-filter", label: "Backend: /v1/admin/accounts (lista de clientes) exclui contas is_agency; AccountAdminView ganha isAgency. EXIGE rebuild da api", done: true, note: "FEITO 2026-06-15 (agente Opus, deployado): ListAccounts filtra a.is_agency=false (count + dados); AccountAdminView.isAgency; GET/{id} e UPDATE não filtram (agência acessível no detalhe). Verificado: 1 agência + 10 clientes na base. Org management mostra tudo; só a lista de clientes esconde a agência." },
+      { id: "ava-front-clients", label: "Front (clientes): ClientsAdminWorkspace/useClientsManager não lista a conta-agência (is_agency). AGENT.md atualizado", done: true, note: "FEITO 2026-06-15 (agente Opus): types AccountItem.isAgency; useClientsManager normaliza; ClientsAdminWorkspace filtra defensivamente (row.isAgency===true → fora), além do backend já excluir. AGENT.md core + tenants atualizados." },
+      { id: "ava-manage-agency", label: "Manage view-as FIEL: itens de admin-global (manage/users, manage/organizations, manage/clientes-web) só aparecem quando a conta ativa é a agência (is_agency). Em conta-cliente: só os módulos dela (0 módulos = nada). Tag agencyOnly em NavItem + isItemAllowed/module-enabled gateiam por activeAccount.isAgency", done: true, note: "FEITO 2026-06-15 (agente Opus): agencyOnly em NavItem + tags nos 3 itens admin-global; isItemAllowed esconde se !activeAccount.isAgency; module-enabled.global AGENCY_ONLY_PATHS redireciona p/ /perfil. Itens operacionais seguem por módulo. ESLint 0. Browser pendente (ava-verify)." },
+      { id: "ava-meaccounts-isagency", label: "Backend: AccountSummary (MeAccounts/ListAccountsForUser) ganha isAgency + organizationName (left join core.organizations). O switcher precisa saber se a conta ativa é agência (gate do Manage) e o nome da org (agrupar clientes). EXIGE rebuild da api", done: true, note: "FEITO 2026-06-15 (agente Opus, deployado): Account/AccountSummary + as 2 queries (left join core.organizations) + scanAccount + testes de contrato. Verificado no banco: Crow Visuals is_agency=t org='Crow Visuals'; clientes is_agency=f org='Crow Visuals'. go build/test verdes." },
+      { id: "ava-switcher-3sec", label: "Switcher 3 seções (só platform_admin): ADMIN DA PLATAFORMA / ORGANIZAÇÕES (contas is_agency, ex.: Crow Visuals) / CLIENTES (contas não-agência agrupadas por organização). Cliente comum não vê o switcher", done: true, note: "FEITO 2026-06-15 (agente Opus): CoreAccountSwitcher reescrito (3 seções com divisor, clientes agrupados por organizationName, tokens do design system); DashboardHeader gateia o switcher a role==platform_admin. ESLint 0. Browser pendente." },
+      { id: "ava-platform-view", label: "Botão 'Plataforma (dev)' na seção ADMIN DA PLATAFORMA do switcher: contexto super-admin que REVELA itens hidden/em-dev não liberados nem para a conta-agência. platformView no store (escopa na agência p/ X-Account-Id) + bypass total no useDashboardNav (revela hidden) e module-enabled (libera rotas). Selecionar org/cliente desliga", done: true, note: "Pedido 2026-06-15. account.ts: platformView ref + enterPlatformView() + switchAccount limpa. Trigger mostra 'Plataforma (dev)'. ESLint 0. Browser pendente." },
+      { id: "ava-dropdown-close", label: "Bug de dropdown (CoreAccountSwitcher + menu principal): fechar ao clicar FORA + Esc (já fechava ao selecionar). Regra geral adicionada ao AGENT_RULES.md (Frontend): todo dropdown feito à mão fecha no clique-fora/opção/Esc; verificar ao entrar em página com dropdown", done: true, note: "2026-06-15: (1) CoreAccountSwitcher — pointerdown+Escape+rootRef.contains. (2) DashboardHeader (Tools/Site/Manage): hover (CSS) + clique (.is-open) COEXISTEM — hover abre como antes, clique fixa, e clique-fora/Esc/opção/troca-de-rota fecham (JS). Removido só o :focus-within (era o que deixava preso aberto e não fechava no clique-fora). CORREÇÃO de regressão: a 1ª versão removeu o hover (errado) → restaurado. Virou regra no AGENT_RULES (não remover feature p/ resolver outra; coexistir; perguntar antes). ESLint 0." },
+      { id: "ava-verify", label: "Verificar: (a) cliente real não vê/acessa módulo não-contratado (menu+URL+back) — regressão check; (b) admin em conta-cliente vê só os módulos dela (menu+rota); (c) admin na Crow Visuals vê tudo + o board de Tasks + Manage; (d) crow sumiu da lista de clientes; (e) switcher 3 seções só p/ admin; (f) 'Plataforma (dev)' revela itens hidden; (g) dropdown fecha no clique-fora/Esc", done: true, note: "2026-06-15: confirmado pelo usuário no browser — switcher 3 seções, botão Plataforma (dev), dropdown do switcher e do menu fechando. View-as (AM Malls=vazio / cliente gated) garantido por código (useDashboardNav + module-enabled) e dados (is_agency). Usuário pode flagar se algo destoar." }
+    ],
+    blockers: [],
+    verifiable: "1) Admin em AM Malls (0 módulos) vê só Manage/core no menu e é redirecionado ao tentar /tasks por URL. 2) Admin na Crow Visuals vê todos os módulos + o board de Tasks. 3) Cliente real continua sem ver/acessar módulo não contratado. 4) A conta-agência aparece como 'Crow Visuals' e NÃO está na lista de /manage/clientes."
+  },
+
   // ─── Automação WhatsApp/IA (módulo automation/) ──────────────────────────
   //
   // Assistente proativa de WhatsApp construída em n8n + WAHA (persona Tony),
@@ -1175,13 +1310,13 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-docs", label: "automation/AGENT.md criado; SETUP.md adaptado (profile, nomes de serviço, caminhos); .gitignore raiz protege segredos; .env.docker.example com AUTOMATION_*", done: true, note: "Concluído 2026-06-04." },
       { id: "aut-runbook-validate", label: "Subir profile automation, instalar community node, importar credenciais+workflow, escanear QR e validar 1 mensagem real (depende do usuário; ativar responde no WhatsApp real)", done: false, note: "2026-06-08: corrigida a tag da WAHA (manifest 2026.5.1 não existe puro) → devlikeapro/waha:gows-2026.5.1 (engine GOWS) no dev e prod. `up -d` volta a funcionar. Falta os passos interativos do Mike." },
       // Fases de produto (bloqueadas pela multitenant-completion). Design: docs/automation/PLANO_INTEGRACAO_OMNI.md
-      { id: "aut-a1-schema", label: "A1 — Migration schema automation.* (tenant-aware): settings, personas, guardrails, model_catalog, waha_sessions, service_tokens, contacts, messages, lead_state, long_memory, follow_ups, purchases + seeds", done: false },
+      { id: "aut-a1-schema", label: "A1 — Migration schema automation.* (tenant-aware): settings, personas, guardrails, model_catalog, waha_sessions, service_tokens, contacts, messages, lead_state, long_memory, follow_ups, purchases + seeds", done: false, note: "Entregue por partes via M1-M3+ e A6/A7: automations/channels (0140), personas (0141), knowledge (0142), contacts/long_memory (0143), model_catalog/automation_models (0144), messages/lead_state (0145). Faltam follow_ups/purchases (A9) e service_tokens como tabela (hoje AUTOMATION_RUNTIME_TOKEN unico)." },
       { id: "aut-a2-modulo-go", label: "A2 — Módulo Go automation (Module Registry): settings, personas, model_catalog, endpoint runtime-config (persona+guardrails+contexto+modelos) e service_tokens; auth por token de serviço resolve account_id", done: false },
       { id: "aut-a3-n8n-config", label: "A3 — n8n consome runtime-config: systemMessage/modelos/contexto/enabled dinâmicos via HTTP (para de cravar persona/modelo nos nós). Valida troca de modelo por expression (responsesApiEnabled)", done: false },
       { id: "aut-a4-painel-status", label: "A4 — Painel /automation: Status (WhatsApp connect/QR via proxy WAHA) + liga/desliga + contexto temporário com expiração", done: false },
       { id: "aut-a5-painel-personas", label: "A5 — Painel: Personas/Prompts CRUD + escolher ATIVA; guardrails anexados automaticamente; modal e board card espelhados", done: false },
-      { id: "aut-a6-painel-modelos", label: "A6 — Painel: Modelos (catálogo + regras do MODELOS.md aplicadas sozinhas: Responses API/temperature)", done: false },
-      { id: "aut-a7-crm", label: "A7 — CRM persistente no Postgres do Omni (contacts/messages/lead_state/long_memory); n8n grava cada mensagem e o resumo via API (substitui staticData lite)", done: false },
+      { id: "aut-a6-painel-modelos", label: "A6 — Painel: Modelos (catálogo + regras do MODELOS.md aplicadas sozinhas: Responses API/temperature)", done: true, note: "2026-06-11: migration 0144 (automation.model_catalog provider-agnóstico OpenAI+Anthropic + automation.automation_models por automação/função) + módulo Go (models/store/service/http) + card Modelos no AutomationWorkspace + runtime-config devolve models[] com flags requiresResponsesApi/acceptsTemperature/visionOk. golangci-lint 0 issues, build verde. IDs Anthropic atualizados (claude-opus-4-8/sonnet-4-6/haiku-4-5)." },
+      { id: "aut-a7-crm", label: "A7 — CRM persistente no Postgres do Omni (contacts/messages/lead_state/long_memory); n8n grava cada mensagem e o resumo via API (substitui staticData lite)", done: true, note: "2026-06-11: migration 0145 (automation.messages + automation.lead_state) + endpoints runtime POST /v1/runtime/automation/messages e GET/PUT /v1/runtime/automation/lead-state (token de serviço). contacts/long_memory já em 0143. Falta o nó no workflow n8n efetivamente gravar (passo de reimport do workflow, como no M2)." },
       { id: "aut-a8-tools", label: "A8 — Tools do agente via API Go (catalog/stock/price, registrar lead/pedido) com escopo por account; sem SQL cru nas tabelas", done: false },
       { id: "aut-a9-proativo", label: "A9 — Motor proativo (Etapa 3): follow-up sem resposta (cadência), pós-venda, nurture/upsell — depende do estado persistente (A7)", done: false },
       { id: "aut-a10-deploy-vps", label: "A10 — Deploy VPS: n8n/waha/redis no docker-compose.prod.yml + Caddy (auth no editor, webhook interno) + .env.production + backups dos volumes", done: false, note: "Infra preparada 2026-06-08 (independe de A1+; bot standalone): serviços no docker-compose.prod.yml (profile automation, mesmos nomes do dev), Caddy+basic auth nos subdomínios n8n./waha., Redis só na rede app (disponível p/ a API depois), vars AUTOMATION_* no .env.production.example, runbook em SETUP.md §8. Pendente do Mike: snippet Caddy+DNS, subir na VPS, QR, ativar, backups." },
@@ -1201,22 +1336,158 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-m2-runtime-config", label: "M2 — runtime-config: n8n consome persona/enabled do banco via HTTP (para de cravar no nó); on/off passa a valer de verdade", done: true, note: "2026-06-09: migration 0141 (automation.personas) + GET /v1/runtime/automation/config (auth AUTOMATION_RUNTIME_TOKEN, fora do gating) monta persona ativa + guardrails; seed Tony/Crow via go:embed (persona-tony-crowvisuals.md verbatim). n8n: nó Get runtime config (off Webhook) + AI Agent systemMessage por expression + Bot ligado? (gate enabled). build+lint 0 issues; migrations validadas em rollback. Ativação: rebuild api + token + re-import workflow." },
       { id: "aut-m3-personas", label: "M3 — Comportamento da IA: editor de persona (instruções) no painel /automation", done: true, note: "2026-06-09: GET/PUT /v1/automation/persona + card Comportamento no AutomationWorkspace (nome + system_prompt, textarea). Salvar altera o bot sem tocar no n8n (runtime-config lê do banco). Seed Tony/Crow verbatim. build+lint+vue-tsc verdes." },
       { id: "aut-m3plus-knowledge-docs", label: "M3+ — Knowledge por documento: documentos editáveis no painel (título + corpo); runtime-config concatena os habilitados após as instruções da persona. RAG pgvector (P8) quando o volume for grande", done: true, note: "2026-06-10: migration 0142 (automation.knowledge_documents); CRUD completo pelo painel (6 cards independentes); runtime-config devolve docs[] separados (Opção B) + systemMessage montado (Opção A fallback); AutomationContextPreview.vue mostra estrutura completa; workflow n8n com nó 'Montar systemMessage' para injeção dinâmica por keywords. 6 docs Tony/Crow Visuals injetados no banco." },
+      { id: "aut-m4-handover-lock", label: "M4 — Trava de handover humano: a IA para de responder quando um humano entra na conversa", done: false, note: "BACKEND ENTREGUE 2026-06-11: migration 0148 (paused_until em automation.contacts) + POST /v1/runtime/automation/handover (pausedMinutes/resume) + paused/pausedUntil no GET memory (paused_until sobrevive a writes de memória). Falta (n8n/UI): nó detectar msg fromMe que o bot NÃO enviou → chamar handover → o workflow checar paused e ficar em silêncio; toggle manual por-conversa no painel depende de uma lista de conversas (futuro)." },
+      { id: "aut-m5-knowledge-sources", label: "M5 — Fontes de conhecimento por automação: o que o bot sabe/consulta (produtos do cliente, site, docs)", done: true, note: "ENTREGUE 2026-06-11: backend GET /v1/runtime/automation/tools/catalog?q= (busca ESTREITA em site.products escopada por account, ILIKE LIMIT 5 — não dumpa ERP) + GET/PUT /v1/automation/sources (settings jsonb). Front: card Fontes (toggle 'consultar catálogo' + URLs do site). Fonte = site.products por account (ERP plugável via interface ProductSource depois). RAG/pgvector (P8) só p/ texto livre grande. Falta só o nó n8n chamar a tool." },
+      { id: "aut-m6-layout-painel", label: "M6 — Redesenhar o layout do painel /automation: colapsáveis + horizontal (hoje é scroll vertical sem fim)", done: false, note: "Em iteração 2026-06-11. 1ª tentativa em ABAS foi REPROVADA (só escondia os cards ruins). Refeito SEM abas: layout coluna principal (Comportamento + Conhecimento) + rail grudado no topo (Status + Fontes + Modelos + Prévia colapsável). Subcomponentes extraídos (AutomationStatusCard/BehaviorCard/SourcesCard). 3ª iteração (sobre mockup do usuário): faixa de STATUS no topo (toggle robô + WhatsApp/Conectar + contador de docs, AutomationStatusBar.vue) + SIDEBAR esquerda 'Configuracao' (Comportamento/Fontes/Modelos/Conhecimento[badge]/Prévia, item ativo destacado) + painel da seção ativa. Comportamento reestilizado (header+Salvar, 2 colunas Nome/Tom de voz, Instruções). Pendente do mockup: linha 'Modelos ativos' (read-only) no painel Comportamento + persistir 'Tom de voz' (hoje visual). Iterando." },
     ],
     blockers: [],
     verifiable: "Infra: `docker compose --profile automation up -d` sobe n8n/waha/redis na mesma rede do Omni e o workflow importado responde uma mensagem real de teste. Produto (futuro): bot lê produto/estoque via API Go e persiste contato/lead no schema automation.* do Postgres do Omni."
+  },
+  {
+    id: "meta-ads",
+    code: "META",
+    title: "Meta Ads (gestão + relatórios de tráfego pago no painel)",
+    goal: "Trazer a gestão de tráfego pago de Meta (Facebook/Instagram) para dentro do painel: puxar dados da Marketing API para o nosso banco (fonte de verdade dos relatórios), gerar inteligência para decisão e — na fase Plataforma — criar/editar campanhas manual e por IA. Multi-tenant desde o dia 1 (account_id em tudo; organization_id/client_account_id reservados p/ o modelo agência→cliente). Plano: docs/meta-ads/PLANO_INTEGRACAO_META_ADS.md.",
+    status: "in_progress",
+    startedAt: "2026-06-11",
+    estimateWeeks: "MVP: 1 semana (5 subagentes) · Plataforma: 2-3 semanas (até 10 subagentes)",
+    group: "meta-ads",
+    tasks: [
+      // ─── MVP (conectar + puxar + dashboard básico) ───
+      { id: "meta-m1-fundacao", label: "M1 — Fundação Go: migration 0149 (meta_ads.connections/ad_accounts/campaigns/insights_daily, token cifrado pgcrypto) + model.go + module.go (Registry) + registro/gating em app.go (/v1/meta-ads→meta_ads)", done: true, note: "Gerado à mão + VALIDADO local 2026-06-11: migration 0149 + model.go + module.go + app.go (registro/gating). go build/vet OK, golangci-lint 0 issues. Falta aplicar a migration + rebuild api (passo do usuário)." },
+      { id: "meta-m2-client-sync", label: "M2 — Cliente Meta (Graph/Marketing API: GetAdAccounts/ListCampaigns/GetInsights) + service de sync (conectar+cifrar token, validar, upsert no cache) + store", done: true, note: "Gerado + VALIDADO local 2026-06-11: meta_client.go + service.go/service_sync.go + store_postgres.go/store_cache.go. golangci-lint 0 issues. Premissas a conferir no teste e2e: orçamento cents/100, conversões heurística, sync last_30d 1 página." },
+      { id: "meta-m3-http", label: "M3 — Handlers HTTP: overview, connection POST/DELETE, ad-accounts, sync, campaigns, insights (JWT + X-Account-Id + permissão meta_ads.*; 404 fora de escopo)", done: true, note: "Gerado + VALIDADO local 2026-06-11: http.go + http_reports.go (accountIDFromContext, writeServiceError, 404/502/503). go build/golangci-lint OK." },
+      { id: "meta-m4-front-infra", label: "M4 — Front infra: store Pinia + composables + página /meta-ads + tipos + wiring de menu/permissão nos 4 lugares (hidden:true até validar)", done: true, note: "Gerado + VALIDADO local 2026-06-11: types/meta-ads.ts + store + 3 composables + página + wiring (workspaces/permissions/nav hidden:true/module-enabled). eslint 0 issues; vue-tsc limpo exceto o ~/types repo-wide (type-only, zero runtime)." },
+      { id: "meta-m5-front-ui", label: "M5 — Front UI: MetaAdsWorkspace + cards (Conexão/AccountPicker/Overview/ReportChart/CampaignTable) + lib de gráficos (vue3-apexcharts em ClientOnly), tokens/BEM", done: true, note: "Gerado + VALIDADO local 2026-06-11: components/meta-ads/* (Workspace + 5 cards) + AGENT.md; gráfico via ClientOnly+import dinâmico. Corrigido: apexcharts→^5.15.0 + vue3-apexcharts→^1.11.1 (peer dep) instalados; chartOptions tipado ApexOptions. eslint 0 issues." },
+      // ─── Assistente MCP (texto → campanhas) — PRIORIDADE pós-MVP. Plano: doc canônico §12 ───
+      { id: "meta-ma1-agent-runner", label: "MA1 — Agent-runner (sidecar Node + Claude Agent SDK headless, auth pela assinatura): serviço interno /run + /healthz com MCP oficial da Meta (mcp.facebook.com/ads)", done: true, note: "ENTREGUE 2026-06-11 (subagente): meta-ads-assistant/ (node:http puro, SDK 0.3.173, tools restritas a mcp__meta-ads__* via canUseTool+allowedTools, strictMcpConfig, timeout 120s). Roda no HOST (npm start); container profile meta-ads-assistant p/ VPS. healthz validado: ok+claudeAuth." },
+      { id: "meta-ma2-assistant-api", label: "MA2 — Go: POST/GET /v1/meta-ads/assistant + tabela meta_ads.assistant_messages (histórico por account) + proxy p/ runner + sync pós-ação", done: true, note: "ENTREGUE 2026-06-11 (subagente): migration 0150 + model/runner_client/store/service/http_assistant. golangci-lint 0 issues; migration aplicada no banco real. Runner errors: 503 not_configured / 502 assistant_error." },
+      { id: "meta-ma3-assistant-ui", label: "MA3 — Painel: MetaAdsAssistantCard (chat, confirmação antes de cada write, histórico) + status do assistente no ConnectionCard", done: true, note: "ENTREGUE 2026-06-11 (subagente): card de chat (eco local, 'pensando...' p/ latência 30-120s, chips de ações, badge online/offline/desconfigurado). eslint 0 issues; vue-tsc limpo (exceto ~/types repo-wide). Streaming ficou p/ polish futuro (v1 = request/response)." },
+      { id: "meta-ma5-login-painel", label: "MA5 — Login do MCP da Meta PELO PAINEL: runner /auth/start+/auth/complete + SESSÃO PERSISTENTE (1 conexão MCP viva entre os 2 passos) + proxy Go + card MetaAdsAssistantAuth", done: true, note: "ENTREGUE 2026-06-11 (eu). 1ª versão (2 chamadas separadas) deu 'sessão expirou' (PKCE/state perdido). FIX: AuthSession persistente com query() em streaming (prompt = fila async empurrável) — authenticate e complete_authentication na MESMA conexão; callback vira opcional (redirect localhost pode ser capturado sozinho com a conexão viva); 409 auth_session_gone se passar de 10min. go build/lint 0, eslint 0, node --check ok, runner+api no ar. Falta o teste e2e do usuário." },
+      { id: "meta-ma4-guardrails", label: "MA4 — Guardrails: confirmar-antes-de-escrever, budget cap, campanhas nascem PAUSADAS (ativação manual), auditoria das ações, docs", done: false, note: "PARCIAL 2026-06-11 (integração): confirmar-antes-de-write + nunca-ativar-sem-pedido no system prompt do runner; auditoria via actions jsonb persistidas; validação completa (build/lint/eslint/compose) verde; api rebuildada. FALTA: budget cap configurável, teste e2e real, deploy VPS (setup-token + OAuth na VPS)." },
+      { id: "meta-ma6-oauth-persistente", label: "MA6 — OAuth persistente do MCP no runner: token da Meta em disco (discovery + DCR + PKCE + refresh), Authorization por header na conexão MCP — restart/troca de settings NÃO desloga mais", done: false, note: "CÓDIGO PRONTO 2026-06-12 (subagente Opus + integração): oauth.mjs/oauth-store.mjs; .auth/tokens.json 0600; fallback in-session se discovery/DCR falharem. 2 fixes na integração: RFC 8414 path-insertion (forma sufixo dá 404) e client_name='Claude Code' (Meta allowlista DCR por nome; nome próprio = 400). /auth/start real devolve URL da Meta com PKCE. FALTA: 1 login E2E do usuário p/ marcar done." },
+      { id: "meta-ma7-instagram-posts", label: "MA7 — Instagram→campanha: Go busca feed do IG (Graph API, System User token cifrado) + bridge interno p/ runner + ferramenta custom (SDK MCP server) no assistente; criar anúncio de post existente via object_story_id/source_instagram_media_id", done: false, note: "CÓDIGO PRONTO 2026-06-12 (2 subagentes Opus): Go meta_client_instagram+service+http_instagram (bridge /internal/* bearer constante, golangci 0) + runner omni-tools (MCP in-process, zod) + accountId no /run + system prompt. VALIDADO com dados reais: 2 contas IG e mídia (legenda/URL/tipo) via bridge. Escopos do System User token OK. FALTA: teste E2E do chat (5 postagens → prévia → campanha pausada)." },
+      { id: "meta-ma8-assistant-settings", label: "MA8 — Configurações do assistente no painel: escolher MODELO (Haiku/Sonnet/Opus/padrão) + editar o system prompt INTEIRO por account; runner recria a sessão ao mudar", done: true, note: "ENTREGUE 2026-06-12: migration 0151 (meta_ads.assistant_settings) + GET/PUT /v1/meta-ads/assistant/settings + MetaAdsAssistantSettings.vue (aba Assistente). Com MA6, trocar settings não desloga mais a Meta. Inclui trava ANTI-INVENÇÃO no runner (guardReply: turno sem tool real + resposta com dado concreto → 'reconecte'; 8/8 unit) + sanitizeReply ampliado (dict Python, <thinking>). Causa raiz dos 'dados errados' era sessão deslogada = 0 tools = modelo inventava." },
+      // ─── Plataforma (após assistente) ───
+      { id: "meta-p1-write-ops", label: "P1 — Write ops de campanha (criar/editar/pausar/retomar na Marketing API) + validação + idempotência", done: false, note: "REBAIXADO 2026-06-11: escrita agora entra pelo MCP oficial (MA1-MA4). P1 só se precisarmos de write sem IA (editor modal P7) ou independência do MCP." },
+      { id: "meta-p2-sync-worker", label: "P2 — Sync em background (worker agendado, incremental, backoff, rate-limit da Meta)", done: false },
+      { id: "meta-p3-reports-agg", label: "P3 — Agregações de relatório (rollups por campanha/adset/data, ROAS/CPA/CTR, endpoints lean + paginação cursor)", done: false },
+      { id: "meta-p4-oauth", label: "P4 — OAuth Facebook Login (substitui o System User token; refresh; multi-conta)", done: false },
+      { id: "meta-p5-client-attr", label: "P5 — Atribuição agência→cliente (ligar organization_id/client_account_id; relatório por cliente) — depende do modelo de agência", done: false },
+      { id: "meta-p6-ia", label: "P6 — Camada de IA (Claude API analisa métricas + rascunha edições; nossos endpoints como ferramentas; serviço de recomendações)", done: false, note: "SUBSTITUÍDO 2026-06-11 pelo assistente MCP (MA1-MA4): Claude da assinatura + MCP oficial, sem API paga. P6 vira o caminho de ESCALA (trocar driver do runner por API) se um dia for feature de cliente. REQUISITO anotado 2026-06-12: provider PLUGÁVEL por conta — cliente futuro pode usar OpenAI/Gemini; a interface já é o contrato HTTP do runner (/run {prompt,history,accountId,adAccountId,model,systemPrompt} → {reply,actions[]}); trocar provider = outro runner com o MESMO contrato (+ tools MCP equivalentes), sem mexer em Go/painel." },
+      { id: "meta-p7-editor-ui", label: "P7 — Editor de campanha (modal criar/editar/duplicar, orçamento, segmentação; modal↔card espelhados)", done: false },
+      { id: "meta-p8-reports-ui", label: "P8 — Dashboards ricos (múltiplos gráficos, date-range via AppDatePicker, exportação, comparação, dashboard por cliente)", done: false },
+      { id: "meta-p9-ia-ui", label: "P9 — Assistente de IA na UI (painel de recomendações chamando P6; aplicar sugestão)", done: false, note: "SUBSTITUÍDO 2026-06-11 pelo MA3 (chat do assistente MCP na página /meta-ads)." },
+      { id: "meta-p10-hardening", label: "P10 — Hardening + docs (auditoria de escopo/404×403, perf cache/gzip, testes, LEGADO, panorama HTML, fechar docs/roadmap)", done: false }
+    ],
+    blockers: [],
+    verifiable: "MVP: platform_admin abre /meta-ads, cola um System User token real, conecta, sincroniza e vê KPIs + 1 gráfico + tabela de campanhas vinda da Meta real. Token cifrado no banco (não vaza em log). golangci-lint + vue-tsc limpos; escopo multitenant respeitado."
+  },
+  {
+    id: "bio-links",
+    code: "BIO",
+    title: "Bio Links (Site/Bio — alimenta o front bio Nuxt)",
+    goal: "Módulo bio multitenant: painel em /site/bio onde cada cliente configura a própria bio (meta, branding, vídeo, links, carrossel, lojas) e admin/agência gerencia todas com filtro por cliente. Bio sem cliente fixo = account dedicada ('cliente de bio') só com o módulo bio. O front bio (repo separado) consome GET /v1/public/bio/{slug} já mesclado com defaults. Plano: docs/bio/PLANO_MODULO_BIO.md.",
+    status: "in_progress",
+    startedAt: "2026-06-12",
+    estimateWeeks: "1 semana (2 subagentes Opus em paralelo + integração)",
+    group: "bio",
+    tasks: [
+      { id: "bio-b1-back", label: "B1 — Banco + módulo Go bio (subagente A): migration 0152 (bio.bios draft/published jsonb + bio.defaults + bio.media) + módulo Registry (model/store/service/merge/media_storage/http/http_public) + endpoint público GET /v1/public/bio/{slug} (merge defaults, mídia absoluta, 404 uniforme) + testes + AGENT.md. Sem app.go (integração)", done: true, note: "ENTREGUE 2026-06-12 (subagente Opus): 11 arquivos; gofmt/build/vet OK, 16/16 testes PASS, golangci-lint 0 issues. Upload valida escopo da bio antes de aceitar o arquivo. Falta aplicar a migration + rebuild (passo do usuário)." },
+      { id: "bio-b2-front", label: "B2 — Painel Site/Bio (subagente B): types BioData + store Pinia + useBioEditor + páginas /site/bio (lista com filtro por cliente p/ admin) e /site/bio/[id] (editor por seções espelhando o contrato) + upload de mídia + publicar/despublicar + AGENT.md. Sem wiring compartilhado (integração)", done: true, note: "ENTREGUE 2026-06-12 (subagente Opus): 15 arquivos <450 linhas; eslint 0 erros; vue-tsc 0 erros nos arquivos bio (230 repo-wide pré-existentes). Seções imutáveis via update:draft (vue/no-mutating-props); feedback inline (sem composable de toast global no projeto); link público via runtimeConfig.public.bioFrontUrl." },
+      { id: "bio-b3-integracao", label: "B3 — Integração: wiring central (app.go registro+gating /v1/bio→bio + workspaces/permissions/nav + module-enabled + bioFrontUrl no nuxt.config), aplicar migration + rebuild api, habilitar módulo em account de teste, e2e criar→editar→publicar→GET público, colar _default.json em bio.defaults, sync 3 docs + panorama HTML + Notas de Deploy (PUBLIC_API_BASE_URL, BIO_PUBLIC_TOKEN)", done: false, note: "Wiring central APLICADO 2026-06-12. REBUILD+MIGRATION VALIDADOS 2026-06-13: api rebuildada, migration 0152 aplicada (bio: 3 tabelas), SyncCatalog registrou 'bio' em core.modules; /v1/bio/bios responde (400 sem auth = montada) e GET /v1/public/bio/{slug} responde JSON not_found do handler (rota pública montada, banco vazio). Item de menu 'Site > Bio' beta:true. Menu filtra por moduleId vs enabledModules SEM bypass de admin. E2E BACKEND OK 2026-06-13: 1a bio real (slug 'perola', account perola) inserida como published + modulo bio habilitado na perola; GET /v1/public/bio/perola retorna 200 (8628 bytes) com o BioData completo (branding/headerMenu+dropdown/links/37 slides/4 lojas/video). Midias ficam relativas /assets/... (servidas pelo front bio, correto). EDICAO+RENDER VALIDADOS 2026-06-13: crow-nuxt aponta NUXT_API_BASE=/v1/public e renderiza /bio/perola do banco; link 'Ver bio' no painel via NUXT_PUBLIC_BIO_FRONT_URL. FIX de fluxo: BioPublishBar so mostrava 'Despublicar' quando publicada (sem como empurrar edicao) -> agora botao 'Republicar' + aviso 'alteracoes salvas, clique em Republicar' (useBioEditor.hasUnpublishedChanges compara draft salvo x data_published). E2E COMPLETO VALIDADO 2026-06-13: editar->Salvar->Republicar reflete em banco=API=crow-nuxt (3 niveis alinhados: title/nameProfile). Causa do 'nao atualiza' era o SWR 300s do crow-nuxt -> desabilitado em DEV no nuxt.config dele (mantido em prod). FALTA: colar _default.json em bio.defaults." },
+      { id: "bio-b4-realtime", label: "B4 — Tempo real (push, sem polling — ENGINEERING_PRINCIPLES §6): (1) previa ao vivo no editor via iframe do crow-nuxt (rota /bio/preview recebe o BioData por postMessage, re-renderiza conforme edita); (2) bio publica aberta atualiza ao vivo via SSE (GET /v1/public/bio/{slug}/stream): publish/unpublish notificam um sseBroker e o browser refetcha ao receber `updated`; (3) purge de cache no Republicar (invalida o SWR do slug no crow-nuxt) p/ o 1o SSR em prod. Zero trafego ocioso (SSE so um ping/25s); iframe so monta com previa aberta.", done: false, note: "ENTREGUE 2026-06-13. 1a tentativa foi POLLING 2.5s (violava §6 'WebSocket p/ tempo real, nao polling') — REVERTIDO p/ SSE a pedido do usuario. Back: sse.go (sseBroker) + GET /v1/public/bio/{slug}/stream + notify no publish/unpublish; build+vet+test+golangci-lint 0 issues; stream validado (event: ready). crow-nuxt: pages/bio/preview.vue (postMessage), [slug].vue usa EventSource (NUXT_PUBLIC_STREAM_BASE), server/api/bio/purge.ts (CORS). Painel: BioLivePreview.vue + purge no onPublish. FALTA: teste visual do usuario (reiniciar dev do crow-nuxt p/ pegar nuxt.config+.env)." },
+      { id: "bio-b5-fixes-criar", label: "B5 — Correcoes do fluxo criar-do-zero: (1) service.Create auto-habilita o modulo bio na account (senao bio publicada dava 404 no publico); (2) PUBLIC_API_BASE_URL no compose (default localhost:9091) — midia uploaded sai ABSOLUTA (sem ela quebrava no front, outro dominio); (3) fundo por VIDEO **ou** IMAGEM (bgImage/bgImagePc no contrato; publish exige logo + um fundo; crow-nuxt BgVideo renderiza img sem video); (4) limite de upload configuravel via env (BIO_MAX_VIDEO_MB=200/BIO_MAX_IMAGE_MB=10) + explicito na UI; (5) previa absolutiza /uploads/ antes do postMessage (logo/video apareciam quebrados); (6) SSE SetWriteDeadline (nao morre no WriteTimeout 30s).", done: true, note: "2026-06-13. Diagnostico do 'criar do zero nao funciona': bio criada em account sem o modulo bio -> publico 404; midia relativa -> quebrava no front (PUBLIC_API_BASE_URL vazia). build+vet+test+golangci-lint 0 issues; eslint+vue-tsc limpos nos arquivos bio. Toca back (service/store/media_storage/module/http/sse), painel (BioSectionVideo/BioLivePreview/types) e crow-nuxt (types/bio + BgVideo). Reiniciar dev do crow-nuxt p/ pegar types+BgVideo." },
+      { id: "bio-b6a-back", label: "B6.A — Back: criar bio sem cliente (account do contexto), POST .../duplicate (copia draft, slug unico), PATCH aceita accountId (mover de account, so admin) + testes. Spec: docs/bio/ITERACAO_B6_EDITOR.md", done: true, note: "ENTREGUE 2026-06-13 (subagente Opus): cliente opcional (admin sem accountId usa contexto) + slug derivado do name; POST .../duplicate (copia draft, slug unico {slug}-copia); PATCH aceita accountId (move, so admin); interface bioStore p/ testar sem banco; 12 testes; build/vet/test/golangci-lint 0 issues. Rota duplicate validada (400 sem auth = montada)." },
+      { id: "bio-b6b-editor", label: "B6.B — Painel core: cliente opcional no modal + criar leva direto ao editor; lista com Duplicar e Ver online; seletor de cliente no editor (admin); auto-save do draft (remove botao Salvar); switch Editando↔Publicado no preview; Undo (Ctrl+Z); remove Previa, mantem Republicar/Despublicar. Spec B6.B", done: true, note: "ENTREGUE 2026-06-13 (subagente Opus): modal 2 botoes (Criar / Criar e editar), cliente+slug opcionais; lista com Duplicar e Ver online (/{slug}); seletor de cliente no editor (admin); auto-save debounced 800ms (sem botao Salvar) + flushSave antes de publicar; undo (pilha 50 + Ctrl+Z); switch Editando<->Publicado no preview; removidos Salvar/Previa. eslint 0, vue-tsc 0 nos arquivos bio." },
+      { id: "bio-b6c-secoes", label: "B6.C — Painel seções: BioMediaField com PREVIEW da midia no botao (img/video, URL no hover) p/ todas as partes; Video simplificado (background mobile/pc + poster, detecta video ou foto); remover toggles duplicados (slide ativo->Slides, header mobile->Links/menu); layout COMPACTO/horizontal em todas as seções (grid lado a lado p/ lojas/slides) + regra de layout no AGENT_RULES. Spec B6.C", done: true, note: "ENTREGUE 2026-06-13 (subagente Opus): BioMediaField vira tile com preview (img/<video muted>; URL no hover/title); Video simplificado (3 campos Background mobile/desktop+Poster, detecta video->bgVideo / imagem->bgImage, limpa o slot oposto); toggles realocados (slide->Slides, header mobile->Links); lojas/slides em grid de cards; regra 'Layout compacto' no AGENT_RULES. eslint 0, vue-tsc 0 nos arquivos bio." },
+      { id: "bio-b6d-crow-rota", label: "B6.D — crow-nuxt: mover /bio/{slug} para /{slug} (cria pages/[slug].vue, remove pages/bio/[slug] e bio/index, mantem bio/preview p/ o iframe); link 'Ver online' do painel passa a /{slug}. Spec B6.D", done: true, note: "ENTREGUE 2026-06-13 (subagente Opus + integracao): crow-nuxt app/pages/[slug].vue (move de bio/[slug]); removidos bio/[slug] e bio/index; mantido bio/preview (iframe); routeRules ajustado p/ /:slug. BUG 'republicar 2x no bg' CORRIGIDO na integracao: BgVideo.vue ganhou watch que recarrega o <video> quando o data muda no SSE (antes so carregava no mount -> exigia F5). Usuario: reiniciar npm run dev do crow-nuxt." },
+      { id: "bio-b7-slides-fonte", label: "B7 — Slides com fonte de produtos plugavel + collapse + carrossel-antes. Spec: docs/bio/ITERACAO_B7_SLIDES_FONTE.md", done: true, note: "ENTREGUE 2026-06-13 (3 subagentes Opus + crow-nuxt + integracao): back bio ProductSource plugavel (SiteProductsSource le site.products cross-schema) + GET /v1/bio/sources e /facets + service.Public resolve fonte->injeta slides; front BioSectionSlides (seletor Fonte manual/produtos + Modo carrossel/estatico + selects categoria/campanha/tipo + quantidade 5/10/todos + link produto/whats/sem + botao abaixo); BioCollapsibleItem (accordion) em links/menu/lojas; crow-nuxt renderiza botao + modo estatico. build/test/golangci-lint 0; eslint 0; endpoints montados (400/401 sem auth). slide-produto link configuravel (produto/whats/none)." },
+      { id: "bio-b8-sync-perola", label: "B8 — Sincronizar produtos do cliente (Perola) -> site.products (fonte externa plugavel). Spec: docs/bio/ITERACAO_B8_PRODUTOS_PEROLA.md", done: true, note: "ENTREGUE 2026-06-13 (2 subagentes Opus + integracao): migration 0154 (site.product_sources + external_id/source em site.products) aplicada; cliente HTTP le perolajoias.com/api/products (GET publico, paginado) -> upsert por (account_id,source,external_id), idempotente; POST /v1/admin/products/sync (admin); fonte Perola registrada (enabled). Front /site/produtos: botao Sincronizar (admin) + colunas imagem(preview)/categorias/campanhas + filtros. app.go: siteService.WithProductSync wired. Docs: GUIA_MODULO_BIO.md (uso tecnico+usuario) + painel-perola/docs/MELHORIAS_OMNI.md. Sync sob demanda (botao); agendamento = fase futura. Usuario: clicar Sincronizar p/ puxar os produtos." },
+      { id: "bio-b9-previa-carrossel-fixes", label: "B9 — Correcoes da previa ao vivo e do carrossel + avif + duplicar imagem entre variantes", done: true, note: "ENTREGUE 2026-06-14 e VALIDADO no navegador. (1) Previa ao vivo: corrigido o bug de 'so atualizava ao publicar' — o resolvedKey (chave de cache do BioLivePreview) era fixado ANTES do await da resolucao; agora so grava APOS o await com sucesso + pendingKey descarta resposta de fonte antiga, entao mudar categoria/campanha/limite/link reflete na previa NA HORA. (2) Carrossel reage a config ao vivo: SlideTopKeen (crow-nuxt) ganhou buildSlider/teardownSlider + watchers — 'Slides por vista' e autoplay (desligar para de verdade) refletem na previa sem publicar. (3) Slide vazio (sem src) nao renderiza; slide-produto resolvido carrega desc/price p/ o Lightbox. (4) Upload aceita avif (back media_storage.go: matchAllowedType/typeFromExtension). (5) Duplicar imagem entre variantes: BioMediaField ganhou prop duplicateTargets (botoes 'copiar para') — branding (logo mobile<->desktop) e video (background mobile/desktop + poster)." },
+      { id: "bio-b10-preview-nativo", label: "B10 — Preview da bio NATIVO na plataforma (decouple do crow-nuxt)", done: true, note: "ENTREGUE 2026-06-14. O preview deixou de ser iframe pro crow-nuxt (que travava e deixava a tela preta quando o dev server pendurava). Agora o BioLivePreview renderiza o BioData com componentes do PROPRIO painel (preview/BioPreviewStage = fundo+overlay; preview/BioPreviewSlides = carrossel CSS; preview/BioPreviewLinks = logo/nome/menu/links). Independe do crow-nuxt estar no ar (so midia em /assets/ quebra se ele cair; a estrutura sempre renderiza). crow-nuxt fica SO pro publicado. Mantem a resolucao de produtos da fonte e o switch Editando/Publicado. REVERTIDO em B11 (2026-06-15): o nativo nao tinha a fidelidade do template real; com o crow-nuxt dockerizado a causa que motivou o nativo (dev server caia) deixou de existir." },
+      { id: "bio-b11-preview-iframe-docker", label: "B11 — Preview de volta pro iframe (fidelidade total) + crow-nuxt como SERVICO docker", done: true, note: "ENTREGUE e VALIDADO 2026-06-15. (1) BioLivePreview voltou a ser iframe pro {bioFrontUrl}/bio/preview (postMessage debounced 300ms) — usa os MESMOS template/componentes da bio publicada, sem duplicar render; removidos os componentes preview/ (BioPreviewStage/Slides/Links) do nativo. Mantidos: switch Editando/Publicado, resolucao de produtos da fonte (B7, resolvedKey apos await + pendingKey), absolutizeUploads (/uploads/->apiBase; /assets/ intactos). (2) crow-nuxt deixou de ser processo manual (`npm run dev`, que morria e deixava o preview preto/carregando-infinito) e virou SERVICO no docker-compose: build de PRODUCAO leve (Dockerfile multi-stage node:22-slim, serve so o .output com node, sem Vite/HMR), restart: unless-stopped, porta NAO-PADRAO 3300 no host (CROW_NUXT_PORT; dentro do container continua 3000). Dockerfile usa `npm install` (NAO ci) pq o package-lock veio do Windows e nao traz as variantes Linux das deps opcionais (@emnapi/rollup/esbuild). SMOKE: build OK; container Up; /bio/preview->200 instantaneo; bio publica /perola->200 em 0.12s (crow-nuxt->api interna api:8080); assets->200; idle 31MB / CPU 0%. Notas de Deploy: este crow-nuxt e SO DEV LOCAL (preview do editor) — NAO subir na VPS a partir deste compose; o front bio tera container/deploy PROPRIO (a definir) e na VPS NUXT_PUBLIC_BIO_FRONT_URL aponta pro dominio real (nao incluir 'crow-nuxt' no docker compose up). Envs CROW_NUXT_PORT(3300)/CROW_NUXT_API_BASE/NUXT_PUBLIC_STREAM_BASE/NUXT_PUBLIC_BIO_FRONT_URL no .env.docker.example." },
+      { id: "bio-b12-preview-incompleto", label: "B12 — Previa ao vivo AINDA INCOMPLETA (revisar no navegador): config do carrossel nao reflete na previa", done: false, note: "ABERTO 2026-06-15 (reporte do usuario). Assim como a UI de produtos, a previa da bio ainda nao esta pronta. Bug observado: alterar 'Slides por vista' de 3 -> 4 e Publicar -> a PAGINA PUBLICADA (crow-nuxt /{slug}) passou a mostrar 4 (funciona), mas a PREVIA (iframe /bio/preview, mesmo com a fonte em 'Publicado') continuou em 3. Ou seja, o erro e SO no preview: o slidesPerView (e provavelmente outros campos do carrossel) nao esta sendo aplicado no caminho do postMessage/SlideTopKeen da rota /bio/preview, embora o SSR da pagina publica aplique. B9 dizia ter corrigido 'Slides por vista' na previa via buildSlider/teardownSlider + watchers no SlideTopKeen — revalidar: provavelmente o preview.vue do crow-nuxt nao repassa o config do carrossel pro SlideTopKeen, ou os breakpoints do keen-slider sobrescrevem o slidesPerView. INVESTIGAR: crow-nuxt app/pages/bio/preview.vue + app/components/bio/SlideTopKeen.vue (slidesPerView vs perView/breakpoints) e o que o painel manda no postMessage (slideTop.carousel). NAO resolver hoje — so registrado." }
+    ],
+    blockers: [],
+    verifiable: "Cliente loga e edita só a bio da própria account; platform_admin lista todas e filtra por cliente; GET /v1/public/bio/{slug} devolve o BioData mesclado com URLs absolutas e o front bio renderiza; slug inexistente/despublicado/módulo desligado → 404. Editor mostra previa ao vivo conforme edita e o Republicar reflete no ar na hora (purge). golangci-lint + eslint + vue-tsc limpos."
+  },
+  {
+    id: "cardapio-online",
+    code: "CARD",
+    title: "Cardápio Online (gestão do front estático de restaurantes)",
+    goal: "Módulo cardapio multitenant: página própria /cardapio para gerir restaurantes (dados, categorias, produtos com variações/adicionais, avaliações, domínios, pedidos) servidos por um front Nuxt ESTÁTICO no host do cliente. API pública /v1/public/* com CORS aberto (browser chama direto), tenant resolvido por host (subdomínio de CARDAPIO_BASE_DOMAIN ou domínio custom), pedidos com preço RECALCULADO no servidor (centavos), tracking com allowlist. Restaurantes na account da Crow até terem cliente próprio. Plano: docs/cardapio/PLANO_MODULO_CARDAPIO.md.",
+    status: "in_progress",
+    startedAt: "2026-06-12",
+    estimateWeeks: "1 semana (2 subagentes Opus em paralelo + integração; junto com a fase bio-links = 4 subagentes)",
+    group: "cardapio",
+    tasks: [
+      { id: "card-c1-back", label: "C1 — Banco + módulo Go cardapio (subagente C): migration 0153 (restaurants/domains/categories/products/variations/addons/reviews/orders/order_items/events, account_id em tudo) + módulo Registry (stores por agregado, service_public resolve/cardápio/prato/eventos, service_orders com recálculo, media_storage, http painel + http_public no formato de erro do contrato) + CORS wildcard p/ /v1/public/* no httpapi/middleware.go + rate limit por IP + testes (recálculo, resolve, allowlist, escopo 404) + AGENT.md. Sem app.go (integração)", done: true, note: "ENTREGUE 2026-06-12 (subagente Opus): 23 arquivos (maior 442 linhas) + middleware CORS cirúrgico; gofmt/build/vet OK, 18 testes cardapio + 4 CORS PASS, golangci-lint 0 issues no módulo (1 finding pré-existente em httpapi/json.go fora do diff). Service depende de interface dataStore p/ testar sem banco. Falta migration + rebuild (usuário)." },
+      { id: "card-c2-front", label: "C2 — Painel /cardapio (subagente D): types do contrato (camelCase, centavos) + store Pinia + useCardapioEditor + páginas /cardapio (lista com filtro por cliente p/ admin) e /cardapio/[id] (editor por seções: dados, categorias, produtos com variações/adicionais e galeria, avaliações, pedidos com mudança de status, domínios) + AGENT.md. Sem wiring compartilhado (integração)", done: true, note: "ENTREGUE 2026-06-12 (subagente Opus): 18 arquivos; eslint 0 erros; vue-tsc 0 erros nos arquivos cardapio (230 repo-wide pré-existentes). Extras p/ 450 linhas: useCardapioProductForm + CardapioMoneyInput (centavos). Aba Eventos sem UI (analytics é fase futura, §9 do plano)." },
+      { id: "card-c3-integracao", label: "C3 — Integração: wiring central (app.go registro+gating /v1/cardapio→cardapio + workspaces/permissions/nav + module-enabled, junto com o da bio), migration + rebuild api, habilitar módulo na account Crow, primeiro restaurante pelo painel, e2e com o front (resolve→cardápio→prato→pedido→evento) + preflight CORS real, sync 3 docs + panorama + Notas de Deploy (CARDAPIO_BASE_DOMAIN, PUBLIC_API_BASE_URL)", done: false, note: "Wiring central APLICADO 2026-06-12. REBUILD+MIGRATION+CORS VALIDADOS 2026-06-13: api rebuildada, migration 0153 aplicada (cardapio: 10 tabelas), SyncCatalog registrou 'cardapio' em core.modules; /v1/cardapio/restaurants responde (400 = montada), GET /v1/public/resolve responde JSON not_found do handler, e preflight OPTIONS de Origin arbitrária em /v1/public/* retorna 204 + Access-Control-Allow-Origin: * (CORS público OK). Item de menu 'Cardápio Online' beta:true. FALTA: habilitar 'cardapio' em core.account_modules da account Crow (INSERT — passo do usuário) + e2e com o front estático (resolve→cardápio→prato→pedido→evento)." }
+    ],
+    blockers: [],
+    verifiable: "Front estático em domínio de teste resolve o host, renderiza o cardápio real do banco, cria pedido com total recalculado no servidor (item+variação+adicionais+frete) e registra eventos da allowlist; preflight OPTIONS de origem qualquer em /v1/public/* responde 204 com Allow-Origin *; rotas não-públicas seguem allowlist intocada; cliente vê só os restaurantes da própria account e platform_admin filtra por cliente. golangci-lint + eslint + vue-tsc limpos."
+  },
+
+  // ─── Infra & Deploy — pipeline GHCR + staging (branch a definir) ──────────
+  //
+  // Criada em 2026-06-15. Substitui o deploy full-sync + build-na-VPS por
+  // build-once no GitHub Actions → push GHCR → VPS só faz pull + up. Adiciona
+  // staging isolado e sob demanda na mesma VPS. Plano canônico:
+  // docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md. Decisões: registry+CI e
+  // staging same-VPS on-demand. IMPLEMENTAÇÃO NÃO INICIADA (só plano).
+  {
+    id: "deploy-registry-staging",
+    code: "DEP",
+    title: "Deploy via Registry (GHCR) + Staging sob demanda",
+    goal: "Tirar o build de Go/Nuxt da VPS (elimina o pico de 4GB de RAM do Nuxt em produção): GitHub Actions builda e publica ghcr.io/mikewade2k16/omni-{api,web}:<sha>; a VPS só faz docker compose pull + up. Promoção staging→prod sobe o MESMO artefato testado (SHA); rollback = apontar pro SHA anterior. Staging isolado (omni-staging, DB/volumes/subdomínio próprios) ligável sob demanda.",
+    status: "in_progress",
+    startedAt: "2026-06-15",
+    estimateWeeks: "3-5 dias",
+    group: "infra-deploy",
+    tasks: [
+      { id: "dep-d1-ci-build", label: "D1 — Workflow .github/workflows/build-images.yml: gates de teste + buildx (api ./back, web ./web target prod) + push GHCR :<sha>/:<branch> + cache-from/to type=gha + label image.source", done: false, note: "ESCRITO 2026-06-15 (2 subagentes Opus em paralelo): build-images.yml criado — job test (mesmos gates do deploy-vps.yml) + job build com buildx, metadata-action (type=sha,format=long + type=ref,event=branch), cache gha por scope (api/web), label image.source. YAML validado. FALTA validar em runtime: 1o push pra disparar o CI + confirmar publicação no GHCR + habilitar packages:write no repo." },
+      { id: "dep-d2-compose", label: "D2 — docker-compose.prod.yml com api.image/web.image = ${API_IMAGE}:${IMAGE_TAG} (mantém build: pra dev); .env.production.example ganha API_IMAGE/WEB_IMAGE/IMAGE_TAG", done: false, note: "ESCRITO 2026-06-15: api.image=${API_IMAGE:-ghcr.io/mikewade2k16/omni-api}:${IMAGE_TAG:-latest} e web análogo; build: mantido. .env.production.example com bloco GHCR (API_IMAGE/WEB_IMAGE/IMAGE_TAG=latest). FALTA: 1o pull real na VPS." },
+      { id: "dep-d3-staging-env", label: "D3 — .env.staging.example (COMPOSE_PROJECT_NAME=omni-staging, aliases lista-staging-*, URLs/secrets próprios) + decisão de seed do banco staging (bootstrap de teste limpo, sem PII real)", done: false, note: "ESCRITO 2026-06-15: .env.staging.example criado (omni-staging, portas 18081/13004, aliases lista-staging-*, URLs staging.lista.*, segredos próprios placeholder, automation off, seed=bootstrap de teste limpo). FALTA: criar .env.staging real na VPS." },
+      { id: "dep-d4-caddy-dns", label: "D4 — Bloco Caddy preview.whenthelightsdie.com + DNS A preview → 85.31.62.33", done: true, note: "FEITO E NO AR 2026-06-16: preview vivo em https://preview.whenthelightsdie.com (healthz + home = 200, cert TLS emitido), sem quebrar omni/crowvisuals. Bloco Caddy no /opt/omnichannel/Caddyfile (lista-staging-api/web). DNS: tentamos crowvisuals.com.br mas a zona é autoritativa na HostGator e o registro foi criado em painel errado (NXDOMAIN); trocamos p/ whenthelightsdie.com (dns-parking/Hostinger, mesmo domínio do prod) que resolveu na hora. Lição na STAGING_SETUP.md §7.4." },
+      { id: "dep-d5-scripts", label: "D5 — scripts/deploy/deploy-pull.ps1 (-Environment staging|prod, escreve IMAGE_TAG, login GHCR, pull, backup opcional, up --no-build, smoke) + staging-up.ps1/staging-down.ps1 + promote.ps1 (só promove SHA que passou por staging)", done: false, note: "ESCRITO 2026-06-15: deploy-pull.ps1 + staging-up/down.ps1 + promote.ps1 (todos parse-OK no parser do PowerShell) + atalhos npm (deploy:staging/:down/:prod/:promote). FALTA validar contra a VPS (precisa do .env.staging + imagens no GHCR)." },
+      { id: "dep-d6-workflow", label: "D6 — deploy-vps.yml migra de up --build para pull + up --no-build; inputs image_tag/environment/backup_database", done: false, note: "ESCRITO 2026-06-15: deploy-vps.yml reescrito deploy-only (inputs environment/image_tag/git_ref/backup_database/force_recreate/skip_smoke_tests): scp do compose + grava IMAGE_TAG + pull + up --no-build + smoke. YAML validado. FALTA: 1a run real." },
+      { id: "dep-d7-docs", label: "D7 — Runbook: atualizar DEPLOY_VPS.md + DEPLOY_CHECKLIST.md + scripts/deploy/AGENT.md + panorama HTML; documentar image prune e GHCR PAT read-only na VPS", done: false, note: "FEITO 2026-06-15: DEPLOY_VPS.md (seção nova no topo + legado marcado), DEPLOY_CHECKLIST.md (tabela do fluxo registry), scripts/deploy/AGENT.md (modelo/scripts/refs), AGENT_RULES.md (regra 'VPS nunca builda'), package.json (scripts npm), panorama P2·22. FALTA: image-prune e validar em runtime." },
+      { id: "dep-d8-fast", label: "D8 — Caminho RÁPIDO sem git (build LOCAL → VPS), um comando", done: true, note: "VALIDADO E NO AR 2026-06-16. O deploy do preview foi feito por build LOCAL + transferência por SSH (docker save→load, SEM GHCR) → up --no-build: zero build na VPS, sem apagar nada. Documentado em STAGING_SETUP.md §7.1. scripts/deploy/deploy-fast.ps1 (build local → push GHCR → deploy-pull) existe como a variante com registry (incremental por camada), mas exige docker login ghcr.io no usuário deploy da VPS — por isso o go-live usou o save/load (sem auth). Containers omni-staging-{api,web,postgres} healthy; healthz 200 em 127.0.0.1:18082 e público https://preview.whenthelightsdie.com 200." }
+    ],
+    blockers: [],
+    verifiable: "https://preview.whenthelightsdie.com/healthz = 200 (cert TLS emitido), home = 200, sem quebrar omni/crowvisuals; containers omni-staging-* healthy; deploy sem build na VPS (build local → save/load por SSH OU push GHCR → pull). Os outros caminhos (CI build-images.yml; deploy-vps.yml pull; deploy-fast.ps1 via GHCR) seguem escritos como opções rastreáveis."
   }
 ];
 
 export const ROADMAP_MODULES: RoadmapModule[] = [
   {
+    id: "meta_ads",
+    label: "Meta Ads",
+    route: "/meta-ads",
+    status: "beta",
+    priority: "P0",
+    category: "operacao-comercial",
+    description:
+      "Gestão e relatórios de tráfego pago de Meta (Facebook/Instagram) no painel. Prioridade atual. MVP: conectar + puxar dados + dashboard básico. Plataforma: CRUD de campanha, relatórios ricos, IA e OAuth. Backend Go é a fonte (Marketing API → cache meta_ads.*).",
+    scope: [
+      "MVP: conectar (System User token) + sync de contas/campanhas/insights + dashboard com gráfico",
+      "Criar/editar/pausar campanhas (manual e por IA)",
+      "Relatórios e dashboards por cliente para decisão",
+      "OAuth Facebook Login + atribuição agência→cliente"
+    ],
+    dependsOn: []
+  },
+  {
     id: "tasks",
     label: "Tasks",
     route: "/tasks",
-    status: "beta",
+    status: "done",
     priority: "P0",
     category: "atendimento",
     description:
-      "Orquestrador de tarefas multi-tenant (boards + tabela). Backend pronto (Fases T1-T9). UI em refino: rolagem vertical, performance, checklist no editor, expand/restore. Em uso interno antes de liberar para tenants.",
+      "Orquestrador de tarefas multi-tenant (boards + tabela). EM USO REAL: board geral da agencia (Crow Visuals, 247 tasks) + boards por cliente (Duby). Backend completo (T1-T9), realtime, tracking, RBAC, render progressivo. Multi-tenant fechado (board vive na conta-agencia; acesso org-aware). Refino continuo de performance e do editor segue como melhoria, nao bloqueio.",
     scope: [
       "Refinar performance do board para >500 cards",
       "Melhorar feedback de drag-and-drop entre colunas",
@@ -1245,15 +1516,15 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
     id: "tracking",
     label: "Tracking",
     route: "/tracking",
-    status: "pending",
+    status: "beta",
     priority: "P1",
     category: "atendimento",
     description:
-      "Visao de time-tracking por consultor: tempos por task, relatorios diarios/semanais. Depende de Tasks 100% (presence + tracking ja existem no backend T7).",
+      "Time-tracking por cliente/usuario/periodo. ENTREGUE 2026-06-10: pagina /tracking com layout de board (TrackingBoardView, so tasks em play/pause) + aba Inteligencia consumindo GET /v1/tasks/tracking/metrics (byClient/byUser/byType em 1 query, GROUP BY server-side; agrega por client_account_id). Falta: export CSV e comparativos avancados.",
     scope: [
-      "Agregacao por consultor/dia/semana",
-      "Export CSV",
-      "Comparativo Pessoa A vs B no periodo"
+      "Export CSV dos buckets de tempo",
+      "Comparativo Pessoa A vs B no periodo",
+      "Metas de tempo por cliente"
     ],
     dependsOn: ["tasks"]
   },
@@ -1278,7 +1549,7 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
     id: "assistente-ia",
     label: "Assistente IA (WhatsApp)",
     route: "/automation",
-    status: "in_progress",
+    status: "beta",
     priority: "P1",
     category: "atendimento",
     description:
@@ -1309,20 +1580,51 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
   },
   {
     id: "site",
-    label: "Site (Campanhas + Paginas + Forms)",
-    route: "/campanhas",
-    status: "pending",
-    priority: "P3",
+    label: "Site (Leads + Produtos + Tracking)",
+    route: "/site/leads",
+    status: "beta",
+    priority: "P2",
     category: "operacao-comercial",
     description:
-      "Builder visual de paginas/forms + campanhas atreladas a pagina. Pagina /campanhas existe mas sem builder. Forms ainda nao implementado.",
+      "Modulo site/ ENTREGUE (C17-C19): schema site (leads, products, webhook_sources, tracking_events); ingestao por webhook HMAC SHA-256; admin CRUD de leads/produtos com filtros + colunas travaveis; receptor de tracking (webhook Perola) + tela /site/tracking. Em uso real. O page-builder visual de paginas/forms fica como evolucao futura separada.",
     scope: [
-      "Builder drag-drop simples para pagina",
-      "Geracao de form com webhook",
-      "Campanha = pagina + canal de divulgacao + meta",
-      "Tracking de conversao"
+      "Page-builder visual de paginas/forms (futuro)",
+      "Campanha = pagina + canal + meta",
+      "Mais fontes de webhook por cliente"
     ],
-    dependsOn: ["site"]
+    dependsOn: []
+  },
+  {
+    id: "bio",
+    label: "Bio (link-in-bio)",
+    route: "/site/bio",
+    status: "beta",
+    priority: "P2",
+    category: "tools",
+    description:
+      "CRUD multitenant das paginas de bio (link-in-bio), servidas pelo front Nuxt separado crow-nuxt (rota /bio/{slug}, consome /v1/public/bio). Cliente edita so a propria bio; admin/agencia gerencia todas com filtro por cliente. Backend modulo bio/ + schema bio (migration 0152). Plano: docs/bio/PLANO_MODULO_BIO.md.",
+    scope: [
+      "Editor de blocos (menu/links/slides/lojas) colapsavel e compacto",
+      "Temas/tokens por bio",
+      "Analytics de cliques por link"
+    ],
+    dependsOn: []
+  },
+  {
+    id: "cardapio",
+    label: "Cardapio Online",
+    route: "/cardapio",
+    status: "beta",
+    priority: "P2",
+    category: "tools",
+    description:
+      "CRUD multitenant de cardapios online (restaurantes), servidos por um front Nuxt estatico no host do cliente, com resolucao de tenant por dominio, pedidos recalculados no servidor e tracking. Backend modulo cardapio/ + schema cardapio (migration 0153). Por enquanto na conta da agencia. Plano: docs/cardapio/PLANO_MODULO_CARDAPIO.md.",
+    scope: [
+      "Recalculo de pedido server-side (preco/estoque)",
+      "Resolucao de tenant por dominio do cliente",
+      "Integracao com WhatsApp para receber pedido"
+    ],
+    dependsOn: []
   },
   {
     id: "inteligencia",
@@ -1467,7 +1769,7 @@ export const ROADMAP_RULES: RoadmapRule[] = [
     id: "fe-feature-flag-hidden",
     category: "frontend",
     title: "Esconder pagina nao pronta via hidden no menu",
-    body: "Quando um modulo/pagina nao esta pronto, usar hidden:true em web/app/utils/sidebar-nav.ts E em web/layers/queue/nav.config.ts. Para itens em beta, usar beta:true (renderiza badge).",
+    body: "Quando um modulo/pagina nao esta pronto, usar hidden:true em web/layers/queue/nav.config.ts (fonte unica do menu desde 2026-06-13; o legado web/app/utils/sidebar-nav.ts foi removido). Para itens em beta, usar beta:true (renderiza badge).",
     why: "Evita que usuario navegue para pagina quebrada. Beta deixa explicito que a feature pode mudar.",
     appliesWhen: "Adicionar/remover modulo do menu lateral."
   },

@@ -68,7 +68,7 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 | Verbo | Path | Resposta | Notas |
 |---|---|---|---|
-| GET | `/v2/me/accounts` | `MeAccountsResponse` (lean) | lista accounts do usuario |
+| GET | `/v2/me/accounts` | `MeAccountsResponse` (lean) | lista accounts do usuario. Cada `AccountSummary` expoe `isAgency` (bool) e `organizationName` (string, via `left join core.organizations`) alem dos campos base — consumidos pelo AccountSwitcher para (a) gatear o menu Manage admin-global so na conta-agencia e (b) agrupar clientes por organizacao. |
 | GET | `/v2/me/context?accountId=<id>` | `MeContextResponse` (full) | contexto completo do account |
 
 > `/v1/me/context` continua servido pelo legado em `platform/app/context_http.go` com shape `{user, principal, context: {tenants, stores}}` esperado pelo frontend. Quando o frontend migrar para o shape v2 (com `account`/`roles`/`permissions`), o alias v1 pode voltar aqui. Os aliases v1 do core foram removidos em 2026-05-29 (post-C9) por causarem conflito de rota + mismatch de shape.
@@ -77,9 +77,9 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 | Verbo | Path | Resposta | Notas |
 |---|---|---|---|
-| GET | `/v1/admin/accounts` | `AdminListAccountsResponse` | filtros: q, status, organizationId, page, perPage. Resposta inclui userCount/userNicks/projectCount/projectSegments/modules/stores agregados (C9, 2026-05-29) |
+| GET | `/v1/admin/accounts` | `AdminListAccountsResponse` | filtros: q, status, organizationId, page, perPage. Resposta inclui userCount/userNicks/projectCount/projectSegments/modules/stores agregados (C9, 2026-05-29). **EXCLUI contas `is_agency=true`** (a conta-agência não é cliente — Trilho 2, migration 0158). `count(*)` e dados usam o mesmo `where a.is_agency = false`. |
 | POST | `/v1/admin/accounts` | `AccountAdminView` | cria account + clona roles + membership do adminEmail + **seed dos modulos default (queue/tasks/crm, igual 0124)** — sem isto a conta nasce com `account_modules` vazio e o guard barra todas as rotas |
-| GET | `/v1/admin/accounts/{id}` | `AccountAdminView` | detalhe completo com billing/contact + agregados |
+| GET | `/v1/admin/accounts/{id}` | `AccountAdminView` | detalhe completo com billing/contact + agregados. **NÃO** aplica o filtro `is_agency` — a conta-agência continua acessível no detalhe (só some da lista). |
 | PATCH | `/v1/admin/accounts/{id}` | `AccountAdminView` | patch semantico (campos nil ignorados). Aceita `active` (toggle status) desde C9 |
 | DELETE | `/v1/admin/accounts/{id}` | 204 | soft delete (is_active=false) |
 | GET | `/v1/admin/accounts/{id}/modules` | `AdminModulesResponse` | lista todos os modulos com enabled/disabled |
@@ -92,7 +92,7 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 | Verbo | Path | Resposta | Notas |
 |---|---|---|---|
-| GET | `/v1/admin/users` | `AdminUserListResponse` | filtros: q (email/nome/nick), status (active/inactive), platformAdmin (true/false), page, perPage. Resposta inclui `accountCount` e `accountNames` (nomes das accounts, não slugs — renomeado em 2026-05-29) via `core.account_users` JOIN `core.accounts`. |
+| GET | `/v1/admin/users` | `AdminUserListResponse` | filtros: q (email/nome/nick), status (active/inactive), platformAdmin (true/false), page, perPage. Resposta inclui `accountCount` e `accountNames` (nomes das accounts, não slugs — renomeado em 2026-05-29) via `core.account_users` JOIN `core.accounts`. **Paginacao server-side** (default perPage=20, cap 100); o front (`/manage/users`) consome UMA pagina por vez com os filtros aplicados no backend — nao baixa mais todas as paginas para filtrar no cliente (Track D perf, 2026-06-15). Param opcional `includeAccounts` (default `true`): `includeAccounts=false` devolve a **projecao lean** (sem o LATERAL join de contas, `accountCount=0`/`accountNames=""`) para callers que so precisam acima-da-dobra — o contrato default permanece inalterado. |
 | POST | `/v1/admin/users` | `AdminUserView` | cria user. Senha opcional — se vazia, `must_change_password=true` (precisa convite). |
 | GET | `/v1/admin/users/{id}` | `AdminUserView` | detalhe completo com agregados. |
 | PATCH | `/v1/admin/users/{id}` | `AdminUserView` | patch semantico. Safeguard: nao permite rebaixar/desativar ultimo platform_admin ativo (`ErrLastPlatformAdmin`, HTTP 409). |
@@ -111,9 +111,65 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 `PATCH /v1/admin/accounts/{id}` agora aceita `organizationId` no body: string vazia (`""`) → desvincula (NULL); UUID válido → vincula. C15.
 
+### Conta-agência: `is_agency` (Trilho 2, migration 0158)
+
+`core.accounts.is_agency` (boolean not null default false) marca a conta-WORKSPACE
+da agência ("Crow Visuals", slug 'crow') — dona do board geral de Tasks, com TODOS
+os módulos habilitados. Ela **NÃO é cliente**, então `ListAccounts` (camada admin)
+filtra `where a.is_agency = false` (no `count(*)` e na query de dados). O campo é
+exposto como `isAgency` em `AccountAdminView` e é scaneado junto com as demais colunas
+de `core.accounts` nos 3 SELECTs que usam `scanAdminAccount` (List/Find/Update returning).
+
+> **Importante**: o FILTRO `is_agency = false` (esconder a conta-agência da lista de
+> clientes) é EXCLUSIVO da camada admin (`admin_repository.go`). `store_postgres.go`
+> (`ListAccountsForUser`/`scanAccount` do switcher) **NÃO** filtra `is_agency` — o admin
+> precisa enxergar a conta-agência no switcher como conta-casa. Não propagar este filtro
+> para a visibilidade org-aware.
+>
+> **Switcher consome `isAgency`/`organizationName` (2026-06-15)**: as queries
+> `listAccountsForUserQuery` e `findAccountIfAccessibleQuery` agora SELECIONAM
+> `a.is_agency` e `coalesce(o.name, '')` (via `left join core.organizations o on o.id =
+> a.organization_id`, 1:1, não multiplica linhas), e `scanAccount` os mapeia para
+> `Account.IsAgency` / `Account.OrganizationName`. `Account.Summary()` os propaga para
+> `AccountSummary.IsAgency` (json `isAgency`) e `AccountSummary.OrganizationName`
+> (json `organizationName`), expostos em `GET /v2/me/accounts`. Isto é SELECT para
+> exibição, distinto do FILTRO admin acima — a visibilidade org-aware permanece inalterada.
+
 `/v2/me/context` valida que o user e membership ativo da account (defesa em profundidade
 contra spoofing de `accountId`). Resposta `account_not_found` cobre tanto "nao existe" quanto
 "nao e membership" para nao vazar existencia.
+
+### Visibilidade org-aware de accounts (Trilho B — Etapa 3, AGENCY_TENANT_ARCHITECTURE)
+
+`ListAccountsForUser` e `FindAccountIfMember` (`store_postgres.go`) decidem o escopo
+de accounts 100% no banco, via a clausula `accountVisibilityWhere` (parametrizada por
+`$1` = userID). Uma account ativa e visivel quando QUALQUER um dos tres caminhos vale:
+
+1. **platform_admin** — `core.users.is_platform_admin = true` (user ativo) → ve TODAS
+   as accounts ativas da plataforma.
+2. **agency_owner** — existe linha em `core.organization_users` com
+   `org_role = 'agency_owner'` cujo `organization_id = a.organization_id` → o dono da
+   agencia ve TODAS as accounts da SUA organization.
+3. **membership** — existe membership ativa em `core.account_users`
+   (`is_active = true`) → comportamento legado, inalterado, para os demais users.
+
+Os tres ramos sao `exists(...)` unidos por `OR` num unico predicado (sem JOIN que
+multiplique linhas), entao cada account aparece no maximo uma vez — `DISTINCT`
+desnecessario. `FindAccountIfMember` aplica a MESMA regra filtrando por `$2` (accountID);
+se nada bate, `pgx.ErrNoRows` → `ErrAccountNotMember` (nao distingue "nao existe" de
+"nao acessivel", para nao vazar existencia). A traducao de erro fica isolada em
+`accountFromAccessibleRow` (testavel sem Postgres).
+
+Defesa em profundidade: o client nunca decide escopo — a regra inteira vive no SQL.
+Teste de contrato + traducao de erro em `store_postgres_test.go`.
+
+> **N+1 AMPLIADO (atencao supervisor)**: `MeAccounts` chama `ListEnabledModuleIDs` por
+> account num loop (N+1 ja conhecido — ENGINEERING_PRINCIPLES §10.3). Com platform_admin
+> agora enxergando TODAS as accounts ativas, esse loop passa a rodar para a base inteira
+> a cada `GET /v2/me/accounts` desse perfil. Nao foi corrigido aqui (fora do escopo).
+> Candidato a agregacao batch: `WHERE account_id = ANY($1)` carregando os modulos de
+> todas as accounts numa unica query (espelhar `loadModulesByAccount` de
+> `admin_repository_aggregates.go`).
 
 ## Regras inegociaveis (vide `docs/CONTRACT_FREEZE.md`)
 
@@ -136,19 +192,19 @@ contra spoofing de `accountId`). Resposta `account_not_found` cobre tanto "nao e
 
 - `model.go` — structs (Account, Organization, User), DTOs (Summary, Context), interface `Repository`.
 - `errors.go` — erros padronizados: identidade, account, RBAC, admin.
-- `store_postgres.go` — `PostgresRepository` implementando `Repository`.
-- `service.go` — orquestra leituras de /me, valida membership.
+- `store_postgres.go` — `PostgresRepository` implementando `Repository`. `ListAccountsForUser`/`FindAccountIfMember` usam a regra org-aware (`accountVisibilityWhere`): platform_admin vê todas, agency_owner vê as da org, demais via membership. As duas queries também selecionam `a.is_agency` + `coalesce(o.name,'')` (via `left join core.organizations`) e `scanAccount` os mapeia para `Account.IsAgency`/`Account.OrganizationName` (switcher). Ver "Visibilidade org-aware de accounts" acima.
+- `service.go` — orquestra leituras de /me, valida acessibilidade (org-aware).
 - `http.go` — handlers /v2/me/accounts e /v2/me/context. Aliases v1 removidos pós-C9 (conflito de rota com legacy + shape diferente).
 - `rbac_model.go` — structs `RoleTemplate` e `Role`, `RoleSummary`.
 - `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository`.
 - `rbac_service.go` — `RBACService` completo.
 - `rbac_http.go` — 7 endpoints RBAC (list/create/get/patch/delete roles + assign/remove).
 - `admin_model.go` — DTOs admin (AccountAdminView com agregados, filtros, modules, stores, webhook) + interface `AdminRepository`.
-- `admin_repository.go` — `PostgresAdminRepository`: CRUD de accounts (List/Find/Create/Update/SoftDelete). Update aceita `Active *bool`. List e Find chamam `enrichAccounts` para popular agregados.
+- `admin_repository.go` — `PostgresAdminRepository`: CRUD de accounts (List/Find/Create/Update/SoftDelete). Update aceita `Active *bool`. List e Find chamam `enrichAccounts` para popular agregados. `ListAccounts` exclui contas `is_agency=true` (filtro base `a.is_agency = false`); `FindAdminAccount` não filtra. Os 3 SELECTs selecionam/scaneiam `is_agency` → `AccountAdminView.IsAgency` (json `isAgency`).
 - `admin_repository_aggregates.go` — loaders batch (`loadUserAggregates`, `loadProjectAggregates`, `loadModulesByAccount`, `loadStoresByAccount`) + `enrichAccounts` que mescla tudo. Chamados por List e Find. Evita N+1 — uma query por agregado independente do número de accounts.
 - `admin_repository_secondary.go` — métodos secundários: modules (`GetAccountModules`, `SetAccountModuleEnabled`), stores (`GetAccountStores`, `SetStoreBillingAmount`), webhook (`RotateWebhookKey`).
 - `admin_users_model.go` — DTOs admin de users (`AdminUserView`, `AdminUserListFilter`, `AdminCreateUserInput`, `AdminUpdateUserInput`, `AccountMembershipView`) + interface `AdminUserRepository`.
-- `admin_users_repository.go` — `PostgresAdminUserRepository`: List com `accountCount`/`accountSlugs` agregados via LATERAL join; Find; Create (com hash de senha); Update; SoftDelete; GetMemberships; CountActivePlatformAdmins (safeguard).
+- `admin_users_repository.go` — `PostgresAdminUserRepository`: List com `accountCount`/`accountNames` agregados via LATERAL join SO quando `filter.IncludeAccounts` (default); com `includeAccounts=false` o join e omitido (projecao lean). Find; Create (com hash de senha); Update; SoftDelete; GetMemberships; CountActivePlatformAdmins (safeguard). A paginacao (page/perPage, cap 100) e aplicada na query — a tela `/manage/users` busca por pagina, nao tudo de uma vez.
 - `admin_users_service.go` — `AdminUserService`: valida unicidade de email (via constraint), hash de senha (`auth.BcryptHasher`) e safeguard do ultimo platform_admin antes de update/delete.
 - `admin_users_http.go` — `RegisterAdminUsersRoutes`: 6 endpoints `/v1/admin/users*` (exigem platform_admin).
 - `nick.go` — `BuildNickname(displayName, maxLength)`: helper que espelha 1-para-1 `web/app/domain/utils/person-display.ts > buildNickname` (primeiro nome + inicial do segundo + ponto). Usado por `AdminUserService.CreateUser` para auto-gerar quando vazio. Mudança aqui exige mudança paralela no front (e vice-versa) — drift entre camadas gera nicks diferentes.

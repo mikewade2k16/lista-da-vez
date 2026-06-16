@@ -31,6 +31,9 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	mux.Handle("POST /v1/automation/knowledge-docs", wrap(handleKnowledgeDocsCreate(svc)))
 	mux.Handle("PATCH /v1/automation/knowledge-docs/{id}", wrap(handleKnowledgeDocsUpdate(svc)))
 	mux.Handle("DELETE /v1/automation/knowledge-docs/{id}", wrap(handleKnowledgeDocsDelete(svc)))
+
+	registerModelRoutes(mux, svc, wrap)
+	registerSourcesRoutes(mux, svc, wrap)
 }
 
 func handleOverview(svc *Service) http.HandlerFunc {
@@ -110,6 +113,8 @@ func RegisterRuntimeRoutes(mux *http.ServeMux, svc *Service, token string) {
 	mux.Handle("GET /v1/runtime/automation/config", handleRuntimeConfig(svc, token))
 	mux.Handle("GET /v1/runtime/automation/memory", handleRuntimeMemoryGet(svc, token))
 	mux.Handle("PUT /v1/runtime/automation/memory", handleRuntimeMemoryPut(svc, token))
+	registerConversationRuntimeRoutes(mux, svc, token)
+	registerCatalogToolRoute(mux, svc, token)
 }
 
 func handleRuntimeConfig(svc *Service, token string) http.HandlerFunc {

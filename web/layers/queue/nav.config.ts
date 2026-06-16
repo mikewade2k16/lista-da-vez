@@ -147,6 +147,15 @@ export default {
               moduleId: 'site',
             },
             {
+              id: 'site-bio',
+              label: 'Bio',
+              icon: 'page',
+              path: '/site/bio',
+              workspaceId: 'site_bio_web',
+              moduleId: 'bio',
+              beta: true,
+            },
+            {
               id: 'campanhas',
               label: 'Campanhas',
               icon: 'megaphone',
@@ -154,6 +163,24 @@ export default {
               workspaceId: 'campanhas',
             },
           ],
+        },
+        {
+          id: 'meta-ads',
+          label: 'Meta Ads',
+          icon: 'megaphone',
+          path: '/meta-ads',
+          workspaceId: 'meta_ads',
+          moduleId: 'meta_ads',
+          beta: true,
+        },
+        {
+          id: 'cardapio',
+          label: 'Cardápio Online',
+          icon: 'boxes',
+          path: '/cardapio',
+          workspaceId: 'cardapio_web',
+          moduleId: 'cardapio',
+          beta: true,
         },
       ],
     },
@@ -227,6 +254,13 @@ export default {
           path: '/monitoramento',
           hidden: true,
         },
+        {
+          id: 'performance',
+          label: 'Performance',
+          icon: 'monitoring',
+          path: '/performance',
+          workspaceId: 'performance',
+        },
       ],
     },
     {
@@ -260,6 +294,7 @@ export default {
               icon: 'manage',
               path: '/manage/clientes-web',
               workspaceId: 'clientes_web',
+              agencyOnly: true,
             },
             {
               id: 'manage-produtos-web',
@@ -293,6 +328,7 @@ export default {
               icon: 'manage_accounts',
               path: '/manage/users',
               workspaceId: 'usuarios_admin',
+              agencyOnly: true,
             },
             {
               id: 'manage-organizations',
@@ -300,6 +336,7 @@ export default {
               icon: 'manage_accounts',
               path: '/manage/organizations',
               workspaceId: 'organizations_admin',
+              agencyOnly: true,
             },
             {
               id: 'erp',

@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { useAutomation } from '~/composables/useAutomation'
+import { useKnowledgeDocs } from '~/composables/useKnowledgeDocs'
 
 const {
   qr,
-  loading,
   connecting,
   savingEnabled,
   errorMessage,
   connected,
-  whatsappStatus,
-  connectedPhone,
   enabled,
   load,
   connect,
@@ -24,245 +22,127 @@ const {
   savePersona,
 } = useAutomation()
 
-const personaSaved = computed(() => personaSavedAt.value > 0)
+const { docs, loadDocs } = useKnowledgeDocs()
 
 const ctxPreview = ref<{ refresh: () => void } | null>(null)
 
-const statusLabel = computed(() => {
-  switch (whatsappStatus.value) {
-    case 'WORKING':
-      return 'Conectado'
-    case 'SCAN_QR_CODE':
-      return 'Escaneie o QR'
-    case 'STARTING':
-      return 'Iniciando...'
-    case 'FAILED':
-      return 'Falhou'
-    default:
-      return 'Desconectado'
-  }
-})
+type SectionId = 'behavior' | 'sources' | 'models' | 'knowledge' | 'context'
+interface Section {
+  id: SectionId
+  label: string
+  icon: string
+}
 
-const statusModifier = computed(() => {
-  if (connected.value) return 'is-connected'
-  if (whatsappStatus.value === 'SCAN_QR_CODE' || whatsappStatus.value === 'STARTING') {
-    return 'is-pending'
-  }
-  return 'is-off'
-})
+const SECTIONS: Section[] = [
+  { id: 'behavior', label: 'Comportamento', icon: 'i-lucide-user' },
+  { id: 'sources', label: 'Fontes de conhecimento', icon: 'i-lucide-link' },
+  { id: 'models', label: 'Modelos de IA', icon: 'i-lucide-cpu' },
+  { id: 'knowledge', label: 'Conhecimento', icon: 'i-lucide-book-open' },
+  { id: 'context', label: 'Previa do contexto', icon: 'i-lucide-code' },
+]
+
+const active = ref<SectionId>('behavior')
 
 function onToggleEnabled() {
   if (savingEnabled.value) return
   void setEnabled(!enabled.value)
 }
 
+function onKnowledgeChange() {
+  ctxPreview.value?.refresh()
+  void loadDocs()
+}
+
 onMounted(() => {
   void load()
   void loadPersona()
+  void loadDocs()
 })
 </script>
 
 <template>
-  <section class="automation-workspace">
-    <header class="automation-workspace__header">
-      <div class="automation-workspace__title">
-        <h1>Automacao</h1>
-        <span class="automation-workspace__badge">BETA</span>
-      </div>
-      <p class="automation-workspace__subtitle">
-        Assistente de WhatsApp/IA. Conecte o numero e ligue/desligue o robo.
-      </p>
-    </header>
+  <section class="aw">
+    <AutomationStatusBar
+      :enabled="enabled"
+      :saving-enabled="savingEnabled"
+      :connected="connected"
+      :connecting="connecting"
+      :docs-count="docs.length"
+      @toggle-enabled="onToggleEnabled"
+      @connect="connect"
+      @disconnect="disconnect"
+    />
 
-    <p v-if="errorMessage" class="automation-workspace__error">{{ errorMessage }}</p>
-
-    <div class="automation-workspace__grid">
-      <!-- Conexao do WhatsApp -->
-      <article class="automation-card">
-        <header class="automation-card__head">
-          <h2 class="automation-card__title">WhatsApp</h2>
-          <span
-            class="automation-card__status"
-            :class="`automation-card__status--${statusModifier}`"
-          >
-            {{ statusLabel }}
-          </span>
-        </header>
-
-        <div class="automation-card__body">
-          <p v-if="connected" class="automation-card__info">
-            Conectado{{ connectedPhone ? ` como +${connectedPhone}` : '' }}.
-          </p>
-
-          <div v-else-if="qr" class="automation-card__qr">
-            <img :src="qr" alt="QR code para conectar o WhatsApp" width="240" height="240" />
-            <p class="automation-card__hint">Abra o WhatsApp no celular e escaneie o codigo.</p>
-          </div>
-
-          <p v-else class="automation-card__info automation-card__info--muted">
-            Nenhum numero conectado. Use um numero dedicado ao robo, nao o seu pessoal.
-          </p>
-        </div>
-
-        <footer class="automation-card__foot">
-          <button
-            v-if="connected"
-            type="button"
-            class="automation-btn automation-btn--ghost"
-            @click="disconnect"
-          >
-            Desconectar
-          </button>
-          <button
-            v-else
-            type="button"
-            class="automation-btn automation-btn--primary"
-            :disabled="connecting"
-            @click="connect"
-          >
-            {{ connecting ? 'Conectando...' : 'Conectar WhatsApp' }}
-          </button>
-        </footer>
-      </article>
-
-      <!-- Liga/desliga do robo -->
-      <article class="automation-card">
-        <header class="automation-card__head">
-          <h2 class="automation-card__title">Robo</h2>
-          <span
-            class="automation-card__status"
-            :class="
-              enabled ? 'automation-card__status--is-connected' : 'automation-card__status--is-off'
-            "
-          >
-            {{ enabled ? 'Ligado' : 'Desligado' }}
-          </span>
-        </header>
-
-        <div class="automation-card__body">
-          <button
-            type="button"
-            class="automation-switch"
-            :class="{ 'automation-switch--on': enabled }"
-            :disabled="savingEnabled || loading"
-            role="switch"
-            :aria-checked="enabled"
-            @click="onToggleEnabled"
-          >
-            <span class="automation-switch__track">
-              <span class="automation-switch__thumb"></span>
-            </span>
-            <span class="automation-switch__label">{{ enabled ? 'Ligado' : 'Desligado' }}</span>
-          </button>
-
-          <p class="automation-card__hint">
-            Ligado, o robo responde as mensagens recebidas. Desligado, ele ignora tudo.
-          </p>
-        </div>
-      </article>
-    </div>
-
-    <!-- Comportamento (persona) -->
-    <article class="automation-card">
-      <header class="automation-card__head">
-        <h2 class="automation-card__title">Comportamento (persona)</h2>
-        <span
-          v-if="personaSaved"
-          class="automation-card__status automation-card__status--is-connected"
-        >
-          Salvo
-        </span>
-      </header>
-
-      <div class="automation-card__body automation-card__body--stretch">
-        <label class="automation-field">
-          <span class="automation-field__label">Nome</span>
-          <input
-            v-model="personaName"
-            type="text"
-            class="automation-field__input"
-            :disabled="personaLoading"
-          />
-        </label>
-
-        <label class="automation-field">
-          <span class="automation-field__label">Instrucoes (comportamento)</span>
-          <textarea
-            v-model="personaPrompt"
-            class="automation-field__textarea"
-            rows="18"
-            spellcheck="false"
-            :disabled="personaLoading"
-          ></textarea>
-        </label>
-
-        <p class="automation-card__hint">
-          Escreva o comportamento, tom e personalidade do assistente. Conhecimento (catalogo,
-          precos, FAQs) vai nos documentos abaixo. Guardrails de WhatsApp sao aplicados
-          automaticamente no runtime.
+    <div v-if="qr" class="aw-qr">
+      <img
+        :src="qr"
+        alt="QR code para conectar o WhatsApp"
+        width="190"
+        height="190"
+        class="aw-qr__img"
+      />
+      <div class="aw-qr__text">
+        <p class="aw-qr__title">Escaneie para conectar</p>
+        <p class="aw-qr__hint">
+          No celular: WhatsApp &gt; Aparelhos conectados &gt; Conectar aparelho.
         </p>
       </div>
+    </div>
 
-      <footer class="automation-card__foot">
+    <p v-if="errorMessage" class="aw__error">{{ errorMessage }}</p>
+
+    <div class="aw-body">
+      <nav class="aw-nav" aria-label="Secoes da automacao">
+        <p class="aw-nav__head">Configuracao</p>
         <button
+          v-for="s in SECTIONS"
+          :key="s.id"
           type="button"
-          class="automation-btn automation-btn--primary"
-          :disabled="savingPersona || personaLoading"
-          @click="savePersona"
+          class="aw-nav__item"
+          :class="{ 'aw-nav__item--active': active === s.id }"
+          @click="active = s.id"
         >
-          {{ savingPersona ? 'Salvando...' : 'Salvar comportamento' }}
+          <UIcon :name="s.icon" class="aw-nav__icon" aria-hidden="true" />
+          <span class="aw-nav__label">{{ s.label }}</span>
+          <span v-if="s.id === 'knowledge' && docs.length" class="aw-nav__badge">
+            {{ docs.length }}
+          </span>
         </button>
-      </footer>
-    </article>
+      </nav>
 
-    <!-- Conhecimento por documento (M3+) -->
-    <AutomationKnowledgeCard @change="ctxPreview?.refresh()" />
-
-    <!-- Contexto do bot — fluxo visual + preview do systemMessage -->
-    <AutomationContextPreview ref="ctxPreview" />
+      <div class="aw-panel">
+        <AutomationBehaviorCard
+          v-if="active === 'behavior'"
+          :persona-name="personaName"
+          :persona-prompt="personaPrompt"
+          :persona-loading="personaLoading"
+          :saving-persona="savingPersona"
+          :persona-saved-at="personaSavedAt"
+          @update:persona-name="personaName = $event"
+          @update:persona-prompt="personaPrompt = $event"
+          @save="savePersona"
+        />
+        <AutomationSourcesCard v-else-if="active === 'sources'" />
+        <AutomationModelsCard v-else-if="active === 'models'" @change="ctxPreview?.refresh()" />
+        <AutomationKnowledgeCard v-else-if="active === 'knowledge'" @change="onKnowledgeChange" />
+        <AutomationContextPreview v-else-if="active === 'context'" ref="ctxPreview" />
+      </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.automation-workspace {
+.aw {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
   padding: 1.5rem;
-  /* rolagem padrao das paginas: ocupa a altura e scrolla o proprio conteudo
-     (o layout module-workspace-full e overflow:hidden). */
   flex: 1;
   min-height: 0;
   overflow-y: auto;
 }
 
-.automation-workspace__title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.automation-workspace__title h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.automation-workspace__badge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 0.35rem;
-  background: color-mix(in srgb, var(--accent-warning) 22%, transparent);
-  color: var(--accent-warning);
-}
-
-.automation-workspace__subtitle {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.automation-workspace__error {
+.aw__error {
   color: rgb(var(--danger));
   background: rgb(var(--danger) / 0.16);
   padding: 0.6rem 0.85rem;
@@ -270,202 +150,141 @@ onMounted(() => {
   font-size: 0.9rem;
 }
 
-.automation-workspace__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.automation-card {
+/* QR inline (so aparece quando ha um QR para escanear) */
+.aw-qr {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.25rem;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.1rem 1.25rem;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-card);
-  background: rgb(var(--surface) / 0.9);
-  box-shadow: var(--shadow-card);
+  background: rgb(var(--surface) / 0.7);
 }
 
-.automation-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.automation-card__title {
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.automation-card__status {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-}
-
-.automation-card__status--is-connected {
-  background: rgb(var(--success) / 0.16);
-  color: rgb(var(--success));
-}
-
-.automation-card__status--is-pending {
-  background: color-mix(in srgb, var(--accent-warning) 18%, transparent);
-  color: var(--accent-warning);
-}
-
-.automation-card__status--is-off {
-  background: rgb(var(--border) / 0.44);
-  color: rgb(var(--muted));
-}
-
-.automation-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  align-items: flex-start;
-}
-
-.automation-card__info {
-  font-size: 0.9rem;
-}
-
-.automation-card__info--muted {
-  color: var(--text-muted);
-}
-
-.automation-card__qr {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.automation-card__qr img {
+.aw-qr__img {
   border-radius: 0.5rem;
-  border: 1px solid var(--line-soft);
-}
-
-.automation-card__hint {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.automation-card__body--stretch {
-  align-items: stretch;
-}
-
-.automation-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  width: 100%;
-}
-
-.automation-field__label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.automation-field__input,
-.automation-field__textarea {
-  width: 100%;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--line-soft);
-  border-radius: 0.5rem;
-  background: rgb(var(--surface-2) / 0.76);
-  color: var(--text-main);
-  font: inherit;
-}
-
-.automation-field__input:focus,
-.automation-field__textarea:focus {
-  outline: none;
-  border-color: rgb(var(--ring) / 0.5);
-  box-shadow: 0 0 0 3px rgb(var(--ring) / 0.16);
-}
-
-.automation-field__textarea {
-  resize: vertical;
-  min-height: 220px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.automation-btn {
-  font-size: 0.9rem;
-  font-weight: 600;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  cursor: pointer;
-  border: 1px solid transparent;
-}
-
-.automation-btn:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.automation-btn--primary {
-  background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600)));
-  color: rgb(255 255 255);
-}
-
-.automation-btn--ghost {
-  background: transparent;
-  border-color: var(--line-soft);
-  color: var(--text-main);
-}
-
-.automation-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
-
-.automation-switch:disabled {
-  opacity: 0.6;
-  cursor: progress;
-}
-
-.automation-switch__track {
-  width: 42px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgb(var(--border));
-  position: relative;
-  transition: background 0.15s ease;
-}
-
-.automation-switch--on .automation-switch__track {
-  background: rgb(var(--primary));
-}
-
-.automation-switch__thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
   background: rgb(255 255 255);
-  transition: transform 0.15s ease;
+  padding: 0.4rem;
+  flex-shrink: 0;
 }
 
-.automation-switch--on .automation-switch__thumb {
-  transform: translateX(18px);
-}
-
-.automation-switch__label {
-  font-size: 0.9rem;
+.aw-qr__title {
   font-weight: 600;
+}
+
+.aw-qr__hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+/* Corpo: sidebar + painel */
+.aw-body {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+  flex: 1;
+  min-height: 0;
+}
+
+.aw-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  position: sticky;
+  top: 0;
+}
+
+.aw-nav__head {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.aw-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 500;
+  text-align: left;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.aw-nav__item:hover {
+  background: rgb(var(--surface-2) / 0.5);
+  color: var(--text-main);
+}
+
+.aw-nav__item--active {
+  background: rgb(var(--primary) / 0.15);
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.aw-nav__item--active .aw-nav__icon {
+  color: rgb(var(--primary));
+}
+
+.aw-nav__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+}
+
+.aw-nav__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.aw-nav__badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
+  flex-shrink: 0;
+}
+
+.aw-panel {
+  min-width: 0;
+}
+
+@media (max-width: 880px) {
+  .aw-body {
+    grid-template-columns: 1fr;
+  }
+
+  .aw-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .aw-nav__head {
+    display: none;
+  }
+
+  .aw-nav__item {
+    width: auto;
+    white-space: nowrap;
+  }
 }
 </style>

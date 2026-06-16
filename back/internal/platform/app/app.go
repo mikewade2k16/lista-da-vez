@@ -13,10 +13,13 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/automation"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bio"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/cardapio"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/erp"
+	metaads "github.com/mikewade2k16/lista-da-vez/back/internal/modules/meta_ads"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue"
@@ -282,7 +285,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		site.NewPostgresProductRepository(pool),
 		site.NewPostgresWebhookSourceRepository(pool),
 		site.NewPostgresTrackingRepository(pool),
-	)
+	).WithProductSync(site.NewPostgresProductSourceRepository(pool), site.NewProductSourceClient()).
+		WithImageCache(site.NewImageCache(cfg.UploadsDir)).
+		WithProductErp(site.NewPostgresProductErpRepository(pool))
 	site.RegisterAdminRoutes(mux, siteService, authMiddleware)
 	site.RegisterIngestRoutes(mux, siteService)
 
@@ -327,6 +332,18 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// automation: painel de WhatsApp/IA. Rotas montadas via handle.RegisterRoutes
 		// (loop abaixo); gating em moduleGatingRules (/v1/automation -> automation).
 		registry.MustRegister(automation.New())
+		// meta_ads: painel de Meta/Facebook Ads. Rotas montadas via
+		// handle.RegisterRoutes (loop abaixo); gating em moduleGatingRules
+		// (/v1/meta-ads -> meta_ads).
+		registry.MustRegister(metaads.New())
+		// bio: paginas de link-in-bio servidas pelo front bio (repo separado).
+		// Painel em /v1/bio (gating abaixo); rota publica /v1/public/bio/{slug}
+		// fora do gate. Plano: docs/bio/PLANO_MODULO_BIO.md.
+		registry.MustRegister(bio.New())
+		// cardapio: cardapios online servidos pelo front estatico no host do
+		// cliente. Painel em /v1/cardapio (gating abaixo); rotas publicas
+		// /v1/public/* fora do gate. Plano: docs/cardapio/PLANO_MODULO_CARDAPIO.md.
+		registry.MustRegister(cardapio.New())
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -446,6 +463,13 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// automation (painel WhatsApp/IA). platform_admin tem bypass; contas sem o
 		// modulo habilitado levam 403 module_disabled.
 		{Prefix: "/v1/automation", ModuleID: "automation"},
+		// meta_ads (painel Meta/Facebook Ads). Mesmo padrao: bypass admin; contas
+		// sem o modulo habilitado levam 403 module_disabled.
+		{Prefix: "/v1/meta-ads", ModuleID: "meta_ads"},
+		// bio (paginas de link-in-bio). Rota publica /v1/public/bio fica fora.
+		{Prefix: "/v1/bio", ModuleID: "bio"},
+		// cardapio (cardapio online). Rotas publicas /v1/public/* ficam fora.
+		{Prefix: "/v1/cardapio", ModuleID: "cardapio"},
 	}
 }
 

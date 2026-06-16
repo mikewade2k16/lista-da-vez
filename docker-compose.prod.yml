@@ -24,7 +24,11 @@ services:
       - app
 
   api:
-    image: ${COMPOSE_PROJECT_NAME:-omni}-api:latest
+    # Imagem do registry (GHCR). IMAGE_TAG recebe o SHA do git (nao "latest"):
+    # garante que o byte-a-byte testado em staging seja o promovido pra prod.
+    # Fluxo de prod usa `pull` + `up --no-build`; a secao `build:` abaixo so
+    # serve pra build local de emergencia/dev.
+    image: ${API_IMAGE:-ghcr.io/mikewade2k16/omni-api}:${IMAGE_TAG:-latest}
     build:
       context: ./back
       dockerfile: Dockerfile
@@ -116,7 +120,9 @@ services:
           - ${PROXY_API_ALIAS:-lista-api}
 
   web:
-    image: ${COMPOSE_PROJECT_NAME:-omni}-web:latest
+    # Imagem do registry (GHCR). Mesmo IMAGE_TAG (SHA) que a api: prod e staging
+    # promovem o MESMO artefato. `build:` abaixo so pra build local de emergencia/dev.
+    image: ${WEB_IMAGE:-ghcr.io/mikewade2k16/omni-web}:${IMAGE_TAG:-latest}
     build:
       context: ./web
       dockerfile: Dockerfile

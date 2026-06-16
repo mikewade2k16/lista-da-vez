@@ -80,7 +80,9 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	products := NewPostgresProductRepository(deps.Pool)
 	sources := NewPostgresWebhookSourceRepository(deps.Pool)
 	tracking := NewPostgresTrackingRepository(deps.Pool)
-	svc := NewService(leads, products, sources, tracking)
+	svc := NewService(leads, products, sources, tracking).
+		WithProductSync(NewPostgresProductSourceRepository(deps.Pool), NewProductSourceClient()).
+		WithProductErp(NewPostgresProductErpRepository(deps.Pool))
 
 	m.handle = &handle{
 		service:        svc,

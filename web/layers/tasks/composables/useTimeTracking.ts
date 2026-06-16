@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+import { useCoreAccountStore } from '../../core/stores/account'
 
 type TrackingStatus = 'running' | 'paused'
 
@@ -118,6 +119,8 @@ function optimisticRun(taskId: string, accumulatedMs = 0, previous?: TrackingEnt
 export function useTimeTracking() {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
+  // Mesma fonte de account do store de Tasks: switcher v2 (Core) com fallback legado.
+  const accountStore = useCoreAccountStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const trackedTaskIds = computed(() => Object.keys(_entries.value))
@@ -130,7 +133,10 @@ export function useTimeTracking() {
     if (auth.isAuthenticated) {
       await auth.ensureSession()
     }
-    const accountId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80)
+    const accountId = normalizeText(
+      accountStore.activeAccountId || auth.activeTenantId || auth.tenantContext?.[0]?.id,
+      80,
+    )
     return await apiRequest(path, {
       skipLoadingIndicator: true,
       ...options,

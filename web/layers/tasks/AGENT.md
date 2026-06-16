@@ -181,6 +181,62 @@ Boot da pagina de Tasks nao pode bloquear ate carregar TODOS os boards e TODAS a
 - Novos metodos publicos do store: `ensureBoardTasksLoaded(boardId, { includeArchived, force })`, `ensureArchivedTasksLoaded(boardId)`; novos refs: `loadedBoardIds`, `archivedBoardIds` (expostos tambem em `useTasksWorkspace`).
 - Cuidado: `normalizeLegacyDefaultProject` agora chama `ensureBoardTasksLoaded` antes de decidir reescrever colunas legadas (board nao-ativo pode ter tasks ainda nao carregadas).
 
+### Montagem tardia dos selects do card (Track C perf — 2026-06-15)
+
+O board renderiza ate ~250 cards (Crow tem 247). Cada card montava 5-6 `OmniSelectMenuInput`
+(status, responsavel, envolvidos, cliente, tipo, prioridade) de uma vez no render. Cada
+`OmniSelectMenuInput` e' um `USelectMenu`/combobox pesado (reka-ui: popover + listbox + busca +
+cadeias de `computed`). Montar tudo na primeira pintura travava a rota /tasks (cold T3 15s+, nunca
+"settlava"). Solucao de RENDER (nao muda regra de negocio):
+
+- **`OmniLazySelectMenuInput.vue`** (novo wrapper): antes de interagir, renderiza so um badge
+  estatico leve com o valor formatado (mesma cor/estilo que o editor usaria). No primeiro
+  clique/foco (ou Enter/Espaco no teclado) monta o `OmniSelectMenuInput` real e ja o abre
+  (`:open`), entao um unico clique vira o editor com o dropdown aberto. Repassa TODAS as props e
+  eventos 1:1 via `v-bind="$attrs"` + `defineOptions({ inheritAttrs: false })` —
+  `update:modelValue`, `create`, `update:open` (presence focus/blur) seguem identicos. Depois de
+  montado, o editor permanece montado (custo ja pago).
+- **`option-colors.ts`** (novo util): paleta de cores/labels das options extraida do
+  `OmniSelectMenuInput` para ser FONTE UNICA. O placeholder do wrapper e o editor real resolvem
+  cor/label da mesma forma (inclusive options renomeadas/recoloridas via `useState`
+  `__omni_select_menu_option_meta__`), entao o badge nao "pisca" ao trocar placeholder pelo editor.
+- **Espelhamento modal/board**: `TasksBoardView.vue` (6 selects de display do card) e
+  `TasksTaskModal.vue` (6 selects de propriedade) usam o wrapper. O draft-card (criacao inline,
+  so 1 por vez) continua com `OmniSelectMenuInput` direto, pois ja e' um contexto de edicao ativo
+  com wiring de `:open` controlado.
+- **NAO quebra**: drag-and-drop (cards continuam montados no DOM, so os selects sao adiados),
+  edicao inline, realtime, presence/lock, tracking — tudo intacto. O `AppDatePicker` NAO virou
+  lazy: o conteudo pesado (calendario) ja fica no `<template #content>` do `UPopover` (so monta ao
+  abrir) e adia-lo arriscaria a formatacao de data/range; o ganho dominante vem dos 6 selects.
+- **Windowing por viewport**: avaliado e NAO aplicado — render real por viewport removeria cards do
+  DOM e quebraria os alvos de drag-and-drop e a presence/realtime (que precisam dos cards montados).
+  Mantido o render progressivo ja existente em `TasksBoardView.vue` (`INITIAL_RENDER` above-the-fold
+  - lotes via `requestIdleCallback`), que agora pinta cards muito mais baratos.
+- **Re-medicao**: validar com `perf_audit.py --only /tasks --base-url http://localhost:3055` apos
+  subir o build de prod. Alvo: cold T3 < 3s ou placeholder/skeleton imediato e interativo rapido.
+- Validacao local desta entrega: `vue-tsc` sem novos erros nos arquivos tocados (o unico erro em
+  `TasksBoardView.vue:793` e' do `creatable` do draft, pre-existente); `vitest run layers/tasks`
+  15/15; `eslint` limpo nos arquivos novos; `npm run dev` compila `/tasks` (HTTP 200, sem warning
+  de componente nao resolvido).
+
+### Conta ativa via switcher v2 (CoreAccountSwitcher) — 2026-06-15
+
+O Tasks resolve o `X-Account-Id` a partir do `useCoreAccountStore().activeAccountId` (switcher v2),
+o mesmo store que o `web/app/plugins/account-id-bridge.client.ts` injeta no api-client global de
+queue/crm. Antes o Tasks lia `auth.activeTenantId` (legado, setado no login e que NAO muda ao trocar
+de conta no `CoreAccountSwitcher`), entao trocar de conta nao recarregava o board.
+
+- Fonte do account id (em `stores/tasks.ts` e `composables/useTimeTracking.ts`):
+  `accountStore.activeAccountId || auth.activeTenantId || auth.tenantContext?.[0]?.id`. O fallback
+  legado cobre o periodo do boot antes de `activeAccountId` estar populado.
+- `accountId` continua sendo um `computed` reativo. O store registra um `watch(accountId, ...)` que,
+  ao mudar para um valor novo e nao-vazio (ignorando o primeiro setup e transicoes para vazio como
+  logout), chama `reloadForAccountSwitch()`: aborta os fetches em voo (padrao existente de
+  `boardLoadControllers`/`AbortController`), limpa `loadedBoardIds`/`archivedBoardIds`/`tasks`/
+  `projects`/`activeProjectId`, zera `initialized` e refaz `initialize()`. Assim o board recarrega
+  com os dados da nova conta sem respostas obsoletas sobrescrevendo o estado.
+- NAO alterar o `account-id-bridge.client.ts` (queue/crm ja seguem o switcher por ele).
+
 ### useTaskTracking (Fase T6)
 
 Server-backed com clock offset. O front nao deve voltar para `localStorage`; usar:

@@ -15,6 +15,11 @@ export interface NavItem {
   // habilitado em useCoreAccountStore().enabledModules. Sem moduleId = sempre
   // visivel (itens do `core` ou utilitarios).
   moduleId?: string
+  // Itens de admin-global (Manage da plataforma): so aparecem quando a conta
+  // ativa do switcher e a agencia (activeAccount.isAgency). Diferente de moduleId
+  // (gating por modulo contratado) — agencyOnly nao depende de modulo, e sim de
+  // a conta ser o workspace da agencia. Ver useDashboardNav.isItemAllowed.
+  agencyOnly?: boolean
 }
 
 export interface NavSection {

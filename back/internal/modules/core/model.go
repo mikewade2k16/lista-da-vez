@@ -18,14 +18,16 @@ type Organization struct {
 // Account substitui o conceito legado de "tenant". Pode ou nao pertencer a uma
 // Organization (cliente direto vs cliente-de-agencia).
 type Account struct {
-	ID             string
-	OrganizationID string
-	Slug           string
-	Name           string
-	Active         bool
-	PlanCode       string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID               string
+	OrganizationID   string
+	OrganizationName string
+	Slug             string
+	Name             string
+	Active           bool
+	PlanCode         string
+	IsAgency         bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // User e a identidade global. Sem account_id; relacionamento com accounts vive
@@ -66,13 +68,15 @@ type OrganizationView struct {
 // AccountSummary e o shape lean retornado por GET /v2/me/accounts.
 // Sem permissoes nem roles — apenas o suficiente para o AccountSwitcher.
 type AccountSummary struct {
-	ID             string   `json:"id"`
-	Slug           string   `json:"slug"`
-	Name           string   `json:"name"`
-	OrganizationID string   `json:"organizationId,omitempty"`
-	PlanCode       string   `json:"planCode"`
-	Active         bool     `json:"active"`
-	Modules        []string `json:"modules"`
+	ID               string   `json:"id"`
+	Slug             string   `json:"slug"`
+	Name             string   `json:"name"`
+	OrganizationID   string   `json:"organizationId,omitempty"`
+	OrganizationName string   `json:"organizationName"`
+	PlanCode         string   `json:"planCode"`
+	IsAgency         bool     `json:"isAgency"`
+	Active           bool     `json:"active"`
+	Modules          []string `json:"modules"`
 }
 
 // AccountContext e o shape full retornado por GET /v2/me/context?accountId=...
@@ -118,12 +122,15 @@ type Repository interface {
 	// FindUserByID busca o user global. Retorna ErrUserNotFound.
 	FindUserByID(ctx context.Context, userID string) (User, error)
 
-	// ListAccountsForUser retorna todas as accounts onde o user tem membership
-	// ativa, ordenadas por nome. Lista vazia se nao tem nenhuma.
+	// ListAccountsForUser retorna todas as accounts ativas visiveis ao user pela
+	// regra org-aware (platform_admin ve todas; agency_owner ve as da sua org;
+	// demais users veem so as accounts com membership ativa), ordenadas por nome.
+	// Lista vazia se nao enxerga nenhuma. Ver accountVisibilityWhere.
 	ListAccountsForUser(ctx context.Context, userID string) ([]Account, error)
 
-	// FindAccountIfMember retorna a account so se o user e membership ativo.
-	// Retorna ErrAccountNotMember caso contrario.
+	// FindAccountIfMember retorna a account so se ela e acessivel ao user por
+	// algum dos tres caminhos da regra org-aware (platform_admin / agency_owner /
+	// membership). Retorna ErrAccountNotMember caso contrario (sem vazar existencia).
 	FindAccountIfMember(ctx context.Context, userID string, accountID string) (Account, error)
 
 	// ListEnabledModuleIDs retorna os ids dos modulos habilitados na account.
@@ -165,12 +172,14 @@ func (account Account) Summary(modules []string) AccountSummary {
 		modules = []string{}
 	}
 	return AccountSummary{
-		ID:             account.ID,
-		Slug:           account.Slug,
-		Name:           account.Name,
-		OrganizationID: account.OrganizationID,
-		PlanCode:       account.PlanCode,
-		Active:         account.Active,
-		Modules:        modules,
+		ID:               account.ID,
+		Slug:             account.Slug,
+		Name:             account.Name,
+		OrganizationID:   account.OrganizationID,
+		OrganizationName: account.OrganizationName,
+		PlanCode:         account.PlanCode,
+		IsAgency:         account.IsAgency,
+		Active:           account.Active,
+		Modules:          modules,
 	}
 }

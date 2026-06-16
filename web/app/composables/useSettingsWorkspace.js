@@ -12,6 +12,7 @@ import {
   reasonInputSectionConfigs,
   settingsTabs,
 } from '~/domain/utils/settings-workspace-data'
+import { useGamificationConfig } from '~/composables/useGamificationConfig'
 import {
   DEFAULT_CRM_GOAL_PAYOUT_POLICY,
   DEFAULT_CRM_LIST_USAGE_TIERS,
@@ -34,6 +35,7 @@ export function useSettingsWorkspace(props) {
   const consultantsStore = useConsultantsStore()
   const ui = useUiStore()
   const auth = useAuthStore()
+  const gamification = useGamificationConfig()
   const scoreWeightSettingIds = new Set([
     'scoreWeightConversion',
     'scoreWeightSoldValue',
@@ -178,6 +180,49 @@ export function useSettingsWorkspace(props) {
         ...policy,
         [group]: rules.length ? rules : DEFAULT_CRM_GOAL_PAYOUT_POLICY[group],
       }),
+    })
+  }
+
+  function validateCrmGoalPayoutRules(groupLabel, rules) {
+    const seenThresholds = new Set()
+    for (let index = 0; index < rules.length; index += 1) {
+      const rule = rules[index]
+      const position = index + 1
+      const threshold = Number(rule?.threshold)
+      const value = Number(rule?.value)
+      if (!Number.isFinite(threshold) || threshold <= 0) {
+        return `${groupLabel}: informe uma meta maior que zero na faixa ${position}.`
+      }
+      if (!Number.isFinite(value) || value <= 0) {
+        return `${groupLabel}: informe um valor maior que zero na faixa ${position}.`
+      }
+      if (seenThresholds.has(threshold)) {
+        return `${groupLabel}: a meta ${threshold}% esta repetida; ajuste a faixa ${position} para um valor unico.`
+      }
+      seenThresholds.add(threshold)
+    }
+    return ''
+  }
+
+  async function saveCrmGoalPayoutGroup(group, rules, groupLabel = group) {
+    const sanitized = (Array.isArray(rules) ? rules : []).map((rule) => ({
+      threshold: Number(rule?.threshold),
+      value: Number(rule?.value),
+      mode: String(rule?.mode || 'percent') === 'amount' ? 'amount' : 'percent',
+    }))
+
+    const validationError = validateCrmGoalPayoutRules(groupLabel, sanitized)
+    if (validationError) {
+      ui.error(validationError)
+      return { ok: false, message: validationError }
+    }
+
+    const ordered = [...sanitized].sort((left, right) => left.threshold - right.threshold)
+    const policy = normalizeCrmGoalPayoutPolicy(crmGoalPayoutPolicy.value)
+    // Persiste o grupo exatamente como esta (inclusive vazio): a normalizacao preserva
+    // arrays vazios explicitos, entao nao forcamos os defaults aqui.
+    return updateCrmCommercialPolicy({
+      crmGoalPayoutPolicy: { ...policy, [group]: ordered },
     })
   }
 
@@ -442,6 +487,19 @@ export function useSettingsWorkspace(props) {
     ui.success('Consultor atualizado.')
   }
 
+  const gamificationBadges = computed(() => gamification.config.value.badges)
+
+  async function updateGamificationBadge(badgeId, patch) {
+    const badges = gamification.config.value.badges.map((badge) => {
+      if (badge.id !== badgeId) return badge
+      return { ...badge, ...patch }
+    })
+    const result = await settingsStore.updateGamificationBadges(badges)
+    if (result?.ok === false) {
+      ui.error(result.message || 'Nao foi possivel salvar a configuracao de gamificacao.')
+    }
+  }
+
   async function archiveConsultant(consultantId) {
     const { confirmed } = await ui.confirm({
       title: 'Arquivar consultor',
@@ -470,6 +528,8 @@ export function useSettingsWorkspace(props) {
     canEditConsultants,
     canEditCrmCommercialPolicy,
     canEditSettings,
+    gamificationBadges,
+    updateGamificationBadge,
     crmGoalPayoutPolicy,
     crmListUsageMinOrdersForHighlight,
     crmListUsageTiers,
@@ -498,6 +558,7 @@ export function useSettingsWorkspace(props) {
     reasonInputModeOptions,
     reasonInputSectionConfigs,
     removeCrmGoalPayoutRule,
+    saveCrmGoalPayoutGroup,
     removeCrmListUsageTier,
     removeOption,
     removeProduct,

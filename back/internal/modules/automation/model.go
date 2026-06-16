@@ -52,12 +52,15 @@ func toPersonaView(p Persona) PersonaView {
 // RuntimeConfigView e o que o n8n consome a cada execucao (auth por service token).
 // systemMessage = montagem completa (Opcao A / fallback).
 // persona + guardrails + docs = partes separadas para o n8n montar dinamicamente (Opcao B).
+// models = modelo escolhido por funcao (chat/vision/audio/classifier) com as flags do
+// MODELOS.md, para o n8n selecionar o no certo e os params (Responses API / temperature).
 type RuntimeConfigView struct {
-	Enabled       bool               `json:"enabled"`
-	SystemMessage string             `json:"systemMessage"`
-	Persona       string             `json:"persona"`
-	Guardrails    string             `json:"guardrails"`
-	Docs          []KnowledgeDocView `json:"docs"`
+	Enabled       bool                  `json:"enabled"`
+	SystemMessage string                `json:"systemMessage"`
+	Persona       string                `json:"persona"`
+	Guardrails    string                `json:"guardrails"`
+	Docs          []KnowledgeDocView    `json:"docs"`
+	Models        []AutomationModelView `json:"models"`
 }
 
 // OverviewView e a projecao do painel: estado do robo + conexao do WhatsApp.
@@ -133,6 +136,7 @@ func toKnowledgeDocView(d KnowledgeDoc) KnowledgeDocView {
 // Contact armazena o contexto de conversa de um cliente (chatId) no Postgres,
 // em vez do staticData do n8n. Quando um doc de conhecimento e deletado ou
 // atualizado o Go zera long_memory de todos os contatos da automacao.
+// PausedUntil (M4) marca handover humano: enquanto > now(), o bot fica em silencio.
 type Contact struct {
 	ID           string
 	AutomationID string
@@ -142,18 +146,27 @@ type Contact struct {
 	LastMsg      string
 	LastMsgTs    int64
 	LongMemory   string
+	PausedUntil  *time.Time
 }
 
 // ContactMemoryView e o contrato de leitura/escrita entre o n8n e o runtime.
+// paused/pausedUntil (M4) dizem ao n8n se deve ficar em silencio (handover humano).
 type ContactMemoryView struct {
-	Seg        int    `json:"seg"`
-	LastMsg    string `json:"lastMsg"`
-	LastMsgTs  int64  `json:"ts"`
-	LongMemory string `json:"longMem"`
+	Seg         int    `json:"seg"`
+	LastMsg     string `json:"lastMsg"`
+	LastMsgTs   int64  `json:"ts"`
+	LongMemory  string `json:"longMem"`
+	Paused      bool   `json:"paused"`
+	PausedUntil string `json:"pausedUntil"`
 }
 
 func toContactMemoryView(c Contact) ContactMemoryView {
-	return ContactMemoryView{Seg: c.Seg, LastMsg: c.LastMsg, LastMsgTs: c.LastMsgTs, LongMemory: c.LongMemory}
+	v := ContactMemoryView{Seg: c.Seg, LastMsg: c.LastMsg, LastMsgTs: c.LastMsgTs, LongMemory: c.LongMemory}
+	if c.PausedUntil != nil {
+		v.PausedUntil = c.PausedUntil.UTC().Format(time.RFC3339)
+		v.Paused = c.PausedUntil.After(time.Now())
+	}
+	return v
 }
 
 // ContextPreviewView e o que o painel mostra na secao "Contexto do bot":

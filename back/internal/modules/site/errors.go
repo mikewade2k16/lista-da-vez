@@ -21,4 +21,18 @@ var (
 
 	// ErrInvalidEntityType — entityType fora de 'leads'|'products'.
 	ErrInvalidEntityType = errors.New("site: invalid entity type")
+
+	// ErrProductSyncUnavailable — service sem repo/cliente de fonte externa
+	// configurado (WithProductSync nao foi chamado).
+	ErrProductSyncUnavailable = errors.New("site: product sync not configured")
+
+	// ErrNoProductSource — account nao tem nenhuma fonte externa habilitada.
+	ErrNoProductSource = errors.New("site: no enabled product source for account")
+
+	// ErrErpItemNotFound — sku informado nao existe no ERP (erp_item_current)
+	// dentro do tenant da account.
+	ErrErpItemNotFound = errors.New("site: erp item not found")
+
+	// ErrInvalidProductSourceMode — modo de fonte fora de 'local'|'online'.
+	ErrInvalidProductSourceMode = errors.New("site: invalid product source mode")
 )

@@ -15,6 +15,7 @@ type AccountAdminView struct {
 	Name                    string              `json:"name"`
 	PlanCode                string              `json:"planCode"`
 	Active                  bool                `json:"active"`
+	IsAgency                bool                `json:"isAgency"`
 	BillingMode             string              `json:"billingMode"`
 	MonthlyPaymentAmount    float64             `json:"monthlyPaymentAmount"`
 	PaymentDueDay           *int                `json:"paymentDueDay,omitempty"`

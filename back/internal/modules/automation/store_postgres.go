@@ -3,6 +3,7 @@ package automation
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -190,10 +191,24 @@ func (s *Store) DeleteKnowledgeDoc(ctx context.Context, id, automationID string)
 // GetContact retorna a memoria de conversa de um contato (por chatId).
 // Retorna pgx.ErrNoRows se ainda nao houve nenhuma interacao.
 func (s *Store) GetContact(ctx context.Context, automationID, chatID string) (Contact, error) {
-	const q = `select id, automation_id, account_id, chat_id, seg, last_msg, last_msg_ts, long_memory
+	const q = `select id, automation_id, account_id, chat_id, seg, last_msg, last_msg_ts, long_memory, paused_until
 		from automation.contacts
 		where automation_id = $1 and chat_id = $2`
 	return scanContact(s.pool.QueryRow(ctx, q, automationID, chatID))
+}
+
+// SetContactPause grava (ou limpa) a janela de handover humano de um contato.
+// pausedUntil nil = retomar o bot (paused_until = NULL). Faz upsert: se o contato
+// ainda nao existe (handover antes da 1a interacao registrada), cria a linha minima.
+func (s *Store) SetContactPause(ctx context.Context, automationID, chatID string, pausedUntil *time.Time) error {
+	const q = `insert into automation.contacts
+		(automation_id, account_id, chat_id, paused_until, updated_at)
+		values ($1, (select account_id from automation.automations where id = $1), $2, $3, now())
+		on conflict (automation_id, chat_id) do update
+		set paused_until = excluded.paused_until,
+		    updated_at = now()`
+	_, err := s.pool.Exec(ctx, q, automationID, chatID, pausedUntil)
+	return err
 }
 
 // UpsertContact salva o estado de conversa de um contato.
@@ -252,6 +267,6 @@ func scanChannel(row rowScanner) (Channel, error) {
 
 func scanContact(row rowScanner) (Contact, error) {
 	var c Contact
-	err := row.Scan(&c.ID, &c.AutomationID, &c.AccountID, &c.ChatID, &c.Seg, &c.LastMsg, &c.LastMsgTs, &c.LongMemory)
+	err := row.Scan(&c.ID, &c.AutomationID, &c.AccountID, &c.ChatID, &c.Seg, &c.LastMsg, &c.LastMsgTs, &c.LongMemory, &c.PausedUntil)
 	return c, err
 }

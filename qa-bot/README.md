@@ -99,6 +99,40 @@ Ele cobre:
 - encerrar o atendimento
 - verificar retorno do consultor para a fila
 
+## Auditoria de performance (`perf_audit.py`)
+
+Script dedicado (fora do runner de cenarios) que mede 3 marcos por rota — **T1** clique→troca de rota, **T2** clique→primeira pintura, **T3** clique→carregamento final — em 3 rodadas sem cache, nos modos **in-app** (navegacao SPA) e **cold** (1a visita), como `platform_admin`. Plano e resultados: [docs/PERFORMANCE_AUDIT_PLAN.md](c:/Users/Mike/Documents/Projects/fila-atendimento/docs/PERFORMANCE_AUDIT_PLAN.md).
+
+Importante: medir contra **build de producao** (o dev compila rota sob demanda no Vite — 1a visita pode levar minutos, falseando a metrica). Subir o prod numa porta livre:
+
+```bash
+docker build -t omni-web-prod ./web
+docker run --rm -d --name omni-web-prod -p 3055:3003 \
+  -e NUXT_PUBLIC_API_BASE=http://localhost:9091 \
+  -e NUXT_API_INTERNAL_BASE=http://host.docker.internal:9091 omni-web-prod
+```
+
+Rodar (credenciais por env, nunca versionadas):
+
+```bash
+OMNI_QA_EMAIL=... OMNI_QA_PASSWORD=... \
+  .venv/Scripts/python.exe perf_audit.py --base-url http://localhost:3055 --runs 3
+# flags: --only "/rota1,/rota2"  --modes inapp,cold  --warmup  --headed
+```
+
+Saida: `artifacts/perf-<timestamp>.{md,csv}` (tabela por rota×modo×rodada + media + ranking). No Windows, passar `--only` com rotas que comecam por `/` via PowerShell (o git-bash converte o path).
+
+### Warm-up do dev (`warmup_dev.py`)
+
+No modo dev o Vite compila cada rota sob demanda na 1a visita da sessao (pode levar segundos/minutos — medido: 203s na 1a, 0,07s na 2a). `warmup_dev.py` visita TODAS as rotas 1x **logo apos `docker compose up`**, deixando tudo compilado para a 1a navegacao do dia ser instantanea:
+
+```bash
+OMNI_QA_EMAIL=... OMNI_QA_PASSWORD=... \
+  .venv/Scripts/python.exe warmup_dev.py --base-url http://localhost:3003
+```
+
+Imprime o tempo de cada rota (a 1a passada = custo de compile) e o ranking das mais lentas. Rode de novo e veja cair para ~0,1s — prova de que era compile, nao o app. E o jeito de matar a dor de "clico e demora" no dev.
+
 ## Observacoes
 
 - hoje os testes ainda dependem do estado mock e de `localStorage`

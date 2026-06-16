@@ -5,8 +5,10 @@ import {
   formatDurationMinutes,
   formatPercent,
 } from '~/domain/utils/admin-metrics'
+import { goalProgressTier } from '~/domain/utils/goal-progress-color'
 import { useGamificationConfig } from '~/composables/useGamificationConfig'
 import ConsultantBadges from './ConsultantBadges.vue'
+import ConsultantStoreGoalBar from './ConsultantStoreGoalBar.vue'
 
 type LiveStatusCode = 'available' | 'service' | 'queue' | 'paused' | 'assignment'
 
@@ -51,12 +53,18 @@ const props = withDefaults(
     rankingPosition?: number | null
     storeConversionAvg?: number | null
     showDetailsButton?: boolean
+    storeGoalProgress?: number | null
+    goalPayoutAmount?: number | null
+    goalPayoutLabel?: string
   }>(),
   {
     mode: 'full',
     rankingPosition: null,
     storeConversionAvg: null,
     showDetailsButton: true,
+    storeGoalProgress: null,
+    goalPayoutAmount: null,
+    goalPayoutLabel: '',
   },
 )
 
@@ -70,6 +78,14 @@ const goalPercent = computed(() => {
   if (!props.stats.monthlyGoal) return 0
   return (props.stats.soldValue / props.stats.monthlyGoal) * 100
 })
+
+const hasGoal = computed(() => Number(props.stats.monthlyGoal || 0) > 0)
+const gaugeTierClass = computed(
+  () => `player-card__gauge-fill--${goalProgressTier(goalPercent.value, hasGoal.value)}`,
+)
+
+const showStoreBar = computed(() => typeof props.storeGoalProgress === 'number')
+const showPayout = computed(() => typeof props.goalPayoutAmount === 'number')
 
 const clampedGoalPercent = computed(() => Math.min(100, Math.max(0, goalPercent.value)))
 
@@ -91,7 +107,7 @@ const statusLabel = computed(() => props.consultant.liveStatusLabel || 'Disponí
 
 const goalProgressText = computed(() => {
   if (!props.stats.monthlyGoal) return 'Sem meta cadastrada'
-  if (goalPercent.value >= 100) return 'Meta batida 🎉'
+  if (goalPercent.value >= 100) return 'Meta batida'
   return `Faltam ${formatCurrencyBRL(props.stats.remainingToGoal)}`
 })
 
@@ -150,7 +166,7 @@ function handleDetailsClick() {
             cx="70"
             cy="70"
             r="56"
-            class="player-card__gauge-fill"
+            :class="['player-card__gauge-fill', gaugeTierClass]"
             fill="none"
             stroke-width="14"
             stroke-linecap="round"
@@ -177,6 +193,15 @@ function handleDetailsClick() {
             {{ stats.erpOrders }} vendas ERP
           </span>
           <span class="player-card__sold-caption">{{ goalProgressText }}</span>
+        </div>
+
+        <div v-if="showStoreBar" class="player-card__store">
+          <ConsultantStoreGoalBar :progress="storeGoalProgress" />
+          <span v-if="showPayout" class="player-card__store-payout">
+            Recebe
+            <strong>{{ formatCurrencyBRL(goalPayoutAmount || 0) }}</strong>
+            <template v-if="goalPayoutLabel">· {{ goalPayoutLabel }}</template>
+          </span>
         </div>
 
         <div v-if="mode === 'full'" class="player-card__hero-metrics">
@@ -468,7 +493,48 @@ function handleDetailsClick() {
 
 .player-card__gauge-fill {
   stroke: rgb(var(--primary));
-  transition: stroke-dasharray 240ms ease;
+  transition:
+    stroke-dasharray 240ms ease,
+    stroke 200ms ease;
+}
+
+.player-card__gauge-fill--none {
+  stroke: rgb(var(--muted) / 0.5);
+}
+
+.player-card__gauge-fill--low {
+  stroke: rgb(var(--danger));
+}
+
+.player-card__gauge-fill--mid {
+  stroke: var(--accent-warning);
+}
+
+.player-card__gauge-fill--high {
+  stroke: rgb(var(--primary));
+}
+
+.player-card__gauge-fill--hit {
+  stroke: rgb(var(--success));
+}
+
+.player-card__store {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.7rem;
+  background: rgb(var(--surface-2) / 0.6);
+  border: 1px solid rgb(var(--border) / 0.6);
+}
+
+.player-card__store-payout {
+  font-size: 0.74rem;
+  color: rgb(var(--muted) / 0.95);
+}
+
+.player-card__store-payout strong {
+  color: rgb(var(--success));
+  font-weight: 800;
 }
 
 .player-card__gauge-value {

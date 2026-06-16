@@ -796,5 +796,42 @@ export const useSettingsStore = defineStore('settings', () => {
     removeCatalogProduct(productId) {
       return mutateAndPersistProductDelete(productId)
     },
+    async updateGamificationBadges(badges: unknown[]) {
+      const isAuthenticated = await ensureAuthenticated()
+
+      if (!isAuthenticated) {
+        return { ok: false, message: 'Sessao indisponivel.' }
+      }
+
+      if (!resolveTenantId()) {
+        return { ok: false, message: 'Tenant ativo nao identificado para a sessao.' }
+      }
+
+      const previousState = cloneValue(runtime.state)
+
+      runtime.replace({
+        ...runtime.state,
+        settings: {
+          ...(runtime.state.settings || {}),
+          badgeRules: cloneValue(badges),
+        },
+      })
+
+      try {
+        await apiRequest(settingsPath('/v1/settings/gamification'), {
+          method: 'PATCH',
+          body: {
+            config: { badgeRules: cloneValue(badges) },
+          },
+        })
+        return { ok: true }
+      } catch (error) {
+        runtime.hydrate(previousState)
+        return {
+          ok: false,
+          message: getApiErrorMessage(error, 'Nao foi possivel salvar a gamificacao.'),
+        }
+      }
+    },
   }
 })

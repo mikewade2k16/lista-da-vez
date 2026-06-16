@@ -15,7 +15,7 @@ Componentes da workspace CRM em `web/app/components/crm/`.
 - Melhor/pior loja usam media de cobertura por consultor da loja. Se nenhuma loja atingir a faixa `Normal` configurada, o card deve ser diagnostico (`Todas ruins`/`abaixo do normal`), nao premio.
 - Melhor/pior consultor usam cobertura capped por consultor e respeitam `crmListUsageMinOrdersForHighlight` para nao destacar amostra pequena.
 - Faixas de uso da lista e politica de recebimento por meta vem de `runtime.state.settings` e sao normalizadas por `web/app/domain/utils/crm-performance-policy.ts`.
-- `Recebimento` na grade de consultores usa o `% meta` da loja do consultor e aplica a faixa de `crmGoalPayoutPolicy.consultant` sobre o vendido do consultor.
+- `Recebimento` na grade de consultores usa o `% meta` da loja do consultor para escolher a faixa de `crmGoalPayoutPolicy.consultant` e aplica o `%` sobre o **total vendido da loja** (`storeSoldCentsBySlug`), nao sobre o vendido do proprio consultor (decisao de negocio CRM C9; mesma base dos cards em `ConsultantPlayerCard`/`ConsultantStaffPayoutCard`). Helpers compartilhados `calculateStoreGoalPayout`/`mapRoleToPayoutGroup` em `crm-performance-policy.ts`.
 
 ## Regras locais
 

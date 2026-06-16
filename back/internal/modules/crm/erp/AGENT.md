@@ -46,6 +46,7 @@ Na fase 1, ele precisa sustentar:
 - `ResolveDefaultTenantID` para `platform_admin` filtra `tenants` por `exists (... stores ativas)` antes do `limit 2`. Isso evita 404 "Loja nao encontrada" quando existem tenants vazios (sem stores) que apareceriam alfabeticamente antes do tenant real do ERP. A regra de "exatamente 1 tenant acessivel ou `ErrTenantRequired`" continua valendo apos o filtro
 - `GET /v1/erp/crm` agrega vendas ERP por loja comercial e consultor no escopo raiz do ERP, resolvendo a loja nesta ordem: `store_id_raw`, override especial de multi-loja, loja dominante do historico ERP do vendedor, cadastro interno do vendedor (`users` + `consultants`/`core.user_module_settings(queue)` lojas do usuario; migrado de `user_store_roles` no U4a) e `store_cnpj` como ultimo fallback; ver tambem `docs/ERP_CRM_STORE_ATTRIBUTION.md`
 - repositorio PostgreSQL fatiado por responsabilidade; manter novos metodos perto do arquivo tematico correspondente em vez de voltar a concentrar em `repository_postgres.go`
+- `GET /v1/erp/status` (`GetStatus` em `repository_status.go`): o "ultimo run" e o "ultimo arquivo" de TODOS os data types sao buscados em 2 queries agregadas (`getLastRunByType`/`getLastFileByType`, `distinct on (data_type)`), nao 2 por tipo. Antes eram 10 round-trips sequenciais (5 tipos x 2) — N+1 que pesava no boot do `/erp`. Os helpers antigos `getLastRun`/`getLastFile` por tipo foram removidos. Ao adicionar data type novo, basta incluir em `supportedDataTypes`; nao reintroduzir lookups por tipo em loop
 
 ## CRM 360 — Indicadores integrados com a fila (2026-05-21)
 
@@ -55,6 +56,7 @@ Na fase 1, ele precisa sustentar:
 - novos arquivos: `repository_crm_queue.go` (queries de fila), `repository_crm_types.go` (tipos internos adicionados)
 - taxa de conversão da fila = `finish_outcome = 'compra'` / total atendimentos; taxa de cancelamento = `cancel_reason preenchido` / total
 - o uso da lista no frontend e cobertura por consultor/loja (`atendimentos >= pedidos ERP`), nao a razao bruta `atendimentos / pedidos`, para evitar KPIs acima de 100%
+- `queueStats.byConsultant[].queueCancellationRate` (ja calculado em `repository_crm_queue.go:buildQueueStats`) e a UNICA fonte da taxa de cancelamento por consultor do card de consultor. A `consultants` store (front) consome esse mesmo payload do `GET /v1/erp/crm`, mergeia por `(storeId, personId)` com fallback por nome e propaga como `cancellationRate` ate o `ConsultantPlayerCard`/drawer da visao integrada. Nao criar DTO/endpoint paralelo nem recalcular no front; o ranking de consultor (`buildRankingRows`, client-side a partir do snapshot) NAO computa cancelamento
 
 ## Invariantes novos
 

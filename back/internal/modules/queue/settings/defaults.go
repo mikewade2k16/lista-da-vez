@@ -2,6 +2,55 @@ package settings
 
 import "encoding/json"
 
+// defaultBadgeRules espelha os DEFAULT_BADGES do frontend (useGamificationConfig.ts).
+func defaultBadgeRules() []BadgeRule {
+	threshold3 := 3
+	return []BadgeRule{
+		{
+			ID:          "goal-hit",
+			Label:       "Meta batida",
+			Icon:        "trophy",
+			Description: "Atingiu 100% ou mais da meta mensal.",
+			Enabled:     true,
+		},
+		{
+			ID:          "top-rank",
+			Label:       "Top {threshold} do mes",
+			Icon:        "star",
+			Description: "Esta entre os melhores do ranking mensal.",
+			Enabled:     true,
+			Threshold:   &threshold3,
+		},
+		{
+			ID:          "conversion-above-store",
+			Label:       "Conversao acima da loja",
+			Icon:        "bolt",
+			Description: "Taxa de conversao acima da media da loja.",
+			Enabled:     true,
+		},
+		{
+			ID:          "ticket-above-goal",
+			Label:       "Ticket acima da meta",
+			Icon:        "target",
+			Description: "Ticket medio acima da meta cadastrada.",
+			Enabled:     true,
+		},
+		{
+			ID:          "pa-above-goal",
+			Label:       "P.A. acima da meta",
+			Icon:        "package",
+			Description: "Pecas por atendimento acima da meta cadastrada.",
+			Enabled:     true,
+		},
+	}
+}
+
+func defaultGamificationConfig() GamificationConfig {
+	return GamificationConfig{
+		BadgeRules: defaultBadgeRules(),
+	}
+}
+
 const defaultTemplateID = "joalheria-padrao"
 const defaultCRMListUsageMinOrdersForHighlight = 5
 

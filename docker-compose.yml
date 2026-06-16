@@ -32,6 +32,10 @@ services:
       APP_ADDR: :8080
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3003}
       UPLOADS_DIR: /app/data/uploads
+      # Base do back acessivel PELO BROWSER; absolutiza a midia /uploads/... no
+      # endpoint publico (bio/cardapio). Sem ela, a midia enviada pelo painel sai
+      # relativa e quebra no front (que roda em outro dominio). Em prod = dominio da api.
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:9091}
       DATABASE_URL: postgres://${POSTGRES_USER:-omni}:${POSTGRES_PASSWORD:-omni_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
@@ -44,6 +48,21 @@ services:
       # Token de servico que o n8n usa no GET /v1/runtime/automation/config (M2).
       # Deve bater com o AUTOMATION_RUNTIME_TOKEN do servico n8n.
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN:-dev-automation-runtime-token}
+      # Modulo meta_ads: base da Graph/Marketing API da Meta (bump de versao via env).
+      META_ADS_GRAPH_BASE: ${META_ADS_GRAPH_BASE:-https://graph.facebook.com/v21.0}
+      # Chave simetrica (pgcrypto) p/ cifrar o System User token at-rest. SEM ela,
+      # conectar a Meta retorna 503. Definir um valor forte no .env (NAO commitar).
+      META_ADS_CRYPTO_KEY: ${META_ADS_CRYPTO_KEY:-}
+      # Assistente meta_ads (MA1): URL do agent-runner que o Go chama no proxy
+      # /v1/meta-ads/assistant. Default aponta pro runner rodando no HOST
+      # (npm start em meta-ads-assistant/), via host.docker.internal.
+      META_ADS_ASSISTANT_RUNNER_URL: ${META_ADS_ASSISTANT_RUNNER_URL:-http://host.docker.internal:8765}
+      # Token de servico do runner. Deve bater com o META_ADS_ASSISTANT_TOKEN
+      # usado pelo runner (host ou servico meta-ads-assistant).
+      META_ADS_ASSISTANT_TOKEN: ${META_ADS_ASSISTANT_TOKEN:-dev-meta-assistant-token}
+      # Bearer do bridge interno (/internal/meta-ads/runner/*) que o runner usa
+      # p/ buscar postagens do Instagram via api Go. Vazio = bridge desligado (503).
+      META_ADS_RUNNER_BRIDGE_TOKEN: ${META_ADS_RUNNER_BRIDGE_TOKEN:-dev-meta-bridge-token}
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-dev-secret-change-me}
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
@@ -95,6 +114,10 @@ services:
         condition: service_healthy
     ports:
       - "${API_PORT:-8080}:8080"
+    # Necessario p/ o api alcancar o agent-runner rodando no HOST (Linux/VPS
+    # nao resolve host.docker.internal sem isso; em Docker Desktop e inocuo).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - api_uploads:/app/data/uploads
       - "./erp-source-local:/app/data/erp/source:ro"
@@ -120,6 +143,9 @@ services:
       NODE_ENV: development
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-http://localhost:8080}
       NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE:-http://api:8080}
+      # Base do front bio publico (crow-nuxt); link "Ver bio" do painel -> {base}/bio/{slug}.
+      # Em dev o crow-nuxt roda em localhost:3300 (porta nao-padrao). Em prod, setar o dominio real.
+      NUXT_PUBLIC_BIO_FRONT_URL: ${NUXT_PUBLIC_BIO_FRONT_URL:-http://localhost:3300}
       NITRO_HOST: 0.0.0.0
       PORT: 3003
       NUXT_DEVTOOLS: ${NUXT_DEVTOOLS:-false}
@@ -135,6 +161,35 @@ services:
       - ./web:/app
       - web_node_modules:/app/node_modules
       - web_nuxt:/app/.nuxt
+
+  # crow-nuxt — front publico da bio (BUILD DE PRODUCAO, leve). Serve as bios
+  # publicadas E o /bio/preview que o painel embute no iframe do editor. Como
+  # SERVICO (restart: unless-stopped) sobe junto e reinicia sozinho — antes era
+  # processo manual (`npm run dev`) que morria e deixava o preview do editor em
+  # tela preta / carregando infinito. Host 3300 (porta nao-padrao) = mesmo de
+  # NUXT_PUBLIC_BIO_FRONT_URL. Idle leve (~31MB); render so quando o editor pede.
+  #
+  # ATENCAO DEPLOY/VPS: este servico e SO PARA O DEV LOCAL (preview do editor).
+  # NAO subir o crow-nuxt no deploy a partir deste compose — o front bio tera o
+  # container/deploy proprio dele (a definir). Na VPS, apontar NUXT_PUBLIC_BIO_FRONT_URL
+  # para o dominio real do front bio e NAO incluir 'crow-nuxt' no `docker compose up`.
+  crow-nuxt:
+    build:
+      context: ../crow-nuxt
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NITRO_HOST: 0.0.0.0
+      NITRO_PORT: "3000"
+      # server-side: crow-nuxt -> api do painel pela rede interna do compose (api:8080).
+      NUXT_API_BASE: ${CROW_NUXT_API_BASE:-http://api:8080/v1/public}
+      # browser-side (SSE da bio publica): host-mapeado.
+      NUXT_PUBLIC_STREAM_BASE: ${NUXT_PUBLIC_STREAM_BASE:-http://localhost:9091/v1/public}
+    ports:
+      # host:container — porta nao-padrao no host (3300); dentro do container e 3000.
+      - "${CROW_NUXT_PORT:-3300}:3000"
+    depends_on:
+      - api
 
   # Automacao WhatsApp/IA (n8n + WAHA + Redis) — modulo automation/.
   # Sobe so com `docker compose --profile automation up -d` (fica fora do dev normal).
@@ -189,6 +244,24 @@ services:
       - "${AUTOMATION_N8N_PORT:-5680}:5678"
     depends_on:
       - redis
+
+  # Agent-runner do modulo meta_ads (MA1) — OPCIONAL, pensado p/ VPS/futuro.
+  # O modo padrao LOCAL e rodar no host (npm start em meta-ads-assistant/),
+  # porque o OAuth do MCP da Meta fica cacheado no ~/.claude do host.
+  # Sobe com: docker compose --profile meta-ads-assistant up -d
+  # Exige CLAUDE_CODE_OAUTH_TOKEN no .env (gerado via `claude setup-token`).
+  meta-ads-assistant:
+    build:
+      context: ./meta-ads-assistant
+      dockerfile: Dockerfile
+    profiles: ["meta-ads-assistant"]
+    environment:
+      META_ADS_ASSISTANT_PORT: 8765
+      META_ADS_ASSISTANT_TOKEN: ${META_ADS_ASSISTANT_TOKEN:-dev-meta-assistant-token}
+      META_ADS_ASSISTANT_TIMEOUT_MS: ${META_ADS_ASSISTANT_TIMEOUT_MS:-120000}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+    ports:
+      - "${META_ADS_ASSISTANT_PORT:-8765}:8765"
 
 volumes:
   postgres_data:

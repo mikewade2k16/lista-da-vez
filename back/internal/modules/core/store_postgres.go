@@ -43,19 +43,80 @@ func (r *PostgresRepository) FindUserByID(ctx context.Context, userID string) (U
 // Accounts
 // ============================================================================
 
-func (r *PostgresRepository) ListAccountsForUser(ctx context.Context, userID string) ([]Account, error) {
-	const query = `
-		select a.id, a.organization_id, a.slug, a.name, a.is_active, a.plan_code,
-		       a.created_at, a.updated_at
-		from core.accounts a
-		join core.account_users au on au.account_id = a.id
-		where au.user_id = $1::uuid
-		  and au.is_active = true
-		  and a.is_active = true
-		order by lower(a.name) asc
-	`
+// accountVisibilityWhere e a clausula org-aware de escopo de accounts. Uma
+// account ($-param do user em $1) e visivel quando QUALQUER caminho vale:
+//
+//	(a) o user e platform_admin (core.users.is_platform_admin) -> ve todas;
+//	(b) a account.organization_id esta entre as orgs onde o user e
+//	    'agency_owner' em core.organization_users -> dono ve as contas da org;
+//	(c) existe membership ativa em core.account_users -> comportamento atual.
+//
+// A regra vive 100% no banco (defesa em profundidade): nada do client decide
+// escopo. SQL totalmente parametrizado ($1 = userID).
+const accountVisibilityWhere = `
+		a.is_active = true
+		and (
+		  exists (
+		    select 1 from core.users u
+		    where u.id = $1::uuid
+		      and u.is_active = true
+		      and u.is_platform_admin = true
+		  )
+		  or exists (
+		    select 1 from core.organization_users ou
+		    where ou.user_id = $1::uuid
+		      and ou.org_role = 'agency_owner'
+		      and ou.organization_id = a.organization_id
+		  )
+		  or exists (
+		    select 1 from core.account_users au
+		    where au.user_id = $1::uuid
+		      and au.account_id = a.id
+		      and au.is_active = true
+		  )
+		)`
 
-	rows, err := r.pool.Query(ctx, query, userID)
+// listAccountsForUserQuery lista todas as accounts ativas visiveis ao user
+// pela regra org-aware acima. Os tres caminhos sao mutuamente OR dentro de um
+// unico predicado, entao cada account aparece no maximo uma vez (sem JOIN que
+// multiplique linhas) — DISTINCT desnecessario.
+//
+// Ordenacao MEMBERSHIP-FIRST: as accounts onde o user tem membership explicita
+// (core.account_users) vem primeiro, depois o resto por nome. Sem isso, um
+// platform_admin/agencia (que ve TODAS as accounts) teria como defaultAccountID
+// a 1a por nome (ex.: "AM Malls") em vez da sua propria conta de trabalho — foi
+// o que mandou o dev para a account errada apos a regra org-aware (2026-06-15).
+// O front usa summaries[0] como default, entao a 1a precisa ser a "casa" do user.
+const listAccountsForUserQuery = `
+	select a.id, a.organization_id, a.slug, a.name, a.is_active, a.plan_code,
+	       a.created_at, a.updated_at, a.is_agency, coalesce(o.name, '')
+	from core.accounts a
+	left join core.organizations o on o.id = a.organization_id
+	where ` + accountVisibilityWhere + `
+	order by
+	  case when exists (
+	      select 1 from core.account_users au_pref
+	      where au_pref.user_id = $1::uuid
+	        and au_pref.account_id = a.id
+	        and au_pref.is_active = true
+	  ) then 0 else 1 end,
+	  lower(a.name) asc
+`
+
+// findAccountIfAccessibleQuery resolve uma unica account ($2) aplicando a MESMA
+// regra de visibilidade. Se nenhum dos tres caminhos vale -> pgx.ErrNoRows ->
+// o repository traduz para ErrAccountNotMember (nao vaza existencia da account).
+const findAccountIfAccessibleQuery = `
+	select a.id, a.organization_id, a.slug, a.name, a.is_active, a.plan_code,
+	       a.created_at, a.updated_at, a.is_agency, coalesce(o.name, '')
+	from core.accounts a
+	left join core.organizations o on o.id = a.organization_id
+	where a.id = $2::uuid
+	  and ` + accountVisibilityWhere + `
+`
+
+func (r *PostgresRepository) ListAccountsForUser(ctx context.Context, userID string) ([]Account, error) {
+	rows, err := r.pool.Query(ctx, listAccountsForUserQuery, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -76,18 +137,15 @@ func (r *PostgresRepository) ListAccountsForUser(ctx context.Context, userID str
 }
 
 func (r *PostgresRepository) FindAccountIfMember(ctx context.Context, userID string, accountID string) (Account, error) {
-	const query = `
-		select a.id, a.organization_id, a.slug, a.name, a.is_active, a.plan_code,
-		       a.created_at, a.updated_at
-		from core.accounts a
-		join core.account_users au on au.account_id = a.id
-		where au.user_id = $1::uuid
-		  and au.account_id = $2::uuid
-		  and au.is_active = true
-		  and a.is_active = true
-	`
+	row := r.pool.QueryRow(ctx, findAccountIfAccessibleQuery, userID, accountID)
+	return accountFromAccessibleRow(row)
+}
 
-	row := r.pool.QueryRow(ctx, query, userID, accountID)
+// accountFromAccessibleRow le a row resolvida por findAccountIfAccessibleQuery e
+// traduz a ausencia de resultado (pgx.ErrNoRows, ou seja: account inexistente OU
+// fora de qualquer um dos tres caminhos de visibilidade) para ErrAccountNotMember.
+// Nao distingue "nao existe" de "nao acessivel" — assim nao vaza existencia.
+func accountFromAccessibleRow(row scannable) (Account, error) {
 	account, err := scanAccount(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -195,6 +253,8 @@ func scanAccount(row scannable) (Account, error) {
 		&account.PlanCode,
 		&account.CreatedAt,
 		&account.UpdatedAt,
+		&account.IsAgency,
+		&account.OrganizationName,
 	); err != nil {
 		return Account{}, err
 	}

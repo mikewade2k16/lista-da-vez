@@ -130,6 +130,23 @@ func Recover(logger *slog.Logger) Middleware {
 func CORS(allowedOrigins []string) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Rotas publicas do cardapio (/v1/public/*) sao consumidas pelo browser
+			// do visitante em qualquer host de cliente: CORS wildcard, cookie-less.
+			// NUNCA Allow-Credentials aqui (sem cookie/sessao). As demais rotas
+			// seguem a allowlist exatamente como abaixo.
+			if strings.HasPrefix(r.URL.Path, "/v1/public/") {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+				w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")
+				if r.Method == http.MethodOptions {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			origin := strings.TrimSpace(r.Header.Get("Origin"))
 			if origin != "" {
 				if OriginAllowed(origin, allowedOrigins) {

@@ -108,6 +108,7 @@ type AppSettings struct {
 	AlertMaxQueueJumpRate              float64         `json:"alertMaxQueueJumpRate"`
 	AlertMinPaScore                    float64         `json:"alertMinPaScore"`
 	AlertMinTicketAverage              float64         `json:"alertMinTicketAverage"`
+	BadgeRules                         json.RawMessage `json:"badgeRules,omitempty"`
 }
 
 type AppSettingsPatch struct {
@@ -453,6 +454,35 @@ type ProductItemPatchInput struct {
 	BasePrice float64 `json:"basePrice"`
 }
 
+// BadgeRule representa uma regra de gamificacao configuravel por tenant.
+type BadgeRule struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Icon        string `json:"icon"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+	Threshold   *int   `json:"threshold,omitempty"`
+}
+
+// GamificationConfig agrupa as badge rules de um tenant.
+type GamificationConfig struct {
+	BadgeRules []BadgeRule `json:"badgeRules"`
+}
+
+// GamificationSectionInput e o payload de PATCH /v1/settings/gamification.
+type GamificationSectionInput struct {
+	StoreID  string              `json:"storeId,omitempty"`
+	TenantID string              `json:"tenantId,omitempty"`
+	Config   *GamificationConfig `json:"config,omitempty"`
+}
+
+// GamificationSectionRecord e o DTO interno da secao de gamificacao.
+type GamificationSectionRecord struct {
+	TenantID  string
+	Config    GamificationConfig
+	UpdatedAt time.Time
+}
+
 type MutationAck struct {
 	OK       bool      `json:"ok"`
 	TenantID string    `json:"tenantId"`
@@ -518,12 +548,14 @@ type Repository interface {
 	GetOperationSection(ctx context.Context, tenantID string) (OperationSectionRecord, bool, error)
 	GetAppearanceSection(ctx context.Context, tenantID string) (AppearanceSectionRecord, bool, error)
 	GetModalSection(ctx context.Context, tenantID string) (ModalSectionRecord, bool, error)
+	GetGamificationSection(ctx context.Context, tenantID string) (GamificationSectionRecord, bool, error)
 	GetOptionGroup(ctx context.Context, tenantID string, kind string) ([]OptionItem, error)
 	GetProductCatalog(ctx context.Context, tenantID string) ([]ProductItem, error)
 	Upsert(ctx context.Context, record Record) (Record, error)
 	UpsertOperationSection(ctx context.Context, section OperationSectionRecord) (OperationSectionRecord, error)
 	UpsertAppearanceSection(ctx context.Context, section AppearanceSectionRecord) (AppearanceSectionRecord, error)
 	UpsertModalSection(ctx context.Context, section ModalSectionRecord) (ModalSectionRecord, error)
+	UpsertGamificationSection(ctx context.Context, section GamificationSectionRecord) (GamificationSectionRecord, error)
 	ApplyOperationTemplate(ctx context.Context, record OperationTemplateApplyRecord) (time.Time, error)
 	ReplaceOptionGroup(ctx context.Context, tenantID string, kind string, options []OptionItem) (time.Time, error)
 	UpsertOption(ctx context.Context, tenantID string, kind string, option OptionItem) (time.Time, error)

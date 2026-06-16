@@ -133,6 +133,13 @@ const storeGoalProgressBySlug = computed(() =>
       .filter(([slug]) => slug),
   ),
 )
+const storeSoldCentsBySlug = computed(() =>
+  Object.fromEntries(
+    storeRows.value
+      .map((row) => [String(row.storeSlug || '').trim(), Number(row.salesCents || 0)])
+      .filter(([slug]) => slug),
+  ),
+)
 
 async function submitFilters() {
   await crmStore.applyFilters()
@@ -343,6 +350,7 @@ function buildQueueStatsForStore(stats: QueueStats, storeSlug: string): QueueSta
         :merged-consultants="displayMergedConsultants"
         :management-consultant-rows="managementConsultantRows"
         :store-goal-progress-by-slug="storeGoalProgressBySlug"
+        :store-sold-cents-by-slug="storeSoldCentsBySlug"
         :goal-payout-policy="goalPayoutPolicy"
         :list-usage-tiers="listUsageTiers"
         :can-manage-consultant-links="canManageConsultantLinks"

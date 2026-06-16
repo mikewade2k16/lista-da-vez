@@ -108,6 +108,9 @@ export default defineNuxtConfig({
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
       apiWsBase: process.env.NUXT_PUBLIC_API_WS_BASE || '',
       themeStudioEnabled: process.env.NUXT_PUBLIC_ENABLE_THEME_STUDIO === 'true',
+      // Base do front bio publico (repo separado); usada no link "Ver bio" do
+      // painel Site/Bio. Vazia = link oculto.
+      bioFrontUrl: process.env.NUXT_PUBLIC_BIO_FRONT_URL || '',
     },
   },
   css: [

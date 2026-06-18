@@ -7,6 +7,12 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
+// StoreTypeBairro e o tipo de loja padrao (loja de bairro).
+const (
+	StoreTypeBairro   = "bairro"
+	StoreTypeShopping = "shopping"
+)
+
 type Store struct {
 	ID                string
 	TenantID          string
@@ -15,6 +21,7 @@ type Store struct {
 	City              string
 	Active            bool
 	DefaultTemplateID string
+	StoreType         string
 	MonthlyGoal       float64
 	WeeklyGoal        float64
 	AvgTicketGoal     float64
@@ -32,6 +39,7 @@ type StoreView struct {
 	City              string  `json:"city"`
 	Active            bool    `json:"isActive"`
 	DefaultTemplateID string  `json:"defaultTemplateId"`
+	StoreType         string  `json:"storeType"`
 	MonthlyGoal       float64 `json:"monthlyGoal"`
 	WeeklyGoal        float64 `json:"weeklyGoal"`
 	AvgTicketGoal     float64 `json:"avgTicketGoal"`
@@ -50,6 +58,7 @@ type CreateInput struct {
 	Name              string
 	City              string
 	DefaultTemplateID string
+	StoreType         string
 	MonthlyGoal       float64
 	WeeklyGoal        float64
 	AvgTicketGoal     float64
@@ -64,6 +73,7 @@ type UpdateInput struct {
 	Code              *string
 	City              *string
 	DefaultTemplateID *string
+	StoreType         *string
 	MonthlyGoal       *float64
 	WeeklyGoal        *float64
 	AvgTicketGoal     *float64
@@ -95,6 +105,7 @@ func (store Store) View() StoreView {
 		City:              store.City,
 		Active:            store.Active,
 		DefaultTemplateID: store.DefaultTemplateID,
+		StoreType:         store.StoreType,
 		MonthlyGoal:       store.MonthlyGoal,
 		WeeklyGoal:        store.WeeklyGoal,
 		AvgTicketGoal:     store.AvgTicketGoal,

@@ -11,8 +11,10 @@ param(
   [switch]$ForceRecreate
 )
 
-# Deploy incremental para a VPS: sobe SO os arquivos novos/alterados (diff por
-# tamanho + mtime contra um manifest remoto), em vez de reenviar o workspace
+# Deploy incremental para a VPS: sobe SO os arquivos novos/alterados, decidindo
+# por COMPARACAO DE CONTEUDO (hash MD5 local vs `md5sum` remoto) — sem heuristica
+# de mtime/tamanho, entao e' impossivel pular um arquivo cujo conteudo difere
+# (mesmo apos git checkout / troca de branch). Em vez de reenviar o workspace
 # inteiro como o deploy-vps-fast.ps1. Espelha o modelo do crow-php, adaptado
 # para esta stack (Postgres + docker-compose.prod.yml, servicos api/web).
 #
@@ -121,6 +123,19 @@ function Invoke-RemoteCommand {
   if ($LASTEXITCODE -ne 0) { throw "Falha ao executar: $Description" }
 }
 
+# --- Hash de conteudo (MD5) ----------------------------------------------------
+# MD5 e usado so como deteccao de mudanca (nao seguranca): rapido e casa com o
+# `md5sum` do coreutils na VPS, garantindo comparacao byte-a-byte dos dois lados.
+
+$script:Md5 = [System.Security.Cryptography.MD5]::Create()
+
+function Get-Md5Hex {
+  param([Parameter(Mandatory = $true)][string]$Path)
+  $fs = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+  try { $bytes = $script:Md5.ComputeHash($fs) } finally { $fs.Dispose() }
+  return [System.BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+}
+
 # --- Enumeracao local com poda de diretorios pesados ---------------------------
 
 function Get-LocalDeployFiles {
@@ -144,7 +159,7 @@ function Get-LocalDeployFiles {
           Path     = $rel
           FullName = $entry
           Length   = $info.Length
-          Mtime    = [int64]([DateTimeOffset]$info.LastWriteTimeUtc).ToUnixTimeSeconds()
+          Hash     = ''
         })
       }
     }
@@ -153,7 +168,7 @@ function Get-LocalDeployFiles {
   return $results
 }
 
-# --- Manifest remoto (find com prune por nome de diretorio) --------------------
+# --- Manifest remoto (md5sum com prune por nome de diretorio) ------------------
 
 function Get-RemoteManifest {
   $remotePathQ = Convert-ToBashSingleQuoted $RemotePath
@@ -161,23 +176,25 @@ function Get-RemoteManifest {
   $pruneExpr = ($ExcludedDirs | ForEach-Object { "-name '$_'" }) -join " -o "
   $fileExcludes = ($ExcludedFiles | ForEach-Object { "! -name '$_'" }) -join " "
 
+  # md5sum de cada arquivo remoto (mesmo algoritmo do lado local). -print0/-0
+  # preserva nomes com espaco; -r evita o md5sum travar lendo stdin quando a
+  # lista vem vazia (diretorio remoto novo).
   $cmd = @"
 if [ -d $remotePathQ ]; then
   cd $remotePathQ &&
-  find . \( -type d \( $pruneExpr \) -prune \) -o \( -type f $fileExcludes ! -name '.codex-devserver.*.log' -printf '%P\t%s\t%T@\n' \)
+  find . \( -type d \( $pruneExpr \) -prune \) -o \( -type f $fileExcludes ! -name '.codex-devserver.*.log' -print0 \) | xargs -0 -r md5sum
 fi
 "@
 
   $manifest = @{}
-  $raw = Invoke-RemoteCommand -Description "Lendo manifest remoto" -Command $cmd -CaptureOutput
+  $raw = Invoke-RemoteCommand -Description "Lendo manifest remoto (md5sum)" -Command $cmd -CaptureOutput
   if ([string]::IsNullOrWhiteSpace($raw)) { return $manifest }
 
+  # Formato md5sum: '<32 hex> <flag><path>', flag = ' ' (texto) ou '*' (binario).
   foreach ($line in ($raw -split "`n")) {
-    $parts = $line -split "`t"
-    if ($parts.Count -lt 3) { continue }
-    $manifest[$parts[0]] = [pscustomobject]@{
-      Length = [int64]$parts[1]
-      Mtime  = [int64][math]::Floor([double]::Parse($parts[2], [Globalization.CultureInfo]::InvariantCulture))
+    if ($line -match '^([0-9a-fA-F]{32}) [ *](.*)$') {
+      $path = $matches[2] -replace '^\./', ''
+      $manifest[$path] = $matches[1].ToLowerInvariant()
     }
   }
 
@@ -289,15 +306,29 @@ function Invoke-DeleteRemoved {
 # 1. Manifest remoto primeiro (nao precisa de backup pra so comparar).
 $remoteManifest = Get-RemoteManifest
 
-# 2. Enumeracao local + diff por tamanho/mtime.
+# 2. Enumeracao local + hash MD5 de cada arquivo (mesmo algoritmo do remoto).
 $localFiles = @(Get-LocalDeployFiles)
 $localManifest = @{}
 foreach ($file in $localFiles) { $localManifest[$file.Path] = $file }
 
+$hashIdx = 0
+foreach ($file in $localFiles) {
+  $hashIdx++
+  $file.Hash = Get-Md5Hex $file.FullName
+  if (($hashIdx % 100) -eq 0 -or $hashIdx -eq $localFiles.Count) {
+    $percent = if ($localFiles.Count -gt 0) { [math]::Round(($hashIdx / $localFiles.Count) * 100, 1) } else { 100 }
+    Write-Progress -Activity "Calculando hash dos arquivos locais" -Status "$percent% ($hashIdx/$($localFiles.Count))" -PercentComplete $percent
+  }
+}
+Write-Progress -Activity "Calculando hash dos arquivos locais" -Completed
+
+# Detecta alterado por comparacao de CONTEUDO (hash): ausente no remoto ou hash
+# diferente. Sem mtime/tamanho — e' impossivel pular um arquivo cujo conteudo
+# difere, independente de timestamp, tamanho coincidente ou troca de branch.
 $changed = New-Object System.Collections.Generic.List[object]
 foreach ($file in $localFiles) {
-  $remote = $remoteManifest[$file.Path]
-  if (-not $remote -or $remote.Length -ne $file.Length -or ($file.Mtime - $remote.Mtime) -gt 2) {
+  $remoteHash = $remoteManifest[$file.Path]
+  if (-not $remoteHash -or $remoteHash -ne $file.Hash) {
     $changed.Add($file)
   }
 }

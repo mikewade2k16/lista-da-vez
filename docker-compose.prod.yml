@@ -197,11 +197,12 @@ services:
     environment:
       N8N_HOST: ${AUTOMATION_N8N_HOST}
       N8N_PORT: 5678
-      N8N_PROTOCOL: https
+      # http/false p/ acesso via tunel SSH (dev/bootstrap); default https/true p/ subdominio.
+      N8N_PROTOCOL: ${AUTOMATION_N8N_PROTOCOL:-https}
       WEBHOOK_URL: ${AUTOMATION_N8N_WEBHOOK_URL}
       N8N_EDITOR_BASE_URL: ${AUTOMATION_N8N_WEBHOOK_URL}
       N8N_PROXY_HOPS: 1
-      N8N_SECURE_COOKIE: "true"
+      N8N_SECURE_COOKIE: ${AUTOMATION_N8N_SECURE_COOKIE:-true}
       N8N_ENCRYPTION_KEY: ${AUTOMATION_N8N_ENCRYPTION_KEY}
       GENERIC_TIMEZONE: America/Sao_Paulo
       N8N_LOG_LEVEL: info

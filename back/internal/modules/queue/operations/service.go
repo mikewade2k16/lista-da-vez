@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 )
 
 const (
@@ -32,17 +30,29 @@ var finishOutcomes = map[string]struct{}{
 }
 
 type Service struct {
-	repository         Repository
-	publisher          EventPublisher
-	storeScopeProvider StoreScopeProvider
-	alertCoordinator   AlertCoordinator
-	alertMonitorMu     sync.Mutex
-	alertMonitorSeen   map[string]struct{}
+	repository           Repository
+	publisher            EventPublisher
+	storeScopeProvider   StoreScopeProvider
+	alertCoordinator     AlertCoordinator
+	goalProgressProvider GoalProgressProvider
+	alertMonitorMu       sync.Mutex
+	alertMonitorSeen     map[string]struct{}
+
+	// Caches em memoria do hot path de leitura (snapshot/overview). Detalhes,
+	// TTLs e chaves em service_goal_stats.go.
+	effectiveGoalsMu    sync.Mutex
+	effectiveGoalsCache map[string]effectiveGoalsCacheEntry
+	storeTenantMu       sync.Mutex
+	storeTenantCache    map[string]storeTenantCacheEntry
 }
 
 type transition struct {
 	personID   string
 	nextStatus string
+	// reason/kind descrevem a pausa que esta sendo encerrada por esta transicao
+	// (ex.: resume). So tem efeito quando o status anterior era paused.
+	reason string
+	kind   string
 }
 
 type noopEventPublisher struct{}
@@ -55,15 +65,24 @@ func NewService(repository Repository, publisher EventPublisher, storeScopeProvi
 	}
 
 	return &Service{
-		repository:         repository,
-		publisher:          publisher,
-		storeScopeProvider: storeScopeProvider,
-		alertMonitorSeen:   make(map[string]struct{}),
+		repository:          repository,
+		publisher:           publisher,
+		storeScopeProvider:  storeScopeProvider,
+		alertMonitorSeen:    make(map[string]struct{}),
+		effectiveGoalsCache: make(map[string]effectiveGoalsCacheEntry),
+		storeTenantCache:    make(map[string]storeTenantCacheEntry),
 	}
 }
 
 func (service *Service) SetAlertCoordinator(coordinator AlertCoordinator) {
 	service.alertCoordinator = coordinator
+}
+
+// SetGoalProgressProvider injeta a ponte com o CRM/ERP para enriquecer o snapshot
+// e o overview com GoalStats por consultor. Opcional: sem provider, o snapshot
+// continua funcionando com GoalStats=nil (degradacao graciosa).
+func (service *Service) SetGoalProgressProvider(provider GoalProgressProvider) {
+	service.goalProgressProvider = provider
 }
 
 func (service *Service) Snapshot(ctx context.Context, access AccessContext, storeID string) (Snapshot, error) {
@@ -72,7 +91,20 @@ func (service *Service) Snapshot(ctx context.Context, access AccessContext, stor
 		return Snapshot{}, err
 	}
 
-	return buildSnapshotView(resolvedStoreID, storeName, roster, snapshotState), nil
+	// Escopo do ERP: account/tenant do principal; se vazio (ex.: platform_admin em
+	// rota RequireAuth sem X-Account-Id), cai no tenant_id da loja (cacheado).
+	scopeTenantID := access.ScopeTenantID()
+	if scopeTenantID == "" {
+		scopeTenantID = service.storeTenantID(ctx, resolvedStoreID)
+	}
+
+	providerStats := service.goalStatsForTenant(ctx, scopeTenantID)
+	metaByConsultant := service.effectiveGoalsByConsultant(ctx, []string{resolvedStoreID})
+	goalStats := combineGoalStats(providerStats, metaByConsultant)
+
+	snapshot := buildSnapshotView(resolvedStoreID, storeName, roster, snapshotState, goalStats)
+	snapshot.ServerTime = time.Now().UTC()
+	return snapshot, nil
 }
 
 func (service *Service) Overview(ctx context.Context, access AccessContext) (OperationOverview, error) {
@@ -88,6 +120,25 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 	if err != nil {
 		return OperationOverview{}, err
 	}
+
+	// GoalStats por consultor: meta CANONICA (operation_goal_targets) de todas as
+	// lojas acessiveis + vendido do ERP (tenant-wide). Map indexado por consultant.ID
+	// de perfil (mesmo id do snapshot/roster).
+	overviewStoreIDs := make([]string, 0, len(accessibleStores))
+	scopeTenantID := access.ScopeTenantID()
+	for _, storeView := range accessibleStores {
+		if trimmed := strings.TrimSpace(storeView.ID); trimmed != "" {
+			overviewStoreIDs = append(overviewStoreIDs, trimmed)
+		}
+		// Fallback de escopo ERP quando o principal nao traz account/tenant: usa o
+		// tenant_id de uma loja acessivel (todas pertencem a mesma account ativa).
+		if scopeTenantID == "" {
+			scopeTenantID = strings.TrimSpace(storeView.TenantID)
+		}
+	}
+	providerStats := service.goalStatsForTenant(ctx, scopeTenantID)
+	metaByConsultant := service.effectiveGoalsByConsultant(ctx, overviewStoreIDs)
+	goalStats := combineGoalStats(providerStats, metaByConsultant)
 
 	overview := OperationOverview{
 		Scope:                "accessible-stores",
@@ -136,6 +187,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				StatusStartedAt: snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
 				QueueJoinedAt:   item.QueueJoinedAt,
 				QueuePosition:   index + 1,
+				GoalStats:       lookupGoalStats(goalStats, person.ID),
 			})
 		}
 
@@ -173,6 +225,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				StoppedAt:            maxInt64(item.StoppedAt, 0),
 				EffectiveFinishedAt:  deriveActiveServiceFreezeAt(item, snapshotState.ActiveServices, snapshotState.ServiceHistory),
 				StopReason:           strings.TrimSpace(item.StopReason),
+				GoalStats:            lookupGoalStats(goalStats, person.ID),
 			})
 		}
 
@@ -198,6 +251,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				StatusStartedAt: snapshotState.ConsultantCurrentStatus[person.ID].StartedAt,
 				PauseReason:     item.Reason,
 				PauseKind:       normalizePauseKind(item.Kind),
+				GoalStats:       lookupGoalStats(goalStats, person.ID),
 			})
 		}
 
@@ -228,6 +282,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 				CommissionRate:  person.CommissionRate,
 				Status:          statusAvailable,
 				StatusStartedAt: status.StartedAt,
+				GoalStats:       lookupGoalStats(goalStats, person.ID),
 			})
 		}
 
@@ -271,6 +326,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 		return overview.AvailableConsultants[left].Name < overview.AvailableConsultants[right].Name
 	})
 
+	overview.ServerTime = time.Now().UTC()
 	return overview, nil
 }
 
@@ -433,38 +489,4 @@ func (service *Service) resolveStoreIDInternal(ctx context.Context, access Acces
 	}
 
 	return "", ErrForbidden
-}
-
-func canReadOperations(access AccessContext) bool {
-	if access.PermissionsResolved {
-		return accesscontrol.HasPermission(access.Permissions, accesscontrol.PermissionOperationsView)
-	}
-
-	return CanAccessOperationsRole(access.Role)
-}
-
-func CanAccessOperationsRole(role string) bool {
-	switch role {
-	case RoleConsultant, RoleStoreTerminal, RoleManager, RoleMarketing, RoleDirector, RoleOwner, RolePlatformAdmin:
-		return true
-	default:
-		return false
-	}
-}
-
-func CanMutateOperationsRole(role string) bool {
-	switch role {
-	case RoleConsultant, RoleStoreTerminal, RoleManager, RoleOwner, RolePlatformAdmin:
-		return true
-	default:
-		return false
-	}
-}
-
-func canMutateOperations(access AccessContext) bool {
-	if access.PermissionsResolved {
-		return accesscontrol.HasPermission(access.Permissions, accesscontrol.PermissionOperationsEdit)
-	}
-
-	return CanMutateOperationsRole(access.Role)
 }

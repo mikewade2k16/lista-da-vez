@@ -62,11 +62,24 @@ O DTO atual de loja deve continuar amigavel ao runtime local do Nuxt, incluindo:
 - `city`
 - `isActive`
 - `defaultTemplateId`
+- `storeType`
 - `monthlyGoal`
 - `weeklyGoal`
 - `avgTicketGoal`
 - `conversionGoal`
 - `paGoal`
+
+### store_type (Shopping/Bairro)
+
+- `storeType` e enum `'shopping' | 'bairro'` (coluna real em `queue.stores`,
+  `CHECK`, default `'bairro'` — migration 0161). Usado pelo calculo de comissao do
+  gerente (faixas managerShopping vs managerBairro em `queue/commission`).
+- Aceito no `POST /v1/stores` e `PATCH /v1/stores/{id}` (campo `storeType`).
+  Validado no service (`normalizeStoreType`): vazio cai no default/valor atual;
+  valor fora do enum => `validation_error` (400). `account_id`/tenant nunca vem do
+  body.
+- Incluido nos SELECTs de loja (`storeSelectSQL`) e nos `returning` de
+  Create/Update; a UI de cadastro le/grava por aqui.
 
 ## Evolucao esperada
 

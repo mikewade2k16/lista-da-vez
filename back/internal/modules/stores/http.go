@@ -30,6 +30,7 @@ type createRequest struct {
 	Name              string   `json:"name"`
 	City              string   `json:"city"`
 	DefaultTemplateID string   `json:"defaultTemplateId"`
+	StoreType         string   `json:"storeType"`
 	MonthlyGoal       *float64 `json:"monthlyGoal"`
 	WeeklyGoal        *float64 `json:"weeklyGoal"`
 	AvgTicketGoal     *float64 `json:"avgTicketGoal"`
@@ -43,6 +44,7 @@ type updateRequest struct {
 	Code              *string  `json:"code"`
 	City              *string  `json:"city"`
 	DefaultTemplateID *string  `json:"defaultTemplateId"`
+	StoreType         *string  `json:"storeType"`
 	MonthlyGoal       *float64 `json:"monthlyGoal"`
 	WeeklyGoal        *float64 `json:"weeklyGoal"`
 	AvgTicketGoal     *float64 `json:"avgTicketGoal"`
@@ -92,6 +94,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			Name:              request.Name,
 			City:              request.City,
 			DefaultTemplateID: request.DefaultTemplateID,
+			StoreType:         request.StoreType,
 			MonthlyGoal:       derefFloat64(request.MonthlyGoal),
 			WeeklyGoal:        derefFloat64(request.WeeklyGoal),
 			AvgTicketGoal:     derefFloat64(request.AvgTicketGoal),
@@ -134,6 +137,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			Code:              request.Code,
 			City:              request.City,
 			DefaultTemplateID: request.DefaultTemplateID,
+			StoreType:         request.StoreType,
 			MonthlyGoal:       request.MonthlyGoal,
 			WeeklyGoal:        request.WeeklyGoal,
 			AvgTicketGoal:     request.AvgTicketGoal,

@@ -33,12 +33,19 @@ const sortBy = ref('identity')
 const sortDir = ref('asc')
 const drafts = ref({})
 const rowBusy = reactive({})
+// touched[id] = o usuario editou essa linha e ainda nao salvou. So enquanto
+// touched/rowBusy o draft e' preservado; fora disso ele e' SEMPRE re-hidratado
+// do servidor (fonte = banco via /v1/stores). Sem isso, um draft semeado de uma
+// fonte parcial (contexto sem storeType, que chega antes do /v1/stores) ficava
+// preso e o select revertia para 'bairro' no reload mesmo com o banco 'shopping'.
+const touched = reactive({})
 const showCreate = ref(false)
 const createBusy = ref(false)
 const createDraft = reactive({
   name: '',
   code: '',
   city: '',
+  storeType: 'bairro',
   defaultTemplateId: '',
 })
 
@@ -46,6 +53,13 @@ const statusOptions = [
   { value: 'active', label: 'Status: ativas' },
   { value: 'archived', label: 'Status: arquivadas' },
   { value: 'all', label: 'Status: todas' },
+]
+
+// Tipo de loja: define a tabela de faixas do payout de gerente no back
+// (Gerente Shopping vs Gerente Bairro). Default 'bairro'.
+const storeTypeOptions = [
+  { value: 'bairro', label: 'Bairro' },
+  { value: 'shopping', label: 'Shopping' },
 ]
 
 const templateOptions = computed(() => [
@@ -91,6 +105,11 @@ const gridColumns = computed(() => {
     { id: 'code', label: 'Codigo', width: '120px', sortable: true },
     { id: 'city', label: 'Cidade', width: 'minmax(120px, 1fr)', sortable: true },
     {
+      id: 'storeType',
+      label: 'Tipo de loja',
+      width: 'minmax(130px, 1fr)',
+    },
+    {
       id: 'defaultTemplateId',
       label: 'Template',
       width: 'minmax(140px, 1fr)',
@@ -110,7 +129,10 @@ watch(
   (stores) => {
     const next = {}
     for (const store of stores || []) {
-      next[store.id] = drafts.value[store.id] ?? createDraftFromStore(store)
+      const keepDraft = touched[store.id] || rowBusy[store.id]
+      next[store.id] = keepDraft
+        ? (drafts.value[store.id] ?? createDraftFromStore(store))
+        : createDraftFromStore(store)
     }
     drafts.value = next
   },
@@ -138,12 +160,15 @@ async function saveRow(row) {
       name: draft.name,
       code: draft.code,
       city: draft.city,
+      storeType: draft.storeType,
       defaultTemplateId: draft.defaultTemplateId,
     })
     if (result?.ok === false) {
       ui.error(result.message || 'Nao foi possivel atualizar a loja.')
       return result
     }
+    // Salvou: o servidor (banco) volta a ser a fonte; libera a re-hidratacao.
+    touched[row.id] = false
     return result
   } finally {
     rowBusy[row.id] = false
@@ -218,6 +243,7 @@ async function createInline() {
       name,
       code,
       city: normalizeText(createDraft.city),
+      storeType: createDraft.storeType,
       defaultTemplateId: normalizeText(createDraft.defaultTemplateId),
     })
     if (result?.ok === false) {
@@ -227,6 +253,7 @@ async function createInline() {
     createDraft.name = ''
     createDraft.code = ''
     createDraft.city = ''
+    createDraft.storeType = 'bairro'
     createDraft.defaultTemplateId = ''
     showCreate.value = false
     ui.success('Loja criada.')
@@ -239,6 +266,7 @@ function cancelCreate() {
   createDraft.name = ''
   createDraft.code = ''
   createDraft.city = ''
+  createDraft.storeType = 'bairro'
   createDraft.defaultTemplateId = ''
   showCreate.value = false
 }
@@ -265,6 +293,7 @@ function updateDraftField(row, field, event) {
     createDraft[field] = field === 'code' ? value.toUpperCase() : value
     return
   }
+  touched[row.id] = true
   const draft = getDraft(row.id)
   draft[field] = field === 'code' ? value.toUpperCase() : value
 }
@@ -274,7 +303,19 @@ function updateTemplate(row, value) {
     createDraft.defaultTemplateId = String(value || '')
     return
   }
+  touched[row.id] = true
   getDraft(row.id).defaultTemplateId = String(value || '')
+  void saveRow(row)
+}
+
+function updateStoreType(row, value) {
+  const next = normalizeStoreType(value)
+  if (isCreateRow(row)) {
+    createDraft.storeType = next
+    return
+  }
+  touched[row.id] = true
+  getDraft(row.id).storeType = next
   void saveRow(row)
 }
 
@@ -299,6 +340,7 @@ function createDraftFromStore(store = {}) {
     name: String(store.name || ''),
     code: String(store.code || ''),
     city: String(store.city || ''),
+    storeType: normalizeStoreType(store.storeType),
     defaultTemplateId: String(store.defaultTemplateId || ''),
   }
 }
@@ -309,8 +351,17 @@ function isRowDirty(row) {
     normalizeText(draft.name) !== normalizeText(row.name) ||
     normalizeText(draft.code).toUpperCase() !== normalizeText(row.code).toUpperCase() ||
     normalizeText(draft.city) !== normalizeText(row.city) ||
+    normalizeStoreType(draft.storeType) !== normalizeStoreType(row.storeType) ||
     normalizeText(draft.defaultTemplateId) !== normalizeText(row.defaultTemplateId)
   )
+}
+
+function normalizeStoreType(value) {
+  return normalizeText(value).toLowerCase() === 'shopping' ? 'shopping' : 'bairro'
+}
+
+function resolveStoreTypeLabel(value) {
+  return normalizeStoreType(value) === 'shopping' ? 'Shopping' : 'Bairro'
 }
 
 function compareRows(a, b, field, direction) {
@@ -460,6 +511,22 @@ function isCreateRow(row) {
           @keydown.enter.prevent="handleEnter($event)"
         />
         <span v-else class="multistore-lojas__readonly">{{ row.city || '—' }}</span>
+      </template>
+
+      <template #cell-storeType="{ row }">
+        <AppSelectField
+          v-if="(canEdit && row.isActive !== false) || isCreateRow(row)"
+          class="multistore-lojas__inline-select"
+          :model-value="isCreateRow(row) ? createDraft.storeType : getDraft(row.id).storeType"
+          :options="storeTypeOptions"
+          :show-leading-icon="false"
+          compact
+          :disabled="!isCreateRow(row) && rowBusy[row.id]"
+          @update:model-value="updateStoreType(row, $event)"
+        />
+        <span v-else class="multistore-lojas__readonly">
+          {{ resolveStoreTypeLabel(row.storeType) }}
+        </span>
       </template>
 
       <template #cell-defaultTemplateId="{ row }">

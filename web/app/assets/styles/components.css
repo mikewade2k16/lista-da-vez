@@ -926,7 +926,7 @@
   inset: auto 0 0 0;
   height: 4px;
   width: 0;
-  background: linear-gradient(90deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
+  background: linear-gradient(90deg, rgb(var(--danger)) 0%, rgb(var(--danger) / 0.78) 100%);
   transition: width 200ms linear;
 }
 
@@ -1127,6 +1127,7 @@
 .workspace-nav {
   display: flex;
   gap: 4px;
+  gap: 0;
   margin-bottom: 14px;
   overflow-x: auto;
 }
@@ -1138,14 +1139,23 @@
   justify-content: center;
   gap: 3px;
   flex-shrink: 0;
-  min-height: auto;
+  min-height: 43px;
+  min-width: 65px;
   padding: 7px 12px;
-  border: 1px solid var(--line-soft);
+  border-left: 1px solid var(--line-soft);
+  /*border-right: 1px solid var(--line-soft);*/
+  border-bottom: 1px solid var(--line-soft);
   border-radius: 12px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
   background: var(--bg-panel);
   color: var(--text-muted);
 }
-
+.workspace-nav__button:last-child {
+  border-right: 1px solid var(--line-soft);
+}
 .workspace-nav__icon {
   font-size: 20px;
   line-height: 1;

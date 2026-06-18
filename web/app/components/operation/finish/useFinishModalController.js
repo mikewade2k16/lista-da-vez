@@ -390,6 +390,11 @@ export function useFinishModalController(props, operationsStore, ui) {
   const step = ref(1)
   const customProducts = ref([])
   const restoredDraftKey = ref('')
+  // Justificativas de campo nao-preenchido so aparecem na TENTATIVA de avancar
+  // (passo 1) ou finalizar (passo 2) — uma flag por passo para nao revelar o
+  // passo 2 cedo demais ao avancar.
+  const step1JustificationsRevealed = ref(false)
+  const step2JustificationsRevealed = ref(false)
   let isApplyingDraft = false
 
   function createProductCatalogSearchState() {
@@ -512,11 +517,13 @@ export function useFinishModalController(props, operationsStore, ui) {
   const isPurchaseOutcome = computed(() => form.outcome === 'compra')
   const showCustomerNameField = computed(
     () =>
-      !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showCustomerNameField, true),
+      !isPurchaseOutcome.value &&
+      resolveModalBoolean(modalConfig.value.showCustomerNameField, true),
   )
   const showCustomerPhoneField = computed(
     () =>
-      !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showCustomerPhoneField, true),
+      !isPurchaseOutcome.value &&
+      resolveModalBoolean(modalConfig.value.showCustomerPhoneField, true),
   )
   const showEmailField = computed(
     () => !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showEmailField, true),
@@ -533,7 +540,8 @@ export function useFinishModalController(props, operationsStore, ui) {
   )
   const showProductClosedField = computed(
     () =>
-      !isPurchaseOutcome.value && resolveModalBoolean(modalConfig.value.showProductClosedField, true),
+      !isPurchaseOutcome.value &&
+      resolveModalBoolean(modalConfig.value.showProductClosedField, true),
   )
   const showPurchaseCodeField = computed(() =>
     resolveModalBoolean(modalConfig.value.showPurchaseCodeField, true),
@@ -830,7 +838,9 @@ export function useFinishModalController(props, operationsStore, ui) {
   )
   const visitReasonSelectedItems = computed({
     get: () =>
-      visitReasonPickerOptions.value.filter((option) => selectedVisitReasonIdSet.value.has(option.id)),
+      visitReasonPickerOptions.value.filter((option) =>
+        selectedVisitReasonIdSet.value.has(option.id),
+      ),
     set: (items) => {
       form.visitReasonIds = normalizeIdList(items.map((item) => item.id))
       form.visitReasonDetails = syncSelectedDetails(form.visitReasonIds, form.visitReasonDetails)
@@ -842,7 +852,9 @@ export function useFinishModalController(props, operationsStore, ui) {
   )
   const customerSourceSelectedItems = computed({
     get: () =>
-      customerSourcePickerOptions.value.filter((option) => selectedCustomerSourceIdSet.value.has(option.id)),
+      customerSourcePickerOptions.value.filter((option) =>
+        selectedCustomerSourceIdSet.value.has(option.id),
+      ),
     set: (items) => {
       form.customerSourceIds = normalizeIdList(items.map((item) => item.id))
       form.customerSourceDetails = syncSelectedDetails(
@@ -922,17 +934,23 @@ export function useFinishModalController(props, operationsStore, ui) {
     resolveModalText(modalConfig.value.lossReasonLabel, 'Motivo da perda'),
   )
   const lossReasonPlaceholder = computed(() =>
-    resolveModalText(modalConfig.value.lossReasonPlaceholder, 'Busque e selecione o motivo da perda'),
+    resolveModalText(
+      modalConfig.value.lossReasonPlaceholder,
+      'Busque e selecione o motivo da perda',
+    ),
   )
   const queueJumpReasonSelectedItems = computed({
-    get: () => queueJumpReasonPickerOptions.value.filter((option) => option.id === form.queueJumpReasonId),
+    get: () =>
+      queueJumpReasonPickerOptions.value.filter((option) => option.id === form.queueJumpReasonId),
     set: (items) => {
       form.queueJumpReasonId = items[0]?.id || ''
     },
   })
   const lossReasonSelectedItems = computed({
     get: () =>
-      lossReasonPickerOptions.value.filter((option) => selectedLossReasonIdSet.value.has(option.id)),
+      lossReasonPickerOptions.value.filter((option) =>
+        selectedLossReasonIdSet.value.has(option.id),
+      ),
     set: (items) => {
       form.lossReasonIds = normalizeIdList(items.map((item) => item.id))
       form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, form.lossReasonDetails)
@@ -1022,7 +1040,11 @@ export function useFinishModalController(props, operationsStore, ui) {
       checks.queueJumpReason = Boolean(selectedQueueJumpReasonLabel.value)
     }
 
-    if (form.outcome === 'nao-compra' && showLossReasonField.value && requireLossReasonField.value) {
+    if (
+      form.outcome === 'nao-compra' &&
+      showLossReasonField.value &&
+      requireLossReasonField.value
+    ) {
       checks.lossReason = form.lossReasonIds.length > 0
     }
 
@@ -1092,7 +1114,11 @@ export function useFinishModalController(props, operationsStore, ui) {
       {
         key: 'productSeenNotes',
         label: productSeenNotesLabel.value,
-        minChars: resolveModalNumber(modalConfig.value.productSeenNotesJustificationMinChars, 20, 1),
+        minChars: resolveModalNumber(
+          modalConfig.value.productSeenNotesJustificationMinChars,
+          20,
+          1,
+        ),
         requiresInput:
           canUseProductSeenNotes.value &&
           !isProductSeenNotesRequired.value &&
@@ -1110,31 +1136,21 @@ export function useFinishModalController(props, operationsStore, ui) {
         key: 'customerName',
         label: customerNameLabel.value,
         minChars: resolveModalNumber(modalConfig.value.customerNameJustificationMinChars, 20, 1),
-        requiresInput:
-          showCustomerNameField.value &&
-          !requireCustomerNameField.value &&
-          resolveModalBoolean(modalConfig.value.requireCustomerNameJustification, false) &&
-          !hasTrimmedText(form.customerName),
+        // Dado do cliente segue a premissa "preenche OU justifica": vazio na hora
+        // de finalizar exige justificativa (escape para quando nao da pra pegar).
+        requiresInput: showCustomerNameField.value && !hasTrimmedText(form.customerName),
       },
       {
         key: 'customerPhone',
         label: customerPhoneLabel.value,
         minChars: resolveModalNumber(modalConfig.value.customerPhoneJustificationMinChars, 20, 1),
-        requiresInput:
-          showCustomerPhoneField.value &&
-          !requireCustomerPhoneField.value &&
-          resolveModalBoolean(modalConfig.value.requireCustomerPhoneJustification, false) &&
-          !hasTrimmedText(form.customerPhone),
+        requiresInput: showCustomerPhoneField.value && !hasTrimmedText(form.customerPhone),
       },
       {
         key: 'email',
         label: customerEmailLabel.value,
         minChars: resolveModalNumber(modalConfig.value.emailJustificationMinChars, 20, 1),
-        requiresInput:
-          showEmailField.value &&
-          !requireEmailField.value &&
-          resolveModalBoolean(modalConfig.value.requireEmailJustification, false) &&
-          !hasTrimmedText(form.customerEmail),
+        requiresInput: showEmailField.value && !hasTrimmedText(form.customerEmail),
       },
       {
         key: 'profession',
@@ -1299,28 +1315,28 @@ export function useFinishModalController(props, operationsStore, ui) {
 
     return Boolean(
       payload.outcome ||
-        payload.isExistingCustomer ||
-        payload.purchaseCode ||
-        payload.productsSeen?.length ||
-        payload.productsClosed?.length ||
-        payload.productsSeenNone ||
-        payload.productSeenNotes ||
-        payload.customerName ||
-        payload.customerPhone ||
-        payload.customerEmail ||
-        payload.customerProfessionId ||
-        payload.visitReasonIds?.length ||
-        payload.visitReasonsNotInformed ||
-        Object.keys(payload.visitReasonDetails || {}).length ||
-        payload.customerSourceIds?.length ||
-        payload.customerSourcesNotInformed ||
-        Object.keys(payload.customerSourceDetails || {}).length ||
-        payload.queueJumpReasonId ||
-        payload.lossReasonIds?.length ||
-        Object.keys(payload.lossReasonDetails || {}).length ||
-        Object.values(payload.fieldJustifications || {}).some((value) => hasTrimmedText(value)) ||
-        payload.notes ||
-        products.length,
+      payload.isExistingCustomer ||
+      payload.purchaseCode ||
+      payload.productsSeen?.length ||
+      payload.productsClosed?.length ||
+      payload.productsSeenNone ||
+      payload.productSeenNotes ||
+      payload.customerName ||
+      payload.customerPhone ||
+      payload.customerEmail ||
+      payload.customerProfessionId ||
+      payload.visitReasonIds?.length ||
+      payload.visitReasonsNotInformed ||
+      Object.keys(payload.visitReasonDetails || {}).length ||
+      payload.customerSourceIds?.length ||
+      payload.customerSourcesNotInformed ||
+      Object.keys(payload.customerSourceDetails || {}).length ||
+      payload.queueJumpReasonId ||
+      payload.lossReasonIds?.length ||
+      Object.keys(payload.lossReasonDetails || {}).length ||
+      Object.values(payload.fieldJustifications || {}).some((value) => hasTrimmedText(value)) ||
+      payload.notes ||
+      products.length,
     )
   }
 
@@ -1464,6 +1480,8 @@ export function useFinishModalController(props, operationsStore, ui) {
     productsClosedSearch.clear()
     productsSeenSearch.clear()
     step.value = 1
+    step1JustificationsRevealed.value = false
+    step2JustificationsRevealed.value = false
     Object.assign(form, createEmptyForm())
     normalizeFormForModalConfig()
     isApplyingDraft = false
@@ -1516,6 +1534,8 @@ export function useFinishModalController(props, operationsStore, ui) {
 
     isApplyingDraft = true
     step.value = 1
+    step1JustificationsRevealed.value = false
+    step2JustificationsRevealed.value = false
     productsClosedSearch.clear()
     productsSeenSearch.clear()
     customProducts.value = mergeProductEntries(
@@ -1533,6 +1553,9 @@ export function useFinishModalController(props, operationsStore, ui) {
   }
 
   async function goToStep2() {
+    // Tentativa de avancar revela as justificativas pendentes do passo 1.
+    step1JustificationsRevealed.value = true
+
     if (!form.outcome) {
       await ui.alert('Selecione como o atendimento terminou.')
       return
@@ -1590,6 +1613,11 @@ export function useFinishModalController(props, operationsStore, ui) {
       return
     }
 
+    // Tentativa de finalizar revela as justificativas pendentes dos dois passos,
+    // mesmo que algum campo estritamente obrigatorio interrompa antes.
+    step1JustificationsRevealed.value = true
+    step2JustificationsRevealed.value = true
+
     if (!service.value?.id || !form.outcome) {
       await ui.alert('Selecione como o atendimento terminou.')
       return
@@ -1640,25 +1668,8 @@ export function useFinishModalController(props, operationsStore, ui) {
       return
     }
 
-    if (showCustomerNameField.value && requireCustomerNameField.value && !form.customerName.trim()) {
-      await ui.alert('Nome do cliente e obrigatorio.')
-      return
-    }
-
-    if (
-      showCustomerPhoneField.value &&
-      requireCustomerPhoneField.value &&
-      !form.customerPhone.trim()
-    ) {
-      await ui.alert('Telefone do cliente e obrigatorio.')
-      return
-    }
-
-    if (showEmailField.value && requireEmailField.value && !form.customerEmail.trim()) {
-      await ui.alert('E-mail do cliente é obrigatório.')
-      return
-    }
-
+    // Nome/telefone/e-mail nao travam mais com "obrigatorio": quando vazios, a
+    // validacao de justificativas abaixo exige o motivo (preenche OU justifica).
     if (showProfessionField.value && requireProfessionField.value && !form.customerProfessionId) {
       await ui.alert('Selecione a profissao do cliente.')
       return
@@ -1807,7 +1818,9 @@ export function useFinishModalController(props, operationsStore, ui) {
       return
     }
 
-    removeStoredDraft(`${String(props.state.activeStoreId || '').trim()}:${currentService.serviceId}`)
+    removeStoredDraft(
+      `${String(props.state.activeStoreId || '').trim()}:${currentService.serviceId}`,
+    )
     restoredDraftKey.value = ''
     customProducts.value = []
     ui.success('Atendimento encerrado.')
@@ -1930,6 +1943,9 @@ export function useFinishModalController(props, operationsStore, ui) {
   watch(
     () => form.outcome,
     (nextValue) => {
+      step1JustificationsRevealed.value = false
+      step2JustificationsRevealed.value = false
+
       if (nextValue !== 'nao-compra') {
         form.lossReasonIds = []
         form.lossReasonDetails = {}
@@ -1983,6 +1999,8 @@ export function useFinishModalController(props, operationsStore, ui) {
     clearCurrentDraft,
     closeModal,
     step,
+    step1JustificationsRevealed,
+    step2JustificationsRevealed,
     modalTitle,
     serviceDisplayName,
     form,

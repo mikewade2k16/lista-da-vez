@@ -18,6 +18,8 @@ const runtimeStore = {
 const operationsStore = {
   refreshOperationSnapshot: vi.fn().mockResolvedValue(null),
   refreshOverview: vi.fn().mockResolvedValue(null),
+  // No proxy do Pinia, o ref `integratedStoreId` chega desempacotado como string.
+  integratedStoreId: '',
 }
 
 async function flushRealtimeTicket() {
@@ -54,8 +56,10 @@ describe('useOperationsRealtime', () => {
     vi.resetModules()
     MockWebSocket.reset()
     cleanupFns.length = 0
-    operationsStore.refreshOperationSnapshot.mockClear()
-    operationsStore.refreshOverview.mockClear()
+    operationsStore.refreshOperationSnapshot.mockReset().mockResolvedValue(null)
+    operationsStore.refreshOverview.mockReset().mockResolvedValue(null)
+    operationsStore.integratedStoreId = ''
+    authStore.accessibleStoreIds = ['store-1']
     ;(globalThis as any).WebSocket = MockWebSocket
     ;(globalThis as any).$fetch.mockResolvedValue({ ticket: 'ticket-operations' })
   })
@@ -105,6 +109,80 @@ describe('useOperationsRealtime', () => {
         action: 'service-started',
       }),
     )
+  })
+
+  it('colapsa rajadas de eventos no modo "all" num unico refreshOverview (debounce trailing)', async () => {
+    vi.useFakeTimers()
+    try {
+      authStore.accessibleStoreIds = ['store-1', 'store-2', 'store-3']
+
+      const { useOperationsRealtime } = await import('./useOperationsRealtime')
+
+      useOperationsRealtime({ scopeMode: 'all' })
+      await flushRealtimeTicket()
+
+      const socket = MockWebSocket.instances[0]
+      socket?.open()
+
+      // Rajada de eventos de lojas diferentes dentro da janela de debounce.
+      socket?.message({ type: 'operation.updated', storeId: 'store-1', action: 'service-started' })
+      socket?.message({ type: 'operation.updated', storeId: 'store-2', action: 'service-started' })
+      socket?.message({ type: 'operation.updated', storeId: 'store-3', action: 'service-started' })
+      await Promise.resolve()
+
+      // Antes do silencio terminar, nenhum overview foi disparado ainda.
+      expect(operationsStore.refreshOverview).not.toHaveBeenCalled()
+
+      // Passada a janela de debounce, dispara UM unico refreshOverview (trailing).
+      await vi.advanceTimersByTimeAsync(300)
+      expect(operationsStore.refreshOverview).toHaveBeenCalledTimes(1)
+
+      // Nenhuma loja aberta no detalhe (integratedStoreId vazio): sem refetch de snapshot.
+      expect(operationsStore.refreshOperationSnapshot).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('garante o refresh trailing apos o ULTIMO evento e revalida snapshot so da loja ativa', async () => {
+    vi.useFakeTimers()
+    try {
+      authStore.accessibleStoreIds = ['store-1', 'store-2']
+      // Loja aberta no detalhe operavel do modo "Todas as lojas".
+      operationsStore.integratedStoreId = 'store-1'
+
+      const { useOperationsRealtime } = await import('./useOperationsRealtime')
+
+      useOperationsRealtime({ scopeMode: 'all' })
+      await flushRealtimeTicket()
+
+      const socket = MockWebSocket.instances[0]
+      socket?.open()
+
+      // Primeiro evento agenda o trailing.
+      socket?.message({ type: 'operation.updated', storeId: 'store-2', action: 'service-started' })
+      await Promise.resolve()
+
+      // Quase no fim da janela chega um novo evento, que reinicia o debounce.
+      await vi.advanceTimersByTimeAsync(200)
+      expect(operationsStore.refreshOverview).not.toHaveBeenCalled()
+      socket?.message({ type: 'operation.updated', storeId: 'store-1', action: 'service-finished' })
+      await Promise.resolve()
+
+      // Apos os 200ms anteriores ainda nao basta: a janela reiniciou no ultimo evento.
+      await vi.advanceTimersByTimeAsync(200)
+      expect(operationsStore.refreshOverview).not.toHaveBeenCalled()
+
+      // Concluida a janela contada a partir do ultimo evento: um unico refresh final.
+      await vi.advanceTimersByTimeAsync(100)
+      expect(operationsStore.refreshOverview).toHaveBeenCalledTimes(1)
+
+      // Snapshot revalidado apenas para a loja ativa (store-1), nunca para store-2.
+      expect(operationsStore.refreshOperationSnapshot).toHaveBeenCalledTimes(1)
+      expect(operationsStore.refreshOperationSnapshot).toHaveBeenCalledWith('store-1')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not open a socket when the ticket request fails', async () => {

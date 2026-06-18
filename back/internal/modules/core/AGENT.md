@@ -111,6 +111,33 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 
 `PATCH /v1/admin/accounts/{id}` agora aceita `organizationId` no body: string vazia (`""`) → desvincula (NULL); UUID válido → vincula. C15.
 
+### /v1/platform/menu-layout — config GLOBAL do menu (platform-level)
+
+Config de **NÍVEL PLATAFORMA** (NÃO per-account, NÃO per-user): organiza o menu
+(quais itens vão no header vs sidebar). Persistida em `core.platform_settings`
+sob a chave singleton `menu_layout`. GET é para **todos** os usuários autenticados;
+PATCH exige **platform_admin**.
+
+| Verbo | Path | Auth | Resposta |
+|---|---|---|---|
+| GET | `/v1/platform/menu-layout` | `RequireAuth` (todos) | `MenuLayoutResponse` |
+| PATCH | `/v1/platform/menu-layout` | `RequireAuth` + `requirePlatformAdmin` | `MenuLayoutResponse` |
+
+- Body do PATCH: `{ "layout": <Layout> }`.
+- Resposta (GET e PATCH): `{ "layout": <Layout>, "updatedAt": <RFC3339|null>, "updatedBy": <userId|null> }`.
+- `<Layout>` = `{ "version": int, "sections": [ {"id": string, "order": int} ], "items": { "<navItemId>": {"placement": string, "order": int} } }`.
+- `placement` ∈ `{header, sidebar, both, hidden}`. Placement inválido → **400** `validation_error` (validado no service).
+- Quando a linha `menu_layout` ainda não existe, o GET devolve o default vazio
+  `{ "layout": {"version":1,"sections":[],"items":{}}, "updatedAt": null, "updatedBy": null }` (sem erro).
+
+#### Tabela `core.platform_settings` (migration 0160)
+
+Key-value **singleton por chave** de configuração global da plataforma
+(`key text primary key`, `config jsonb`, `updated_at timestamptz`, `updated_by uuid
+references core.users(id)` nullable). **Exceção consciente** à regra "toda tabela
+tem account_id": é deliberadamente platform-global (config única para a plataforma
+inteira, igual ao catálogo de módulos). A primeira chave é `menu_layout`.
+
 ### Conta-agência: `is_agency` (Trilho 2, migration 0158)
 
 `core.accounts.is_agency` (boolean not null default false) marca a conta-WORKSPACE
@@ -214,6 +241,10 @@ Teste de contrato + traducao de erro em `store_postgres_test.go`.
 - `admin_organizations_http.go` — `RegisterAdminOrganizationsRoutes`: 5 endpoints `/v1/admin/organizations*` (exigem platform_admin).
 - `admin_service.go` — `AdminService`: regras de negocio, validacao, publicacao de eventos, invalidacao de cache.
 - `admin_http.go` — `RegisterAdminRoutes`: 10 endpoints /v1/admin/accounts (todos exigem platform_admin).
+- `platform_settings_model.go` — tipos da config GLOBAL do menu: `MenuLayout`, `MenuLayoutSection`, `MenuLayoutItem`, `MenuLayoutResponse` + set de placements válidos (`header/sidebar/both/hidden`) e `defaultMenuLayout()`.
+- `platform_settings_repository.go` — `PostgresPlatformSettingsRepository` (mesmo `*pgxpool.Pool` dos demais repos core): `GetByKey` (linha ausente → nil/nil/nil sem erro) e `Upsert` (`insert ... on conflict (key) do update ... returning updated_at`). `updated_at`/`updated_by` scaneados como ponteiros (nullable).
+- `platform_settings_service.go` — `PlatformSettingsService`: `GetMenuLayout` (default vazio quando não persistido) e `SaveMenuLayout` (valida placements → `ErrValidationFailed`, normaliza, marshal, upsert). Injeção via construtor.
+- `platform_settings_http.go` — `RegisterPlatformSettingsRoutes`: `GET /v1/platform/menu-layout` (RequireAuth, todos) e `PATCH` (RequireAuth + `requirePlatformAdmin`). userID do autor via `auth.PrincipalFromContext`. Placement inválido → 400 `validation_error`.
 
 ### Origem dos agregados (C9)
 

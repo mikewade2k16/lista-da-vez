@@ -2,7 +2,6 @@
 import { computed, defineAsyncComponent } from 'vue'
 import OperationConsultantStrip from '~/components/operation/OperationConsultantStrip.vue'
 import OperationQueueColumns from '~/components/operation/OperationQueueColumns.vue'
-import OperationScopeBar from '~/components/operation/OperationScopeBar.vue'
 import { canMutateOperations } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 
@@ -37,12 +36,31 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['integrated-store-change'])
 const auth = useAuthStore()
 const canOperate = computed(() =>
   canMutateOperations(auth.role, auth.permissionKeys, auth.permissionsResolved),
 )
 const showIntegratedView = computed(() => props.canSeeIntegrated && props.scopeMode === 'all')
+
+// No modo "Todas as lojas", quando o usuario filtra UMA loja com snapshot real
+// carregado, aquela loja vira contexto operavel (iniciar/encerrar/pausar) como
+// um operador comum. Sem filtro (agregado), segue somente leitura.
+const operableStoreId = computed(() => {
+  if (!showIntegratedView.value) {
+    return ''
+  }
+
+  const storeId = String(props.integratedStoreId || '').trim()
+  if (!storeId) {
+    return ''
+  }
+
+  return hasTrustedScopedSnapshot(storeId) ? storeId : ''
+})
+const isOperatingSingleStore = computed(() => Boolean(operableStoreId.value))
+const childIntegratedMode = computed(
+  () => showIntegratedView.value && !isOperatingSingleStore.value,
+)
 
 function shouldIncludeStore(storeId) {
   const filterStoreId = String(props.integratedStoreId || '').trim()
@@ -63,6 +81,7 @@ function mapIntegratedWaitingItem(person) {
     color: String(person?.color || '').trim(),
     monthlyGoal: Math.max(0, Number(person?.monthlyGoal || 0) || 0),
     commissionRate: Math.max(0, Number(person?.commissionRate || 0) || 0),
+    goalStats: person?.goalStats ?? null,
     queueJoinedAt: Number(person?.queueJoinedAt || 0) || 0,
   }
 }
@@ -79,6 +98,7 @@ function mapIntegratedActiveItem(person) {
     color: String(person?.color || '').trim(),
     monthlyGoal: Math.max(0, Number(person?.monthlyGoal || 0) || 0),
     commissionRate: Math.max(0, Number(person?.commissionRate || 0) || 0),
+    goalStats: person?.goalStats ?? null,
     serviceId: String(person?.serviceId || '').trim(),
     serviceStartedAt: Number(person?.serviceStartedAt || 0) || 0,
     queueJoinedAt: Number(person?.queueJoinedAt || 0) || 0,
@@ -152,6 +172,7 @@ function mapScopedActiveItem(service, storeMeta) {
     color: String(service?.color || '').trim(),
     monthlyGoal: Math.max(0, Number(service?.monthlyGoal || 0) || 0),
     commissionRate: Math.max(0, Number(service?.commissionRate || 0) || 0),
+    goalStats: service?.goalStats ?? null,
     serviceId: String(service?.serviceId || '').trim(),
     serviceStartedAt: Number(service?.serviceStartedAt || 0) || 0,
     queueJoinedAt: Number(service?.queueJoinedAt || 0) || 0,
@@ -250,7 +271,45 @@ function upsertRosterPerson(rosterMap, person) {
   })
 }
 
+function buildOperableStoreState(storeId) {
+  const snapshot = getScopedSnapshot(storeId) || {}
+  const storeMeta = resolveStoreMeta(storeId)
+  const decorate = (items) =>
+    (Array.isArray(items) ? items : []).map((item) => ({
+      ...item,
+      storeId,
+      storeName: storeMeta.storeName,
+      storeCode: storeMeta.storeCode,
+    }))
+
+  // Mantem a config tenant-wide (settings/modalConfig/opcoes/estado do modal) do
+  // estado de topo e troca apenas as listas operacionais pela loja operada,
+  // fixando activeStoreId nela para o modal/rascunho mirarem a loja certa.
+  return {
+    ...props.state,
+    activeStoreId: storeId,
+    roster: decorate(snapshot.roster),
+    waitingList: decorate(snapshot.waitingList),
+    activeServices: decorate(snapshot.activeServices),
+    pausedEmployees: (Array.isArray(snapshot.pausedEmployees) ? snapshot.pausedEmployees : []).map(
+      (item) => ({ ...item, storeId }),
+    ),
+    serviceHistory: Array.isArray(snapshot.serviceHistory) ? snapshot.serviceHistory : [],
+    consultantActivitySessions: Array.isArray(snapshot.consultantActivitySessions)
+      ? snapshot.consultantActivitySessions
+      : [],
+    consultantCurrentStatus:
+      snapshot.consultantCurrentStatus && typeof snapshot.consultantCurrentStatus === 'object'
+        ? snapshot.consultantCurrentStatus
+        : {},
+  }
+}
+
 const displayState = computed(() => {
+  if (isOperatingSingleStore.value) {
+    return buildOperableStoreState(operableStoreId.value)
+  }
+
   if (!showIntegratedView.value || !props.overview) {
     return props.state
   }
@@ -297,13 +356,6 @@ const isFinishModalOpen = computed(() =>
 
 <template>
   <section class="operation-workspace">
-    <OperationScopeBar
-      :state="props.state"
-      :scope-mode="scopeMode"
-      :stores="stores"
-      :integrated-store-id="integratedStoreId"
-      @integrated-store-change="emit('integrated-store-change', $event)"
-    />
     <div v-if="!canOperate" class="insight-card">
       <p class="settings-card__text">
         Este perfil acompanha a operacao em tempo real, mas nao executa fila, pausas nem
@@ -314,12 +366,14 @@ const isFinishModalOpen = computed(() =>
       <OperationQueueColumns
         :state="displayState"
         :read-only="!canOperate"
-        :integrated-mode="showIntegratedView"
+        :integrated-mode="childIntegratedMode"
+        :operating-store-id="operableStoreId"
       />
       <OperationConsultantStrip
         v-if="canOperate"
         :state="displayState"
-        :integrated-mode="showIntegratedView"
+        :integrated-mode="childIntegratedMode"
+        :operating-store-id="operableStoreId"
       />
     </div>
     <Suspense v-if="isFinishModalOpen">

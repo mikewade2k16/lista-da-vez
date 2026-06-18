@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { buildNickname } from '~/domain/utils/person-display'
 import OperationActiveServiceCard from '~/components/operation/OperationActiveServiceCard.vue'
+import OperationConsultantAvatarRing from '~/components/operation/OperationConsultantAvatarRing.vue'
+import OperationSidePanel from '~/components/operation/OperationSidePanel.vue'
 import { useOperationsStore } from '~/stores/operations'
 import { useUiStore } from '~/stores/ui'
 
@@ -19,6 +21,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  operatingStoreId: {
+    type: String,
+    default: '',
+  },
 })
 
 const operationsStore = useOperationsStore()
@@ -32,7 +38,24 @@ const waitingList = computed(() => props.state.waitingList || [])
 const activeServices = computed(() => props.state.activeServices || [])
 const serviceHistory = computed(() => props.state.serviceHistory || [])
 const serverClockOffsetMs = computed(() => Number(props.state?.serverClockOffsetMs || 0) || 0)
-const adjustedNow = computed(() => now.value + serverClockOffsetMs.value)
+// Relogio monotonico local (imune a skew/ajuste do relogio de parede).
+function monotonicNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+// "Agora do servidor": ancora (serverTime da ultima resposta) + avanco MONOTONICO local.
+// Fonte da verdade = servidor; nao depende do relogio de parede do PC, entao o elapsed
+// nao drifta entre maquinas. Fallback ao legado (relogio local + offset) so antes da
+// 1a ancora chegar. `now.value` entra como dependencia para recomputar a cada tick.
+const adjustedNow = computed(() => {
+  const tick = now.value
+  const anchor = operationsStore.serverClockAnchor
+  if (anchor && anchor.serverTimeMs > 0) {
+    return anchor.serverTimeMs + (monotonicNow() - anchor.perfMs)
+  }
+  return tick + serverClockOffsetMs.value
+})
 const maxConcurrentServices = computed(() => props.state.settings?.maxConcurrentServices || 10)
 const maxConcurrentPerConsultant = computed(
   () => props.state.settings?.maxConcurrentServicesPerConsultant || 1,
@@ -314,7 +337,7 @@ function resolveActionReason() {
 }
 
 async function startFirstService() {
-  const result = await operationsStore.startService()
+  const result = await operationsStore.startService('', props.operatingStoreId)
 
   if (result?.ok === false) {
     ui.error(result.message)
@@ -324,7 +347,7 @@ async function startFirstService() {
 }
 
 async function startSpecificService(personId) {
-  const result = await operationsStore.startService(personId)
+  const result = await operationsStore.startService(personId, props.operatingStoreId)
 
   if (result?.ok === false) {
     ui.error(result.message)
@@ -366,7 +389,10 @@ function openStopModal(serviceOrId) {
 async function startParallelService(personId) {
   const consultant = props.state.roster?.find((item) => item.id === personId)
   const consultantName = displayName(consultant) || 'Consultor'
-  const result = await operationsStore.startParallelService(personId, consultant?.storeId || '')
+  const result = await operationsStore.startParallelService(
+    personId,
+    props.operatingStoreId || consultant?.storeId || '',
+  )
 
   if (result?.ok === false) {
     ui.error(result.message)
@@ -436,7 +462,7 @@ async function assignTask(person) {
   const result = await operationsStore.assignTask(
     person.id,
     value,
-    props.integratedMode ? person.storeId : '',
+    props.operatingStoreId || (props.integratedMode ? person.storeId : ''),
   )
 
   if (result?.ok === false) {
@@ -507,9 +533,11 @@ onBeforeUnmount(() => {
             :data-testid="`operation-waiting-${person.id}`"
           >
             <span class="queue-card__position">{{ index + 1 }}</span>
-            <span class="queue-card__avatar" :style="{ '--avatar-accent': person.color }">
-              {{ person.initials }}
-            </span>
+            <OperationConsultantAvatarRing
+              :initials="person.initials"
+              :color="person.color"
+              :goal-stats="person.goalStats"
+            />
             <span class="queue-card__content">
               <span class="queue-card__headline">
                 <strong class="queue-card__name">{{ displayName(person) }}</strong>
@@ -615,6 +643,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
+
+    <OperationSidePanel />
   </div>
 
   <Teleport to="body">

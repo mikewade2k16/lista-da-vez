@@ -4,7 +4,11 @@ import (
 	"strings"
 )
 
-func buildSnapshotView(storeID string, storeName string, roster []ConsultantProfile, snapshotState SnapshotState) Snapshot {
+// buildSnapshotView e PURO/testavel: recebe o map de GoalStats por consultor
+// (chave = consultant.ID de perfil) e embute em cada item da waitingList e dos
+// activeServices que tenham entrada no map. map nil/vazio => GoalStats fica nil
+// (degradacao graciosa).
+func buildSnapshotView(storeID string, storeName string, roster []ConsultantProfile, snapshotState SnapshotState, goalStatsByConsultant map[string]GoalStats) Snapshot {
 	rosterByID := mapRosterByID(roster)
 	rosterView := make([]RosterMember, 0, len(roster))
 	for _, person := range roster {
@@ -34,6 +38,7 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			MonthlyGoal:    person.MonthlyGoal,
 			CommissionRate: person.CommissionRate,
 			QueueJoinedAt:  item.QueueJoinedAt,
+			GoalStats:      lookupGoalStats(goalStatsByConsultant, person.ID),
 		})
 	}
 
@@ -66,6 +71,7 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			StoppedAt:            maxInt64(item.StoppedAt, 0),
 			EffectiveFinishedAt:  deriveActiveServiceFreezeAt(item, snapshotState.ActiveServices, snapshotState.ServiceHistory),
 			StopReason:           strings.TrimSpace(item.StopReason),
+			GoalStats:            lookupGoalStats(goalStatsByConsultant, person.ID),
 		})
 	}
 
@@ -228,13 +234,18 @@ func applyStatusTransitions(
 			continue
 		}
 
-		nextSessions = append(nextSessions, ConsultantSession{
+		closedSession := ConsultantSession{
 			PersonID:   item.personID,
 			Status:     previous.Status,
 			StartedAt:  previous.StartedAt,
 			EndedAt:    now,
 			DurationMs: maxInt64(0, now-previous.StartedAt),
-		})
+		}
+		if previous.Status == statusPaused {
+			closedSession.Reason = strings.TrimSpace(item.reason)
+			closedSession.Kind = normalizePauseKind(item.kind)
+		}
+		nextSessions = append(nextSessions, closedSession)
 
 		nextStatus[item.personID] = ConsultantStatus{
 			Status:    item.nextStatus,
@@ -323,6 +334,21 @@ func normalizeHistoryEntry(entry ServiceHistoryEntry) ServiceHistoryEntry {
 		entry.ProductDetails = firstNonEmpty(entry.ProductClosed, entry.ProductSeen)
 	}
 	return entry
+}
+
+// lookupGoalStats devolve um PONTEIRO para uma copia do GoalStats do consultor
+// quando ha entrada no map; caso contrario nil. Copiar evita compartilhar a mesma
+// struct entre waitingList e activeServices (aliasing acidental no JSON).
+func lookupGoalStats(goalStatsByConsultant map[string]GoalStats, consultantID string) *GoalStats {
+	if len(goalStatsByConsultant) == 0 {
+		return nil
+	}
+	stats, ok := goalStatsByConsultant[consultantID]
+	if !ok {
+		return nil
+	}
+	copyStats := stats
+	return &copyStats
 }
 
 func mapRosterByID(roster []ConsultantProfile) map[string]ConsultantProfile {
@@ -415,6 +441,17 @@ func filterPaused(pausedEmployees []PausedStateItem, consultantID string) []Paus
 		}
 	}
 	return filtered
+}
+
+// pauseReasonAndKind devolve o motivo e o tipo da pausa corrente de um
+// consultor (para preservar na sessao de pausa fechada no resume).
+func pauseReasonAndKind(pausedEmployees []PausedStateItem, consultantID string) (string, string) {
+	for _, item := range pausedEmployees {
+		if item.ConsultantID == consultantID {
+			return strings.TrimSpace(item.Reason), normalizePauseKind(item.Kind)
+		}
+	}
+	return "", ""
 }
 
 func countActiveServicesForConsultant(activeServices []ActiveServiceState, consultantID string) int {

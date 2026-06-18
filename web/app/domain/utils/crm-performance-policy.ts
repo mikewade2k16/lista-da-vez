@@ -12,15 +12,57 @@ export type CrmGoalPayoutRule = {
   mode: CrmGoalPayoutMode
 }
 
-export type CrmGoalPayoutPolicy = {
-  consultant: CrmGoalPayoutRule[]
-  manager: CrmGoalPayoutRule[]
-  support: CrmGoalPayoutRule[]
+// Base de cálculo do consultor: 'self' = sobre a PRÓPRIA venda; 'store' = sobre o total da loja.
+export type CrmConsultantPayoutBase = 'self' | 'store'
+
+// Regras específicas do consultor (editáveis na tela). O cálculo em si vive no BACK
+// (pacote Go queue/commission, embutido em GET /v1/erp/crm) — aqui só ficam os tipos
+// e o normalize que o editor de Metas CRM usa.
+export type CrmConsultantRules = {
+  base: CrmConsultantPayoutBase
+  qualityPenaltyPercent: number // perda POR métrica (P.A./Ticket) não atingida
+  // Gate da LOJA sobre o recebimento do consultor:
+  storeFloorPercent: number // loja < isso -> consultor recebe 0
+  storeFullPercent: number // loja >= isso -> faixa própria normal (consultant[])
+  reducedRate: number // % na faixa reduzida da loja [floor, full)
+  reducedRequiresOwnPercent: number // na faixa reduzida, meta própria mínima p/ receber
 }
 
-export type CrmGoalPayoutResult = {
-  amountCents: number
-  rule: CrmGoalPayoutRule | null
+export type CrmGoalPayoutPolicy = {
+  consultant: CrmGoalPayoutRule[]
+  managerShopping: CrmGoalPayoutRule[]
+  managerBairro: CrmGoalPayoutRule[]
+  support: CrmGoalPayoutRule[]
+  consultantRules: CrmConsultantRules
+}
+
+// Grupos que possuem faixas (arrays). consultantRules é config, não faixa.
+export type CrmGoalPayoutTierGroup = 'consultant' | 'managerShopping' | 'managerBairro' | 'support'
+
+// Grupo de PAPEL (não distingue Shopping/Bairro — isso é decidido pelo store_type no back).
+// Usado APENAS para display: escolher qual payout pré-calculado do back mostrar no card.
+// O cálculo do valor é 100% no back (queue/commission).
+export type CrmPayoutRoleGroup = 'consultant' | 'manager' | 'support'
+
+const MANAGER_ROLE_TOKENS = ['manager', 'gerente', 'gerencia', 'subgerente', 'lider', 'leader']
+const SUPPORT_ROLE_TOKENS = [
+  'support',
+  'caixa',
+  'cashier',
+  'auxiliar',
+  'assistant',
+  'estoquista',
+  'estoque',
+  'financeiro',
+  'recepcao',
+]
+
+export function mapRoleToPayoutGroup(role: unknown): CrmPayoutRoleGroup {
+  const normalized = normalizeText(role).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  if (!normalized) return 'consultant'
+  if (MANAGER_ROLE_TOKENS.some((token) => normalized.includes(token))) return 'manager'
+  if (SUPPORT_ROLE_TOKENS.some((token) => normalized.includes(token))) return 'support'
+  return 'consultant'
 }
 
 export const DEFAULT_CRM_LIST_USAGE_MIN_ORDERS_FOR_HIGHLIGHT = 5
@@ -34,18 +76,34 @@ export const DEFAULT_CRM_LIST_USAGE_TIERS: CrmListUsageTier[] = [
   { id: 'perfeito', label: 'Perfeito', minRate: 100 },
 ]
 
+export const DEFAULT_CRM_CONSULTANT_RULES: CrmConsultantRules = {
+  base: 'self',
+  qualityPenaltyPercent: 0.1,
+  storeFloorPercent: 50,
+  storeFullPercent: 80,
+  reducedRate: 1.5,
+  reducedRequiresOwnPercent: 100,
+}
+
 export const DEFAULT_CRM_GOAL_PAYOUT_POLICY: CrmGoalPayoutPolicy = {
+  // Faixa pela PRÓPRIA meta do consultor -> % sobre a própria venda (vale quando a
+  // loja >= storeFullPercent). O gate da loja vive em consultantRules.
   consultant: [
     { threshold: 80, value: 1, mode: 'percent' },
     { threshold: 90, value: 2, mode: 'percent' },
     { threshold: 100, value: 3, mode: 'percent' },
     { threshold: 120, value: 3.2, mode: 'percent' },
   ],
-  manager: [
+  managerShopping: [
     { threshold: 80, value: 0.8, mode: 'percent' },
     { threshold: 90, value: 0.9, mode: 'percent' },
     { threshold: 100, value: 1, mode: 'percent' },
     { threshold: 120, value: 1.2, mode: 'percent' },
+  ],
+  managerBairro: [
+    { threshold: 80, value: 1, mode: 'percent' },
+    { threshold: 100, value: 1.7, mode: 'percent' },
+    { threshold: 120, value: 2, mode: 'percent' },
   ],
   support: [
     { threshold: 80, value: 80, mode: 'amount' },
@@ -53,6 +111,7 @@ export const DEFAULT_CRM_GOAL_PAYOUT_POLICY: CrmGoalPayoutPolicy = {
     { threshold: 100, value: 100, mode: 'amount' },
     { threshold: 120, value: 120, mode: 'amount' },
   ],
+  consultantRules: { ...DEFAULT_CRM_CONSULTANT_RULES },
 }
 
 function normalizeText(value: unknown) {
@@ -108,6 +167,33 @@ function normalizePayoutRules(
     .sort((left, right) => left.threshold - right.threshold)
 }
 
+function normalizeConsultantBase(value: unknown): CrmConsultantPayoutBase {
+  return normalizeText(value) === 'store' ? 'store' : 'self'
+}
+
+function normalizeConsultantRules(value: unknown): CrmConsultantRules {
+  const source = value && typeof value === 'object' ? (value as Partial<CrmConsultantRules>) : {}
+  const pick = (input: unknown, fallback: number) =>
+    input === undefined || input === null ? fallback : positiveRate(input)
+  return {
+    base: normalizeConsultantBase(source.base),
+    qualityPenaltyPercent: pick(
+      source.qualityPenaltyPercent,
+      DEFAULT_CRM_CONSULTANT_RULES.qualityPenaltyPercent,
+    ),
+    storeFloorPercent: pick(
+      source.storeFloorPercent,
+      DEFAULT_CRM_CONSULTANT_RULES.storeFloorPercent,
+    ),
+    storeFullPercent: pick(source.storeFullPercent, DEFAULT_CRM_CONSULTANT_RULES.storeFullPercent),
+    reducedRate: pick(source.reducedRate, DEFAULT_CRM_CONSULTANT_RULES.reducedRate),
+    reducedRequiresOwnPercent: pick(
+      source.reducedRequiresOwnPercent,
+      DEFAULT_CRM_CONSULTANT_RULES.reducedRequiresOwnPercent,
+    ),
+  }
+}
+
 export function normalizeCrmListUsageTiers(value: unknown): CrmListUsageTier[] {
   const tiers = (Array.isArray(value) ? value : [])
     .map((tier, index) => normalizeTier(tier, index))
@@ -150,103 +236,29 @@ export function crmListUsageNormalThreshold(tiers: unknown) {
   return firstPositiveTier?.minRate ?? 50
 }
 
+// Normaliza a política v2. Retrocompatível: linhas antigas têm apenas
+// `manager` (sem distinção de loja) — semeamos managerShopping E managerBairro a
+// partir dela; faixas explicitamente vazias são preservadas; campos ausentes caem
+// no default. O CÁLCULO em si é feito no back (queue/commission) — aqui só o shape.
 export function normalizeCrmGoalPayoutPolicy(value: unknown): CrmGoalPayoutPolicy {
-  const source = value && typeof value === 'object' ? (value as Partial<CrmGoalPayoutPolicy>) : {}
+  const source =
+    value && typeof value === 'object'
+      ? (value as Partial<CrmGoalPayoutPolicy> & { manager?: Partial<CrmGoalPayoutRule>[] })
+      : {}
+
+  const legacyManager = source.manager
 
   return {
     consultant: normalizePayoutRules(source.consultant, DEFAULT_CRM_GOAL_PAYOUT_POLICY.consultant),
-    manager: normalizePayoutRules(source.manager, DEFAULT_CRM_GOAL_PAYOUT_POLICY.manager),
+    managerShopping: normalizePayoutRules(
+      Array.isArray(source.managerShopping) ? source.managerShopping : legacyManager,
+      DEFAULT_CRM_GOAL_PAYOUT_POLICY.managerShopping,
+    ),
+    managerBairro: normalizePayoutRules(
+      Array.isArray(source.managerBairro) ? source.managerBairro : legacyManager,
+      DEFAULT_CRM_GOAL_PAYOUT_POLICY.managerBairro,
+    ),
     support: normalizePayoutRules(source.support, DEFAULT_CRM_GOAL_PAYOUT_POLICY.support),
+    consultantRules: normalizeConsultantRules(source.consultantRules),
   }
-}
-
-export function resolveCrmGoalPayoutRule(goalProgress: unknown, rules: CrmGoalPayoutRule[] = []) {
-  const progress = positiveRate(goalProgress)
-  let selected: CrmGoalPayoutRule | null = null
-
-  for (const rule of [...rules].sort((left, right) => left.threshold - right.threshold)) {
-    if (progress >= rule.threshold) {
-      selected = rule
-    }
-  }
-
-  return selected
-}
-
-export function calculateCrmGoalPayout(
-  salesCents: unknown,
-  goalProgress: unknown,
-  policy: unknown,
-  role: keyof CrmGoalPayoutPolicy = 'consultant',
-): CrmGoalPayoutResult {
-  const normalizedPolicy = normalizeCrmGoalPayoutPolicy(policy)
-  const rule = resolveCrmGoalPayoutRule(goalProgress, normalizedPolicy[role])
-  if (!rule) return { amountCents: 0, rule: null }
-
-  if (rule.mode === 'amount') {
-    return { amountCents: Math.round(rule.value * 100), rule }
-  }
-
-  return {
-    amountCents: Math.round(Math.max(0, Number(salesCents || 0) || 0) * (rule.value / 100)),
-    rule,
-  }
-}
-
-// Mapeia o papel do membro da loja para o grupo de recebimento da politica.
-// gerente -> manager; caixa/auxiliar -> support; qualquer outro (operador da fila) -> consultant.
-const MANAGER_ROLE_TOKENS = ['manager', 'gerente', 'gerencia', 'subgerente', 'lider', 'leader']
-const SUPPORT_ROLE_TOKENS = [
-  'support',
-  'caixa',
-  'cashier',
-  'auxiliar',
-  'assistant',
-  'estoquista',
-  'estoque',
-  'financeiro',
-  'recepcao',
-]
-
-export function mapRoleToPayoutGroup(role: unknown): keyof CrmGoalPayoutPolicy {
-  const normalized = normalizeText(role)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-  if (!normalized) return 'consultant'
-  if (MANAGER_ROLE_TOKENS.some((token) => normalized.includes(token))) return 'manager'
-  if (SUPPORT_ROLE_TOKENS.some((token) => normalized.includes(token))) return 'support'
-  return 'consultant'
-}
-
-export type StoreGoalPayoutInput = {
-  storeSold: number
-  storeProgress: number
-  policy: unknown
-  role?: unknown
-}
-
-export type StoreGoalPayoutResult = {
-  amount: number
-  rule: CrmGoalPayoutRule | null
-  group: keyof CrmGoalPayoutPolicy
-}
-
-// Recebimento por atingimento de meta, calculado SEMPRE pela meta da LOJA:
-// - a faixa (threshold) e escolhida pelo % de atingimento da loja (storeProgress);
-// - quando a faixa e percentual, o % incide sobre o TOTAL vendido da loja (storeSold);
-// - quando a faixa e valor fixo (amount), retorna o valor em reais.
-// Trabalha em reais (storeSold em reais -> amount em reais).
-export function calculateStoreGoalPayout(input: StoreGoalPayoutInput): StoreGoalPayoutResult {
-  const group = mapRoleToPayoutGroup(input.role)
-  const normalizedPolicy = normalizeCrmGoalPayoutPolicy(input.policy)
-  const rule = resolveCrmGoalPayoutRule(input.storeProgress, normalizedPolicy[group])
-  if (!rule) return { amount: 0, rule: null, group }
-
-  if (rule.mode === 'amount') {
-    return { amount: Math.max(0, rule.value), rule, group }
-  }
-
-  const base = Math.max(0, Number(input.storeSold || 0) || 0)
-  return { amount: base * (rule.value / 100), rule, group }
 }

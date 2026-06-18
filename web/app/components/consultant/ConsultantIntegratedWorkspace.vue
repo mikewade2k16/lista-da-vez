@@ -1,28 +1,22 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { CalendarDays } from 'lucide-vue-next'
-import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
-import AppSelectField from '~/components/ui/AppSelectField.vue'
 import ConsultantDetailsDrawer from '~/components/consultant/ConsultantDetailsDrawer.vue'
-import ConsultantHistoryPanel from '~/components/consultant/ConsultantHistoryPanel.vue'
-import ConsultantPlayerCard from '~/components/consultant/ConsultantPlayerCard.vue'
-import ConsultantPlayerGrid from '~/components/consultant/ConsultantPlayerGrid.vue'
-import ConsultantRecentAttendancesTable from '~/components/consultant/ConsultantRecentAttendancesTable.vue'
-import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
-import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
-import ConsultantStaffPayoutCard from '~/components/consultant/ConsultantStaffPayoutCard.vue'
+import ConsultantIntegratedFilters from '~/components/consultant/ConsultantIntegratedFilters.vue'
+import ConsultantSingleStoreView from '~/components/consultant/ConsultantSingleStoreView.vue'
+import ConsultantStoreGroup from '~/components/consultant/ConsultantStoreGroup.vue'
 import { useConsultantDetailsDrawer } from '~/composables/useConsultantDetailsDrawer'
 import {
   useConsultantIntegratedRows,
   type ConsultantRosterItem,
 } from '~/composables/useConsultantIntegratedRows'
-import { useCrmGoalPayoutPolicy } from '~/composables/useCrmGoalPayoutPolicy'
 import {
-  calculateStoreGoalPayout,
-  type CrmGoalPayoutRule,
-} from '~/domain/utils/crm-performance-policy'
+  consultantPayoutLabel,
+  storePayoutForRole,
+  storeRolePayoutLabel,
+} from '~/domain/utils/consultant-payout-display'
 import { useConsultantsStore } from '~/stores/consultants'
+import { useGoalQuickEditContext } from '~/composables/useGoalQuickEditContext'
 
 interface StaffItem {
   id: string
@@ -65,6 +59,7 @@ const simulationAdditionalSales = ref(0)
 
 const consultantsStore = useConsultantsStore()
 const { integratedDateFrom, integratedDateTo } = storeToRefs(consultantsStore)
+const { buildContext: buildGoalContext } = useGoalQuickEditContext()
 
 const rosterRef = computed(() => props.roster || [])
 const rankingRef = computed(() => props.ranking || null)
@@ -75,9 +70,8 @@ const {
   storeConversionAvgByStoreId,
   rankingPositionByKey,
   storeProgressByStoreId,
+  storePayoutByStoreId,
 } = useConsultantIntegratedRows(rosterRef, rankingRef, overviewRef)
-
-const { policy: payoutPolicy } = useCrmGoalPayoutPolicy()
 
 const staffByStoreId = computed(() => {
   const map: Record<string, StaffItem[]> = {}
@@ -89,12 +83,6 @@ const staffByStoreId = computed(() => {
   })
   return map
 })
-
-function payoutRuleLabel(rule: CrmGoalPayoutRule | null) {
-  if (!rule) return 'Sem faixa'
-  if (rule.mode === 'amount') return `${formatCurrencyBRL(rule.value)} fixo`
-  return `${Number(rule.value).toLocaleString('pt-BR')}% da loja`
-}
 
 const storeOptions = computed(() => {
   const storesById = new Map<string, { value: string; label: string }>()
@@ -165,6 +153,14 @@ const groupedRows = computed(() => {
   return [...groups.values()]
     .map((g) => ({
       ...g,
+      // Contexto de escopo de LOJA (consultantId vazio) p/ os avisos de ticket/PA no
+      // cabeçalho. Semeia o popover com a meta efetiva vinda de um consultor da loja.
+      storeContext: buildGoalContext({
+        storeId: g.storeId,
+        store: storePayoutByStoreId.value[g.storeId] ?? null,
+        currentTicketGoal: Number(g.rows[0]?.avgTicketGoal || 0),
+        currentPaGoal: Number(g.rows[0]?.paGoal || 0),
+      }),
       rows: [...g.rows].sort(
         (a, b) =>
           b.soldValue - a.soldValue || String(a.name || '').localeCompare(String(b.name || '')),
@@ -185,12 +181,8 @@ const selectedStoreConsultantCard = computed(() => {
   const row = selectedStoreConsultant.value
   if (!row) return null
   const store = storeProgressByStoreId.value[String(row.storeId || '')] ?? null
-  const payout = calculateStoreGoalPayout({
-    storeSold: store?.storeSold ?? 0,
-    storeProgress: store?.progress ?? 0,
-    policy: payoutPolicy.value,
-    role: row.role,
-  })
+  // Consultor: payout pré-calculado no back (% da própria venda). Display só.
+  const payout = row.payout ?? null
   return {
     consultant: {
       id: row.id,
@@ -227,8 +219,23 @@ const selectedStoreConsultantCard = computed(() => {
     rankingPosition:
       rankingPositionByKey.value[`${String(row.storeId || '')}:${String(row.id || '')}`] ?? null,
     storeGoalProgress: store ? store.progress : null,
-    goalPayoutAmount: payout.amount,
-    goalPayoutLabel: payoutRuleLabel(payout.rule),
+    goalPayoutAmount: payout ? payout.amount : null,
+    goalPayoutLabel: payout ? consultantPayoutLabel(payout) : '',
+    // Contexto do quick-edit de metas (motor plugável) para o card full single-store.
+    goalContext: buildGoalContext({
+      storeId: row.storeId,
+      consultantId: row.id,
+      store: storePayoutByStoreId.value[String(row.storeId || '')] ?? null,
+      currentTicketGoal: Number(row.avgTicketGoal || 0),
+      currentPaGoal: Number(row.paGoal || 0),
+      consultant: {
+        goalSource: row.goalSource,
+        missingMonthlyGoal: row.missingMonthlyGoal,
+        missingTicketGoal: row.missingTicketGoal,
+        missingPaGoal: row.missingPaGoal,
+        monthlyGoal: row.monthlyGoal,
+      },
+    }),
   }
 })
 
@@ -237,18 +244,15 @@ const selectedStoreStaff = computed(() => {
   const sid = String(selectedStoreConsultant.value?.storeId || '').trim()
   if (!sid) return []
   const store = storeProgressByStoreId.value[sid] ?? null
+  const storePayout = storePayoutByStoreId.value[sid] ?? null
   return (staffByStoreId.value[sid] || []).map((member) => {
-    const payout = calculateStoreGoalPayout({
-      storeSold: store?.storeSold ?? 0,
-      storeProgress: store?.progress ?? 0,
-      policy: payoutPolicy.value,
-      role: member.role,
-    })
+    // Gerente/caixa recebem pela LOJA; o papel escolhe manager vs support no back.
+    const payout = storePayoutForRole(storePayout, member.role)
     return {
       member,
       storeGoalProgress: store ? store.progress : null,
-      payoutAmount: payout.amount,
-      payoutLabel: payoutRuleLabel(payout.rule),
+      payoutAmount: payout ? payout.amount : null,
+      payoutLabel: payout ? storeRolePayoutLabel(payout) : '',
     }
   })
 })
@@ -306,6 +310,10 @@ const selectedDrawerStats = computed(() => {
     paGoal: Number(row.paGoal || 0),
     conversionGoal: Number(row.conversionGoal || 0),
     cancellationRate: row.cancellationRate,
+    // Payout do consultor pré-calculado no back (espelha o card).
+    goalPayoutAmount: row.payout ? row.payout.amount : null,
+    goalPayoutLabel: row.payout ? consultantPayoutLabel(row.payout) : '',
+    goalPayoutRatePercent: row.payout ? row.payout.ratePercent : null,
     monthEntries: (props.history || []).filter((e) => String(e?.personId || '').trim() === row.id),
   }
 })
@@ -327,6 +335,10 @@ async function resetPeriodRange() {
   consultantsStore.resetIntegratedCurrentMonth()
   await consultantsStore.applyIntegratedFilters()
 }
+async function setPreviousMonthRange() {
+  consultantsStore.resetIntegratedPreviousMonth()
+  await consultantsStore.applyIntegratedFilters()
+}
 </script>
 
 <template>
@@ -346,169 +358,52 @@ async function resetPeriodRange() {
     </article>
 
     <template v-else>
-      <article class="settings-card consultant-integrated-filters">
-        <div class="consultant-integrated-filters__grid">
-          <label class="settings-field consultant-integrated-filters__search">
-            <span>Buscar consultor</span>
-            <input v-model="searchTerm" type="text" placeholder="Nome, loja ou cargo" />
-          </label>
-          <label class="settings-field">
-            <span>Loja</span>
-            <AppSelectField
-              :model-value="storeFilter"
-              :options="storeOptions"
-              placeholder="Filtrar loja"
-              @update:model-value="storeFilter = $event"
-            />
-          </label>
-          <label class="settings-field">
-            <span>Status</span>
-            <AppSelectField
-              :model-value="statusFilter"
-              :options="statusOptions"
-              placeholder="Filtrar status"
-              @update:model-value="statusFilter = $event"
-            />
-          </label>
-          <label class="settings-field">
-            <span>Meta</span>
-            <AppSelectField
-              :model-value="goalFilter"
-              :options="goalOptions"
-              placeholder="Filtrar meta"
-              @update:model-value="goalFilter = $event"
-            />
-          </label>
-          <div class="consultant-integrated-filters__period">
-            <label class="settings-field consultant-integrated-filters__period-field">
-              <span>Periodo</span>
-              <AppDatePicker
-                :model-value="integratedDateFrom"
-                :end-date="integratedDateTo"
-                @update:model-value="integratedDateFrom = $event"
-                @update:end-date="integratedDateTo = $event"
-              >
-                <template #default="{ label }">
-                  <button type="button" class="consultant-integrated-date-trigger">
-                    <CalendarDays :size="14" />
-                    <span>{{ label || 'Mes atual' }}</span>
-                  </button>
-                </template>
-              </AppDatePicker>
-            </label>
-            <div class="consultant-integrated-filters__actions">
-              <button
-                type="button"
-                class="consultant-integrated-btn consultant-integrated-btn--ghost"
-                :disabled="pending"
-                @click="resetPeriodRange"
-              >
-                Mes atual
-              </button>
-              <button
-                type="button"
-                class="consultant-integrated-btn"
-                :disabled="pending"
-                @click="applyPeriodFilters"
-              >
-                {{ pending ? 'Atualizando...' : 'Atualizar' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </article>
+      <ConsultantIntegratedFilters
+        :search-term="searchTerm"
+        :store-filter="storeFilter"
+        :status-filter="statusFilter"
+        :goal-filter="goalFilter"
+        :store-options="storeOptions"
+        :status-options="statusOptions"
+        :goal-options="goalOptions"
+        :date-from="integratedDateFrom"
+        :date-to="integratedDateTo"
+        :pending="pending"
+        @update:search-term="searchTerm = $event"
+        @update:store-filter="storeFilter = $event"
+        @update:status-filter="statusFilter = $event"
+        @update:goal-filter="goalFilter = $event"
+        @update:date-from="integratedDateFrom = $event"
+        @update:date-to="integratedDateTo = $event"
+        @apply="applyPeriodFilters"
+        @reset-current-month="resetPeriodRange"
+        @set-previous-month="setPreviousMonthRange"
+      />
 
-      <template v-if="singleStoreMode">
-        <ConsultantSelector
-          v-if="singleStoreRows.length"
-          :roster="singleStoreRows"
-          :selected-consultant-id="selectedStoreConsultant?.id || ''"
-          @select="selectConsultant"
-        />
-        <ConsultantPlayerCard
-          v-if="selectedStoreConsultantCard"
-          :consultant="selectedStoreConsultantCard.consultant"
-          :stats="selectedStoreConsultantCard.stats"
-          :store-conversion-avg="selectedStoreConsultantCard.storeConversionAvg"
-          :ranking-position="selectedStoreConsultantCard.rankingPosition"
-          :store-goal-progress="selectedStoreConsultantCard.storeGoalProgress"
-          :goal-payout-amount="selectedStoreConsultantCard.goalPayoutAmount"
-          :goal-payout-label="selectedStoreConsultantCard.goalPayoutLabel"
-          mode="full"
-          :show-details-button="false"
-        />
-        <div v-if="selectedStoreConsultantCard" class="consultant-integrated-insights">
-          <ConsultantHistoryPanel
-            :consultant-id="selectedStoreConsultantCard.consultant.id"
-            :store-id="selectedStoreConsultant?.storeId"
-            :entries="props.history || []"
-          />
-          <section class="consultant-integrated-insight-panel">
-            <ConsultantSimulator
-              :sold-value="selectedStoreConsultantCard.stats.soldValue"
-              :monthly-goal="selectedStoreConsultantCard.stats.monthlyGoal"
-              :commission-rate="selectedStoreConsultantCard.stats.commissionRate"
-              :simulation-additional-sales="simulationAdditionalSales"
-              @update:simulation-additional-sales="updateSimulationAdditionalSales"
-            />
-          </section>
-        </div>
-        <section v-if="selectedStoreStaff.length" class="consultant-integrated-staff">
-          <header class="consultant-integrated-staff__header">
-            <h3 class="consultant-integrated-staff__title">Equipe da loja (sem fila)</h3>
-            <p class="consultant-integrated-staff__text">
-              Recebem pela meta da loja; nao atendem na fila.
-            </p>
-          </header>
-          <div class="consultant-integrated-staff__grid">
-            <ConsultantStaffPayoutCard
-              v-for="item in selectedStoreStaff"
-              :key="`staff:${item.member.storeId}:${item.member.id}`"
-              :staff="item.member"
-              :store-goal-progress="item.storeGoalProgress"
-              :payout-amount="item.payoutAmount"
-              :payout-label="item.payoutLabel"
-            />
-          </div>
-        </section>
-
-        <ConsultantRecentAttendancesTable
-          v-if="selectedStoreConsultant"
-          :consultant-id="selectedStoreConsultant.id"
-          :consultant-name="selectedStoreConsultant.name"
-          :store-id="selectedStoreConsultant.storeId"
-          :store-name="selectedStoreConsultant.storeName"
-          :entries="props.history || []"
-        />
-        <div v-else class="player-grid__empty" data-testid="player-grid-empty">
-          Nenhum consultor encontrado para os filtros selecionados.
-        </div>
-      </template>
+      <ConsultantSingleStoreView
+        v-if="singleStoreMode"
+        :rows="singleStoreRows"
+        :selected-consultant="selectedStoreConsultant"
+        :card="selectedStoreConsultantCard"
+        :staff="selectedStoreStaff"
+        :history="props.history || []"
+        :simulation-additional-sales="simulationAdditionalSales"
+        @select="selectConsultant"
+        @update:simulation-additional-sales="updateSimulationAdditionalSales"
+      />
 
       <div v-else-if="groupedRows.length" class="consultant-integrated-groups">
-        <section
+        <ConsultantStoreGroup
           v-for="group in groupedRows"
           :key="group.storeId"
-          class="consultant-integrated-group"
-        >
-          <header class="consultant-integrated-group__header">
-            <div>
-              <h3 class="consultant-integrated-group__title">{{ group.storeName }}</h3>
-              <p class="consultant-integrated-group__text">
-                {{ group.rows.length }} consultor(es) nos filtros atuais.
-              </p>
-            </div>
-          </header>
-          <ConsultantPlayerGrid
-            :rows="group.rows"
-            :staff="staffByStoreId[group.storeId] || []"
-            :store-conversion-avg-by-store-id="storeConversionAvgByStoreId"
-            :ranking-position-by-key="rankingPositionByKey"
-            :store-progress-by-store-id="storeProgressByStoreId"
-            :payout-policy="payoutPolicy"
-            @open-details="openDetails"
-          />
-        </section>
+          :group="group"
+          :staff="staffByStoreId[group.storeId] || []"
+          :store-conversion-avg-by-store-id="storeConversionAvgByStoreId"
+          :ranking-position-by-key="rankingPositionByKey"
+          :store-progress-by-store-id="storeProgressByStoreId"
+          :store-payout-by-store-id="storePayoutByStoreId"
+          @open-details="openDetails"
+        />
       </div>
       <div v-else class="player-grid__empty" data-testid="player-grid-empty">
         Nenhum consultor encontrado para os filtros selecionados.
@@ -520,140 +415,13 @@ async function resetPeriodRange() {
 </template>
 
 <style scoped>
-.consultant-integrated-filters__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
-  gap: 0.85rem;
-}
-.consultant-integrated-filters__search {
-  min-width: 0;
-}
-.consultant-integrated-filters__period {
-  display: grid;
-  gap: 0.65rem;
-  min-width: 0;
-}
-.consultant-integrated-filters__period-field {
-  min-width: 0;
-}
-.consultant-integrated-date-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 100%;
-  min-height: 42px;
-  padding: 0 0.85rem;
-  border-radius: 12px;
-  border: 1px solid rgb(var(--border) / 0.9);
-  background: rgb(var(--surface) / 0.95);
-  color: rgb(var(--text));
-  font-size: 0.88rem;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.consultant-integrated-filters__actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-.consultant-integrated-btn {
-  min-height: 38px;
-  border: none;
-  border-radius: 12px;
-  padding: 0.6rem 0.9rem;
-  background: rgb(var(--primary));
-  color: rgb(255 255 255);
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.consultant-integrated-btn:disabled {
-  cursor: wait;
-  opacity: 0.72;
-}
-.consultant-integrated-btn--ghost {
-  background: rgb(var(--primary) / 0.12);
-  color: rgb(var(--primary));
-}
 .consultant-integrated-groups {
   display: grid;
   gap: 1rem;
-}
-.consultant-integrated-insights {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: 0.85rem;
-  align-items: start;
-}
-.consultant-integrated-insight-panel {
-  padding: 1rem;
-  border-radius: 1rem;
-  border: 1px solid rgb(var(--primary) / 0.16);
-  background: rgb(var(--surface) / 0.78);
-  box-shadow: var(--shadow-xs);
-}
-.consultant-integrated-staff {
-  display: grid;
-  gap: 0.65rem;
-}
-.consultant-integrated-staff__header {
-  display: grid;
-  gap: 0.15rem;
-}
-.consultant-integrated-staff__title {
-  margin: 0;
-  font-size: 0.95rem;
-  color: rgb(var(--text) / 0.96);
-}
-.consultant-integrated-staff__text {
-  margin: 0;
-  font-size: 0.76rem;
-  color: rgb(var(--muted) / 0.9);
-}
-.consultant-integrated-staff__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
-  gap: 0.85rem;
-}
-.consultant-integrated-group {
-  display: grid;
-  gap: 0.85rem;
-}
-.consultant-integrated-group__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding-bottom: 0.35rem;
-  border-bottom: 1px solid rgb(var(--border) / 0.72);
-}
-.consultant-integrated-group__title {
-  margin: 0;
-  font-size: 1rem;
-  color: rgb(var(--text) / 0.96);
-}
-.consultant-integrated-group__text {
-  margin: 0.2rem 0 0;
-  font-size: 0.78rem;
-  color: rgb(var(--muted) / 0.9);
 }
 .player-grid__empty {
   padding: 2rem;
   text-align: center;
   color: rgb(var(--muted) / 0.92);
-}
-@media (max-width: 1100px) {
-  .consultant-integrated-insights,
-  .consultant-integrated-filters__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 720px) {
-  .consultant-integrated-insights,
-  .consultant-integrated-filters__grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 </style>

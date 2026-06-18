@@ -22,6 +22,7 @@ Hoje `/relatorios` no Nuxt ja consome:
 - `GET /v1/reports/results`
 - `GET /v1/reports/recent-services`
 - `GET /v1/reports/multistore-overview`
+- `GET /v1/reports/pauses`
 
 Ele nao deve cuidar de:
 
@@ -35,6 +36,7 @@ Ele nao deve cuidar de:
 - `GET /v1/reports/results`
 - `GET /v1/reports/recent-services`
 - `GET /v1/reports/multistore-overview`
+- `GET /v1/reports/pauses`
 
 ## Regras de arquitetura
 
@@ -45,6 +47,7 @@ Ele nao deve cuidar de:
 - `results` entrega linhas paginadas
 - `recent-services` entrega leitura administrativa dos ultimos atendimentos
 - `multistore-overview` entrega comparativo por loja com metricas historicas e contadores vivos da operacao
+- `pauses` agrega `queue.operation_status_sessions` (`status='paused'`, `kind` pause; `assignment`/tarefa fica de fora) por consultor/motivo/hora: `summary`, `byConsultant` (com `byReason`), `byReason`, `byHour` (hora UTC) e `rows` (timestamps crus para o front formatar em hora local). Reusa o mesmo escopo/permissao (`canViewReports`) e a resolucao de loja/tenant dos demais relatorios; filtra a janela por `ended_at`
 - backend deve filtrar por `store_id` e acesso do usuario antes de qualquer agregacao
 - quando `storeId` for omitido, leituras agregadas devem atravessar apenas as lojas acessiveis da sessao dentro do tenant resolvido
 

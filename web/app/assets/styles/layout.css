@@ -14,7 +14,7 @@
 }
 
 .workspace {
-  width: min(100%, 1600px);
+  width: min(100%, 1900px);
 
   margin: 0 auto;
   padding: 16px;
@@ -101,13 +101,15 @@
 
 .queue-grid {
   display: grid;
-  --queue-grid-left-column: 0.85fr;
-  --queue-grid-right-column: 1.15fr;
-  --queue-grid-left-column: 1fr;
-  --queue-grid-right-column: 1fr;
+  /* Largura das 3 colunas da operacao — AJUSTE AQUI (fila | atendimento | lateral).
+     Use fr (proporcional) ou unidades fixas (ex.: 320px) por coluna. */
+  --queue-grid-left-column: 1fr; /* Lista da vez */
+  --queue-grid-right-column: 1fr; /* Em atendimento */
+  --queue-grid-side-column: 0.9fr; /* Comunicados + Omni Chat */
   grid-template-columns:
     minmax(0, var(--queue-grid-left-column))
-    minmax(0, var(--queue-grid-right-column));
+    minmax(0, var(--queue-grid-right-column))
+    minmax(0, var(--queue-grid-side-column));
   gap: 12px;
   min-height: 0;
   align-items: stretch;

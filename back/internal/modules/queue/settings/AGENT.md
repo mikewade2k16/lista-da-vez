@@ -134,6 +134,7 @@ tabela larga atual.
   - configuracoes operacionais estaveis e tipadas
   - exemplos: limites de concorrencia, tempos, ticket minimo, janela de cancelamento, template selecionado
   - tambem guarda a politica comercial CRM em colunas JSON controladas: `crm_list_usage_tiers`, `crm_list_usage_min_orders_for_highlight`, `crm_goal_payout_policy`
+  - `crm_goal_payout_policy` usa o shape v2 (default em `defaults.go`/migration 0162): grupos `consultant`/`managerShopping`/`managerBairro`/`support` (cada um `[{threshold,value,mode}]`) + `consultantRules` `{base,minOwnGoalPercent,qualityPenaltyPercent}`. Defaults v2: `consultant=[{50,1.5,percent}]`; `managerShopping=[{80,0.8},{90,0.9},{100,1},{120,1.2}]` percent; `managerBairro=[{80,1},{100,1.7},{120,2}]` percent; `support=[{80,80},{90,90},{100,100},{120,120}]` amount; `consultantRules={base:self,minOwnGoalPercent:100,qualityPenaltyPercent:0.1}`. Retrocompat: linha antiga tem so `consultant`/`manager`/`support` — `managerShopping`/`managerBairro` sao semeados a partir de `manager` no normalize (`queue/commission.NormalizePolicy`). Esta coluna e SO armazenamento; o calculo da comissao vive em `queue/commission` e e embutido no `GET /v1/erp/crm`.
 - `tenant_finish_modal_settings`
   - configuracao do modal de encerramento
   - deve usar `finish_flow_mode` + `schema_version` + `config jsonb`

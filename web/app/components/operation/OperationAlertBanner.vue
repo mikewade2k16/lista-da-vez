@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.85rem;
-  padding: 0.7rem 1rem;
+  padding: 0.3rem 1rem;
   background: linear-gradient(
     90deg,
     var(--alert-color-darker, rgb(var(--primary-600))) 0%,
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
   );
   border-left: 3px solid var(--alert-color, rgb(var(--primary)));
   color: rgb(255 255 255);
-  border-radius: 0 6px 6px 0;
+  border-radius: 6px;
   box-shadow: 0 2px 12px rgb(var(--primary) / 0.28);
 }
 

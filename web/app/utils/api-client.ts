@@ -180,6 +180,20 @@ export function setApiAccountIdProvider(provider: (() => string) | null) {
   accountIdProvider = provider
 }
 
+// Handler global de 401 (sessao expirada/revogada). Injetado pelo plugin
+// auth-bridge.client.ts para deslogar e mandar pro login na hora, sem o api-client
+// importar store/router (evita dep circular). Rotas /v1/auth/* sao ignoradas: login
+// com senha errada tambem retorna 401 e NAO deve deslogar nem redirecionar.
+let unauthorizedHandler: (() => void) | null = null
+
+export function setApiUnauthorizedHandler(handler: (() => void) | null) {
+  unauthorizedHandler = handler
+}
+
+function isAuthEndpoint(path: string) {
+  return String(path || '').includes('/v1/auth/')
+}
+
 export function createApiRequest(runtimeConfig, getAccessToken = null) {
   return function apiRequest(path, options = {}) {
     const headers = {
@@ -235,6 +249,17 @@ export function createApiRequest(runtimeConfig, getAccessToken = null) {
       baseURL,
       ...processedOptions,
       headers,
+      onResponseError(ctx) {
+        // Sessao expirada/invalida em qualquer rota (menos login/logout): aciona o
+        // handler global que desloga e redireciona, em vez de so estourar um toast
+        // enquanto o usuario continua "na tela" achando que esta logado.
+        if (ctx?.response?.status === 401 && !isAuthEndpoint(path)) {
+          unauthorizedHandler?.()
+        }
+        if (typeof options.onResponseError === 'function') {
+          options.onResponseError(ctx)
+        }
+      },
     })
     let requestPromise = fetchPromise
 

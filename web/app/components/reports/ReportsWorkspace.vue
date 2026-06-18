@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { buildReportDataFromApi, buildReportRowsFromApi } from '~/domain/utils/reports'
 import { exportReportCsv, exportReportPdf } from '~/utils/report-export'
 import ReportsFilterToolbar from '~/components/reports/ReportsFilterToolbar.vue'
+import ReportsPausesSection from '~/components/reports/ReportsPausesSection.vue'
 import ReportsQualityTable from '~/components/reports/ReportsQualityTable.vue'
 import ReportsRecentServicesTable from '~/components/reports/ReportsRecentServicesTable.vue'
 import ReportsResultsTable from '~/components/reports/ReportsResultsTable.vue'
@@ -742,6 +743,8 @@ function exportPdf() {
         <ReportsQualityTable :quality="report.quality" />
         <ReportsResultsTable :rows="report.rows" :total="report.totalRows" />
       </div>
+
+      <ReportsPausesSection />
 
       <ReportsRecentServicesTable
         :rows="recentRows"

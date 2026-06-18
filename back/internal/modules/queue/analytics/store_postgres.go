@@ -2,8 +2,10 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
@@ -56,7 +58,10 @@ func (repository *PostgresRepository) LoadSettings(ctx context.Context, storeID 
 		&settings.AlertMinPAScore,
 		&settings.AlertMinTicketAverage,
 	)
-	if err != nil {
+	// Loja sem linha em store_operation_settings nao e' erro: segue com os
+	// defaults (reaplicados no build via maxInt/maxFloat). Evita que uma unica
+	// loja sem settings derrube o analytics do tenant inteiro com 500.
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return StoreSettings{}, err
 	}
 

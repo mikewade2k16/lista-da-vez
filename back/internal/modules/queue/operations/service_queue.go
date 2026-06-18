@@ -53,6 +53,9 @@ func (service *Service) Resume(ctx context.Context, access AccessContext, input 
 	}
 
 	now := nowUnixMilli()
+	// Captura motivo/tipo da pausa ANTES de filtrar, para a sessao de pausa
+	// fechada carregar esses dados (operation_paused_consultants some no resume).
+	pausedReason, pausedKind := pauseReasonAndKind(snapshotState.PausedEmployees, personID)
 	snapshotState.PausedEmployees = filterPaused(snapshotState.PausedEmployees, personID)
 	if !isWaiting(snapshotState.WaitingList, personID) && !isInService(snapshotState.ActiveServices, personID) {
 		snapshotState.WaitingList = append(snapshotState.WaitingList, QueueStateItem{
@@ -69,7 +72,7 @@ func (service *Service) Resume(ctx context.Context, access AccessContext, input 
 	snapshotState.ConsultantActivitySessions, snapshotState.ConsultantCurrentStatus = applyStatusTransitions(
 		snapshotState.ConsultantActivitySessions,
 		snapshotState.ConsultantCurrentStatus,
-		[]transition{{personID: personID, nextStatus: nextStatus}},
+		[]transition{{personID: personID, nextStatus: nextStatus, reason: pausedReason, kind: pausedKind}},
 		now,
 	)
 

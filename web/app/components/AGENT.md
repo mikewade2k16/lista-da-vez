@@ -84,9 +84,10 @@ Antes de criar componente novo:
 
 - [DashboardHeader.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/dashboard/DashboardHeader.vue)
   Header autenticado com conta atual e acoes de sessao. Nao deve expor seletor global de loja; filtros de loja vivem dentro de cada workspace que precisa desse controle.
+  Altura compacta fixa: o header usa padding vertical enxuto (`0.3rem`) e logo reduzida (`clamp(4.5rem, 8vw, 5.6rem)`) para ocupar pouca altura. A altura efetiva e ancorada pelo `min-height: 2.45rem` dos itens de nav. Sem efeito de hover/expansao.
 - [DashboardWorkspaceNav.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/dashboard/DashboardWorkspaceNav.vue)
   Navegacao principal entre workspaces do app.
-  O contexto operacional (pills de fila/atendimento/finalizados) pode aparecer nas rotas `/operacao/*`, mas sem seletor global de loja; o filtro deve existir apenas dentro do workspace que precisa dele.
+  O contexto operacional (pills de fila/atendimento/finalizados) aparece nas rotas `/operacao/*`. O seletor de loja do modo "Todas as lojas" tambem vive aqui, no `workspace-nav-context`, **antes** das pills — visivel so quando `auth.canUseAllStores` E `activeWorkspace === 'operacao'`. Atencao: este nav shell renderiza em TODO `/operacao/*` (inclui as rotas filhas `/operacao/clientes` e `/operacao/usuarios`, que sao workspaces distintos), entao o seletor e gateado pelo workspace ATIVO exato, nao pelo prefixo do path — so existe na propria pagina de operacao. NAO e um seletor global de loja: apenas escreve `integratedStoreId` no `stores/operations.ts` (lido pela pagina de operacao); nenhum outro modulo le esse filtro. Mudou so o lugar de render (do corpo da pagina para a barra do nav) para economizar altura.
 
 ### `data`
 
@@ -108,6 +109,8 @@ Antes de criar componente novo:
 
 - [MultiStoreWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreWorkspace.vue)
   Workspace administrativo de lojas e comparativo multiloja.
+- [MultiStoreLojasSection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreLojasSection.vue)
+  Grid de cadastro/edicao inline de lojas (nome, codigo, cidade, `storeType` Shopping/Bairro, template, status). Fonte autoritativa = `useMultiStoreStore.managedStores` (de `GET /v1/stores`, que inclui `storeType` do banco `queue.stores`). O draft de cada linha e' SEMPRE re-hidratado do servidor; so se preserva enquanto `touched`/`rowBusy` (edicao pendente). Nao semear draft de fonte parcial (contexto sem `storeType`) — senao o select reverte para 'bairro' no reload mesmo com o banco em 'shopping'.
 - [MultiStoreUserAccessCard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/multistore/MultiStoreUserAccessCard.vue)
   Card de gerenciamento de acessos, papeis e onboarding de usuarios.
 

@@ -10,12 +10,12 @@ import {
   crmListUsageStatusLabel,
 } from '~/domain/utils/crm-list-usage'
 import {
-  calculateCrmGoalPayout,
   classifyCrmListUsageRate,
   type CrmGoalPayoutPolicy,
-  type CrmGoalPayoutRule,
   type CrmListUsageTier,
 } from '~/domain/utils/crm-performance-policy'
+import { consultantPayoutLabel } from '~/domain/utils/consultant-payout-display'
+import { normalizeErpPayout, type ErpPayout } from '~/domain/utils/consultant-integrated-view'
 import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
 import type { CRMConsultantMetric } from '~/stores/crm'
 import type { ErpConsultantLinkOption } from '~/stores/erp'
@@ -142,15 +142,9 @@ const decoratedConsultants = computed(() =>
     const usageRate = crmListUsageCoverageRate(row)
     const listTier = classifyCrmListUsageRate(usageRate, props.listUsageTiers)
     const storeGoalProgress = storeGoalProgressForRow(row)
-    // Base do recebimento = total vendido da LOJA (decisao de negocio): a faixa e
-    // destravada pelo % da meta da loja e o % incide sobre o total da loja, nao sobre
-    // as vendas do consultor. Mesmo modelo dos cards de consultor.
-    const goalPayout = calculateCrmGoalPayout(
-      storeSoldCentsForRow(row),
-      storeGoalProgress,
-      props.goalPayoutPolicy,
-      'consultant',
-    )
+    // Recebimento do consultor vem PRONTO do back (% da PRÓPRIA venda), no mesmo
+    // payload /v1/erp/crm (byConsultant.payout). Front é display: nada recalculado.
+    const payout = payoutForRow(row)
 
     return {
       ...row,
@@ -167,8 +161,9 @@ const decoratedConsultants = computed(() =>
       queueUsageOrdersValue: crmListUsageOrders(row),
       queueUsageAttendancesValue: crmListUsageAttendances(row),
       queueCancellationRateValue: cancellationRate,
-      goalPayoutCentsValue: goalPayout.amountCents,
-      goalPayoutRuleLabel: goalPayoutRuleLabel(goalPayout.rule),
+      // payout.amount vem em R$; a coluna formata centavos.
+      goalPayoutCentsValue: payout ? Math.round(payout.amount * 100) : 0,
+      goalPayoutRuleLabel: consultantPayoutLabel(payout),
       storeGoalProgressValue: storeGoalProgress,
       belowAverageQueueUse: listStatus === 'partial' || listStatus === 'unused',
     }
@@ -403,14 +398,9 @@ function storeGoalProgressForRow(row: MergedCrmConsultant) {
   return Number(props.storeGoalProgressBySlug?.[String(row.storeSlug || '').trim()] || 0)
 }
 
-function storeSoldCentsForRow(row: MergedCrmConsultant) {
-  return Number(props.storeSoldCentsBySlug?.[String(row.storeSlug || '').trim()] || 0)
-}
-
-function goalPayoutRuleLabel(rule: CrmGoalPayoutRule | null) {
-  if (!rule) return 'sem faixa'
-  if (rule.mode === 'amount') return formatCurrencyBRL(rule.value)
-  return `${rule.value.toFixed(1)}%`
+// Lê o payout pré-calculado embutido no item de byConsultant pelo back.
+function payoutForRow(row: MergedCrmConsultant): ErpPayout | null {
+  return normalizeErpPayout((row as Record<string, unknown>).payout)
 }
 
 function sortValue(row: Record<string, unknown>, field: string) {

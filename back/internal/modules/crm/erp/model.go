@@ -288,50 +288,103 @@ type CRMSummary struct {
 }
 
 type CRMStoreMetric struct {
-	StoreSlug            string   `json:"storeSlug"`
-	StoreLabel           string   `json:"storeLabel"`
-	StoreCode            string   `json:"storeCode,omitempty"`
-	StoreName            string   `json:"storeName,omitempty"`
-	StoreCNPJs           []string `json:"storeCnpjs,omitempty"`
-	Mapped               bool     `json:"mapped"`
-	Orders               int      `json:"orders"`
-	Units                int64    `json:"units"`
-	SalesCents           int64    `json:"salesCents"`
-	TicketAverageCents   int64    `json:"ticketAverageCents"`
-	ValuePerProductCents int64    `json:"valuePerProductCents"`
-	PAScore              float64  `json:"paScore"`
-	MonthlyGoalCents     int64    `json:"monthlyGoalCents"`
-	AvgTicketGoalCents   int64    `json:"avgTicketGoalCents"`
-	PAGoal               float64  `json:"paGoal"`
-	GoalProgress         float64  `json:"goalProgress"`
-	RemainingToGoalCents int64    `json:"remainingToGoalCents"`
-	ERPCancellations     int      `json:"erpCancellations,omitempty"`
-	ERPCancellationRate  float64  `json:"erpCancellationRate,omitempty"`
+	StoreSlug            string       `json:"storeSlug"`
+	StoreLabel           string       `json:"storeLabel"`
+	StoreCode            string       `json:"storeCode,omitempty"`
+	StoreName            string       `json:"storeName,omitempty"`
+	StoreCNPJs           []string     `json:"storeCnpjs,omitempty"`
+	Mapped               bool         `json:"mapped"`
+	Orders               int          `json:"orders"`
+	Units                int64        `json:"units"`
+	SalesCents           int64        `json:"salesCents"`
+	TicketAverageCents   int64        `json:"ticketAverageCents"`
+	ValuePerProductCents int64        `json:"valuePerProductCents"`
+	PAScore              float64      `json:"paScore"`
+	MonthlyGoalCents     int64        `json:"monthlyGoalCents"`
+	AvgTicketGoalCents   int64        `json:"avgTicketGoalCents"`
+	PAGoal               float64      `json:"paGoal"`
+	GoalProgress         float64      `json:"goalProgress"`
+	RemainingToGoalCents int64        `json:"remainingToGoalCents"`
+	ERPCancellations     int          `json:"erpCancellations,omitempty"`
+	ERPCancellationRate  float64      `json:"erpCancellationRate,omitempty"`
+	StoreType            string       `json:"storeType"`
+	ManagerPayout        *PayoutStore `json:"managerPayout,omitempty"`
+	SupportPayout        *PayoutStore `json:"supportPayout,omitempty"`
+
+	// Progresso EFETIVO da loja usado no gate de comissao (em reais). A meta cai na
+	// soma das metas dos consultores quando a loja nao tem meta propria cadastrada,
+	// para o display bater EXATAMENTE com o numero usado no calculo (evita o
+	// "GoalProgress" cru, que usava so a meta da loja e estourava o %).
+	StoreSold     float64 `json:"storeSold"`
+	StoreGoal     float64 `json:"storeGoal"`
+	StoreProgress float64 `json:"storeProgress"`
+
+	// Flags de gap (aviso acionavel inline): de onde veio a meta da loja e quais
+	// configs estao faltando. Derivados dos insumos ja carregados em applyCRMPayouts
+	// (sem recalcular). "own" = loja tem monthly_goal proprio; "consultant-sum" =
+	// caiu na soma das metas dos consultores; "none" = sem meta alguma.
+	StoreGoalSource      string `json:"storeGoalSource"`
+	MissingStoreGoal     bool   `json:"missingStoreGoal"`
+	MissingTicketGoal    bool   `json:"missingTicketGoal"`
+	MissingPaGoal        bool   `json:"missingPaGoal"`
+	SplitConsultantCount int    `json:"splitConsultantCount"`
+}
+
+// PayoutConsultant e o payout por consultor embutido em byConsultant.
+type PayoutConsultant struct {
+	Amount         float64 `json:"amount"`
+	RatePercent    float64 `json:"ratePercent"`
+	Base           float64 `json:"base"`
+	Group          string  `json:"group"`
+	RuleLabel      string  `json:"ruleLabel"`
+	PenaltyApplied float64 `json:"penaltyApplied"`
+}
+
+// PayoutStore e o payout de gerente/caixa resolvido por loja (store_type ja decidido).
+type PayoutStore struct {
+	Amount      float64 `json:"amount"`
+	RatePercent float64 `json:"ratePercent"`
+	RuleLabel   string  `json:"ruleLabel"`
 }
 
 type CRMConsultantMetric struct {
-	ConsultantID          string  `json:"consultantId"`
-	ConsultantName        string  `json:"consultantName"`
-	ERPEmployeeID         string  `json:"erpEmployeeId,omitempty"`
-	ProfileConsultantID   string  `json:"profileConsultantId,omitempty"`
-	ProfileConsultantName string  `json:"profileConsultantName,omitempty"`
-	ProfileUserID         string  `json:"profileUserId,omitempty"`
-	ProfileStoreID        string  `json:"profileStoreId,omitempty"`
-	ProfileStoreCode      string  `json:"profileStoreCode,omitempty"`
-	ProfileStoreName      string  `json:"profileStoreName,omitempty"`
-	LinkStatus            string  `json:"linkStatus,omitempty"`
-	LinkConfidence        float64 `json:"linkConfidence,omitempty"`
-	LinkCandidates        int     `json:"linkCandidates,omitempty"`
-	StoreSlug             string  `json:"storeSlug"`
-	StoreLabel            string  `json:"storeLabel"`
-	StoreCNPJ             string  `json:"storeCnpj,omitempty"`
-	Mapped                bool    `json:"mapped"`
-	Orders                int     `json:"orders"`
-	Units                 int64   `json:"units"`
-	SalesCents            int64   `json:"salesCents"`
-	TicketAverageCents    int64   `json:"ticketAverageCents"`
-	ValuePerProductCents  int64   `json:"valuePerProductCents"`
-	PAScore               float64 `json:"paScore"`
+	ConsultantID          string            `json:"consultantId"`
+	ConsultantName        string            `json:"consultantName"`
+	ERPEmployeeID         string            `json:"erpEmployeeId,omitempty"`
+	ProfileConsultantID   string            `json:"profileConsultantId,omitempty"`
+	ProfileConsultantName string            `json:"profileConsultantName,omitempty"`
+	ProfileUserID         string            `json:"profileUserId,omitempty"`
+	ProfileStoreID        string            `json:"profileStoreId,omitempty"`
+	ProfileStoreCode      string            `json:"profileStoreCode,omitempty"`
+	ProfileStoreName      string            `json:"profileStoreName,omitempty"`
+	LinkStatus            string            `json:"linkStatus,omitempty"`
+	LinkConfidence        float64           `json:"linkConfidence,omitempty"`
+	LinkCandidates        int               `json:"linkCandidates,omitempty"`
+	StoreSlug             string            `json:"storeSlug"`
+	StoreLabel            string            `json:"storeLabel"`
+	StoreCNPJ             string            `json:"storeCnpj,omitempty"`
+	Mapped                bool              `json:"mapped"`
+	Orders                int               `json:"orders"`
+	Units                 int64             `json:"units"`
+	SalesCents            int64             `json:"salesCents"`
+	TicketAverageCents    int64             `json:"ticketAverageCents"`
+	ValuePerProductCents  int64             `json:"valuePerProductCents"`
+	PAScore               float64           `json:"paScore"`
+	MonthlyGoalCents      int64             `json:"monthlyGoalCents"`
+	AvgTicketGoalCents    int64             `json:"avgTicketGoalCents"`
+	PAGoal                float64           `json:"paGoal"`
+	GoalProgress          float64           `json:"goalProgress"`
+	Payout                *PayoutConsultant `json:"payout,omitempty"`
+
+	// Flags de gap (aviso acionavel inline): de onde veio a meta mensal do consultor
+	// e quais metas estao faltando. Derivados dos insumos ja carregados em
+	// applyConsultantPayout (sem recalcular). "own" = consultor tem meta mensal
+	// propria; "store-split" = herdou a meta da loja dividida entre N consultores;
+	// "none" = sem meta alguma. Ticket/PA "missing" considera tambem a heranca da loja.
+	GoalSource         string `json:"goalSource"`
+	MissingMonthlyGoal bool   `json:"missingMonthlyGoal"`
+	MissingTicketGoal  bool   `json:"missingTicketGoal"`
+	MissingPaGoal      bool   `json:"missingPaGoal"`
 }
 
 // QueueConsultantStats contem indicadores de atendimento da fila por consultor.
@@ -379,6 +432,18 @@ type CRMOverviewResponse struct {
 	Consultants []CRMConsultantMetric `json:"consultants"`
 	QueueStats  *QueueStats           `json:"queueStats,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
+}
+
+// ConsultantGoalStat e o atingimento de meta CANONICO de um consultor de PERFIL,
+// derivado de CRMConsultantMetric. Usado pela ponte server-side que enriquece o
+// snapshot da Operacao (queue/operations) com a meta vinda do CRM, sem expor o
+// payload inteiro do /v1/erp/crm (que e gestao-only). Valores em reais.
+type ConsultantGoalStat struct {
+	MonthlyGoal     float64
+	SoldValue       float64
+	RemainingToGoal float64
+	Progress        float64
+	HasGoal         bool
 }
 
 type ConsultantERPLinkEmployeeRow struct {

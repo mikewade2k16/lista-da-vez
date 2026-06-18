@@ -34,6 +34,32 @@ Um usuario = **UMA linha em `core.users`** (fonte da verdade), sem tabela legada
 
 Papeis/permissoes migram 100% para `core.*` (`core.account_users` + `core.user_role_assignments` + `core.role_permissions`), eliminando `user_tenant_roles`/`user_store_roles`/`user_platform_roles`. O auth deve resolver papel a partir do `core.*`, nao do legado.
 
+### Nada hardcoded — toda informacao vem do banco (round-trip completo banco <-> back <-> front)
+
+Nao trabalhamos com dado hardcoded. **Toda** informacao exibida no front vem do banco, atraves do back; **toda** alteracao no front vai ao back e e' gravada no banco. O fluxo e' SEMPRE:
+- **Leitura:** banco -> back (API) -> front.
+- **Escrita:** front -> back (API) -> banco -> e o front re-le do banco (ou usa o objeto que a API retornou). Nunca confiar so no estado local "achando que salvou".
+
+Regras concretas:
+1. **Sem valor cravado no codigo nem default que minta.** Nenhum default no front (ex.: `'bairro'`) pode sobreviver a uma leitura do banco que diga outra coisa. Default e' so o estado inicial *antes* do dado real chegar — assim que o endpoint autoritativo responde, o valor do banco vence.
+2. **So a fonte autoritativa do recurso renderiza o dado de verdade.** O front NUNCA mostra um campo real (que existe no banco) a partir de fonte parcial/secundaria (contexto, cache, fallback, localStorage) que nao tem aquele campo. Se a fonte autoritativa (o endpoint do recurso) ainda nao chegou, mostrar loading/vazio — nao um default que mascare o dado.
+3. **Draft/estado de edicao re-hidrata do back.** Qualquer rascunho de edicao no front e' re-hidratado a partir da resposta do back assim que ela chega; so se preserva enquanto houver edicao pendente do usuario naquela linha/campo (flag `touched`/dirty). Draft semeado de fonte incompleta NAO pode "grudar".
+4. **Cadeia completa para campo novo.** Campo novo numa tela exige a cadeia inteira confirmada: coluna/jsonb no banco -> SELECT no repo -> DTO no service/handler -> store/composable no front -> componente. Faltou um elo = o dado nao fecha o ciclo.
+
+- **Por que:** Aconteceu (2026-06-17): o "Tipo de loja" (`store_type`) no multiloja era gravado certo no banco (`queue.stores`, e a API `/v1/stores` ja devolvia `storeType`), mas o front montava o draft a partir de `auth.storeContext` (contexto, SEM `storeType`) que chegava ANTES do `/v1/stores`; um `??` preservava esse draft semeado de `'bairro'` e ignorava o valor real (`'shopping'`) que vinha do banco logo depois. O usuario trocava para Shopping, recarregava e "voltava" para Bairro — parecia que nao salvava, mas o banco ja estava correto; o bug era o front nao re-hidratar do banco.
+- **Aplica quando:** SEMPRE. Ao depurar "nao salvou / reverteu", checar PRIMEIRO se o dado esta no banco (psql) e se a API autoritativa o devolve, ANTES de mexer no back — o problema costuma ser o front exibindo de uma fonte que nao e' o banco. Detalhe dos pilares em [docs/ENGINEERING_PRINCIPLES.md](docs/ENGINEERING_PRINCIPLES.md).
+
+### Mapa: calculo de comissao (recebimento por atingimento de meta) — onde vive
+
+Exemplo canonico de "logica no back, fonte unica, embutida no payload" + "config e dado no banco". Para achar rapido:
+
+- **Politica (config editavel na tela):** JSONB `queue.tenant_operation_core_settings.crm_goal_payout_policy` (por tenant). Migrations `0139`/`0162`/`0163`. Default no back: `back/internal/modules/queue/settings/defaults.go` (`defaultCRMGoalPayoutPolicyJSON`). Grupos: `consultant`, `managerShopping`, `managerBairro`, `support` + `consultantRules` (base, penalidade por metrica, gate da loja: floor/full/reducedRate/reducedRequiresOwnPercent).
+- **Editor (front):** `web/app/components/settings/sections/SettingsCrmGoalsSection.vue` + `SettingsCrmConsultantRules.vue` → `useSettingsWorkspace.js` → `stores/settings.ts` `updateCrmCommercialPolicy` → `PATCH /v1/settings/crm-policy` (auth: `platform_admin`/`director`).
+- **Calculo (FONTE UNICA, Go puro):** pacote `back/internal/modules/queue/commission/` — `calculate.go` (`Calculate`, `ResolveRule`, `MapRoleToGroup`), `model.go` (`Policy`/`Input`/`Result`), `policy_json.go` (parse do JSONB). Tipos espelhados (so normalize, NAO recalcula) no front: `web/app/domain/utils/crm-performance-policy.ts`.
+- **Onde e aplicado (embute no payload existente):** `back/internal/modules/crm/erp/repository_crm_payout.go` (`loadCRMPayoutInputs` + `applyCRMPayouts`), chamado em `repository_crm.go` no build do `GET /v1/erp/crm`. Metas vem de `queue.operation_goal_targets` (meta de loja = `consultant_id` null; meta de consultor = `consultant_id` preenchido; ticket/PA do consultor herdam os da loja quando 0).
+- **DTO consumido pelo front (`crm/erp/model.go`):** por consultor `payout {amount, ratePercent, base, group, ruleLabel, penaltyApplied}` + `goalProgress` (% do consultor); por loja `managerPayout`/`supportPayout` + `storeProgress`/`storeSold`/`storeGoal`/`storeType` (% da loja). O front SO exibe (nao recalcula); `mapRoleToPayoutGroup` decide consultor/gerente/caixa.
+- **AGENT.md detalhados:** `back/internal/modules/queue/commission/AGENT.md`, `crm/erp/AGENT.md`, `queue/settings/AGENT.md`.
+
 ---
 
 ## Frontend
@@ -98,6 +124,17 @@ Quando um modulo/pagina nao esta pronto, usar `hidden: true` em `web/app/utils/s
 - **Por que:** Evita que usuario navegue para pagina quebrada. Beta deixa explicito que a feature pode mudar.
 - **Aplica quando:** Adicionar/remover modulo do menu lateral.
 
+### Criar pagina nova — checar rota-pai, gating de path e workspace ANTES (falha silenciosa)
+Ao criar `web/app/pages/<...>.vue`, rodar esta checagem ANTES. Os tres primeiros itens falham **sem erro de build nem de type-check** — so aparecem testando a rota no browser (a tela "abre outra pagina" ou redireciona):
+
+1. **Rota-pai engole a filha.** Se ja existe o ARQUIVO `pages/<x>.vue`, qualquer `pages/<x>/<y>.vue` vira rota-FILHA dele e so renderiza se `<x>.vue` tiver `<NuxtPage/>`. Sem isso, o pai mostra o proprio conteudo e a filha "some". Antes de criar `pages/<x>/<y>.vue`, conferir que NAO existe `pages/<x>.vue` (arquivo) — se existir, usar outro prefixo.
+2. **Gating de path em `module-enabled.global.ts`.** A path herda o gating do prefixo: cair num `MODULE_PATH_GUARDS` (`/configuracoes`, `/operacao`, `/consultor`, `/ranking`, `/dados`, `/relatorios`, `/multiloja`, `/alertas`, `/feedback` → `queue`; `/crm`, `/erp` → `crm`; `/site/*` → `site`; `/cardapio` → `cardapio`; `/meta-ads` → `meta_ads`) exige aquele modulo contratado pela conta ativa. Pagina GLOBAL/admin (nao-de-modulo) NUNCA pode ficar sob prefixo de modulo. `/manage/*` (fora de `AGENCY_ONLY_PATHS`) e "sempre acessivel" — lar correto de tela global/admin de plataforma.
+3. **Gate de workspace em `auth.global.ts`.** `definePageMeta({ workspaceId })` redireciona se o id nao estiver em `auth.allowedWorkspaces`. Por isso o wiring de 3 arquivos e obrigatorio: `web/app/utils/workspaces.ts` + `web/app/domain/utils/permissions.ts` (com o id no `ROLE_WORKSPACES` do papel-alvo) + `web/layers/queue/nav.config.ts` — ver ENGINEERING_PRINCIPLES (registro 2026-05-29).
+4. **Estatico vence dinamico.** Se a pasta tem `[param].vue`, a rota estatica nova vence no path exato (ok) — mas confirme que e a SUA pagina que renderiza.
+
+- **Por que:** Aconteceu (2026-06-16): criei `pages/configuracoes/menu.vue` (config GLOBAL do menu) e a rota abria a pagina da FILA — `configuracoes.vue` (arquivo) virava rota-pai e engolia a filha; alem disso `/configuracoes` e gated por `queue` (uma config de plataforma nao pode depender do modulo da Fila). Resolvido movendo para `pages/manage/menu-layout.vue` (`/manage/menu-layout`, sempre acessivel). Nenhum dos tres checks da erro de build/type-check — so o browser revela.
+- **Aplica quando:** Criar QUALQUER pagina nova (`pages/**/*.vue`). Rodar os 4 checks; depois abrir a rota no browser pelo papel-alvo e confirmar que renderiza a pagina certa (nao a do pai nem um redirect).
+
 ### Cabecalho de pagina admin SEMPRE via `AdminPageHeader` (respeita o toggle global)
 O eyebrow/titulo/descricao do topo de QUALQUER pagina admin tem que vir do componente compartilhado `AdminPageHeader` — que consome `useAdminPageHeaderVisibility` (layer core) e respeita o toggle GLOBAL de cabecalho (themes > "PAGE HEADERS": eyebrow/title/description / "Desativar tudo"). NUNCA renderizar eyebrow/titulo/descricao a mao (markup proprio) numa pagina, senao o "desativar" nao funciona naquela pagina.
 
@@ -109,6 +146,18 @@ Todo dropdown, popover, menu suspenso ou seletor aberto por clique DEVE fechar q
 
 - **Por que:** Aconteceu (CoreAccountSwitcher): o dropdown so fechava ao selecionar item ou clicar no trigger; clicar fora deixava ele aberto/preso. Dropdown que nao fecha no clique-fora atrapalha a navegacao e parece travado.
 - **Aplica quando:** Criar OU revisar QUALQUER pagina/componente com dropdown/popover/menu feito a mao. Ao entrar numa pagina que tem dropdown, VERIFICAR esse comportamento (fecha fora/opcao/Esc) antes de considerar pronto.
+
+### Config/dado faltando = aviso ACIONAVEL inline; editar de QUALQUER tela via API (sem caçar a tela de config)
+
+Em producao, dados que o calculo usa VAO faltar (ex.: meta de ticket/PA da loja, meta por consultor, `store_type`) ate o pessoal se acostumar a preencher. A tela NUNCA pode mascarar isso nem obrigar o usuario a procurar a pagina especifica de edicao. Padrao obrigatorio:
+
+1. **Transparencia primeiro — o numero nunca mente sobre a origem.** Onde o dado faltante muda o resultado, mostrar um aviso claro e honesto ali mesmo: "Sem meta de ticket/PA cadastrada — penalidade de qualidade desligada"; "Sem meta individual — meta da loja R$ X dividida igualmente entre N consultores"; "Loja sem `store_type` — usando padrao bairro". O usuario entende de onde veio o valor.
+2. **Aviso CLICAVEL = editor inline na hora.** Se o usuario tem permissao de editar aquilo, o aviso abre um editor inline (popover/drawer/modal) NA PROPRIA tela, que grava via a MESMA API canonica do recurso. Proibido mandar o usuario "ir em Configuracoes > X" para corrigir um dado que o aviso ja apontou.
+3. **Mesma acao em qualquer tela — componente/composable compartilhado.** O editor inline e UM componente + composable reutilizavel (ex.: `useGoalQuickEdit` + `QuickEditPopover`), usado identico em /operacao, /consultor, /ranking, multiloja, etc. O dado aparece em N telas → a acao de editar existe nas N telas, sem reimplementar por tela e sem divergir.
+4. **Gate por permissao espelhando o back + re-hidrata.** So quem pode editar ve o aviso clicavel (os demais veem so o informativo). Apos salvar, re-hidratar do back (regra [[Nada hardcoded — toda informacao vem do banco]]). A FONTE continua unica (a API do recurso); muda so o PONTO DE ENTRADA da edicao, nunca a fonte.
+
+- **Por que:** Aconteceu (2026-06-17, Perola Jardins): a loja estava sem meta de ticket/PA (penalidade de qualidade silenciosamente desligada) e sem meta por consultor (meta da loja dividida por igual entre os consultores, com uma conta renomeada inflando o divisor) — tudo isso mudava o calculo da comissao SEM nenhum aviso na tela, e a unica forma de corrigir era achar a tela de config certa. Aviso acionavel inline torna o gap visivel e corrigivel de onde o usuario ja esta: dinamico e facil, em vez de engessado.
+- **Aplica quando:** QUALQUER tela que consome dado/config que pode faltar e cuja ausencia altera o resultado exibido. Preferir SEMPRE aviso acionavel inline a (a) mascarar o gap com um default silencioso ou (b) obrigar navegacao ate a tela de config.
 
 ---
 

@@ -37,6 +37,8 @@ import {
 import type { NavItem } from '~/stores/nav'
 import { useNavStore } from '~/stores/nav'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
+import { useMenuLayoutStore } from '~/stores/menuLayout'
+import type { MenuPlacement } from '~/stores/menuLayout'
 import { QUEUE_ONLY_WORKSPACE_IDS } from '~/utils/workspaces'
 
 export const NAV_ICON_MAP: Record<string, unknown> = {
@@ -101,6 +103,7 @@ export function useDashboardNav(
   const navStore = useNavStore()
   const route = useRoute()
   const accountStore = useCoreAccountStore()
+  const menuLayoutStore = useMenuLayoutStore()
 
   const allowedWorkspaceSet = computed(() => new Set(allowedWorkspaces.value || []))
   const enabledModulesSet = computed(() => new Set(accountStore.enabledModules))
@@ -200,7 +203,65 @@ export function useDashboardNav(
     return NAV_ICON_MAP[icon] || LayoutPanelLeft
   }
 
-  const visibleSections = computed(() =>
+  // Posicao efetiva de um item segundo a config GLOBAL do menu. Sem layout
+  // salvo o store devolve 'both' (default) — nesse caso o comportamento e o
+  // de hoje: o item aparece no header e na sidebar.
+  function effectivePlacement(item: NavItem): MenuPlacement {
+    return menuLayoutStore.placementOf(item.id)
+  }
+
+  // Ordena itens pela ordem da config global; empate cai na ordem declarada
+  // (estavel, pois orderOf devolve MAX_SAFE_INTEGER quando nao ha override).
+  function sortByConfiguredOrder(items: NavItem[]): NavItem[] {
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const delta = menuLayoutStore.orderOf(a.item.id) - menuLayoutStore.orderOf(b.item.id)
+        return delta !== 0 ? delta : a.index - b.index
+      })
+      .map((entry) => entry.item)
+  }
+
+  // Mantem itens visiveis na SIDEBAR: placement sidebar/both. Aplica
+  // recursivamente aos filhos e ordena pela config global. Grupos sem filho
+  // elegivel sao descartados.
+  function keepForSidebar(item: NavItem): NavItem | null {
+    if (Array.isArray(item.children)) {
+      const children = sortByConfiguredOrder(
+        item.children.filter((child) => {
+          const placement = effectivePlacement(child)
+          return placement === 'sidebar' || placement === 'both'
+        }),
+      )
+      if (!children.length) return null
+      return { ...item, children }
+    }
+    const placement = effectivePlacement(item)
+    if (placement !== 'sidebar' && placement !== 'both') return null
+    return item
+  }
+
+  // Mantem itens visiveis no HEADER: placement header/both. Um grupo entra se o
+  // proprio grupo for header/both E tiver ao menos um filho elegivel.
+  function keepForHeader(item: NavItem): NavItem | null {
+    const placement = effectivePlacement(item)
+    if (placement !== 'header' && placement !== 'both') return null
+    if (Array.isArray(item.children)) {
+      const children = sortByConfiguredOrder(
+        item.children.filter((child) => {
+          const childPlacement = effectivePlacement(child)
+          return childPlacement === 'header' || childPlacement === 'both'
+        }),
+      )
+      if (!children.length) return null
+      return { ...item, children }
+    }
+    return item
+  }
+
+  // Secoes filtradas por permissao/modulo/agencyOnly/hidden (visao canonica do
+  // usuario), antes de aplicar o split header/sidebar.
+  const allowedSections = computed(() =>
     navStore.sections
       .filter((section) => !section.hidden)
       .map((section) => ({
@@ -210,11 +271,40 @@ export function useDashboardNav(
       .filter((section) => section.items.length > 0),
   )
 
-  const headerItems = computed(() =>
-    visibleSections.value.flatMap((section) =>
-      section.items.map((item) => ({ ...item, sectionLabel: section.label })),
-    ),
-  )
+  // Ordena as secoes pela config global (sectionOrderOf); empate mantem a ordem
+  // de registro.
+  function sortSectionsByConfiguredOrder<T extends { id: string }>(sections: T[]): T[] {
+    return sections
+      .map((section, index) => ({ section, index }))
+      .sort((a, b) => {
+        const delta =
+          menuLayoutStore.sectionOrderOf(a.section.id) -
+          menuLayoutStore.sectionOrderOf(b.section.id)
+        return delta !== 0 ? delta : a.index - b.index
+      })
+      .map((entry) => entry.section)
+  }
+
+  const visibleSections = computed(() => {
+    const sections = allowedSections.value
+      .map((section) => {
+        const items = sortByConfiguredOrder(
+          section.items.map(keepForSidebar).filter((i): i is NavItem => i !== null),
+        )
+        return { ...section, items }
+      })
+      .filter((section) => section.items.length > 0)
+    return sortSectionsByConfiguredOrder(sections)
+  })
+
+  const headerItems = computed(() => {
+    const sections = sortSectionsByConfiguredOrder(allowedSections.value)
+    return sections.flatMap((section) =>
+      sortByConfiguredOrder(
+        section.items.map(keepForHeader).filter((i): i is NavItem => i !== null),
+      ).map((item) => ({ ...item, sectionLabel: section.label })),
+    )
+  })
 
   return { visibleSections, headerItems, resolveIcon, isItemActive, isGroupActive }
 }

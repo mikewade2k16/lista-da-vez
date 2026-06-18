@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  DEFAULT_CRM_CONSULTANT_RULES,
   DEFAULT_CRM_GOAL_PAYOUT_POLICY,
-  calculateCrmGoalPayout,
-  calculateStoreGoalPayout,
   classifyCrmListUsageRate,
-  mapRoleToPayoutGroup,
   normalizeCrmGoalPayoutPolicy,
 } from './crm-performance-policy'
 
@@ -17,63 +15,52 @@ describe('crm performance policy utils', () => {
     expect(classifyCrmListUsageRate(100, null).label).toBe('Perfeito')
   })
 
-  it('calculates consultant payout from store goal progress', () => {
-    const result = calculateCrmGoalPayout(
-      181_336_07,
-      120,
-      DEFAULT_CRM_GOAL_PAYOUT_POLICY,
-      'consultant',
-    )
-
-    expect(result.rule?.value).toBe(3.2)
-    expect(result.amountCents).toBe(580_275)
-  })
-
-  it('maps store role to the payout group', () => {
-    expect(mapRoleToPayoutGroup('queue.manager')).toBe('manager')
-    expect(mapRoleToPayoutGroup('Gerente')).toBe('manager')
-    expect(mapRoleToPayoutGroup('cashier')).toBe('support')
-    expect(mapRoleToPayoutGroup('Caixa e auxiliar')).toBe('support')
-    expect(mapRoleToPayoutGroup('queue.consultant')).toBe('consultant')
-    expect(mapRoleToPayoutGroup('')).toBe('consultant')
-  })
-
-  it('calculates store goal payout over the store total for percent rules', () => {
-    const result = calculateStoreGoalPayout({
-      storeSold: 250_000,
-      storeProgress: 120,
-      policy: DEFAULT_CRM_GOAL_PAYOUT_POLICY,
-      role: 'consultant',
-    })
-
-    expect(result.group).toBe('consultant')
-    expect(result.rule?.value).toBe(3.2)
-    expect(result.amount).toBeCloseTo(8_000)
-  })
-
-  it('returns the fixed amount for support and no payout below the lowest threshold', () => {
-    const support = calculateStoreGoalPayout({
-      storeSold: 250_000,
-      storeProgress: 100,
-      policy: DEFAULT_CRM_GOAL_PAYOUT_POLICY,
-      role: 'caixa',
-    })
-    expect(support.rule?.mode).toBe('amount')
-    expect(support.amount).toBe(100)
-
-    const belowFloor = calculateStoreGoalPayout({
-      storeSold: 250_000,
-      storeProgress: 50,
-      policy: DEFAULT_CRM_GOAL_PAYOUT_POLICY,
-      role: 'consultant',
-    })
-    expect(belowFloor.rule).toBeNull()
-    expect(belowFloor.amount).toBe(0)
-  })
-
   it('preserves an explicit empty group but falls back to defaults when absent', () => {
     const policy = normalizeCrmGoalPayoutPolicy({ consultant: [] })
     expect(policy.consultant).toEqual([])
-    expect(policy.manager).toEqual(DEFAULT_CRM_GOAL_PAYOUT_POLICY.manager)
+    expect(policy.managerShopping).toEqual(DEFAULT_CRM_GOAL_PAYOUT_POLICY.managerShopping)
+    expect(policy.managerBairro).toEqual(DEFAULT_CRM_GOAL_PAYOUT_POLICY.managerBairro)
+    expect(policy.support).toEqual(DEFAULT_CRM_GOAL_PAYOUT_POLICY.support)
+  })
+
+  it('seeds both manager groups from the legacy manager array', () => {
+    const legacy = [{ threshold: 80, value: 0.8, mode: 'percent' as const }]
+    const policy = normalizeCrmGoalPayoutPolicy({ manager: legacy })
+    expect(policy.managerShopping).toEqual(legacy)
+    expect(policy.managerBairro).toEqual(legacy)
+  })
+
+  it('keeps explicit manager groups over the legacy fallback', () => {
+    const policy = normalizeCrmGoalPayoutPolicy({
+      manager: [{ threshold: 80, value: 0.8, mode: 'percent' }],
+      managerShopping: [{ threshold: 100, value: 1, mode: 'percent' }],
+      managerBairro: [],
+    })
+    expect(policy.managerShopping).toEqual([{ threshold: 100, value: 1, mode: 'percent' }])
+    expect(policy.managerBairro).toEqual([])
+  })
+
+  it('normalizes consultant rules with defaults and overrides', () => {
+    const fallback = normalizeCrmGoalPayoutPolicy({})
+    expect(fallback.consultantRules).toEqual(DEFAULT_CRM_CONSULTANT_RULES)
+
+    const overridden = normalizeCrmGoalPayoutPolicy({
+      consultantRules: {
+        base: 'store',
+        qualityPenaltyPercent: 0.2,
+        storeFloorPercent: 45,
+        storeFullPercent: 75,
+        reducedRate: 1.2,
+        reducedRequiresOwnPercent: 95,
+      },
+    })
+    expect(overridden.consultantRules).toEqual({
+      base: 'store',
+      qualityPenaltyPercent: 0.2,
+      storeFloorPercent: 45,
+      storeFullPercent: 75,
+      reducedRate: 1.2,
+      reducedRequiresOwnPercent: 95,
+    })
   })
 })

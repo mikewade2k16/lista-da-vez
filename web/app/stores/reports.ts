@@ -27,6 +27,7 @@ export const useReportsStore = defineStore('reports', () => {
   const results = ref(null)
   const recentServices = ref(null)
   const multiStoreOverview = ref(null)
+  const pauses = ref(null)
   const pending = ref(false)
   const ready = ref(false)
   const errorMessage = ref('')
@@ -67,6 +68,7 @@ export const useReportsStore = defineStore('reports', () => {
     results.value = null
     recentServices.value = null
     multiStoreOverview.value = null
+    pauses.value = null
     ready.value = false
     errorMessage.value = ''
     lastLoadedKey.value = ''
@@ -157,20 +159,27 @@ export const useReportsStore = defineStore('reports', () => {
     errorMessage.value = ''
 
     try {
-      const [overviewResponse, resultsResponse, recentServicesResponse] = await Promise.all([
-        apiRequest(
-          `/v1/reports/overview?${buildRequestParams(storeId, RESULTS_PAGE_SIZE).toString()}`,
-        ),
-        apiRequest(
-          `/v1/reports/results?${buildRequestParams(storeId, RESULTS_PAGE_SIZE).toString()}`,
-        ),
-        apiRequest(`/v1/reports/recent-services?${buildRequestParams(storeId, 12).toString()}`),
-      ])
+      const [overviewResponse, resultsResponse, recentServicesResponse, pausesResponse] =
+        await Promise.all([
+          apiRequest(
+            `/v1/reports/overview?${buildRequestParams(storeId, RESULTS_PAGE_SIZE).toString()}`,
+          ),
+          apiRequest(
+            `/v1/reports/results?${buildRequestParams(storeId, RESULTS_PAGE_SIZE).toString()}`,
+          ),
+          apiRequest(`/v1/reports/recent-services?${buildRequestParams(storeId, 12).toString()}`),
+          // Pausas e auxiliar: nao derruba o carregamento principal (ex.: endpoint
+          // ainda nao disponivel antes do rebuild da api).
+          apiRequest(
+            `/v1/reports/pauses?${buildRequestParams(storeId, RESULTS_PAGE_SIZE).toString()}`,
+          ).catch(() => null),
+        ])
 
       overview.value = overviewResponse
       results.value = resultsResponse
       recentServices.value = recentServicesResponse
       multiStoreOverview.value = null
+      pauses.value = pausesResponse
       ready.value = true
       lastLoadedKey.value = refreshKey
       return {
@@ -216,18 +225,25 @@ export const useReportsStore = defineStore('reports', () => {
             throw error
           })
         : Promise.resolve(null)
-      const [overviewResponse, resultsResponse, recentServicesResponse, multiStoreResponse] =
-        await Promise.all([
-          apiRequest(`/v1/reports/overview?${reportParams}`),
-          apiRequest(`/v1/reports/results?${reportParams}`),
-          apiRequest(`/v1/reports/recent-services?${recentParams}`),
-          multiStoreOverviewRequest,
-        ])
+      const [
+        overviewResponse,
+        resultsResponse,
+        recentServicesResponse,
+        multiStoreResponse,
+        pausesResponse,
+      ] = await Promise.all([
+        apiRequest(`/v1/reports/overview?${reportParams}`),
+        apiRequest(`/v1/reports/results?${reportParams}`),
+        apiRequest(`/v1/reports/recent-services?${recentParams}`),
+        multiStoreOverviewRequest,
+        apiRequest(`/v1/reports/pauses?${reportParams}`).catch(() => null),
+      ])
 
       overview.value = overviewResponse
       results.value = resultsResponse
       recentServices.value = recentServicesResponse
       multiStoreOverview.value = multiStoreResponse
+      pauses.value = pausesResponse
       ready.value = true
       lastLoadedKey.value = refreshKey
       return {
@@ -339,6 +355,7 @@ export const useReportsStore = defineStore('reports', () => {
     results,
     recentServices,
     multiStoreOverview,
+    pauses,
     pending,
     ready,
     errorMessage,

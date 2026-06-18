@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { useAuthStore } from '~/stores/auth'
+import { useOperationsStore } from '~/stores/operations'
 import { QUEUE_WORKSPACES } from '~/utils/workspaces'
 
 const props = defineProps({
@@ -26,7 +27,31 @@ const props = defineProps({
 
 const emit = defineEmits(['store-change', 'profile-change'])
 const auth = useAuthStore()
-const { isAuthenticated } = storeToRefs(auth)
+const operationsStore = useOperationsStore()
+const { isAuthenticated, canUseAllStores, storeContext } = storeToRefs(auth)
+const { integratedStoreId } = storeToRefs(operationsStore)
+
+// O filtro de loja so existe na PROPRIA pagina de operacao. O nav shell tambem
+// renderiza nas rotas filhas `/operacao/clientes` e `/operacao/usuarios` (mesmo
+// prefixo), entao gateamos pelo workspace ativo exato, nao pelo path.
+const isOperationWorkspace = computed(() => props.activeWorkspace === 'operacao')
+
+// Filtro de loja do modo "Todas as lojas": so faz sentido para quem enxerga
+// mais de uma loja. Escreve no operations store, lido pela pagina de operacao.
+const storeFilterOptions = computed(() => [
+  { value: '', label: 'Todas as lojas', meta: 'Sem filtro aplicado' },
+  ...(storeContext.value || []).map((store) => ({
+    value: String(store?.id || '').trim(),
+    label: String(store?.name || '').trim(),
+    meta: [String(store?.code || '').trim(), String(store?.city || '').trim()]
+      .filter(Boolean)
+      .join(' · '),
+  })),
+])
+
+function handleStoreFilterChange(value) {
+  operationsStore.setIntegratedStoreId(value)
+}
 
 const visibleWorkspaces = computed(() =>
   QUEUE_WORKSPACES.filter((workspace) => props.allowedWorkspaces.includes(workspace.id)).filter(
@@ -63,6 +88,17 @@ function handleProfileChange(value) {
     </nav>
 
     <div v-if="showOperationsContext && state" class="workspace-nav-context">
+      <AppSelectField
+        v-if="isOperationWorkspace && canUseAllStores"
+        class="summary-select workspace-nav-context__store-select"
+        :model-value="integratedStoreId"
+        :options="storeFilterOptions"
+        placeholder="Todas as lojas"
+        :show-leading-icon="false"
+        compact
+        testid="operation-filter-integrated-store"
+        @update:model-value="handleStoreFilterChange"
+      />
       <span class="summary-pill">{{ state.waitingList.length }} na fila</span>
       <span class="summary-pill" :class="{ 'summary-pill--active': activeServicesCount > 0 }">
         {{ activeServicesCount }}/{{ state.settings.maxConcurrentServices }} em atendimento
@@ -89,6 +125,8 @@ function handleProfileChange(value) {
   gap: 0.75rem;
   min-width: 0;
   width: 100%;
+
+  padding-bottom: 0.75rem;
 }
 
 .workspace-nav-shell .workspace-nav {
@@ -110,7 +148,12 @@ function handleProfileChange(value) {
   width: 12rem;
 }
 
-.workspace-nav-context__profile-select :deep(.app-select-field__trigger) {
+.workspace-nav-context__store-select {
+  width: 14rem;
+}
+
+.workspace-nav-context__profile-select :deep(.app-select-field__trigger),
+.workspace-nav-context__store-select :deep(.app-select-field__trigger) {
   min-height: 2.45rem;
   padding: 0 0.82rem;
   border-radius: 999px;

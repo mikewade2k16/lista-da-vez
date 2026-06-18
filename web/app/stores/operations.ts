@@ -11,6 +11,20 @@ import { applyOperationSnapshotToState, hydrateRuntimeStoreContext } from '~/uti
 
 type LooseRecord = Record<string, any>
 
+// Desvio minimo (ms) para re-aplicar o serverClockOffsetMs. Cada resposta carrega
+// latencia de rede de poucos ms; so re-sincronizamos quando o desvio real passa de
+// 1s (o drift que faz o timer "errar" entre sessoes), evitando churn de estado e
+// jitter sub-segundo no relogio exibido. (Usado so para o LABEL "Iniciado as".)
+const CLOCK_OFFSET_RESYNC_THRESHOLD_MS = 1000
+
+// Relogio MONOTONICO local (nao sofre ajuste/skew do relogio de parede). Usado para
+// avancar a ancora do cronometro entre respostas do servidor.
+function monotonicNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+
 function normalizeCampaignMatches(matches = []) {
   return (Array.isArray(matches) ? matches : [])
     .map((match) => ({
@@ -41,7 +55,10 @@ function normalizeProductEntries(products = []) {
     .filter((product) => product.id || product.name || product.code)
 }
 
-function normalizeCatalogProductSearchResponse(response: LooseRecord | null, fallback: LooseRecord = {}) {
+function normalizeCatalogProductSearchResponse(
+  response: LooseRecord | null,
+  fallback: LooseRecord = {},
+) {
   return {
     sourceKey: normalizeText(response?.sourceKey || fallback.sourceKey || 'erp_current'),
     term: normalizeText(response?.term || fallback.term).toUpperCase(),
@@ -128,6 +145,21 @@ export const useOperationsStore = defineStore('operations', () => {
   const overview = ref(null)
   const overviewPending = ref(false)
   const overviewError = ref('')
+  // Ancora do cronometro (fonte da verdade = servidor). serverTimeMs e o horario do
+  // servidor na ultima resposta; perfMs e o instante MONOTONICO local correspondente.
+  // O "agora do servidor" = serverTimeMs + (monotonicNow() - perfMs). O elapsed de cada
+  // atendimento = esse agora - serviceStartedAt (ambos do servidor), entao e identico
+  // em qualquer cliente e nao depende do relogio de parede de cada PC.
+  const serverClockAnchor = ref({ serverTimeMs: 0, perfMs: 0 })
+  // Filtro de loja do modo "Todas as lojas". Mora aqui (e nao no componente)
+  // porque e lido/escrito em ramos diferentes da arvore: o seletor vive no nav
+  // do layout (DashboardWorkspaceNav) e a logica de snapshot operavel vive na
+  // pagina (pages/operacao/index.vue).
+  const integratedStoreId = ref('')
+
+  function setIntegratedStoreId(storeId) {
+    integratedStoreId.value = String(storeId || '').trim()
+  }
 
   function applyServerClockOffset(offsetMs) {
     const normalizedOffset = Number(offsetMs || 0) || 0
@@ -166,7 +198,24 @@ export const useOperationsStore = defineStore('operations', () => {
       return Number(runtime.state?.serverClockOffsetMs || 0) || 0
     }
 
-    return applyServerClockOffset(serverTimestamp - Date.now())
+    // Re-ancora SEMPRE que chega um horario de servidor valido: fixa o "agora do
+    // servidor" no instante monotonico atual. Re-ancorar nao causa jitter visivel
+    // (o cronometro mostra segundos), e corrige qualquer drift acumulado de relogio.
+    serverClockAnchor.value = { serverTimeMs: serverTimestamp, perfMs: monotonicNow() }
+
+    const nextOffset = serverTimestamp - Date.now()
+    const currentOffset = Number(runtime.state?.serverClockOffsetMs || 0) || 0
+
+    // Ja sincronizado e dentro da tolerancia: mantem o offset atual (sem churn nem
+    // jitter). A primeira captura (offset 0) sempre aplica.
+    if (
+      currentOffset !== 0 &&
+      Math.abs(nextOffset - currentOffset) <= CLOCK_OFFSET_RESYNC_THRESHOLD_MS
+    ) {
+      return currentOffset
+    }
+
+    return applyServerClockOffset(nextOffset)
   }
 
   async function resolveActiveStoreId() {
@@ -193,6 +242,10 @@ export const useOperationsStore = defineStore('operations', () => {
       storeId,
       auth.activeTenantId,
     )
+    // Ancora o relogio ja no load inicial (nao so em mutacao/refresh). Sem isso, uma
+    // sessao que so observa um atendimento ocioso ficava com a ancora zerada e o
+    // cronometro caia no fallback de relogio de parede (drift entre maquinas).
+    captureServerClockOffset(runtimeContext?.operationsSnapshot?.serverTime)
     auth.applyRuntimeSettingsStatus(runtimeContext)
     return runtimeContext
   }
@@ -208,6 +261,9 @@ export const useOperationsStore = defineStore('operations', () => {
     const snapshot = await apiRequest(
       `/v1/operations/snapshot?storeId=${encodeURIComponent(normalizedStoreId)}`,
     )
+    // Re-sincroniza o relogio a cada leitura ao vivo: sem isso, a sessao que so
+    // observa (nao muta) nunca recaptura o offset e o timer drifta ate o reload.
+    captureServerClockOffset(snapshot?.serverTime)
     runtime.hydrate(
       applyOperationSnapshotToState(runtime.state, normalizedStoreId, snapshot, {
         resetFinishModal: Boolean(options?.resetFinishModal),
@@ -230,6 +286,8 @@ export const useOperationsStore = defineStore('operations', () => {
 
     try {
       const response = await apiRequest('/v1/operations/overview')
+      // Re-sincroniza o relogio do observador (board integrado) a cada leitura.
+      captureServerClockOffset(response?.serverTime)
       overview.value = response
       return response
     } catch (error) {
@@ -309,7 +367,13 @@ export const useOperationsStore = defineStore('operations', () => {
             resetFinishModal: Boolean(options?.resetFinishModal),
           }),
         )
-      } else if (storeId === runtime.state.activeStoreId) {
+      } else if (
+        storeId === runtime.state.activeStoreId ||
+        runtime.state.storeSnapshots?.[storeId]
+      ) {
+        // Revalida o snapshot escopado da loja ativa OU de qualquer loja ja
+        // carregada como contexto operavel (operacao por loja individual no
+        // modo "Todas as lojas").
         await refreshOperationSnapshot(storeId, options)
       }
 
@@ -346,6 +410,9 @@ export const useOperationsStore = defineStore('operations', () => {
     overview,
     overviewPending,
     overviewError,
+    serverClockAnchor,
+    integratedStoreId,
+    setIntegratedStoreId,
     setSelectedConsultant(personId) {
       return runtime.run('setSelectedConsultant', personId)
     },
@@ -392,8 +459,15 @@ export const useOperationsStore = defineStore('operations', () => {
         },
       )
     },
-    startService(personId = null) {
-      return runCommand('/v1/operations/start', { personId: personId || '' })
+    startService(personId = null, storeId = '') {
+      return runCommand(
+        '/v1/operations/start',
+        { personId: personId || '' },
+        {
+          storeId,
+          refreshOverview: Boolean(storeId),
+        },
+      )
     },
     openFinishModal(serviceId) {
       return runtime.run('openFinishModal', serviceId)

@@ -29,7 +29,22 @@ const CLOCK_REFRESH_MS = 250
 const serverClockOffsetMs = computed(
   () => Number(operationsStore.state?.serverClockOffsetMs || 0) || 0,
 )
-const adjustedNow = computed(() => now.value + serverClockOffsetMs.value)
+// Relogio monotonico local (imune a skew do relogio de parede).
+function monotonicNow() {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+}
+// "Agora do servidor": ancora (serverTime) + avanco MONOTONICO local. Igual em todo
+// cliente, sem depender do relogio de parede. Fallback ao legado antes da 1a ancora.
+const adjustedNow = computed(() => {
+  const tick = now.value
+  const anchor = operationsStore.serverClockAnchor
+  if (anchor && anchor.serverTimeMs > 0) {
+    return anchor.serverTimeMs + (monotonicNow() - anchor.perfMs)
+  }
+  return tick + serverClockOffsetMs.value
+})
 
 function shouldIncludeStore(storeId) {
   const filterStoreId = String(props.filterStoreId || '').trim()

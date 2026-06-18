@@ -182,6 +182,68 @@ type CountRow struct {
 	Count int    `json:"count"`
 }
 
+// ---------------------------------------------------------------------------
+// Relatorio de pausas (queue.operation_status_sessions, status='paused')
+// ---------------------------------------------------------------------------
+
+type PauseSessionRow struct {
+	ConsultantID   string
+	ConsultantName string
+	Reason         string
+	Kind           string
+	StartedAt      int64
+	EndedAt        int64
+	DurationMs     int64
+}
+
+type PausesResponse struct {
+	StoreID      string               `json:"storeId"`
+	Filters      Filters              `json:"filters"`
+	Summary      PauseSummary         `json:"summary"`
+	ByConsultant []PauseConsultantRow `json:"byConsultant"`
+	ByReason     []PauseReasonRow     `json:"byReason"`
+	ByHour       []PauseHourRow       `json:"byHour"`
+	Rows         []PauseRow           `json:"rows"`
+}
+
+type PauseSummary struct {
+	TotalPauses         int   `json:"totalPauses"`
+	TotalDurationMs     int64 `json:"totalDurationMs"`
+	AverageDurationMs   int64 `json:"averageDurationMs"`
+	DistinctConsultants int   `json:"distinctConsultants"`
+}
+
+type PauseConsultantRow struct {
+	ConsultantID      string           `json:"consultantId"`
+	ConsultantName    string           `json:"consultantName"`
+	PauseCount        int              `json:"pauseCount"`
+	TotalDurationMs   int64            `json:"totalDurationMs"`
+	AverageDurationMs int64            `json:"averageDurationMs"`
+	ByReason          []PauseReasonRow `json:"byReason"`
+}
+
+type PauseReasonRow struct {
+	Reason          string `json:"reason"`
+	Count           int    `json:"count"`
+	TotalDurationMs int64  `json:"totalDurationMs"`
+}
+
+type PauseHourRow struct {
+	Hour            string `json:"hour"`
+	Count           int    `json:"count"`
+	TotalDurationMs int64  `json:"totalDurationMs"`
+}
+
+type PauseRow struct {
+	ConsultantID   string `json:"consultantId"`
+	ConsultantName string `json:"consultantName"`
+	Reason         string `json:"reason"`
+	Kind           string `json:"kind"`
+	StartedAt      int64  `json:"startedAt"`
+	EndedAt        int64  `json:"endedAt"`
+	DurationMs     int64  `json:"durationMs"`
+}
+
 type ResultRow struct {
 	ServiceID          string   `json:"serviceId"`
 	StoreID            string   `json:"storeId"`

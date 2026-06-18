@@ -70,6 +70,10 @@ const emit = defineEmits(['update:searchValue', 'visible-columns-change', 'sort'
 const columnsMenuOpen = ref(false)
 const columnsMenuRef = ref(null)
 const visibleColumnIds = ref([])
+// Ids de coluna que o usuário já "viu" (já existiam quando a config foi salva).
+// Serve para distinguir uma coluna NOVA (que deve aparecer por padrão) de uma que
+// o usuário escondeu de propósito (que deve continuar escondida).
+const knownColumnIds = ref([])
 const hydrated = ref(false)
 
 const normalizedColumns = computed(() =>
@@ -102,16 +106,41 @@ function buildDefaultVisibleColumns() {
     .map((column) => column.id)
 }
 
+function normalizeIdList(value) {
+  return Array.isArray(value)
+    ? value.map((columnId) => String(columnId || '').trim()).filter(Boolean)
+    : []
+}
+
 function syncVisibleColumns(forceDefaults = false) {
-  const availableIds = new Set(normalizedColumns.value.map((column) => column.id))
+  const available = normalizedColumns.value.map((column) => column.id)
+  const availableIds = new Set(available)
   const defaults = buildDefaultVisibleColumns()
 
   if (forceDefaults || visibleColumnIds.value.length === 0) {
     visibleColumnIds.value = defaults
+    knownColumnIds.value = available
     return
   }
 
-  visibleColumnIds.value = visibleColumnIds.value.filter((columnId) => availableIds.has(columnId))
+  // Mantém só ids que ainda existem.
+  const filtered = visibleColumnIds.value.filter((columnId) => availableIds.has(columnId))
+
+  // Colunas NOVAS (que o usuário nunca viu) e defaultVisible passam a aparecer por
+  // padrão. Sem isso, adicionar uma coluna no código não surtia efeito para quem já
+  // tinha config salva no localStorage (whitelist antiga sem a coluna nova).
+  const newDefaults = normalizedColumns.value
+    .filter(
+      (column) =>
+        column.defaultVisible &&
+        !column.locked &&
+        !knownColumnIds.value.includes(column.id) &&
+        !filtered.includes(column.id),
+    )
+    .map((column) => column.id)
+
+  visibleColumnIds.value = [...filtered, ...newDefaults]
+  knownColumnIds.value = available
 
   if (visibleColumnIds.value.length === 0) {
     visibleColumnIds.value = defaults
@@ -134,9 +163,15 @@ function loadVisibleColumns() {
     }
 
     const parsed = JSON.parse(rawValue)
-    visibleColumnIds.value = Array.isArray(parsed)
-      ? parsed.map((columnId) => String(columnId || '').trim()).filter(Boolean)
-      : []
+    if (Array.isArray(parsed)) {
+      // Formato legado (só a lista de visíveis): as conhecidas = as visíveis salvas,
+      // então toda coluna adicionada depois entra como "nova" e aparece por padrão.
+      visibleColumnIds.value = normalizeIdList(parsed)
+      knownColumnIds.value = [...visibleColumnIds.value]
+    } else {
+      visibleColumnIds.value = normalizeIdList(parsed?.visible)
+      knownColumnIds.value = normalizeIdList(parsed?.known)
+    }
     syncVisibleColumns(false)
   } catch {
     syncVisibleColumns(true)
@@ -150,7 +185,10 @@ function persistVisibleColumns() {
     return
   }
 
-  window.localStorage.setItem(props.storageKey, JSON.stringify(visibleColumnIds.value))
+  window.localStorage.setItem(
+    props.storageKey,
+    JSON.stringify({ visible: visibleColumnIds.value, known: knownColumnIds.value }),
+  )
 }
 
 function isColumnVisible(column) {

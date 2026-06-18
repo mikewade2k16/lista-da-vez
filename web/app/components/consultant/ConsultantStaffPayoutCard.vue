@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
+import AppInfoPopover from '~/components/ui/AppInfoPopover.vue'
 import ConsultantStoreGoalBar from './ConsultantStoreGoalBar.vue'
+
+const FORECAST_NOTE =
+  'Previsão calculada com base nos dados recebidos até o dia anterior e nas metas cadastradas pela ' +
+  'gerência. Os valores são apenas para acompanhamento e devem ser validados com o gerente responsável.'
 
 interface StaffMember {
   id: string
@@ -44,6 +49,7 @@ const showPayout = computed(() => typeof props.payoutAmount === 'number')
         </span>
       </div>
       <span class="staff-card__tag">Sem fila</span>
+      <AppInfoPopover :text="FORECAST_NOTE" label="Sobre a previsão" />
     </header>
 
     <ConsultantStoreGoalBar v-if="showStoreBar" :progress="storeGoalProgress" />

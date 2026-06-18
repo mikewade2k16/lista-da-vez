@@ -2,12 +2,21 @@
 import { computed } from 'vue'
 import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
 
-const props = defineProps<{
-  soldValue: number
-  monthlyGoal: number
-  commissionRate: number
-  simulationAdditionalSales: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    soldValue: number
+    monthlyGoal: number
+    commissionRate: number
+    simulationAdditionalSales: number
+    // Taxa efetiva (%) do payout pré-calculado no back. Quando presente, o
+    // recebimento estimado usa (venda+adicional)*ratePercent/100. A lógica de faixa
+    // (trava/penalidade) é do back; aqui é só uma ESTIMATIVA linear na faixa atual.
+    payoutRatePercent?: number | null
+  }>(),
+  {
+    payoutRatePercent: null,
+  },
+)
 
 const emit = defineEmits<{
   (e: 'update:simulationAdditionalSales', value: number): void
@@ -18,6 +27,11 @@ const projectedGoalPercent = computed(() =>
   props.monthlyGoal ? (projectedSales.value / props.monthlyGoal) * 100 : 0,
 )
 const projectedCommission = computed(() => projectedSales.value * props.commissionRate)
+
+const hasPayoutRate = computed(() => typeof props.payoutRatePercent === 'number')
+const projectedPayout = computed(() =>
+  hasPayoutRate.value ? (projectedSales.value * (props.payoutRatePercent || 0)) / 100 : 0,
+)
 
 function handleInput(event: Event) {
   const target = event.target as HTMLInputElement | null
@@ -50,6 +64,13 @@ function handleInput(event: Event) {
         <span class="metric-card__label">Comissao projetada</span>
         <strong class="metric-card__value">{{ formatCurrencyBRL(projectedCommission) }}</strong>
         <span class="metric-card__text">Com base na taxa atual.</span>
+      </article>
+      <article v-if="hasPayoutRate" class="metric-card metric-card--soft">
+        <span class="metric-card__label">Recebimento estimado</span>
+        <strong class="metric-card__value">{{ formatCurrencyBRL(projectedPayout) }}</strong>
+        <span class="metric-card__text">
+          Estimativa: {{ formatPercent(payoutRatePercent || 0) }} da venda na faixa atual.
+        </span>
       </article>
     </div>
   </section>

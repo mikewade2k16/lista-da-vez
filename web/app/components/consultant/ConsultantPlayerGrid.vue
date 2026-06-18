@@ -2,12 +2,17 @@
 import { computed } from 'vue'
 import ConsultantPlayerCard from '~/components/consultant/ConsultantPlayerCard.vue'
 import ConsultantStaffPayoutCard from '~/components/consultant/ConsultantStaffPayoutCard.vue'
-import { formatCurrencyBRL } from '~/domain/utils/admin-metrics'
+import type {
+  ConsultantGoalSource,
+  ErpPayout,
+  ErpStorePayout,
+} from '~/domain/utils/consultant-integrated-view'
 import {
-  calculateStoreGoalPayout,
-  type CrmGoalPayoutPolicy,
-  type CrmGoalPayoutRule,
-} from '~/domain/utils/crm-performance-policy'
+  consultantPayoutLabel,
+  storePayoutForRole,
+  storeRolePayoutLabel,
+} from '~/domain/utils/consultant-payout-display'
+import { useGoalQuickEditContext } from '~/composables/useGoalQuickEditContext'
 
 interface GridRow {
   id: string
@@ -31,6 +36,12 @@ interface GridRow {
   avgTicketGoal?: number
   paGoal?: number
   cancellationRate?: number
+  payout?: ErpPayout | null
+  // Flags de gap por consultor (contrato congelado) p/ o aviso acionável inline.
+  goalSource?: ConsultantGoalSource
+  missingMonthlyGoal?: boolean
+  missingTicketGoal?: boolean
+  missingPaGoal?: boolean
   [key: string]: unknown
 }
 
@@ -56,7 +67,7 @@ const props = withDefaults(
     storeConversionAvgByStoreId?: Record<string, number>
     rankingPositionByKey?: Record<string, number>
     storeProgressByStoreId?: Record<string, StoreProgress>
-    payoutPolicy?: CrmGoalPayoutPolicy | null
+    storePayoutByStoreId?: Record<string, ErpStorePayout>
   }>(),
   {
     rows: () => [],
@@ -64,7 +75,7 @@ const props = withDefaults(
     storeConversionAvgByStoreId: () => ({}),
     rankingPositionByKey: () => ({}),
     storeProgressByStoreId: () => ({}),
-    payoutPolicy: null,
+    storePayoutByStoreId: () => ({}),
   },
 )
 
@@ -72,27 +83,38 @@ const emit = defineEmits<{
   (e: 'open-details', consultantId: string): void
 }>()
 
-function payoutRuleLabel(rule: CrmGoalPayoutRule | null) {
-  if (!rule) return 'Sem faixa'
-  if (rule.mode === 'amount') return `${formatCurrencyBRL(rule.value)} fixo`
-  return `${Number(rule.value).toLocaleString('pt-BR')}% da loja`
-}
-
 function storeProgressFor(storeId?: string): StoreProgress | null {
   return props.storeProgressByStoreId[storeId ?? ''] ?? null
 }
 
+function storePayoutFor(storeId?: string): ErpStorePayout | null {
+  return props.storePayoutByStoreId[storeId ?? ''] ?? null
+}
+
+const { buildContext } = useGoalQuickEditContext()
+
 const enrichedRows = computed(() =>
   props.rows.map((row) => {
     const store = storeProgressFor(row.storeId)
-    const payout = props.payoutPolicy
-      ? calculateStoreGoalPayout({
-          storeSold: store?.storeSold ?? 0,
-          storeProgress: store?.progress ?? 0,
-          policy: props.payoutPolicy,
-          role: row.role,
-        })
-      : null
+    // Consultor: payout vem PRONTO do back (% da própria venda). Display só.
+    const payout = row.payout ?? null
+
+    // Contexto do quick-edit de metas (motor plugável). Os valores efetivos de
+    // ticket/PA (com herança da loja) vêm das stats da row p/ semear o popover.
+    const goalContext = buildContext({
+      storeId: row.storeId,
+      consultantId: row.id,
+      store: storePayoutFor(row.storeId),
+      currentTicketGoal: row.avgTicketGoal ?? 0,
+      currentPaGoal: row.paGoal ?? 0,
+      consultant: {
+        goalSource: row.goalSource,
+        missingMonthlyGoal: row.missingMonthlyGoal,
+        missingTicketGoal: row.missingTicketGoal,
+        missingPaGoal: row.missingPaGoal,
+        monthlyGoal: row.monthlyGoal ?? 0,
+      },
+    })
 
     return {
       consultant: {
@@ -123,7 +145,8 @@ const enrichedRows = computed(() =>
       rankingPosition: props.rankingPositionByKey[`${row.storeId}:${row.id}`] ?? null,
       storeGoalProgress: store ? store.progress : null,
       goalPayoutAmount: payout ? payout.amount : null,
-      goalPayoutLabel: payout ? payoutRuleLabel(payout.rule) : '',
+      goalPayoutLabel: payout ? consultantPayoutLabel(payout) : '',
+      goalContext,
       key: `${row.storeId}:${row.id}`,
     }
   }),
@@ -132,20 +155,14 @@ const enrichedRows = computed(() =>
 const enrichedStaff = computed(() =>
   props.staff.map((member) => {
     const store = storeProgressFor(member.storeId)
-    const payout = props.payoutPolicy
-      ? calculateStoreGoalPayout({
-          storeSold: store?.storeSold ?? 0,
-          storeProgress: store?.progress ?? 0,
-          policy: props.payoutPolicy,
-          role: member.role,
-        })
-      : null
+    // Gerente/caixa: recebem pela LOJA. mapRoleToPayoutGroup escolhe manager vs support.
+    const payout = storePayoutForRole(storePayoutFor(member.storeId), member.role)
 
     return {
       member,
       storeGoalProgress: store ? store.progress : null,
       payoutAmount: payout ? payout.amount : null,
-      payoutLabel: payout ? payoutRuleLabel(payout.rule) : '',
+      payoutLabel: payout ? storeRolePayoutLabel(payout) : '',
       key: `staff:${member.storeId}:${member.id}`,
     }
   }),
@@ -170,6 +187,7 @@ function handleOpen(consultantId: string) {
       :store-goal-progress="row.storeGoalProgress"
       :goal-payout-amount="row.goalPayoutAmount"
       :goal-payout-label="row.goalPayoutLabel"
+      :goal-context="row.goalContext"
       mode="mini"
       :show-details-button="false"
       @open-details="handleOpen"

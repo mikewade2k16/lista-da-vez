@@ -317,6 +317,21 @@ lista.whenthelightsdie.com {
 
 Observacoes praticas:
 
+- **CRITICO — rotear `/v2/*` junto com `/v1/*`:** a API multitenant expoe a accounts API
+  em `/v2/me/accounts` e `/v2/me/context` (usadas pelo switcher de contas). O `handle` do
+  Caddy aceita **um** matcher, entao adicione um **bloco `/v2/* separado`** com o mesmo
+  upstream do `/v1/*`:
+  ```caddy
+  handle /v1/* { reverse_proxy lista-api:8080 }
+  handle /v2/* { reverse_proxy lista-api:8080 }   # <- necessario p/ o switcher
+  ```
+  (Alternativa: matcher nomeado — `@api path /v1/* /v2/*` + `handle @api { reverse_proxy lista-api:8080 }`.)
+  Sem o `/v2/*`, o switcher volta vazio, a conta ativa nao resolve para a agencia e os itens
+  `agencyOnly` (Clientes Web, Usuarios Admin, Organizations) somem do menu — mesmo com os
+  dados corretos no banco. **Atencao:** `handle /v1/* /v2/* {` (dois paths no mesmo handle)
+  e INVALIDO no Caddy. E o bind-mount do Caddyfile e por inode — editar com `sed -i` (troca o
+  inode) faz o container continuar lendo o arquivo antigo; edite preservando o inode
+  (`cat novo > Caddyfile`) e de `caddy reload`, ou reinicie o container.
 - `Strict-Transport-Security` so faz sentido depois de HTTPS estavel no host publico.
 - o `Content-Security-Policy` acima assume frontend, API e WebSocket no mesmo host `lista.whenthelightsdie.com`;
 - se algum recurso legitimo do Nuxt parar de carregar depois da mudanca, valide no navegador qual diretiva bloqueou e ajuste a policy antes de endurecer mais.
@@ -786,10 +801,11 @@ Arquivo do script:
 ### Deploy incremental (so arquivos alterados)
 
 Mesmo modelo simples do `crow-php`: em vez de reenviar o workspace inteiro, le
-um manifest remoto (`find` com tamanho/mtime), compara com o local e sobe **so
-os arquivos novos/alterados** por `scp`. Depois roda `up -d --build` (o codigo e
-copiado pra dentro da imagem no build, entao o rebuild continua necessario — o
-que encurta e' o ENVIO, nao o build do Nuxt na VPS).
+um manifest remoto por **hash de conteudo** (`md5sum` na VPS), compara com o hash
+MD5 local de cada arquivo e sobe **so os arquivos cujo conteudo difere** por
+`scp`. Depois roda `up -d --build` (o codigo e copiado pra dentro da imagem no
+build, entao o rebuild continua necessario — o que encurta e' o ENVIO, nao o
+build do Nuxt na VPS).
 
 ```bash
 npm run prod:deploy:vps:inc      # incremental COM backup do Postgres (padrao)
@@ -811,6 +827,18 @@ Arquivo do script:
 
 Diferenca pro `crow-php`: aqui os `*.sql` sao migrations (vao no deploy), entao o
 script **nao** exclui `.sql` — o conjunto de exclusoes e o mesmo do deploy-fast.
+
+Confiabilidade do diff:
+
+- A comparacao e por **hash de conteudo** (MD5 local vs `md5sum` remoto), nao por
+  mtime/tamanho. E' impossivel pular um arquivo cujo conteudo difere — inclusive
+  apos `git checkout`/troca de branch, que mexem no mtime mas nao no conteudo.
+- Custo: calcular os hashes locais + `md5sum` remoto adiciona alguns segundos por
+  deploy. Em troca, o incremental fica tao confiavel quanto o full para detectar
+  o que mudou.
+- O deploy **full** `npm run prod:deploy:vps` continua valendo como reset: ele
+  limpa o diretorio remoto e reextrai tudo. Use se quiser garantir do zero (ex.:
+  apos remover muitos arquivos sem usar `-DeleteRemoved`).
 
 ### Workflow manual por GitHub Actions
 

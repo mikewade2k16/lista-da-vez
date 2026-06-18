@@ -363,6 +363,13 @@ export default {
               moduleId: 'queue',
             },
             {
+              id: 'menu-layout',
+              label: 'Organização do Menu',
+              icon: 'manage',
+              path: '/manage/menu-layout',
+              workspaceId: 'menu_layout',
+            },
+            {
               id: 'alertas',
               label: 'Alertas',
               icon: 'alert',

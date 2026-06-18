@@ -28,6 +28,9 @@ interface DrawerStats {
   paGoal?: number
   conversionGoal?: number
   cancellationRate?: number
+  goalPayoutAmount?: number | null
+  goalPayoutLabel?: string
+  goalPayoutRatePercent?: number | null
   monthEntries?: Array<{ finishedAt?: number; saleAmount?: number }>
 }
 
@@ -80,6 +83,9 @@ const conversionTotal = computed(() => {
   if (!props.stats) return 0
   return props.stats.conversions + props.stats.nonConversions
 })
+
+// Espelha o card: payout pré-calculado no back (% da própria venda). Display só.
+const showPayout = computed(() => typeof props.stats?.goalPayoutAmount === 'number')
 
 const sparklinePoints = computed(() => {
   const entries = props.stats?.monthEntries || []
@@ -255,6 +261,15 @@ function handleSimulatorUpdate(value: number | string) {
               Taxa atual: {{ formatPercent(stats.commissionRate * 100) }}
             </span>
           </article>
+          <article v-if="showPayout" class="consultant-drawer__metric">
+            <span class="consultant-drawer__metric-label">Recebimento por meta</span>
+            <strong class="consultant-drawer__metric-value">
+              {{ formatCurrencyBRL(stats.goalPayoutAmount || 0) }}
+            </strong>
+            <span v-if="stats.goalPayoutLabel" class="consultant-drawer__metric-text">
+              {{ stats.goalPayoutLabel }}
+            </span>
+          </article>
         </div>
 
         <div class="consultant-drawer__metric-grid consultant-drawer__metric-grid--tight">
@@ -373,6 +388,7 @@ function handleSimulatorUpdate(value: number | string) {
           :sold-value="stats.soldValue"
           :monthly-goal="stats.monthlyGoal"
           :commission-rate="stats.commissionRate"
+          :payout-rate-percent="stats.goalPayoutRatePercent ?? null"
           :simulation-additional-sales="Number(simulationAdditionalSales || 0)"
           @update:simulation-additional-sales="handleSimulatorUpdate"
         />

@@ -148,6 +148,22 @@ export const useConsultantsStore = defineStore('consultants', () => {
     integratedDateTo.value = nextRange.dateTo
   }
 
+  // Espelha setRankingPreviousMonth de ranking.vue: range do mês anterior em UTC
+  // (início = primeiro dia; fim = dia 0 do mês atual = último dia do mês anterior).
+  function resetIntegratedPreviousMonth() {
+    const now = new Date()
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
+    const formatDateInput = (date: Date) =>
+      [
+        date.getUTCFullYear(),
+        String(date.getUTCMonth() + 1).padStart(2, '0'),
+        String(date.getUTCDate()).padStart(2, '0'),
+      ].join('-')
+    integratedDateFrom.value = formatDateInput(start)
+    integratedDateTo.value = formatDateInput(end)
+  }
+
   async function refreshIntegratedView() {
     await runtime.ensure()
 
@@ -175,13 +191,22 @@ export const useConsultantsStore = defineStore('consultants', () => {
       if (integratedDateTo.value) {
         crmParams.set('dateTo', integratedDateTo.value)
       }
-      const [overviewResponse, storeResponses, erpCrmResponse, staffResponse] = await Promise.all([
+      const [overviewResponse, storeResponses, erpCrmResponse] = await Promise.all([
         apiRequest('/v1/operations/overview'),
         Promise.all(
           stores.map(async (store) => {
-            const [consultantsResponse, snapshotResponse] = await Promise.all([
+            // store-staff é buscado POR LOJA (com storeId), igual /v1/consultants:
+            // ensureStoreAccess valida a loja contra o Principal (platform_admin
+            // libera qualquer loja; demais papéis pela própria StoreIDs). O fetch
+            // global (/v1/store-staff sem storeId) dependia de resolveAccessibleStoreIDs
+            // (lojas do AccountID), que diverge do escopo que o front enxerga -> staff
+            // vinha vazio e os gerentes não apareciam.
+            const [consultantsResponse, snapshotResponse, staffResponse] = await Promise.all([
               apiRequest(`/v1/consultants?storeId=${encodeURIComponent(store.id)}`),
               apiRequest(`/v1/operations/snapshot?storeId=${encodeURIComponent(store.id)}`),
+              apiRequest(`/v1/store-staff?storeId=${encodeURIComponent(store.id)}`).catch(() => ({
+                items: [],
+              })),
             ])
 
             return {
@@ -190,22 +215,22 @@ export const useConsultantsStore = defineStore('consultants', () => {
                 ? consultantsResponse.consultants
                 : [],
               snapshot: snapshotResponse || {},
+              staff: Array.isArray(staffResponse?.items) ? staffResponse.items : [],
             }
           }),
         ),
         apiRequest(`/v1/erp/crm?${crmParams.toString()}`).catch(() => null),
-        apiRequest('/v1/store-staff').catch(() => ({ items: [] })),
       ])
 
-      integratedStaff.value = (Array.isArray(staffResponse?.items) ? staffResponse.items : []).map(
-        (item: Record<string, unknown>) => ({
+      integratedStaff.value = storeResponses.flatMap(({ staff }) =>
+        (staff as Record<string, unknown>[]).map((item) => ({
           id: normalizeText(item?.id),
           name: normalizeText(item?.name),
           role: normalizeText(item?.role),
           roleLabel: normalizeText(item?.roleLabel),
           storeId: normalizeText(item?.storeId),
           storeName: normalizeText(item?.storeName),
-        }),
+        })),
       )
 
       integratedRoster.value = storeResponses.flatMap(({ store, consultants }) =>
@@ -412,6 +437,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     applyIntegratedFilters,
     clearIntegratedView,
     resetIntegratedCurrentMonth,
+    resetIntegratedPreviousMonth,
     setSelectedConsultant(personId: string) {
       return runtime.run('setSelectedConsultant', personId)
     },

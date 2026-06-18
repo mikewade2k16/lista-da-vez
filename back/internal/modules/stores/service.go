@@ -83,12 +83,18 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 		return StoreView{}, ErrValidation
 	}
 
+	storeType, ok := normalizeStoreType(input.StoreType, StoreTypeBairro)
+	if !ok {
+		return StoreView{}, ErrValidation
+	}
+
 	created, err := service.repository.Create(ctx, Store{
 		TenantID:          tenantID,
 		Code:              code,
 		Name:              name,
 		City:              city,
 		DefaultTemplateID: defaultTemplateID,
+		StoreType:         storeType,
 		MonthlyGoal:       maxFloat(input.MonthlyGoal, 0),
 		WeeklyGoal:        maxFloat(input.WeeklyGoal, 0),
 		AvgTicketGoal:     maxFloat(input.AvgTicketGoal, 0),
@@ -133,6 +139,14 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 
 	if input.DefaultTemplateID != nil {
 		existing.DefaultTemplateID = strings.TrimSpace(*input.DefaultTemplateID)
+	}
+
+	if input.StoreType != nil {
+		storeType, ok := normalizeStoreType(*input.StoreType, existing.StoreType)
+		if !ok {
+			return StoreView{}, ErrValidation
+		}
+		existing.StoreType = storeType
 	}
 
 	if input.MonthlyGoal != nil {
@@ -306,4 +320,21 @@ func maxFloat(value float64, minimum float64) float64 {
 	}
 
 	return value
+}
+
+// normalizeStoreType valida o enum store_type. Vazio cai no fallback informado
+// (default na criacao, valor atual no update). Valor invalido => (._, false).
+func normalizeStoreType(value string, fallback string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "":
+		if fallback == "" {
+			return StoreTypeBairro, true
+		}
+		return fallback, true
+	case StoreTypeShopping, StoreTypeBairro:
+		return normalized, true
+	default:
+		return "", false
+	}
 }

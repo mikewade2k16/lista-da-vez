@@ -57,6 +57,7 @@ func (repository *PostgresRepository) listCRMStoreTargets(ctx context.Context, t
 		select
 			code,
 			name,
+			coalesce(nullif(trim(store_type), ''), 'bairro') as store_type,
 			coalesce(round(monthly_goal * 100), 0)::bigint,
 			coalesce(round(avg_ticket_goal * 100), 0)::bigint,
 			coalesce(pa_goal, 0)::float8
@@ -74,11 +75,12 @@ func (repository *PostgresRepository) listCRMStoreTargets(ctx context.Context, t
 		var (
 			code               string
 			name               string
+			storeType          string
 			monthlyGoalCents   int64
 			avgTicketGoalCents int64
 			paGoal             float64
 		)
-		if err := rows.Scan(&code, &name, &monthlyGoalCents, &avgTicketGoalCents, &paGoal); err != nil {
+		if err := rows.Scan(&code, &name, &storeType, &monthlyGoalCents, &avgTicketGoalCents, &paGoal); err != nil {
 			return nil, err
 		}
 
@@ -92,6 +94,7 @@ func (repository *PostgresRepository) listCRMStoreTargets(ctx context.Context, t
 			Label:              label,
 			Code:               code,
 			Name:               name,
+			StoreType:          storeType,
 			MonthlyGoalCents:   monthlyGoalCents,
 			AvgTicketGoalCents: avgTicketGoalCents,
 			PAGoal:             paGoal,

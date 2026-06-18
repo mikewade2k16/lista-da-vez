@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import OperationWorkspace from '~/components/operation/OperationWorkspace.vue'
+import OperationScopeBar from '~/components/operation/OperationScopeBar.vue'
 import OperationSkeleton from '~/components/operation/OperationSkeleton.vue'
 import AlertDisplayHost from '~/components/operation/AlertDisplayHost.vue'
 import ArchivedStoreBanner from '~/components/operation/ArchivedStoreBanner.vue'
@@ -22,7 +23,9 @@ const auth = useAuthStore()
 const operationsStore = useOperationsStore()
 const alertsStore = useAlertsStore()
 const loadError = ref('')
-const integratedStoreId = ref('')
+// Filtro de loja compartilhado: o seletor agora vive no nav (DashboardWorkspaceNav),
+// que escreve neste mesmo ref do store. A pagina so reage a ele.
+const { integratedStoreId } = storeToRefs(operationsStore)
 const storeOptions = computed(() => auth.storeContext || [])
 
 const canSeeIntegrated = computed(() => canUseAllStoresScope(auth.accessibleStoreIds))
@@ -144,6 +147,27 @@ watch(scopeMode, (nextMode) => {
   }
 })
 
+// Ao filtrar UMA loja no modo "Todas as lojas", carrega o snapshot REAL dela
+// para transformar aquela loja em contexto operavel (iniciar/encerrar/pausar).
+// Sem filtro, segue a visao agregada (somente leitura).
+async function loadOperableStoreSnapshot() {
+  const storeId = String(integratedStoreId.value || '').trim()
+
+  if (scopeMode.value !== 'all' || !canSeeIntegrated.value || !storeId) {
+    return
+  }
+
+  try {
+    await operationsStore.refreshOperationSnapshot(storeId)
+  } catch {
+    // Falha ao carregar o snapshot escopado mantem a visao agregada de leitura.
+  }
+}
+
+watch(integratedStoreId, () => {
+  void loadOperableStoreSnapshot()
+})
+
 const bannerStoreId = computed(() => {
   if (scopeMode.value === 'single') {
     return String(auth.activeStoreId || '').trim()
@@ -161,10 +185,6 @@ watch(
     }
   },
 )
-
-function handleIntegratedStoreChange(storeId) {
-  integratedStoreId.value = String(storeId || '').trim()
-}
 </script>
 
 <template>
@@ -179,8 +199,9 @@ function handleIntegratedStoreChange(storeId) {
       <AlertDisplayHost
         v-if="bannerStoreId && canLoadAlerts"
         :store-id="bannerStoreId"
-        class="operation-alert-banner-page"
+        class="operation-page-alerts"
       />
+      <OperationScopeBar :state="state" class="operation-page-campaign" />
       <OperationWorkspace
         :state="state"
         :overview="overview"
@@ -188,8 +209,21 @@ function handleIntegratedStoreChange(storeId) {
         :can-see-integrated="canSeeIntegrated"
         :stores="storeOptions"
         :integrated-store-id="integratedStoreId"
-        @integrated-store-change="handleIntegratedStoreChange"
       />
     </template>
   </div>
 </template>
+
+<style scoped>
+/* O filtro de loja foi para o nav (DashboardWorkspaceNav); aqui restam o banner
+   de alerta e o destaque de campanha. A margem so existe quando o elemento
+   realmente renderiza (banner = stack com v-if; campanha = section com v-if),
+   entao nao sobra espaco vertical morto quando nao ha nada a mostrar. */
+.operation-page-alerts :deep(.operation-alert-banner-stack) {
+  margin-bottom: 0.5rem;
+}
+
+.operation-page-campaign {
+  margin-bottom: 0.5rem;
+}
+</style>

@@ -1,16 +1,25 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import DashboardHeader from '~/components/dashboard/DashboardHeader.vue'
 import DashboardWorkspaceNav from '~/components/dashboard/DashboardWorkspaceNav.vue'
 import FeedbackFormModal from '~/components/feedback/FeedbackFormModal.vue'
 import { useContextRealtime } from '~/composables/useContextRealtime'
 import { useDashboardShell } from '~/composables/useDashboardShell'
 import { useAuthStore } from '~/stores/auth'
+import { useMenuLayoutStore } from '~/stores/menuLayout'
 
 const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile } = useDashboardShell()
 const auth = useAuthStore()
 const route = useRoute()
+const menuLayout = useMenuLayoutStore()
 useContextRealtime()
+
+// Carrega a config global do menu (header vs sidebar) uma unica vez no client.
+// Idempotente: o proprio store ignora chamadas repetidas e nunca bloqueia o
+// shell (sem layout salvo = default 'both', comportamento de hoje).
+onMounted(() => {
+  void menuLayout.load()
+})
 
 const feedbackModalOpen = ref(false)
 const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || '').trim())

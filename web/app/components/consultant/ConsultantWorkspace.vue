@@ -8,6 +8,24 @@ import ConsultantRecentAttendancesTable from '~/components/consultant/Consultant
 import ConsultantSelector from '~/components/consultant/ConsultantSelector.vue'
 import ConsultantSimulator from '~/components/consultant/ConsultantSimulator.vue'
 import { useConsultantsStore } from '~/stores/consultants'
+import type { ConsultantRosterItem } from '~/composables/useConsultantIntegratedRows'
+
+// Espelha a interface StaffItem de ConsultantIntegratedWorkspace.vue (não exportada lá);
+// usada apenas para tipar o prop integratedStaff repassado ao componente filho.
+interface IntegratedStaffItem {
+  id: string
+  name: string
+  role?: string
+  roleLabel?: string
+  storeId?: string
+  storeName?: string
+}
+
+// Forma mínima de um item de serviceHistory consumida neste componente.
+interface ServiceHistoryEntry extends Record<string, unknown> {
+  personId?: string
+  finishOutcome?: string
+}
 
 interface RosterItem {
   id: string
@@ -25,7 +43,7 @@ interface RosterItem {
 interface WorkspaceState {
   roster?: RosterItem[]
   selectedConsultantId?: string
-  serviceHistory?: Array<Record<string, unknown>>
+  serviceHistory?: ServiceHistoryEntry[]
   consultantSimulationAdditionalSales?: number
   visitReasonOptions?: unknown[]
   customerSourceOptions?: unknown[]
@@ -36,11 +54,11 @@ const props = withDefaults(
   defineProps<{
     state: WorkspaceState
     integratedScope?: boolean
-    integratedRoster?: unknown[]
-    integratedStaff?: unknown[]
-    integratedRanking?: object | null
-    integratedOverview?: object | null
-    integratedHistory?: unknown[]
+    integratedRoster?: ConsultantRosterItem[]
+    integratedStaff?: IntegratedStaffItem[]
+    integratedRanking?: Record<string, unknown> | null
+    integratedOverview?: Record<string, unknown> | null
+    integratedHistory?: Array<Record<string, unknown>>
     integratedPending?: boolean
     integratedError?: string
   }>(),
@@ -84,7 +102,7 @@ const stats = computed(() => {
 const storeConversionAvg = computed(() => {
   const history = props.state.serviceHistory || []
   const rosterIds = new Set(roster.value.map((c) => c.id))
-  const inStore = history.filter((entry) => rosterIds.has(entry.personId))
+  const inStore = history.filter((entry) => rosterIds.has(String(entry.personId || '')))
   if (!inStore.length) return null
 
   const converted = inStore.filter(

@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -88,6 +89,11 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ErrStoreRequired), errors.Is(err, ErrScopeRequired):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Informe a loja ou o tenant para carregar o analytics.")
 	default:
+		slog.ErrorContext(r.Context(), "analytics_internal_error",
+			slog.String("request_id", httpapi.RequestIDFromContext(r.Context())),
+			slog.String("path", r.URL.Path),
+			slog.Any("error", err),
+		)
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar o analytics.")
 	}
 }

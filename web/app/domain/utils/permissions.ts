@@ -207,6 +207,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: 'workspace.configuracoes.edit',
   },
   {
+    id: 'menu_layout',
+    label: 'Menu',
+    description: 'Config global do menu: posicao de cada item entre header e sidebar.',
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'themes',
     label: 'Temas',
     description: 'Theme Studio centralizado do tenant.',
@@ -309,6 +316,7 @@ const ROLE_WORKSPACES = {
     'organizations_admin',
     'manage',
     'configuracoes',
+    'menu_layout',
     'themes',
     'alertas',
     'feedback',

@@ -22,6 +22,8 @@ const {
   clearCurrentDraft,
   closeModal,
   step,
+  step1JustificationsRevealed,
+  step2JustificationsRevealed,
   modalTitle,
   serviceDisplayName,
   form,
@@ -155,7 +157,7 @@ const {
           <div>
             <h2 id="finish-modal-title" class="finish-modal__title">{{ modalTitle }}</h2>
             <p class="finish-modal__subtitle">
-              {{ serviceDisplayName(service) }} | ID {{ service.serviceId }}
+              {{ serviceDisplayName(service) }}
             </p>
           </div>
           <div class="finish-modal__header-actions">
@@ -212,12 +214,15 @@ const {
             />
 
             <FinishStepProduct
+              :justifications-revealed="step1JustificationsRevealed"
               :should-use-legacy-closed-product-field="shouldUseLegacyClosedProductField"
               :closed-product-label="closedProductLabel"
               :closed-product-helper-text="closedProductHelperText"
               :products-closed-picker-options="productsClosedPickerOptions"
               :products-closed="form.productsClosed"
-              :product-closed-placeholder="modalConfig.productClosedPlaceholder || 'Digite 3 primeiros digitos do codigo/SKU'"
+              :product-closed-placeholder="
+                modalConfig.productClosedPlaceholder || 'Digite 3 primeiros digitos do codigo/SKU'
+              "
               :products-closed-empty-label="productsClosedEmptyLabel"
               :products-closed-search-pending="productsClosedSearch.state.pending"
               :show-product-seen-field="showProductSeenField"
@@ -225,7 +230,9 @@ const {
               :products-seen-picker-options="productsSeenPickerOptions"
               :products-seen="form.productsSeen"
               :products-seen-none="form.productsSeenNone"
-              :product-seen-placeholder="productSeenPlaceholder || 'Digite 3 primeiros digitos do codigo/SKU'"
+              :product-seen-placeholder="
+                productSeenPlaceholder || 'Digite 3 primeiros digitos do codigo/SKU'
+              "
               :products-seen-empty-label="productsSeenEmptyLabel"
               :allow-product-seen-none="allowProductSeenNone"
               :show-product-seen-notes-field="showProductSeenNotesField"
@@ -319,6 +326,7 @@ const {
               @update:customer-source-not-informed="form.customerSourceNotInformed = $event"
             />
             <FinishStepNotes
+              :justifications-revealed="step2JustificationsRevealed"
               :is-queue-jump-service="service.startMode === 'queue-jump'"
               :show-queue-jump-reason-field="showQueueJumpReasonField"
               :queue-jump-reason-label="queueJumpReasonLabel"

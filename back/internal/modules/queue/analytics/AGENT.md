@@ -35,6 +35,8 @@ Ele nao deve cuidar de:
 - respostas devem ser pequenas e orientadas ao caso de uso da tela
 - toda leitura deve respeitar escopo autenticado de loja/tenant
 - quando `tenantId` subir sem `storeId`, a agregacao deve atravessar apenas as lojas acessiveis da sessao, sem depender da workspace administrativa `multiloja`
+- ao agregar por tenant, uma loja sem dado (ex.: sem linha em `store_operation_settings`) NAO pode derrubar o tenant inteiro: `LoadSettings` trata `pgx.ErrNoRows` como defaults, em vez de propagar erro (senao vira 500 em `/data`). Backfill historico em migration `0164`.
+- o `default` de `writeServiceError` (500) deve logar o erro real (`request_id` + path); 500 cego ja escondeu causa-raiz antes
 - se uma tela precisar de outro agregado, preferir abrir um endpoint especifico antes de devolver bundles genericos
 
 ## Direcao de plugabilidade

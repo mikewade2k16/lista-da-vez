@@ -40,6 +40,7 @@ Hoje o contrato minimo de entrada do modulo e:
 - `Repository`
 - `StoreScopeProvider`
 - `EventPublisher`
+- `GoalProgressProvider` (opcional)
 
 ### `AccessContext`
 
@@ -85,6 +86,46 @@ Pode ser:
 
 Se o host nao quiser realtime, o modulo continua funcionando com publisher noop.
 
+### `GoalStats` no snapshot — meta canonica + vendido do ERP
+
+Cada consultor do snapshot/overview pode carregar `goalStats` (em reais):
+`monthlyGoal`, `soldValue`, `remainingToGoal`, `progress` (%, pode passar de 100),
+`hasGoal`. O front usa para o anel de meta no card da fila.
+
+Fonte de cada numero (montado em `combineGoalStats`, service.go):
+- a META e CANONICA de `queue.operation_goal_targets` (meta individual do consultor
+  no mes; senao a meta da loja como fallback), resolvida por
+  `Repository.EffectiveMonthlyGoalByConsultant(storeIDs, month)`. A coluna
+  `queue.consultants.monthly_goal` NAO e a fonte (fica zerada). Por ser in-domain,
+  a meta aparece ATE em loja sem ERP.
+- o VENDIDO vem do ERP via `GoalProgressProvider` (abaixo). Quando o ERP ja cobre o
+  consultor (meta>0), usa-se o stat inteiro do ERP (bate exatamente com `/v1/erp/crm`);
+  para os demais com meta cadastrada, usa-se a meta canonica + vendido do ERP quando
+  houver (senao 0). Consultor sem meta nenhuma fica fora do map (anel neutro no front).
+
+### `GoalProgressProvider` (ponte de VENDIDO com o CRM/ERP)
+
+Entrega o atingimento/vendido CANONICO por consultor (vindo do `goalProgress`/
+`salesCents` do `/v1/erp/crm`) para o modulo cruzar com a meta no snapshot/overview.
+
+- assinatura: `GoalStatsByConsultant(ctx, tenantID, month) (map[string]GoalStats, error)`
+- chave do map: o `consultant.ID` de PERFIL (mesmo `roster.id` do snapshot / `person.id` do front); o adapter pula consultores sem ID de perfil (`ProfileConsultantID` vazio)
+- `month` no formato `"YYYY-MM"`; vazio => mes corrente (UTC)
+- `GoalStats` (em reais): `monthlyGoal`, `soldValue`, `remainingToGoal`, `progress` (%, pode passar de 100), `hasGoal`
+- injecao via `SetGoalProgressProvider` (opcional). Sem provider, ou em erro/nil, o snapshot degrada com `goalStats=nil` (log em WARN `operations_goal_stats_unavailable`). E enriquecimento: erro NUNCA propaga para o snapshot/overview
+- o adapter concreto vive na composition root (`back/internal/platform/app/operations_goal_progress_adapter.go`) para que `operations` NAO importe `crm/erp` (sem ciclo). Ele chama o service do erp server-side (sem o gate `canViewERP`), com um principal `platform_admin` escopado ao tenant pedido — decisao de produto "todos os operadores veem a meta de todos"
+- escopo tenant-wide: o adapter usa o mesmo caminho da pagina de consultores (`resolveERPScope` + `GetCRMOverview`), com janela do mes (primeiro ao ultimo dia, UTC) IGUAL ao default de `consultant-transforms.ts`, para o numero bater exatamente
+- CACHE no adapter por `(tenantID, month)` com TTL de 120s (mutex + map): o snapshot e hot path realtime e nao pode rodar o overview inteiro do CRM a cada chamada
+
+### Caches do hot path de leitura (snapshot/overview) — `service_goal_stats.go`
+
+Snapshot e overview sao hot path: o front refaz a leitura apos CADA mutacao (start/finish/pause...) e a cada evento de realtime, entao todo clique pagava o custo das queries de enriquecimento de meta. Para nao bater no banco a cada chamada, alem do cache do adapter do ERP (acima), `operations` mantem dois caches em memoria no proprio service (`sync.Mutex` + `map`):
+
+- **meta canonica por consultor** (`effectiveGoalsByConsultant` -> `Repository.EffectiveMonthlyGoalByConsultant`): TTL **60s**. Chave = lista de `storeIDs` (trim + dedup + ORDENADOS, juntados por `,`) + `"|"` + mes `"YYYY-MM"`. O mes na chave garante que a virada de mes nunca devolve dado stale do mes anterior (e da determinismo aos testes sem precisar de relogio injetado). A meta muda raramente; 60s reflete edicao de meta sem o operador esperar.
+- **store -> tenant_id** (`storeTenantID` -> `Repository.GetStoreTenantID`): TTL **300s**, chave = `storeID`. Usado SO no fallback de escopo do ERP quando o principal nao traz account/tenant (ex.: `platform_admin` em rota `RequireAuth` sem `X-Account-Id`). store -> tenant e praticamente imutavel, por isso o TTL e generoso.
+
+Em ambos: ERRO NUNCA e cacheado (mantem a degradacao graciosa — na proxima chamada tenta de novo e o resultado segue `nil`/`""`, snapshot com `goalStats=nil`). Nao altera os VALORES de `GoalStats` nem a logica de `combineGoalStats`; so evita o trabalho de banco repetido. `goalStatsForTenant`, `effectiveGoalsByConsultant` e `combineGoalStats` vivem em `service_goal_stats.go`; os gates de permissao (`canReadOperations`/`canMutateOperations` e os papeis) em `service_access.go`.
+
 ## Contrato atual
 
 - `GET /v1/operations/snapshot?storeId=...`
@@ -99,7 +140,9 @@ Se o host nao quiser realtime, o modulo continua funcionando com publisher noop.
 Regra de resposta:
 
 - `GET /v1/operations/snapshot` devolve o snapshot operacional completo da loja, incluindo `roster` (projecao ENXUTA dos consultores da loja: `id`, `storeId`, `name`, `role`, `initials`, `color`). O `roster` existe para a faixa de consultores funcionar para papeis operadores que NAO tem a permissao de gestao `/v1/consultants` (ex.: `consultant`). NUNCA inclua meta/comissao/e-mail no `roster` do snapshot — esses ficam so no endpoint de gestao
+- `waitingList[].goalStats` e `activeServices[].goalStats` (opcionais, `null` quando nao ha dado ERP do consultor): o atingimento de meta CANONICO do consultor vindo do CRM/ERP (`goalProgress` do `/v1/erp/crm`), embutido server-side via `GoalProgressProvider` para que TODO operador veja o anel de meta no card da Lista da vez, sem precisar da permissao de gestao do ERP. Shape: `{ monthlyGoal, soldValue, remainingToGoal, progress, hasGoal }` em reais. No overview, `goalStats` aparece em cada `OperationOverviewPerson` (waitingList/activeServices/pausedEmployees/availableConsultants), preenchido por uma unica busca tenant-wide. Payout NAO entra neste corte
 - `GET /v1/operations/overview` devolve a visao operacional integrada das lojas acessiveis da sessao autenticada
+- `snapshot` e `overview` carregam `serverTime` (relogio do servidor na resposta). O front re-sincroniza o `serverClockOffsetMs` a CADA leitura ao vivo com esse campo — nao so no `savedAt` do ack de mutacao. Sem isso, a sessao que apenas OBSERVA (nao muta) nunca recaptura o offset e o cronometro drifta pelo skew API/navegador (ver nota de skew abaixo) ate o reload
 - comandos `POST` devolvem apenas `ack` minimo (`ok`, `storeId`, `savedAt`, `action`, `personId`)
 - o frontend deve revalidar o snapshot por `GET /v1/operations/snapshot` apos mutacao bem-sucedida
 - no modo integrado, o frontend deve revalidar `GET /v1/operations/overview` apos mutacao bem-sucedida
@@ -127,6 +170,7 @@ Regra de resposta:
 - auditoria vive em tabelas append-only:
   - `operation_status_sessions`
   - `operation_service_history`
+- `operation_status_sessions` agora tem `reason` e `kind` (nullable, migration 0159): quando a sessao fechada e de pausa (`status='paused'`), `applyStatusTransitions` anexa o motivo e o tipo (`pause`/`assignment`) capturados no `Resume` ANTES do `filterPaused` (o `operation_paused_consultants` e apagado no resume, entao a metrica precisa do dado na sessao). Isso alimenta o relatorio de pausas (`GET /v1/reports/pauses`)
 - o snapshot enviado ao Nuxt deve manter compatibilidade com o shape atual do runtime, para reduzir retrabalho no frontend
 - comandos nao devem devolver o snapshot inteiro da loja; isso aumenta payload, confunde debug e mistura leitura com mutacao
 - o modulo ja esta integrado ao Nuxt via `web/app/stores/operations.ts` e `web/app/utils/runtime-remote.ts`

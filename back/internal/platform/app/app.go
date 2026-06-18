@@ -168,6 +168,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		BackfillMaxFiles:           cfg.ERPBackfillMaxFiles,
 		ManualSyncMinInterval:      cfg.ERPManualSyncMinInterval,
 	})
+	// Ponte de meta no snapshot: operations obtem o goalProgress canonico do CRM
+	// via o service do erp (adapter na composition root => sem ciclo de import).
+	// Injecao opcional/nil-safe: se falhar, o snapshot degrada com GoalStats=nil.
+	operationsService.SetGoalProgressProvider(newOperationsGoalProgressAdapter(erpService))
 	if recovered, err := erpRepository.RecoverOrphanedSyncRuns(context.Background(), 2*time.Hour); err != nil {
 		logger.Warn("erp_orphan_recovery_failed", "error", err)
 	} else if recovered > 0 {

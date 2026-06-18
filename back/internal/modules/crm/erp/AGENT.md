@@ -58,6 +58,87 @@ Na fase 1, ele precisa sustentar:
 - o uso da lista no frontend e cobertura por consultor/loja (`atendimentos >= pedidos ERP`), nao a razao bruta `atendimentos / pedidos`, para evitar KPIs acima de 100%
 - `queueStats.byConsultant[].queueCancellationRate` (ja calculado em `repository_crm_queue.go:buildQueueStats`) e a UNICA fonte da taxa de cancelamento por consultor do card de consultor. A `consultants` store (front) consome esse mesmo payload do `GET /v1/erp/crm`, mergeia por `(storeId, personId)` com fallback por nome e propaga como `cancellationRate` ate o `ConsultantPlayerCard`/drawer da visao integrada. Nao criar DTO/endpoint paralelo nem recalcular no front; o ranking de consultor (`buildRankingRows`, client-side a partir do snapshot) NAO computa cancelamento
 
+## Comissao por atingimento de meta (payout embutido no /v1/erp/crm) (2026-06-17)
+
+- O calculo de comissao ("Recebimento por atingimento de meta") vive em
+  `back/internal/modules/queue/commission` (pacote folha, fonte unica). O
+  `/v1/erp/crm` apenas CARREGA os insumos, chama `commission.Calculate` e
+  EMBUTE o resultado no DTO existente — sem endpoint/DTO paralelo, sem recalcular no front.
+- Insumos carregados 1x por request, tenant-scoped (`repository_crm_payout.go`):
+  politica (`tenant_operation_core_settings.crm_goal_payout_policy`), metas
+  mensais por consultor (`queue.operation_goal_targets`, batch por `tenant_id` +
+  `target_month`) e `store_type`/metas de loja (ja vem em `listCRMStoreTargets`,
+  agora lendo `queue.stores.store_type`). Sem N+1.
+- `target_month` do payout = mes do `dateFrom` da query (ou mes atual se vazio).
+- Campos JSON novos no payload (consumidos pela Trilha C):
+  - cada item de `consultants[]` (byConsultant) ganha:
+    - `payout` = `{ amount, ratePercent, base, group, ruleLabel, penaltyApplied }`.
+      `group` = `"consultant"|"manager"|"support"`; `ratePercent` ja com penalidade;
+      `base` = valor sobre o qual incidiu; `ruleLabel` curto; `penaltyApplied` em
+      pontos percentuais. (so quando ha dado; `omitempty`).
+    - `monthlyGoalCents` e `goalProgress` do consultor (preenchidos quando ha meta propria).
+  - cada item de `stores[]` ganha:
+    - `storeType` (`"shopping"|"bairro"`),
+    - `managerPayout` = `{ amount, ratePercent, ruleLabel }` (ja resolvido pelo
+      `store_type` da loja),
+    - `supportPayout` = `{ amount, ratePercent, ruleLabel }`.
+    `storeSold`/`storeGoal`/`storeProgress` ja existiam como `salesCents`/
+    `monthlyGoalCents`/`goalProgress`.
+- O payout de loja so e calculado para loja `mapped` (com target). Loja nao
+  mapeada nao recebe `managerPayout`/`supportPayout`.
+
+## Flags de gap — aviso acionavel inline (2026-06-17)
+
+- O payload do `GET /v1/erp/crm` expoe "flags de gap" que dizem ao front qual
+  config de meta esta faltando (regra AGENT_RULES "Config/dado faltando = aviso
+  ACIONAVEL inline"). Plano canonico: `docs/INLINE_QUICK_EDIT_PLAN.md` (fase
+  `crm-c10`). Tudo DERIVADO do que `applyCRMPayouts` ja carrega — sem recalcular,
+  sem endpoint/migration/query nova.
+- Cada item de `stores[]` ganha:
+  - `storeGoalSource`: `"own"` (loja tem `monthly_goal` proprio) | `"consultant-sum"`
+    (meta caiu na soma das metas dos consultores) | `"none"` (sem meta alguma).
+  - `missingStoreGoal` (bool): loja sem `monthly_goal` proprio cadastrado.
+  - `missingTicketGoal` / `missingPaGoal` (bool): loja sem meta de ticket/PA
+    (com essas faltando, a penalidade de qualidade fica desligada).
+  - `splitConsultantCount` (int): nº de consultores na loja (divisor da mensagem
+    "meta da loja R$ X ÷ N").
+- Cada item de `consultants[]` ganha:
+  - `goalSource`: `"own"` (meta mensal propria) | `"store-split"` (herdou a meta da
+    loja dividida entre N consultores) | `"none"`.
+  - `missingMonthlyGoal` (bool): consultor sem meta mensal propria.
+  - `missingTicketGoal` / `missingPaGoal` (bool): sem meta de ticket/PA, ja
+    considerando a HERANCA da loja (so marca missing quando nem o consultor nem a
+    loja tem a meta).
+- Preenchimento em `repository_crm_payout.go`: flags de loja no loop de lojas
+  (junto de `storeGoal`/`storeProgress`); flags de consultor em
+  `applyConsultantPayout` (reusa `cg`/`sg`/`monthlyGoal`/`ticketGoalCents`/`paGoal`).
+
+## Ponte de meta para o snapshot da Operacao (2026-06-17)
+
+- `Service.GoalStatsByConsultant(ctx, principal, tenantID, month)` (em `service.go`)
+  e uma PONTE server-side para o modulo `queue/operations` embutir o atingimento
+  de meta CANONICO por consultor no snapshot/overview da Lista da vez. Devolve
+  `map[string]ConsultantGoalStat` indexado pelo `ProfileConsultantID` (o mesmo
+  `consultant.ID` de perfil / `person.id` do front); consultores sem
+  `ProfileConsultantID` sao pulados.
+- Diferente de `CRMOverview`, este metodo NAO passa pelo gate `canViewERP`: o
+  numero e enriquecimento, e a decisao de produto e "todos os operadores veem a
+  meta de todos". O escopo continua restrito ao tenant — o caller (adapter na
+  composition root) injeta um principal `platform_admin` escopado ao `tenantID`.
+- Reusa exatamente o caminho da pagina de consultores: `resolveERPScope` +
+  `repository.GetCRMOverview` com `allowedStoreIDs` tenant-wide quando o papel nao
+  exige filtro por loja. A janela do mes (`monthWindow`, `service.go`) e do
+  primeiro ao ultimo dia do mes em UTC, date-only — IGUAL ao default de
+  `web/app/domain/utils/consultant-transforms.ts` — para o numero bater com o
+  `goalProgress` do `/v1/erp/crm`. `month` vazio => mes corrente.
+- Mapeamento `CRMConsultantMetric` -> `ConsultantGoalStat` (em reais): `MonthlyGoal
+  = MonthlyGoalCents/100`, `SoldValue = SalesCents/100`, `RemainingToGoal =
+  maxCRMRemaining(MonthlyGoalCents, SalesCents)/100`, `Progress = GoalProgress`,
+  `HasGoal = MonthlyGoalCents > 0`.
+- O cache (TTL 120s por `(tenant, mes)`) NAO fica aqui: vive no adapter da
+  composition root (`back/internal/platform/app/operations_goal_progress_adapter.go`),
+  para `operations` nao importar `crm/erp`.
+
 ## Invariantes novos
 
 - nunca mutar a origem remota; apenas listar e abrir arquivos

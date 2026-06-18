@@ -38,6 +38,10 @@ func (repository *testOperationsRepository) GetStoreName(context.Context, string
 	return repository.storeName, nil
 }
 
+func (repository *testOperationsRepository) GetStoreTenantID(context.Context, string) (string, error) {
+	return "", nil
+}
+
 func (repository *testOperationsRepository) GetMaxConcurrentServices(context.Context, string) (int, error) {
 	return repository.maxConcurrentServices, nil
 }
@@ -59,6 +63,10 @@ func (repository *testOperationsRepository) ListStoresWithActiveServicesByTenant
 
 func (repository *testOperationsRepository) ListRoster(context.Context, string) ([]ConsultantProfile, error) {
 	return append([]ConsultantProfile{}, repository.roster...), nil
+}
+
+func (repository *testOperationsRepository) EffectiveMonthlyGoalByConsultant(context.Context, []string, time.Time) (map[string]float64, error) {
+	return map[string]float64{}, nil
 }
 
 func (repository *testOperationsRepository) LoadSnapshot(context.Context, string) (SnapshotState, error) {

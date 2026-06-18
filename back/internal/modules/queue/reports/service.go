@@ -27,6 +27,7 @@ type Repository interface {
 	ListHistory(ctx context.Context, storeID string, filters repositoryFilters) ([]operations.ServiceHistoryEntry, error)
 	ListHistoryByStores(ctx context.Context, storeIDs []string, filters repositoryFilters) ([]operations.ServiceHistoryEntry, error)
 	ListLiveCounts(ctx context.Context, storeIDs []string) (map[string]StoreLiveCounts, error)
+	ListPauseSessions(ctx context.Context, storeIDs []string, fromMillis *int64, toMillis *int64, consultantIDs []string) ([]PauseSessionRow, error)
 }
 
 type StoreFinder interface {
@@ -259,7 +260,7 @@ func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.P
 	})
 
 	if len(rows) > 0 {
-		summary.AverageHealthScore = summary.AverageHealthScore / float64(len(rows))
+		summary.AverageHealthScore /= float64(len(rows))
 	}
 
 	return MultiStoreOverviewResponse{

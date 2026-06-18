@@ -67,6 +67,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, store Store) (
 			name,
 			city,
 			default_template_id,
+			store_type,
 			monthly_goal,
 			weekly_goal,
 			avg_ticket_goal,
@@ -85,7 +86,8 @@ func (repository *PostgresRepository) Create(ctx context.Context, store Store) (
 			$8,
 			$9,
 			$10,
-			$11
+			$11,
+			$12
 		)
 		returning
 			id::text,
@@ -94,6 +96,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, store Store) (
 			name,
 			city,
 			default_template_id,
+			store_type,
 			monthly_goal,
 			weekly_goal,
 			avg_ticket_goal,
@@ -112,6 +115,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, store Store) (
 		store.Name,
 		store.City,
 		store.DefaultTemplateID,
+		store.StoreType,
 		store.MonthlyGoal,
 		store.WeeklyGoal,
 		store.AvgTicketGoal,
@@ -138,12 +142,13 @@ func (repository *PostgresRepository) Update(ctx context.Context, store Store) (
 			name = $3,
 			city = $4,
 			default_template_id = $5,
-			monthly_goal = $6,
-			weekly_goal = $7,
-			avg_ticket_goal = $8,
-			conversion_goal = $9,
-			pa_goal = $10,
-			is_active = $11,
+			store_type = $6,
+			monthly_goal = $7,
+			weekly_goal = $8,
+			avg_ticket_goal = $9,
+			conversion_goal = $10,
+			pa_goal = $11,
+			is_active = $12,
 			updated_at = now()
 		where id = $1::uuid
 		returning
@@ -153,6 +158,7 @@ func (repository *PostgresRepository) Update(ctx context.Context, store Store) (
 			name,
 			city,
 			default_template_id,
+			store_type,
 			monthly_goal,
 			weekly_goal,
 			avg_ticket_goal,
@@ -171,6 +177,7 @@ func (repository *PostgresRepository) Update(ctx context.Context, store Store) (
 		store.Name,
 		store.City,
 		store.DefaultTemplateID,
+		store.StoreType,
 		store.MonthlyGoal,
 		store.WeeklyGoal,
 		store.AvgTicketGoal,
@@ -244,6 +251,7 @@ func scanStore(row pgx.Row) (Store, error) {
 		&store.Name,
 		&store.City,
 		&store.DefaultTemplateID,
+		&store.StoreType,
 		&store.MonthlyGoal,
 		&store.WeeklyGoal,
 		&store.AvgTicketGoal,
@@ -261,6 +269,10 @@ func scanStore(row pgx.Row) (Store, error) {
 	store.Name = strings.TrimSpace(store.Name)
 	store.City = strings.TrimSpace(store.City)
 	store.DefaultTemplateID = strings.TrimSpace(store.DefaultTemplateID)
+	store.StoreType = strings.ToLower(strings.TrimSpace(store.StoreType))
+	if store.StoreType == "" {
+		store.StoreType = StoreTypeBairro
+	}
 
 	return store, nil
 }

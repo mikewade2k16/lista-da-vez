@@ -1,28 +1,15 @@
 <script setup>
 import { computed } from 'vue'
-import AppSelectField from '~/components/ui/AppSelectField.vue'
 import { deriveCampaignStatus } from '~/domain/utils/campaigns'
 
+// Apos mover o filtro de loja para o nav (DashboardWorkspaceNav), esta barra
+// cuida apenas do destaque de campanha comercial ativa na operacao.
 const props = defineProps({
   state: {
     type: Object,
     required: true,
   },
-  scopeMode: {
-    type: String,
-    default: 'single',
-  },
-  stores: {
-    type: Array,
-    default: () => [],
-  },
-  integratedStoreId: {
-    type: String,
-    default: '',
-  },
 })
-
-const emit = defineEmits(['integrated-store-change'])
 
 function formatPeriodLabel(startsAt, endsAt) {
   if (startsAt && endsAt) {
@@ -40,20 +27,6 @@ function formatPeriodLabel(startsAt, endsAt) {
   return ''
 }
 
-const storeOptions = computed(() =>
-  (Array.isArray(props.stores) ? props.stores : []).map((store) => ({
-    value: String(store?.id || '').trim(),
-    label: String(store?.name || '').trim(),
-    meta: [String(store?.code || '').trim(), String(store?.city || '').trim()]
-      .filter(Boolean)
-      .join(' · '),
-  })),
-)
-
-const integratedFilterOptions = computed(() => [
-  { value: '', label: 'Todas as lojas', meta: 'Sem filtro aplicado' },
-  ...storeOptions.value,
-])
 const activeCommercialCampaigns = computed(() =>
   (props.state.campaigns || [])
     .filter((campaign) => (campaign.campaignType || 'interna') === 'comercial')
@@ -88,18 +61,12 @@ const campaignSubline = computed(() => {
 
   return 'Abra os detalhes para consultar regras, produtos e metas.'
 })
-const showFilter = computed(() => props.scopeMode === 'all')
 const showCampaign = computed(() => activeCommercialCampaigns.value.length > 0)
-const shouldRenderBar = computed(() => showFilter.value || showCampaign.value)
-
-function handleIntegratedStoreChange(value) {
-  emit('integrated-store-change', String(value || '').trim())
-}
 </script>
 
 <template>
-  <section v-if="shouldRenderBar" class="operation-scope-bar">
-    <div v-if="showCampaign" class="operation-scope-bar__campaign">
+  <section v-if="showCampaign" class="operation-scope-bar">
+    <div class="operation-scope-bar__campaign">
       <div class="operation-scope-bar__campaign-accent" aria-hidden="true"></div>
       <div class="operation-scope-bar__campaign-content">
         <strong class="operation-scope-bar__campaign-headline">{{ campaignHeadline }}</strong>
@@ -109,19 +76,6 @@ function handleIntegratedStoreChange(value) {
       </div>
       <NuxtLink to="/campanhas" class="operation-scope-bar__campaign-action">Ver campanha</NuxtLink>
     </div>
-
-    <div v-if="showFilter" class="operation-scope-bar__filter">
-      <span class="operation-scope-bar__filter-label">Filtro</span>
-      <AppSelectField
-        class="operation-scope-bar__field"
-        :model-value="integratedStoreId"
-        :options="integratedFilterOptions"
-        placeholder="Todas as lojas"
-        :show-leading-icon="false"
-        testid="operation-filter-integrated-store"
-        @update:model-value="handleIntegratedStoreChange"
-      />
-    </div>
   </section>
 </template>
 
@@ -129,10 +83,7 @@ function handleIntegratedStoreChange(value) {
 .operation-scope-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.9rem;
-  padding: 0.85rem 1rem;
-  border-radius: 1rem;
 }
 
 .operation-scope-bar__campaign {
@@ -198,26 +149,6 @@ function handleIntegratedStoreChange(value) {
   color: rgb(var(--primary));
 }
 
-.operation-scope-bar__filter {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.operation-scope-bar__filter-label {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.operation-scope-bar__field {
-  min-width: 13.5rem;
-}
-
 @media (max-width: 900px) {
   .operation-scope-bar {
     flex-direction: column;
@@ -227,16 +158,6 @@ function handleIntegratedStoreChange(value) {
   .operation-scope-bar__campaign {
     align-items: flex-start;
     flex-wrap: wrap;
-  }
-
-  .operation-scope-bar__filter {
-    justify-content: flex-start;
-    margin-left: 0;
-  }
-
-  .operation-scope-bar__field {
-    min-width: 0;
-    width: 100%;
   }
 }
 </style>

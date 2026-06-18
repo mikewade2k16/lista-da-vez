@@ -1,6 +1,8 @@
 <script setup>
 import { reactive, watch } from 'vue'
 
+import SettingsCrmConsultantRules from '~/components/settings/sections/SettingsCrmConsultantRules.vue'
+
 const props = defineProps({
   ctx: {
     type: Object,
@@ -10,7 +12,8 @@ const props = defineProps({
 
 const payoutGroups = [
   { id: 'consultant', label: 'Consultor' },
-  { id: 'manager', label: 'Gerente' },
+  { id: 'managerShopping', label: 'Gerente Shopping' },
+  { id: 'managerBairro', label: 'Gerente Lojas Bairro' },
   { id: 'support', label: 'Caixa e auxiliar' },
 ]
 
@@ -32,19 +35,11 @@ function toDraftRule(rule) {
 
 // Rascunho local editavel por grupo. O usuario edita livremente (valor vazio/0
 // transitorio nao derruba a linha) e so persistimos no blur / botao "Salvar faixas".
-const draft = reactive({
-  consultant: [],
-  manager: [],
-  support: [],
-})
+const draft = reactive(Object.fromEntries(payoutGroups.map((group) => [group.id, []])))
 
 // Marca quais grupos tem edicao pendente para nao sobrescrever o rascunho com a
 // fonte enquanto o usuario digita.
-const dirty = reactive({
-  consultant: false,
-  manager: false,
-  support: false,
-})
+const dirty = reactive(Object.fromEntries(payoutGroups.map((group) => [group.id, false])))
 
 function syncGroupFromSource(groupId) {
   const source = props.ctx.crmGoalPayoutPolicy?.[groupId] || []
@@ -284,6 +279,8 @@ async function saveGroup(groupId) {
         </details>
       </div>
     </article>
+
+    <SettingsCrmConsultantRules :ctx="ctx" />
   </div>
 </template>
 

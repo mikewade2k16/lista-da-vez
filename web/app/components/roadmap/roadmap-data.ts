@@ -95,6 +95,21 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     id: "infra-deploy",
     label: "Infra & Deploy",
     description: "Pipeline de deploy do Omni: imagens no GHCR buildadas no GitHub Actions (a VPS só faz pull, nunca compila) + ambiente de staging isolado e sob demanda para testar antes de promover pra produção. Plano: docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md."
+  },
+  {
+    id: "fila-operacao",
+    label: "Fila — Página Operação",
+    description: "Ajustes de operação da Fila: controle por loja individual para usuários multi-loja, limpeza do modal de encerrar, justificativa só ao avançar e métrica de pausas (motivo/horário/duração) persistida e em Relatórios. Plano: docs/operacao/AJUSTES_OPERACAO_PLAN.md."
+  },
+  {
+    id: "menu-layout",
+    label: "Organização do Menu (Header × Sidebar)",
+    description: "Config global, editável pelo platform_admin, de como o menu se divide entre header e sidebar: posição por item (header/sidebar/ambos/oculto) + reordenar, persistida em core.platform_settings. Inclui fix responsivo do header (overflow 'Mais'). Plano: docs/MENU_LAYOUT_CONFIG.md."
+  },
+  {
+    id: "comissao-v2",
+    label: "Comissão v2 — cálculo no back (API-first)",
+    description: "Recebimento por atingimento de meta calculado no backend como serviço de domínio único (pacote queue/commission), embutido em /v1/erp/crm. Consultor sobre a PRÓPRIA venda com trava de meta e penalidade PA/Ticket; gerente sobre o total da loja com faixas por tipo de loja (Shopping/Bairro). Inclui a auditoria das demais lógicas só-no-front (P1-P3). Plano: planos/vamos-fazer-altera-es-em-purrfect-pony.md."
   }
 ];
 
@@ -1017,6 +1032,63 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
   },
 
   {
+    id: "crm-c10",
+    code: "CRM C10",
+    title: "Aviso acionavel inline + quick-edit de metas via API (de qualquer tela, plugavel)",
+    goal: "Quando um dado que o calculo usa (meta de ticket/PA da loja, meta por consultor, store_type) esta faltando, a tela mostra um aviso honesto onde o dado importa e, para quem tem permissao, deixa cadastrar NA HORA num popover inline que grava pela API canonica (reusa operationgoals) — sem obrigar a achar a tela de config. Mecanismo PLUGAVEL e simples: 1 descriptor + soltar <InlineFieldGuard>. Caso real: Perola Jardins sem ticket/PA (penalidade desligada) e sem meta individual (meta da loja dividida por N). Doc: docs/INLINE_QUICK_EDIT_PLAN.md.",
+    status: "done",
+    estimateWeeks: "2-3 dias",
+    startedAt: "2026-06-17",
+    finishedAt: "2026-06-17",
+    group: "crm-360",
+    tasks: [
+      { id: "gap-flags", label: "Back: /v1/erp/crm expoe flags de gap (goalSource own|store-split|none, missingMonthlyGoal/Ticket/Pa por consultor; missingStoreGoal/Ticket/Pa + splitCount por loja) calculados no applyCRMPayouts; DTO em crm/erp/model.go; rebuild api", done: true },
+      { id: "inline-field-guard", label: "Front: motor plugavel — InlineFieldGuard.vue + QuickEditPopover.vue + defineQuickEditField/registry em web/app/domain/quick-edit/ (aviso + clicavel se canEdit + salva via descriptor.save + re-hidrata via afterSave + fecha clique-fora/Esc)", done: true },
+      { id: "goal-descriptors", label: "Descriptors storeTicketGoal/storePaGoal/consultantMonthlyGoal salvando via /v1/operations/goals (reusa useOperationGoalsStore; SEM endpoint novo, SEM migration)", done: true },
+      { id: "consultor-plug", label: "Plugar <InlineFieldGuard> nos cards de /consultor (ConsultantPlayerCard/Grid): aviso informativo p/ todos, edicao gated por canManageGoalTargets espelhando o back; transparencia 'meta da loja R$ X / N'", done: true },
+      { id: "docs-tests", label: "Sincronizar docs/INLINE_QUICK_EDIT_PLAN.md + AGENT.md (crm/erp, consultant front) + testes vitest dos descriptors do guard (16 verdes)", done: true }
+    ],
+    verifiable: "Na Perola Jardins, /consultor mostra 'sem TM' no cabecalho da loja (loja sem ticket) e 'sem Meta' por consultor; usuario com permissao clica, cadastra no popover (grava via /v1/operations/goals), recalcula vindo do back e persiste apos refresh; quem nao tem permissao ve so o aviso. 16 testes vitest dos descriptors verdes; vue-tsc da pasta consultant zerado."
+  },
+
+  {
+    id: "crm-c11",
+    code: "CRM C11",
+    title: "Estender quick-edit inline a operacao/ranking/multiloja + novos descriptors",
+    goal: "Reusar o MESMO motor InlineFieldGuard (entregue na C10) em /operacao, /ranking e multiloja, e escrever os descriptors de store_type (PATCH /v1/stores/{id}) e politica de comissao (PATCH /v1/settings/crm-policy). Zero codigo novo de UI por tela: 1 descriptor + soltar o componente. Doc: docs/INLINE_QUICK_EDIT_PLAN.md (Fase 2).",
+    status: "pending",
+    estimateWeeks: "1-2 dias",
+    group: "crm-360",
+    tasks: [
+      { id: "operacao-plug", label: "Plugar <InlineFieldGuard> na pagina de operacao (avisos + edicao de meta no contexto consultor/loja)", done: false },
+      { id: "ranking-multiloja-plug", label: "Plugar o mesmo guard em /ranking e multiloja onde meta/atingimento aparecem", done: false },
+      { id: "store-type-descriptor", label: "Descriptor de store_type (PATCH /v1/stores/{id}) e de politica de comissao (PATCH /v1/settings/crm-policy)", done: false }
+    ],
+    verifiable: "O mesmo <InlineFieldGuard> aparece em /operacao, /ranking e multiloja sem codigo novo por tela; editar store_type/politica inline grava pela API canonica e re-hidrata."
+  },
+
+  {
+    id: "qa-vue-tsc-baseline",
+    code: "QA · vue-tsc",
+    title: "Zerar a baseline de erros do type-check do front (vue-tsc)",
+    goal: "O QUE FALTA: ~223 erros de tipo no `npx vue-tsc --noEmit` do web, pre-existentes e espalhados — site (47), crm (40), utils/runtime-remote+api-client (38), ranking (20), stores+dashboard (21), composables (13), layers/tasks (14), alerts (7), tenants (6) e o resto em admin/manager/roadmap/omni/feedback/meta-ads/bi/app.config (~17). Sao quase todos tipagem LOOSE (`unknown`/`object`/`any` implicito em respostas de API, getters de store e props), nao bugs de runtime. POR QUE NAO E' URGENTE: o vue-tsc NAO esta no pre-commit (so eslint/golangci/sql-lint sao enforcados); o app compila e roda normal (Vite/Nuxt transpila sem checagem de tipo), entao nada disso quebra em producao hoje; e' o estado ambiente de um codebase grande. POR QUE DEVEMOS RESOLVER: ENGINEERING_PRINCIPLES (TS strict: vue-tsc deve passar, pega bug em build time e nao em prod) e o objetivo de type-safety; com 223 erros de ruido NAO da pra usar o vue-tsc como gate — um erro NOVO de verdade se esconde no meio; refactor sem type-check e' arriscado; ja mordeu nesta branch (PlayerCardStats/liveStatusCode/ConsultantRow eram exatamente loose typing escondendo incompatibilidade real). Zerar permite LIGAR o gate (CI/pre-commit) e impedir regressao. COMO: tipar na FONTE (sem `any`), area por area, com subagentes Opus em paralelo (dominios disjuntos).",
+    status: "pending",
+    estimateWeeks: "3-5 dias",
+    group: "infra-deploy",
+    tasks: [
+      { id: "tsc-site", label: "Zerar vue-tsc em app/components/site (47 erros) — tipar respostas/props de SiteProductsWorkspace e cia", done: false },
+      { id: "tsc-crm", label: "Zerar vue-tsc em app/components/crm (40) — CrmConsultantsSection e cia (tipar metricas/payout vindos do /v1/erp/crm)", done: false },
+      { id: "tsc-utils", label: "Zerar vue-tsc em app/utils (38) — runtime-remote.ts + api-client.ts: tipar payloads de fetch e o estado remoto em vez de unknown/object", done: false },
+      { id: "tsc-ranking", label: "Zerar vue-tsc em app/components/ranking (20)", done: false },
+      { id: "tsc-stores", label: "Zerar vue-tsc em app/stores + app/stores/dashboard (21) — multistore.ts, state.ts, meta-ads.ts, workspace.ts", done: false },
+      { id: "tsc-composables-tasks", label: "Zerar vue-tsc em app/composables (13) + layers/tasks (14 — components/composables: AppDatePicker, OmniDataTable, useTasks*)", done: false },
+      { id: "tsc-resto", label: "Zerar vue-tsc no resto: alerts (7), tenants (6), admin/manager/roadmap/omni/feedback/meta-ads/bi + app.config.ts (~17)", done: false },
+      { id: "tsc-gate", label: "Apos zerar: ligar o gate de vue-tsc (CI e/ou pre-commit Husky) pra impedir regressao; documentar em AGENT_RULES (Qualidade)", done: false }
+    ],
+    verifiable: "`npx vue-tsc --noEmit` no web retorna 0 erros; gate de vue-tsc ativo (CI/pre-commit) faz PR com erro de tipo falhar antes do merge; nenhuma feature existente quebrou (regressao visual/funcional checada por area)."
+  },
+
+  {
     id: "roadmap-b1",
     code: "Roadmap B1",
     title: "Backend de Modulos & Regras editaveis",
@@ -1309,6 +1381,7 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-move-folder", label: "Pasta 'n8n Whatsapp' migrada para automation/ (export + .mcp.json + .gitignore + docker-compose.reference.yml) e docs para docs/automation/", done: true, note: "Concluído 2026-06-04." },
       { id: "aut-docs", label: "automation/AGENT.md criado; SETUP.md adaptado (profile, nomes de serviço, caminhos); .gitignore raiz protege segredos; .env.docker.example com AUTOMATION_*", done: true, note: "Concluído 2026-06-04." },
       { id: "aut-runbook-validate", label: "Subir profile automation, instalar community node, importar credenciais+workflow, escanear QR e validar 1 mensagem real (depende do usuário; ativar responde no WhatsApp real)", done: false, note: "2026-06-08: corrigida a tag da WAHA (manifest 2026.5.1 não existe puro) → devlikeapro/waha:gows-2026.5.1 (engine GOWS) no dev e prod. `up -d` volta a funcionar. Falta os passos interativos do Mike." },
+      { id: "aut-promote-subdomain", label: "Promover o acesso da automação de túnel SSH → subdomínios públicos (n8n./waha.crowvisuals.com.br): DNS A → 85.31.62.33 + bloco Caddy com basic auth + flip env p/ https/true", done: false, note: "2026-06-16: escolha do dono = subir na VPS via TÚNEL SSH primeiro (rápido, sem DNS): n8n 127.0.0.1:15680 / WAHA 127.0.0.1:13010, com N8N_PROTOCOL/SECURE_COOKIE=http/false. Compose já deixa esses 2 campos env-driven (default https/true). Promover depois pra produção: criar DNS, bloco no /opt/omnichannel/Caddyfile (editar com cat>, não sed -i) e voltar env p/ https/true." },
       // Fases de produto (bloqueadas pela multitenant-completion). Design: docs/automation/PLANO_INTEGRACAO_OMNI.md
       { id: "aut-a1-schema", label: "A1 — Migration schema automation.* (tenant-aware): settings, personas, guardrails, model_catalog, waha_sessions, service_tokens, contacts, messages, lead_state, long_memory, follow_ups, purchases + seeds", done: false, note: "Entregue por partes via M1-M3+ e A6/A7: automations/channels (0140), personas (0141), knowledge (0142), contacts/long_memory (0143), model_catalog/automation_models (0144), messages/lead_state (0145). Faltam follow_ups/purchases (A9) e service_tokens como tabela (hoje AUTOMATION_RUNTIME_TOKEN unico)." },
       { id: "aut-a2-modulo-go", label: "A2 — Módulo Go automation (Module Registry): settings, personas, model_catalog, endpoint runtime-config (persona+guardrails+contexto+modelos) e service_tokens; auth por token de serviço resolve account_id", done: false },
@@ -1458,6 +1531,172 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     ],
     blockers: [],
     verifiable: "https://preview.whenthelightsdie.com/healthz = 200 (cert TLS emitido), home = 200, sem quebrar omni/crowvisuals; containers omni-staging-* healthy; deploy sem build na VPS (build local → save/load por SSH OU push GHCR → pull). Os outros caminhos (CI build-images.yml; deploy-vps.yml pull; deploy-fast.ps1 via GHCR) seguem escritos como opções rastreáveis."
+  },
+
+  // ─── Fila / Operação — ajustes (orquestrador, lanes A/B/C/D) ──────────────
+  //
+  // Criada em 2026-06-16. Plano canônico: docs/operacao/AJUSTES_OPERACAO_PLAN.md.
+  // Decisões de produto: Item 1 = filtrar 1 loja libera operação só nela;
+  // Item 4 = métrica de pausas numa seção "Pausas" em Relatórios.
+  // CÓDIGO LOCAL CONCLUÍDO 2026-06-16 (os subagentes em background travaram num
+  // gate de validação; o orquestrador assumiu e fechou as 4 lanes inline).
+  // Gates locais OK: go build/vet/gofmt + go test (operations/reports); web
+  // eslint 0 erros + vue-tsc sem erro novo nos arquivos tocados + vitest 46/46.
+  // FALTA (usuário): migration 0159 + rebuild api + validação em browser.
+  {
+    id: "operacao-ajustes",
+    code: "OPS",
+    title: "Operação da Fila — controle multi-loja, modal e métrica de pausas",
+    goal: "Devolver controle operacional por loja individual a usuários multi-loja, limpar o modal de encerrar (sem ID, só nome), mostrar justificativa só ao tentar avançar, e persistir/metrificar as pausas (motivo, horário, duração, contagem) com uma seção Pausas em Relatórios.",
+    status: "in_progress",
+    startedAt: "2026-06-16",
+    estimateWeeks: "2-4 dias",
+    group: "fila-operacao",
+    tasks: [
+      { id: "ops-a-multistore", label: "A — Front (Item 1): ao filtrar 1 loja no modo 'Todas as lojas', aquela loja vira contexto operável (iniciar/encerrar/parar/pausar/retomar) com snapshot real; 'Todas as lojas' segue leitura.", done: true, note: "FEITO 2026-06-16: OperationWorkspace.vue (operableStoreId + buildOperableStoreState a partir do snapshot escopado + childIntegratedMode); operacao/index.vue (carrega refreshOperationSnapshot ao filtrar 1 loja); stores/operations.ts (startService aceita storeId + runCommand revalida snapshot de loja com storeSnapshots carregado); OperationQueueColumns/ConsultantStrip recebem operatingStoreId e usam nas ações. FALTA validar no browser." },
+      { id: "ops-b-modal", label: "B — Front (Itens 2+3): remover '| ID {serviceId}' do subtítulo do OperationFinishModal (só nome do consultor) + revelar justificativas só ao tentar avançar/concluir.", done: true, note: "FEITO 2026-06-16: subtítulo só com o nome; reveal das justificativas por passo (step1JustificationsRevealed em goToStep2; step1+step2 em submitForm, setados ANTES dos returns de obrigatórios) — duas flags pra não revelar o passo Cliente cedo demais ao avançar; resetadas em resetForm/clearCurrentDraft/watch(outcome). Regras/inputs de justificativa INTOCADOS (só o momento de exibir mudou). Campo estritamente obrigatório (requireField) não tem justificativa por design — continua cobrando; a justificativa é só p/ campo 'opcional + exige justificativa'." },
+      { id: "ops-c-pausas-back", label: "C — Back (Item 4a+4b-back): migration 0159 + ConsultantSession.Reason/Kind + applyStatusTransitions anexa motivo/kind ao fechar sessão de pausa + append/loadSessions + endpoint GET /v1/reports/pauses.", done: true, note: "FEITO 2026-06-16: migration 0159 (reason/kind nullable + recria view pública); Resume captura motivo/kind antes do filterPaused e leva na transition; appendSessions/loadSessions com *string; endpoint /v1/reports/pauses (summary/byConsultant/byReason/byHour/rows, kind='pause'). go build/vet/gofmt/test OK. FALTA (usuário): aplicar migration 0159 + docker compose up -d --build api. TestAllMigrationsApply roda no CI (banco limpo)." },
+      { id: "ops-d-pausas-front", label: "D — Front (Item 4b-front): seção 'Pausas' em relatorios.vue consumindo GET /v1/reports/pauses (resumo, tabela por consultor, motivos e por hora), tokens do design system.", done: true, note: "FEITO 2026-06-16: ReportsPausesSection.vue (resumo + tabela por consultor + barras por motivo/hora + últimas pausas) reusando classes globais; stores/reports.ts busca /v1/reports/pauses (tolerante a 404 antes do rebuild) no escopo loja e tenant. eslint/vue-tsc/vitest OK." }
+    ],
+    blockers: [],
+    verifiable: "Multi-loja: 'Todas as lojas' = leitura, escolher 1 loja no filtro = opera como operador comum (timers/serviceId reais). Modal de encerrar sem ID, só nome. Justificativa some até clicar Avançar/Concluir com campo vazio. Pausar+retomar grava reason/kind em operation_status_sessions; aba Pausas em Relatórios mostra qtd/horário/duração/motivo por consultor. build/lint/type-check + go test limpos."
+  },
+
+  // ─── Anel de meta no avatar da fila — 2 subagentes (back × front) ──
+  //
+  // Criada em 2026-06-17. Decisão de produto: anel de progresso de meta ao redor
+  // do avatar do consultor no card da "Lista da vez", com gradiente vermelho→verde
+  // conforme fecha 100% e popover no hover (meta/atingido/falta). Número CANÔNICO =
+  // goalProgress do /v1/erp/crm (#2). Como esse endpoint é gestão-only (canViewERP
+  // barra consultant/store_terminal), o snapshot da operação faz a PONTE: operations
+  // recebe um GoalProgressProvider (interface injetada) implementado por um adapter
+  // do erp, cacheado por (tenant, mês), e embute goalStats por consultor no
+  // QueueEntry/OperationOverviewPerson. Todos os operadores veem (decisão "todos
+  // veem de todos"). Payout fora do 1º corte. Exige rebuild api (usuário).
+  {
+    id: "operacao-anel-meta",
+    code: "OPS-META",
+    title: "Anel de meta no avatar da fila + popover no hover",
+    goal: "Mostrar, ao redor do avatar de cada consultor no card da Lista da vez, um anel de progresso da meta mensal (gradiente vermelho→verde conforme fecha 100%) e um popover no hover com Meta/Atingido/Falta. O número é o goalProgress canônico do /v1/erp/crm, entregue a TODO operador (inclusive consultor/terminal sem permissão de ERP) via ponte no snapshot da operação.",
+    status: "in_progress",
+    startedAt: "2026-06-17",
+    estimateWeeks: "1-2 dias",
+    group: "fila-operacao",
+    tasks: [
+      { id: "meta-back-provider", label: "Back — interface GoalProgressProvider em queue/operations + adapter do erp (GetCRMOverview → map[profileConsultantID]GoalStats, valores em reais) com cache por (tenant, mês) TTL ~120s; injeção no wiring sem ciclo de import.", done: true, note: "FEITO 2026-06-17: interface GoalProgressProvider + GoalStats em model.go; adapter na composition root back/internal/platform/app/operations_goal_progress_adapter.go (cache (tenant,mês) TTL 120s, principal sintético platform_admin tenant-scoped, bypassa canViewERP); erp.GoalStatsByConsultant reusa resolveERPScope+GetCRMOverview; wiring SetGoalProgressProvider em app.go:174. Nil-safe (provider off = goalStats null)." },
+      { id: "meta-back-snapshot", label: "Back — GoalStats{monthlyGoal,soldValue,remainingToGoal,progress,hasGoal} em QueueEntry e OperationOverviewPerson; service busca via provider (tem tenant) e passa o map p/ buildSnapshotView (mantido puro); espelhar no caminho do overview. Testes + AGENT.md.", done: true, note: "FEITO 2026-06-17: buildSnapshotView recebe map[string]GoalStats e preenche goalStats em waitingList+activeServices; service.Snapshot/Overview buscam via goalStatsForTenant (log WARN, erro nunca propaga); 4 loops do overview preenchidos. snapshot_roster_test atualizado + TestBuildSnapshotViewFillsGoalStatsOnWaitingList. AGENT.md operations+erp atualizados. go build/vet/test OK. CORRECAO 2026-06-17: a META passou a vir de operation_goal_targets (Repository.EffectiveMonthlyGoalByConsultant + combineGoalStats no service), nao mais so do ERP — consultor com meta cadastrada mas sem venda/vinculo ERP (ex.: Fabio 45k) caia em 'Sem meta cadastrada'. ERP cobre o consultor => usa o stat exato do #2; senao meta canonica + vendido ERP (ou 0). Rebuild da api feito. CORRECAO 2 (2026-06-17): o VENDIDO vinha 0 porque o escopo do provider usava access.TenantID, vazio p/ platform_admin (as rotas da operacao usam RequireAuth, sem X-Account-Id => AccountID tb vazio). Fix: AccessContext.ScopeTenantID() (AccountID->TenantID) + fallback no tenant_id da loja (GetStoreTenantID no snapshot; StoreScopeView.TenantID no overview) + WARN operations_goal_stats_no_scope. Rebuild feito." },
+      { id: "meta-front-ring", label: "Front — OperationConsultantAvatarRing.vue (avatar + anel SVG com gradiente de tokens do design system + popover no hover/foco, Teleport p/ não ser cortado) exibindo Meta/Atingido(%)/Falta.", done: true, note: "FEITO 2026-06-17: anel SVG com linearGradient de tokens (--danger→--accent-warning→--primary→--success), id único por instância (useId), arco via stroke-dasharray; popover via Teleport(body)+position fixed (getBoundingClientRect, reposiciona em scroll/resize), abre no hover+foco, fecha no leave/blur/Esc; sem meta = anel muted + 'Sem meta cadastrada'. eslint 0 erros." },
+      { id: "meta-front-wire", label: "Front — usar o componente no queue-card__avatar do card da fila (OperationQueueColumns) + propagar goalStats em mapIntegratedWaitingItem (OperationWorkspace). AGENT.md.", done: true, note: "FEITO 2026-06-17: card WAITING (Lista da vez) E card Em atendimento (OperationActiveServiceCard, avatar do primaryService) — mesmo componente reusado; mapIntegratedWaitingItem + mapIntegratedActiveItem + mapScopedActiveItem repassam goalStats; buildOperableStoreState/servicesGroupedByConsultant fluem via spread. Gradiente trocado por verde sólido (--primary era azul). AGENT.md atualizado. eslint ok." }
+    ],
+    blockers: [],
+    verifiable: "Card da Lista da vez mostra anel colorido por atingimento; hover abre popover com Meta/Atingido/Falta vindos do /v1/erp/crm via snapshot; consultor/terminal veem mesmo sem permissão de ERP. go build/vet/gofmt + go test limpos; eslint + vue-tsc + vitest limpos. Falta (usuário): rebuild api (docker compose up -d --build api) + validação no browser."
+  },
+
+  // ─── Coluna lateral da operação (Comunicados + Omni Chat) ──
+  //
+  // Criada em 2026-06-17. 1a etapa = TEMPLATE no front (OperationSidePanel.vue) como
+  // 3a coluna do board da operação. Falta a implementação real: comunicados/campanhas
+  // (dados do back) e o chat IA (Omni Chat). Larguras das colunas centralizadas em
+  // web/app/assets/styles/layout.css (.queue-grid: --queue-grid-*-column).
+  {
+    id: "operacao-painel-lateral",
+    code: "OPS-LAT",
+    title: "Coluna lateral da operação — Comunicados + Omni Chat",
+    goal: "Adicionar uma 3a coluna no board da operação com um bloco de Comunicados (campanhas ativas, mensagens, avisos) no topo e um chat de IA (Omni Chat) embaixo, para atendimento/produtos/pesquisa/operacional/dúvidas gerais/pesquisa de mercado. 1a etapa é só o template no front; depois a implementação real com dados e backend.",
+    status: "in_progress",
+    startedAt: "2026-06-17",
+    estimateWeeks: "a definir",
+    group: "fila-operacao",
+    tasks: [
+      { id: "lat-template", label: "Front — template da 3a coluna (OperationSidePanel.vue: card Comunicados + card Omni Chat com input desabilitado), plugado no .queue-grid; larguras por variável CSS em layout.css; marcado 'Prévia'.", done: true, note: "FEITO 2026-06-17: OperationSidePanel.vue + import no OperationQueueColumns + 3a var --queue-grid-side-column em layout.css. Só front, sem dados/backend; tag 'Prévia' visível. eslint ok." },
+      { id: "lat-comunicados", label: "Back+Front — Comunicados reais (campanhas ativas / mensagens / avisos) por loja/conta.", done: false },
+      { id: "lat-chat", label: "Back+Front — Omni Chat (IA) integrado (atendimento/produtos/pesquisa/operacional/dúvidas/pesquisa de mercado).", done: false }
+    ],
+    blockers: [],
+    verifiable: "Board da operação mostra a 3a coluna com Comunicados (topo) e Omni Chat (rodapé); largura ajustável via .queue-grid no layout.css; mobile colapsa para 1 coluna. Etapas reais (dados + chat) pendentes."
+  },
+
+  // ─── Organização do Menu (Header × Sidebar) — 2 subagentes (back × front) ──
+  //
+  // Criada em 2026-06-16. Plano canônico: docs/MENU_LAYOUT_CONFIG.md.
+  // Problema: header e sidebar renderizam os MESMOS itens (header = flatMap de
+  // visibleSections em useDashboardNav). Para platform_admin (vê tudo) o header
+  // estoura. Decisões de produto: config GLOBAL da plataforma (não per-user/tenant),
+  // controle = posição (header/sidebar/ambos/oculto) + reordenar, e fix responsivo
+  // do header no escopo. Persistência: core.platform_settings (singleton KV jsonb).
+  // Migration 0160 (0159 reservada pela fase OPS). Exige rebuild api (usuário).
+  {
+    id: "menu-layout",
+    code: "MENU",
+    title: "Organização global do menu — header × sidebar editável pelo platform_admin",
+    goal: "Dar ao platform_admin uma tela para definir UMA organização global do menu: por item, escolher se aparece no header, só no sidebar, em ambos ou oculto, e reordenar itens/seções por drag-and-drop. Persistir em core.platform_settings e tornar o header responsivo (excedente colapsa em 'Mais').",
+    status: "in_progress",
+    estimateWeeks: "2-3 dias",
+    startedAt: "2026-06-16",
+    group: "menu-layout",
+    tasks: [
+      { id: "menu-a-back", label: "A — Back: migration 0160_core_platform_settings.sql (singleton KV jsonb, platform-global) + módulo core (platform_settings model/repository/service/http) + GET /v1/platform/menu-layout (RequireAuth) e PATCH (requirePlatformAdmin) + wire em module.go + AGENT.md. Exige rebuild api (usuário)", done: false, note: "ESCRITO 2026-06-16 (subagente back): 4 arquivos platform_settings_* + migration 0160 + wire em module.go (Build/RegisterRoutes) + AGENT.md. go build EXIT=0, golangci-lint 0 issues. FALTA (usuário): aplicar migration 0160 + docker compose up -d --build api + teste no browser." },
+      { id: "menu-b-nav", label: "B — Front: store menuLayout (load GET, save PATCH) + useDashboardNav passa a dividir header/sidebar por placement (header/sidebar/ambos/oculto) e ordenar itens/seções; default 'both' preserva comportamento atual", done: false, note: "ESCRITO 2026-06-16 (subagente front): store menuLayout.ts + useDashboardNav split (allowedSections → visibleSections/headerItems independentes; default 'both' = comportamento atual) + load no dashboard.vue. vue-tsc limpo. FALTA: teste no browser." },
+      { id: "menu-c-config", label: "C — Front: tela /manage/menu-layout (MenuLayoutEditor/ItemRow/Preview, drag-and-drop nativo HTML5 reusado de OmniTableColumnsConfig, seções colapsáveis, preview ao vivo, botão 'Sugerir layout enxuto') + wiring de 3 arquivos (workspaces.ts, permissions.ts platform_admin, nav.config.ts seção manage)", done: false, note: "ESCRITO 2026-06-16: página + MenuLayoutEditor/ItemRow/Preview + useMenuLayoutEditor + wiring de 3 arquivos (workspaces/permissions só platform_admin/nav.config seção manage). ROTA CORRIGIDA: era /configuracoes/menu mas configuracoes.vue (página da Fila) virava rota-pai e engolia a filha (+ /configuracoes é gated por queue no module-enabled.global.ts); movida p/ pages/manage/menu-layout.vue (/manage/menu-layout, não-agency, sempre acessível). FALTA: teste no browser." },
+      { id: "menu-d-header", label: "D — Front: header responsivo em DashboardHeader.vue (ResizeObserver mede itens que cabem; excedente vai p/ popover 'Mais' com fechar clique-fora/Esc/opção)", done: false, note: "ESCRITO 2026-06-16: overflow 'Mais' via ResizeObserver + faixa de medição oculta; hover/drawer intactos. REFATORADO depois p/ respeitar o limite de 450 linhas: DashboardHeader.vue (1207→203) decomposto em DashboardHeaderNav/NavMore/ProfileMenu/Drawer/Avatar + composables useHeaderNavOverflow/useDropdownDismiss/useHeaderProfile — todos <450, ESLint 0 warning, vue-tsc limpo nos arquivos tocados. FALTA: teste no browser." }
+    ],
+    blockers: [],
+    verifiable: "Como platform_admin, /manage/menu-layout move itens entre Header/Sidebar/Ambos/Oculto e reordena por drag; Salvar persiste em core.platform_settings e sobrevive a reload. Header mostra só header/ambos, sidebar só sidebar/ambos, oculto some dos dois. Janela estreita colapsa excedente do header em 'Mais'. Papel não-admin não vê a tela e PATCH direto retorna 403. vue-tsc + ESLint + golangci-lint limpos."
+  },
+
+  // ─── Comissão v2 — cálculo no back (API-first) — 2026-06-17 ───────────────
+  //
+  // O "Recebimento por atingimento de meta" era calculado SÓ no front
+  // (crm-performance-policy.ts) sobre o total da loja para todos os grupos. Vira
+  // serviço de domínio Go (queue/commission) embutido em /v1/erp/crm: consultor
+  // sobre a PRÓPRIA venda (trava ≥100% da própria meta + penalidade 0,1%/métrica
+  // PA/Ticket), gerente sobre a loja com faixas por tipo de loja (Shopping/Bairro
+  // = coluna nova em queue.stores). Política segue em JSONB (config tenant-wide).
+  // Supersede a antiga task "payout-domain" (front-only) do grupo crm-360.
+  {
+    id: "comissao-v2-core",
+    code: "COM v2",
+    title: "Comissão por atingimento de meta — cálculo no back + tipo de loja + /consultor",
+    goal: "Mover o cálculo de comissão para um serviço de domínio Go (queue/commission) embutido em GET /v1/erp/crm, adicionar store_type (Shopping/Bairro) à loja, atualizar o editor de Metas CRM (4 grupos + regras do consultor) e a página /consultor (display do payout do back, gerentes nos cards, botão Mês anterior). Política em JSONB; cálculo no back como fonte única reutilizável por site/app/automação.",
+    status: "in_progress",
+    estimateWeeks: "3-5 dias",
+    startedAt: "2026-06-17",
+    group: "comissao-v2",
+    tasks: [
+      { id: "com-keystone", label: "Keystone: contrato — shape JSONB v2 (managerShopping/managerBairro + consultantRules) + tipos TS + normalize v2 em crm-performance-policy.ts + remover cálculo do front + nome store_type + DTO payout no /v1/erp/crm", done: true, note: "FEITO 2026-06-17: tipos v2 + normalize (retrocompat com 'manager' legado) + DEFAULT v2 + mapRoleToPayoutGroup (display) em crm-performance-policy.ts; cálculo (calculateStoreGoalPayout/calculateCrmGoalPayout) removido do front; test 5/5 verde (vitest). Fases pending P1-P3 documentadas." },
+      { id: "com-a-domain", label: "A (back): pacote queue/commission (model/calculate/test) — Calculate/NormalizePolicy/ResolveRule/MapRoleToGroup; fonte única do cálculo, puro e testado", done: true, note: "FEITO 2026-06-17 (subagente Opus): back/internal/modules/queue/commission/{model,calculate,policy_json,calculate_test}.go + AGENT.md. go test verde." },
+      { id: "com-a-erp", label: "A (back): enriquecer GET /v1/erp/crm com payout por consultor + payout de loja (manager Shopping/Bairro, support), carregando política+metas+store_type em batch tenant-scoped (resolveTenantScope)", done: true, note: "FEITO: repository_crm_payout.go (loadCRMPayoutInputs+applyCRMPayouts, batch, sem N+1); CRMConsultantMetric.payout + CRMStoreMetric.{storeType,managerPayout,supportPayout}. Meta do consultor de queue.operation_goal_targets; sem meta cadastrada => progress 0 => payout 0." },
+      { id: "com-a-migrations", label: "A (back): migration 0161 (queue.stores.store_type + recria view public.stores) e 0162 (crm_goal_payout_policy v2 + backfill idempotente); settings/defaults.go v2", done: true, note: "FEITO: 0161/0162 idempotentes, schema-qualificadas, sem goose Down. defaults.go v2. FALTA (usuário): aplicar migrate up no :5433 + docker compose up -d --build api." },
+      { id: "com-a-storetype", label: "A (back): update de loja aceita/valida store_type ('shopping'|'bairro') + expõe nos selects do roster/stores", done: true, note: "FEITO: modules/stores (model/service normalizeStoreType/http json storeType/store_postgres/scope_queries). gofmt normalizado (5 arquivos estavam CRLF)." },
+      { id: "com-b-editor", label: "B (front): SettingsCrmGoalsSection.vue 4 grupos (Consultor/Gerente Shopping/Gerente Bairro/Caixa) + subcomponente Regras do consultor (base/trava/penalidade) + useSettingsWorkspace; arquivo < 450 ln", done: true, note: "FEITO 2026-06-17 (subagente Opus): 4 grupos derivados de payoutGroups; SettingsCrmConsultantRules.vue (107 ln) novo; saveCrmConsultantRules em useSettingsWorkspace. eslint/vue-tsc limpos. FALTA: browser." },
+      { id: "com-c-display", label: "C (front): consumir payout do back em consultants.ts/useConsultantIntegratedRows/Grid/Workspace/Card + CrmConsultantsSection; gerentes nos cards com valor do mês; simulador via ratePercent; remover cálculo do front", done: true, note: "FEITO 2026-06-17 (subagente Opus): consultant-integrated-view.ts capta payout; consultant-payout-display.ts (helpers); Grid/Workspace/Drawer/Simulator/StaffCard + CrmConsultantsSection leem payout do back. Sem erro tsc novo (restantes são pré-existentes). FALTA: browser." },
+      { id: "com-c-loja-mes", label: "C (front): MultiStoreLojasSection tipo de loja (Shopping/Bairro) + botão Mês anterior em /consultor (resetIntegratedPreviousMonth)", done: true, note: "FEITO: select Tipo de loja (multistore.ts storeType no create/update, campo 'storeType' confirmado no back) + botão Mês anterior. FALTA: browser confirmar que o update de loja persiste storeType." }
+    ],
+    blockers: [],
+    verifiable: "go test ./internal/modules/queue/commission passa; /v1/erp/crm retorna payout por consultor/loja; consultor ≥100% da meta + loja 50-79% recebe própria venda×1,5% (−0,1%/métrica PA/Ticket faltante); <100% da própria meta recebe 0; gerente Shopping≠Bairro sobre o total da loja; editor com 4 grupos persiste; botão Mês anterior funciona. vue-tsc/eslint/golangci-lint limpos."
+  },
+
+  // ─── Auditoria: lógica de negócio só-no-front → API (P1-P3) ───────────────
+  // Backlog URGENTE descoberto ao mover a comissão: várias regras calculadas no
+  // cliente, parte DUPLICADA no back (admin-metrics.ts vs analytics/). Mesmo
+  // padrão da Comissão v2: domínio Go + embute no endpoint + front vira display.
+  {
+    id: "front-to-api-audit",
+    code: "F2API",
+    title: "Migrar lógica de negócio só-no-front para API (auditoria)",
+    goal: "Eliminar a lógica de negócio que vive no cliente (e às vezes duplicada no back), movendo para serviços de domínio Go expostos por API, seguindo o padrão da Comissão v2. Front vira display.",
+    status: "pending",
+    estimateWeeks: "1-2 semanas",
+    group: "comissao-v2",
+    tasks: [
+      { id: "f2api-p1-ranking", label: "P1 (Alto, DUPLICADO): ranking/alertas do consultor — admin-metrics.ts (772 ln) buildRankingRows/buildConsultantAlerts são iguais ao analytics/service_ranking.go do back; consolidar no back como única fonte e remover do front (+buildConsultantStats/buildInsights/buildTimeIntelligence/buildOperationalIntelligence)", done: false },
+      { id: "f2api-p1-integrated", label: "P1 (Alto): ranking integrado montado no cliente — consultant-integrated-view.ts buildIntegratedRankingResponse mescla ERP+histórico no front (consultants.ts); mover para endpoint integrado pronto no back", done: false },
+      { id: "f2api-p2-reports", label: "P2 (Médio): reports.ts (711 ln) finalizar migração buildReportData→buildReportDataFromApi (servidor) e remover o caminho front", done: false },
+      { id: "f2api-p2-campaigns", label: "P2 (Médio): campaigns.ts buildCampaignPerformance para API", done: false },
+      { id: "f2api-p3-listusage", label: "P3 (Baixo): crm-list-usage.ts (325 ln) buildCrmListUsageSummary para API", done: false }
+    ],
+    blockers: [],
+    verifiable: "Cada lógica migrada tem teste Go; o front correspondente passa a ler o resultado do back (sem recálculo); admin-metrics.ts deixa de duplicar analytics/. vue-tsc/eslint/golangci-lint limpos; cada arquivo < 450 linhas."
   }
 ];
 
@@ -1772,6 +2011,14 @@ export const ROADMAP_RULES: RoadmapRule[] = [
     body: "Quando um modulo/pagina nao esta pronto, usar hidden:true em web/layers/queue/nav.config.ts (fonte unica do menu desde 2026-06-13; o legado web/app/utils/sidebar-nav.ts foi removido). Para itens em beta, usar beta:true (renderiza badge).",
     why: "Evita que usuario navegue para pagina quebrada. Beta deixa explicito que a feature pode mudar.",
     appliesWhen: "Adicionar/remover modulo do menu lateral."
+  },
+  {
+    id: "fe-rota-nova-checagem",
+    category: "frontend",
+    title: "Criar pagina nova — checar rota-pai, gating de path e workspace ANTES (falha silenciosa)",
+    body: "Ao criar pages/<...>.vue rodar 3 checks que falham SEM erro de build/type-check (so o browser revela): (1) ROTA-PAI — se existe o arquivo pages/<x>.vue, qualquer pages/<x>/<y>.vue vira rota-filha e so renderiza se o pai tiver <NuxtPage/>; senao o pai engole a filha; usar outro prefixo. (2) GATING DE PATH em module-enabled.global.ts — a path herda o modulo do prefixo (/configuracoes,/operacao,/ranking,/relatorios,/alertas...->queue; /crm,/erp->crm; /site/*->site; /cardapio->cardapio; /meta-ads->meta_ads); pagina global/admin nao pode ficar sob prefixo de modulo; /manage/* (fora de AGENCY_ONLY_PATHS) e sempre acessivel. (3) WORKSPACE em auth.global.ts — definePageMeta workspaceId precisa estar no ROLE_WORKSPACES do papel (wiring de 3 arquivos: workspaces.ts + permissions.ts + nav.config.ts).",
+    why: "Aconteceu (2026-06-16): pages/configuracoes/menu.vue abria a pagina da Fila (configuracoes.vue virava rota-pai e engolia a filha) e /configuracoes e gated por queue. Movido para pages/manage/menu-layout.vue (/manage/menu-layout, sempre acessivel).",
+    appliesWhen: "Criar QUALQUER pagina nova (pages/**/*.vue); depois abrir a rota no browser pelo papel-alvo e confirmar que renderiza a pagina certa."
   },
   {
     id: "be-padrao-modulo-go",

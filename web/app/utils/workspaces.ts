@@ -57,6 +57,7 @@ export const WORKSPACES = [
   },
   { id: 'manage', label: 'Manage', icon: 'layout_panel_left', path: '/manage/users' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/configuracoes' },
+  { id: 'menu_layout', label: 'Organização do Menu', icon: 'tune', path: '/manage/menu-layout' },
   { id: 'themes', label: 'Temas', icon: 'palette', path: '/themes' },
   { id: 'alertas', label: 'Alertas', icon: 'warning', path: '/alertas' },
   { id: 'feedback', label: 'Feedback', icon: 'chat_bubble', path: '/feedback' },

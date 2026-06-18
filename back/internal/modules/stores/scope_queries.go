@@ -164,6 +164,7 @@ func storeSelectSQL() string {
 			s.name,
 			s.city,
 			s.default_template_id,
+			s.store_type,
 			s.monthly_goal,
 			s.weekly_goal,
 			s.avg_ticket_goal,

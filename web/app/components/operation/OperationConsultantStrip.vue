@@ -14,6 +14,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  operatingStoreId: {
+    type: String,
+    default: '',
+  },
 })
 
 const operationsStore = useOperationsStore()
@@ -70,7 +74,7 @@ function displayName(employee) {
 async function addToQueue(employee) {
   const result = await operationsStore.addToQueue(
     employee.id,
-    props.integratedMode ? employee.storeId : '',
+    props.operatingStoreId || (props.integratedMode ? employee.storeId : ''),
   )
 
   if (result?.ok === false) {
@@ -109,7 +113,7 @@ async function confirmPauseEmployee(reason) {
     const result = await operationsStore.pauseEmployee(
       employee.id,
       normalizedReason,
-      props.integratedMode ? employee.storeId : '',
+      props.operatingStoreId || (props.integratedMode ? employee.storeId : ''),
     )
 
     if (result?.ok === false) {
@@ -141,7 +145,7 @@ async function assignTask(employee) {
   const result = await operationsStore.assignTask(
     employee.id,
     value,
-    props.integratedMode ? employee.storeId : '',
+    props.operatingStoreId || (props.integratedMode ? employee.storeId : ''),
   )
 
   if (result?.ok === false) {
@@ -155,7 +159,7 @@ async function assignTask(employee) {
 async function resumeEmployee(employee) {
   const result = await operationsStore.resumeEmployee(
     employee.id,
-    props.integratedMode ? employee.storeId : '',
+    props.operatingStoreId || (props.integratedMode ? employee.storeId : ''),
   )
 
   if (result?.ok === false) {

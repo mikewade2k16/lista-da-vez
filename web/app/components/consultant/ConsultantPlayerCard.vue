@@ -1,49 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  formatCurrencyBRL,
-  formatDurationMinutes,
-  formatPercent,
-} from '~/domain/utils/admin-metrics'
+import { formatCurrencyBRL, formatPercent } from '~/domain/utils/admin-metrics'
 import { goalProgressTier } from '~/domain/utils/goal-progress-color'
 import { useGamificationConfig } from '~/composables/useGamificationConfig'
+import AppInfoPopover from '~/components/ui/AppInfoPopover.vue'
+import InlineFieldGuard from '~/components/quick-edit/InlineFieldGuard.vue'
+import { consultantMonthlyGoal } from '~/domain/quick-edit/fields/consultantMonthlyGoal'
+import type { GoalQuickEditContext } from '~/domain/quick-edit/fields/goalContext'
+import type { PlayerCardConsultant, PlayerCardStats } from './player-card-types'
 import ConsultantBadges from './ConsultantBadges.vue'
 import ConsultantStoreGoalBar from './ConsultantStoreGoalBar.vue'
+import ConsultantPlayerCardMetrics from './ConsultantPlayerCardMetrics.vue'
 
-type LiveStatusCode = 'available' | 'service' | 'queue' | 'paused' | 'assignment'
-
-interface PlayerCardStats {
-  monthlyGoal: number
-  soldValue: number
-  remainingToGoal: number
-  estimatedCommission: number
-  commissionRate: number
-  ticketAverage: number
-  paScore: number
-  conversionRate: number
-  conversions: number
-  nonConversions: number
-  averageDurationMs?: number
-  nonClientConversions: number
-  queueJumpServices: number
-  erpOrders?: number
-  soldValueSource?: string
-  ticketAverageSource?: string
-  paScoreSource?: string
-  avgTicketGoal?: number
-  paGoal?: number
-  conversionGoal?: number
-  cancellationRate?: number
-}
-
-interface PlayerCardConsultant {
-  id: string
-  name: string
-  role?: string
-  storeName?: string
-  liveStatusCode?: LiveStatusCode
-  liveStatusLabel?: string
-}
+const FORECAST_NOTE =
+  'Previsão calculada com base nos dados recebidos até o dia anterior e nas metas cadastradas pela ' +
+  'gerência. Os valores são apenas para acompanhamento e devem ser validados com o gerente responsável.'
 
 const props = withDefaults(
   defineProps<{
@@ -56,6 +27,8 @@ const props = withDefaults(
     storeGoalProgress?: number | null
     goalPayoutAmount?: number | null
     goalPayoutLabel?: string
+    // Contexto do quick-edit de metas (motor plugável). null = sem avisos inline.
+    goalContext?: GoalQuickEditContext | null
   }>(),
   {
     mode: 'full',
@@ -65,6 +38,7 @@ const props = withDefaults(
     storeGoalProgress: null,
     goalPayoutAmount: null,
     goalPayoutLabel: '',
+    goalContext: null,
   },
 )
 
@@ -73,6 +47,10 @@ const emit = defineEmits<{
 }>()
 
 const { enabledBadges } = useGamificationConfig()
+
+// Quick-edit de metas (motor plugável): só o aviso de meta INDIVIDUAL fica no card;
+// os de ticket/PA da loja vivem no cabeçalho do grupo (uma vez por loja).
+const hasGoalContext = computed(() => Boolean(props.goalContext))
 
 const goalPercent = computed(() => {
   if (!props.stats.monthlyGoal) return 0
@@ -141,14 +119,17 @@ function handleDetailsClick() {
         </span>
         <div class="player-card__name-block">
           <strong class="player-card__name">{{ consultant.name }}</strong>
-          <span v-if="consultant.storeName || consultant.role" class="player-card__subtitle">
+          <!--<span v-if="consultant.storeName || consultant.role" class="player-card__subtitle">
             <template v-if="consultant.storeName">{{ consultant.storeName }}</template>
             <template v-if="consultant.storeName && consultant.role">·</template>
             <template v-if="consultant.role">{{ consultant.role }}</template>
-          </span>
+          </span>-->
         </div>
       </div>
-      <span :class="statusClass">{{ statusLabel }}</span>
+      <div class="player-card__header-end">
+        <!--<span :class="statusClass">{{ statusLabel }}</span>-->
+        <!--<span v-if="stats.soldValueSource === 'erp'" class="player-card__source-badge">ERP teste</span>-->
+      </div>
     </header>
 
     <div class="player-card__gauge-block">
@@ -178,21 +159,27 @@ function handleDetailsClick() {
           </text>
           <text x="70" y="86" text-anchor="middle" class="player-card__gauge-caption">da meta</text>
         </svg>
+        <span
+          v-if="stats.soldValueSource === 'erp' && stats.erpOrders"
+          class="player-card__gauge-orders"
+        >
+          {{ stats.erpOrders }} vendas ERP
+        </span>
       </div>
       <div class="player-card__gauge-side">
         <div class="player-card__goal-copy">
-          <span v-if="stats.soldValueSource === 'erp'" class="player-card__source-badge">ERP</span>
+          <!-- <span v-if="stats.soldValueSource === 'erp'" class="player-card__source-badge">ERP</span> -->
           <span class="player-card__sold-amount">{{ formatCurrencyBRL(stats.soldValue) }}</span>
-          <span class="player-card__sold-of-goal">
-            de {{ formatCurrencyBRL(stats.monthlyGoal) }}
-          </span>
-          <span
-            v-if="stats.soldValueSource === 'erp' && stats.erpOrders"
-            class="player-card__sold-caption"
-          >
-            {{ stats.erpOrders }} vendas ERP
-          </span>
-          <span class="player-card__sold-caption">{{ goalProgressText }}</span>
+          <div class="player-card__goal-line">
+            <span class="player-card__sold-of-goal">
+              de {{ formatCurrencyBRL(stats.monthlyGoal) }}
+            </span>
+            <span class="player-card__sold-caption">{{ goalProgressText }}</span>
+          </div>
+        </div>
+
+        <div v-if="hasGoalContext && goalContext" class="player-card__goal-alerts">
+          <InlineFieldGuard :descriptor="consultantMonthlyGoal" :context="goalContext" />
         </div>
 
         <div v-if="showStoreBar" class="player-card__store">
@@ -200,148 +187,21 @@ function handleDetailsClick() {
           <span v-if="showPayout" class="player-card__store-payout">
             Recebe
             <strong>{{ formatCurrencyBRL(goalPayoutAmount || 0) }}</strong>
+            <AppInfoPopover
+              :text="FORECAST_NOTE"
+              label="Sobre a previsão"
+              align="start"
+              class="player-card__payout-info"
+            />
             <template v-if="goalPayoutLabel">· {{ goalPayoutLabel }}</template>
           </span>
         </div>
 
-        <div v-if="mode === 'full'" class="player-card__hero-metrics">
-          <div class="player-card__hero-metric">
-            <span v-if="stats.ticketAverageSource === 'erp'" class="player-card__source-badge">
-              ERP
-            </span>
-            <span class="player-card__kpi-icon" aria-hidden="true">🎯</span>
-            <span class="player-card__kpi-label">Ticket</span>
-            <strong class="player-card__kpi-value">
-              {{ formatCurrencyBRL(stats.ticketAverage) }}
-            </strong>
-            <span
-              v-if="stats.avgTicketGoal"
-              class="player-card__metric-note"
-              :class="
-                stats.ticketAverage >= stats.avgTicketGoal
-                  ? 'player-card__metric-note--hit'
-                  : 'player-card__metric-note--miss'
-              "
-            >
-              Meta: {{ formatCurrencyBRL(stats.avgTicketGoal) }}
-            </span>
-          </div>
-          <div class="player-card__hero-metric">
-            <span v-if="stats.paScoreSource === 'erp'" class="player-card__source-badge">ERP</span>
-            <span class="player-card__kpi-icon" aria-hidden="true">📦</span>
-            <span class="player-card__kpi-label">P.A.</span>
-            <strong class="player-card__kpi-value">{{ stats.paScore.toFixed(2) }}</strong>
-            <span
-              v-if="stats.paGoal"
-              class="player-card__metric-note"
-              :class="
-                stats.paScore >= stats.paGoal
-                  ? 'player-card__metric-note--hit'
-                  : 'player-card__metric-note--miss'
-              "
-            >
-              Meta: {{ stats.paGoal.toFixed(2) }}
-            </span>
-          </div>
-          <div class="player-card__hero-metric">
-            <span class="player-card__kpi-icon" aria-hidden="true">⚡</span>
-            <span class="player-card__kpi-label">Conversão</span>
-            <strong class="player-card__kpi-value">
-              {{ formatPercent(stats.conversionRate) }}
-            </strong>
-            <span
-              v-if="stats.conversionGoal"
-              class="player-card__metric-note"
-              :class="
-                stats.conversionRate >= stats.conversionGoal
-                  ? 'player-card__metric-note--hit'
-                  : 'player-card__metric-note--miss'
-              "
-            >
-              Meta: {{ formatPercent(stats.conversionGoal) }}
-            </span>
-          </div>
-          <div class="player-card__hero-metric">
-            <span class="player-card__kpi-icon" aria-hidden="true">⏱</span>
-            <span class="player-card__kpi-label">Tempo médio</span>
-            <strong class="player-card__kpi-value">
-              {{ formatDurationMinutes(stats.averageDurationMs || 0) }}
-            </strong>
-          </div>
-        </div>
+        <ConsultantPlayerCardMetrics v-if="mode === 'full'" section="hero" :stats="stats" />
       </div>
     </div>
 
-    <div v-if="mode === 'full'" class="player-card__detail-grid">
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">💸</span>
-        <span class="player-card__kpi-label">Comissão estimada</span>
-        <strong class="player-card__kpi-value">
-          {{ formatCurrencyBRL(stats.estimatedCommission) }}
-        </strong>
-        <span class="player-card__metric-note">
-          Taxa atual: {{ formatPercent(stats.commissionRate * 100) }}
-        </span>
-      </div>
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">👥</span>
-        <span class="player-card__kpi-label">Atendimentos</span>
-        <strong class="player-card__kpi-value">
-          {{ stats.conversions + stats.nonConversions }}
-        </strong>
-      </div>
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">🔄</span>
-        <span class="player-card__kpi-label">Conversões / Não convertidas</span>
-        <strong class="player-card__kpi-value">
-          {{ stats.conversions }} / {{ stats.nonConversions }}
-        </strong>
-      </div>
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">🆕</span>
-        <span class="player-card__kpi-label">Não-clientes convertidos</span>
-        <strong class="player-card__kpi-value">{{ stats.nonClientConversions }}</strong>
-      </div>
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">↪</span>
-        <span class="player-card__kpi-label">Fora da vez</span>
-        <strong class="player-card__kpi-value">{{ stats.queueJumpServices }}</strong>
-      </div>
-      <div v-if="typeof stats.cancellationRate === 'number'" class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">⛔</span>
-        <span class="player-card__kpi-label">Taxa de cancelamento</span>
-        <strong class="player-card__kpi-value">{{ formatPercent(stats.cancellationRate) }}</strong>
-      </div>
-    </div>
-
-    <div v-else class="player-card__kpis">
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">⏱</span>
-        <span class="player-card__kpi-label">Tempo</span>
-        <strong class="player-card__kpi-value">
-          {{ formatDurationMinutes(stats.averageDurationMs || 0) }}
-        </strong>
-      </div>
-      <div class="player-card__kpi">
-        <span class="player-card__kpi-icon" aria-hidden="true">⚡</span>
-        <span class="player-card__kpi-label">Conversão</span>
-        <strong class="player-card__kpi-value">{{ formatPercent(stats.conversionRate) }}</strong>
-      </div>
-      <div class="player-card__kpi">
-        <span v-if="stats.ticketAverageSource === 'erp'" class="player-card__source-badge">
-          ERP
-        </span>
-        <span class="player-card__kpi-icon" aria-hidden="true">🎯</span>
-        <span class="player-card__kpi-label">Ticket</span>
-        <strong class="player-card__kpi-value">{{ formatCurrencyBRL(stats.ticketAverage) }}</strong>
-      </div>
-      <div class="player-card__kpi">
-        <span v-if="stats.paScoreSource === 'erp'" class="player-card__source-badge">ERP</span>
-        <span class="player-card__kpi-icon" aria-hidden="true">📦</span>
-        <span class="player-card__kpi-label">P.A.</span>
-        <strong class="player-card__kpi-value">{{ stats.paScore.toFixed(2) }}</strong>
-      </div>
-    </div>
+    <ConsultantPlayerCardMetrics section="detail" :stats="stats" :mode="mode" />
 
     <ConsultantBadges
       v-if="mode === 'full'"
@@ -397,6 +257,13 @@ function handleDetailsClick() {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.player-card__header-end {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .player-card__identity {
@@ -481,10 +348,23 @@ function handleDetailsClick() {
   grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
 }
 
+.player-card__gauge {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+}
+
 .player-card__gauge-svg {
   width: 100%;
   height: auto;
   display: block;
+}
+
+.player-card__gauge-orders {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgb(var(--muted) / 0.92);
+  text-align: center;
 }
 
 .player-card__gauge-track {
@@ -510,10 +390,7 @@ function handleDetailsClick() {
   stroke: var(--accent-warning);
 }
 
-.player-card__gauge-fill--high {
-  stroke: rgb(var(--primary));
-}
-
+.player-card__gauge-fill--high,
 .player-card__gauge-fill--hit {
   stroke: rgb(var(--success));
 }
@@ -528,8 +405,25 @@ function handleDetailsClick() {
 }
 
 .player-card__store-payout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
   font-size: 0.74rem;
   color: rgb(var(--muted) / 0.95);
+}
+
+/* Ícone "i" da previsão em amarelo (destaque), junto do valor a receber. */
+.player-card__payout-info :deep(.app-info-popover__trigger) {
+  color: var(--accent-warning);
+  border-color: var(--accent-warning);
+  background: rgb(var(--surface-2) / 0.6);
+}
+
+.player-card__payout-info :deep(.app-info-popover__trigger:hover),
+.player-card__payout-info :deep(.app-info-popover__trigger[aria-expanded='true']) {
+  color: var(--accent-warning);
+  border-color: var(--accent-warning);
 }
 
 .player-card__store-payout strong {
@@ -558,7 +452,26 @@ function handleDetailsClick() {
   position: relative;
   display: grid;
   gap: 0.25rem;
-  padding-right: 2.6rem;
+  /* padding-right: 2.6rem; */
+}
+
+.player-card__goal-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.45rem;
+}
+
+.player-card__goal-line .player-card__sold-caption::before {
+  content: '·';
+  margin-right: 0.45rem;
+  color: rgb(var(--muted) / 0.6);
+}
+
+.player-card__goal-alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
 }
 
 .player-card__sold-amount {
@@ -571,23 +484,6 @@ function handleDetailsClick() {
 .player-card__sold-caption {
   font-size: 0.78rem;
   color: rgb(var(--muted) / 0.92);
-}
-
-.player-card__hero-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.5rem;
-}
-
-.player-card__hero-metric,
-.player-card__kpi {
-  position: relative;
-  display: grid;
-  gap: 0.15rem;
-  padding: 0.55rem 0.65rem;
-  border-radius: 0.7rem;
-  background: rgb(var(--surface-2) / 0.76);
-  border: 1px solid rgb(var(--border) / 0.72);
 }
 
 .player-card__source-badge {
@@ -604,56 +500,6 @@ function handleDetailsClick() {
   font-size: 0.58rem;
   font-weight: 800;
   line-height: 1;
-  letter-spacing: 0;
-}
-
-.player-card__detail-grid {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(11rem, 1fr);
-  gap: 0.5rem;
-  overflow-x: auto;
-  padding-bottom: 0.1rem;
-}
-
-.player-card__kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-}
-
-.player-card--mini .player-card__kpis {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.player-card__kpi-icon {
-  font-size: 0.95rem;
-  line-height: 1;
-}
-
-.player-card__kpi-label {
-  font-size: 0.68rem;
-  color: rgb(var(--muted) / 0.88);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.player-card__kpi-value {
-  font-size: 0.92rem;
-  color: rgb(var(--text) / 0.96);
-}
-
-.player-card__metric-note {
-  font-size: 0.7rem;
-  color: rgb(var(--muted) / 0.92);
-}
-
-.player-card__metric-note--hit {
-  color: rgb(var(--success));
-}
-
-.player-card__metric-note--miss {
-  color: rgb(var(--danger));
 }
 
 .player-card__footer {
@@ -678,11 +524,6 @@ function handleDetailsClick() {
 }
 
 @media (max-width: 720px) {
-  .player-card__hero-metrics,
-  .player-card__kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .player-card__gauge-block {
     grid-template-columns: minmax(0, 7rem) minmax(0, 1fr);
   }
@@ -695,10 +536,6 @@ function handleDetailsClick() {
 
   .player-card__gauge {
     max-width: 8rem;
-  }
-
-  .player-card__hero-metrics {
-    grid-template-columns: 1fr;
   }
 }
 </style>

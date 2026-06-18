@@ -2,6 +2,11 @@ import { computed, onMounted, watch, type Ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
 import { useOperationGoalsStore } from '~/stores/operation-goals'
+import type {
+  ConsultantGoalSource,
+  ErpPayout,
+  ErpStorePayout,
+} from '~/domain/utils/consultant-integrated-view'
 
 export interface ConsultantRosterItem {
   id: string
@@ -21,6 +26,9 @@ export interface ConsultantRosterItem {
 }
 
 export interface ConsultantRow extends ConsultantRosterItem {
+  // name obrigatório (a base ConsultantRosterItem o deixa opcional): o row sempre
+  // tem nome, e os consumidores (RosterEntry/GridRow/DrawerConsultant) exigem string.
+  name: string
   liveStatusCode: string
   liveStatusLabel: string
   monthlyGoal: number
@@ -41,6 +49,13 @@ export interface ConsultantRow extends ConsultantRosterItem {
   progress: number
   hitGoal: boolean
   remainingToGoal: number
+  // Payout do consultor pré-calculado no back (% da PRÓPRIA venda). null = display "—"/R$ 0.
+  payout: ErpPayout | null
+  // Flags de gap por consultor (contrato congelado) p/ o aviso acionável inline.
+  goalSource: ConsultantGoalSource
+  missingMonthlyGoal: boolean
+  missingTicketGoal: boolean
+  missingPaGoal: boolean
 }
 
 function normalizeText(v: unknown) {
@@ -180,7 +195,9 @@ export function useConsultantIntegratedRows(
       const liveStatus =
         statusMap.value.get(buildRowKey(consultant.storeId, consultant.id)) ||
         normalizeStatusEntry('available', 'Disponivel')
-      const monthlyGoal = resolveMonthlyGoal(consultant)
+      // Prefere a meta EFETIVA do back (com herança da loja) p/ o % bater com o cálculo.
+      const backMonthlyGoal = Math.max(0, Number(monthly.erpMonthlyGoal || 0) || 0)
+      const monthlyGoal = backMonthlyGoal > 0 ? backMonthlyGoal : resolveMonthlyGoal(consultant)
       const soldValue = Math.max(0, Number(monthly.soldValue || 0))
       const attendances = Math.max(0, Number(monthly.attendances || 0))
       const conversions = Math.max(0, Number(monthly.conversions || 0))
@@ -191,6 +208,7 @@ export function useConsultantIntegratedRows(
           : consultant.cancellationRate
       return {
         ...consultant,
+        name: normalizeText(consultant.name),
         cancellationRate,
         liveStatusCode: liveStatus.code,
         liveStatusLabel: liveStatus.label,
@@ -212,9 +230,35 @@ export function useConsultantIntegratedRows(
         progress,
         hitGoal: monthlyGoal > 0 && soldValue >= monthlyGoal,
         remainingToGoal: Math.max(0, monthlyGoal - soldValue),
+        // Metas de ticket/PA: preferem a meta EFETIVA do back (herança da loja),
+        // caindo na meta individual do roster só quando o back não trouxe.
+        avgTicketGoal:
+          Math.max(0, Number(monthly.erpAvgTicketGoal || 0) || 0) ||
+          Math.max(0, Number(consultant.avgTicketGoal || 0)),
+        paGoal:
+          Math.max(0, Number(monthly.erpPaGoal || 0) || 0) ||
+          Math.max(0, Number(consultant.paGoal || 0)),
+        // Lido do payload do back (não recalculado): row.payout (% própria venda).
+        payout: (monthly.payout as ErpPayout | null) ?? null,
+        // Flags de gap (contrato congelado): default seguro antes do rebuild do back.
+        goalSource: (normalizeText(monthly.erpGoalSource) || 'none') as ConsultantGoalSource,
+        missingMonthlyGoal: Boolean(monthly.erpMissingMonthlyGoal),
+        missingTicketGoal: Boolean(monthly.erpMissingTicketGoal),
+        missingPaGoal: Boolean(monthly.erpMissingPaGoal),
       }
     }),
   )
+
+  // Payout/tipo de loja vindo do back, indexado por storeId. Display só.
+  const storePayoutByStoreId = computed<Record<string, ErpStorePayout>>(() => {
+    const source = (ranking.value?.storePayoutByStore as Record<string, ErpStorePayout>) || {}
+    const map: Record<string, ErpStorePayout> = {}
+    for (const [key, value] of Object.entries(source)) {
+      const normalized = normalizeText(key)
+      if (normalized && value) map[normalized] = value
+    }
+    return map
+  })
 
   const storeConversionAvgByStoreId = computed(() => {
     const result: Record<string, number> = {}
@@ -262,15 +306,18 @@ export function useConsultantIntegratedRows(
     })
 
     new Set(consultantRows.value.map((row) => normalizeText(row.storeId))).forEach((sid) => {
-      const storeSold = soldByStore[sid] || 0
+      // Prefere os números da loja vindos do back (payout DTO); cai no cálculo
+      // local só quando o back ainda não trouxe a métrica daquela loja.
+      const backStore = storePayoutByStoreId.value[sid]
+      const localSold = soldByStore[sid] || 0
+      const storeSold = backStore?.storeSold || localSold
       const cadastredStoreGoal = goalByStoreId.value.get(sid) || 0
       const storeGoal =
-        cadastredStoreGoal > 0 ? cadastredStoreGoal : individualGoalByStore.get(sid) || 0
-      result[sid] = {
-        storeSold,
-        storeGoal,
-        progress: storeGoal > 0 ? (storeSold / storeGoal) * 100 : 0,
-      }
+        backStore?.storeGoal ||
+        (cadastredStoreGoal > 0 ? cadastredStoreGoal : individualGoalByStore.get(sid) || 0)
+      const progress =
+        backStore?.storeProgress || (storeGoal > 0 ? (storeSold / storeGoal) * 100 : 0)
+      result[sid] = { storeSold, storeGoal, progress }
     })
     return result
   })
@@ -281,5 +328,6 @@ export function useConsultantIntegratedRows(
     rankingPositionByKey,
     storeTotalSoldByStoreId,
     storeProgressByStoreId,
+    storePayoutByStoreId,
   }
 }

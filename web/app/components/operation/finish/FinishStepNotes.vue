@@ -78,6 +78,10 @@ defineProps({
     type: String,
     default: '',
   },
+  justificationsRevealed: {
+    type: Boolean,
+    default: false,
+  },
   step2MissingJustifications: {
     type: Array,
     default: () => [],
@@ -275,7 +279,10 @@ const emit = defineEmits([
     ></textarea>
   </section>
 
-  <section v-if="step2MissingJustifications.length" class="finish-form__section">
+  <section
+    v-if="justificationsRevealed && step2MissingJustifications.length"
+    class="finish-form__section"
+  >
     <strong class="finish-form__label">Justificativas pendentes</strong>
     <div class="finish-form__justification-list">
       <div
@@ -313,7 +320,10 @@ const emit = defineEmits([
     </div>
   </section>
 
-  <section v-if="shouldUseLegacyClosedProductField" class="finish-form__section operation-modal__summary">
+  <section
+    v-if="shouldUseLegacyClosedProductField"
+    class="finish-form__section operation-modal__summary"
+  >
     <span class="finish-form__label">Valor da venda derivado dos produtos fechados</span>
     <strong>{{ formattedClosedTotal }}</strong>
   </section>
@@ -399,7 +409,7 @@ const emit = defineEmits([
         title="Observações"
       ></span>
       <span
-        v-if="step2MissingJustifications.length"
+        v-if="justificationsRevealed && step2MissingJustifications.length"
         class="finish-form__quality-dot finish-form__quality-dot--notes"
         :class="{ 'is-filled': !hasInvalidStep2Justifications }"
         title="Justificativas pendentes"

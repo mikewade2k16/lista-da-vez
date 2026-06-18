@@ -168,12 +168,16 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	adminOrgRepo := NewPostgresAdminOrganizationRepository(adminRepo)
 	adminOrgSvc := NewAdminOrganizationService(adminOrgRepo)
 
+	platformSettingsRepo := NewPostgresPlatformSettingsRepository(deps.Pool)
+	platformSettingsSvc := NewPlatformSettingsService(platformSettingsRepo)
+
 	m.handle = &handle{
 		service:                  svc,
 		rbacService:              rbacSvc,
 		adminService:             adminSvc,
 		adminUserService:         adminUserSvc,
 		adminOrganizationService: adminOrgSvc,
+		platformSettingsService:  platformSettingsSvc,
 		authMiddleware:           deps.AuthMiddleware,
 	}
 	return m.handle, nil
@@ -189,6 +193,7 @@ type handle struct {
 	adminService             *AdminService
 	adminUserService         *AdminUserService
 	adminOrganizationService *AdminOrganizationService
+	platformSettingsService  *PlatformSettingsService
 	authMiddleware           *auth.Middleware
 }
 
@@ -202,6 +207,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterAdminRoutes(mux, h.adminService, h.authMiddleware)
 	RegisterAdminUsersRoutes(mux, h.adminUserService, h.authMiddleware)
 	RegisterAdminOrganizationsRoutes(mux, h.adminOrganizationService, h.authMiddleware)
+	RegisterPlatformSettingsRoutes(mux, h.platformSettingsService, h.authMiddleware)
 }
 
 // RegisterEventHandlers — core nao consome eventos por enquanto (publica

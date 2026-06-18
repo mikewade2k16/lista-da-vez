@@ -67,6 +67,7 @@ func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store 
 			StoreName:          target.Name,
 			StoreCNPJs:         []string{},
 			Mapped:             true,
+			StoreType:          normalizeStoreType(target.StoreType),
 			MonthlyGoalCents:   target.MonthlyGoalCents,
 			AvgTicketGoalCents: target.AvgTicketGoalCents,
 			PAGoal:             target.PAGoal,
@@ -208,7 +209,7 @@ func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store 
 		queueStatsPtr = &queueStats
 	}
 
-	return CRMOverviewResponse{
+	response := CRMOverviewResponse{
 		Store:       store,
 		DateFrom:    formatOptionalCRMDate(query.DateFrom, query.DateFromHasTime),
 		DateTo:      formatOptionalCRMDate(query.DateTo, query.DateToHasTime),
@@ -217,7 +218,17 @@ func (repository *PostgresRepository) GetCRMOverview(ctx context.Context, store 
 		Consultants: consultantRows,
 		QueueStats:  queueStatsPtr,
 		Warnings:    warnings,
-	}, nil
+	}
+
+	// Comissao por atingimento de meta: insumos carregados 1x, tenant-scoped.
+	// O calculo vive em queue/commission (fonte unica). Embute o payout no DTO.
+	payoutInputs, err := repository.loadCRMPayoutInputs(ctx, store, query)
+	if err != nil {
+		return CRMOverviewResponse{}, err
+	}
+	applyCRMPayouts(&response, payoutInputs)
+
+	return response, nil
 }
 
 func formatOptionalCRMDate(value time.Time, hasTime bool) string {
@@ -254,6 +265,7 @@ func (repository *PostgresRepository) resolveCRMStoreMetricRow(rowsByKey map[str
 			StoreName:          target.Name,
 			StoreCNPJs:         []string{},
 			Mapped:             true,
+			StoreType:          normalizeStoreType(target.StoreType),
 			MonthlyGoalCents:   target.MonthlyGoalCents,
 			AvgTicketGoalCents: target.AvgTicketGoalCents,
 			PAGoal:             target.PAGoal,

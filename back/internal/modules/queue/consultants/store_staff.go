@@ -30,11 +30,20 @@ type StoreStaffView struct {
 	StoreName string `json:"storeName"`
 }
 
-// queueConsultantRoleCodes lista os codes core.roles que representam o consultor
-// de fila — esses ficam de fora do roster de staff porque ja vem de
-// /v1/consultants. Cobre os codes queue.* e os legados normalizados.
+// queueConsultantRoleCodes lista os codes core.roles EXCLUIDOS do roster de staff.
+// Cobre o consultor de fila (ja vem de /v1/consultants) e o terminal de loja
+// (store_terminal e um ACESSO/login da loja, nao uma pessoa ou cargo — nao deve
+// aparecer como card de staff). Cobre os codes queue.* e os legados normalizados.
 func queueConsultantRoleCodes() []string {
-	return []string{"queue.consultant", "consultant", "core.member", "queue.marketing", "marketing"}
+	return []string{
+		"queue.consultant",
+		"consultant",
+		"core.member",
+		"queue.marketing",
+		"marketing",
+		"queue.store_terminal",
+		"store_terminal",
+	}
 }
 
 // queueConsultantTemplateCodes lista os cloned_from_template_id que indicam

@@ -14,6 +14,7 @@ import {
 } from '~/domain/utils/settings-workspace-data'
 import { useGamificationConfig } from '~/composables/useGamificationConfig'
 import {
+  DEFAULT_CRM_CONSULTANT_RULES,
   DEFAULT_CRM_GOAL_PAYOUT_POLICY,
   DEFAULT_CRM_LIST_USAGE_TIERS,
   normalizeCrmGoalPayoutPolicy,
@@ -223,6 +224,33 @@ export function useSettingsWorkspace(props) {
     // arrays vazios explicitos, entao nao forcamos os defaults aqui.
     return updateCrmCommercialPolicy({
       crmGoalPayoutPolicy: { ...policy, [group]: ordered },
+    })
+  }
+
+  // Salva as regras do consultor (base + gate da loja + penalidade) fazendo merge em
+  // crmGoalPayoutPolicy.consultantRules. O normalize (shape v3) garante o resto.
+  async function saveCrmConsultantRules(rules) {
+    const source = rules && typeof rules === 'object' ? rules : {}
+    const fallback = DEFAULT_CRM_CONSULTANT_RULES
+    const pick = (value, fallbackValue) =>
+      value === undefined || value === null ? fallbackValue : Number(value)
+    const nextRules = {
+      base: source.base === 'store' ? 'store' : 'self',
+      qualityPenaltyPercent: pick(source.qualityPenaltyPercent, fallback.qualityPenaltyPercent),
+      storeFloorPercent: pick(source.storeFloorPercent, fallback.storeFloorPercent),
+      storeFullPercent: pick(source.storeFullPercent, fallback.storeFullPercent),
+      reducedRate: pick(source.reducedRate, fallback.reducedRate),
+      reducedRequiresOwnPercent: pick(
+        source.reducedRequiresOwnPercent,
+        fallback.reducedRequiresOwnPercent,
+      ),
+    }
+    const policy = normalizeCrmGoalPayoutPolicy(crmGoalPayoutPolicy.value)
+    return updateCrmCommercialPolicy({
+      crmGoalPayoutPolicy: normalizeCrmGoalPayoutPolicy({
+        ...policy,
+        consultantRules: nextRules,
+      }),
     })
   }
 
@@ -558,6 +586,7 @@ export function useSettingsWorkspace(props) {
     reasonInputModeOptions,
     reasonInputSectionConfigs,
     removeCrmGoalPayoutRule,
+    saveCrmConsultantRules,
     saveCrmGoalPayoutGroup,
     removeCrmListUsageTier,
     removeOption,

@@ -9,6 +9,32 @@ function createServiceId(personId) {
   return `${personId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+// Procura um atendimento ativo pelo serviceId no escopo ativo E em todos os
+// snapshots por loja ja carregados. No modo "Todas as lojas" filtrado por UMA loja
+// (admin operando), a loja operada nao e a activeStoreId global; sem buscar nos
+// storeSnapshots o modal de encerrar nao abriria para essa loja.
+function findActiveServiceAcrossStores(state, serviceId) {
+  const targetId = String(serviceId || '').trim()
+  if (!targetId) {
+    return null
+  }
+
+  const inActive = (state.activeServices || []).find((item) => item.serviceId === targetId)
+  if (inActive) {
+    return inActive
+  }
+
+  const snapshots = state.storeSnapshots || {}
+  for (const key of Object.keys(snapshots)) {
+    const found = (snapshots[key]?.activeServices || []).find((item) => item.serviceId === targetId)
+    if (found) {
+      return found
+    }
+  }
+
+  return null
+}
+
 function deriveQueuePositionAtStart(targetService, activeServices = [], serviceHistory = []) {
   if (
     typeof targetService?.queuePositionAtStart === 'number' &&
@@ -291,7 +317,7 @@ export function createOperationActions({ getState, updateState }) {
 
     openFinishModal(serviceId) {
       const state = getState()
-      const activeService = state.activeServices.find((item) => item.serviceId === serviceId)
+      const activeService = findActiveServiceAcrossStores(state, serviceId)
 
       if (!activeService) {
         return

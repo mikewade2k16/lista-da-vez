@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
@@ -296,6 +297,92 @@ func (service *Service) CRMOverview(ctx context.Context, principal auth.Principa
 	}
 
 	return service.repository.GetCRMOverview(ctx, store, normalized, allowedStoreIDs)
+}
+
+// GoalStatsByConsultant devolve o atingimento de meta do mes por consultor de
+// PERFIL (chave do map = ProfileConsultantID), no MESMO escopo e janela do mes
+// que a pagina de consultores usa, para o numero bater EXATAMENTE com o
+// goalProgress do /v1/erp/crm.
+//
+// Diferente de CRMOverview, este metodo e uma PONTE server-side (enriquecimento do
+// snapshot da Operacao): NAO passa pelo gate canViewERP — o principal injetado
+// pela composition root ja garante o escopo do tenant. A decisao de produto e
+// "todos os operadores veem a meta de todos", entao o gate de gestao nao se aplica
+// aqui. O escopo continua tenant-wide (allowedStoreIDs=nil) quando o papel nao
+// exige filtro por loja, espelhando o caminho da pagina.
+//
+// `month` no formato "YYYY-MM". Vazio => mes corrente (UTC).
+func (service *Service) GoalStatsByConsultant(ctx context.Context, principal auth.Principal, tenantID string, month string) (map[string]ConsultantGoalStat, error) {
+	dateFrom, dateTo, err := monthWindow(month)
+	if err != nil {
+		return nil, err
+	}
+
+	store, err := service.resolveERPScope(ctx, principal, tenantID, "")
+	if err != nil {
+		return nil, err
+	}
+
+	query, err := normalizeCRMOverviewQuery(CRMOverviewQuery{
+		TenantID: tenantID,
+		DateFrom: dateFrom,
+		DateTo:   dateTo,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var allowedStoreIDs []string
+	if requiresStoreScopedFilter(principal.Role) {
+		allowedStoreIDs = principal.StoreIDs
+	}
+
+	overview, err := service.repository.GetCRMOverview(ctx, store, query, allowedStoreIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := make(map[string]ConsultantGoalStat, len(overview.Consultants))
+	for _, consultant := range overview.Consultants {
+		profileID := strings.TrimSpace(consultant.ProfileConsultantID)
+		if profileID == "" {
+			continue
+		}
+		remainingCents := maxCRMRemaining(consultant.MonthlyGoalCents, consultant.SalesCents)
+		stats[profileID] = ConsultantGoalStat{
+			MonthlyGoal:     centsToReais(consultant.MonthlyGoalCents),
+			SoldValue:       centsToReais(consultant.SalesCents),
+			RemainingToGoal: centsToReais(remainingCents),
+			Progress:        consultant.GoalProgress,
+			HasGoal:         consultant.MonthlyGoalCents > 0,
+		}
+	}
+
+	return stats, nil
+}
+
+// monthWindow converte "YYYY-MM" (ou vazio => mes corrente) na janela [primeiro
+// dia, ultimo dia] do mes em UTC, date-only — IGUAL ao default da pagina de
+// consultores (web/app/domain/utils/consultant-transforms.ts): dateFrom = dia 1,
+// dateTo = ultimo dia do mes. Mesma janela => mesmo numero.
+func monthWindow(month string) (time.Time, time.Time, error) {
+	trimmed := strings.TrimSpace(month)
+	var year int
+	var mon time.Month
+	if trimmed == "" {
+		now := time.Now().UTC()
+		year, mon = now.Year(), now.Month()
+	} else {
+		parsed, err := time.Parse("2006-01", trimmed)
+		if err != nil {
+			return time.Time{}, time.Time{}, ErrValidation
+		}
+		year, mon = parsed.Year(), parsed.Month()
+	}
+
+	dateFrom := time.Date(year, mon, 1, 0, 0, 0, 0, time.UTC)
+	dateTo := dateFrom.AddDate(0, 1, -1)
+	return dateFrom, dateTo, nil
 }
 
 func (service *Service) ConsultantERPLinks(ctx context.Context, principal auth.Principal, tenantID string, storeCode string, employeeIDs []string) (ConsultantERPLinksResponse, error) {

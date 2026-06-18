@@ -63,6 +63,9 @@ const defaultCRMListUsageTiersJSON = `[
 	{"id":"perfeito","label":"Perfeito","minRate":100}
 ]`
 
+// Politica de comissao v3 (espelha o contrato e queue/commission.DefaultPolicy).
+// consultant: faixa pela PROPRIA meta do consultor -> % sobre a propria venda
+// (vale quando a loja >= storeFullPercent). O gate da loja vive em consultantRules.
 const defaultCRMGoalPayoutPolicyJSON = `{
 	"consultant":[
 		{"threshold":80,"value":1,"mode":"percent"},
@@ -70,18 +73,24 @@ const defaultCRMGoalPayoutPolicyJSON = `{
 		{"threshold":100,"value":3,"mode":"percent"},
 		{"threshold":120,"value":3.2,"mode":"percent"}
 	],
-	"manager":[
+	"managerShopping":[
 		{"threshold":80,"value":0.8,"mode":"percent"},
 		{"threshold":90,"value":0.9,"mode":"percent"},
 		{"threshold":100,"value":1,"mode":"percent"},
 		{"threshold":120,"value":1.2,"mode":"percent"}
+	],
+	"managerBairro":[
+		{"threshold":80,"value":1,"mode":"percent"},
+		{"threshold":100,"value":1.7,"mode":"percent"},
+		{"threshold":120,"value":2,"mode":"percent"}
 	],
 	"support":[
 		{"threshold":80,"value":80,"mode":"amount"},
 		{"threshold":90,"value":90,"mode":"amount"},
 		{"threshold":100,"value":100,"mode":"amount"},
 		{"threshold":120,"value":120,"mode":"amount"}
-	]
+	],
+	"consultantRules":{"base":"self","qualityPenaltyPercent":0.1,"storeFloorPercent":50,"storeFullPercent":80,"reducedRate":1.5,"reducedRequiresOwnPercent":100}
 }`
 
 func defaultCRMListUsageTiers() json.RawMessage {

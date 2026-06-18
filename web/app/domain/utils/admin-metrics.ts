@@ -766,7 +766,19 @@ export function formatPercent(value) {
   return `${Number(value || 0).toFixed(1)}%`
 }
 
+// Formata uma duracao (em ms) na maior unidade legivel, cascateando:
+// minutos ate 60 -> horas ate 24 -> dias. Mostra a unidade secundaria so quando > 0.
 export function formatDurationMinutes(valueMs) {
-  const minutes = Math.round(Number(valueMs || 0) / 60000)
-  return `${minutes} min`
+  const totalMinutes = Math.round(Number(valueMs || 0) / 60000)
+  if (totalMinutes < 60) return `${totalMinutes} min`
+
+  const totalHours = Math.floor(totalMinutes / 60)
+  if (totalHours < 24) {
+    const minutes = totalMinutes % 60
+    return minutes > 0 ? `${totalHours}h ${minutes}min` : `${totalHours}h`
+  }
+
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`
 }

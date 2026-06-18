@@ -4,6 +4,7 @@ import { buildNickname } from '~/domain/utils/person-display'
 import { formatClock, formatDuration } from '~/domain/utils/time'
 import { useAlertsStore } from '~/stores/alerts'
 import { alertCardStyle } from '~/utils/alert-colors'
+import OperationConsultantAvatarRing from '~/components/operation/OperationConsultantAvatarRing.vue'
 
 const props = defineProps({
   services: {
@@ -264,12 +265,11 @@ function handleStartParallel() {
     :data-testid="`operation-service-group-${primaryService?.id || 'consultant'}`"
   >
     <div class="service-card__summary">
-      <span
-        class="queue-card__avatar queue-card__avatar--large"
-        :style="{ '--avatar-accent': primaryService?.color }"
-      >
-        {{ primaryService?.initials }}
-      </span>
+      <OperationConsultantAvatarRing
+        :initials="primaryService?.initials || ''"
+        :color="primaryService?.color"
+        :goal-stats="primaryService?.goalStats ?? null"
+      />
 
       <div class="service-card__content">
         <span class="queue-card__headline">

@@ -144,7 +144,6 @@ func (repository *PostgresRepository) listHistoryQuery(
 	if filters.MaxSaleAmount != nil {
 		fmt.Fprintf(&query, " and h.sale_amount <= $%d", position)
 		args = append(args, *filters.MaxSaleAmount)
-		position++
 	}
 
 	query.WriteString(" order by h.finished_at desc, h.created_at desc;")
@@ -285,6 +284,87 @@ func (repository *PostgresRepository) ListLiveCounts(
 	}
 
 	return result, rows.Err()
+}
+
+// ListPauseSessions devolve as sessoes de pausa fechadas (status='paused',
+// kind pause) das lojas no escopo, opcionalmente filtradas por intervalo de
+// data (ended_at) e por consultor. Sessoes de tarefa (kind='assignment') ficam
+// de fora — sao deslocamento operacional, nao pausa.
+func (repository *PostgresRepository) ListPauseSessions(
+	ctx context.Context,
+	storeIDs []string,
+	fromMillis *int64,
+	toMillis *int64,
+	consultantIDs []string,
+) ([]PauseSessionRow, error) {
+	if len(storeIDs) == 0 {
+		return []PauseSessionRow{}, nil
+	}
+
+	query := strings.Builder{}
+	query.WriteString(`
+		select
+			ss.consultant_id::text,
+			coalesce(c.name, '') as consultant_name,
+			coalesce(ss.reason, '') as reason,
+			coalesce(ss.kind, 'pause') as kind,
+			ss.started_at,
+			ss.ended_at,
+			ss.duration_ms
+		from operation_status_sessions ss
+		left join queue.consultants c
+		  on c.id = ss.consultant_id
+		where ss.status = 'paused'
+		  and (ss.kind is null or ss.kind = 'pause')
+		  and ss.store_id::text = any($1)
+	`)
+
+	args := []any{storeIDs}
+	position := 2
+
+	if fromMillis != nil {
+		fmt.Fprintf(&query, " and ss.ended_at >= $%d", position)
+		args = append(args, *fromMillis)
+		position++
+	}
+
+	if toMillis != nil {
+		fmt.Fprintf(&query, " and ss.ended_at <= $%d", position)
+		args = append(args, *toMillis)
+		position++
+	}
+
+	if len(consultantIDs) > 0 {
+		fmt.Fprintf(&query, " and ss.consultant_id::text = any($%d)", position)
+		args = append(args, consultantIDs)
+	}
+
+	query.WriteString(" order by ss.ended_at desc;")
+
+	rows, err := repository.pool.Query(ctx, query.String(), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]PauseSessionRow, 0)
+	for rows.Next() {
+		var item PauseSessionRow
+		if err := rows.Scan(
+			&item.ConsultantID,
+			&item.ConsultantName,
+			&item.Reason,
+			&item.Kind,
+			&item.StartedAt,
+			&item.EndedAt,
+			&item.DurationMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, rows.Err()
 }
 
 func decodeSkippedPeople(raw []byte) []operations.SkippedPerson {

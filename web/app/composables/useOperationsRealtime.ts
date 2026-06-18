@@ -11,6 +11,12 @@ type OperationsRealtimeOptions = {
   scopeMode?: unknown
 }
 
+// Janela do debounce trailing do overview no modo "Todas as lojas". Rajadas de
+// eventos dentro dessa janela colapsam em UM unico refreshOverview, disparado
+// apos o periodo de silencio. Mantida curta (~meio segundo) para preservar a
+// sensacao de tempo real; o ultimo evento SEMPRE garante o refresh final.
+const OVERVIEW_REFRESH_DEBOUNCE_MS = 300
+
 function resolveSourceValue(source, fallback = 'single') {
   if (typeof source === 'function') {
     const value = source()
@@ -64,6 +70,7 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
   let snapshotRefreshQueued = false
   let overviewRefreshPromise = null
   let overviewRefreshQueued = false
+  let overviewDebounceTimer = null
   let settingsRefreshPromise = null
   let settingsRefreshQueued = false
   let queuedSettingsStoreId = ''
@@ -153,6 +160,30 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
       })
 
     return overviewRefreshPromise
+  }
+
+  function clearOverviewDebounce() {
+    if (overviewDebounceTimer != null) {
+      window.clearTimeout(overviewDebounceTimer)
+      overviewDebounceTimer = null
+    }
+  }
+
+  /**
+   * Debounce trailing do refresh de overview no modo "Todas as lojas".
+   *
+   * Cada evento reinicia a janela; o refresh so dispara apos OVERVIEW_REFRESH_DEBOUNCE_MS
+   * sem novos eventos. Isso colapsa rajadas em UM unico refreshOverview e garante,
+   * por construcao, um refresh trailing apos o ULTIMO evento (a janela so termina
+   * quando os eventos param). O coalescing interno de refreshOverview segue como
+   * guarda adicional caso o fetch anterior ainda esteja em voo.
+   */
+  function scheduleOverviewRefresh() {
+    clearOverviewDebounce()
+    overviewDebounceTimer = window.setTimeout(() => {
+      overviewDebounceTimer = null
+      void refreshOverview()
+    }, OVERVIEW_REFRESH_DEBOUNCE_MS)
   }
 
   async function refreshStoreSettings(storeId) {
@@ -354,13 +385,20 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
         }
 
         if (mode === 'all') {
-          const followUps = [refreshOverview()]
+          // O board integrado renderiza a partir do overview: colapsamos as rajadas
+          // num unico refresh trailing (~300ms apos o ultimo evento).
+          scheduleOverviewRefresh()
 
-          if (payloadStoreId) {
-            followUps.push(refreshSnapshot(payloadStoreId))
+          // No modo "Todas as lojas" o snapshot por loja so e exibido para a loja
+          // aberta no detalhe operavel (integratedStoreId). Revalidar o snapshot de
+          // qualquer loja que emita evento gera refetches que ninguem ve. Atualizamos
+          // imediatamente apenas a loja ativa, sem descartar a atualizacao dela; o
+          // coalescing interno de refreshSnapshot ja protege contra rajadas dessa loja.
+          const integratedStoreId = String(operationsStore.integratedStoreId || '').trim()
+          if (payloadStoreId && payloadStoreId === integratedStoreId) {
+            await refreshSnapshot(payloadStoreId)
           }
 
-          await Promise.all(followUps)
           return
         }
 
@@ -435,6 +473,7 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
       stopWatcher = null
     }
 
+    clearOverviewDebounce()
     disconnectAll()
   })
 

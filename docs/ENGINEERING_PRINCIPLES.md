@@ -245,6 +245,29 @@ replicando a cláusula SQL em `accountAccessibleQuery` (const, com teste de cont
 (enforcement do middleware). Um teste de contrato em cada lado documenta que a regra existe. Antes de
 mover dado de tenant entre accounts, validar no Gate que o portão de membership aceita o novo dono.
 
+### [2026-06-17] store_type do multiloja "revertia" no reload (front nao re-hidratava do banco)
+
+**O que aconteceu:** Em Configuracoes > Multi-loja, trocar o "Tipo de loja" de Bairro para Shopping
+parecia nao salvar: ao recarregar a pagina, o select voltava para Bairro. Suspeita inicial de bug de
+persistencia (banco/back).
+
+**Causa raiz:** o dado JA persistia certo — `queue.stores.store_type` tinha `shopping` para as lojas
+editadas e a API `/v1/stores` devolvia `storeType`. O bug era 100% de leitura no front: o
+`MultiStoreLojasSection.vue` montava o "draft" de cada linha com `drafts[id] ?? createDraftFromStore(store)`.
+No reload, `state.managedStores` chegava PRIMEIRO pelo fallback `auth.storeContext`/`runtimeState.stores`
+(contexto do switcher, SEM `storeType`) — o draft era semeado com o default `'bairro'`. Quando o
+`/v1/stores` chegava depois com `'shopping'`, o `??` preservava o draft velho e ignorava o valor real do
+banco. Fonte parcial (contexto) vencia a fonte autoritativa (endpoint do recurso).
+
+**Correcao:** o draft passa a ser SEMPRE re-hidratado a partir do servidor; so se preserva enquanto a
+linha tem edicao pendente (`touched`) ou esta salvando (`rowBusy`). `touched[id]` e' marcado ao editar e
+limpo no save bem-sucedido. Assim o valor do `/v1/stores` (banco) sempre vence o default/contexto.
+
+**Regra criada:** ver AGENT_RULES "Nada hardcoded — toda informacao vem do banco". Front nunca renderiza
+dado real a partir de fonte parcial/fallback; draft re-hidrata do back assim que ele responde. Ao depurar
+"nao salvou/reverteu", checar PRIMEIRO se o dado esta no banco (`psql`) e se a API o devolve, antes de
+mexer no back.
+
 ## Referência cruzada
 
 - Plano canônico da branch atual → [MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md)

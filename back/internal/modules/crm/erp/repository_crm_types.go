@@ -10,6 +10,7 @@ type crmStoreTarget struct {
 	Label              string
 	Code               string
 	Name               string
+	StoreType          string
 	MonthlyGoalCents   int64
 	AvgTicketGoalCents int64
 	PAGoal             float64

@@ -768,13 +768,25 @@ export function hydrateState(nextState: LooseRecord = {}) {
   const sourceFinishModalIdentifier = String(
     sourceState.finishModalServiceId || sourceState.finishModalPersonId || '',
   ).trim()
+  // Resolve o servico do modal de encerrar no snapshot ativo E em todos os snapshots
+  // por loja. No modo "Todas as lojas" filtrado por uma loja (admin operando), a loja
+  // operada nao e a activeStoreId global; sem buscar nos storeSnapshots o
+  // finishModalServiceId resolveria null e o modal nao abriria para essa loja.
+  const findFinishModalService = (identifier) => {
+    const snapshots = [resolvedActiveSnapshot, ...Object.values(normalizedStoreSnapshots || {})]
+    for (const snapshot of snapshots) {
+      const services = Array.isArray(snapshot?.activeServices) ? snapshot.activeServices : []
+      const found =
+        services.find((service) => service.serviceId === identifier) ||
+        services.find((service) => service.id === identifier)
+      if (found) {
+        return found
+      }
+    }
+    return null
+  }
   const resolvedFinishModalService = sourceFinishModalIdentifier
-    ? resolvedActiveSnapshot.activeServices.find(
-        (service) => service.serviceId === sourceFinishModalIdentifier,
-      ) ||
-      resolvedActiveSnapshot.activeServices.find(
-        (service) => service.id === sourceFinishModalIdentifier,
-      )
+    ? findFinishModalService(sourceFinishModalIdentifier)
     : null
   const finishModalServiceId = resolvedFinishModalService?.serviceId || null
   const profiles =

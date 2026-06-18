@@ -118,6 +118,10 @@ defineProps({
     type: Number,
     default: 0,
   },
+  justificationsRevealed: {
+    type: Boolean,
+    default: false,
+  },
   step1MissingJustifications: {
     type: Array,
     default: () => [],
@@ -259,7 +263,10 @@ const emit = defineEmits([
     </div>
   </section>
 
-  <section v-if="step1MissingJustifications.length" class="finish-form__section">
+  <section
+    v-if="justificationsRevealed && step1MissingJustifications.length"
+    class="finish-form__section"
+  >
     <strong class="finish-form__label">Justificativas pendentes</strong>
     <div class="finish-form__justification-list">
       <div
@@ -332,7 +339,7 @@ const emit = defineEmits([
         title="Detalhes dos interesses"
       ></span>
       <span
-        v-if="step1MissingJustifications.length"
+        v-if="justificationsRevealed && step1MissingJustifications.length"
         class="finish-form__quality-dot finish-form__quality-dot--notes"
         :class="{ 'is-filled': !hasInvalidStep1Justifications }"
         title="Justificativas pendentes"

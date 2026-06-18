@@ -14,6 +14,38 @@ Este diretório cuida da renderização visual da operação, incluindo:
 - Alertas operacionais em diversos formatos
 - Modais e diálogos operacionais
 
+## Anel de meta no avatar da fila (OperationConsultantAvatarRing)
+
+`OperationConsultantAvatarRing.vue` (novo) envolve o avatar de CADA consultor com um anel de progresso da meta mensal, em DOIS lugares: a coluna "Lista da vez" (cards WAITING em `OperationQueueColumns.vue`) e a coluna "Em atendimento" (`OperationActiveServiceCard.vue`, avatar do `primaryService`). O MESMO componente e reusado nos dois (tamanho/cor/grossura controlados num lugar so); `goalStats` chega tanto na `waitingList` quanto nos `activeServices` do snapshot/overview.
+
+**Props:**
+
+- `initials: string` — iniciais exibidas no avatar.
+- `color?: string` — cor de fundo do avatar (`--avatar-accent`). Reusa a classe global `.queue-card__avatar`, preservando o visual atual.
+- `goalStats?: GoalStats | null` — vem de `person.goalStats` no snapshot do back. Pode ser `null`/`undefined` (ate o rebuild da api) sem quebrar.
+
+**Contrato `GoalStats`** (alinhado com o snapshot do back, definido localmente no componente):
+
+```ts
+{ monthlyGoal: number; soldValue: number; remainingToGoal: number; progress: number; hasGoal: boolean } | null
+```
+
+**Comportamento:**
+
+- Anel SVG (`stroke-dasharray`, mesma tecnica do gauge de `ConsultantPlayerCard.vue`), arco = `clamp(progress, 0, 100)`.
+- Cor do anel = VERDE solido (`rgb(var(--success))`) quando ha meta; sem gradiente. (Era gradiente vermelho->amarelo->verde, mas o stop `--primary` e azul no design system, entao virou verde puro a pedido do usuario.)
+- Sem dado (`goalStats` null OU `hasGoal === false`): anel neutro (tier `none`, `--muted`), sem inventar %.
+- Popover no hover E no foco (acessibilidade); fecha no `mouseleave`, `blur` e `Esc`. Usa `Teleport` para o `body` com posicao calculada via `getBoundingClientRect` (reposiciona em scroll/resize) para nao ser cortado pelo overflow do board. Conteudo = lista de stats (Meta / Atingido (com %) / Falta), ou linha "Sem meta cadastrada".
+
+**Propagacao de `goalStats`:** `OperationWorkspace.vue` repassa em `mapIntegratedWaitingItem`, `mapIntegratedActiveItem` e `mapScopedActiveItem` (modo integrado/all) e via spread `...item` em `buildOperableStoreState` + `servicesGroupedByConsultant` (modo loja unica). O anel aparece na fila E no "Em atendimento" (avatar do `primaryService`); a faixa de consultores do rodape NAO usa o anel.
+
+## Coluna lateral da operacao (OperationSidePanel) — TEMPLATE/PREVIA
+
+`OperationSidePanel.vue` (novo) e a 3a coluna do board (`.queue-grid`), renderizada dentro de `OperationQueueColumns.vue` depois das colunas "Lista da vez" e "Em atendimento". Dois blocos: **Comunicados** (topo) e **Omni Chat** (rodape, com input desabilitado).
+
+- E SO front (sem dados/sem backend); marcado com a tag "Previa" para nao parecer pronto. A implementacao real (comunicados/campanhas + chat IA) vem depois.
+- **Largura das colunas:** as 3 larguras estao em `web/app/assets/styles/layout.css` no `.queue-grid` (`--queue-grid-left-column`, `--queue-grid-right-column`, `--queue-grid-side-column`) — ajuste num lugar so (fr ou px). No mobile o grid colapsa para 1 coluna.
+
 ## Skeleton de carregamento (Fase 9 — apply-operacao)
 
 `OperationSkeleton.vue` (novo) e o estado de loading visual da pagina `pages/operacao/index.vue`.
@@ -152,6 +184,37 @@ Display mais agressivo: tela inteira com gradiente de fundo.
 ```vue
 <AlertDisplayHost v-if="bannerStoreId" :store-id="bannerStoreId" />
 ```
+
+## Filtro de loja ("Todas as lojas") — mora no nav, nao na pagina
+
+Para economizar espaco vertical, o seletor de loja do modo "Todas as lojas"
+**nao** fica mais no corpo da operacao: foi movido para o nav
+(`components/dashboard/DashboardWorkspaceNav.vue`, area `workspace-nav-context`),
+**antes** das pills de resumo. O nav shell renderiza em todo `/operacao/*`
+(incluindo as rotas filhas `/operacao/clientes` e `/operacao/usuarios`), entao o
+seletor e gateado pelo workspace ATIVO exato (`activeWorkspace === 'operacao'`),
+nao pelo prefixo do path — so existe na propria pagina de operacao. Tambem so
+aparece quando `auth.canUseAllStores` (quem enxerga 2+ lojas).
+
+- **Estado compartilhado:** `integratedStoreId` agora e um `ref` no
+  `stores/operations.ts` (com `setIntegratedStoreId`). Foi pra la porque e
+  escrito no nav (layout) e lido na pagina (`pages/operacao/index.vue`) — ramos
+  diferentes da arvore, sem relacao pai/filho, entao prop/emit nao serve.
+  - O nav escreve via `setIntegratedStoreId`.
+  - A pagina le via `storeToRefs(operationsStore)` e reage (carrega o snapshot
+    operavel da loja filtrada) com os watchers ja existentes.
+  - `OperationWorkspace` continua recebendo `integratedStoreId`/`stores`/`scopeMode`
+    por prop (usados em `displayState`, `resolveStoreMeta`, `operableStoreId`).
+- **`OperationScopeBar` virou campanha-only.** Perdeu o filtro, o `emit`
+  `integrated-store-change` e os props `stores`/`integratedStoreId`/`scopeMode`;
+  hoje so destaca campanha comercial ativa (`shouldRender = showCampaign`). Segue
+  renderizado na pagina, recebendo apenas `:state`. (O nome "ScopeBar" ficou por
+  heranca; o escopo real agora e o nav.)
+- **Pagina:** banner de alerta (`AlertDisplayHost`) e a barra de campanha sao
+  filhos diretos do `workspace-host`. A margem inferior (`0.5rem`) e aplicada so
+  no elemento que de fato renderiza (`:deep(.operation-alert-banner-stack)` e a
+  `section` da campanha, ambos com `v-if`), entao nao sobra espaco morto quando
+  nao ha alerta nem campanha.
 
 ## Cores suportadas
 

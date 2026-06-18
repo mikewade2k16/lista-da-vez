@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -71,6 +72,25 @@ func (repository *PostgresRepository) GetStoreName(ctx context.Context, storeID 
 	}
 
 	return strings.TrimSpace(name), nil
+}
+
+func (repository *PostgresRepository) GetStoreTenantID(ctx context.Context, storeID string) (string, error) {
+	var tenantID string
+	err := repository.pool.QueryRow(ctx, `
+		select tenant_id::text
+		from queue.stores
+		where id = $1::uuid
+		limit 1;
+	`, storeID).Scan(&tenantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrStoreNotFound
+		}
+
+		return "", err
+	}
+
+	return strings.TrimSpace(tenantID), nil
 }
 
 func (repository *PostgresRepository) GetMaxConcurrentServices(ctx context.Context, storeID string) (int, error) {
@@ -246,6 +266,55 @@ func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID st
 	}
 
 	return roster, nil
+}
+
+// EffectiveMonthlyGoalByConsultant resolve a meta mensal canonica por consultor a
+// partir de queue.operation_goal_targets: meta individual quando existe, senao a
+// meta da loja (consultant_id null) como fallback. A coluna queue.consultants.
+// monthly_goal NAO e a fonte (fica zerada); a meta real vive na tabela de targets.
+func (repository *PostgresRepository) EffectiveMonthlyGoalByConsultant(ctx context.Context, storeIDs []string, month time.Time) (map[string]float64, error) {
+	result := make(map[string]float64)
+	if len(storeIDs) == 0 {
+		return result, nil
+	}
+
+	monthDate := time.Date(month.Year(), month.Month(), 1, 0, 0, 0, 0, time.UTC)
+	rows, err := repository.pool.Query(ctx, `
+		select
+			c.id::text,
+			coalesce(cg.monthly_goal, sg.monthly_goal, 0)::float8 as meta
+		from queue.consultants c
+		left join queue.operation_goal_targets cg
+			on cg.consultant_id = c.id
+			and cg.target_month = $1::date
+		left join queue.operation_goal_targets sg
+			on sg.store_id = c.store_id
+			and sg.consultant_id is null
+			and sg.target_month = $1::date
+		where c.is_active = true
+		  and c.store_id = any($2::uuid[]);
+	`, monthDate, storeIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var consultantID string
+		var meta float64
+		if err := rows.Scan(&consultantID, &meta); err != nil {
+			return nil, err
+		}
+		if meta > 0 {
+			result[consultantID] = meta
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (repository *PostgresRepository) LoadSnapshot(ctx context.Context, storeID string) (SnapshotState, error) {
@@ -461,7 +530,7 @@ func (repository *PostgresRepository) loadCurrentStatus(ctx context.Context, sto
 
 func (repository *PostgresRepository) loadSessions(ctx context.Context, storeID string) ([]ConsultantSession, error) {
 	rows, err := repository.pool.Query(ctx, `
-		select consultant_id::text, status, started_at, ended_at, duration_ms
+		select consultant_id::text, status, started_at, ended_at, duration_ms, reason, kind
 		from operation_status_sessions
 		where store_id = $1::uuid
 		order by started_at asc, created_at asc;
@@ -474,8 +543,16 @@ func (repository *PostgresRepository) loadSessions(ctx context.Context, storeID 
 	items := make([]ConsultantSession, 0)
 	for rows.Next() {
 		var item ConsultantSession
-		if err := rows.Scan(&item.PersonID, &item.Status, &item.StartedAt, &item.EndedAt, &item.DurationMs); err != nil {
+		var reason *string
+		var kind *string
+		if err := rows.Scan(&item.PersonID, &item.Status, &item.StartedAt, &item.EndedAt, &item.DurationMs, &reason, &kind); err != nil {
 			return nil, err
+		}
+		if reason != nil {
+			item.Reason = *reason
+		}
+		if kind != nil {
+			item.Kind = *kind
 		}
 		items = append(items, item)
 	}
@@ -739,6 +816,15 @@ func replaceCurrentStatus(ctx context.Context, tx pgx.Tx, storeID string, items 
 
 func appendSessions(ctx context.Context, tx pgx.Tx, storeID string, items []ConsultantSession) error {
 	for _, item := range items {
+		var reason *string
+		var kind *string
+		if trimmed := strings.TrimSpace(item.Reason); trimmed != "" {
+			reason = &trimmed
+		}
+		if trimmed := strings.TrimSpace(item.Kind); trimmed != "" {
+			kind = &trimmed
+		}
+
 		if _, err := tx.Exec(ctx, `
 			insert into operation_status_sessions (
 				store_id,
@@ -746,10 +832,12 @@ func appendSessions(ctx context.Context, tx pgx.Tx, storeID string, items []Cons
 				status,
 				started_at,
 				ended_at,
-				duration_ms
+				duration_ms,
+				reason,
+				kind
 			)
-			values ($1::uuid, $2::uuid, $3, $4, $5, $6);
-		`, storeID, item.PersonID, item.Status, item.StartedAt, item.EndedAt, item.DurationMs); err != nil {
+			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8);
+		`, storeID, item.PersonID, item.Status, item.StartedAt, item.EndedAt, item.DurationMs, reason, kind); err != nil {
 			return err
 		}
 	}

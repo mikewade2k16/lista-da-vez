@@ -15,6 +15,12 @@ function normalizeCode(value) {
   return normalizeText(value).toUpperCase()
 }
 
+// Tipo de loja (Shopping/Bairro): atributo de 1ª classe usado pelas faixas de
+// payout de gerente no back. Default 'bairro' (espelha o default da coluna).
+function normalizeStoreType(value) {
+  return normalizeText(value).toLowerCase() === 'shopping' ? 'shopping' : 'bairro'
+}
+
 function normalizeStore(store: LooseRecord = {}) {
   return {
     id: normalizeText(store.id),
@@ -22,6 +28,7 @@ function normalizeStore(store: LooseRecord = {}) {
     code: normalizeCode(store.code),
     name: normalizeText(store.name),
     city: normalizeText(store.city),
+    storeType: normalizeStoreType(store.storeType),
     isActive: Boolean(store.isActive ?? true),
     defaultTemplateId: normalizeText(store.defaultTemplateId),
     monthlyGoal: Math.max(0, Number(store.monthlyGoal || 0) || 0),
@@ -63,6 +70,7 @@ function buildCreatePayload(payload: LooseRecord = {}, tenantId) {
   }
 
   const city = normalizeText(payload.city)
+  const storeType = normalizeStoreType(payload.storeType)
   const defaultTemplateId = normalizeText(payload.defaultTemplateId)
   const monthlyGoal = normalizeNullableNumber(payload.monthlyGoal)
   const weeklyGoal = normalizeNullableNumber(payload.weeklyGoal)
@@ -73,6 +81,8 @@ function buildCreatePayload(payload: LooseRecord = {}, tenantId) {
   if (city) {
     body.city = city
   }
+
+  body.storeType = storeType
 
   if (defaultTemplateId) {
     body.defaultTemplateId = defaultTemplateId
@@ -107,6 +117,9 @@ function buildUpdatePayload(payload: LooseRecord = {}, currentStore: LooseRecord
   assignIfChanged(body, 'name', payload.name, currentStore.name, normalizeText)
   assignIfChanged(body, 'code', payload.code, currentStore.code, normalizeCode)
   assignIfChanged(body, 'city', payload.city, currentStore.city, normalizeText)
+  // store_type (Shopping/Bairro): só envia quando o usuário muda. Trilha A confirma
+  // o nome exato do campo aceito pelo handler de update de loja (assumido: storeType).
+  assignIfChanged(body, 'storeType', payload.storeType, currentStore.storeType, normalizeStoreType)
   assignIfChanged(
     body,
     'defaultTemplateId',
@@ -365,6 +378,16 @@ export const useMultiStoreStore = defineStore('multistore', () => {
           body: requestBody,
         },
       )
+
+      // Atualiza a entry local com o store retornado (inclui storeType), senao o
+      // multiloja re-sincroniza o draft com o valor antigo e o select "reverte"
+      // (parecia que nao salvava, mas ja tinha persistido no banco).
+      const updatedStore = normalizeStore(response?.store || {})
+      if (updatedStore.id) {
+        managedStores.value = managedStores.value.map((store) =>
+          store.id === updatedStore.id ? updatedStore : store,
+        )
+      }
 
       await refreshContext()
       return {

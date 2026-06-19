@@ -122,8 +122,9 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
   },
   {
     id: 'cardapio_web',
-    label: 'Cardápio Online',
-    description: 'Gestao dos cardapios online (restaurantes) servidos pelo front estatico.',
+    label: 'Presence',
+    description:
+      'Presence — gestao do site (visual, cardapio, pedidos, dominios) de cada estabelecimento.',
     viewPermission: '',
     editPermission: '',
   },

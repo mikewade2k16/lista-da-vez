@@ -6,7 +6,7 @@ import CardapioEditorWorkspace from '~/components/cardapio/CardapioEditorWorkspa
 definePageMeta({
   layout: 'dashboard',
   workspaceId: 'cardapio_web',
-  pageLabel: 'Cardapio Online',
+  pageLabel: 'Presence',
 })
 
 const route = useRoute()

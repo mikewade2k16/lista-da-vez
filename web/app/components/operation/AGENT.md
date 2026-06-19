@@ -44,6 +44,7 @@ Este diretório cuida da renderização visual da operação, incluindo:
 `OperationSidePanel.vue` (novo) e a 3a coluna do board (`.queue-grid`), renderizada dentro de `OperationQueueColumns.vue` depois das colunas "Lista da vez" e "Em atendimento". Dois blocos: **Comunicados** (topo) e **Omni Chat** (rodape, com input desabilitado).
 
 - E SO front (sem dados/sem backend); marcado com a tag "Previa" para nao parecer pronto. A implementacao real (comunicados/campanhas + chat IA) vem depois.
+- **Editar persona do Omni Chat (so platform_admin):** o cabecalho do bloco Omni Chat tem uma engrenagem (icone `tune`, ao lado do badge "Previa", gateada por `auth.role === 'platform_admin'`) que abre o editor inline `OperationOmniPersonaEditor.vue`. Esse componente le/grava o prompt do sistema (persona) no banco via `useOmniChatPersona` (GET/PUT `/v1/omni-chat/persona`; X-Account-Id automatico, sem accountId no body); mostra "Usando o texto padrao" quando `isDefault`, e feedback de salvando/salvo/erro. O chat em si continua para todos; so a edicao e gated.
 - **Largura das colunas:** as 3 larguras estao em `web/app/assets/styles/layout.css` no `.queue-grid` (`--queue-grid-left-column`, `--queue-grid-right-column`, `--queue-grid-side-column`) — ajuste num lugar so (fr ou px). No mobile o grid colapsa para 1 coluna.
 
 ## Skeleton de carregamento (Fase 9 — apply-operacao)

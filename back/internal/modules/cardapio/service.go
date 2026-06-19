@@ -82,7 +82,10 @@ func (s *Service) GetRestaurant(ctx context.Context, accountID, id string) (Rest
 	return r, mapStoreErr(err)
 }
 
-// UpdateRestaurant aplica o PATCH parcial.
+// UpdateRestaurant aplica o PATCH parcial. in.AccountID (mover de conta) ja chega
+// zerado para nao-admin (gate no handler); aqui resolvemos o ponteiro do move
+// espelhando a bio: vazio/conta atual => nao move; conta destino inexistente =>
+// ErrNotFound (404 limpo antes do update, alem da protecao da FK).
 func (s *Service) UpdateRestaurant(ctx context.Context, accountID, id string, in UpdateRestaurantInput) (Restaurant, error) {
 	if in.Name != nil {
 		trimmed := strings.TrimSpace(*in.Name)
@@ -91,8 +94,34 @@ func (s *Service) UpdateRestaurant(ctx context.Context, accountID, id string, in
 		}
 		in.Name = &trimmed
 	}
+	movePtr, err := s.resolveMoveAccount(ctx, in.AccountID, accountID)
+	if err != nil {
+		return Restaurant{}, err
+	}
+	in.AccountID = movePtr
 	r, err := s.store.UpdateRestaurant(ctx, accountID, id, in)
 	return r, mapStoreErr(err)
+}
+
+// resolveMoveAccount decide o ponteiro de account_id do PATCH (mover de conta).
+// nil/vazio/igual a conta atual => nil (nao move). Caso contrario, valida que a
+// conta destino existe (ErrNotFound se nao) e devolve o ponteiro normalizado.
+func (s *Service) resolveMoveAccount(ctx context.Context, accountID *string, currentAccountID string) (*string, error) {
+	if accountID == nil {
+		return nil, nil
+	}
+	target := strings.TrimSpace(*accountID)
+	if target == "" || target == strings.TrimSpace(currentAccountID) {
+		return nil, nil
+	}
+	exists, err := s.store.AccountExists(ctx, target)
+	if err != nil {
+		return nil, mapStoreErr(err)
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+	return &target, nil
 }
 
 // DeleteRestaurant remove o restaurante.
@@ -128,6 +157,53 @@ func (s *Service) CreateDomain(ctx context.Context, accountID, restaurantID stri
 // DeleteDomain remove um dominio por host.
 func (s *Service) DeleteDomain(ctx context.Context, accountID, host string) error {
 	return s.store.DeleteDomain(ctx, accountID, normalizeHost(host))
+}
+
+// ============================================================================
+// Delivery zones (painel) — WS-A
+// ============================================================================
+
+// ListDeliveryZones lista as zonas de um restaurante (valida posse).
+func (s *Service) ListDeliveryZones(ctx context.Context, accountID, restaurantID string) ([]DeliveryZone, error) {
+	if _, err := s.store.GetRestaurant(ctx, accountID, restaurantID); err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return s.store.ListZones(ctx, accountID, restaurantID)
+}
+
+// CreateDeliveryZone cria uma zona no restaurante (valida posse; nome obrigatorio).
+func (s *Service) CreateDeliveryZone(ctx context.Context, accountID, restaurantID string, in DeliveryZoneInput) (DeliveryZone, error) {
+	if _, err := s.store.GetRestaurant(ctx, accountID, restaurantID); err != nil {
+		return DeliveryZone{}, mapStoreErr(err)
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	if in.Name == "" || in.FeeCents < 0 {
+		return DeliveryZone{}, ErrValidation
+	}
+	z, err := s.store.CreateZone(ctx, accountID, restaurantID, in)
+	return z, mapStoreErr(err)
+}
+
+// UpdateDeliveryZone aplica o PATCH parcial de uma zona (escopo pela account; 404
+// fora do escopo). Valida apenas os campos enviados.
+func (s *Service) UpdateDeliveryZone(ctx context.Context, accountID, id string, in UpdateDeliveryZoneInput) (DeliveryZone, error) {
+	if in.Name != nil {
+		trimmed := strings.TrimSpace(*in.Name)
+		if trimmed == "" {
+			return DeliveryZone{}, ErrValidation
+		}
+		in.Name = &trimmed
+	}
+	if in.FeeCents != nil && *in.FeeCents < 0 {
+		return DeliveryZone{}, ErrValidation
+	}
+	z, err := s.store.UpdateZone(ctx, accountID, id, in)
+	return z, mapStoreErr(err)
+}
+
+// DeleteDeliveryZone remove uma zona por id na account.
+func (s *Service) DeleteDeliveryZone(ctx context.Context, accountID, id string) error {
+	return s.store.DeleteZone(ctx, accountID, id)
 }
 
 // ============================================================================

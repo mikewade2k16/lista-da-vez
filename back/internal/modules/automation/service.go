@@ -16,13 +16,29 @@ type Service struct {
 	waha   *WAHAClient
 	n8n    *N8NClient
 	ctxMgr *ContextTokenManager
+	// wahaSession fixa a sessao fisica da WAHA usada em todas as chamadas (Status/
+	// Start/Logout/QR). A WAHA Core so aceita a sessao "default" (1 numero por
+	// instancia), entao todas as contas compartilham essa sessao unica. Vazio = modo
+	// por-conta (1 sessao por automation), valido so com WAHA Plus (multi-sessao).
+	wahaSession string
 }
 
 // NewService cria o Service. n8n e' o cliente do webhook interno do Omni Chat
 // (pode estar nao configurado; nesse caso OmniChatAsk responde 503). ctxMgr emite
-// e valida o context token HMAC do Omni Chat (Fase 2 / tools de dados).
-func NewService(store *Store, waha *WAHAClient, n8n *N8NClient, ctxMgr *ContextTokenManager) *Service {
-	return &Service{store: store, waha: waha, n8n: n8n, ctxMgr: ctxMgr}
+// e valida o context token HMAC do Omni Chat (Fase 2 / tools de dados). wahaSession
+// e' a sessao fisica unica da WAHA Core ("default"); vazio cai no modo por-conta.
+func NewService(store *Store, waha *WAHAClient, n8n *N8NClient, ctxMgr *ContextTokenManager, wahaSession string) *Service {
+	return &Service{store: store, waha: waha, n8n: n8n, ctxMgr: ctxMgr, wahaSession: wahaSession}
+}
+
+// sessionName resolve a sessao fisica da WAHA para um canal. Com wahaSession setado
+// (WAHA Core, default "default") todas as contas usam a mesma sessao; vazio cai no
+// session_name por-conta do canal (WAHA Plus / multi-sessao).
+func (s *Service) sessionName(ch Channel) string {
+	if s.wahaSession != "" {
+		return s.wahaSession
+	}
+	return ch.SessionName
 }
 
 // Overview retorna o estado do robo + a conexao do WhatsApp (lida da WAHA em
@@ -48,14 +64,23 @@ func (s *Service) Connect(ctx context.Context, accountID string) (ConnectView, e
 		return ConnectView{}, err
 	}
 
-	if status, phone := s.liveStatus(ctx, ch); status == statusWorking {
+	status, phone := s.liveStatus(ctx, ch)
+	if status == statusWorking {
 		return ConnectView{Status: statusWorking, ConnectedPhone: phone}, nil
 	}
 
-	if err := s.waha.Start(ctx, ch.SessionName); err != nil {
+	session := s.sessionName(ch)
+	// Sessao em FAILED nao gera QR (o GET de QR fica em long-poll ate estourar o timeout
+	// = 502). Restart re-arma o engine e leva a sessao de volta a SCAN_QR_CODE, de onde o
+	// QR sai; nos demais estados (STOPPED/SCAN_QR_CODE) basta o Start idempotente.
+	if status == statusFailed {
+		if err := s.waha.Restart(ctx, session); err != nil {
+			return ConnectView{}, err
+		}
+	} else if err := s.waha.Start(ctx, session); err != nil {
 		return ConnectView{}, err
 	}
-	qr, err := s.waha.QR(ctx, ch.SessionName)
+	qr, err := s.waha.QR(ctx, session)
 	if err != nil {
 		return ConnectView{}, err
 	}
@@ -63,13 +88,15 @@ func (s *Service) Connect(ctx context.Context, accountID string) (ConnectView, e
 	return ConnectView{Status: "SCAN_QR_CODE", QR: qr}, nil
 }
 
-// Disconnect encerra a sessao do WhatsApp.
+// Disconnect faz logout da sessao do WhatsApp, liberando o numero pareado. Com a
+// WAHA Core (1 sessao/numero), e' o que permite trocar de numero: desconectar o
+// atual e conectar outro (escaneando um novo QR).
 func (s *Service) Disconnect(ctx context.Context, accountID string) error {
 	_, ch, err := s.store.GetOrCreateDefault(ctx, accountID)
 	if err != nil {
 		return err
 	}
-	if err := s.waha.Stop(ctx, ch.SessionName); err != nil {
+	if err := s.waha.Logout(ctx, s.sessionName(ch)); err != nil {
 		return err
 	}
 	return s.store.UpdateChannelStatus(ctx, ch.ID, "STOPPED", "")
@@ -327,7 +354,7 @@ func (s *Service) ensurePersona(ctx context.Context, a Automation) (Persona, err
 
 // liveStatus le o estado na WAHA e persiste; em erro, cai no ultimo persistido.
 func (s *Service) liveStatus(ctx context.Context, ch Channel) (status, phone string) {
-	status, phone, err := s.waha.Status(ctx, ch.SessionName)
+	status, phone, err := s.waha.Status(ctx, s.sessionName(ch))
 	if err != nil {
 		current := ch.Status
 		if ch.ConnectedPhone != nil {
@@ -350,3 +377,7 @@ func buildWhatsAppView(ch Channel, status, phone string) WhatsAppView {
 }
 
 const statusWorking = "WORKING"
+
+// statusFailed e o estado de uma sessao WAHA que falhou ao iniciar (gows nao
+// conectou). Nesse estado a WAHA nao gera QR; o Connect faz Restart para recuperar.
+const statusFailed = "FAILED"

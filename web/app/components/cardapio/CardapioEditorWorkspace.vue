@@ -6,7 +6,9 @@ import CardapioSectionCategorias from '~/components/cardapio/sections/CardapioSe
 import CardapioSectionProdutos from '~/components/cardapio/sections/CardapioSectionProdutos.vue'
 import CardapioSectionAvaliacoes from '~/components/cardapio/sections/CardapioSectionAvaliacoes.vue'
 import CardapioSectionPedidos from '~/components/cardapio/sections/CardapioSectionPedidos.vue'
+import CardapioSectionEntrega from '~/components/cardapio/sections/CardapioSectionEntrega.vue'
 import CardapioSectionDominios from '~/components/cardapio/sections/CardapioSectionDominios.vue'
+import CardapioSectionAparencia from '~/components/cardapio/sections/CardapioSectionAparencia.vue'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
@@ -16,7 +18,15 @@ const props = defineProps<{ restaurantId: string; accountId?: string }>()
 const store = useCardapioStore()
 const ui = useUiStore()
 
-type SectionId = 'dados' | 'categorias' | 'produtos' | 'avaliacoes' | 'pedidos' | 'dominios'
+type SectionId =
+  | 'dados'
+  | 'categorias'
+  | 'produtos'
+  | 'avaliacoes'
+  | 'pedidos'
+  | 'entrega'
+  | 'dominios'
+  | 'aparencia'
 
 interface SectionTab {
   id: SectionId
@@ -29,7 +39,9 @@ const SECTIONS: SectionTab[] = [
   { id: 'produtos', label: 'Produtos' },
   { id: 'avaliacoes', label: 'Avaliacoes' },
   { id: 'pedidos', label: 'Pedidos' },
+  { id: 'entrega', label: 'Entrega' },
   { id: 'dominios', label: 'Dominios' },
+  { id: 'aparencia', label: 'Aparencia' },
 ]
 
 const active = ref<SectionId>('dados')
@@ -45,7 +57,7 @@ async function onToggleActive() {
   togglingActive.value = true
   try {
     await store.patchRestaurant(store.restaurantId, { isActive: !isActive.value })
-    ui.success(isActive.value ? 'Cardapio publicado.' : 'Cardapio despublicado.')
+    ui.success(isActive.value ? 'Site publicado.' : 'Site despublicado.')
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel alterar o status.'))
   } finally {
@@ -67,7 +79,7 @@ onMounted(loadActive)
   <section class="cardapio-editor">
     <header class="cardapio-editor__top">
       <div class="cardapio-editor__crumbs">
-        <NuxtLink to="/cardapio" class="cardapio-editor__back">Cardapios</NuxtLink>
+        <NuxtLink to="/cardapio" class="cardapio-editor__back">Presence</NuxtLink>
         <span class="cardapio-editor__sep">/</span>
         <span class="cardapio-editor__current">
           {{ store.restaurant?.name || 'Carregando...' }}
@@ -102,7 +114,7 @@ onMounted(loadActive)
     <p v-if="store.detailError" class="cardapio-editor__error">{{ store.detailError }}</p>
 
     <div v-if="store.detailPending && !store.restaurant" class="cardapio-editor__loading">
-      Carregando cardapio...
+      Carregando estabelecimento...
     </div>
 
     <div v-else class="cardapio-editor__body">
@@ -125,7 +137,9 @@ onMounted(loadActive)
         <CardapioSectionProdutos v-else-if="active === 'produtos'" />
         <CardapioSectionAvaliacoes v-else-if="active === 'avaliacoes'" />
         <CardapioSectionPedidos v-else-if="active === 'pedidos'" />
+        <CardapioSectionEntrega v-else-if="active === 'entrega'" />
         <CardapioSectionDominios v-else-if="active === 'dominios'" />
+        <CardapioSectionAparencia v-else-if="active === 'aparencia'" />
       </div>
     </div>
   </section>

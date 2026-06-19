@@ -33,7 +33,7 @@ export const WORKSPACES = [
   },
   {
     id: 'cardapio_web',
-    label: 'Cardápio Online',
+    label: 'Presence',
     icon: 'dashboard_customize',
     path: '/cardapio',
   },

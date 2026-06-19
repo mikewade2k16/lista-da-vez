@@ -10,13 +10,17 @@ import (
 // json.RawMessage para preservar a forma livre (address/hours/settings/theme/
 // gallery/diet/allergens/pairing/tags) sem reescrever o shape do contrato.
 
-// Address e o endereco do restaurante (forma fixa do contrato).
+// Address e o endereco do restaurante (forma fixa do contrato). number/complement/
+// reference (WS-C) sao opcionais (omitempty) e vivem no mesmo jsonb address.
 type Address struct {
 	Street       string `json:"street"`
 	Neighborhood string `json:"neighborhood"`
 	City         string `json:"city"`
 	State        string `json:"state"`
 	Zip          string `json:"zip"`
+	Number       string `json:"number,omitempty"`
+	Complement   string `json:"complement,omitempty"`
+	Reference    string `json:"reference,omitempty"`
 }
 
 // HourSpan e uma faixa de horario (dias + horas em texto livre).
@@ -27,12 +31,31 @@ type HourSpan struct {
 
 // Settings sao as regras comerciais do restaurante (entrega/retirada/local).
 type Settings struct {
-	DeliveryFeeCents       int64 `json:"deliveryFeeCents"`
-	DeliveryEnabled        bool  `json:"deliveryEnabled"`
-	PickupEnabled          bool  `json:"pickupEnabled"`
-	DineInEnabled          bool  `json:"dineInEnabled"`
-	MinOrderCents          int64 `json:"minOrderCents"`
-	FreeDeliveryAboveCents int64 `json:"freeDeliveryAboveCents"`
+	DeliveryFeeCents       int64           `json:"deliveryFeeCents"`
+	DeliveryEnabled        bool            `json:"deliveryEnabled"`
+	PickupEnabled          bool            `json:"pickupEnabled"`
+	DineInEnabled          bool            `json:"dineInEnabled"`
+	MinOrderCents          int64           `json:"minOrderCents"`
+	FreeDeliveryAboveCents int64           `json:"freeDeliveryAboveCents"`
+	Payment                PaymentSettings `json:"payment"`
+}
+
+// PaymentSettings (WS-B) descreve as formas de pagamento aceitas. E INFORMATIVO:
+// sai no menu publico para exibicao, mas NAO entra no checkout (o pedido nao
+// escolhe forma de pagamento). jsonb dentro de settings — sem migration.
+type PaymentSettings struct {
+	Cash   bool        `json:"cash"`
+	Debit  PaymentCard `json:"debit"`
+	Credit PaymentCard `json:"credit"`
+	Pix    bool        `json:"pix"`
+	Ticket bool        `json:"ticket"`
+	Other  string      `json:"other"`
+}
+
+// PaymentCard descreve um meio por cartao (debito/credito): aceito + bandeiras.
+type PaymentCard struct {
+	Accepted bool     `json:"accepted"`
+	Brands   []string `json:"brands"`
 }
 
 // Restaurant e o DTO completo do restaurante.
@@ -52,9 +75,16 @@ type Restaurant struct {
 	Hours       []HourSpan      `json:"hours"`
 	Settings    Settings        `json:"settings"`
 	Theme       json.RawMessage `json:"theme"`
-	IsActive    bool            `json:"isActive"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
+	// WS-C: campos faltantes (paridade lojatop) + estatisticas.
+	Segment           string    `json:"segment"`
+	Facebook          string    `json:"facebook"`
+	Youtube           string    `json:"youtube"`
+	GoogleAnalyticsID string    `json:"googleAnalyticsId"`
+	FacebookPixelID   string    `json:"facebookPixelId"`
+	CustomHeadHTML    string    `json:"customHeadHtml"`
+	IsActive          bool      `json:"isActive"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // RestaurantLean e a projecao enxuta da listagem do painel.
@@ -175,11 +205,22 @@ type EventView struct {
 	CreatedAt time.Time       `json:"createdAt"`
 }
 
+// DeliveryZone (WS-A) e um bairro com valor de entrega. centavos int64.
+type DeliveryZone struct {
+	ID           string `json:"id"`
+	RestaurantID string `json:"restaurantId"`
+	Name         string `json:"name"`
+	FeeCents     int64  `json:"feeCents"`
+	IsActive     bool   `json:"isActive"`
+	SortOrder    int    `json:"sortOrder"`
+}
+
 // PublicMenu e a resposta de GET /v1/public/restaurants/{slug}.
 type PublicMenu struct {
-	Restaurant Restaurant `json:"restaurant"`
-	Categories []Category `json:"categories"`
-	Products   []Product  `json:"products"`
+	Restaurant    Restaurant     `json:"restaurant"`
+	Categories    []Category     `json:"categories"`
+	Products      []Product      `json:"products"`
+	DeliveryZones []DeliveryZone `json:"deliveryZones"`
 }
 
 // PublicProduct e a resposta de GET .../products/{productSlug}.
@@ -203,7 +244,10 @@ type CreateRestaurantInput struct {
 
 // UpdateRestaurantInput cobre os campos editaveis do restaurante. Ponteiros
 // permitem PATCH parcial (campo ausente => preserva o valor atual).
+// AccountID move o restaurante para outra conta (so platform_admin; espelha bio):
+// nil/vazio/conta atual => nao move; o handler zera o campo para nao-admin.
 type UpdateRestaurantInput struct {
+	AccountID   *string          `json:"accountId"`
 	Name        *string          `json:"name"`
 	Tagline     *string          `json:"tagline"`
 	Description *string          `json:"description"`
@@ -217,7 +261,14 @@ type UpdateRestaurantInput struct {
 	Hours       *[]HourSpan      `json:"hours"`
 	Settings    *Settings        `json:"settings"`
 	Theme       *json.RawMessage `json:"theme"`
-	IsActive    *bool            `json:"isActive"`
+	// WS-C: campos faltantes (paridade lojatop) + estatisticas.
+	Segment           *string `json:"segment"`
+	Facebook          *string `json:"facebook"`
+	Youtube           *string `json:"youtube"`
+	GoogleAnalyticsID *string `json:"googleAnalyticsId"`
+	FacebookPixelID   *string `json:"facebookPixelId"`
+	CustomHeadHTML    *string `json:"customHeadHtml"`
+	IsActive          *bool   `json:"isActive"`
 }
 
 // CategoryInput cria/edita categoria.
@@ -284,4 +335,21 @@ type ReviewInput struct {
 type DomainInput struct {
 	Host      string `json:"host"`
 	IsPrimary bool   `json:"isPrimary"`
+}
+
+// DeliveryZoneInput cria uma zona de entrega (WS-A).
+type DeliveryZoneInput struct {
+	Name      string `json:"name"`
+	FeeCents  int64  `json:"feeCents"`
+	IsActive  bool   `json:"isActive"`
+	SortOrder int    `json:"sortOrder"`
+}
+
+// UpdateDeliveryZoneInput e o PATCH parcial de uma zona (WS-A). Ponteiros => so
+// os campos enviados mudam (toggle de is_active nao precisa do body inteiro).
+type UpdateDeliveryZoneInput struct {
+	Name      *string `json:"name"`
+	FeeCents  *int64  `json:"feeCents"`
+	IsActive  *bool   `json:"isActive"`
+	SortOrder *int    `json:"sortOrder"`
 }

@@ -20,6 +20,7 @@ type fakeStore struct {
 	products       map[string]productForOrder // productID -> dados
 	variations     map[string]Variation       // variationID -> dados (com ProductID)
 	addons         map[string][]Addon         // productID -> addons
+	zones          map[string]DeliveryZone    // zoneID -> dados (com RestaurantID, so ativas)
 	resolveSlug    map[string]string          // slug pedido -> slug canonico
 	resolveHost    map[string]string          // host -> slug
 	createdOrder   orderInsert
@@ -31,9 +32,18 @@ func newFakeStore() *fakeStore {
 		products:    map[string]productForOrder{},
 		variations:  map[string]Variation{},
 		addons:      map[string][]Addon{},
+		zones:       map[string]DeliveryZone{},
 		resolveSlug: map[string]string{},
 		resolveHost: map[string]string{},
 	}
+}
+
+func (f *fakeStore) zoneForOrder(_ context.Context, restaurantID, zoneID string) (DeliveryZone, error) {
+	z, ok := f.zones[zoneID]
+	if !ok || z.RestaurantID != restaurantID || !z.IsActive {
+		return DeliveryZone{}, pgx.ErrNoRows
+	}
+	return z, nil
 }
 
 func (f *fakeStore) publicRestaurant(_ context.Context, _ string) (Restaurant, string, error) {
@@ -230,6 +240,85 @@ func TestService_OutOfScopeReturnsNotFound(t *testing.T) {
 	if _, err := svc.GetRestaurant(context.Background(), "acc-intrusa", "rest-1"); err != ErrNotFound {
 		t.Fatalf("account intrusa: esperava ErrNotFound, recebi %v", err)
 	}
+}
+
+// ============================================================================
+// Mover restaurante de conta (coluna Cliente, espelha bio)
+// ============================================================================
+
+// moveFakeStore captura o ponteiro de account_id repassado ao UpdateRestaurant e
+// controla a existencia da conta destino (AccountExists).
+type moveFakeStore struct {
+	unimplementedStore
+	exists     bool
+	gotAccount *string
+}
+
+func (s *moveFakeStore) AccountExists(_ context.Context, _ string) (bool, error) {
+	return s.exists, nil
+}
+
+func (s *moveFakeStore) UpdateRestaurant(_ context.Context, _, _ string, in UpdateRestaurantInput) (Restaurant, error) {
+	s.gotAccount = in.AccountID
+	return Restaurant{ID: "rest-1"}, nil
+}
+
+func ptr(v string) *string { return &v }
+
+func TestUpdateRestaurant_MoveAccount(t *testing.T) {
+	const current = "acc-atual"
+
+	// Admin move para conta destino valida: o ponteiro chega normalizado ao store.
+	t.Run("conta valida move", func(t *testing.T) {
+		store := &moveFakeStore{exists: true}
+		svc := newServiceWithStore(store, ServiceConfig{})
+		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
+			UpdateRestaurantInput{AccountID: ptr(" acc-destino ")}); err != nil {
+			t.Fatalf("esperava sucesso, recebi %v", err)
+		}
+		if store.gotAccount == nil || *store.gotAccount != "acc-destino" {
+			t.Fatalf("esperava account_id 'acc-destino' no store, recebi %v", store.gotAccount)
+		}
+	})
+
+	// Conta destino inexistente => ErrNotFound antes do update.
+	t.Run("conta inexistente", func(t *testing.T) {
+		store := &moveFakeStore{exists: false}
+		svc := newServiceWithStore(store, ServiceConfig{})
+		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
+			UpdateRestaurantInput{AccountID: ptr("acc-fantasma")}); err != ErrNotFound {
+			t.Fatalf("esperava ErrNotFound, recebi %v", err)
+		}
+		if store.gotAccount != nil {
+			t.Fatalf("update nao deveria ter ocorrido, recebi %v", store.gotAccount)
+		}
+	})
+
+	// Conta igual a atual (ou vazia) => nil (nao move), sem consultar AccountExists.
+	t.Run("mesma conta nao move", func(t *testing.T) {
+		store := &moveFakeStore{exists: false}
+		svc := newServiceWithStore(store, ServiceConfig{})
+		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
+			UpdateRestaurantInput{AccountID: ptr(current)}); err != nil {
+			t.Fatalf("esperava sucesso, recebi %v", err)
+		}
+		if store.gotAccount != nil {
+			t.Fatalf("mesma conta nao deve mover, recebi %v", store.gotAccount)
+		}
+	})
+
+	// Sem accountId (nao-admin chega assim, zerado no handler) => nao move.
+	t.Run("nil nao move", func(t *testing.T) {
+		store := &moveFakeStore{exists: false}
+		svc := newServiceWithStore(store, ServiceConfig{})
+		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
+			UpdateRestaurantInput{}); err != nil {
+			t.Fatalf("esperava sucesso, recebi %v", err)
+		}
+		if store.gotAccount != nil {
+			t.Fatalf("sem accountId nao deve mover, recebi %v", store.gotAccount)
+		}
+	})
 }
 
 func TestNormalizeHost(t *testing.T) {

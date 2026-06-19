@@ -15,6 +15,19 @@ import (
 // 400 question_too_long acima disso).
 const omniChatMaxQuestionLen = 2000
 
+// omniChatMaxPersonaLen e o limite de caracteres do systemPrompt da persona do Omni
+// Chat (contrato: 400 prompt_too_long acima disso).
+const omniChatMaxPersonaLen = 20000
+
+// omniChatPersonaView e a resposta do contrato de config do Omni Chat: o systemPrompt
+// efetivo da account, se ele e o default embutido (true) ou um custom salvo (false), e
+// a janela de memoria (interacoes que o n8n mantem no contexto).
+type omniChatPersonaView struct {
+	SystemPrompt  string `json:"systemPrompt"`
+	IsDefault     bool   `json:"isDefault"`
+	HistoryWindow int    `json:"historyWindow"`
+}
+
 // handleOmniChatAsk responde POST /v1/omni-chat/ask: chat interno do painel de
 // Operacao ligado ao n8n. Auth e' RequireAuth (rota FORA do prefixo
 // /v1/automation, de proposito — nao exige o modulo automation de quem usa
@@ -38,8 +51,9 @@ func handleOmniChatAsk(svc *Service) http.HandlerFunc {
 		}
 
 		var body struct {
-			Question string `json:"question"`
-			Topic    string `json:"topic"`
+			Question       string `json:"question"`
+			Topic          string `json:"topic"`
+			ConversationID string `json:"conversationId"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
@@ -56,12 +70,70 @@ func handleOmniChatAsk(svc *Service) http.HandlerFunc {
 			return
 		}
 
-		view, err := svc.OmniChatAsk(r.Context(), scope, question, body.Topic)
+		// conversationId vem do front (1 por conversa) e escopa a memoria do n8n;
+		// o service o combina com account+user (nunca confia no body p/ escopo).
+		view, err := svc.OmniChatAsk(r.Context(), scope, question, body.Topic, body.ConversationID)
 		if err != nil {
 			writeOmniChatError(w, r, err)
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+// handleOmniChatPersonaGet responde GET /v1/omni-chat/persona: devolve o systemPrompt
+// EFETIVO da account (custom salvo no banco, ou o default embutido) + isDefault.
+// RequireAuth; accountID vem do principal (X-Account-Id), nunca do body.
+func handleOmniChatPersonaGet(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, ok := accountIDFromContext(r)
+		if !ok {
+			writeNoAccount(w, r)
+			return
+		}
+		prompt, isDefault, historyWindow, err := svc.OmniChatConfig(r.Context(), accountID)
+		if err != nil {
+			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao carregar a persona do Omni Chat.")
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, omniChatPersonaView{SystemPrompt: prompt, IsDefault: isDefault, HistoryWindow: historyWindow})
+	}
+}
+
+// handleOmniChatPersonaPut responde PUT /v1/omni-chat/persona: salva o systemPrompt
+// customizado da account e passa a valer (isDefault=false). RequireAuth; accountID do
+// principal. Valida vazio (400 empty_prompt) e tamanho (400 prompt_too_long).
+func handleOmniChatPersonaPut(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, ok := accountIDFromContext(r)
+		if !ok {
+			writeNoAccount(w, r)
+			return
+		}
+		var body struct {
+			SystemPrompt  string `json:"systemPrompt"`
+			HistoryWindow int    `json:"historyWindow"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		trimmed := strings.TrimSpace(body.SystemPrompt)
+		switch {
+		case trimmed == "":
+			httpapi.WriteError(w, r, http.StatusBadRequest, "empty_prompt", "O comportamento nao pode ficar vazio.")
+			return
+		case len(trimmed) > omniChatMaxPersonaLen:
+			httpapi.WriteError(w, r, http.StatusBadRequest, "prompt_too_long", "O comportamento e' longo demais (max 20000 caracteres).")
+			return
+		}
+		// historyWindow normalizado no service (0/ausente -> default; clamp 1..20).
+		saved, savedWindow, err := svc.SetOmniChatConfig(r.Context(), accountID, trimmed, body.HistoryWindow)
+		if err != nil {
+			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao salvar a persona do Omni Chat.")
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, omniChatPersonaView{SystemPrompt: saved, IsDefault: false, HistoryWindow: savedWindow})
 	}
 }
 

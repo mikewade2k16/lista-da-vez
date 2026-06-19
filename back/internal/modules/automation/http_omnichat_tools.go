@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -48,17 +49,22 @@ func handleOmniChatCatalogTool(svc *Service, token string, ctxMgr *ContextTokenM
 			return
 		}
 
-		// 3) Busca escopada pelo accountID do TOKEN (nunca do query). q vazio ->
-		// lista vazia (mesma seguranca da tool do WhatsApp).
+		// 3) Busca escopada pelo accountID do TOKEN (nunca do query). Tres intencoes
+		// resolvidas em OmniChatCatalog (vazio/NONE, "LISTAR"=amostra, termo=busca com
+		// fallback p/ amostra) para o bot nunca travar nem ficar "burro".
 		query := strings.TrimSpace(r.URL.Query().Get("q"))
-		hits, err := svc.SearchCatalogByAccount(r.Context(), scope.AccountID, query)
+		hits, mode, err := svc.OmniChatCatalog(r.Context(), scope.AccountID, query)
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao buscar no catalogo.")
 			return
 		}
+		// Observabilidade: account/q/mode/contagem (account UUID e q nao sao segredo) —
+		// ajuda a diagnosticar "catalogo vazio" sem precisar reconstruir execucao do n8n.
+		slog.Info("omni-chat catalog tool", "account", scope.AccountID, "q", query, "mode", mode, "results", len(hits))
 		httpapi.WriteJSON(w, http.StatusOK, struct {
 			Produtos []ProductHit `json:"produtos"`
 			Total    int          `json:"total"`
-		}{Produtos: hits, Total: len(hits)})
+			Mode     string       `json:"mode"`
+		}{Produtos: hits, Total: len(hits), Mode: mode})
 	}
 }

@@ -19,7 +19,8 @@ func (s *Store) publicRestaurant(ctx context.Context, slug string) (Restaurant, 
 
 const publicRestaurantColumns = `r.id, r.slug, r.name, r.tagline, r.description, r.logo_url,
 	r.banner_url, r.whatsapp, r.phone, r.email, r.instagram, r.address, r.hours, r.settings,
-	r.theme, r.is_active, r.created_at, r.updated_at`
+	r.theme, r.segment, r.facebook, r.youtube, r.google_analytics_id, r.facebook_pixel_id,
+	r.custom_head_html, r.is_active, r.created_at, r.updated_at`
 
 func scanPublicRestaurant(row rowScanner) (Restaurant, string, error) {
 	var r Restaurant
@@ -28,6 +29,7 @@ func scanPublicRestaurant(row rowScanner) (Restaurant, string, error) {
 	err := row.Scan(
 		&r.ID, &r.Slug, &r.Name, &r.Tagline, &r.Description, &r.LogoURL, &r.BannerURL,
 		&r.WhatsApp, &r.Phone, &r.Email, &r.Instagram, &address, &hours, &settings, &theme,
+		&r.Segment, &r.Facebook, &r.Youtube, &r.GoogleAnalyticsID, &r.FacebookPixelID, &r.CustomHeadHTML,
 		&r.IsActive, &r.CreatedAt, &r.UpdatedAt, &accountID,
 	)
 	if err != nil {

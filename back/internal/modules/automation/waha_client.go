@@ -61,29 +61,86 @@ func (c *WAHAClient) Status(ctx context.Context, session string) (status string,
 	return s.Status, phone, nil
 }
 
-// Start garante a sessao criada e iniciada. Idempotente e tolerante: se a sessao
-// ja existe, tenta iniciar o recurso existente.
+// Start garante a sessao iniciada (idempotente). Tenta iniciar a sessao existente
+// (POST /api/sessions/{name}/start — caminho que a engine gows aceita); se a sessao
+// ainda nao existe (404), cria e inicia. O atalho "criar+iniciar num passo so"
+// (POST /api/sessions {start:true}) e' recusado por algumas versoes da WAHA quando a
+// sessao ja existe e dava 502 no painel ao clicar Conectar.
 func (c *WAHAClient) Start(ctx context.Context, session string) error {
-	body := strings.NewReader(fmt.Sprintf(`{"name":%q,"start":true}`, session))
+	code, err := c.startSession(ctx, session)
+	if err != nil {
+		return err
+	}
+	if code == http.StatusNotFound {
+		if err := c.createSession(ctx, session); err != nil {
+			return err
+		}
+		if code, err = c.startSession(ctx, session); err != nil {
+			return err
+		}
+	}
+	// 2xx = iniciada; 4xx = provavelmente ja rodando (toleramos); 5xx = erro real.
+	if code >= 500 {
+		return fmt.Errorf("waha start: http %d", code)
+	}
+	return nil
+}
+
+// startSession dispara POST /api/sessions/{session}/start e devolve o status code.
+func (c *WAHAClient) startSession(ctx context.Context, session string) (int, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/api/sessions/"+session+"/start", nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode, nil
+}
+
+// createSession cria a sessao (POST /api/sessions {name}). 4xx ("ja existe") e' tolerado.
+func (c *WAHAClient) createSession(ctx context.Context, session string) error {
+	body := strings.NewReader(fmt.Sprintf(`{"name":%q}`, session))
 	resp, err := c.do(ctx, http.MethodPost, "/api/sessions", body)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	switch {
-	case resp.StatusCode == http.StatusUnprocessableEntity, resp.StatusCode == http.StatusConflict:
-		return c.post(ctx, "/api/sessions/"+session+"/start")
-	case resp.StatusCode >= 300:
-		return fmt.Errorf("waha start: http %d", resp.StatusCode)
-	default:
-		return nil
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("waha create session: http %d", resp.StatusCode)
 	}
+	return nil
 }
 
-// Stop encerra a sessao.
-func (c *WAHAClient) Stop(ctx context.Context, session string) error {
-	return c.post(ctx, "/api/sessions/"+session+"/stop")
+// Logout desconecta a sessao do WhatsApp (POST /api/sessions/{name}/logout),
+// liberando o numero pareado para que um novo QR possa ser escaneado. E' o que
+// permite "desconectar e conectar outro numero" — um `stop` apenas pausaria mantendo
+// o mesmo numero pareado, entao reconectar voltaria o mesmo numero. Tolerante: 4xx
+// (sessao ja deslogada/inexistente) nao e' erro; so 5xx falha.
+func (c *WAHAClient) Logout(ctx context.Context, session string) error {
+	resp, err := c.do(ctx, http.MethodPost, "/api/sessions/"+session+"/logout", nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("waha logout: http %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// Restart reinicia a sessao (POST /api/sessions/{name}/restart), re-armando o engine.
+// E' a forma de recuperar uma sessao em estado FAILED: uma sessao FAILED nao gera QR
+// (o GET de QR fica em long-poll ate estourar o timeout), e o restart a leva de volta
+// a STARTING -> SCAN_QR_CODE. Tolerante: 4xx nao e' erro, so 5xx falha.
+func (c *WAHAClient) Restart(ctx context.Context, session string) error {
+	resp, err := c.do(ctx, http.MethodPost, "/api/sessions/"+session+"/restart", nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("waha restart: http %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // QR busca o QR code (PNG) e devolve um data URL base64 pronto para <img src>.
@@ -103,27 +160,18 @@ func (c *WAHAClient) QR(ctx context.Context, session string) (string, error) {
 	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw), nil
 }
 
-func (c *WAHAClient) post(ctx context.Context, path string) error {
-	resp, err := c.do(ctx, http.MethodPost, path, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("waha %s: http %d", path, resp.StatusCode)
-	}
-	return nil
-}
-
 func (c *WAHAClient) do(ctx context.Context, method, path string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
+	// G704 (gosec): falso-positivo. baseURL vem de config confiavel
+	// (AUTOMATION_WAHA_INTERNAL_URL, default http://waha:3000) e o session no path e'
+	// a sessao fisica ("default" de config ou UUID interno do canal), nunca input do usuario.
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body) //nolint:gosec // host de config confiavel, nao de input
 	if err != nil {
 		return nil, err
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return c.http.Do(req)
+	return c.http.Do(req) //nolint:gosec // host de config confiavel, nao de input
 }
 
 // phoneFromWAHAID extrai o numero de um id tipo "554284138129@c.us".

@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -40,6 +41,10 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	// (RequireModuleByPath usa limite de segmento), entao quem usa Operacao nao
 	// precisa do modulo `automation` habilitado. So RequireAuth.
 	mux.Handle("POST /v1/omni-chat/ask", wrap(handleOmniChatAsk(svc)))
+	// Persona do Omni Chat (editavel, guardada no banco; embed = default/fallback).
+	// Mesmas regras da rota /ask: fora do prefixo /v1/automation, so RequireAuth.
+	mux.Handle("GET /v1/omni-chat/persona", wrap(handleOmniChatPersonaGet(svc)))
+	mux.Handle("PUT /v1/omni-chat/persona", wrap(handleOmniChatPersonaPut(svc)))
 }
 
 func handleOverview(svc *Service) http.HandlerFunc {
@@ -67,6 +72,7 @@ func handleConnect(svc *Service) http.HandlerFunc {
 		}
 		view, err := svc.Connect(r.Context(), accountID)
 		if err != nil {
+			slog.Error("automation: whatsapp connect failed", "account", accountID, "err", err)
 			httpapi.WriteError(w, r, http.StatusBadGateway, "waha_error", "Nao foi possivel falar com o WhatsApp (WAHA).")
 			return
 		}
@@ -82,6 +88,7 @@ func handleDisconnect(svc *Service) http.HandlerFunc {
 			return
 		}
 		if err := svc.Disconnect(r.Context(), accountID); err != nil {
+			slog.Error("automation: whatsapp disconnect failed", "account", accountID, "err", err)
 			httpapi.WriteError(w, r, http.StatusBadGateway, "waha_error", "Nao foi possivel desconectar.")
 			return
 		}

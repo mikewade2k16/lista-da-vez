@@ -29,6 +29,11 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	mux.Handle("POST /v1/cardapio/restaurants/{id}/domains", wrap(handleCreateDomain(svc)))
 	mux.Handle("DELETE /v1/cardapio/domains", wrap(handleDeleteDomain(svc)))
 
+	mux.Handle("GET /v1/cardapio/restaurants/{id}/delivery-zones", wrap(handleListZones(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/delivery-zones", wrap(handleCreateZone(svc)))
+	mux.Handle("PATCH /v1/cardapio/delivery-zones/{id}", wrap(handleUpdateZone(svc)))
+	mux.Handle("DELETE /v1/cardapio/delivery-zones/{id}", wrap(handleDeleteZone(svc)))
+
 	mux.Handle("POST /v1/cardapio/restaurants/{id}/media", wrap(handleUploadMedia(svc)))
 }
 
@@ -182,7 +187,7 @@ func handleGetRestaurant(svc *Service) http.HandlerFunc {
 
 func handleUpdateRestaurant(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, isAdmin, err := scopedAccountID(r, false)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -191,6 +196,11 @@ func handleUpdateRestaurant(svc *Service) http.HandlerFunc {
 		if err := httpapi.ReadJSON(r, &in); err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
+		}
+		// Mover de conta e exclusivo de platform_admin: nao-admin nunca troca a
+		// account do restaurante (zera o campo antes do service decidir).
+		if !isAdmin {
+			in.AccountID = nil
 		}
 		view, err := svc.UpdateRestaurant(r.Context(), accountID, r.PathValue("id"), in)
 		if err != nil {

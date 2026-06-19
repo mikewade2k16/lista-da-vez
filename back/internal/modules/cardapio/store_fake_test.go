@@ -3,6 +3,8 @@ package cardapio
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // unimplementedStore fornece defaults inertes para todos os metodos de dataStore.
@@ -24,6 +26,9 @@ func (unimplementedStore) UpdateRestaurant(context.Context, string, string, Upda
 	return Restaurant{}, nil
 }
 func (unimplementedStore) DeleteRestaurant(context.Context, string, string) error { return nil }
+func (unimplementedStore) AccountExists(context.Context, string) (bool, error) {
+	return false, nil
+}
 func (unimplementedStore) ListDomains(context.Context, string, string) ([]Domain, error) {
 	return nil, nil
 }
@@ -67,6 +72,22 @@ func (unimplementedStore) UpdateReview(context.Context, string, string, ReviewIn
 	return Review{}, nil
 }
 func (unimplementedStore) DeleteReview(context.Context, string, string) error { return nil }
+func (unimplementedStore) ListZones(context.Context, string, string) ([]DeliveryZone, error) {
+	return nil, nil
+}
+func (unimplementedStore) ListPublicZones(context.Context, string, string) ([]DeliveryZone, error) {
+	return nil, nil
+}
+func (unimplementedStore) CreateZone(context.Context, string, string, DeliveryZoneInput) (DeliveryZone, error) {
+	return DeliveryZone{}, nil
+}
+func (unimplementedStore) UpdateZone(context.Context, string, string, UpdateDeliveryZoneInput) (DeliveryZone, error) {
+	return DeliveryZone{}, nil
+}
+func (unimplementedStore) DeleteZone(context.Context, string, string) error { return nil }
+func (unimplementedStore) zoneForOrder(context.Context, string, string) (DeliveryZone, error) {
+	return DeliveryZone{}, pgx.ErrNoRows
+}
 func (unimplementedStore) CreateOrder(context.Context, orderInsert) (Order, error) {
 	return Order{}, nil
 }

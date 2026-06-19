@@ -15,6 +15,13 @@ import (
 // AUTOMATION_WAHA_INTERNAL_URL.
 const defaultWAHAURL = "http://waha:3000"
 
+// defaultWAHASession e a sessao fisica usada nas chamadas a WAHA. A WAHA Core so
+// aceita a sessao "default" (1 numero por instancia), entao todas as contas
+// compartilham essa sessao unica. Sobrescrita por AUTOMATION_WAHA_SESSION; o valor
+// especial "@channel" volta ao modo por-conta (1 sessao por automation), valido
+// apenas com WAHA Plus (multi-sessao).
+const defaultWAHASession = "default"
+
 // defaultN8NURL e a base interna do n8n na rede do compose (webhook do Omni
 // Chat). Sobrescrita por AUTOMATION_N8N_INTERNAL_URL.
 const defaultN8NURL = "http://n8n:5678"
@@ -79,6 +86,15 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	if n8nURL == "" {
 		n8nURL = defaultN8NURL
 	}
+	// Sessao fisica da WAHA. Default "default" (WAHA Core, 1 numero compartilhado);
+	// "@channel" volta ao modo por-conta (WAHA Plus, 1 sessao por automation).
+	wahaSession := strings.TrimSpace(os.Getenv("AUTOMATION_WAHA_SESSION"))
+	if wahaSession == "" {
+		wahaSession = defaultWAHASession
+	}
+	if wahaSession == "@channel" {
+		wahaSession = ""
+	}
 	// O Omni Chat reusa AUTOMATION_RUNTIME_TOKEN (mesmo token de servico do
 	// runtime-config) para o Bearer Go->n8n. Sem token = nao configurado (503).
 	runtimeToken := strings.TrimSpace(os.Getenv("AUTOMATION_RUNTIME_TOKEN"))
@@ -94,7 +110,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	}
 	ctxMgr := NewContextTokenManager([]byte(ctxSecret), omniContextTokenTTL)
 
-	svc := NewService(NewStore(deps.Pool), NewWAHAClient(wahaURL), NewN8NClient(n8nURL, runtimeToken), ctxMgr)
+	svc := NewService(NewStore(deps.Pool), NewWAHAClient(wahaURL), NewN8NClient(n8nURL, runtimeToken), ctxMgr, wahaSession)
 
 	m.handle = &handle{
 		service:        svc,

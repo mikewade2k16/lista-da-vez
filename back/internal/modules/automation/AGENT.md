@@ -49,7 +49,15 @@ escopado da WAHA para o front, sem expor n8n/WAHA ao cliente.
   `POST http://n8n:5678/webhook/omni-chat`. M0 = pipeline + persona, **sem** consultar banco/CRM.
   Contrato congelado: docs/automation/OMNI_CHAT_PLAN.md.
 
-- **Omni Chat — Fase 2 (tools de dados):** o `/ask` agora emite um **context token HMAC** opaco
+- **Omni Chat — persona dedicada + catalogo DESCONECTADO (2026-06-19, decisao do usuario):** o Omni Chat
+  NAO usa mais o Tony nem consulta o catalogo. Usa uma **persona propria** (`defaults/omni_chat_persona.md`,
+  embed `omniChatPersona`): copiloto de vendas/conhecimento da **Perola Joias** (joias, relogios Seiko/
+  Bulova/Victorinox, concorrentes, persuasao). Workflow n8n simplificado p/ `Webhook -> AI Agent -> Respond`.
+  O catalogo (codigo Go + nos do n8n) fica intacto, so desconectado — ver registro de falhas "2026-06-19 (3)".
+  A descricao de Fase 2 abaixo (context token + tool de catalogo) segue valida como infra, mas o workflow
+  atual NAO a chama.
+
+- **Omni Chat — Fase 2 (tools de dados) [infra, hoje nao usada pelo workflow]:** o `/ask` ainda emite um **context token HMAC** opaco
   (`ctxv1`) que escopa as tools de dados; o n8n o reenvia no header `X-Omni-Context` ao chamar
   uma tool. Primeira tool: **catalogo** (`GET /v1/runtime/omni-chat/catalog`). O escopo
   (account/tenant/store/user/role) sai SO do token assinado, NUNCA do query/body do n8n. Tools de
@@ -70,15 +78,19 @@ back/internal/modules/automation/
   models.go            <- catalogo de modelos + selecao por funcao (A6) e *View
   model_conversation.go<- Message, LeadState e *View (A7)
   model_product.go     <- SourcesView, ProductHit (M5)
-  waha_client.go       <- cliente HTTP interno da WAHA (status/start/stop/qr)
+  waha_client.go       <- cliente HTTP interno da WAHA (status/start/logout/qr); start usa
+                          POST /api/sessions/{name}/start (compativel com a engine gows), nao o
+                          atalho POST /api/sessions {start:true}; disconnect usa /logout (libera o
+                          numero pareado p/ trocar de numero), nao /stop
   store_postgres.go    <- persistencia (automations/channels/personas/knowledge_documents/contacts)
   store_models.go      <- persistencia do catalogo + selecao de modelos (A6)
   store_conversation.go<- persistencia de messages + lead_state (A7)
   store_product.go     <- settings.sources jsonb + SELECT escopado em site.products (M5)
+  store_omnichat.go    <- settings.omniChatPersona jsonb (Get/Set da persona editavel do Omni Chat)
   service.go           <- orquestra store + WAHA + n8n; buildSystemMessage (instrucoes+docs+guardrails)
   n8n_client.go        <- cliente HTTP do webhook interno do Omni Chat (POST /webhook/omni-chat) (M0)
-  service_omnichat.go  <- OmniChatAsk: monta systemMessage do Tony + emite context token + chama n8n.Ask
-  http_omnichat.go     <- handler POST /v1/omni-chat/ask (RequireAuth; fora do gating) (M0)
+  service_omnichat.go  <- OmniChatAsk (systemMessage = persona efetiva do banco) + Get/SetOmniChatPersona + emite context token + chama n8n.Ask
+  http_omnichat.go     <- handlers POST /v1/omni-chat/ask + GET/PUT /v1/omni-chat/persona (RequireAuth; fora do gating)
   context_token.go     <- ContextTokenManager: Issue/Parse do context token HMAC (ctxv1, Fase 2)
   http_omnichat_tools.go<- tools de dados do Omni Chat (GET /v1/runtime/omni-chat/catalog) (Fase 2)
   service_models.go    <- regras do MODELOS.md (valida catalogo, sanitiza params) (A6)
@@ -145,7 +157,7 @@ chave `sources` = `{ catalogEnabled bool, siteUrls string[] }`. A tool de catalo
 |---|---|---|
 | GET | `/v1/automation` | overview: estado do robo + status do WhatsApp (lido da WAHA, persistido) |
 | POST | `/v1/automation/whatsapp/connect` | inicia a sessao e devolve o QR (base64); se ja WORKING, retorna conectado |
-| POST | `/v1/automation/whatsapp/disconnect` | encerra a sessao |
+| POST | `/v1/automation/whatsapp/disconnect` | **logout** da sessao (libera o numero pareado p/ trocar de numero) |
 | PUT | `/v1/automation/settings` | liga/desliga o robo (`{enabled}` -> status active/paused) |
 | GET | `/v1/automation/persona` | persona ativa `{ id, name, systemPrompt }` (semeia a default se faltar) |
 | PUT | `/v1/automation/persona` | edita `{ name, systemPrompt }` da persona ativa (instrucoes) |
@@ -160,6 +172,14 @@ chave `sources` = `{ catalogEnabled bool, siteUrls string[] }`. A tool de catalo
 
 `account_id` vem do `Principal` (X-Account-Id), nunca do body. O proxy WAHA usa
 `AUTOMATION_WAHA_INTERNAL_URL` (default `http://waha:3000`).
+
+**Sessao fisica unica (WAHA Core):** a WAHA Core so aceita a sessao **`default`** (1 numero por
+instancia) — qualquer outro nome devolve **422** ("WAHA Core support only 'default' session ...
+get WAHA PLUS"). Por isso todas as chamadas WAHA (Status/Start/Logout/QR) usam a sessao de
+`AUTOMATION_WAHA_SESSION` (default `default`), e nao o `session_name` por-conta do canal. Ou seja:
+**1 numero de WhatsApp compartilhado** entre as contas. Trocar de numero = `disconnect` (logout) +
+`connect` (novo QR). Multi-numero real (1 sessao por conta) exige **WAHA Plus**; nesse caso setar
+`AUTOMATION_WAHA_SESSION=@channel` faz o service voltar a usar o `session_name` do canal.
 
 **Modelos (A6) — regras do MODELOS.md aplicadas no servico (defesa em profundidade):** o `PUT`
 valida `(provider, modelId, role)` contra `model_catalog`; recusa modelo de visao sem `vision_ok`
@@ -181,7 +201,7 @@ explicita devolve o default (gpt-4o-mini / whisper-1).
 | PUT | `/v1/runtime/automation/lead-state?session=&contactId=` | body `{ status, followUpCount }` — upsert do estado do lead (A7) |
 | POST | `/v1/runtime/automation/handover?session=&contactId=` | body `{ pausedMinutes: 30 }` => `paused_until = now()+N min`; `{ resume: true }` (ou `pausedMinutes<=0`) => limpa. Responde a memoria atualizada `{ ..., paused, pausedUntil }` (M4) |
 | GET | `/v1/runtime/automation/tools/catalog?session=&q=` | `[{ name, code, price }]` — busca estreita escopada por account em `site.products` (LIMIT 5). Lista vazia se `catalogEnabled=false` ou `q` vazio (M5) |
-| GET | `/v1/runtime/omni-chat/catalog?q=` | `{ produtos: [{ name, code, price, brand, image }], total }` — tool de catalogo do **Omni Chat** (Fase 2). Escopo por **context token** no header `X-Omni-Context` (NAO usa `session`). `produtos` vazio se `q` vazio. Ignora o toggle `catalogEnabled` (uso interno). Devolve OBJETO (nao array) p/ o n8n entregar 1 item. **Base = `site.products` (lista+imagem) ENRIQUECIDA pelo ERP** (`queue.erp_item_current` por sku==`split_part(code,'_',1)`, code multi-parte; cobre ~511/773): nome real, marca e preco (price_cents->reais) vem do ERP porque o `site.products` da Perola veio com nome generico e preco 0. Indice `(tenant_id,sku)` (migration **0165**) deixa o enrich rapido (~60ms vs ~8s). Marca puramente numerica (cod. de loja) escondida; produtos duplicados deduplicados por nome. Busca **multi-palavra** (ilike all dos tokens no nome do site + nome ERP + marca). Consumido por um FLUXO MANUAL no n8n (HTTP comum no fluxo principal) — tools nativas do AI Agent estao quebradas no build n8n 2.23.2; ver OMNI_CHAT_PLAN.md |
+| GET | `/v1/runtime/omni-chat/catalog?q=` | `{ produtos: [{ name, code, price, brand, image }], total, mode }` — tool de catalogo do **Omni Chat** (Fase 2). Escopo por **context token** no header `X-Omni-Context` (NAO usa `session`). Ignora o toggle `catalogEnabled` (uso interno). **3 intencoes (`OmniChatCatalog`):** `q` vazio (NONE) -> `mode=empty`, `produtos=[]`; **`q="LISTAR"`** (sentinel do extrator p/ pedido generico/sugestao) -> **amostra real** do catalogo (`SampleSiteProducts`), `mode=sample`; `q=<termo>` -> busca especifica, e se **0 resultados** cai numa amostra como sugestao, `mode=suggestion` (bot nunca trava nem fica "burro"). `mode=match` quando a busca acha. Devolve OBJETO (nao array) p/ o n8n entregar 1 item. **Base = `site.products` (lista+imagem) ENRIQUECIDA pelo ERP** (`queue.erp_item_current` por sku==`split_part(code,'_',1)`, code multi-parte; cobre ~511/773): nome real, marca e preco (price_cents->reais) vem do ERP porque o `site.products` da Perola veio com nome generico e preco 0. Indice `(tenant_id,sku)` (migration **0165**) deixa o enrich rapido (~60ms vs ~8s). Marca puramente numerica (cod. de loja) escondida; produtos duplicados deduplicados por nome. Busca **multi-palavra** (ilike all dos tokens no nome do site + nome ERP + marca). Consumido por um FLUXO MANUAL no n8n (HTTP comum no fluxo principal) — tools nativas do AI Agent estao quebradas no build n8n 2.23.2; ver OMNI_CHAT_PLAN.md |
 | GET | `/v1/automation/context-preview` | `{ personaName, instructions, knowledgeDocs[], guardrails, systemMessage }` — previa do bot para o painel (JWT normal, sem sessao) |
 
 **Contrato `models[]` no runtime-config (A6, retrocompativel — campos antigos intactos):** cada item
@@ -217,6 +237,8 @@ responde enquanto a pausa nao expira.
 | Verbo | Path | Acao |
 |---|---|---|
 | POST | `/v1/omni-chat/ask` | `{ question, topic? }` -> `{ answer, topic? }`. Chat interno ligado ao n8n. RequireAuth; accountID do principal (X-Account-Id) |
+| GET | `/v1/omni-chat/persona` | `{ systemPrompt, isDefault }` — persona EFETIVA da account: custom salvo no banco, ou o embed `omniChatPersona` como default (`isDefault=true`). RequireAuth; accountID do principal |
+| PUT | `/v1/omni-chat/persona` | body `{ systemPrompt }` -> `{ systemPrompt, isDefault:false }`. Salva o custom (passa a valer). `400 empty_prompt` (vazio apos trim) · `400 prompt_too_long` (> 20000 chars). RequireAuth; accountID do principal |
 
 **Fora do prefixo `/v1/automation`** (de proposito): o `RequireModuleByPath` usa limite de
 segmento (`pathHasSegmentPrefix`), entao `/v1/omni-chat/ask` **nao casa** a regra
@@ -237,6 +259,23 @@ na resposta `{ answer }`. Timeout 60s.
 (`AUTOMATION_N8N_INTERNAL_URL` ou `AUTOMATION_RUNTIME_TOKEN` vazios) · `502 omnichat_error` (n8n
 fora / HTTP nao-2xx / JSON invalido) · `504 omnichat_timeout` (`context.DeadlineExceeded`).
 `storeId`/`accountId` **nunca** vem do body nem do n8n.
+
+**Persona do Omni Chat editavel (banco; embed = default) — sem migration.** A persona deixou de ser
+fixa no embed: agora vive no `automation.automations.settings jsonb`, chave **`omniChatPersona`**
+(valor string), na automacao default da account (`GetOrCreateDefault`) — **mesmo padrao das sources
+(M5)**, sem migration nova. O embed `omniChatPersona` (`defaults/omni_chat_persona.md`) vira o
+**DEFAULT/fallback**: vale enquanto a conta nunca salvou um custom.
+- `GET /v1/omni-chat/persona` -> `{ systemPrompt, isDefault }`: `systemPrompt` = prompt EFETIVO da
+  account (custom salvo, senao o embed); `isDefault=true` quando ainda e o embed, `false` quando ja
+  ha custom salvo.
+- `PUT /v1/omni-chat/persona` body `{ systemPrompt }` -> `{ systemPrompt, isDefault:false }`: salva o
+  custom (trim) e passa a valer. `400 empty_prompt` (vazio apos trim) · `400 prompt_too_long`
+  (> 20000 chars). `MaxBytesReader` 64KB.
+- **`OmniChatAsk` usa o prompt EFETIVO** (`OmniChatPersona(scope.AccountID)`) como `systemMessage`,
+  nao mais o embed verbatim. Store: `GetOmniChatPersonaSetting`/`SetOmniChatPersonaSetting`
+  (store_omnichat.go) espelham `GetSources`/`SetSources`. Ambas as rotas sao `RequireAuth`, **fora**
+  do prefixo `/v1/automation` (sem gating de modulo, como `/v1/omni-chat/ask`); `accountId` vem do
+  principal (X-Account-Id), nunca do body.
 
 ### Omni Chat — Fase 2 (tools de dados)
 
@@ -307,6 +346,10 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
   workflow para ler `models[]` e chamar `POST /messages` + `GET/PUT /lead-state` (mesmo
   `AUTOMATION_RUNTIME_TOKEN`).
 - Var `AUTOMATION_WAHA_INTERNAL_URL` (default `http://waha:3000`) — proxy WAHA.
+- Var **`AUTOMATION_WAHA_SESSION`** (default `default`) — sessao fisica usada nas chamadas WAHA
+  (Status/Start/Logout/QR). A WAHA Core so aceita `default`; `@channel` volta ao modo 1-sessao-por-conta
+  (so com WAHA Plus). Set nos 2 composes (servico `api`) + `.env.docker.example` /
+  `.env.production.example`. So muda comportamento; **rebuild da api** ao alterar o codigo Go.
 - **Omni Chat (M0):** Var **`AUTOMATION_N8N_INTERNAL_URL`** (default `http://n8n:5678`) — base do
   webhook interno `POST /webhook/omni-chat`. Set em `docker-compose.yml` + `docker-compose.prod.yml`
   (servico `api`) e em `.env.docker.example` / `.env.production.example` / `.env.staging.example`.
@@ -334,8 +377,9 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
 
 - `liga/desliga` (M1) so persiste o `status`; o robo so passa a respeitar quando o n8n
   consumir o runtime-config (fase M2). O painel avisa isso na UI.
-- WAHA Core suporta 1 sessao -> V0 opera 1 numero (`default`). Multi-numero = P11 (WAHA Plus
-  ou Evolution API).
+- WAHA Core suporta **so a sessao `default`** (1 numero por instancia); qualquer outro nome ->
+  **422**. Por isso o service usa `AUTOMATION_WAHA_SESSION` (default `default`) em TODAS as chamadas
+  WAHA, nao o `session_name` por-conta. Multi-numero = P11 (WAHA Plus, `AUTOMATION_WAHA_SESSION=@channel`).
 - WAHA tag e `gows-<versao>` (engine GOWS).
 
 ## Registro de falhas (debug operacional — anotar aqui pra nao repetir)
@@ -422,3 +466,197 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
 - **Prevencao:** no consumido por `$('X')` **depois de um Wait/debounce PRECISA estar no
   caminho principal** (ancestral), nunca em ramo paralelo sem saida. **No DEPLOY VPS:**
   re-importar este workflow no n8n da VPS (mesmo fix) + restart do container n8n.
+
+### 2026-06-19 — painel "Conectar" do WhatsApp da 502 (local e VPS)
+
+- **Sintoma:** clicar **Conectar** no painel `/automation` retorna 502 ("Nao foi possivel falar
+  com o WhatsApp (WAHA)"). Reproduzido em dev e na VPS.
+- **Causa raiz:** o `WAHAClient.Start` usava o atalho **`POST /api/sessions {name, start:true}`**
+  (criar+iniciar num passo). A engine **gows** (`devlikeapro/waha:gows-2026.5.1`) **recusa** esse
+  atalho quando a sessao **ja existe** (estado STOPPED apos um deploy/restart), devolvendo erro que
+  o Go propagava como 502. Curl confirmou: `POST /api/sessions {start:true}` numa sessao existente
+  falha; `POST /api/sessions/{name}/start` numa sessao existente = **201**.
+- **Diagnostico:** `curl` direto na WAHA interna comparando os dois caminhos; o `/{name}/start`
+  responde 201, o atalho falha.
+- **Correcao (`waha_client.go`):** `Start` agora tenta **`POST /api/sessions/{name}/start`**; se a
+  sessao nao existe (**404**), cria com `POST /api/sessions {name}` e re-inicia. Idempotente: 4xx em
+  sessao ja rodando e' tolerado, so 5xx vira erro. Rebuild da api (`docker compose up -d --build api`)
+  local + deploy `prod:deploy:vps:inc -Services api` na VPS.
+- **Prevencao:** preferir o endpoint **especifico por acao** da WAHA (`/{name}/start`, `/{name}/stop`)
+  ao atalho combinado; o comportamento do atalho varia entre engines/versoes da WAHA.
+- **Causa raiz 2 (a que pegava a Perola — mais profunda):** o fix do start NAO resolveu sozinho. O
+  canal de cada conta guarda `session_name = UUID da automacao`, mas a **WAHA Core so aceita a sessao
+  `default`**. Toda chamada para a sessao da Perola (`ce2b406f-...`) devolvia **422** ("WAHA Core
+  support only 'default' session ... get WAHA PLUS"). O fluxo `Connect`: `Status(UUID)` 422 -> erro ->
+  `liveStatus` cai no status persistido (STOPPED) -> guard "ja WORKING" nao dispara -> `Start(UUID)` 422
+  (tolerado, <500) -> **`QR(UUID)` 422 -> erro -> 502**. So a conta com `session_name='default'` (Crow)
+  conectava; Perola/Codex (UUID) batiam no 422.
+- **Diagnostico:** `GET /api/sessions?all=true` na WAHA mostrou **so a sessao `default`** (WORKING,
+  554284138129); `POST /api/sessions/{UUID}/start` -> 422 com a mensagem do WAHA Core. `select` em
+  `automation.channels` confirmou os `session_name` UUID por conta.
+- **Correcao (sessao fisica unica):** `Service` passou a usar **`AUTOMATION_WAHA_SESSION`** (default
+  `default`) em TODAS as chamadas WAHA (helper `sessionName(ch)`), em vez do `session_name` por-conta.
+  Assim toda conta opera a sessao unica `default` (1 numero compartilhado — limite do WAHA Core).
+  `@channel` reativa o modo por-conta (so com WAHA Plus). Alem disso, **`disconnect` agora faz `logout`**
+  (nao `stop`): libera o numero pareado, permitindo "desconectar e conectar outro numero" (escanear
+  novo QR). O handler tambem passou a **logar o erro real** (`slog.Error`) — antes o 502 era cego.
+- **Prevencao:** com WAHA Core, nunca usar nome de sessao != `default`; o painel opera 1 numero so.
+  Multi-numero por conta = WAHA Plus (P11) + `AUTOMATION_WAHA_SESSION=@channel`.
+
+### 2026-06-19 — QR aparece no painel mas o scan falha ("nao foi possivel conectar o dispositivo")
+
+- **Sintoma:** apos os fixes acima o QR **aparecia** no painel (dev e prod), mas ao escanear a
+  WhatsApp dava *"nao foi possivel conectar o dispositivo"*. Na prod aparecia so depois do self-heal.
+- **Causa raiz:** a **WAHA rotaciona o QR a cada ~20s** (gera um QR novo; o anterior expira). O
+  front (`web/.../useAutomation.ts`) buscava o QR **uma unica vez** no clique do Conectar e exibia
+  essa imagem **estatica**; o `startPolling` so checava status, **nao re-buscava o QR**. Passados ~20s
+  o QR da tela ficava vencido — o usuario escaneava um QR velho que a WAHA ja descartou -> pareamento
+  falha. Logs da WAHA: `Failed QR item event {Event:"timeout"}` + `websocket ... EOF` a cada ~20s, com
+  QR novo sendo impresso no intervalo, sem nenhum `pair-success`.
+- **Diagnostico:** `docker logs ...waha... | grep -i "qr\|pair\|fail"` mostrou a cadencia de ~20s de
+  QRs novos e o timeout sem pareamento. Relogio da VPS estava OK (NTP), descartando skew de tempo.
+- **Correcao (`web/app/composables/useAutomation.ts`, SO front):** `startPolling` passou a **re-buscar
+  o QR a cada poll (3s)** via `refreshQr()` (reusa o `POST /connect`, que ainda recupera se a sessao
+  cair p/ FAILED), atualizando `qr` **so quando muda** (sem flicker). Assim a tela sempre mostra o QR
+  corrente da rotacao. Detecta WORKING e para o polling.
+- **Prevencao:** QR de pareamento e' efemero — nunca exibir como imagem estatica; re-buscar mais rapido
+  que a rotacao (~20s). Se o scan falhar mesmo com QR fresco, suspeitar de bloqueio do IP da VPS pela
+  WhatsApp (datacenter) — ai a saida e' proxy residencial ou outro numero.
+
+### 2026-06-19 — Omni Chat: "Buscar catalogo" da "Authorization failed" e TRAVA todas as respostas
+
+- **Sintoma:** no n8n, o no **"Buscar catalogo"** falha com *"Authorization failed - please check your
+  credentials"* (GET `http://api:8080/v1/runtime/omni-chat/catalog`). Pior: quando ele falha, **a
+  execucao inteira para** — "AI Agent" (compositor) e "Respond to Webhook" nunca rodam, o webhook nao
+  responde e o `/v1/omni-chat/ask` do Go estoura timeout -> o chat **congela** (nenhuma resposta).
+  Quando o catalogo voltava VAZIO, o bot so dizia "nao encontrei" (burro).
+- **Causa raiz:** o node manda `X-Omni-Context: {{ $('Webhook').first().json.body.contextToken }}`. O
+  context token tem **TTL 300s** e so e emitido pelo `/ask` do Go. Em teste "Debug in editor" (sem Go) ele
+  vem **vazio**; num replay de execucao antiga vem **expirado** -> `ctxMgr.Parse` rejeita -> tool **401**
+  -> o HTTP node erra e, com `onError` no default (`stopWorkflow`), **mata a execucao**. (Mesmo B.O. #4 do
+  OMNI_CHAT_PLAN.md, mas o impacto real e o congelamento, nao so o 401.)
+- **Diagnostico:** bateria `c:\tmp\test_omnichat_resilience.py` (POST direto no webhook). Token vazio/
+  invalido -> resposta **vazia** (JSONDecodeError) = freeze comprovado; catalogo vazio (conta zero) -> 200
+  com "nao encontrei".
+- **Correcao (`automation/export/workflow-omni-chat.json`, SO n8n — sem mexer no Go):**
+  1. **"Buscar catalogo" com `"onError": "continueRegularOutput"`** — qualquer falha do catalogo (401
+     token vazio/expirado, timeout, 5xx, rede) NAO derruba mais o fluxo: segue pro compositor com
+     `produtos` vazio e o webhook **sempre** responde.
+  2. **Prompt do compositor "AI Agent" reescrito** — leitura defensiva `JSON.stringify($json.produtos || [])`
+     (item de erro vira `[]`) e instrucao: **nunca** travar/responder vazio; se nao achar o item, dizer em 1
+     frase que nao achou e **sugerir alternativas relacionadas (categorias/marcas/parecidos) + 1 pergunta
+     pra refinar**, em vez de so "nao encontrei".
+- **Verificado (e2e local):** token vazio/invalido (catalogo 401) -> responde com sugestao (Casio/Orient/
+  Citizen) **sem travar**; catalogo vazio -> sugere alternativa; pergunta normal -> normal; Perola -> 5
+  produtos reais (sem regressao).
+- **Prevencao:** todo HTTP node de tool no fluxo principal do Omni Chat deve ter `onError:
+  continueRegularOutput` (a tool e best-effort; a resposta do chat nao pode depender dela). O compositor
+  sempre recebe `produtos` defensivo. **Sem migration, sem rebuild da api** (so o workflow do n8n). **No
+  DEPLOY VPS:** re-importar `workflow-omni-chat.json` no n8n da VPS + `update:workflow --active=true` +
+  restart do container n8n (mesmo fix). Import via Git Bash no Windows exige **`MSYS_NO_PATHCONV=1`** senao
+  o `--input=/tmp/...` vira path Windows (`C:/Users/.../Temp/...`) e da ENOENT silencioso.
+
+### 2026-06-19 (2) — Omni Chat: catalogo volta VAZIO para pedido generico/sugestao (bot "burro")
+
+- **Sintoma (no navegador, conta Perola):** "Lista produtos do catalogo", "me sugere uma joia",
+  "produtos para presente" -> **0 produtos**, bot diz "nao encontrei". Ate "relogio seiko" parecia
+  vazio. O usuario: "ainda nao consegue acessar o catalogo".
+- **Causa raiz (reconstruida das execucoes do n8n — SQLite `database.sqlite`, formato *flatted*):**
+  o problema NAO era auth (catalogo respondia **200**) nem a conta (token carregava a Perola
+  `aaaaaaaa-...` correta). Era o **extrator + a busca literal**:
+  1. O **extrator** classificava "Lista produtos do catalogo" como **NONE** (so reconhecia produto
+     ESPECIFICO) -> `q` vazio -> 0.
+  2. Para pedidos genericos ele gerava termos que **nao casam com nome nenhum** ("presente",
+     "perfume") -> a busca e `ilike` LITERAL multi-palavra no `nome_site + nome_ERP + marca`, e em
+     `site.products` da Perola o nome e' o CODIGO (`368145_...`) — o nome real vem do ERP, e nenhum
+     produto se chama "joia"/"produto"/"presente". Joalheria: tudo e' joia, mas nada se *chama* joia.
+  - (O "relogio seiko" vazio que o usuario viu caiu na conta **Crow Visuals** `80caf5d5` — 0 produtos;
+    so a Perola tem os 773. Platform view escopa na agencia Crow -> tambem 0.)
+- **Diagnostico:** reconstruir a execucao do n8n (copiar `database.sqlite` + `-wal`, parser flatted em
+  Python) revelou `question -> Extrair termo.output -> Buscar catalogo.produtos` reais. Ex.: "Lista
+  produtos do catalogo" -> output **NONE** -> 0; "produtos para presente" -> "presente" -> 0; "me lista
+  2 relogios seiko" -> "relogio seiko" -> **5** (busca especifica SEMPRE funcionou).
+- **Correcao (Go + n8n):**
+  1. **Go `OmniChatCatalog` (service_product.go) com 3 intencoes + fallback:** `q` vazio (NONE) ->
+     `mode=empty`; **`q="LISTAR"`** (sentinel) -> **amostra real** do catalogo (`SampleSiteProducts`
+     em store_product.go: mesma enrich/dedup, so itens com `price>0` + imagem, ordem **aleatoria
+     (`random()`)** p/ VARIAR a cada chamada — senao o bot repetia sempre os mesmos 5) `mode=sample`;
+     `q=<termo>` -> busca, e se **0 resultados** cai numa
+     **amostra como sugestao** `mode=suggestion` (bot sugere "outra coisa que tenha a ver" com produtos
+     REAIS, sem inventar). A tool passou a devolver `{ produtos, total, mode }`.
+  2. **n8n extrator 3-way:** NONE (nao-produto) / **LISTAR** (ver/listar/sugerir sem produto concreto:
+     "lista produtos", "me sugere uma joia", "produtos para presente") / termo especifico.
+  3. **n8n compositor usa `mode`:** match/sample -> "Veja algumas opcoes do catalogo:"; suggestion ->
+     "Nao achei isso exato, mas separei estas opcoes:"; vazio -> sugere/pergunta; NONE -> responde normal.
+- **Verificado (e2e local, Perola):** "Lista produtos"/"me sugere uma joia"/"presente" -> **5 produtos**;
+  "relogio seiko" (com e sem acento) -> match 5; "tem rolex?" -> "Nao achei Rolex, mas separei estas
+  opcoes de joias" + 5 cards; "bom dia" -> normal, 0 produtos. (`c:\tmp\test_catalog_modes.py` direto +
+  `c:\tmp\test_omnichat_browse.py` e2e.)
+- **Prevencao / nota de produto:** os 773 produtos estao SO na **Perola**; **Crow Visuals e platform
+  view tem 0** -> precisa Perola ativa pra ver catalogo. Acento ja funciona (nome do site tem a forma
+  acentuada). **Rebuild da api obrigatorio** (Go novo) + **reimport do workflow** no n8n. **Sem migration.**
+
+### 2026-06-19 (3) — Omni Chat: persona DEDICADA (Perola Joias) + catalogo DESCONECTADO (decisao do usuario)
+
+- **Decisao do usuario:** desconectar o catalogo "por enquanto" e parar de usar o **Tony** no Omni Chat.
+  O chat passa a ser **so GPT + o conhecimento do prompt** (sem consultar produtos). Nova persona:
+  um **copiloto de vendas/conhecimento da Perola Joias** (joalheria; ouro 18k/prata, relogios Seiko/
+  Bulova/Victorinox; concorrentes Vivara/Lea Pain; mercado de luxo; tecnicas de venda/persuasao). Fala
+  com a EQUIPE (interno), nao com o cliente final.
+- **O que mudou:**
+  1. **Persona dedicada** em `defaults/omni_chat_persona.md`, embed `omniChatPersona` (defaults.go).
+     Independente do Tony (`defaultPersona`, ainda usado pelo WhatsApp). Sem guardrails de WhatsApp.
+  2. **`OmniChatAsk` (service_omnichat.go)** usa `omniChatPersona` verbatim como systemMessage — NAO
+     consulta mais banco/persona (dropou GetOrCreateDefault/ensurePersona/ListKnowledgeDocs/
+     buildSystemMessage). Mantem o `contextToken` (inofensivo) p/ reconectar tools depois sem retrabalho.
+  3. **Workflow n8n simplificado:** `Webhook -> AI Agent -> Respond` (removidos "Extrair termo",
+     "Buscar catalogo", "OpenAI Model (extrator)"). Respond devolve `{ answer, topic }` (sem products).
+- **Catalogo nao foi removido — so desconectado.** O codigo Go (`OmniChatCatalog`, `SampleSiteProducts`,
+  `GET /v1/runtime/omni-chat/catalog`) fica intacto; reconectar = voltar os nos no workflow + ajustar a
+  persona. O front (`useOmniChat`) ja trata products ausente (renderiza sem cards).
+- **Limitacao honesta:** o AI Agent deste build (n8n 2.23.2) **nao navega na web ao vivo** (tools nativas
+  quebradas). "Pesquisar na net" = conhecimento do modelo + o que esta no prompt. A persona instrui a
+  **nao inventar** preco/estoque/datas/fatos atuais de concorrente (dizer "confirmar na fonte").
+- **Verificado (e2e, `c:\tmp\test_omnichat_persona.py`):** Seiko Prospex x Presage; vender Bulova mais
+  caro; diferenciar da Vivara; presente de formatura; 4 Cs do diamante; saudacao — todas com resposta
+  util de vendas/conhecimento, **sem citar Tony e sem products**.
+- **Deploy:** **rebuild da api** (Go novo: embed da persona) + **reimport do workflow** no n8n. **Sem
+  migration.** (Persona editavel resolvida em 2026-06-19 (4): vive no `settings jsonb`, embed = default.)
+
+### 2026-06-19 (4) — Omni Chat: persona EDITAVEL no banco (embed = default/fallback)
+
+- **Mudanca:** a persona do Omni Chat deixou de ser fixa no embed. Agora e guardada no banco
+  (`automation.automations.settings jsonb`, chave `omniChatPersona`, na automacao default da account
+  via `GetOrCreateDefault`) e **editavel** por `GET/PUT /v1/omni-chat/persona`. O embed
+  `omniChatPersona` (`defaults/omni_chat_persona.md`) vira o **DEFAULT/fallback** — vale ate a conta
+  salvar um custom.
+- **Padrao reusado:** identico ao Sources (M5) — `GetOmniChatPersonaSetting` (`settings ->> $2`) e
+  `SetOmniChatPersonaSetting` (`jsonb_set` + `to_jsonb($prompt::text)` + `updated_at=now()`) em
+  store_omnichat.go; service `OmniChatPersona`/`SetOmniChatPersona`. `OmniChatAsk` passou a montar o
+  `systemMessage` com o prompt EFETIVO (`OmniChatPersona`), nao mais o embed verbatim.
+- **Contrato (congelado, front depende):** `GET` -> `{ systemPrompt, isDefault }`; `PUT` `{ systemPrompt }`
+  -> `{ systemPrompt, isDefault:false }`; `400 empty_prompt` (vazio apos trim) · `400 prompt_too_long`
+  (> 20000 chars). RequireAuth, fora do prefixo `/v1/automation` (sem gating), accountId do principal.
+- **Deploy:** **rebuild da api** (Go novo). **Sem migration.** (Nao toca o workflow do n8n.)
+
+### 2026-06-19 (5) — Omni Chat: memoria de conversa (node de memoria no n8n) + janela configuravel
+
+- **Mudanca:** o chat passou a SEGUIR a conversa (ultimas N interacoes, INCLUSIVE as respostas da propria
+  IA). **De-risk:** node nativo de memoria FUNCIONA neste build (2.23.2) — as TOOLS quebram (exigem
+  supplyData+execute), mas memoria usa so `supplyData` (igual o chat model que funciona). Provado em teste
+  de 3 turnos: a IA lembrou o nome do usuario E um numero que ela mesma gerou.
+- **n8n (workflow-omni-chat.json):** node **Window Buffer Memory** (`@n8n/n8n-nodes-langchain.memoryBufferWindow`,
+  typeVersion 1.3) ligado ao AI Agent por `ai_memory`. `sessionKey={{ $('Webhook').first().json.body.sessionKey }}`,
+  `contextWindowLength={{ Number($('Webhook').first().json.body.historyWindow) || 5 }}`.
+- **Go:** `OmniChatAsk(ctx, scope, question, topic, conversationID)` agora manda `sessionKey` + `historyWindow`
+  ao n8n (`OmniChatRunRequest`). **sessionKey escopado** = `accountID|userID|conversationId` (`omniChatSessionKey`),
+  isola memoria entre operadores (nunca por accountID puro). Janela no `settings` jsonb (chave
+  `omniChatHistoryWindow`, default 5, clamp 1..20; `Get/SetOmniChatHistoryWindow` em store_omnichat.go).
+  **`OmniChatPersona`/`SetOmniChatPersona` foram substituidos por `OmniChatConfig`/`SetOmniChatConfig`**
+  (leem/gravam persona + janela numa so resolucao de automacao default).
+- **Contrato (aditivo, retrocompativel):** `GET/PUT /v1/omni-chat/persona` agora tambem carrega
+  `historyWindow`; `POST /v1/omni-chat/ask` aceita `conversationId` (escopa a memoria; nunca confiado p/
+  escopo de tenant — so compoe o sessionKey).
+- **Verificado (local):** memoria + janela dinamica via webhook (`c:\tmp\test_memory.py`); go build/vet;
+  SQL da janela (rollback); eslint. UI final = navegador.
+- **Deploy:** **rebuild da api** + **reimport do workflow** (node de memoria novo) + restart n8n. **Sem migration.**

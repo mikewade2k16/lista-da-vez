@@ -87,10 +87,13 @@ type PublicCustomerInput struct {
 }
 
 // PublicOrderInput e o corpo de POST /v1/public/restaurants/{slug}/orders.
+// DeliveryZoneID (WS-A) e o id da zona de entrega escolhida; quando valido (zona
+// ativa do restaurante) o frete vem da zona, senao cai no settings.deliveryFeeCents.
 type PublicOrderInput struct {
 	Type            string                 `json:"type"`
 	Customer        PublicCustomerInput    `json:"customer"`
 	DeliveryAddress json.RawMessage        `json:"deliveryAddress"`
+	DeliveryZoneID  string                 `json:"deliveryZoneId"`
 	Notes           string                 `json:"notes"`
 	SessionID       string                 `json:"sessionId"`
 	Items           []PublicOrderItemInput `json:"items"`

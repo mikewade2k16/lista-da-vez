@@ -3,8 +3,10 @@
 // sem backend) e Omni Chat (rodape, agora LIGADO ao endpoint Go POST
 // /v1/omni-chat/ask via useOmniChat). O bloco Comunicados segue stub visual ate
 // ter dados/backend; mantido com badge "Previa".
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useOmniChat } from '~/composables/useOmniChat'
+import { useAuthStore } from '~/stores/auth'
+import OperationOmniPersonaEditor from '~/components/operation/OperationOmniPersonaEditor.vue'
 
 // Conteudo de exemplo so para dar forma ao template. Nao vem de API.
 const communications = [
@@ -24,6 +26,25 @@ const chatTopics = [
 
 const chat = useOmniChat()
 const chatStreamRef = ref<HTMLElement | null>(null)
+
+// Edicao da persona (prompt/sistema) do Omni Chat. So aparece para admin da
+// plataforma; o chat em si continua para todos. Gating no mesmo padrao do
+// CrmWorkspace (auth.role === 'platform_admin'). O editor inline propriamente
+// dito (carregar/salvar) mora em OperationOmniPersonaEditor.vue.
+const auth = useAuthStore()
+const canEditPersona = computed(() => auth.role === 'platform_admin')
+const isPersonaEditorOpen = ref(false)
+
+function openPersonaEditor() {
+  if (!canEditPersona.value) {
+    return
+  }
+  isPersonaEditorOpen.value = true
+}
+
+function closePersonaEditor() {
+  isPersonaEditorOpen.value = false
+}
 
 // Rola a conversa para a ultima mensagem assim que a lista muda. flush:'post'
 // garante que o DOM ja renderizou a nova bolha antes de medir scrollHeight.
@@ -61,8 +82,38 @@ watch(
     <section class="operation-side__card operation-side__chat">
       <header class="operation-side__head">
         <h3 class="operation-side__title">Omni Chat</h3>
-        <span class="operation-side__preview-tag">Prévia</span>
+        <div class="operation-side__head-actions">
+          <button
+            type="button"
+            class="operation-side__persona-toggle"
+            :disabled="!chat.messages.value.length && !chat.sending.value"
+            aria-label="Nova conversa"
+            title="Nova conversa (limpa o histórico)"
+            @click="chat.newConversation()"
+          >
+            <span class="material-icons-round">restart_alt</span>
+          </button>
+          <button
+            v-if="canEditPersona"
+            type="button"
+            class="operation-side__persona-toggle"
+            :class="{ 'operation-side__persona-toggle--is-active': isPersonaEditorOpen }"
+            :aria-pressed="isPersonaEditorOpen"
+            aria-label="Editar persona do Omni"
+            title="Editar persona do Omni"
+            @click="isPersonaEditorOpen ? closePersonaEditor() : openPersonaEditor()"
+          >
+            <span class="material-icons-round">tune</span>
+          </button>
+          <span class="operation-side__preview-tag">Prévia</span>
+        </div>
       </header>
+
+      <!-- Editor inline da persona (so admin). Abre via engrenagem no cabecalho. -->
+      <OperationOmniPersonaEditor
+        v-if="canEditPersona && isPersonaEditorOpen"
+        @close="closePersonaEditor()"
+      />
 
       <!--<div class="operation-side__chat-topics">
         <button
@@ -207,6 +258,44 @@ watch(
   color: var(--accent-warning);
   border: 1px solid var(--accent-warning);
   background: rgb(var(--surface-2) / 0.5);
+}
+
+.operation-side__head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.operation-side__persona-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--line-soft);
+  background: rgb(var(--surface-2) / 0.4);
+  color: rgb(var(--muted));
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.operation-side__persona-toggle:hover {
+  border-color: rgb(var(--ring) / 0.42);
+  color: var(--text-main);
+}
+
+.operation-side__persona-toggle--is-active {
+  color: rgb(var(--primary));
+  border-color: rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.16);
+}
+
+.operation-side__persona-toggle .material-icons-round {
+  font-size: 16px;
 }
 
 .operation-side__comms-list {

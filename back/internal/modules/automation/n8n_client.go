@@ -70,6 +70,12 @@ type OmniChatRunRequest struct {
 	SystemMessage string `json:"systemMessage"`
 	SessionRef    string `json:"sessionRef"`
 	ContextToken  string `json:"contextToken"`
+	// SessionKey identifica a CONVERSA para a memoria do n8n (node Window Buffer
+	// Memory). Escopado por account+user+conversationId (montado no service, nunca
+	// do body cru) p/ isolar memoria entre operadores. HistoryWindow = quantas
+	// interacoes (pergunta+resposta) o n8n mantem no contexto (default 5).
+	SessionKey    string `json:"sessionKey"`
+	HistoryWindow int    `json:"historyWindow"`
 }
 
 // OmniChatRunResult e a resposta do webhook ({ answer, products }). products e' a

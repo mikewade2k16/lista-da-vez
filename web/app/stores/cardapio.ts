@@ -5,6 +5,7 @@ import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import type {
   Category,
+  DeliveryZone,
   Order,
   OrderStatus,
   Product,
@@ -54,11 +55,21 @@ export const useCardapioStore = defineStore('cardapio', () => {
   const scopeAccountId = ref('')
 
   function withScope(path: string): string {
-    if (!scopeAccountId.value) {
+    return withScopeFor(path, scopeAccountId.value)
+  }
+
+  // Igual ao withScope, mas com o accountId explicito da chamada. Usado pela
+  // LISTA: ali o scopeAccountId esta vazio (e do editor), entao a edicao/exclusao
+  // inline de um restaurante de OUTRA account (platform_admin) precisa passar o
+  // accountId da propria linha — senao cai na account ativa (X-Account-Id) e da
+  // 404. Vazio = sem query, usa o contexto (account ativa).
+  function withScopeFor(path: string, accountId: string): string {
+    const scoped = String(accountId || '').trim()
+    if (!scoped) {
       return path
     }
     const sep = path.includes('?') ? '&' : '?'
-    return `${path}${sep}accountId=${encodeURIComponent(scopeAccountId.value)}`
+    return `${path}${sep}accountId=${encodeURIComponent(scoped)}`
   }
 
   // Lista de restaurantes (projecao lean).
@@ -71,6 +82,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
   const categories = ref<Category[]>([])
   const products = ref<ProductListItem[]>([])
   const domains = ref<RestaurantDomain[]>([])
+  const zones = ref<DeliveryZone[]>([])
   const detailPending = ref(false)
   const detailError = ref('')
 
@@ -89,6 +101,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
     categories.value = []
     products.value = []
     domains.value = []
+    zones.value = []
     orders.value = emptyOrders()
     detailError.value = ''
     ordersError.value = ''
@@ -112,7 +125,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
       const response = await apiRequest(`/v1/cardapio/restaurants${query ? `?${query}` : ''}`)
       restaurants.value = asArray<RestaurantListItem>(response, 'restaurants')
     } catch (caught) {
-      listError.value = getApiErrorMessage(caught, 'Nao foi possivel carregar os cardapios.')
+      listError.value = getApiErrorMessage(caught, 'Nao foi possivel carregar os estabelecimentos.')
     } finally {
       listPending.value = false
     }
@@ -135,7 +148,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
     } catch (caught) {
       return {
         ok: false as const,
-        message: getApiErrorMessage(caught, 'Nao foi possivel criar o cardapio.'),
+        message: getApiErrorMessage(caught, 'Nao foi possivel criar o estabelecimento.'),
       }
     }
   }
@@ -151,19 +164,26 @@ export const useCardapioStore = defineStore('cardapio', () => {
     detailError.value = ''
     try {
       const base = `/v1/cardapio/restaurants/${encodeURIComponent(id)}`
-      const [restaurantResponse, categoriesResponse, productsResponse, domainsResponse] =
-        await Promise.all([
-          apiRequest(withScope(base)),
-          apiRequest(withScope(`${base}/categories`)),
-          apiRequest(withScope(`${base}/products`)),
-          apiRequest(withScope(`${base}/domains`)),
-        ])
+      const [
+        restaurantResponse,
+        categoriesResponse,
+        productsResponse,
+        domainsResponse,
+        zonesResponse,
+      ] = await Promise.all([
+        apiRequest(withScope(base)),
+        apiRequest(withScope(`${base}/categories`)),
+        apiRequest(withScope(`${base}/products`)),
+        apiRequest(withScope(`${base}/domains`)),
+        apiRequest(withScope(`${base}/delivery-zones`)),
+      ])
       restaurant.value = restaurantResponse as Restaurant
       categories.value = asArray<Category>(categoriesResponse, 'categories')
       products.value = asArray<ProductListItem>(productsResponse, 'products')
       domains.value = asArray<RestaurantDomain>(domainsResponse, 'domains')
+      zones.value = asArray<DeliveryZone>(zonesResponse, 'deliveryZones')
     } catch (caught) {
-      detailError.value = getApiErrorMessage(caught, 'Nao foi possivel carregar o cardapio.')
+      detailError.value = getApiErrorMessage(caught, 'Nao foi possivel carregar o estabelecimento.')
     } finally {
       detailPending.value = false
     }
@@ -186,6 +206,68 @@ export const useCardapioStore = defineStore('cardapio', () => {
       method: 'DELETE',
     })
     restaurants.value = restaurants.value.filter((item) => item.id !== id)
+  }
+
+  // Versoes "scoped" para a LISTA: recebem o accountId da propria linha e o
+  // anexam na query daquela chamada (sem tocar no scopeAccountId do editor).
+  // Resolvem o isolamento multi-tenant da edicao/exclusao inline quando o admin
+  // mexe num restaurante de outra account. Atualizam a projecao lean da lista.
+  async function patchRestaurantScoped(
+    id: string,
+    accountId: string,
+    body: Record<string, unknown>,
+  ) {
+    const response = (await apiRequest(
+      withScopeFor(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`, accountId),
+      { method: 'PATCH', body },
+    )) as Restaurant
+    restaurants.value = restaurants.value.map((item) =>
+      item.id === id
+        ? { ...item, name: response.name, slug: response.slug, isActive: response.isActive }
+        : item,
+    )
+    return response
+  }
+
+  async function deleteRestaurantScoped(id: string, accountId: string) {
+    await apiRequest(
+      withScopeFor(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`, accountId),
+      { method: 'DELETE' },
+    )
+    restaurants.value = restaurants.value.filter((item) => item.id !== id)
+  }
+
+  // Define o dominio primario de um restaurante a partir da LISTA (edicao inline).
+  // host vazio => NO-OP (nao apaga dominio inline; remover e so na aba Dominios).
+  // host preenchido => se ja existe um primario na linha, DELETE o antigo e POST
+  // o novo como primario; senao so POST. Usa o accountId da linha (multi-tenant).
+  // Atualiza o primaryDomain da projecao lean. Retorna o host normalizado salvo.
+  async function setPrimaryDomain(restaurantId: string, accountId: string, host: string) {
+    const normalized = String(host || '')
+      .trim()
+      .toLowerCase()
+    if (!normalized) {
+      return ''
+    }
+    const current = restaurants.value.find((item) => item.id === restaurantId)
+    const previous = String(current?.primaryDomain || '').trim()
+    if (previous && previous !== normalized) {
+      await apiRequest(
+        withScopeFor(`/v1/cardapio/domains?host=${encodeURIComponent(previous)}`, accountId),
+        { method: 'DELETE' },
+      )
+    }
+    await apiRequest(
+      withScopeFor(
+        `/v1/cardapio/restaurants/${encodeURIComponent(restaurantId)}/domains`,
+        accountId,
+      ),
+      { method: 'POST', body: { host: normalized, isPrimary: true } },
+    )
+    restaurants.value = restaurants.value.map((item) =>
+      item.id === restaurantId ? { ...item, primaryDomain: normalized } : item,
+    )
+    return normalized
   }
 
   // --- Categorias ---
@@ -379,6 +461,45 @@ export const useCardapioStore = defineStore('cardapio', () => {
     }
   }
 
+  // --- Zonas de entrega (bairro + frete) ---
+
+  async function reloadZones(id: string) {
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/delivery-zones`),
+    )
+    zones.value = asArray<DeliveryZone>(response, 'deliveryZones')
+  }
+
+  async function createZone(id: string, body: Record<string, unknown>) {
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/delivery-zones`),
+      { method: 'POST', body },
+    )) as DeliveryZone
+    await reloadZones(id)
+    return response
+  }
+
+  // PATCH de zona e PARCIAL (pointer-based no back): pode mandar so {isActive}.
+  async function patchZone(zoneId: string, body: Record<string, unknown>) {
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/delivery-zones/${encodeURIComponent(zoneId)}`),
+      { method: 'PATCH', body },
+    )) as DeliveryZone
+    if (restaurantId.value) {
+      await reloadZones(restaurantId.value)
+    }
+    return response
+  }
+
+  async function deleteZone(zoneId: string) {
+    await apiRequest(withScope(`/v1/cardapio/delivery-zones/${encodeURIComponent(zoneId)}`), {
+      method: 'DELETE',
+    })
+    if (restaurantId.value) {
+      await reloadZones(restaurantId.value)
+    }
+  }
+
   // --- Upload de midia ---
 
   async function uploadMedia(id: string, file: File): Promise<string> {
@@ -402,6 +523,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
     categories,
     products,
     domains,
+    zones,
     detailPending,
     detailError,
     orders,
@@ -415,6 +537,9 @@ export const useCardapioStore = defineStore('cardapio', () => {
     loadRestaurant,
     patchRestaurant,
     deleteRestaurant,
+    patchRestaurantScoped,
+    deleteRestaurantScoped,
+    setPrimaryDomain,
     reloadCategories,
     createCategory,
     patchCategory,
@@ -433,6 +558,10 @@ export const useCardapioStore = defineStore('cardapio', () => {
     reloadDomains,
     createDomain,
     deleteDomain,
+    reloadZones,
+    createZone,
+    patchZone,
+    deleteZone,
     uploadMedia,
   }
 })

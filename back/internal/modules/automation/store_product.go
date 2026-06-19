@@ -119,3 +119,54 @@ func (s *Store) SearchSiteProducts(ctx context.Context, accountID, q string, lim
 	}
 	return hits, rows.Err()
 }
+
+// SampleSiteProducts devolve uma AMOSTRA de produtos reais da account (SEM filtro de
+// nome), escopada por account_id (multi-tenant, igual SearchSiteProducts). Usada no
+// modo "listar/sugerir" do Omni Chat: quando o usuario pede para ver o catalogo ou
+// sugerir algo sem especificar um produto, ou quando uma busca especifica nao acha
+// nada (fallback). So traz itens ENRIQUECIDOS pelo ERP (price > 0 => nome real do ERP
+// + preco; evita mostrar item com nome = codigo) e com imagem na frente, deduplicados
+// por nome. Ordem ALEATORIA (random()) para VARIAR a cada chamada — senao o bot ficaria
+// repetindo sempre os mesmos itens em pedidos genericos/sugestoes. Mesmo enrich/dedup da busca.
+func (s *Store) SampleSiteProducts(ctx context.Context, accountID string, limit int) ([]ProductHit, error) {
+	const query = `select name, code, price, brand, image from (
+			select
+				coalesce(nullif(e.name, ''), p.name) as name,
+				coalesce(p.code, '') as code,
+				round(coalesce(e.price_cents, 0)::numeric / 100.0, 2)::float8 as price,
+				case when e.brandname ~ '^[0-9]+$' then '' else coalesce(e.brandname, '') end as brand,
+				coalesce(p.image, '') as image,
+				row_number() over (
+					partition by lower(coalesce(nullif(e.name, ''), p.name))
+					order by (e.price_cents > 0) desc, e.price_cents desc, (coalesce(p.image, '') <> '') desc
+				) as rn
+			from site.products p
+			left join lateral (
+				select name, price_cents, brandname
+				from queue.erp_item_current
+				where tenant_id = p.account_id::uuid and sku = split_part(p.code, '_', 1)
+				order by (price_cents > 0) desc, price_cents desc
+				limit 1
+			) e on true
+			where p.account_id = $1::uuid
+			  and p.status = 'active'
+			  and p.is_active = true
+		) t
+		where t.rn = 1 and t.price > 0
+		order by (t.image <> '') desc, random()
+		limit $2`
+	rows, err := s.pool.Query(ctx, query, accountID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	hits := make([]ProductHit, 0, limit)
+	for rows.Next() {
+		var h ProductHit
+		if err := rows.Scan(&h.Name, &h.Code, &h.Price, &h.Brand, &h.Image); err != nil {
+			return nil, err
+		}
+		hits = append(hits, h)
+	}
+	return hits, rows.Err()
+}

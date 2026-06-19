@@ -2,10 +2,19 @@
 import { computed, onMounted, ref, watch } from 'vue'
 
 import CardapioCreateModal from '~/components/cardapio/CardapioCreateModal.vue'
+import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
+import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useTenantsStore } from '~/stores/tenants'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
+import type {
+  OmniFilterDefinition,
+  OmniFocusCell,
+  OmniTableCellUpdate,
+  OmniTableColumn,
+} from '~/types/omni/collection'
+import type { RestaurantListItem } from '~/domain/cardapio/types'
 
 const store = useCardapioStore()
 const tenantsStore = useTenantsStore()
@@ -13,11 +22,16 @@ const auth = useAuthStore()
 const ui = useUiStore()
 
 const isAdmin = computed(() => String(auth.role || '').trim() === 'platform_admin')
+const viewerUserType = computed<'admin' | 'client'>(() => (isAdmin.value ? 'admin' : 'client'))
 
-const search = ref('')
-const accountFilter = ref('')
 const createOpen = ref(false)
 const creating = ref(false)
+const focusCell = ref<OmniFocusCell | null>(null)
+const selectedIds = ref<Array<string | number>>([])
+
+// Filtros server-side (busca + cliente): a lista re-le do back ao mudar, igual
+// ao comportamento anterior. accountFilter so existe para platform_admin.
+const filtersState = ref<Record<string, unknown>>({ query: '', accountFilter: '' })
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -25,33 +39,235 @@ const tenantOptions = computed(() =>
   (tenantsStore.tenants || []).map((tenant) => ({ id: tenant.id, name: tenant.name })),
 )
 
-function dateLabel(value: string): string {
-  const date = new Date(value)
+const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
+  {
+    key: 'query',
+    label: 'Buscar',
+    type: 'text',
+    placeholder: 'Buscar por nome ou slug',
+    mode: 'all',
+  },
+  {
+    key: 'accountFilter',
+    label: 'Cliente',
+    type: 'select',
+    adminOnly: true,
+    placeholder: 'Todos os clientes',
+    options: tenantOptions.value.map((tenant) => ({ label: tenant.name, value: tenant.id })),
+  },
+])
+
+function dateLabel(value: unknown): string {
+  const date = new Date(String(value ?? ''))
   if (Number.isNaN(date.getTime())) {
     return '—'
   }
   return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+const allTableColumns = computed<OmniTableColumn[]>(() => [
+  {
+    key: 'name',
+    label: 'Nome',
+    type: 'text',
+    editable: true,
+    minWidth: 220,
+    focusOnCreate: true,
+    locked: true,
+    defaultOrder: 10,
+  },
+  {
+    key: 'slug',
+    label: 'Slug',
+    type: 'custom',
+    minWidth: 180,
+    defaultOrder: 20,
+  },
+  {
+    key: 'accountId',
+    label: 'Cliente',
+    type: 'select',
+    adminOnly: true,
+    editable: true,
+    minWidth: 200,
+    defaultOrder: 30,
+    placeholder: 'Selecione o cliente',
+    options: tenantOptions.value.map((tenant) => ({ label: tenant.name, value: tenant.id })),
+  },
+  {
+    key: 'primaryDomain',
+    label: 'Dominio',
+    type: 'text',
+    editable: true,
+    minWidth: 200,
+    defaultOrder: 40,
+    placeholder: 'exemplo.com.br',
+  },
+  {
+    key: 'isActive',
+    label: 'Status',
+    type: 'switch',
+    editable: true,
+    immediate: true,
+    switchOnValue: true,
+    switchOffValue: false,
+    minWidth: 110,
+    defaultOrder: 50,
+  },
+  {
+    key: 'updatedAt',
+    label: 'Atualizado',
+    type: 'text',
+    editable: false,
+    minWidth: 140,
+    defaultOrder: 60,
+    formatter: (value) => dateLabel(value),
+  },
+  {
+    key: 'actions',
+    label: 'Opcoes',
+    type: 'custom',
+    minWidth: 90,
+    align: 'center',
+    defaultOrder: 1000,
+  },
+])
+
+const columnExcludeKeys = ['actions']
+const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
+  useOmniVisibleColumns({
+    preferenceKey: 'cardapio.list.restaurants',
+    allColumns: allTableColumns,
+    columnExcludeKeys,
+  })
+
+const tableRows = computed(() => store.restaurants as unknown as Array<Record<string, unknown>>)
+
+function toRestaurant(row: Record<string, unknown>): RestaurantListItem {
+  return row as unknown as RestaurantListItem
+}
+
 async function refresh() {
   await store.loadRestaurants({
-    accountId: isAdmin.value ? accountFilter.value : '',
-    q: search.value.trim(),
+    accountId: isAdmin.value ? String(filtersState.value.accountFilter || '').trim() : '',
+    q: String(filtersState.value.query || '').trim(),
   })
 }
 
-function onSearchInput() {
-  if (searchTimer) {
-    clearTimeout(searchTimer)
-  }
-  searchTimer = setTimeout(() => {
+watch(
+  () => filtersState.value.query,
+  () => {
+    if (searchTimer) {
+      clearTimeout(searchTimer)
+    }
+    searchTimer = setTimeout(() => {
+      void refresh()
+    }, 300)
+  },
+)
+
+watch(
+  () => filtersState.value.accountFilter,
+  () => {
     void refresh()
-  }, 300)
+  },
+)
+
+function onResetFilters() {
+  filtersState.value = { query: '', accountFilter: '' }
 }
 
-watch(accountFilter, () => {
-  void refresh()
-})
+function openEditor(id: string, accountId = '') {
+  const account = String(accountId || '').trim()
+  void navigateTo(`/cardapio/${id}${account ? `?account=${encodeURIComponent(account)}` : ''}`)
+}
+
+function onCellUpdate(payload: OmniTableCellUpdate) {
+  const id = String(payload.rowId).trim()
+  if (!id) return
+
+  const row = store.restaurants.find((item) => item.id === id)
+  if (!row) return
+
+  // Multi-tenant: na lista o scopeAccountId esta vazio; o accountId da linha
+  // garante que a edicao caia na account certa (senao 404 fora do escopo).
+  const accountId = String(row.accountId || '').trim()
+  const key = String(payload.key)
+
+  if (key === 'name') {
+    const name = String(payload.value ?? '').trim()
+    if (!name) return
+    void savePatch(id, accountId, { name })
+    return
+  }
+
+  if (key === 'isActive') {
+    void savePatch(id, accountId, { isActive: payload.value === true })
+    return
+  }
+
+  if (key === 'accountId') {
+    const target = String(payload.value ?? '').trim()
+    if (!target || target === accountId) return
+    void moveAccount(id, accountId, target)
+    return
+  }
+
+  if (key === 'primaryDomain') {
+    void saveDomain(id, accountId, String(payload.value ?? ''))
+  }
+}
+
+async function savePatch(id: string, accountId: string, body: Record<string, unknown>) {
+  try {
+    await store.patchRestaurantScoped(id, accountId, body)
+  } catch {
+    ui.error('Nao foi possivel salvar a alteracao.')
+    void refresh()
+  }
+}
+
+// Move o restaurante para outra conta (so platform_admin). O PATCH nao devolve o
+// nome da nova account, entao recarregamos a lista para refletir Cliente/dominio.
+async function moveAccount(id: string, accountId: string, target: string) {
+  try {
+    await store.patchRestaurantScoped(id, accountId, { accountId: target })
+    await refresh()
+    ui.success('Estabelecimento movido para o novo cliente.')
+  } catch {
+    ui.error('Nao foi possivel mover o estabelecimento.')
+    void refresh()
+  }
+}
+
+// Edicao inline do dominio primario: host vazio e NO-OP (remover so na aba
+// Dominios). Em sucesso a store ja atualiza a linha lean.
+async function saveDomain(id: string, accountId: string, host: string) {
+  if (!String(host || '').trim()) return
+  try {
+    await store.setPrimaryDomain(id, accountId, host)
+  } catch {
+    ui.error('Nao foi possivel salvar o dominio.')
+    void refresh()
+  }
+}
+
+async function onDelete(row: Record<string, unknown>) {
+  const restaurant = toRestaurant(row)
+  const { confirmed } = (await ui.confirm({
+    title: 'Excluir estabelecimento',
+    message: `Excluir o estabelecimento "${restaurant.name}"? Esta acao nao pode ser desfeita.`,
+    confirmLabel: 'Excluir',
+  })) as { confirmed: boolean }
+  if (!confirmed) return
+
+  try {
+    await store.deleteRestaurantScoped(restaurant.id, String(restaurant.accountId || '').trim())
+    ui.success('Estabelecimento excluido.')
+  } catch {
+    ui.error('Nao foi possivel excluir o estabelecimento.')
+  }
+}
 
 function openCreate() {
   createOpen.value = true
@@ -72,16 +288,11 @@ async function onCreate(payload: { name: string; slug: string; accountId: string
   }
 
   createOpen.value = false
-  ui.success('Cardapio criado.')
+  ui.success('Estabelecimento criado.')
   // Admin pode criar sob a account de um cliente: leva o accountId na query pro
   // editor escopar o GET corretamente (senao 404 quando != account ativa).
   const account = isAdmin.value ? String(payload.accountId || '').trim() : ''
-  await openEditor(result.restaurant.id, account)
-}
-
-function openEditor(id: string, accountId = '') {
-  const account = String(accountId || '').trim()
-  void navigateTo(`/cardapio/${id}${account ? `?account=${encodeURIComponent(account)}` : ''}`)
+  openEditor(result.restaurant.id, account)
 }
 
 onMounted(async () => {
@@ -94,97 +305,92 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="cardapio-list">
-    <header class="cardapio-list__header">
-      <div class="cardapio-list__heading">
-        <h1 class="cardapio-list__title">Cardapio Online</h1>
-        <p class="cardapio-list__subtitle">
-          Gerencie os restaurantes, o catalogo, os dominios e os pedidos de cada cardapio.
-        </p>
-      </div>
-      <button type="button" class="cardapio-list__create" @click="openCreate">Novo cardapio</button>
-    </header>
+  <section class="cardapio-list flex h-full min-h-0 flex-col gap-4 overflow-hidden">
+    <AdminPageHeader
+      eyebrow="Presence"
+      title="Estabelecimentos"
+      description="Gerencie o site de cada estabelecimento: visual, cardapio, pedidos e dominios."
+    />
 
-    <div class="cardapio-list__toolbar">
-      <label class="cardapio-list__search">
-        <span class="cardapio-list__search-icon" aria-hidden="true">⌕</span>
-        <input
-          v-model="search"
-          type="search"
-          class="cardapio-list__search-input"
-          placeholder="Buscar por nome ou slug"
-          @input="onSearchInput"
+    <OmniCollectionFilters
+      v-model="filtersState"
+      v-model:visible-columns="visibleColumnKeys"
+      v-model:locked-columns="lockedColumnKeys"
+      v-model:column-order="columnOrder"
+      :viewer-user-type="viewerUserType"
+      :filters="filterDefinitions"
+      :table-columns="allTableColumns"
+      :column-exclude-keys="columnExcludeKeys"
+      :loading="store.listPending"
+      @reset="onResetFilters"
+      @reset-columns="resetToDefaults"
+    >
+      <template #actions>
+        <UButton
+          icon="i-lucide-plus"
+          label="Novo estabelecimento"
+          color="primary"
+          :loading="creating"
+          :disabled="creating"
+          @click="openCreate"
         />
-      </label>
+      </template>
+    </OmniCollectionFilters>
 
-      <label v-if="isAdmin" class="cardapio-list__filter">
-        <span class="cardapio-list__filter-label">Cliente</span>
-        <select v-model="accountFilter" class="cardapio-list__filter-select">
-          <option value="">Todos os clientes</option>
-          <option v-for="tenant in tenantOptions" :key="tenant.id" :value="tenant.id">
-            {{ tenant.name }}
-          </option>
-        </select>
-      </label>
-    </div>
+    <UAlert
+      v-if="store.listError"
+      color="error"
+      variant="soft"
+      icon="i-lucide-alert-triangle"
+      title="Erro"
+      :description="store.listError"
+    />
 
-    <p v-if="store.listError" class="cardapio-list__error">{{ store.listError }}</p>
-
-    <div v-if="store.listPending" class="cardapio-list__state">Carregando cardapios...</div>
-
-    <div v-else-if="store.restaurants.length === 0" class="cardapio-list__empty">
-      <strong class="cardapio-list__empty-title">Nenhum cardapio ainda</strong>
-      <p class="cardapio-list__empty-text">
-        Crie o primeiro restaurante para configurar catalogo, dominios e comecar a receber pedidos.
-      </p>
-      <button type="button" class="cardapio-list__create" @click="openCreate">
-        Criar primeiro cardapio
-      </button>
-    </div>
-
-    <div v-else class="cardapio-list__table-wrap">
-      <table class="cardapio-list__table">
-        <thead>
-          <tr>
-            <th class="cardapio-list__th">Nome</th>
-            <th class="cardapio-list__th">Slug</th>
-            <th v-if="isAdmin" class="cardapio-list__th">Cliente</th>
-            <th class="cardapio-list__th">Dominio</th>
-            <th class="cardapio-list__th">Status</th>
-            <th class="cardapio-list__th">Atualizado</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="restaurant in store.restaurants"
-            :key="restaurant.id"
-            class="cardapio-list__row"
-            tabindex="0"
-            @click="openEditor(restaurant.id, restaurant.accountId)"
-            @keydown.enter="openEditor(restaurant.id, restaurant.accountId)"
+    <div class="cardapio-list__table-scroll min-h-0 flex-1 overflow-y-auto">
+      <OmniDataTable
+        v-model="selectedIds"
+        :rows="tableRows"
+        :columns="tableColumns"
+        :viewer-user-type="viewerUserType"
+        row-key="id"
+        :loading="store.listPending"
+        :focus-cell="focusCell"
+        empty-text="Nenhum estabelecimento encontrado com os filtros atuais."
+        @update:cell="onCellUpdate"
+      >
+        <template #cell-slug="{ row }">
+          <button
+            type="button"
+            class="cardapio-list__link cardapio-list__link--mono"
+            @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
           >
-            <td class="cardapio-list__td cardapio-list__td--name">{{ restaurant.name }}</td>
-            <td class="cardapio-list__td cardapio-list__td--mono">{{ restaurant.slug }}</td>
-            <td v-if="isAdmin" class="cardapio-list__td">{{ restaurant.accountName || '—' }}</td>
-            <td class="cardapio-list__td cardapio-list__td--mono">
-              {{ restaurant.primaryDomain || '—' }}
-            </td>
-            <td class="cardapio-list__td">
-              <span
-                class="cardapio-list__badge"
-                :class="
-                  restaurant.isActive
-                    ? 'cardapio-list__badge--active'
-                    : 'cardapio-list__badge--inactive'
-                "
-              >
-                {{ restaurant.isActive ? 'Ativo' : 'Inativo' }}
-              </span>
-            </td>
-            <td class="cardapio-list__td">{{ dateLabel(restaurant.updatedAt) }}</td>
-          </tr>
-        </tbody>
-      </table>
+            {{ toRestaurant(row).slug || '—' }}
+          </button>
+        </template>
+
+        <template #cell-actions="{ row }">
+          <div class="flex items-center justify-end gap-1">
+            <UButton
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Abrir editor"
+              aria-label="Abrir editor"
+              @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
+            />
+            <UButton
+              icon="i-lucide-trash-2"
+              color="error"
+              variant="ghost"
+              size="sm"
+              title="Excluir estabelecimento"
+              aria-label="Excluir estabelecimento"
+              @click="onDelete(row)"
+            />
+          </div>
+        </template>
+      </OmniDataTable>
     </div>
 
     <CardapioCreateModal
@@ -199,218 +405,18 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.cardapio-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  padding: 1.5rem;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.cardapio-list__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.cardapio-list__title {
-  font-size: 1.35rem;
-  font-weight: 700;
-  color: var(--text-main);
-}
-
-.cardapio-list__subtitle {
-  margin-top: 0.25rem;
-  font-size: 0.92rem;
-  color: var(--text-muted);
-  max-width: 52ch;
-}
-
-.cardapio-list__create {
-  border: none;
-  color: rgb(var(--surface));
-  background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600)));
-  padding: 0.6rem 1.1rem;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-size: 0.9rem;
+.cardapio-list__link {
+  color: rgb(var(--primary));
   cursor: pointer;
-  white-space: nowrap;
-}
-
-.cardapio-list__toolbar {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  align-items: flex-end;
-}
-
-.cardapio-list__search {
-  position: relative;
-  flex: 1;
-  min-width: 220px;
-  display: flex;
-  align-items: center;
-}
-
-.cardapio-list__search-icon {
-  position: absolute;
-  left: 0.75rem;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.cardapio-list__search-input {
-  width: 100%;
-  padding: 0.6rem 0.75rem 0.6rem 2rem;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2) / 0.6);
-  color: var(--text-main);
-  font-size: 0.92rem;
-}
-
-.cardapio-list__search-input:focus,
-.cardapio-list__filter-select:focus {
-  outline: none;
-  border-color: rgb(var(--ring));
-  box-shadow: 0 0 0 3px rgb(var(--ring) / 0.18);
-}
-
-.cardapio-list__filter {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.cardapio-list__filter-label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.cardapio-list__filter-select {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface-2) / 0.6);
-  color: var(--text-main);
-  font-size: 0.92rem;
-  min-width: 200px;
-}
-
-.cardapio-list__error {
-  color: rgb(var(--danger));
-  background: rgb(var(--danger) / 0.14);
-  padding: 0.6rem 0.85rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-}
-
-.cardapio-list__state {
-  color: var(--text-muted);
-  font-size: 0.92rem;
-  padding: 1rem 0;
-}
-
-.cardapio-list__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  text-align: center;
-  padding: 3rem 1.5rem;
-  border: 1px dashed var(--line-soft);
-  border-radius: var(--radius-card);
-  background: rgb(var(--surface) / 0.5);
-}
-
-.cardapio-list__empty-title {
-  font-size: 1.05rem;
-  color: var(--text-main);
-}
-
-.cardapio-list__empty-text {
-  font-size: 0.9rem;
-  color: var(--text-muted);
-  max-width: 46ch;
-}
-
-.cardapio-list__table-wrap {
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-card);
-  overflow: hidden;
-}
-
-.cardapio-list__table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-.cardapio-list__th {
   text-align: left;
-  padding: 0.7rem 0.9rem;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  background: rgb(var(--surface-2) / 0.6);
-  border-bottom: 1px solid var(--line-soft);
 }
 
-.cardapio-list__row {
-  cursor: pointer;
-  transition: background 0.12s ease;
+.cardapio-list__link:hover {
+  text-decoration: underline;
 }
 
-.cardapio-list__row:hover,
-.cardapio-list__row:focus-visible {
-  background: rgb(var(--primary) / 0.08);
-  outline: none;
-}
-
-.cardapio-list__td {
-  padding: 0.75rem 0.9rem;
-  color: var(--text-main);
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.cardapio-list__row:last-child .cardapio-list__td {
-  border-bottom: none;
-}
-
-.cardapio-list__td--name {
-  font-weight: 600;
-}
-
-.cardapio-list__td--mono {
+.cardapio-list__link--mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.84rem;
-  color: var(--text-muted);
-}
-
-.cardapio-list__badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.76rem;
-  font-weight: 600;
-}
-
-.cardapio-list__badge--active {
-  background: rgb(var(--success) / 0.16);
-  color: rgb(var(--success));
-}
-
-.cardapio-list__badge--inactive {
-  background: rgb(var(--muted) / 0.16);
-  color: var(--text-muted);
 }
 </style>

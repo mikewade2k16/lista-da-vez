@@ -4,7 +4,7 @@ import CardapioListWorkspace from '~/components/cardapio/CardapioListWorkspace.v
 definePageMeta({
   layout: 'dashboard',
   workspaceId: 'cardapio_web',
-  pageLabel: 'Cardapio Online',
+  pageLabel: 'Presence',
 })
 </script>
 

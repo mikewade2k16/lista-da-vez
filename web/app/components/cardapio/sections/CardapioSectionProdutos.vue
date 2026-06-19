@@ -8,13 +8,19 @@ import { getApiErrorMessage } from '~/utils/api-client'
 import { formatCurrency } from '~/domain/cardapio/types'
 import type { ProductListItem } from '~/domain/cardapio/types'
 import { formToPayload, productToForm } from '~/composables/useCardapioProductForm'
+import { resolveMediaUrl } from '~/utils/media'
 
 const store = useCardapioStore()
 const ui = useUiStore()
+const config = useRuntimeConfig()
+const mediaUrl = (url?: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
 
 const modalOpen = ref(false)
 const editingId = ref('')
 const busyId = ref('')
+
+// Sinaliza produtos sem imagem (ex.: import que ainda nao tem foto cadastrada).
+const noImageCount = computed(() => store.products.filter((p) => !p.imageUrl).length)
 
 interface Group {
   id: string
@@ -97,7 +103,10 @@ async function remove(product: ProductListItem) {
 <template>
   <div class="cardapio-prod">
     <div class="cardapio-prod__head">
-      <p class="cardapio-prod__count">{{ store.products.length }} produto(s)</p>
+      <p class="cardapio-prod__count">
+        {{ store.products.length }} produto(s)
+        <span v-if="noImageCount" class="cardapio-prod__warn">· {{ noImageCount }} sem imagem</span>
+      </p>
       <button type="button" class="cardapio-prod__add" @click="openCreate">Novo produto</button>
     </div>
 
@@ -111,7 +120,7 @@ async function remove(product: ProductListItem) {
         <li v-for="product in group.products" :key="product.id" class="cardapio-prod__item">
           <img
             v-if="product.imageUrl"
-            :src="product.imageUrl"
+            :src="mediaUrl(product.imageUrl)"
             alt=""
             class="cardapio-prod__thumb"
           />
@@ -125,6 +134,9 @@ async function remove(product: ProductListItem) {
             <div class="cardapio-prod__name-row">
               <span class="cardapio-prod__name">{{ product.name }}</span>
               <span v-if="product.isFeatured" class="cardapio-prod__tag">Destaque</span>
+              <span v-if="!product.imageUrl" class="cardapio-prod__tag cardapio-prod__tag--warn">
+                Sem imagem
+              </span>
             </div>
             <span class="cardapio-prod__price">{{ formatCurrency(product.priceCents) }}</span>
           </div>
@@ -264,6 +276,16 @@ async function remove(product: ProductListItem) {
   border-radius: 999px;
   background: rgb(var(--primary) / 0.16);
   color: rgb(var(--primary));
+}
+
+.cardapio-prod__tag--warn {
+  background: rgb(var(--danger) / 0.14);
+  color: rgb(var(--danger));
+}
+
+.cardapio-prod__warn {
+  color: rgb(var(--danger));
+  font-weight: 600;
 }
 
 .cardapio-prod__price {

@@ -79,11 +79,20 @@ func (s *Service) PublicMenu(ctx context.Context, slug string) (PublicMenu, erro
 	if err != nil {
 		return PublicMenu{}, err
 	}
+	zones, err := s.store.ListPublicZones(ctx, accountID, restaurant.ID)
+	if err != nil {
+		return PublicMenu{}, err
+	}
 	s.absolutizeRestaurant(&restaurant)
 	for i := range products {
 		s.absolutizeProduct(&products[i])
 	}
-	return PublicMenu{Restaurant: restaurant, Categories: categories, Products: products}, nil
+	return PublicMenu{
+		Restaurant:    restaurant,
+		Categories:    categories,
+		Products:      products,
+		DeliveryZones: zones,
+	}, nil
 }
 
 // PublicProduct monta prato + reviews. 404 se o produto nao existe/indisponivel.

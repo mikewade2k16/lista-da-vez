@@ -1,6 +1,9 @@
 package automation
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // ProductSource e a fonte de catalogo plugavel da tool de produto (M5). Hoje a unica
 // implementacao e o site (site.products); ERP/catalog entram como fontes futuras sem
@@ -83,6 +86,55 @@ func (s *Service) SearchCatalogByAccount(ctx context.Context, accountID, query s
 		return []ProductHit{}, nil
 	}
 	return s.productSource().Search(ctx, accountID, query, catalogToolLimit)
+}
+
+// browseSentinel e o valor de q que o extrator do n8n envia quando o usuario quer
+// VER/LISTAR/SUGERIR produtos SEM especificar um produto concreto ("o que tem",
+// "lista produtos", "me sugere uma joia", "produtos para presente"). Nenhum produto
+// se chama assim => sem colisao com uma busca real.
+const browseSentinel = "LISTAR"
+
+// Modos da resposta da tool (campo "mode") — o compositor do n8n usa para frasear com
+// honestidade (achou x amostra x sugestao apos nao achar).
+const (
+	catalogModeEmpty      = "empty"      // q vazio (NONE) -> sem busca
+	catalogModeMatch      = "match"      // busca especifica achou
+	catalogModeSample     = "sample"     // pedido generico (LISTAR) -> amostra do catalogo
+	catalogModeSuggestion = "suggestion" // busca especifica nao achou -> amostra como sugestao
+)
+
+// OmniChatCatalog resolve as 3 intencoes do chat interno a partir do termo que o
+// extrator do n8n manda, para o bot NUNCA travar nem ficar "burro":
+//   - vazio (NONE)  -> nada (o bot responde normal, sem produtos);
+//   - "LISTAR"      -> amostra real do catalogo (pedido generico/sugestao);
+//   - termo         -> busca especifica; se nao achar, cai numa AMOSTRA real como
+//     sugestao ("nao achei X, mas temos estas opcoes") em vez de devolver vazio.
+//
+// Devolve tambem o modo, para o compositor frasear certo. accountID vem do context
+// token assinado (escopo multi-tenant), NUNCA do query/body do n8n.
+func (s *Service) OmniChatCatalog(ctx context.Context, accountID, query string) ([]ProductHit, string, error) {
+	query = strings.TrimSpace(query)
+	if accountID == "" || query == "" {
+		return []ProductHit{}, catalogModeEmpty, nil
+	}
+	if strings.EqualFold(query, browseSentinel) {
+		hits, err := s.store.SampleSiteProducts(ctx, accountID, catalogToolLimit)
+		return hits, catalogModeSample, err
+	}
+	hits, err := s.SearchCatalogByAccount(ctx, accountID, query)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(hits) > 0 {
+		return hits, catalogModeMatch, nil
+	}
+	// Busca especifica vazia: oferece uma amostra REAL como sugestao (sugere "outra
+	// coisa que tenha a ver" com produtos do proprio catalogo, sem inventar item).
+	sample, err := s.store.SampleSiteProducts(ctx, accountID, catalogToolLimit)
+	if err != nil {
+		return nil, "", err
+	}
+	return sample, catalogModeSuggestion, nil
 }
 
 // productSource escolhe a fonte de catalogo. Hoje fixa no site; ponto unico de

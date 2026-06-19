@@ -24,8 +24,9 @@ type rowScanner interface {
 }
 
 const restaurantColumns = `id, slug, name, tagline, description, logo_url, banner_url,
-	whatsapp, phone, email, instagram, address, hours, settings, theme, is_active,
-	created_at, updated_at`
+	whatsapp, phone, email, instagram, address, hours, settings, theme,
+	segment, facebook, youtube, google_analytics_id, facebook_pixel_id, custom_head_html,
+	is_active, created_at, updated_at`
 
 func scanRestaurant(row rowScanner) (Restaurant, error) {
 	var r Restaurant
@@ -33,6 +34,7 @@ func scanRestaurant(row rowScanner) (Restaurant, error) {
 	err := row.Scan(
 		&r.ID, &r.Slug, &r.Name, &r.Tagline, &r.Description, &r.LogoURL, &r.BannerURL,
 		&r.WhatsApp, &r.Phone, &r.Email, &r.Instagram, &address, &hours, &settings, &theme,
+		&r.Segment, &r.Facebook, &r.Youtube, &r.GoogleAnalyticsID, &r.FacebookPixelID, &r.CustomHeadHTML,
 		&r.IsActive, &r.CreatedAt, &r.UpdatedAt,
 	)
 	if err != nil {
@@ -98,30 +100,53 @@ func (s *Store) ListRestaurantsLean(ctx context.Context, accountID, query string
 }
 
 // UpdateRestaurant aplica um PATCH parcial. Campos nil sao preservados via COALESCE.
+// O WHERE escopa pela account ATUAL ($2); account_id ($23) so muda quando in.AccountID
+// nao e nil (move para outra conta — ja validado no service, so platform_admin).
 func (s *Store) UpdateRestaurant(ctx context.Context, accountID, id string, in UpdateRestaurantInput) (Restaurant, error) {
 	address, hours, settings, theme := encodeJSONUpdates(in)
 	const q = `update cardapio.restaurants set
-			name        = coalesce($3, name),
-			tagline     = coalesce($4, tagline),
-			description = coalesce($5, description),
-			logo_url    = coalesce($6, logo_url),
-			banner_url  = coalesce($7, banner_url),
-			whatsapp    = coalesce($8, whatsapp),
-			phone       = coalesce($9, phone),
-			email       = coalesce($10, email),
-			instagram   = coalesce($11, instagram),
-			address     = coalesce($12, address),
-			hours       = coalesce($13, hours),
-			settings    = coalesce($14, settings),
-			theme       = coalesce($15, theme),
-			is_active   = coalesce($16, is_active),
-			updated_at  = now()
+			name                = coalesce($3, name),
+			tagline             = coalesce($4, tagline),
+			description         = coalesce($5, description),
+			logo_url            = coalesce($6, logo_url),
+			banner_url          = coalesce($7, banner_url),
+			whatsapp            = coalesce($8, whatsapp),
+			phone               = coalesce($9, phone),
+			email               = coalesce($10, email),
+			instagram           = coalesce($11, instagram),
+			address             = coalesce($12, address),
+			hours               = coalesce($13, hours),
+			settings            = coalesce($14, settings),
+			theme               = coalesce($15, theme),
+			segment             = coalesce($16, segment),
+			facebook            = coalesce($17, facebook),
+			youtube             = coalesce($18, youtube),
+			google_analytics_id = coalesce($19, google_analytics_id),
+			facebook_pixel_id   = coalesce($20, facebook_pixel_id),
+			custom_head_html    = coalesce($21, custom_head_html),
+			is_active           = coalesce($22, is_active),
+			account_id          = coalesce($23::uuid, account_id),
+			updated_at          = now()
 		where id = $1 and account_id = $2
 		returning ` + restaurantColumns
 	return scanRestaurant(s.pool.QueryRow(ctx, q, id, accountID,
 		in.Name, in.Tagline, in.Description, in.LogoURL, in.BannerURL,
 		in.WhatsApp, in.Phone, in.Email, in.Instagram,
-		address, hours, settings, theme, in.IsActive))
+		address, hours, settings, theme,
+		in.Segment, in.Facebook, in.Youtube, in.GoogleAnalyticsID, in.FacebookPixelID, in.CustomHeadHTML,
+		in.IsActive, in.AccountID))
+}
+
+// AccountExists informa se a conta destino existe (espelha bio). Usado pelo
+// service antes de mover um restaurante de conta — devolve um 404 limpo se a
+// conta nao existe, alem da protecao da FK account_id.
+func (s *Store) AccountExists(ctx context.Context, accountID string) (bool, error) {
+	const q = `select exists(select 1 from core.accounts where id = $1::uuid)`
+	var exists bool
+	if err := s.pool.QueryRow(ctx, q, accountID).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
 }
 
 func encodeJSONUpdates(in UpdateRestaurantInput) (address, hours, settings, theme []byte) {

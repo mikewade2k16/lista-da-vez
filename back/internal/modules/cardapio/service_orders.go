@@ -61,7 +61,15 @@ func (s *Service) PlaceOrder(ctx context.Context, slug string, in PublicOrderInp
 		return Order{}, ErrMinOrder
 	}
 
-	deliveryFee := computeDeliveryFee(orderType, subtotal, restaurant.Settings)
+	// Resolve a zona de entrega (WS-A): so para entrega. Quando deliveryZoneId vem
+	// preenchido, a zona TEM que existir, estar ativa e pertencer ao restaurante;
+	// senao => ErrOptionInvalid. Sem zona escolhida => frete do settings (fallback).
+	zone, hasZone, err := s.resolveDeliveryZone(ctx, orderType, restaurant.ID, in.DeliveryZoneID)
+	if err != nil {
+		return Order{}, err
+	}
+
+	deliveryFee := computeDeliveryFee(orderType, subtotal, restaurant.Settings, zone, hasZone)
 	total := subtotal + deliveryFee
 
 	// Endereco de entrega: prioriza customer.address (formato do contrato); cai
@@ -72,6 +80,11 @@ func (s *Service) PlaceOrder(ctx context.Context, slug string, in PublicOrderInp
 	}
 	if len(deliveryAddress) == 0 {
 		deliveryAddress = json.RawMessage("{}")
+	}
+	// Grava o nome do bairro (zona) dentro do delivery_address jsonb, para o painel
+	// exibir sem precisar de join. Falha de merge nao derruba o pedido.
+	if hasZone {
+		deliveryAddress = mergeNeighborhood(deliveryAddress, zone.Name)
 	}
 
 	order, err := s.store.CreateOrder(ctx, orderInsert{
@@ -180,16 +193,67 @@ func validateOrderType(orderType string, settings Settings) error {
 	return nil
 }
 
+// resolveDeliveryZone valida a zona de entrega informada (WS-A). So tem efeito em
+// entrega: para retirada/local retorna (zero, false, nil). Em entrega, se o
+// deliveryZoneId vier vazio o frete cai no fallback do settings (zero, false,
+// nil); se vier preenchido, a zona TEM que existir, estar ativa e pertencer ao
+// restaurante — caso contrario ErrOptionInvalid.
+func (s *Service) resolveDeliveryZone(ctx context.Context, orderType, restaurantID, zoneID string) (DeliveryZone, bool, error) {
+	if orderType != OrderTypeDelivery {
+		return DeliveryZone{}, false, nil
+	}
+	id := strings.TrimSpace(zoneID)
+	if id == "" {
+		return DeliveryZone{}, false, nil
+	}
+	zone, err := s.store.zoneForOrder(ctx, restaurantID, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DeliveryZone{}, false, ErrOptionInvalid
+	}
+	if err != nil {
+		return DeliveryZone{}, false, err
+	}
+	return zone, true, nil
+}
+
 // computeDeliveryFee calcula o frete: so para entrega; zera quando o subtotal
-// atinge o limiar de frete gratis (quando > 0).
-func computeDeliveryFee(orderType string, subtotal int64, settings Settings) int64 {
+// atinge o limiar de frete gratis (quando > 0). Quando ha zona escolhida (WS-A),
+// o frete base vem de zone.fee_cents; senao do settings.deliveryFeeCents.
+func computeDeliveryFee(orderType string, subtotal int64, settings Settings, zone DeliveryZone, hasZone bool) int64 {
 	if orderType != OrderTypeDelivery {
 		return 0
 	}
 	if settings.FreeDeliveryAboveCents > 0 && subtotal >= settings.FreeDeliveryAboveCents {
 		return 0
 	}
+	if hasZone {
+		return zone.FeeCents
+	}
 	return settings.DeliveryFeeCents
+}
+
+// mergeNeighborhood injeta neighborhood (nome da zona) no delivery_address jsonb.
+// Tolerante: se o raw nao for objeto valido, devolve um objeto novo so com o
+// bairro; nunca derruba o pedido.
+func mergeNeighborhood(raw json.RawMessage, neighborhood string) json.RawMessage {
+	neighborhood = strings.TrimSpace(neighborhood)
+	if neighborhood == "" {
+		return raw
+	}
+	obj := map[string]json.RawMessage{}
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &obj)
+	}
+	if obj == nil {
+		obj = map[string]json.RawMessage{}
+	}
+	name, _ := json.Marshal(neighborhood)
+	obj["neighborhood"] = name
+	merged, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return merged
 }
 
 func dedupeNonEmpty(values []string) []string {

@@ -15,6 +15,10 @@ import {
   formToPayload,
   productToForm,
 } from '~/composables/useCardapioProductForm'
+import { resolveMediaUrl } from '~/utils/media'
+
+const config = useRuntimeConfig()
+const mediaUrl = (url: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
 
 const props = defineProps<{
   open: boolean
@@ -191,7 +195,7 @@ async function onSave() {
             <div class="cardapio-pm__media">
               <img
                 v-if="form.imageUrl"
-                :src="form.imageUrl"
+                :src="mediaUrl(form.imageUrl)"
                 alt="Imagem"
                 class="cardapio-pm__thumb"
               />

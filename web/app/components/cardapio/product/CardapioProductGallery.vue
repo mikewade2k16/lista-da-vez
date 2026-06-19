@@ -1,6 +1,11 @@
 <script setup lang="ts">
 // Galeria de imagens do produto. Recebe a lista de URLs e expoe o upload via
 // callback do pai (que conhece o restaurantId/store). Upload preenche a galeria.
+import { resolveMediaUrl } from '~/utils/media'
+
+const config = useRuntimeConfig()
+const mediaUrl = (url: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
+
 const props = defineProps<{
   modelValue: string[]
   uploading: boolean
@@ -40,7 +45,7 @@ function onFile(event: Event) {
     <p v-if="!modelValue.length" class="cardapio-gallery__empty">Nenhuma imagem na galeria.</p>
     <div v-else class="cardapio-gallery__grid">
       <div v-for="(url, index) in modelValue" :key="index" class="cardapio-gallery__item">
-        <img :src="url" alt="Imagem do produto" class="cardapio-gallery__img" />
+        <img :src="mediaUrl(url)" alt="Imagem do produto" class="cardapio-gallery__img" />
         <button
           type="button"
           class="cardapio-gallery__remove"

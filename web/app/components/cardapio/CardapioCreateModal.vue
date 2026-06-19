@@ -83,7 +83,7 @@ function onSubmit() {
     <div class="cardapio-create__backdrop" @click="emit('close')"></div>
     <div class="cardapio-create__panel">
       <header class="cardapio-create__header">
-        <h2 class="cardapio-create__title">Novo cardapio</h2>
+        <h2 class="cardapio-create__title">Novo estabelecimento</h2>
         <button
           type="button"
           class="cardapio-create__close"
@@ -143,7 +143,7 @@ function onSubmit() {
             :disabled="!canSubmit || saving"
           >
             <span v-if="saving" class="cardapio-create__spinner" aria-hidden="true"></span>
-            {{ saving ? 'Criando...' : 'Criar cardapio' }}
+            {{ saving ? 'Criando...' : 'Criar estabelecimento' }}
           </button>
         </footer>
       </form>

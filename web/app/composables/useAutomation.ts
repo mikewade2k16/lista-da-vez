@@ -159,15 +159,32 @@ export function useAutomation() {
     }
   }
 
+  // refreshQr re-busca o QR atual e detecta a conexao. A WAHA rotaciona o QR a cada
+  // ~20s; exibir um QR vencido faz o scan falhar ("nao foi possivel conectar o
+  // dispositivo"), entao a cada poll buscamos o QR corrente (so atualiza se mudou, sem
+  // flicker). Reusa o /connect, que ainda recupera a sessao se ela cair para FAILED.
+  async function refreshQr() {
+    try {
+      const res = (await apiRequest('/v1/automation/whatsapp/connect', {
+        method: 'POST',
+      })) as ConnectResponse
+      if (res.status === 'WORKING') {
+        qr.value = ''
+        stopPolling()
+        await load()
+      } else if (res.qr && res.qr !== qr.value) {
+        qr.value = res.qr
+      }
+    } catch {
+      // erro transitorio no polling: mantem o QR atual
+      return
+    }
+  }
+
   function startPolling() {
     stopPolling()
     pollTimer = setInterval(() => {
-      void load().then(() => {
-        if (connected.value) {
-          qr.value = ''
-          stopPolling()
-        }
-      })
+      void refreshQr()
     }, POLL_INTERVAL_MS)
   }
 

@@ -2,6 +2,7 @@ package cardapio
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -207,6 +208,78 @@ func TestPlaceOrder_BelowMinOrder(t *testing.T) {
 	})
 	if err != ErrMinOrder {
 		t.Fatalf("abaixo do minimo: esperava ErrMinOrder, recebi %v", err)
+	}
+}
+
+// WS-A: frete vem da zona de entrega escolhida (zone.fee_cents), nao do settings.
+func TestPlaceOrder_DeliveryFeeFromZone(t *testing.T) {
+	store := baseStore(enabledSettings()) // settings.DeliveryFeeCents = 700
+	store.zones["zone-1"] = DeliveryZone{ID: "zone-1", RestaurantID: "rest-1", Name: "Centro", FeeCents: 1500, IsActive: true}
+	svc := newServiceWithStore(store, ServiceConfig{})
+
+	order, err := svc.PlaceOrder(context.Background(), "slug", PublicOrderInput{
+		Type:           OrderTypeDelivery,
+		Customer:       PublicCustomerInput{Name: "Joao", Phone: "11999"},
+		DeliveryZoneID: "zone-1",
+		Items:          []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 1}}, // 5000
+	})
+	if err != nil {
+		t.Fatalf("esperava sucesso, recebi %v", err)
+	}
+	if order.DeliveryFeeCents != 1500 {
+		t.Fatalf("frete da zona: esperava 1500, recebi %d", order.DeliveryFeeCents)
+	}
+	if order.TotalCents != 6500 {
+		t.Fatalf("total: esperava 6500, recebi %d", order.TotalCents)
+	}
+	// O nome do bairro deve ter sido gravado no delivery_address jsonb.
+	if !strings.Contains(string(store.createdOrder.DeliveryAddress), "Centro") {
+		t.Fatalf("esperava neighborhood no delivery_address, recebi %s", store.createdOrder.DeliveryAddress)
+	}
+}
+
+// WS-A: zona inexistente/de outro restaurante/inativa => ErrOptionInvalid.
+func TestPlaceOrder_InvalidZone(t *testing.T) {
+	store := baseStore(enabledSettings())
+	store.zones["zone-other"] = DeliveryZone{ID: "zone-other", RestaurantID: "rest-2", Name: "Outro", FeeCents: 999, IsActive: true}
+	store.zones["zone-off"] = DeliveryZone{ID: "zone-off", RestaurantID: "rest-1", Name: "Inativa", FeeCents: 999, IsActive: false}
+	svc := newServiceWithStore(store, ServiceConfig{})
+
+	for _, zoneID := range []string{"zone-x", "zone-other", "zone-off"} {
+		_, err := svc.PlaceOrder(context.Background(), "slug", PublicOrderInput{
+			Type:           OrderTypeDelivery,
+			Customer:       PublicCustomerInput{Name: "Joao", Phone: "11999"},
+			DeliveryZoneID: zoneID,
+			Items:          []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 1}},
+		})
+		if err != ErrOptionInvalid {
+			t.Fatalf("zona %q invalida: esperava ErrOptionInvalid, recebi %v", zoneID, err)
+		}
+	}
+}
+
+// WS-A: frete gratis acima do limiar zera mesmo com zona escolhida.
+func TestPlaceOrder_FreeDeliveryWithZone(t *testing.T) {
+	settings := enabledSettings()
+	settings.FreeDeliveryAboveCents = 10000
+	store := baseStore(settings)
+	store.zones["zone-1"] = DeliveryZone{ID: "zone-1", RestaurantID: "rest-1", Name: "Centro", FeeCents: 1500, IsActive: true}
+	svc := newServiceWithStore(store, ServiceConfig{})
+
+	order, err := svc.PlaceOrder(context.Background(), "slug", PublicOrderInput{
+		Type:           OrderTypeDelivery,
+		Customer:       PublicCustomerInput{Name: "Joao", Phone: "11999"},
+		DeliveryZoneID: "zone-1",
+		Items:          []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 3}}, // 15000 > 10000
+	})
+	if err != nil {
+		t.Fatalf("esperava sucesso, recebi %v", err)
+	}
+	if order.DeliveryFeeCents != 0 {
+		t.Fatalf("frete gratis com zona: esperava 0, recebi %d", order.DeliveryFeeCents)
+	}
+	if order.TotalCents != 15000 {
+		t.Fatalf("total: esperava 15000, recebi %d", order.TotalCents)
 	}
 }
 

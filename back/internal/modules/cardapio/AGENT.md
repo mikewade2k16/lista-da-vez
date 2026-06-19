@@ -9,12 +9,18 @@ do visitante** de um front Nuxt **estatico** hospedado no site do cliente.
 > `web/app/components/roadmap/roadmap-data.ts` (fase `cardapio-online`).
 > Contrato de saida (camelCase, centavos): types do front cardapio (Nuxt estatico).
 
-## Estado: C1 — back + banco (2026-06-12)
+## Estado: C1 — back + banco (2026-06-12) · Fase 2 back (2026-06-19)
 
-Entregue: migration `0153_cardapio_schema.sql`, modulo Go completo, CORS publico no
+Entregue C1: migration `0153_cardapio_schema.sql`, modulo Go completo, CORS publico no
 middleware da plataforma, testes (recalculo de pedido, resolve por host, allowlist de
 eventos, escopo multitenant 404, CORS publico). **Sem `app.go`** (registro central e da
 integracao C3). Front `/cardapio` (C2) e wiring (C3) sao outras frentes.
+
+Entregue Fase 2 (back): **WS-A** zonas de entrega (tabela `delivery_zones`, CRUD do painel,
+frete por zona no pedido, `deliveryZones` no menu publico); **WS-B** `settings.payment`
+informativo (jsonb, sem migration/rota); **WS-C** colunas extras do restaurante
+(segment/facebook/youtube/GA/Pixel/HTML) + endereco no `address` jsonb. Front (painel +
+TAVOLA) e seed do Mostarda (WS-E) sao outras frentes. Plano: `docs/cardapio/PLANO_CARDAPIO_FASE2.md`.
 
 ## Banco (`cardapio.*`, migration 0153)
 
@@ -30,6 +36,16 @@ integracao C3). Front `/cardapio` (C2) e wiring (C3) sao outras frentes.
 | `orders` | pedidos; `order_number` sequencial por restaurante; valores em centavos |
 | `order_items` | snapshot (`product_id` nullable; `addons jsonb [{name,priceCents}]`) |
 | `events` | telemetria do front publico; index `(restaurant_id, created_at)` |
+| `delivery_zones` | (Fase 2 / WS-A, migration 0166) bairro + `fee_cents`; unique `(restaurant_id, lower(name))`; index `account_id` e `(restaurant_id, sort_order)` |
+
+**Colunas extras do restaurante (Fase 2 / WS-C, migration 0167):** `segment`,
+`facebook`, `youtube`, `google_analytics_id`, `facebook_pixel_id`,
+`custom_head_html` (todas `text not null default ''`). No DTO: `segment`,
+`facebook`, `youtube`, `googleAnalyticsId`, `facebookPixelId`, `customHeadHtml`.
+Numero/complemento/ponto de referencia do endereco entram no `address` jsonb
+(`number`, `complement`, `reference` — opcionais, omitempty), sem coluna.
+⚠️ `custom_head_html` = HTML livre injetado no site publico = risco de XSS; gate
+de edicao (so platform_admin) e renderizacao controlada sao do front (nao do back).
 
 Status do pedido: `recebido, em_preparo, pronto, saiu_entrega, entregue, cancelado`.
 Tipo: `retirada, entrega, local` — validados no service contra as `settings`.
@@ -39,7 +55,7 @@ Tipo: `retirada, entrega, local` — validados no service contra as `settings`.
 | Verbo | Path | Resposta |
 |---|---|---|
 | GET | `/v1/public/resolve?host=` | `200 {slug}` / `404`. localhost+`CARDAPIO_DEV_DEFAULT_SLUG`; subdominio de `CARDAPIO_BASE_DOMAIN`; senao `restaurant_domains` |
-| GET | `/v1/public/restaurants/{slug}` | `{restaurant, categories[], products[]}` (so ativos/disponiveis; variations/addons embutidos, sem N+1) |
+| GET | `/v1/public/restaurants/{slug}` | `{restaurant, categories[], products[], deliveryZones[]}` (so ativos/disponiveis; `deliveryZones` so ativas, order by sort_order; variations/addons embutidos, sem N+1) |
 | GET | `/v1/public/restaurants/{slug}/products/{productSlug}` | `{restaurant, product, reviews[]}` / `404` |
 | POST | `/v1/public/restaurants/{slug}/orders` | `201 {order}` — **preco recalculado do banco** |
 | POST | `/v1/public/restaurants/{slug}/events` | `202 {status:"ok"}`; nome fora da allowlist => `400`; `context` <= 8KB |
@@ -61,11 +77,23 @@ Tipo: `retirada, entrega, local` — validados no service contra as `settings`.
 
 ### Recalculo de pedido (`service_orders.go`)
 `unitPrice = product.price_cents + variation.price_delta_cents + Σ addons.price_cents`;
-total do item = unit × quantity; subtotal = Σ itens; deliveryFee = `settings.deliveryFeeCents`
-so para `entrega` (zera se subtotal >= `freeDeliveryAboveCents > 0`). Valida: tipo habilitado,
-1-50 itens, quantity 1-50, nome obrigatorio, telefone se entrega, produto existe/disponivel/do
-restaurante, variationId/addonIds pertencem ao produto, subtotal >= `minOrderCents`. **O total
-enviado pelo cliente e ignorado.**
+total do item = unit × quantity; subtotal = Σ itens; deliveryFee so para `entrega`
+(zera se subtotal >= `freeDeliveryAboveCents > 0`). **Frete por zona (WS-A):** o corpo
+do pedido aceita `deliveryZoneId`; em entrega, se preenchido, a zona TEM que existir,
+estar ativa e pertencer ao restaurante (`zoneForOrder`) — caso contrario `ErrOptionInvalid`
+(`option_invalid`, 400). Com zona valida o frete base = `zone.fee_cents`; sem zona escolhida
+cai no fallback `settings.deliveryFeeCents`. O frete gratis acima do limiar zera mesmo com
+zona. O nome do bairro (zona) e gravado em `delivery_address.neighborhood` (merge no jsonb).
+Valida tambem: tipo habilitado, 1-50 itens, quantity 1-50, nome obrigatorio, telefone se
+entrega, produto existe/disponivel/do restaurante, variationId/addonIds pertencem ao produto,
+subtotal >= `minOrderCents`. **O total enviado pelo cliente e ignorado.**
+
+### `settings.payment` (WS-B, informativo — sem migration, jsonb)
+`settings` ganha o sub-objeto `payment`: `{cash bool, debit {accepted bool, brands []string},
+credit {accepted bool, brands []string}, pix bool, ticket bool, other string}` (camelCase).
+E so informativo: sai no menu publico (settings ja e serializado) e entra pelo PATCH do
+restaurante (`UpdateRestaurantInput.Settings` e pointer). NAO afeta o checkout — o pedido
+nao escolhe forma de pagamento. Sem rota nova.
 
 Allowlist de eventos (exata): `page_view, restaurant_viewed, menu_viewed, category_viewed,
 product_viewed, product_clicked, add_to_cart, remove_from_cart, cart_opened, checkout_started,
@@ -85,8 +113,20 @@ rotas by-id usam `scopedAccountID` (query `accountId` tem precedencia sobre o he
 o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?account=` na rota).
 
 - Restaurants: `GET/POST /v1/cardapio/restaurants` (lista lean com `accountName` + dominio
-  primario), `GET/PATCH/DELETE /v1/cardapio/restaurants/{id}`.
+  primario), `GET/PATCH/DELETE /v1/cardapio/restaurants/{id}`. O PATCH aceita
+  `accountId` (mover de conta — coluna **Cliente** da lista, edicao inline): so
+  `platform_admin` move; o handler ZERA `in.AccountID` para nao-admin. No service
+  (`resolveMoveAccount`, espelha bio): vazio/conta atual => nao move; conta destino
+  inexistente => `404` (via `AccountExists`, antes do update). O UPDATE escopa pela
+  conta ATUAL no WHERE (`account_id = $2`) e so altera `account_id` quando o ponteiro
+  nao e nil (`account_id = coalesce($23::uuid, account_id)`).
 - Domains: `GET/POST /v1/cardapio/restaurants/{id}/domains`, `DELETE /v1/cardapio/domains?host=`.
+  A coluna **Dominio** da lista edita o primario inline (front): host vazio = NO-OP (deletar
+  e so na aba Dominios); preenchido = DELETE do primario antigo (se houver) + POST do novo
+  como primario. Sem rota nova — reusa os endpoints de dominio existentes.
+- Delivery zones (WS-A): `GET/POST /v1/cardapio/restaurants/{id}/delivery-zones`,
+  `PATCH/DELETE /v1/cardapio/delivery-zones/{id}`. PATCH e parcial (pointer-based,
+  `UpdateDeliveryZoneInput`) — toggle de `isActive` nao precisa do body inteiro.
 - Categories: `GET/POST /v1/cardapio/restaurants/{id}/categories`, `PATCH/DELETE /v1/cardapio/categories/{id}`.
 - Products: `GET/POST /v1/cardapio/restaurants/{id}/products` (lean), `GET/PATCH/DELETE
   /v1/cardapio/products/{id}` (full; PATCH faz **replace-all transacional** de `variations[]`/`addons[]`).
@@ -109,9 +149,9 @@ relativo (`/uploads/cardapio/...`); absolutizado no publico via `PUBLIC_API_BASE
 ## Arquivos
 
 `module.go` (Registry) · `model.go`/`model_order.go` (DTOs) · `store.go` (interface `dataStore`)
-· `store_restaurants.go`/`store_catalog.go`/`store_orders.go`/`store_events.go`/`store_public.go`
+· `store_restaurants.go`/`store_catalog.go`/`store_orders.go`/`store_events.go`/`store_public.go`/`store_zones.go`
 · `service.go`/`service_public.go`/`service_orders.go` · `media_storage.go` · `rate_limit.go`
-· `http.go`/`http_catalog.go`/`http_orders.go`/`http_public.go` · `errors.go` ·
+· `http.go`/`http_catalog.go`/`http_orders.go`/`http_public.go`/`http_zones.go` · `errors.go` ·
 `service_test.go`/`service_orders_test.go`/`store_fake_test.go`.
 
 ## Variaveis de ambiente
@@ -123,7 +163,10 @@ relativo (`/uploads/cardapio/...`); absolutizado no publico via `PUBLIC_API_BASE
 
 ## Notas de Deploy
 
-1. Migration `0153_cardapio_schema.sql` (local: conferir `:5433`).
+1. Migrations `0153_cardapio_schema.sql`, `0166_cardapio_delivery_zones.sql` (WS-A),
+   `0167_cardapio_restaurant_extra.sql` (WS-C) (local: conferir porta do Postgres).
+   Obs.: os numeros 0154/0155 citados no plano ja estavam ocupados (site_product_*);
+   as migrations da Fase 2 foram para 0166/0167 (proximos livres).
 2. **Rebuild api** (mudou Go): `docker compose up -d --build api`.
 3. Envs novas em `.env.production` E `docker-compose.prod.yml`: `CARDAPIO_BASE_DOMAIN`,
    `CARDAPIO_DEV_DEFAULT_SLUG` (opcional). `PUBLIC_API_BASE_URL` ja existe (bio).

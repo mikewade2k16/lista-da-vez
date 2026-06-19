@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import CardapioMoneyInput from '~/components/cardapio/CardapioMoneyInput.vue'
+import CardapioDadosPagamento from '~/components/cardapio/CardapioDadosPagamento.vue'
+import CardapioDadosEstatisticas from '~/components/cardapio/CardapioDadosEstatisticas.vue'
 import { useCardapioEditor } from '~/composables/useCardapioEditor'
+import { resolveMediaUrl } from '~/utils/media'
 
 const { form, dirty, savingDados, uploading, saveDados, uploadAndApply, addHour, removeHour } =
   useCardapioEditor()
+
+const config = useRuntimeConfig()
+const mediaUrl = (url?: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
 
 function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
   const input = event.target as HTMLInputElement
@@ -35,6 +41,15 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           </span>
         </label>
         <label class="cardapio-dados__field cardapio-dados__field--full">
+          <span class="cardapio-dados__label">Segmento</span>
+          <input
+            v-model="form.segment"
+            type="text"
+            class="cardapio-dados__input"
+            placeholder="Ex.: Alimentacao, Pizzaria, Hamburgueria"
+          />
+        </label>
+        <label class="cardapio-dados__field cardapio-dados__field--full">
           <span class="cardapio-dados__label">Chamada (tagline)</span>
           <input v-model="form.tagline" type="text" class="cardapio-dados__input" />
         </label>
@@ -45,7 +60,12 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
         <div class="cardapio-dados__field">
           <span class="cardapio-dados__label">Logo</span>
           <div class="cardapio-dados__media">
-            <img v-if="form.logoUrl" :src="form.logoUrl" alt="Logo" class="cardapio-dados__thumb" />
+            <img
+              v-if="form.logoUrl"
+              :src="mediaUrl(form.logoUrl)"
+              alt="Logo"
+              class="cardapio-dados__thumb"
+            />
             <input
               v-model="form.logoUrl"
               type="text"
@@ -63,7 +83,7 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           <div class="cardapio-dados__media">
             <img
               v-if="form.bannerUrl"
-              :src="form.bannerUrl"
+              :src="mediaUrl(form.bannerUrl)"
               alt="Banner"
               class="cardapio-dados__thumb"
             />
@@ -101,6 +121,14 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           <span class="cardapio-dados__label">Instagram</span>
           <input v-model="form.instagram" type="text" class="cardapio-dados__input" />
         </label>
+        <label class="cardapio-dados__field">
+          <span class="cardapio-dados__label">Facebook</span>
+          <input v-model="form.facebook" type="text" class="cardapio-dados__input" />
+        </label>
+        <label class="cardapio-dados__field">
+          <span class="cardapio-dados__label">Youtube</span>
+          <input v-model="form.youtube" type="text" class="cardapio-dados__input" />
+        </label>
       </div>
     </section>
 
@@ -110,6 +138,18 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
         <label class="cardapio-dados__field cardapio-dados__field--full">
           <span class="cardapio-dados__label">Rua</span>
           <input v-model="form.address.street" type="text" class="cardapio-dados__input" />
+        </label>
+        <label class="cardapio-dados__field">
+          <span class="cardapio-dados__label">Numero</span>
+          <input v-model="form.address.number" type="text" class="cardapio-dados__input" />
+        </label>
+        <label class="cardapio-dados__field">
+          <span class="cardapio-dados__label">Complemento</span>
+          <input v-model="form.address.complement" type="text" class="cardapio-dados__input" />
+        </label>
+        <label class="cardapio-dados__field cardapio-dados__field--full">
+          <span class="cardapio-dados__label">Ponto de referencia</span>
+          <input v-model="form.address.reference" type="text" class="cardapio-dados__input" />
         </label>
         <label class="cardapio-dados__field">
           <span class="cardapio-dados__label">Bairro</span>
@@ -192,17 +232,9 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
       </div>
     </section>
 
-    <section class="cardapio-dados__card">
-      <h3 class="cardapio-dados__heading">Tema (JSON)</h3>
-      <p class="cardapio-dados__hint">
-        Tokens livres usados pelo front publico. Deve ser um objeto JSON.
-      </p>
-      <textarea
-        v-model="form.theme"
-        rows="6"
-        class="cardapio-dados__input cardapio-dados__mono"
-      ></textarea>
-    </section>
+    <CardapioDadosPagamento :settings="form.settings" />
+
+    <CardapioDadosEstatisticas :form="form" />
 
     <footer class="cardapio-dados__footer">
       <span v-if="dirty" class="cardapio-dados__dirty">Alteracoes nao salvas</span>
@@ -285,11 +317,6 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
   outline: none;
   border-color: rgb(var(--ring));
   box-shadow: 0 0 0 3px rgb(var(--ring) / 0.18);
-}
-
-.cardapio-dados__mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.82rem;
 }
 
 .cardapio-dados__media {

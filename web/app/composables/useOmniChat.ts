@@ -60,6 +60,9 @@ export function useOmniChat() {
   const activeTopic = ref('')
   const sending = ref(false)
   const errorMessage = ref('')
+  // ID da conversa atual: vai no /ask e escopa a memoria do n8n (o back combina
+  // com account+user). "Nova conversa" gera outro id => contexto zerado.
+  const conversationId = ref(newMessageId())
 
   // Cancela a pergunta anterior ainda em voo quando o usuario dispara outra.
   let inflightController: AbortController | null = null
@@ -100,8 +103,12 @@ export function useOmniChat() {
       const response = (await apiRequest('/v1/omni-chat/ask', {
         method: 'POST',
         body: resolvedTopic
-          ? { question: trimmedQuestion, topic: resolvedTopic }
-          : { question: trimmedQuestion },
+          ? {
+              question: trimmedQuestion,
+              topic: resolvedTopic,
+              conversationId: conversationId.value,
+            }
+          : { question: trimmedQuestion, conversationId: conversationId.value },
         signal: controller.signal,
       })) as OmniChatAskResponse
 
@@ -142,6 +149,19 @@ export function useOmniChat() {
     void sendQuestion(question, activeTopic.value)
   }
 
+  // Inicia uma conversa nova: limpa o histórico visível e gera um conversationId
+  // novo, zerando a memória do n8n (que é keyed por esse id).
+  function newConversation() {
+    inflightController?.abort()
+    inflightController = null
+    messages.value = []
+    draft.value = ''
+    errorMessage.value = ''
+    activeTopic.value = ''
+    sending.value = false
+    conversationId.value = newMessageId()
+  }
+
   // Resolve a URL da imagem do produto. O catalogo devolve um path relativo
   // (/uploads/...); o front prefixa com o apiBase para o <img>. URL absoluta passa
   // direto. A api serve /uploads/* (mesma base das chamadas de API).
@@ -168,8 +188,10 @@ export function useOmniChat() {
     activeTopic,
     sending,
     errorMessage,
+    conversationId,
     sendQuestion,
     send,
+    newConversation,
     selectTopic,
     mediaUrl,
     formatPrice,

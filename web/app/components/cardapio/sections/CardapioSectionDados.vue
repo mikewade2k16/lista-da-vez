@@ -29,7 +29,10 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
         </label>
         <label class="cardapio-dados__field">
           <span class="cardapio-dados__label">Slug</span>
-          <input v-model="form.slug" type="text" class="cardapio-dados__input" />
+          <input :value="form.slug" type="text" class="cardapio-dados__input" readonly disabled />
+          <span class="cardapio-dados__hint">
+            O slug e o identificador na URL e nao pode ser alterado depois de criado.
+          </span>
         </label>
         <label class="cardapio-dados__field cardapio-dados__field--full">
           <span class="cardapio-dados__label">Chamada (tagline)</span>

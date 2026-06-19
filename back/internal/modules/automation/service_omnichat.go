@@ -5,10 +5,13 @@ import (
 	"strings"
 )
 
-// OmniChatResultView e a resposta do Omni Chat para o painel de Operacao.
+// OmniChatResultView e a resposta do Omni Chat para o painel de Operacao. products
+// vem da tool de catalogo (via n8n) para o front renderizar cards com imagem; vazio
+// em pergunta nao-produto.
 type OmniChatResultView struct {
-	Answer string `json:"answer"`
-	Topic  string `json:"topic,omitempty"`
+	Answer   string       `json:"answer"`
+	Topic    string       `json:"topic,omitempty"`
+	Products []ProductHit `json:"products,omitempty"`
 }
 
 // OmniChatAsk responde uma pergunta do chat interno (painel de Operacao) via
@@ -57,5 +60,5 @@ func (s *Service) OmniChatAsk(ctx context.Context, scope ContextScope, question,
 		return OmniChatResultView{}, err
 	}
 
-	return OmniChatResultView{Answer: result.Answer, Topic: topic}, nil
+	return OmniChatResultView{Answer: result.Answer, Topic: topic, Products: result.Products}, nil
 }

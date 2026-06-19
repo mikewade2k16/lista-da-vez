@@ -7,16 +7,26 @@ import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 // storeId/accountId NAO vao no body: o header X-Account-Id e injetado
 // automaticamente pelo api-client a partir do account ativo.
 
+export interface OmniChatProduct {
+  name: string
+  code?: string
+  price?: number
+  brand?: string
+  image?: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
   topic?: string
+  products?: OmniChatProduct[]
 }
 
 interface OmniChatAskResponse {
   answer?: string
   topic?: string
+  products?: OmniChatProduct[]
 }
 
 const QUESTION_MAX_LENGTH = 2000
@@ -27,6 +37,17 @@ function newMessageId(): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
+}
+
+const PRICE_FORMATTER = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+
+// Formata o preco (reais) como moeda pt-BR. Vazio quando 0/invalido — o catalogo da
+// Perola tem itens sem preco no ERP; nesse caso o card simplesmente nao mostra preco.
+function formatPrice(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return ''
+  }
+  return PRICE_FORMATTER.format(value)
 }
 
 export function useOmniChat() {
@@ -85,11 +106,13 @@ export function useOmniChat() {
       })) as OmniChatAskResponse
 
       const answer = String(response?.answer || '').trim()
+      const products = Array.isArray(response?.products) ? response.products : []
       messages.value.push({
         id: newMessageId(),
         role: 'assistant',
         text: answer || 'O Omni nao retornou uma resposta. Tente reformular a pergunta.',
         topic: String(response?.topic || resolvedTopic || '').trim() || undefined,
+        products: products.length ? products : undefined,
       })
     } catch (error) {
       // Pergunta cancelada de proposito (usuario enviou outra) nao vira erro.
@@ -119,6 +142,21 @@ export function useOmniChat() {
     void sendQuestion(question, activeTopic.value)
   }
 
+  // Resolve a URL da imagem do produto. O catalogo devolve um path relativo
+  // (/uploads/...); o front prefixa com o apiBase para o <img>. URL absoluta passa
+  // direto. A api serve /uploads/* (mesma base das chamadas de API).
+  function mediaUrl(path?: string): string {
+    const raw = String(path || '').trim()
+    if (!raw) {
+      return ''
+    }
+    if (/^https?:\/\//i.test(raw)) {
+      return raw
+    }
+    const base = String(runtimeConfig.public.apiBase || '').replace(/\/+$/, '')
+    return base + (raw.startsWith('/') ? raw : `/${raw}`)
+  }
+
   onBeforeUnmount(() => {
     inflightController?.abort()
     inflightController = null
@@ -133,5 +171,7 @@ export function useOmniChat() {
     sendQuestion,
     send,
     selectTopic,
+    mediaUrl,
+    formatPrice,
   }
 }

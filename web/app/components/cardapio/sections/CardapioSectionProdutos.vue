@@ -7,6 +7,7 @@ import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
 import { formatCurrency } from '~/domain/cardapio/types'
 import type { ProductListItem } from '~/domain/cardapio/types'
+import { formToPayload, productToForm } from '~/composables/useCardapioProductForm'
 
 const store = useCardapioStore()
 const ui = useUiStore()
@@ -58,7 +59,13 @@ function openEdit(product: ProductListItem) {
 async function toggleAvailable(product: ProductListItem) {
   busyId.value = product.id
   try {
-    await store.patchProduct(product.id, { isAvailable: !product.isAvailable })
+    // PATCH de produto e full-replace no back (ProductInput nao e parcial e o
+    // ReadJSON rejeita campo desconhecido). A lista so tem dados "lean", entao
+    // busca o produto completo, inverte a disponibilidade e reenvia o body inteiro.
+    const full = await store.loadProduct(product.id)
+    const payload = formToPayload(productToForm(full))
+    payload.isAvailable = !full.isAvailable
+    await store.patchProduct(product.id, payload)
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel alterar a disponibilidade.'))
   } finally {

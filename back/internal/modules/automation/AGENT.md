@@ -54,6 +54,11 @@ escopado da WAHA para o front, sem expor n8n/WAHA ao cliente.
   uma tool. Primeira tool: **catalogo** (`GET /v1/runtime/omni-chat/catalog`). O escopo
   (account/tenant/store/user/role) sai SO do token assinado, NUNCA do query/body do n8n. Tools de
   ranking/metas entram a seguir (reusam o mesmo token). Detalhe abaixo em "Omni Chat — Fase 2".
+  Resposta do `/ask`: `{ answer, topic?, products? }` — o n8n inclui no Respond o resultado da tool
+  de catalogo (`products[]`) e o Go faz pass-through (`OmniChatResultView.Products`) p/ o front
+  renderizar **cards com imagem** (a imagem e' o path `/uploads/...` servido pela api). O n8n consome
+  a tool por um FLUXO MANUAL (HTTP comum no fluxo principal: extrai termo -> busca -> compoe), porque
+  as tools nativas do AI Agent estao quebradas no build n8n 2.23.2 (Tools Agent V3). Ver OMNI_CHAT_PLAN.md.
 
 Proximas fases (BYOK, multi-numero, CRM, tools de ranking/metas) em PLATAFORMA_AUTOMACAO.md (P6+).
 
@@ -176,7 +181,7 @@ explicita devolve o default (gpt-4o-mini / whisper-1).
 | PUT | `/v1/runtime/automation/lead-state?session=&contactId=` | body `{ status, followUpCount }` — upsert do estado do lead (A7) |
 | POST | `/v1/runtime/automation/handover?session=&contactId=` | body `{ pausedMinutes: 30 }` => `paused_until = now()+N min`; `{ resume: true }` (ou `pausedMinutes<=0`) => limpa. Responde a memoria atualizada `{ ..., paused, pausedUntil }` (M4) |
 | GET | `/v1/runtime/automation/tools/catalog?session=&q=` | `[{ name, code, price }]` — busca estreita escopada por account em `site.products` (LIMIT 5). Lista vazia se `catalogEnabled=false` ou `q` vazio (M5) |
-| GET | `/v1/runtime/omni-chat/catalog?q=` | `{ produtos: [{ name, code, price, brand, image }], total }` — tool de catalogo do **Omni Chat** (Fase 2). Escopo por **context token** no header `X-Omni-Context` (NAO usa `session`). `produtos` vazio se `q` vazio. Ignora o toggle `catalogEnabled` (uso interno). Devolve OBJETO (nao array) p/ o n8n entregar 1 item. **Base = `site.products` (lista+imagem) ENRIQUECIDA pelo ERP** (`public.erp_item_current` por sku==code): nome real, marca e preco (price_cents->reais) vem do ERP porque o `site.products` da Perola veio com nome generico e preco 0. Busca **multi-palavra** (ilike all dos tokens no nome do site + nome ERP + marca). Consumido por um FLUXO MANUAL no n8n (HTTP comum no fluxo principal) — tools nativas do AI Agent estao quebradas no build n8n 2.23.2; ver OMNI_CHAT_PLAN.md |
+| GET | `/v1/runtime/omni-chat/catalog?q=` | `{ produtos: [{ name, code, price, brand, image }], total }` — tool de catalogo do **Omni Chat** (Fase 2). Escopo por **context token** no header `X-Omni-Context` (NAO usa `session`). `produtos` vazio se `q` vazio. Ignora o toggle `catalogEnabled` (uso interno). Devolve OBJETO (nao array) p/ o n8n entregar 1 item. **Base = `site.products` (lista+imagem) ENRIQUECIDA pelo ERP** (`queue.erp_item_current` por sku==`split_part(code,'_',1)`, code multi-parte; cobre ~511/773): nome real, marca e preco (price_cents->reais) vem do ERP porque o `site.products` da Perola veio com nome generico e preco 0. Indice `(tenant_id,sku)` (migration **0165**) deixa o enrich rapido (~60ms vs ~8s). Marca puramente numerica (cod. de loja) escondida; produtos duplicados deduplicados por nome. Busca **multi-palavra** (ilike all dos tokens no nome do site + nome ERP + marca). Consumido por um FLUXO MANUAL no n8n (HTTP comum no fluxo principal) — tools nativas do AI Agent estao quebradas no build n8n 2.23.2; ver OMNI_CHAT_PLAN.md |
 | GET | `/v1/automation/context-preview` | `{ personaName, instructions, knowledgeDocs[], guardrails, systemMessage }` — previa do bot para o painel (JWT normal, sem sessao) |
 
 **Contrato `models[]` no runtime-config (A6, retrocompativel — campos antigos intactos):** cada item

@@ -72,9 +72,12 @@ type OmniChatRunRequest struct {
 	ContextToken  string `json:"contextToken"`
 }
 
-// OmniChatRunResult e a resposta do webhook ({ answer }).
+// OmniChatRunResult e a resposta do webhook ({ answer, products }). products e' a
+// lista de produtos que a tool de catalogo retornou (vazia em pergunta nao-produto);
+// o n8n a inclui no Respond para o painel renderizar cards com imagem.
 type OmniChatRunResult struct {
-	Answer string `json:"answer"`
+	Answer   string       `json:"answer"`
+	Products []ProductHit `json:"products,omitempty"`
 }
 
 // Ask envia a pergunta + systemMessage para o webhook do n8n e retorna a

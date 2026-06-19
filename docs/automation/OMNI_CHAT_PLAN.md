@@ -179,7 +179,26 @@ Ordem: **Produtos/Catálogo → Vendas & Ranking → Metas**. Pré-requisito com
 - **Rebuild obrigatório da api** (código Go novo): `docker compose up -d --build api`.
 - **n8n:** importar `workflow-omni-chat.json`, **ativar** o workflow e restart do n8n (webhook só
   ouve com workflow Active; usar path `/webhook/omni-chat`, não `/webhook-test/`).
-- **Migration:** **nenhuma no M0** (só leitura do que já existe; migrations já em 0164).
+- **Migration:** `0165_erp_item_current_tenant_sku_idx.sql` — índice `(tenant_id, sku)` em
+  `queue.erp_item_current` (a PK é `(tenant_id, store_id, sku)`; sem store_id o enrich do catálogo
+  varria ~360k itens/lookup → ~8s; com o índice → ~60ms). Idempotente. (Antes do enrich era sem migration.)
+
+### Deploy na VPS (prod) — runbook do Omni Chat
+Prod **já preparado** no `docker-compose.prod.yml`: n8n `2.23.2` (igual ao dev → o fluxo manual roda
+idêntico), `api` e `n8n` na rede `app` (n8n alcança `http://api:8080`), envs
+`AUTOMATION_N8N_INTERNAL_URL` (default `http://n8n:5678`) e `AUTOMATION_RUNTIME_TOKEN` no compose. api/web
+são imagens **GHCR** (CI builda, VPS faz pull). **1 migration** (`0165`, índice no ERP — roda no
+`migrate up` do deploy da api; cria índice em tabela grande, breve lock de escrita). Ordem (comandos do Mike — [[feedback_local_only]]):
+1. **Código → imagens:** commit + push da branch; o CI builda `omni-api`/`omni-web` (tag = SHA). Pipeline: `docs/DEPLOY_VPS.md`.
+2. **`.env.production` (VPS):** `AUTOMATION_RUNTIME_TOKEN=<forte>` (MESMO valor na api e no n8n). Demais `AUTOMATION_*`/`AUTH_GATEWAY_COOKIE_DOMAIN` conforme `SSO_GATEWAY_PLAN.md` §6.
+3. **VPS — api/web:** `docker compose -f docker-compose.prod.yml pull api web && up -d api web` (api tem código Go novo; web tem os cards).
+4. **VPS — n8n:** subir o profile se preciso: `... --profile automation up -d`. Importar o workflow + credencial OpenAI:
+   - SCP `automation/export/workflow-omni-chat.json` (versionado) + `automation/export/credentials.decrypted.json` (gitignored) p/ a VPS.
+   - `docker compose cp workflow-omni-chat.json n8n:/tmp/` → `exec n8n n8n import:workflow --input=/tmp/...` → `n8n update:workflow --id=omnichatmvp00001 --active=true` → `restart n8n`.
+   - Credencial OpenAI (workflow referencia id `sCzmqFisO8bdeZ9B`): `n8n import:credentials --input=/tmp/credentials.decrypted.json` (ou criar na UI). **N8N_ENCRYPTION_KEY** fixo (não mudar depois de salvar credenciais).
+5. **n8n online:** seguir `SSO_GATEWAY_PLAN.md` §9 — `n8n.crowvisuals.com.br` com **login próprio do n8n** (sem gate Omni); **CRIAR o owner do n8n ANTES de expor** (land-grab); bloco Caddy `reverse_proxy`; DNS já feito.
+6. **Dados/imagens:** p/ os cards mostrarem foto/preço, a VPS precisa de `site.products` + `erp_item_current` da Pérola e as imagens no volume `api_uploads`. Se a prod já é a base real, ok; senão rodar o sync (`POST /v1/admin/products/sync?accountId=<perola>`).
+- **Pendência atual:** este código está na branch `refactor/multitenant-complete` (não commitado). O deploy carrega o que for buildado a partir dela.
 
 ---
 
@@ -232,13 +251,22 @@ sem erro no n8n. O endpoint Go passou a devolver **objeto** `{produtos:[...],tot
 n8n entregar 1 item.
 
 **Dados enriquecidos pelo ERP (2026-06-18):** a query (`store_product.go: SearchSiteProducts`) usa
-`site.products` (lista + imagem) + LEFT JOIN LATERAL `public.erp_item_current` (por `sku == code`,
-mesmo tenant) p/ trazer **nome real, marca e preço** — porque o `site.products` da Pérola veio com
-nome genérico e **preço R$ 0**. Resposta: `{ name, code, price, brand, image }`. Busca **multi-palavra**
+`site.products` (lista + imagem) + LEFT JOIN LATERAL `queue.erp_item_current` (por
+`sku == split_part(code,'_',1)` — o code do site é multi-parte; cobre ~511/773) p/ trazer **nome real,
+marca e preço** — porque o `site.products` da Pérola veio com nome genérico e **preço R$ 0**. Índice
+`(tenant_id, sku)` (migration 0165) deixa rápido (~60ms vs ~8s sem). Marca puramente numérica (cód. de
+loja) é escondida; produtos duplicados (variantes de código) são deduplicados por nome. Resposta:
+`{ name, code, price, brand, image }`. Busca **multi-palavra**
 (`ilike all` dos tokens no nome do site + nome ERP + marca); o extrator devolve termos no singular sem
 preposição. Provado com Pérola: "me lista 2 relogios seiko" → 2 SEIKO completos (R$ 5.840/5.300, marca,
-link de imagem). "anel ouro" vazio é dado (143 "anel", só 1 com "ouro" no texto). A imagem volta como
-path `/uploads/...` — renderizar inline no chat é follow-up do front (prefixar apiBase).
+link de imagem). "anel ouro" vazio é dado (143 "anel", só 1 com "ouro" no texto).
+
+**Imagem no chat (cards) — FEITO:** o `/ask` agora devolve `products[]` estruturado (`{name, code,
+price, brand, image}`) — o n8n inclui no Respond o resultado da tool, o Go faz pass-through, e o front
+(`OperationSidePanel.vue` + `useOmniChat.ts`) renderiza **cards com a foto** (prefixa `apiBase` no path
+`/uploads/...`; a api serve `/uploads/*`). O compositor dá resposta curta de 1 linha (os detalhes/foto
+vêm nos cards, sem repetir no texto). Verificado: "me lista 2 relogios seiko" → texto curto + 5 cards
+com imagem/preço/marca. (Preço = ERP maior>0 entre lojas — store-scoping fino fica como refinamento.)
 
 **Falta:** teste no NAVEGADOR (trocar a conta ativa p/ **Pérola** — os produtos estão só nela). Padrão
 pronto para estender a Ranking/Metas (ver abaixo).

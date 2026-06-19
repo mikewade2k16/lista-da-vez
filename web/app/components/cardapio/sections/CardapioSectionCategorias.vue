@@ -45,6 +45,20 @@ function startEdit(category: Category) {
   editName.value = category.name
 }
 
+// O PATCH de categoria e full-replace no back (CategoryInput nao e parcial), entao
+// todo patch precisa mandar o objeto COMPLETO + os campos alterados — senao zera
+// description/sortOrder/isActive e falha a validacao de nome/slug.
+function categoryBody(category: Category, overrides: Record<string, unknown> = {}) {
+  return {
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    sortOrder: category.sortOrder,
+    isActive: category.isActive,
+    ...overrides,
+  }
+}
+
 async function saveEdit(category: Category) {
   const name = editName.value.trim()
   if (!name) {
@@ -52,7 +66,7 @@ async function saveEdit(category: Category) {
   }
   busyId.value = category.id
   try {
-    await store.patchCategory(category.id, { name, slug: slugify(name) })
+    await store.patchCategory(category.id, categoryBody(category, { name, slug: slugify(name) }))
     editingId.value = ''
     ui.success('Categoria atualizada.')
   } catch (caught) {
@@ -65,7 +79,7 @@ async function saveEdit(category: Category) {
 async function toggleActive(category: Category) {
   busyId.value = category.id
   try {
-    await store.patchCategory(category.id, { isActive: !category.isActive })
+    await store.patchCategory(category.id, categoryBody(category, { isActive: !category.isActive }))
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel alterar o status.'))
   } finally {
@@ -106,8 +120,8 @@ async function move(index: number, direction: -1 | 1) {
   }
   busyId.value = current.id
   try {
-    await store.patchCategory(current.id, { sortOrder: swap.sortOrder })
-    await store.patchCategory(swap.id, { sortOrder: current.sortOrder })
+    await store.patchCategory(current.id, categoryBody(current, { sortOrder: swap.sortOrder }))
+    await store.patchCategory(swap.id, categoryBody(swap, { sortOrder: current.sortOrder }))
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel reordenar.'))
   } finally {

@@ -59,6 +59,13 @@ Doc canonico do modulo: `docs/cardapio/PLANO_MODULO_CARDAPIO.md` (contrato em §
   `useUiStore().confirm`. Estados vazios orientativos.
 - Filtro por cliente e o `accountId` na criacao so existem para `platform_admin`; demais papeis
   operam na propria account (o backend resolve o escopo).
+- **Shape do body no PATCH** (`ReadJSON` usa `DisallowUnknownFields`): (1) NUNCA enviar campo que o
+  Input do back nao tem — `slug` no PATCH de restaurante (imutavel) e `id` em variacao/adicional
+  (replace-all) dao `400 "Body invalido"`. (2) `CategoryInput`/`ProductInput`/`ReviewInput` sao
+  full-replace (nao-ponteiro): todo PATCH (inclusive toggles de `isActive`/`isAvailable`/`isHighlight`
+  e reordenacao) manda o OBJETO COMPLETO + o campo alterado, senao zera o resto e da `400 "Dados
+invalidos"`. O toggle de disponibilidade do produto busca o produto completo antes (lista e lean).
+  So `UpdateRestaurantInput` e parcial (pointer-based).
 - Admin abrindo restaurante de outro cliente: o editor leva o `accountId` na query (lista/criacao ->
   `/cardapio/{id}?account=<accountId>`). Sem isso o GET cai na account ativa (`X-Account-Id`) e da 404
   quando o restaurante e de outra account. O default "Agencia" no modal mantem o caso comum na account

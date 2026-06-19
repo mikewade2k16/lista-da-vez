@@ -119,10 +119,11 @@ export function formToPayload(form: ProductForm): Record<string, unknown> {
     isAvailable: form.isAvailable,
     isFeatured: form.isFeatured,
     sortOrder: Math.trunc(Number(form.sortOrder) || 0),
+    // variations/addons sao replace-all no back (VariationInput/AddonInput nao
+    // tem `id`); enviar `id` faria o ReadJSON (DisallowUnknownFields) rejeitar.
     variations: form.variations
       .filter((variation) => variation.name.trim())
       .map((variation, index) => ({
-        id: variation.id || undefined,
         name: variation.name.trim(),
         priceDeltaCents: Math.trunc(Number(variation.priceDeltaCents) || 0),
         sortOrder: index,
@@ -130,7 +131,6 @@ export function formToPayload(form: ProductForm): Record<string, unknown> {
     addons: form.addons
       .filter((addon) => addon.name.trim())
       .map((addon, index) => ({
-        id: addon.id || undefined,
         name: addon.name.trim(),
         priceCents: Math.max(0, Math.trunc(Number(addon.priceCents) || 0)),
         sortOrder: index,

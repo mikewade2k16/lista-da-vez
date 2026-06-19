@@ -87,7 +87,18 @@ async function onCreate() {
 async function toggleHighlight(review: Review) {
   busyId.value = review.id
   try {
-    await store.patchReview(review.id, { isHighlight: !review.isHighlight })
+    // PATCH de review e full-replace no back (ReviewInput valida autor/rating),
+    // entao manda o objeto completo + o campo alterado.
+    await store.patchReview(review.id, {
+      productId: review.productId,
+      authorName: review.authorName,
+      authorLevel: review.authorLevel,
+      rating: review.rating,
+      body: review.body,
+      isHighlight: !review.isHighlight,
+      dateLabel: review.dateLabel,
+      sortOrder: review.sortOrder,
+    })
     await loadReviews()
   } catch (caught) {
     ui.error(getApiErrorMessage(caught, 'Nao foi possivel atualizar a avaliacao.'))

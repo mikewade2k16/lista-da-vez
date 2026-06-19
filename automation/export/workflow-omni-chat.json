@@ -71,7 +71,7 @@
       {
         "parameters": {
           "promptType": "define",
-          "text": "=Pergunta do usuario: {{ $('Webhook').first().json.body.question }}\n\nProdutos encontrados no catalogo (JSON, pode estar vazio): {{ JSON.stringify($json.produtos) }}\n\nResponda a pergunta do usuario em portugues, de forma curta. Se houver produtos no JSON, use os dados na resposta: 'name' (nome), 'brand' (marca), 'price' (preco em reais, formate como R$ x.xxx,xx) e 'code' (codigo). Se um produto tiver 'image' (link da foto), inclua o link. Se o JSON de produtos estiver vazio e a pergunta era sobre produto, diga que nao encontrou no catalogo. Se a pergunta nao era sobre produtos, apenas responda normalmente.",
+          "text": "=Pergunta do usuario: {{ $('Webhook').first().json.body.question }}\n\nProdutos encontrados no catalogo (JSON, pode estar vazio): {{ JSON.stringify($json.produtos) }}\n\nResponda em portugues, BEM CURTO. Se houver produtos no JSON: responda em 1 frase (ex.: 'Encontrei algumas opcoes:'), SEM listar nome/preco/codigo e SEM colocar link de imagem no texto — os produtos ja aparecem em cards com foto logo abaixo da sua resposta. Se o JSON de produtos estiver vazio e a pergunta era sobre produto, diga que nao encontrou no catalogo. Se a pergunta nao era sobre produtos, apenas responda normalmente.",
           "hasOutputParser": false,
           "options": {
             "systemMessage": "={{ $('Webhook').first().json.body.systemMessage }}"
@@ -86,7 +86,7 @@
       {
         "parameters": {
           "respondWith": "json",
-          "responseBody": "={{ { \"answer\": $json.output, \"topic\": $('Webhook').first().json.body.topic } }}",
+          "responseBody": "={{ { \"answer\": $json.output, \"topic\": $('Webhook').first().json.body.topic, \"products\": ($('Buscar catalogo').first().json.produtos || []) } }}",
           "options": {}
         },
         "type": "n8n-nodes-base.respondToWebhook",

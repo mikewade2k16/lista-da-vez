@@ -133,9 +133,10 @@ export function useCardapioEditor() {
 
     savingDados.value = true
     try {
+      // slug NAO entra no PATCH: e imutavel no back (UpdateRestaurantInput nao
+      // tem o campo) e o ReadJSON com DisallowUnknownFields rejeitaria o body.
       await store.patchRestaurant(store.restaurantId, {
         name: form.value.name.trim(),
-        slug: form.value.slug.trim(),
         tagline: form.value.tagline.trim(),
         description: form.value.description,
         logoUrl: form.value.logoUrl.trim(),

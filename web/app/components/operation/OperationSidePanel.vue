@@ -9,8 +9,8 @@ import { useOmniChat } from '~/composables/useOmniChat'
 // Conteudo de exemplo so para dar forma ao template. Nao vem de API.
 const communications = [
   { id: 'campaigns', label: 'Campanhas ativas', hint: 'Nenhuma campanha conectada ainda' },
-  { id: 'messages', label: 'Mensagens', hint: 'Sem mensagens no momento' },
-  { id: 'notices', label: 'Avisos', hint: 'Sem avisos publicados' },
+  //{ id: 'messages', label: 'Mensagens', hint: 'Sem mensagens no momento' },
+  // { id: 'notices', label: 'Avisos', hint: 'Sem avisos publicados' },
 ]
 
 const chatTopics = [
@@ -64,7 +64,7 @@ watch(
         <span class="operation-side__preview-tag">Prévia</span>
       </header>
 
-      <div class="operation-side__chat-topics">
+      <!--<div class="operation-side__chat-topics">
         <button
           v-for="topic in chatTopics"
           :key="topic"
@@ -75,7 +75,7 @@ watch(
         >
           {{ topic }}
         </button>
-      </div>
+      </div>-->
 
       <div ref="chatStreamRef" class="operation-side__chat-stream">
         <p v-if="!chat.messages.value.length" class="operation-side__chat-empty">
@@ -88,9 +88,42 @@ watch(
             v-for="message in chat.messages.value"
             :key="message.id"
             class="operation-side__chat-msg"
-            :class="`operation-side__chat-msg--${message.role}`"
+            :class="[
+              `operation-side__chat-msg--${message.role}`,
+              { 'operation-side__chat-msg--wide': message.products && message.products.length },
+            ]"
           >
-            {{ message.text }}
+            <span v-if="message.text" class="operation-side__chat-text">{{ message.text }}</span>
+            <div
+              v-if="message.products && message.products.length"
+              class="operation-side__products"
+            >
+              <article
+                v-for="(product, index) in message.products"
+                :key="product.code || index"
+                class="operation-side__product"
+              >
+                <img
+                  v-if="product.image"
+                  class="operation-side__product-img"
+                  :src="chat.mediaUrl(product.image)"
+                  :alt="product.name"
+                  loading="lazy"
+                />
+                <div class="operation-side__product-info">
+                  <span class="operation-side__product-name">{{ product.name }}</span>
+                  <span v-if="product.brand" class="operation-side__product-brand">
+                    {{ product.brand }}
+                  </span>
+                  <span
+                    v-if="chat.formatPrice(product.price)"
+                    class="operation-side__product-price"
+                  >
+                    {{ chat.formatPrice(product.price) }}
+                  </span>
+                </div>
+              </article>
+            </div>
           </div>
         </template>
 
@@ -286,6 +319,69 @@ watch(
 .operation-side__chat-typing {
   color: rgb(var(--muted));
   font-style: italic;
+}
+
+.operation-side__chat-text {
+  display: block;
+}
+
+/* Mensagem com produtos ocupa a largura cheia para os cards/imagens respirarem. */
+.operation-side__chat-msg--wide {
+  max-width: 100%;
+  width: 100%;
+}
+
+.operation-side__products {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.operation-side__product {
+  display: grid;
+  gap: 4px;
+  padding: 7px;
+  border-radius: 10px;
+  border: 1px solid var(--line-soft);
+  background: rgb(var(--surface-2) / 0.5);
+}
+
+.operation-side__product-img {
+  width: 100%;
+  height: 128px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: rgb(var(--surface-2) / 0.6);
+}
+
+.operation-side__product-info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.operation-side__product-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.operation-side__product-brand {
+  font-size: 0.66rem;
+  color: rgb(var(--muted));
+}
+
+.operation-side__product-price {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: rgb(var(--primary));
 }
 
 .operation-side__chat-error {

@@ -56,6 +56,11 @@ function saveField(field: 'displayName' | 'nick' | 'email' | 'isActive' | 'isPla
   emit('updated')
 }
 
+function toggleField(field: 'isActive' | 'isPlatformAdmin', value: unknown) {
+  form[field] = Boolean(value)
+  saveField(field)
+}
+
 // Vinculos (cliente/agencia) + nivel por vinculo.
 const memberships = ref<AccountMembershipItem[]>([])
 const loadingMemberships = ref(false)
@@ -174,10 +179,7 @@ async function submitPassword() {
                 <USwitch
                   :model-value="form.isActive"
                   :disabled="!canManage"
-                  @update:model-value="
-                    form.isActive = Boolean($event)
-                    saveField('isActive')
-                  "
+                  @update:model-value="toggleField('isActive', $event)"
                 />
                 <span class="text-sm">Ativo</span>
               </div>
@@ -185,10 +187,7 @@ async function submitPassword() {
                 <USwitch
                   :model-value="form.isPlatformAdmin"
                   :disabled="!canManage"
-                  @update:model-value="
-                    form.isPlatformAdmin = Boolean($event)
-                    saveField('isPlatformAdmin')
-                  "
+                  @update:model-value="toggleField('isPlatformAdmin', $event)"
                 />
                 <span class="text-sm">Platform admin</span>
               </div>

@@ -29,6 +29,7 @@ func RegisterAdminUsersRoutes(mux *http.ServeMux, svc *AdminUserService, middlew
 	mux.Handle("PATCH /v1/admin/users/{id}", wrap(handleUpdateUser(svc)))
 	mux.Handle("DELETE /v1/admin/users/{id}", wrap(handleDeleteUser(svc)))
 	mux.Handle("GET /v1/admin/users/{id}/memberships", wrap(handleGetMemberships(svc)))
+	mux.Handle("PATCH /v1/admin/users/{id}/memberships/{accountId}", wrap(handleUpdateMembershipRole(svc)))
 }
 
 // ============================================================================
@@ -134,6 +135,26 @@ func handleGetMemberships(svc *AdminUserService) http.HandlerFunc {
 	}
 }
 
+func handleUpdateMembershipRole(svc *AdminUserService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := r.PathValue("id")
+		accountID := r.PathValue("accountId")
+
+		var input UpdateMembershipRoleInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", err.Error())
+			return
+		}
+
+		resp, err := svc.UpdateMembershipRole(r.Context(), userID, accountID, input)
+		if err != nil {
+			writeAdminUserError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, resp)
+	}
+}
+
 // ============================================================================
 // Erros
 // ============================================================================
@@ -146,6 +167,8 @@ func writeAdminUserError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusConflict, "email_conflict", "Ja existe um usuario com este email.")
 	case errors.Is(err, ErrLastPlatformAdmin):
 		httpapi.WriteError(w, r, http.StatusConflict, "last_platform_admin", "Nao e possivel rebaixar ou desativar o ultimo platform admin ativo.")
+	case errors.Is(err, ErrInvalidRole):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Papel invalido. Use owner, director ou marketing.")
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 	}

@@ -9,15 +9,20 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Service orquestra a persistencia (automation.*) e o proxy da WAHA.
+// Service orquestra a persistencia (automation.*), o proxy da WAHA e o webhook
+// interno do Omni Chat (n8n).
 type Service struct {
-	store *Store
-	waha  *WAHAClient
+	store  *Store
+	waha   *WAHAClient
+	n8n    *N8NClient
+	ctxMgr *ContextTokenManager
 }
 
-// NewService cria o Service.
-func NewService(store *Store, waha *WAHAClient) *Service {
-	return &Service{store: store, waha: waha}
+// NewService cria o Service. n8n e' o cliente do webhook interno do Omni Chat
+// (pode estar nao configurado; nesse caso OmniChatAsk responde 503). ctxMgr emite
+// e valida o context token HMAC do Omni Chat (Fase 2 / tools de dados).
+func NewService(store *Store, waha *WAHAClient, n8n *N8NClient, ctxMgr *ContextTokenManager) *Service {
+	return &Service{store: store, waha: waha, n8n: n8n, ctxMgr: ctxMgr}
 }
 
 // Overview retorna o estado do robo + a conexao do WhatsApp (lida da WAHA em

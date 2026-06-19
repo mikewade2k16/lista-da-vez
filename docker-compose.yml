@@ -45,8 +45,12 @@ services:
       # Modulo automation: base interna da WAHA (rede do compose). So usada quando
       # o profile automation esta no ar; senao o painel cai no ultimo status salvo.
       AUTOMATION_WAHA_INTERNAL_URL: ${AUTOMATION_WAHA_INTERNAL_URL:-http://waha:3000}
-      # Token de servico que o n8n usa no GET /v1/runtime/automation/config (M2).
-      # Deve bater com o AUTOMATION_RUNTIME_TOKEN do servico n8n.
+      # Omni Chat (M0): base interna do n8n (rede do compose) p/ o webhook
+      # POST /webhook/omni-chat. So usada quando o profile automation esta no ar.
+      AUTOMATION_N8N_INTERNAL_URL: ${AUTOMATION_N8N_INTERNAL_URL:-http://n8n:5678}
+      # Token de servico que o n8n usa no GET /v1/runtime/automation/config (M2) e
+      # que a api usa no Bearer Go->n8n do Omni Chat (M0). Deve bater com o
+      # AUTOMATION_RUNTIME_TOKEN do servico n8n.
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN:-dev-automation-runtime-token}
       # Modulo meta_ads: base da Graph/Marketing API da Meta (bump de versao via env).
       META_ADS_GRAPH_BASE: ${META_ADS_GRAPH_BASE:-https://graph.facebook.com/v21.0}
@@ -68,6 +72,9 @@ services:
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
       AUTH_PASSWORD_RESET_TTL: ${AUTH_PASSWORD_RESET_TTL:-30m}
       AUTH_ROLES_SOURCE: ${AUTH_ROLES_SOURCE:-core}
+      # Dominio do cookie de sessao do gate SSO (Caddy forward_auth libera n8n./waha.
+      # com o login do Omni). Vazio em dev (sem subdominio/Caddy). Prod: .crowvisuals.com.br.
+      AUTH_GATEWAY_COOKIE_DOMAIN: ${AUTH_GATEWAY_COOKIE_DOMAIN:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USERNAME: ${SMTP_USERNAME:-}

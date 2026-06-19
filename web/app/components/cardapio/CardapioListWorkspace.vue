@@ -73,11 +73,15 @@ async function onCreate(payload: { name: string; slug: string; accountId: string
 
   createOpen.value = false
   ui.success('Cardapio criado.')
-  await navigateTo(`/cardapio/${result.restaurant.id}`)
+  // Admin pode criar sob a account de um cliente: leva o accountId na query pro
+  // editor escopar o GET corretamente (senao 404 quando != account ativa).
+  const account = isAdmin.value ? String(payload.accountId || '').trim() : ''
+  await openEditor(result.restaurant.id, account)
 }
 
-function openEditor(id: string) {
-  void navigateTo(`/cardapio/${id}`)
+function openEditor(id: string, accountId = '') {
+  const account = String(accountId || '').trim()
+  void navigateTo(`/cardapio/${id}${account ? `?account=${encodeURIComponent(account)}` : ''}`)
 }
 
 onMounted(async () => {
@@ -156,8 +160,8 @@ onMounted(async () => {
             :key="restaurant.id"
             class="cardapio-list__row"
             tabindex="0"
-            @click="openEditor(restaurant.id)"
-            @keydown.enter="openEditor(restaurant.id)"
+            @click="openEditor(restaurant.id, restaurant.accountId)"
+            @keydown.enter="openEditor(restaurant.id, restaurant.accountId)"
           >
             <td class="cardapio-list__td cardapio-list__td--name">{{ restaurant.name }}</td>
             <td class="cardapio-list__td cardapio-list__td--mono">{{ restaurant.slug }}</td>

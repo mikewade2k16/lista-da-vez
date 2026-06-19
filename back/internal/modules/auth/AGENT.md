@@ -130,12 +130,20 @@ Ele nao deve cuidar de:
 - `POST /v1/auth/me/avatar`
 - `GET /v1/auth/invitations/{token}`
 - `POST /v1/auth/invitations/accept`
+- `GET /v1/auth/gateway/verify` — gate SSO consumido pelo **Caddy (forward_auth)** para liberar subdominios admin com o login do Omni. **Decisão 2026-06-18:** usado na **`waha.crowvisuals.com.br`** (API aberta exige); o **n8n NÃO usa** (fica com login próprio). Publico no roteamento; valida o cookie `omni_gw` (ou `Authorization` Bearer p/ curl) e exige `platform_admin`: **200** libera, **302** manda pro login (`WEB_APP_URL/auth/login`), **403** logado sem permissao. Sem gating de modulo nem `X-Account-Id` (o navegador nao manda). Ver `gateway.go` e docs/automation/SSO_GATEWAY_PLAN.md.
+
+### Cookie de sessao do gate (`omni_gw`)
+
+- `POST /v1/auth/login` e `POST /v1/auth/invitations/accept` setam, alem do JSON com `accessToken`, um cookie `omni_gw` (= o mesmo token HMAC) — `HttpOnly; Secure; SameSite=Lax; Domain=AUTH_GATEWAY_COOKIE_DOMAIN`. `POST /v1/auth/logout` expira o cookie.
+- Existe **so** para o gate SSO: o navegador, ao abrir direto `n8n.`/`waha.`, nao manda o Bearer (esse vive no localStorage do SPA), mas manda o cookie do dominio pai. O SPA segue usando o Bearer do JSON — o cookie e aditivo, nao quebra nada.
+- `AUTH_GATEWAY_COOKIE_DOMAIN`: vazio em dev (host-only), `.crowvisuals.com.br` em prod (vale em omni./n8n./waha.).
 
 ## Invariantes
 
 - email deve ser tratado normalizado em lowercase
 - usuario inativo nao pode autenticar
 - usuario sem `password_hash` deve receber `onboarding_required` no login
+- usuario sem papel resolvivel (`ErrInvalidRoleScope` — sem cliente/agencia/papel) recebe `403 user_no_role` no login, NUNCA `500`. Vincular a um cliente ou agencia (com cargo) resolve.
 - usuario com `must_change_password = true` pode autenticar, mas deve ser conduzido ao fluxo de troca de senha no frontend
 - token invalido ou expirado gera `401`
 - role fora do catalogo e erro de modelagem
@@ -183,6 +191,7 @@ Quando este modulo crescer, a ordem certa e:
 - `tokens.go` — JWT HMAC com claim `sid` (session UUID); `Issue(sessionID, user)` — sessionID pode ser ""
 - `middleware.go`
 - `http.go`
+- `gateway.go` — gate SSO: `GatewayConfig`, cookie `omni_gw` (Set/Clear) e `handleGatewayVerify` (200/302/403, `platform_admin`)
 - `store_postgres.go`
 - `core_role_resolver.go` — resolvedor `core|legacy|core_with_fallback` e mapeamento core role -> role coarse
 - `passwords.go`

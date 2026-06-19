@@ -11,10 +11,13 @@ definePageMeta({
 
 const route = useRoute()
 const restaurantId = computed(() => String(route.params.id || '').trim())
+// account do restaurante (so platform_admin abrindo cardapio de outro cliente).
+// Vem da listagem/criacao via query ?account= e sobrevive ao refresh da pagina.
+const accountId = computed(() => String(route.query.account || '').trim())
 </script>
 
 <template>
   <div class="page-workspace">
-    <CardapioEditorWorkspace :restaurant-id="restaurantId" />
+    <CardapioEditorWorkspace :restaurant-id="restaurantId" :account-id="accountId" />
   </div>
 </template>

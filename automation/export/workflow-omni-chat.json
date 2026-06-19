@@ -1,0 +1,177 @@
+[
+  {
+    "id": "omnichatmvp00001",
+    "name": "Omni Chat",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "omni-chat",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [0, 0],
+        "id": "28ccf36e-00db-4177-a09d-637050331d3f",
+        "name": "Webhook",
+        "webhookId": "b9fa7b24-f488-4293-bc76-3e603c201cdc"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=Pergunta do usuario: {{ $json.body.question }}\n\nSe a pergunta for sobre PRODUTOS do catalogo (nome de produto, preco, disponibilidade, SKU), responda APENAS com 1 a 3 palavras-chave do produto, no SINGULAR e SEM preposicoes (de, da, do, com, para), sem aspas e sem explicacao. Exemplos: 'me lista relogios seiko' -> relogio seiko ; 'tem aneis de ouro?' -> anel ouro ; 'colar de prata' -> colar prata. Se a pergunta NAO for sobre produtos do catalogo, responda exatamente: NONE",
+          "hasOutputParser": false,
+          "options": {
+            "systemMessage": "Voce e um classificador. Sua unica saida e o termo de busca de produto OU a palavra NONE. Nunca escreva mais nada."
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [220, 0],
+        "id": "a1a1a1a1-ext0-4ext-9ext-extractor001",
+        "name": "Extrair termo"
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "http://api:8080/v1/runtime/omni-chat/catalog",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "q",
+                "value": "={{ (($json.output || '').trim().toUpperCase() === 'NONE') ? '' : ($json.output || '').trim() }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.AUTOMATION_RUNTIME_TOKEN }}"
+              },
+              {
+                "name": "X-Omni-Context",
+                "value": "={{ $('Webhook').first().json.body.contextToken }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.4,
+        "position": [440, 0],
+        "id": "f1e2d3c4-cat0-4a01-9b01-0a0b0c0d0e0f",
+        "name": "Buscar catalogo"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=Pergunta do usuario: {{ $('Webhook').first().json.body.question }}\n\nProdutos encontrados no catalogo (JSON, pode estar vazio): {{ JSON.stringify($json.produtos) }}\n\nResponda a pergunta do usuario em portugues, de forma curta. Se houver produtos no JSON, use os dados na resposta: 'name' (nome), 'brand' (marca), 'price' (preco em reais, formate como R$ x.xxx,xx) e 'code' (codigo). Se um produto tiver 'image' (link da foto), inclua o link. Se o JSON de produtos estiver vazio e a pergunta era sobre produto, diga que nao encontrou no catalogo. Se a pergunta nao era sobre produtos, apenas responda normalmente.",
+          "hasOutputParser": false,
+          "options": {
+            "systemMessage": "={{ $('Webhook').first().json.body.systemMessage }}"
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [660, 0],
+        "id": "5aa9ddf0-e852-47b3-922c-0340ba8e85c0",
+        "name": "AI Agent"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { \"answer\": $json.output, \"topic\": $('Webhook').first().json.body.topic } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [880, 0],
+        "id": "89b4349a-743d-49a3-857d-08340101fc7a",
+        "name": "Respond to Webhook"
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-5.3-chat-latest",
+            "cachedResultName": "gpt-5.3-chat-latest"
+          },
+          "options": {},
+          "responsesApiEnabled": false
+        },
+        "id": "b2b2b2b2-mod0-4mod-9mod-extractmodel1",
+        "name": "OpenAI Model (extrator)",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [220, 220],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-5.3-chat-latest",
+            "cachedResultName": "gpt-5.3-chat-latest"
+          },
+          "builtInTools": {},
+          "options": {},
+          "responsesApiEnabled": false
+        },
+        "id": "e170a8a9-51c4-4783-ac56-59f96b3b06c5",
+        "name": "OpenAI Chat Model",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [660, 220],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [[{ "node": "Extrair termo", "type": "main", "index": 0 }]]
+      },
+      "Extrair termo": {
+        "main": [[{ "node": "Buscar catalogo", "type": "main", "index": 0 }]]
+      },
+      "Buscar catalogo": {
+        "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+      },
+      "AI Agent": {
+        "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+      },
+      "OpenAI Model (extrator)": {
+        "ai_languageModel": [[{ "node": "Extrair termo", "type": "ai_languageModel", "index": 0 }]]
+      },
+      "OpenAI Chat Model": {
+        "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "f6e77b53-2979-49bc-a8f9-2bdb2d96e22a"
+  }
+]

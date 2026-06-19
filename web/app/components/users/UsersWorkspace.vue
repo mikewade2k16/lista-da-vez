@@ -4,6 +4,8 @@ import { computed, ref, watch } from 'vue'
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
 import UsersAccessManager from '~/components/users/UsersAccessManager.vue'
 import UsersRoleMatrixManager from '~/components/users/UsersRoleMatrixManager.vue'
+import { canManageRoleDefaults } from '~/domain/utils/permissions'
+import { useAuthStore } from '~/stores/auth'
 
 const props = defineProps({
   mode: {
@@ -12,17 +14,29 @@ const props = defineProps({
   },
 })
 
+const auth = useAuthStore()
+// A aba "Perfis e padroes" (matriz padrao por papel) volta a aparecer na operacao
+// (modo queue), mas SO para quem pode editar o padrao por perfil (platform_admin /
+// access.role_defaults.manage). Usuario comum da fila nao ve.
+const canManageProfiles = computed(() =>
+  canManageRoleDefaults(auth.role, auth.permissionKeys, auth.permissionsResolved),
+)
+
 const activeTab = ref('usuarios')
 const isQueueMode = computed(() => props.mode === 'queue')
 const tabs = computed(() => {
+  const usuariosTab = {
+    id: 'usuarios',
+    label: isQueueMode.value ? 'Usuarios da fila' : 'Usuarios',
+    icon: 'group',
+  }
+  const perfisTab = { id: 'perfis', label: 'Perfis e padroes', icon: 'fact_check' }
+
   if (isQueueMode.value) {
-    return [{ id: 'usuarios', label: 'Usuarios da fila', icon: 'group' }]
+    return canManageProfiles.value ? [usuariosTab, perfisTab] : [usuariosTab]
   }
 
-  return [
-    { id: 'usuarios', label: 'Usuarios', icon: 'group' },
-    { id: 'perfis', label: 'Perfis e padroes', icon: 'fact_check' },
-  ]
+  return [usuariosTab, perfisTab]
 })
 const title = computed(() => (isQueueMode.value ? 'Usuarios da fila' : 'Usuarios e acessos'))
 const description = computed(() =>
@@ -31,10 +45,12 @@ const description = computed(() =>
     : 'Gerencie contas, overrides individuais e o padrao de visibilidade do painel por tipo de usuario.',
 )
 
+// Se a aba ativa virar indisponivel (ex.: perdeu permissao de perfis, ou trocou
+// de modo), volta para "usuarios" para nao ficar numa aba vazia.
 watch(
-  () => props.mode,
-  (mode) => {
-    if (mode === 'queue') {
+  [tabs, canManageProfiles],
+  () => {
+    if (!tabs.value.some((tab) => tab.id === activeTab.value)) {
       activeTab.value = 'usuarios'
     }
   },
@@ -50,13 +66,13 @@ watch(
     </header>
 
     <SettingsTabs
-      v-if="!isQueueMode"
+      v-if="tabs.length > 1"
       :tabs="tabs"
       :active-tab="activeTab"
       @update:active-tab="activeTab = $event"
     />
 
     <UsersAccessManager v-if="activeTab === 'usuarios'" :mode="props.mode" />
-    <UsersRoleMatrixManager v-else />
+    <UsersRoleMatrixManager v-else-if="canManageProfiles" />
   </section>
 </template>

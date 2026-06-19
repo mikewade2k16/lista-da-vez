@@ -10,6 +10,9 @@ import type {
   OmniTableColumn,
 } from '~/types/omni/collection'
 
+// Espelha o minimo do backend (admin_users_service.go: "must be at least 8 chars").
+const PASSWORD_MIN_LENGTH = 8
+
 const {
   users,
   filters,
@@ -24,6 +27,7 @@ const {
   updateField,
   createUser,
   deleteUser,
+  setPassword,
   fetchMemberships,
 } = useAdminUsersManager()
 
@@ -237,6 +241,18 @@ function onCellUpdate(payload: OmniTableCellUpdate) {
   updateField(id, field, payload.value, { immediate: payload.immediate })
 }
 
+// Drawer de edicao por usuario (dados + senha + vinculos/nivel). O modulo/pagina
+// por usuario (Fase 1B) entra dentro do proprio drawer.
+const editDrawerOpen = ref(false)
+const editUser = ref<AdminUserItem | null>(null)
+function openEdit(row: Record<string, unknown>) {
+  editUser.value = toUser(row)
+  editDrawerOpen.value = true
+}
+function onUserUpdated() {
+  void fetchUsers()
+}
+
 const createDialogOpen = ref(false)
 const createForm = reactive({
   email: '',
@@ -247,6 +263,7 @@ const createForm = reactive({
   accountId: '',
   organizationId: '',
   role: 'owner',
+  orgRole: 'agency_member',
 })
 
 function openCreate() {
@@ -258,17 +275,62 @@ function openCreate() {
   createForm.accountId = ''
   createForm.organizationId = ''
   createForm.role = 'owner'
+  createForm.orgRole = 'agency_member'
   createDialogOpen.value = true
   void clientsManager.fetchClients()
   void orgsManager.fetchOrganizations()
 }
 
+// Senha na criacao: opcional (vazia = fluxo de convite), mas se preenchida tem
+// que respeitar o minimo do backend. Bloqueia o submit com hint inline.
+const createPasswordError = computed(() => {
+  const pw = createForm.temporaryPassword.trim()
+  if (!pw) return ''
+  return pw.length < PASSWORD_MIN_LENGTH ? `Minimo de ${PASSWORD_MIN_LENGTH} caracteres.` : ''
+})
+
+// Um usuario sem cliente/agencia e sem ser platform_admin nao consegue logar (sem
+// papel resolvido o login falha). Evita criar um usuario "inutil": exige cliente
+// (com papel), agencia (com cargo) OU a flag de platform admin.
+const createNeedsClient = computed(
+  () => !createForm.isPlatformAdmin && !createForm.accountId && !createForm.organizationId,
+)
+
 async function submitCreate() {
-  if (!canCreateUser.value) return
+  if (!canCreateUser.value || createPasswordError.value || createNeedsClient.value) return
   const createdId = await createUser({ ...createForm })
   if (!createdId) return
   createDialogOpen.value = false
   focusCell.value = { rowId: createdId, columnKey: 'email', token: Date.now() }
+}
+
+// Definir/Resetar senha de um usuario ja criado (acao explicita, so platform_admin).
+// O backend so toca no password_hash quando recebe `password` nao-vazio.
+const passwordDialogOpen = ref(false)
+const passwordTarget = ref<{ id: string; email: string } | null>(null)
+const passwordValue = ref('')
+const passwordSaving = ref(false)
+const passwordError = computed(() => {
+  const pw = passwordValue.value.trim()
+  if (!pw) return ''
+  return pw.length < PASSWORD_MIN_LENGTH ? `Minimo de ${PASSWORD_MIN_LENGTH} caracteres.` : ''
+})
+
+function openPassword(row: Record<string, unknown>) {
+  if (!canCreateUser.value) return
+  passwordTarget.value = { id: rowId(row), email: String(toUser(row).email ?? '') }
+  passwordValue.value = ''
+  passwordDialogOpen.value = true
+}
+
+async function submitPassword() {
+  const target = passwordTarget.value
+  const pw = passwordValue.value.trim()
+  if (!target || pw.length < PASSWORD_MIN_LENGTH) return
+  passwordSaving.value = true
+  const ok = await setPassword(target.id, pw)
+  passwordSaving.value = false
+  if (ok) passwordDialogOpen.value = false
 }
 
 function onResetFilters() {
@@ -462,6 +524,28 @@ onMounted(() => {
             </OmniMinimalPopover>
 
             <UButton
+              v-if="canCreateUser"
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Editar usuario (dados, nivel, senha)"
+              aria-label="Editar"
+              @click="openEdit(row)"
+            />
+
+            <UButton
+              v-if="canCreateUser"
+              icon="i-lucide-key-round"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Definir/Resetar senha"
+              aria-label="Definir senha"
+              @click="openPassword(row)"
+            />
+
+            <UButton
               v-if="canDeleteUser"
               icon="i-lucide-trash-2"
               color="error"
@@ -536,6 +620,9 @@ onMounted(() => {
                 placeholder="minimo 8 chars"
                 @update:model-value="createForm.temporaryPassword = String($event ?? '')"
               />
+              <p v-if="createPasswordError" class="text-xs text-[rgb(var(--danger))] mt-1">
+                {{ createPasswordError }}
+              </p>
             </div>
             <div>
               <label class="block text-xs text-[rgb(var(--muted))] mb-1">Cliente (opcional)</label>
@@ -548,6 +635,10 @@ onMounted(() => {
                   {{ opt.label }}
                 </option>
               </select>
+              <p v-if="createNeedsClient" class="text-xs text-[rgb(var(--danger))] mt-1">
+                Selecione um cliente, uma agencia (abaixo) ou marque platform admin — senao o
+                usuario nao consegue logar.
+              </p>
             </div>
             <div v-if="createForm.accountId">
               <label class="block text-xs text-[rgb(var(--muted))] mb-1">Papel no cliente</label>
@@ -576,6 +667,21 @@ onMounted(() => {
                 </option>
               </select>
             </div>
+            <div v-if="createForm.organizationId">
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Cargo na agencia</label>
+              <select
+                class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
+                :value="createForm.orgRole"
+                @change="createForm.orgRole = ($event.target as HTMLSelectElement).value"
+              >
+                <option value="agency_owner">Dono da agencia (acesso total)</option>
+                <option value="agency_member">Membro (acesso limitado)</option>
+              </select>
+              <p class="text-xs text-[rgb(var(--muted))] mt-1">
+                O cargo define o acesso: dono ve tudo da agencia; membro tem acesso limitado. Ele
+                entra como membro da conta-agencia e navega pelos clientes da agencia.
+              </p>
+            </div>
             <div class="flex items-center gap-2">
               <USwitch v-model="createForm.isPlatformAdmin" />
               <span class="text-sm">Platform admin (acesso global)</span>
@@ -590,11 +696,68 @@ onMounted(() => {
                 variant="ghost"
                 @click="createDialogOpen = false"
               />
-              <UButton label="Criar" color="primary" :loading="creating" @click="submitCreate" />
+              <UButton
+                label="Criar"
+                color="primary"
+                :loading="creating"
+                :disabled="creating || Boolean(createPasswordError) || createNeedsClient"
+                @click="submitCreate"
+              />
             </div>
           </template>
         </UCard>
       </template>
     </UModal>
+
+    <UModal v-model:open="passwordDialogOpen">
+      <template #content>
+        <UCard>
+          <template #header>
+            <h3 class="text-base font-semibold">Definir senha</h3>
+          </template>
+
+          <div class="space-y-3">
+            <p class="text-xs text-[rgb(var(--muted))]">
+              Define uma nova senha para
+              <strong>{{ passwordTarget?.email || 'este usuario' }}</strong>
+              . O usuario passa a logar com ela imediatamente.
+            </p>
+            <div>
+              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nova senha</label>
+              <UInput
+                :model-value="passwordValue"
+                type="password"
+                placeholder="minimo 8 chars"
+                @update:model-value="passwordValue = String($event ?? '')"
+                @keyup.enter="submitPassword"
+              />
+              <p v-if="passwordError" class="text-xs text-[rgb(var(--danger))] mt-1">
+                {{ passwordError }}
+              </p>
+            </div>
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-2">
+              <UButton
+                label="Cancelar"
+                color="neutral"
+                variant="ghost"
+                @click="passwordDialogOpen = false"
+              />
+              <UButton
+                label="Salvar senha"
+                color="primary"
+                :loading="passwordSaving"
+                :disabled="passwordSaving || Boolean(passwordError) || !passwordValue.trim()"
+                @click="submitPassword"
+              />
+            </div>
+          </template>
+        </UCard>
+      </template>
+    </UModal>
+
+    <AdminUserEditDrawer v-model:open="editDrawerOpen" :user="editUser" @updated="onUserUpdated" />
   </section>
 </template>

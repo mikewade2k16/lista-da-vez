@@ -78,6 +78,7 @@ type Config struct {
 	ConsultantEmailDomain         string
 	ConsultantDefaultPassword     string
 	CoreV2Enabled                 bool
+	AuthGatewayCookieDomain       string
 }
 
 func Load() Config {
@@ -178,6 +179,10 @@ func Load() Config {
 		ConsultantEmailDomain:     getEnv("AUTH_CONSULTANT_EMAIL_DOMAIN", "acesso.omni.local"),
 		ConsultantDefaultPassword: getEnv("AUTH_CONSULTANT_DEFAULT_PASSWORD", "Omni@123"),
 		CoreV2Enabled:             getEnvBool("CORE_V2_ENABLED", false),
+		// Dominio do cookie de sessao usado pelo gate SSO (Caddy forward_auth) que
+		// libera n8n./waha. com o login do Omni. Vazio = cookie host-only (dev, sem
+		// subdominio). Prod: ".crowvisuals.com.br". Ver docs/automation/SSO_GATEWAY_PLAN.md.
+		AuthGatewayCookieDomain: getEnv("AUTH_GATEWAY_COOKIE_DOMAIN", ""),
 	}
 }
 

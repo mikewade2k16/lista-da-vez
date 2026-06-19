@@ -75,6 +75,21 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input AdminCreateUser
 		}
 	}
 
+	// Quando vincula a uma agencia (OrganizationID), o cargo define o acesso: o repo
+	// matricula o user na conta-agencia (owner para dono, director para membro) para
+	// que ele consiga logar. Default agency_member.
+	if strings.TrimSpace(input.OrganizationID) != "" {
+		input.OrgRole = strings.TrimSpace(input.OrgRole)
+		if input.OrgRole == "" {
+			input.OrgRole = "agency_member"
+		}
+		switch input.OrgRole {
+		case "agency_owner", "agency_member":
+		default:
+			return AdminUserView{}, errors.New("orgRole must be agency_owner or agency_member")
+		}
+	}
+
 	// Auto-gera nick a partir do displayName quando vazio. Mesmo padrao do front
 	// (buildNickname em person-display.ts) para consistencia entre camadas.
 	if input.Nick == "" {
@@ -118,7 +133,27 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, userID string, input 
 		input.DisplayName = &trimmed
 	}
 
-	return s.repo.UpdateUser(ctx, userID, input)
+	// Senha: SO mexe no hash quando vem uma senha nao-vazia (acao explicita do
+	// admin). nil ou string vazia/em-branco => passwordHash "" => repo nao toca
+	// no password_hash (regra critica). Nunca logamos a senha nem o hash.
+	var passwordHash string
+	if input.Password != nil {
+		pw := strings.TrimSpace(*input.Password)
+		if pw != "" {
+			if len(pw) < 8 {
+				return AdminUserView{}, errors.New("password must be at least 8 chars")
+			}
+			hash, err := s.hasher.Hash(pw)
+			if err != nil {
+				return AdminUserView{}, err
+			}
+			passwordHash = hash
+		}
+	}
+	// Evita que o texto puro da senha trafegue alem deste ponto.
+	input.Password = nil
+
+	return s.repo.UpdateUser(ctx, userID, input, passwordHash)
 }
 
 // DeleteUser aplica safeguard antes de soft-delete (chamado direto).
@@ -146,6 +181,33 @@ func (s *AdminUserService) GetMemberships(ctx context.Context, userID string) (A
 		return AdminMembershipsResponse{}, err
 	}
 	return AdminMembershipsResponse{Memberships: memberships}, nil
+}
+
+// UpdateMembershipRole troca o nivel/papel do usuario numa conta (cliente ou
+// conta-agencia). Aceita papeis tenant-scoped (owner/director/marketing) — nao
+// exigem vinculo de loja. Exige que o user ja seja membro da conta. Devolve as
+// memberships atualizadas para o front re-renderizar.
+func (s *AdminUserService) UpdateMembershipRole(ctx context.Context, userID, accountID string, input UpdateMembershipRoleInput) (AdminMembershipsResponse, error) {
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	switch role {
+	case "owner", "director", "marketing":
+	default:
+		return AdminMembershipsResponse{}, ErrInvalidRole
+	}
+
+	member, err := s.repo.IsAccountMember(ctx, accountID, userID)
+	if err != nil {
+		return AdminMembershipsResponse{}, err
+	}
+	if !member {
+		return AdminMembershipsResponse{}, ErrUserNotFound
+	}
+
+	if err := s.repo.SetUserAccountRole(ctx, accountID, userID, role); err != nil {
+		return AdminMembershipsResponse{}, err
+	}
+
+	return s.GetMemberships(ctx, userID)
 }
 
 // guardLastPlatformAdmin bloqueia rebaixar/desativar o ultimo platform_admin

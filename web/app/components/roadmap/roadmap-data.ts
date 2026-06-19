@@ -1381,7 +1381,8 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-move-folder", label: "Pasta 'n8n Whatsapp' migrada para automation/ (export + .mcp.json + .gitignore + docker-compose.reference.yml) e docs para docs/automation/", done: true, note: "Concluído 2026-06-04." },
       { id: "aut-docs", label: "automation/AGENT.md criado; SETUP.md adaptado (profile, nomes de serviço, caminhos); .gitignore raiz protege segredos; .env.docker.example com AUTOMATION_*", done: true, note: "Concluído 2026-06-04." },
       { id: "aut-runbook-validate", label: "Subir profile automation, instalar community node, importar credenciais+workflow, escanear QR e validar 1 mensagem real (depende do usuário; ativar responde no WhatsApp real)", done: false, note: "2026-06-08: corrigida a tag da WAHA (manifest 2026.5.1 não existe puro) → devlikeapro/waha:gows-2026.5.1 (engine GOWS) no dev e prod. `up -d` volta a funcionar. Falta os passos interativos do Mike." },
-      { id: "aut-promote-subdomain", label: "Promover o acesso da automação de túnel SSH → subdomínios públicos (n8n./waha.crowvisuals.com.br): DNS A → 85.31.62.33 + bloco Caddy com basic auth + flip env p/ https/true", done: false, note: "2026-06-16: escolha do dono = subir na VPS via TÚNEL SSH primeiro (rápido, sem DNS): n8n 127.0.0.1:15680 / WAHA 127.0.0.1:13010, com N8N_PROTOCOL/SECURE_COOKIE=http/false. Compose já deixa esses 2 campos env-driven (default https/true). Promover depois pra produção: criar DNS, bloco no /opt/omnichannel/Caddyfile (editar com cat>, não sed -i) e voltar env p/ https/true." },
+      { id: "aut-promote-subdomain", label: "Promover o acesso da automação de túnel SSH → subdomínios públicos: WAHA atrás do gate SSO do Omni (Caddy forward_auth → /v1/auth/gateway/verify, só platform_admin); n8n com login próprio (sem gate) + flip env p/ https/true. Plano: docs/automation/SSO_GATEWAY_PLAN.md", done: false, note: "2026-06-18: decisão do dono = (1) NÃO usar basic_auth; (2) gate Omni SÓ na WAHA (API aberta), n8n fica com login próprio (community não tem SSO; gate em cima = login duplo, dispensado). BACKEND IMPLEMENTADO+TESTADO local (curl): cookie omni_gw (Domain via AUTH_GATEWAY_COOKIE_DOMAIN) setado no login/convite + GET /v1/auth/gateway/verify (200 admin / 302 p/ /auth/login / 403 não-admin) — auth/gateway.go. DNS n8n.+waha.→85.31.62.33 OK. FALTA deploy: rebuild api + ajustar .env.production (AUTH_GATEWAY_COOKIE_DOMAIN=.crowvisuals.com.br + AUTOMATION_N8N_* p/ https/secure_cookie=true) + blocos Caddy (n8n=reverse_proxy puro, waha=forward_auth) + CRIAR owner do n8n ANTES de expor (land-grab). Dono pediu testar local antes de subir." },
+      { id: "aut-painel-session-manage", label: "Painel /automation: gerenciar a conexão WhatsApp por conta — desconectar a sessão atual, conectar outro número/conta e ver QUAL conta é dona da sessão única da WAHA Core, tudo pelo painel (quem tem acesso troca sem mexer no banco)", done: false, note: "2026-06-18: descoberto ao testar — o número pareado ficou preso na conta legacy 'Codex QA Smoke 0606' (sessão WAHA 'default'), enquanto o robô ligado era 'Crow Visuals' (canal STOPPED, session_name=UUID que nunca conectou). Causa: createChannel grava session_name=UUID por automação, mas WAHA Core só roda 1 sessão → só a 1ª conta conecta de fato e segura o 'default'. Corrigido na mão por re-bind no banco (UPDATE automation.channels SET session_name='default' p/ a automação da Crow). FALTA no painel: (1) mostrar a conta dona da sessão + status real por conta; (2) botão desconectar/transferir a sessão para outra conta; (3) regra de sessão única até multi-número (P11). Bug detalhado em back/internal/modules/automation/AGENT.md (Registro de falhas)." },
       // Fases de produto (bloqueadas pela multitenant-completion). Design: docs/automation/PLANO_INTEGRACAO_OMNI.md
       { id: "aut-a1-schema", label: "A1 — Migration schema automation.* (tenant-aware): settings, personas, guardrails, model_catalog, waha_sessions, service_tokens, contacts, messages, lead_state, long_memory, follow_ups, purchases + seeds", done: false, note: "Entregue por partes via M1-M3+ e A6/A7: automations/channels (0140), personas (0141), knowledge (0142), contacts/long_memory (0143), model_catalog/automation_models (0144), messages/lead_state (0145). Faltam follow_ups/purchases (A9) e service_tokens como tabela (hoje AUTOMATION_RUNTIME_TOKEN unico)." },
       { id: "aut-a2-modulo-go", label: "A2 — Módulo Go automation (Module Registry): settings, personas, model_catalog, endpoint runtime-config (persona+guardrails+contexto+modelos) e service_tokens; auth por token de serviço resolve account_id", done: false },
@@ -1412,6 +1413,15 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
       { id: "aut-m4-handover-lock", label: "M4 — Trava de handover humano: a IA para de responder quando um humano entra na conversa", done: false, note: "BACKEND ENTREGUE 2026-06-11: migration 0148 (paused_until em automation.contacts) + POST /v1/runtime/automation/handover (pausedMinutes/resume) + paused/pausedUntil no GET memory (paused_until sobrevive a writes de memória). Falta (n8n/UI): nó detectar msg fromMe que o bot NÃO enviou → chamar handover → o workflow checar paused e ficar em silêncio; toggle manual por-conversa no painel depende de uma lista de conversas (futuro)." },
       { id: "aut-m5-knowledge-sources", label: "M5 — Fontes de conhecimento por automação: o que o bot sabe/consulta (produtos do cliente, site, docs)", done: true, note: "ENTREGUE 2026-06-11: backend GET /v1/runtime/automation/tools/catalog?q= (busca ESTREITA em site.products escopada por account, ILIKE LIMIT 5 — não dumpa ERP) + GET/PUT /v1/automation/sources (settings jsonb). Front: card Fontes (toggle 'consultar catálogo' + URLs do site). Fonte = site.products por account (ERP plugável via interface ProductSource depois). RAG/pgvector (P8) só p/ texto livre grande. Falta só o nó n8n chamar a tool." },
       { id: "aut-m6-layout-painel", label: "M6 — Redesenhar o layout do painel /automation: colapsáveis + horizontal (hoje é scroll vertical sem fim)", done: false, note: "Em iteração 2026-06-11. 1ª tentativa em ABAS foi REPROVADA (só escondia os cards ruins). Refeito SEM abas: layout coluna principal (Comportamento + Conhecimento) + rail grudado no topo (Status + Fontes + Modelos + Prévia colapsável). Subcomponentes extraídos (AutomationStatusCard/BehaviorCard/SourcesCard). 3ª iteração (sobre mockup do usuário): faixa de STATUS no topo (toggle robô + WhatsApp/Conectar + contador de docs, AutomationStatusBar.vue) + SIDEBAR esquerda 'Configuracao' (Comportamento/Fontes/Modelos/Conhecimento[badge]/Prévia, item ativo destacado) + painel da seção ativa. Comportamento reestilizado (header+Salvar, 2 colunas Nome/Tom de voz, Instruções). Pendente do mockup: linha 'Modelos ativos' (read-only) no painel Comportamento + persistir 'Tom de voz' (hoje visual). Iterando." },
+      // ─── Omni Chat interno (chat no painel de Operação ligado ao n8n) ───
+      // Reaproveita o módulo automation/n8n (persona Tony, AUTOMATION_RUNTIME_TOKEN), mas é canal
+      // NOVO e independente do WhatsApp. Topologia Front→API Go→n8n (proxy síncrono). MVP = persona
+      // sem dados; Fase 2 = tools de produtos/vendas/metas. Doc: docs/automation/OMNI_CHAT_PLAN.md.
+      { id: "oc-0-doc-contrato", label: "OC0 — Doc canônico OMNI_CHAT_PLAN.md + contrato congelado (HTTP /v1/omni-chat/ask, webhook n8n /webhook/omni-chat, contextToken Fase 2) que sincroniza as 3 trilhas", done: false, note: "2026-06-18: doc-first, antes do código." },
+      { id: "oc-1-back", label: "OC1 (M0) — Back: POST /v1/omni-chat/ask (RequireAuth, fora do gate de módulo) → proxy síncrono pro webhook interno do n8n. n8n_client.go (molde meta_ads/runner_client) + service_omnichat.go (reusa buildSystemMessage do Tony) + http_omnichat.go + env AUTOMATION_N8N_INTERNAL_URL", done: false },
+      { id: "oc-2-n8n", label: "OC2 (M0) — n8n: workflow-omni-chat.json enxuto (Webhook Header Auth → AI Agent systemMessage pronto → Respond to Webhook). Reaproveita AI Agent + OpenAI do WhatsApp; sem WAHA/mídia/fila/memória", done: false },
+      { id: "oc-3-front", label: "OC3 (M0) — Front: useOmniChat.ts (createApiRequest) + habilitar o Omni Chat em OperationSidePanel.vue (input/botão, bolhas user/assistant, digitando, erro, scroll auto). Sem dados ainda", done: false },
+      { id: "oc-t1-tools", label: "OC-T1 (Fase 2) — Tools de dados via contextToken HMAC: endpoints runtime espelho /v1/runtime/omni-chat/{catalog,ranking,goals} escopados por account/store. Ordem: Produtos → Vendas/Ranking → Metas", done: false, note: "2026-06-18: CATÁLOGO funcionando e2e via FLUXO MANUAL no n8n. As tools nativas do AI Agent NÃO funcionam neste build (n8n 2.23.2 monorepo: Tools Agent V3 coleta via supplyData mas executa via runNode/execute — nenhum nó tem os dois). Padrão: Webhook→AI Agent extrai termo→HTTP Request comum chama /v1/runtime/omni-chat/catalog (header X-Omni-Context=contextToken do body)→AI Agent compõe→Respond. Endpoint Go devolve {produtos,total}. Context token ctxv1 (context_token.go). Falta: teste browser com conta real + estender o padrão p/ ranking/metas (classificar intenção→Switch→HTTP→compor)." },
     ],
     blockers: [],
     verifiable: "Infra: `docker compose --profile automation up -d` sobe n8n/waha/redis na mesma rede do Omni e o workflow importado responde uma mensagem real de teste. Produto (futuro): bot lê produto/estoque via API Go e persiste contato/lead no schema automation.* do Postgres do Omni."
@@ -1697,6 +1707,51 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     ],
     blockers: [],
     verifiable: "Cada lógica migrada tem teste Go; o front correspondente passa a ler o resultado do back (sem recálculo); admin-metrics.ts deixa de duplicar analytics/. vue-tsc/eslint/golangci-lint limpos; cada arquivo < 450 linhas."
+  },
+  // Usuários e acessos: consertar o que está quebrado nas duas telas de usuário.
+  // Doc canônico: docs/USUARIOS_ACESSOS_FIX_PLAN.md. A regra de coerência
+  // conta→usuário (mapa module_id→workspaces) fica fora desta leva (só complexo).
+  {
+    id: "usuarios-acessos-fix",
+    code: "UAF",
+    title: "Usuários e acessos — corrigir operacao/usuarios + manage/users",
+    goal: "Voltar a salvar os módulos do usuário na operação (com revogação ao vivo) e permitir definir/resetar senha no manage/users. Coerência conta→usuário fica para a próxima leva.",
+    status: "in_progress",
+    estimateWeeks: "1-2 dias",
+    startedAt: "2026-06-18",
+    tasks: [
+      { id: "uaf-a1-save", label: "Trilha A: operacao/usuarios volta a salvar módulos", done: true, note: "Backend ja salvava (GET/PUT /v1/access/overrides 200, testado ao vivo). Bug era no front: validacao de nome/loja bloqueava o save quando so os modulos mudavam — corrigido com flag basicChanged." },
+      { id: "uaf-a2-error", label: "Trilha A: tirar o erro silencioso do access — mostrar motivo real inline", done: true, note: "saveDetails agora mostra detailAccessError real e nunca diz que salvou modulos quando nao salvou." },
+      { id: "uaf-a3-live", label: "Trilha A: revogar ao vivo no front (WS access → re-buscar contexto → remontar menu)", done: true, note: "Ja estava cabeado em useContextRealtime (resource access → auth.fetchContext + refreshRealtimeState); verificado. Backend re-resolve perms do banco a cada request." },
+      { id: "uaf-a4-perfis", label: "Trilha A: reexpor a aba 'Perfis' (UsersRoleMatrixManager) no modo queue", done: true, note: "Gated por canManageRoleDefaults (platform_admin)." },
+      { id: "uaf-b1-create", label: "Trilha B: manage/users — criar usuario com senha que consegue logar", done: true, note: "Criar sem vinculo gerava login 500; agora o login retorna 403 user_no_role e o modal exige cliente, agencia (com cargo) OU platform admin." },
+      { id: "uaf-b3-agency", label: "Trilha B: usuario de agencia loga com cargo (acesso de agencia nos clientes)", done: true, note: "Criar com organizationId+orgRole matricula na conta-agencia (agency_owner->owner total, agency_member->director limitado). Testado ao vivo: login 200 com papel correto. Switcher org-aware abre os clientes da agencia." },
+      { id: "uaf-b2-reset", label: "Trilha B: manage/users — definir/resetar senha (campo password no PATCH + acao na grid)", done: true, note: "Back (model/service/repo) e front prontos; build+vet+eslint limpos. Teste real do PATCH so apos rebuild da api." },
+      { id: "uaf-docs", label: "Sincronizar AGENT.md (core, components/users) + doc canônico + roadmap", done: true }
+    ],
+    blockers: [],
+    verifiable: "Em /operacao/usuarios o admin altera os módulos de um usuário e salva (persistido em access); a sessão logada do afetado atualiza o menu na hora. Em /manage/users dá para criar usuário com senha e resetar a senha depois, e o usuário consegue logar. Pendente: rebuild da api para o reset de senha; teste no browser. vue-tsc/eslint/golangci-lint limpos (warnings pre-existentes de max-lines)."
+  },
+  // RBAC multi-tenant em camadas: modulo×pagina, teto da conta (account_modules),
+  // perfis custom por conta e overrides por usuario. Doc: docs/RBAC_ACESSO_MODELO.md.
+  {
+    id: "rbac-acesso",
+    code: "RBAC",
+    title: "Acesso por usuário: drawer de edição, nível por vínculo e módulos/páginas",
+    goal: "manage/users vira a tela canônica de gestão de acesso: editar o usuário, trocar o nível dentro do cliente/agência e dar/remover módulos/páginas, respeitando o que a conta contratou. Perfis customizáveis por conta vêm na fase 3.",
+    status: "in_progress",
+    estimateWeeks: "1-2 semanas",
+    startedAt: "2026-06-18",
+    tasks: [
+      { id: "rbac-f1-drawer", label: "Fase 1: drawer de edição por usuário em manage/users (abre, edita básico + senha)", done: true, note: "AdminUserEditDrawer.vue: dados (nome/nick/email/ativo/platform admin) + senha. Botão de editar (lápis) por linha. eslint limpo." },
+      { id: "rbac-f1-memberships", label: "Fase 1 (back): memberships devolvem role + isAgency; endpoint para trocar o papel do usuário numa conta", done: true, note: "GET memberships agora traz role+isAgency; PATCH /v1/admin/users/{id}/memberships/{accountId} faz replace de user_role_assignments (owner/director/marketing; invalido->400). Testado ao vivo: troca owner->director e o login reflete director." },
+      { id: "rbac-f1-level", label: "Fase 1: trocar o nível/papel do usuário por vínculo (cliente/agência) no drawer", done: true, note: "Select de nível por vínculo no drawer chamando o PATCH; lista re-renderiza com o papel novo." },
+      { id: "rbac-f1-modules", label: "Fase 1B: dar/remover módulo/página por usuário no drawer (reaproveita overrides do access)", done: false, note: "Proxima etapa: painel de módulos/páginas dentro do drawer, via /v1/access/users/{id}." },
+      { id: "rbac-f2-map", label: "Fase 2: mapa módulo→páginas explícito + coerência usuário ⊆ account_modules no back (override só dev/admin)", done: false },
+      { id: "rbac-f3-perfis", label: "Fase 3: perfis customizáveis por conta (permissão por página) + atribuição ao usuário", done: false }
+    ],
+    blockers: [],
+    verifiable: "Em /manage/users o admin abre um usuário, troca o nível dele dentro de um cliente/agência e dá/remove módulos/páginas; o usuário passa a ver/perder o acesso conforme. Fases 2/3 adicionam o teto da conta e os perfis custom. vue-tsc/eslint/golangci-lint limpos."
   }
 ];
 

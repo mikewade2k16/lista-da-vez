@@ -7,6 +7,8 @@ import type {
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 const PATCH_DELAY_MS = 380
+// Espelha o minimo do backend (admin_users_service.go: "must be at least 8 chars").
+const PASSWORD_MIN_LENGTH = 8
 
 // Campos editaveis inline → campo do PATCH backend (AdminUpdateUserInput).
 const FIELD_TO_PATCH: Record<AdminUserFieldKey, string> = {
@@ -41,6 +43,8 @@ function normalizeMembership(raw: Record<string, unknown>): AccountMembershipIte
     accountName: String(raw.accountName ?? ''),
     isActive: Boolean(raw.isActive),
     joinedAt: String(raw.joinedAt ?? ''),
+    role: String(raw.role ?? ''),
+    isAgency: Boolean(raw.isAgency),
   }
 }
 
@@ -207,6 +211,32 @@ export function useAdminUsersManager() {
     }
   }
 
+  // Define/reseta a senha de um usuario (acao explicita do admin). Envia no mesmo
+  // PATCH de admin users: o backend so toca no password_hash quando vem `password`
+  // nao-vazio (semantica "ausente = nao mexe"). Gate de platform_admin e na UI.
+  async function setPassword(id: string, password: string): Promise<boolean> {
+    const pw = String(password ?? '').trim()
+    if (pw.length < PASSWORD_MIN_LENGTH) {
+      errorMessage.value = `A senha deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`
+      return false
+    }
+    setSaving(`${id}:password`, true)
+    errorMessage.value = ''
+    try {
+      const resp = await apiRequest(`/v1/admin/users/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: { password: pw },
+      })
+      applyPatch(id, resp as Record<string, unknown>)
+      return true
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao definir a senha.')
+      return false
+    } finally {
+      setSaving(`${id}:password`, false)
+    }
+  }
+
   async function fetchMemberships(id: string): Promise<AccountMembershipItem[]> {
     try {
       const resp = await apiRequest(`/v1/admin/users/${encodeURIComponent(id)}/memberships`)
@@ -215,6 +245,31 @@ export function useAdminUsersManager() {
     } catch (e) {
       errorMessage.value = getApiErrorMessage(e, 'Falha ao carregar memberships.')
       return []
+    }
+  }
+
+  // Troca o nivel/papel do usuario numa conta (cliente ou conta-agencia). Devolve a
+  // lista de memberships atualizada (o backend re-monta) ou null em caso de erro.
+  async function updateMembershipRole(
+    userId: string,
+    accountId: string,
+    role: string,
+  ): Promise<AccountMembershipItem[] | null> {
+    const key = `${userId}:membership:${accountId}`
+    setSaving(key, true)
+    errorMessage.value = ''
+    try {
+      const resp = await apiRequest(
+        `/v1/admin/users/${encodeURIComponent(userId)}/memberships/${encodeURIComponent(accountId)}`,
+        { method: 'PATCH', body: { role } },
+      )
+      const raw = (resp as { memberships?: Record<string, unknown>[] }).memberships ?? []
+      return raw.map(normalizeMembership)
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao atualizar o nivel do usuario.')
+      return null
+    } finally {
+      setSaving(key, false)
     }
   }
 
@@ -247,7 +302,9 @@ export function useAdminUsersManager() {
     updateField,
     createUser,
     deleteUser,
+    setPassword,
     fetchMemberships,
+    updateMembershipRole,
     resetFilters,
   }
 }

@@ -16,10 +16,14 @@ Doc canonico do modulo: `docs/cardapio/PLANO_MODULO_CARDAPIO.md` (contrato em §
 
 - **Pages** (`pages/cardapio/`): orquestradores finos.
   - `index.vue` -> `CardapioListWorkspace`.
-  - `[id].vue` -> `CardapioEditorWorkspace` (recebe `restaurantId` da rota).
+  - `[id].vue` -> `CardapioEditorWorkspace` (recebe `restaurantId` e `accountId` da rota; `?account=`
+    so para `platform_admin` abrindo cardapio de OUTRO cliente).
 - **Store** (`stores/cardapio.ts`): unica fonte de dados. Lista lean, restaurante ativo + catalogo +
   dominios, pedidos paginados. `X-Account-Id` e injetado automaticamente pelo `createApiRequest`
-  (account ativa) — nao passar manualmente.
+  (account ativa) — nao passar manualmente. Para `platform_admin` abrindo restaurante de OUTRA
+  account, o `accountId` vai na query de TODAS as chamadas do editor: `loadRestaurant(id, accountId)`
+  seta `scopeAccountId` e `withScope()` anexa `?accountId=`; o backend prioriza o query sobre o header
+  (`scopedAccountID`). Vazio = account ativa (nao-admin ou agencia).
 - **Types** (`domain/cardapio/types.ts`): port EXATO do contrato (camelCase). Dinheiro SEMPRE em
   centavos inteiros (`...Cents`). Helpers `formatCurrency`/`formatCents`/`parseCents`/`slugify` e os
   labels pt-BR de status/tipo de pedido vivem aqui.
@@ -32,7 +36,7 @@ Doc canonico do modulo: `docs/cardapio/PLANO_MODULO_CARDAPIO.md` (contrato em §
 | Componente                               | Papel                                                                                                                                                                                 |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CardapioListWorkspace.vue`              | Tabela de restaurantes (nome/slug/cliente/dominio/ativo/atualizado) + busca + filtro por cliente (so `platform_admin`, via `useTenantsStore`) + criar. Clique na linha abre o editor. |
-| `CardapioCreateModal.vue`                | Nome + slug (auto a partir do nome) + select de cliente (so admin).                                                                                                                   |
+| `CardapioCreateModal.vue`                | Nome + slug (auto a partir do nome) + select de cliente (so admin; default "Agencia" = propria account ativa, espelha a bio).                                                         |
 | `CardapioEditorWorkspace.vue`            | Shell: breadcrumb, barra de status (ativo/inativo + link publico + publicar/despublicar), sidebar de secoes + painel ativo.                                                           |
 | `CardapioMoneyInput.vue`                 | Input de moeda reutilizavel: v-model em CENTAVOS, exibe `R$ 1.234,56`.                                                                                                                |
 | `sections/CardapioSectionDados.vue`      | Identidade, contato, endereco, horarios, settings de entrega (centavos com mascara), tema JSON. Salva via `useCardapioEditor` (dirty-check).                                          |
@@ -55,10 +59,15 @@ Doc canonico do modulo: `docs/cardapio/PLANO_MODULO_CARDAPIO.md` (contrato em §
   `useUiStore().confirm`. Estados vazios orientativos.
 - Filtro por cliente e o `accountId` na criacao so existem para `platform_admin`; demais papeis
   operam na propria account (o backend resolve o escopo).
+- Admin abrindo restaurante de outro cliente: o editor leva o `accountId` na query (lista/criacao ->
+  `/cardapio/{id}?account=<accountId>`). Sem isso o GET cai na account ativa (`X-Account-Id`) e da 404
+  quando o restaurante e de outra account. O default "Agencia" no modal mantem o caso comum na account
+  ativa, onde nem precisa do `?account=`.
 
 ## Pendente (fora do MVP)
 
 - Notificacao realtime de pedido novo (hoje: refresh manual / re-fetch ao trocar filtro).
 - Dashboard de analytics dos eventos (a aba de eventos do contrato nao tem UI ainda).
-- O wiring de menu (`nav.config.ts`, `workspaces.ts`, `permissions.ts`, `module-enabled.global.ts`)
-  e feito na INTEGRACAO (fase C3), nao por esta area. Ate la a pagina nao aparece no menu.
+- O wiring de menu ja foi aplicado (workspace `cardapio_web` em `workspaces.ts` + `permissions.ts`;
+  gating em `module-enabled.global.ts`); a pagina aparece no menu. Nao existe `nav.config.ts` neste
+  repo — o nav deriva de `workspaces.ts`/`permissions.ts`.

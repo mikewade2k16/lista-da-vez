@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// TEMPLATE/PREVIA: coluna lateral da operacao com dois blocos — Comunicados (topo)
-// e Omni Chat (rodape). Por enquanto e SO front (sem dados/sem backend); marcado
-// visivelmente como "Previa" para ninguem achar que ja esta pronto. A implementacao
-// real (comunicados/campanhas + chat IA) vem depois.
+// Coluna lateral da operacao com dois blocos — Comunicados (topo, ainda PREVIA
+// sem backend) e Omni Chat (rodape, agora LIGADO ao endpoint Go POST
+// /v1/omni-chat/ask via useOmniChat). O bloco Comunicados segue stub visual ate
+// ter dados/backend; mantido com badge "Previa".
+import { nextTick, ref, watch } from 'vue'
+import { useOmniChat } from '~/composables/useOmniChat'
 
 // Conteudo de exemplo so para dar forma ao template. Nao vem de API.
 const communications = [
@@ -19,6 +21,24 @@ const chatTopics = [
   'Duvidas gerais',
   'Pesquisa de mercado',
 ]
+
+const chat = useOmniChat()
+const chatStreamRef = ref<HTMLElement | null>(null)
+
+// Rola a conversa para a ultima mensagem assim que a lista muda. flush:'post'
+// garante que o DOM ja renderizou a nova bolha antes de medir scrollHeight.
+watch(
+  () => chat.messages.value.length,
+  () => {
+    void nextTick(() => {
+      const stream = chatStreamRef.value
+      if (stream) {
+        stream.scrollTop = stream.scrollHeight
+      }
+    })
+  },
+  { flush: 'post' },
+)
 </script>
 
 <template>
@@ -45,26 +65,63 @@ const chatTopics = [
       </header>
 
       <div class="operation-side__chat-topics">
-        <span v-for="topic in chatTopics" :key="topic" class="operation-side__chip">
+        <button
+          v-for="topic in chatTopics"
+          :key="topic"
+          type="button"
+          class="operation-side__chip"
+          :class="{ 'operation-side__chip--is-selected': topic === chat.activeTopic.value }"
+          @click="chat.selectTopic(topic)"
+        >
           {{ topic }}
-        </span>
+        </button>
       </div>
 
-      <div class="operation-side__chat-stream">
-        <p class="operation-side__chat-empty">
+      <div ref="chatStreamRef" class="operation-side__chat-stream">
+        <p v-if="!chat.messages.value.length" class="operation-side__chat-empty">
           O assistente do Omni vai responder aqui sobre atendimento, produtos, operação e pesquisa
           de mercado.
         </p>
+
+        <template v-else>
+          <div
+            v-for="message in chat.messages.value"
+            :key="message.id"
+            class="operation-side__chat-msg"
+            :class="`operation-side__chat-msg--${message.role}`"
+          >
+            {{ message.text }}
+          </div>
+        </template>
+
+        <div
+          v-if="chat.sending.value"
+          class="operation-side__chat-msg operation-side__chat-msg--assistant operation-side__chat-typing"
+          aria-live="polite"
+        >
+          digitando…
+        </div>
       </div>
+
+      <p v-if="chat.errorMessage.value" class="operation-side__chat-error" role="alert">
+        {{ chat.errorMessage.value }}
+      </p>
 
       <div class="operation-side__chat-input">
         <input
+          v-model="chat.draft.value"
           class="operation-side__chat-field"
           type="text"
           placeholder="Pergunte ao Omni…"
-          disabled
+          @keydown.enter.prevent="chat.send()"
         />
-        <button class="operation-side__chat-send" type="button" disabled aria-label="Enviar">
+        <button
+          class="operation-side__chat-send"
+          type="button"
+          :disabled="chat.sending.value || !chat.draft.value.trim()"
+          aria-label="Enviar"
+          @click="chat.send()"
+        >
           <span class="material-icons-round">send</span>
         </button>
       </div>
@@ -161,6 +218,22 @@ const chatTopics = [
   color: rgb(var(--muted));
   border: 1px solid var(--line-soft);
   background: rgb(var(--surface-2) / 0.4);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.operation-side__chip:hover {
+  border-color: rgb(var(--ring) / 0.42);
+  color: var(--text-main);
+}
+
+.operation-side__chip--is-selected {
+  color: rgb(var(--primary));
+  border-color: rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.16);
 }
 
 .operation-side__chat-stream {
@@ -168,8 +241,8 @@ const chatTopics = [
   min-height: 0;
   overflow-y: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
   padding: 10px;
   border-radius: 12px;
   border: 1px dashed var(--line-soft);
@@ -177,11 +250,52 @@ const chatTopics = [
 }
 
 .operation-side__chat-empty {
-  margin: 0;
+  margin: auto;
   max-width: 24ch;
   text-align: center;
   font-size: 0.78rem;
   color: rgb(var(--muted));
+}
+
+.operation-side__chat-msg {
+  max-width: 88%;
+  padding: 8px 11px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.operation-side__chat-msg--user {
+  align-self: flex-end;
+  color: rgb(var(--primary));
+  border: 1px solid rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.16);
+  border-bottom-right-radius: 4px;
+}
+
+.operation-side__chat-msg--assistant {
+  align-self: flex-start;
+  color: var(--text-main);
+  border: 1px solid var(--line-soft);
+  background: rgb(var(--surface-2) / 0.6);
+  border-bottom-left-radius: 4px;
+}
+
+.operation-side__chat-typing {
+  color: rgb(var(--muted));
+  font-style: italic;
+}
+
+.operation-side__chat-error {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 10px;
+  font-size: 0.76rem;
+  color: rgb(var(--danger));
+  border: 1px solid rgb(var(--danger) / 0.25);
+  background: rgb(var(--danger) / 0.08);
 }
 
 .operation-side__chat-input {
@@ -217,8 +331,13 @@ const chatTopics = [
   border: 1px solid rgb(var(--ring) / 0.42);
   background: rgb(var(--primary) / 0.16);
   color: rgb(var(--primary));
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.operation-side__chat-send:disabled {
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.5;
 }
 
 .operation-side__chat-send .material-icons-round {

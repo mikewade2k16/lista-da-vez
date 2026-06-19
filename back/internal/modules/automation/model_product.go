@@ -9,11 +9,15 @@ type SourcesView struct {
 }
 
 // ProductHit e a projecao lean de um produto retornado pela tool de catalogo (M5)
-// para o runtime (n8n). So os campos que o bot precisa para responder ao cliente.
+// para o runtime (n8n). Base = site.products (lista + imagem), ENRIQUECIDO pelo ERP
+// via o codigo (nome real, preco e marca): o site.products costuma vir com nome
+// generico e preco 0; o ERP (erp_item_current, por sku == code) tem o dado bom.
 type ProductHit struct {
 	Name  string  `json:"name"`
 	Code  string  `json:"code"`
 	Price float64 `json:"price"`
+	Brand string  `json:"brand,omitempty"`
+	Image string  `json:"image,omitempty"`
 }
 
 // sourcesSettingsKey e a chave dentro de automation.automations.settings jsonb onde

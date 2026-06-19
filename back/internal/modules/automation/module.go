@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
@@ -13,6 +14,15 @@ import (
 // defaultWAHAURL e a base interna da WAHA na rede do compose. Sobrescrita por
 // AUTOMATION_WAHA_INTERNAL_URL.
 const defaultWAHAURL = "http://waha:3000"
+
+// defaultN8NURL e a base interna do n8n na rede do compose (webhook do Omni
+// Chat). Sobrescrita por AUTOMATION_N8N_INTERNAL_URL.
+const defaultN8NURL = "http://n8n:5678"
+
+// omniContextTokenTTL e a janela de validade do context token do Omni Chat
+// (Fase 2). Curta: cobre o salto /ask -> webhook n8n -> tool de dados, limitando
+// a janela de uso de um token vazado.
+const omniContextTokenTTL = 300 * time.Second
 
 // Module e o adaptador do modulo `automation` para o Module Registry.
 //
@@ -65,12 +75,32 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	if wahaURL == "" {
 		wahaURL = defaultWAHAURL
 	}
-	svc := NewService(NewStore(deps.Pool), NewWAHAClient(wahaURL))
+	n8nURL := strings.TrimSpace(os.Getenv("AUTOMATION_N8N_INTERNAL_URL"))
+	if n8nURL == "" {
+		n8nURL = defaultN8NURL
+	}
+	// O Omni Chat reusa AUTOMATION_RUNTIME_TOKEN (mesmo token de servico do
+	// runtime-config) para o Bearer Go->n8n. Sem token = nao configurado (503).
+	runtimeToken := strings.TrimSpace(os.Getenv("AUTOMATION_RUNTIME_TOKEN"))
+
+	// Context token (Fase 2): secret HMAC dedicado quando
+	// AUTOMATION_CONTEXT_TOKEN_SECRET esta setado; senao reusa o runtime token
+	// como secret (MVP — token e secret HMAC sao valores distintos: o runtime
+	// token assina o context token, nao e' o context token). Sem nenhum dos dois,
+	// o manager fica sem secret e Issue/Parse falham (chat sem tools de dados).
+	ctxSecret := strings.TrimSpace(os.Getenv("AUTOMATION_CONTEXT_TOKEN_SECRET"))
+	if ctxSecret == "" {
+		ctxSecret = runtimeToken
+	}
+	ctxMgr := NewContextTokenManager([]byte(ctxSecret), omniContextTokenTTL)
+
+	svc := NewService(NewStore(deps.Pool), NewWAHAClient(wahaURL), NewN8NClient(n8nURL, runtimeToken), ctxMgr)
 
 	m.handle = &handle{
 		service:        svc,
 		authMiddleware: deps.AuthMiddleware,
-		runtimeToken:   strings.TrimSpace(os.Getenv("AUTOMATION_RUNTIME_TOKEN")),
+		runtimeToken:   runtimeToken,
+		ctxMgr:         ctxMgr,
 	}
 	return m.handle, nil
 }
@@ -83,6 +113,7 @@ type handle struct {
 	service        *Service
 	authMiddleware *auth.Middleware
 	runtimeToken   string
+	ctxMgr         *ContextTokenManager
 }
 
 func (h *handle) ID() string { return "automation" }
@@ -92,7 +123,7 @@ func (h *handle) ID() string { return "automation" }
 // por token de servico, fora do gating).
 func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterRoutes(mux, h.service, h.authMiddleware)
-	RegisterRuntimeRoutes(mux, h.service, h.runtimeToken)
+	RegisterRuntimeRoutes(mux, h.service, h.runtimeToken, h.ctxMgr)
 }
 
 // RegisterEventHandlers — automation nao consome eventos por enquanto.

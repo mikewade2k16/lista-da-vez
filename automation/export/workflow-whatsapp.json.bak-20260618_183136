@@ -235,7 +235,7 @@
         "typeVersion": 1.6,
         "position": [
           2080,
-          272
+          260
         ],
         "id": "6f2381e5-b8c6-42d6-99cb-5551028c5da3",
         "name": "Redis Chat Memory",
@@ -283,7 +283,7 @@
         "type": "n8n-nodes-waha.WAHA",
         "typeVersion": 202411,
         "position": [
-          2464,
+          2460,
           0
         ],
         "id": "115782b1-ee0c-4e43-947e-d8d7dd274d47",
@@ -312,8 +312,8 @@
         "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
         "typeVersion": 1.3,
         "position": [
-          1888,
-          272
+          1880,
+          260
         ],
         "credentials": {
           "openAiApi": {
@@ -527,8 +527,8 @@
         "type": "n8n-nodes-base.set",
         "typeVersion": 3.4,
         "position": [
-          1184,
-          -208
+          1180,
+          -200
         ],
         "parameters": {
           "assignments": {
@@ -550,12 +550,12 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          1392,
+          1380,
           0
         ],
         "parameters": {
           "mode": "runOnceForAllItems",
-          "jsCode": "const chatId = $('Dados').first().json.chatId;\nconst msg = $('Juntar').first().json.message || '';\nconst mem = $('Ler memoria').first().json || {};\nconst seg = mem.seg || 0;\nconst lastMsg = mem.lastMsg || '';\nconst ts = mem.ts || 0;\nconst longMem = mem.longMem || '';\nconst now = Date.now();\nconst gapMin = ts ? Math.round((now - ts) / 60000) : 99999;\nreturn [{ json: { message: msg, chatId: chatId, prevMsg: lastMsg, seg: seg, gapMin: gapMin, longMem: longMem } }];"
+          "jsCode": "const chatId = $('Dados').first().json.chatId;\nconst msg = $input.first().json.message || '';\nconst mem = $('Ler memoria').first().json || {};\nconst seg = mem.seg || 0;\nconst lastMsg = mem.lastMsg || '';\nconst ts = mem.ts || 0;\nconst longMem = mem.longMem || '';\nconst now = Date.now();\nconst gapMin = ts ? Math.round((now - ts) / 60000) : 99999;\nreturn [{ json: { message: msg, chatId: chatId, prevMsg: lastMsg, seg: seg, gapMin: gapMin, longMem: longMem } }];"
         }
       },
       {
@@ -564,7 +564,7 @@
         "type": "@n8n/n8n-nodes-langchain.chainLlm",
         "typeVersion": 1.9,
         "position": [
-          1584,
+          1580,
           0
         ],
         "parameters": {
@@ -578,7 +578,7 @@
         "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
         "typeVersion": 1.3,
         "position": [
-          1584,
+          1580,
           240
         ],
         "parameters": {
@@ -606,7 +606,7 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          1792,
+          1780,
           0
         ],
         "parameters": {
@@ -620,7 +620,7 @@
         "type": "@n8n/n8n-nodes-langchain.chainLlm",
         "typeVersion": 1.9,
         "position": [
-          2688,
+          2680,
           0
         ],
         "parameters": {
@@ -634,8 +634,8 @@
         "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
         "typeVersion": 1.3,
         "position": [
-          2688,
-          224
+          2680,
+          220
         ],
         "parameters": {
           "model": {
@@ -662,7 +662,7 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          2912,
+          2900,
           0
         ],
         "parameters": {
@@ -676,8 +676,8 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          384,
-          -176
+          380,
+          -180
         ],
         "parameters": {
           "mode": "runOnceForAllItems",
@@ -690,8 +690,8 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
         "position": [
-          2368,
-          -176
+          2360,
+          -180
         ],
         "onError": "continueRegularOutput",
         "parameters": {
@@ -710,8 +710,8 @@
         "type": "n8n-nodes-base.wait",
         "typeVersion": 1.1,
         "position": [
-          2368,
-          48
+          2360,
+          40
         ],
         "parameters": {
           "resume": "timeInterval",
@@ -727,7 +727,7 @@
         "typeVersion": 2,
         "position": [
           2240,
-          128
+          120
         ],
         "parameters": {
           "mode": "runOnceForAllItems",
@@ -740,8 +740,8 @@
         "type": "n8n-nodes-base.splitInBatches",
         "typeVersion": 3,
         "position": [
-          2384,
-          128
+          2380,
+          120
         ],
         "parameters": {
           "batchSize": 1,
@@ -754,8 +754,8 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          2912,
-          128
+          2900,
+          120
         ],
         "parameters": {
           "mode": "runOnceForAllItems",
@@ -935,8 +935,8 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
         "position": [
-          1120,
-          -864
+          0,
+          220
         ],
         "id": "38befe62-539b-4771-8977-a8fd756dab26",
         "name": "Get runtime config"
@@ -949,7 +949,7 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          1984,
+          1980,
           0
         ],
         "id": "c5a0ae7b-c762-4ba0-989d-ab656ef84078",
@@ -961,7 +961,7 @@
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
         "position": [
-          2112,
+          2100,
           0
         ],
         "parameters": {
@@ -975,12 +975,12 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
         "position": [
-          2720,
-          -320
+          0,
+          440
         ],
         "onError": "continueRegularOutput",
         "parameters": {
-          "url": "=http://api:8080/v1/runtime/automation/memory?session={{ $('Dados').first().json.session }}&chatId={{ $('Dados').first().json.chatId }}",
+          "url": "=http://api:8080/v1/runtime/automation/memory?session={{ $json.body.session }}&chatId={{ $json.body.payload.from || '' }}",
           "sendHeaders": true,
           "headerParameters": {
             "parameters": [
@@ -999,8 +999,8 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
         "position": [
-          1984,
-          208
+          1980,
+          200
         ],
         "onError": "continueRegularOutput",
         "parameters": {
@@ -1028,7 +1028,7 @@
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
         "position": [
-          3104,
+          3100,
           0
         ],
         "onError": "continueRegularOutput",
@@ -1058,6 +1058,11 @@
           [
             {
               "node": "Dados",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Ler memoria",
               "type": "main",
               "index": 0
             }
@@ -1457,7 +1462,7 @@
         "main": [
           [
             {
-              "node": "Ler memoria",
+              "node": "Ctx: ler",
               "type": "main",
               "index": 0
             }
@@ -1502,17 +1507,6 @@
           [
             {
               "node": "Bot ligado?",
-              "type": "main",
-              "index": 0
-            }
-          ]
-        ]
-      },
-      "Ler memoria": {
-        "main": [
-          [
-            {
-              "node": "Ctx: ler",
               "type": "main",
               "index": 0
             }

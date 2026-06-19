@@ -71,6 +71,32 @@ func scopedAccountID(r *http.Request, allowEmpty bool) (string, bool, error) {
 
 var errNoAccount = errors.New("cardapio: no account context")
 
+// listScopeAccountID resolve o escopo da LISTAGEM. Para platform_admin o filtro
+// vem SO do query accountId (vazio = todas as accounts, igual a bio) — o header
+// X-Account-Id serve ao gating de modulo, nao restringe o que o admin enxerga.
+// Nao-admin fica preso na propria account (accountId divergente => 404 uniforme).
+func listScopeAccountID(r *http.Request) (string, error) {
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		return "", errNoAccount
+	}
+	requested := strings.TrimSpace(r.URL.Query().Get("accountId"))
+	if principal.Role == auth.RolePlatformAdmin {
+		return requested, nil
+	}
+	own := strings.TrimSpace(principal.AccountID)
+	if own == "" {
+		own = strings.TrimSpace(principal.TenantID)
+	}
+	if own == "" {
+		return "", errNoAccount
+	}
+	if requested != "" && requested != own {
+		return "", ErrNotFound
+	}
+	return own, nil
+}
+
 // writeServiceError traduz erros de dominio para HTTP no formato do contrato.
 func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
@@ -97,7 +123,7 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 
 func handleListRestaurants(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, true)
+		accountID, err := listScopeAccountID(r)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

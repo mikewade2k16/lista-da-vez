@@ -47,6 +47,20 @@ export const useCardapioStore = defineStore('cardapio', () => {
   const auth = useAuthStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
+  // Escopo de account do EDITOR. Quando platform_admin abre um restaurante de
+  // OUTRO cliente, o accountId precisa ir na query — o backend prioriza o query
+  // `accountId` sobre o header X-Account-Id (account ativa). Vazio = usa o
+  // contexto (nao-admin, ou admin operando na propria agencia/account ativa).
+  const scopeAccountId = ref('')
+
+  function withScope(path: string): string {
+    if (!scopeAccountId.value) {
+      return path
+    }
+    const sep = path.includes('?') ? '&' : '?'
+    return `${path}${sep}accountId=${encodeURIComponent(scopeAccountId.value)}`
+  }
+
   // Lista de restaurantes (projecao lean).
   const restaurants = ref<RestaurantListItem[]>([])
   const listPending = ref(false)
@@ -78,6 +92,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
     orders.value = emptyOrders()
     detailError.value = ''
     ordersError.value = ''
+    scopeAccountId.value = ''
   }
 
   // --- Lista de restaurantes ---
@@ -127,16 +142,21 @@ export const useCardapioStore = defineStore('cardapio', () => {
 
   // --- Restaurante ativo (editor) ---
 
-  async function loadRestaurant(id: string) {
+  // accountId: account do restaurante (vem da listagem ou da query da rota). So
+  // platform_admin abrindo restaurante de outro cliente precisa informar; demais
+  // casos passam vazio e usam o X-Account-Id do contexto.
+  async function loadRestaurant(id: string, accountId = '') {
+    scopeAccountId.value = String(accountId || '').trim()
     detailPending.value = true
     detailError.value = ''
     try {
+      const base = `/v1/cardapio/restaurants/${encodeURIComponent(id)}`
       const [restaurantResponse, categoriesResponse, productsResponse, domainsResponse] =
         await Promise.all([
-          apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`),
-          apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/categories`),
-          apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products`),
-          apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/domains`),
+          apiRequest(withScope(base)),
+          apiRequest(withScope(`${base}/categories`)),
+          apiRequest(withScope(`${base}/products`)),
+          apiRequest(withScope(`${base}/domains`)),
         ])
       restaurant.value = restaurantResponse as Restaurant
       categories.value = asArray<Category>(categoriesResponse, 'categories')
@@ -150,16 +170,21 @@ export const useCardapioStore = defineStore('cardapio', () => {
   }
 
   async function patchRestaurant(id: string, body: Record<string, unknown>) {
-    const response = (await apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      body,
-    })) as Restaurant
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`),
+      {
+        method: 'PATCH',
+        body,
+      },
+    )) as Restaurant
     restaurant.value = response
     return response
   }
 
   async function deleteRestaurant(id: string) {
-    await apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await apiRequest(withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}`), {
+      method: 'DELETE',
+    })
     restaurants.value = restaurants.value.filter((item) => item.id !== id)
   }
 
@@ -167,14 +192,14 @@ export const useCardapioStore = defineStore('cardapio', () => {
 
   async function reloadCategories(id: string) {
     const response = await apiRequest(
-      `/v1/cardapio/restaurants/${encodeURIComponent(id)}/categories`,
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/categories`),
     )
     categories.value = asArray<Category>(response, 'categories')
   }
 
   async function createCategory(id: string, body: Record<string, unknown>) {
     const response = (await apiRequest(
-      `/v1/cardapio/restaurants/${encodeURIComponent(id)}/categories`,
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/categories`),
       { method: 'POST', body },
     )) as Category
     await reloadCategories(id)
@@ -183,7 +208,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
 
   async function patchCategory(categoryId: string, body: Record<string, unknown>) {
     const response = (await apiRequest(
-      `/v1/cardapio/categories/${encodeURIComponent(categoryId)}`,
+      withScope(`/v1/cardapio/categories/${encodeURIComponent(categoryId)}`),
       { method: 'PATCH', body },
     )) as Category
     if (restaurantId.value) {
@@ -193,7 +218,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
   }
 
   async function deleteCategory(categoryId: string) {
-    await apiRequest(`/v1/cardapio/categories/${encodeURIComponent(categoryId)}`, {
+    await apiRequest(withScope(`/v1/cardapio/categories/${encodeURIComponent(categoryId)}`), {
       method: 'DELETE',
     })
     if (restaurantId.value) {
@@ -204,20 +229,22 @@ export const useCardapioStore = defineStore('cardapio', () => {
   // --- Produtos ---
 
   async function reloadProducts(id: string) {
-    const response = await apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products`)
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products`),
+    )
     products.value = asArray<ProductListItem>(response, 'products')
   }
 
   async function loadProduct(productId: string): Promise<Product> {
     const response = (await apiRequest(
-      `/v1/cardapio/products/${encodeURIComponent(productId)}`,
+      withScope(`/v1/cardapio/products/${encodeURIComponent(productId)}`),
     )) as Product
     return response
   }
 
   async function createProduct(id: string, body: Record<string, unknown>) {
     const response = (await apiRequest(
-      `/v1/cardapio/restaurants/${encodeURIComponent(id)}/products`,
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/products`),
       { method: 'POST', body },
     )) as Product
     await reloadProducts(id)
@@ -225,10 +252,10 @@ export const useCardapioStore = defineStore('cardapio', () => {
   }
 
   async function patchProduct(productId: string, body: Record<string, unknown>) {
-    const response = (await apiRequest(`/v1/cardapio/products/${encodeURIComponent(productId)}`, {
-      method: 'PATCH',
-      body,
-    })) as Product
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/products/${encodeURIComponent(productId)}`),
+      { method: 'PATCH', body },
+    )) as Product
     if (restaurantId.value) {
       await reloadProducts(restaurantId.value)
     }
@@ -236,7 +263,9 @@ export const useCardapioStore = defineStore('cardapio', () => {
   }
 
   async function deleteProduct(productId: string) {
-    await apiRequest(`/v1/cardapio/products/${encodeURIComponent(productId)}`, { method: 'DELETE' })
+    await apiRequest(withScope(`/v1/cardapio/products/${encodeURIComponent(productId)}`), {
+      method: 'DELETE',
+    })
     if (restaurantId.value) {
       await reloadProducts(restaurantId.value)
     }
@@ -246,27 +275,29 @@ export const useCardapioStore = defineStore('cardapio', () => {
 
   async function loadReviews(productId: string): Promise<Review[]> {
     const response = await apiRequest(
-      `/v1/cardapio/products/${encodeURIComponent(productId)}/reviews`,
+      withScope(`/v1/cardapio/products/${encodeURIComponent(productId)}/reviews`),
     )
     return asArray<Review>(response, 'reviews')
   }
 
   async function createReview(productId: string, body: Record<string, unknown>) {
-    return (await apiRequest(`/v1/cardapio/products/${encodeURIComponent(productId)}/reviews`, {
-      method: 'POST',
-      body,
-    })) as Review
+    return (await apiRequest(
+      withScope(`/v1/cardapio/products/${encodeURIComponent(productId)}/reviews`),
+      { method: 'POST', body },
+    )) as Review
   }
 
   async function patchReview(reviewId: string, body: Record<string, unknown>) {
-    return (await apiRequest(`/v1/cardapio/reviews/${encodeURIComponent(reviewId)}`, {
+    return (await apiRequest(withScope(`/v1/cardapio/reviews/${encodeURIComponent(reviewId)}`), {
       method: 'PATCH',
       body,
     })) as Review
   }
 
   async function deleteReview(reviewId: string) {
-    await apiRequest(`/v1/cardapio/reviews/${encodeURIComponent(reviewId)}`, { method: 'DELETE' })
+    await apiRequest(withScope(`/v1/cardapio/reviews/${encodeURIComponent(reviewId)}`), {
+      method: 'DELETE',
+    })
   }
 
   // --- Pedidos ---
@@ -287,7 +318,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
       search.set('page', String(nextPage))
       search.set('perPage', String(ORDERS_PER_PAGE))
       const response = (await apiRequest(
-        `/v1/cardapio/restaurants/${encodeURIComponent(id)}/orders?${search.toString()}`,
+        withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/orders?${search.toString()}`),
       )) as { orders?: Order[]; total?: number; page?: number } | Order[]
 
       const items = asArray<Order>(response, 'orders')
@@ -307,10 +338,13 @@ export const useCardapioStore = defineStore('cardapio', () => {
   }
 
   async function updateOrderStatus(orderId: string, status: OrderStatus) {
-    const response = (await apiRequest(`/v1/cardapio/orders/${encodeURIComponent(orderId)}`, {
-      method: 'PATCH',
-      body: { status },
-    })) as Order
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/orders/${encodeURIComponent(orderId)}`),
+      {
+        method: 'PATCH',
+        body: { status },
+      },
+    )) as Order
     orders.value = {
       ...orders.value,
       items: orders.value.items.map((order) => (order.id === orderId ? response : order)),
@@ -321,13 +355,15 @@ export const useCardapioStore = defineStore('cardapio', () => {
   // --- Dominios ---
 
   async function reloadDomains(id: string) {
-    const response = await apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/domains`)
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/domains`),
+    )
     domains.value = asArray<RestaurantDomain>(response, 'domains')
   }
 
   async function createDomain(id: string, host: string, isPrimary: boolean) {
     const response = (await apiRequest(
-      `/v1/cardapio/restaurants/${encodeURIComponent(id)}/domains`,
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/domains`),
       { method: 'POST', body: { host, isPrimary } },
     )) as RestaurantDomain
     await reloadDomains(id)
@@ -335,7 +371,9 @@ export const useCardapioStore = defineStore('cardapio', () => {
   }
 
   async function deleteDomain(host: string) {
-    await apiRequest(`/v1/cardapio/domains?host=${encodeURIComponent(host)}`, { method: 'DELETE' })
+    await apiRequest(withScope(`/v1/cardapio/domains?host=${encodeURIComponent(host)}`), {
+      method: 'DELETE',
+    })
     if (restaurantId.value) {
       await reloadDomains(restaurantId.value)
     }
@@ -346,10 +384,13 @@ export const useCardapioStore = defineStore('cardapio', () => {
   async function uploadMedia(id: string, file: File): Promise<string> {
     const form = new FormData()
     form.append('file', file)
-    const response = (await apiRequest(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/media`, {
-      method: 'POST',
-      body: form,
-    })) as { url?: string }
+    const response = (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/media`),
+      {
+        method: 'POST',
+        body: form,
+      },
+    )) as { url?: string }
     return String(response?.url ?? '')
   }
 

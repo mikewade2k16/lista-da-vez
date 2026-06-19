@@ -78,10 +78,12 @@ type PublicOrderItemInput struct {
 	Notes       string   `json:"notes"`
 }
 
-// PublicCustomerInput sao os dados do cliente final no checkout.
+// PublicCustomerInput sao os dados do cliente final no checkout. Address e o
+// endereco de entrega no formato do contrato (customer.address); jsonb livre.
 type PublicCustomerInput struct {
-	Name  string `json:"name"`
-	Phone string `json:"phone"`
+	Name    string          `json:"name"`
+	Phone   string          `json:"phone"`
+	Address json.RawMessage `json:"address"`
 }
 
 // PublicOrderInput e o corpo de POST /v1/public/restaurants/{slug}/orders.

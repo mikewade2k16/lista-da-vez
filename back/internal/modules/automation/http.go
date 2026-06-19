@@ -34,6 +34,12 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 
 	registerModelRoutes(mux, svc, wrap)
 	registerSourcesRoutes(mux, svc, wrap)
+
+	// Omni Chat (M0) — chat interno do painel de Operacao. Path FORA do prefixo
+	// /v1/automation de proposito: nao casa nenhuma regra de moduleGatingRules
+	// (RequireModuleByPath usa limite de segmento), entao quem usa Operacao nao
+	// precisa do modulo `automation` habilitado. So RequireAuth.
+	mux.Handle("POST /v1/omni-chat/ask", wrap(handleOmniChatAsk(svc)))
 }
 
 func handleOverview(svc *Service) http.HandlerFunc {
@@ -108,13 +114,15 @@ func handleSetEnabled(svc *Service) http.HandlerFunc {
 
 // RegisterRuntimeRoutes monta a rota consumida pelo n8n. Fora do prefixo
 // /v1/automation (que e gateado por modulo + X-Account-Id); auth aqui e por
-// TOKEN DE SERVICO (AUTOMATION_RUNTIME_TOKEN), nao por JWT de usuario.
-func RegisterRuntimeRoutes(mux *http.ServeMux, svc *Service, token string) {
+// TOKEN DE SERVICO (AUTOMATION_RUNTIME_TOKEN), nao por JWT de usuario. ctxMgr
+// valida o context token (Fase 2) das tools de dados do Omni Chat.
+func RegisterRuntimeRoutes(mux *http.ServeMux, svc *Service, token string, ctxMgr *ContextTokenManager) {
 	mux.Handle("GET /v1/runtime/automation/config", handleRuntimeConfig(svc, token))
 	mux.Handle("GET /v1/runtime/automation/memory", handleRuntimeMemoryGet(svc, token))
 	mux.Handle("PUT /v1/runtime/automation/memory", handleRuntimeMemoryPut(svc, token))
 	registerConversationRuntimeRoutes(mux, svc, token)
 	registerCatalogToolRoute(mux, svc, token)
+	registerOmniChatToolRoutes(mux, svc, token, ctxMgr)
 }
 
 func handleRuntimeConfig(svc *Service, token string) http.HandlerFunc {

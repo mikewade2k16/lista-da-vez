@@ -14,6 +14,15 @@ var (
 	// ErrValidation: input invalido (slug/nome vazio, status invalido etc.).
 	ErrValidation = errors.New("cardapio: validation")
 
+	// Erros especificos do checkout publico (mensagens acionaveis ao cliente).
+	ErrTypeUnavailable = errors.New("cardapio: order type unavailable")
+	ErrNameRequired    = errors.New("cardapio: customer name required")
+	ErrPhoneRequired   = errors.New("cardapio: customer phone required")
+	ErrEmptyCart       = errors.New("cardapio: empty cart")
+	ErrMinOrder        = errors.New("cardapio: below minimum order")
+	ErrItemUnavailable = errors.New("cardapio: item unavailable")
+	ErrOptionInvalid   = errors.New("cardapio: item option invalid")
+
 	// ErrSlugConflict: slug duplicado (restaurante global ou produto/categoria no
 	// restaurante).
 	ErrSlugConflict = errors.New("cardapio: slug conflict")

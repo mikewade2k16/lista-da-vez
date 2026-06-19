@@ -98,7 +98,7 @@ Se esse app for subir na mesma VPS, ele sobe como stack separada e isolada.
 
 Para este codigo, o desenho mais simples e direto e um unico host publico:
 
-- app e api: `https://lista.whenthelightsdie.com`
+- app e api: `https://omni.crowvisuals.com.br`
 
 Motivo tecnico:
 

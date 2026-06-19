@@ -11,7 +11,7 @@ import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
 
-const props = defineProps<{ restaurantId: string }>()
+const props = defineProps<{ restaurantId: string; accountId?: string }>()
 
 const store = useCardapioStore()
 const ui = useUiStore()
@@ -55,7 +55,7 @@ async function onToggleActive() {
 
 function loadActive() {
   if (props.restaurantId) {
-    void store.loadRestaurant(props.restaurantId)
+    void store.loadRestaurant(props.restaurantId, props.accountId)
   }
 }
 

@@ -104,8 +104,8 @@ func TestPlaceOrder_UnavailableItem(t *testing.T) {
 		Customer: PublicCustomerInput{Name: "Joao"},
 		Items:    []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 1}},
 	})
-	if err != ErrValidation {
-		t.Fatalf("item indisponivel: esperava ErrValidation, recebi %v", err)
+	if err != ErrItemUnavailable {
+		t.Fatalf("item indisponivel: esperava ErrItemUnavailable, recebi %v", err)
 	}
 }
 
@@ -140,8 +140,8 @@ func TestPlaceOrder_AddonFromAnotherProduct(t *testing.T) {
 			Quantity:  1,
 		}},
 	})
-	if err != ErrValidation {
-		t.Fatalf("addon de outro produto: esperava ErrValidation, recebi %v", err)
+	if err != ErrOptionInvalid {
+		t.Fatalf("addon de outro produto: esperava ErrOptionInvalid, recebi %v", err)
 	}
 }
 
@@ -156,8 +156,8 @@ func TestPlaceOrder_VariationFromAnotherProduct(t *testing.T) {
 		Customer: PublicCustomerInput{Name: "Joao"},
 		Items:    []PublicOrderItemInput{{ProductID: "prod-1", VariationID: "var-x", Quantity: 1}},
 	})
-	if err != ErrValidation {
-		t.Fatalf("variacao de outro produto: esperava ErrValidation, recebi %v", err)
+	if err != ErrOptionInvalid {
+		t.Fatalf("variacao de outro produto: esperava ErrOptionInvalid, recebi %v", err)
 	}
 }
 
@@ -173,8 +173,8 @@ func TestPlaceOrder_TypeNotEnabled(t *testing.T) {
 		Customer: PublicCustomerInput{Name: "Joao", Phone: "11999"},
 		Items:    []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 1}},
 	})
-	if err != ErrValidation {
-		t.Fatalf("tipo desabilitado: esperava ErrValidation, recebi %v", err)
+	if err != ErrTypeUnavailable {
+		t.Fatalf("tipo desabilitado: esperava ErrTypeUnavailable, recebi %v", err)
 	}
 }
 
@@ -188,8 +188,8 @@ func TestPlaceOrder_DeliveryRequiresPhone(t *testing.T) {
 		Customer: PublicCustomerInput{Name: "Joao"},
 		Items:    []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 1}},
 	})
-	if err != ErrValidation {
-		t.Fatalf("entrega sem telefone: esperava ErrValidation, recebi %v", err)
+	if err != ErrPhoneRequired {
+		t.Fatalf("entrega sem telefone: esperava ErrPhoneRequired, recebi %v", err)
 	}
 }
 
@@ -205,8 +205,8 @@ func TestPlaceOrder_BelowMinOrder(t *testing.T) {
 		Customer: PublicCustomerInput{Name: "Joao"},
 		Items:    []PublicOrderItemInput{{ProductID: "prod-1", Quantity: 1}}, // 5000 < 20000
 	})
-	if err != ErrValidation {
-		t.Fatalf("abaixo do minimo: esperava ErrValidation, recebi %v", err)
+	if err != ErrMinOrder {
+		t.Fatalf("abaixo do minimo: esperava ErrMinOrder, recebi %v", err)
 	}
 }
 

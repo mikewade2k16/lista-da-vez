@@ -20,6 +20,10 @@ const emit = defineEmits<{
   (e: 'submit', payload: { name: string; slug: string; accountId: string }): void
 }>()
 
+// Sentinela "agencia": admin cria sob a propria account ativa (accountId vazio
+// no backend) em vez de escolher um cliente. Espelha o modal da bio.
+const AGENCY_SENTINEL = 'agency'
+
 const name = ref('')
 const slug = ref('')
 const slugTouched = ref(false)
@@ -39,7 +43,7 @@ function reset() {
   name.value = ''
   slug.value = ''
   slugTouched.value = false
-  accountId.value = props.isAdmin ? '' : ''
+  accountId.value = props.isAdmin ? AGENCY_SENTINEL : ''
 }
 
 watch(
@@ -69,7 +73,7 @@ function onSubmit() {
   emit('submit', {
     name: name.value.trim(),
     slug: slug.value.trim(),
-    accountId: accountId.value,
+    accountId: accountId.value === AGENCY_SENTINEL ? '' : accountId.value,
   })
 }
 </script>
@@ -117,7 +121,7 @@ function onSubmit() {
         <label v-if="isAdmin" class="cardapio-create__field">
           <span class="cardapio-create__label">Cliente (account)</span>
           <select v-model="accountId" class="cardapio-create__input">
-            <option value="" disabled>Selecione o cliente</option>
+            <option :value="AGENCY_SENTINEL">Agencia (propria account)</option>
             <option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">
               {{ tenant.name }}
             </option>

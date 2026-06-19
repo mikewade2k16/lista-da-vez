@@ -263,7 +263,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		logger.Info("core_v2 feature flag enabled — multi-tenant refactor code paths active")
 	}
 
-	auth.RegisterRoutes(mux, authService, invitationService, passwordResetService, authMiddleware)
+	auth.RegisterRoutes(mux, authService, invitationService, passwordResetService, authMiddleware, auth.GatewayConfig{
+		CookieDomain: cfg.AuthGatewayCookieDomain,
+		LoginURL:     cfg.WebAppURL,
+	})
 	registerContextRoutes(mux, authService, authMiddleware, tenantService, storeService)
 	tenants.RegisterRoutes(mux, tenantService, authMiddleware)
 	stores.RegisterRoutes(mux, storeService, authMiddleware)

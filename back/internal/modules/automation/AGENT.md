@@ -8,7 +8,7 @@ escopado da WAHA para o front, sem expor n8n/WAHA ao cliente.
 > Infra dos containers (n8n/waha/redis): automation/AGENT.md (raiz). Esquema-alvo:
 > docs/automation/schema_automation_sketch.sql.
 
-## Estado: M1 + M2 + M3 + M3+ + A6 + A7 + M4 + M5 — 2026-06-11
+## Estado: M1 + M2 + M3 + M3+ + A6 + A7 + M4 + M5 + Omni Chat (M0 + Fase 2 catalogo) — 2026-06-18
 
 - **M1:** conectar o WhatsApp (QR via proxy WAHA), ver status e ligar/desligar o robo, pelo
   painel `/automation`. Acesso V0: **so platform_admin** (gating por modulo + bypass do admin).
@@ -41,7 +41,21 @@ escopado da WAHA para o front, sem expor n8n/WAHA ao cliente.
   `site.products` (so `SELECT`; modulo site nao e tocado). Fonte plugavel via interface
   `ProductSource` (hoje `site`; ERP/catalog futuros).
 
-Proximas fases (BYOK, multi-numero, CRM, tools) em PLATAFORMA_AUTOMACAO.md (P6+).
+- **Omni Chat (M0):** chat interno do painel de **Operacao** (`/operacao`), ligado ao n8n por
+  proxy `Front -> API Go -> n8n` (o browser nunca fala com o n8n). Endpoint
+  `POST /v1/omni-chat/ask` (RequireAuth, **fora** do prefixo `/v1/automation`). O Go monta o
+  `systemMessage` do Tony reusando `GetOrCreateDefault` + `ensurePersona` + `ListKnowledgeDocs`
+  + `buildSystemMessage` (sem sessao WAHA) e chama o webhook interno
+  `POST http://n8n:5678/webhook/omni-chat`. M0 = pipeline + persona, **sem** consultar banco/CRM.
+  Contrato congelado: docs/automation/OMNI_CHAT_PLAN.md.
+
+- **Omni Chat — Fase 2 (tools de dados):** o `/ask` agora emite um **context token HMAC** opaco
+  (`ctxv1`) que escopa as tools de dados; o n8n o reenvia no header `X-Omni-Context` ao chamar
+  uma tool. Primeira tool: **catalogo** (`GET /v1/runtime/omni-chat/catalog`). O escopo
+  (account/tenant/store/user/role) sai SO do token assinado, NUNCA do query/body do n8n. Tools de
+  ranking/metas entram a seguir (reusam o mesmo token). Detalhe abaixo em "Omni Chat — Fase 2".
+
+Proximas fases (BYOK, multi-numero, CRM, tools de ranking/metas) em PLATAFORMA_AUTOMACAO.md (P6+).
 
 ## Estrutura
 
@@ -56,7 +70,12 @@ back/internal/modules/automation/
   store_models.go      <- persistencia do catalogo + selecao de modelos (A6)
   store_conversation.go<- persistencia de messages + lead_state (A7)
   store_product.go     <- settings.sources jsonb + SELECT escopado em site.products (M5)
-  service.go           <- orquestra store + WAHA; buildSystemMessage (instrucoes+docs+guardrails)
+  service.go           <- orquestra store + WAHA + n8n; buildSystemMessage (instrucoes+docs+guardrails)
+  n8n_client.go        <- cliente HTTP do webhook interno do Omni Chat (POST /webhook/omni-chat) (M0)
+  service_omnichat.go  <- OmniChatAsk: monta systemMessage do Tony + emite context token + chama n8n.Ask
+  http_omnichat.go     <- handler POST /v1/omni-chat/ask (RequireAuth; fora do gating) (M0)
+  context_token.go     <- ContextTokenManager: Issue/Parse do context token HMAC (ctxv1, Fase 2)
+  http_omnichat_tools.go<- tools de dados do Omni Chat (GET /v1/runtime/omni-chat/catalog) (Fase 2)
   service_models.go    <- regras do MODELOS.md (valida catalogo, sanitiza params) (A6)
   service_conversation.go<- save de mensagem + lead-state + handover (A7/M4)
   service_product.go   <- ProductSource plugavel + Sources/SearchCatalog (M5)
@@ -157,6 +176,7 @@ explicita devolve o default (gpt-4o-mini / whisper-1).
 | PUT | `/v1/runtime/automation/lead-state?session=&contactId=` | body `{ status, followUpCount }` — upsert do estado do lead (A7) |
 | POST | `/v1/runtime/automation/handover?session=&contactId=` | body `{ pausedMinutes: 30 }` => `paused_until = now()+N min`; `{ resume: true }` (ou `pausedMinutes<=0`) => limpa. Responde a memoria atualizada `{ ..., paused, pausedUntil }` (M4) |
 | GET | `/v1/runtime/automation/tools/catalog?session=&q=` | `[{ name, code, price }]` — busca estreita escopada por account em `site.products` (LIMIT 5). Lista vazia se `catalogEnabled=false` ou `q` vazio (M5) |
+| GET | `/v1/runtime/omni-chat/catalog?q=` | `{ produtos: [{ name, code, price, brand, image }], total }` — tool de catalogo do **Omni Chat** (Fase 2). Escopo por **context token** no header `X-Omni-Context` (NAO usa `session`). `produtos` vazio se `q` vazio. Ignora o toggle `catalogEnabled` (uso interno). Devolve OBJETO (nao array) p/ o n8n entregar 1 item. **Base = `site.products` (lista+imagem) ENRIQUECIDA pelo ERP** (`public.erp_item_current` por sku==code): nome real, marca e preco (price_cents->reais) vem do ERP porque o `site.products` da Perola veio com nome generico e preco 0. Busca **multi-palavra** (ilike all dos tokens no nome do site + nome ERP + marca). Consumido por um FLUXO MANUAL no n8n (HTTP comum no fluxo principal) — tools nativas do AI Agent estao quebradas no build n8n 2.23.2; ver OMNI_CHAT_PLAN.md |
 | GET | `/v1/automation/context-preview` | `{ personaName, instructions, knowledgeDocs[], guardrails, systemMessage }` — previa do bot para o painel (JWT normal, sem sessao) |
 
 **Contrato `models[]` no runtime-config (A6, retrocompativel — campos antigos intactos):** cada item
@@ -186,6 +206,58 @@ lido (SELECT), nunca editado.
 **Handover humano (M4):** `paused_until` sobrevive a writes de memoria (o upsert de memoria
 nao toca a coluna). O n8n le `paused`/`pausedUntil` no inicio (junto da memoria) e nao
 responde enquanto a pausa nao expira.
+
+### Omni Chat (M0) — chat interno do painel de Operacao
+
+| Verbo | Path | Acao |
+|---|---|---|
+| POST | `/v1/omni-chat/ask` | `{ question, topic? }` -> `{ answer, topic? }`. Chat interno ligado ao n8n. RequireAuth; accountID do principal (X-Account-Id) |
+
+**Fora do prefixo `/v1/automation`** (de proposito): o `RequireModuleByPath` usa limite de
+segmento (`pathHasSegmentPrefix`), entao `/v1/omni-chat/ask` **nao casa** a regra
+`{Prefix:"/v1/automation"}` nem nenhuma outra de `moduleGatingRules()` -> nao exige o modulo
+`automation` habilitado (quem usa Operacao nao precisa do painel de automacao). So `RequireAuth`.
+
+**Fluxo (proxy `Front -> API Go -> n8n`):** o handler valida `question` (vazia -> `400
+missing_question`; > 2000 chars -> `400 question_too_long`), resolve o `accountID` do principal e
+monta o `ContextScope` completo (account + tenant/store/user/role do principal, **nunca** do body)
+e chama `OmniChatAsk`. O service monta o `systemMessage` do Tony (persona + docs habilitados +
+guardrails, via `buildSystemMessage`, **sem sessao WAHA**), **emite o context token** (Fase 2) e
+chama `n8n.Ask` com `{ question, topic, systemMessage, sessionRef: "omni-chat-"+accountID,
+contextToken }`. `n8n_client.go` faz `POST $AUTOMATION_N8N_INTERNAL_URL/webhook/omni-chat` com
+`Authorization: Bearer $AUTOMATION_RUNTIME_TOKEN` (reusado; sem token novo no M0), `io.LimitReader`
+na resposta `{ answer }`. Timeout 60s.
+
+**Erros (contrato congelado, via `httpapi.WriteError`):** `503 omnichat_not_configured`
+(`AUTOMATION_N8N_INTERNAL_URL` ou `AUTOMATION_RUNTIME_TOKEN` vazios) · `502 omnichat_error` (n8n
+fora / HTTP nao-2xx / JSON invalido) · `504 omnichat_timeout` (`context.DeadlineExceeded`).
+`storeId`/`accountId` **nunca** vem do body nem do n8n.
+
+### Omni Chat — Fase 2 (tools de dados)
+
+**Context token (`context_token.go`).** `ContextTokenManager` espelha `auth/tokens.go`: HMAC-SHA256
+sobre `base64.RawURLEncoding(json(claims))`, formato `ctxv1.<payload>.<sig>`. Claims:
+`{ accountId, tenantId?, storeIds?, userId, role, iat, exp }`. **TTL 300s** (cobre o salto
+`/ask` -> webhook n8n -> tool; limita janela de token vazado). **Secret:**
+`AUTOMATION_CONTEXT_TOKEN_SECRET` quando setado; senao **reusa `AUTOMATION_RUNTIME_TOKEN`** como
+secret HMAC (MVP). `Issue(scope)` assina o escopo do principal; `Parse(token)` valida 3 partes +
+prefixo + assinatura (constant-time `hmac.Equal`) + expiracao, retornando `ContextScope`. Qualquer
+falha vira o erro generico `ErrInvalidContextToken` (nao vaza o motivo). Sem secret, `Issue`/`Parse`
+falham e o chat segue **sem** tools (o token vai vazio; a tool recusa com 401).
+
+**Tool de catalogo (`http_omnichat_tools.go`).** `GET /v1/runtime/omni-chat/catalog?q=`. Duas
+camadas de auth: (1) **transporte** = `Authorization: Bearer $AUTOMATION_RUNTIME_TOKEN`
+(constant-time via `bearerEquals`; 401 invalido / 503 nao configurado); (2) **escopo** = context
+token no header `X-Omni-Context`, validado por `ctxMgr.Parse` (401 `unauthorized` se invalido/
+expirado, sem vazar motivo). A busca usa `scope.AccountID` do **token**, NUNCA do query/body. `q`
+vazio -> `[]`. Reusa `SearchCatalogByAccount` -> `productSource().Search` (mesmo `SELECT` escopado
+por `account_id` em `site.products`, LIMIT 5, projecao `{ name, code, price }`). **Decisao
+deliberada:** a tool do Omni Chat **ignora** o toggle `catalogEnabled` das sources — esse toggle
+controla o que o bot publico do WhatsApp expoe a clientes externos; o chat **interno** (operadores
+do painel) sempre pode consultar o catalogo da propria account.
+
+**Ainda nao implementado (Fase 2):** ranking de vendas e metas. Reusam o mesmo context token
+(`X-Omni-Context`) e o mesmo padrao de handler. Contrato: docs/automation/OMNI_CHAT_PLAN.md.
 
 **Memoria de conversa (Postgres, M3+):** o n8n le/escreve `long_memory` via
 `GET/PUT /v1/runtime/automation/memory` (mesmo token de servico). Nos workflow:
@@ -230,9 +302,25 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
   workflow para ler `models[]` e chamar `POST /messages` + `GET/PUT /lead-state` (mesmo
   `AUTOMATION_RUNTIME_TOKEN`).
 - Var `AUTOMATION_WAHA_INTERNAL_URL` (default `http://waha:3000`) — proxy WAHA.
+- **Omni Chat (M0):** Var **`AUTOMATION_N8N_INTERNAL_URL`** (default `http://n8n:5678`) — base do
+  webhook interno `POST /webhook/omni-chat`. Set em `docker-compose.yml` + `docker-compose.prod.yml`
+  (servico `api`) e em `.env.docker.example` / `.env.production.example` / `.env.staging.example`.
+  Reusa `AUTOMATION_RUNTIME_TOKEN` no Bearer Go->n8n (sem token novo). Sem URL **ou** sem token ->
+  `503 omnichat_not_configured`. **Rebuild obrigatorio da api** (codigo Go novo):
+  `docker compose up -d --build api`. **n8n:** importar `automation/export/workflow-omni-chat.json`,
+  **ativar** o workflow e restart do n8n (webhook so ouve com workflow Active; path `/webhook/`,
+  nao `/webhook-test/`). **Sem migration** no M0 (so leitura do que ja existe).
 - Var **`AUTOMATION_RUNTIME_TOKEN`** (M2): a **api E o n8n** usam o MESMO valor (api valida,
   n8n manda no header). Dev tem default que ja bate; prod exige set em `.env.production`
   (gere forte). Sem ele, o runtime-config responde 503.
+- **Omni Chat — Fase 2 (context token):** var **opcional** `AUTOMATION_CONTEXT_TOKEN_SECRET` — secret
+  HMAC do context token. **Quando ausente, reusa `AUTOMATION_RUNTIME_TOKEN`** como secret (MVP); a
+  Fase 2 funciona sem setar a var nova. Em prod, recomenda-se um secret dedicado e forte. So codigo
+  Go novo, **sem migration** -> **rebuild obrigatorio da api:** `docker compose up -d --build api`.
+  **n8n:** atualizar o workflow do Omni Chat para (1) reenviar o `contextToken` (que ja chega no body
+  do webhook) no header `X-Omni-Context` ao chamar a tool; (2) chamar
+  `GET /v1/runtime/omni-chat/catalog?q=` (Bearer = `AUTOMATION_RUNTIME_TOKEN`) quando precisar do
+  catalogo.
 - **Ordem de ativacao do M2:** (1) set do token; (2) `up -d --build api` (sobe modulo +
   migrations); (3) restart do n8n (pega o `$env`); (4) re-importar o workflow
   (`n8n import:workflow`) que agora consome o runtime-config; (5) ativar e testar.
@@ -244,3 +332,88 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
 - WAHA Core suporta 1 sessao -> V0 opera 1 numero (`default`). Multi-numero = P11 (WAHA Plus
   ou Evolution API).
 - WAHA tag e `gows-<versao>` (engine GOWS).
+
+## Registro de falhas (debug operacional — anotar aqui pra nao repetir)
+
+> Formato: data — sintoma — causa raiz — como diagnosticar — correcao — prevencao.
+
+### 2026-06-18 — "ativei o n8n mas o bot nao responde no WhatsApp"
+
+- **Sintoma:** sessao WhatsApp conectada, workflow do n8n **Active**, mas mandar mensagem
+  nao gera resposta. "Em tese estava funcionando, so tirei a publicacao; religando era pra
+  voltar."
+- **Causa raiz:** **DOIS interruptores independentes** — religar so um nao basta:
+  1. **Workflow Active/Inactive** no proprio n8n (UI do n8n). Esse o usuario religou.
+  2. **Toggle liga/desliga do painel `/automation`** -> grava `automation.automations.status`
+     (active/paused) -> o `runtime-config` devolve `enabled` -> o no **"Bot ligado?"** do
+     workflow corta o fluxo se `enabled=false`. Esse ficou **OFF** (`status=paused`).
+  Resultado: a execucao roda `Webhook -> Dados -> Dedupe -> Get runtime config` e
+  **termina logo apos** (o gate "Bot ligado?" descarta os itens). Nenhuma resposta sai.
+- **Como diagnosticar (passo a passo, sem precisar do n8n UI):**
+  1. WAHA conectada? `GET http://localhost:3010/api/sessions` -> `status:"WORKING"`.
+  2. WAHA entrega o webhook? `docker logs omni-waha-1` -> `POST ... status code: 200`
+     para `http://n8n:5678/webhook/webhook`.
+  3. n8n executa e onde para? `docker logs omni-n8n-1 | grep -i "node\|execution"` ->
+     ver ate qual no roda. Aqui parou apos `Get runtime config`.
+  4. **Confirmacao da causa:** `GET /v1/runtime/automation/config?session=default`
+     (header `Authorization: Bearer $AUTOMATION_RUNTIME_TOKEN`) -> **`"enabled": false`**.
+- **Correcao:** ligar o robo no painel `/automation` (toggle) OU
+  `PUT /v1/automation/settings {"enabled": true}` (JWT + X-Account-Id da conta dona da
+  sessao). Isso poe `status=active` -> `runtime-config.enabled=true` -> o gate libera.
+- **Prevencao:** lembrar que **"Active no n8n" != "ligado no painel"**. O painel ja avisa
+  na UI; o que falta e diagnostico rapido (este registro). Melhoria futura: o painel
+  refletir o estado real (Active do n8n + enabled) num so indicador.
+
+### 2026-06-18 (2) — "liguei o robo no painel mas continua sem responder; WhatsApp 'desconectado'"
+
+- **Sintoma:** toggle "Robo ligado" ON numa conta (ex.: Crow Visuals), mas o bot nao responde
+  e o painel mostra **"WhatsApp desconectado"** — mesmo com a WAHA `WORKING`.
+- **Causa raiz:** **descasamento conta ↔ sessao WAHA.** A unica sessao WAHA conectada
+  (`default`, WORKING, com o numero pareado) pertence a **OUTRA** automacao — uma conta
+  legacy de smoke-test (`Codex QA Smoke 0606`, `status=draft`). `createChannel` hoje grava
+  `session_name = UUID da automacao` (preparado p/ multi-numero), mas a **WAHA Core so roda 1
+  sessao**; a automacao legacy pegou o nome `default` e ficou com o numero. Entao
+  `runtime-config?session=default` resolve a automacao **legacy (draft → enabled:false)** e o
+  gate corta. A automacao que voce ligou (Crow) tem canal `STOPPED` (session_name=UUID que
+  nunca conectou) → painel "desconectado".
+- **Diagnostico:** `select a.account_id, ac.name, a.status, c.session_name, c.status
+  from automation.automations a left join automation.channels c on c.automation_id=a.id
+  left join core.accounts ac on ac.id=a.account_id;` e cruzar com WAHA `GET /api/sessions`
+  (qual sessao esta WORKING e a quem o `session_name` dela pertence).
+- **Correcao (local):** re-bind do canal — dar o `session_name='default'` para a automacao que
+  se quer testar (liberando a legacy antes, por causa do UNIQUE). Sem re-scan de QR (a sessao
+  WAHA `default` segue a mesma). Alternativa: ligar a automacao **dona** da sessao conectada.
+- **Prevencao / divida tecnica:** `session_name = UUID` por automacao e **incompativel com
+  WAHA Core (1 sessao)** — so 1 automacao por instancia consegue conectar de fato. Falta
+  regra/UI de "qual automacao possui a sessao unica" + limpar contas de teste legacy que
+  seguram o `default`. Multi-numero real = P11 (WAHA Plus/Evolution).
+
+### 2026-06-18 (3) — workflow n8n: "Bot ligado?" erra com "Node 'Get runtime config' hasn't been executed"
+
+- **Sintoma:** com o robo ligado (`enabled:true`) o bot **ainda nao responde**; a execucao do
+  n8n vai longe (passa o debounce, Ctx:*) e **falha no no "Bot ligado?"** com
+  `ExpressionError: Node 'Get runtime config' hasn't been executed`.
+- **Causa raiz:** **"Get runtime config" (HTTP) era um ramo PARALELO sem saida** —
+  `Webhook → Get runtime config` com `outgoing = []` (beco). Os nos "Bot ligado?" e
+  "Montar systemMessage" liam `$('Get runtime config')`, mas o debounce tem nos **Wait**; ao
+  **retomar a execucao pos-Wait**, o n8n so da acesso via `$('node')` a nos **ancestrais do
+  caminho retomado** — ramo paralelo sem ligacao pra frente nao conta -> erro.
+- **Diagnostico:** `docker logs omni-n8n-1` mostrou a execucao parando no "Bot ligado?" com o
+  erro; analise do JSON confirmou `Get runtime config` com `outgoing=[]` e **nao-ancestral**
+  de "Bot ligado?".
+- **Correcao (`automation/export/workflow-whatsapp.json`):** mover "Get runtime config" pro
+  caminho principal -> `Ctx: aplicar → Get runtime config → Bot ligado?`. A URL passou a ler a
+  sessao de `$('Dados').first().json.session` (ancestral on-path, sobrevive ao Wait). Como o
+  HTTP node substitui o item, o "Bot ligado?" passou a repassar a msg via
+  `$('Ctx: aplicar').all()`. Re-import + **restart do n8n** (re-registra o webhook ativo).
+  Backup do JSON em `.bak-*`.
+- **MESMO bug tambem no "Ler memoria"** (outro HTTP off-Webhook, consumido por "Ctx: ler"
+  pos-Wait): movido para `Juntar → Ler memoria → Ctx: ler`; URL le `session`/`chatId` de
+  `$('Dados')`; "Ctx: ler" passou a ler a msg de `$('Juntar')` (input agora e' a resposta do
+  Ler memoria). Apos os 2 fixes, o fan-out do Webhook ficou so `Webhook → Dados`.
+- **Como achar todos de uma vez:** varrer o JSON por `$('X')` e checar se `X` e' ancestral do
+  no (script ad-hoc). Sobra so `Redis Chat Memory → $('Dados')`, que e' **OK** (sub-no do AI
+  Agent; `Dados` e' ancestral do AI Agent e resolve em runtime).
+- **Prevencao:** no consumido por `$('X')` **depois de um Wait/debounce PRECISA estar no
+  caminho principal** (ancestral), nunca em ramo paralelo sem saida. **No DEPLOY VPS:**
+  re-importar este workflow no n8n da VPS (mesmo fix) + restart do container n8n.

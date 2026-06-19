@@ -34,12 +34,15 @@ func (s *Service) PlaceOrder(ctx context.Context, slug string, in PublicOrderInp
 	customerName := strings.TrimSpace(in.Customer.Name)
 	customerPhone := strings.TrimSpace(in.Customer.Phone)
 	if customerName == "" {
-		return Order{}, ErrValidation
+		return Order{}, ErrNameRequired
 	}
 	if orderType == OrderTypeDelivery && customerPhone == "" {
-		return Order{}, ErrValidation
+		return Order{}, ErrPhoneRequired
 	}
-	if len(in.Items) < 1 || len(in.Items) > maxOrderItems {
+	if len(in.Items) < 1 {
+		return Order{}, ErrEmptyCart
+	}
+	if len(in.Items) > maxOrderItems {
 		return Order{}, ErrValidation
 	}
 
@@ -55,13 +58,18 @@ func (s *Service) PlaceOrder(ctx context.Context, slug string, in PublicOrderInp
 	}
 
 	if min := restaurant.Settings.MinOrderCents; min > 0 && subtotal < min {
-		return Order{}, ErrValidation
+		return Order{}, ErrMinOrder
 	}
 
 	deliveryFee := computeDeliveryFee(orderType, subtotal, restaurant.Settings)
 	total := subtotal + deliveryFee
 
-	deliveryAddress := in.DeliveryAddress
+	// Endereco de entrega: prioriza customer.address (formato do contrato); cai
+	// para o campo top-level deliveryAddress (compat) e, por fim, objeto vazio.
+	deliveryAddress := in.Customer.Address
+	if len(deliveryAddress) == 0 {
+		deliveryAddress = in.DeliveryAddress
+	}
 	if len(deliveryAddress) == 0 {
 		deliveryAddress = json.RawMessage("{}")
 	}
@@ -98,13 +106,13 @@ func (s *Service) recalcItem(ctx context.Context, restaurantID string, in Public
 
 	product, err := s.store.productForOrder(ctx, restaurantID, productID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return OrderItem{}, ErrValidation
+		return OrderItem{}, ErrItemUnavailable
 	}
 	if err != nil {
 		return OrderItem{}, err
 	}
 	if !product.IsAvailable {
-		return OrderItem{}, ErrValidation
+		return OrderItem{}, ErrItemUnavailable
 	}
 
 	unitPrice := product.PriceCents
@@ -112,7 +120,7 @@ func (s *Service) recalcItem(ctx context.Context, restaurantID string, in Public
 	if variationID := strings.TrimSpace(in.VariationID); variationID != "" {
 		variation, err := s.store.variationForProduct(ctx, productID, variationID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return OrderItem{}, ErrValidation
+			return OrderItem{}, ErrOptionInvalid
 		}
 		if err != nil {
 			return OrderItem{}, err
@@ -130,7 +138,7 @@ func (s *Service) recalcItem(ctx context.Context, restaurantID string, in Public
 		}
 		// Todos os adicionais informados precisam pertencer ao produto.
 		if len(addons) != len(addonIDs) {
-			return OrderItem{}, ErrValidation
+			return OrderItem{}, ErrOptionInvalid
 		}
 		for _, a := range addons {
 			unitPrice += a.PriceCents
@@ -156,18 +164,18 @@ func validateOrderType(orderType string, settings Settings) error {
 	switch orderType {
 	case OrderTypePickup:
 		if !settings.PickupEnabled {
-			return ErrValidation
+			return ErrTypeUnavailable
 		}
 	case OrderTypeDelivery:
 		if !settings.DeliveryEnabled {
-			return ErrValidation
+			return ErrTypeUnavailable
 		}
 	case OrderTypeDineIn:
 		if !settings.DineInEnabled {
-			return ErrValidation
+			return ErrTypeUnavailable
 		}
 	default:
-		return ErrValidation
+		return ErrTypeUnavailable
 	}
 	return nil
 }

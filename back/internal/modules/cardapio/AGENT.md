@@ -48,8 +48,16 @@ Tipo: `retirada, entrega, local` — validados no service contra as `settings`.
   (`core.account_modules`) — 1 join; senao `404` uniforme.
 - Imagens absolutizadas via `PUBLIC_API_BASE_URL` (strings `/uploads/...` -> base+path).
 - Erro no formato do contrato `{"error":{"code","message"}}` (pt-BR) via `httpapi.WriteError`.
+  `writePublicError` mapeia erros ESPECIFICOS do checkout (type_unavailable, name_required,
+  phone_required, empty_cart, below_min_order, item_unavailable, option_invalid) — nada de
+  "Pedido invalido" generico para causas conhecidas.
+- **`customer.address` no corpo do pedido**: `httpapi.ReadJSON` usa `DisallowUnknownFields`, e o
+  front sempre envia `customer.address`; por isso `PublicCustomerInput` TEM o campo `Address`
+  (jsonb livre). `PlaceOrder` usa `customer.address` como `deliveryAddress` (fallback p/ o campo
+  top-level `deliveryAddress`). Remover esse campo volta a derrubar TODO pedido com `400`.
 - Rate limit por IP em memoria (`rate_limit.go`): orders 10/min, events 60/min => `429`.
-  Independente do `RateLimit` global por user.
+  Independente do `RateLimit` global por user. Em dev (Docker) todos os requests chegam com o IP
+  do gateway, entao o limite vira efetivamente global — `docker compose restart api` zera o bucket.
 
 ### Recalculo de pedido (`service_orders.go`)
 `unitPrice = product.price_cents + variation.price_delta_cents + Σ addons.price_cents`;
@@ -69,6 +77,12 @@ whatsapp_order_clicked, reservation_started, reservation_sent, coupon_viewed, co
 (`scopedAccountID` em `http.go`): `platform_admin` ve qualquer account (ou todas na
 listagem); demais papeis ficam fixos na propria account; accountId divergente => `404`
 uniforme. Repo SEMPRE filtra `account_id` (defesa em profundidade).
+
+A LISTAGEM (`GET /v1/cardapio/restaurants`) usa `listScopeAccountID`: para `platform_admin`
+o filtro vem SO do query `accountId` (vazio = todas as accounts, igual a bio) — o header
+`X-Account-Id` serve so ao gating de modulo, nao restringe o que o admin enxerga. Ja as
+rotas by-id usam `scopedAccountID` (query `accountId` tem precedencia sobre o header), entao
+o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?account=` na rota).
 
 - Restaurants: `GET/POST /v1/cardapio/restaurants` (lista lean com `accountName` + dominio
   primario), `GET/PATCH/DELETE /v1/cardapio/restaurants/{id}`.

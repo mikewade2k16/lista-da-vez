@@ -25,6 +25,20 @@ func writePublicError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "not_found", "Restaurante nao encontrado.")
+	case errors.Is(err, ErrTypeUnavailable):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "type_unavailable", "Forma de recebimento indisponivel neste restaurante.")
+	case errors.Is(err, ErrNameRequired):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "name_required", "Informe seu nome.")
+	case errors.Is(err, ErrPhoneRequired):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "phone_required", "Informe o telefone para entrega.")
+	case errors.Is(err, ErrEmptyCart):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "empty_cart", "Sua sacola esta vazia.")
+	case errors.Is(err, ErrMinOrder):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "below_min_order", "O valor do pedido esta abaixo do pedido minimo.")
+	case errors.Is(err, ErrItemUnavailable):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "item_unavailable", "Um item da sacola nao esta mais disponivel. Atualize a pagina e tente de novo.")
+	case errors.Is(err, ErrOptionInvalid):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "option_invalid", "Uma opcao (tamanho ou adicional) do item e invalida. Limpe a sacola e adicione de novo.")
 	case errors.Is(err, ErrValidation):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Pedido invalido. Confira os dados e tente novamente.")
 	default:

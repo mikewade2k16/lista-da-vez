@@ -76,7 +76,12 @@ type principalDTO struct {
 	ExpiresAt           time.Time `json:"expiresAt"`
 }
 
-func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *InvitationService, passwordResets *PasswordResetService, middleware *Middleware) {
+func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *InvitationService, passwordResets *PasswordResetService, middleware *Middleware, gateway GatewayConfig) {
+	// Gate SSO consumido pelo Caddy (forward_auth) para liberar n8n./waha. com o
+	// login do Omni. Publico no roteamento: a validacao (cookie + papel) e feita
+	// dentro do handler. Ver docs/automation/SSO_GATEWAY_PLAN.md.
+	mux.HandleFunc("GET /v1/auth/gateway/verify", handleGatewayVerify(service, gateway))
+
 	mux.HandleFunc("GET /v1/auth/roles", func(w http.ResponseWriter, r *http.Request) {
 		httpapi.WriteJSON(w, http.StatusOK, roleCatalogResponse{
 			TenantModel: "tenant-owner-is-client",
@@ -146,12 +151,15 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 				httpapi.WriteError(w, r, http.StatusForbidden, "user_inactive", "Usuario inativo.")
 			case errors.Is(err, ErrOnboardingRequired):
 				httpapi.WriteError(w, r, http.StatusForbidden, "onboarding_required", "Conta criada, mas ainda falta definir a primeira senha pelo convite.")
+			case errors.Is(err, ErrInvalidRoleScope):
+				httpapi.WriteError(w, r, http.StatusForbidden, "user_no_role", "Usuario sem cliente/agencia ou papel definido. Vincule a um cliente ou agencia para liberar o acesso.")
 			default:
 				httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao autenticar.")
 			}
 			return
 		}
 
+		SetGatewayCookie(w, gateway, result.Session.AccessToken, result.Session.ExpiresAt)
 		httpapi.WriteJSON(w, http.StatusOK, loginResponse{
 			User: result.User,
 			Session: loginSessionDTO{
@@ -177,6 +185,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
+		ClearGatewayCookie(w, gateway)
 		httpapi.WriteJSON(w, http.StatusOK, map[string]any{
 			"ok": true,
 		})
@@ -334,6 +343,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			return
 		}
 
+		SetGatewayCookie(w, gateway, result.Session.AccessToken, result.Session.ExpiresAt)
 		httpapi.WriteJSON(w, http.StatusOK, loginResponse{
 			User: result.User,
 			Session: loginSessionDTO{

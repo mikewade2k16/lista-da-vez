@@ -6,13 +6,21 @@ import (
 )
 
 // AccountMembershipView é um item de "accounts em que o user participa".
-// Usado por GET /v1/admin/users/{id}/memberships.
+// Usado por GET /v1/admin/users/{id}/memberships. Role é o papel coarse do user
+// naquela conta (owner/director/marketing/...); IsAgency marca a conta-agencia.
 type AccountMembershipView struct {
 	AccountID   string    `json:"accountId"`
 	AccountSlug string    `json:"accountSlug"`
 	AccountName string    `json:"accountName"`
 	IsActive    bool      `json:"isActive"`
 	JoinedAt    time.Time `json:"joinedAt"`
+	Role        string    `json:"role"`
+	IsAgency    bool      `json:"isAgency"`
+}
+
+// UpdateMembershipRoleInput é o body de PATCH /v1/admin/users/{id}/memberships/{accountId}.
+type UpdateMembershipRoleInput struct {
+	Role string `json:"role"`
 }
 
 // AdminUserView é o DTO de um user para o painel /manage/users.
@@ -74,6 +82,11 @@ type AdminCreateUserInput struct {
 	// legado) e para aparecer em /operacao/usuarios. Default 'owner' quando
 	// AccountID setado. accountId == tenantId (core.accounts.id == public.tenants.id).
 	Role string `json:"role,omitempty"`
+	// OrgRole: cargo na agencia (organization) quando OrganizationID setado. Valores
+	// 'agency_owner' (acesso total da agencia) ou 'agency_member' (acesso limitado).
+	// Default 'agency_member'. O repo tambem matricula o user na conta-agencia com o
+	// papel correspondente para que ele consiga logar.
+	OrgRole string `json:"orgRole,omitempty"`
 }
 
 // AdminUpdateUserInput e o body de PATCH /v1/admin/users/:id.
@@ -84,6 +97,11 @@ type AdminUpdateUserInput struct {
 	Nick            *string `json:"nick"`
 	IsActive        *bool   `json:"isActive"`
 	IsPlatformAdmin *bool   `json:"isPlatformAdmin"`
+	// Password define/reseta a senha do usuario. Semantica CRITICA: nil ou vazio
+	// = NAO mexe no password_hash (regra "nunca sobrescrever senha sem acao
+	// explicita"). So quando vem uma senha nao-vazia (minimo 8) o service hasheia
+	// e o repo faz SET password_hash + must_change_password = false. Nunca logado.
+	Password *string `json:"password"`
 }
 
 // AdminMembershipsResponse e o body de GET /v1/admin/users/:id/memberships.
@@ -96,8 +114,17 @@ type AdminUserRepository interface {
 	ListUsers(ctx context.Context, filter AdminUserListFilter) ([]AdminUserView, int, error)
 	FindAdminUser(ctx context.Context, userID string) (AdminUserView, error)
 	CreateUser(ctx context.Context, input AdminCreateUserInput, passwordHash string) (AdminUserView, error)
-	UpdateUser(ctx context.Context, userID string, input AdminUpdateUserInput) (AdminUserView, error)
+	// UpdateUser aplica o patch. passwordHash != "" => SET password_hash +
+	// must_change_password = false; "" => nao toca no hash (regra: senha so muda
+	// com acao explicita). O service e quem hasheia; o repo so persiste.
+	UpdateUser(ctx context.Context, userID string, input AdminUpdateUserInput, passwordHash string) (AdminUserView, error)
 	SoftDeleteUser(ctx context.Context, userID string) error
 	GetMemberships(ctx context.Context, userID string) ([]AccountMembershipView, error)
+	// SetUserAccountRole troca o papel do usuario numa conta: remove os
+	// user_role_assignments atuais dele naquela conta e atribui o novo papel
+	// (clonando o role do template se faltar). Idempotente.
+	SetUserAccountRole(ctx context.Context, accountID, userID, role string) error
+	// IsAccountMember diz se o usuario ja e membro (account_users) da conta.
+	IsAccountMember(ctx context.Context, accountID, userID string) (bool, error)
 	CountActivePlatformAdmins(ctx context.Context) (int, error)
 }

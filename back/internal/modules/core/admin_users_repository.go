@@ -182,73 +182,113 @@ func (r *PostgresAdminUserRepository) CreateUser(ctx context.Context, input Admi
 
 	// Vinculo opcional a cliente (account) e/ou agencia (organization).
 	if accountID := strings.TrimSpace(input.AccountID); accountID != "" {
-		// 1. membership no modelo novo (modulos contratados, /manage/users).
-		if _, err := r.pool.Exec(ctx, `
-			insert into core.account_users (account_id, user_id, is_active, joined_at)
-			values ($1::uuid, $2::uuid, true, now())
-			on conflict (account_id, user_id) do nothing
-		`, accountID, userID); err != nil {
-			return AdminUserView{}, err
-		}
-		// 2. papel no modelo CORE (core.user_role_assignments). Garante o role
-		//    queue.<papel> da account (clona do template se faltar) e atribui.
-		//    Mapeamento owner/director->queue.supervisor, marketing->queue.consultant
-		//    (igual a 0133 + auth core_role_resolver). U4b: substitui o write legado
-		//    em user_tenant_roles. accountId == tenantId (core.accounts.id==tenants.id).
 		role := input.Role
 		if role == "" {
 			role = "owner"
 		}
-		if _, err := r.pool.Exec(ctx, `
-			with ins as (
-				insert into core.roles (account_id, cloned_from_template_id, code, label, description, is_locked)
-				select $1::uuid, rt.id, 'queue.' || $3, rt.label, rt.description, rt.is_locked
-				from core.role_templates rt
-				where rt.id = case $3::text when 'marketing' then 'queue.consultant' else 'queue.supervisor' end
-				on conflict (account_id, code) do nothing
-				returning id
-			),
-			resolved as (
-				select id from ins
-				union
-				select id from core.roles where account_id = $1::uuid and code = 'queue.' || $3
-			)
-			insert into core.user_role_assignments (account_id, user_id, role_id)
-			select $1::uuid, $2::uuid, (select id from resolved limit 1)
-			where (select id from resolved limit 1) is not null
-			on conflict (account_id, user_id, role_id) do nothing
-		`, accountID, userID, role); err != nil {
-			return AdminUserView{}, err
-		}
-		if _, err := r.pool.Exec(ctx, `
-			insert into core.role_permissions (role_id, permission_key)
-			select r.id, rtp.permission_key
-			from core.roles r
-			join core.role_template_permissions rtp on rtp.role_template_id = r.cloned_from_template_id
-			where r.account_id = $1::uuid and r.code = 'queue.' || $2
-			on conflict do nothing
-		`, accountID, role); err != nil {
+		if err := r.enrollUserInAccount(ctx, accountID, userID, role); err != nil {
 			return AdminUserView{}, err
 		}
 	}
 	if orgID := strings.TrimSpace(input.OrganizationID); orgID != "" {
+		orgRole := strings.TrimSpace(input.OrgRole)
+		if orgRole == "" {
+			orgRole = "agency_member"
+		}
 		if _, err := r.pool.Exec(ctx, `
 			insert into core.organization_users (organization_id, user_id, org_role, joined_at)
-			values ($1::uuid, $2::uuid, 'agency_member', now())
-			on conflict (organization_id, user_id) do nothing
-		`, orgID, userID); err != nil {
+			values ($1::uuid, $2::uuid, $3, now())
+			on conflict (organization_id, user_id) do update set org_role = $3
+		`, orgID, userID, orgRole); err != nil {
 			return AdminUserView{}, err
+		}
+		// Cargo de agencia precisa logar: vira membro da conta-agencia (is_agency=true)
+		// da org com papel conforme o cargo (dono->owner total, membro->director
+		// limitado). O switcher org-aware (AGENCY_TENANT_ARCHITECTURE) abre os clientes
+		// da agencia. Sem isto o usuario de agencia nao resolve papel e o login falha.
+		var agencyAccountID string
+		err := r.pool.QueryRow(ctx, `
+			select id::text
+			from core.accounts
+			where organization_id = $1::uuid and is_agency = true and is_active = true
+			order by created_at asc
+			limit 1
+		`, orgID).Scan(&agencyAccountID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return AdminUserView{}, err
+		}
+		if strings.TrimSpace(agencyAccountID) != "" {
+			if err := r.enrollUserInAccount(ctx, agencyAccountID, userID, agencyAccountRole(orgRole)); err != nil {
+				return AdminUserView{}, err
+			}
 		}
 	}
 
 	return r.FindAdminUser(ctx, userID)
 }
 
+// enrollUserInAccount garante membership + papel CORE do usuario numa account:
+// (1) core.account_users, (2) clona o role queue.<papel> do template e atribui em
+// core.user_role_assignments, (3) copia as role_permissions do template. Reaproveitado
+// pela conta-cliente e pela conta-agencia. Mapeamento owner/director->queue.supervisor,
+// marketing->queue.consultant (igual a 0133 + auth core_role_resolver).
+func (r *PostgresAdminUserRepository) enrollUserInAccount(ctx context.Context, accountID, userID, role string) error {
+	if _, err := r.pool.Exec(ctx, `
+		insert into core.account_users (account_id, user_id, is_active, joined_at)
+		values ($1::uuid, $2::uuid, true, now())
+		on conflict (account_id, user_id) do nothing
+	`, accountID, userID); err != nil {
+		return err
+	}
+	if _, err := r.pool.Exec(ctx, `
+		with ins as (
+			insert into core.roles (account_id, cloned_from_template_id, code, label, description, is_locked)
+			select $1::uuid, rt.id, 'queue.' || $3, rt.label, rt.description, rt.is_locked
+			from core.role_templates rt
+			where rt.id = case $3::text when 'marketing' then 'queue.consultant' else 'queue.supervisor' end
+			on conflict (account_id, code) do nothing
+			returning id
+		),
+		resolved as (
+			select id from ins
+			union
+			select id from core.roles where account_id = $1::uuid and code = 'queue.' || $3
+		)
+		insert into core.user_role_assignments (account_id, user_id, role_id)
+		select $1::uuid, $2::uuid, (select id from resolved limit 1)
+		where (select id from resolved limit 1) is not null
+		on conflict (account_id, user_id, role_id) do nothing
+	`, accountID, userID, role); err != nil {
+		return err
+	}
+	if _, err := r.pool.Exec(ctx, `
+		insert into core.role_permissions (role_id, permission_key)
+		select r.id, rtp.permission_key
+		from core.roles r
+		join core.role_template_permissions rtp on rtp.role_template_id = r.cloned_from_template_id
+		where r.account_id = $1::uuid and r.code = 'queue.' || $2
+		on conflict do nothing
+	`, accountID, role); err != nil {
+		return err
+	}
+	return nil
+}
+
+// agencyAccountRole mapeia o cargo de agencia para o papel na conta-agencia:
+// agency_owner -> owner (acesso total da agencia); demais (agency_member) -> director
+// (acesso limitado, tenant-scoped, sem exigir vinculo de loja).
+func agencyAccountRole(orgRole string) string {
+	if strings.TrimSpace(orgRole) == "agency_owner" {
+		return "owner"
+	}
+	return "director"
+}
+
 // ============================================================================
 // UpdateUser
 // ============================================================================
 
-func (r *PostgresAdminUserRepository) UpdateUser(ctx context.Context, userID string, input AdminUpdateUserInput) (AdminUserView, error) {
+func (r *PostgresAdminUserRepository) UpdateUser(ctx context.Context, userID string, input AdminUpdateUserInput, passwordHash string) (AdminUserView, error) {
 	sets := []string{}
 	args := []any{userID}
 	n := 2
@@ -273,6 +313,12 @@ func (r *PostgresAdminUserRepository) UpdateUser(ctx context.Context, userID str
 	}
 	if input.IsPlatformAdmin != nil {
 		addSet("is_platform_admin", *input.IsPlatformAdmin)
+	}
+	// Senha so e tocada quando o service mandou um hash (acao explicita). Definir
+	// uma nova senha limpa o flag must_change_password (o admin acabou de defini-la).
+	if passwordHash != "" {
+		addSet("password_hash", passwordHash)
+		addSet("must_change_password", false)
 	}
 
 	if len(sets) == 0 {
@@ -323,12 +369,33 @@ func (r *PostgresAdminUserRepository) SoftDeleteUser(ctx context.Context, userID
 // ============================================================================
 
 func (r *PostgresAdminUserRepository) GetMemberships(ctx context.Context, userID string) ([]AccountMembershipView, error) {
+	// Role: papel coarse do user naquela conta (queue.<papel> -> <papel>). LATERAL
+	// pega o assignment de maior prioridade. is_agency separa conta-cliente da
+	// conta-agencia. Agencias primeiro, depois nome.
 	const query = `
-		select a.id, a.slug, a.name, au.is_active, au.joined_at
+		select a.id, a.slug, a.name, au.is_active, au.joined_at, a.is_agency,
+			coalesce(case
+				when lower(sel.role_code) like 'queue.%' then substr(lower(sel.role_code), 7)
+				else lower(sel.role_code)
+			end, '') as role
 		from core.account_users au
 		join core.accounts a on a.id = au.account_id
+		left join lateral (
+			select lower(r.code) as role_code
+			from core.user_role_assignments ura
+			join core.roles r on r.id = ura.role_id
+			where ura.account_id = a.id and ura.user_id = au.user_id
+			order by case
+				when lower(r.code) like 'queue.owner%' then 1
+				when lower(r.code) like 'queue.director%' then 2
+				when lower(r.code) like 'queue.marketing%' then 3
+				when lower(r.code) like 'queue.manager%' then 4
+				else 99
+			end, r.created_at asc
+			limit 1
+		) sel on true
 		where au.user_id = $1::uuid
-		order by lower(a.name) asc
+		order by a.is_agency desc, lower(a.name) asc
 	`
 	rows, err := r.pool.Query(ctx, query, userID)
 	if err != nil {
@@ -339,12 +406,36 @@ func (r *PostgresAdminUserRepository) GetMemberships(ctx context.Context, userID
 	memberships := make([]AccountMembershipView, 0)
 	for rows.Next() {
 		var m AccountMembershipView
-		if err := rows.Scan(&m.AccountID, &m.AccountSlug, &m.AccountName, &m.IsActive, &m.JoinedAt); err != nil {
+		if err := rows.Scan(&m.AccountID, &m.AccountSlug, &m.AccountName, &m.IsActive, &m.JoinedAt, &m.IsAgency, &m.Role); err != nil {
 			return nil, err
 		}
 		memberships = append(memberships, m)
 	}
 	return memberships, rows.Err()
+}
+
+// IsAccountMember diz se o usuario ja e membro ativo/inativo (account_users) da conta.
+func (r *PostgresAdminUserRepository) IsAccountMember(ctx context.Context, accountID, userID string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		select exists(
+			select 1 from core.account_users
+			where account_id = $1::uuid and user_id = $2::uuid
+		)
+	`, accountID, userID).Scan(&exists)
+	return exists, err
+}
+
+// SetUserAccountRole remove os papeis atuais do usuario naquela conta e atribui o
+// novo (reaproveitando enrollUserInAccount, que garante membership + role + perms).
+func (r *PostgresAdminUserRepository) SetUserAccountRole(ctx context.Context, accountID, userID, role string) error {
+	if _, err := r.pool.Exec(ctx, `
+		delete from core.user_role_assignments
+		where account_id = $1::uuid and user_id = $2::uuid
+	`, accountID, userID); err != nil {
+		return err
+	}
+	return r.enrollUserInAccount(ctx, accountID, userID, role)
 }
 
 // ============================================================================

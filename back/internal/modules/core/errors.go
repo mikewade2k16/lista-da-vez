@@ -50,6 +50,10 @@ var (
 	// platform_admin ativo. Safeguard para evitar perder acesso total.
 	ErrLastPlatformAdmin = errors.New("core: cannot remove the last active platform admin")
 
+	// ErrInvalidRole e retornado quando o papel informado (criar user ou trocar
+	// nivel de membership) nao e um valor aceito. Mapeado para HTTP 400.
+	ErrInvalidRole = errors.New("core: invalid role")
+
 	// ErrOrganizationSlugConflict e retornado quando ja existe uma organization
 	// com o mesmo slug.
 	ErrOrganizationSlugConflict = errors.New("core: organization slug already exists")

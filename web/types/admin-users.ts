@@ -21,6 +21,10 @@ export interface AccountMembershipItem {
   accountName: string
   isActive: boolean
   joinedAt: string
+  // Papel coarse do usuario naquela conta (owner/director/marketing/...). isAgency
+  // marca a conta-agencia (vinculo de agencia) vs conta-cliente.
+  role: string
+  isAgency: boolean
 }
 
 export interface AdminUserCreateInput {
@@ -35,6 +39,9 @@ export interface AdminUserCreateInput {
   // Papel no tenant do cliente (owner/director/marketing) — cria user_tenant_roles
   // legado (necessario para login + /operacao/usuarios). Default owner no backend.
   role?: string
+  // Cargo na agencia (agency_owner = acesso total / agency_member = acesso limitado)
+  // quando organizationId setado. Default agency_member no backend.
+  orgRole?: string
 }
 
 export interface AdminUserListResponse {

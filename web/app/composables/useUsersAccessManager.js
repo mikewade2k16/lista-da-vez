@@ -959,35 +959,58 @@ export async function useUsersAccessManager(options = {}) {
       return
     }
 
+    const current = selectedDetailUser.value
     const payload = buildDetailUpdatePayload()
-    if (!payload.displayName || !payload.email) {
-      ui.error('Nome e email sao obrigatorios.')
-      return
-    }
 
-    if (isStoreScopedRole(payload.role) && payload.storeIds.length === 0) {
-      ui.error('Selecione uma loja valida para esse perfil.')
-      return
+    // So consideramos "dados basicos mudaram" quando algum campo de identidade/escopo
+    // difere do usuario atual. Mexer SO nos modulos (overrides) nao deve disparar a
+    // validacao de loja/nome — antes isso bloqueava o save inteiro de um store_terminal
+    // sem loja vinculada e dava a impressao de "nao salva os modulos".
+    const sameStores =
+      JSON.stringify((payload.storeIds || []).map(normalizeText)) ===
+      JSON.stringify((Array.isArray(current.storeIds) ? current.storeIds : []).map(normalizeText))
+    const basicChanged =
+      normalizeText(payload.displayName) !== normalizeText(current.displayName) ||
+      normalizeText(payload.email).toLowerCase() !== normalizeText(current.email).toLowerCase() ||
+      normalizeText(payload.employeeCode) !== normalizeText(current.employeeCode) ||
+      normalizeText(payload.role) !== normalizeText(current.role) ||
+      Boolean(payload.active) !== Boolean(current.active) ||
+      normalizeText(payload.tenantId) !== normalizeText(current.tenantId) ||
+      !sameStores
+
+    if (basicChanged) {
+      if (!payload.displayName || !payload.email) {
+        ui.error('Nome e email sao obrigatorios.')
+        return
+      }
+
+      if (isStoreScopedRole(payload.role) && payload.storeIds.length === 0) {
+        ui.error('Selecione uma loja valida para esse perfil.')
+        return
+      }
     }
 
     detailSaving.value = true
 
-    const updateResult = await usersStore.updateUser(selectedDetailUser.value.id, payload)
-    if (updateResult?.ok === false) {
-      detailSaving.value = false
-      ui.error(updateResult.message || 'Nao foi possivel salvar o usuario.')
-      return
+    if (basicChanged) {
+      const updateResult = await usersStore.updateUser(current.id, payload)
+      if (updateResult?.ok === false) {
+        detailSaving.value = false
+        ui.error(updateResult.message || 'Nao foi possivel salvar o usuario.')
+        return
+      }
     }
 
     if (!detailAccessReady.value) {
       detailSaving.value = false
-      await refreshDetail(selectedDetailUser.value.id)
-      ui.success('Dados do usuario atualizados.')
-      if (detailAccessError.value) {
-        ui.info(
-          'A area de permissoes continua indisponivel enquanto a API de access nao estiver ativa.',
-        )
+      await refreshDetail(current.id)
+      if (basicChanged) {
+        ui.success('Dados do usuario atualizados.')
       }
+      // Honestidade: nunca dizer que os modulos foram salvos quando nao foram.
+      // Mostra o motivo REAL (erro da API de access ou matriz nao carregada).
+      const reason = detailAccessError.value || 'a matriz de acesso nao carregou neste ambiente'
+      ui.error(`Modulos NAO foram salvos: ${reason}.`)
       return
     }
 

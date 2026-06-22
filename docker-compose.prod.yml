@@ -142,6 +142,10 @@ services:
       NODE_ENV: production
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       NUXT_PUBLIC_API_WS_BASE: ${NUXT_PUBLIC_API_WS_BASE:-}
+      # Base do Studio do TAVOLA (repo separado) embutido por iframe na aba "Site" do
+      # editor de cardápio (site builder). Sem isso o painel cai no default localhost:3000
+      # e a aba Site não embute. Aponte pro host do TAVOLA (ex.: https://mostarda.crowvisuals.com.br).
+      NUXT_PUBLIC_STUDIO_URL: ${NUXT_PUBLIC_STUDIO_URL:-}
       NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE:-http://api:8080}
       NITRO_HOST: 0.0.0.0
       PORT: 3003

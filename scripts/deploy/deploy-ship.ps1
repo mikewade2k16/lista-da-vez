@@ -95,7 +95,11 @@ docker compose --env-file '$envFile' -f docker-compose.prod.yml up -d --no-build
 docker compose --env-file '$envFile' -f docker-compose.prod.yml ps --format '{{.Name}}  {{.State}}'
 "@
 Write-Host "==> up --no-build na VPS"
-& $SshExe @sshArgs $remoteTarget $upCmd
+# Forca bash no remoto: o login shell do deploy e' sh/dash e rejeita
+# 'set -o pipefail' ("set: pipefail: invalid option name") -> o up abortava e o
+# prod seguia nos containers velhos. O upCmd vai pelo STDIN do bash -s; assim o
+# pipefail vale de novo e PROTEGE o backup (pg_dump | gzip nao mascara dump vazio).
+$upCmd | & $SshExe @sshArgs $remoteTarget "bash -s"
 if ($LASTEXITCODE -ne 0) { throw "Falha no up na VPS." }
 
 # 5. smoke

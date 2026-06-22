@@ -369,3 +369,173 @@ depois da 1.
 ### Ordem (governador)
 KA / KB / KC / F1 em paralelo (arquivos disjuntos) → **fan-out de colunas após KA**
 (consome `--cols-*`) → build + review adversarial. Eu reviso e integro no fim.
+
+---
+
+## 10. Fase 8 — Polish do site público (chrome real, logo-imagem, footer com dados, tamanho de imagem, mobile)
+
+> **Status: CÓDIGO ENTREGUE (2026-06-22) via Workflow (8 agentes) + fixes do governador.
+> `nuxt build` PASS + typecheck limpo. Pendente rebuild+upload da TAVOLA pelo dono.**
+> Lote pedido pelo dono em cima das Fases 6/7 (ainda **pendentes de rebuild+upload da
+> TAVOLA** — o deploy desta fase leva as três juntas). Mapeamento de causa-raiz feito
+> por workflow de 6 leitores + síntese adversarial. **Achado-chave do deploy: os 5
+> problemas são 100% front TAVOLA — ZERO migration, ZERO rebuild da api.** O backend
+> já entrega `logoUrl` absoluto, `address/hours/phone/email` e o layout jsonb com
+> `props` livres.
+>
+> **Entrega:** keystone (chrome único + hook da logo) ‖ tamanho de imagem → header
+> (logo-img + hamburger) ‖ footer (data-bound + logo-img) → build + 3 reviews
+> adversariais. Reviews chrome+imagem e responsivo **aprovados**; logo+footer reprovou
+> por 1 regressão (`LibFooterMinimalCentralizado` → `[object Object]`) **corrigida pelo
+> governador**, junto da blindagem de overflow do nome/logo longo nos 5 headers em
+> `<360px` (`min-width:0`+ellipsis no `.logo` colapsado + `max-width` na `.logo-img`).
+> **Notas de Deploy ATUALIZADAS:** além de build+upload TAVOLA, **recachear o
+> `public/sections-catalog.json` no Omni** (footers viraram `dataBinding:restaurant`;
+> version `888e82547eaa`→`e2704a0710d3`). **Débito carregado:** família `info`
+> dessincronizada (`info.ts` gerado tem `dataBinding` ausente dos `.work/defs/info-*.json`)
+> — portar antes de rodar `gen-registry.cjs`, senão reverte.
+>
+> **Ajuste 2 (decisão do dono, 2026-06-22) — chrome = só PubHeader/PubFooter:**
+> após validação no browser (a logo real subiu pelo painel e funcionou), o dono
+> pediu para **remover o header/footer "do Studio"** e usar **só o `PubHeader`/
+> `PubFooter` padrão** (que já são data-bound: logo-imagem + endereço/horários/
+> contato reais). Mudanças: `layouts/public.vue` e `components/studio/StudioPreview.vue`
+> renderizam SEMPRE PubHeader/PubFooter (não mais o bloco `navegacao.*`); os seeds
+> `sections/default/{home,cardapio,produto}.ts` perderam os blocos `b_header`/
+> `b_footer`. Blocos `navegacao.*` que sobrem em layouts já salvos (ex.: `mk`) ficam
+> **inertes** (ignorados no render). Isso REVERTE a decisão da Fase 6 ("header como
+> seção escolhível") e torna o "dois headers" estruturalmente impossível (só existe
+> um componente de chrome). **Consequência boa p/ deploy:** como o site passa a usar
+> o `PubFooter` (data-bound nativo), o **recache do `sections-catalog.json` deixa de
+> ser necessário** p/ o footer mostrar dados reais — o WS-3 (footer data-bound via
+> defs) fica como trabalho não-usado no render (a família `navegacao` segue no
+> catálogo, sem uso). `nuxt build` PASS.
+
+### 10.1 Problema 1 — DOIS headers no site live (Studio mostra só 1)
+- **Causa-raiz:** o header é, ao mesmo tempo, **(a)** um bloco dentro da MESMA lista de
+  blocos da página e **(b)** algo que o layout-wrapper renderiza por fora. No site live a
+  responsabilidade é DIVIDIDA: `layouts/public.vue` (chama `useSiteLayout`, renderiza
+  header da seção OU `PubHeader` — linhas 73-74 = header #1) e a página
+  (`pages/index.vue:35`, `cardapio.vue:19`, `prato/[productSlug].vue:50` chamam
+  `useSiteLayout` **de novo** e filtram conteúdo por string-match frágil
+  `!b.type.startsWith('navegacao.')`). Quando a separação não bate (header com `type`
+  fora do prefixo `navegacao.`, header duplicado na lista publicada, ou `pageName`
+  derivado da rota ≠ nome hardcoded `'home'/'cardapio'/'produto'`), empilha 2 `<header>`.
+  No Studio não acontece: `StudioPreview.vue` é o **dono único** da montagem e o
+  `layouts/studio.vue` é casca vazia. Agravante: as 2 instâncias de `useSiteLayout`
+  compartilham a chave fixa `useAsyncData('site-layout')`.
+- **Onde corrige:** 100% front TAVOLA. **precisaBackend: não.**
+- **Passos:** (1) estender `useSiteLayout` p/ devolver `{headerBlock, contentBlocks,
+  footerBlock}` já fatiado por página (fonte única); (2) `public.vue` é o ÚNICO a
+  renderizar header/footer; páginas consomem só `contentBlocks` e nunca renderizam
+  bloco `navegacao.*`; (3) endurecer o filtro por **família** `navegacao` (não por
+  prefixo de string) e escolher 1 e só 1 `headerBlock`; (4) extrair `pageName` p/ um
+  helper único usado por layout E páginas; (5) chave `useAsyncData` por página (ou
+  compartilhar a mesma instância); (6) espelhar no `StudioPreview` + AGENT.md da TAVOLA.
+
+### 10.2 Problema 2 — LOGO renderizada como TEXTO (nunca a imagem enviada)
+- **Causa-raiz:** o dado existe ponta-a-ponta (`banco logo_url → API logoUrl
+  absolutizado em service_public.go:164 → Restaurant.logoUrl no front`), mas **nenhum
+  chrome consome** `restaurant.logoUrl`: `PubHeader.vue:22`, `PubFooter.vue:20/44` e
+  todos os `Lib*Header/Lib*Footer` imprimem `restaurant.name.toUpperCase()` via
+  `useSectionBrand.ts:36`. É ausência de consumo, não falta de dado.
+- **Onde corrige:** 100% front TAVOLA. Upload de logo já existe no painel
+  (`CardapioSectionDados.vue:60-80 → POST .../media`). **precisaBackend: não.**
+- **Passos:** (1) estender `useSectionBrand` (ou criar `useSectionLogo`) p/ expor
+  `logoUrl` mantendo a cadeia `block.data.restaurant → inject('sectionData')`;
+  (2) renderizar `<img :src=logoUrl :alt=name>` com **fallback no texto** do nome;
+  (3) tamanho de exibição controlado por CSS var (conecta com Problema 5); (4) validar
+  no `StudioPreview` + AGENT.md. **Compartilha os arquivos de header com o Problema 5 →
+  mesmo agente ou coordenação.**
+
+### 10.3 Problema 3 — FOOTER com endereço/horário/contato FAKE do template
+- **Causa-raiz:** o footer ativo é o bloco `navegacao.footer-multicoluna`
+  (`LibFooterMulticoluna.vue`, default em `sections/default/home.ts:44`). Ele lê
+  endereço/horário/telefone/email de `block.fields` (defaults fixos do fake "Tavola
+  Bistro": *R. Bandeira Paulista 514, reservas@tavola.bistro*), **nunca** de
+  `block.data.restaurant`. Estrutural: a família `navegacao` **não declara
+  `dataBinding`** (defs fonte `.work/defs/navegacao-1.json`/`navegacao-2.json`), ao
+  contrário de `info` (`source:restaurant`). Por isso o `SectionRenderer` não injeta
+  `block.data.restaurant` no footer. O NOME aparece real só porque `useSectionBrand`
+  usa um 2º caminho (`inject('sectionData')`). O `PubFooter` é data-bound, mas só
+  renderiza como fallback quando NÃO há bloco `navegacao.footer-*`.
+- **Onde corrige:** front TAVOLA (caminho comum). Backend/painel já entregam tudo.
+  **precisaBackend: não** (só se o requisito virar "lojista escolhe campos do footer" =
+  `settings.footer` estruturado, aí entra Go).
+- **Passos (ordem obrigatória):** (1) adicionar `dataBinding {source:'restaurant'}` aos
+  defs **FONTE** `.work/defs/navegacao-1.json`/`navegacao-2.json` (NÃO editar os `.ts`
+  gerados); (2) `LibFooterMulticoluna` (e `LibFooterFaixaDupla`/`LibFooterComNewsletter`)
+  lerem `block.data.restaurant.{address,hours,phone,email,instagram}` com fallback nos
+  fields; (3) rodar `node .work/gen-registry.cjs` e versionar os GERADOS
+  (`sections/families/navegacao.ts`, `components.ts`, `public/sections-catalog.json`);
+  (4) **recachear o `sections-catalog.json` no Omni** (o painel busca/cacheia p/ validar
+  layout). **Alternativa barata:** trocar o footer default por `PubFooter` (já
+  data-bound) — perde edição no Studio. (0) **Validar antes:** `GET
+  /v1/public/restaurants/{slug-mostarda}` p/ confirmar que os campos estão preenchidos
+  (se vazios, há 2º motivo no cadastro). Endpoint público, sem credencial.
+
+### 10.4 Problema 4 — TAMANHO/proporção de imagem (itens/categorias) não configurável
+- **Causa-raiz:** o tamanho é constante de apresentação cravada no componente: `ratio`
+  literal no `TPlaceholder` (`ratio="3x4"`, `"1x1"`…) ou `aspect-ratio`/`width` fixo em
+  CSS escopado (`TDishCard.vue:44`, `LibMenuComFotosPequenas.vue:55`). Nenhum lê
+  `block.props`. **Já existe o precedente exato:** `colsDesktop/colsMobile` viram CSS
+  vars `--cols-d/--cols-m` no `SectionRenderer.blockStyle`. `TPlaceholder` já aceita a
+  prop `ratio` (só recebe valor fixo do template).
+- **Onde corrige:** front TAVOLA. `LayoutBlock.props` é jsonb livre e `validateSiteLayout`
+  não valida props → **precisaBackend: não.**
+- **Passos:** (1) prop genérica por bloco `imageRatio` (1x1/4x5/3x4/4x3/16x9) e opcional
+  `imageScale` (none/sm/md/lg), vivendo em `block.props` como `mt/mb/cols`;
+  (2) `StudioBlockEditor` grupo "Layout" ganha `TSelect`; (3) `SectionRenderer.blockStyle`
+  emite `--img-ratio`/`--img-h`; (4) componentes trocam `ratio` literal por
+  `:ratio="f.imageRatio ?? 'XxY'"` e `<img>` direto usa `var(--img-ratio, 4/5)`.
+  **Decisão de produto:** GLOBAL por bloco (recomendado, barato) vs por SEÇÃO via
+  registry (exige editar `.work/defs` e regenerar). Resize/compressão de UPLOAD (peso) =
+  escopo separado no handler Go `POST .../media`.
+
+### 10.5 Problema 5 — Header não responsivo (sem hamburger, quebra no mobile)
+- **Causa-raiz:** nenhum dos 5 headers (`PubHeader` + 4 `LibHeader`) tem hamburger; o
+  padrão é esconder a nav (`display:none`) sem substituto — no celular some "A casa"/
+  "Cardápio". Agravantes: `PubHeader.vue:44` usa grid `auto/1fr/auto` que não recolhe a
+  coluna central (vão morto); brand `white-space:nowrap` 22px estoura com nome longo;
+  tipografia px sem `clamp()`; **bug de tokens** — `TSection` e vários `Lib*` usam
+  `--space-10/14/20/32` que **não existem** nos temas (só 1/2/3/4/6/8/12/16/24) → padding
+  colapsa. Tema só controla cores/fontes/raio (`useRestaurantTheme.ts`), nunca escala.
+- **Onde corrige:** 100% front TAVOLA. **precisaBackend: não** (escala tipográfica por
+  tema seria opcional, e o `theme` jsonb é livre — ainda sem migration).
+- **Passos:** (1) hamburger real nos 5 headers (toggle `aria-expanded/aria-controls` +
+  drawer; reusar `TDrawer`); (2) `PubHeader` colapsa p/ 2 colunas no mobile + brand sem
+  `nowrap`; (3) corrigir tokens `--space-10/14/20/32` (adicionar nos temas ou trocar p/
+  escala existente); (4) tokenizar tipografia com `clamp()` (como `.d-*`); (5) padronizar
+  breakpoints (hoje 700/768/980 convivem); (6) `LibHeaderLojaComCarrinho` empilha busca em
+  2ª linha; (7) espelhar no `StudioPreview` + AGENT.md.
+
+### 10.6 Decisão de fonte (princípio fonte única) — confirmado
+- **Logo:** dado do tenant → upload no painel → banco `cardapio.restaurants.logo_url` →
+  API `logoUrl` → TAVOLA renderiza `<img>`. **Nunca hardcoded no TAVOLA** (nem arquivo
+  bundlado, nem string fixa). Você guarda a logo **no painel**, não na pasta do TAVOLA.
+- **Footer (endereço/horário/contato):** dado do tenant, já no banco e já na API; aparece
+  fake só porque o footer lê `block.fields` em vez de `block.data.restaurant`.
+- **Tamanho de imagem:** config de APRESENTAÇÃO → fonte é o `SiteLayout` (jsonb
+  `cardapio.site_layouts`) via `block.props`, servido por `/v1/public/.../layout`.
+
+### 10.7 Notas de Deploy (Fase 8)
+- **Problemas 1, 2, 4, 5:** SÓ front TAVOLA. `nuxt generate` (SPA, ssr:false) + upload do
+  TAVOLA. **ZERO migration, ZERO mudança no Go, ZERO rebuild da api.**
+- **Problema 3 (caminho estrutural):** editar defs FONTE `.work/defs/navegacao-*.json` →
+  rodar `node .work/gen-registry.cjs` → versionar os GERADOS → **recachear o
+  `public/sections-catalog.json` no Omni** após o deploy do TAVOLA. Sem migration/rebuild
+  api. (Caminho barato = trocar footer por `PubFooter`, sem gerador/catálogo.)
+- **Resumo:** nenhum problema exige banco. Deploy desta fase = **build + upload TAVOLA**.
+
+### 10.8 Workstreams / paralelização (subagentes)
+| WS | O quê | Arquivos | Dependência |
+|---|---|---|---|
+| **WS-1 (keystone)** | Fonte única do chrome (corrige 2 headers) | `useSiteLayout.ts`, `layouts/public.vue`, `pages/{index,cardapio,prato}.vue`, `StudioPreview.vue` | **PRIMEIRO** (base de WS-2/WS-5) |
+| **WS-2** | Logo-imagem no chrome | `useSectionBrand.ts`, `PubHeader/PubFooter`, `Lib*Header/Lib*Footer` | após/junto WS-1; **coordena com WS-5** (mesmos headers) |
+| **WS-5** | Hamburger + responsivo + tokens de espaço | `PubHeader`, 4 `LibHeader`, `tavola.css`/`brasa.css`, `TSection`, `TButton` | após/junto WS-1; **coordena com WS-2** |
+| **WS-4** | Tamanho de imagem por bloco | `SectionRenderer.blockStyle`, `StudioBlockEditor`, `TPlaceholder`, `Lib*` grid/menu, `TDishCard` | **independente** (paralelo livre) |
+| **WS-3** | Footer data-bound | `.work/defs/navegacao-*.json` + gerador + `LibFooter*` | **independente**; sequencial interno (defs→gerar→componentes→recachear) |
+
+> **Ordem (governador):** WS-1 primeiro (chrome único) → WS-2+WS-5 juntos nos headers →
+> WS-4 e WS-3 totalmente em paralelo desde o início. Build do TAVOLA + review
+> adversarial no fim. Tudo segue a skill `principios-engenharia`.

@@ -103,6 +103,18 @@ func (unimplementedStore) InsertEvent(context.Context, string, string, string, s
 func (unimplementedStore) ListEvents(context.Context, string, string, int, int) ([]EventView, int, error) {
 	return nil, 0, nil
 }
+func (unimplementedStore) GetPublishedLayout(context.Context, string, string) (json.RawMessage, int64, error) {
+	return nil, 0, pgx.ErrNoRows
+}
+func (unimplementedStore) GetDraftLayout(context.Context, string, string) (json.RawMessage, int64, bool, error) {
+	return nil, 0, false, nil
+}
+func (unimplementedStore) PutDraftLayout(context.Context, string, string, json.RawMessage, *int64) (json.RawMessage, int64, error) {
+	return nil, 0, nil
+}
+func (unimplementedStore) PublishLayout(context.Context, string, string) (json.RawMessage, int64, error) {
+	return nil, 0, pgx.ErrNoRows
+}
 func (unimplementedStore) publicRestaurant(context.Context, string) (Restaurant, string, error) {
 	return Restaurant{}, "", nil
 }

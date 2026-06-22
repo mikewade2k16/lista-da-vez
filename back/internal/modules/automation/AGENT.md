@@ -660,3 +660,75 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
 - **Verificado (local):** memoria + janela dinamica via webhook (`c:\tmp\test_memory.py`); go build/vet;
   SQL da janela (rollback); eslint. UI final = navegador.
 - **Deploy:** **rebuild da api** + **reimport do workflow** (node de memoria novo) + restart n8n. **Sem migration.**
+
+### 2026-06-19 (6) — VPS: bot do WhatsApp nao responde — 4 problemas EMPILHADOS (node + 2 credenciais de DEV + workflow antigo)
+
+- **Sintoma:** na VPS, WhatsApp conectado (WAHA WORKING) e robo ligado no painel, mas mandar
+  mensagem **nao gera resposta** nenhuma. Cada camada que eu corrigia revelava a proxima.
+- **Causa raiz (4 problemas em serie):**
+  1. **Node community `n8n-nodes-waha` ausente** no volume `~/.n8n/nodes` (so registro fantasma na
+     tabela `installed_packages` do SQLite, **sem arquivos** em `node_modules`; a UI mostrava
+     "instalado" porque le do banco, nao do disco). Boot do n8n: `Unrecognized node type:
+     n8n-nodes-waha.WAHA` -> workflow "Whatsapp" nunca ativava (so o banco marcava active) ->
+     webhook nao registrava -> WAHA tomava **404** em todos os POSTs.
+  2. **Credencial Redis** (`Redis account`, id `pkxksfWdwYDbv6B3`) com config de **DEV**:
+     `host.docker.internal:6380` + senha curta. ioredis fica em retry infinito de auth ->
+     execucoes travavam em `running` (`waitTill` NULL) no 1o no Redis ("Fila push"), **sem erro
+     no log**. Sintoma confirmavel: `redis-cli DBSIZE` = 0 apesar de N mensagens entregues.
+  3. **Workflow era a versao ANTIGA** (sem o fix de 2026-06-18(3)): "Ler memoria"/"Get runtime
+     config" pendurados como becos do Webhook -> erro `Node 'Ler memoria' hasn't been executed`
+     no no "Ctx: ler" ao retomar pos-Wait.
+  4. **Credencial WAHA** (`WAHA account`, id `OeshCwyq7C4bSPAo`) com config de **DEV**:
+     `http://host.docker.internal:3010` -> "Send a text message"/"Send Seen" (envio da resposta)
+     falharia. (OpenAI `sCzmqFisO8bdeZ9B` estava OK: key `sk-proj` 164 chars.)
+- **Como diagnosticar (so SQLite + curl, sem a UI):** o n8n usa **SQLite** `~/.n8n/database.sqlite`
+  (NAO tem better-sqlite3; ler/escrever com `node --experimental-sqlite` via `node:sqlite`).
+  `execution_entity` (status/`waitTill`) + `execution_data` (formato **flatted** — `require` o
+  pacote `flatted` do n8n p/ ler `resultData.runData`/`error`) mostram em que no a execucao parou.
+  Credenciais: descriptografar/encriptar com `CipherAes256CBC` de
+  `n8n-core/dist/encryption/aes-256-cbc.js` (OpenSSL `Salted__`; so precisa data+key; key de
+  `N8N_ENCRYPTION_KEY` ou `~/.n8n/config`). Webhook registrado? `curl localhost:15680/webhook/webhook`
+  -> `"not registered for GET"` = POST ativo; `"...is not registered"` seco = workflow inativo.
+- **Correcao (tudo no container `listaatendimento-n8n-1`):** (1) `npm install n8n-nodes-waha` em
+  `~/.n8n/nodes`; (2/4) UPDATE das credenciais no SQLite p/ `redis:6379` + senha
+  `AUTOMATION_REDIS_PASSWORD` e `http://waha:3000` (reencriptar com o MESMO Cipher); (3)
+  `n8n import:workflow --input=workflow-whatsapp.json` (o id do workflow `lzhb5JjN5kdcVuRR` e os
+  IDs de credencial batem -> o import so troca nodes/conexoes/params, **NAO** sobrescreve
+  credenciais). **Cada troca de credencial/import exige `docker restart listaatendimento-n8n-1`**
+  (o webhook so re-registra com o workflow Active no boot).
+- **Prevencao:** ao subir o n8n da automacao num ambiente novo, **as credenciais importadas vem com
+  host de DEV** (`host.docker.internal`) — reapontar Redis (`redis:6379`) e WAHA (`http://waha:3000`)
+  e **reimportar o `workflow-whatsapp.json` atual** (o que ja estava no n8n pode ser uma versao
+  velha). Instalar o community node `n8n-nodes-waha` no volume; idealmente setar
+  `N8N_REINSTALL_MISSING_PACKAGES=true` no compose (auto-cura do node em recreate do container).
+  Paridade conferida pos-fix: **42 nodes, 0 diff, conexoes/settings identicos** VPS x local (so os
+  VALORES das credenciais diferem, de proposito).
+
+### 2026-06-20 — painel: editar o prompt "nao muda nada no n8n" (era pausa + guardrails da api antiga)
+
+- **Sintoma:** usuario edita o prompt de comportamento em `/automation`, salva, mas "nao muda nada
+  dentro do n8n". (VPS, conta **Crow Visuals**, sessao `default`.)
+- **NAO era bug de salvamento:** `GET /v1/runtime/automation/config?session=default` ja retornava
+  `persona` = o texto do painel (provado em execucoes reais via SQLite `execution_data` flatted). O
+  caminho painel → DB → runtime-config **sempre funcionou**.
+- **Causa 1 (o "nao muda"):** o **robo estava pausado** (de proposito). O gate `Bot ligado?` corta o
+  fluxo (passa 0 itens) quando `cfg.enabled=false` → o **AI Agent nunca roda** → nenhuma execucao
+  chega a usar o prompt. Alem disso, o no `AI Agent` usa o systemMessage por **expressao**
+  (`{{ $('Montar systemMessage').first().json.systemMessage }}`), entao abrir o no nunca mostra o
+  texto literal — e pull em runtime, comportamento correto.
+- **Causa 2 (faria "responder errado" ao ligar):** a **api da VPS e antiga** e ainda anexa os
+  `guardrails` (2047 chars) por cima da persona; o bloco comeca com "Responda SEMPRE em PT-BR, mesmo
+  que a persona esteja em ingles" → **sobrescrevia** o teste "responde em ingles". A decisao "prompt e
+  a lei: sem guardrails" (service.go `Guardrails:""`) estava no working tree, **nao-commitada/nao-deployada**.
+- **Correcao (sem redeploy da api; escolha do usuario "prompt = lei"):** removido o append dos
+  guardrails do no **`Montar systemMessage`** — no n8n da VPS (patch no SQLite: regex
+  `sm\+='[^']*'\+guardrails;` + drop da `const guardrails`) **e no
+  `automation/export/workflow-whatsapp.json`** do repo (pra re-import/deploy futuro nao reverter o fix).
+  Restart do n8n; robo seguiu **pausado** (nao foi ligado). Provado: `systemMessage === cfg.persona`
+  para qualquer mensagem; cadeia `Bot ligado? → Montar systemMessage → AI Agent` intacta. Backup do
+  jsCode original em `/tmp/montar_jscode_backup.txt` no container n8n.
+- **Prevencao:** "Active no n8n" e "ligado no painel" sao interruptores distintos — com pausa, **nada**
+  chega ao AI Agent. O fix duravel de verdade e **redeploy da api** (passa a mandar `guardrails=""`
+  nativo, hoje pre-Fase-2 na VPS); ate la, o no `Montar systemMessage` (VPS+repo) ja nao anexa
+  guardrails, entao o **prompt do painel e a unica regra** — idioma/formato/baloes precisam estar
+  DENTRO do proprio prompt.

@@ -3,6 +3,7 @@ package cardapio
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 func RegisterPublicRoutes(mux *http.ServeMux, svc *Service, limiter *rateLimiter) {
 	mux.Handle("GET /v1/public/resolve", handleResolve(svc))
 	mux.Handle("GET /v1/public/restaurants/{slug}", handlePublicMenu(svc))
+	mux.Handle("GET /v1/public/restaurants/{slug}/layout", handlePublicLayout(svc))
 	mux.Handle("GET /v1/public/restaurants/{slug}/products/{productSlug}", handlePublicProduct(svc))
 	mux.Handle("POST /v1/public/restaurants/{slug}/orders", handlePublicOrder(svc, limiter))
 	mux.Handle("POST /v1/public/restaurants/{slug}/events", handlePublicEvent(svc, limiter))
@@ -76,6 +78,24 @@ func handlePublicMenu(svc *Service) http.HandlerFunc {
 		}
 		setPublicCache(w)
 		httpapi.WriteJSON(w, http.StatusOK, menu)
+	}
+}
+
+// handlePublicLayout serve o layout PUBLICADO do site (Opcao B). 404 quando nao
+// ha publicado => o site estatico cai no defaultHomeLayout bundlado.
+func handlePublicLayout(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		layout, version, err := svc.PublicLayout(r.Context(), r.PathValue("slug"))
+		if err != nil {
+			writePublicError(w, r, err)
+			return
+		}
+		// no-cache (revalida com ETag a cada carga): publicar no Studio reflete no
+		// site num F5 normal, sem esperar TTL. O layout muda quando o dono publica
+		// — diferente do menu/produto, que podem ficar 60s em cache.
+		w.Header().Set("ETag", "\""+strconv.FormatInt(version, 10)+"\"")
+		w.Header().Set("Cache-Control", "no-cache")
+		httpapi.WriteJSON(w, http.StatusOK, layout)
 	}
 }
 

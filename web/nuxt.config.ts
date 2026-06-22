@@ -111,6 +111,10 @@ export default defineNuxtConfig({
       // Base do front bio publico (repo separado); usada no link "Ver bio" do
       // painel Site/Bio. Vazia = link oculto.
       bioFrontUrl: process.env.NUXT_PUBLIC_BIO_FRONT_URL || '',
+      // Base do Studio do TAVOLA (repo separado) embutido por iframe na aba Site
+      // do editor de cardapio (desenho B4). A origem desta URL e a UNICA aceita
+      // nas mensagens postMessage do iframe. Sobrescrevivel por NUXT_PUBLIC_STUDIO_URL.
+      studioUrl: process.env.NUXT_PUBLIC_STUDIO_URL || 'http://localhost:3000',
     },
   },
   css: [

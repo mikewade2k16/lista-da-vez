@@ -1,73 +1,70 @@
 # Runbook — Mostarda em produção (omni.crowvisuals.com.br)
 
-> Pôr o cardápio Fase 2 + os dados/imagens do Mostarda na VPS, e ligar o front
-> TAVOLA (já no ar em https://mostarda.crowvisuals.com.br/). Criado 2026-06-19.
-> Regra: o dono roda os comandos de prod; este doc é a ordem exata.
+> Levar os dados/imagens do Mostarda Bar Bistrô pra VPS e ligar o front TAVOLA
+> (já no ar em https://mostarda.crowvisuals.com.br/). Criado 2026-06-19, atualizado
+> depois do recon ao vivo na VPS.
+> Regra: **o dono roda as escritas em prod** — o agente só prepara e verifica
+> (leituras em prod são liberadas; escritas, não).
 
-## ⚠️ Ponto crítico: IDs são diferentes em prod
-O seed/import LOCAL usa o id da conta Crow **local** (`80caf5d5-...`). Na VPS a
-conta Crow tem **outro id**. Então os SQLs precisam ser re-gerados com o id de
-prod (`$CROW_PROD`) ANTES de rodar. O caminho da imagem também leva o id da conta
-(`/uploads/cardapio/$CROW_PROD/mostarda/<slug>.jpg`).
+## Estado descoberto na VPS (recon 2026-06-19)
+- Conta **Crow Visuals em PROD**: `0d88ff7b-b274-4a0f-83c0-972983e9a081` (≠ do id local `80caf5d5…`).
+- Módulo `cardapio` **já habilitado** para a Crow (não precisa do passo de seed/enable).
+- `cardapio.restaurants` estava **vazio** (schema criado pelas migrations; sem duplicata).
+- Existe uma conta "Mostarda" separada (`eb205e8b…`) **sem** o módulo cardápio — o restaurante
+  vai sob a **Crow** (igual ao local). Mover depois pelo "Cliente" inline, se quiser.
+- Host: `omni.crowvisuals.com.br` e `lista.whenthelightsdie.com` apontam pro **mesmo** api
+  (Caddy). Ambos servem `/v1/public/*` e `/uploads/*`. Front TAVOLA buildado p/ `omni.…`.
 
-## Passo 0 — Deploy do código (com backup) — DONO
-```powershell
-npm run deploy:ship:prod
-```
-Builda api+web local (o working tree atual = todo o cardápio Fase 2) → `docker save`→`load` na VPS por SSH → **backup do Postgres** (gzip em `backups/`) → `up -d --no-build` → migrations (0153/0166/0167) rodam no startup → smoke em `/healthz`. Precisa do Docker Desktop rodando + a chave SSH em `~/.ssh/gh_actions_omnichannel_vps`.
+## ⚠️ Furo do compose (corrigido) — leia antes
+As imagens do público são absolutizadas por `PUBLIC_API_BASE_URL` (`/uploads/…` → base+path).
+**O `docker-compose.prod.yml` não passava essa env pro container** (bloco `environment:`
+explícito, sem `env_file`). Sem ela o público devolve caminho **relativo** e o front em
+outro domínio (TAVOLA) não acha a imagem.
+- **Correção (já feita local):** adicionada a linha `PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}`
+  no `environment:` do `api` em `docker-compose.prod.yml`.
+- O script abaixo seta `PUBLIC_API_BASE_URL=https://omni.crowvisuals.com.br` no `.env.production`,
+  re-envia o compose e **recria** o `api` (sem rebuild de imagem — a env é lida em runtime).
 
-## Passo 1 — Descobrir o id da conta Crow em prod
-Na VPS (`/home/deploy/lista-atendimento`):
+## Abordagem: dump do banco LOCAL → restore no prod
+O banco local é a fonte única (1 restaurante `mk`, 203 produtos todos com imagem, 17 categorias,
+17 zonas; 0 variação/adicional/review/order). Em vez de replicar seeds, fazemos
+`pg_dump --data-only` das 4 tabelas com conteúdo (`restaurants, categories, products,
+delivery_zones`), trocamos o id da conta por `sed` (isso conserta `account_id` **e** os
+caminhos em `image_url` de uma vez), e damos restore atômico. As imagens vão por `tar` por SSH
+pro volume `api_uploads`.
+
+## Como rodar — um comando (DONO, no Git Bash)
 ```bash
-docker compose --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
-  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tA -c \
-  "select id, name from core.accounts where name ilike '%crow%';"
+bash scripts/deploy/upload-mostarda-prod.sh
 ```
-Anote o id → é o `$CROW_PROD`. (Me mande esse id que eu re-gero os SQLs com ele.)
+O script (`scripts/deploy/upload-mostarda-prod.sh`, idempotente/re-rodável) faz:
+1. Gera o dump re-targetado do **banco local** (`80caf5d5…` → `0d88ff7b…`) e valida que o id
+   antigo sumiu.
+2. **Carrega no prod** (limpa o restaurante + COPY, tudo em `--single-transaction`,
+   `ON_ERROR_STOP=1`) e imprime as contagens.
+3. Copia as **203 imagens** (`C:/tmp/mostarda_jpg/*.jpg`) pro volume em
+   `/app/data/uploads/cardapio/0d88ff7b…/mostarda/`.
+4. Garante `PUBLIC_API_BASE_URL=https://omni.crowvisuals.com.br` no `.env.production`,
+   re-envia o `docker-compose.prod.yml` e recria o `api` (`up -d --no-build api`).
+5. Registra o domínio `mostarda.crowvisuals.com.br` (primário) — upsert idempotente.
+6. Smoke: espera o `/healthz`, busca `/v1/public/restaurants/mk` e confere que a 1ª imagem
+   volta **absoluta** e responde 200.
 
-## Passo 2 — Habilitar o módulo cardápio na conta Crow (prod pula seed demo)
-```bash
-docker compose ... exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
-  "insert into core.account_modules (account_id, module_id, enabled)
-   values ('$CROW_PROD','cardapio',true)
-   on conflict (account_id, module_id) do update set enabled = true;"
-```
+Pré-requisitos: Docker Desktop com o stack local up, chave `~/.ssh/gh_actions_omnichannel_vps`,
+e `C:/tmp/mostarda_jpg/` com os 203 jpg.
 
-## Passo 3 — PUBLIC_API_BASE_URL (pras imagens absolutizarem certo)
-No `.env.production` da VPS, garantir:
-```
-PUBLIC_API_BASE_URL=https://omni.crowvisuals.com.br
-```
-(O TAVOLA chama `omni.crowvisuals.com.br`; as imagens precisam absolutizar pra um host HTTPS alcançável. Depois `restart api`.)
+## Testar
+- Público: `https://omni.crowvisuals.com.br/v1/public/restaurants/mk` → cardápio + imagens
+  absolutas em `https://omni.crowvisuals.com.br/uploads/…`.
+- Front por host: `https://mostarda.crowvisuals.com.br/`.
+- Front sem depender do domínio: `https://mostarda.crowvisuals.com.br/?slug=mk`.
 
-## Passo 4 — Seed do Mostarda + 203 produtos (re-targetado p/ $CROW_PROD)
-Eu re-gero `seed_mostarda_fase2.sql` e `import_mostarda.sql` com `$CROW_PROD` (e o
-mesmo restaurant id `b1b1b1b1-...`). Rodar na VPS:
-```bash
-docker compose ... exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < seed_mostarda_prod.sql
-docker compose ... exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < import_mostarda_prod.sql
-```
-
-## Passo 5 — Copiar as 203 imagens pro volume da VPS
-As imagens (`C:/tmp/mostarda_jpg/*.jpg`) vão pro volume `api_uploads`, na pasta da
-conta de prod. Via `tar` por SSH (igual fizemos local):
-```bash
-DIR=/app/data/uploads/cardapio/$CROW_PROD/mostarda
-tar -cf - -C /c/tmp/mostarda_jpg . | ssh -i ~/.ssh/gh_actions_omnichannel_vps deploy@85.31.62.33 \
-  "cd /home/deploy/lista-atendimento && docker compose --env-file .env.production -f docker-compose.prod.yml exec -T api sh -c 'mkdir -p $DIR && tar -xf - -C $DIR'"
-```
-
-## Passo 6 — Registrar o domínio do front
-No painel (omni.crowvisuals.com.br) → estabelecimento Mostarda → aba **Domínios** →
-adicionar host `mostarda.crowvisuals.com.br` (primário). Isso faz o resolve por host
-do TAVOLA funcionar.
-
-## Passo 7 — Testar
-- Rápido (sem domínio): `https://mostarda.crowvisuals.com.br/?slug=<slug-do-mostarda>` (o `?slug=` sobrepõe o resolve).
-- Por host: `https://mostarda.crowvisuals.com.br/` (depois do Passo 6).
-- Conferir no público: `https://omni.crowvisuals.com.br/v1/public/restaurants/<slug>` deve devolver o cardápio + imagens absolutas em `https://omni.crowvisuals.com.br/uploads/...`.
-
-## Notas
-- CORS do `/v1/public/*` é `*` (no código) — o front em outro domínio chama sem problema.
-- `<img>` cross-origin não precisa de CORS; as imagens carregam mesmo de domínio diferente.
-- Se o slug do Mostarda em prod for diferente de `mk`, ajustar o `?slug=` e o seed.
+## Notas de Deploy (afetam prod)
+- **`docker-compose.prod.yml`**: nova env `PUBLIC_API_BASE_URL` no serviço `api`. Recriar o
+  `api` depois de re-enviar o compose (`up -d --no-build api`). Não exige rebuild de imagem.
+- **`.env.production` (VPS)**: adicionar `PUBLIC_API_BASE_URL=https://omni.crowvisuals.com.br`.
+  É **global** (vale p/ cardápio e bio): faz o público devolver URLs absolutas — comportamento
+  correto/esperado; fronts que usam a URL como veio (TAVOLA/bio) seguem funcionando.
+- Migrations do cardápio (já aplicadas no deploy do código): nada a rodar à parte.
+- CORS de `/v1/public/*` é `*` (no código) — front em outro domínio chama sem problema; `<img>`
+  cross-origin não precisa de CORS.

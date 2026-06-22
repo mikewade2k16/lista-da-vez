@@ -101,8 +101,10 @@ onMounted(() => {
       <li v-for="order in store.orders.items" :key="order.id" class="cardapio-orders__item">
         <div class="cardapio-orders__head" @click="toggleExpand(order.id)">
           <div class="cardapio-orders__id">
-            <span class="cardapio-orders__number">#{{ order.orderNumber }}</span>
-            <span class="cardapio-orders__type">{{ ORDER_TYPE_LABELS[order.type] }}</span>
+            <span class="cardapio-orders__number">{{ order.code || `#${order.orderNumber}` }}</span>
+            <span class="cardapio-orders__type">
+              #{{ order.orderNumber }} · {{ ORDER_TYPE_LABELS[order.type] }}
+            </span>
           </div>
           <div class="cardapio-orders__meta">
             <span class="cardapio-orders__customer">{{ order.customerName || 'Cliente' }}</span>

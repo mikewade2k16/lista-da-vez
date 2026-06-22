@@ -69,9 +69,11 @@ if ($Service -eq "both" -or $Service -eq "web") { Build-Image (Join-Path $repoDi
 
 # 2. save (local) -> load (VPS), via SSH, sem registry
 Write-Host "==> docker save | ssh 'docker load' ($($refsToShip -join ', '))"
-$saveCmd = "docker save $($refsToShip -join ' ') | gzip"
-$loadOnVps = "gunzip | docker load"
-# pipeline: docker save | gzip | ssh ... 'gunzip | docker load'
+$loadOnVps = "docker load"
+# pipeline SEM compressao: docker save | ssh ... 'docker load'. O gzip local nao
+# e' garantido no cmd do Windows; o tar cru passa byte-clean pela pipe do cmd. (Um
+# `gunzip` orfao aqui fazia TODO deploy falhar em "not in gzip format" — as imagens
+# nunca chegavam na VPS e o prod seguia na imagem velha.)
 & cmd /c "docker save $($refsToShip -join ' ') | `"$SshExe`" $($sshArgs -join ' ') $remoteTarget `"$loadOnVps`""
 if ($LASTEXITCODE -ne 0) { throw "Falha ao transferir/carregar a imagem na VPS." }
 

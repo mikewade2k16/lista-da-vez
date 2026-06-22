@@ -22,6 +22,27 @@ informativo (jsonb, sem migration/rota); **WS-C** colunas extras do restaurante
 (segment/facebook/youtube/GA/Pixel/HTML) + endereco no `address` jsonb. Front (painel +
 TAVOLA) e seed do Mostarda (WS-E) sao outras frentes. Plano: `docs/cardapio/PLANO_CARDAPIO_FASE2.md`.
 
+Entregue Fase 2 (**WS-F**, 2026-06-20): campos opcionais de catalogo do contrato TAVOLA —
+`Category.imageUrl` (coluna + painel) e `Product.compareAtPriceCents` (coluna + painel),
+migration `0168`; `Category.productCount` derivado no `service_public` (conta produtos
+disponiveis por categoria, **sem coluna**; DTO `omitempty`). Auditoria do gap (TAVOLA x Omni):
+o layout de secoes do site (sections-catalog / GET-PUT layout / editor) segue **ausente** —
+e a Fase 3 (`docs/cardapio/PLANO_CARDAPIO_SITE_BUILDER.md`, decisao A/B em aberto).
+
+Entregue Fase 3 (**back / Opcao B**, 2026-06-21): **site builder** — tabela `site_layouts`
+(migration 0170), DTOs do layout (`model_layout.go`), `GET /v1/public/.../layout` (publicado,
+ETag, **`Cache-Control: no-cache`** p/ publicar refletir num F5, 404->fallback) +
+`PUT /v1/cardapio/.../layout` (rascunho, If-Match -> 412) + `POST .../layout/publish`
+(mesmo auth do painel), validacao estrutural + version. Front (Studio embed + aba no painel) =
+Fases 2-3; **migracao layout-driven do site TAVOLA (home/cardapio/prato render-from-layout
+com fallback curado) CONCLUIDA** no repo TAVOLA (sem deploy do back). Gating de
+plano/sanitizacao/sections-catalog = Fase 4. Plano: `docs/cardapio/PLANO_CARDAPIO_SITE_BUILDER.md`.
+
+Entregue Fase 2 (**WS-G**, 2026-06-20): **codigo do pedido** voltado ao cliente —
+coluna `orders.code` (migration `0169`), gerada no `CreateOrder` (base32 Crockford,
+6 chars, unica por restaurante via `uniqueOrderCode` + unique index parcial). Sai no
+DTO `Order.code` (publico e painel); o `order_number` sequencial continua para uso interno.
+
 ## Banco (`cardapio.*`, migration 0153)
 
 | Tabela | Resumo |
@@ -33,10 +54,11 @@ TAVOLA) e seed do Mostarda (WS-E) sao outras frentes. Plano: `docs/cardapio/PLAN
 | `product_variations` | `price_delta_cents` (soma) |
 | `product_addons` | `price_cents` (cumulativo) |
 | `reviews` | avaliacoes curadas por produto (rating 1-5) |
-| `orders` | pedidos; `order_number` sequencial por restaurante; valores em centavos |
+| `orders` | pedidos; `order_number` sequencial por restaurante; `code` (WS-G, migration 0169) curto p/ o cliente, unique parcial `(restaurant_id, code) where code<>''`; valores em centavos |
 | `order_items` | snapshot (`product_id` nullable; `addons jsonb [{name,priceCents}]`) |
 | `events` | telemetria do front publico; index `(restaurant_id, created_at)` |
 | `delivery_zones` | (Fase 2 / WS-A, migration 0166) bairro + `fee_cents`; unique `(restaurant_id, lower(name))`; index `account_id` e `(restaurant_id, sort_order)` |
+| `site_layouts` | (Fase 3 / Opcao B, migration 0170) layout de secoes do site por restaurante: `draft`/`published` jsonb + `version`; unique `(restaurant_id)` |
 
 **Colunas extras do restaurante (Fase 2 / WS-C, migration 0167):** `segment`,
 `facebook`, `youtube`, `google_analytics_id`, `facebook_pixel_id`,
@@ -44,6 +66,12 @@ TAVOLA) e seed do Mostarda (WS-E) sao outras frentes. Plano: `docs/cardapio/PLAN
 `facebook`, `youtube`, `googleAnalyticsId`, `facebookPixelId`, `customHeadHtml`.
 Numero/complemento/ponto de referencia do endereco entram no `address` jsonb
 (`number`, `complement`, `reference` — opcionais, omitempty), sem coluna.
+
+**Campos opcionais de catalogo (Fase 2 / WS-F, migration 0168):** `categories.image_url`
+(`text not null default ''`) e `products.compare_at_price_cents` (`bigint not null default 0`).
+No DTO: `Category.imageUrl`, `Product.compareAtPriceCents` (omitempty). `Category.productCount`
+NAO tem coluna — e derivado em `service_public.PublicMenu` (conta produtos disponiveis por
+categoria) e a foto da categoria e absolutizada como a do produto.
 ⚠️ `custom_head_html` = HTML livre injetado no site publico = risco de XSS; gate
 de edicao (so platform_admin) e renderizacao controlada sao do front (nao do back).
 
@@ -56,6 +84,7 @@ Tipo: `retirada, entrega, local` — validados no service contra as `settings`.
 |---|---|---|
 | GET | `/v1/public/resolve?host=` | `200 {slug}` / `404`. localhost+`CARDAPIO_DEV_DEFAULT_SLUG`; subdominio de `CARDAPIO_BASE_DOMAIN`; senao `restaurant_domains` |
 | GET | `/v1/public/restaurants/{slug}` | `{restaurant, categories[], products[], deliveryZones[]}` (so ativos/disponiveis; `deliveryZones` so ativas, order by sort_order; variations/addons embutidos, sem N+1) |
+| GET | `/v1/public/restaurants/{slug}/layout` | `SiteLayout` publicado (ETag + **`Cache-Control: no-cache`**, NAO `max-age=60` como os demais GETs publicos — assim publicar reflete num F5 do site; o ETag continua evitando payload repetido); `404` se sem publicado => o site cai no `defaultHomeLayout` |
 | GET | `/v1/public/restaurants/{slug}/products/{productSlug}` | `{restaurant, product, reviews[]}` / `404` |
 | POST | `/v1/public/restaurants/{slug}/orders` | `201 {order}` — **preco recalculado do banco** |
 | POST | `/v1/public/restaurants/{slug}/events` | `202 {status:"ok"}`; nome fora da allowlist => `400`; `context` <= 8KB |
@@ -127,6 +156,7 @@ o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?acc
 - Delivery zones (WS-A): `GET/POST /v1/cardapio/restaurants/{id}/delivery-zones`,
   `PATCH/DELETE /v1/cardapio/delivery-zones/{id}`. PATCH e parcial (pointer-based,
   `UpdateDeliveryZoneInput`) — toggle de `isActive` nao precisa do body inteiro.
+- Site layout (Fase 3 / Opcao B): `GET/PUT /v1/cardapio/restaurants/{id}/layout` (rascunho; PUT com `If-Match` = version, 412 se conflito), `POST /v1/cardapio/restaurants/{id}/layout/publish` (promove rascunho->publicado). Mesmo auth/escopo dos demais. Validacao ESTRUTURAL (pages/blocks/id unico/type nao-vazio); gating de plano + sanitizacao pesada de props/theme + sections-catalog = Fase 4.
 - Categories: `GET/POST /v1/cardapio/restaurants/{id}/categories`, `PATCH/DELETE /v1/cardapio/categories/{id}`.
 - Products: `GET/POST /v1/cardapio/restaurants/{id}/products` (lean), `GET/PATCH/DELETE
   /v1/cardapio/products/{id}` (full; PATCH faz **replace-all transacional** de `variations[]`/`addons[]`).
@@ -164,7 +194,10 @@ relativo (`/uploads/cardapio/...`); absolutizado no publico via `PUBLIC_API_BASE
 ## Notas de Deploy
 
 1. Migrations `0153_cardapio_schema.sql`, `0166_cardapio_delivery_zones.sql` (WS-A),
-   `0167_cardapio_restaurant_extra.sql` (WS-C) (local: conferir porta do Postgres).
+   `0167_cardapio_restaurant_extra.sql` (WS-C), `0168_cardapio_catalog_optional_fields.sql`
+   (WS-F: `image_url` em categories, `compare_at_price_cents` em products),
+   `0169_cardapio_order_code.sql` (WS-G: `code` em orders),
+   `0170_cardapio_site_layouts.sql` (Fase 3 / Opcao B: `site_layouts`) (local: conferir porta do Postgres).
    Obs.: os numeros 0154/0155 citados no plano ja estavam ocupados (site_product_*);
    as migrations da Fase 2 foram para 0166/0167 (proximos livres).
 2. **Rebuild api** (mudou Go): `docker compose up -d --build api`.

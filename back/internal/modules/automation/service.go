@@ -191,7 +191,7 @@ func (s *Service) RuntimeConfig(ctx context.Context, session string) (RuntimeCon
 		Enabled:       a.Status == statusActive,
 		SystemMessage: buildSystemMessage(persona.SystemPrompt, docs),
 		Persona:       persona.SystemPrompt,
-		Guardrails:    defaultGuardrails,
+		Guardrails:    "", // prompt do painel e' a lei: sem guardrails fixos (2026-06-19)
 		Docs:          docViews,
 		Models:        models,
 	}, nil
@@ -316,13 +316,15 @@ func (s *Service) ContextPreview(ctx context.Context, accountID string) (Context
 		PersonaName:   persona.Name,
 		Instructions:  persona.SystemPrompt,
 		KnowledgeDocs: docViews,
-		Guardrails:    defaultGuardrails,
+		Guardrails:    "", // sem guardrails fixos (prompt e' a lei, 2026-06-19)
 		SystemMessage: buildSystemMessage(persona.SystemPrompt, docs),
 	}, nil
 }
 
-// buildSystemMessage monta o systemMessage completo:
-// instrucoes da persona + knowledge docs habilitados (em sort_order) + guardrails.
+// buildSystemMessage monta o systemMessage: instrucoes da persona + knowledge docs
+// habilitados (em sort_order). O prompt do painel e' a LEI — os guardrails fixos
+// (defaultGuardrails) NAO sao mais anexados (decisao 2026-06-19): tudo que vale pro
+// bot vem inteiro do prompt/knowledge do banco. Ver defaults.go e AGENT.md.
 func buildSystemMessage(instructions string, docs []KnowledgeDoc) string {
 	var sb strings.Builder
 	sb.WriteString(instructions)
@@ -338,8 +340,6 @@ func buildSystemMessage(instructions string, docs []KnowledgeDoc) string {
 		}
 		sb.WriteString(d.Body)
 	}
-	sb.WriteString("\n\n")
-	sb.WriteString(defaultGuardrails)
 	return sb.String()
 }
 

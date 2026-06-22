@@ -6,15 +6,20 @@ import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
 import { slugify } from '~/domain/cardapio/types'
 import type { Category } from '~/domain/cardapio/types'
+import { resolveMediaUrl } from '~/utils/media'
 
 const store = useCardapioStore()
 const ui = useUiStore()
+const config = useRuntimeConfig()
+const mediaUrl = (url: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
 
 const newName = ref('')
 const creating = ref(false)
 const busyId = ref('')
 const editingId = ref('')
 const editName = ref('')
+const editImageUrl = ref('')
+const uploading = ref(false)
 
 const ordered = computed(() => [...store.categories].sort((a, b) => a.sortOrder - b.sortOrder))
 
@@ -28,6 +33,7 @@ async function onCreate() {
     await store.createCategory(store.restaurantId, {
       name,
       slug: slugify(name),
+      imageUrl: '',
       sortOrder: store.categories.length,
       isActive: true,
     })
@@ -43,19 +49,42 @@ async function onCreate() {
 function startEdit(category: Category) {
   editingId.value = category.id
   editName.value = category.name
+  editImageUrl.value = category.imageUrl
 }
 
 // O PATCH de categoria e full-replace no back (CategoryInput nao e parcial), entao
 // todo patch precisa mandar o objeto COMPLETO + os campos alterados — senao zera
-// description/sortOrder/isActive e falha a validacao de nome/slug.
+// description/imageUrl/sortOrder/isActive e falha a validacao de nome/slug.
 function categoryBody(category: Category, overrides: Record<string, unknown> = {}) {
   return {
     name: category.name,
     slug: category.slug,
     description: category.description,
+    imageUrl: category.imageUrl,
     sortOrder: category.sortOrder,
     isActive: category.isActive,
     ...overrides,
+  }
+}
+
+async function onImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !store.restaurantId) {
+    input.value = ''
+    return
+  }
+  uploading.value = true
+  try {
+    const url = await store.uploadMedia(store.restaurantId, file)
+    if (url) {
+      editImageUrl.value = url
+    }
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel enviar a imagem.'))
+  } finally {
+    uploading.value = false
+    input.value = ''
   }
 }
 
@@ -66,7 +95,10 @@ async function saveEdit(category: Category) {
   }
   busyId.value = category.id
   try {
-    await store.patchCategory(category.id, categoryBody(category, { name, slug: slugify(name) }))
+    await store.patchCategory(
+      category.id,
+      categoryBody(category, { name, slug: slugify(name), imageUrl: editImageUrl.value.trim() }),
+    )
     editingId.value = ''
     ui.success('Categoria atualizada.')
   } catch (caught) {
@@ -172,14 +204,39 @@ async function move(index: number, direction: -1 | 1) {
         </div>
 
         <div class="cardapio-cats__body">
-          <input
-            v-if="editingId === category.id"
-            v-model="editName"
-            type="text"
-            class="cardapio-cats__input"
-            @keydown.enter="saveEdit(category)"
-          />
+          <div v-if="editingId === category.id" class="cardapio-cats__edit">
+            <input
+              v-model="editName"
+              type="text"
+              class="cardapio-cats__input"
+              @keydown.enter="saveEdit(category)"
+            />
+            <div class="cardapio-cats__media">
+              <img
+                v-if="editImageUrl"
+                :src="mediaUrl(editImageUrl)"
+                alt="Imagem da categoria"
+                class="cardapio-cats__thumb"
+              />
+              <input
+                v-model="editImageUrl"
+                type="text"
+                class="cardapio-cats__input"
+                placeholder="URL da imagem (opcional)"
+              />
+              <label class="cardapio-cats__upload">
+                <input type="file" accept="image/*" hidden @change="onImageUpload" />
+                {{ uploading ? 'Enviando...' : 'Enviar' }}
+              </label>
+            </div>
+          </div>
           <template v-else>
+            <img
+              v-if="category.imageUrl"
+              :src="mediaUrl(category.imageUrl)"
+              alt=""
+              class="cardapio-cats__thumb"
+            />
             <span class="cardapio-cats__name">{{ category.name }}</span>
             <span class="cardapio-cats__slug">{{ category.slug }}</span>
           </template>
@@ -315,8 +372,42 @@ async function move(index: number, direction: -1 | 1) {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.6rem;
+}
+
+.cardapio-cats__edit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cardapio-cats__media {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cardapio-cats__thumb {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.cardapio-cats__upload {
+  flex-shrink: 0;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface-2) / 0.8);
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .cardapio-cats__name {

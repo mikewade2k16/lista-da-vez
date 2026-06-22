@@ -46,6 +46,10 @@ services:
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
+      # Absolutiza /uploads/* nas respostas publicas (cardapio/bio). Sem isso o
+      # publico devolve caminho relativo e o front em outro dominio (ex.: TAVOLA
+      # em mostarda.crowvisuals.com.br) nao acha a imagem. Ver DEPLOY_MOSTARDA_PROD.md.
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}

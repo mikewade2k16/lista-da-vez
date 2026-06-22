@@ -64,6 +64,7 @@ Doc canonico do modulo: `docs/cardapio/PLANO_MODULO_CARDAPIO.md` (contrato em §
 | `CardapioColorField.vue`                 | Campo de cor semantica reutilizavel (WS-D): `<input type=color>` + hex editavel sincronizados; valor = dado do usuario (hex livre, nao token). Usado 5x pela Aparencia.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `CardapioThemePreview.vue`               | Previa ao vivo AUTOSSUFICIENTE da Aparencia (WS-D): SEM iframe. Mock fiel dos blocos do site publico (header, hero, cards de prato) dirigido por CSS vars `--prev-*` aplicadas no container raiz; reativo ao tema (prop). `themeToPreviewVars(theme)` em `types.ts` monta as vars.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `sections/CardapioSectionDominios.vue`   | CRUD de dominios proprios + explicacao do subdominio por convencao.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `sections/CardapioSectionSite.vue`       | Aba **Site** (Site Builder, desenho B4): embute o Studio do TAVOLA num `<iframe>` (`studioUrl/studio?slug=<slug>&embed=1`) e SALVA/PUBLICA o layout pela API do painel. O painel detem o JWT; o iframe NUNCA recebe token. Protocolo postMessage no canal `omni-studio` (init/ready/change). So aceita mensagens cujo `event.origin === origem do studioUrl`. Botoes "Salvar rascunho" (`putDraftLayout`, com If-Match) e "Publicar" (`publishLayout`); trata 412 (conflito de versao).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Regras
 
@@ -112,6 +113,22 @@ invalidos"`. O toggle de disponibilidade do produto busca o produto completo ant
   `/cardapio/{id}?account=<accountId>`). Sem isso o GET cai na account ativa (`X-Account-Id`) e da 404
   quando o restaurante e de outra account. O default "Agencia" no modal mantem o caso comum na account
   ativa, onde nem precisa do `?account=`.
+- **Site Builder (aba Site, desenho B4)**: o layout do site e um documento livre
+  (`SiteLayout = {pages:{[nome]:{page,blocks:[{id,type,props,visible}]}}, theme?, updatedAt?}` em
+  `types.ts`) editado no Studio do TAVOLA embutido por iframe. Persistencia pela store:
+  `loadLayout(id)` (GET `.../layout` -> `{layout,version}`; vazio = `{pages:{}}` e version 0),
+  `putDraftLayout(id, layout, version?)` (PUT; manda `If-Match: <version>` quando `version>0`, controle
+  de concorrencia otimista — 412 = conflito; back tolera ausencia) e `publishLayout(id)` (POST
+  `.../layout/publish`). Todas usam `withScope` (escopo de account do editor, igual ao resto). O JWT
+  fica no painel; o iframe NUNCA recebe token. Protocolo postMessage no canal `omni-studio`: painel
+  posta `{type:'init', layout}` em resposta ao `{type:'ready'}` do iframe e guarda o layout a cada
+  `{type:'change'}`; so aceita mensagens cujo `event.origin === origem do studioUrl`. **Upload de
+  imagem**: como o iframe nao tem token, o Studio posta `{type:'upload-request', requestId, file}`
+  (File cru, via structured clone); o painel sobe pela MESMA API `store.uploadMedia(id, file)` (POST
+  `.../media`, usada por logo/banner/produto) e responde `{type:'upload-result', requestId, url}` (url
+  vazia em erro). Env:
+  `runtimeConfig.public.studioUrl` (default `http://localhost:3000`, sobrescrevivel por
+  `NUXT_PUBLIC_STUDIO_URL`).
 
 ## Pendente (fora do MVP)
 

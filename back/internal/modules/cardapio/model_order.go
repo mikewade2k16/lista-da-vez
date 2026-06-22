@@ -48,6 +48,7 @@ type Order struct {
 	RestaurantID     string          `json:"restaurantId"`
 	CustomerID       *string         `json:"customerId"`
 	OrderNumber      int             `json:"orderNumber"`
+	Code             string          `json:"code"`
 	Status           string          `json:"status"`
 	Type             string          `json:"type"`
 	CustomerName     string          `json:"customerName"`

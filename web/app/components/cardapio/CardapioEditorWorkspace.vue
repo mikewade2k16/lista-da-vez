@@ -9,6 +9,7 @@ import CardapioSectionPedidos from '~/components/cardapio/sections/CardapioSecti
 import CardapioSectionEntrega from '~/components/cardapio/sections/CardapioSectionEntrega.vue'
 import CardapioSectionDominios from '~/components/cardapio/sections/CardapioSectionDominios.vue'
 import CardapioSectionAparencia from '~/components/cardapio/sections/CardapioSectionAparencia.vue'
+import CardapioSectionSite from '~/components/cardapio/sections/CardapioSectionSite.vue'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
@@ -27,6 +28,7 @@ type SectionId =
   | 'entrega'
   | 'dominios'
   | 'aparencia'
+  | 'site'
 
 interface SectionTab {
   id: SectionId
@@ -42,6 +44,7 @@ const SECTIONS: SectionTab[] = [
   { id: 'entrega', label: 'Entrega' },
   { id: 'dominios', label: 'Dominios' },
   { id: 'aparencia', label: 'Aparencia' },
+  { id: 'site', label: 'Site' },
 ]
 
 const active = ref<SectionId>('dados')
@@ -140,6 +143,7 @@ onMounted(loadActive)
         <CardapioSectionEntrega v-else-if="active === 'entrega'" />
         <CardapioSectionDominios v-else-if="active === 'dominios'" />
         <CardapioSectionAparencia v-else-if="active === 'aparencia'" />
+        <CardapioSectionSite v-else-if="active === 'site'" />
       </div>
     </div>
   </section>

@@ -145,9 +145,11 @@ Runbook: docs/automation/SETUP.md secao 8.
 - Modelos de raciocinio (gpt-5*, o-series) exigem Responses API e nao aceitam
   `temperature`; nao funcionam no no de imagem (por isso a visao usa gpt-4o).
 - Expressoes do n8n nao suportam optional chaining (`?.`); usar `(obj || {}).campo`.
-- `systemMessage` do AI Agent = persona (`gpt-tony.md`) + `guardrails-resposta.md`
-  (sempre anexar os guardrails ao re-sincronizar). Guardrails forcam resposta em PT-BR e
-  texto puro (sem markdown), e definem quando dividir em baloes.
+- `systemMessage` do AI Agent = **so a persona/prompt do painel** (+ knowledge docs habilitados).
+  Decisao "prompt e a lei" (2026-06-19): o no `Montar systemMessage` **NAO anexa mais** os guardrails
+  fixos (`guardrails-resposta.md`). Regras de idioma/formato (PT-BR, texto puro, baloes) agora tem que
+  estar DENTRO do proprio prompt do painel. Ver registro de falhas "2026-06-20" no
+  back/internal/modules/automation/AGENT.md.
 - Midia da WAHA tem TTL curto: baixar na hora do webhook.
 
 ## Segredos
@@ -191,6 +193,13 @@ ambiente, considerar rotacionar as chaves.
 **VPS / deploy**
 - [ ] Rotas Caddy `n8n.`/`waha.` (basic auth) no projeto do proxy + DNS dos subdominios.
 - [ ] Subir `--profile automation` na prod, importar workflow/credenciais, escanear QR, ativar (confirmar com o Mike).
+- [ ] **Apos importar (ARMADILHA real 2026-06-19):** as credenciais do n8n vem com **host de DEV**
+      (`host.docker.internal`) — reapontar **Redis** (`redis:6379` + `AUTOMATION_REDIS_PASSWORD`) e
+      **WAHA** (`http://waha:3000`); **reimportar o `workflow-whatsapp.json` atual** (o que ja estava
+      no n8n pode ser uma versao velha sem os fixes de conexao) e **instalar o community node
+      `n8n-nodes-waha`** no volume `~/.n8n/nodes`; `docker restart` do n8n a cada troca. Sem isso o
+      bot conecta mas **nao responde** (execucoes travam no Redis / erram em "Ler memoria" / envio
+      WAHA falha). Detalhe: back/internal/modules/automation/AGENT.md "Registro de falhas 2026-06-19 (6)".
 - [ ] Backup dos volumes `automation_n8n_data` e `automation_waha_sessions`.
 - [ ] Multi-numero: avaliar **WAHA Plus** (licenca) quando precisar de >1 sessao por account.
 

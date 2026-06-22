@@ -55,6 +55,12 @@ type dataStore interface {
 	InsertEvent(ctx context.Context, accountID, restaurantID, name, sessionID string, eventContext json.RawMessage) error
 	ListEvents(ctx context.Context, accountID, restaurantID string, limit, offset int) ([]EventView, int, error)
 
+	// Site layout (Fase 3 / Opcao B)
+	GetPublishedLayout(ctx context.Context, accountID, restaurantID string) (json.RawMessage, int64, error)
+	GetDraftLayout(ctx context.Context, accountID, restaurantID string) (json.RawMessage, int64, bool, error)
+	PutDraftLayout(ctx context.Context, accountID, restaurantID string, draft json.RawMessage, expectedVersion *int64) (json.RawMessage, int64, error)
+	PublishLayout(ctx context.Context, accountID, restaurantID string) (json.RawMessage, int64, error)
+
 	// Public lookups
 	publicRestaurant(ctx context.Context, slug string) (Restaurant, string, error)
 	publicProductBySlug(ctx context.Context, accountID, restaurantID, productSlug string) (Product, error)

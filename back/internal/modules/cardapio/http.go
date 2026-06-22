@@ -115,6 +115,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusConflict, "slug_conflict", "Ja existe um registro com este identificador.")
 	case errors.Is(err, ErrInvalidMedia):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Imagem invalida (formato ou tamanho).")
+	case errors.Is(err, ErrVersionConflict):
+		httpapi.WriteError(w, r, http.StatusPreconditionFailed, "version_conflict", "O layout foi alterado em outra aba. Recarregue e tente de novo.")
 	case errors.Is(err, errNoAccount):
 		httpapi.WriteError(w, r, http.StatusForbidden, "no_account", "Contexto de account obrigatorio.")
 	default:

@@ -29,4 +29,7 @@ var (
 
 	// ErrInvalidMedia: upload invalido (tamanho/mime fora da allowlist).
 	ErrInvalidMedia = errors.New("cardapio: invalid media")
+
+	// ErrVersionConflict: If-Match nao confere (edicao concorrente do layout) => 412.
+	ErrVersionConflict = errors.New("cardapio: version conflict")
 )

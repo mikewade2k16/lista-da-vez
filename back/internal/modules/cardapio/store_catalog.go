@@ -11,12 +11,12 @@ import (
 // Categories
 // ============================================================================
 
-const categoryColumns = `id, restaurant_id, slug, name, description, sort_order, is_active, created_at`
+const categoryColumns = `id, restaurant_id, slug, name, description, image_url, sort_order, is_active, created_at`
 
 func scanCategory(row rowScanner) (Category, error) {
 	var c Category
 	err := row.Scan(&c.ID, &c.RestaurantID, &c.Slug, &c.Name, &c.Description,
-		&c.SortOrder, &c.IsActive, &c.CreatedAt)
+		&c.ImageURL, &c.SortOrder, &c.IsActive, &c.CreatedAt)
 	return c, err
 }
 
@@ -46,21 +46,21 @@ func (s *Store) ListCategories(ctx context.Context, accountID, restaurantID stri
 // CreateCategory insere uma categoria.
 func (s *Store) CreateCategory(ctx context.Context, accountID, restaurantID string, in CategoryInput) (Category, error) {
 	const q = `insert into cardapio.categories
-		(account_id, restaurant_id, slug, name, description, sort_order, is_active)
-		values ($1, $2, $3, $4, $5, $6, $7)
+		(account_id, restaurant_id, slug, name, description, image_url, sort_order, is_active)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
 		returning ` + categoryColumns
 	return scanCategory(s.pool.QueryRow(ctx, q, accountID, restaurantID,
-		in.Slug, in.Name, in.Description, in.SortOrder, in.IsActive))
+		in.Slug, in.Name, in.Description, in.ImageURL, in.SortOrder, in.IsActive))
 }
 
 // UpdateCategory edita uma categoria por id na account.
 func (s *Store) UpdateCategory(ctx context.Context, accountID, id string, in CategoryInput) (Category, error) {
 	const q = `update cardapio.categories set
-			slug = $3, name = $4, description = $5, sort_order = $6, is_active = $7
+			slug = $3, name = $4, description = $5, image_url = $6, sort_order = $7, is_active = $8
 		where id = $1 and account_id = $2
 		returning ` + categoryColumns
 	return scanCategory(s.pool.QueryRow(ctx, q, id, accountID,
-		in.Slug, in.Name, in.Description, in.SortOrder, in.IsActive))
+		in.Slug, in.Name, in.Description, in.ImageURL, in.SortOrder, in.IsActive))
 }
 
 // DeleteCategory remove uma categoria (produtos ficam sem categoria via FK).
@@ -83,7 +83,7 @@ func (s *Store) DeleteCategory(ctx context.Context, accountID, id string) error 
 const productColumns = `id, restaurant_id, category_id, slug, name, short_desc, description,
 	body, price_cents, image_url, gallery, weight, cook_time, diet, allergens, pairing,
 	tags, is_available, is_featured, sort_order, rating, review_count, sold_count,
-	created_at, updated_at`
+	created_at, updated_at, compare_at_price_cents`
 
 func scanProduct(row rowScanner) (Product, error) {
 	var p Product
@@ -92,7 +92,7 @@ func scanProduct(row rowScanner) (Product, error) {
 		&p.ID, &p.RestaurantID, &p.CategoryID, &p.Slug, &p.Name, &p.ShortDesc, &p.Description,
 		&p.Body, &p.PriceCents, &p.ImageURL, &gallery, &p.Weight, &p.CookTime, &diet, &allergens,
 		&pairing, &tags, &p.IsAvailable, &p.IsFeatured, &p.SortOrder, &p.Rating, &p.ReviewCount,
-		&p.SoldCount, &p.CreatedAt, &p.UpdatedAt,
+		&p.SoldCount, &p.CreatedAt, &p.UpdatedAt, &p.CompareAtPriceCents,
 	)
 	if err != nil {
 		return Product{}, err
@@ -256,8 +256,8 @@ func (s *Store) CreateProduct(ctx context.Context, accountID, restaurantID strin
 	const q = `insert into cardapio.products
 		(account_id, restaurant_id, category_id, slug, name, short_desc, description, body,
 		 price_cents, image_url, gallery, weight, cook_time, diet, allergens, pairing, tags,
-		 is_available, is_featured, sort_order)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+		 is_available, is_featured, sort_order, compare_at_price_cents)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		returning ` + productColumns
 	p, err := scanProduct(tx.QueryRow(ctx, q, productInsertArgs(accountID, restaurantID, in)...))
 	if err != nil {
@@ -285,7 +285,7 @@ func (s *Store) UpdateProduct(ctx context.Context, accountID, id string, in Prod
 			category_id = $3, slug = $4, name = $5, short_desc = $6, description = $7, body = $8,
 			price_cents = $9, image_url = $10, gallery = $11, weight = $12, cook_time = $13,
 			diet = $14, allergens = $15, pairing = $16, tags = $17, is_available = $18,
-			is_featured = $19, sort_order = $20, updated_at = now()
+			is_featured = $19, sort_order = $20, compare_at_price_cents = $21, updated_at = now()
 		where id = $1 and account_id = $2
 		returning ` + productColumns
 	args := append([]any{id, accountID}, productUpdateArgs(in)...)
@@ -315,7 +315,7 @@ func productUpdateArgs(in ProductInput) []any {
 		in.CategoryID, in.Slug, in.Name, in.ShortDesc, in.Description, in.Body,
 		in.PriceCents, in.ImageURL, mustJSON(in.Gallery), in.Weight, in.CookTime,
 		mustJSON(in.Diet), mustJSON(in.Allergens), pairing, mustJSON(in.Tags),
-		in.IsAvailable, in.IsFeatured, in.SortOrder,
+		in.IsAvailable, in.IsFeatured, in.SortOrder, in.CompareAtPriceCents,
 	}
 }
 

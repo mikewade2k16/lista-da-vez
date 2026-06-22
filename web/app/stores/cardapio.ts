@@ -14,6 +14,7 @@ import type {
   RestaurantDomain,
   RestaurantListItem,
   Review,
+  SiteLayout,
 } from '~/domain/cardapio/types'
 
 // Store do modulo Cardapio Online (painel). Contrato congelado em
@@ -515,6 +516,56 @@ export const useCardapioStore = defineStore('cardapio', () => {
     return String(response?.url ?? '')
   }
 
+  // --- Site Builder (layout do Studio do TAVOLA) ---
+
+  // Normaliza a resposta {layout, version} do back. Layout ausente => documento
+  // vazio canonico; version ausente => 0 (rascunho novo).
+  function asLayoutResult(value: unknown): { layout: SiteLayout; version: number } {
+    const source = (value ?? {}) as { layout?: SiteLayout | null; version?: number }
+    const layout: SiteLayout =
+      source.layout && typeof source.layout === 'object' ? source.layout : { pages: {} }
+    const version = Number.isFinite(source.version) ? Number(source.version) : 0
+    return { layout, version }
+  }
+
+  // GET do rascunho do layout. Vazio = { pages: {} } e version 0. Usa o escopo do
+  // editor (withScope anexa ?accountId= para platform_admin de outra account).
+  async function loadLayout(id: string): Promise<{ layout: SiteLayout; version: number }> {
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/layout`),
+    )
+    return asLayoutResult(response)
+  }
+
+  // PUT do rascunho. Manda If-Match com a versao conhecida quando > 0 (controle de
+  // concorrencia otimista; 412 se outro editor salvou no meio). O back tolera
+  // ausencia do header. Retorna a nova {layout, version}.
+  async function putDraftLayout(
+    id: string,
+    layout: SiteLayout,
+    version = 0,
+  ): Promise<{ layout: SiteLayout; version: number }> {
+    const headers: Record<string, string> = {}
+    if (version > 0) {
+      headers['If-Match'] = String(version)
+    }
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/layout`),
+      { method: 'PUT', body: layout, headers },
+    )
+    return asLayoutResult(response)
+  }
+
+  // POST publica o rascunho atual (vira a versao publica do site). Retorna a
+  // {layout, version} publicada.
+  async function publishLayout(id: string): Promise<{ layout: SiteLayout; version: number }> {
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/layout/publish`),
+      { method: 'POST' },
+    )
+    return asLayoutResult(response)
+  }
+
   return {
     restaurants,
     listPending,
@@ -563,5 +614,8 @@ export const useCardapioStore = defineStore('cardapio', () => {
     patchZone,
     deleteZone,
     uploadMedia,
+    loadLayout,
+    putDraftLayout,
+    publishLayout,
   }
 })

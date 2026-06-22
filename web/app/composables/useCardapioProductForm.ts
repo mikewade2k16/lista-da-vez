@@ -17,6 +17,7 @@ export interface ProductForm {
   description: string
   body: string
   priceCents: number
+  compareAtPriceCents: number
   imageUrl: string
   gallery: string[]
   weight: string
@@ -52,6 +53,7 @@ export function emptyProductForm(): ProductForm {
     description: '',
     body: '',
     priceCents: 0,
+    compareAtPriceCents: 0,
     imageUrl: '',
     gallery: [],
     weight: '',
@@ -77,6 +79,7 @@ export function productToForm(product: Product): ProductForm {
     description: product.description,
     body: product.body,
     priceCents: product.priceCents,
+    compareAtPriceCents: product.compareAtPriceCents ?? 0,
     imageUrl: product.imageUrl,
     gallery: [...(product.gallery ?? [])],
     weight: product.weight,
@@ -109,6 +112,11 @@ export function formToPayload(form: ProductForm): Record<string, unknown> {
     description: form.description,
     body: form.body,
     priceCents: form.priceCents,
+    // So envia preco riscado quando MAIOR que o base (honra a hint da UI); senao 0.
+    compareAtPriceCents:
+      form.compareAtPriceCents > form.priceCents
+        ? Math.max(0, Math.trunc(Number(form.compareAtPriceCents) || 0))
+        : 0,
     imageUrl: form.imageUrl.trim(),
     gallery: form.gallery,
     weight: form.weight.trim(),

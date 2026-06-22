@@ -102,6 +102,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterRoutes(mux, h.service, h.authMiddleware)
 	RegisterCatalogRoutes(mux, h.service, h.authMiddleware)
 	RegisterOrderRoutes(mux, h.service, h.authMiddleware)
+	RegisterLayoutRoutes(mux, h.service, h.authMiddleware)
 	RegisterPublicRoutes(mux, h.service, h.limiter)
 }
 

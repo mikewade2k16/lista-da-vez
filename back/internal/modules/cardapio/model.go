@@ -99,16 +99,20 @@ type RestaurantLean struct {
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
-// Category e o DTO de categoria.
+// Category e o DTO de categoria. imageUrl (WS-F) e foto representativa opcional;
+// productCount (WS-F) e derivado no menu publico (omitempty: 0 => ausente, o
+// front deriva localmente) e NAO tem coluna.
 type Category struct {
 	ID           string    `json:"id"`
 	RestaurantID string    `json:"restaurantId"`
 	Slug         string    `json:"slug"`
 	Name         string    `json:"name"`
 	Description  string    `json:"description"`
+	ImageURL     string    `json:"imageUrl"`
 	SortOrder    int       `json:"sortOrder"`
 	IsActive     bool      `json:"isActive"`
 	CreatedAt    time.Time `json:"createdAt"`
+	ProductCount int       `json:"productCount,omitempty"`
 }
 
 // Variation e uma opcao mutuamente exclusiva do produto.
@@ -131,33 +135,36 @@ type Addon struct {
 
 // Product e o DTO completo do prato.
 type Product struct {
-	ID           string          `json:"id"`
-	RestaurantID string          `json:"restaurantId"`
-	CategoryID   *string         `json:"categoryId"`
-	Slug         string          `json:"slug"`
-	Name         string          `json:"name"`
-	ShortDesc    string          `json:"shortDesc"`
-	Description  string          `json:"description"`
-	Body         string          `json:"body"`
-	PriceCents   int64           `json:"priceCents"`
-	ImageURL     string          `json:"imageUrl"`
-	Gallery      []string        `json:"gallery"`
-	Weight       string          `json:"weight"`
-	CookTime     string          `json:"cookTime"`
-	Diet         []string        `json:"diet"`
-	Allergens    []string        `json:"allergens"`
-	Pairing      json.RawMessage `json:"pairing"`
-	Tags         []string        `json:"tags"`
-	IsAvailable  bool            `json:"isAvailable"`
-	IsFeatured   bool            `json:"isFeatured"`
-	SortOrder    int             `json:"sortOrder"`
-	Rating       *float64        `json:"rating"`
-	ReviewCount  int             `json:"reviewCount"`
-	SoldCount    int             `json:"soldCount"`
-	CreatedAt    time.Time       `json:"createdAt"`
-	UpdatedAt    time.Time       `json:"updatedAt"`
-	Variations   []Variation     `json:"variations"`
-	Addons       []Addon         `json:"addons"`
+	ID           string  `json:"id"`
+	RestaurantID string  `json:"restaurantId"`
+	CategoryID   *string `json:"categoryId"`
+	Slug         string  `json:"slug"`
+	Name         string  `json:"name"`
+	ShortDesc    string  `json:"shortDesc"`
+	Description  string  `json:"description"`
+	Body         string  `json:"body"`
+	PriceCents   int64   `json:"priceCents"`
+	// CompareAtPriceCents (WS-F): preco "cheio" para exibicao riscada (promocao).
+	// omitempty => 0 = sem preco riscado. Nunca e usado como preco real.
+	CompareAtPriceCents int64           `json:"compareAtPriceCents,omitempty"`
+	ImageURL            string          `json:"imageUrl"`
+	Gallery             []string        `json:"gallery"`
+	Weight              string          `json:"weight"`
+	CookTime            string          `json:"cookTime"`
+	Diet                []string        `json:"diet"`
+	Allergens           []string        `json:"allergens"`
+	Pairing             json.RawMessage `json:"pairing"`
+	Tags                []string        `json:"tags"`
+	IsAvailable         bool            `json:"isAvailable"`
+	IsFeatured          bool            `json:"isFeatured"`
+	SortOrder           int             `json:"sortOrder"`
+	Rating              *float64        `json:"rating"`
+	ReviewCount         int             `json:"reviewCount"`
+	SoldCount           int             `json:"soldCount"`
+	CreatedAt           time.Time       `json:"createdAt"`
+	UpdatedAt           time.Time       `json:"updatedAt"`
+	Variations          []Variation     `json:"variations"`
+	Addons              []Addon         `json:"addons"`
 }
 
 // ProductLean e a projecao enxuta da listagem de produtos do painel.
@@ -271,11 +278,13 @@ type UpdateRestaurantInput struct {
 	IsActive          *bool   `json:"isActive"`
 }
 
-// CategoryInput cria/edita categoria.
+// CategoryInput cria/edita categoria (full-replace: o painel manda o body
+// completo, incluindo imageUrl — sem ele, zera a foto).
 type CategoryInput struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	ImageURL    string `json:"imageUrl"`
 	SortOrder   int    `json:"sortOrder"`
 	IsActive    bool   `json:"isActive"`
 }
@@ -297,26 +306,27 @@ type AddonInput struct {
 // ProductInput cria/edita produto. variations/addons (quando nao-nil) substituem
 // todas as opcoes existentes (replace-all transacional).
 type ProductInput struct {
-	CategoryID  *string          `json:"categoryId"`
-	Slug        string           `json:"slug"`
-	Name        string           `json:"name"`
-	ShortDesc   string           `json:"shortDesc"`
-	Description string           `json:"description"`
-	Body        string           `json:"body"`
-	PriceCents  int64            `json:"priceCents"`
-	ImageURL    string           `json:"imageUrl"`
-	Gallery     []string         `json:"gallery"`
-	Weight      string           `json:"weight"`
-	CookTime    string           `json:"cookTime"`
-	Diet        []string         `json:"diet"`
-	Allergens   []string         `json:"allergens"`
-	Pairing     json.RawMessage  `json:"pairing"`
-	Tags        []string         `json:"tags"`
-	IsAvailable bool             `json:"isAvailable"`
-	IsFeatured  bool             `json:"isFeatured"`
-	SortOrder   int              `json:"sortOrder"`
-	Variations  []VariationInput `json:"variations"`
-	Addons      []AddonInput     `json:"addons"`
+	CategoryID          *string          `json:"categoryId"`
+	Slug                string           `json:"slug"`
+	Name                string           `json:"name"`
+	ShortDesc           string           `json:"shortDesc"`
+	Description         string           `json:"description"`
+	Body                string           `json:"body"`
+	PriceCents          int64            `json:"priceCents"`
+	CompareAtPriceCents int64            `json:"compareAtPriceCents"`
+	ImageURL            string           `json:"imageUrl"`
+	Gallery             []string         `json:"gallery"`
+	Weight              string           `json:"weight"`
+	CookTime            string           `json:"cookTime"`
+	Diet                []string         `json:"diet"`
+	Allergens           []string         `json:"allergens"`
+	Pairing             json.RawMessage  `json:"pairing"`
+	Tags                []string         `json:"tags"`
+	IsAvailable         bool             `json:"isAvailable"`
+	IsFeatured          bool             `json:"isFeatured"`
+	SortOrder           int              `json:"sortOrder"`
+	Variations          []VariationInput `json:"variations"`
+	Addons              []AddonInput     `json:"addons"`
 }
 
 // ReviewInput cria/edita avaliacao.

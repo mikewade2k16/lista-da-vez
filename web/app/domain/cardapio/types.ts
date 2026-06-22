@@ -76,6 +76,45 @@ export interface RestaurantTheme {
   radius: ThemeRadius
 }
 
+// --- Site Builder (Studio do TAVOLA embutido por iframe — desenho B4) ---
+// O layout do site e um documento livre editado no Studio do TAVOLA (iframe) e
+// SALVO/PUBLICADO pelo painel (que detem o JWT; o iframe nunca recebe token).
+// Contrato espelhado dos dois lados; protocolo postMessage no canal
+// 'omni-studio'. Endpoints: GET/PUT .../layout (rascunho, com versao p/
+// concorrencia via If-Match) e POST .../layout/publish.
+
+// Overrides de tema do site (livre). Espelha o RestaurantTheme rico, porem todos
+// os campos sao opcionais — o Studio so envia o que sobrescreve.
+export interface ThemeOverrides {
+  base?: string
+  mode?: ThemeMode
+  colors?: Partial<ThemeColors>
+  fonts?: Partial<ThemeFonts>
+  radius?: ThemeRadius
+}
+
+// Bloco de uma pagina do site. `props` e livre (o Studio define o shape de cada
+// `type`); `visible` controla render no site publico.
+export interface LayoutBlock {
+  id: string
+  type: string
+  props: Record<string, unknown>
+  visible: boolean
+}
+
+// Uma pagina do site (ex.: "home", "cardapio"): identificador + blocos ordenados.
+export interface PageLayout {
+  page: string
+  blocks: LayoutBlock[]
+}
+
+// Documento de layout do site inteiro. Vazio = `{ pages: {} }`.
+export interface SiteLayout {
+  pages: Record<string, PageLayout>
+  theme?: ThemeOverrides
+  updatedAt?: string
+}
+
 export interface Restaurant {
   id: string
   slug: string
@@ -131,9 +170,13 @@ export interface Category {
   slug: string
   name: string
   description: string
+  // WS-F: foto da categoria (opcional no contrato). productCount e derivado no
+  // menu publico (omitempty no back; ausente => o front deriva).
+  imageUrl: string
   sortOrder: number
   isActive: boolean
   createdAt: string
+  productCount?: number
 }
 
 export interface Variation {
@@ -169,6 +212,8 @@ export interface Product {
   description: string
   body: string
   priceCents: number
+  // WS-F: preco "cheio" para exibicao riscada (promocao). Ausente = sem risco.
+  compareAtPriceCents?: number
   imageUrl: string
   gallery: string[]
   weight: string
@@ -250,6 +295,8 @@ export interface Order {
   restaurantId: string
   customerId: string | null
   orderNumber: number
+  // Código curto voltado ao cliente (WS-G); o atendente usa para casar o pedido.
+  code: string
   status: OrderStatus
   type: OrderType
   customerName: string

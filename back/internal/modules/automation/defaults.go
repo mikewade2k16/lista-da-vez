@@ -10,9 +10,14 @@ import _ "embed"
 var defaultPersona string
 
 // defaultGuardrails sao as regras de resposta de WhatsApp (PT-BR, texto puro,
-// baloes, emoji raro). Gerado de docs/automation/guardrails-resposta.md. Anexado
-// ao final do systemMessage no runtime-config — nunca editado junto da persona.
+// baloes, emoji raro). Gerado de docs/automation/guardrails-resposta.md.
+// DESATIVADO em 2026-06-19: o prompt do painel passou a ser a LEI — os guardrails
+// fixos NAO sao mais anexados ao systemMessage (buildSystemMessage) nem devolvidos
+// no runtime-config (cfg.guardrails vai vazio, o n8n nao anexa nada). Mantido aqui
+// (embed + arquivo defaults/guardrails.md) como referencia REVERSIVEL: para reativar,
+// voltar as 3 referencias removidas no service.go. Ver AGENT.md.
 //
+//nolint:unused // mantido de proposito como referencia reversivel (ver acima)
 //go:embed defaults/guardrails.md
 var defaultGuardrails string
 

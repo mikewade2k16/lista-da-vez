@@ -178,6 +178,13 @@ async function onSave() {
             <span class="cardapio-pm__label">Preco base</span>
             <CardapioMoneyInput v-model="form.priceCents" />
           </label>
+          <label class="cardapio-pm__field">
+            <span class="cardapio-pm__label">Preço cheio (riscado)</span>
+            <CardapioMoneyInput v-model="form.compareAtPriceCents" />
+            <span class="cardapio-pm__hint">
+              Opcional. Maior que o preço base, mostra o desconto riscado. 0 = sem risco.
+            </span>
+          </label>
           <label class="cardapio-pm__field cardapio-pm__field--full">
             <span class="cardapio-pm__label">Descricao curta</span>
             <input v-model="form.shortDesc" type="text" class="cardapio-pm__input" />
@@ -392,6 +399,11 @@ async function onSave() {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-main);
+}
+
+.cardapio-pm__hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 .cardapio-pm__input {

@@ -87,6 +87,19 @@ func (s *Service) PublicMenu(ctx context.Context, slug string) (PublicMenu, erro
 	for i := range products {
 		s.absolutizeProduct(&products[i])
 	}
+	// WS-F: productCount derivado (conta os produtos disponiveis ja carregados por
+	// categoria, sem query extra) + absolutiza a foto da categoria, como em
+	// produto/restaurante. omitempty no DTO: 0 => ausente (o front deriva).
+	counts := make(map[string]int, len(categories))
+	for i := range products {
+		if products[i].CategoryID != nil {
+			counts[*products[i].CategoryID]++
+		}
+	}
+	for i := range categories {
+		categories[i].ProductCount = counts[categories[i].ID]
+		categories[i].ImageURL = s.absolutize(categories[i].ImageURL)
+	}
 	return PublicMenu{
 		Restaurant:    restaurant,
 		Categories:    categories,

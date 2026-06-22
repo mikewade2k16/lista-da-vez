@@ -152,8 +152,101 @@ SQL idempotente (UPDATE no restaurante slug `mk`) com os dados das telas:
 - Pickup: sim.
 - **Zonas de entrega** (do 1º print): inserir os bairros + valores (13 de Julho 700, 18 do Forte 1800, Aeroporto 1500, Aruana 2500, Atalaia 1600, Capucho 1800, Centro 900, Cirurgia 1500, Getúlio Vargas 1400, Grageru 1200, Jabotiana 1500, Jardins 1500, Luzia 1000, Pereira Lobo 1500, Ponto Novo 1200, Salgado Filho 1200, Siqueira Campos 1400, ... resto do print) em `cardapio.delivery_zones`.
 
+## WS-F — Campos opcionais de catálogo (contrato TAVOLA)
+
+> Extensão pós-Fase 2 (2026-06-20). O contrato da API do TAVOLA
+> (`TAVOLA/docs/api-contract.md`, "Campos opcionais novos no cardápio") declara
+> três campos que o Omni ainda não refletia. São **opcionais**: o site funciona
+> sem eles (deriva/placeholder), mas as seções da biblioteca Lego os aproveitam.
+> Auditoria do gap: ver memória `project_tavola_omni_layout_gap`.
+
+### Campos
+- **`Category.imageUrl`** — foto representativa da categoria (URL absoluta ou
+  `/uploads/*` absolutizado no público).
+- **`Category.productCount`** — contagem de produtos disponíveis na categoria.
+  **Derivada no servidor** (sem coluna): o `PublicMenu` conta os produtos por
+  `categoryId`. Sai com `omitempty` (0 = ausente → o front deriva localmente).
+- **`Product.compareAtPriceCents`** — preço "cheio" para exibição riscada
+  (promoção). `omitempty` (0 = sem preço riscado). Nunca usado como preço real.
+
+### Banco (migration `0168_cardapio_catalog_optional_fields.sql`)
+Idempotente, schema-qualificado, sem `-- +goose Down`:
+```
+alter table cardapio.categories add column if not exists image_url text not null default '';
+alter table cardapio.products   add column if not exists compare_at_price_cents bigint not null default 0;
+```
+`productCount` **não** tem coluna (derivado no `service_public`).
+
+### Back (`back/internal/modules/cardapio/`)
+- `model.go`: `Category` ganha `ImageURL` (`imageUrl`) e `ProductCount`
+  (`productCount,omitempty`); `CategoryInput` ganha `ImageURL`. `Product` e
+  `ProductInput` ganham `CompareAtPriceCents` (`compareAtPriceCents`/omitempty no DTO).
+- `store_catalog.go`: `image_url` em `categoryColumns` + scan + INSERT/UPDATE de
+  categoria; `compare_at_price_cents` ao FIM de `productColumns` + scan +
+  INSERT/UPDATE de produto (`productUpdateArgs`). `productColumns`/`scanProduct`
+  são compartilhados → cobre menu público, prato e GET do painel.
+- `service_public.go` `PublicMenu`: deriva `ProductCount` por categoria (conta os
+  produtos disponíveis já carregados, sem query extra) e absolutiza
+  `Category.ImageURL` (como já faz com produto/restaurante).
+
+### Painel (`web/app/`)
+- `domain/cardapio/types.ts`: `Category.imageUrl`/`productCount?`,
+  `Product.compareAtPriceCents?`.
+- `useCardapioProductForm.ts` + `CardapioProductModal.vue`: campo "Preço cheio
+  (riscado)" via `CardapioMoneyInput`, ao lado do preço base.
+- `CardapioSectionCategorias.vue`: imagem por categoria (URL + upload reusando
+  `store.uploadMedia` + `resolveMediaUrl`), no modo de edição; `categoryBody`
+  passa `imageUrl` (full-replace — sem ele, zera).
+
+### TAVOLA
+- Já preparado: `types.ts` declara `Category.imageUrl`/`productCount?` e
+  `Product.compareAtPriceCents?`; o `SectionRenderer` deriva `productCount`
+  quando ausente. Sem mudança necessária no site para estes campos.
+
+---
+
+## WS-G — Código do pedido (referência grandes redes)
+
+> Extensão pós-Fase 2 (2026-06-20). O cliente precisa de um **código** como
+> confirmação ("fiz o pedido X"), para não haver "fiz e não recebi". Referência
+> McDonald's/BK/iFood: código **curto e legível** (não um número longo aleatório,
+> ruim de ditar). O `order_number` sequencial continua para uso interno do painel.
+
+### Banco (migration `0169_cardapio_order_code.sql`)
+`alter table cardapio.orders add column if not exists code text not null default ''`
++ `create unique index if not exists ... on cardapio.orders (restaurant_id, code) where code <> ''`
+(unique **parcial** ignora pedidos antigos com `code=''`).
+
+### Back (`back/internal/modules/cardapio/`)
+- `model_order.go`: `Order.Code` (`code`).
+- `store_orders.go`: `generateOrderCode` (base32 Crockford `0123456789ABCDEFGHJKMNPQRSTVWXYZ`,
+  6 chars, modulo sem viés) + `uniqueOrderCode` (gera e checa na MESMA tx; o unique
+  index parcial é o backstop contra corrida). `CreateOrder` gera o code e o insere;
+  `orderColumns`/`scanOrder` ganham `code` no fim. `service_orders.go` inalterado.
+- `store_orders_code_test.go`: testa formato/alfabeto/colisão do gerador.
+
+### Painel (`web/app/`)
+- `domain/cardapio/types.ts`: `Order.code`.
+- `CardapioSectionPedidos.vue`: mostra o `code` como identificador principal do
+  pedido, com `#orderNumber` + tipo na linha de baixo (o atendente casa o código
+  que o cliente informar).
+
+### TAVOLA (`apps/web/app/`)
+- `types.ts`: `Order.code`.
+- `CartDrawer.vue`: tela de confirmação com status "Pedido recebido", o **código
+  em destaque** (mono), instrução "guarde este código" e botão WhatsApp.
+- `utils/whatsapp.ts`: a mensagem usa o `code` no cabeçalho do pedido.
+
+### Comportamento que previne o "pedido fantasma"
+Pedido só ganha `code` quando é **gravado no banco** (resposta 201); e o checkout
+**não finaliza** endereço sem zona de entrega (ver `TAVOLA/docs/checkout-entrega.md`).
+
+---
+
 ## 4. Notas de Deploy
 1. Migrations **0166** (delivery_zones) e **0167** (restaurant_extra). Aplicar local (`:5432`) e portar p/ produção.
+1b. Migration **0168** (WS-F: `image_url` em categories, `compare_at_price_cents` em products). Aplicar local e portar p/ produção; **rebuild api**.
+1c. Migration **0169** (WS-G: `code` em orders + unique parcial). Aplicar local e portar p/ produção; **rebuild api**.
 2. **Rebuild api**: `docker compose up -d --build api` (mudou Go).
 3. TAVOLA: mudanças de front (sem rebuild; HMR + hard-reload; mudança de `nuxt.config`/fontes exige reiniciar o dev server).
 4. Envs: nenhuma nova (GA/Pixel são dado por-restaurante, não env).

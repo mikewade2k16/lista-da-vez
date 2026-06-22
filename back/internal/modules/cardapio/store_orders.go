@@ -2,8 +2,50 @@ package cardapio
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"errors"
+
+	"github.com/jackc/pgx/v5"
 )
+
+// orderCodeAlphabet e base32 Crockford (sem I/L/O/U); 32 chars => modulo sem vies.
+const orderCodeAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+const orderCodeLen = 6
+
+// generateOrderCode gera um codigo curto e legivel (ex.: "K7Q4PM").
+func generateOrderCode() (string, error) {
+	buf := make([]byte, orderCodeLen)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	out := make([]byte, orderCodeLen)
+	for i, b := range buf {
+		out[i] = orderCodeAlphabet[int(b)%len(orderCodeAlphabet)]
+	}
+	return string(out), nil
+}
+
+// uniqueOrderCode gera um codigo unico por restaurante, checando na MESMA tx; o
+// unique index parcial e o backstop contra corrida (falha => pedido reenviado).
+func (s *Store) uniqueOrderCode(ctx context.Context, tx pgx.Tx, restaurantID string) (string, error) {
+	for i := 0; i < 8; i++ {
+		code, err := generateOrderCode()
+		if err != nil {
+			return "", err
+		}
+		var exists bool
+		if err := tx.QueryRow(ctx,
+			`select exists(select 1 from cardapio.orders where restaurant_id = $1 and code = $2)`,
+			restaurantID, code).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return code, nil
+		}
+	}
+	return "", errors.New("cardapio: nao foi possivel gerar codigo de pedido unico")
+}
 
 // orderInsert e o pedido ja recalculado pelo service, pronto para persistir.
 type orderInsert struct {
@@ -24,7 +66,7 @@ type orderInsert struct {
 
 const orderColumns = `id, restaurant_id, customer_id, order_number, status, type,
 	customer_name, customer_phone, delivery_address, notes, subtotal_cents,
-	delivery_fee_cents, discount_cents, total_cents, created_at, updated_at`
+	delivery_fee_cents, discount_cents, total_cents, created_at, updated_at, code`
 
 func scanOrder(row rowScanner) (Order, error) {
 	var o Order
@@ -32,7 +74,7 @@ func scanOrder(row rowScanner) (Order, error) {
 	err := row.Scan(
 		&o.ID, &o.RestaurantID, &o.CustomerID, &o.OrderNumber, &o.Status, &o.Type,
 		&o.CustomerName, &o.CustomerPhone, &deliveryAddress, &o.Notes, &o.SubtotalCents,
-		&o.DeliveryFeeCents, &o.DiscountCents, &o.TotalCents, &o.CreatedAt, &o.UpdatedAt,
+		&o.DeliveryFeeCents, &o.DiscountCents, &o.TotalCents, &o.CreatedAt, &o.UpdatedAt, &o.Code,
 	)
 	if err != nil {
 		return Order{}, err
@@ -63,6 +105,11 @@ func (s *Store) CreateOrder(ctx context.Context, in orderInsert) (Order, error) 
 		return Order{}, err
 	}
 
+	code, err := s.uniqueOrderCode(ctx, tx, in.RestaurantID)
+	if err != nil {
+		return Order{}, err
+	}
+
 	deliveryAddress := in.DeliveryAddress
 	if len(deliveryAddress) == 0 {
 		deliveryAddress = json.RawMessage("{}")
@@ -70,13 +117,13 @@ func (s *Store) CreateOrder(ctx context.Context, in orderInsert) (Order, error) 
 	const insQ = `insert into cardapio.orders
 		(account_id, restaurant_id, order_number, status, type, session_id, customer_name,
 		 customer_phone, delivery_address, notes, subtotal_cents, delivery_fee_cents,
-		 discount_cents, total_cents)
-		values ($1,$2,$3,'recebido',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		 discount_cents, total_cents, code)
+		values ($1,$2,$3,'recebido',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		returning ` + orderColumns
 	order, err := scanOrder(tx.QueryRow(ctx, insQ,
 		in.AccountID, in.RestaurantID, orderNumber, in.Type, in.SessionID, in.CustomerName,
 		in.CustomerPhone, []byte(deliveryAddress), in.Notes, in.SubtotalCents,
-		in.DeliveryFeeCents, in.DiscountCents, in.TotalCents))
+		in.DeliveryFeeCents, in.DiscountCents, in.TotalCents, code))
 	if err != nil {
 		return Order{}, err
 	}

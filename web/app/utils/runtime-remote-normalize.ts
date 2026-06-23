@@ -1,0 +1,138 @@
+import { cloneValue } from '~/domain/utils/object'
+
+// Normalizadores puros do payload remoto (sem dependencia de store/fetch). Cada
+// funcao defende contra shape parcial vindo do back e devolve um objeto estavel.
+// Extraido de runtime-remote.ts para manter cada arquivo dentro do limite de
+// linhas (ver principios de engenharia).
+
+export function cloneOrFallback(value, fallback) {
+  return cloneValue(value === undefined ? fallback : value)
+}
+
+export function normalizeOptions(options = []) {
+  return (Array.isArray(options) ? options : [])
+    .map((option) => ({
+      id: String(option?.id || '').trim(),
+      label: String(option?.label || '').trim(),
+    }))
+    .filter((option) => option.id && option.label)
+}
+
+export function normalizeProducts(products = []) {
+  return (Array.isArray(products) ? products : [])
+    .map((product) => ({
+      id: String(product?.id || '').trim(),
+      name: String(product?.name || '').trim(),
+      code: String(product?.code || '')
+        .trim()
+        .toUpperCase(),
+      category: String(product?.category || '').trim(),
+      basePrice: Math.max(0, Number(product?.basePrice || 0) || 0),
+    }))
+    .filter((product) => product.id && product.name)
+}
+
+export function normalizeConsultants(consultants = []) {
+  return (Array.isArray(consultants) ? consultants : [])
+    .map((consultant) => ({
+      id: String(consultant?.id || '').trim(),
+      storeId: String(consultant?.storeId || '').trim(),
+      name: String(consultant?.name || '').trim(),
+      role: String(consultant?.role || '').trim() || 'Atendimento',
+      initials: String(consultant?.initials || '').trim(),
+      color: String(consultant?.color || '').trim() || '#168aad',
+      monthlyGoal: Math.max(0, Number(consultant?.monthlyGoal || 0) || 0),
+      commissionRate: Math.max(0, Number(consultant?.commissionRate || 0) || 0),
+      conversionGoal: Math.max(0, Number(consultant?.conversionGoal || 0) || 0),
+      avgTicketGoal: Math.max(0, Number(consultant?.avgTicketGoal || 0) || 0),
+      paGoal: Math.max(0, Number(consultant?.paGoal || 0) || 0),
+      active: Boolean(consultant?.active ?? true),
+      access:
+        consultant?.access && typeof consultant.access === 'object'
+          ? {
+              userId: String(consultant.access?.userId || '').trim(),
+              email: String(consultant.access?.email || '')
+                .trim()
+                .toLowerCase(),
+              active: Boolean(consultant.access?.active ?? false),
+            }
+          : null,
+    }))
+    .filter((consultant) => consultant.id && consultant.name)
+}
+
+// O roster da faixa de consultores vem de /v1/consultants (gestao, restrito a
+// papeis com consultor.view/settings.view). Papeis operadores sem essa permissao
+// (ex.: consultor) NAO buscam esse endpoint; nesse caso usamos o roster ENXUTO
+// que o snapshot da operacao ja entrega (id/nome/iniciais/cor). Assim toda role
+// que pode operar a fila recebe a faixa, sem vazar meta/comissao/e-mail. O roster
+// completo (quando presente) sempre vence, para nao perder metas de quem ja tem
+// a permissao de gestao.
+export function resolveOperationRoster(consultants, operationSnapshot) {
+  const managedRoster = normalizeConsultants(consultants)
+  if (managedRoster.length) {
+    return managedRoster
+  }
+
+  return normalizeConsultants(operationSnapshot?.roster)
+}
+
+export function normalizeOperationSnapshot(snapshot = {}) {
+  return {
+    waitingList: Array.isArray(snapshot?.waitingList)
+      ? snapshot.waitingList.map((item) => ({
+          ...item,
+          queueJoinedAt: Math.max(0, Number(item?.queueJoinedAt || 0) || 0),
+        }))
+      : [],
+    activeServices: Array.isArray(snapshot?.activeServices)
+      ? snapshot.activeServices.map((item) => ({
+          ...item,
+          serviceStartedAt: Math.max(0, Number(item?.serviceStartedAt || 0) || 0),
+          queueJoinedAt: Math.max(0, Number(item?.queueJoinedAt || 0) || 0),
+          queueWaitMs: Math.max(0, Number(item?.queueWaitMs || 0) || 0),
+          queuePositionAtStart: Math.max(1, Number(item?.queuePositionAtStart || 1) || 1),
+          skippedPeople: Array.isArray(item?.skippedPeople) ? item.skippedPeople : [],
+          stoppedAt: Math.max(0, Number(item?.stoppedAt || 0) || 0),
+          effectiveFinishedAt: Math.max(0, Number(item?.effectiveFinishedAt || 0) || 0),
+          stopReason: String(item?.stopReason || '').trim(),
+        }))
+      : [],
+    pausedEmployees: Array.isArray(snapshot?.pausedEmployees)
+      ? snapshot.pausedEmployees
+          .map((item) => ({
+            personId: String(item?.personId || '').trim(),
+            reason: String(item?.reason || '').trim(),
+            kind: String(item?.kind || 'pause').trim() || 'pause',
+            startedAt: Math.max(0, Number(item?.startedAt || 0) || 0),
+          }))
+          .filter((item) => item.personId)
+      : [],
+    consultantActivitySessions: Array.isArray(snapshot?.consultantActivitySessions)
+      ? snapshot.consultantActivitySessions
+          .map((item) => ({
+            personId: String(item?.personId || '').trim(),
+            status: String(item?.status || '').trim(),
+            startedAt: Math.max(0, Number(item?.startedAt || 0) || 0),
+            endedAt: Math.max(0, Number(item?.endedAt || 0) || 0),
+            durationMs: Math.max(0, Number(item?.durationMs || 0) || 0),
+          }))
+          .filter((item) => item.personId)
+      : [],
+    consultantCurrentStatus:
+      snapshot?.consultantCurrentStatus && typeof snapshot.consultantCurrentStatus === 'object'
+        ? Object.fromEntries(
+            Object.entries(snapshot.consultantCurrentStatus)
+              .map(([consultantId, value]) => [
+                String(consultantId || '').trim(),
+                {
+                  status: String(value?.status || '').trim(),
+                  startedAt: Math.max(0, Number(value?.startedAt || 0) || 0),
+                },
+              ])
+              .filter(([consultantId]) => consultantId),
+          )
+        : {},
+    serviceHistory: Array.isArray(snapshot?.serviceHistory) ? snapshot.serviceHistory : [],
+  }
+}

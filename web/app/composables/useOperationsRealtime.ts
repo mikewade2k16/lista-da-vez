@@ -6,6 +6,7 @@ import { useOperationsStore } from '~/stores/operations'
 import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { createApiRequest } from '~/utils/api-client'
 import { refreshRuntimeStoreSettings } from '~/utils/runtime-remote'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 
 type OperationsRealtimeOptions = {
   scopeMode?: unknown
@@ -55,6 +56,7 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
   const runtime = useAppRuntimeStore()
   const auth = useAuthStore()
   const operationsStore = useOperationsStore()
+  const accountStore = useCoreAccountStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const status = ref('idle')
@@ -206,6 +208,9 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
       apiRequest,
       normalizedStoreId,
       auth.activeTenantId,
+      // Conta sem o modulo queue nao recarrega /v1/settings (evita 403 +
+      // aviso degradado). Quem tem queue mantem o refresh em tempo real.
+      { canFetchQueueSettings: accountStore.enabledModules.includes('queue') },
     )
       .then((result) => {
         auth.applyRuntimeSettingsStatus(result)

@@ -49,6 +49,9 @@ const crmStore = {
   invalidateOverview: vi.fn(),
   refreshOverview: vi.fn().mockResolvedValue(undefined),
 }
+const coreAccountStore = {
+  enabledModules: ['queue'] as string[],
+}
 
 async function flushRealtimeTicket() {
   await Promise.resolve()
@@ -105,6 +108,10 @@ vi.mock('~/stores/crm', () => ({
 
 vi.mock('~/utils/runtime-remote', () => ({
   refreshRuntimeStoreSettings: (...args: unknown[]) => refreshRuntimeStoreSettings(...args),
+}))
+
+vi.mock('../../layers/core/stores/account', () => ({
+  useCoreAccountStore: () => coreAccountStore,
 }))
 
 describe('useContextRealtime', () => {

@@ -24,6 +24,33 @@ func NewPostgresAdminUserRepository(base *PostgresAdminRepository) *PostgresAdmi
 	return &PostgresAdminUserRepository{PostgresAdminRepository: base}
 }
 
+// clientAccountIDSelect e a subquery escalar que resolve o id do UNICO cliente
+// ativo NAO-agencia do usuario (u.id), ou ” quando ele tem 0 ou >1 clientes.
+// O `having count(*) = 1` agrega o conjunto filtrado num so grupo: com exatamente
+// 1 cliente o max() devolve o id e o having passa; com 0 (grupo vazio) ou >1 o
+// having falha e a subquery devolve NULL -> coalesce para ”. Reusada por
+// ListUsers e FindAdminUser (ambas com alias `u` para core.users).
+const clientAccountIDSelect = `coalesce((
+		select max(au3.account_id::text)
+		from core.account_users au3
+		join core.accounts a3 on a3.id = au3.account_id
+		where au3.user_id = u.id and au3.is_active = true and a3.is_active = true
+			and a3.is_agency = false
+		having count(*) = 1
+	), '')`
+
+// isAgencyMemberSelect e a subquery escalar (bool) que diz se o usuario (u.id) e
+// membro ATIVO de ao menos uma conta-agencia ATIVA (core.accounts.is_agency=true).
+// Reusada por ListUsers e FindAdminUser (ambas com alias `u` para core.users),
+// projetada como ultima coluna na mesma ordem nas duas queries.
+const isAgencyMemberSelect = `exists(
+		select 1
+		from core.account_users au_ag
+		join core.accounts a_ag on a_ag.id = au_ag.account_id
+		where au_ag.user_id = u.id and au_ag.is_active = true
+			and a_ag.is_active = true and a_ag.is_agency = true
+	)`
+
 // ============================================================================
 // ListUsers
 // ============================================================================
@@ -53,6 +80,19 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 		conds = append(conds, "u.is_platform_admin = true")
 	case "false":
 		conds = append(conds, "u.is_platform_admin = false")
+	}
+	// Filtro por conta: so usuarios que sao membros ATIVOS daquela conta ATIVA
+	// (defesa em profundidade — exige conta ativa, nao so a membership). exists()
+	// nao multiplica linhas.
+	if accountID := strings.TrimSpace(filter.AccountID); accountID != "" {
+		conds = append(conds, fmt.Sprintf(`exists (
+			select 1 from core.account_users au2
+			join core.accounts a2 on a2.id = au2.account_id
+			where au2.user_id = u.id and au2.account_id = $%d::uuid
+				and au2.is_active = true and a2.is_active = true
+		)`, n))
+		args = append(args, accountID)
+		n++
 	}
 
 	where := strings.Join(conds, " and ")
@@ -102,12 +142,14 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 			u.id, u.email, u.display_name, u.nick, u.avatar_path,
 			u.is_active, u.is_platform_admin, u.must_change_password,
 			u.created_at, u.updated_at,
+			%s,
+			%s,
 			%s
 		from core.users u%s
 		where %s
 		order by lower(u.display_name) asc
 		limit $%d offset $%d
-	`, accountSelect, accountJoin, where, n, n+1)
+	`, accountSelect, clientAccountIDSelect, isAgencyMemberSelect, accountJoin, where, n, n+1)
 
 	rows, err := r.pool.Query(ctx, dataSQL, args...)
 	if err != nil {
@@ -131,13 +173,15 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 // ============================================================================
 
 func (r *PostgresAdminUserRepository) FindAdminUser(ctx context.Context, userID string) (AdminUserView, error) {
-	const query = `
+	query := `
 		select
 			u.id, u.email, u.display_name, u.nick, u.avatar_path,
 			u.is_active, u.is_platform_admin, u.must_change_password,
 			u.created_at, u.updated_at,
 			coalesce(agg.account_count, 0),
-			coalesce(agg.account_names, '')
+			coalesce(agg.account_names, ''),
+			` + clientAccountIDSelect + `,
+			` + isAgencyMemberSelect + `
 		from core.users u
 		left join lateral (
 			select
@@ -186,7 +230,7 @@ func (r *PostgresAdminUserRepository) CreateUser(ctx context.Context, input Admi
 		if role == "" {
 			role = "owner"
 		}
-		if err := r.enrollUserInAccount(ctx, accountID, userID, role); err != nil {
+		if err := enrollUserInAccount(ctx, r.pool, accountID, userID, role); err != nil {
 			return AdminUserView{}, err
 		}
 	}
@@ -218,7 +262,7 @@ func (r *PostgresAdminUserRepository) CreateUser(ctx context.Context, input Admi
 			return AdminUserView{}, err
 		}
 		if strings.TrimSpace(agencyAccountID) != "" {
-			if err := r.enrollUserInAccount(ctx, agencyAccountID, userID, agencyAccountRole(orgRole)); err != nil {
+			if err := enrollUserInAccount(ctx, r.pool, agencyAccountID, userID, agencyAccountRole(orgRole)); err != nil {
 				return AdminUserView{}, err
 			}
 		}
@@ -227,20 +271,31 @@ func (r *PostgresAdminUserRepository) CreateUser(ctx context.Context, input Admi
 	return r.FindAdminUser(ctx, userID)
 }
 
+// pgxExec abstrai os metodos de execucao compartilhados por *pgxpool.Pool e
+// pgx.Tx, permitindo reusar enrollUserInAccount tanto fora quanto dentro de uma
+// transacao (MoveUserAccount). So expomos o que o enroll usa (Exec).
+type pgxExec interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+}
+
 // enrollUserInAccount garante membership + papel CORE do usuario numa account:
 // (1) core.account_users, (2) clona o role queue.<papel> do template e atribui em
 // core.user_role_assignments, (3) copia as role_permissions do template. Reaproveitado
 // pela conta-cliente e pela conta-agencia. Mapeamento owner/director->queue.supervisor,
-// marketing->queue.consultant (igual a 0133 + auth core_role_resolver).
-func (r *PostgresAdminUserRepository) enrollUserInAccount(ctx context.Context, accountID, userID, role string) error {
-	if _, err := r.pool.Exec(ctx, `
+// marketing->queue.consultant (igual a 0133 + auth core_role_resolver). Recebe um
+// pgxExec (pool OU tx) para poder rodar dentro de uma transacao.
+func enrollUserInAccount(ctx context.Context, exec pgxExec, accountID, userID, role string) error {
+	// on conflict reativa a membership (is_active=true): garante que re-enroll de
+	// um vinculo previamente desativado (ex.: MoveUserAccount para uma conta onde
+	// o usuario ja teve membership) volte a ficar ativo, sem perder joined_at.
+	if _, err := exec.Exec(ctx, `
 		insert into core.account_users (account_id, user_id, is_active, joined_at)
 		values ($1::uuid, $2::uuid, true, now())
-		on conflict (account_id, user_id) do nothing
+		on conflict (account_id, user_id) do update set is_active = true
 	`, accountID, userID); err != nil {
 		return err
 	}
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := exec.Exec(ctx, `
 		with ins as (
 			insert into core.roles (account_id, cloned_from_template_id, code, label, description, is_locked)
 			select $1::uuid, rt.id, 'queue.' || $3, rt.label, rt.description, rt.is_locked
@@ -261,7 +316,7 @@ func (r *PostgresAdminUserRepository) enrollUserInAccount(ctx context.Context, a
 	`, accountID, userID, role); err != nil {
 		return err
 	}
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := exec.Exec(ctx, `
 		insert into core.role_permissions (role_id, permission_key)
 		select r.id, rtp.permission_key
 		from core.roles r
@@ -435,7 +490,81 @@ func (r *PostgresAdminUserRepository) SetUserAccountRole(ctx context.Context, ac
 	`, accountID, userID); err != nil {
 		return err
 	}
-	return r.enrollUserInAccount(ctx, accountID, userID, role)
+	return enrollUserInAccount(ctx, r.pool, accountID, userID, role)
+}
+
+// ============================================================================
+// MoveUserAccount (transacao: remove vinculos de cliente atuais + matricula no destino)
+// ============================================================================
+
+// MoveUserAccount MOVE o usuario para a conta-cliente destino, tudo numa
+// transacao para nao deixar o usuario sem vinculo se algo falhar no meio:
+//  1. valida que o destino existe, esta ATIVO e NAO e agencia (is_agency=false);
+//  2. remove os user_role_assignments das contas-CLIENTE nao-agencia atuais;
+//  3. desativa as memberships account_users nao-agencia atuais;
+//  4. matricula no destino reusando enrollUserInAccount (membership + papel + perms).
+//
+// NAO toca vinculos de agencia (account_users de contas is_agency=true nem os
+// respectivos role_assignments) — este endpoint e exclusivo de cliente.
+func (r *PostgresAdminUserRepository) MoveUserAccount(ctx context.Context, userID, targetAccountID, role string) (AdminUserView, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return AdminUserView{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// (1) Valida o destino: existe + ativo + nao-agencia. A query separa "nao existe
+	// / inativo" (ErrAccountNotFound, 404 — nao vaza existencia) de "e agencia"
+	// (ErrAccountIsAgency, 400 — endpoint so para cliente).
+	var isAgency bool
+	err = tx.QueryRow(ctx, `
+		select is_agency from core.accounts
+		where id = $1::uuid and is_active = true
+	`, targetAccountID).Scan(&isAgency)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AdminUserView{}, ErrAccountNotFound
+		}
+		return AdminUserView{}, err
+	}
+	if isAgency {
+		return AdminUserView{}, ErrAccountIsAgency
+	}
+
+	// (2) Remove os papeis das contas-CLIENTE (nao-agencia) atuais do usuario.
+	if _, err := tx.Exec(ctx, `
+		delete from core.user_role_assignments ura
+		using core.accounts a
+		where a.id = ura.account_id
+			and ura.user_id = $1::uuid
+			and a.is_agency = false
+	`, userID); err != nil {
+		return AdminUserView{}, err
+	}
+
+	// (3) Desativa as memberships de cliente (nao-agencia) atuais. Mantemos a linha
+	// (is_active=false) em vez de deletar para preservar joined_at/historico — o
+	// enroll no destino faz upsert e reativa se a conta destino ja existir aqui.
+	if _, err := tx.Exec(ctx, `
+		update core.account_users au
+		set is_active = false
+		from core.accounts a
+		where a.id = au.account_id
+			and au.user_id = $1::uuid
+			and a.is_agency = false
+	`, userID); err != nil {
+		return AdminUserView{}, err
+	}
+
+	// (4) Matricula no destino (membership ativa + papel + perms) na mesma tx.
+	if err := enrollUserInAccount(ctx, tx, targetAccountID, userID, role); err != nil {
+		return AdminUserView{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return AdminUserView{}, err
+	}
+	return r.FindAdminUser(ctx, userID)
 }
 
 // ============================================================================
@@ -461,7 +590,8 @@ func scanAdminUser(row scannable) (AdminUserView, error) {
 		&u.ID, &u.Email, &u.DisplayName, &nick, &avatarPath,
 		&u.IsActive, &u.IsPlatformAdmin, &u.MustChangePassword,
 		&u.CreatedAt, &u.UpdatedAt,
-		&u.AccountCount, &u.AccountNames,
+		&u.AccountCount, &u.AccountNames, &u.ClientAccountID,
+		&u.IsAgencyMember,
 	); err != nil {
 		return AdminUserView{}, err
 	}

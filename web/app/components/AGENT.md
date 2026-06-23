@@ -28,6 +28,28 @@ Antes de criar componente novo:
 
 ## Catalogo atual
 
+### `admin`
+
+Area cross-account de plataforma (so `platform_admin`), backed pela API real
+`/v1/admin/*`. Paginacao e filtros SERVER-SIDE.
+
+- [AdminUsersWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/admin/AdminUsersWorkspace.vue)
+  Tela `/manage/users`. Lista cross-account de usuarios via `/v1/admin/users`
+  (paginacao/filtros no servidor: `q`, `status`, `platformAdmin`, `accountId`).
+  Filtros: Buscar, Status, Tipo e **Cliente** (select server-side; options vem de
+  `useClientsManager` carregado no onMounted, traduzido `clientFilter` ->
+  `filters.accountId` em `syncFiltersToBackend`).
+  Coluna **Cliente** (`accountNames`, `type: 'custom'`, slot `#cell-accountNames`):
+  editavel inline quando `clientAccountId != ''` e o usuario NAO e platform_admin —
+  renderiza um `<select>` de clientes preselecionado e, no change, chama
+  `moveUserAccount(id, accountId)` (`PUT /v1/admin/users/{id}/account` body
+  `{ accountId, role: 'owner' }`) apos `window.confirm`; em sucesso aplica o user
+  retornado na linha. Caso contrario (0 ou >1 clientes, ou platform_admin) mostra os
+  nomes read-only. Coluna **Qtd clientes** (`accountCount`) e' read-only.
+  Drawer de detalhe ([AdminUserEditDrawer.vue]) continua para dados/senha/vinculos.
+  Logica de dados em [useAdminUsersManager.ts]; tipos em `web/types/admin-users.ts`
+  (`AdminUserItem.clientAccountId`).
+
 ### `campaigns`
 
 - [CampaignWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/campaigns/CampaignWorkspace.vue)

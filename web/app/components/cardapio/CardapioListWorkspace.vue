@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 
 import CardapioCreateModal from '~/components/cardapio/CardapioCreateModal.vue'
+import CardapioDuplicateModal from '~/components/cardapio/CardapioDuplicateModal.vue'
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
 import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
 import { useCardapioStore } from '~/stores/cardapio'
@@ -26,6 +27,9 @@ const viewerUserType = computed<'admin' | 'client'>(() => (isAdmin.value ? 'admi
 
 const createOpen = ref(false)
 const creating = ref(false)
+const duplicateOpen = ref(false)
+const duplicating = ref(false)
+const duplicateSource = ref<RestaurantListItem | null>(null)
 const focusCell = ref<OmniFocusCell | null>(null)
 const selectedIds = ref<Array<string | number>>([])
 
@@ -134,11 +138,17 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
 ])
 
 const columnExcludeKeys = ['actions']
+// Para admin, a coluna 'accountId' (Cliente) deve sempre aparecer, mesmo que a
+// preferencia salva no localStorage seja anterior a existencia dela. Reativo:
+// so injeta quando o papel admin resolve. O OmniDataTable ainda esconde a coluna
+// adminOnly para nao-admin (entao a lista vazia para client nao a forca).
+const forceVisibleColumnKeys = computed(() => (isAdmin.value ? ['accountId'] : []))
 const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
   useOmniVisibleColumns({
     preferenceKey: 'cardapio.list.restaurants',
     allColumns: allTableColumns,
     columnExcludeKeys,
+    forceVisibleColumnKeys,
   })
 
 const tableRows = computed(() => store.restaurants as unknown as Array<Record<string, unknown>>)
@@ -269,6 +279,37 @@ async function onDelete(row: Record<string, unknown>) {
   }
 }
 
+// Duplicar (so platform_admin): abre o modal com o restaurante de origem. O back
+// nega demais papeis; o botao tambem so aparece para admin.
+function openDuplicate(row: Record<string, unknown>) {
+  duplicateSource.value = toRestaurant(row)
+  duplicateOpen.value = true
+}
+
+async function onDuplicate(payload: { name: string; slug: string }) {
+  const source = duplicateSource.value
+  if (!source) return
+
+  duplicating.value = true
+  try {
+    // accountId da PROPRIA linha: na lista o scopeAccountId esta vazio, entao a
+    // duplicacao de um restaurante de outra account precisa do escopo da linha.
+    const created = await store.duplicateRestaurant(
+      source.id,
+      { name: payload.name, slug: payload.slug },
+      String(source.accountId || '').trim(),
+    )
+    duplicateOpen.value = false
+    duplicateSource.value = null
+    ui.success('Estabelecimento duplicado.')
+    openEditor(created.id, source.accountId)
+  } catch {
+    ui.error('Nao foi possivel duplicar o estabelecimento.')
+  } finally {
+    duplicating.value = false
+  }
+}
+
 function openCreate() {
   createOpen.value = true
 }
@@ -380,6 +421,16 @@ onMounted(async () => {
               @click="openEditor(toRestaurant(row).id, toRestaurant(row).accountId)"
             />
             <UButton
+              v-if="isAdmin"
+              icon="i-lucide-copy"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              title="Duplicar estabelecimento"
+              aria-label="Duplicar estabelecimento"
+              @click="openDuplicate(row)"
+            />
+            <UButton
               icon="i-lucide-trash-2"
               color="error"
               variant="ghost"
@@ -400,6 +451,15 @@ onMounted(async () => {
       :tenants="tenantOptions"
       @close="createOpen = false"
       @submit="onCreate"
+    />
+
+    <CardapioDuplicateModal
+      :open="duplicateOpen"
+      :saving="duplicating"
+      :source-name="duplicateSource?.name || ''"
+      :source-slug="duplicateSource?.slug || ''"
+      @close="duplicateOpen = false"
+      @submit="onDuplicate"
     />
   </section>
 </template>

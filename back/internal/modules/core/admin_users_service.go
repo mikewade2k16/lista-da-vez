@@ -210,6 +210,28 @@ func (s *AdminUserService) UpdateMembershipRole(ctx context.Context, userID, acc
 	return s.GetMemberships(ctx, userID)
 }
 
+// MoveUserAccount MOVE o usuario para a conta-cliente destino: o repositorio
+// (transacional) remove os vinculos de CLIENTE atuais (nao toca agencia) e
+// matricula no destino. Valida accountId obrigatorio e papel (default "owner").
+// Retorna o AdminUserView atualizado (mesmo shape do PATCH) para o front
+// atualizar a linha sem refetch.
+func (s *AdminUserService) MoveUserAccount(ctx context.Context, userID string, input MoveUserAccountInput) (AdminUserView, error) {
+	accountID := strings.TrimSpace(input.AccountID)
+	if accountID == "" {
+		return AdminUserView{}, errors.New("accountId is required")
+	}
+	role := strings.ToLower(strings.TrimSpace(input.Role))
+	if role == "" {
+		role = "owner"
+	}
+	switch role {
+	case "owner", "director", "marketing":
+	default:
+		return AdminUserView{}, ErrInvalidRole
+	}
+	return s.repo.MoveUserAccount(ctx, userID, accountID, role)
+}
+
 // guardLastPlatformAdmin bloqueia rebaixar/desativar o ultimo platform_admin
 // ativo. Chamado antes do update real.
 func (s *AdminUserService) guardLastPlatformAdmin(ctx context.Context, userID string, nextIsAdmin, nextIsActive *bool) error {

@@ -11,6 +11,14 @@ export interface AdminUserItem {
   mustChangePassword: boolean
   accountCount: number
   accountNames: string
+  // Id do unico cliente (account nao-agencia) ativo deste usuario, ou '' quando
+  // ele tem 0 ou mais de 1 cliente. Habilita a edicao inline de "Cliente" na grade
+  // (mover o usuario de cliente). Quando '', a celula vira read-only.
+  clientAccountId: string
+  // True quando o usuario e membro ativo de pelo menos uma conta-agencia
+  // (is_agency=true). Vindo do backend (/v1/admin/users). Serve para a grade
+  // sinalizar que esse usuario ve todos os clientes/modulos da agencia.
+  isAgencyMember: boolean
   createdAt: string
   updatedAt: string
 }

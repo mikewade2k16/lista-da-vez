@@ -27,6 +27,8 @@ func RegisterCatalogRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Mi
 
 	mux.Handle("GET /v1/cardapio/products/{id}/reviews", wrap(handleListReviews(svc)))
 	mux.Handle("POST /v1/cardapio/products/{id}/reviews", wrap(handleCreateReview(svc)))
+	mux.Handle("GET /v1/cardapio/restaurants/{id}/reviews", wrap(handleListEstablishmentReviews(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/reviews", wrap(handleCreateEstablishmentReview(svc)))
 	mux.Handle("PATCH /v1/cardapio/reviews/{id}", wrap(handleUpdateReview(svc)))
 	mux.Handle("DELETE /v1/cardapio/reviews/{id}", wrap(handleDeleteReview(svc)))
 }
@@ -234,6 +236,47 @@ func handleCreateReview(svc *Service) http.HandlerFunc {
 			return
 		}
 		view, err := svc.CreateReview(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, view)
+	}
+}
+
+// handleListEstablishmentReviews lista as avaliacoes do estabelecimento (F2):
+// reviews proprias (product_id NULL) + reviews de produto marcadas para a vitrine.
+func handleListEstablishmentReviews(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		items, err := svc.ListEstablishmentReviews(r.Context(), accountID, r.PathValue("id"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]any{"reviews": items})
+	}
+}
+
+// handleCreateEstablishmentReview cria uma avaliacao do estabelecimento (F2,
+// product_id NULL). Escopo validado via scopedAccountID; defesa em profundidade no repo.
+func handleCreateEstablishmentReview(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in ReviewInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.CreateEstablishmentReview(r.Context(), accountID, r.PathValue("id"), in)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

@@ -43,17 +43,51 @@ coluna `orders.code` (migration `0169`), gerada no `CreateOrder` (base32 Crockfo
 6 chars, unica por restaurante via `uniqueOrderCode` + unique index parcial). Sai no
 DTO `Order.code` (publico e painel); o `order_number` sequencial continua para uso interno.
 
+Correcao (mover de conta atomico, 2026-06-22): o PATCH com `accountId` (mover de conta)
+deixou de atualizar so `restaurants.account_id` (que deixava a subarvore orfã e o site
+publico em `404`). Agora move a subarvore inteira numa transacao via
+`MoveRestaurantToAccount` e auto-habilita o modulo `cardapio` em `core.account_modules` no
+destino. Sem migration (so codigo Go); exige rebuild da api.
+
+Fase 9 (gestao/UX do painel — back F1+F2 ENTREGUE, 2026-06-22 —
+`docs/cardapio/PLANO_CARDAPIO_GESTAO_UX.md`):
+- **F1 — duplicar restaurante** `POST /v1/cardapio/restaurants/{id}/duplicate`
+  (so `platform_admin`; nao-admin => **403** forbidden, que aqui e correto pois e
+  negacao de papel numa acao admin-only, nao leak de escopo). Body `{name, slug}`
+  obrigatorios; slug livre globalmente (senao `ErrSlugConflict`/409). Source escopado
+  por `scopedAccountID` (404 fora de escopo). Copia TRANSACIONAL na MESMA account do
+  source (`DuplicateRestaurant` em `store_restaurants.go`, espelha
+  `MoveRestaurantToAccount`): restaurante (novo id/slug/name, **`is_active=false`**,
+  `last_order_number=0`, demais campos copiados), categorias, produtos (remapeando
+  `category_id` por slug), `product_variations`/`product_addons` (ligados ao produto
+  novo por slug), `delivery_zones`, `site_layouts` (draft+published+version). **NAO
+  copia** `restaurant_domains`, `reviews`, `orders`/`order_items`, `events`. Resposta
+  `201 {restaurant}` (full, novo id).
+- **F2 — avaliacoes de estabelecimento** (migration `0171`): `reviews.product_id`
+  agora nullable (NULL = review do **estabelecimento**) + coluna
+  `show_on_establishment boolean default false` (marca review de produto para a
+  vitrine do estabelecimento). Rotas novas: `GET /v1/cardapio/restaurants/{id}/reviews`
+  (reviews do estabelecimento: `product_id IS NULL OR show_on_establishment = true`,
+  order by sort_order) e `POST /v1/cardapio/restaurants/{id}/reviews` (cria com
+  `product_id = NULL`; valida rating 1-5). `PATCH/DELETE /v1/cardapio/reviews/{id}`
+  (existentes) gravam/leem `show_on_establishment`. DTO: `Review.productId` agora
+  `omitempty` (scan nullable via `*string`) + `Review.showOnEstablishment`;
+  `ReviewInput.showOnEstablishment`. Publico (`/v1/public/*`) NAO mexido — exposicao
+  no TAVOLA e follow-up.
+- Acesso do painel reusa `cardapio.manage`/`cardapio.orders.manage` (sem RBAC novo).
+  Exige migration `0171` + rebuild api. Front (P1..P8) = outras frentes.
+
 ## Banco (`cardapio.*`, migration 0153)
 
 | Tabela | Resumo |
 |---|---|
 | `restaurants` | entidade central; `slug` unico global `lower(slug)`; `address/hours/settings/theme jsonb`; `last_order_number int`; `is_active` |
-| `restaurant_domains` | `host text PK` (normalizado: lower, sem porta, sem `www.`) -> restaurante |
+| `restaurant_domains` | `host text PK` (normalizado por `normalizeHost`: lower, **sem esquema `http(s)://`**, sem path, sem porta, sem `www.` — aceita URL colada inteira sem virar lixo tipo `https`) -> restaurante |
 | `categories` | unique `(restaurant_id, lower(slug))` |
 | `products` | `price_cents bigint`; `gallery/diet/allergens/tags jsonb`; `pairing jsonb` nullable; unique `(restaurant_id, lower(slug))` |
 | `product_variations` | `price_delta_cents` (soma) |
 | `product_addons` | `price_cents` (cumulativo) |
-| `reviews` | avaliacoes curadas por produto (rating 1-5) |
+| `reviews` | avaliacoes curadas (rating 1-5); `product_id` **nullable** (F2, migration 0171: NULL = review do estabelecimento) + `show_on_establishment boolean default false` (marca review de produto para a vitrine do estabelecimento) |
 | `orders` | pedidos; `order_number` sequencial por restaurante; `code` (WS-G, migration 0169) curto p/ o cliente, unique parcial `(restaurant_id, code) where code<>''`; valores em centavos |
 | `order_items` | snapshot (`product_id` nullable; `addons jsonb [{name,priceCents}]`) |
 | `events` | telemetria do front publico; index `(restaurant_id, created_at)` |
@@ -142,13 +176,35 @@ rotas by-id usam `scopedAccountID` (query `accountId` tem precedencia sobre o he
 o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?account=` na rota).
 
 - Restaurants: `GET/POST /v1/cardapio/restaurants` (lista lean com `accountName` + dominio
-  primario), `GET/PATCH/DELETE /v1/cardapio/restaurants/{id}`. O PATCH aceita
+  primario), `GET/PATCH/DELETE /v1/cardapio/restaurants/{id}`,
+  `POST /v1/cardapio/restaurants/{id}/duplicate` (F1; **so `platform_admin` => 403 para
+  nao-admin**; body `{name, slug}`; copia transacional do catalogo/zonas/layout sob novo
+  id/slug, `is_active=false`, sem dominios/reviews/pedidos/eventos; `201 {restaurant}`).
+  O PATCH aceita
   `accountId` (mover de conta — coluna **Cliente** da lista, edicao inline): so
   `platform_admin` move; o handler ZERA `in.AccountID` para nao-admin. No service
   (`resolveMoveAccount`, espelha bio): vazio/conta atual => nao move; conta destino
-  inexistente => `404` (via `AccountExists`, antes do update). O UPDATE escopa pela
-  conta ATUAL no WHERE (`account_id = $2`) e so altera `account_id` quando o ponteiro
-  nao e nil (`account_id = coalesce($23::uuid, account_id)`).
+  inexistente => `404` (via `AccountExists`, antes do move).
+  - **Mover de conta = move da SUBARVORE INTEIRA + auto-habilita o modulo (atomico).**
+    Quando ha move, o service NAO usa o `UpdateRestaurant` generico: chama
+    `MoveRestaurantToAccount` (`store_restaurants.go`), que numa UNICA transacao
+    troca o `account_id` da raiz **e de todas as filhas** (`restaurant_domains`,
+    `categories`, `products`, `product_variations`, `product_addons`, `reviews`,
+    `delivery_zones`, `orders`, `order_items`, `events`, `site_layouts`) para a conta
+    destino, e faz upsert em `core.account_modules (account_id, module_id='cardapio',
+    enabled=true)` (PK `(account_id, module_id)`). **Auto-habilita o modulo no destino**
+    (decisao de negocio). Sem isso o cardapio ficava orfao (filhas com `account_id`
+    antigo) e o site publico caia (`404`, pois o publico exige `account_modules`
+    habilitado na conta nova). A raiz e escopada pela conta ATUAL no WHERE
+    (`account_id = $current`): 0 linhas => `404` (fora de escopo, sem vazar
+    existencia). Retorna o restaurante ja sob a conta NOVA. As filhas sao escopadas
+    pelo `restaurant_id` (variacoes/adicionais via subquery no produto; itens via
+    subquery no pedido).
+  - **PATCH com move + outros campos juntos:** o move tem precedencia e os demais
+    campos do MESMO corpo sao ignorados (o painel dispara o move como edicao isolada
+    da coluna Cliente, sem outros campos). O caminho SEM move segue no
+    `UpdateRestaurant` generico (campos do restaurante, COALESCE; nunca toca
+    `account_id`).
 - Domains: `GET/POST /v1/cardapio/restaurants/{id}/domains`, `DELETE /v1/cardapio/domains?host=`.
   A coluna **Dominio** da lista edita o primario inline (front): host vazio = NO-OP (deletar
   e so na aba Dominios); preenchido = DELETE do primario antigo (se houver) + POST do novo
@@ -160,7 +216,11 @@ o painel passa `?accountId=` ao abrir restaurante de outra account (front: `?acc
 - Categories: `GET/POST /v1/cardapio/restaurants/{id}/categories`, `PATCH/DELETE /v1/cardapio/categories/{id}`.
 - Products: `GET/POST /v1/cardapio/restaurants/{id}/products` (lean), `GET/PATCH/DELETE
   /v1/cardapio/products/{id}` (full; PATCH faz **replace-all transacional** de `variations[]`/`addons[]`).
-- Reviews: `GET/POST /v1/cardapio/products/{id}/reviews`, `PATCH/DELETE /v1/cardapio/reviews/{id}`.
+- Reviews: `GET/POST /v1/cardapio/products/{id}/reviews` (por produto),
+  `GET/POST /v1/cardapio/restaurants/{id}/reviews` (F2; do estabelecimento:
+  `product_id IS NULL OR show_on_establishment = true`; o POST cria com `product_id NULL`),
+  `PATCH/DELETE /v1/cardapio/reviews/{id}` (servem produto e estabelecimento; gravam
+  `showOnEstablishment`).
 - Orders: `GET /v1/cardapio/restaurants/{id}/orders?status=&page=&perPage=`, `PATCH /v1/cardapio/orders/{id}` (`{status}`).
 - Events: `GET /v1/cardapio/restaurants/{id}/events?page=` (lista crua paginada).
 - Media: `POST /v1/cardapio/restaurants/{id}/media` (multipart `file` -> `{url}`).
@@ -182,7 +242,7 @@ relativo (`/uploads/cardapio/...`); absolutizado no publico via `PUBLIC_API_BASE
 · `store_restaurants.go`/`store_catalog.go`/`store_orders.go`/`store_events.go`/`store_public.go`/`store_zones.go`
 · `service.go`/`service_public.go`/`service_orders.go` · `media_storage.go` · `rate_limit.go`
 · `http.go`/`http_catalog.go`/`http_orders.go`/`http_public.go`/`http_zones.go` · `errors.go` ·
-`service_test.go`/`service_orders_test.go`/`store_fake_test.go`.
+`service_test.go`/`service_orders_test.go`/`service_gestao_test.go` (F1+F2)/`store_fake_test.go`.
 
 ## Variaveis de ambiente
 
@@ -197,10 +257,14 @@ relativo (`/uploads/cardapio/...`); absolutizado no publico via `PUBLIC_API_BASE
    `0167_cardapio_restaurant_extra.sql` (WS-C), `0168_cardapio_catalog_optional_fields.sql`
    (WS-F: `image_url` em categories, `compare_at_price_cents` em products),
    `0169_cardapio_order_code.sql` (WS-G: `code` em orders),
-   `0170_cardapio_site_layouts.sql` (Fase 3 / Opcao B: `site_layouts`) (local: conferir porta do Postgres).
+   `0170_cardapio_site_layouts.sql` (Fase 3 / Opcao B: `site_layouts`),
+   `0171_cardapio_establishment_reviews.sql` (F2: `reviews.product_id` nullable +
+   `show_on_establishment`) (local: conferir porta do Postgres).
    Obs.: os numeros 0154/0155 citados no plano ja estavam ocupados (site_product_*);
    as migrations da Fase 2 foram para 0166/0167 (proximos livres).
-2. **Rebuild api** (mudou Go): `docker compose up -d --build api`.
+2. **Rebuild api** (mudou Go): `docker compose up -d --build api`. F1 (duplicar, so codigo
+   Go) + F2 (reviews de estabelecimento, migration `0171`) exigem rebuild da api. A
+   correcao do move atomico (2026-06-22) e so codigo Go, mas tambem exige rebuild.
 3. Envs novas em `.env.production` E `docker-compose.prod.yml`: `CARDAPIO_BASE_DOMAIN`,
    `CARDAPIO_DEV_DEFAULT_SLUG` (opcional). `PUBLIC_API_BASE_URL` ja existe (bio).
 4. Registro central (integracao C3, NAO neste modulo):
@@ -212,5 +276,12 @@ relativo (`/uploads/cardapio/...`); absolutizado no publico via `PUBLIC_API_BASE
 
 - `account_id` nunca vem do body cru; o accountId de query/header e filtro validado contra o
   Principal. Fora do escopo => `404` (nunca 403; nao vaza existencia).
+- Mover de conta (`MoveRestaurantToAccount`) so para `platform_admin` (handler zera
+  `in.AccountID` p/ nao-admin); a raiz e escopada pela conta ATUAL (0 linhas => `404`); todas
+  as filhas trocam de `account_id` na MESMA transacao (sem orfaos cross-tenant).
+- Duplicar (F1) so para `platform_admin`: o handler nega nao-admin com **403** (negacao de
+  papel numa acao admin-only; nao e leak de escopo). O source e escopado pela account
+  (`DuplicateRestaurant` faz o insert-from-select com `where account_id = $`: 0 linhas =>
+  `404`). A copia mantem o `account_id` do source (nunca cruza tenant).
 - SQL 100% parametrizado. Pedido publico recalcula tudo do banco (cliente nao define preco).
 - CORS publico cookie-less: `Allow-Origin: *`, **nunca** `Allow-Credentials`.

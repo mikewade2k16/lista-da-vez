@@ -23,6 +23,7 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	mux.Handle("POST /v1/cardapio/restaurants", wrap(handleCreateRestaurant(svc)))
 	mux.Handle("GET /v1/cardapio/restaurants/{id}", wrap(handleGetRestaurant(svc)))
 	mux.Handle("PATCH /v1/cardapio/restaurants/{id}", wrap(handleUpdateRestaurant(svc)))
+	mux.Handle("POST /v1/cardapio/restaurants/{id}/duplicate", wrap(handleDuplicateRestaurant(svc)))
 	mux.Handle("DELETE /v1/cardapio/restaurants/{id}", wrap(handleDeleteRestaurant(svc)))
 
 	mux.Handle("GET /v1/cardapio/restaurants/{id}/domains", wrap(handleListDomains(svc)))
@@ -210,6 +211,40 @@ func handleUpdateRestaurant(svc *Service) http.HandlerFunc {
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+// handleDuplicateRestaurant duplica um restaurante inteiro (F1). EXCLUSIVO de
+// platform_admin: nao-admin recebe 403 (forbidden) — e uma negacao de papel
+// (acao admin-only), nao um leak de escopo, entao 403 e correto aqui. O source e
+// escopado pela account informada (404 fora de escopo). Resposta 201 {restaurant}.
+func handleDuplicateRestaurant(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			writeServiceError(w, r, errNoAccount)
+			return
+		}
+		if principal.Role != auth.RolePlatformAdmin {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Acao restrita a administradores da plataforma.")
+			return
+		}
+		accountID, _, err := scopedAccountID(r, false)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		var in DuplicateRestaurantInput
+		if err := httpapi.ReadJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.DuplicateRestaurant(r.Context(), accountID, r.PathValue("id"), in)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, view)
 	}
 }
 

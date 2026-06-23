@@ -2,14 +2,16 @@
 import { computed, ref } from 'vue'
 
 import CardapioMoneyInput from '~/components/cardapio/CardapioMoneyInput.vue'
+import { useSortableList } from '~/composables/useSortableList'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
 import type { DeliveryZone } from '~/domain/cardapio/types'
 
-// WS-A — Zonas de entrega (bairro + valor do frete). PATCH de zona e PARCIAL
-// (pointer-based no back): o toggle de ativo manda so {isActive}; o save da
-// edicao manda so os campos alterados (name/feeCents).
+// WS-A — Zonas de entrega (bairro + valor do frete). Grid de cards em 2 colunas,
+// drag-n-drop (useSortableList, HTML5 nativo) e badge de ordem (#1, #2...).
+// PATCH de zona e PARCIAL (pointer-based no back): toggle manda so {isActive};
+// edicao manda so {name,feeCents}; reorder manda so {sortOrder} por zona alterada.
 
 const store = useCardapioStore()
 const ui = useUiStore()
@@ -18,6 +20,7 @@ const newName = ref('')
 const newFeeCents = ref(0)
 const creating = ref(false)
 const busyId = ref('')
+const reordering = ref(false)
 const editingId = ref('')
 const editName = ref('')
 const editFeeCents = ref(0)
@@ -25,6 +28,10 @@ const editFeeCents = ref(0)
 const ordered = computed(() =>
   [...store.zones].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
 )
+
+function feeLabel(feeCents: number) {
+  return `R$ ${(feeCents / 100).toFixed(2).replace('.', ',')}`
+}
 
 async function onCreate() {
   const name = newName.value.trim()
@@ -107,13 +114,51 @@ async function remove(zone: DeliveryZone) {
     busyId.value = ''
   }
 }
+
+// Reordena local, recalcula sortOrder contiguo (0..n-1) e PATCH parcial {sortOrder}
+// so nas zonas cujo indice mudou. Em erro, re-hidrata do banco (reloadZones) + toast.
+async function onReorder(from: number, to: number) {
+  if (reordering.value || from === to) {
+    return
+  }
+  const previous = ordered.value
+  const next = [...previous]
+  const [moved] = next.splice(from, 1)
+  if (!moved) {
+    return
+  }
+  next.splice(to, 0, moved)
+
+  const changed = next
+    .map((zone, index) => ({ zone, sortOrder: index }))
+    .filter(({ zone, sortOrder }) => zone.sortOrder !== sortOrder)
+  if (!changed.length) {
+    return
+  }
+
+  reordering.value = true
+  try {
+    await Promise.all(changed.map(({ zone, sortOrder }) => store.patchZone(zone.id, { sortOrder })))
+    ui.success('Ordem das zonas atualizada.')
+  } catch (caught) {
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel reordenar as zonas.'))
+    if (store.restaurantId) {
+      await store.reloadZones(store.restaurantId)
+    }
+  } finally {
+    reordering.value = false
+  }
+}
+
+const { draggingIndex, overIndex, itemHandlers } = useSortableList({ onReorder })
 </script>
 
 <template>
   <div class="cardapio-zones">
     <p class="cardapio-zones__note">
       Cada bairro tem um valor de frete proprio. No site, o cliente escolhe o bairro na entrega e o
-      frete e calculado pela zona. Bairros inativos nao aparecem no site.
+      frete e calculado pela zona. Bairros inativos nao aparecem no site. Arraste os cards para
+      reordenar a exibicao.
     </p>
 
     <form class="cardapio-zones__create" @submit.prevent="onCreate">
@@ -135,70 +180,76 @@ async function remove(zone: DeliveryZone) {
       Nenhuma zona de entrega cadastrada. Adicione os bairros que voce atende.
     </p>
 
-    <table v-else class="cardapio-zones__table">
-      <thead>
-        <tr>
-          <th class="cardapio-zones__th">Bairro</th>
-          <th class="cardapio-zones__th cardapio-zones__th--fee">Valor</th>
-          <th class="cardapio-zones__th cardapio-zones__th--actions">Acoes</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="zone in ordered" :key="zone.id" class="cardapio-zones__row">
-          <td class="cardapio-zones__cell">
+    <ul v-else class="cardapio-zones__grid">
+      <li
+        v-for="(zone, index) in ordered"
+        :key="zone.id"
+        class="cardapio-zones__card"
+        :class="{
+          'is-dragging': draggingIndex === index,
+          'is-over': overIndex === index && draggingIndex !== index,
+        }"
+        v-bind="itemHandlers(index)"
+      >
+        <span class="cardapio-zones__handle" aria-hidden="true" title="Arrastar para reordenar">
+          &#x2630;
+        </span>
+        <span class="cardapio-zones__badge">#{{ index + 1 }}</span>
+
+        <div class="cardapio-zones__body">
+          <template v-if="editingId === zone.id">
             <input
-              v-if="editingId === zone.id"
               v-model="editName"
               type="text"
               class="cardapio-zones__input"
+              placeholder="Nome do bairro"
               @keydown.enter="saveEdit(zone)"
             />
-            <span v-else class="cardapio-zones__name">{{ zone.name }}</span>
-          </td>
-          <td class="cardapio-zones__cell cardapio-zones__cell--fee">
-            <div v-if="editingId === zone.id" class="cardapio-zones__fee">
+            <div class="cardapio-zones__fee">
               <CardapioMoneyInput v-model="editFeeCents" />
             </div>
-            <span v-else>R$ {{ (zone.feeCents / 100).toFixed(2).replace('.', ',') }}</span>
-          </td>
-          <td class="cardapio-zones__cell cardapio-zones__cell--actions">
-            <span
-              class="cardapio-zones__pill"
-              :class="zone.isActive ? 'is-on' : 'is-off'"
-              @click="toggleActive(zone)"
+          </template>
+          <template v-else>
+            <span class="cardapio-zones__name">{{ zone.name }}</span>
+            <span class="cardapio-zones__feeval">{{ feeLabel(zone.feeCents) }}</span>
+          </template>
+        </div>
+
+        <div class="cardapio-zones__actions">
+          <span
+            class="cardapio-zones__pill"
+            :class="zone.isActive ? 'is-on' : 'is-off'"
+            @click="toggleActive(zone)"
+          >
+            {{ zone.isActive ? 'Ativo' : 'Inativo' }}
+          </span>
+          <template v-if="editingId === zone.id">
+            <button
+              type="button"
+              class="cardapio-zones__btn"
+              :disabled="busyId === zone.id"
+              @click="saveEdit(zone)"
             >
-              {{ zone.isActive ? 'Ativo' : 'Inativo' }}
-            </span>
-            <template v-if="editingId === zone.id">
-              <button
-                type="button"
-                class="cardapio-zones__btn"
-                :disabled="busyId === zone.id"
-                @click="saveEdit(zone)"
-              >
-                Salvar
-              </button>
-              <button type="button" class="cardapio-zones__btn" @click="cancelEdit">
-                Cancelar
-              </button>
-            </template>
-            <template v-else>
-              <button type="button" class="cardapio-zones__btn" @click="startEdit(zone)">
-                Editar
-              </button>
-              <button
-                type="button"
-                class="cardapio-zones__btn cardapio-zones__btn--danger"
-                :disabled="busyId === zone.id"
-                @click="remove(zone)"
-              >
-                Remover
-              </button>
-            </template>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+              Salvar
+            </button>
+            <button type="button" class="cardapio-zones__btn" @click="cancelEdit">Cancelar</button>
+          </template>
+          <template v-else>
+            <button type="button" class="cardapio-zones__btn" @click="startEdit(zone)">
+              Editar
+            </button>
+            <button
+              type="button"
+              class="cardapio-zones__btn cardapio-zones__btn--danger"
+              :disabled="busyId === zone.id"
+              @click="remove(zone)"
+            >
+              Remover
+            </button>
+          </template>
+        </div>
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -267,53 +318,82 @@ async function remove(zone: DeliveryZone) {
   text-align: center;
 }
 
-.cardapio-zones__table {
-  width: 100%;
-  border-collapse: collapse;
+.cardapio-zones__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
-.cardapio-zones__th {
-  text-align: left;
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  padding: 0.5rem 0.7rem;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.cardapio-zones__th--fee {
-  width: 9rem;
-}
-
-.cardapio-zones__th--actions {
-  width: 1%;
-  white-space: nowrap;
-}
-
-.cardapio-zones__row {
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.cardapio-zones__cell {
-  padding: 0.5rem 0.7rem;
-  color: var(--text-main);
-  font-size: 0.9rem;
-  vertical-align: middle;
-}
-
-.cardapio-zones__cell--fee {
-  white-space: nowrap;
-}
-
-.cardapio-zones__cell--actions {
+.cardapio-zones__card {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  justify-content: flex-end;
+  gap: 0.7rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-card);
+  background: rgb(var(--surface) / 0.6);
+  cursor: grab;
+}
+
+.cardapio-zones__card.is-dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+.cardapio-zones__card.is-over {
+  border-color: rgb(var(--ring));
+  box-shadow: 0 0 0 2px rgb(var(--ring) / 0.3);
+}
+
+.cardapio-zones__handle {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.cardapio-zones__badge {
+  min-width: 2rem;
+  padding: 0.18rem 0.4rem;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: rgb(var(--surface-2) / 0.8);
+  border: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+
+.cardapio-zones__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .cardapio-zones__name {
   font-weight: 600;
+  color: var(--text-main);
+}
+
+.cardapio-zones__feeval {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cardapio-zones__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .cardapio-zones__pill {
@@ -356,9 +436,19 @@ async function remove(zone: DeliveryZone) {
   border-color: rgb(var(--danger) / 0.4);
 }
 
+@media (max-width: 720px) {
+  .cardapio-zones__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 640px) {
   .cardapio-zones__fee {
     width: 100%;
+  }
+
+  .cardapio-zones__card {
+    flex-wrap: wrap;
   }
 }
 </style>

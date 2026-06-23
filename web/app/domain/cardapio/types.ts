@@ -251,15 +251,38 @@ export interface ProductListItem {
 export interface Review {
   id: string
   restaurantId: string
-  productId: string
+  // Fase 9 (F2): review do ESTABELECIMENTO tem productId null; review de PRODUTO
+  // traz o id. `omitempty` no back -> pode vir ausente; tratamos como null.
+  productId?: string | null
   authorName: string
   authorLevel: string
   rating: number
   body: string
   isHighlight: boolean
+  // Fase 9 (F2): quando true, uma review de PRODUTO tambem aparece na vitrine do
+  // estabelecimento (GET .../restaurants/{id}/reviews retorna productId null OU
+  // showOnEstablishment=true).
+  showOnEstablishment: boolean
   dateLabel: string
   sortOrder: number
   createdAt: string
+}
+
+// Body de create/patch de review (full-replace no back — ReviewInput nao e
+// ponteiro: todo PATCH manda o OBJETO COMPLETO + o campo alterado). `productId`
+// nao entra no input do ESTABELECIMENTO (o back forca product_id NULL na rota
+// /restaurants/{id}/reviews); no review de PRODUTO o back ja sabe o produto pela
+// rota /products/{id}/reviews, entao o input tambem dispensa productId.
+export interface ReviewInput {
+  authorName: string
+  authorLevel: string
+  rating: number
+  body: string
+  isHighlight: boolean
+  // Fase 9 (F2): faz a review de produto aparecer tambem no estabelecimento.
+  showOnEstablishment: boolean
+  dateLabel: string
+  sortOrder: number
 }
 
 export type OrderStatus =

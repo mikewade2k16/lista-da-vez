@@ -14,6 +14,8 @@ type dataStore interface {
 	GetRestaurant(ctx context.Context, accountID, id string) (Restaurant, error)
 	ListRestaurantsLean(ctx context.Context, accountID, query string) ([]RestaurantLean, error)
 	UpdateRestaurant(ctx context.Context, accountID, id string, in UpdateRestaurantInput) (Restaurant, error)
+	MoveRestaurantToAccount(ctx context.Context, currentAccountID, restaurantID, targetAccountID string) (Restaurant, error)
+	DuplicateRestaurant(ctx context.Context, accountID, sourceID, slug, name string) (Restaurant, error)
 	DeleteRestaurant(ctx context.Context, accountID, id string) error
 	AccountExists(ctx context.Context, accountID string) (bool, error)
 	ListDomains(ctx context.Context, accountID, restaurantID string) ([]Domain, error)
@@ -36,6 +38,7 @@ type dataStore interface {
 
 	// Reviews
 	ListReviewsByProduct(ctx context.Context, accountID, productID string) ([]Review, error)
+	ListEstablishmentReviews(ctx context.Context, accountID, restaurantID string) ([]Review, error)
 	CreateReview(ctx context.Context, accountID, restaurantID string, in ReviewInput) (Review, error)
 	UpdateReview(ctx context.Context, accountID, id string, in ReviewInput) (Review, error)
 	DeleteReview(ctx context.Context, accountID, id string) error

@@ -21,6 +21,9 @@ const operationsStore = {
   // No proxy do Pinia, o ref `integratedStoreId` chega desempacotado como string.
   integratedStoreId: '',
 }
+const coreAccountStore = {
+  enabledModules: ['queue'] as string[],
+}
 
 async function flushRealtimeTicket() {
   await Promise.resolve()
@@ -49,6 +52,10 @@ vi.mock('~/stores/app-runtime', () => ({
 
 vi.mock('~/stores/operations', () => ({
   useOperationsStore: () => operationsStore,
+}))
+
+vi.mock('../../layers/core/stores/account', () => ({
+  useCoreAccountStore: () => coreAccountStore,
 }))
 
 describe('useOperationsRealtime', () => {

@@ -22,6 +22,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
     )
   }
 
+  // Bootstrap de sessao e concern do CLIENTE: a sessao vive no cookie e os plugins
+  // de auth (auth-bridge/account-id-bridge) sao client-only. Rodar ensureSession/
+  // fetchAccounts no SERVIDOR e fragil — numa rota SSR (ex.: /cardapio), uma falha
+  // transitoria de hidratacao chamava clearSession (deslogava no hard reload) ou
+  // estourava ao ler o store no servidor (accounts undefined). Com o token
+  // presente, deixamos o SSR renderizar e o cliente resolve sessao + gating no
+  // hidrate. As rotas /auth/* ja sao tratadas no fluxo abaixo.
+  if (import.meta.server) {
+    return
+  }
+
   // Em rotas /auth/* (login/reset/invite), pular o ensureSession evita travar
   // a tela quando o token local esta valido mas o contexto remoto demora.
   // Se o usuario ja esta autenticado, ainda redirecionamos abaixo via

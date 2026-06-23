@@ -63,6 +63,10 @@ function toggleField(field: 'isActive' | 'isPlatformAdmin', value: unknown) {
 
 // Vinculos (cliente/agencia) + nivel por vinculo.
 const memberships = ref<AccountMembershipItem[]>([])
+// Indicador read-only no header: o usuario e membro de alguma conta-agencia (ve
+// todos os clientes/modulos da agencia). O drawer NAO cria vinculo de agencia,
+// entao aqui e so sinalizacao.
+const isAgencyMember = computed(() => memberships.value.some((m) => m.isAgency))
 const loadingMemberships = ref(false)
 const savingAccountId = ref('')
 
@@ -129,7 +133,12 @@ async function submitPassword() {
       <UCard>
         <template #header>
           <div>
-            <h3 class="text-base font-semibold">Editar usuario</h3>
+            <div class="flex items-center gap-2">
+              <h3 class="text-base font-semibold">Editar usuario</h3>
+              <UBadge v-if="isAgencyMember" color="primary" variant="soft" size="xs">
+                Membro de agencia
+              </UBadge>
+            </div>
             <p class="text-xs text-[rgb(var(--muted))]">{{ user?.email }}</p>
           </div>
         </template>

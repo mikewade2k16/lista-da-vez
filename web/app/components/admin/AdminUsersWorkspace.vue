@@ -28,6 +28,7 @@ const {
   createUser,
   deleteUser,
   setPassword,
+  moveUserAccount,
   fetchMemberships,
 } = useAdminUsersManager()
 
@@ -49,6 +50,19 @@ const organizationOptions = computed(() => [
   { value: '', label: 'Sem agencia' },
   ...orgsManager.organizations.value.map((o) => ({ value: o.id, label: o.name })),
 ])
+// So clientes reais (sem a opcao vazia) — usado no filtro server-side por cliente
+// e no <select> inline da coluna "Cliente". Agencias entram em organizationOptions,
+// nunca aqui (mover para uma conta-agencia e' 400 no backend).
+const clientOptions = computed(() =>
+  clientsManager.clients.value
+    .filter((c) => !c.isAgency)
+    .map((c) => ({ value: c.id, label: c.name })),
+)
+const clientNameById = computed(() => {
+  const map = new Map<string, string>()
+  for (const c of clientsManager.clients.value) map.set(c.id, c.name)
+  return map
+})
 
 const selectedIds = ref<Array<string | number>>([])
 const focusCell = ref<OmniFocusCell | null>(null)
@@ -57,6 +71,7 @@ const filtersState = ref<Record<string, unknown>>({
   query: '',
   statusFilter: '',
   platformAdminFilter: '',
+  clientFilter: '',
 })
 
 const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
@@ -88,6 +103,14 @@ const filterDefinitions = computed<OmniFilterDefinition[]>(() => [
       { label: 'Membro de conta', value: false },
     ],
     accessor: (row) => row.isPlatformAdmin,
+  },
+  {
+    key: 'clientFilter',
+    label: 'Cliente',
+    type: 'select',
+    placeholder: 'Cliente',
+    // Filtro aplicado NO SERVIDOR (accountId) — traduzido em syncFiltersToBackend.
+    options: clientOptions.value,
   },
 ])
 
@@ -131,18 +154,21 @@ const allTableColumns = computed<OmniTableColumn[]>(() => [
   },
   {
     key: 'accountCount',
-    label: 'Qtd contas',
+    label: 'Qtd clientes',
     type: 'number',
     editable: false,
     minWidth: 120,
     defaultOrder: 60,
   },
   {
+    // Coluna "Cliente": custom para permitir edicao inline (mover de cliente) via
+    // <select> quando o usuario tem exatamente 1 cliente e nao e platform_admin.
+    // Caso contrario, renderiza os nomes read-only (slot #cell-accountNames).
     key: 'accountNames',
-    label: 'Contas',
-    type: 'text',
+    label: 'Cliente',
+    type: 'custom',
     editable: false,
-    minWidth: 240,
+    minWidth: 260,
     defaultOrder: 70,
   },
   {
@@ -184,6 +210,7 @@ function syncFiltersToBackend() {
   filters.status = status === true ? 'active' : status === false ? 'inactive' : ''
   const admin = filtersState.value.platformAdminFilter
   filters.platformAdmin = admin === true ? 'true' : admin === false ? 'false' : ''
+  filters.accountId = String(filtersState.value.clientFilter ?? '')
 }
 
 let filterTimer: ReturnType<typeof setTimeout> | null = null
@@ -241,6 +268,28 @@ function onCellUpdate(payload: OmniTableCellUpdate) {
   updateField(id, field, payload.value, { immediate: payload.immediate })
 }
 
+// Move inline de cliente (coluna "Cliente"). So habilitado quando o usuario tem
+// exatamente 1 cliente (clientAccountId != '') e nao e platform_admin. Confirma
+// antes; em sucesso o composable ja aplica o user retornado na linha.
+const movingId = ref<string | null>(null)
+async function onMoveClient(row: Record<string, unknown>, accountId: string) {
+  const user = toUser(row)
+  const id = rowId(row)
+  const target = String(accountId ?? '').trim()
+  if (!id || !target || target === user.clientAccountId) return
+  const targetName = clientNameById.value.get(target) ?? 'este cliente'
+  if (
+    import.meta.client &&
+    !window.confirm(
+      `Mover este usuario para o cliente ${targetName}? Ele perde acesso ao cliente atual.`,
+    )
+  )
+    return
+  movingId.value = id
+  await moveUserAccount(id, target)
+  movingId.value = null
+}
+
 // Drawer de edicao por usuario (dados + senha + vinculos/nivel). O modulo/pagina
 // por usuario (Fase 1B) entra dentro do proprio drawer.
 const editDrawerOpen = ref(false)
@@ -276,6 +325,7 @@ function openCreate() {
   createForm.organizationId = ''
   createForm.role = 'owner'
   createForm.orgRole = 'agency_member'
+  createAgencyConfirmed.value = false
   createDialogOpen.value = true
   void clientsManager.fetchClients()
   void orgsManager.fetchOrganizations()
@@ -296,8 +346,17 @@ const createNeedsClient = computed(
   () => !createForm.isPlatformAdmin && !createForm.accountId && !createForm.organizationId,
 )
 
+// Vincular Cliente + Agencia juntos torna o usuario MEMBRO DA AGENCIA (ve todos os
+// clientes/modulos da agencia) — perigoso para um usuario que deveria ser so deste
+// cliente. Quando os dois selects estao preenchidos, exigimos confirmacao explicita.
+const createBindsClientAndAgency = computed(
+  () => Boolean(createForm.accountId) && Boolean(createForm.organizationId),
+)
+const createAgencyConfirmed = ref(false)
+
 async function submitCreate() {
   if (!canCreateUser.value || createPasswordError.value || createNeedsClient.value) return
+  if (createBindsClientAndAgency.value && !createAgencyConfirmed.value) return
   const createdId = await createUser({ ...createForm })
   if (!createdId) return
   createDialogOpen.value = false
@@ -334,7 +393,7 @@ async function submitPassword() {
 }
 
 function onResetFilters() {
-  filtersState.value = { query: '', statusFilter: '', platformAdminFilter: '' }
+  filtersState.value = { query: '', statusFilter: '', platformAdminFilter: '', clientFilter: '' }
   syncFiltersToBackend()
   void fetchUsers({ page: 1 })
 }
@@ -374,7 +433,11 @@ function setPopoverOpen(rowId: string, type: 'memberships' | 'info', value: bool
 onMounted(() => {
   // Gate por permissao ANTES de disparar o fetch (espelha o back: rota exige
   // platform_admin). Evita 403 de ruido no bootstrap.
-  if (canViewUsers.value) void fetchUsers()
+  if (!canViewUsers.value) return
+  void fetchUsers()
+  // Carrega os clientes para popular o filtro "Cliente" e o <select> inline de
+  // mover usuario de cliente. So admin (a tela ja e gateada por canViewUsers).
+  void clientsManager.fetchClients()
 })
 </script>
 
@@ -432,11 +495,32 @@ onMounted(() => {
         empty-text="Nenhum usuario encontrado com os filtros atuais."
         @update:cell="onCellUpdate"
       >
+        <template #cell-accountNames="{ row }">
+          <select
+            v-if="toUser(row).clientAccountId && !toUser(row).isPlatformAdmin"
+            class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
+            :value="toUser(row).clientAccountId"
+            :disabled="movingId === rowId(row) || loading"
+            :title="toUser(row).accountNames"
+            @change="onMoveClient(row, ($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="opt in clientOptions" :key="opt.value" :value="opt.value">
+              {{ opt.label }}
+            </option>
+          </select>
+          <span v-else class="flex items-center gap-1.5 text-sm" :title="toUser(row).accountNames">
+            <UBadge v-if="toUser(row).isAgencyMember" color="primary" variant="soft" size="xs">
+              Agencia
+            </UBadge>
+            <span class="line-clamp-1">{{ toUser(row).accountNames || '-' }}</span>
+          </span>
+        </template>
+
         <template #cell-actions="{ row }">
           <div class="flex items-center justify-end gap-1">
             <OmniMinimalPopover
               :open="popoverIsOpen(rowId(row), 'memberships')"
-              title="Contas (memberships)"
+              title="Clientes (memberships)"
               width-class="w-[300px] max-w-[90vw]"
               @update:open="setPopoverOpen(rowId(row), 'memberships', $event)"
               @opened="openMemberships(rowId(row))"
@@ -513,12 +597,16 @@ onMounted(() => {
                   {{ toUser(row).mustChangePassword ? 'sim' : 'nao' }}
                 </p>
                 <p>
-                  <strong>Qtd contas:</strong>
+                  <strong>Qtd clientes:</strong>
                   {{ toUser(row).accountCount }}
                 </p>
                 <p>
-                  <strong>Contas:</strong>
+                  <strong>Cliente:</strong>
                   {{ toUser(row).accountNames || '-' }}
+                </p>
+                <p>
+                  <strong>Membro de agencia:</strong>
+                  {{ toUser(row).isAgencyMember ? 'sim' : 'nao' }}
                 </p>
               </div>
             </OmniMinimalPopover>
@@ -682,6 +770,20 @@ onMounted(() => {
                 entra como membro da conta-agencia e navega pelos clientes da agencia.
               </p>
             </div>
+            <div
+              v-if="createBindsClientAndAgency"
+              class="rounded-[var(--radius-md)] border border-[rgb(var(--danger))] bg-[rgb(var(--surface-2))] px-3 py-2"
+            >
+              <p class="text-xs text-[rgb(var(--danger))]">
+                Atencao: vincular uma agencia torna o usuario MEMBRO DA AGENCIA — ele passa a ver
+                todos os clientes e modulos da agencia. Para um usuario so deste cliente, deixe
+                Agencia vazio.
+              </p>
+              <label class="mt-2 flex items-center gap-2 text-xs">
+                <input v-model="createAgencyConfirmed" type="checkbox" />
+                <span>Entendo, e um membro de agencia</span>
+              </label>
+            </div>
             <div class="flex items-center gap-2">
               <USwitch v-model="createForm.isPlatformAdmin" />
               <span class="text-sm">Platform admin (acesso global)</span>
@@ -700,7 +802,12 @@ onMounted(() => {
                 label="Criar"
                 color="primary"
                 :loading="creating"
-                :disabled="creating || Boolean(createPasswordError) || createNeedsClient"
+                :disabled="
+                  creating ||
+                  Boolean(createPasswordError) ||
+                  createNeedsClient ||
+                  (createBindsClientAndAgency && !createAgencyConfirmed)
+                "
                 @click="submitCreate"
               />
             </div>

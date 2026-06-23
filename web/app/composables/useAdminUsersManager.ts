@@ -31,6 +31,8 @@ function normalizeUser(raw: Record<string, unknown>): AdminUserItem {
     mustChangePassword: Boolean(raw.mustChangePassword),
     accountCount: Number(raw.accountCount ?? 0) || 0,
     accountNames: String(raw.accountNames ?? ''),
+    clientAccountId: String(raw.clientAccountId ?? ''),
+    isAgencyMember: Boolean(raw.isAgencyMember),
     createdAt: String(raw.createdAt ?? ''),
     updatedAt: String(raw.updatedAt ?? ''),
   }
@@ -58,6 +60,9 @@ export function useAdminUsersManager() {
     q: '',
     status: '' as '' | 'active' | 'inactive',
     platformAdmin: '' as '' | 'true' | 'false',
+    // Filtro server-side por cliente (account). Vazio = todos. Quando preenchido,
+    // a lista volta so com os membros ativos daquele cliente.
+    accountId: '',
   })
   // Paginacao server-side: a tela busca UMA pagina por vez com os filtros
   // aplicados no backend (q/status/platformAdmin), em vez de baixar todos os
@@ -71,7 +76,7 @@ export function useAdminUsersManager() {
   const errorMessage = ref('')
   const savingMap = ref<Record<string, boolean>>({})
   const canResetFilters = computed(() =>
-    Boolean(filters.q || filters.status || filters.platformAdmin),
+    Boolean(filters.q || filters.status || filters.platformAdmin || filters.accountId),
   )
 
   const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -105,6 +110,7 @@ export function useAdminUsersManager() {
     if (filters.q.trim()) params.set('q', filters.q.trim())
     if (filters.status) params.set('status', filters.status)
     if (filters.platformAdmin) params.set('platformAdmin', filters.platformAdmin)
+    if (filters.accountId.trim()) params.set('accountId', filters.accountId.trim())
     return params.toString()
   }
 
@@ -237,6 +243,30 @@ export function useAdminUsersManager() {
     }
   }
 
+  // Move o usuario para outro cliente (account), como owner. Backend:
+  // PUT /v1/admin/users/{id}/account body { accountId, role }. Retorna o user
+  // atualizado (mesmo shape do PATCH) — aplicamos na linha. Destino inexistente
+  // -> 404; conta-agencia -> 400 (o errorMessage carrega a mensagem do backend).
+  async function moveUserAccount(userId: string, accountId: string): Promise<boolean> {
+    const target = String(accountId ?? '').trim()
+    if (!userId || !target) return false
+    setSaving(`${userId}:account`, true)
+    errorMessage.value = ''
+    try {
+      const resp = await apiRequest(`/v1/admin/users/${encodeURIComponent(userId)}/account`, {
+        method: 'PUT',
+        body: { accountId: target, role: 'owner' },
+      })
+      applyPatch(userId, resp as Record<string, unknown>)
+      return true
+    } catch (e) {
+      errorMessage.value = getApiErrorMessage(e, 'Falha ao mover o usuario de cliente.')
+      return false
+    } finally {
+      setSaving(`${userId}:account`, false)
+    }
+  }
+
   async function fetchMemberships(id: string): Promise<AccountMembershipItem[]> {
     try {
       const resp = await apiRequest(`/v1/admin/users/${encodeURIComponent(id)}/memberships`)
@@ -277,6 +307,7 @@ export function useAdminUsersManager() {
     filters.q = ''
     filters.status = ''
     filters.platformAdmin = ''
+    filters.accountId = ''
     page.value = 1
   }
 
@@ -303,6 +334,7 @@ export function useAdminUsersManager() {
     createUser,
     deleteUser,
     setPassword,
+    moveUserAccount,
     fetchMemberships,
     updateMembershipRole,
     resetFilters,

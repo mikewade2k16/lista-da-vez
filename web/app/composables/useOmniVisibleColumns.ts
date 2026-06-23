@@ -10,6 +10,17 @@ interface UseOmniVisibleColumnsOptions {
   // para `lockedColumnKeys` (admin ainda pode destravar via UI).
   alwaysVisibleColumnKeys?: Iterable<string>
   defaultVisibleColumnKeys?: Iterable<string> | string[]
+  // Colunas que devem SEMPRE estar no conjunto visivel apos a hidratacao, mesmo
+  // que a preferencia salva (localStorage) esteja desatualizada e nao as inclua
+  // (ex.: coluna nova adicionada depois que o usuario ja tinha preferencia). E
+  // aditivo: nao apaga as escolhas do usuario, so garante a presenca destas
+  // chaves. Para coluna `adminOnly`, o filtro do OmniDataTable ainda a esconde
+  // para nao-admin — passar so quando o viewer e admin.
+  forceVisibleColumnKeys?:
+    | Iterable<string>
+    | string[]
+    | Ref<Iterable<string> | string[]>
+    | ComputedRef<Iterable<string> | string[]>
 }
 
 function sameStringArray(a: string[], b: string[]) {
@@ -94,6 +105,27 @@ export function useOmniVisibleColumns(options: UseOmniVisibleColumnsOptions) {
     return preferred.length > 0 ? preferred : [...allowedColumnKeys.value]
   })
 
+  // Chaves que devem sempre constar no conjunto visivel apos a hidratacao. Pode
+  // ser reativo (ex.: depende de admin resolver). So considera as chaves que sao
+  // colunas permitidas (exclui 'actions' etc.).
+  const forceVisibleKeys = computed(() => {
+    const raw = normalizeStringIterable(unref(options.forceVisibleColumnKeys))
+    const allowedSet = new Set(allowedColumnKeys.value)
+    return raw.filter((key) => allowedSet.has(key))
+  })
+
+  // Garante (aditivo, idempotente) que as forceVisibleKeys estejam no conjunto
+  // visivel, preservando o resto. Retorna o proximo array ou o mesmo se nada muda.
+  function withForcedVisible(current: string[]): string[] {
+    const forced = forceVisibleKeys.value
+    if (forced.length === 0) {
+      return current
+    }
+    const present = new Set(current)
+    const missing = forced.filter((key) => !present.has(key))
+    return missing.length === 0 ? current : [...current, ...missing]
+  }
+
   watch(
     allowedColumnKeys,
     (allowedKeys) => {
@@ -144,7 +176,10 @@ export function useOmniVisibleColumns(options: UseOmniVisibleColumnsOptions) {
     const savedVisible = readStringArray(['ui', 'columns', options.preferenceKey], fallback)
     visibleColumnKeys.value = (() => {
       const sanitized = sanitizeKeys(savedVisible, allowed)
-      return sanitized.length === 0 ? [...fallback] : sanitized
+      const base = sanitized.length === 0 ? [...fallback] : sanitized
+      // Conserta a preferencia desatualizada: injeta as forceVisibleKeys ausentes
+      // (ex.: coluna 'accountId'/Cliente para admin) sem apagar as escolhas salvas.
+      return withForcedVisible(base)
     })()
 
     const savedLocked = readStringArray(
@@ -157,6 +192,17 @@ export function useOmniVisibleColumns(options: UseOmniVisibleColumnsOptions) {
     columnOrder.value = sanitizeKeys(savedOrder, allKeys)
 
     hydratedFromPreferences.value = true
+  })
+
+  // Re-garante as forceVisibleKeys quando elas resolvem DEPOIS da hidratacao
+  // (ex.: o papel admin so e conhecido apos a sessao carregar). Aditivo: o watch
+  // de escrita acima persiste o conjunto corrigido.
+  watch(forceVisibleKeys, () => {
+    if (!hydratedFromPreferences.value || import.meta.server) return
+    const next = withForcedVisible(visibleColumnKeys.value)
+    if (!sameStringArray(next, visibleColumnKeys.value)) {
+      visibleColumnKeys.value = next
+    }
   })
 
   watch(

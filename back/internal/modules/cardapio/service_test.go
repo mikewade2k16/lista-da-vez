@@ -246,20 +246,59 @@ func TestService_OutOfScopeReturnsNotFound(t *testing.T) {
 // Mover restaurante de conta (coluna Cliente, espelha bio)
 // ============================================================================
 
-// moveFakeStore captura o ponteiro de account_id repassado ao UpdateRestaurant e
-// controla a existencia da conta destino (AccountExists).
+// moveFakeStore simula o move da subarvore numa conta destino. Modela o cardapio
+// como um conjunto de filhas (cada uma com o account_id corrente) e um mapa de
+// modulos habilitados por conta, para os testes provarem que (a) TODAS as filhas
+// trocam de account_id e (b) o modulo cardapio fica habilitado no destino. Tambem
+// captura se o move (MoveRestaurantToAccount) ou o update generico foi chamado.
 type moveFakeStore struct {
 	unimplementedStore
-	exists     bool
-	gotAccount *string
+	exists bool
+
+	// account_id corrente de cada parte da subarvore (raiz + filhas).
+	childAccounts map[string]string
+	// modulos habilitados por conta: enabledModules[accountID]["cardapio"] = true.
+	enabledModules map[string]map[string]bool
+
+	movedTo        *string // destino repassado ao MoveRestaurantToAccount
+	genericUpdated bool    // true se o update generico (sem move) foi chamado
+}
+
+func newMoveFakeStore(exists bool, current string) *moveFakeStore {
+	// Subarvore inicial: raiz + uma de cada filha, todas na conta atual.
+	parts := []string{"restaurant", "category", "product", "variation", "addon",
+		"review", "zone", "order", "order_item", "event", "domain", "layout"}
+	children := make(map[string]string, len(parts))
+	for _, p := range parts {
+		children[p] = current
+	}
+	return &moveFakeStore{
+		exists:         exists,
+		childAccounts:  children,
+		enabledModules: map[string]map[string]bool{},
+	}
 }
 
 func (s *moveFakeStore) AccountExists(_ context.Context, _ string) (bool, error) {
 	return s.exists, nil
 }
 
-func (s *moveFakeStore) UpdateRestaurant(_ context.Context, _, _ string, in UpdateRestaurantInput) (Restaurant, error) {
-	s.gotAccount = in.AccountID
+func (s *moveFakeStore) UpdateRestaurant(_ context.Context, _, _ string, _ UpdateRestaurantInput) (Restaurant, error) {
+	s.genericUpdated = true
+	return Restaurant{ID: "rest-1"}, nil
+}
+
+func (s *moveFakeStore) MoveRestaurantToAccount(_ context.Context, _, _, target string) (Restaurant, error) {
+	s.movedTo = &target
+	// Move a subarvore inteira (todas as filhas) para o destino.
+	for k := range s.childAccounts {
+		s.childAccounts[k] = target
+	}
+	// Habilita o modulo cardapio na conta destino (auto-habilita no move).
+	if s.enabledModules[target] == nil {
+		s.enabledModules[target] = map[string]bool{}
+	}
+	s.enabledModules[target]["cardapio"] = true
 	return Restaurant{ID: "rest-1"}, nil
 }
 
@@ -268,55 +307,76 @@ func ptr(v string) *string { return &v }
 func TestUpdateRestaurant_MoveAccount(t *testing.T) {
 	const current = "acc-atual"
 
-	// Admin move para conta destino valida: o ponteiro chega normalizado ao store.
-	t.Run("conta valida move", func(t *testing.T) {
-		store := &moveFakeStore{exists: true}
+	// Admin move para conta destino valida: o move recebe o destino normalizado,
+	// TODA a subarvore troca de account_id e o modulo fica habilitado no destino.
+	t.Run("conta valida move subarvore inteira", func(t *testing.T) {
+		store := newMoveFakeStore(true, current)
 		svc := newServiceWithStore(store, ServiceConfig{})
 		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
 			UpdateRestaurantInput{AccountID: ptr(" acc-destino ")}); err != nil {
 			t.Fatalf("esperava sucesso, recebi %v", err)
 		}
-		if store.gotAccount == nil || *store.gotAccount != "acc-destino" {
-			t.Fatalf("esperava account_id 'acc-destino' no store, recebi %v", store.gotAccount)
+		if store.movedTo == nil || *store.movedTo != "acc-destino" {
+			t.Fatalf("esperava move para 'acc-destino', recebi %v", store.movedTo)
+		}
+		if store.genericUpdated {
+			t.Fatalf("move nao deve passar pelo update generico")
+		}
+		// (a) TODAS as filhas (e a raiz) mudaram para a conta nova.
+		for part, acc := range store.childAccounts {
+			if acc != "acc-destino" {
+				t.Fatalf("filha %q nao foi movida: account_id=%q", part, acc)
+			}
+		}
+		// (b) modulo cardapio habilitado no destino apos o move.
+		if !store.enabledModules["acc-destino"]["cardapio"] {
+			t.Fatalf("modulo cardapio deveria estar habilitado em 'acc-destino'")
 		}
 	})
 
-	// Conta destino inexistente => ErrNotFound antes do update.
+	// Conta destino inexistente => ErrNotFound antes de qualquer move.
 	t.Run("conta inexistente", func(t *testing.T) {
-		store := &moveFakeStore{exists: false}
+		store := newMoveFakeStore(false, current)
 		svc := newServiceWithStore(store, ServiceConfig{})
 		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
 			UpdateRestaurantInput{AccountID: ptr("acc-fantasma")}); err != ErrNotFound {
 			t.Fatalf("esperava ErrNotFound, recebi %v", err)
 		}
-		if store.gotAccount != nil {
-			t.Fatalf("update nao deveria ter ocorrido, recebi %v", store.gotAccount)
+		if store.movedTo != nil {
+			t.Fatalf("move nao deveria ter ocorrido, recebi %v", store.movedTo)
 		}
 	})
 
-	// Conta igual a atual (ou vazia) => nil (nao move), sem consultar AccountExists.
+	// Conta igual a atual (ou vazia) => nao move; o PATCH cai no update generico.
 	t.Run("mesma conta nao move", func(t *testing.T) {
-		store := &moveFakeStore{exists: false}
+		store := newMoveFakeStore(false, current)
 		svc := newServiceWithStore(store, ServiceConfig{})
 		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
 			UpdateRestaurantInput{AccountID: ptr(current)}); err != nil {
 			t.Fatalf("esperava sucesso, recebi %v", err)
 		}
-		if store.gotAccount != nil {
-			t.Fatalf("mesma conta nao deve mover, recebi %v", store.gotAccount)
+		if store.movedTo != nil {
+			t.Fatalf("mesma conta nao deve mover, recebi %v", store.movedTo)
+		}
+		if !store.genericUpdated {
+			t.Fatalf("sem move o PATCH deve usar o update generico")
 		}
 	})
 
-	// Sem accountId (nao-admin chega assim, zerado no handler) => nao move.
+	// PATCH sem move (nao-admin chega assim, zerado no handler) => update generico.
 	t.Run("nil nao move", func(t *testing.T) {
-		store := &moveFakeStore{exists: false}
+		store := newMoveFakeStore(false, current)
 		svc := newServiceWithStore(store, ServiceConfig{})
+		name := "Novo Nome"
 		if _, err := svc.UpdateRestaurant(context.Background(), current, "rest-1",
-			UpdateRestaurantInput{}); err != nil {
+			UpdateRestaurantInput{Name: &name}); err != nil {
 			t.Fatalf("esperava sucesso, recebi %v", err)
 		}
-		if store.gotAccount != nil {
-			t.Fatalf("sem accountId nao deve mover, recebi %v", store.gotAccount)
+		if store.movedTo != nil {
+			t.Fatalf("sem accountId nao deve mover, recebi %v", store.movedTo)
+		}
+		if !store.genericUpdated {
+			t.Fatalf("PATCH sem move deve usar o update generico (como antes)")
 		}
 	})
 }
@@ -331,6 +391,9 @@ func TestNormalizeHost(t *testing.T) {
 		{"localhost:3000", "localhost"},
 		{" exemplo.com/path ", "exemplo.com"}, // espacos + path + porta removidos
 		{"www.loja.app", "loja.app"},
+		{"https://mostarda.crowvisuals.com.br/", "mostarda.crowvisuals.com.br"}, // esquema + barra final
+		{"http://www.loja.com:8080/menu", "loja.com"},                           // esquema + www + porta + path
+		{"HTTPS://Loja.COM", "loja.com"},
 	}
 	for _, c := range cases {
 		if got := normalizeHost(c.in); got != c.want {

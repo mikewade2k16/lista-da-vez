@@ -15,6 +15,7 @@ import {
 } from '~/utils/api-client'
 import { hydrateRuntimeStoreContext } from '~/utils/runtime-remote'
 import { getWorkspacePath } from '~/utils/workspaces'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 
 const REMEMBERED_LOGIN_STORAGE_KEY = 'ldv_remembered_login'
 const STORE_SCOPE_MODE_SINGLE = 'single'
@@ -174,6 +175,14 @@ export const useAuthStore = defineStore('auth', () => {
     if (nextStatus === 'degraded') {
       runtimeSettingsLastError.value = String(result?.settingsErrorMessage || '').trim()
       runtimeSettingsNotice.value = buildRuntimeSettingsNotice(runtimeSettingsLastError.value)
+      return
+    }
+
+    // 'skipped': conta sem o modulo queue nao buscou /v1/settings. Estado neutro —
+    // limpa qualquer aviso degradado anterior; nao e erro, e ausencia esperada.
+    if (nextStatus === 'skipped') {
+      runtimeSettingsNotice.value = ''
+      runtimeSettingsLastError.value = ''
     }
   }
 
@@ -187,6 +196,26 @@ export const useAuthStore = defineStore('auth', () => {
     )
   }
 
+  // canFetchQueueSettings decide se o bootstrap/troca-de-loja deve buscar
+  // /v1/settings (config da fila). Conta sem o modulo queue retorna false → pula a
+  // chamada (evita 403 module_disabled + aviso de modo degradado indevido). Como
+  // o auth.global.ts so dispara fetchAccounts() DEPOIS do ensureSession (e o
+  // settings sobe dentro dele), garantimos os modulos resolvidos aqui via
+  // fetchAccounts idempotente antes de decidir — sem isso, no boot a lista estaria
+  // vazia e quem TEM queue bootaria degradado.
+  async function canFetchQueueSettings(): Promise<boolean> {
+    const accountStore = useCoreAccountStore()
+    if (!accountStore.accountsLoaded) {
+      await accountStore.fetchAccounts()
+    }
+    // Sem conta ativa resolvida (sem membership/lista vazia) tambem nao busca:
+    // nao ha tenant de fila para configurar.
+    if (!accountStore.activeAccount) {
+      return false
+    }
+    return accountStore.enabledModules.includes('queue')
+  }
+
   function syncStoreScopeMode(nextMode = storeScopeMode.value) {
     const normalizedMode = normalizeStoreScopeMode(nextMode)
     const resolvedMode = canUseAllStores.value ? normalizedMode : STORE_SCOPE_MODE_SINGLE
@@ -198,9 +227,17 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearSession() {
-    accessToken.value = null
-    activeStoreCookie.value = null
-    storeScopeCookie.value = STORE_SCOPE_MODE_SINGLE
+    // Em SSR NUNCA apagar os cookies de sessao: um soluco no bootstrap do servidor
+    // (ex.: hidratacao de runtime/settings que degrada durante um hard reload de
+    // rota SSR como /cardapio) nao pode emitir Set-Cookie deletando o token e
+    // deslogar o usuario no proximo paint. O cliente re-tenta o ensureSession e,
+    // num 401 real, o auth-bridge limpa de forma autoritativa. So mexe nos cookies
+    // no cliente; os refs em memoria sao por-request no servidor e zera-los e inocuo.
+    if (import.meta.client) {
+      accessToken.value = null
+      activeStoreCookie.value = null
+      storeScopeCookie.value = STORE_SCOPE_MODE_SINGLE
+    }
     user.value = null
     principal.value = null
     tenantContext.value = []
@@ -258,6 +295,7 @@ export const useAuthStore = defineStore('auth', () => {
         activeTenantId.value,
         {
           preserveExistingSettings: shouldPreserveExistingRuntimeSettings(),
+          canFetchQueueSettings: await canFetchQueueSettings(),
         },
       )
       applyRuntimeSettingsStatus(runtimeContext)
@@ -298,7 +336,19 @@ export const useAuthStore = defineStore('auth', () => {
     syncStoreScopeMode(storeScopeCookie.value)
     hydrated.value = true
     lastError.value = ''
-    await syncRuntimeAccess()
+    // A autenticacao ja esta estabelecida acima (user/principal/hydrated). A
+    // hidratacao de runtime/settings e best-effort e NUNCA pode derrubar a sessao:
+    // se syncRuntimeAccess falhar (runtime, accounts, /v1/settings), degradamos sem
+    // relancar — senao o catch do ensureSession/login chamaria clearSession por um
+    // erro que NAO e de auth, deslogando o usuario. Mesma regra ja aplicada a
+    // consultants/snapshot em runtime-remote.ts (fetchRemoteStoreData).
+    try {
+      await syncRuntimeAccess()
+    } catch (error) {
+      if (import.meta.client) {
+        console.warn('[auth] syncRuntimeAccess degradado; sessao preservada', error)
+      }
+    }
     return response
   }
 
@@ -529,6 +579,7 @@ export const useAuthStore = defineStore('auth', () => {
       activeTenantId.value,
       {
         preserveExistingSettings: shouldPreserveExistingRuntimeSettings(),
+        canFetchQueueSettings: await canFetchQueueSettings(),
       },
     )
     applyRuntimeSettingsStatus(runtimeContext)

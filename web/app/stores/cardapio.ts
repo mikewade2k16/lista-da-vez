@@ -14,6 +14,7 @@ import type {
   RestaurantDomain,
   RestaurantListItem,
   Review,
+  ReviewInput,
   SiteLayout,
 } from '~/domain/cardapio/types'
 
@@ -238,6 +239,32 @@ export const useCardapioStore = defineStore('cardapio', () => {
     restaurants.value = restaurants.value.filter((item) => item.id !== id)
   }
 
+  // Duplica um restaurante a partir da LISTA (so platform_admin; o back nega
+  // demais papeis). O accountId e o da PROPRIA linha (vazio = account ativa) e vai
+  // na query igual as demais acoes scoped da lista — o admin pode duplicar um
+  // restaurante de OUTRA account, e o scopeAccountId (do editor) esta vazio aqui.
+  // O novo restaurante nasce inativo e na MESMA account do source. Re-le a lista
+  // lean do back (a resposta e um Restaurant full, sem accountName/primaryDomain
+  // da projecao lean) para refletir o item novo. Retorna o restaurante criado.
+  async function duplicateRestaurant(
+    id: string,
+    payload: { name: string; slug: string },
+    accountId = '',
+  ): Promise<Restaurant> {
+    const response = (await apiRequest(
+      withScopeFor(`/v1/cardapio/restaurants/${encodeURIComponent(id)}/duplicate`, accountId),
+      {
+        method: 'POST',
+        body: {
+          name: String(payload.name || '').trim(),
+          slug: String(payload.slug || '').trim(),
+        },
+      },
+    )) as Restaurant
+    await loadRestaurants(accountId ? { accountId } : {})
+    return response
+  }
+
   // Define o dominio primario de um restaurante a partir da LISTA (edicao inline).
   // host vazio => NO-OP (nao apaga dominio inline; remover e so na aba Dominios).
   // host preenchido => se ja existe um primario na linha, DELETE o antigo e POST
@@ -354,7 +381,11 @@ export const useCardapioStore = defineStore('cardapio', () => {
     }
   }
 
-  // --- Avaliacoes (por produto) ---
+  // --- Avaliacoes ---
+  // As reviews NAO ficam no state da store: cada secao busca a sua lista (por
+  // produto OU do estabelecimento) e a guarda localmente. As actions abaixo so
+  // fazem a chamada e devolvem o resultado (mesmo padrao de loadProduct).
+  // ReviewInput e full-replace: PATCH manda o objeto COMPLETO + o campo alterado.
 
   async function loadReviews(productId: string): Promise<Review[]> {
     const response = await apiRequest(
@@ -363,18 +394,53 @@ export const useCardapioStore = defineStore('cardapio', () => {
     return asArray<Review>(response, 'reviews')
   }
 
-  async function createReview(productId: string, body: Record<string, unknown>) {
+  async function createReview(productId: string, input: ReviewInput) {
     return (await apiRequest(
       withScope(`/v1/cardapio/products/${encodeURIComponent(productId)}/reviews`),
-      { method: 'POST', body },
+      { method: 'POST', body: { ...input } },
     )) as Review
   }
 
-  async function patchReview(reviewId: string, body: Record<string, unknown>) {
+  // Reviews do ESTABELECIMENTO: productId null OU showOnEstablishment=true. O back
+  // forca product_id NULL no POST (review propria do estabelecimento), entao o
+  // input nao carrega productId. Mesma forma de guardar das reviews de produto:
+  // a action so devolve a lista; quem chama a guarda.
+  async function loadEstablishmentReviews(restaurantId: string): Promise<Review[]> {
+    const response = await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(restaurantId)}/reviews`),
+    )
+    return asArray<Review>(response, 'reviews')
+  }
+
+  async function createEstablishmentReview(restaurantId: string, input: ReviewInput) {
+    return (await apiRequest(
+      withScope(`/v1/cardapio/restaurants/${encodeURIComponent(restaurantId)}/reviews`),
+      { method: 'POST', body: { ...input } },
+    )) as Review
+  }
+
+  async function patchReview(reviewId: string, input: ReviewInput) {
     return (await apiRequest(withScope(`/v1/cardapio/reviews/${encodeURIComponent(reviewId)}`), {
       method: 'PATCH',
-      body,
+      body: { ...input },
     })) as Review
+  }
+
+  // Conveniencia: vira a flag showOnEstablishment de uma review SEM zerar o resto.
+  // ReviewInput e full-replace, e nao ha GET de review individual; por isso recebe
+  // a review COMPLETA (a secao ja tem o objeto em maos) e reenvia todos os campos
+  // com a flag trocada. Espelha o patchReview cheio do toggle de destaque.
+  async function setReviewOnEstablishment(review: Review, value: boolean) {
+    return patchReview(review.id, {
+      authorName: review.authorName,
+      authorLevel: review.authorLevel,
+      rating: review.rating,
+      body: review.body,
+      isHighlight: review.isHighlight,
+      showOnEstablishment: value,
+      dateLabel: review.dateLabel,
+      sortOrder: review.sortOrder,
+    })
   }
 
   async function deleteReview(reviewId: string) {
@@ -590,6 +656,7 @@ export const useCardapioStore = defineStore('cardapio', () => {
     deleteRestaurant,
     patchRestaurantScoped,
     deleteRestaurantScoped,
+    duplicateRestaurant,
     setPrimaryDomain,
     reloadCategories,
     createCategory,
@@ -602,7 +669,10 @@ export const useCardapioStore = defineStore('cardapio', () => {
     deleteProduct,
     loadReviews,
     createReview,
+    loadEstablishmentReviews,
+    createEstablishmentReview,
     patchReview,
+    setReviewOnEstablishment,
     deleteReview,
     loadOrders,
     updateOrderStatus,

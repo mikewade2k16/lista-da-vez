@@ -54,6 +54,11 @@ var (
 	// nivel de membership) nao e um valor aceito. Mapeado para HTTP 400.
 	ErrInvalidRole = errors.New("core: invalid role")
 
+	// ErrAccountIsAgency e retornado ao tentar MOVER um usuario para uma conta
+	// is_agency=true via PUT /v1/admin/users/{id}/account. Esse endpoint e so
+	// para conta-cliente. Mapeado para HTTP 400.
+	ErrAccountIsAgency = errors.New("core: target account is an agency")
+
 	// ErrOrganizationSlugConflict e retornado quando ja existe uma organization
 	// com o mesmo slug.
 	ErrOrganizationSlugConflict = errors.New("core: organization slug already exists")

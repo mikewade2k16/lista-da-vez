@@ -5,11 +5,18 @@ import { storeToRefs } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
 import { useFeedbackStore } from '~/stores/feedback'
 import { useUiStore } from '~/stores/ui'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 
 const feedbackStore = useFeedbackStore()
 const auth = useAuthStore()
 const ui = useUiStore()
+const accountStore = useCoreAccountStore()
 const { allowedWorkspaces, storeContext, user } = storeToRefs(auth)
+// Feedback e feature do modulo queue (ver module-enabled.global.ts e o gating do
+// backend em /v1/feedback). Conta sem o modulo (ex.: so cardapio/bio) nao tem o
+// recurso: nao busca (evitava 403 module_disabled em loop no polling) nem mostra
+// o sino.
+const hasFeedbackModule = computed(() => accountStore.enabledModules.includes('queue'))
 const menuRef = ref(null)
 const menuOpen = ref(false)
 const feedbackSyncCursor = ref('')
@@ -154,7 +161,7 @@ function handleNotificationOpen(notification) {
 }
 
 async function loadNotifications() {
-  if (!ownUserId.value || !isDocumentVisible()) {
+  if (!hasFeedbackModule.value || !ownUserId.value || !isDocumentVisible()) {
     return
   }
 
@@ -208,7 +215,7 @@ function handleVisibilityChange() {
 }
 
 watch(
-  [ownUserId, canManageFeedback],
+  [ownUserId, canManageFeedback, hasFeedbackModule],
   () => {
     feedbackSyncCursor.value = ''
     void loadNotifications()
@@ -230,7 +237,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="menuRef" class="feedback-notifications">
+  <div v-if="hasFeedbackModule" ref="menuRef" class="feedback-notifications">
     <button
       class="feedback-notifications__trigger"
       type="button"

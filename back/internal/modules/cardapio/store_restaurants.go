@@ -100,8 +100,9 @@ func (s *Store) ListRestaurantsLean(ctx context.Context, accountID, query string
 }
 
 // UpdateRestaurant aplica um PATCH parcial. Campos nil sao preservados via COALESCE.
-// O WHERE escopa pela account ATUAL ($2); account_id ($23) so muda quando in.AccountID
-// nao e nil (move para outra conta — ja validado no service, so platform_admin).
+// O WHERE escopa pela account ATUAL ($2). Mover de conta NAO passa por aqui: o
+// service redireciona o move para MoveRestaurantToAccount (subarvore inteira numa
+// transacao), entao este UPDATE so toca os campos do proprio restaurante.
 func (s *Store) UpdateRestaurant(ctx context.Context, accountID, id string, in UpdateRestaurantInput) (Restaurant, error) {
 	address, hours, settings, theme := encodeJSONUpdates(in)
 	const q = `update cardapio.restaurants set
@@ -125,7 +126,6 @@ func (s *Store) UpdateRestaurant(ctx context.Context, accountID, id string, in U
 			facebook_pixel_id   = coalesce($20, facebook_pixel_id),
 			custom_head_html    = coalesce($21, custom_head_html),
 			is_active           = coalesce($22, is_active),
-			account_id          = coalesce($23::uuid, account_id),
 			updated_at          = now()
 		where id = $1 and account_id = $2
 		returning ` + restaurantColumns
@@ -134,7 +134,216 @@ func (s *Store) UpdateRestaurant(ctx context.Context, accountID, id string, in U
 		in.WhatsApp, in.Phone, in.Email, in.Instagram,
 		address, hours, settings, theme,
 		in.Segment, in.Facebook, in.Youtube, in.GoogleAnalyticsID, in.FacebookPixelID, in.CustomHeadHTML,
-		in.IsActive, in.AccountID))
+		in.IsActive))
+}
+
+// moveChildTables lista as tabelas-filhas do schema cardapio que tem account_id e
+// se ligam ao restaurante por restaurant_id (atualizadas direto no move).
+var moveChildTablesByRestaurant = []string{
+	"cardapio.restaurant_domains",
+	"cardapio.categories",
+	"cardapio.products",
+	"cardapio.reviews",
+	"cardapio.delivery_zones",
+	"cardapio.orders",
+	"cardapio.events",
+	"cardapio.site_layouts",
+}
+
+// MoveRestaurantToAccount move a SUBARVORE INTEIRA do restaurante para a conta
+// destino numa unica transacao e habilita o modulo cardapio no destino (decisao
+// de negocio: auto-habilita). Sem isso o cardapio fica orfao (filhas com
+// account_id antigo) e o site publico cai (o publico exige core.account_modules
+// habilitado na conta nova).
+//
+// A linha do proprio restaurante e escopada pela conta ATUAL ($current): 0 linhas
+// afetadas => ErrNotFound (fora de escopo, defesa em profundidade, sem vazar
+// existencia). As filhas sao escopadas pelo restaurant_id (direta ou via subquery
+// no produto/pedido) e movidas para $target. Retorna o restaurante ja sob a conta
+// NOVA para o PATCH refletir o move.
+func (s *Store) MoveRestaurantToAccount(ctx context.Context, currentAccountID, restaurantID, targetAccountID string) (Restaurant, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Restaurant{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// 1. O proprio restaurante (escopado pela conta atual: 0 linhas => fora de escopo).
+	const moveRoot = `update cardapio.restaurants
+		set account_id = $3::uuid, updated_at = now()
+		where id = $1 and account_id = $2`
+	tag, err := tx.Exec(ctx, moveRoot, restaurantID, currentAccountID, targetAccountID)
+	if err != nil {
+		return Restaurant{}, err
+	}
+	if tag.RowsAffected() == 0 {
+		return Restaurant{}, ErrNotFound
+	}
+
+	// 2. Tabelas-filhas ligadas direto por restaurant_id.
+	for _, table := range moveChildTablesByRestaurant {
+		q := `update ` + table + ` set account_id = $2::uuid where restaurant_id = $1`
+		if _, err := tx.Exec(ctx, q, restaurantID, targetAccountID); err != nil {
+			return Restaurant{}, err
+		}
+	}
+
+	// 3. Variacoes/adicionais: ligadas por product_id (filhas dos produtos).
+	const moveVariations = `update cardapio.product_variations set account_id = $2::uuid
+		where product_id in (select id from cardapio.products where restaurant_id = $1)`
+	if _, err := tx.Exec(ctx, moveVariations, restaurantID, targetAccountID); err != nil {
+		return Restaurant{}, err
+	}
+	const moveAddons = `update cardapio.product_addons set account_id = $2::uuid
+		where product_id in (select id from cardapio.products where restaurant_id = $1)`
+	if _, err := tx.Exec(ctx, moveAddons, restaurantID, targetAccountID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 4. Itens de pedido: ligados por order_id (filhas dos pedidos).
+	const moveOrderItems = `update cardapio.order_items set account_id = $2::uuid
+		where order_id in (select id from cardapio.orders where restaurant_id = $1)`
+	if _, err := tx.Exec(ctx, moveOrderItems, restaurantID, targetAccountID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 5. Habilita o modulo cardapio na conta destino (auto-habilita no move).
+	const enableModule = `insert into core.account_modules (account_id, module_id, enabled)
+		values ($1::uuid, 'cardapio', true)
+		on conflict (account_id, module_id) do update set enabled = true`
+	if _, err := tx.Exec(ctx, enableModule, targetAccountID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 6. Re-scan sob a conta NOVA para a resposta refletir o move.
+	const reread = `select ` + restaurantColumns + `
+		from cardapio.restaurants where id = $1 and account_id = $2::uuid`
+	r, err := scanRestaurant(tx.QueryRow(ctx, reread, restaurantID, targetAccountID))
+	if err != nil {
+		return Restaurant{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Restaurant{}, err
+	}
+	return r, nil
+}
+
+// DuplicateRestaurant copia um restaurante inteiro (catalogo + zonas + layout)
+// para um novo id/slug/name na MESMA account do source, numa UNICA transacao (F1).
+// O source e escopado pela account ($accountID): inexistente/fora de escopo =>
+// ErrNotFound (sem vazar existencia). O novo restaurante nasce is_active=false e
+// last_order_number=0. NAO copia: restaurant_domains (host unico), reviews
+// (curadas), orders/order_items, events. Espelha o padrao de MoveRestaurantToAccount
+// (transacao + subquery por restaurant_id). Retorna o restaurante novo (full).
+func (s *Store) DuplicateRestaurant(ctx context.Context, accountID, sourceID, slug, name string) (Restaurant, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Restaurant{}, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	// 1. Restaurante: copia todos os campos do source (escopado pela account),
+	//    sob novo id/slug/name; is_active=false, last_order_number=0.
+	const insertRoot = `insert into cardapio.restaurants (
+			account_id, slug, name, tagline, description, logo_url, banner_url,
+			whatsapp, phone, email, instagram, address, hours, settings, theme,
+			segment, facebook, youtube, google_analytics_id, facebook_pixel_id, custom_head_html,
+			is_active, last_order_number)
+		select account_id, $3, $4, tagline, description, logo_url, banner_url,
+			whatsapp, phone, email, instagram, address, hours, settings, theme,
+			segment, facebook, youtube, google_analytics_id, facebook_pixel_id, custom_head_html,
+			false, 0
+		from cardapio.restaurants
+		where id = $1 and account_id = $2
+		returning ` + restaurantColumns
+	// scanRestaurant devolve pgx.ErrNoRows quando o source esta fora de escopo; o
+	// service traduz para ErrNotFound (404 uniforme) via mapStoreErr.
+	newRestaurant, err := scanRestaurant(tx.QueryRow(ctx, insertRoot, sourceID, accountID, slug, name))
+	if err != nil {
+		return Restaurant{}, err
+	}
+	newID := newRestaurant.ID
+
+	// 2. Categorias: novos ids; preserva slug/name/descricao/foto/ordem/ativo. O
+	//    remapeamento category_id dos produtos e feito por slug (unico por
+	//    restaurante) direto no SQL do passo 3 — sem mapa em memoria.
+	const copyCategories = `insert into cardapio.categories
+			(account_id, restaurant_id, slug, name, description, image_url, sort_order, is_active)
+		select account_id, $2, slug, name, description, image_url, sort_order, is_active
+		from cardapio.categories
+		where restaurant_id = $1`
+	if _, err := tx.Exec(ctx, copyCategories, sourceID, newID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 3. Produtos: novos ids; remapeia category_id (via slug da categoria source)
+	//    para a categoria nova; preserva slug/precos/flags/jsonb. O slug e unico por
+	//    restaurante, entao variacoes/adicionais reencontram o produto novo por slug.
+	const copyProducts = `insert into cardapio.products
+			(account_id, restaurant_id, category_id, slug, name, short_desc, description, body,
+			 price_cents, image_url, gallery, weight, cook_time, diet, allergens, pairing, tags,
+			 is_available, is_featured, sort_order, compare_at_price_cents)
+		select p.account_id, $2,
+			case when p.category_id is null then null
+			     else (select c2.id from cardapio.categories c2
+			           where c2.restaurant_id = $2 and c2.slug = c1.slug) end,
+			p.slug, p.name, p.short_desc, p.description, p.body,
+			p.price_cents, p.image_url, p.gallery, p.weight, p.cook_time, p.diet, p.allergens,
+			p.pairing, p.tags, p.is_available, p.is_featured, p.sort_order, p.compare_at_price_cents
+		from cardapio.products p
+		left join cardapio.categories c1 on c1.id = p.category_id
+		where p.restaurant_id = $1`
+	if _, err := tx.Exec(ctx, copyProducts, sourceID, newID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 4. Variacoes e adicionais: novos ids, ligados ao produto NOVO. O produto novo
+	//    e encontrado pelo slug (unico por restaurante).
+	const copyVariations = `insert into cardapio.product_variations
+			(account_id, product_id, name, price_delta_cents, sort_order)
+		select v.account_id, np.id, v.name, v.price_delta_cents, v.sort_order
+		from cardapio.product_variations v
+		join cardapio.products sp on sp.id = v.product_id
+		join cardapio.products np on np.restaurant_id = $2 and np.slug = sp.slug
+		where sp.restaurant_id = $1`
+	if _, err := tx.Exec(ctx, copyVariations, sourceID, newID); err != nil {
+		return Restaurant{}, err
+	}
+	const copyAddons = `insert into cardapio.product_addons
+			(account_id, product_id, name, price_cents, sort_order)
+		select a.account_id, np.id, a.name, a.price_cents, a.sort_order
+		from cardapio.product_addons a
+		join cardapio.products sp on sp.id = a.product_id
+		join cardapio.products np on np.restaurant_id = $2 and np.slug = sp.slug
+		where sp.restaurant_id = $1`
+	if _, err := tx.Exec(ctx, copyAddons, sourceID, newID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 5. Zonas de entrega: novos ids; preserva name/fee/ativo/ordem.
+	const copyZones = `insert into cardapio.delivery_zones
+			(account_id, restaurant_id, name, fee_cents, is_active, sort_order)
+		select account_id, $2, name, fee_cents, is_active, sort_order
+		from cardapio.delivery_zones
+		where restaurant_id = $1`
+	if _, err := tx.Exec(ctx, copyZones, sourceID, newID); err != nil {
+		return Restaurant{}, err
+	}
+
+	// 6. Layout do site: copia draft + published + version (novo restaurant_id).
+	const copyLayout = `insert into cardapio.site_layouts
+			(account_id, restaurant_id, draft, published, version)
+		select account_id, $2, draft, published, version
+		from cardapio.site_layouts
+		where restaurant_id = $1`
+	if _, err := tx.Exec(ctx, copyLayout, sourceID, newID); err != nil {
+		return Restaurant{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return Restaurant{}, err
+	}
+	return newRestaurant, nil
 }
 
 // AccountExists informa se a conta destino existe (espelha bio). Usado pelo

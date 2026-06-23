@@ -44,6 +44,11 @@ export const useCoreAccountStore = defineStore('core/account', () => {
   const context = ref<AccountContext | null>(null)
   const loading = ref(false)
   const error = ref<string>('')
+  // accountsLoaded distingue "ainda hidratando" de "resolveu" (com ou sem conta
+  // ativa). Vira true no finally do fetchAccounts (sucesso OU erro): assim o
+  // gating de modulo pode FECHAR (fail-closed) quando o contexto ja resolveu sem
+  // conta ativa, sem causar flash durante o hidrate inicial (quando ainda false).
+  const accountsLoaded = ref(false)
   // platformView: contexto SUPER-ADMIN/DEV (so platform_admin). Quando ativo, o
   // menu revela itens em desenvolvimento/`hidden` que nao foram liberados nem
   // para a conta-agencia (Crow Visuals). Escopo de API usa a conta-agencia (tem
@@ -119,6 +124,10 @@ export const useCoreAccountStore = defineStore('core/account', () => {
       error.value = e?.data?.error?.message ?? e?.message ?? 'Erro ao carregar accounts.'
     } finally {
       loading.value = false
+      // Marca que a tentativa terminou (sucesso ou erro). A partir daqui, gating
+      // de modulo sem conta ativa pode fechar (fail-closed) — antes disso o
+      // contexto ainda nao resolveu e o filtro nao deve esconder itens.
+      accountsLoaded.value = true
     }
   }
 
@@ -161,6 +170,7 @@ export const useCoreAccountStore = defineStore('core/account', () => {
     context.value = null
     error.value = ''
     platformView.value = false
+    accountsLoaded.value = false
   }
 
   return {
@@ -172,6 +182,7 @@ export const useCoreAccountStore = defineStore('core/account', () => {
     error,
     permissions,
     enabledModules,
+    accountsLoaded,
     platformView,
     fetchAccounts,
     switchAccount,

@@ -1,93 +1,106 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
+import OmniDataTable from '../../../../layers/tasks/components/omni/table/OmniDataTable.vue'
 import CardapioProductModal from '~/components/cardapio/product/CardapioProductModal.vue'
+import {
+  useCardapioProductColumns,
+  type CardapioProductFilters,
+  type CardapioProductRow,
+} from '~/composables/useCardapioProductColumns'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
-import { formatCurrency } from '~/domain/cardapio/types'
-import type { ProductListItem } from '~/domain/cardapio/types'
-import { formToPayload, productToForm } from '~/composables/useCardapioProductForm'
-import { resolveMediaUrl } from '~/utils/media'
+import type { OmniTableCellUpdate, OmniTableImageUpload } from '~/types/omni/collection'
 
 const store = useCardapioStore()
 const ui = useUiStore()
-const config = useRuntimeConfig()
-const mediaUrl = (url?: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
 
 const modalOpen = ref(false)
 const editingId = ref('')
 const busyId = ref('')
+const selectedIds = ref<Array<string | number>>([])
+
+const filtersState = ref<CardapioProductFilters & Record<string, unknown>>({
+  categoryId: '',
+  availability: '',
+})
+
+const {
+  tableRows,
+  filteredRows,
+  allTableColumns,
+  filterDefinitions,
+  onCellInput,
+  applyImageUpload,
+} = useCardapioProductColumns(() => filtersState.value, {
+  onSuccess: () => ui.success('Produto atualizado.'),
+  onError: (caught) =>
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel atualizar o produto.')),
+})
 
 // Sinaliza produtos sem imagem (ex.: import que ainda nao tem foto cadastrada).
-const noImageCount = computed(() => store.products.filter((p) => !p.imageUrl).length)
+const noImageCount = computed(() => tableRows.value.filter((row) => !row.imageUrl).length)
 
-interface Group {
-  id: string
-  name: string
-  products: ProductListItem[]
+const columnExcludeKeys = ['actions']
+const { visibleColumnKeys, lockedColumnKeys, columnOrder, tableColumns, resetToDefaults } =
+  useOmniVisibleColumns({
+    preferenceKey: 'cardapio.editor.products',
+    allColumns: allTableColumns,
+    columnExcludeKeys,
+  })
+
+function toRow(row: Record<string, unknown>): CardapioProductRow {
+  return row as unknown as CardapioProductRow
 }
 
-const groups = computed<Group[]>(() => {
-  const buckets = new Map<string, ProductListItem[]>()
-
-  for (const product of store.products) {
-    const key = product.categoryId ?? ''
-    const list = buckets.get(key) ?? []
-    list.push(product)
-    buckets.set(key, list)
-  }
-
-  const ordered: Group[] = []
-  for (const category of store.categories) {
-    const products = buckets.get(category.id)
-    if (products?.length) {
-      ordered.push({ id: category.id, name: category.name, products })
-    }
-  }
-  const uncategorized = buckets.get('')
-  if (uncategorized?.length) {
-    ordered.push({ id: '', name: 'Sem categoria', products: uncategorized })
-  }
-  return ordered
-})
+function rowId(row: Record<string, unknown>): string {
+  return String(row.id ?? '').trim()
+}
 
 function openCreate() {
   editingId.value = ''
   modalOpen.value = true
 }
 
-function openEdit(product: ProductListItem) {
-  editingId.value = product.id
+function openEdit(row: Record<string, unknown>) {
+  editingId.value = rowId(row)
   modalOpen.value = true
 }
 
-async function toggleAvailable(product: ProductListItem) {
-  busyId.value = product.id
+// Edicao inline: grava no overlay otimista e agenda o load-full-then-patch (PATCH
+// full-replace). Salva no commit da celula (debounce p/ texto/select/money; switch
+// `immediate`), nao a cada tecla. Toast vem dos callbacks do composable.
+function onCellUpdate(payload: OmniTableCellUpdate) {
+  onCellInput(String(payload.rowId).trim(), payload.key, payload.value, payload.immediate)
+}
+
+// Upload de imagem inline: sobe pela mesma API de midia e grava a url via PATCH
+// full-replace (mecanica encapsulada no composable).
+async function onImageUpload(payload: OmniTableImageUpload) {
+  const id = String(payload.rowId).trim()
+  if (!id) return
+  busyId.value = id
   try {
-    // PATCH de produto e full-replace no back (ProductInput nao e parcial e o
-    // ReadJSON rejeita campo desconhecido). A lista so tem dados "lean", entao
-    // busca o produto completo, inverte a disponibilidade e reenvia o body inteiro.
-    const full = await store.loadProduct(product.id)
-    const payload = formToPayload(productToForm(full))
-    payload.isAvailable = !full.isAvailable
-    await store.patchProduct(product.id, payload)
+    await applyImageUpload(id, payload.file)
+    ui.success('Imagem atualizada.')
   } catch (caught) {
-    ui.error(getApiErrorMessage(caught, 'Nao foi possivel alterar a disponibilidade.'))
+    ui.error(getApiErrorMessage(caught, 'Nao foi possivel enviar a imagem.'))
   } finally {
     busyId.value = ''
   }
 }
 
-async function remove(product: ProductListItem) {
+async function remove(row: Record<string, unknown>) {
+  const product = toRow(row)
   const { confirmed } = (await ui.confirm({
     title: 'Remover produto',
     message: `Remover o produto "${product.name}"?`,
     confirmLabel: 'Remover',
   })) as { confirmed: boolean }
-  if (!confirmed) {
-    return
-  }
+  if (!confirmed) return
+
   busyId.value = product.id
   try {
     await store.deleteProduct(product.id)
@@ -98,72 +111,70 @@ async function remove(product: ProductListItem) {
     busyId.value = ''
   }
 }
+
+function onResetFilters() {
+  filtersState.value = { categoryId: '', availability: '' }
+}
 </script>
 
 <template>
-  <div class="cardapio-prod">
+  <section class="cardapio-prod">
     <div class="cardapio-prod__head">
       <p class="cardapio-prod__count">
-        {{ store.products.length }} produto(s)
+        {{ tableRows.length }} produto(s)
         <span v-if="noImageCount" class="cardapio-prod__warn">· {{ noImageCount }} sem imagem</span>
       </p>
-      <button type="button" class="cardapio-prod__add" @click="openCreate">Novo produto</button>
     </div>
 
-    <p v-if="!store.products.length" class="cardapio-prod__empty">
-      Nenhum produto ainda. Crie o primeiro para montar o cardapio.
-    </p>
+    <OmniCollectionFilters
+      v-model="filtersState"
+      v-model:visible-columns="visibleColumnKeys"
+      v-model:locked-columns="lockedColumnKeys"
+      v-model:column-order="columnOrder"
+      :filters="filterDefinitions"
+      :table-columns="allTableColumns"
+      :column-exclude-keys="columnExcludeKeys"
+      @reset="onResetFilters"
+      @reset-columns="resetToDefaults"
+    >
+      <template #actions>
+        <UButton icon="i-lucide-plus" label="Novo produto" color="primary" @click="openCreate" />
+      </template>
+    </OmniCollectionFilters>
 
-    <div v-for="group in groups" :key="group.id || 'none'" class="cardapio-prod__group">
-      <h3 class="cardapio-prod__group-title">{{ group.name }}</h3>
-      <ul class="cardapio-prod__list">
-        <li v-for="product in group.products" :key="product.id" class="cardapio-prod__item">
-          <img
-            v-if="product.imageUrl"
-            :src="mediaUrl(product.imageUrl)"
-            alt=""
-            class="cardapio-prod__thumb"
+    <OmniDataTable
+      v-model="selectedIds"
+      :rows="filteredRows"
+      :columns="tableColumns"
+      row-key="id"
+      empty-text="Nenhum produto encontrado com os filtros atuais."
+      @update:cell="onCellUpdate"
+      @upload:image="onImageUpload"
+    >
+      <template #cell-actions="{ row }">
+        <div class="cardapio-prod__actions">
+          <UButton
+            icon="i-lucide-pencil"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            title="Editar produto (variacoes, adicionais, galeria)"
+            aria-label="Editar"
+            @click="openEdit(row)"
           />
-          <div
-            v-else
-            class="cardapio-prod__thumb cardapio-prod__thumb--empty"
-            aria-hidden="true"
-          ></div>
-
-          <div class="cardapio-prod__info">
-            <div class="cardapio-prod__name-row">
-              <span class="cardapio-prod__name">{{ product.name }}</span>
-              <span v-if="product.isFeatured" class="cardapio-prod__tag">Destaque</span>
-              <span v-if="!product.imageUrl" class="cardapio-prod__tag cardapio-prod__tag--warn">
-                Sem imagem
-              </span>
-            </div>
-            <span class="cardapio-prod__price">{{ formatCurrency(product.priceCents) }}</span>
-          </div>
-
-          <div class="cardapio-prod__actions">
-            <span
-              class="cardapio-prod__pill"
-              :class="product.isAvailable ? 'is-on' : 'is-off'"
-              @click="toggleAvailable(product)"
-            >
-              {{ product.isAvailable ? 'Disponivel' : 'Indisponivel' }}
-            </span>
-            <button type="button" class="cardapio-prod__btn" @click="openEdit(product)">
-              Editar
-            </button>
-            <button
-              type="button"
-              class="cardapio-prod__btn cardapio-prod__btn--danger"
-              :disabled="busyId === product.id"
-              @click="remove(product)"
-            >
-              Remover
-            </button>
-          </div>
-        </li>
-      </ul>
-    </div>
+          <UButton
+            icon="i-lucide-trash-2"
+            color="error"
+            variant="ghost"
+            size="sm"
+            title="Remover produto"
+            aria-label="Remover"
+            :loading="busyId === rowId(row)"
+            @click="remove(row)"
+          />
+        </div>
+      </template>
+    </OmniDataTable>
 
     <CardapioProductModal
       :open="modalOpen"
@@ -172,14 +183,14 @@ async function remove(product: ProductListItem) {
       @close="modalOpen = false"
       @saved="modalOpen = false"
     />
-  </div>
+  </section>
 </template>
 
 <style scoped>
 .cardapio-prod {
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
+  gap: 0.9rem;
 }
 
 .cardapio-prod__head {
@@ -193,148 +204,15 @@ async function remove(product: ProductListItem) {
   color: var(--text-muted);
 }
 
-.cardapio-prod__add {
-  border: none;
-  color: rgb(var(--surface));
-  background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary-600)));
-  padding: 0.55rem 1.1rem;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-size: 0.88rem;
-  cursor: pointer;
-}
-
-.cardapio-prod__empty {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  padding: 1.5rem 0;
-  text-align: center;
-}
-
-.cardapio-prod__group-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-  margin-bottom: 0.5rem;
-}
-
-.cardapio-prod__list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  list-style: none;
-}
-
-.cardapio-prod__item {
-  display: flex;
-  align-items: center;
-  gap: 0.85rem;
-  padding: 0.6rem 0.85rem;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-card);
-  background: rgb(var(--surface) / 0.6);
-}
-
-.cardapio-prod__thumb {
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: var(--radius-sm);
-  object-fit: cover;
-  flex-shrink: 0;
-  border: 1px solid var(--line-soft);
-}
-
-.cardapio-prod__thumb--empty {
-  background: rgb(var(--surface-2) / 0.8);
-}
-
-.cardapio-prod__info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.cardapio-prod__name-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.cardapio-prod__name {
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-.cardapio-prod__tag {
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  background: rgb(var(--primary) / 0.16);
-  color: rgb(var(--primary));
-}
-
-.cardapio-prod__tag--warn {
-  background: rgb(var(--danger) / 0.14);
-  color: rgb(var(--danger));
-}
-
 .cardapio-prod__warn {
   color: rgb(var(--danger));
   font-weight: 600;
 }
 
-.cardapio-prod__price {
-  font-size: 0.84rem;
-  color: var(--text-muted);
-}
-
 .cardapio-prod__actions {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.cardapio-prod__pill {
-  padding: 0.18rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.74rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cardapio-prod__pill.is-on {
-  background: rgb(var(--success) / 0.16);
-  color: rgb(var(--success));
-}
-
-.cardapio-prod__pill.is-off {
-  background: rgb(var(--muted) / 0.16);
-  color: var(--text-muted);
-}
-
-.cardapio-prod__btn {
-  border: 1px solid var(--line-soft);
-  background: rgb(var(--surface-2) / 0.8);
-  color: var(--text-main);
-  padding: 0.4rem 0.7rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cardapio-prod__btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.cardapio-prod__btn--danger {
-  color: rgb(var(--danger));
-  border-color: rgb(var(--danger) / 0.4);
+  justify-content: center;
+  gap: 0.25rem;
 }
 </style>

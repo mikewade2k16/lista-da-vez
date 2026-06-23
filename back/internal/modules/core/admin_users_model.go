@@ -23,21 +23,41 @@ type UpdateMembershipRoleInput struct {
 	Role string `json:"role"`
 }
 
+// MoveUserAccountInput é o body de PUT /v1/admin/users/{id}/account.
+// Move o usuario do(s) cliente(s) atual(is) para a conta-cliente destino:
+// remove os vinculos de CLIENTE atuais (account_users NAO-agencia + role
+// assignments dessas contas) e matricula no destino. NAO toca vinculos de
+// agencia (is_agency=true). Role opcional (default "owner").
+type MoveUserAccountInput struct {
+	AccountID string `json:"accountId"`
+	Role      string `json:"role,omitempty"`
+}
+
 // AdminUserView é o DTO de um user para o painel /manage/users.
 // Inclui agregados (accountCount, accountSlugs) computados no backend.
 type AdminUserView struct {
-	ID                 string    `json:"id"`
-	Email              string    `json:"email"`
-	DisplayName        string    `json:"displayName"`
-	Nick               string    `json:"nick"`
-	AvatarPath         string    `json:"avatarPath,omitempty"`
-	IsActive           bool      `json:"isActive"`
-	IsPlatformAdmin    bool      `json:"isPlatformAdmin"`
-	MustChangePassword bool      `json:"mustChangePassword"`
-	AccountCount       int       `json:"accountCount"`
-	AccountNames       string    `json:"accountNames"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	ID                 string `json:"id"`
+	Email              string `json:"email"`
+	DisplayName        string `json:"displayName"`
+	Nick               string `json:"nick"`
+	AvatarPath         string `json:"avatarPath,omitempty"`
+	IsActive           bool   `json:"isActive"`
+	IsPlatformAdmin    bool   `json:"isPlatformAdmin"`
+	MustChangePassword bool   `json:"mustChangePassword"`
+	AccountCount       int    `json:"accountCount"`
+	AccountNames       string `json:"accountNames"`
+	// ClientAccountID e o id do UNICO cliente ativo NAO-agencia
+	// (core.accounts.is_agency=false) do usuario. "" quando o usuario tem 0 ou
+	// mais de 1 cliente nao-agencia. Serve para o front preselecionar a conta e
+	// decidir se a celula de "mover cliente" e editavel.
+	ClientAccountID string `json:"clientAccountId"`
+	// IsAgencyMember marca que o usuario e membro ATIVO de pelo menos uma
+	// conta-agencia (core.accounts.is_agency=true). Serve para o painel sinalizar
+	// na grade que o usuario ve todos os clientes/modulos da agencia (guard-rail
+	// contra "usuario de cliente virou membro de agencia sem querer").
+	IsAgencyMember bool      `json:"isAgencyMember"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 // AdminUserListFilter parametriza GET /v1/admin/users.
@@ -45,8 +65,11 @@ type AdminUserListFilter struct {
 	Q             string
 	Status        string // "active" | "inactive" | "" (todos)
 	PlatformAdmin string // "true" | "false" | "" (todos)
-	Page          int
-	PerPage       int
+	// AccountID: quando != "", filtra para usuarios que sao membros ATIVOS daquela
+	// conta (join em core.account_users + conta ativa). "" = sem filtro de conta.
+	AccountID string
+	Page      int
+	PerPage   int
 	// IncludeAccounts: quando true (default), a listagem agrega accountCount e
 	// accountNames por user (lateral join). Quando false, devolve a projecao lean
 	// (sem o agregado) — usado pela tela acima-da-dobra, que carrega o detalhe de
@@ -127,4 +150,10 @@ type AdminUserRepository interface {
 	// IsAccountMember diz se o usuario ja e membro (account_users) da conta.
 	IsAccountMember(ctx context.Context, accountID, userID string) (bool, error)
 	CountActivePlatformAdmins(ctx context.Context) (int, error)
+	// MoveUserAccount (transacional) MOVE o usuario para a conta-cliente destino:
+	// remove os vinculos de CLIENTE atuais (account_users NAO-agencia + os
+	// user_role_assignments dessas contas) e matricula no destino reusando o
+	// enroll (membership + papel + perms). NAO toca vinculos de agencia
+	// (is_agency=true). Valida que o destino existe, esta ativo e NAO e agencia.
+	MoveUserAccount(ctx context.Context, userID, targetAccountID, role string) (AdminUserView, error)
 }

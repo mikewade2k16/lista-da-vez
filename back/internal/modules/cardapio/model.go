@@ -180,19 +180,22 @@ type ProductLean struct {
 	SortOrder   int     `json:"sortOrder"`
 }
 
-// Review e o DTO de avaliacao curada.
+// Review e o DTO de avaliacao curada. productId e opcional (F2): vazio/null = review
+// do ESTABELECIMENTO; preenchido = review de produto. showOnEstablishment marca uma
+// review de produto para tambem aparecer na vitrine do estabelecimento.
 type Review struct {
-	ID           string    `json:"id"`
-	RestaurantID string    `json:"restaurantId"`
-	ProductID    string    `json:"productId"`
-	AuthorName   string    `json:"authorName"`
-	AuthorLevel  string    `json:"authorLevel"`
-	Rating       int       `json:"rating"`
-	Body         string    `json:"body"`
-	IsHighlight  bool      `json:"isHighlight"`
-	DateLabel    string    `json:"dateLabel"`
-	SortOrder    int       `json:"sortOrder"`
-	CreatedAt    time.Time `json:"createdAt"`
+	ID                  string    `json:"id"`
+	RestaurantID        string    `json:"restaurantId"`
+	ProductID           string    `json:"productId,omitempty"`
+	AuthorName          string    `json:"authorName"`
+	AuthorLevel         string    `json:"authorLevel"`
+	Rating              int       `json:"rating"`
+	Body                string    `json:"body"`
+	IsHighlight         bool      `json:"isHighlight"`
+	ShowOnEstablishment bool      `json:"showOnEstablishment"`
+	DateLabel           string    `json:"dateLabel"`
+	SortOrder           int       `json:"sortOrder"`
+	CreatedAt           time.Time `json:"createdAt"`
 }
 
 // Domain e o DTO de dominio custom de um restaurante.
@@ -247,6 +250,14 @@ type CreateRestaurantInput struct {
 	AccountID string `json:"accountId"`
 	Slug      string `json:"slug"`
 	Name      string `json:"name"`
+}
+
+// DuplicateRestaurantInput duplica um restaurante inteiro (catalogo + zonas +
+// layout) sob um novo id/slug/name na MESMA account do source (F1). name e slug
+// sao obrigatorios; slug precisa estar livre globalmente.
+type DuplicateRestaurantInput struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
 }
 
 // UpdateRestaurantInput cobre os campos editaveis do restaurante. Ponteiros
@@ -329,16 +340,18 @@ type ProductInput struct {
 	Addons              []AddonInput     `json:"addons"`
 }
 
-// ReviewInput cria/edita avaliacao.
+// ReviewInput cria/edita avaliacao (full-replace). showOnEstablishment (F2) marca
+// uma review de produto para aparecer tambem na vitrine do estabelecimento.
 type ReviewInput struct {
-	ProductID   string `json:"productId"`
-	AuthorName  string `json:"authorName"`
-	AuthorLevel string `json:"authorLevel"`
-	Rating      int    `json:"rating"`
-	Body        string `json:"body"`
-	IsHighlight bool   `json:"isHighlight"`
-	DateLabel   string `json:"dateLabel"`
-	SortOrder   int    `json:"sortOrder"`
+	ProductID           string `json:"productId"`
+	AuthorName          string `json:"authorName"`
+	AuthorLevel         string `json:"authorLevel"`
+	Rating              int    `json:"rating"`
+	Body                string `json:"body"`
+	IsHighlight         bool   `json:"isHighlight"`
+	ShowOnEstablishment bool   `json:"showOnEstablishment"`
+	DateLabel           string `json:"dateLabel"`
+	SortOrder           int    `json:"sortOrder"`
 }
 
 // DomainInput cria um dominio custom.

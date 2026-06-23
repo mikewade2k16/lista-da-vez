@@ -1,15 +1,24 @@
-import { cloneValue } from '~/domain/utils/object'
 import { canViewConsultants } from '~/domain/utils/permissions'
+import { createEmptyState } from '~/stores/dashboard/runtime/state'
 import {
-  createEmptyState,
-  createEmptyStoreScopedState,
-  extractStoreScopedState,
-  normalizeAppearanceState,
-  normalizeStoreScopedState,
-} from '~/stores/dashboard/runtime/state'
+  applyRemoteStoreData,
+  applySettingsBundleToRuntime,
+  buildSettingsBundleFromState,
+} from './runtime-remote-state'
+
+// Re-export para compatibilidade: callers historicos (stores/operations,
+// runtime-remote.test, etc.) importam estas funcoes de '~/utils/runtime-remote'.
+// A logica de normalizacao/estado vive agora em runtime-remote-normalize.ts e
+// runtime-remote-state.ts; este arquivo concentra fetch + hidratacao remota.
+export { applyOperationSnapshotToState, applySettingsBundleToState } from './runtime-remote-state'
+export { applyRemoteStoreData, applySettingsBundleToRuntime, buildSettingsBundleFromState }
 
 const SETTINGS_LOAD_STATE_LOADED = 'loaded'
 const SETTINGS_LOAD_STATE_DEGRADED = 'degraded'
+// 'skipped': conta sem o modulo queue nao busca /v1/settings (evita o 403
+// module_disabled e o aviso de modo degradado indevido). Estado neutro — NAO
+// degradado: o painel usa o fallback de settings sem exibir aviso de erro.
+const SETTINGS_LOAD_STATE_SKIPPED = 'skipped'
 
 function extractRemoteErrorMessage(
   error,
@@ -30,33 +39,6 @@ function logSettingsDegraded(eventName, payload = {}) {
     ...payload,
     recordedAt: new Date().toISOString(),
   })
-}
-
-function cloneOrFallback(value, fallback) {
-  return cloneValue(value === undefined ? fallback : value)
-}
-
-function normalizeOptions(options = []) {
-  return (Array.isArray(options) ? options : [])
-    .map((option) => ({
-      id: String(option?.id || '').trim(),
-      label: String(option?.label || '').trim(),
-    }))
-    .filter((option) => option.id && option.label)
-}
-
-function normalizeProducts(products = []) {
-  return (Array.isArray(products) ? products : [])
-    .map((product) => ({
-      id: String(product?.id || '').trim(),
-      name: String(product?.name || '').trim(),
-      code: String(product?.code || '')
-        .trim()
-        .toUpperCase(),
-      category: String(product?.category || '').trim(),
-      basePrice: Math.max(0, Number(product?.basePrice || 0) || 0),
-    }))
-    .filter((product) => product.id && product.name)
 }
 
 function buildFallbackSettingsBundle(currentState, storeId, options = {}) {
@@ -104,347 +86,30 @@ function resolveTenantIdForStore(state, storeId, fallbackTenantId = '') {
   return String(store?.tenantId || '').trim()
 }
 
-function normalizeConsultants(consultants = []) {
-  return (Array.isArray(consultants) ? consultants : [])
-    .map((consultant) => ({
-      id: String(consultant?.id || '').trim(),
-      storeId: String(consultant?.storeId || '').trim(),
-      name: String(consultant?.name || '').trim(),
-      role: String(consultant?.role || '').trim() || 'Atendimento',
-      initials: String(consultant?.initials || '').trim(),
-      color: String(consultant?.color || '').trim() || '#168aad',
-      monthlyGoal: Math.max(0, Number(consultant?.monthlyGoal || 0) || 0),
-      commissionRate: Math.max(0, Number(consultant?.commissionRate || 0) || 0),
-      conversionGoal: Math.max(0, Number(consultant?.conversionGoal || 0) || 0),
-      avgTicketGoal: Math.max(0, Number(consultant?.avgTicketGoal || 0) || 0),
-      paGoal: Math.max(0, Number(consultant?.paGoal || 0) || 0),
-      active: Boolean(consultant?.active ?? true),
-      access:
-        consultant?.access && typeof consultant.access === 'object'
-          ? {
-              userId: String(consultant.access?.userId || '').trim(),
-              email: String(consultant.access?.email || '')
-                .trim()
-                .toLowerCase(),
-              active: Boolean(consultant.access?.active ?? false),
-            }
-          : null,
-    }))
-    .filter((consultant) => consultant.id && consultant.name)
-}
-
-// O roster da faixa de consultores vem de /v1/consultants (gestao, restrito a
-// papeis com consultor.view/settings.view). Papeis operadores sem essa permissao
-// (ex.: consultor) NAO buscam esse endpoint; nesse caso usamos o roster ENXUTO
-// que o snapshot da operacao ja entrega (id/nome/iniciais/cor). Assim toda role
-// que pode operar a fila recebe a faixa, sem vazar meta/comissao/e-mail. O roster
-// completo (quando presente) sempre vence, para nao perder metas de quem ja tem
-// a permissao de gestao.
-function resolveOperationRoster(consultants, operationSnapshot) {
-  const managedRoster = normalizeConsultants(consultants)
-  if (managedRoster.length) {
-    return managedRoster
-  }
-
-  return normalizeConsultants(operationSnapshot?.roster)
-}
-
-function resolveSelectedConsultantId(currentState, storeId, roster) {
-  const currentSnapshot = currentState.storeSnapshots?.[storeId] || {}
-  const preferredId =
-    storeId === currentState.activeStoreId
-      ? currentState.selectedConsultantId
-      : currentSnapshot.selectedConsultantId
-
-  if (roster.some((consultant) => consultant.id === preferredId)) {
-    return preferredId
-  }
-
-  return roster[0]?.id || null
-}
-
-function buildStoreSnapshot(currentState, storeId, roster) {
-  const currentSnapshot = cloneOrFallback(currentState.storeSnapshots?.[storeId], {})
-
-  return {
-    ...currentSnapshot,
-    roster,
-    selectedConsultantId: resolveSelectedConsultantId(currentState, storeId, roster),
-  }
-}
-
-function normalizeOperationSnapshot(snapshot = {}) {
-  return {
-    waitingList: Array.isArray(snapshot?.waitingList)
-      ? snapshot.waitingList.map((item) => ({
-          ...item,
-          queueJoinedAt: Math.max(0, Number(item?.queueJoinedAt || 0) || 0),
-        }))
-      : [],
-    activeServices: Array.isArray(snapshot?.activeServices)
-      ? snapshot.activeServices.map((item) => ({
-          ...item,
-          serviceStartedAt: Math.max(0, Number(item?.serviceStartedAt || 0) || 0),
-          queueJoinedAt: Math.max(0, Number(item?.queueJoinedAt || 0) || 0),
-          queueWaitMs: Math.max(0, Number(item?.queueWaitMs || 0) || 0),
-          queuePositionAtStart: Math.max(1, Number(item?.queuePositionAtStart || 1) || 1),
-          skippedPeople: Array.isArray(item?.skippedPeople) ? item.skippedPeople : [],
-          stoppedAt: Math.max(0, Number(item?.stoppedAt || 0) || 0),
-          effectiveFinishedAt: Math.max(0, Number(item?.effectiveFinishedAt || 0) || 0),
-          stopReason: String(item?.stopReason || '').trim(),
-        }))
-      : [],
-    pausedEmployees: Array.isArray(snapshot?.pausedEmployees)
-      ? snapshot.pausedEmployees
-          .map((item) => ({
-            personId: String(item?.personId || '').trim(),
-            reason: String(item?.reason || '').trim(),
-            kind: String(item?.kind || 'pause').trim() || 'pause',
-            startedAt: Math.max(0, Number(item?.startedAt || 0) || 0),
-          }))
-          .filter((item) => item.personId)
-      : [],
-    consultantActivitySessions: Array.isArray(snapshot?.consultantActivitySessions)
-      ? snapshot.consultantActivitySessions
-          .map((item) => ({
-            personId: String(item?.personId || '').trim(),
-            status: String(item?.status || '').trim(),
-            startedAt: Math.max(0, Number(item?.startedAt || 0) || 0),
-            endedAt: Math.max(0, Number(item?.endedAt || 0) || 0),
-            durationMs: Math.max(0, Number(item?.durationMs || 0) || 0),
-          }))
-          .filter((item) => item.personId)
-      : [],
-    consultantCurrentStatus:
-      snapshot?.consultantCurrentStatus && typeof snapshot.consultantCurrentStatus === 'object'
-        ? Object.fromEntries(
-            Object.entries(snapshot.consultantCurrentStatus)
-              .map(([consultantId, value]) => [
-                String(consultantId || '').trim(),
-                {
-                  status: String(value?.status || '').trim(),
-                  startedAt: Math.max(0, Number(value?.startedAt || 0) || 0),
-                },
-              ])
-              .filter(([consultantId]) => consultantId),
-          )
-        : {},
-    serviceHistory: Array.isArray(snapshot?.serviceHistory) ? snapshot.serviceHistory : [],
-  }
-}
-
-export function applyOperationSnapshotToState(
-  currentState,
+export async function refreshRuntimeStoreSettings(
+  runtime,
+  apiRequest,
   storeId,
-  operationSnapshot,
+  tenantId = '',
   options = {},
 ) {
   const normalizedStoreId = String(storeId || '').trim()
 
   if (!normalizedStoreId) {
-    return cloneOrFallback(currentState, {})
-  }
-
-  const storeDescriptor =
-    (Array.isArray(currentState?.stores) ? currentState.stores : []).find(
-      (store) => store.id === normalizedStoreId,
-    ) || null
-  const activeScopedState =
-    normalizedStoreId === currentState?.activeStoreId
-      ? extractStoreScopedState(currentState || {})
-      : cloneOrFallback(currentState?.storeSnapshots?.[normalizedStoreId], {})
-  const existingRoster =
-    Array.isArray(activeScopedState?.roster) && activeScopedState.roster.length
-      ? activeScopedState.roster
-      : normalizedStoreId === currentState?.activeStoreId
-        ? cloneOrFallback(currentState?.roster, [])
-        : []
-  // Sem roster de gestao (papel operador sem consultor.view), usa o roster
-  // enxuto que vem dentro do snapshot da operacao para manter a faixa viva.
-  const roster = existingRoster.length
-    ? existingRoster
-    : normalizeConsultants(operationSnapshot?.roster)
-  const fallbackScopedState = normalizeStoreScopedState(
-    {
-      ...cloneOrFallback(activeScopedState, {}),
-      roster,
-    },
-    createEmptyStoreScopedState(roster),
-    storeDescriptor,
-    Date.now(),
-  )
-  const nextScopedState = normalizeStoreScopedState(
-    {
-      ...cloneOrFallback(fallbackScopedState, {}),
-      ...normalizeOperationSnapshot(operationSnapshot),
-      roster,
-    },
-    fallbackScopedState,
-    storeDescriptor,
-    Date.now(),
-  )
-  const nextScopedStateWithMetadata = {
-    ...nextScopedState,
-    _operationSnapshotFetchedAt: Date.now(),
-  }
-
-  return {
-    ...cloneOrFallback(currentState, {}),
-    storeSnapshots: {
-      ...cloneOrFallback(currentState?.storeSnapshots, {}),
-      [normalizedStoreId]: nextScopedStateWithMetadata,
-    },
-    ...(normalizedStoreId === currentState?.activeStoreId ? nextScopedStateWithMetadata : {}),
-    ...(options?.resetFinishModal
-      ? {
-          finishModalServiceId: null,
-          finishModalDraft: null,
-        }
-      : {}),
-  }
-}
-
-export function applyRemoteStoreData(
-  currentState,
-  storeId,
-  settingsBundle,
-  consultants,
-  operationSnapshot = null,
-) {
-  const roster = resolveOperationRoster(consultants, operationSnapshot)
-  const storeDescriptor =
-    (Array.isArray(currentState?.stores) ? currentState.stores : []).find(
-      (store) => store.id === storeId,
-    ) || null
-  const nextSnapshot = normalizeStoreScopedState(
-    {
-      ...buildStoreSnapshot(currentState, storeId, roster),
-      ...normalizeOperationSnapshot(operationSnapshot),
-      roster,
-    },
-    createEmptyStoreScopedState(roster),
-    storeDescriptor,
-    Date.now(),
-  )
-  const nextSnapshotWithMetadata = {
-    ...nextSnapshot,
-    _operationSnapshotFetchedAt: Date.now(),
-  }
-
-  return {
-    ...cloneOrFallback(currentState, {}),
-    ...nextSnapshotWithMetadata,
-    activeStoreId: storeId,
-    storeSnapshots: {
-      ...cloneOrFallback(currentState.storeSnapshots, {}),
-      [storeId]: nextSnapshotWithMetadata,
-    },
-    operationTemplates: Array.isArray(settingsBundle?.operationTemplates)
-      ? cloneOrFallback(settingsBundle.operationTemplates, [])
-      : cloneOrFallback(currentState.operationTemplates, []),
-    selectedOperationTemplateId: String(
-      settingsBundle?.selectedOperationTemplateId || currentState.selectedOperationTemplateId || '',
-    ).trim(),
-    settings: settingsBundle?.settings
-      ? cloneOrFallback(settingsBundle.settings, {})
-      : cloneOrFallback(currentState.settings, {}),
-    appearance: normalizeAppearanceState(settingsBundle?.appearance, currentState?.appearance),
-    modalConfig: {
-      ...cloneOrFallback(currentState.modalConfig, {}),
-      ...cloneOrFallback(settingsBundle?.modalConfig, {}),
-    },
-    visitReasonOptions: Array.isArray(settingsBundle?.visitReasonOptions)
-      ? normalizeOptions(settingsBundle.visitReasonOptions)
-      : cloneOrFallback(currentState.visitReasonOptions, []),
-    customerSourceOptions: Array.isArray(settingsBundle?.customerSourceOptions)
-      ? normalizeOptions(settingsBundle.customerSourceOptions)
-      : cloneOrFallback(currentState.customerSourceOptions, []),
-    pauseReasonOptions:
-      Array.isArray(settingsBundle?.pauseReasonOptions) && settingsBundle.pauseReasonOptions.length
-        ? normalizeOptions(settingsBundle.pauseReasonOptions)
-        : cloneOrFallback(currentState.pauseReasonOptions, []),
-    cancelReasonOptions: Array.isArray(settingsBundle?.cancelReasonOptions)
-      ? normalizeOptions(settingsBundle.cancelReasonOptions)
-      : cloneOrFallback(currentState.cancelReasonOptions, []),
-    stopReasonOptions: Array.isArray(settingsBundle?.stopReasonOptions)
-      ? normalizeOptions(settingsBundle.stopReasonOptions)
-      : cloneOrFallback(currentState.stopReasonOptions, []),
-    queueJumpReasonOptions: Array.isArray(settingsBundle?.queueJumpReasonOptions)
-      ? normalizeOptions(settingsBundle.queueJumpReasonOptions)
-      : cloneOrFallback(currentState.queueJumpReasonOptions, []),
-    lossReasonOptions: Array.isArray(settingsBundle?.lossReasonOptions)
-      ? normalizeOptions(settingsBundle.lossReasonOptions)
-      : cloneOrFallback(currentState.lossReasonOptions, []),
-    professionOptions: Array.isArray(settingsBundle?.professionOptions)
-      ? normalizeOptions(settingsBundle.professionOptions)
-      : cloneOrFallback(currentState.professionOptions, []),
-    productCatalog: Array.isArray(settingsBundle?.productCatalog)
-      ? normalizeProducts(settingsBundle.productCatalog)
-      : cloneOrFallback(currentState.productCatalog, []),
-  }
-}
-
-export function applySettingsBundleToState(currentState, storeId, settingsBundle) {
-  const normalizedStoreId = String(storeId || '').trim()
-
-  return {
-    ...cloneOrFallback(currentState, {}),
-    activeStoreId: normalizedStoreId || currentState?.activeStoreId,
-    operationTemplates: Array.isArray(settingsBundle?.operationTemplates)
-      ? cloneOrFallback(settingsBundle.operationTemplates, [])
-      : cloneOrFallback(currentState.operationTemplates, []),
-    selectedOperationTemplateId: String(
-      settingsBundle?.selectedOperationTemplateId || currentState.selectedOperationTemplateId || '',
-    ).trim(),
-    settings: settingsBundle?.settings
-      ? cloneOrFallback(settingsBundle.settings, {})
-      : cloneOrFallback(currentState.settings, {}),
-    appearance: normalizeAppearanceState(settingsBundle?.appearance, currentState?.appearance),
-    modalConfig: {
-      ...cloneOrFallback(currentState.modalConfig, {}),
-      ...cloneOrFallback(settingsBundle?.modalConfig, {}),
-    },
-    visitReasonOptions: Array.isArray(settingsBundle?.visitReasonOptions)
-      ? normalizeOptions(settingsBundle.visitReasonOptions)
-      : cloneOrFallback(currentState.visitReasonOptions, []),
-    customerSourceOptions: Array.isArray(settingsBundle?.customerSourceOptions)
-      ? normalizeOptions(settingsBundle.customerSourceOptions)
-      : cloneOrFallback(currentState.customerSourceOptions, []),
-    pauseReasonOptions:
-      Array.isArray(settingsBundle?.pauseReasonOptions) && settingsBundle.pauseReasonOptions.length
-        ? normalizeOptions(settingsBundle.pauseReasonOptions)
-        : cloneOrFallback(currentState.pauseReasonOptions, []),
-    cancelReasonOptions: Array.isArray(settingsBundle?.cancelReasonOptions)
-      ? normalizeOptions(settingsBundle.cancelReasonOptions)
-      : cloneOrFallback(currentState.cancelReasonOptions, []),
-    stopReasonOptions: Array.isArray(settingsBundle?.stopReasonOptions)
-      ? normalizeOptions(settingsBundle.stopReasonOptions)
-      : cloneOrFallback(currentState.stopReasonOptions, []),
-    queueJumpReasonOptions: Array.isArray(settingsBundle?.queueJumpReasonOptions)
-      ? normalizeOptions(settingsBundle.queueJumpReasonOptions)
-      : cloneOrFallback(currentState.queueJumpReasonOptions, []),
-    lossReasonOptions: Array.isArray(settingsBundle?.lossReasonOptions)
-      ? normalizeOptions(settingsBundle.lossReasonOptions)
-      : cloneOrFallback(currentState.lossReasonOptions, []),
-    professionOptions: Array.isArray(settingsBundle?.professionOptions)
-      ? normalizeOptions(settingsBundle.professionOptions)
-      : cloneOrFallback(currentState.professionOptions, []),
-    productCatalog: Array.isArray(settingsBundle?.productCatalog)
-      ? normalizeProducts(settingsBundle.productCatalog)
-      : cloneOrFallback(currentState.productCatalog, []),
-  }
-}
-
-export function applySettingsBundleToRuntime(runtime, storeId, settingsBundle) {
-  runtime.replace(applySettingsBundleToState(runtime.state, storeId, settingsBundle))
-  return runtime.state
-}
-
-export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId, tenantId = '') {
-  const normalizedStoreId = String(storeId || '').trim()
-
-  if (!normalizedStoreId) {
     return null
+  }
+
+  // Conta sem o modulo queue: nao recarrega /v1/settings (evita 403 + aviso
+  // degradado indevido). Estado neutro 'skipped'; applyRuntimeSettingsStatus nao
+  // marca degradado. Default true preserva o refresh de quem tem queue.
+  if (options?.canFetchQueueSettings === false) {
+    return {
+      storeId: normalizedStoreId,
+      resolvedTenantId: String(tenantId || '').trim(),
+      settingsBundle: null,
+      settingsLoadState: SETTINGS_LOAD_STATE_SKIPPED,
+      settingsErrorMessage: '',
+    }
   }
 
   await runtime.ensure()
@@ -496,43 +161,28 @@ export async function refreshRuntimeStoreSettings(runtime, apiRequest, storeId, 
   }
 }
 
-export function buildSettingsBundleFromState(state, storeId) {
-  return {
-    storeId,
-    operationTemplates: cloneOrFallback(state.operationTemplates, []),
-    selectedOperationTemplateId: String(state.selectedOperationTemplateId || '').trim(),
-    settings: cloneOrFallback(state.settings, {}),
-    appearance: normalizeAppearanceState(state.appearance),
-    modalConfig: cloneOrFallback(state.modalConfig, {}),
-    visitReasonOptions: cloneOrFallback(state.visitReasonOptions, []),
-    customerSourceOptions: cloneOrFallback(state.customerSourceOptions, []),
-    pauseReasonOptions: cloneOrFallback(state.pauseReasonOptions, []),
-    cancelReasonOptions: cloneOrFallback(state.cancelReasonOptions, []),
-    stopReasonOptions: cloneOrFallback(state.stopReasonOptions, []),
-    queueJumpReasonOptions: cloneOrFallback(state.queueJumpReasonOptions, []),
-    lossReasonOptions: cloneOrFallback(state.lossReasonOptions, []),
-    professionOptions: cloneOrFallback(state.professionOptions, []),
-    productCatalog: cloneOrFallback(state.productCatalog, []),
-  }
-}
-
 function getApiErrorStatusCode(error) {
   const directStatus = Number(error?.statusCode ?? error?.status ?? error?.response?.status)
 
   return Number.isFinite(directStatus) ? directStatus : 0
 }
 
-function isConsultantsAccessDenied(error) {
-  return getApiErrorStatusCode(error) === 403
-}
+// Loga (sem derrubar o boot) quando consultores ou snapshot degradam. Ambos sao
+// best-effort: qualquer erro (403 sem permissao/modulo, 400 loja stale, 5xx por
+// schema stale na VPS, rede) degrada para vazio e o login completa. So registra
+// para diagnostico — nunca re-lanca.
+function logRemoteDataDegraded(eventName, error, payload = {}) {
+  if (import.meta.server) {
+    return
+  }
 
-// Erro de snapshot que NAO deve derrubar o login/boot: conta sem o modulo queue
-// (403 module_disabled), papel sem escopo na loja (403 forbidden) ou loja ainda
-// nao resolvida/loja de outra account (400 validation). Esses degradam para
-// snapshot vazio; so erros inesperados (5xx/rede) sobem e quebram o boot.
-function isStoreSnapshotRecoverable(error) {
-  const status = getApiErrorStatusCode(error)
-  return status === 400 || status === 403
+  console.warn('[runtime-remote]', {
+    event: eventName,
+    status: getApiErrorStatusCode(error),
+    message: extractRemoteErrorMessage(error, ''),
+    ...payload,
+    recordedAt: new Date().toISOString(),
+  })
 }
 
 function resolveRuntimeRole(currentState) {
@@ -561,53 +211,85 @@ export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '', o
   const normalizedStoreId = String(storeId || '').trim()
   const storeQuery = encodeURIComponent(normalizedStoreId)
   const normalizedTenantId = String(tenantId || '').trim()
-  const shouldFetchConsultants = options?.canFetchConsultants !== false
+  // /v1/settings, /v1/consultants e /v1/operations/snapshot pertencem ao modulo
+  // fila/operacao (queue). Conta SEM o modulo NAO dispara NENHUM dos tres: evita
+  // os 403 module_disabled poluindo o console (ex.: conta so de cardapio/bio).
+  // Default true preserva o comportamento de quem tem queue. Consultants exige
+  // ainda a permissao consultor.view (canFetchConsultants) por cima do modulo.
+  const hasQueueModule = options?.canFetchQueueSettings !== false
+  const shouldFetchSettings = hasQueueModule
+  const shouldFetchConsultants = hasQueueModule && options?.canFetchConsultants !== false
+  const shouldFetchSnapshot = hasQueueModule
   const requestResults = await Promise.allSettled([
-    hasResolvedTenantId(normalizedTenantId)
-      ? apiRequest(withTenantQuery('/v1/settings', normalizedTenantId))
-      : Promise.reject(new Error('Tenant ativo nao resolvido para carregar configuracoes.')),
+    !shouldFetchSettings
+      ? Promise.resolve(null)
+      : hasResolvedTenantId(normalizedTenantId)
+        ? apiRequest(withTenantQuery('/v1/settings', normalizedTenantId))
+        : Promise.reject(new Error('Tenant ativo nao resolvido para carregar configuracoes.')),
     shouldFetchConsultants
       ? apiRequest(`/v1/consultants?storeId=${storeQuery}`)
       : Promise.resolve({ consultants: [] }),
-    apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`),
+    shouldFetchSnapshot
+      ? apiRequest(`/v1/operations/snapshot?storeId=${storeQuery}`)
+      : Promise.resolve(null),
   ])
   const [settingsResult, consultantsResult, operationsSnapshotResult] = requestResults
 
+  // O roster de gestao (/v1/consultants) e best-effort e NUNCA derruba o login.
+  // Qualquer erro degrada para roster vazio — o snapshot da operacao ainda entrega
+  // o roster enxuto (id/nome/iniciais/cor). Antes, so 403 degradava: um 500
+  // ("Erro ao processar o consultor", ex.: core.users sem employee_code numa VPS
+  // de schema stale) era re-lancado, o catch do login() limpava a sessao e
+  // travava o usuario na tela de login.
   const consultantsLoadState = !shouldFetchConsultants
     ? 'skipped'
-    : consultantsResult.status === 'rejected' && isConsultantsAccessDenied(consultantsResult.reason)
+    : consultantsResult.status === 'rejected'
       ? 'degraded'
       : 'loaded'
 
-  if (consultantsResult.status === 'rejected' && consultantsLoadState !== 'degraded') {
-    throw consultantsResult.reason
+  if (consultantsResult.status === 'rejected') {
+    logRemoteDataDegraded('consultants-degraded', consultantsResult.reason, {
+      storeId: normalizedStoreId,
+      tenantId: normalizedTenantId,
+    })
   }
 
   // operations/snapshot e o dado central da operacao, mas NAO pode derrubar o
-  // login: usuario novo/terminal cuja account nao tem o modulo queue, papel sem
-  // escopo na loja ou loja stale (de sessao anterior no mesmo browser) faziam o
-  // boot lancar e jogar de volta pro login com "Modulo nao habilitado". Agora
-  // degrada para snapshot vazio (applyRemoteStoreData tolera null) e o login
-  // completa; a tela re-resolve a loja correta depois.
-  const operationsSnapshotRecoverable =
-    operationsSnapshotResult.status === 'rejected' &&
-    isStoreSnapshotRecoverable(operationsSnapshotResult.reason)
-
-  if (operationsSnapshotResult.status === 'rejected' && !operationsSnapshotRecoverable) {
-    throw operationsSnapshotResult.reason
+  // login. Qualquer erro degrada para snapshot vazio (applyRemoteStoreData tolera
+  // null) e o login completa; a tela re-resolve a loja correta depois. Cobre:
+  // account sem o modulo queue (403 module_disabled), papel sem escopo na loja
+  // (403 forbidden), loja stale de sessao anterior (400 validation), schema stale
+  // na VPS (500) e falha de rede. Antes, so 400/403 degradavam e um 500 jogava o
+  // usuario de volta pro login.
+  if (operationsSnapshotResult.status === 'rejected') {
+    logRemoteDataDegraded('snapshot-degraded', operationsSnapshotResult.reason, {
+      storeId: normalizedStoreId,
+      tenantId: normalizedTenantId,
+    })
   }
 
   const operationsSnapshot =
     operationsSnapshotResult.status === 'fulfilled' ? operationsSnapshotResult.value : null
-  const operationsSnapshotLoadState =
-    operationsSnapshotResult.status === 'fulfilled' ? 'loaded' : 'degraded'
+  const operationsSnapshotLoadState = !shouldFetchSnapshot
+    ? 'skipped'
+    : operationsSnapshotResult.status === 'fulfilled'
+      ? 'loaded'
+      : 'degraded'
 
-  const settingsLoadState =
-    settingsResult.status === 'fulfilled'
+  // Resolve o estado dos settings preservando o narrowing do PromiseSettledResult
+  // (guarda direta por settingsResult.status). O 'skipped' (conta sem queue, que
+  // nem disparou a request) e sobreposto depois para nao perder o narrowing.
+  const settingsBundle =
+    !shouldFetchSettings || settingsResult.status !== 'fulfilled' ? null : settingsResult.value
+  const settingsErrorMessage =
+    shouldFetchSettings && settingsResult.status === 'rejected'
+      ? extractRemoteErrorMessage(settingsResult.reason)
+      : ''
+  const settingsLoadState = !shouldFetchSettings
+    ? SETTINGS_LOAD_STATE_SKIPPED
+    : settingsResult.status === 'fulfilled'
       ? SETTINGS_LOAD_STATE_LOADED
       : SETTINGS_LOAD_STATE_DEGRADED
-  const settingsErrorMessage =
-    settingsResult.status === 'rejected' ? extractRemoteErrorMessage(settingsResult.reason) : ''
 
   if (settingsLoadState === SETTINGS_LOAD_STATE_DEGRADED) {
     logSettingsDegraded('bootstrap-degraded', {
@@ -620,7 +302,7 @@ export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '', o
   return {
     storeId: normalizedStoreId,
     resolvedTenantId: normalizedTenantId,
-    settingsBundle: settingsResult.status === 'fulfilled' ? settingsResult.value : null,
+    settingsBundle,
     consultants:
       consultantsResult.status === 'fulfilled' &&
       Array.isArray(consultantsResult.value?.consultants)
@@ -652,6 +334,9 @@ export async function hydrateRuntimeStoreContext(
   const resolvedTenantId = resolveTenantIdForStore(runtime.state, normalizedStoreID, tenantId)
   const remoteData = await fetchRemoteStoreData(apiRequest, normalizedStoreID, resolvedTenantId, {
     canFetchConsultants: resolveCanFetchConsultants(runtime.state, options),
+    // Default true: so PULA /v1/settings quando o caller marca explicitamente que
+    // a conta nao tem o modulo queue. Quem tem queue mantem o fluxo de hoje.
+    canFetchQueueSettings: options?.canFetchQueueSettings !== false,
   })
   const settingsBundle =
     remoteData.settingsLoadState === SETTINGS_LOAD_STATE_LOADED

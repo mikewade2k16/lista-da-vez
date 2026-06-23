@@ -12,6 +12,7 @@ import { useUsersStore } from '~/stores/users'
 import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { createApiRequest } from '~/utils/api-client'
 import { refreshRuntimeStoreSettings } from '~/utils/runtime-remote'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 
 /**
  * Sincroniza o contexto global do tenant via WebSocket e dispara refresh dos stores transversais.
@@ -37,6 +38,7 @@ export function useContextRealtime() {
   const alertsStore = useAlertsStore()
   const ui = useUiStore()
   const runtime = useAppRuntimeStore()
+  const accountStore = useCoreAccountStore()
 
   const toastedAlertIds = new Set<string>()
   const multiStore = useMultiStoreStore()
@@ -119,6 +121,9 @@ export function useContextRealtime() {
       apiRequest,
       normalizedStoreId,
       auth.activeTenantId,
+      // Conta sem o modulo queue nao recarrega /v1/settings (evita 403 +
+      // aviso degradado). Quem tem queue mantem o refresh em tempo real.
+      { canFetchQueueSettings: accountStore.enabledModules.includes('queue') },
     )
       .then((result) => {
         auth.applyRuntimeSettingsStatus(result)

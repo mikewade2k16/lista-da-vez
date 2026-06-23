@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
 import { getApiErrorMessage } from '~/utils/api-client'
+import { openWhatsapp } from '~/utils/whatsapp'
 import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_ORDER,
@@ -71,6 +72,11 @@ function toggleExpand(orderId: string) {
   expandedId.value = expandedId.value === orderId ? '' : orderId
 }
 
+function openWhatsappForOrder(order: Order) {
+  const text = order.code ? `Ola! Sobre seu pedido ${order.code}` : undefined
+  openWhatsapp(order.customerPhone, text)
+}
+
 onMounted(() => {
   void reload(1)
 })
@@ -127,7 +133,27 @@ onMounted(() => {
         <div v-if="expandedId === order.id" class="cardapio-orders__details">
           <p v-if="order.customerPhone" class="cardapio-orders__line">
             <strong>Telefone:</strong>
-            {{ order.customerPhone }}
+            <button
+              type="button"
+              class="cardapio-orders__whatsapp"
+              aria-label="Abrir conversa no WhatsApp"
+              :title="`Abrir conversa no WhatsApp: ${order.customerPhone}`"
+              @click="openWhatsappForOrder(order)"
+            >
+              <svg
+                class="cardapio-orders__whatsapp-icon"
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12.04 2.5c-5.25 0-9.5 4.25-9.5 9.5 0 1.68.44 3.3 1.28 4.74L2.5 21.5l4.9-1.28a9.46 9.46 0 0 0 4.64 1.2h.01c5.24 0 9.5-4.26 9.5-9.5s-4.26-9.5-9.51-9.5Zm0 17.2h-.01a7.9 7.9 0 0 1-4.02-1.1l-.29-.17-2.9.76.77-2.83-.19-.29a7.86 7.86 0 0 1-1.21-4.18 7.94 7.94 0 0 1 13.56-5.6 7.86 7.86 0 0 1 2.33 5.61c0 4.36-3.55 7.9-7.84 7.9Zm4.34-5.92c-.24-.12-1.4-.69-1.62-.77-.22-.08-.38-.12-.53.12-.16.24-.61.77-.75.93-.14.16-.28.18-.51.06-.24-.12-1-.37-1.91-1.18-.71-.63-1.18-1.41-1.32-1.65-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.53-1.28-.73-1.76-.19-.46-.39-.4-.53-.4l-.45-.01c-.16 0-.42.06-.63.3-.22.24-.83.81-.83 1.97 0 1.16.85 2.29.97 2.45.12.16 1.67 2.55 4.04 3.58.57.24 1 .39 1.35.5.57.18 1.08.16 1.49.1.46-.07 1.4-.57 1.6-1.12.2-.55.2-1.02.14-1.12-.06-.1-.22-.16-.46-.28Z"
+                />
+              </svg>
+              {{ order.customerPhone }}
+            </button>
           </p>
           <p v-if="order.deliveryAddress" class="cardapio-orders__line">
             <strong>Entrega:</strong>
@@ -309,6 +335,37 @@ onMounted(() => {
   font-size: 0.86rem;
   color: var(--text-main);
   margin-bottom: 0.3rem;
+}
+
+.cardapio-orders__whatsapp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface-2) / 0.6);
+  color: var(--text-main);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.cardapio-orders__whatsapp:hover {
+  border-color: rgb(var(--ring));
+  background: rgb(var(--surface-2) / 0.9);
+}
+
+.cardapio-orders__whatsapp:focus-visible {
+  outline: none;
+  border-color: rgb(var(--ring));
+  box-shadow: 0 0 0 3px rgb(var(--ring) / 0.18);
+}
+
+.cardapio-orders__whatsapp-icon {
+  color: rgb(var(--success));
+  flex-shrink: 0;
 }
 
 .cardapio-orders__items {

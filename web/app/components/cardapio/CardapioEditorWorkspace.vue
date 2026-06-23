@@ -10,14 +10,19 @@ import CardapioSectionEntrega from '~/components/cardapio/sections/CardapioSecti
 import CardapioSectionDominios from '~/components/cardapio/sections/CardapioSectionDominios.vue'
 import CardapioSectionAparencia from '~/components/cardapio/sections/CardapioSectionAparencia.vue'
 import CardapioSectionSite from '~/components/cardapio/sections/CardapioSectionSite.vue'
+import CardapioEditorClientSelect from '~/components/cardapio/CardapioEditorClientSelect.vue'
 import { useCardapioStore } from '~/stores/cardapio'
 import { useUiStore } from '~/stores/ui'
+import { useAuthStore } from '~/stores/auth'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 import { getApiErrorMessage } from '~/utils/api-client'
 
 const props = defineProps<{ restaurantId: string; accountId?: string }>()
 
 const store = useCardapioStore()
 const ui = useUiStore()
+const auth = useAuthStore()
+const accountStore = useCoreAccountStore()
 
 type SectionId =
   | 'dados'
@@ -30,25 +35,74 @@ type SectionId =
   | 'aparencia'
   | 'site'
 
+// Faixa de acesso de uma secao. Decisao 2026-06-22: SEM split operacao/config —
+// quem tem o modulo cardapio ve tudo ('all'); so Dominios/Site ficam restritos a
+// plataforma (Crow / platform_admin). Mapeamento no doc PLANO_CARDAPIO_GESTAO_UX.
+type SectionGate = 'all' | 'platform'
+
 interface SectionTab {
   id: SectionId
   label: string
+  gate: SectionGate
 }
 
 const SECTIONS: SectionTab[] = [
-  { id: 'dados', label: 'Dados' },
-  { id: 'categorias', label: 'Categorias' },
-  { id: 'produtos', label: 'Produtos' },
-  { id: 'avaliacoes', label: 'Avaliacoes' },
-  { id: 'pedidos', label: 'Pedidos' },
-  { id: 'entrega', label: 'Entrega' },
-  { id: 'dominios', label: 'Dominios' },
-  { id: 'aparencia', label: 'Aparencia' },
-  { id: 'site', label: 'Site' },
+  { id: 'dados', label: 'Dados', gate: 'all' },
+  { id: 'categorias', label: 'Categorias', gate: 'all' },
+  { id: 'produtos', label: 'Produtos', gate: 'all' },
+  { id: 'avaliacoes', label: 'Avaliacoes', gate: 'all' },
+  { id: 'pedidos', label: 'Pedidos', gate: 'all' },
+  { id: 'entrega', label: 'Entrega', gate: 'all' },
+  { id: 'dominios', label: 'Dominios', gate: 'platform' },
+  { id: 'aparencia', label: 'Aparencia', gate: 'all' },
+  { id: 'site', label: 'Site', gate: 'platform' },
 ]
+
+// platform_admin = papel platform_admin OU modo dev (platformView) do switcher —
+// espelha o CardapioEditorClientSelect e o resto do painel. So ele ve Dominios/Site.
+const isPlatformAdmin = computed(
+  () => String(auth.role || '').trim() === 'platform_admin' || accountStore.platformView,
+)
+
+// Fail-safe de hidratacao (espelha useDashboardNav): enquanto o contexto da conta
+// nao resolveu (accountsLoaded false), NAO filtra — evita flash sumindo secoes
+// platform durante o load. Resolvido = aplica o gate de plataforma.
+const accessReady = computed(() => accountStore.accountsLoaded)
+
+function isSectionAllowed(section: SectionTab): boolean {
+  if (section.gate !== 'platform' || !accessReady.value) {
+    return true
+  }
+  return isPlatformAdmin.value
+}
+
+const visibleSections = computed(() => SECTIONS.filter(isSectionAllowed))
 
 const active = ref<SectionId>('dados')
 const togglingActive = ref(false)
+
+// Defesa em profundidade: o painel so renderiza a secao ativa se ela esta na
+// lista visivel (defesa alem do nav). Durante a hidratacao tudo e visivel, entao
+// nao some o conteudo; resolvido, uma secao gateada nunca pinta o painel.
+const isActiveVisible = computed(() =>
+  visibleSections.value.some((section) => section.id === active.value),
+)
+
+// A secao ativa cai sempre na primeira visivel para o usuario. Quando a lista
+// visivel muda (hidratacao das permissoes ou troca de escopo) e a atual deixa
+// de ser permitida, reposiciona — nunca fixa em 'dados' se o usuario nao a ve.
+watch(
+  visibleSections,
+  (sections) => {
+    if (!sections.length) {
+      return
+    }
+    if (!sections.some((section) => section.id === active.value)) {
+      active.value = sections[0].id
+    }
+  },
+  { immediate: true },
+)
 
 const isActive = computed(() => store.restaurant?.isActive ?? false)
 const publicUrl = computed(() => (store.primaryDomain ? `https://${store.primaryDomain}` : ''))
@@ -90,6 +144,10 @@ onMounted(loadActive)
       </div>
 
       <div class="cardapio-editor__status">
+        <CardapioEditorClientSelect
+          :restaurant-id="props.restaurantId"
+          :account-id="props.accountId"
+        />
         <a
           v-if="publicUrl"
           :href="publicUrl"
@@ -123,7 +181,7 @@ onMounted(loadActive)
     <div v-else class="cardapio-editor__body">
       <nav class="cardapio-editor__nav" aria-label="Secoes do cardapio">
         <button
-          v-for="section in SECTIONS"
+          v-for="section in visibleSections"
           :key="section.id"
           type="button"
           class="cardapio-editor__nav-item"
@@ -134,7 +192,7 @@ onMounted(loadActive)
         </button>
       </nav>
 
-      <div class="cardapio-editor__panel">
+      <div v-if="isActiveVisible" class="cardapio-editor__panel">
         <CardapioSectionDados v-if="active === 'dados'" />
         <CardapioSectionCategorias v-else-if="active === 'categorias'" />
         <CardapioSectionProdutos v-else-if="active === 'produtos'" />
@@ -151,6 +209,9 @@ onMounted(loadActive)
 
 <style scoped>
 .cardapio-editor {
+  /* Container de rolagem da pagina (flex:1; min-height:0; overflow-y:auto). O
+     header e a sidebar grudam (sticky) DENTRO deste elemento; por isso ele nao
+     pode ter overflow horizontal que quebre o sticky dos filhos. */
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
@@ -158,14 +219,26 @@ onMounted(loadActive)
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Altura do header sticky: a sidebar gruda logo abaixo dele. */
+  --cardapio-editor-header-offset: 3.75rem;
 }
 
 .cardapio-editor__top {
+  /* FIXO no topo enquanto o painel rola. O fundo opaco + margem negativa que
+     cobre o padding do container impedem o conteudo de aparecer por tras/ao lado
+     ao rolar; z-index acima da sidebar e do painel. */
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
+  margin: -1.5rem -1.5rem 0;
+  padding: 1rem 1.5rem;
+  background: rgb(var(--surface));
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .cardapio-editor__crumbs {
@@ -263,11 +336,16 @@ onMounted(loadActive)
 }
 
 .cardapio-editor__nav {
+  /* FIXA enquanto o painel rola. align-self: flex-start impede o item de
+     esticar na altura do grid (sem isso o sticky nao teria folga para grudar).
+     top abaixo do header sticky para nao sobrepor. */
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
   position: sticky;
-  top: 0;
+  top: var(--cardapio-editor-header-offset);
+  align-self: flex-start;
+  z-index: 1;
 }
 
 .cardapio-editor__nav-item {

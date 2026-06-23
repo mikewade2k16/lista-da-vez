@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import CardapioMoneyInput from '~/components/cardapio/CardapioMoneyInput.vue'
 import CardapioDadosPagamento from '~/components/cardapio/CardapioDadosPagamento.vue'
 import CardapioDadosEstatisticas from '~/components/cardapio/CardapioDadosEstatisticas.vue'
@@ -10,6 +11,39 @@ const { form, dirty, savingDados, uploading, saveDados, uploadAndApply, addHour,
 
 const config = useRuntimeConfig()
 const mediaUrl = (url?: string) => resolveMediaUrl(url, String(config.public.apiBase || ''))
+
+// Resumos curtos exibidos quando o bloco esta fechado: so usam dado ja presente
+// no form (sem inventar). Ficam vazios quando nao ha nada relevante a mostrar.
+const contatoSummary = computed(
+  () =>
+    [form.value.whatsapp, form.value.phone, form.value.email].find((value) => !!value?.trim()) ||
+    '',
+)
+
+const enderecoSummary = computed(() => {
+  const street = form.value.address.street?.trim()
+  const city = form.value.address.city?.trim()
+  return [street, city].filter(Boolean).join(', ')
+})
+
+const horariosSummary = computed(() => {
+  const total = form.value.hours.length
+  return total ? `${total} ${total === 1 ? 'horario' : 'horarios'}` : 'Nenhum horario'
+})
+
+const entregaSummary = computed(() => {
+  const parts: string[] = []
+  if (form.value.settings.deliveryEnabled) {
+    parts.push('Entrega')
+  }
+  if (form.value.settings.pickupEnabled) {
+    parts.push('Retirada')
+  }
+  if (form.value.settings.dineInEnabled) {
+    parts.push('No local')
+  }
+  return parts.join(' / ') || 'Desabilitado'
+})
 
 function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
   const input = event.target as HTMLInputElement
@@ -26,8 +60,7 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
 
 <template>
   <div class="cardapio-dados">
-    <section class="cardapio-dados__card">
-      <h3 class="cardapio-dados__heading">Identidade</h3>
+    <OmniCollapse title="Identidade" :default-open="true">
       <div class="cardapio-dados__grid">
         <label class="cardapio-dados__field">
           <span class="cardapio-dados__label">Nome</span>
@@ -100,10 +133,9 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           </div>
         </div>
       </div>
-    </section>
+    </OmniCollapse>
 
-    <section class="cardapio-dados__card">
-      <h3 class="cardapio-dados__heading">Contato</h3>
+    <OmniCollapse title="Contato" :summary="contatoSummary" :default-open="false">
       <div class="cardapio-dados__grid">
         <label class="cardapio-dados__field">
           <span class="cardapio-dados__label">WhatsApp</span>
@@ -130,10 +162,9 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           <input v-model="form.youtube" type="text" class="cardapio-dados__input" />
         </label>
       </div>
-    </section>
+    </OmniCollapse>
 
-    <section class="cardapio-dados__card">
-      <h3 class="cardapio-dados__heading">Endereco</h3>
+    <OmniCollapse title="Endereco" :summary="enderecoSummary" :default-open="false">
       <div class="cardapio-dados__grid">
         <label class="cardapio-dados__field cardapio-dados__field--full">
           <span class="cardapio-dados__label">Rua</span>
@@ -173,13 +204,12 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           <input v-model="form.address.zip" type="text" class="cardapio-dados__input" />
         </label>
       </div>
-    </section>
+    </OmniCollapse>
 
-    <section class="cardapio-dados__card">
-      <div class="cardapio-dados__row-head">
-        <h3 class="cardapio-dados__heading">Horarios</h3>
+    <OmniCollapse title="Horarios" :summary="horariosSummary" :default-open="false">
+      <template #actions>
         <button type="button" class="cardapio-dados__small" @click="addHour">Adicionar</button>
-      </div>
+      </template>
       <p v-if="!form.hours.length" class="cardapio-dados__hint">Nenhum horario configurado.</p>
       <div v-for="(hour, index) in form.hours" :key="index" class="cardapio-dados__hour">
         <input
@@ -198,10 +228,9 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           Remover
         </button>
       </div>
-    </section>
+    </OmniCollapse>
 
-    <section class="cardapio-dados__card">
-      <h3 class="cardapio-dados__heading">Entrega e retirada</h3>
+    <OmniCollapse title="Entrega e retirada" :summary="entregaSummary" :default-open="false">
       <div class="cardapio-dados__toggles">
         <label class="cardapio-dados__toggle">
           <input v-model="form.settings.deliveryEnabled" type="checkbox" />
@@ -230,11 +259,15 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
           <CardapioMoneyInput v-model="form.settings.freeDeliveryAboveCents" />
         </label>
       </div>
-    </section>
+    </OmniCollapse>
 
-    <CardapioDadosPagamento :settings="form.settings" />
+    <OmniCollapse title="Pagamento" :default-open="false">
+      <CardapioDadosPagamento :settings="form.settings" />
+    </OmniCollapse>
 
-    <CardapioDadosEstatisticas :form="form" />
+    <OmniCollapse title="Estatisticas" :default-open="false">
+      <CardapioDadosEstatisticas :form="form" />
+    </OmniCollapse>
 
     <footer class="cardapio-dados__footer">
       <span v-if="dirty" class="cardapio-dados__dirty">Alteracoes nao salvas</span>
@@ -256,27 +289,6 @@ function onUpload(event: Event, target: 'logoUrl' | 'bannerUrl') {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-}
-
-.cardapio-dados__card {
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-card);
-  background: rgb(var(--surface) / 0.6);
-  padding: 1.1rem 1.25rem;
-}
-
-.cardapio-dados__heading {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-main);
-  margin-bottom: 0.85rem;
-}
-
-.cardapio-dados__row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.6rem;
 }
 
 .cardapio-dados__grid {

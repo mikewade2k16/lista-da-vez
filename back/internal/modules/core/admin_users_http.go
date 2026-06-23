@@ -30,6 +30,7 @@ func RegisterAdminUsersRoutes(mux *http.ServeMux, svc *AdminUserService, middlew
 	mux.Handle("DELETE /v1/admin/users/{id}", wrap(handleDeleteUser(svc)))
 	mux.Handle("GET /v1/admin/users/{id}/memberships", wrap(handleGetMemberships(svc)))
 	mux.Handle("PATCH /v1/admin/users/{id}/memberships/{accountId}", wrap(handleUpdateMembershipRole(svc)))
+	mux.Handle("PUT /v1/admin/users/{id}/account", wrap(handleMoveUserAccount(svc)))
 }
 
 // ============================================================================
@@ -50,6 +51,7 @@ func handleListUsers(svc *AdminUserService) http.HandlerFunc {
 			Q:               strings.TrimSpace(q.Get("q")),
 			Status:          strings.TrimSpace(q.Get("status")),
 			PlatformAdmin:   strings.TrimSpace(q.Get("platformAdmin")),
+			AccountID:       strings.TrimSpace(q.Get("accountId")),
 			Page:            page,
 			PerPage:         perPage,
 			IncludeAccounts: includeAccounts,
@@ -155,6 +157,27 @@ func handleUpdateMembershipRole(svc *AdminUserService) http.HandlerFunc {
 	}
 }
 
+// handleMoveUserAccount MOVE o usuario para a conta-cliente do body. Devolve o
+// AdminUserView atualizado (mesmo shape do PATCH) para o front atualizar a linha.
+func handleMoveUserAccount(svc *AdminUserService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := r.PathValue("id")
+
+		var input MoveUserAccountInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", err.Error())
+			return
+		}
+
+		user, err := svc.MoveUserAccount(r.Context(), userID, input)
+		if err != nil {
+			writeAdminUserError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, user)
+	}
+}
+
 // ============================================================================
 // Erros
 // ============================================================================
@@ -169,6 +192,10 @@ func writeAdminUserError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusConflict, "last_platform_admin", "Nao e possivel rebaixar ou desativar o ultimo platform admin ativo.")
 	case errors.Is(err, ErrInvalidRole):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_role", "Papel invalido. Use owner, director ou marketing.")
+	case errors.Is(err, ErrAccountNotFound):
+		httpapi.WriteError(w, r, http.StatusNotFound, "account_not_found", "Conta destino nao encontrada ou inativa.")
+	case errors.Is(err, ErrAccountIsAgency):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "account_is_agency", "A conta destino e uma agencia; este endpoint move apenas para conta-cliente.")
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 	}

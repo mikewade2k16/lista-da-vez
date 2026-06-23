@@ -73,10 +73,19 @@ export default defineNuxtRouteMiddleware((to) => {
 
   const guard = MODULE_PATH_GUARDS.find((g) => to.path.startsWith(g.prefix))
   if (!guard) return
-  // Sem account ativa (ex.: durante hidrate inicial), nao bloqueia — auth.global
-  // ja redireciona se nao autenticado. Quando account aterrissar, navegacao
-  // subsequente respeita o guard.
-  if (!account.activeAccount) return
+  // Sem account ativa (fail-closed espelhando o useDashboardNav):
+  //  - Durante o hidrate inicial (accountsLoaded false) NAO bloqueia — auth.global
+  //    ja redireciona se nao autenticado; quando a account aterrissar, navegacao
+  //    subsequente respeita o guard.
+  //  - Se o contexto ja resolveu (accountsLoaded true) e ainda nao ha account
+  //    ativa (sem membership, lista vazia ou erro), rota de modulo nao deve abrir
+  //    so pelo papel → manda pro fallback seguro.
+  if (!account.activeAccount) {
+    if (account.accountsLoaded) {
+      return navigateTo(MODULE_GATED_FALLBACK_PATH, { replace: true })
+    }
+    return
+  }
 
   // view-as: platform_admin TAMBEM e gated pela conta ativa do switcher. O
   // switcher e a ferramenta do admin para "ver como o cliente" — ao selecionar

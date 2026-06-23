@@ -82,10 +82,37 @@ func (s *Service) GetRestaurant(ctx context.Context, accountID, id string) (Rest
 	return r, mapStoreErr(err)
 }
 
+// DuplicateRestaurant copia o restaurante sourceID (catalogo + zonas + layout)
+// para um novo restaurante (is_active=false) na MESMA account (ja validada). name
+// e slug sao obrigatorios; o slug precisa estar livre globalmente (a unique do
+// banco vira ErrSlugConflict via mapStoreErr). O gate de platform_admin e do
+// handler (403); aqui o source e escopado pela account (404 fora de escopo). A
+// copia inteira e transacional no store.
+func (s *Service) DuplicateRestaurant(ctx context.Context, accountID, sourceID string, in DuplicateRestaurantInput) (Restaurant, error) {
+	slug := normalizeSlug(in.Slug)
+	name := strings.TrimSpace(in.Name)
+	if slug == "" || name == "" {
+		return Restaurant{}, ErrValidation
+	}
+	r, err := s.store.DuplicateRestaurant(ctx, accountID, sourceID, slug, name)
+	return r, mapStoreErr(err)
+}
+
 // UpdateRestaurant aplica o PATCH parcial. in.AccountID (mover de conta) ja chega
 // zerado para nao-admin (gate no handler); aqui resolvemos o ponteiro do move
 // espelhando a bio: vazio/conta atual => nao move; conta destino inexistente =>
 // ErrNotFound (404 limpo antes do update, alem da protecao da FK).
+//
+// Mover de conta (move) NAO e um simples update de coluna: a subarvore inteira do
+// restaurante (categorias, produtos, variacoes/adicionais, avaliacoes, zonas,
+// pedidos/itens, eventos, dominios, layout) precisa mudar de account_id na MESMA
+// transacao, senao o cardapio fica orfao na conta nova (filhas com account_id
+// antigo) e o site publico cai (o publico exige core.account_modules habilitado
+// na conta nova). Por isso o move usa MoveRestaurantToAccount, que tambem
+// auto-habilita o modulo cardapio no destino (decisao de negocio). Quando ha
+// move, os demais campos do MESMO PATCH sao ignorados: o painel dispara o move
+// como edicao isolada da coluna Cliente (sem outros campos no corpo); aplica-se
+// apenas o move para manter o comportamento simples e seguro.
 func (s *Service) UpdateRestaurant(ctx context.Context, accountID, id string, in UpdateRestaurantInput) (Restaurant, error) {
 	if in.Name != nil {
 		trimmed := strings.TrimSpace(*in.Name)
@@ -98,7 +125,12 @@ func (s *Service) UpdateRestaurant(ctx context.Context, accountID, id string, in
 	if err != nil {
 		return Restaurant{}, err
 	}
-	in.AccountID = movePtr
+	if movePtr != nil {
+		// Move da subarvore inteira + auto-habilita o modulo no destino (atomico).
+		r, err := s.store.MoveRestaurantToAccount(ctx, accountID, id, *movePtr)
+		return r, mapStoreErr(err)
+	}
+	in.AccountID = nil
 	r, err := s.store.UpdateRestaurant(ctx, accountID, id, in)
 	return r, mapStoreErr(err)
 }
@@ -306,6 +338,31 @@ func (s *Service) ListReviews(ctx context.Context, accountID, productID string) 
 	return s.store.ListReviewsByProduct(ctx, accountID, productID)
 }
 
+// ListEstablishmentReviews lista as avaliacoes do estabelecimento (F2): reviews
+// proprias (product_id NULL) + reviews de produto marcadas para a vitrine. Valida
+// posse do restaurante (404 fora de escopo).
+func (s *Service) ListEstablishmentReviews(ctx context.Context, accountID, restaurantID string) ([]Review, error) {
+	if _, err := s.store.GetRestaurant(ctx, accountID, restaurantID); err != nil {
+		return nil, mapStoreErr(err)
+	}
+	return s.store.ListEstablishmentReviews(ctx, accountID, restaurantID)
+}
+
+// CreateEstablishmentReview cria uma avaliacao do estabelecimento (product_id
+// NULL). Valida posse do restaurante e rating 1-5 (como o create de produto).
+func (s *Service) CreateEstablishmentReview(ctx context.Context, accountID, restaurantID string, in ReviewInput) (Review, error) {
+	if _, err := s.store.GetRestaurant(ctx, accountID, restaurantID); err != nil {
+		return Review{}, mapStoreErr(err)
+	}
+	in.ProductID = "" // review do estabelecimento: sem produto associado (NULL).
+	in.AuthorName = strings.TrimSpace(in.AuthorName)
+	if in.AuthorName == "" || in.Rating < 1 || in.Rating > 5 {
+		return Review{}, ErrValidation
+	}
+	r, err := s.store.CreateReview(ctx, accountID, restaurantID, in)
+	return r, mapStoreErr(err)
+}
+
 func (s *Service) CreateReview(ctx context.Context, accountID, productID string, in ReviewInput) (Review, error) {
 	product, err := s.store.GetProduct(ctx, accountID, productID)
 	if err != nil {
@@ -404,12 +461,17 @@ func paginate(page, perPage int) (limit, offset int) {
 	return perPage, (page - 1) * perPage
 }
 
-// normalizeHost normaliza um host: lowercase, sem espacos, remove a porta e o
-// prefixo www.
+// normalizeHost normaliza um host: lowercase, sem espacos, remove o esquema
+// (http:// ou https://), a porta, o path e o prefixo www. Aceitar a URL colada
+// inteira (ex.: "https://loja.com/") evita salvar lixo como "https" — o "://" e
+// removido ANTES dos cortes em "/" e ":" para o esquema nao virar o host.
 func normalizeHost(host string) string {
 	h := strings.ToLower(strings.TrimSpace(host))
 	if h == "" {
 		return ""
+	}
+	if idx := strings.Index(h, "://"); idx >= 0 {
+		h = h[idx+3:]
 	}
 	if idx := strings.IndexByte(h, '/'); idx >= 0 {
 		h = h[:idx]

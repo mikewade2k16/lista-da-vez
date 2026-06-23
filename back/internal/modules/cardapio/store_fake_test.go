@@ -25,6 +25,12 @@ func (unimplementedStore) ListRestaurantsLean(context.Context, string, string) (
 func (unimplementedStore) UpdateRestaurant(context.Context, string, string, UpdateRestaurantInput) (Restaurant, error) {
 	return Restaurant{}, nil
 }
+func (unimplementedStore) MoveRestaurantToAccount(context.Context, string, string, string) (Restaurant, error) {
+	return Restaurant{}, nil
+}
+func (unimplementedStore) DuplicateRestaurant(context.Context, string, string, string, string) (Restaurant, error) {
+	return Restaurant{}, nil
+}
 func (unimplementedStore) DeleteRestaurant(context.Context, string, string) error { return nil }
 func (unimplementedStore) AccountExists(context.Context, string) (bool, error) {
 	return false, nil
@@ -63,6 +69,9 @@ func (unimplementedStore) UpdateProduct(context.Context, string, string, Product
 }
 func (unimplementedStore) DeleteProduct(context.Context, string, string) error { return nil }
 func (unimplementedStore) ListReviewsByProduct(context.Context, string, string) ([]Review, error) {
+	return nil, nil
+}
+func (unimplementedStore) ListEstablishmentReviews(context.Context, string, string) ([]Review, error) {
 	return nil, nil
 }
 func (unimplementedStore) CreateReview(context.Context, string, string, ReviewInput) (Review, error) {

@@ -7,9 +7,11 @@ import { useContextRealtime } from '~/composables/useContextRealtime'
 import { useDashboardShell } from '~/composables/useDashboardShell'
 import { useAuthStore } from '~/stores/auth'
 import { useMenuLayoutStore } from '~/stores/menuLayout'
+import { useCoreAccountStore } from '../../layers/core/stores/account'
 
 const { state, activeWorkspaceId, allowedWorkspaces, setActiveProfile } = useDashboardShell()
 const auth = useAuthStore()
+const accountStore = useCoreAccountStore()
 const route = useRoute()
 const menuLayout = useMenuLayoutStore()
 useContextRealtime()
@@ -23,6 +25,10 @@ onMounted(() => {
 
 const feedbackModalOpen = ref(false)
 const runtimeSettingsNotice = computed(() => String(auth.runtimeSettingsNotice || '').trim())
+// Conta sem o modulo queue nao usa configuracoes de fila — "configuracoes
+// indisponiveis" e o estado esperado, nao um erro. O aviso de modo degradado so
+// faz sentido para quem TEM queue (e portanto deveria conseguir carregar /v1/settings).
+const hasQueueModule = computed(() => accountStore.enabledModules.includes('queue'))
 const usesQueueWorkspace = computed(() => String(route.path || '').startsWith('/operacao'))
 
 function handleProfileChange(profileId) {
@@ -43,7 +49,7 @@ function handleProfileChange(profileId) {
         />
       </ClientOnly>
       <div
-        v-if="runtimeSettingsNotice"
+        v-if="runtimeSettingsNotice && hasQueueModule"
         class="runtime-settings-banner"
         role="status"
         aria-live="polite"

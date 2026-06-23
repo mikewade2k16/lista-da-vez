@@ -375,13 +375,31 @@ func (s *Store) DeleteProduct(ctx context.Context, accountID, id string) error {
 // ============================================================================
 
 const reviewColumns = `id, restaurant_id, product_id, author_name, author_level, rating,
-	body, is_highlight, date_label, sort_order, created_at`
+	body, is_highlight, show_on_establishment, date_label, sort_order, created_at`
 
+// scanReview decodifica uma review. product_id e nullable (F2): review do
+// estabelecimento tem product_id NULL, mapeado para string vazia no DTO.
 func scanReview(row rowScanner) (Review, error) {
 	var r Review
-	err := row.Scan(&r.ID, &r.RestaurantID, &r.ProductID, &r.AuthorName, &r.AuthorLevel,
-		&r.Rating, &r.Body, &r.IsHighlight, &r.DateLabel, &r.SortOrder, &r.CreatedAt)
-	return r, err
+	var productID *string
+	err := row.Scan(&r.ID, &r.RestaurantID, &productID, &r.AuthorName, &r.AuthorLevel,
+		&r.Rating, &r.Body, &r.IsHighlight, &r.ShowOnEstablishment, &r.DateLabel, &r.SortOrder, &r.CreatedAt)
+	if err != nil {
+		return Review{}, err
+	}
+	if productID != nil {
+		r.ProductID = *productID
+	}
+	return r, nil
+}
+
+// nullableProductID converte o productId do input (string vazia = review de
+// estabelecimento) no valor a gravar (NULL quando vazio).
+func nullableProductID(productID string) any {
+	if productID == "" {
+		return nil
+	}
+	return productID
 }
 
 // ListReviewsByProduct retorna avaliacoes de um produto.
@@ -406,26 +424,54 @@ func (s *Store) ListReviewsByProduct(ctx context.Context, accountID, productID s
 	return out, rows.Err()
 }
 
-// CreateReview insere uma avaliacao para um produto do restaurante.
+// ListEstablishmentReviews retorna as avaliacoes do estabelecimento (F2): reviews
+// proprias do estabelecimento (product_id IS NULL) + reviews de produto marcadas
+// para a vitrine (show_on_establishment = true). Ordenadas por sort_order.
+func (s *Store) ListEstablishmentReviews(ctx context.Context, accountID, restaurantID string) ([]Review, error) {
+	const q = `select ` + reviewColumns + `
+		from cardapio.reviews
+		where restaurant_id = $1 and account_id = $2
+		  and (product_id is null or show_on_establishment = true)
+		order by is_highlight desc, sort_order, created_at desc`
+	rows, err := s.pool.Query(ctx, q, restaurantID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]Review, 0)
+	for rows.Next() {
+		r, err := scanReview(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CreateReview insere uma avaliacao do restaurante. product_id vem do input
+// (vazio = review de estabelecimento, gravado como NULL).
 func (s *Store) CreateReview(ctx context.Context, accountID, restaurantID string, in ReviewInput) (Review, error) {
 	const q = `insert into cardapio.reviews
 		(account_id, restaurant_id, product_id, author_name, author_level, rating, body,
-		 is_highlight, date_label, sort_order)
-		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		 is_highlight, show_on_establishment, date_label, sort_order)
+		values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 		returning ` + reviewColumns
-	return scanReview(s.pool.QueryRow(ctx, q, accountID, restaurantID, in.ProductID,
-		in.AuthorName, in.AuthorLevel, in.Rating, in.Body, in.IsHighlight, in.DateLabel, in.SortOrder))
+	return scanReview(s.pool.QueryRow(ctx, q, accountID, restaurantID, nullableProductID(in.ProductID),
+		in.AuthorName, in.AuthorLevel, in.Rating, in.Body, in.IsHighlight, in.ShowOnEstablishment,
+		in.DateLabel, in.SortOrder))
 }
 
-// UpdateReview edita uma avaliacao por id na account.
+// UpdateReview edita uma avaliacao por id na account (full-replace, inclui
+// show_on_establishment). product_id NAO muda no update (definido no create).
 func (s *Store) UpdateReview(ctx context.Context, accountID, id string, in ReviewInput) (Review, error) {
 	const q = `update cardapio.reviews set
 			author_name = $3, author_level = $4, rating = $5, body = $6,
-			is_highlight = $7, date_label = $8, sort_order = $9
+			is_highlight = $7, show_on_establishment = $8, date_label = $9, sort_order = $10
 		where id = $1 and account_id = $2
 		returning ` + reviewColumns
 	return scanReview(s.pool.QueryRow(ctx, q, id, accountID, in.AuthorName, in.AuthorLevel,
-		in.Rating, in.Body, in.IsHighlight, in.DateLabel, in.SortOrder))
+		in.Rating, in.Body, in.IsHighlight, in.ShowOnEstablishment, in.DateLabel, in.SortOrder))
 }
 
 // DeleteReview remove uma avaliacao por id na account.

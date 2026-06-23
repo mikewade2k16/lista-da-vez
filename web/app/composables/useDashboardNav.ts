@@ -151,15 +151,23 @@ export function useDashboardNav(
     // uma conta, o menu reflete SO os modulos que ela contratou (igual o cliente
     // veria), inclusive para platform_admin.
     //
-    // Gate de "conta carregada": filtra sempre que houver uma activeAccount
-    // resolvida (accountStore.activeAccount). Conta com 0 modulos → esconde todos
-    // os itens de modulo (sobra so core/Manage). Durante o hidrate inicial (sem
-    // activeAccount ainda) NAO filtra — evita flash de menu vazio; nesse momento
-    // permissoes (role/workspace) decidem. Itens sem moduleId ou com `core`
-    // nunca sao filtrados (Manage, perfil, etc.).
+    // Gate de "conta carregada" (fail-closed): para item de modulo (moduleId
+    // nao-core), tres casos:
+    //  1. Ha activeAccount resolvida → filtra: esconde se o modulo nao esta
+    //     habilitado. Conta com 0 modulos → some tudo de modulo (sobra core/Manage).
+    //  2. Sem activeAccount MAS o contexto ja resolveu (accountsLoaded) → fecha:
+    //     `return false`. Sem conta ativa (sem membership, /v2/me/accounts vazio
+    //     ou erro) nao deve revelar itens de modulo so pelo papel.
+    //  3. Sem activeAccount e ainda hidratando (accountsLoaded false) → NAO filtra:
+    //     evita flash de menu vazio; permissoes (role/workspace) decidem por ora.
+    // Itens sem moduleId ou com `core` nunca sao filtrados (Manage, perfil, etc.).
     const moduleId = String(item.moduleId || '').trim()
-    if (moduleId && moduleId !== 'core' && accountStore.activeAccount) {
-      if (!enabledModulesSet.value.has(moduleId)) return false
+    if (moduleId && moduleId !== 'core') {
+      if (accountStore.activeAccount) {
+        if (!enabledModulesSet.value.has(moduleId)) return false
+      } else if (accountStore.accountsLoaded) {
+        return false
+      }
     }
     const workspaceId = String(item.workspaceId || '').trim()
     if (!workspaceId) return true

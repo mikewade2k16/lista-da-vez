@@ -76,7 +76,8 @@ Ele nao deve cuidar de:
 ### Hot-path do middleware (Fase 7A + U2)
 
 - `AuthenticateToken` usa `LoadUserForAuth` para centralizar identidade + papel + escopo.
-- Desde U2, `LoadUserForAuth` usa o resolvedor configurado por `AUTH_ROLES_SOURCE`; o default `core_with_fallback` prioriza `core.*` e preserva login de usuarios ainda so no legado.
+- `LoadUserForAuth` continua no contrato `Repository` (usado no hot-path), mas hoje so delega para `FindByID` — o fallback legado que justificava dois metodos foi removido. A resolucao de papel/tenant/store vive em `buildUser`/`resolveAuthRoleScope`.
+- Desde U2, esse resolvedor e configurado por `AUTH_ROLES_SOURCE`; o default `core_with_fallback` prioriza `core.*` e preserva login de usuarios ainda so no legado.
 - A resolucao de permissoes usa `access.Service.ResolveUserPermissions` que delega para `Repository.ResolveEffectivePermissions` (1 query unica consolidando `access_role_permissions` + `user_access_overrides`).
 - Caminhos administrativos (update perfil, troca de senha) tambem passam pelo mesmo resolvedor ao remontar `User`.
 

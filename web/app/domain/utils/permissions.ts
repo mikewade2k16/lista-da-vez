@@ -10,7 +10,6 @@ const ROLE_LABELS = {
   director: 'Diretoria',
   owner: 'Proprietario',
   platform_admin: 'Admin da plataforma',
-  admin: 'Admin da plataforma',
 }
 
 // Label amigavel do papel para exibicao (perfil, cabecalhos). normalizeAppRole e
@@ -132,8 +131,8 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     label: 'Presence',
     description:
       'Presence — gestao do site (visual, cardapio, pedidos, dominios) de cada estabelecimento.',
-    viewPermission: '',
-    editPermission: '',
+    viewPermission: 'cardapio.view',
+    editPermission: 'cardapio.manage',
   },
   {
     id: 'clientes',
@@ -417,35 +416,6 @@ const ROLE_WORKSPACES = {
     'alertas',
   ],
   consultant: ['operacao'],
-  admin: [
-    'operacao',
-    'consultor',
-    'tasks',
-    'ranking',
-    'dados',
-    'inteligencia',
-    'relatorios',
-    'campanhas',
-    'site',
-    'site_produtos_web',
-    'site_leads_web',
-    'site_tracking_web',
-    'site_bio_web',
-    'cardapio_web',
-    'clientes',
-    'erp',
-    'bi',
-    'crm',
-    'multiloja',
-    'usuarios',
-    'manage',
-    'configuracoes',
-    'themes',
-    'alertas',
-    'feedback',
-    'tools',
-    'roadmap',
-  ],
 }
 
 const SUPERUSER_ROLES = new Set(['platform_admin'])
@@ -496,10 +466,20 @@ function hasAnyReportsAccessPermission(permissionKeys = []) {
   )
 }
 
-function hasWorkspaceAccessAlias(workspaceId, permissionKeys = [], roleDefaults = new Set()) {
+function hasWorkspaceAccessAlias(
+  workspaceId,
+  permissionKeys = [],
+  roleDefaults = new Set(),
+  normalizedRole = '',
+) {
   switch (String(workspaceId || '').trim()) {
     case 'operacao':
       return hasAnyOperationAccessPermission(permissionKeys)
+    case 'cardapio_web':
+      // owner da conta sempre ve o cardapio (espelha o gate do back: platform_admin
+      // + owner + agency_owner + cardapio.view/manage). Demais papeis caem no
+      // viewPermission ('cardapio.view') resolvido por permissao logo abaixo.
+      return normalizedRole === 'owner'
     case 'consultor':
       return (
         hasPermission(permissionKeys, 'workspace.consultor.view') ||
@@ -635,7 +615,7 @@ export function getAllowedWorkspaces(role, permissionKeys = [], permissionsResol
     if (!viewPermission) {
       return roleDefaults.has(workspace.id)
     }
-    if (hasWorkspaceAccessAlias(workspace.id, permissionKeys, roleDefaults)) {
+    if (hasWorkspaceAccessAlias(workspace.id, permissionKeys, roleDefaults, normalizedRole)) {
       return true
     }
     return hasPermission(permissionKeys, viewPermission)

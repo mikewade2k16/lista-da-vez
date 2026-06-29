@@ -100,16 +100,16 @@ func (s *Service) ListMine(ctx context.Context, principal auth.Principal, input 
 }
 
 func (s *Service) MarkRead(ctx context.Context, principal auth.Principal, id string) (*FeedbackView, error) {
-	feedback, err := s.repository.GetByID(id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
 
-	if !canAccessFeedback(principal, feedback) {
-		return nil, ErrForbidden
+	if err := canAccessFeedback(principal, feedback); err != nil {
+		return nil, err
 	}
 
-	updated, err := s.repository.MarkRead(feedback.ID, principal.UserID, time.Now().UTC())
+	updated, err := s.repository.MarkRead(principal.TenantID, feedback.ID, principal.UserID, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -118,16 +118,16 @@ func (s *Service) MarkRead(ctx context.Context, principal auth.Principal, id str
 }
 
 func (s *Service) ListMessages(ctx context.Context, principal auth.Principal, id string, input ListMessagesInput) ([]FeedbackMessageView, error) {
-	feedback, err := s.repository.GetByID(id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
 
-	if !canAccessFeedback(principal, feedback) {
-		return nil, ErrForbidden
+	if err := canAccessFeedback(principal, feedback); err != nil {
+		return nil, err
 	}
 
-	messages, err := s.repository.ListMessages(id, input)
+	messages, err := s.repository.ListMessages(principal.TenantID, id, input)
 	if err != nil {
 		return nil, err
 	}
@@ -141,17 +141,19 @@ func (s *Service) ListMessages(ctx context.Context, principal auth.Principal, id
 }
 
 func (s *Service) CreateMessage(ctx context.Context, principal auth.Principal, id string, input CreateMessageInput) (*FeedbackMessageView, error) {
-	feedback, err := s.repository.GetByID(id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
+		return nil, err
+	}
+
+	// Checar acesso/tenant ANTES do status: feedback fechado de outro tenant nao
+	// pode vazar 409 (resposta diferente de 404 revelaria a existencia do recurso).
+	if err := canReplyToFeedback(principal, feedback); err != nil {
 		return nil, err
 	}
 
 	if feedback.Status == StatusClosed {
 		return nil, ErrClosed
-	}
-
-	if !canReplyToFeedback(principal, feedback) {
-		return nil, ErrForbidden
 	}
 
 	body := strings.TrimSpace(input.Body)
@@ -180,14 +182,14 @@ func (s *Service) CreateMessage(ctx context.Context, principal auth.Principal, i
 		}
 	}
 
-	created, err := s.repository.CreateMessage(message)
+	created, err := s.repository.CreateMessage(principal.TenantID, message)
 	if err != nil {
 		if message.ImagePath != "" {
 			_ = s.deleteImage(message.ImagePath)
 		}
 		return nil, err
 	}
-	if _, err := s.repository.MarkRead(feedback.ID, principal.UserID, created.CreatedAt); err != nil {
+	if _, err := s.repository.MarkRead(principal.TenantID, feedback.ID, principal.UserID, created.CreatedAt); err != nil {
 		return nil, err
 	}
 
@@ -199,14 +201,16 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 		return nil, ErrForbidden
 	}
 
-	feedback, err := s.repository.GetByID(id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
 
+	// Recurso de outro tenant -> 404 (nao vaza existencia).
 	if feedback.TenantID != principal.TenantID && principal.Role != auth.RolePlatformAdmin {
-		return nil, ErrForbidden
+		return nil, ErrNotFound
 	}
+	// Loja fora do escopo do editor -> 403 (RBAC de papel/loja dentro do tenant).
 	if !isFeedbackStoreAccessible(principal, feedback.StoreID) {
 		return nil, ErrForbidden
 	}
@@ -229,7 +233,7 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 		feedback.AdminNote = *input.AdminNote
 	}
 
-	if err := s.repository.Update(feedback); err != nil {
+	if err := s.repository.Update(principal.TenantID, feedback); err != nil {
 		return nil, err
 	}
 
@@ -298,36 +302,49 @@ func canEditFeedback(principal auth.Principal) bool {
 		principal.Role == auth.RoleManager
 }
 
-func canAccessFeedback(principal auth.Principal, feedback *Feedback) bool {
+// canAccessFeedback retorna nil se o principal pode ler o feedback.
+// Recurso de OUTRO tenant -> ErrNotFound (nao vaza existencia, vira 404).
+// Negacao por papel/loja dentro do proprio tenant -> ErrForbidden (RBAC, vira 403).
+func canAccessFeedback(principal auth.Principal, feedback *Feedback) error {
 	if feedback == nil {
-		return false
+		return ErrNotFound
 	}
 
 	if feedback.TenantID != principal.TenantID && principal.Role != auth.RolePlatformAdmin {
-		return false
+		return ErrNotFound
 	}
 
 	if feedback.UserID == principal.UserID {
-		return true
+		return nil
 	}
 
-	return canViewFeedback(principal) && isFeedbackStoreAccessible(principal, feedback.StoreID)
+	if canViewFeedback(principal) && isFeedbackStoreAccessible(principal, feedback.StoreID) {
+		return nil
+	}
+
+	return ErrForbidden
 }
 
-func canReplyToFeedback(principal auth.Principal, feedback *Feedback) bool {
+// canReplyToFeedback espelha canAccessFeedback para respostas: cross-tenant -> 404,
+// RBAC de papel/loja -> 403.
+func canReplyToFeedback(principal auth.Principal, feedback *Feedback) error {
 	if feedback == nil {
-		return false
+		return ErrNotFound
 	}
 
 	if feedback.TenantID != principal.TenantID && principal.Role != auth.RolePlatformAdmin {
-		return false
+		return ErrNotFound
 	}
 
 	if feedback.UserID == principal.UserID {
-		return true
+		return nil
 	}
 
-	return canEditFeedback(principal) && isFeedbackStoreAccessible(principal, feedback.StoreID)
+	if canEditFeedback(principal) && isFeedbackStoreAccessible(principal, feedback.StoreID) {
+		return nil
+	}
+
+	return ErrForbidden
 }
 
 func isFeedbackStoreAccessible(principal auth.Principal, storeID string) bool {

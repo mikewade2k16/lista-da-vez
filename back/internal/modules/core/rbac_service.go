@@ -18,54 +18,6 @@ func NewRBACService(rbac RBACRepository) *RBACService {
 }
 
 // ============================================================================
-// Seed (Item 1)
-// ============================================================================
-
-// InitAccountRoles faz o seed de todos os role templates dos módulos informados
-// para a account, criando entradas em core.roles e core.role_permissions.
-//
-// Idempotente: roles que já existem (mesmo code) são ignorados sem erro.
-// Chamado ao criar uma nova account ou ao habilitar um módulo adicional.
-func (s *RBACService) InitAccountRoles(
-	ctx context.Context,
-	accountID string,
-	moduleIDs []string,
-) error {
-	if strings.TrimSpace(accountID) == "" {
-		return ErrAccountNotFound
-	}
-	if len(moduleIDs) == 0 {
-		return nil
-	}
-
-	templates, err := s.rbac.ListTemplatesForModules(ctx, moduleIDs)
-	if err != nil {
-		return err
-	}
-
-	for _, tmpl := range templates {
-		permKeys, err := s.rbac.ListTemplatePermissionKeys(ctx, tmpl.ID)
-		if err != nil {
-			return err
-		}
-
-		roleID, created, err := s.rbac.CloneTemplate(ctx, accountID, tmpl)
-		if err != nil {
-			return err
-		}
-
-		if !created || len(permKeys) == 0 {
-			continue
-		}
-		if err := s.rbac.SetRolePermissions(ctx, roleID, permKeys); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// ============================================================================
 // CRUD de roles (Item 3)
 // ============================================================================
 
@@ -172,12 +124,20 @@ func (s *RBACService) DeleteRole(
 // Atribuição de roles (Item 3)
 // ============================================================================
 
-// AssignRoleToUser atribui um role a um user dentro da account. Verifica que
-// o role pertence à account antes de atribuir. Idempotente.
+// AssignRoleToUser atribui um role a um user dentro da account. Valida que o
+// alvo é membro da account (ErrAccountNotMember -> ErrNotMember -> 404, igual ao
+// SetUserRoles — fecha concessão de papel a usuário não-membro/cross-tenant) e
+// que o role pertence à account antes de atribuir. Idempotente.
 func (s *RBACService) AssignRoleToUser(
 	ctx context.Context,
 	accountID, userID, roleID string,
 ) error {
+	if err := s.rbac.CheckMembership(ctx, accountID, userID); err != nil {
+		if errors.Is(err, ErrAccountNotMember) {
+			return ErrNotMember
+		}
+		return err
+	}
 	if _, err := s.rbac.FindRole(ctx, accountID, roleID); err != nil {
 		return err
 	}

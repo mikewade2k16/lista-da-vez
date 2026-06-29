@@ -89,33 +89,10 @@ func (r *PostgresAdminOverridesRepository) ListAvailablePermissions(ctx context.
 }
 
 // PlatformScopedKeys retorna, dentre as keys informadas, as que tem
-// scope='platform' (bloqueadas para override). Parametrizado via unnest.
+// scope='platform' (bloqueadas para override). Delega na funcao livre
+// platformScopedKeys (corpo unico compartilhado com a impl. de RBACRepository).
 func (r *PostgresAdminOverridesRepository) PlatformScopedKeys(ctx context.Context, keys []string) ([]string, error) {
-	if len(keys) == 0 {
-		return []string{}, nil
-	}
-	const query = `
-		select p.key
-		from core.permissions p
-		join unnest($1::text[]) as k(key) on k.key = p.key
-		where p.scope = 'platform'
-		order by p.key asc
-	`
-	rows, err := r.pool.Query(ctx, query, keys)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]string, 0)
-	for rows.Next() {
-		var k string
-		if err := rows.Scan(&k); err != nil {
-			return nil, err
-		}
-		out = append(out, k)
-	}
-	return out, rows.Err()
+	return platformScopedKeys(ctx, r.pool, keys)
 }
 
 // ReplaceUserOverrides substitui os overrides do usuario na account numa

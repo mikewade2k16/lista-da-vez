@@ -62,12 +62,21 @@ func (l *rateLimiter) allowN(scope, ip string, n, limit int, window time.Duratio
 	return true
 }
 
-// clientIP extrai o IP do request, preferindo X-Forwarded-For (primeiro host) e
-// caindo para RemoteAddr.
+// clientIP extrai o IP do request para a chave do rate limit. Usa o ULTIMO hop
+// de X-Forwarded-For (o IP que o proxy CONFIAVEL mais proximo — Caddy em prod —
+// observou e anexou), nao o primeiro: o primeiro elemento e totalmente
+// controlado pelo cliente e seria trivial de forjar para escapar do limite
+// (cada request com um XFF diferente caia num bucket novo). Sem XFF, cai para
+// RemoteAddr (conexao direta).
+//
+// PREMISSA DE PROD (ver AGENT.md): assume-se EXATAMENTE UM proxy confiavel na
+// frente (Caddy), que reescreve/anexa o IP real ao XFF. Se um dia houver mais de
+// um proxy, o ultimo hop deixa de ser o cliente e este calculo precisa do
+// numero de proxies confiaveis para indexar o hop correto.
 func clientIP(r *http.Request) string {
 	if fwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); fwd != "" {
 		parts := strings.Split(fwd, ",")
-		if ip := strings.TrimSpace(parts[0]); ip != "" {
+		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
 			return ip
 		}
 	}

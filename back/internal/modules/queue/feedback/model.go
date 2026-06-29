@@ -183,11 +183,14 @@ type ListMessagesInput struct {
 
 type Repository interface {
 	Create(feedback *Feedback) (*Feedback, error)
-	GetByID(id string) (*Feedback, error)
+	// GetByID/MarkRead/Update/CreateMessage/ListMessages recebem o tenantID do
+	// Principal para filtrar por tenant na query (defesa em profundidade). tenantID
+	// vazio (platform_admin) ignora o filtro e enxerga todos os tenants.
+	GetByID(tenantID string, id string) (*Feedback, error)
 	List(tenantID string, input ListInput) ([]Feedback, error)
-	MarkRead(feedbackID string, userID string, readAt time.Time) (*Feedback, error)
-	Update(feedback *Feedback) error
-	CreateMessage(message *FeedbackMessage) (*FeedbackMessage, error)
-	ListMessages(feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error)
+	MarkRead(tenantID string, feedbackID string, userID string, readAt time.Time) (*Feedback, error)
+	Update(tenantID string, feedback *Feedback) error
+	CreateMessage(tenantID string, message *FeedbackMessage) (*FeedbackMessage, error)
+	ListMessages(tenantID string, feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error)
 	PurgeExpiredAttachments(cutoff time.Time, limit int) ([]string, error)
 }

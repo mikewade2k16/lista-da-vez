@@ -1,14 +1,11 @@
+import { getRoleLabel } from '~/domain/utils/permissions'
+
 export const ALL_STORES_VALUE = 'all'
 
-export const ROLE_LABELS: Record<string, string> = {
-  consultant: 'Consultor',
-  manager: 'Gerente',
-  marketing: 'Marketing',
-  director: 'Diretor',
-  owner: 'Gestao geral',
-  platform_admin: 'Admin sistema',
-  store_terminal: 'Usuario de loja',
-}
+// getRoleLabel/ROLE_LABELS tem fonte unica em permissions.ts (normaliza o alias
+// admin->platform_admin). Re-exportamos aqui para os consumidores do user-access
+// nao precisarem trocar o import.
+export { getRoleLabel }
 
 export const ACCESS_STATE_LABELS: Record<string, string> = {
   inherit: 'Herdar padrao',
@@ -50,11 +47,6 @@ export function normalizeSearch(value: unknown) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-}
-
-export function getRoleLabel(role: unknown) {
-  const roleId = normalizeText(role)
-  return ROLE_LABELS[roleId] || roleId || 'Sem papel'
 }
 
 export function isStoreScopedRole(role: unknown) {

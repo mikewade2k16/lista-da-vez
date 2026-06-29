@@ -1,6 +1,44 @@
 package core
 
-import "context"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// platformScopedKeys retorna, dentre as keys informadas, as que tem
+// scope='platform' em core.permissions. Funcao livre compartilhada por
+// PostgresRBACRepository.PlatformScopedKeys (bloqueio em matriz de papel) e
+// PostgresAdminOverridesRepository.PlatformScopedKeys (bloqueio em override por
+// usuario) — corpo unico, parametrizado via unnest. Lista vazia quando nenhuma e
+// platform-scoped.
+func platformScopedKeys(ctx context.Context, pool *pgxpool.Pool, keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return []string{}, nil
+	}
+	const query = `
+		select p.key
+		from core.permissions p
+		join unnest($1::text[]) as k(key) on k.key = p.key
+		where p.scope = 'platform'
+		order by p.key asc
+	`
+	rows, err := pool.Query(ctx, query, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]string, 0)
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, rows.Err()
+}
 
 // accountPermResolvedExists e a subquery UNION allow EXCEPT deny (espelhada de
 // ListPermissionsForUser) que diz se o user ($2) tem AO MENOS UMA das permissoes
@@ -38,31 +76,7 @@ const accountPermResolvedExists = `
 // plataforma (ex.: core.organization.consolidated_read) via matriz de papel.
 // Parametrizado via unnest. Lista vazia quando nenhuma e platform-scoped.
 func (r *PostgresRBACRepository) PlatformScopedKeys(ctx context.Context, keys []string) ([]string, error) {
-	if len(keys) == 0 {
-		return []string{}, nil
-	}
-	const query = `
-		select p.key
-		from core.permissions p
-		join unnest($1::text[]) as k(key) on k.key = p.key
-		where p.scope = 'platform'
-		order by p.key asc
-	`
-	rows, err := r.pool.Query(ctx, query, keys)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]string, 0)
-	for rows.Next() {
-		var k string
-		if err := rows.Scan(&k); err != nil {
-			return nil, err
-		}
-		out = append(out, k)
-	}
-	return out, rows.Err()
+	return platformScopedKeys(ctx, r.pool, keys)
 }
 
 // HasAccountPermission resolve se o user tem a permissao informada na account.

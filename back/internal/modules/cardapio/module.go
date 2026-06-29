@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
 )
@@ -70,19 +71,23 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	store := NewStore(deps.Pool)
 	media := NewDiskMediaStorage(strings.TrimSpace(os.Getenv("UPLOADS_DIR")))
 	telemetrySalt := strings.TrimSpace(os.Getenv("CARDAPIO_TELEMETRY_SALT"))
-	// Sem salt, o ip_hash da telemetria fica vazio (ipHashHex retorna "") — sem
-	// fail-open silencioso de IP cru, mas em prod o salt e obrigatorio (LGPD). Em dev
-	// apenas avisamos no boot, sem derrubar o modulo.
+	// Sem salt, o ip_hash da telemetria fica vazio (ipHashHex retorna "") — fail-closed
+	// quanto a PII: nao grava IP cru. Em producao o salt deve ser definido (LGPD), mas a
+	// ausencia NAO derruba o boot: so loga um WARN e a telemetria roda sem ip_hash.
 	if telemetrySalt == "" && deps.Logger != nil {
-		deps.Logger.Warn("CARDAPIO_TELEMETRY_SALT vazio: ip_hash da telemetria sera vazio (obrigatorio em producao)")
+		deps.Logger.Warn("CARDAPIO_TELEMETRY_SALT vazio: telemetria sem ip_hash (defina o salt em producao para LGPD)")
 	}
-	svc := NewService(store, deps.Pool, ServiceConfig{
+	// Gate de permissao fina do painel: reusa o RBACService do core (mesma
+	// HasAccountPermission usada por ~20 modulos) sobre o pool compartilhado, sem
+	// depender do wiring central (app.go). pool tambem resolve agency_owner.
+	gate := newCardapioGate(core.NewRBACService(core.NewPostgresRBACRepository(deps.Pool)), deps.Pool)
+	svc := NewService(store, ServiceConfig{
 		BaseDomain:     strings.TrimSpace(os.Getenv("CARDAPIO_BASE_DOMAIN")),
 		DevDefaultSlug: strings.TrimSpace(os.Getenv("CARDAPIO_DEV_DEFAULT_SLUG")),
 		PublicBaseURL:  strings.TrimSpace(os.Getenv("PUBLIC_API_BASE_URL")),
 		TelemetrySalt:  telemetrySalt,
 		Media:          media,
-	})
+	}).WithGate(gate)
 
 	// Poda diaria da telemetria (LGPD). CARDAPIO_TELEMETRY_RETENTION_DAYS sobrescreve o
 	// default de 90 dias; <= 0 desliga a poda automatica. A goroutine para no Close.

@@ -46,6 +46,12 @@ So o list popula esses campos (via `ToListView`); as respostas de mutacao usam `
 - leitura: `owner`, `manager`, `platform_admin`
 - atualizacao: `owner`, `manager`, `platform_admin`
 
+## Isolamento multi-tenant (404 vs 403)
+
+- Recurso de OUTRO tenant retorna **404** (`ErrNotFound`), nunca 403 — 403 vazaria a existencia do feedback (enumeration). Vale para `MarkRead`, `ListMessages`, `CreateMessage` e `Update`. Negacao por papel/loja DENTRO do proprio tenant continua **403** (`ErrForbidden`), pois e RBAC legitimo. As helpers `canAccessFeedback`/`canReplyToFeedback` retornam o erro ja mapeado (404 cross-tenant, 403 RBAC).
+- Em `CreateMessage` a checagem de acesso/tenant ocorre ANTES da checagem de `StatusClosed` (409); senao um feedback fechado de outro tenant vazaria 409 em vez de 404.
+- Defesa em profundidade: as queries do store (`GetByID`, `getByIDForViewer`, `MarkRead`, `Update`, `CreateMessage`, `ListMessages`) recebem o `tenantID` do Principal e filtram por `tenant_id` no WHERE (`$N::uuid is null or tenant_id = $N::uuid`). `tenantID` vazio (platform_admin) ignora o filtro e enxerga todos os tenants. A checagem no service permanece como camada extra.
+
 ## Regras de dados
 
 - feedback e criado dentro do escopo do tenant e loja do usuario autenticado

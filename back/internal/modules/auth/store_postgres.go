@@ -85,19 +85,11 @@ func (store *PostgresUserStore) FindByID(ctx context.Context, id string) (User, 
 	return store.buildUser(ctx, record)
 }
 
-// LoadUserForAuth carrega o usuario e resolve role/tenant/store pelo resolvedor configurado
-// (core, legado ou core com fallback). Usado no hot-path do middleware de auth.
+// LoadUserForAuth carrega o usuario por id no hot-path do middleware de auth.
+// Mantido no contrato Repository; delega para FindByID, que ja resolve
+// role/tenant/store via buildUser/resolveAuthRoleScope.
 func (store *PostgresUserStore) LoadUserForAuth(ctx context.Context, userID string) (User, error) {
-	record, err := store.findRecord(ctx, "u.id = $1::uuid", strings.TrimSpace(userID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return User{}, ErrUnauthorized
-		}
-
-		return User{}, err
-	}
-
-	return store.buildUser(ctx, record)
+	return store.FindByID(ctx, userID)
 }
 
 func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string, arg string) (userRecord, error) {

@@ -23,20 +23,37 @@ const publicRestaurantColumns = `r.id, r.slug, r.name, r.tagline, r.description,
 	r.custom_head_html, r.is_active, r.created_at, r.updated_at`
 
 func scanPublicRestaurant(row rowScanner) (Restaurant, string, error) {
-	var r Restaurant
 	var accountID string
-	var address, hours, settings, theme []byte
-	err := row.Scan(
-		&r.ID, &r.Slug, &r.Name, &r.Tagline, &r.Description, &r.LogoURL, &r.BannerURL,
-		&r.WhatsApp, &r.Phone, &r.Email, &r.Instagram, &address, &hours, &settings, &theme,
-		&r.Segment, &r.Facebook, &r.Youtube, &r.GoogleAnalyticsID, &r.FacebookPixelID, &r.CustomHeadHTML,
-		&r.IsActive, &r.CreatedAt, &r.UpdatedAt, &accountID,
-	)
+	// O Scan publico tras a coluna extra r.account_id no fim (sentinela): passamos
+	// &accountID para o helper compartilhado capturar o 25o campo.
+	r, err := scanRestaurantInto(row, &accountID)
 	if err != nil {
 		return Restaurant{}, "", err
 	}
-	hydrateRestaurantJSON(&r, address, hours, settings, theme)
 	return r, accountID, nil
+}
+
+// scanRestaurantInto e o Scan compartilhado dos 24 campos do restaurante (mesma
+// ordem em restaurantColumns e publicRestaurantColumns). Quando accountIDDst nao
+// e nil, le tambem a coluna extra account_id (sentinela do Scan publico). Hidrata
+// os jsonb no struct. Mantem o comportamento IDENTICO dos dois scans antigos.
+func scanRestaurantInto(row rowScanner, accountIDDst *string) (Restaurant, error) {
+	var r Restaurant
+	var address, hours, settings, theme []byte
+	dest := []any{
+		&r.ID, &r.Slug, &r.Name, &r.Tagline, &r.Description, &r.LogoURL, &r.BannerURL,
+		&r.WhatsApp, &r.Phone, &r.Email, &r.Instagram, &address, &hours, &settings, &theme,
+		&r.Segment, &r.Facebook, &r.Youtube, &r.GoogleAnalyticsID, &r.FacebookPixelID, &r.CustomHeadHTML,
+		&r.IsActive, &r.CreatedAt, &r.UpdatedAt,
+	}
+	if accountIDDst != nil {
+		dest = append(dest, accountIDDst)
+	}
+	if err := row.Scan(dest...); err != nil {
+		return Restaurant{}, err
+	}
+	hydrateRestaurantJSON(&r, address, hours, settings, theme)
+	return r, nil
 }
 
 // hydrateRestaurantJSON decodifica os campos jsonb no struct (compartilhado

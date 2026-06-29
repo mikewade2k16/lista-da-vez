@@ -40,8 +40,14 @@ func RegisterAnalyticsRoutes(mux *http.ServeMux, svc *Service, middleware *auth.
 // comum. Em erro de escopo/range, escreve a resposta HTTP e retorna ok=false. O
 // restaurantId vem do path; a validacao de pertencimento e feita no service.
 func analyticsContext(w http.ResponseWriter, r *http.Request, svc *Service) (accountID, restaurantID string, rg analyticsRange, ok bool) {
-	accountID, _, err := scopedAccountID(r, false)
+	accountID, _, err := scopedAccountID(r)
 	if err != nil {
+		writeServiceError(w, r, err)
+		return "", "", analyticsRange{}, false
+	}
+	// Analytics e leitura: exige cardapio.view (curto-circuito de platform_admin/
+	// agency_owner). Gate unico para os 9 GETs; falha => 404 uniforme.
+	if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 		writeServiceError(w, r, err)
 		return "", "", analyticsRange{}, false
 	}

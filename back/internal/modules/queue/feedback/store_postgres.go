@@ -133,14 +133,17 @@ func scanFeedback(scan func(...any) error) (*Feedback, error) {
 	return &f, nil
 }
 
-func (r *PostgresRepository) GetByID(id string) (*Feedback, error) {
+func (r *PostgresRepository) GetByID(tenantID string, id string) (*Feedback, error) {
+	// Defesa em profundidade: filtra por tenant na query mesmo com a checagem no
+	// service. tenantID vazio (platform_admin) ignora o filtro e ve todos os tenants.
 	row := r.pool.QueryRow(context.Background(), `
 		select id::text, tenant_id::text, store_id::text, user_id::text, user_name,
 		       kind, status, subject, body, admin_note, created_at, updated_at, closed_at, user_last_read_at
 		from user_feedback
 		where id = $1::uuid
+		  and ($2::uuid is null or tenant_id = $2::uuid)
 		limit 1;
-	`, id)
+	`, id, nullableUUID(tenantID))
 
 	f, err := scanFeedback(row.Scan)
 	if err != nil {
@@ -152,7 +155,7 @@ func (r *PostgresRepository) GetByID(id string) (*Feedback, error) {
 	return f, nil
 }
 
-func (r *PostgresRepository) getByIDForViewer(id string, viewerUserID string) (*Feedback, error) {
+func (r *PostgresRepository) getByIDForViewer(tenantID string, id string, viewerUserID string) (*Feedback, error) {
 	row := r.pool.QueryRow(context.Background(), `
 		select user_feedback.id::text, user_feedback.tenant_id::text, user_feedback.store_id::text,
 		       user_feedback.user_id::text, user_feedback.user_name, user_feedback.kind,
@@ -164,8 +167,9 @@ func (r *PostgresRepository) getByIDForViewer(id string, viewerUserID string) (*
 		  on feedback_read_states.feedback_id = user_feedback.id
 		 and feedback_read_states.user_id = $2::uuid
 		where user_feedback.id = $1::uuid
+		  and ($3::uuid is null or user_feedback.tenant_id = $3::uuid)
 		limit 1;
-	`, id, viewerUserID)
+	`, id, viewerUserID, nullableUUID(tenantID))
 
 	f, err := scanFeedback(row.Scan)
 	if err != nil {
@@ -257,7 +261,7 @@ func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback,
 		argCount++
 	}
 
-	if normalizedStoreIDs := normalizeFeedbackStoreIDs(input.StoreIDs); len(normalizedStoreIDs) > 0 {
+	if normalizedStoreIDs := normalizeStoreIDs(input.StoreIDs); len(normalizedStoreIDs) > 0 {
 		query += fmt.Sprintf(" and user_feedback.store_id::text = any($%d::text[])", argCount)
 		args = append(args, normalizedStoreIDs)
 		argCount++
@@ -324,25 +328,7 @@ func scanFeedbackListRow(scan func(...any) error) (*Feedback, error) {
 	return &f, nil
 }
 
-func normalizeFeedbackStoreIDs(storeIDs []string) []string {
-	normalized := make([]string, 0, len(storeIDs))
-	seen := make(map[string]struct{}, len(storeIDs))
-	for _, storeID := range storeIDs {
-		trimmed := strings.TrimSpace(storeID)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; exists {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		normalized = append(normalized, trimmed)
-	}
-
-	return normalized
-}
-
-func (r *PostgresRepository) MarkRead(feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
+func (r *PostgresRepository) MarkRead(tenantID string, feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
 	_, err := r.pool.Exec(context.Background(), `
 		insert into feedback_read_states (
 			feedback_id, user_id, last_read_at
@@ -361,14 +347,13 @@ func (r *PostgresRepository) MarkRead(feedbackID string, userID string, readAt t
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.GetByID(feedbackID); err != nil {
-		return nil, err
-	}
 
-	return r.getByIDForViewer(feedbackID, userID)
+	// getByIDForViewer ja filtra por tenant e mapeia ErrNotFound; nao precisa
+	// de um GetByID extra antes so para descartar.
+	return r.getByIDForViewer(tenantID, feedbackID, userID)
 }
 
-func (r *PostgresRepository) Update(feedback *Feedback) error {
+func (r *PostgresRepository) Update(tenantID string, feedback *Feedback) error {
 	ctx := context.Background()
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -376,15 +361,20 @@ func (r *PostgresRepository) Update(feedback *Feedback) error {
 	}
 	defer tx.Rollback(ctx)
 
+	// Defesa em profundidade: o filtro por tenant impede atualizar feedback de
+	// outro tenant mesmo que a checagem do service falhasse. tenantID vazio
+	// (platform_admin) ignora o filtro.
 	_, err = tx.Exec(ctx, `
 		update user_feedback
 		set status = $2, admin_note = $3, closed_at = $4, updated_at = now()
-		where id = $1::uuid;
+		where id = $1::uuid
+		  and ($5::uuid is null or tenant_id = $5::uuid);
 	`,
 		feedback.ID,
 		feedback.Status,
 		feedback.AdminNote,
 		feedback.ClosedAt,
+		nullableUUID(tenantID),
 	)
 	if err != nil {
 		return err
@@ -395,15 +385,17 @@ func (r *PostgresRepository) Update(feedback *Feedback) error {
 			update feedback_messages
 			set image_expires_at = $2
 			where feedback_id = $1::uuid
-			  and image_path <> '';
-		`, feedback.ID, feedback.ClosedAt.Add(feedbackImageRetention))
+			  and image_path <> ''
+			  and ($3::uuid is null or tenant_id = $3::uuid);
+		`, feedback.ID, feedback.ClosedAt.Add(feedbackImageRetention), nullableUUID(tenantID))
 	} else {
 		_, err = tx.Exec(ctx, `
 			update feedback_messages
 			set image_expires_at = null
 			where feedback_id = $1::uuid
-			  and image_path <> '';
-		`, feedback.ID)
+			  and image_path <> ''
+			  and ($2::uuid is null or tenant_id = $2::uuid);
+		`, feedback.ID, nullableUUID(tenantID))
 	}
 	if err != nil {
 		return err
@@ -442,7 +434,7 @@ func scanFeedbackMessage(scan func(...any) error) (*FeedbackMessage, error) {
 	return &message, nil
 }
 
-func (r *PostgresRepository) CreateMessage(message *FeedbackMessage) (*FeedbackMessage, error) {
+func (r *PostgresRepository) CreateMessage(tenantID string, message *FeedbackMessage) (*FeedbackMessage, error) {
 	ctx := context.Background()
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -472,11 +464,14 @@ func (r *PostgresRepository) CreateMessage(message *FeedbackMessage) (*FeedbackM
 		return nil, err
 	}
 
+	// Defesa em profundidade: so toca o feedback do tenant informado. tenantID
+	// vazio (platform_admin) ignora o filtro.
 	_, err = tx.Exec(ctx, `
 		update user_feedback
 		set updated_at = now()
-		where id = $1::uuid;
-	`, message.FeedbackID)
+		where id = $1::uuid
+		  and ($2::uuid is null or tenant_id = $2::uuid);
+	`, message.FeedbackID, nullableUUID(tenantID))
 	if err != nil {
 		return nil, err
 	}
@@ -488,19 +483,21 @@ func (r *PostgresRepository) CreateMessage(message *FeedbackMessage) (*FeedbackM
 	return message, nil
 }
 
-func (r *PostgresRepository) ListMessages(feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error) {
+func (r *PostgresRepository) ListMessages(tenantID string, feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error) {
+	// Defesa em profundidade: filtra por tenant ($2). tenantID vazio
+	// (platform_admin) ignora o filtro e ve todos os tenants.
 	query := `
 		select id::text, tenant_id::text, feedback_id::text, author_user_id::text,
 		       author_name, author_role, body, image_path, image_content_type,
 		       image_size_bytes, image_expires_at, created_at
 		from feedback_messages
 		where feedback_id = $1::uuid
+		  and ($2::uuid is null or tenant_id = $2::uuid)
 	`
-	args := []interface{}{feedbackID}
-	argCount := 2
+	args := []interface{}{feedbackID, nullableUUID(tenantID)}
 
 	if input.After != nil {
-		query += fmt.Sprintf(" and created_at > $%d", argCount)
+		query += " and created_at > $3"
 		args = append(args, *input.After)
 	}
 

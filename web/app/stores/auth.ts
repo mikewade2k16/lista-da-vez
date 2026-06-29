@@ -5,6 +5,7 @@ import {
   filterPerolaERPWorkspaces,
   getAllowedWorkspaces,
   normalizeAppRole,
+  normalizePermissionKeys,
 } from '~/domain/utils/permissions'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 import {
@@ -116,13 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
   let ensurePromise = null
 
   const role = computed(() => normalizeAppRole(principal.value?.role || ''))
-  const permissionKeys = computed(() =>
-    Array.isArray(principal.value?.permissions)
-      ? principal.value.permissions
-          .map((permissionKey) => String(permissionKey || '').trim())
-          .filter(Boolean)
-      : [],
-  )
+  const permissionKeys = computed(() => normalizePermissionKeys(principal.value?.permissions))
   const permissionsResolved = computed(() => Boolean(principal.value?.permissionsResolved))
   const isAuthenticated = computed(() =>
     Boolean(accessToken.value && user.value && principal.value),
@@ -146,7 +141,6 @@ export const useAuthStore = defineStore('auth', () => {
   const isAllStoresScope = computed(
     () => canUseAllStores.value && storeScopeMode.value === STORE_SCOPE_MODE_ALL,
   )
-  const isRuntimeSettingsDegraded = computed(() => runtimeSettingsStatus.value === 'degraded')
 
   function buildRuntimeSettingsNotice(errorMessage = '') {
     const suffix = errorMessage ? ` Ultimo erro: ${errorMessage}` : ''
@@ -701,7 +695,6 @@ export const useAuthStore = defineStore('auth', () => {
     accessibleStoreIds,
     canUseAllStores,
     isAllStoresScope,
-    isRuntimeSettingsDegraded,
     ensureSession,
     fetchContext,
     fetchMe: fetchContext,

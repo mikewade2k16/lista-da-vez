@@ -51,6 +51,21 @@ const isAgencyMemberSelect = `exists(
 			and a_ag.is_active = true and a_ag.is_agency = true
 	)`
 
+// accountAggLateralJoin e o left join lateral que agrega as contas ATIVAS do
+// usuario (u.id) em (account_count, account_names). Projeta o alias `agg`, lido
+// como coalesce(agg.account_count,0)/coalesce(agg.account_names,”). Reusado por
+// ListUsers (quando IncludeAccounts=true) e FindAdminUser (ambas com alias `u`
+// para core.users).
+const accountAggLateralJoin = `
+		left join lateral (
+			select
+				count(distinct au.account_id) as account_count,
+				string_agg(distinct a.name, ', ' order by a.name) as account_names
+			from core.account_users au
+			join core.accounts a on a.id = au.account_id
+			where au.user_id = u.id and au.is_active = true and a.is_active = true
+		) agg on true`
+
 // ============================================================================
 // ListUsers
 // ============================================================================
@@ -133,15 +148,7 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 	// (sem lateral join). A tela carrega o detalhe de contas sob interacao
 	// (popover de memberships). Espelha AGENT_RULES "pedir so o necessario".
 	accountSelect := "coalesce(agg.account_count, 0), coalesce(agg.account_names, '')"
-	accountJoin := `
-		left join lateral (
-			select
-				count(distinct au.account_id) as account_count,
-				string_agg(distinct a.name, ', ' order by a.name) as account_names
-			from core.account_users au
-			join core.accounts a on a.id = au.account_id
-			where au.user_id = u.id and au.is_active = true and a.is_active = true
-		) agg on true`
+	accountJoin := accountAggLateralJoin
 	if !filter.IncludeAccounts {
 		accountSelect = "0, ''"
 		accountJoin = ""
@@ -192,15 +199,7 @@ func (r *PostgresAdminUserRepository) FindAdminUser(ctx context.Context, userID 
 			coalesce(agg.account_names, ''),
 			` + clientAccountIDSelect + `,
 			` + isAgencyMemberSelect + `
-		from core.users u
-		left join lateral (
-			select
-				count(distinct au.account_id) as account_count,
-				string_agg(distinct a.name, ', ' order by a.name) as account_names
-			from core.account_users au
-			join core.accounts a on a.id = au.account_id
-			where au.user_id = u.id and au.is_active = true and a.is_active = true
-		) agg on true
+		from core.users u` + accountAggLateralJoin + `
 		where u.id = $1::uuid
 	`
 	row := r.pool.QueryRow(ctx, query, userID)

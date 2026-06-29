@@ -24,8 +24,12 @@ func RegisterLayoutRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Mid
 
 func handleGetLayout(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -41,8 +45,12 @@ func handleGetLayout(svc *Service) http.HandlerFunc {
 
 func handlePutLayout(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -64,8 +72,12 @@ func handlePutLayout(svc *Service) http.HandlerFunc {
 
 func handlePublishLayout(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}

@@ -177,9 +177,15 @@ Tipo: `retirada, entrega, local` — validados no service contra as `settings`.
   front sempre envia `customer.address`; por isso `PublicCustomerInput` TEM o campo `Address`
   (jsonb livre). `PlaceOrder` usa `customer.address` como `deliveryAddress` (fallback p/ o campo
   top-level `deliveryAddress`). Remover esse campo volta a derrubar TODO pedido com `400`.
-- Rate limit por IP em memoria (`rate_limit.go`): orders 10/min, events 60/min => `429`.
-  Independente do `RateLimit` global por user. Em dev (Docker) todos os requests chegam com o IP
-  do gateway, entao o limite vira efetivamente global — `docker compose restart api` zera o bucket.
+- Rate limit por (tenant, IP) em memoria (`rate_limit.go`): orders 10/min, events 600/min => `429`.
+  A chave do bucket inclui o **slug** (`orders|<slug>`, `events|<slug>`), isolando o orcamento entre
+  restaurantes (um tenant ruidoso nao consome a cota dos vizinhos). Independente do `RateLimit`
+  global por user. **`clientIP` usa o ULTIMO hop de `X-Forwarded-For`** (o IP que o proxy confiavel
+  — Caddy em prod — anexou), nao o primeiro: o primeiro elemento e 100% controlado pelo cliente e
+  seria trivial de forjar para escapar do limite. **Premissa:** EXATAMENTE UM proxy confiavel na
+  frente (Caddy); com mais de um proxy o ultimo hop deixa de ser o cliente e o calculo precisaria do
+  numero de proxies. Em dev (Docker) todos os requests chegam com o IP do gateway, entao o limite vira
+  efetivamente por-slug-global — `docker compose restart api` zera o bucket.
 
 ### Recalculo de pedido (`service_orders.go`)
 `unitPrice = product.price_cents + variation.price_delta_cents + Σ addons.price_cents`;
@@ -229,6 +235,30 @@ compartilha o mesmo orcamento (`allowN`, 600/min/IP); o batch debita `len(events
 (`scopedAccountID` em `http.go`): `platform_admin` ve qualquer account (ou todas na
 listagem); demais papeis ficam fixos na propria account; accountId divergente => `404`
 uniforme. Repo SEMPRE filtra `account_id` (defesa em profundidade).
+
+**Permissao fina aplicada (gate por handler — `requireCardapioPerm` em `http.go`,
+implementacao em `rbac.go`).** Alem do `RequireAuth` + gating de modulo no Chain, CADA
+handler do painel agora checa a permissao no banco via `core.RBACService.HasAccountPermission`
+(mesma usada por ~20 modulos). Regra:
+- **GET** (listar/obter restaurante, dominios, catalogo, reviews, layout, zonas, pedidos,
+  eventos e os 9 GETs de analytics) => `cardapio.view`.
+- **Mutacao de catalogo/restaurante/layout/zona/dominio/media** (POST/PATCH/DELETE de
+  restaurante, categoria, produto, review, dominio, zona, layout PUT/publish, upload de
+  media) => `cardapio.manage`.
+- **Mutacao de pedido** (`PATCH /v1/cardapio/orders/{id}`, troca de status) =>
+  `cardapio.orders.manage`.
+
+`platform_admin` (via `Principal.Role`) e `agency_owner` (da org dona da account, resolvido
+no banco em `cardapioGate.isAgencyOwner`, espelhando `core.CanAccessAccountRoles`) entram em
+**curto-circuito** (permitem sem checar a permissao fina). Falha de permissao => `ErrForbidden`,
+que `writeServiceError` traduz para **404 uniforme** (nao vaza existencia/escopo). As rotas
+PUBLICAS (`http_public.go`) NAO passam pelo gate. O gate e injetado no `Build` do modulo
+(`module.go`: `core.NewRBACService(core.NewPostgresRBACRepository(deps.Pool))` -> `WithGate`),
+sem tocar `app.go`. Nos testes (`newServiceWithStore`) o gate fica nil e e **fail-closed** (so
+`platform_admin` passa) — os testes exercitam o service direto, nao os handlers HTTP.
+
+`handleDuplicateRestaurant` mantem a negacao explicita por papel (so `platform_admin` => `403`
+para nao-admin): e acao admin-only, negacao de papel, nao leak de escopo (ver Seguranca).
 
 A LISTAGEM (`GET /v1/cardapio/restaurants`) usa `listScopeAccountID`: para `platform_admin`
 o filtro vem SO do query `accountId` (vazio = todas as accounts, igual a bio) — o header
@@ -328,6 +358,10 @@ duracoes em segundos. **Exige rebuild api** (mudanca Go). Arquivos: `model_analy
 
 - `cardapio.view`, `cardapio.manage`, `cardapio.orders.manage` (scope `account`).
 - Templates: `cardapio.manager` (as 3), `cardapio.viewer` (view).
+- **Aplicadas por handler** (ver "Endpoints do painel"): GET => `view`; mutacao de
+  catalogo/restaurante/layout/zona => `manage`; mutacao de pedido => `orders.manage`.
+  `platform_admin`/`agency_owner` em curto-circuito; falha => 404 uniforme. Antes desta
+  fase os handlers so exigiam `RequireAuth` + gating de modulo (sem permissao fina).
 
 ## Media (`media_storage.go`)
 
@@ -349,7 +383,9 @@ absolutizado no publico via `PUBLIC_API_BASE_URL`.
 
 ## Arquivos
 
-`module.go` (Registry) · `model.go`/`model_order.go` (DTOs) · `store.go` (interface `dataStore`)
+`module.go` (Registry; monta o gate de permissao via `core.RBACService`) · `rbac.go`
+(`cardapioGate`/`requireCardapioPerm` helpers + chaves `permView`/`permManage`/`permOrdersManage`)
+· `model.go`/`model_order.go` (DTOs) · `store.go` (interface `dataStore`)
 · `store_restaurants.go`/`store_catalog.go`/`store_orders.go`/`store_events.go`/`store_sessions.go`/`store_public.go`/`store_zones.go`
 · `service.go`/`service_public.go`/`service_orders.go`/`service_analytics.go` (F2) · `telemetry_enrich.go`
 (parse UA / ip_hash / referrer / sanitize anti-PII da ingestao) · `model_analytics.go` (DTOs + range +
@@ -365,8 +401,10 @@ allowlists do analytics) · `store_analytics.go`/`store_analytics_detail.go` (qu
 - `CARDAPIO_DEV_DEFAULT_SLUG` — opcional, so dev/local (host `localhost`).
 - `UPLOADS_DIR` — raiz dos uploads (default `uploads`).
 - `CARDAPIO_TELEMETRY_SALT` (Fase 10/F1) — salt do `ip_hash` da ingestao de telemetria
-  (`sha256(ip + salt)`). Obrigatoria em producao (LGPD); vazia => `ip_hash` fica vazio (sem
-  IP cru) e o boot loga um WARN (`deps.Logger`), sem derrubar o modulo em dev.
+  (`sha256(ip + salt)`). **Vazia => `ip_hash` fica vazio (sem IP cru gravado) e o boot loga um
+  WARN (`deps.Logger`); NAO derruba o modulo nem o boot.** Isto e **fail-closed quanto a PII**: na
+  duvida nao grava o IP. Definir o salt em producao e a recomendacao (LGPD), mas o modulo NAO
+  impoe isso no boot (decisao deliberada: o enforcement de boot seria cross-cutting; ver `module.go`).
 - `CARDAPIO_TELEMETRY_RETENTION_DAYS` (Fase 10/F5) — opcional, default **90**. Janela da poda
   diaria de telemetria (`events` por `created_at` + `sessions` por `last_seen_at`); `<=0`
   desliga. `startRetentionLoop` (`telemetry_retention.go`) roda a 1a poda ~5min apos o boot,
@@ -394,10 +432,12 @@ allowlists do analytics) · `store_analytics.go`/`store_analytics_detail.go` (qu
 2. **Rebuild api** (mudou Go): `docker compose up -d --build api`. F1 (duplicar, so codigo
    Go) + F2 (reviews de estabelecimento, migration `0171`) exigem rebuild da api. A
    correcao do move atomico (2026-06-22) e so codigo Go, mas tambem exige rebuild. A
-   Fase 10/F1 (ingestao de telemetria) mudou Go + migration `0174` — exige rebuild.
+   Fase 10/F1 (ingestao de telemetria) mudou Go + migration `0174` — exige rebuild. O gate de
+   permissao fina do painel (esta fase) e so codigo Go (sem migration) — exige rebuild da api.
 3. Envs novas em `.env.production` E `docker-compose.prod.yml`: `CARDAPIO_BASE_DOMAIN`,
-   `CARDAPIO_DEV_DEFAULT_SLUG` (opcional), `CARDAPIO_TELEMETRY_SALT` (Fase 10/F1, obrigatoria
-   em producao p/ o `ip_hash` da telemetria; vazia loga WARN no boot e nao grava IP),
+   `CARDAPIO_DEV_DEFAULT_SLUG` (opcional), `CARDAPIO_TELEMETRY_SALT` (Fase 10/F1, recomendada
+   em producao p/ o `ip_hash` da telemetria; vazia loga WARN no boot e nao grava IP — fail-closed
+   quanto a PII, NAO derruba o boot),
    `CARDAPIO_TELEMETRY_RETENTION_DAYS` (Fase 10/F5, opcional, default 90; `<=0` desliga a poda).
    `PUBLIC_API_BASE_URL` ja existe (bio).
 4. Registro central (integracao C3, NAO neste modulo):
@@ -407,6 +447,12 @@ allowlists do analytics) · `store_analytics.go`/`store_analytics_detail.go` (qu
 
 ## Seguranca
 
+- **Permissao fina por handler do painel** (`requireCardapioPerm` -> `cardapioGate.Authorize`,
+  `rbac.go`): GET => `cardapio.view`; mutacao de catalogo/restaurante/layout/zona => `cardapio.manage`;
+  mutacao de pedido => `cardapio.orders.manage`. Resolve no banco (`HasAccountPermission`:
+  role_permissions + overrides allow/deny). `platform_admin`/`agency_owner` em curto-circuito.
+  Falha => `ErrForbidden` => **404 uniforme** (nao 403; nao vaza existencia). Rotas publicas NAO
+  gateadas. Gate **fail-closed** sem RBAC injetado (so platform_admin passa).
 - `account_id` nunca vem do body cru; o accountId de query/header e filtro validado contra o
   Principal. Fora do escopo => `404` (nunca 403; nao vaza existencia).
 - Mover de conta (`MoveRestaurantToAccount`) so para `platform_admin` (handler zera

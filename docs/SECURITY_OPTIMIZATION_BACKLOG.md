@@ -82,6 +82,75 @@ Severidade: 🔴 alta · 🟡 média · 🟢 baixa.
 
 ---
 
+## Revisão 2026-06-29 (revisão tripla adversarial)
+
+> 9 achados de segurança da revisão tripla de 2026-06-29 (todos verificados adversarialmente). A maioria nasceu no módulo `cardapio` (gating fino decorativo) e foi tratada na **wave 1** (correção imediata). Numeração continua a sequência SEC-*. Cada ticket traz `arquivo:linha` e o conserto.
+
+### SEC-6 🔴 [P1] Cardápio sem permissão fina (RequireAuth-only)
+- **Problema:** as rotas `/v1/cardapio/*` do painel usam só `RequireAuth` — qualquer usuário autenticado de qualquer papel chega no handler. As permissões `cardapio.view`/`cardapio.manage` existiam no registry mas eram **decorativas** (nada as exigia).
+- **Arquivo:** `back/internal/modules/cardapio/http.go:17-39` (`RegisterRoutes` envolve tudo em `middleware.RequireAuth`).
+- **Conserto (wave 1):** exigir `cardapio.view` no GET e `cardapio.manage` no POST/PATCH/DELETE/duplicate/media (platform_admin e agency_owner em curto-circuito). O gating por módulo (`account_modules`) já vem do `RequireModuleByPath` no Chain; a permissão fina passa a ser checada no handler/wrap.
+- **Aceite:** usuário sem `cardapio.view` → 404 no GET; sem `cardapio.manage` → 403 na escrita; escopo de outra account → 404.
+- **Status:** em correção wave 1.
+
+### SEC-7 🔴 [P1] assignRole sem CheckMembership (concessão de papel cross-tenant)
+- **Problema:** `AssignRoleToUser` atribuía um role na account sem validar que o usuário-alvo é **membro** daquela account — permitia conceder papel a usuário de outro tenant (escalonamento cross-tenant), divergindo do `SetUserRoles` que já validava.
+- **Arquivo:** `back/internal/modules/core/rbac_service.go:179-193` (`AssignRoleToUser`).
+- **Conserto (wave 1):** chamar `s.rbac.CheckMembership(ctx, accountID, userID)` antes do `FindRole`/assign; `ErrAccountNotMember` → `ErrNotMember` → 404 (escopo uniforme, igual ao `SetUserRoles`).
+- **Aceite:** atribuir papel a usuário não-membro da account → 404; membro → idempotente.
+- **Status:** em correção wave 1.
+
+### SEC-8 🔴 [P1] Front cardapio_web sem viewPermission/editPermission
+- **Problema:** o workspace `cardapio_web` não declara `viewPermission`/`editPermission` — o menu/tela do cardápio aparece sem espelhar o gating fino do back (SEC-6), inconsistente com os demais workspaces.
+- **Arquivo:** `web/app/utils/workspaces.ts:34-39` (entry `cardapio_web`, sem chaves de permissão).
+- **Conserto (wave 1):** declarar `viewPermission: 'cardapio.view'` e `editPermission: 'cardapio.manage'` (espelhando o back), mantendo platform_admin/agency_owner com bypass via `isPlatformAdmin || has(...)`.
+- **Aceite:** papel sem `cardapio.view` não vê o item no menu nem acessa por URL; admin/agência continua vendo.
+- **Status:** em correção wave 1.
+
+### SEC-9 🟡 [P2] Feedback retorna 403 em vez de 404 (SEC-2)
+- **Problema:** acesso a feedback fora do escopo do tenant devolve `403 forbidden` (revela existência) em vez de `404` — enumeration, mesma classe do SEC-2.
+- **Arquivo:** `back/internal/modules/queue/feedback/http.go:355-356` (`writeServiceError` mapeia `ErrForbidden` → `http.StatusForbidden`); origem em `back/internal/modules/queue/feedback/service.go:65,109,127,154,199,208,211`.
+- **Conserto (wave 1):** o `ErrForbidden` **por escopo de tenant** vira 404 (`feedback_not_found`); manter 403 só para negação por permissão RBAC genuína (distinguir os dois caminhos no service).
+- **Aceite:** GET/POST em feedback de outro tenant → 404 idêntico ao de id inexistente.
+- **Status:** wave 1.
+
+### SEC-10 🟡 [P2] Queries de feedback sem filtro tenant_id (defesa em profundidade)
+- **Problema:** parte das queries de feedback resolve o escopo só na aplicação (service), sem `where tenant_id = $` na própria query — um handler novo que esqueça o scope vaza cross-tenant (sem rede embaixo, mesma raiz do SEC-1).
+- **Arquivo:** `back/internal/modules/queue/feedback/store_postgres.go:138,157,217` (selects de feedback/mensagens sem cláusula `tenant_id` consistente; o filtro só aparece no list em :237).
+- **Conserto (wave 1):** adicionar `and tenant_id = $::uuid` (defesa em profundidade) nos selects de feedback e mensagens, alimentado pelo `Principal.TenantID`/`AccountID`.
+- **Aceite:** query de feedback sempre carrega o predicado de tenant; teste de regressão IDOR cross-tenant verde.
+- **Status:** wave 1.
+
+### SEC-11 🟡 [P2] Rate-limit público do cardápio é global por IP (SEC-3)
+- **Problema:** o limitador público do cardápio é por `(scope, IP)` em memória, **global** — não tem dimensão de tenant/restaurante, então um IP barulhento afeta todos os restaurantes (noisy-neighbor, mesma classe do SEC-3).
+- **Arquivo:** `back/internal/modules/cardapio/rate_limit.go:36-40` (chave = `scope + "|" + ip`, sem restaurante/account).
+- **Conserto (wave 1):** incluir o slug/restaurantID na chave do bucket (`scope|restaurant|ip`) para isolar quota por restaurante; manter o teto por IP.
+- **Aceite:** estouro de quota num restaurante não derruba a ingestão pública de outro.
+- **Status:** wave 1.
+
+### SEC-12 🟡 [P2] clientIP confia no primeiro X-Forwarded-For
+- **Problema:** `clientIP` usa o **primeiro** host do `X-Forwarded-For`, que é forjável pelo cliente (spoof do IP → driblar o rate-limit e poluir `ip_hash` da telemetria).
+- **Arquivo:** `back/internal/modules/cardapio/rate_limit.go:65-77` (`clientIP` pega o 1º host do XFF antes do `RemoteAddr`).
+- **Conserto (wave 1):** confiar só no proxy conhecido — pegar o IP **mais à direita** do XFF (o que o proxy de borda anexou) ou cair direto no `RemoteAddr`; documentar a premissa de proxy reverso confiável.
+- **Aceite:** XFF arbitrário do cliente não muda o IP efetivo do rate-limit/telemetria.
+- **Status:** wave 1.
+
+### SEC-13 🟡 [P2] CARDAPIO_TELEMETRY_SALT "obrigatório" não é enforçado
+- **Problema:** o `AGENT.md` chama `CARDAPIO_TELEMETRY_SALT` de obrigatório em produção, mas o boot só loga um `Warn` e segue com `ip_hash` vazio — divergência doc×código (telemetria sem salt = `ip_hash` previsível/vazio).
+- **Arquivo:** `back/internal/modules/cardapio/module.go:72-83` (só `Logger.Warn` quando vazio); doc em `back/internal/modules/cardapio/AGENT.md:367,399`.
+- **Conserto (wave 1):** alinhar a doc ao comportamento real (warn + `ip_hash` vazio, não fatal) **e** registrar como item de deploy: provisionar o salt no `.env.production` da VPS (ver roadmap fase de hardening). Endurecer para fatal-em-prod fica como follow-up.
+- **Aceite:** doc descreve o comportamento real; salt provisionado em prod antes de vender acesso.
+- **Status:** doc alinhada wave 1 (enforcement fatal = follow-up).
+
+### SEC-14 🟢 [P2] AGENT.md do cardápio afirmava RBAC que não existia
+- **Problema:** o `AGENT.md` do módulo `cardapio` descrevia gating por `cardapio.view`/`cardapio.manage` que de fato **não era aplicado** (só `RequireAuth`, ver SEC-6) — documentação enganosa que mascarava o buraco de permissão.
+- **Arquivo:** `back/internal/modules/cardapio/AGENT.md` (seção de rotas do painel) + `back/internal/modules/cardapio/http.go:14-16` (comentário dizia que o gating vinha do Chain, sem permissão fina).
+- **Conserto (wave 1):** corrigir o AGENT.md para refletir o gating fino real introduzido no SEC-6 (`cardapio.view`/`cardapio.manage` no handler) — doc volta a casar com o código.
+- **Aceite:** AGENT.md do cardápio descreve exatamente o que o código exige; sem afirmação de RBAC fantasma.
+- **Status:** corrigido wave 1.
+
+---
+
 ## Mapa de paralelismo (o que roda junto SEM conflito de arquivo)
 
 | Track | Tickets | Arquivos | Conflita com |
@@ -97,7 +166,7 @@ Severidade: 🔴 alta · 🟡 média · 🟢 baixa.
 ---
 
 ## Status
-Backlog criado em 2026-06-07.
+Backlog criado em 2026-06-07. Ampliado em 2026-06-29 com a seção "Revisão 2026-06-29" (SEC-6 a SEC-14, 9 achados; foco em `cardapio` + `assignRole`, maioria em correção/feito na wave 1).
 
 **Concluídos:**
 - SEC-4 ✅ security headers (P1·10)

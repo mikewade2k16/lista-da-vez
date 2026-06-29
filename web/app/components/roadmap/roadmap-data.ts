@@ -1881,6 +1881,46 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     ],
     blockers: [],
     verifiable: "grep por /v1/access/ e mockQueueState retorna 0 em código vivo; login e gating de página 100% via core; nenhum usuário perde acesso; docs/LEGADO.md zerado dos itens removidos."
+  },
+  // ─── Pré-venda / Pré-deploy — revisão tripla 2026-06-29 ───────────────────
+  //
+  // Criada em 2026-06-29 a partir da revisão tripla adversarial (9 achados de
+  // segurança + 36 de faxina). Reúne o que precisa estar fechado ANTES de vender
+  // acesso a cliente / antes do deploy: staging do trabalho não-commitado +
+  // env vars novas na VPS, gate RBAC do cardápio + CheckMembership do assignRole
+  // (wave 1), smokes no browser dos critérios 1-3 do MULTITENANT_COMPLETION_PLAN,
+  // e a wave 2 de faxina (refactors grandes). Docs canônicos:
+  // docs/SECURITY_OPTIMIZATION_BACKLOG.md (§Revisão 2026-06-29, SEC-6..SEC-14) e
+  // docs/FAXINA_CODIGO_2026-06-29.md.
+  {
+    id: "pre-venda-revisao-0629",
+    code: "PRE",
+    title: "Pré-venda / Pré-deploy — fechar revisão tripla 2026-06-29",
+    goal: "Deixar o painel pronto para vender acesso e fazer deploy: tudo da revisão tripla de 2026-06-29 staged/commitado + env vars novas provisionadas na VPS, gate RBAC do cardápio e CheckMembership do assignRole validados no browser (wave 1), smokes dos critérios 1-3 do MULTITENANT_COMPLETION_PLAN e a wave 2 de faxina (refactors grandes) agendada. Segurança: docs/SECURITY_OPTIMIZATION_BACKLOG.md §Revisão 2026-06-29; faxina: docs/FAXINA_CODIGO_2026-06-29.md.",
+    status: "pending",
+    startedAt: "2026-06-29",
+    estimateWeeks: "1 semana (wave 1 + smokes) + wave 2 dedicada",
+    group: "multi-tenant",
+    tasks: [
+      // (a) Deploy — staging do trabalho + env vars na VPS
+      { id: "pre-a-git-add", label: "[deploy] git add -A obrigatório: o trabalho da revisão (cardápio/rbac/faxina) tem arquivos novos e alterados ainda não commitados; stage tudo (sem deixar arquivo novo de fora) antes de buildar a imagem do deploy", done: false, note: "Achado da revisão tripla 2026-06-29: dezenas de arquivos novos/alterados untracked na branch; um `git add -A` antes do build evita imagem velha (lição do deploy-ship órfão). Comandos devolvidos ao usuário (regra: agente não roda git)." },
+      { id: "pre-a-env-vps", label: "[deploy] Provisionar no .env.production da VPS: CARDAPIO_TELEMETRY_SALT (obrigatório p/ ip_hash da telemetria; hoje só loga Warn e segue com hash vazio) e CARDAPIO_TELEMETRY_RETENTION_DAYS (opcional, default 90)", done: false, note: "SEC-13: module.go:72-83 só Warn quando o salt é vazio; doc dizia 'obrigatório'. Alinhar = provisionar em prod. Anotar em Notas de Deploy do doc canônico." },
+      // (b) Segurança wave 1 — gate RBAC cardápio + CheckMembership assignRole
+      { id: "pre-b-cardapio-rbac", label: "[seguranca] Gate RBAC fino do cardápio (wave 1): /v1/cardapio/* exige cardapio.view (GET) e cardapio.manage (escrita); workspace cardapio_web ganha viewPermission/editPermission; validar no browser que papel sem permissão não vê/edita e admin/agência continua", done: false, note: "SEC-6 (back/internal/modules/cardapio/http.go:17-39, era RequireAuth-only) + SEC-8 (web/app/utils/workspaces.ts:34-39, sem chaves de permissão) + SEC-14 (AGENT.md afirmava RBAC que não existia). platform_admin/agency_owner em curto-circuito. Validar no browser." },
+      { id: "pre-b-assignrole-membership", label: "[seguranca] CheckMembership no assignRole (wave 1): AssignRoleToUser valida que o alvo é membro da account antes de conceder o papel (não-membro/cross-tenant → 404); validar no browser que não dá pra atribuir papel a usuário de outro tenant", done: false, note: "SEC-7 (back/internal/modules/core/rbac_service.go:179-193): CheckMembership + ErrAccountNotMember→ErrNotMember→404, espelhando SetUserRoles. Exige rebuild api." },
+      { id: "pre-b-feedback-404-tenant", label: "[seguranca] Feedback: 403→404 fora de escopo (SEC-9) + predicado tenant_id nas queries (SEC-10, defesa em profundidade) — wave 1; validar IDOR cross-tenant no browser", done: false, note: "SEC-9 (feedback/http.go:355-356) + SEC-10 (feedback/store_postgres.go:138,157,217). ErrForbidden por escopo vira 404; por permissão RBAC continua 403." },
+      { id: "pre-b-cardapio-ratelimit-ip", label: "[seguranca] Cardápio público: rate-limit por restaurante+IP (SEC-11) + clientIP confiável (SEC-12, não confiar no 1º X-Forwarded-For) — wave 1", done: false, note: "SEC-11 (rate_limit.go:36-40, chave global por IP→incluir restaurante) + SEC-12 (rate_limit.go:65-77, pegar IP à direita do XFF ou RemoteAddr). NÃO remover o limitador público (cobre rotas sem JWT, de propósito)." },
+      // (c) Smokes no browser — critérios 1-3 do MULTITENANT_COMPLETION_PLAN
+      { id: "pre-c-smoke-crit1", label: "[smoke] Critério 1: GET /v1/admin/accounts retorna as contas reais do banco (não mock) — conferir no browser logado", done: false, note: "Espelha o critério 1 do verifiable da fase multitenant-completion. Validação humana no browser." },
+      { id: "pre-c-smoke-crit2", label: "[smoke] Critério 2: habilitar módulo via UI grava em core.account_modules e o item aparece no menu sem reload", done: false },
+      { id: "pre-c-smoke-crit3", label: "[smoke] Critério 3: desabilitar módulo retorna 403 module_disabled na rota dele (gate por RequireModuleByPath)", done: false },
+      // (d) Wave 2 — faxina (refactors grandes)
+      { id: "pre-d-wave2-helpers", label: "[wave2] Consolidar helpers cross-módulo (firstNonEmpty 8x, normalizeStoreIDs cross-módulo, decodeStringSlice 3x, slugify 6x) num pacote utilitário único + testes", done: false, note: "F-01..F-04 de docs/FAXINA_CODIGO_2026-06-29.md. Baixo risco, destrava os outros refactors. Não altera comportamento." },
+      { id: "pre-d-wave2-splits", label: "[wave2] Split de arquivos > 450 linhas: useTasksPageContext.ts (3063), AdminUsersWorkspace.vue (881), AdminRoleMatrixEditor.vue (633), admin_users_repository.go (592)", done: false, note: "F-17..F-20. Cada um num PR próprio; API pública estável; gates verdes (go build/vet/test + eslint/vue-tsc)." },
+      { id: "pre-d-wave2-socket-inline-chat", label: "[wave2] Extrair socket WS compartilhado (useTasksRealtime/useTaskPresence), useInlineEditManager (6 managers) e composable de chat do feedback", done: false, note: "Itens 2/3/4 da §6 de docs/FAXINA_CODIGO_2026-06-29.md. Exigem teste de realtime; nenhum remove feature." }
+    ],
+    blockers: [],
+    verifiable: "1) git status sem arquivo novo da revisão fora do stage e CARDAPIO_TELEMETRY_SALT/RETENTION_DAYS no .env.production da VPS. 2) No browser: papel sem cardapio.view não vê/edita o cardápio (admin/agência sim) e assignRole não atribui papel cross-tenant (404). 3) Smokes 1-3 do MULTITENANT_COMPLETION_PLAN passam no browser. 4) Wave 2 de faxina agendada/iniciada (helpers consolidados, splits dos arquivos > 450 linhas). Refs: docs/SECURITY_OPTIMIZATION_BACKLOG.md §Revisão 2026-06-29 + docs/FAXINA_CODIGO_2026-06-29.md."
   }
 ];
 

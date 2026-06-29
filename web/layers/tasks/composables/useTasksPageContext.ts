@@ -255,10 +255,6 @@ export function useTasksPageContext() {
       .replace(/[^a-z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
   }
-  function toNumberId(value: unknown) {
-    const n = Number.parseInt(String(value ?? '').trim(), 10)
-    return Number.isFinite(n) && n > 0 ? n : 0
-  }
   function dateLabel(value: unknown) {
     const iso = normalizeText(value, 24)
     if (!iso) return '-'
@@ -282,9 +278,6 @@ export function useTasksPageContext() {
   }
   function priorityLabel(value: TaskPriority) {
     return value === 'alta' ? 'Alta' : value === 'baixa' ? 'Baixa' : 'Media'
-  }
-  function priorityColor(value: TaskPriority): 'error' | 'warning' | 'neutral' {
-    return value === 'alta' ? 'error' : value === 'media' ? 'warning' : 'neutral'
   }
   function toPriority(value: unknown): TaskPriority {
     const key = normalizeKey(value)
@@ -2974,11 +2967,9 @@ export function useTasksPageContext() {
     normalizeText,
     clampText,
     normalizeKey,
-    toNumberId,
     dateLabel,
     dateLabelLong,
     priorityLabel,
-    priorityColor,
     toPriority,
     columnColorClass,
     clientLabel,

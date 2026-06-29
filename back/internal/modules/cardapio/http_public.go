@@ -123,7 +123,9 @@ func handlePublicProduct(svc *Service) http.HandlerFunc {
 
 func handlePublicOrder(svc *Service, limiter *rateLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !limiter.allow("orders", clientIP(r), 10, time.Minute) {
+		// Chave por (tenant, IP): inclui o slug para isolar o orcamento entre
+		// restaurantes (um tenant ruidoso nao consome a cota dos vizinhos).
+		if !limiter.allow("orders|"+r.PathValue("slug"), clientIP(r), 10, time.Minute) {
 			httpapi.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitos pedidos. Aguarde um instante.")
 			return
 		}
@@ -144,7 +146,8 @@ func handlePublicOrder(svc *Service, limiter *rateLimiter) http.HandlerFunc {
 func handlePublicEvent(svc *Service, limiter *rateLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Mesmo bucket "events" do batch (allowN 1 slot) p/ nao dessincronizar o orcamento.
-		if !limiter.allowN("events", clientIP(r), 1, eventsRateBudget, time.Minute) {
+		// Chave por (tenant, IP): inclui o slug para isolar o orcamento entre restaurantes.
+		if !limiter.allowN("events|"+r.PathValue("slug"), clientIP(r), 1, eventsRateBudget, time.Minute) {
 			httpapi.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitos eventos. Aguarde um instante.")
 			return
 		}
@@ -196,7 +199,8 @@ func handlePublicEventBatch(svc *Service, limiter *rateLimiter) http.HandlerFunc
 			httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Lote de eventos invalido.")
 			return
 		}
-		if !limiter.allowN("events", clientIP(r), len(in.Events), eventsRateBudget, time.Minute) {
+		// Mesmo bucket "events|slug" do singular: orcamento por (tenant, IP), isolado por restaurante.
+		if !limiter.allowN("events|"+r.PathValue("slug"), clientIP(r), len(in.Events), eventsRateBudget, time.Minute) {
 			httpapi.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitos eventos. Aguarde um instante.")
 			return
 		}

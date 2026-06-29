@@ -6,6 +6,11 @@ import { useAuthStore } from '~/stores/auth'
 import { useFeedbackStore } from '~/stores/feedback'
 import { useUiStore } from '~/stores/ui'
 import { compressFeedbackImage, formatFeedbackImageSize } from '~/utils/feedback-image'
+import {
+  feedbackKindLabel as kindLabel,
+  feedbackStatusLabel as statusLabel,
+  formatFeedbackDate as formatDate,
+} from '~/domain/utils/feedback-display'
 
 const feedbackStore = useFeedbackStore()
 const auth = useAuthStore()
@@ -57,41 +62,6 @@ const lastSelectedMessageCreatedAt = computed(() => {
 
 function isDocumentVisible() {
   return !import.meta.client || document.visibilityState === 'visible'
-}
-
-function statusLabel(status) {
-  const labels = {
-    open: 'Aberto',
-    in_progress: 'Em analise',
-    resolved: 'Resolvido',
-    closed: 'Fechado',
-  }
-
-  return labels[String(status || '').trim()] || status || '-'
-}
-
-function kindLabel(kind) {
-  const labels = {
-    suggestion: 'Sugestao',
-    question: 'Duvida',
-    problem: 'Problema',
-  }
-
-  return labels[String(kind || '').trim()] || kind || '-'
-}
-
-function formatDate(isoString) {
-  try {
-    return new Date(isoString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return isoString || ''
-  }
 }
 
 function getFeedbackMessages(feedbackId) {

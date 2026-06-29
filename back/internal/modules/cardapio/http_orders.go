@@ -21,8 +21,12 @@ func RegisterOrderRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Midd
 
 func handleListOrders(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -42,8 +46,12 @@ func handleListOrders(svc *Service) http.HandlerFunc {
 
 func handleUpdateOrderStatus(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permOrdersManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -65,8 +73,12 @@ func handleUpdateOrderStatus(svc *Service) http.HandlerFunc {
 
 func handleListEvents(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}

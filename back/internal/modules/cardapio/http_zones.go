@@ -12,8 +12,12 @@ import (
 
 func handleListZones(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -28,8 +32,12 @@ func handleListZones(svc *Service) http.HandlerFunc {
 
 func handleCreateZone(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -49,8 +57,12 @@ func handleCreateZone(svc *Service) http.HandlerFunc {
 
 func handleUpdateZone(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -70,8 +82,12 @@ func handleUpdateZone(svc *Service) http.HandlerFunc {
 
 func handleDeleteZone(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}

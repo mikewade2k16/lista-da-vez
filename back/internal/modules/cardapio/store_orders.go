@@ -194,21 +194,6 @@ func (s *Store) ListOrders(ctx context.Context, accountID, restaurantID, status 
 	return orders, total, nil
 }
 
-// GetOrder retorna um pedido com itens por id na account.
-func (s *Store) GetOrder(ctx context.Context, accountID, id string) (Order, error) {
-	const q = `select ` + orderColumns + `
-		from cardapio.orders where id = $1 and account_id = $2`
-	o, err := scanOrder(s.pool.QueryRow(ctx, q, id, accountID))
-	if err != nil {
-		return Order{}, err
-	}
-	o.Items, err = s.orderItems(ctx, accountID, []string{o.ID})
-	if err != nil {
-		return Order{}, err
-	}
-	return o, nil
-}
-
 func (s *Store) attachOrderItems(ctx context.Context, accountID string, orders []Order) error {
 	if len(orders) == 0 {
 		return nil

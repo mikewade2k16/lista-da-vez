@@ -39,11 +39,12 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 }
 
 // scopedAccountID resolve o accountId efetivo da requisicao validado contra o
-// Principal. platform_admin pode informar qualquer accountId (ou "" para "todos"
-// no contexto de listagem); demais papeis tem o accountId fixado na propria
-// account e qualquer accountId divergente vira 404 (escopo uniforme). allowEmpty
-// permite "" so para admin (listagem sem filtro).
-func scopedAccountID(r *http.Request, allowEmpty bool) (string, bool, error) {
+// Principal, para endpoints by-id (que SEMPRE exigem um escopo). platform_admin
+// pode informar qualquer accountId (query tem precedencia sobre X-Account-Id);
+// demais papeis tem o accountId fixado na propria account e qualquer accountId
+// divergente vira 404 (escopo uniforme). O 2o retorno isAdmin distingue
+// platform_admin (usado em handleUpdateRestaurant para liberar o move de conta).
+func scopedAccountID(r *http.Request) (string, bool, error) {
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
 		return "", false, errNoAccount
@@ -54,8 +55,8 @@ func scopedAccountID(r *http.Request, allowEmpty bool) (string, bool, error) {
 	}
 
 	if principal.Role == auth.RolePlatformAdmin {
-		if requested == "" && !allowEmpty {
-			// admin sem filtro num endpoint que exige escopo => 404 uniforme.
+		if requested == "" {
+			// admin sem filtro num endpoint by-id que exige escopo => 404 uniforme.
 			return "", true, errNoAccount
 		}
 		return requested, true, nil
@@ -76,6 +77,21 @@ func scopedAccountID(r *http.Request, allowEmpty bool) (string, bool, error) {
 }
 
 var errNoAccount = errors.New("cardapio: no account context")
+
+// requireCardapioPerm e o gate de permissao fina dos handlers do painel: resolve
+// se o Principal pode exercer permKey na account (curto-circuito de
+// platform_admin/agency_owner; demais papeis precisam da permissao no banco).
+// Falha => ErrForbidden, que writeServiceError traduz para 404 uniforme. Centraliza
+// a checagem para os ~40 handlers do painel (GET => cardapio.view; mutacao de
+// catalogo/restaurante/layout/zona => cardapio.manage; mutacao de pedido =>
+// cardapio.orders.manage). As rotas publicas (http_public.go) NAO passam por aqui.
+func requireCardapioPerm(svc *Service, r *http.Request, accountID, permKey string) error {
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		return errNoAccount
+	}
+	return svc.authorize(r.Context(), principal, accountID, permKey)
+}
 
 // listScopeAccountID resolve o escopo da LISTAGEM. Para platform_admin o filtro
 // vem SO do query accountId (vazio = todas as accounts, igual a bio) — o header
@@ -136,6 +152,10 @@ func handleListRestaurants(svc *Service) http.HandlerFunc {
 			writeServiceError(w, r, err)
 			return
 		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
 		items, err := svc.ListRestaurants(r.Context(), accountID, r.URL.Query().Get("q"))
 		if err != nil {
 			writeServiceError(w, r, err)
@@ -158,8 +178,12 @@ func handleCreateRestaurant(svc *Service) http.HandlerFunc {
 			q.Set("accountId", strings.TrimSpace(in.AccountID))
 			r.URL.RawQuery = q.Encode()
 		}
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -174,8 +198,12 @@ func handleCreateRestaurant(svc *Service) http.HandlerFunc {
 
 func handleGetRestaurant(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -190,8 +218,12 @@ func handleGetRestaurant(svc *Service) http.HandlerFunc {
 
 func handleUpdateRestaurant(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, isAdmin, err := scopedAccountID(r, false)
+		accountID, isAdmin, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -229,7 +261,7 @@ func handleDuplicateRestaurant(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Acao restrita a administradores da plataforma.")
 			return
 		}
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -250,8 +282,12 @@ func handleDuplicateRestaurant(svc *Service) http.HandlerFunc {
 
 func handleDeleteRestaurant(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -269,8 +305,12 @@ func handleDeleteRestaurant(svc *Service) http.HandlerFunc {
 
 func handleListDomains(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -285,8 +325,12 @@ func handleListDomains(svc *Service) http.HandlerFunc {
 
 func handleCreateDomain(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -306,8 +350,12 @@ func handleCreateDomain(svc *Service) http.HandlerFunc {
 
 func handleDeleteDomain(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -330,8 +378,12 @@ func handleDeleteDomain(svc *Service) http.HandlerFunc {
 
 func handleUploadMedia(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}

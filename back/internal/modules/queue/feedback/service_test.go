@@ -60,7 +60,7 @@ func (repository *serviceTestRepository) Create(feedback *Feedback) (*Feedback, 
 	return feedback, nil
 }
 
-func (repository *serviceTestRepository) GetByID(_ string) (*Feedback, error) {
+func (repository *serviceTestRepository) GetByID(_ string, _ string) (*Feedback, error) {
 	if repository.getByIDErr != nil {
 		return nil, repository.getByIDErr
 	}
@@ -75,7 +75,7 @@ func (repository *serviceTestRepository) List(_ string, input ListInput) ([]Feed
 	return repository.feedbacks, repository.listErr
 }
 
-func (repository *serviceTestRepository) MarkRead(feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
+func (repository *serviceTestRepository) MarkRead(_ string, feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
 	repository.markReadCallCount++
 	repository.lastMarkRead.feedbackID = feedbackID
 	repository.lastMarkRead.userID = userID
@@ -94,7 +94,7 @@ func (repository *serviceTestRepository) MarkRead(feedbackID string, userID stri
 	return &updated, nil
 }
 
-func (repository *serviceTestRepository) Update(_ *Feedback) error {
+func (repository *serviceTestRepository) Update(_ string, _ *Feedback) error {
 	repository.updateCallCount++
 	if repository.feedback != nil {
 		updated := *repository.feedback
@@ -103,7 +103,7 @@ func (repository *serviceTestRepository) Update(_ *Feedback) error {
 	return repository.updateErr
 }
 
-func (repository *serviceTestRepository) CreateMessage(_ *FeedbackMessage) (*FeedbackMessage, error) {
+func (repository *serviceTestRepository) CreateMessage(_ string, _ *FeedbackMessage) (*FeedbackMessage, error) {
 	if repository.createMessageErr != nil {
 		return nil, repository.createMessageErr
 	}
@@ -113,7 +113,7 @@ func (repository *serviceTestRepository) CreateMessage(_ *FeedbackMessage) (*Fee
 	return repository.createdMessage, nil
 }
 
-func (repository *serviceTestRepository) ListMessages(_ string, _ ListMessagesInput) ([]FeedbackMessage, error) {
+func (repository *serviceTestRepository) ListMessages(_ string, _ string, _ ListMessagesInput) ([]FeedbackMessage, error) {
 	return repository.messages, repository.listMessagesErr
 }
 

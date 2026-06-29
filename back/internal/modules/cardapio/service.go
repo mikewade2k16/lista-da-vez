@@ -7,7 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 )
 
 // ServiceConfig agrupa a configuracao do modulo lida do ambiente.
@@ -24,12 +25,34 @@ type ServiceConfig struct {
 type Service struct {
 	store dataStore
 	cfg   ServiceConfig
+	gate  *cardapioGate // permissao fina do painel; nil nos testes (gate fail-closed)
 }
 
-// NewService cria o service. pool e mantido na assinatura para alinhar com o
-// padrao dos demais modulos (Build passa deps.Pool); o Service usa o Store.
-func NewService(store *Store, _ *pgxpool.Pool, cfg ServiceConfig) *Service {
+// NewService cria o service. O gate de permissao e injetado depois via WithGate
+// (Build do modulo monta o RBACService); ate la o gate fica nil (so os handlers
+// do painel o consultam, e a falta dele e fail-closed, nunca fail-open).
+func NewService(store *Store, cfg ServiceConfig) *Service {
 	return &Service{store: store, cfg: cfg}
+}
+
+// WithGate injeta o gate de permissao fina do painel (curto-circuito de
+// platform_admin/agency_owner + cardapio.view/manage/orders.manage). Retorna o
+// proprio Service para encadear no Build.
+func (s *Service) WithGate(gate *cardapioGate) *Service {
+	s.gate = gate
+	return s
+}
+
+// authorize delega ao gate a checagem de permKey na account para o Principal.
+// Sem gate (testes), so platform_admin passa — fail-closed.
+func (s *Service) authorize(ctx context.Context, principal auth.Principal, accountID, permKey string) error {
+	if s.gate == nil {
+		if principal.Role == auth.RolePlatformAdmin {
+			return nil
+		}
+		return ErrForbidden
+	}
+	return s.gate.Authorize(ctx, principal, accountID, permKey)
 }
 
 // newServiceWithStore injeta um dataStore arbitrario (usado nos testes).

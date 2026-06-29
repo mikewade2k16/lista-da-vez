@@ -28,20 +28,11 @@ const restaurantColumns = `id, slug, name, tagline, description, logo_url, banne
 	segment, facebook, youtube, google_analytics_id, facebook_pixel_id, custom_head_html,
 	is_active, created_at, updated_at`
 
+// scanRestaurant le os 24 campos do restaurante (painel, sem a coluna extra
+// account_id). Delega ao Scan compartilhado scanRestaurantInto (store_public.go),
+// passando accountIDDst=nil.
 func scanRestaurant(row rowScanner) (Restaurant, error) {
-	var r Restaurant
-	var address, hours, settings, theme []byte
-	err := row.Scan(
-		&r.ID, &r.Slug, &r.Name, &r.Tagline, &r.Description, &r.LogoURL, &r.BannerURL,
-		&r.WhatsApp, &r.Phone, &r.Email, &r.Instagram, &address, &hours, &settings, &theme,
-		&r.Segment, &r.Facebook, &r.Youtube, &r.GoogleAnalyticsID, &r.FacebookPixelID, &r.CustomHeadHTML,
-		&r.IsActive, &r.CreatedAt, &r.UpdatedAt,
-	)
-	if err != nil {
-		return Restaurant{}, err
-	}
-	hydrateRestaurantJSON(&r, address, hours, settings, theme)
-	return r, nil
+	return scanRestaurantInto(row, nil)
 }
 
 // jsonUnmarshalInto decodifica raw em dst tolerando bytes vazios.

@@ -52,9 +52,12 @@ Branch alvo: `refactor/multi-tenant-core`. Documento mestre:
 - Template `core.owner` declarado com `IsLocked: true` — roles clonados dele nao podem ser deletados.
 - `rbac_model.go` — structs `RoleTemplate` e `Role` com `ToSummary()`, erros RBAC em `errors.go`.
 - `rbac_repository.go` — `RBACRepository` + `PostgresRBACRepository`:
-  todos os metodos de seed, CRUD, atribuicao, resolucao de contexto e validacao de permissoes.
-- `rbac_service.go` — `RBACService`: `InitAccountRoles`, `ListRoles`, `GetRole`, `CreateRole`,
-  `UpdateRolePermissions`, `DeleteRole`, `AssignRoleToUser`, `RemoveRoleFromUser`,
+  metodos de CRUD, atribuicao, resolucao de contexto e validacao de permissoes. O seed
+  real de roles roda em `cloneRoleTemplates` (admin_repository.go); os metodos de clone de
+  template no service/repo foram removidos por nao terem caller.
+- `rbac_service.go` — `RBACService`: `ListRoles`, `GetRole`, `CreateRole`,
+  `UpdateRolePermissions`, `DeleteRole`, `AssignRoleToUser` (valida membership do alvo ->
+  `ErrNotMember`/404, igual a `SetUserRoles`), `RemoveRoleFromUser`, `SetUserRoles`,
   `ResolveUserContext` (retorna roles e permissions reais via UNION/EXCEPT de overrides).
 - `rbac_http.go` — 7 endpoints RBAC registrados via `RegisterRBACRoutes`.
 - Migration `0103_rbac_seed_roles_and_assignments.sql` — seed de roles para accounts ativas

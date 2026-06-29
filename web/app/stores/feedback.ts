@@ -108,18 +108,18 @@ export const useFeedbackStore = defineStore('feedback', () => {
     return formData
   }
 
+  function toTime(value?: string | null) {
+    const time = new Date(value || 0).getTime()
+    return Number.isFinite(time) ? time : 0
+  }
+
   function getFeedbackActivityTime(feedback: Partial<FeedbackItem>) {
-    const updatedAt = new Date(feedback.updated_at || feedback.created_at || 0).getTime()
-    return Number.isFinite(updatedAt) ? updatedAt : 0
+    return toTime(feedback.updated_at || feedback.created_at)
   }
 
   function getFeedbackSyncTime(feedback: Partial<FeedbackItem>) {
-    const updatedAt = new Date(feedback.updated_at || feedback.created_at || 0).getTime()
-    const readAt = new Date(feedback.user_last_read_at || feedback.created_at || 0).getTime()
-    return Math.max(
-      Number.isFinite(updatedAt) ? updatedAt : 0,
-      Number.isFinite(readAt) ? readAt : 0,
-    )
+    const activityTime = getFeedbackActivityTime(feedback)
+    return Math.max(activityTime, toTime(feedback.user_last_read_at))
   }
 
   function buildFeedbackSyncCursor(feedbacks: Partial<FeedbackItem>[]) {

@@ -39,8 +39,12 @@ func RegisterCatalogRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Mi
 
 func handleListCategories(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -55,8 +59,12 @@ func handleListCategories(svc *Service) http.HandlerFunc {
 
 func handleCreateCategory(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -76,8 +84,12 @@ func handleCreateCategory(svc *Service) http.HandlerFunc {
 
 func handleUpdateCategory(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -97,8 +109,12 @@ func handleUpdateCategory(svc *Service) http.HandlerFunc {
 
 func handleDeleteCategory(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -116,8 +132,12 @@ func handleDeleteCategory(svc *Service) http.HandlerFunc {
 
 func handleListProducts(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -132,8 +152,12 @@ func handleListProducts(svc *Service) http.HandlerFunc {
 
 func handleCreateProduct(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -153,8 +177,12 @@ func handleCreateProduct(svc *Service) http.HandlerFunc {
 
 func handleGetProduct(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -169,8 +197,12 @@ func handleGetProduct(svc *Service) http.HandlerFunc {
 
 func handleUpdateProduct(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -190,8 +222,12 @@ func handleUpdateProduct(svc *Service) http.HandlerFunc {
 
 func handleDeleteProduct(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -209,8 +245,12 @@ func handleDeleteProduct(svc *Service) http.HandlerFunc {
 
 func handleListReviews(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -225,8 +265,12 @@ func handleListReviews(svc *Service) http.HandlerFunc {
 
 func handleCreateReview(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -248,8 +292,12 @@ func handleCreateReview(svc *Service) http.HandlerFunc {
 // reviews proprias (product_id NULL) + reviews de produto marcadas para a vitrine.
 func handleListEstablishmentReviews(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permView); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -266,8 +314,12 @@ func handleListEstablishmentReviews(svc *Service) http.HandlerFunc {
 // product_id NULL). Escopo validado via scopedAccountID; defesa em profundidade no repo.
 func handleCreateEstablishmentReview(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -287,8 +339,12 @@ func handleCreateEstablishmentReview(svc *Service) http.HandlerFunc {
 
 func handleUpdateReview(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -308,8 +364,12 @@ func handleUpdateReview(svc *Service) http.HandlerFunc {
 
 func handleDeleteReview(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, _, err := scopedAccountID(r, false)
+		accountID, _, err := scopedAccountID(r)
 		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		if err := requireCardapioPerm(svc, r, accountID, permManage); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}

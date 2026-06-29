@@ -9,6 +9,7 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_ORDER,
   ORDER_TYPE_LABELS,
+  PAYMENT_METHOD_LABELS,
   formatCurrency,
 } from '~/domain/cardapio/types'
 import type { Order, OrderStatus } from '~/domain/cardapio/types'
@@ -158,6 +159,13 @@ onMounted(() => {
           <p v-if="order.deliveryAddress" class="cardapio-orders__line">
             <strong>Entrega:</strong>
             {{ order.deliveryAddress }}
+          </p>
+          <p v-if="order.paymentMethod" class="cardapio-orders__line">
+            <strong>Pagamento:</strong>
+            {{ PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod }}
+            <template v-if="order.changeForCents > 0">
+              — troco para {{ formatCurrency(order.changeForCents) }}
+            </template>
           </p>
           <p v-if="order.notes" class="cardapio-orders__line">
             <strong>Observacao:</strong>

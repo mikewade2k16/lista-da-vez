@@ -52,60 +52,19 @@ function getStoreLabel(storeId) {
   return String(store.name || store.code || store.city || 'Loja nao informada').trim()
 }
 
-function isUnreadForViewer(feedback, message, readAt) {
-  const authorUserId = String(message.author_user_id || '').trim()
-  const createdAt = new Date(message.created_at).getTime()
-  if (!Number.isFinite(createdAt) || createdAt <= readAt) {
-    return false
-  }
-
-  if (canManageFeedback.value) {
-    return authorUserId === String(feedback.user_id || '').trim()
-  }
-
-  return authorUserId !== ownUserId.value
-}
-
-function isNewFeedbackUnread(feedback) {
-  if (!canManageFeedback.value) {
-    return false
-  }
-
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-  const createdAt = new Date(feedback.created_at).getTime()
-  if (!Number.isFinite(createdAt) || createdAt <= readAt) {
-    return false
-  }
-
-  return !(feedbackStore.messagesByFeedbackId[feedback.id] || []).length
-}
-
-function getLatestUnreadReply(feedback) {
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-  const messages = feedbackStore.messagesByFeedbackId[feedback.id] || []
-
-  return [...messages].reverse().find((message) => isUnreadForViewer(feedback, message, readAt))
-}
-
+// O contador de nao-lidos e o preview vem direto do list (GET /v1/feedback(/me)
+// devolve unread_count + last_message_*), entao o sino nao precisa baixar
+// mensagens de cada feedback. O backend ja computa unread_count pela perspectiva
+// do viewer (dono ve respostas de terceiros; admin ve mensagens do criador).
 const notifications = computed(() => {
   return feedbackCollection.value
+    .filter((feedback) => Number(feedback.unread_count || 0) > 0 && feedback.status !== 'closed')
     .map((feedback) => {
-      const latestReply = getLatestUnreadReply(feedback)
-      const unreadNewFeedback = isNewFeedbackUnread(feedback)
-
-      if ((!latestReply && !unreadNewFeedback) || feedback.status === 'closed') {
-        return null
-      }
-
-      const createdAt = unreadNewFeedback
-        ? feedback.created_at || feedback.updated_at
-        : latestReply.created_at || feedback.updated_at
-      const preview = unreadNewFeedback
-        ? feedback.body || ''
-        : latestReply.body || feedback.body || ''
+      const createdAt = feedback.last_message_at || feedback.updated_at
+      const preview = feedback.last_message_body || feedback.body || ''
 
       return {
-        id: unreadNewFeedback ? `${feedback.id}:created` : `${feedback.id}:${latestReply.id}`,
+        id: `${feedback.id}:${createdAt}`,
         feedbackId: feedback.id,
         title: feedback.subject || 'Chamado sem assunto',
         meta: canManageFeedback.value
@@ -116,7 +75,6 @@ const notifications = computed(() => {
         path: `${feedbackPath.value}?id=${encodeURIComponent(feedback.id)}`,
       }
     })
-    .filter(Boolean)
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
     .slice(0, 6)
 })
@@ -180,15 +138,13 @@ async function loadNotifications() {
   if (result.cursor) {
     feedbackSyncCursor.value = result.cursor
   }
-
-  await feedbackStore.syncMessagesForFeedbacks(
-    feedbackCollection.value.map((feedback) => feedback.id),
-  )
 }
 
 function startPolling() {
   stopPolling()
-  pollingTimer = window.setInterval(loadNotifications, 30000)
+  // 60s: o list ja traz unread_count + preview, entao o sino nunca baixa
+  // mensagens. So atualiza a lista (com cursor since) periodicamente.
+  pollingTimer = window.setInterval(loadNotifications, 60000)
 }
 
 function stopPolling() {

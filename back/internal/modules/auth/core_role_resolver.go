@@ -3,18 +3,9 @@ package auth
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-)
-
-type authRolesSource string
-
-const (
-	authRolesSourceCore             authRolesSource = "core"
-	authRolesSourceLegacy           authRolesSource = "legacy"
-	authRolesSourceCoreWithFallback authRolesSource = "core_with_fallback"
 )
 
 type authRoleScope struct {
@@ -23,82 +14,19 @@ type authRoleScope struct {
 	StoreIDs []string
 }
 
-func authRolesSourceFromEnv() authRolesSource {
-	return parseAuthRolesSource(os.Getenv("AUTH_ROLES_SOURCE"))
-}
-
-func parseAuthRolesSource(value string) authRolesSource {
-	switch authRolesSource(strings.ToLower(strings.TrimSpace(value))) {
-	case authRolesSourceCore:
-		return authRolesSourceCore
-	case authRolesSourceLegacy:
-		return authRolesSourceLegacy
-	default:
-		return authRolesSourceCoreWithFallback
-	}
-}
-
-func (scope authRoleScope) valid() bool {
-	if scope.Role == "" {
-		return false
-	}
-
-	return ValidateUserScope(User{
-		Role:     scope.Role,
-		TenantID: scope.TenantID,
-		StoreIDs: append([]string{}, scope.StoreIDs...),
-	}) == nil
-}
-
+// resolveAuthRoleScope resolve papel/escopo do usuario 100% pelo core
+// (core.account_users + core.user_role_assignments + is_platform_admin). O
+// fallback legado (user_*_roles) foi removido apos o DROP da 0135 — AUTH_ROLES_SOURCE
+// e' sempre `core` em todos os ambientes.
 func (store *PostgresUserStore) resolveAuthRoleScope(ctx context.Context, record userRecord) (authRoleScope, error) {
-	source := store.rolesSource
-	if source == "" {
-		source = authRolesSourceCoreWithFallback
-	}
-
-	switch source {
-	case authRolesSourceCore:
-		scope, found, err := store.resolveCoreAuthRoleScope(ctx, record.ID)
-		if err != nil {
-			return authRoleScope{}, err
-		}
-		if !found {
-			return authRoleScope{}, nil
-		}
-		return scope, nil
-	case authRolesSourceLegacy:
-		return store.resolveLegacyAuthRoleScope(ctx, record)
-	default:
-		scope, found, err := store.resolveCoreAuthRoleScope(ctx, record.ID)
-		if err != nil {
-			return authRoleScope{}, err
-		}
-		if found && scope.valid() {
-			return scope, nil
-		}
-		return store.resolveLegacyAuthRoleScope(ctx, record)
-	}
-}
-
-func (store *PostgresUserStore) resolveLegacyAuthRoleScope(ctx context.Context, record userRecord) (authRoleScope, error) {
-	role, tenantID := resolveRole(record)
-	if role == "" {
-		return authRoleScope{}, nil
-	}
-
-	storeIDs, err := store.findStoreIDs(ctx, record.ID, role, tenantID)
+	scope, found, err := store.resolveCoreAuthRoleScope(ctx, record.ID)
 	if err != nil {
 		return authRoleScope{}, err
 	}
-	if storeIDs == nil {
-		storeIDs = []string{}
+	if !found {
+		return authRoleScope{}, nil
 	}
-
-	return authRoleScope{
-		Role:     role,
-		TenantID: tenantID,
-		StoreIDs: storeIDs,
-	}, nil
+	return scope, nil
 }
 
 func (store *PostgresUserStore) resolveCoreAuthRoleScope(ctx context.Context, userID string) (authRoleScope, bool, error) {

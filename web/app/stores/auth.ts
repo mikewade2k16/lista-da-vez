@@ -302,7 +302,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function fetchContext() {
+  async function fetchContext({ deferRuntime = false } = {}) {
     if (!accessToken.value) {
       clearSession()
       hydrated.value = true
@@ -342,11 +342,25 @@ export const useAuthStore = defineStore('auth', () => {
     // relancar — senao o catch do ensureSession/login chamaria clearSession por um
     // erro que NAO e de auth, deslogando o usuario. Mesma regra ja aplicada a
     // consultants/snapshot em runtime-remote.ts (fetchRemoteStoreData).
-    try {
-      await syncRuntimeAccess()
-    } catch (error) {
+    const onRuntimeDegraded = (error: unknown) => {
       if (import.meta.client) {
         console.warn('[auth] syncRuntimeAccess degradado; sessao preservada', error)
+      }
+    }
+    // deferRuntime (caminho do LOGIN): a hidratacao de runtime/accounts/settings
+    // (syncRuntimeAccess: /v2/me/accounts + /v1/settings + consultants + snapshot)
+    // NAO bloqueia. Nada dela e necessario para rotear — homePath ja saiu do
+    // /v1/me/context acima (deriva so de role/permissions). Disparamos em background
+    // para o login navegar na hora; a pagina destino re-resolve o que precisar no
+    // mount. No bootstrap por reload (ensureSession) e nas mutacoes de perfil
+    // seguimos com await completo (deferRuntime=false).
+    if (deferRuntime) {
+      void syncRuntimeAccess().catch(onRuntimeDegraded)
+    } else {
+      try {
+        await syncRuntimeAccess()
+      } catch (error) {
+        onRuntimeDegraded(error)
       }
     }
     return response
@@ -398,7 +412,10 @@ export const useAuthStore = defineStore('auth', () => {
 
       accessToken.value = response.session.accessToken
       hydrated.value = false
-      await fetchContext()
+      // deferRuntime: navega assim que user/principal/homePath estao prontos
+      // (/v1/me/context). A hidratacao pesada (accounts/settings/operacao) roda em
+      // background — o login deixa de esperar 4+ round-trips antes de sair da tela.
+      await fetchContext({ deferRuntime: true })
       return response
     } catch (error) {
       clearSession()

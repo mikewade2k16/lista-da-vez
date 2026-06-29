@@ -17,6 +17,11 @@ interface FeedbackItem {
   user_last_read_at: string
   created_at: string
   updated_at: string
+  // Agregados que so vem da listagem (GET /v1/feedback(/me)). Ausentes nas
+  // respostas de mutacao — o upsert preserva o ultimo valor do list.
+  unread_count?: number
+  last_message_body?: string
+  last_message_at?: string | null
 }
 
 interface FeedbackMessageItem {
@@ -148,12 +153,28 @@ export const useFeedbackStore = defineStore('feedback', () => {
     return new Date(Math.max(...timestamps)).toISOString()
   }
 
+  function mergeFeedback(existing: FeedbackItem | undefined, incoming: FeedbackItem): FeedbackItem {
+    if (!existing) {
+      return incoming
+    }
+
+    // Os agregados (unread_count/last_message_*) so vem do list. Numa resposta de
+    // mutacao eles chegam undefined; preservar o ultimo valor do list em vez de
+    // zerar o badge/preview ate o proximo ciclo de listagem.
+    return {
+      ...incoming,
+      unread_count: incoming.unread_count ?? existing.unread_count,
+      last_message_body: incoming.last_message_body ?? existing.last_message_body,
+      last_message_at: incoming.last_message_at ?? existing.last_message_at,
+    }
+  }
+
   function upsertIntoCollection(collection: Ref<FeedbackItem[]>, feedbacks: FeedbackItem[]) {
     const byId = new Map(collection.value.map((feedback) => [feedback.id, feedback]))
 
     for (const feedback of feedbacks) {
       if (feedback?.id) {
-        byId.set(feedback.id, feedback)
+        byId.set(feedback.id, mergeFeedback(byId.get(feedback.id), feedback))
       }
     }
 
@@ -252,6 +273,8 @@ export const useFeedbackStore = defineStore('feedback', () => {
 
     patchFeedbackCollections(normalizedId, {
       user_last_read_at: nextReadAt,
+      // Acabou de ler: zera o badge na hora, sem esperar o proximo list.
+      unread_count: 0,
     })
 
     return nextReadAt
@@ -532,29 +555,6 @@ export const useFeedbackStore = defineStore('feedback', () => {
     }
   }
 
-  async function syncMessagesForFeedbacks(feedbackIds: string[]) {
-    const uniqueIds = Array.from(
-      new Set(feedbackIds.map((feedbackId) => String(feedbackId || '').trim()).filter(Boolean)),
-    )
-
-    if (!uniqueIds.length) {
-      return { ok: true, data: [] }
-    }
-
-    const results = await Promise.all(
-      uniqueIds.map((feedbackId) =>
-        fetchMessages(feedbackId, {
-          after: getLastMessageCreatedAt(feedbackId),
-        }),
-      ),
-    )
-
-    return {
-      ok: results.every((result) => result.ok),
-      data: uniqueIds.map((feedbackId) => messagesByFeedbackId.value[feedbackId] || []),
-    }
-  }
-
   return {
     items,
     myItems,
@@ -569,7 +569,6 @@ export const useFeedbackStore = defineStore('feedback', () => {
     updateFeedback,
     fetchMessages,
     applyLocalReadState,
-    syncMessagesForFeedbacks,
     sendMessage,
     markFeedbackAsRead,
   }

@@ -43,11 +43,7 @@ Ele nao deve cuidar de:
 
 - usuarios vivem no PostgreSQL
 - identidade vive em `core.users` (fonte única; a view compat `public.users` foi DROPADA na 0136 — o auth lê `core.users` direto)
-- papel/escopo no auth e resolvido por `AUTH_ROLES_SOURCE`:
-  - `core` = apenas `core.*` (**default e UNICO valido em prod desde o U4c**)
-  - `legacy` = apenas `user_*_roles` — **QUEBRADO**: as tabelas foram dropadas (0135)
-  - `core_with_fallback` = tenta `core.*` e cai no legado — **QUEBRADO** pelo mesmo motivo
-- **U4c (2026-06-06):** `findRecord` (`legacyRoleProjection()`) so referencia `user_*_roles` quando `source != core`; em `core` os campos legados saem vazios (o resolvedor core os ignora). Sem isso, qualquer login quebrava com 500 apos o DROP. O codigo de fallback legado (`resolveLegacyAuthRoleScope`/`findStoreIDs`) segue presente mas so executa em `legacy`/`core_with_fallback` (nunca em prod).
+- papel/escopo no auth e resolvido **100% pelo core** (`resolveAuthRoleScope` → `resolveCoreAuthRoleScope`). O fallback legado e o flag `AUTH_ROLES_SOURCE` foram **REMOVIDOS** (2026-06-26) — desde o DROP da 0135 o unico caminho valido era `core`. Apagados: `resolveLegacyAuthRoleScope`, `findStoreIDs`, `resolveRole`, `legacyRoleProjection`, o tipo `authRolesSource`/`parseAuthRolesSource` e os campos legados de `userRecord`. O env var `AUTH_ROLES_SOURCE` virou no-op (remover do compose/.env no proximo deploy-cleanup).
 - fonte core de papel/escopo:
   - `core.users.is_platform_admin`
   - `core.account_users`

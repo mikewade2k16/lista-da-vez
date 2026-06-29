@@ -13,6 +13,13 @@ const ROLE_LABELS = {
   admin: 'Admin da plataforma',
 }
 
+// Label amigavel do papel para exibicao (perfil, cabecalhos). normalizeAppRole e
+// hoisted (declaracao de funcao abaixo), entao pode ser referenciada aqui.
+export function getRoleLabel(role) {
+  const normalized = normalizeAppRole(role)
+  return ROLE_LABELS[normalized] || ROLE_LABELS[role] || String(role || '').trim() || 'Sem papel'
+}
+
 export const WORKSPACE_ACCESS_DEFINITIONS = [
   {
     id: 'operacao',
@@ -898,10 +905,6 @@ export function canAccessMultiStore(role, permissionKeys = [], permissionsResolv
     normalized === 'marketing' ||
     normalized === 'manager'
   )
-}
-
-export function getRoleLabel(role) {
-  return ROLE_LABELS[normalizeAppRole(role)] || 'Consultor'
 }
 
 export function filterPerolaERPWorkspaces(workspaces = []) {

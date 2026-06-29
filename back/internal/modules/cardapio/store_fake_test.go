@@ -3,6 +3,7 @@ package cardapio
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -109,8 +110,59 @@ func (unimplementedStore) UpdateOrderStatus(context.Context, string, string, str
 func (unimplementedStore) InsertEvent(context.Context, string, string, string, string, json.RawMessage) error {
 	return nil
 }
+func (unimplementedStore) InsertEventsBatch(context.Context, string, string, []eventInsert) (int, error) {
+	return 0, nil
+}
+func (unimplementedStore) UpsertSession(context.Context, sessionUpsert) error {
+	return nil
+}
+func (unimplementedStore) listProductSlugs(context.Context, string, string) (map[string]struct{}, error) {
+	return nil, nil
+}
+func (unimplementedStore) PruneTelemetry(context.Context, int) (int64, int64, error) {
+	return 0, 0, nil
+}
 func (unimplementedStore) ListEvents(context.Context, string, string, int, int) ([]EventView, int, error) {
 	return nil, 0, nil
+}
+func (unimplementedStore) Overview(context.Context, string, string, time.Time, time.Time) (overviewRaw, error) {
+	return overviewRaw{}, nil
+}
+func (unimplementedStore) TimeseriesDaily(context.Context, string, string, time.Time, time.Time, string) (map[string]AnalyticsTimePoint, error) {
+	return nil, nil
+}
+func (unimplementedStore) TimeseriesHourOfDay(context.Context, string, string, time.Time, time.Time, string) (map[int]AnalyticsTimePoint, error) {
+	return nil, nil
+}
+func (unimplementedStore) TimeseriesWeekdayHour(context.Context, string, string, time.Time, time.Time, string) (map[int]AnalyticsTimePoint, error) {
+	return nil, nil
+}
+func (unimplementedStore) FunnelSteps(context.Context, string, string, time.Time, time.Time) ([]AnalyticsFunnelStep, error) {
+	return nil, nil
+}
+func (unimplementedStore) TopProductsByEvent(context.Context, string, string, string, time.Time, time.Time, int) ([]topProductRaw, error) {
+	return nil, nil
+}
+func (unimplementedStore) TopProductsByOrders(context.Context, string, string, time.Time, time.Time, int) ([]topProductRaw, error) {
+	return nil, nil
+}
+func (unimplementedStore) Sources(context.Context, string, string, string, time.Time, time.Time, int) ([]AnalyticsSource, error) {
+	return nil, nil
+}
+func (unimplementedStore) Devices(context.Context, string, string, string, time.Time, time.Time) ([]AnalyticsBreakdownItem, error) {
+	return nil, nil
+}
+func (unimplementedStore) Pages(context.Context, string, string, time.Time, time.Time, int) ([]AnalyticsPage, error) {
+	return nil, nil
+}
+func (unimplementedStore) Dwell(context.Context, string, string, string, string, time.Time, time.Time, int) ([]AnalyticsDwellItem, error) {
+	return nil, nil
+}
+func (unimplementedStore) Clicks(context.Context, string, string, time.Time, time.Time, int) ([]AnalyticsClick, error) {
+	return nil, nil
+}
+func (unimplementedStore) ProductNamesBySlug(context.Context, string, string, []string) (map[string]string, error) {
+	return map[string]string{}, nil
 }
 func (unimplementedStore) GetPublishedLayout(context.Context, string, string) (json.RawMessage, int64, error) {
 	return nil, 0, pgx.ErrNoRows

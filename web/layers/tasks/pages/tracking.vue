@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, provide, reactive, watch } from 'vue'
+import { computed, provide, reactive, watch } from 'vue'
+import { defineLazyComponent } from '~/utils/lazy-component'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
 import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
 import { TASKS_PAGE_CONTEXT_KEY, useTasksPageContext } from '../composables/useTasksPageContext'
 import TrackingBoardView from '../components/TrackingBoardView.vue'
 
 // Modal da task carregado sob demanda (clicar num card abre o mesmo modal do Tasks).
-const TasksTaskModal = defineAsyncComponent(() => import('../components/TasksTaskModal.vue'))
+const TasksTaskModal = defineLazyComponent(() => import('../components/TasksTaskModal.vue'))
 
 // @ts-ignore Nuxt macro available at runtime in this page.
 definePageMeta({

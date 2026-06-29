@@ -185,6 +185,7 @@ No auth:
 - `SettingsOptionManager.vue` e o ponto unico para catalogos ordenaveis simples da area de configuracoes, incluindo `pausas`.
 - Para listagens administrativas reutilizaveis, preferir `AppEntityGrid.vue` em vez de tabelas HTML novas.
 - Quando a listagem precisar de status booleano ou detalhes laterais/modal, compor com `AppToggleSwitch.vue` e `AppDetailDialog.vue` antes de criar widgets paralelos.
+- Componente carregado sob demanda (chunk lazy) deve usar `defineLazyComponent` (`~/utils/lazy-component`), nunca `defineAsyncComponent` pelado: o wrapper re-tenta o import e mostra um errorComponent acionavel (`CoreAsyncError`) se o chunk falhar, em vez de tela em branco silenciosa (ver `.claude/skills/principios-engenharia/references/registro-de-falhas.md` #10).
 - Quando alterar comportamento de tela importante, atualizar a documentacao correspondente.
 
 ## Typecheck (Fase 6.4 do PLANO_REFATORACAO)

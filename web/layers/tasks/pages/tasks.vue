@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { defineAsyncComponent, provide } from 'vue'
+import { provide } from 'vue'
+import { defineLazyComponent } from '~/utils/lazy-component'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
 import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
 import { TASKS_PAGE_CONTEXT_KEY, useTasksPageContext } from '../composables/useTasksPageContext'
@@ -9,11 +10,11 @@ import TasksBoardView from '../components/TasksBoardView.vue'
 // Componentes pesados carregados sob demanda para reduzir o bundle inicial
 // da pagina /tasks. Boards e a view default; tabela/modal/settings so carregam
 // quando o usuario interage.
-const TasksTableView = defineAsyncComponent(() => import('../components/TasksTableView.vue'))
-const TasksProjectSettings = defineAsyncComponent(
+const TasksTableView = defineLazyComponent(() => import('../components/TasksTableView.vue'))
+const TasksProjectSettings = defineLazyComponent(
   () => import('../components/TasksProjectSettings.vue'),
 )
-const TasksTaskModal = defineAsyncComponent(() => import('../components/TasksTaskModal.vue'))
+const TasksTaskModal = defineLazyComponent(() => import('../components/TasksTaskModal.vue'))
 
 // @ts-ignore Nuxt macro available at runtime in this page.
 definePageMeta({
@@ -451,8 +452,7 @@ const {
   box-shadow: var(--shadow-md);
 }
 
-.tasks-page__column-editor-popover,
-.tasks-page__task-mode-menu {
+.tasks-page__column-editor-popover {
   border-radius: var(--radius-sm);
   border: 1px solid rgb(var(--border));
   background: rgb(var(--surface));
@@ -485,23 +485,6 @@ const {
   color: rgb(var(--error));
 }
 
-.tasks-page__task-mode-item {
-  width: 100%;
-  min-height: 2rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  border-radius: var(--radius-sm);
-  padding: 0.35rem 0.5rem;
-  color: rgb(var(--text));
-  font-size: 0.85rem;
-  text-align: left;
-}
-
-.tasks-page__task-mode-item:hover {
-  background: rgb(var(--surface-2));
-}
-
 .tasks-page__table-add-row {
   width: 100%;
   min-height: 2.5rem;
@@ -528,34 +511,10 @@ const {
   background: rgb(var(--surface));
 }
 
-.tasks-page__task-overlay {
-  width: min(var(--tasks-editor-width, 720px), calc(100vw - 1rem)) !important;
-  max-width: min(var(--tasks-editor-width, 720px), calc(100vw - 1rem)) !important;
-}
-
-.tasks-page__task-overlay--center {
-  right: auto !important;
-  left: 50% !important;
-  top: 50% !important;
-  bottom: auto !important;
-  width: min(880px, calc(100vw - 2rem)) !important;
-  max-width: min(880px, calc(100vw - 2rem)) !important;
-  height: min(840px, calc(100vh - 2rem)) !important;
-  transform: translate(-50%, -50%) !important;
-  border-radius: var(--radius-md) !important;
-}
-
-.tasks-page__task-overlay--fullscreen {
-  inset: 0 !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  height: 100vh !important;
-  border-radius: 0 !important;
-}
-
-.tasks-page__task-modal-header {
-  min-height: 2.25rem;
-}
+/* Posicao/largura/header/resize/mode-menu do modal agora vivem no template-core
+   OmniEntityDrawer (web/app/components/ui/OmniEntityDrawer.vue). A pagina so mantem
+   o estilo do CONTEUDO da task (abaixo) e o encolhimento do board via
+   --tasks-editor-width (escrito pelo composable a partir da largura do modal). */
 
 .tasks-page__presence-stack {
   display: inline-flex;
@@ -618,31 +577,6 @@ const {
   max-width: 860px;
   margin-inline: auto;
   padding: 0rem 0 2rem;
-}
-
-.tasks-page__task-resize-handle {
-  position: absolute;
-  left: -0.75rem;
-  top: -3.5rem;
-  bottom: -3rem;
-  width: 0.75rem;
-  cursor: col-resize;
-}
-
-.tasks-page__task-resize-handle::after {
-  content: '';
-  position: absolute;
-  left: 0.3rem;
-  top: 4rem;
-  bottom: 2rem;
-  width: 1px;
-  background: rgb(var(--border));
-  opacity: 0;
-  transition: opacity 0.16s ease;
-}
-
-.tasks-page__task-resize-handle:hover::after {
-  opacity: 1;
 }
 
 .tasks-page__task-title-row {
@@ -1069,14 +1003,6 @@ const {
 
   .tasks-page__task-title-input input {
     font-size: 1.75rem;
-  }
-
-  .tasks-page__task-overlay,
-  .tasks-page__task-overlay--center {
-    width: 100vw;
-    max-width: 100vw;
-    height: 100vh;
-    border-radius: 0;
   }
 
   .tasks-page__task-video-item {

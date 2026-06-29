@@ -99,27 +99,20 @@ function getFeedbackMessages(feedbackId) {
 }
 
 function getFeedbackPreview(feedback) {
-  const latestMessage = getFeedbackMessages(feedback.id).at(-1)
-  if (!latestMessage) {
-    return feedback.body || ''
+  // O chamado aberto tem mensagens reais carregadas (loadSelectedMessages); os
+  // demais usam o preview que o list trouxe (last_message_body).
+  const localLatest = getFeedbackMessages(feedback.id).at(-1)
+  if (localLatest) {
+    return localLatest.body || (localLatest.image_url ? 'Imagem anexada' : feedback.body || '')
   }
 
-  return latestMessage.body || (latestMessage.image_url ? 'Imagem anexada' : feedback.body || '')
+  return feedback.last_message_body || feedback.body || ''
 }
 
 function getUnreadCount(feedback) {
-  if (!feedback?.id) {
-    return 0
-  }
-
-  const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-
-  return getFeedbackMessages(feedback.id).filter((message) => {
-    const authorUserId = String(message.author_user_id || '').trim()
-    const createdAt = new Date(message.created_at).getTime()
-
-    return authorUserId !== ownUserId.value && createdAt > readAt
-  }).length
+  // unread_count vem do backend (GET /v1/feedback/me), ja pela perspectiva do
+  // viewer. Zera localmente ao marcar como lido (applyLocalReadState).
+  return Number(feedback?.unread_count || 0)
 }
 
 async function loadMyFeedbacks(options = {}) {
@@ -141,10 +134,6 @@ async function loadMyFeedbacks(options = {}) {
   if (result.cursor) {
     feedbackSyncCursor.value = result.cursor
   }
-
-  await feedbackStore.syncMessagesForFeedbacks(
-    feedbackStore.myFeedbacks.map((feedback) => feedback.id),
-  )
 
   const queryId = String(route.query.id || '').trim()
   if (queryId && feedbackStore.myFeedbacks.some((feedback) => feedback.id === queryId)) {
@@ -327,7 +316,9 @@ async function sendReply() {
 function startPolling() {
   stopPolling()
   feedbackPollingTimer = window.setInterval(loadMyFeedbackUpdates, 30000)
-  messagesPollingTimer = window.setInterval(loadSelectedMessages, 8000)
+  // 15s: ritmo de chat sem martelar a API. As mensagens novas tambem chegam
+  // ao abrir/trocar de chamado e ao refocar a aba (handleVisibilityChange).
+  messagesPollingTimer = window.setInterval(loadSelectedMessages, 15000)
 }
 
 function stopPolling() {

@@ -33,9 +33,17 @@ function slugify(value: string): string {
 // ja vinha com valor e recebia digitacao por cima — concatenava).
 const slugPreview = computed(() => (form.slug.trim() ? slugify(form.slug) : slugify(form.name)))
 
-const canSubmit = computed(() =>
-  Boolean(form.name.trim() && slugPreview.value && form.adminEmail.trim()),
-)
+// adminEmail e OPCIONAL (cliente de controle interno pode nascer sem usuario).
+// So nome e obrigatorio; o slug deriva do nome quando vazio.
+const canSubmit = computed(() => Boolean(form.name.trim() && slugPreview.value))
+
+// Feedback do que falta quando o submit esta travado — nunca deixar o botao morto
+// sem explicar o porque.
+const missingHint = computed(() => {
+  if (!form.name.trim()) return 'Informe o nome do cliente para continuar.'
+  if (!slugPreview.value) return 'Nao foi possivel derivar o slug; informe um slug valido.'
+  return ''
+})
 
 function submit() {
   if (!canSubmit.value) return
@@ -58,7 +66,10 @@ function submit() {
 
         <div class="account-create__form">
           <div class="account-create__field">
-            <label class="account-create__label">Nome</label>
+            <label class="account-create__label">
+              Nome
+              <span class="account-create__required" aria-hidden="true">*</span>
+            </label>
             <UInput
               :model-value="form.name"
               placeholder="Nome da conta"
@@ -86,34 +97,41 @@ function submit() {
             />
           </div>
           <div class="account-create__field">
-            <label class="account-create__label">E-mail do admin inicial</label>
+            <label class="account-create__label">
+              E-mail do admin inicial
+              <span class="account-create__optional">(opcional)</span>
+            </label>
             <UInput
               :model-value="form.adminEmail"
-              placeholder="admin@cliente.com (usuario ja existente)"
+              placeholder="admin@cliente.com (deixe vazio se for so controle interno)"
               @update:model-value="form.adminEmail = String($event ?? '')"
             />
             <p class="account-create__hint">
-              O admin deve ja existir em core.users. O backend cria a conta, clona os cargos do
-              template e vincula o admin como owner.
+              Deixe vazio para um cliente so de controle interno (sem usuario/acesso). Se informar,
+              o e-mail deve ser de um usuario ja existente em core.users — o backend vincula esse
+              usuario como owner do novo cliente.
             </p>
           </div>
         </div>
 
         <template #footer>
           <div class="account-create__footer">
-            <UButton
-              label="Cancelar"
-              color="neutral"
-              variant="ghost"
-              @click="emit('update:open', false)"
-            />
-            <UButton
-              label="Criar conta"
-              color="primary"
-              :loading="creating"
-              :disabled="!canSubmit || creating"
-              @click="submit"
-            />
+            <p v-if="missingHint" class="account-create__missing">{{ missingHint }}</p>
+            <div class="account-create__footer-actions">
+              <UButton
+                label="Cancelar"
+                color="neutral"
+                variant="ghost"
+                @click="emit('update:open', false)"
+              />
+              <UButton
+                label="Criar conta"
+                color="primary"
+                :loading="creating"
+                :disabled="!canSubmit || creating"
+                @click="submit"
+              />
+            </div>
           </div>
         </template>
       </UCard>
@@ -138,6 +156,18 @@ function submit() {
   font-weight: 700;
 }
 
+.account-create__required {
+  color: rgb(var(--danger));
+  margin-left: 0.15rem;
+}
+
+.account-create__optional {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
+}
+
 .account-create__hint {
   margin: 0;
   color: var(--text-muted);
@@ -147,7 +177,22 @@ function submit() {
 
 .account-create__footer {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.account-create__missing {
+  margin: 0;
+  color: rgb(var(--danger));
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.account-create__footer-actions {
+  display: flex;
   justify-content: end;
   gap: 0.5rem;
+  margin-left: auto;
 }
 </style>

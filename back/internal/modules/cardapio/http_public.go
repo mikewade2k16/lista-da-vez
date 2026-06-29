@@ -1,7 +1,9 @@
 package cardapio
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +11,11 @@ import (
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 )
+
+// eventsRateBudget e o orcamento compartilhado do bucket "events" (singular + batch):
+// ~600 eventos/min por IP. O batch debita len(events) de uma vez (allowN); o singular
+// debita 1 — ambos no MESMO bucket para nao dessincronizar.
+const eventsRateBudget = 600
 
 // RegisterPublicRoutes monta as rotas publicas (sem JWT, sem gating). O CORS
 // wildcard de /v1/public/* e tratado no middleware da plataforma. Erros no
@@ -20,6 +27,7 @@ func RegisterPublicRoutes(mux *http.ServeMux, svc *Service, limiter *rateLimiter
 	mux.Handle("GET /v1/public/restaurants/{slug}/products/{productSlug}", handlePublicProduct(svc))
 	mux.Handle("POST /v1/public/restaurants/{slug}/orders", handlePublicOrder(svc, limiter))
 	mux.Handle("POST /v1/public/restaurants/{slug}/events", handlePublicEvent(svc, limiter))
+	mux.Handle("POST /v1/public/restaurants/{slug}/events/batch", handlePublicEventBatch(svc, limiter))
 }
 
 // writePublicError traduz erros de dominio para o formato do contrato (pt-BR).
@@ -41,6 +49,8 @@ func writePublicError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusBadRequest, "item_unavailable", "Um item da sacola nao esta mais disponivel. Atualize a pagina e tente de novo.")
 	case errors.Is(err, ErrOptionInvalid):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "option_invalid", "Uma opcao (tamanho ou adicional) do item e invalida. Limpe a sacola e adicione de novo.")
+	case errors.Is(err, ErrPaymentInvalid):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "payment_invalid", "Forma de pagamento indisponivel neste restaurante.")
 	case errors.Is(err, ErrValidation):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Pedido invalido. Confira os dados e tente novamente.")
 	default:
@@ -133,7 +143,8 @@ func handlePublicOrder(svc *Service, limiter *rateLimiter) http.HandlerFunc {
 
 func handlePublicEvent(svc *Service, limiter *rateLimiter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !limiter.allow("events", clientIP(r), 60, time.Minute) {
+		// Mesmo bucket "events" do batch (allowN 1 slot) p/ nao dessincronizar o orcamento.
+		if !limiter.allowN("events", clientIP(r), 1, eventsRateBudget, time.Minute) {
 			httpapi.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitos eventos. Aguarde um instante.")
 			return
 		}
@@ -147,5 +158,57 @@ func handlePublicEvent(svc *Service, limiter *rateLimiter) http.HandlerFunc {
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+	}
+}
+
+// readBatchJSON le o corpo do lote com decoder dedicado: LimitReader de
+// maxBatchBodyBytes (256KB, < 1MB do httpapi.ReadJSON), DisallowUnknownFields e
+// rejeita lixo apos o objeto (decoder.More()).
+func readBatchJSON(r *http.Request, dst *PublicEventBatchInput) error {
+	if r.Body == nil {
+		return io.EOF
+	}
+	defer func() { _ = r.Body.Close() }()
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxBatchBodyBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	if decoder.More() {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+// handlePublicEventBatch ingere um lote (sendBeacon no unload). 1..maxBatchEvents
+// eventos, corpo <= 256KB. Rate limit debita len(events) no bucket compartilhado
+// (allowN). Le User-Agent/Referer + hash do IP (CARDAPIO_TELEMETRY_SALT) e delega ao
+// service. Resposta 202 {accepted, rejected} (best-effort: nome fora da allowlist ou
+// context grande conta em rejected, sem derrubar o lote).
+func handlePublicEventBatch(svc *Service, limiter *rateLimiter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in PublicEventBatchInput
+		if err := readBatchJSON(r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Lote de eventos invalido.")
+			return
+		}
+		if len(in.Events) < 1 || len(in.Events) > maxBatchEvents {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Lote de eventos invalido.")
+			return
+		}
+		if !limiter.allowN("events", clientIP(r), len(in.Events), eventsRateBudget, time.Minute) {
+			httpapi.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitos eventos. Aguarde um instante.")
+			return
+		}
+		userAgent := r.Header.Get("User-Agent")
+		referer := r.Header.Get("Referer")
+		ipHash := ipHashHex(clientIP(r), svc.cfg.TelemetrySalt)
+
+		accepted, rejected, err := svc.RecordEventBatch(r.Context(), r.PathValue("slug"), in, userAgent, referer, ipHash)
+		if err != nil {
+			writePublicError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusAccepted, map[string]int{"accepted": accepted, "rejected": rejected})
 	}
 }

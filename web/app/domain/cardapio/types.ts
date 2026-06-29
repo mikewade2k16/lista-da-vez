@@ -169,10 +169,14 @@ export interface Category {
   restaurantId: string
   slug: string
   name: string
+  // description = SUBTITULO da categoria (texto curto exibido sob o nome).
   description: string
-  // WS-F: foto da categoria (opcional no contrato). productCount e derivado no
-  // menu publico (omitempty no back; ausente => o front deriva).
+  // imageUrl = CAPA (WS-F: foto representativa, opcional no contrato).
+  // bannerUrl = BANNER (imagem larga de topo da secao no site publico).
+  // productCount e derivado no menu publico (omitempty no back; ausente => o
+  // front deriva).
   imageUrl: string
+  bannerUrl: string
   sortOrder: number
   isActive: boolean
   createdAt: string
@@ -325,6 +329,11 @@ export interface Order {
   customerName: string
   customerPhone: string
   deliveryAddress: string
+  // Forma de pagamento escolhida no checkout do cardapio (pix/cash/debit/credit/
+  // ticket/other); changeForCents = troco para (so > 0 em entrega + dinheiro).
+  // Vazio em pedidos antigos.
+  paymentMethod: string
+  changeForCents: number
   notes: string
   subtotalCents: number
   deliveryFeeCents: number
@@ -375,6 +384,16 @@ export const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   retirada: 'Retirada',
   entrega: 'Entrega',
   local: 'Consumo no local',
+}
+
+// Rotulos da forma de pagamento (tokens enviados pelo checkout do cardapio).
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  pix: 'PIX',
+  cash: 'Dinheiro',
+  debit: 'Cartão de débito',
+  credit: 'Cartão de crédito',
+  ticket: 'Ticket',
+  other: 'Outro',
 }
 
 // --- Aparencia RICA: listas curadas + presets + normalize (WS-D) ---

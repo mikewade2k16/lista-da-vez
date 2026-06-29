@@ -99,7 +99,9 @@ type RestaurantLean struct {
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
-// Category e o DTO de categoria. imageUrl (WS-F) e foto representativa opcional;
+// Category e o DTO de categoria. description e o SUBTITULO da categoria (texto
+// curto exibido sob o nome no site publico). imageUrl (WS-F) e a CAPA (foto
+// representativa opcional); bannerUrl e o BANNER (imagem larga de topo da secao).
 // productCount (WS-F) e derivado no menu publico (omitempty: 0 => ausente, o
 // front deriva localmente) e NAO tem coluna.
 type Category struct {
@@ -109,6 +111,7 @@ type Category struct {
 	Name         string    `json:"name"`
 	Description  string    `json:"description"`
 	ImageURL     string    `json:"imageUrl"`
+	BannerURL    string    `json:"bannerUrl"`
 	SortOrder    int       `json:"sortOrder"`
 	IsActive     bool      `json:"isActive"`
 	CreatedAt    time.Time `json:"createdAt"`
@@ -290,12 +293,14 @@ type UpdateRestaurantInput struct {
 }
 
 // CategoryInput cria/edita categoria (full-replace: o painel manda o body
-// completo, incluindo imageUrl — sem ele, zera a foto).
+// completo, incluindo imageUrl/bannerUrl — sem eles, zera capa/banner).
+// description e o SUBTITULO da categoria.
 type CategoryInput struct {
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	ImageURL    string `json:"imageUrl"`
+	BannerURL   string `json:"bannerUrl"`
 	SortOrder   int    `json:"sortOrder"`
 	IsActive    bool   `json:"isActive"`
 }

@@ -64,7 +64,7 @@ const WORKSPACE_PREVIEW_ORDER = [
   'banco',
 ]
 
-export async function useUsersAccessManager(options = {}) {
+export function useUsersAccessManager(options = {}) {
   const auth = useAuthStore()
   const ui = useUiStore()
   const usersStore = useUsersStore()
@@ -1077,9 +1077,26 @@ export async function useUsersAccessManager(options = {}) {
     },
   )
 
-  await usersStore.ensureLoaded()
-  resetCreateDraft()
-  resetDetailOverrides()
+  // Action-first: dispara o load de usuarios + roles em BACKGROUND. Antes havia um
+  // `await usersStore.ensureLoaded()` aqui que, via o `const ctx = await
+  // useUsersAccessManager(...)` no UsersAccessManager.vue (await de topo no
+  // <script setup>), suspendia a troca de rota ate /v1/users + /v1/auth/roles
+  // responderem — a pagina /usuarios ficava parada na rota anterior, sem skeleton.
+  // Agora o setup retorna na hora (o provide acontece sincrono, o AppEntityGrid
+  // pinta o skeleton via usersStore.pending) e os drafts re-sincronizam quando os
+  // dados chegam, preservando a ordem do reset anterior (reset pos-load).
+  void usersStore
+    .ensureLoaded()
+    .then(() => {
+      resetCreateDraft()
+      resetDetailOverrides()
+    })
+    .catch(() => {
+      // ensureLoaded ja trata internamente a falha de /v1/users (return false); este
+      // catch cobre uma falha de /v1/auth/roles (ensureRoleCatalog) para nao deixar
+      // rejection nao-tratada no fire-and-forget. O grid mostra o estado vazio/erro
+      // do store; os drafts seguem nos defaults declarados.
+    })
 
   return reactive({
     allStoresValue: ALL_STORES_VALUE,

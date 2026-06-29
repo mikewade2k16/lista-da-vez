@@ -2,8 +2,11 @@ package cardapio
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -130,21 +133,235 @@ func (s *Service) PublicProduct(ctx context.Context, slug, productSlug string) (
 	return PublicProduct{Restaurant: restaurant, Product: product, Reviews: reviews}, nil
 }
 
-// RecordEvent grava um evento publico, validando a allowlist e o tamanho do
-// context (<= 8KB).
+// maxEventContextBytes e o teto do context jsonb por evento (defesa de payload).
+const maxEventContextBytes = 8 * 1024
+
+// RecordEvent grava um evento publico singular (legado/compat), validando a allowlist
+// e o tamanho do context (<= 8KB). Passa pelo MESMO sanitize do lote (anti-PII), mas
+// sem enriquecimento de UA/referer/ip (o caminho singular nao os recebe).
 func (s *Service) RecordEvent(ctx context.Context, slug string, in PublicEventInput) error {
 	name := strings.TrimSpace(in.Name)
 	if !isAllowedEvent(name) {
 		return ErrValidation
 	}
-	if len(in.Context) > 8*1024 {
+	if len(in.Context) > maxEventContextBytes {
 		return ErrValidation
 	}
 	restaurant, accountID, err := s.loadPublicRestaurant(ctx, slug)
 	if err != nil {
 		return err
 	}
-	return s.store.InsertEvent(ctx, accountID, restaurant.ID, name, strings.TrimSpace(in.SessionID), in.Context)
+	clean := sanitizeContext(name, in.Context)
+	return s.store.InsertEvent(ctx, accountID, restaurant.ID, name, strings.TrimSpace(in.SessionID), clean)
+}
+
+// RecordEventBatch ingere um lote de eventos do front publico (best-effort). Resolve o
+// restaurante 1x (account_id pelo slug, nunca do corpo) e carrega os slugs de produto
+// 1x. Para cada evento: valida a allowlist + cap de context; sanitiza PII; clampa o
+// occurredAt do cliente; promove product_slug (so se pertencer ao restaurante)/
+// page_path/dwell_ms/device_id/utm do context; enriquece device_type/browser/os
+// (User-Agent), referrer_host e ip_hash (ja hasheado pelo handler). Eventos invalidos
+// nao derrubam o lote (rejected++). Persiste tudo via InsertEventsBatch + um
+// UpsertSession agregado. created_at e sempre o relogio do servidor (no store).
+func (s *Service) RecordEventBatch(ctx context.Context, slug string, in PublicEventBatchInput, userAgent, referer, ipHash string) (accepted, rejected int, err error) {
+	restaurant, accountID, err := s.loadPublicRestaurant(ctx, slug)
+	if err != nil {
+		return 0, 0, err
+	}
+	slugs, err := s.store.listProductSlugs(ctx, accountID, restaurant.ID)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	deviceType, browser, os := parseUserAgent(userAgent)
+	referrerHost := referrerHostOf(referer)
+	now := time.Now().UTC()
+	batchDeviceID := strings.TrimSpace(in.DeviceID)
+	batchSessionID := strings.TrimSpace(in.SessionID)
+
+	rows := make([]eventInsert, 0, len(in.Events))
+	session := sessionUpsert{
+		AccountID:    accountID,
+		RestaurantID: restaurant.ID,
+		SessionID:    batchSessionID,
+		DeviceID:     batchDeviceID,
+		LastSeenAt:   now,
+		DeviceType:   deviceType,
+		ReferrerHost: referrerHost,
+	}
+
+	rejectedUnknown := make(map[string]struct{})
+	for i := range in.Events {
+		ev := in.Events[i]
+		name := strings.TrimSpace(ev.Name)
+		if !isAllowedEvent(name) {
+			rejected++
+			if name != "" {
+				rejectedUnknown[name] = struct{}{}
+			}
+			continue
+		}
+		if len(ev.Context) > maxEventContextBytes {
+			rejected++
+			continue
+		}
+		clean := sanitizeContext(name, ev.Context)
+		promo := promoteContext(clean, slugs)
+
+		sessionID := strings.TrimSpace(ev.SessionID)
+		if sessionID == "" {
+			sessionID = batchSessionID
+		}
+		deviceID := batchDeviceID
+		if promo.deviceID != "" {
+			deviceID = promo.deviceID
+		}
+
+		row := eventInsert{
+			EventID:      strings.TrimSpace(ev.EventID),
+			Name:         name,
+			SessionID:    sessionID,
+			DeviceID:     deviceID,
+			OccurredAt:   clampOccurredAt(ev.OccurredAt, now),
+			PagePath:     promo.pagePath,
+			ProductSlug:  promo.productSlug,
+			DeviceType:   deviceType,
+			Browser:      browser,
+			OS:           os,
+			ReferrerHost: referrerHost,
+			UTMSource:    promo.utmSource,
+			UTMMedium:    promo.utmMedium,
+			UTMCampaign:  promo.utmCampaign,
+			IPHash:       ipHash,
+			DwellMS:      promo.dwellMS,
+			Context:      clean,
+		}
+		rows = append(rows, row)
+
+		// Agregacao da sessao: pageviews conta page_view; landing/utm vem do 1o evento.
+		if name == "page_view" {
+			session.Pageviews++
+		}
+		if session.LandingPath == "" && promo.pagePath != "" {
+			session.LandingPath = promo.pagePath
+		}
+		if session.UTMSource == "" {
+			session.UTMSource = promo.utmSource
+		}
+		if session.UTMMedium == "" {
+			session.UTMMedium = promo.utmMedium
+		}
+		if session.UTMCampaign == "" {
+			session.UTMCampaign = promo.utmCampaign
+		}
+		if promo.dwellMS > int(session.DurationMS) {
+			session.DurationMS = int64(promo.dwellMS)
+		}
+	}
+
+	// Drift de allowlist: nome emitido pelo front que o back nao conhece (deploy
+	// fora de ordem). Logado server-side para detectar sem depender do front, que e
+	// fire-and-forget e nao trata o rejected da resposta.
+	if len(rejectedUnknown) > 0 {
+		names := make([]string, 0, len(rejectedUnknown))
+		for n := range rejectedUnknown {
+			names = append(names, n)
+		}
+		slog.Warn("cardapio: eventos de telemetria com nome fora da allowlist",
+			"restaurantId", restaurant.ID, "names", names)
+	}
+
+	if len(rows) == 0 {
+		return 0, rejected, nil
+	}
+
+	accepted, err = s.store.InsertEventsBatch(ctx, accountID, restaurant.ID, rows)
+	if err != nil {
+		return 0, rejected, err
+	}
+	session.Events = accepted
+	if session.SessionID != "" {
+		if err := s.store.UpsertSession(ctx, session); err != nil {
+			return accepted, rejected, err
+		}
+	}
+	return accepted, rejected, nil
+}
+
+// promotedContext sao os campos derivados do context que viram coluna em events.
+type promotedContext struct {
+	productSlug string
+	pagePath    string
+	deviceID    string
+	dwellMS     int
+	utmSource   string
+	utmMedium   string
+	utmCampaign string
+}
+
+// promoteContext extrai do context (ja sanitizado) os campos desnormalizados em
+// colunas. product_slug so e promovido se pertencer ao restaurante (senao "").
+func promoteContext(ctx json.RawMessage, slugs map[string]struct{}) promotedContext {
+	var obj struct {
+		ProductSlug string `json:"productSlug"`
+		PagePath    string `json:"pagePath"`
+		Route       string `json:"route"`
+		DeviceID    string `json:"deviceId"`
+		DwellMS     int    `json:"dwellMs"`
+		UTMSource   string `json:"utmSource"`
+		UTMMedium   string `json:"utmMedium"`
+		UTMCampaign string `json:"utmCampaign"`
+	}
+	if len(ctx) > 0 {
+		_ = json.Unmarshal(ctx, &obj)
+	}
+	out := promotedContext{
+		pagePath:    strings.TrimSpace(firstNonEmpty(obj.PagePath, obj.Route)),
+		deviceID:    strings.TrimSpace(obj.DeviceID),
+		utmSource:   strings.TrimSpace(obj.UTMSource),
+		utmMedium:   strings.TrimSpace(obj.UTMMedium),
+		utmCampaign: strings.TrimSpace(obj.UTMCampaign),
+	}
+	if obj.DwellMS > 0 {
+		out.dwellMS = obj.DwellMS
+	}
+	if slug := normalizeSlug(obj.ProductSlug); slug != "" {
+		if _, ok := slugs[slug]; ok {
+			out.productSlug = slug
+		}
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// clampOccurredAt parseia o occurredAt do cliente (RFC3339) e o restringe a
+// [now-24h, now+5min]. Invalido/vazio => now do servidor. Nunca alimenta histograma de
+// hora (isso e created_at do servidor); serve so para ordenar dentro do lote.
+func clampOccurredAt(value string, now time.Time) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return now
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return now
+	}
+	t = t.UTC()
+	if min := now.Add(-24 * time.Hour); t.Before(min) {
+		return min
+	}
+	if max := now.Add(5 * time.Minute); t.After(max) {
+		return max
+	}
+	return t
 }
 
 // loadPublicRestaurant resolve slug -> restaurante publico (ativo + account

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AdminAuthShell from '~/components/layout/AdminAuthShell.vue'
 import { useAuthStore } from '~/stores/auth'
 
@@ -20,6 +20,13 @@ const form = reactive({
 })
 const rememberLogin = ref(false)
 const showPassword = ref(false)
+// submitting cobre o ciclo INTEIRO do submit, incluindo o navigateTo. auth.pending
+// zera no finally de auth.login() ANTES da navegacao, entao sem isto o botao
+// voltava a "Entrar" enquanto o usuario ainda estava na tela de login (parecia
+// travado). Com o defer do runtime no store, a navegacao comeca logo apos o
+// /v1/me/context e o loading so solta quando a rota destino pinta.
+const submitting = ref(false)
+const isBusy = computed(() => auth.pending || submitting.value)
 
 onMounted(() => {
   const rememberedLogin = auth.getRememberedLogin()
@@ -41,6 +48,7 @@ watch(rememberLogin, (enabled) => {
 })
 
 async function submitLogin() {
+  submitting.value = true
   try {
     await auth.login({
       email: form.email,
@@ -66,7 +74,11 @@ async function submitLogin() {
       redirectTarget && redirectTarget.startsWith('/') ? redirectTarget : auth.homePath
     await navigateTo(destination, { replace: true })
   } catch {
-    return
+    // Erro de auth ja exibido via auth.lastError; o finally libera o form.
+  } finally {
+    // So solta o loading apos a navegacao (ou apos o erro) — mantem "Entrando..."
+    // ate a rota destino pintar, sem botao "morto" na tela de login.
+    submitting.value = false
   }
 }
 </script>
@@ -84,7 +96,7 @@ async function submitLogin() {
           inputmode="email"
           autocapitalize="none"
           placeholder="Email"
-          :readonly="auth.pending"
+          :readonly="isBusy"
           required
         />
       </div>
@@ -97,7 +109,7 @@ async function submitLogin() {
           :type="showPassword ? 'text' : 'password'"
           autocomplete="current-password"
           placeholder="Senha"
-          :readonly="auth.pending"
+          :readonly="isBusy"
           required
         />
         <button
@@ -155,9 +167,9 @@ async function submitLogin() {
         </div>
       </Transition>
 
-      <button type="submit" class="admin-auth-submit" :disabled="auth.pending">
-        <span v-if="auth.pending" class="admin-auth-submit__spinner"></span>
-        <span>{{ auth.pending ? 'Entrando...' : 'Entrar' }}</span>
+      <button type="submit" class="admin-auth-submit" :disabled="isBusy">
+        <span v-if="isBusy" class="admin-auth-submit__spinner"></span>
+        <span>{{ isBusy ? 'Entrando...' : 'Entrar' }}</span>
       </button>
 
       <p class="admin-auth-meta">

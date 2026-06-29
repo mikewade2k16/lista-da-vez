@@ -15,6 +15,7 @@ type ServiceConfig struct {
 	BaseDomain     string // CARDAPIO_BASE_DOMAIN (resolve por subdominio)
 	DevDefaultSlug string // CARDAPIO_DEV_DEFAULT_SLUG (localhost em dev)
 	PublicBaseURL  string // PUBLIC_API_BASE_URL (absolutiza /uploads/* no publico)
+	TelemetrySalt  string // CARDAPIO_TELEMETRY_SALT (hash do IP na ingestao de telemetria)
 	Media          MediaStorage
 }
 
@@ -423,7 +424,8 @@ func (s *Service) ListEvents(ctx context.Context, accountID, restaurantID string
 // Media (painel)
 // ============================================================================
 
-// SaveMedia grava uma imagem do restaurante e devolve o caminho relativo.
+// SaveMedia grava uma midia do restaurante (imagem ou video) e devolve o caminho
+// relativo. O teto de tamanho e o mime aceito sao validados no MediaStorage.
 func (s *Service) SaveMedia(ctx context.Context, accountID, restaurantID, fileName, contentType string, content []byte) (string, error) {
 	if _, err := s.store.GetRestaurant(ctx, accountID, restaurantID); err != nil {
 		return "", mapStoreErr(err)

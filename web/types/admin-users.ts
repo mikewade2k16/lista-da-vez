@@ -58,3 +58,75 @@ export interface AdminUserListResponse {
   page: number
   perPage: number
 }
+
+// Cargo na agencia (organization). agency_owner = acesso amplo a todos os
+// clientes da org; agency_member = acesso limitado. Espelha core.organization_users.
+export type OrgRole = 'agency_owner' | 'agency_member'
+
+// Efeito de um override de permissao por usuario por account. Espelha
+// core.user_permission_overrides (allow concede, deny revoga a permissao herdada
+// dos papeis). Sem override = herda do papel (nao aparece nesta lista).
+export type PermissionEffect = 'allow' | 'deny'
+
+// Override de modulo/pagina de UM usuario numa account especifica. permissionKey
+// e a chave da permissao no catalogo (core.permissions, ex.: 'cardapio.orders.view').
+export interface UserPermissionOverride {
+  permissionKey: string
+  effect: PermissionEffect
+  // Nota opcional do admin justificando o override (auditoria).
+  note?: string
+}
+
+// Permissao disponivel para receber override num usuario, vinda do catalogo
+// filtrado pelos modulos habilitados na account (backend monta `available`).
+// moduleId/scope orientam o agrupamento na UI (por modulo / por workspace).
+export interface AvailablePermission {
+  key: string
+  label: string
+  moduleId: string
+  scope: string
+}
+
+// Resposta de GET/PUT /v1/admin/users/{id}/accounts/{accountId}/overrides.
+// overrides = os ativos do usuario; available = catalogo elegivel para edicao.
+export interface UserOverridesResponse {
+  overrides: UserPermissionOverride[]
+  available: AvailablePermission[]
+}
+
+// Resumo de um cargo (core.roles) de uma account — clone editavel de template.
+// Mesmo shape do RoleSummary do backend (core/model.go). isLocked = cargo de
+// sistema nao removivel; isDefault = atribuido por padrao a novos membros.
+export interface RoleSummary {
+  id: string
+  code: string
+  label: string
+  isLocked: boolean
+  isDefault: boolean
+  description?: string
+}
+
+// Alias semantico: na UI o RoleSummary representa um cargo da conta.
+export type AccountRole = RoleSummary
+
+// Detalhe de um cargo: o resumo + a lista de permissionKeys marcadas na matriz.
+// Espelha GET /v1/accounts/{accountId}/roles/{roleId}.
+export interface RoleDetail {
+  role: RoleSummary
+  permissions: string[]
+}
+
+// Body de POST /v1/accounts/{accountId}/roles (cria cargo customizado).
+export interface RoleCreateInput {
+  code: string
+  label: string
+  description?: string
+}
+
+// Body de PATCH /v1/accounts/{accountId}/roles/{roleId} (edita label/descricao
+// e substitui a matriz de permissoes do cargo).
+export interface RoleUpdateInput {
+  label: string
+  description?: string
+  permissions: string[]
+}

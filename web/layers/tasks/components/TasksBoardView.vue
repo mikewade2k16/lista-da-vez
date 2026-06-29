@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { inject, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
+import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
 import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
 import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
@@ -8,6 +9,7 @@ import AppDatePicker from './AppDatePicker.vue'
 const ctx = inject(TASKS_PAGE_CONTEXT_KEY)!
 const {
   activeProject,
+  activeBoardLoading,
   boardColumns,
   columnColorClass,
   dropTarget,
@@ -315,6 +317,16 @@ watch(
         </header>
 
         <div class="tasks-page__board-column-body gap-2 p-2">
+          <!-- Skeleton enquanto as tasks do board ativo nao chegaram (boot ou troca de
+               board), para nao mostrar "Sem tasks" antes de saber se ha dados. -->
+          <div
+            v-if="activeBoardLoading"
+            class="tasks-page__board-column-skeleton grid gap-2"
+            aria-hidden="true"
+          >
+            <CoreSkeleton variant="card" :count="3" />
+          </div>
+
           <article
             v-for="(task, index) in visibleColumnTasks(column)"
             :key="task.id"
@@ -869,7 +881,7 @@ watch(
           </article>
 
           <UAlert
-            v-if="column.tasks.length === 0 && !creatingCards[column.id]"
+            v-if="!activeBoardLoading && column.tasks.length === 0 && !creatingCards[column.id]"
             class="tasks-page__board-empty"
             color="neutral"
             variant="soft"
@@ -879,6 +891,7 @@ watch(
           />
 
           <button
+            v-if="!activeBoardLoading"
             class="tasks-page__board-add-card"
             type="button"
             @click="beginCreateTaskInColumn(column)"

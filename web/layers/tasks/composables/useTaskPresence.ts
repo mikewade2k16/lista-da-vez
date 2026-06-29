@@ -1,6 +1,7 @@
 ﻿import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { useAuthStore } from '~/stores/auth'
+import { useCoreAccountStore } from '../../core/stores/account'
 
 type PresenceSource<T> = T | Ref<T> | ComputedRef<T> | (() => T)
 
@@ -111,9 +112,17 @@ function normalizePresenceUser(raw: Record<string, unknown>): TaskPresenceUser {
   }
 }
 
-function resolveAccountId(auth: ReturnType<typeof useAuthStore>, explicitAccountId = '') {
+function resolveAccountId(
+  auth: ReturnType<typeof useAuthStore>,
+  accountStore: ReturnType<typeof useCoreAccountStore>,
+  explicitAccountId = '',
+) {
+  // Espelha a fonte do REST (stores/tasks.ts): conta do switcher v2 primeiro, fallback legado
+  // depois. Sem accountStore.activeAccountId aqui, um chamador que nao passe o prop cairia em
+  // auth.activeTenantId (seed aaaa... pro platform_admin) e o canal de board seria rejeitado (1006).
   return normalizeText(
     explicitAccountId ||
+      accountStore.activeAccountId ||
       auth.activeTenantId ||
       auth.principal?.tenantId ||
       auth.tenantContext?.[0]?.id,
@@ -136,6 +145,7 @@ function resolveCurrentUserId(auth: ReturnType<typeof useAuthStore>) {
 export function useTaskPresence(options: TaskPresenceOptions) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
+  const accountStore = useCoreAccountStore()
 
   const status = ref<TaskPresenceStatus>('idle')
   const lastEvent = ref<Record<string, unknown> | null>(null)
@@ -164,7 +174,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     const scope = sourceValue(options.scope, 'task')
     const taskId = normalizeText(sourceValue(options.taskId, ''), 120)
     const boardId = normalizeText(sourceValue(options.boardId, ''), 120)
-    const accountId = resolveAccountId(auth, sourceValue(options.accountId, ''))
+    const accountId = resolveAccountId(auth, accountStore, sourceValue(options.accountId, ''))
     const accessToken = normalizeText(auth.accessToken, 2000)
 
     if (!enabled || !auth.isAuthenticated || !accountId || !accessToken) return null

@@ -4,6 +4,7 @@ import type {
   AdminUserFieldKey,
   AdminUserItem,
 } from '~/types/admin-users'
+import { useAdminUserLinks } from '~/composables/useAdminUserLinks'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 const PATCH_DELAY_MS = 380
@@ -303,6 +304,17 @@ export function useAdminUsersManager() {
     }
   }
 
+  // Vinculos (membership/organization) e overrides de modulo por usuario. Fatiado
+  // em useAdminUserLinks para o arquivo nao estourar ~450 linhas; recebe o mesmo
+  // apiRequest/setSaving/errorMessage/applyPatch para manter uma fonte de estado.
+  const links = useAdminUserLinks({
+    apiRequest,
+    setSaving,
+    errorMessage,
+    applyPatch,
+    normalizeMembership,
+  })
+
   function resetFilters() {
     filters.q = ''
     filters.status = ''
@@ -337,6 +349,13 @@ export function useAdminUsersManager() {
     moveUserAccount,
     fetchMemberships,
     updateMembershipRole,
+    // Vinculos e overrides de modulo (re-expostos do useAdminUserLinks).
+    addMembership: links.addMembership,
+    removeMembership: links.removeMembership,
+    linkOrganization: links.linkOrganization,
+    unlinkOrganization: links.unlinkOrganization,
+    getOverrides: links.getOverrides,
+    setOverrides: links.setOverrides,
     resetFilters,
   }
 }

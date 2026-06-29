@@ -352,7 +352,9 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 			return
 		}
 		defer file.Close()
-		content, err := io.ReadAll(io.LimitReader(file, maxMediaBytes+1))
+		// Le ate o maior teto (video); o limite fino por tipo (imagem 5MB / video
+		// 60MB) e aplicado em SaveMedia conforme o mime detectado.
+		content, err := io.ReadAll(io.LimitReader(file, maxVideoBytes+1))
 		if err != nil || len(content) == 0 {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Arquivo invalido.")
 			return

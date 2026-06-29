@@ -87,6 +87,17 @@ type RBACRepository interface {
 	// CheckMembership verifica que o user tem membership ativa na account.
 	// ErrAccountNotMember se não tiver.
 	CheckMembership(ctx context.Context, accountID, userID string) error
+
+	// PlatformScopedKeys retorna, dentre as keys informadas, as que tem
+	// scope='platform' (bloqueadas em papel custom — um core.roles.manage de
+	// cliente nao pode conceder permissao de plataforma). Lista vazia = nenhuma.
+	PlatformScopedKeys(ctx context.Context, keys []string) ([]string, error)
+
+	// ---- Gate de papeis por cliente (impl. em rbac_repository_assign.go) ----
+
+	HasAccountPermission(ctx context.Context, accountID, userID, permKey string) (bool, error)
+	CanAccessAccountRoles(ctx context.Context, accountID, userID string, requireManage bool) (bool, error)
+	ReplaceUserRoleAssignments(ctx context.Context, accountID, userID string, roleIDs []string) error
 }
 
 // PostgresRBACRepository implementa RBACRepository contra o schema core.

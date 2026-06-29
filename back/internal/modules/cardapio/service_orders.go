@@ -72,6 +72,14 @@ func (s *Service) PlaceOrder(ctx context.Context, slug string, in PublicOrderInp
 	deliveryFee := computeDeliveryFee(orderType, subtotal, restaurant.Settings, zone, hasZone)
 	total := subtotal + deliveryFee
 
+	// Forma de pagamento (TAVOLA): quando informada, TEM que ser uma forma que o
+	// restaurante aceita (settings.payment). O troco so faz sentido em entrega +
+	// dinheiro — zerado nos demais casos.
+	paymentMethod, changeForCents, err := resolvePayment(in.PaymentMethod, in.ChangeForCents, orderType, restaurant.Settings)
+	if err != nil {
+		return Order{}, err
+	}
+
 	// Endereco de entrega: prioriza customer.address (formato do contrato); cai
 	// para o campo top-level deliveryAddress (compat) e, por fim, objeto vazio.
 	deliveryAddress := in.Customer.Address
@@ -95,6 +103,8 @@ func (s *Service) PlaceOrder(ctx context.Context, slug string, in PublicOrderInp
 		CustomerName:     customerName,
 		CustomerPhone:    customerPhone,
 		DeliveryAddress:  deliveryAddress,
+		PaymentMethod:    paymentMethod,
+		ChangeForCents:   changeForCents,
 		Notes:            strings.TrimSpace(in.Notes),
 		SubtotalCents:    subtotal,
 		DeliveryFeeCents: deliveryFee,
@@ -191,6 +201,47 @@ func validateOrderType(orderType string, settings Settings) error {
 		return ErrTypeUnavailable
 	}
 	return nil
+}
+
+// resolvePayment normaliza e valida a forma de pagamento escolhida no checkout.
+// Vazio e aceito (cliente legado/sem captura) e nao persiste troco. Quando
+// informada, TEM que ser um token conhecido E aceito pelo restaurante
+// (settings.payment) — senao ErrPaymentInvalid. O troco so e persistido em
+// entrega + dinheiro (e > 0); nos demais casos zera (o checkout so oferece troco
+// para entrega; "na mesa" nem manda forma).
+func resolvePayment(method string, changeFor int64, orderType string, settings Settings) (string, int64, error) {
+	normalized := strings.ToLower(strings.TrimSpace(method))
+	if normalized == "" {
+		return "", 0, nil
+	}
+	if !paymentAccepted(normalized, settings.Payment) {
+		return "", 0, ErrPaymentInvalid
+	}
+	if normalized == PaymentMethodCash && orderType == OrderTypeDelivery && changeFor > 0 {
+		return normalized, changeFor, nil
+	}
+	return normalized, 0, nil
+}
+
+// paymentAccepted diz se o token de pagamento esta entre as formas que o
+// restaurante aceita (settings.payment).
+func paymentAccepted(method string, p PaymentSettings) bool {
+	switch method {
+	case PaymentMethodPix:
+		return p.Pix
+	case PaymentMethodCash:
+		return p.Cash
+	case PaymentMethodDebit:
+		return p.Debit.Accepted
+	case PaymentMethodCredit:
+		return p.Credit.Accepted
+	case PaymentMethodTicket:
+		return p.Ticket
+	case PaymentMethodOther:
+		return strings.TrimSpace(p.Other) != ""
+	default:
+		return false
+	}
 }
 
 // resolveDeliveryZone valida a zona de entrega informada (WS-A). So tem efeito em

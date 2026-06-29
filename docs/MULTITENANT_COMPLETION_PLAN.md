@@ -676,6 +676,8 @@ Enquanto qualquer um desses 8 não for verdade, nem Fase 13 (Omni), nem Fase 14 
 
 ## Referência cruzada
 
+- **Template-core de modal (toda a app) → [frontend/MODAL_TEMPLATE.md](frontend/MODAL_TEMPLATE.md)** — `OmniEntityDrawer` é a casca única de modal (header/modos/resize/fullscreen); consumido por Tasks e pela edição de usuário (`/manage/users`).
+- **Acesso por usuário (papéis/módulos/páginas), inclusive usuário só-organização → roadmap fase `rbac-acesso` (em `roadmap-data.ts`) + [LEGADO.md](LEGADO.md) item 5.** A aba "Páginas" grava nos overrides do `access` legado porque o gating de página do menu ainda resolve do `access` (`/v1/me/context`), não do core — alvo é migrar o gating para o core (`/v2/me/context`) e então mover a aba.
 - **Princípios de engenharia e registro de falhas → [ENGINEERING_PRINCIPLES.md](ENGINEERING_PRINCIPLES.md)**
 - Plano arquitetural original → [ROADMAP.md](ROADMAP.md)
 - Decisão de remoção do BFF → [adr/0002-remove-bff-nitro-mock.md](adr/0002-remove-bff-nitro-mock.md) (a criar)

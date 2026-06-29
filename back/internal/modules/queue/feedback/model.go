@@ -33,6 +33,13 @@ type Feedback struct {
 	UserLastReadAt   time.Time
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+
+	// Agregados preenchidos so na listagem (List) — ver ToListView. Permitem o
+	// sino e a lista contarem nao-lidos e exibirem o preview sem baixar as
+	// mensagens de cada feedback.
+	UnreadCount     int
+	LastMessageBody string
+	LastMessageAt   *time.Time
 }
 
 type FeedbackView struct {
@@ -49,6 +56,13 @@ type FeedbackView struct {
 	UserLastReadAt time.Time `json:"user_last_read_at"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+
+	// Preenchidos so na listagem (ToListView). Ponteiros com omitempty: nas
+	// respostas de mutacao (criar/atualizar/marcar lido) saem ausentes, e o
+	// front preserva o valor que veio do list em vez de zerar.
+	UnreadCount     *int       `json:"unread_count,omitempty"`
+	LastMessageBody *string    `json:"last_message_body,omitempty"`
+	LastMessageAt   *time.Time `json:"last_message_at,omitempty"`
 }
 
 type FeedbackMessage struct {
@@ -97,6 +111,21 @@ func (f *Feedback) ToView() *FeedbackView {
 		CreatedAt:      f.CreatedAt,
 		UpdatedAt:      f.UpdatedAt,
 	}
+}
+
+// ToListView e a projecao usada na listagem: inclui os agregados (unread_count
+// sempre, mesmo zero; preview da ultima mensagem quando existe) para o front
+// renderizar sino e badges sem buscar mensagens 1-a-1.
+func (f *Feedback) ToListView() *FeedbackView {
+	view := f.ToView()
+	unread := f.UnreadCount
+	view.UnreadCount = &unread
+	if f.LastMessageAt != nil {
+		body := f.LastMessageBody
+		view.LastMessageBody = &body
+		view.LastMessageAt = f.LastMessageAt
+	}
+	return view
 }
 
 func (m *FeedbackMessage) ToView() *FeedbackMessageView {

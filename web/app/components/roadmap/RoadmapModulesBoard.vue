@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, provide, ref, watch } from 'vue'
+import { computed, onMounted, provide, ref, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
+import { defineLazyComponent } from '~/utils/lazy-component'
 import RoadmapModuleCard from '~/components/roadmap/RoadmapModuleCard.vue'
 import RoadmapModuleForm from '~/components/roadmap/RoadmapModuleForm.vue'
 import RoadmapModuleTasksModal from '~/components/roadmap/RoadmapModuleTasksModal.vue'
@@ -21,7 +22,7 @@ import {
   useTasksPageContext,
 } from '../../../layers/tasks/composables/useTasksPageContext'
 
-const TasksTaskModal = defineAsyncComponent(
+const TasksTaskModal = defineLazyComponent(
   () => import('../../../layers/tasks/components/TasksTaskModal.vue'),
 )
 

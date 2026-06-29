@@ -1,6 +1,6 @@
 # Plano de Auditoria de Performance de Navegação — Omni
 
-> Status: **Auditoria feita + 1ª rodada de correções aplicada (2026-06-15).** Resultados em §14-15. Doc canônico desta frente; espelhado em `web/app/components/roadmap/roadmap-data.ts` (fases `perf-audit` done, `perf-fixes` in_progress).
+> Status: **Auditoria feita + 1ª rodada de correções aplicada (2026-06-15); re-auditoria action-first em 2026-06-26 (§17).** Resultados em §14-15; re-auditoria (login + última página bloqueante) em §17. Doc canônico desta frente; espelhado em `web/app/components/roadmap/roadmap-data.ts` (fases `perf-audit` done, `perf-fixes` in_progress, `perf-reaudit-login` in_progress).
 >
 > **Como medir (setup — anotar):** SEMPRE contra um **build de produção** (o dev compila rota sob demanda no Vite e falseia o número — ver §3.1). Passos: `docker build -t omni-web-prod ./web` → `docker run --rm -d --name omni-web-prod -p 3055:3003 -e NUXT_PUBLIC_API_BASE=http://localhost:9091 -e NUXT_API_INTERNAL_BASE=http://host.docker.internal:9091 omni-web-prod` → `OMNI_QA_EMAIL=.. OMNI_QA_PASSWORD=.. python qa-bot/perf_audit.py --base-url http://localhost:3055`. O container é descartável (`docker stop omni-web-prod` ao terminar). Detalhe em [qa-bot/README.md](../qa-bot/README.md).
 
@@ -201,3 +201,34 @@ Implementado por 4 subagentes (specs em [PERF_FIXES_SUBAGENT_SPECS.md](PERF_FIXE
 **Regra (se um dia implementar):** cache SÓ com **invalidação por evento**, nunca brigando com realtime (não servir dado stale onde o usuário espera ao vivo); polling → trocar por **push (WebSocket/evento)** ou **GET condicional (ETag/`If-None-Match` → 304)**; Redis entra como **backplane** quando houver múltiplas instâncias (pub/sub realtime + `PrincipalCache` compartilhado — já previsto na fase-7 item `redis-cache`, deferido).
 
 **Levers reais por página (quando focarmos):** `/tasks` → front (TBT/windowing/payload); realtime → push/invalidação + Redis só ao escalar; `/erp` → cache de status com invalidação no sync; `/manage/users` → ETag/304 (paginação já feita).
+
+## 17. Re-auditoria action-first (2026-06-26) — login + última página bloqueante
+
+> Relato novo do usuário: "ainda trava ao trocar de página (~1s parado e só então vai) e no login (o botão de carregando nem sempre aparece / para de carregar e continua na tela de login)". Re-varredura das 41 páginas (10 agentes em paralelo) + deep-dive do login. Espelhado no roadmap (`perf-reaudit-login`) e na nota da página `/performance` (`PerformanceWarmupNote.vue`).
+
+### 17.1. Navegação entre páginas — confirma o §14
+- Das **41 páginas**, **40 já são action-first**: o fetch sai em `onMounted`/`watch` assíncrono (não suspende a rota), e/ou há skeleton imediato. 9 delas nem buscam rede (estáticas/runtime em memória).
+- **1 violação real (vale em PROD, não é Vite):** `/usuarios`. `web/app/components/users/UsersAccessManager.vue:19` faz `const ctx = await useUsersAccessManager({ mode })` — **await de topo** no `<script setup>`. Sem `<Suspense>` com fallback no caminho, o Suspense implícito da rota **segura a troca**: ao clicar em `/usuarios` o conteúdo fica na página anterior até `/v1/users` + `/v1/auth/roles` responderem. Ironia: o `AppEntityGrid` teria skeleton via `:loading="usersStore.pending"`, mas ele nunca aparece porque o componente não monta antes do await terminar. (Só atinge `/usuarios` → `UsersWorkspace mode="queue"`; `/manage/users` usa `AdminUsersWorkspace`, que já é action-first.)
+- **Demais "travadas ~1s" no dev local = compile sob demanda do Vite** (§3.1/§14): em build de produção a troca de rota é instantânea. Levers de dev: `qa-bot/warmup_dev.py` (pré-compila as rotas) ou rodar o stage prod do `web/Dockerfile` local no dia a dia. Não é bug do app.
+
+### 17.2. Login — o gargalo de app que ainda sobra (vale em PROD)
+Sequência exata do clique em "Entrar" até a rota destino pintar (`login.vue:43` → `auth.ts:385`):
+1. `POST /v1/auth/login` (REDE #1) → seta token.
+2. `await fetchContext()` → `GET /v1/me/context` (REDE #2) → popula `user/principal`. **`homePath` já está resolvido aqui** (deriva só de `role`/`permissionKeys`/`permissionsResolved`).
+3. ...mas `fetchContext` ainda `await syncRuntimeAccess()` **com `pending=true`**: `fetchAccounts` (`/v2/me/accounts` + `/v2/me/context`, REDE #3-#4) + `hydrateRuntimeStoreContext` (`/v1/settings` + `/v1/consultants` + `/v1/operations/snapshot`, REDE #6-#8). **Mínimo de 4 round-trips sequenciais** antes de o `navigateTo` sequer começar — e **nada disso é necessário para rotear**.
+4. `pending` zera no `finally` de `login()` (`auth.ts:409`) **antes** do `navigateTo` (`login.vue:67`). Resultado: o botão volta de "Entrando..." → "Entrar" e os inputs saem do `readonly` **enquanto o usuário ainda está na tela de login** = exatamente o "para de carregar e continua travado".
+
+**Correção (action-first):**
+- **P1 — adiar runtime:** `fetchContext({ deferRuntime: true })` no caminho do login dispara `syncRuntimeAccess()` **sem await** (já é best-effort, `try/catch` que degrada sem derrubar sessão). Navega logo após REDE #2. `ensureSession`/bootstrap por reload seguem com await completo (sem mudança).
+- **P2 — segurar o loading:** ref local `submitting` em `login.vue`; botão/inputs gateados por `auth.pending || submitting`; solta num `finally` **após** o `navigateTo`. (Menor risco — não altera o contrato de `pending` do store.)
+- **P3 — anti-corrida:** guard de in-flight em `account.ts fetchAccounts` (memoizar a promise como em `ensureSession`) para o `await fetchAccounts()` do `auth.global.ts` não duplicar `/v2/me/accounts`.
+- **Validado:** `homePath` é puro/síncrono a partir de `principal` (REDE #2) — o defer é seguro; nenhum input de `homePath` vem da parte adiada. O gating de módulo no destino é fail-open durante o hidrate (já documentado em `module-enabled.global.ts`), então navegar cedo não barra a rota.
+
+### 17.3. Notas de deploy / dependências
+- **Só front.** Sem migration, sem env var, sem mudança de contrato de API. Arquivos: `web/app/stores/auth.ts`, `web/app/pages/auth/login.vue`, `web/layers/core/stores/account.ts`, `web/app/components/users/UsersAccessManager.vue` (+ `web/app/composables/useUsersAccessManager.js`).
+- Validar **no browser** (mudança de UX, type-check não cobre): login com rede lenta (DevTools throttling) — botão fica "Entrando..." até a rota destino pintar; `/usuarios` troca na hora e mostra skeleton.
+- `apply-tables`/skeleton já existem (`AppEntityGrid`); o fix de `/usuarios` só destrava a montagem para o skeleton aparecer.
+
+### 17.4. Honestidade — o que isto contradiz
+- O `verifiable` da **fase-7** ("Login < 500ms; navegação sem latência perceptível", `done`) não se sustenta enquanto o login encadear 4+ chamadas e `/usuarios` travar. Anotado em `perf-reaudit-login` até as correções fecharem.
+- **Login não é medido** pelo `perf_audit.py` (só rotas pós-login). Para a página `/performance` refletir login seria preciso instrumentar o login no harness e re-emitir `perf-data.ts` — fora do escopo desta rodada; por isso a nota da página diz isso explicitamente.

@@ -62,4 +62,43 @@ var (
 	// ErrOrganizationSlugConflict e retornado quando ja existe uma organization
 	// com o mesmo slug.
 	ErrOrganizationSlugConflict = errors.New("core: organization slug already exists")
+
+	// ErrForbidden e retornado quando o ator autenticado NAO tem nenhum poder de
+	// admin (nem platform_admin, nem agency_owner, nem core.users/roles.manage em
+	// alguma account). Mapeado para HTTP 403 — distinto de "recurso fora do escopo"
+	// (que vira 404 para nao vazar existencia de outro tenant).
+	ErrForbidden = errors.New("core: actor has no admin authority")
+
+	// ErrForbiddenField e retornado quando um ator NAO-platform_admin tenta editar
+	// um campo identity-global (displayName/nick/email/password/isPlatformAdmin/
+	// isActive) no PATCH de usuario. A delegacao da poder sobre o VINCULO, nunca
+	// sobre a identidade global. Mapeado para HTTP 403.
+	ErrForbiddenField = errors.New("core: actor cannot edit identity-global field")
+
+	// ErrInvalidPermission e retornado quando um override referencia uma key fora
+	// do catalogo, de modulo desabilitado, ou com scope='platform'. Mapeado para
+	// HTTP 422.
+	ErrInvalidPermission = errors.New("core: invalid permission key for override")
+
+	// ErrInvalidEffect e retornado quando um override usa effect fora de
+	// {allow,deny}. Mapeado para HTTP 422.
+	ErrInvalidEffect = errors.New("core: override effect must be allow or deny")
+
+	// ErrLastAgencyOwner e retornado ao tentar remover o ultimo agency_owner de uma
+	// organization (deixaria a org sem dono). Mapeado para HTTP 409.
+	ErrLastAgencyOwner = errors.New("core: cannot remove the last agency owner of the organization")
+
+	// ErrNotMember e retornado quando o usuario-alvo nao e membro da account em um
+	// endpoint que exige vinculo previo (overrides, roles em lote). Mapeado para
+	// HTTP 404 (nao vaza se a account existe).
+	ErrNotMember = errors.New("core: target user is not a member of the account")
+
+	// ErrConfirmationRequired e retornado quando vincular agencia exige
+	// confirmAgencyWideAccess=true (acesso amplo a todos os clientes da org) e o
+	// caller nao confirmou. Mapeado para HTTP 422 com code confirmation_required.
+	ErrConfirmationRequired = errors.New("core: agency-wide access requires explicit confirmation")
+
+	// ErrInvalidOrgRole e retornado quando o org_role informado nao esta em
+	// {agency_owner, agency_member}. Mapeado para HTTP 400.
+	ErrInvalidOrgRole = errors.New("core: invalid org role")
 )

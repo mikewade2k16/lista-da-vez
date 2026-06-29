@@ -172,37 +172,42 @@ func (r *PostgresAdminRepository) CreateAccount(ctx context.Context, input Admin
 		return AccountAdminView{}, err
 	}
 
-	var userID string
-	err = tx.QueryRow(ctx,
-		`select id from core.users where lower(email) = lower($1) and is_active = true limit 1`,
-		input.AdminEmail,
-	).Scan(&userID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return AccountAdminView{}, ErrAdminUserNotFound
+	// Vincula o dono SOMENTE quando um adminEmail foi informado. Vazio = conta de
+	// controle interno, sem dono/usuario (permitido por design). O dono pode ser
+	// anexado depois via POST /v1/admin/users/{id}/memberships.
+	if input.AdminEmail != "" {
+		var userID string
+		err = tx.QueryRow(ctx,
+			`select id from core.users where lower(email) = lower($1) and is_active = true limit 1`,
+			input.AdminEmail,
+		).Scan(&userID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return AccountAdminView{}, ErrAdminUserNotFound
+			}
+			return AccountAdminView{}, err
 		}
-		return AccountAdminView{}, err
-	}
 
-	_, err = tx.Exec(ctx, `
-		insert into core.account_users (account_id, user_id, is_active, joined_at)
-		values ($1::uuid, $2::uuid, true, now())
-		on conflict (account_id, user_id) do nothing
-	`, accountID, userID)
-	if err != nil {
-		return AccountAdminView{}, err
-	}
+		_, err = tx.Exec(ctx, `
+			insert into core.account_users (account_id, user_id, is_active, joined_at)
+			values ($1::uuid, $2::uuid, true, now())
+			on conflict (account_id, user_id) do nothing
+		`, accountID, userID)
+		if err != nil {
+			return AccountAdminView{}, err
+		}
 
-	_, err = tx.Exec(ctx, `
-		insert into core.user_role_assignments (account_id, user_id, role_id)
-		select $1::uuid, $2::uuid, r.id
-		from core.roles r
-		where r.account_id = $1::uuid and r.code = 'core.owner'
-		limit 1
-		on conflict (account_id, user_id, role_id) do nothing
-	`, accountID, userID)
-	if err != nil {
-		return AccountAdminView{}, err
+		_, err = tx.Exec(ctx, `
+			insert into core.user_role_assignments (account_id, user_id, role_id)
+			select $1::uuid, $2::uuid, r.id
+			from core.roles r
+			where r.account_id = $1::uuid and r.code = 'core.owner'
+			limit 1
+			on conflict (account_id, user_id, role_id) do nothing
+		`, accountID, userID)
+		if err != nil {
+			return AccountAdminView{}, err
+		}
 	}
 
 	// Seed dos modulos default da conta nova (mesmo set da migration 0124:

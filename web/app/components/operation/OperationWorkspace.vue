@@ -1,11 +1,12 @@
 <script setup>
-import { computed, defineAsyncComponent } from 'vue'
+import { computed } from 'vue'
 import OperationConsultantStrip from '~/components/operation/OperationConsultantStrip.vue'
 import OperationQueueColumns from '~/components/operation/OperationQueueColumns.vue'
 import { canMutateOperations } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
+import { defineLazyComponent } from '~/utils/lazy-component'
 
-const OperationFinishModal = defineAsyncComponent(
+const OperationFinishModal = defineLazyComponent(
   () => import('~/components/operation/OperationFinishModal.vue'),
 )
 

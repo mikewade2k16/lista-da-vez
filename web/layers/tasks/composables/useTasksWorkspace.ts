@@ -11,6 +11,7 @@ export function useTasksWorkspace() {
     projects,
     tasks,
     activeProjectId,
+    loadedBoardIds,
     legacyMigrationNotice,
   } = storeToRefs(store)
 
@@ -22,6 +23,7 @@ export function useTasksWorkspace() {
     projects,
     tasks,
     activeProjectId,
+    loadedBoardIds,
     legacyMigrationNotice,
     initialize: store.initialize,
     refresh: store.refresh,

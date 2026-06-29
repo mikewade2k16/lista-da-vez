@@ -64,9 +64,10 @@ func (s *AdminService) CreateAccount(ctx context.Context, input AdminCreateAccou
 	if !slugRegex.MatchString(input.Slug) {
 		return AccountAdminView{}, ErrValidationFailed("slug deve conter apenas letras minusculas, numeros e hifens (min 2 chars)")
 	}
-	if input.AdminEmail == "" {
-		return AccountAdminView{}, ErrValidationFailed("adminEmail e obrigatorio")
-	}
+	// adminEmail e OPCIONAL por design: clientes podem ser cadastrados so para
+	// controle interno, sem usuario/acesso. Vazio -> conta sem dono (o dono pode
+	// ser anexado depois via POST /v1/admin/users/{id}/memberships). Quando
+	// preenchido, deve corresponder a um usuario ja existente em core.users.
 	if input.PlanCode == "" {
 		input.PlanCode = "standard"
 	}

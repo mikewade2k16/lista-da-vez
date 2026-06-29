@@ -6,6 +6,7 @@ import CardapioSectionCategorias from '~/components/cardapio/sections/CardapioSe
 import CardapioSectionProdutos from '~/components/cardapio/sections/CardapioSectionProdutos.vue'
 import CardapioSectionAvaliacoes from '~/components/cardapio/sections/CardapioSectionAvaliacoes.vue'
 import CardapioSectionPedidos from '~/components/cardapio/sections/CardapioSectionPedidos.vue'
+import CardapioSectionRelatorios from '~/components/cardapio/sections/CardapioSectionRelatorios.vue'
 import CardapioSectionEntrega from '~/components/cardapio/sections/CardapioSectionEntrega.vue'
 import CardapioSectionDominios from '~/components/cardapio/sections/CardapioSectionDominios.vue'
 import CardapioSectionAparencia from '~/components/cardapio/sections/CardapioSectionAparencia.vue'
@@ -30,6 +31,7 @@ type SectionId =
   | 'produtos'
   | 'avaliacoes'
   | 'pedidos'
+  | 'relatorios'
   | 'entrega'
   | 'dominios'
   | 'aparencia'
@@ -52,6 +54,7 @@ const SECTIONS: SectionTab[] = [
   { id: 'produtos', label: 'Produtos', gate: 'all' },
   { id: 'avaliacoes', label: 'Avaliacoes', gate: 'all' },
   { id: 'pedidos', label: 'Pedidos', gate: 'all' },
+  { id: 'relatorios', label: 'Relatorios', gate: 'all' },
   { id: 'entrega', label: 'Entrega', gate: 'all' },
   { id: 'dominios', label: 'Dominios', gate: 'platform' },
   { id: 'aparencia', label: 'Aparencia', gate: 'all' },
@@ -198,6 +201,7 @@ onMounted(loadActive)
         <CardapioSectionProdutos v-else-if="active === 'produtos'" />
         <CardapioSectionAvaliacoes v-else-if="active === 'avaliacoes'" />
         <CardapioSectionPedidos v-else-if="active === 'pedidos'" />
+        <CardapioSectionRelatorios v-else-if="active === 'relatorios'" />
         <CardapioSectionEntrega v-else-if="active === 'entrega'" />
         <CardapioSectionDominios v-else-if="active === 'dominios'" />
         <CardapioSectionAparencia v-else-if="active === 'aparencia'" />

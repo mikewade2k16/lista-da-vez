@@ -32,7 +32,7 @@ switch ($Environment) {
   "prod" {
     $envFile = ".env.production"
     $remotePath = "/home/deploy/lista-atendimento"
-    $publicBaseUrl = "https://lista.whenthelightsdie.com"
+    $publicBaseUrl = "https://omni.crowvisuals.com.br"
   }
   "staging" {
     $envFile = ".env.staging"
@@ -82,13 +82,19 @@ function Invoke-RemoteCommand {
     [switch]$CaptureOutput
   )
   Write-Host "==> $Description"
+  # Entrega o script pela STDIN do bash remoto, NAO como argumento do ssh.exe: passar
+  # como argumento faz o PowerShell 5.1 comer as aspas duplas embutidas (o
+  # `sed -i "s|...|...|"` e o `pg_dump -U "$POSTGRES_USER"` viram lixo no shell remoto).
+  # Detalhe: ao fazer pipe pra stdin de um nativo, o PS 5.1 reconverte \n em \r\n, e o
+  # \r quebra o bash (`cd <dir>\r` => "No such file or directory"). Por isso o remoto
+  # roda `tr -d '\r' | bash -s` pra limpar o CR antes de executar.
   $normalizedCommand = $Command -replace "`r`n", "`n" -replace "`r", "`n"
   if ($CaptureOutput) {
-    $output = & $SshExe @sshArgs $remoteTarget $normalizedCommand
+    $output = $normalizedCommand | & $SshExe @sshArgs $remoteTarget "tr -d '\r' | bash -s"
     if ($LASTEXITCODE -ne 0) { throw "Falha ao executar: $Description" }
     return (($output | ForEach-Object { $_.ToString() }) -join "`n").Trim()
   }
-  & $SshExe @sshArgs $remoteTarget $normalizedCommand
+  $normalizedCommand | & $SshExe @sshArgs $remoteTarget "tr -d '\r' | bash -s"
   if ($LASTEXITCODE -ne 0) { throw "Falha ao executar: $Description" }
 }
 

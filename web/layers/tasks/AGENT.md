@@ -46,7 +46,7 @@ web/layers/tasks/
     TasksBoardView.vue                   kanban: colunas + cards + drag/drop
     TasksTableView.vue                   wrapper OmniDataTable
     TasksProjectSettings.vue             USlideover: configuração da página
-    TasksTaskModal.vue                   USlideover: detalhe/edição da task
+    TasksTaskModal.vue                   detalhe/edição da task — usa OmniEntityDrawer (template-core)
     inputs/OmniSelectMenuInput.vue
     omni/table/OmniDataTable.vue
     AppDatePicker.vue
@@ -174,12 +174,25 @@ O store `tasks.ts` mantem a mesma distincao: optimistic update do titulo usa `cl
 Boot da pagina de Tasks nao pode bloquear ate carregar TODOS os boards e TODAS as tasks. Regra:
 
 - **Skeleton imediato**: `pages/tasks.vue` ja renderiza skeleton enquanto `pageBootstrapping` (inicia `true` em `useTasksPageContext`); a primeira pintura nao espera a API.
+- **Skeleton tambem na TROCA de board** (fim do flash de "Sem tasks" — 2026-06-26): `activeBoardLoading` (computed em `useTasksPageContext` = `pageBootstrapping || !loadedBoardIds.has(activeBoardId)`) cobre tanto o boot quanto o lazy-load ao trocar de board. `TasksBoardView` mostra `CoreSkeleton` nas colunas e `TasksTableView` passa `:loading="activeBoardLoading"` em vez do estado vazio enquanto o board ativo carrega.
 - **Above-the-fold primeiro**: `store.refresh()` carrega a lista de boards + detalhes de todos, mas busca as **tasks somente do board ativo**. Os demais boards ficam lazy.
 - **Lazy por board**: `setActiveProject(id)` dispara `ensureBoardTasksLoaded(id)` (fire-and-forget) para buscar as tasks do board que virou ativo. `loadedBoardIds`/`archivedBoardIds` (refs `Set<string>`) registram o que ja foi carregado e evitam refetch. Trocar de board faz `force` para garantir dados frescos; aborta o fetch do board anterior via `AbortController` (`boardLoadControllers`).
 - **Arquivadas sob demanda**: `listBoardTasks` agora usa `archived=false` por padrao. Quando o usuario desativa "ocultar arquivadas" (`filters.hideArchived = false`), um watcher em `useTasksPageContext` chama `ensureArchivedTasksLoaded(activeBoardId)` (que faz `force` com `includeArchived`). Nao recarrega os outros boards.
 - **Refresh do realtime**: o `refresh()` debounced preserva verbatim as tasks de boards nao-ativos ja carregados (sem refetch nem remap, pra nao perder labels resolvidos do backend); so o board ativo e' re-buscado.
 - Novos metodos publicos do store: `ensureBoardTasksLoaded(boardId, { includeArchived, force })`, `ensureArchivedTasksLoaded(boardId)`; novos refs: `loadedBoardIds`, `archivedBoardIds` (expostos tambem em `useTasksWorkspace`).
 - Cuidado: `normalizeLegacyDefaultProject` agora chama `ensureBoardTasksLoaded` antes de decidir reescrever colunas legadas (board nao-ativo pode ter tasks ainda nao carregadas).
+
+### Modal-template unico (2026-06-26)
+
+O `TasksTaskModal.vue` deixou de ser um `USlideover` proprio e passou a montar sobre o
+TEMPLATE-CORE de modal `web/app/components/ui/OmniEntityDrawer.vue` (header fechar/expandir-toggle/
+popover de modo, resize no modo lado, modos lado/centro/fullscreen, Esc, overlay). O corpo da task,
+as acoes de header especificas (presenca/Compartilhar/link/estrela/mais) e o rodape (Excluir +
+autosave + Fechar) vivem nos slots `default`/`#header-extra`/`#footer`. Modo e largura sao do shell,
+espelhados no contexto via `v-model` (`taskEditorMode`/`taskEditorWidth`); o board encolhe pela var
+`--tasks-editor-width` (escrita por `useTasksPageContext` a partir de `taskEditorWidth`). O
+`setTaskEditorMode` segue exposto (o `RoadmapModulesBoard` abre a task em modo `center`). Ajustes do
+comportamento do modal sao feitos no `OmniEntityDrawer` (um lugar so). Ver `docs/frontend/MODAL_TEMPLATE.md`.
 
 ### Montagem tardia dos selects do card (Track C perf — 2026-06-15)
 
@@ -236,6 +249,23 @@ de conta no `CoreAccountSwitcher`), entao trocar de conta nao recarregava o boar
   `projects`/`activeProjectId`, zera `initialized` e refaz `initialize()`. Assim o board recarrega
   com os dados da nova conta sem respostas obsoletas sobrescrevendo o estado.
 - NAO alterar o `account-id-bridge.client.ts` (queue/crm ja seguem o switcher por ele).
+- **Realtime/presence DEVE usar a MESMA fonte (2026-06-25):** os WS de `useTasksRealtime` e
+  `useTaskPresence` recebem o `accountId` via `useTasksPageContext`. Esse prop tem que espelhar o
+  REST — `accountStore.activeAccountId || auth.activeTenantId || auth.tenantContext?.[0]?.id` — num
+  unico `computed realtimeAccountId` reutilizado pelos quatro canais (task/board presence + account/
+  board tasks). Bug corrigido: o page context passava `auth.activeTenantId` direto, que para
+  platform_admin cai no seed `aaaaaaaa-...` e DIVERGE da conta real do switcher. O REST carregava o
+  board na conta certa, mas o WS de escopo `board` abria na conta errada e o `authorizeTasksBoard`
+  do back retornava 404 (board nao pertence aquela conta) -> handshake nunca virava 101 -> close
+  1006 em loop de reconexao (presence e tasks). O canal `account` "abria" como falso-positivo
+  (authorizeTasksAccount so valida que a conta-seed existe + platform_admin curto-circuita), mas
+  assinava o topico da conta errada. Nao reintroduzir `auth.activeTenantId` como fonte unica do
+  accountId de realtime/presence. Defesa em profundidade: o `resolveAccountId` interno de
+  `useTasksRealtime.ts` e `useTaskPresence.ts` tambem recebe o `accountStore` e inclui
+  `accountStore.activeAccountId` no fallback (entre o prop explicito e `auth.activeTenantId`), entao
+  mesmo um chamador que esqueca de passar o prop resolve a conta certa. O teste
+  `useTasksRealtime.test.ts` mocka `../../core/stores/account` com `activeAccountId: ''` para manter
+  o fallback legado (`tenant-1`) verificado.
 
 ### useTaskTracking (Fase T6)
 

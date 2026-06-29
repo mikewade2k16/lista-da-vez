@@ -57,6 +57,26 @@
         (primeira visita ou F5, com o documento recarregando do zero). O cold e sempre mais lento
         porque inclui o boot do app.
       </p>
+
+      <div class="performance-warmup__reaudit">
+        <h4 class="performance-warmup__reaudit-title">Re-auditoria 26/06/2026 — action-first</h4>
+        <p class="performance-warmup__text">
+          Varredura nas 41 paginas do painel: 40 ja seguem o padrao action-first (a rota troca na
+          hora e o conteudo carrega depois, com skeleton). A unica excecao era
+          <strong>/usuarios</strong>
+          , que segurava a troca de rota com um await de topo no componente (UsersAccessManager) ate
+          /v1/users e /v1/auth/roles responderem — em correcao.
+        </p>
+        <p class="performance-warmup__note performance-warmup__note--alert">
+          O gargalo de app que ainda sobra nao e a navegacao, e o
+          <strong>login</strong>
+          . Hoje o login encadeia 4+ chamadas em sequencia (login, contexto, contas,
+          settings/operacao) antes de sair da tela, e o botao "Entrando..." volta ao normal antes de
+          a navegacao terminar — por isso parece travado. A correcao (navegar assim que o contexto
+          chega e adiar o resto para a pagina destino) esta planejada. Obs.: o login ainda nao e
+          medido por esta auditoria (so rotas pos-login), por isso nao aparece na tabela acima.
+        </p>
+      </div>
     </div>
   </section>
 </template>
@@ -138,5 +158,25 @@
   font-size: 0.8rem;
   line-height: 1.5;
   color: var(--text-muted);
+}
+
+.performance-warmup__reaudit {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.performance-warmup__reaudit-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.performance-warmup__note--alert {
+  background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
+  color: var(--text-main);
 }
 </style>

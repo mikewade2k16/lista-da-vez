@@ -76,7 +76,7 @@ func (s *Service) List(ctx context.Context, principal auth.Principal, input List
 
 	views := make([]FeedbackView, 0, len(feedbacks))
 	for _, f := range feedbacks {
-		views = append(views, *f.ToView())
+		views = append(views, *f.ToListView())
 	}
 
 	return views, nil
@@ -93,7 +93,7 @@ func (s *Service) ListMine(ctx context.Context, principal auth.Principal, input 
 
 	views := make([]FeedbackView, 0, len(feedbacks))
 	for _, f := range feedbacks {
-		views = append(views, *f.ToView())
+		views = append(views, *f.ToListView())
 	}
 
 	return views, nil

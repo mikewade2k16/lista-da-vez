@@ -11,12 +11,12 @@ import (
 // Categories
 // ============================================================================
 
-const categoryColumns = `id, restaurant_id, slug, name, description, image_url, sort_order, is_active, created_at`
+const categoryColumns = `id, restaurant_id, slug, name, description, image_url, banner_url, sort_order, is_active, created_at`
 
 func scanCategory(row rowScanner) (Category, error) {
 	var c Category
 	err := row.Scan(&c.ID, &c.RestaurantID, &c.Slug, &c.Name, &c.Description,
-		&c.ImageURL, &c.SortOrder, &c.IsActive, &c.CreatedAt)
+		&c.ImageURL, &c.BannerURL, &c.SortOrder, &c.IsActive, &c.CreatedAt)
 	return c, err
 }
 
@@ -46,21 +46,21 @@ func (s *Store) ListCategories(ctx context.Context, accountID, restaurantID stri
 // CreateCategory insere uma categoria.
 func (s *Store) CreateCategory(ctx context.Context, accountID, restaurantID string, in CategoryInput) (Category, error) {
 	const q = `insert into cardapio.categories
-		(account_id, restaurant_id, slug, name, description, image_url, sort_order, is_active)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
+		(account_id, restaurant_id, slug, name, description, image_url, banner_url, sort_order, is_active)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		returning ` + categoryColumns
 	return scanCategory(s.pool.QueryRow(ctx, q, accountID, restaurantID,
-		in.Slug, in.Name, in.Description, in.ImageURL, in.SortOrder, in.IsActive))
+		in.Slug, in.Name, in.Description, in.ImageURL, in.BannerURL, in.SortOrder, in.IsActive))
 }
 
 // UpdateCategory edita uma categoria por id na account.
 func (s *Store) UpdateCategory(ctx context.Context, accountID, id string, in CategoryInput) (Category, error) {
 	const q = `update cardapio.categories set
-			slug = $3, name = $4, description = $5, image_url = $6, sort_order = $7, is_active = $8
+			slug = $3, name = $4, description = $5, image_url = $6, banner_url = $7, sort_order = $8, is_active = $9
 		where id = $1 and account_id = $2
 		returning ` + categoryColumns
 	return scanCategory(s.pool.QueryRow(ctx, q, id, accountID,
-		in.Slug, in.Name, in.Description, in.ImageURL, in.SortOrder, in.IsActive))
+		in.Slug, in.Name, in.Description, in.ImageURL, in.BannerURL, in.SortOrder, in.IsActive))
 }
 
 // DeleteCategory remove uma categoria (produtos ficam sem categoria via FK).

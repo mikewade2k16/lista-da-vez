@@ -68,8 +68,14 @@ type AdminUserListFilter struct {
 	// AccountID: quando != "", filtra para usuarios que sao membros ATIVOS daquela
 	// conta (join em core.account_users + conta ativa). "" = sem filtro de conta.
 	AccountID string
-	Page      int
-	PerPage   int
+	// ActorUserID e o id do ator autenticado (SEMPRE do Principal, nunca da query).
+	// O repositorio aplica o predicado de escopo (listUsersScopeWhere) no count(*)
+	// e no SELECT: platform_admin ve todos; agency_owner ve usuarios das accounts
+	// da org; admin de cliente ve membros das accounts onde tem core.users.manage.
+	// AccountID vira "filtro dentro do permitido".
+	ActorUserID string
+	Page        int
+	PerPage     int
 	// IncludeAccounts: quando true (default), a listagem agrega accountCount e
 	// accountNames por user (lateral join). Quando false, devolve a projecao lean
 	// (sem o agregado) — usado pela tela acima-da-dobra, que carrega o detalhe de
@@ -130,6 +136,46 @@ type AdminUpdateUserInput struct {
 // AdminMembershipsResponse e o body de GET /v1/admin/users/:id/memberships.
 type AdminMembershipsResponse struct {
 	Memberships []AccountMembershipView `json:"memberships"`
+}
+
+// AddMembershipInput e o body de POST /v1/admin/users/{id}/memberships.
+// Adiciona um vinculo de cliente SEM remover os demais (diferente do PUT
+// .../account que MOVE). Role default "owner" em {owner,director,marketing}.
+type AddMembershipInput struct {
+	AccountID string `json:"accountId"`
+	Role      string `json:"role,omitempty"`
+}
+
+// LinkOrganizationInput e o body de POST /v1/admin/users/{id}/organizations/{orgId}.
+// OrgRole em {agency_owner,agency_member}. ConfirmAgencyWideAccess precisa ser true
+// (virar membro de agencia da visao de TODOS os clientes da org).
+type LinkOrganizationInput struct {
+	OrgRole                 string `json:"orgRole"`
+	ConfirmAgencyWideAccess bool   `json:"confirmAgencyWideAccess"`
+}
+
+// AdminUserLinksRepository abstrai a persistencia dos vinculos de um usuario:
+// membership de cliente e cargo de organization. Operacoes destrutivas sao
+// transacionais.
+type AdminUserLinksRepository interface {
+	// FindAccountLinkInfo carrega existe/ativa/agencia da account destino.
+	FindAccountLinkInfo(ctx context.Context, accountID string) (AccountLinkInfo, error)
+	// AddMembership matricula o usuario na conta-cliente sem remover os outros vinculos.
+	AddMembership(ctx context.Context, accountID, userID, role string) error
+	// DeactivateMembership desativa o vinculo de cliente (preserva joined_at) e
+	// remove os role_assignments daquela conta.
+	DeactivateMembership(ctx context.Context, accountID, userID string) error
+	// FindOrganizationLinkInfo carrega existe/ativa da org destino.
+	FindOrganizationLinkInfo(ctx context.Context, organizationID string) (OrganizationLinkInfo, error)
+	// LinkUserToOrganization vincula a org (cargo de agencia) + matricula na conta-agencia.
+	LinkUserToOrganization(ctx context.Context, organizationID, userID, orgRole string) error
+	// CountAgencyOwners conta os agency_owner ativos da org (safeguard).
+	CountAgencyOwners(ctx context.Context, organizationID string) (int, error)
+	// IsAgencyOwner diz se o usuario e agency_owner da org.
+	IsAgencyOwner(ctx context.Context, organizationID, userID string) (bool, error)
+	// UnlinkUserFromOrganization remove o vinculo de agencia + desativa membership
+	// na conta-agencia da org.
+	UnlinkUserFromOrganization(ctx context.Context, organizationID, userID string) error
 }
 
 // AdminUserRepository abstrai persistencia para os endpoints admin de users.

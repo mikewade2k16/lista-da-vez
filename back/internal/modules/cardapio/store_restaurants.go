@@ -264,12 +264,12 @@ func (s *Store) DuplicateRestaurant(ctx context.Context, accountID, sourceID, sl
 	}
 	newID := newRestaurant.ID
 
-	// 2. Categorias: novos ids; preserva slug/name/descricao/foto/ordem/ativo. O
-	//    remapeamento category_id dos produtos e feito por slug (unico por
+	// 2. Categorias: novos ids; preserva slug/name/subtitulo/capa/banner/ordem/ativo.
+	//    O remapeamento category_id dos produtos e feito por slug (unico por
 	//    restaurante) direto no SQL do passo 3 — sem mapa em memoria.
 	const copyCategories = `insert into cardapio.categories
-			(account_id, restaurant_id, slug, name, description, image_url, sort_order, is_active)
-		select account_id, $2, slug, name, description, image_url, sort_order, is_active
+			(account_id, restaurant_id, slug, name, description, image_url, banner_url, sort_order, is_active)
+		select account_id, $2, slug, name, description, image_url, banner_url, sort_order, is_active
 		from cardapio.categories
 		where restaurant_id = $1`
 	if _, err := tx.Exec(ctx, copyCategories, sourceID, newID); err != nil {

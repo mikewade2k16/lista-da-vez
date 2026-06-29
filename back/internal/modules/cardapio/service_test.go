@@ -3,6 +3,7 @@ package cardapio
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -25,6 +26,9 @@ type fakeStore struct {
 	resolveHost    map[string]string          // host -> slug
 	createdOrder   orderInsert
 	insertedEvents []string
+	productSlugs   map[string]struct{} // slugs de produto do restaurante (validacao)
+	batchRows      []eventInsert       // capturado por InsertEventsBatch
+	upserted       *sessionUpsert      // capturado por UpsertSession
 }
 
 func newFakeStore() *fakeStore {
@@ -123,6 +127,23 @@ func (f *fakeStore) InsertEvent(_ context.Context, _, _, name, _ string, _ json.
 	return nil
 }
 
+func (f *fakeStore) listProductSlugs(_ context.Context, _, _ string) (map[string]struct{}, error) {
+	if f.productSlugs == nil {
+		return map[string]struct{}{}, nil
+	}
+	return f.productSlugs, nil
+}
+
+func (f *fakeStore) InsertEventsBatch(_ context.Context, _, _ string, rows []eventInsert) (int, error) {
+	f.batchRows = append(f.batchRows, rows...)
+	return len(rows), nil
+}
+
+func (f *fakeStore) UpsertSession(_ context.Context, in sessionUpsert) error {
+	f.upserted = &in
+	return nil
+}
+
 // ============================================================================
 // Resolve por host
 // ============================================================================
@@ -201,6 +222,132 @@ func TestRecordEvent_ContextTooLarge(t *testing.T) {
 	ctx := json.RawMessage(`"` + string(big) + `"`)
 	if err := svc.RecordEvent(context.Background(), "slug", PublicEventInput{Name: "page_view", Context: ctx}); err != ErrValidation {
 		t.Fatalf("context > 8KB: esperava ErrValidation, recebi %v", err)
+	}
+}
+
+// TestAllowlist_36Names garante que os 36 nomes canonicos (secao 5 do doc) estao na
+// allowlist e que um nome fora dela e rejeitado.
+func TestAllowlist_36Names(t *testing.T) {
+	want := []string{
+		"page_view", "session_start", "session_end",
+		"restaurant_viewed", "menu_viewed",
+		"product_impression", "product_clicked", "product_viewed", "product_option_changed",
+		"add_to_cart", "cart_qty_changed", "remove_from_cart", "cart_opened", "cart_cleared",
+		"checkout_started", "checkout_type_changed", "checkout_payment_selected",
+		"checkout_submitted", "checkout_failed", "order_created", "whatsapp_order_clicked",
+		"category_viewed", "category_tab_clicked", "menu_search", "menu_filter_changed", "menu_sort_changed",
+		"cta_clicked", "outbound_click",
+		"scroll_depth", "page_dwell", "product_dwell", "section_dwell",
+		"coupon_viewed", "coupon_used", "reservation_started", "reservation_sent",
+	}
+	if len(want) != 36 {
+		t.Fatalf("a lista de referencia deveria ter 36 nomes, tem %d", len(want))
+	}
+	if len(allowedEvents) != 36 {
+		t.Fatalf("allowedEvents deveria ter 36 nomes, tem %d", len(allowedEvents))
+	}
+	for _, name := range want {
+		if !isAllowedEvent(name) {
+			t.Fatalf("evento %q deveria estar na allowlist", name)
+		}
+	}
+	if isAllowedEvent("hack_event") {
+		t.Fatalf("evento fora da allowlist nao deveria ser aceito")
+	}
+}
+
+// ============================================================================
+// Ingestao em lote (RecordEventBatch)
+// ============================================================================
+
+func TestRecordEventBatch_AllowlistAndPII(t *testing.T) {
+	store := newFakeStore()
+	store.restaurant = Restaurant{ID: "rest-1", IsActive: true}
+	store.productSlugs = map[string]struct{}{"pizza": {}}
+	svc := newServiceWithStore(store, ServiceConfig{TelemetrySalt: "s"})
+
+	in := PublicEventBatchInput{
+		SessionID: "sess-1",
+		DeviceID:  "dev-1",
+		Events: []PublicEventEntry{
+			// Valido + page_view (conta pageview) + PII no context (deve ser removido).
+			{EventID: "e1", Name: "page_view", Context: json.RawMessage(`{"pagePath":"/","name":"Joao","phone":"119999"}`)},
+			// Fora da allowlist => rejected.
+			{EventID: "e2", Name: "hack_event"},
+			// menu_search com termo cru => grava so {length,hasResults}, descarta o termo.
+			{EventID: "e3", Name: "menu_search", Context: json.RawMessage(`{"query":"pizza margherita","hasResults":true}`)},
+			// product_slug do restaurante => promovido.
+			{EventID: "e4", Name: "product_viewed", Context: json.RawMessage(`{"productSlug":"pizza"}`)},
+			// product_slug que NAO pertence ao restaurante => coluna vazia.
+			{EventID: "e5", Name: "product_viewed", Context: json.RawMessage(`{"productSlug":"sushi"}`)},
+		},
+	}
+
+	accepted, rejected, err := svc.RecordEventBatch(context.Background(), "slug", in,
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) Mobile Safari", "https://google.com/search", "iphash")
+	if err != nil {
+		t.Fatalf("esperava sucesso, recebi %v", err)
+	}
+	if accepted != 4 || rejected != 1 {
+		t.Fatalf("esperava accepted=4 rejected=1, recebi accepted=%d rejected=%d", accepted, rejected)
+	}
+	if len(store.batchRows) != 4 {
+		t.Fatalf("esperava 4 linhas gravadas, recebi %d", len(store.batchRows))
+	}
+
+	byName := map[string]eventInsert{}
+	for _, row := range store.batchRows {
+		byName[row.EventID] = row
+		// Enriquecimento do UA (mobile/safari/ios) em toda linha.
+		if row.DeviceType != "mobile" || row.Browser != "safari" || row.OS != "ios" {
+			t.Fatalf("enriquecimento UA errado: %+v", row)
+		}
+		if row.ReferrerHost != "google.com" {
+			t.Fatalf("referrer_host esperado google.com, recebi %q", row.ReferrerHost)
+		}
+		if row.IPHash != "iphash" {
+			t.Fatalf("ip_hash deveria ser repassado, recebi %q", row.IPHash)
+		}
+	}
+
+	// PII removida do page_view (sem name/phone), pagePath preservado.
+	pv := string(byName["e1"].Context)
+	if strings.Contains(pv, "Joao") || strings.Contains(pv, "119999") {
+		t.Fatalf("PII nao foi removida do context: %s", pv)
+	}
+	if !strings.Contains(pv, "pagePath") {
+		t.Fatalf("pagePath deveria ter sido preservado: %s", pv)
+	}
+
+	// menu_search: termo cru descartado, derivados presentes.
+	ms := string(byName["e3"].Context)
+	if strings.Contains(ms, "margherita") || strings.Contains(ms, "query") {
+		t.Fatalf("menu_search nao deveria conter o termo cru: %s", ms)
+	}
+	if !strings.Contains(ms, "length") || !strings.Contains(ms, "hasResults") {
+		t.Fatalf("menu_search deveria derivar length/hasResults: %s", ms)
+	}
+
+	// product_slug: pertence => promovido; nao pertence => vazio.
+	if byName["e4"].ProductSlug != "pizza" {
+		t.Fatalf("product_slug do restaurante deveria ser promovido, recebi %q", byName["e4"].ProductSlug)
+	}
+	if byName["e5"].ProductSlug != "" {
+		t.Fatalf("product_slug de fora do restaurante deveria ficar vazio, recebi %q", byName["e5"].ProductSlug)
+	}
+
+	// Sessao agregada: 1 pageview, 4 eventos aceitos, device_type do UA.
+	if store.upserted == nil {
+		t.Fatalf("esperava upsert de sessao")
+	}
+	if store.upserted.Pageviews != 1 {
+		t.Fatalf("esperava pageviews=1, recebi %d", store.upserted.Pageviews)
+	}
+	if store.upserted.Events != 4 {
+		t.Fatalf("esperava events=4, recebi %d", store.upserted.Events)
+	}
+	if store.upserted.SessionID != "sess-1" || store.upserted.DeviceType != "mobile" {
+		t.Fatalf("sessao agregada inesperada: %+v", *store.upserted)
 	}
 }
 

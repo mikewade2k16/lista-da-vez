@@ -267,24 +267,25 @@ export function useClientsManager() {
     }
   }
 
-  // Criação de account via POST /v1/admin/accounts (C10). O admin inicial deve
-  // já existir em core.users; o backend clona roles de template + membership owner.
+  // Criação de account via POST /v1/admin/accounts (C10). O adminEmail e OPCIONAL:
+  // vazio cria um cliente sem dono (controle interno, sem acesso). Quando informado,
+  // o backend clona roles de template + vincula o usuario (ja existente) como owner.
   async function createClient(input?: {
     name: string
     slug: string
     planCode?: string
-    adminEmail: string
+    adminEmail?: string
   }): Promise<string | null> {
     if (!input) {
-      errorMessage.value = 'Informe nome, slug e e-mail do admin para criar a conta.'
+      errorMessage.value = 'Informe ao menos o nome para criar a conta.'
       return null
     }
     const name = input.name.trim()
     const slug = input.slug.trim().toLowerCase()
-    const adminEmail = input.adminEmail.trim().toLowerCase()
+    const adminEmail = (input.adminEmail ?? '').trim().toLowerCase()
     const planCode = (input.planCode ?? 'standard').trim() || 'standard'
-    if (!name || !slug || !adminEmail) {
-      errorMessage.value = 'Nome, slug e e-mail do admin sao obrigatorios.'
+    if (!name || !slug) {
+      errorMessage.value = 'Nome e slug sao obrigatorios.'
       return null
     }
     creating.value = true

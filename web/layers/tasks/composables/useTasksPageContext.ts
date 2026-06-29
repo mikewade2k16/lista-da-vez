@@ -2,6 +2,7 @@ import type { InjectionKey } from 'vue'
 import { useCoreLoading } from '../../core/composables/useCoreLoading'
 import { useAuthStore } from '~/stores/auth'
 import { useUsersStore } from '~/stores/users'
+import { useCoreAccountStore } from '../../core/stores/account'
 import { useTasksClientStore } from '../stores/tasks-client'
 import { useCan } from './useCan'
 import { useTaskPresence } from './useTaskPresence'
@@ -35,6 +36,7 @@ export function useTasksPageContext() {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const usersStore = useUsersStore()
+  const accountStore = useCoreAccountStore()
   const tasksClient = useTasksClientStore()
   const tasksWorkspace = useTasksWorkspace()
   const taskVideoRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
@@ -114,12 +116,6 @@ export function useTasksPageContext() {
     { key: 'createdAt', label: 'Criado em' },
   ] as const
 
-  const modalModeOptions = [
-    { label: 'Modo lado a lado', value: 'side', icon: 'i-lucide-panel-right' },
-    { label: 'Modo centralizado', value: 'center', icon: 'i-lucide-square' },
-    { label: 'Pagina inteira', value: 'fullscreen', icon: 'i-lucide-expand' },
-  ] as const
-
   const viewMode = ref<'board' | 'table'>('board')
   const pageBootstrapping = ref(true)
   const draggingTaskId = ref('')
@@ -161,7 +157,6 @@ export function useTasksPageContext() {
   const taskEditorOpen = ref(false)
   const taskEditorMode = ref<'side' | 'center' | 'fullscreen'>('side')
   const taskEditorWidth = ref(720)
-  const taskEditorResizing = ref(false)
   const settingsSaving = ref(false)
   const taskSaving = ref(false)
 
@@ -358,6 +353,16 @@ export function useTasksPageContext() {
       tasksWorkspace.projects.value.find((p) => p.id === tasksWorkspace.activeProjectId.value) ??
       null,
   )
+  // True enquanto as tasks do board ATIVO ainda nao chegaram: durante o boot da pagina
+  // (pageBootstrapping) e tambem na TROCA de board (lazy-load por board — o id so entra
+  // em loadedBoardIds depois do fetch). Serve para o board mostrar skeleton em vez do
+  // estado "Sem tasks" antes de saber se ha dados (evita flash de vazio).
+  const activeBoardLoading = computed(() => {
+    if (pageBootstrapping.value) return true
+    const id = activeProject.value?.id
+    if (!id) return false
+    return !tasksWorkspace.loadedBoardIds.value.has(id)
+  })
   const projectOptions = computed(() =>
     tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
   )
@@ -390,18 +395,25 @@ export function useTasksPageContext() {
   const taskEditorCssVars = computed(() => ({
     '--tasks-editor-width': `${taskEditorWidth.value}px`,
   }))
+  // Fonte de conta do realtime/presence DEVE espelhar a do REST (store de tasks: accountStore.
+  // activeAccountId primeiro). Se divergir, o board carrega via REST na conta real mas o WS abre
+  // na conta errada (ex.: seed aaaa... vinda de auth.activeTenantId pro platform_admin) e o
+  // authorizeTasksBoard do back rejeita o canal de board -> 1006 em loop.
+  const realtimeAccountId = computed(
+    () => accountStore.activeAccountId || auth.activeTenantId || auth.tenantContext?.[0]?.id || '',
+  )
   const taskPresence = useTaskPresence({
     enabled: computed(() => taskEditorOpen.value && !!taskDraft.id),
     scope: 'task',
     taskId: computed(() => taskDraft.id),
     boardId: computed(() => activeProject.value?.id || ''),
-    accountId: computed(() => auth.activeTenantId || ''),
+    accountId: realtimeAccountId,
   })
   const boardPresence = useTaskPresence({
     enabled: computed(() => !!activeProject.value),
     scope: 'board',
     boardId: computed(() => activeProject.value?.id || ''),
-    accountId: computed(() => auth.activeTenantId || ''),
+    accountId: realtimeAccountId,
   })
   const presenceParticipants = taskPresence.participants
   const presenceStatus = taskPresence.status
@@ -413,7 +425,7 @@ export function useTasksPageContext() {
   const accountTasksRealtime = useTasksRealtime({
     enabled: computed(() => tasksWorkspace.initialized.value && auth.isAuthenticated),
     scope: 'account',
-    accountId: computed(() => auth.activeTenantId || ''),
+    accountId: realtimeAccountId,
     onEvent: handleTasksRealtimeEvent,
   })
   const boardTasksRealtime = useTasksRealtime({
@@ -421,7 +433,7 @@ export function useTasksPageContext() {
       () => tasksWorkspace.initialized.value && auth.isAuthenticated && !!activeProject.value?.id,
     ),
     scope: 'board',
-    accountId: computed(() => auth.activeTenantId || ''),
+    accountId: realtimeAccountId,
     boardId: computed(() => activeProject.value?.id || ''),
     onEvent: handleTasksRealtimeEvent,
   })
@@ -2234,28 +2246,11 @@ export function useTasksPageContext() {
     if (payload.action === 'delete') deleteTask(task)
   }
 
+  // setTaskEditorMode segue exposto: o RoadmapModulesBoard abre a task em modo
+  // 'center'. O resize e o toggle de fullscreen do modal vivem no OmniEntityDrawer
+  // (template-core); o modo/largura sao espelhados aqui via v-model.
   function setTaskEditorMode(mode: 'side' | 'center' | 'fullscreen') {
     taskEditorMode.value = mode
-  }
-
-  function startTaskEditorResize(event: MouseEvent) {
-    if (taskEditorMode.value !== 'side' || !import.meta.client) return
-    event.preventDefault()
-    taskEditorResizing.value = true
-    const startX = event.clientX
-    const startWidth = taskEditorWidth.value
-    const maxWidth = () => Math.min(window.innerWidth - 80, 1120)
-    const onMove = (moveEvent: MouseEvent) => {
-      const next = startWidth + (startX - moveEvent.clientX)
-      taskEditorWidth.value = Math.max(560, Math.min(maxWidth(), next))
-    }
-    const onUp = () => {
-      taskEditorResizing.value = false
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
   }
 
   function syncClientFilter() {
@@ -2292,7 +2287,12 @@ export function useTasksPageContext() {
       return
     }
     const eventAccountId = normalizeText(event.accountId, 80)
-    const currentAccountId = normalizeText(auth.activeTenantId || auth.tenantContext?.[0]?.id, 80)
+    // Mesma fonte de conta da conexao WS e do REST (realtimeAccountId =
+    // accountStore.activeAccountId primeiro). Usar auth.activeTenantId aqui descartava
+    // eventos REAIS quando as fontes divergem (platform_admin: seed aaaa... != conta
+    // selecionada): create/update nao apareciam para o outro usuario, so a presenca
+    // (que ja usa realtimeAccountId). Mantem o isolamento por conta, com a fonte certa.
+    const currentAccountId = normalizeText(realtimeAccountId.value, 80)
     if (eventAccountId && currentAccountId && eventAccountId !== currentAccountId) {
       if (import.meta.client)
         console.debug('[tasks-ws] evento de outra account, ignorado:', {
@@ -2725,7 +2725,8 @@ export function useTasksPageContext() {
     if (!taskEditorOpen.value) return
     const target = event.target as HTMLElement | null
     if (!target) return
-    if (target.closest('.tasks-page__task-overlay')) return
+    // Painel do modal-template (OmniEntityDrawer) — clique dentro nao fecha.
+    if (target.closest('.omni-entity-drawer')) return
     if (target.closest('.tasks-page__board-wrap')) return
     if (
       target.closest(
@@ -2870,10 +2871,10 @@ export function useTasksPageContext() {
     FIELD_DEFS,
     filterSwitchDefs,
     cardFieldSwitchDefs,
-    modalModeOptions,
     // state
     viewMode,
     pageBootstrapping,
+    activeBoardLoading,
     draggingTaskId,
     draggingColumnId,
     filters,
@@ -2891,7 +2892,6 @@ export function useTasksPageContext() {
     taskEditorOpen,
     taskEditorMode,
     taskEditorWidth,
-    taskEditorResizing,
     settingsSaving,
     taskSaving,
     taskVideoDrafts,
@@ -3063,7 +3063,6 @@ export function useTasksPageContext() {
     onTableCellUpdate,
     onTableRowAction,
     setTaskEditorMode,
-    startTaskEditorResize,
     syncClientFilter,
     groupOptionsFor,
     updateProjectView,

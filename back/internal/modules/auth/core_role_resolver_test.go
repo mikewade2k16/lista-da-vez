@@ -34,25 +34,6 @@ func TestCoarseRoleFromCoreRolePreservesLegacyRoles(t *testing.T) {
 	}
 }
 
-func TestParseAuthRolesSourceDefaultsToCoreWithFallback(t *testing.T) {
-	cases := []struct {
-		value string
-		want  authRolesSource
-	}{
-		{"", authRolesSourceCoreWithFallback},
-		{"CORE", authRolesSourceCore},
-		{"legacy", authRolesSourceLegacy},
-		{"unexpected", authRolesSourceCoreWithFallback},
-	}
-
-	for _, testCase := range cases {
-		got := parseAuthRolesSource(testCase.value)
-		if got != testCase.want {
-			t.Fatalf("parseAuthRolesSource(%q) = %q, want %q", testCase.value, got, testCase.want)
-		}
-	}
-}
-
 func TestCoreOnlyResolvedUserLogsIn(t *testing.T) {
 	user := User{
 		ID:           "user-core-only",
@@ -127,26 +108,6 @@ func TestPlatformAdminResolvedFromCoreLogsIn(t *testing.T) {
 	}
 	if result.User.TenantID != "" || len(result.User.StoreIDs) != 0 {
 		t.Fatalf("platform scope = tenant %q stores %v, want empty", result.User.TenantID, result.User.StoreIDs)
-	}
-}
-
-func TestLegacyRoleResolutionStillPreservesExistingPriority(t *testing.T) {
-	role, tenantID := resolveRole(userRecord{
-		TenantRole:    "director",
-		TenantID:      "tenant-1",
-		StoreRole:     "manager",
-		StoreTenantID: "tenant-2",
-	})
-	if role != RoleDirector || tenantID != "tenant-1" {
-		t.Fatalf("tenant role got (%q, %q), want (director, tenant-1)", role, tenantID)
-	}
-
-	role, tenantID = resolveRole(userRecord{
-		StoreRole:     "manager",
-		StoreTenantID: "tenant-2",
-	})
-	if role != RoleManager || tenantID != "tenant-2" {
-		t.Fatalf("store role got (%q, %q), want (manager, tenant-2)", role, tenantID)
 	}
 }
 

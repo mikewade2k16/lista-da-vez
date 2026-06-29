@@ -93,6 +93,37 @@ func (m *Module) Permissions() []modules.PermissionDef {
 			Description: "Modo agencia: visualizar dados agregados de todas as accounts da organization.",
 			Scope:       "platform",
 		},
+		// Permissoes de VISIBILIDADE/EDICAO de PAGINA (workspace.*), migradas do
+		// modulo legado `access` para o core (fase aditiva 2026-06-26). Gateiam quais
+		// paginas do menu cada usuario ve. Declaradas no `core` (modulo sempre
+		// habilitado) para o override valer em qualquer account. Backfill de
+		// role_permissions/overrides na migration 0175. Ver docs/LEGADO.md item 5.
+		{Key: "workspace.operacao.view", Label: "Ver pagina Operacao", Description: "Visibilidade da pagina Operacao no menu.", Scope: "account"},
+		{Key: "workspace.operacao.edit", Label: "Editar na pagina Operacao", Description: "Executar comandos na pagina Operacao.", Scope: "account"},
+		{Key: "workspace.consultor.view", Label: "Ver pagina Consultor", Description: "Visibilidade da pagina Consultor no menu.", Scope: "account"},
+		{Key: "workspace.ranking.view", Label: "Ver pagina Ranking", Description: "Visibilidade da pagina Ranking no menu.", Scope: "account"},
+		{Key: "workspace.dados.view", Label: "Ver pagina Dados", Description: "Visibilidade da pagina Dados no menu.", Scope: "account"},
+		{Key: "workspace.inteligencia.view", Label: "Ver pagina Inteligencia", Description: "Visibilidade da pagina Inteligencia no menu.", Scope: "account"},
+		{Key: "workspace.relatorios.view", Label: "Ver pagina Relatorios", Description: "Visibilidade da pagina Relatorios no menu.", Scope: "account"},
+		{Key: "workspace.campanhas.view", Label: "Ver pagina Campanhas", Description: "Visibilidade da pagina Campanhas no menu.", Scope: "account"},
+		{Key: "workspace.campanhas.edit", Label: "Editar na pagina Campanhas", Description: "Editar regras/campanhas na pagina Campanhas.", Scope: "account"},
+		{Key: "workspace.clientes.view", Label: "Ver pagina Clientes", Description: "Visibilidade da pagina Clientes no menu.", Scope: "account"},
+		{Key: "workspace.clientes.edit", Label: "Editar na pagina Clientes", Description: "Editar clientes e grupos na pagina Clientes.", Scope: "account"},
+		{Key: "workspace.multiloja.view", Label: "Ver pagina Multi-loja", Description: "Visibilidade da pagina Multi-loja no menu.", Scope: "account"},
+		{Key: "workspace.multiloja.edit", Label: "Editar na pagina Multi-loja", Description: "Editar lojas/config na pagina Multi-loja.", Scope: "account"},
+		{Key: "workspace.usuarios.view", Label: "Ver pagina Usuarios", Description: "Visibilidade da pagina Usuarios no menu.", Scope: "account"},
+		{Key: "workspace.usuarios.edit", Label: "Editar na pagina Usuarios", Description: "Editar usuarios/overrides na pagina Usuarios.", Scope: "account"},
+		{Key: "workspace.manage.view", Label: "Ver paginas de Manage", Description: "Visibilidade das rotas agrupadas em Manage.", Scope: "account"},
+		{Key: "workspace.configuracoes.view", Label: "Ver pagina Configuracoes", Description: "Visibilidade da pagina Configuracoes no menu.", Scope: "account"},
+		{Key: "workspace.configuracoes.edit", Label: "Editar na pagina Configuracoes", Description: "Editar configuracoes operacionais.", Scope: "account"},
+		{Key: "workspace.themes.view", Label: "Ver pagina Temas", Description: "Visibilidade da pagina Temas no menu.", Scope: "account"},
+		{Key: "workspace.alertas.view", Label: "Ver pagina Alertas", Description: "Visibilidade da pagina Alertas no menu.", Scope: "account"},
+		{Key: "workspace.alertas.edit", Label: "Editar na pagina Alertas", Description: "Gerenciar a pagina Alertas.", Scope: "account"},
+		{Key: "workspace.feedback.view", Label: "Ver pagina Feedback", Description: "Visibilidade da pagina Feedback no menu.", Scope: "account"},
+		{Key: "workspace.feedback.edit", Label: "Editar na pagina Feedback", Description: "Editar feedback e notas na pagina Feedback.", Scope: "account"},
+		{Key: "workspace.tools.view", Label: "Ver pagina Tools", Description: "Visibilidade da pagina Tools no menu.", Scope: "account"},
+		{Key: "workspace.erp.view", Label: "Ver pagina ERP", Description: "Visibilidade da pagina ERP no menu.", Scope: "account"},
+		{Key: "workspace.erp.edit", Label: "Editar na pagina ERP", Description: "Sync manual e administracao na pagina ERP.", Scope: "account"},
 	}
 }
 
@@ -162,8 +193,19 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	adminRepo := NewPostgresAdminRepository(deps.Pool)
 	adminSvc := NewAdminService(adminRepo, deps.Bus, deps.ModulesGuard)
 
+	// AdminScopeResolver: decide por-request/por-account se o ator pode administrar
+	// (delegacao multi-tenant). NAO confia em Principal.Role/Permissions (resolvidos
+	// so no login a partir de UMA conta home); resolve tudo no banco.
+	scopeResolver := NewAdminScopeResolver(NewPostgresAdminScopeRepository(deps.Pool))
+
 	adminUserRepo := NewPostgresAdminUserRepository(adminRepo)
-	adminUserSvc := NewAdminUserService(adminUserRepo, deps.PasswordHasher)
+	adminUserLinksRepo := NewPostgresAdminUserLinksRepository(adminUserRepo)
+	adminUserSvc := NewAdminUserService(adminUserRepo, deps.PasswordHasher, scopeResolver, adminUserLinksRepo)
+
+	// Overrides allow/deny por usuario por account (core.user_permission_overrides),
+	// validados via InvalidPermissionKeys do RBAC repo (reuso, sem catalogo novo).
+	adminOverridesRepo := NewPostgresAdminOverridesRepository(deps.Pool)
+	adminOverridesSvc := NewAdminOverridesService(adminOverridesRepo, scopeResolver, rbacRepo)
 
 	adminOrgRepo := NewPostgresAdminOrganizationRepository(adminRepo)
 	adminOrgSvc := NewAdminOrganizationService(adminOrgRepo)
@@ -176,6 +218,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		rbacService:              rbacSvc,
 		adminService:             adminSvc,
 		adminUserService:         adminUserSvc,
+		adminOverridesService:    adminOverridesSvc,
 		adminOrganizationService: adminOrgSvc,
 		platformSettingsService:  platformSettingsSvc,
 		authMiddleware:           deps.AuthMiddleware,
@@ -192,6 +235,7 @@ type handle struct {
 	rbacService              *RBACService
 	adminService             *AdminService
 	adminUserService         *AdminUserService
+	adminOverridesService    *AdminOverridesService
 	adminOrganizationService *AdminOrganizationService
 	platformSettingsService  *PlatformSettingsService
 	authMiddleware           *auth.Middleware
@@ -206,6 +250,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterRBACRoutes(mux, h.rbacService, h.authMiddleware)
 	RegisterAdminRoutes(mux, h.adminService, h.authMiddleware)
 	RegisterAdminUsersRoutes(mux, h.adminUserService, h.authMiddleware)
+	RegisterAdminOverridesRoutes(mux, h.adminOverridesService, h.adminUserService, h.authMiddleware)
 	RegisterAdminOrganizationsRoutes(mux, h.adminOrganizationService, h.authMiddleware)
 	RegisterPlatformSettingsRoutes(mux, h.platformSettingsService, h.authMiddleware)
 }

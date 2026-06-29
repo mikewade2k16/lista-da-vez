@@ -16,7 +16,7 @@ const props = defineProps({
   },
 })
 
-const ctx = await useUsersAccessManager({ mode: props.mode })
+const ctx = useUsersAccessManager({ mode: props.mode })
 provideUsersAccessContext(ctx)
 </script>
 

@@ -13,8 +13,7 @@ import (
 )
 
 type PostgresUserStore struct {
-	pool        *pgxpool.Pool
-	rolesSource authRolesSource
+	pool *pgxpool.Pool
 }
 
 type userRecord struct {
@@ -27,11 +26,6 @@ type userRecord struct {
 	AvatarPath         string
 	Active             bool
 	CreatedAt          time.Time
-	PlatformRole       string
-	TenantRole         string
-	TenantID           string
-	StoreRole          string
-	StoreTenantID      string
 }
 
 type invitationRecord struct {
@@ -61,8 +55,7 @@ type passwordResetRecord struct {
 
 func NewPostgresUserStore(pool *pgxpool.Pool) *PostgresUserStore {
 	return &PostgresUserStore{
-		pool:        pool,
-		rolesSource: authRolesSourceFromEnv(),
+		pool: pool,
 	}
 }
 
@@ -118,8 +111,7 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 			u.must_change_password,
 			coalesce(u.avatar_path, '') as avatar_path,
 			u.is_active,
-			u.created_at,
-			` + store.legacyRoleProjection() + `
+			u.created_at
 		from core.users u
 		where ` + predicate + `
 		limit 1;
@@ -137,11 +129,6 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 		&record.AvatarPath,
 		&record.Active,
 		&record.CreatedAt,
-		&record.PlatformRole,
-		&record.TenantRole,
-		&record.TenantID,
-		&record.StoreRole,
-		&record.StoreTenantID,
 	)
 	if err != nil {
 		return userRecord{}, err
@@ -152,72 +139,6 @@ func (store *PostgresUserStore) findRecord(ctx context.Context, predicate string
 	}
 
 	return record, nil
-}
-
-// legacyRoleProjection retorna a projecao de papel/escopo legado do findRecord.
-// Em AUTH_ROLES_SOURCE=core as tabelas user_*_roles foram dropadas (U4c) e NAO
-// podem ser referenciadas: os campos legados ficam vazios (o resolvedor core nao
-// os usa). Em legacy/core_with_fallback mantem as subqueries originais.
-func (store *PostgresUserStore) legacyRoleProjection() string {
-	if store.rolesSource == authRolesSourceCore {
-		return `'' as platform_role, '' as tenant_role, '' as tenant_id, '' as store_role, '' as store_tenant_id`
-	}
-
-	return `coalesce((
-			select upr.role
-			from user_platform_roles upr
-			where upr.user_id = u.id
-			limit 1
-		), '') as platform_role,
-		coalesce((
-			select utr.role
-			from user_tenant_roles utr
-			where utr.user_id = u.id
-			order by case
-				when utr.role = 'owner' then 1
-				when utr.role = 'director' then 2
-				when utr.role = 'marketing' then 3
-				else 99
-			end
-			limit 1
-		), '') as tenant_role,
-		coalesce((
-			select utr.tenant_id::text
-			from user_tenant_roles utr
-			where utr.user_id = u.id
-			order by case
-				when utr.role = 'owner' then 1
-				when utr.role = 'director' then 2
-				when utr.role = 'marketing' then 3
-				else 99
-			end
-			limit 1
-		), '') as tenant_id,
-		coalesce((
-			select usr.role
-			from user_store_roles usr
-			where usr.user_id = u.id
-			order by case
-				when usr.role = 'manager' then 1
-				when usr.role = 'consultant' then 2
-				when usr.role = 'store_terminal' then 3
-				else 99
-			end
-			limit 1
-		), '') as store_role,
-		coalesce((
-			select s.tenant_id::text
-			from user_store_roles usr
-			join queue.stores s on s.id = usr.store_id
-			where usr.user_id = u.id
-			order by case
-				when usr.role = 'manager' then 1
-				when usr.role = 'consultant' then 2
-				when usr.role = 'store_terminal' then 3
-				else 99
-			end
-			limit 1
-		), '') as store_tenant_id`
 }
 
 func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord) (User, error) {
@@ -249,84 +170,6 @@ func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord
 	}
 
 	return user, nil
-}
-
-func (store *PostgresUserStore) findStoreIDs(ctx context.Context, userID string, role Role, tenantID string) ([]string, error) {
-	switch role {
-	case RoleOwner, RoleDirector, RoleMarketing:
-		rows, err := store.pool.Query(ctx, `
-			select s.id::text
-			from queue.stores s
-			where s.tenant_id = $1::uuid
-				and s.is_active = true
-			order by s.created_at asc, s.code asc;
-		`, tenantID)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-
-		storeIDs := make([]string, 0)
-		for rows.Next() {
-			var storeID string
-			if err := rows.Scan(&storeID); err != nil {
-				return nil, err
-			}
-
-			storeIDs = append(storeIDs, storeID)
-		}
-
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-
-		return storeIDs, nil
-	case RoleManager, RoleConsultant, RoleStoreTerminal:
-		rows, err := store.pool.Query(ctx, `
-			select usr.store_id::text
-			from user_store_roles usr
-			join queue.stores s on s.id = usr.store_id
-			where usr.user_id = $1::uuid
-				and s.is_active = true
-			group by usr.store_id
-			order by min(s.created_at) asc, min(s.code) asc;
-		`, userID)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-
-		storeIDs := make([]string, 0)
-		for rows.Next() {
-			var storeID string
-			if err := rows.Scan(&storeID); err != nil {
-				return nil, err
-			}
-
-			storeIDs = append(storeIDs, storeID)
-		}
-
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-
-		return storeIDs, nil
-	default:
-		return nil, nil
-	}
-}
-
-func resolveRole(record userRecord) (Role, string) {
-	switch {
-	case record.PlatformRole != "":
-		return Role(record.PlatformRole), ""
-	case record.TenantRole != "":
-		return Role(record.TenantRole), record.TenantID
-	case record.StoreRole != "":
-		return Role(record.StoreRole), record.StoreTenantID
-	default:
-		return "", ""
-	}
 }
 
 func (store *PostgresUserStore) ReplacePendingInvitation(ctx context.Context, user User, invitedByUserID string, tokenHash string, expiresAt time.Time) (Invitation, error) {

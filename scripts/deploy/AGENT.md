@@ -29,7 +29,7 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 - usuario SSH: `deploy`
 - caminho remoto prod: `/home/deploy/lista-atendimento`
 - caminho remoto staging: `/home/deploy/lista-atendimento-staging`
-- dominio publico prod: `https://lista.whenthelightsdie.com`
+- dominio publico prod: `https://omni.crowvisuals.com.br`
 - dominio publico staging: `https://preview.whenthelightsdie.com`
 - proxy central: Caddy da stack `omnichannel-mvp`
 
@@ -75,9 +75,14 @@ Fluxo registry via CI (opcao completa/rastreavel):
 
 Atalhos npm: `deploy:staging`, `deploy:staging:down`, `deploy:prod`, `deploy:promote`.
 
-Legado (tar + build na VPS, em remocao quando o fluxo registry estiver validado):
+Legado (mantidos no repo como fallback de emergencia, SEM atalho npm — os shortcuts foram
+removidos em 2026-06-23 na consolidacao dos docs). Buildam o Nuxt NA VPS (lento, risco de OOM):
 
-- `deploy-vps-fast.ps1` (npm `prod:deploy:vps` / `prod:deploy:vps:backup`)
+- `deploy-vps-fast.ps1` — tar + `up -d --build` na VPS
+- `deploy-vps-incremental.ps1` — so arquivos alterados por hash + `up -d --build` na VPS
+- `deploy-ship.ps1` — build local + `docker save | ssh 'docker load'` (sem registry)
+
+Rode via `.ps1` direto so se o GHCR estiver indisponivel. O caminho normal e' sempre GHCR.
 
 ## Validacao minima
 
@@ -86,14 +91,13 @@ Ao alterar scripts desta pasta:
 1. validar a sintaxe do PowerShell quando houver mudanca em `.ps1`
    (ex.: `[System.Management.Automation.Language.Parser]::ParseFile(path, [ref]$null, [ref]$errors)`)
 2. validar os workflows em `.github/workflows/build-images.yml` e `deploy-vps.yml` se a mudanca tocar o fluxo GitHub
-3. garantir que os comandos documentados em `docs/DEPLOY_CHECKLIST.md` ainda correspondem ao comportamento real
+3. garantir que os comandos documentados em `docs/DEPLOY_VPS.md` ainda correspondem ao comportamento real
 
 ## Referencias
 
 - `../../docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md` (plano canonico)
 - `../../docs/deploy/STAGING_SETUP.md` (Caddy/DNS/up-down do staging)
-- `../../docs/DEPLOY_VPS.md`
-- `../../docs/DEPLOY_CHECKLIST.md`
+- `../../docs/DEPLOY_VPS.md` (doc unico de deploy)
 - `../../.github/workflows/build-images.yml`
 - `../../.github/workflows/deploy-vps.yml`
 - `../dev/AGENT.md`

@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
 import { useAuthStore } from '~/stores/auth'
+import { useCoreAccountStore } from '../../core/stores/account'
 
 type RealtimeSource<T> = T | Ref<T> | ComputedRef<T> | (() => T)
 
@@ -53,9 +54,17 @@ function normalizeScope(value: unknown): TasksRealtimeScope {
   return 'account'
 }
 
-function resolveAccountId(auth: ReturnType<typeof useAuthStore>, explicitAccountId = '') {
+function resolveAccountId(
+  auth: ReturnType<typeof useAuthStore>,
+  accountStore: ReturnType<typeof useCoreAccountStore>,
+  explicitAccountId = '',
+) {
+  // Espelha a fonte do REST (stores/tasks.ts): conta do switcher v2 primeiro, fallback legado
+  // depois. Sem accountStore.activeAccountId aqui, um chamador que nao passe o prop cairia em
+  // auth.activeTenantId (seed aaaa... pro platform_admin) e o canal de board seria rejeitado (1006).
   return normalizeText(
     explicitAccountId ||
+      accountStore.activeAccountId ||
       auth.activeTenantId ||
       auth.principal?.tenantId ||
       auth.tenantContext?.[0]?.id,
@@ -66,6 +75,7 @@ function resolveAccountId(auth: ReturnType<typeof useAuthStore>, explicitAccount
 export function useTasksRealtime(options: TasksRealtimeOptions) {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
+  const accountStore = useCoreAccountStore()
 
   const status = ref<TasksRealtimeStatus>('idle')
   const lastEvent = ref<TasksRealtimeEvent | null>(null)
@@ -82,7 +92,7 @@ export function useTasksRealtime(options: TasksRealtimeOptions) {
   function desiredConnection() {
     const enabled = Boolean(sourceValue(options.enabled, false))
     const scope = normalizeScope(sourceValue(options.scope, 'account'))
-    const accountId = resolveAccountId(auth, sourceValue(options.accountId, ''))
+    const accountId = resolveAccountId(auth, accountStore, sourceValue(options.accountId, ''))
     const boardId = normalizeText(sourceValue(options.boardId, ''), 120)
     const taskId = normalizeText(sourceValue(options.taskId, ''), 120)
     const accessToken = normalizeText(auth.accessToken, 2000)

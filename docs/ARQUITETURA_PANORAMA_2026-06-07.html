@@ -177,6 +177,7 @@
         <li><span class="dot g"></span>Schemas por domínio; índices em hot paths</li>
         <li><span class="dot g"></span>Rate limit (fallback por IP), CORS allowlist</li>
         <li><span class="dot g"></span><code>public.*</code> legado eliminado (migration 0136)</li>
+        <li><span class="dot g"></span>Modal-template único (<code>OmniEntityDrawer</code>): header/modos/resize/fullscreen num lugar só — Tasks e <code>/manage/users</code> consomem (<code>docs/frontend/MODAL_TEMPLATE.md</code>)</li>
       </ul>
     </div>
     <div class="card">
@@ -268,9 +269,10 @@
     <h3>DRIFT DE VERSÃO / CONFIG (reconciliar)</h3>
     <ul class="clean">
       <li><span class="dot y"></span><code>go.mod</code> declara <code>go 1.25.0</code>, mas <code>Dockerfile</code> usa <code>golang:1.26.3</code></li>
-      <li><span class="dot r"></span>Prod: <code>CORE_V2_ENABLED=false</code> + <code>AUTH_ROLES_SOURCE=core_with_fallback</code> — e a 0135 removeu as tabelas de role legadas</li>
+      <li><span class="dot g"></span><s>Prod: <code>AUTH_ROLES_SOURCE=core_with_fallback</code> com tabelas legadas dropadas (0135)</s> — <b style="color:var(--green)">✅ reconciliado</b>: compose (dev+prod) e <code>.env.*.example</code> agora usam <code>:-core</code>. O CÓDIGO de fallback legado do auth foi removido (2026-06-26)</li>
       <li><span class="dot y"></span>Ledger de migrations com prefixos duplicados (<code>0015a</code>, múltiplos <code>0019/0031/0039/0110</code>, <code>0126</code>) — congelar convenção</li>
       <li><span class="dot r"></span><b>Migrator ignora marcadores goose</b> — <code>migrator.go</code> roda o <code>.sql</code> inteiro; <code>-- +goose Down</code> + <code>DROP</code> se auto-destrói. A <code>0143</code> dropava <code>automation.contacts</code> no boot (corrigido pela <code>0147</code>); revisar convenção das futuras</li>
+      <li><span class="dot r"></span><b>Dois sistemas de permissão coexistem (band-aid)</b> — o gating de PÁGINA do menu lê do <b>access legado</b> (<code>auth.permissionKeys</code> ← <code>/v1/me/context</code> ← <code>access_role_permissions</code>+<code>user_access_overrides</code>), enquanto <code>has()</code>/<code>CorePermissionGate</code> leem do <b>core</b> (<code>/v2/me/context</code>). Chaves <code>workspace.*.view</code> só existem em <code>access_permissions</code>, não em <code>core.permissions</code>. Alvo: mover o gating de página pro core e aposentar o <code>access</code> (ver <code>docs/LEGADO.md</code> item 5)</li>
     </ul>
   </div>
 </section>
@@ -422,6 +424,15 @@
     </details>
 
     <!-- P1 segurança -->
+    <details class="item" data-p="p1" data-area="seg">
+      <summary><span class="id">P1·L1</span><span class="ttl">Mover gating de página pro core e aposentar o access legado</span><span class="pill p1">P1</span><span class="when">legado · 2026-06-26</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o gating de PÁGINA do menu ainda resolve do módulo legado <code>access</code> (<code>auth.permissionKeys</code> ← <code>/v1/me/context</code> ← <code>access_role_permissions</code>+<code>user_access_overrides</code>); o core (<code>/v2/me/context</code>) é uma lista separada. Dois sistemas de permissão coexistem. A nova aba "Páginas" de <code>/manage/users</code> grava no access de propósito (é o único lever que muda o menu hoje).</p>
+        <p><b>Ação (faseada, sem quebrar acesso):</b> <b style="color:var(--green)">1) ✅ FEITO (2026-06-26)</b> — declaradas as <code>workspace.*.view/.edit</code> (26) no registry do core + migration <code>0175</code> seedou <code>core.permissions</code> e backfillou <code>core.role_permissions</code> (359/39 papéis) e <code>core.user_permission_overrides</code> (2, paridade 1:1); API healthy, zero blast radius. <b>PENDENTE:</b> 2) verificar paridade por-usuário + canary; 3) <code>getAllowedWorkspaces</code>/<code>auth.permissionKeys</code> passam a ler de <code>/v2/me/context</code>; 4) aba "Páginas" troca pro override core; 5) remover <code>back/internal/modules/access</code> + <code>/v1/access/*</code> + <code>stores/access-control.ts</code> + <code>UsersAccessPermissionPanel.vue</code>.</p>
+        <p><b>Aceite:</b> visibilidade de página de todos os usuários idêntica antes/depois do switch; nenhum usuário perde acesso; <code>access</code> removido. Ver <code>docs/LEGADO.md</code> item 5.</p>
+      </div>
+    </details>
+
     <details class="item" data-p="p1" data-area="seg">
       <summary><span class="id">P1·7</span><span class="ttl">RLS no Postgres por etapas</span><span class="pill p1">P1</span><span class="when">30–90d</span><span class="chev">›</span></summary>
       <div class="body">

@@ -582,6 +582,35 @@ export const useCardapioStore = defineStore('cardapio', () => {
     return String(response?.url ?? '')
   }
 
+  // --- Analytics (aba Relatorios — F4) ---
+
+  // GET de um endpoint de analytics do restaurante ativo. Herda o escopo do
+  // EDITOR (scopeAccountId via withScope -> ?accountId= quando platform_admin abre
+  // conta alheia) e o X-Account-Id do createApiRequest. NUNCA criar um fetch novo
+  // no composable: a unica camada de fetch do modulo e esta store (isolamento
+  // multi-tenant + dedupe + loading global ja resolvidos aqui).
+  //
+  // path = sufixo do endpoint (ex.: 'overview', 'timeseries'); params = query
+  // especifica do bloco (from/to/granularity/dimension/metric/limit). O accountId
+  // do escopo e anexado por withScope DEPOIS, entao nunca colide com os params.
+  async function analyticsRequest<T>(
+    id: string,
+    path: string,
+    params: Record<string, string | number | undefined> = {},
+  ): Promise<T> {
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      if (value === undefined || value === '') {
+        continue
+      }
+      search.set(key, String(value))
+    }
+    const query = search.toString()
+    const base = `/v1/cardapio/restaurants/${encodeURIComponent(id)}/analytics/${path}`
+    const url = withScope(query ? `${base}?${query}` : base)
+    return (await apiRequest(url)) as T
+  }
+
   // --- Site Builder (layout do Studio do TAVOLA) ---
 
   // Normaliza a resposta {layout, version} do back. Layout ausente => documento
@@ -684,6 +713,8 @@ export const useCardapioStore = defineStore('cardapio', () => {
     patchZone,
     deleteZone,
     uploadMedia,
+    withScope,
+    analyticsRequest,
     loadLayout,
     putDraftLayout,
     publishLayout,

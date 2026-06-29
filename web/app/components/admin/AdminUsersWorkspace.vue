@@ -33,9 +33,17 @@ const {
 } = useAdminUsersManager()
 
 const auth = useAuthStore()
-const canViewUsers = computed(() => auth.role === 'platform_admin')
-const canCreateUser = computed(() => auth.role === 'platform_admin')
-const canDeleteUser = computed(() => auth.role === 'platform_admin')
+const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
+// Visualizar/editar usuarios e DELEGADO: platform_admin OU quem tem core.users.manage.
+// A listagem e a editabilidade fina sao escopadas no backend (404/403 fora do escopo);
+// o front so precisa nao esconder a pagina do delegado (padrao isPlatformAdmin || has).
+const canViewUsers = computed(
+  () => isPlatformAdmin.value || auth.permissionKeys.includes('core.users.manage'),
+)
+// Criar/excluir usuario sao identity-global → so platform_admin (o backend restringe
+// POST/DELETE/PUT account a platform_admin; abrir esses botoes a delegado so daria 403).
+const canCreateUser = computed(() => isPlatformAdmin.value)
+const canDeleteUser = computed(() => isPlatformAdmin.value)
 
 // Opcoes de vinculo no modal de criacao: cliente (account) + agencia (organization).
 // Diferente de /operacao/usuarios (que ja esta dentro de um cliente), aqui no admin
@@ -268,23 +276,22 @@ function onCellUpdate(payload: OmniTableCellUpdate) {
   updateField(id, field, payload.value, { immediate: payload.immediate })
 }
 
-// Move inline de cliente (coluna "Cliente"). So habilitado quando o usuario tem
-// exatamente 1 cliente (clientAccountId != '') e nao e platform_admin. Confirma
-// antes; em sucesso o composable ja aplica o user retornado na linha.
+// Atribuir/mover cliente inline (coluna "Cliente"). Habilitado para usuarios que
+// nao sao platform_admin nem membros de agencia — inclui quem ainda NAO tem cliente
+// (clientAccountId == ''), que antes ficava travado num "-" morto. Reusa
+// moveUserAccount: para 0 vinculos ele apenas matricula (vincula); para 1 vinculo
+// ele move (substitui). Confirma antes com a mensagem certa para cada caso.
 const movingId = ref<string | null>(null)
-async function onMoveClient(row: Record<string, unknown>, accountId: string) {
+async function onAssignClient(row: Record<string, unknown>, accountId: string) {
   const user = toUser(row)
   const id = rowId(row)
   const target = String(accountId ?? '').trim()
   if (!id || !target || target === user.clientAccountId) return
   const targetName = clientNameById.value.get(target) ?? 'este cliente'
-  if (
-    import.meta.client &&
-    !window.confirm(
-      `Mover este usuario para o cliente ${targetName}? Ele perde acesso ao cliente atual.`,
-    )
-  )
-    return
+  const message = user.clientAccountId
+    ? `Mover este usuario para o cliente ${targetName}? Ele perde acesso ao cliente atual.`
+    : `Vincular este usuario ao cliente ${targetName} como owner?`
+  if (import.meta.client && !window.confirm(message)) return
   movingId.value = id
   await moveUserAccount(id, target)
   movingId.value = null
@@ -497,13 +504,17 @@ onMounted(() => {
       >
         <template #cell-accountNames="{ row }">
           <select
-            v-if="toUser(row).clientAccountId && !toUser(row).isPlatformAdmin"
+            v-if="!toUser(row).isPlatformAdmin && !toUser(row).isAgencyMember"
             class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
+            :class="{ 'text-[rgb(var(--muted))]': !toUser(row).clientAccountId }"
             :value="toUser(row).clientAccountId"
             :disabled="movingId === rowId(row) || loading"
-            :title="toUser(row).accountNames"
-            @change="onMoveClient(row, ($event.target as HTMLSelectElement).value)"
+            :title="toUser(row).accountNames || 'Sem cliente — selecione para vincular'"
+            @change="onAssignClient(row, ($event.target as HTMLSelectElement).value)"
           >
+            <option v-if="!toUser(row).clientAccountId" value="" disabled>
+              Sem cliente — vincular...
+            </option>
             <option v-for="opt in clientOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </option>
@@ -612,12 +623,12 @@ onMounted(() => {
             </OmniMinimalPopover>
 
             <UButton
-              v-if="canCreateUser"
+              v-if="canViewUsers"
               icon="i-lucide-pencil"
               color="neutral"
               variant="ghost"
               size="sm"
-              title="Editar usuario (dados, nivel, senha)"
+              title="Editar usuario (dados, vinculos, papeis, modulos)"
               aria-label="Editar"
               @click="openEdit(row)"
             />

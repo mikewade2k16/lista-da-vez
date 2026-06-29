@@ -19,7 +19,12 @@ platform_admin. Não confundir com o gestor legado de `public.tenants`
 - `AccountBoardCard.vue` — card compacto do board, exibe `accountCardFields()`.
   `@open` abre o detail modal (botão ou duplo clique).
 - `AccountCreateModal.vue` — form de criar conta (name, slug, planCode,
-  adminEmail) → `POST /v1/admin/accounts` via `createClient(payload)`.
+  adminEmail) → `POST /v1/admin/accounts` via `createClient(payload)`. **Só `name`
+  é obrigatório** (slug deriva do nome); **`adminEmail` é OPCIONAL** (2026-06-25):
+  vazio cria cliente só de controle interno, sem usuário/acesso — o backend pula o
+  vínculo de dono. O botão de submit nunca fica "morto" sem explicação: quando
+  desabilitado, `missingHint` mostra o que falta (campo obrigatório marcado com `*`,
+  opcional rotulado). Padrão de feedback de formulário a replicar nas próximas telas.
 
 ## Regra do espelho (ENGINEERING_PRINCIPLES §4)
 

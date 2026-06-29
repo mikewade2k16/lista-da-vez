@@ -10,15 +10,17 @@ import (
 )
 
 const (
-	maxMediaBytes          = 5 * 1024 * 1024 // 5MB
-	maxMediaMultipartBytes = maxMediaBytes + 256*1024
+	maxMediaBytes = 5 * 1024 * 1024  // 5MB para imagem
+	maxVideoBytes = 60 * 1024 * 1024 // 60MB para video (fundo de hero/CTA/banner)
+	// Teto do multipart cobre o maior tipo (video) + folga para os headers do form.
+	maxMediaMultipartBytes = maxVideoBytes + 256*1024
 )
 
-// MediaStorage abstrai a persistencia de imagens do cardapio (testavel via mock).
+// MediaStorage abstrai a persistencia de midia do cardapio (testavel via mock).
 type MediaStorage interface {
-	// Save grava a imagem em uploads/cardapio/{accountId}/ e devolve o caminho
-	// relativo "/uploads/cardapio/{accountId}/{file}". content/contentType ja
-	// lidos pelo handler.
+	// Save grava a midia (imagem ou video) em uploads/cardapio/{accountId}/ e
+	// devolve o caminho relativo "/uploads/cardapio/{accountId}/{file}".
+	// content/contentType ja lidos pelo handler.
 	Save(accountID, fileName, contentType string, content []byte) (string, error)
 }
 
@@ -37,14 +39,19 @@ func NewDiskMediaStorage(rootDir string) *DiskMediaStorage {
 	return &DiskMediaStorage{rootDir: root}
 }
 
-// Save valida tamanho/mime e grava o arquivo com permissoes restritas.
+// Save valida tamanho/mime e grava o arquivo com permissoes restritas. O teto de
+// tamanho depende do tipo: 5MB para imagem, 60MB para video.
 func (s *DiskMediaStorage) Save(accountID, fileName, contentType string, content []byte) (string, error) {
-	if len(content) == 0 || len(content) > maxMediaBytes {
+	normalized := detectMediaContentType(content, contentType, fileName)
+	extension := mediaExtension(normalized, fileName)
+	if normalized == "" || extension == "" {
 		return "", ErrInvalidMedia
 	}
-	normalized := detectImageContentType(content, contentType)
-	extension := imageExtension(normalized, fileName)
-	if normalized == "" || extension == "" {
+	limit := maxMediaBytes
+	if isVideoMime(normalized) {
+		limit = maxVideoBytes
+	}
+	if len(content) == 0 || len(content) > limit {
 		return "", ErrInvalidMedia
 	}
 
@@ -67,20 +74,34 @@ func (s *DiskMediaStorage) Save(accountID, fileName, contentType string, content
 	return "/uploads/cardapio/" + account + "/" + name, nil
 }
 
-// detectImageContentType sniffa o conteudo e cai no fallback do header,
-// aceitando so a allowlist de imagens.
-func detectImageContentType(content []byte, fallback string) string {
+// detectMediaContentType resolve o mime aceito (imagem OU video).
+//
+// Imagem: sniffa o conteudo (http.DetectContentType e confiavel para imagem) e
+// cai no fallback do header — sempre dentro da allowlist.
+//
+// Video: http.DetectContentType e fraco para video (mp4 costuma cair em
+// application/octet-stream), entao confia no contentType declarado SE estiver no
+// allowlist de video E a extensao do fileName casar com o mime declarado. Nunca
+// aceita mime arbitrario.
+func detectMediaContentType(content []byte, fallback, fileName string) string {
 	if len(content) > 0 {
 		sniffLen := len(content)
 		if sniffLen > 512 {
 			sniffLen = 512
 		}
-		switch strings.ToLower(strings.TrimSpace(http.DetectContentType(content[:sniffLen]))) {
+		sniffed := http.DetectContentType(content[:sniffLen])
+		switch strings.ToLower(strings.TrimSpace(sniffed)) {
 		case "image/jpeg", "image/png", "image/webp", "image/gif":
-			return normalizeImageMime(http.DetectContentType(content[:sniffLen]))
+			return normalizeImageMime(sniffed)
 		}
 	}
-	return normalizeImageMime(fallback)
+	if mime := normalizeImageMime(fallback); mime != "" {
+		return mime
+	}
+	if mime := normalizeVideoMime(fallback); mime != "" && videoExtensionMatches(mime, fileName) {
+		return mime
+	}
+	return ""
 }
 
 func normalizeImageMime(value string) string {
@@ -98,7 +119,41 @@ func normalizeImageMime(value string) string {
 	}
 }
 
-func imageExtension(contentType, fileName string) string {
+func normalizeVideoMime(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "video/mp4":
+		return "video/mp4"
+	case "video/webm":
+		return "video/webm"
+	case "video/quicktime":
+		return "video/quicktime"
+	default:
+		return ""
+	}
+}
+
+func isVideoMime(value string) bool {
+	return normalizeVideoMime(value) != ""
+}
+
+// videoExtensionMatches garante que a extensao do arquivo corresponde ao mime de
+// video declarado (defesa extra: nao basta o header dizer video, o nome precisa
+// casar com a allowlist).
+func videoExtensionMatches(mime, fileName string) bool {
+	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(fileName)))
+	switch mime {
+	case "video/mp4":
+		return ext == ".mp4"
+	case "video/webm":
+		return ext == ".webm"
+	case "video/quicktime":
+		return ext == ".mov"
+	default:
+		return false
+	}
+}
+
+func mediaExtension(contentType, fileName string) string {
 	switch contentType {
 	case "image/jpeg":
 		return ".jpg"
@@ -108,6 +163,12 @@ func imageExtension(contentType, fileName string) string {
 		return ".webp"
 	case "image/gif":
 		return ".gif"
+	case "video/mp4":
+		return ".mp4"
+	case "video/webm":
+		return ".webm"
+	case "video/quicktime":
+		return ".mov"
 	}
 	switch strings.ToLower(filepath.Ext(strings.TrimSpace(fileName))) {
 	case ".jpg", ".jpeg":
@@ -118,6 +179,12 @@ func imageExtension(contentType, fileName string) string {
 		return ".webp"
 	case ".gif":
 		return ".gif"
+	case ".mp4":
+		return ".mp4"
+	case ".webm":
+		return ".webm"
+	case ".mov":
+		return ".mov"
 	default:
 		return ""
 	}
@@ -133,7 +200,7 @@ func sanitizeSegment(value string) string {
 func randomSuffix() string {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		return "image"
+		return "media"
 	}
 	return hex.EncodeToString(b)
 }

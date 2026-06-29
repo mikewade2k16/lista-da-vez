@@ -11,8 +11,8 @@ Status: `ativo` (legado em uso, precisa remover) · `band-aid` (sync temporário
 **RESOLVIDO (U1–U4c):** as tabelas `user_tenant_roles`/`user_store_roles`/`user_platform_roles` foram **DROPADAS** (migration 0135). Papéis/escopo agora 100% em `core.*` (`core.account_users` + `core.user_role_assignments` + `core.roles` + `core.user_module_settings`). Auth em `AUTH_ROLES_SOURCE=core`. Histórico abaixo.
 
 **Pendências OPCIONAIS de limpeza (não bloqueiam; o config força core):**
-- Remover o CÓDIGO de fallback legado do auth (`resolveLegacyAuthRoleScope`, `findStoreIDs`, o branch legado de `legacyRoleProjection`) + o flag `AUTH_ROLES_SOURCE` — hoje gated por config, nunca executado em core.
-- Neutralizar os seeds históricos `0002`/`0012`/`0015`/`0036` que criam/seedam as tabelas num DB novo (rodam antes do backfill 0133 + drop 0135, então funcionam, mas são desperdício).
+- ~~Remover o CÓDIGO de fallback legado do auth~~ — **REMOVIDO ✅ (2026-06-26):** apagados `resolveLegacyAuthRoleScope`, `findStoreIDs`, `resolveRole`, `legacyRoleProjection`, o tipo `authRolesSource`/`parseAuthRolesSource`/`authRolesSourceFromEnv`, o campo `rolesSource` e os 5 campos legados de `userRecord`. `resolveAuthRoleScope` agora resolve 100% pelo core. `go build` + `go test ./internal/modules/auth/...` verdes. O env var `AUTH_ROLES_SOURCE` virou **no-op** (nenhum código lê) — remover do `docker-compose*.yml` e `.env.*.example` no próximo deploy-cleanup (não removido agora para não mexer em config de prod).
+- Neutralizar os seeds históricos `0002`/`0012`/`0015`/`0036` que criam/seedam as tabelas num DB novo (rodam antes do backfill 0133 + drop 0135, então funcionam, mas são desperdício). **Cuidado:** os seeds alimentam o backfill 0133→core num DB fresh; remover sem cuidado tira papéis demo do dev. Fazer junto com revisão da cadeia de migrations.
 
 ---
 _Histórico:_
@@ -110,6 +110,52 @@ _Histórico do estado anterior abaixo._
 5. Remover `DEFAULT_CLIENT_OPTIONS`/`isMock` e o badge. Sai desta lista.
 
 **Fonte de verdade confirmada:** `core.accounts` (a tabela `public.tenants` foi dropada — item 3). Ver memória `project_tasks_client_source`.
+
+---
+
+## 5. Overrides de acesso por usuário — módulo `access` (`/v1/access/*`) — `band-aid` (2026-06-25)
+
+**O que é:** o sistema legado de permissões por usuário vive em `back/internal/modules/access`
+(`/v1/access/roles`, `/v1/access/users/{id}/overrides`) e grava por `tenantId/storeId` com
+catálogo de permissões HARDCODED (`access/model.go`) e `auth.Role`. A UI dele é
+`web/app/components/users/UsersAccessPermissionPanel.vue` (na página legada `/operacao/usuarios`).
+
+**Substituto (core, 2026-06-25):** o painel novo `web/app/components/admin/users/AdminUserModulesPanel.vue`
+(aba "Módulos" do `AdminUserEditDrawer`) bate em `core.user_permission_overrides` via
+`GET/PUT /v1/admin/users/{id}/accounts/{accountId}/overrides` — catálogo real do banco
+(`available` = permissões dos módulos habilitados da account), valida contra `core.permissions`,
+bloqueia `scope='platform'`. Fonte única, sem hardcode.
+
+**Por que é band-aid:** os dois coexistem enquanto `/operacao/usuarios` (Fila) continuar usando o
+`access`. Não remover a página legada nesta rodada (princípio: features coexistem).
+
+**Atualização 2026-06-26 — aba "Páginas" do `/manage/users` usa de PROPÓSITO o `access` legado:**
+o gating de visibilidade de PÁGINA do menu resolve do módulo legado `access`, não do core:
+`useDashboardNav` → `allowedWorkspaces` → `getAllowedWorkspaces(role, auth.permissionKeys, ...)`, e
+`auth.permissionKeys` vem de `/v1/me/context` → `principal.Permissions` → `access.ResolveEffectivePermissions`
+(`access_role_permissions` + `user_access_overrides`). O core (`/v2/me/context`, usado por `has()`/
+`CorePermissionGate`) é uma lista SEPARADA. Por isso a nova aba `AdminUserPagesPanel.vue` grava nos
+overrides de access (store `access-control` → `PUT /v1/access/users/{id}/overrides`, chaves
+`workspace.*.view`) — é o ÚNICO lever que muda o menu hoje. Override core de `workspace.*` não
+funcionaria (as chaves nem existem em `core.permissions`; só em `access_permissions`/migration 0019).
+Isso aprofunda o band-aid: alvo é mover o gating de página para o core e então migrar esta aba.
+
+**FASE 1 (aditiva) — FEITA ✅ (2026-06-26):** as chaves `workspace.*.view/.edit` (26) foram semeadas em
+`core.permissions` (declaradas no registry `core/module.go`, não-depreciadas pelo SyncCatalog) e o
+`core.role_permissions` (359 linhas / 39 papéis) + `core.user_permission_overrides` (2, paridade 1:1 com
+`user_access_overrides`) foram backfillados pela **migration `0175_workspace_permissions_core.sql`**. O
+caminho de leitura NÃO mudou: o gating do menu segue resolvendo do `access` (`/v1/me/context`). Zero blast
+radius (nada lê core `workspace.*` via `has()` hoje). É a base para a FASE 2 (switch).
+
+**Alvo / como remover:**
+1. Migrar `/operacao/usuarios` para consumir o override core (ou aposentar a página em favor de `/manage/users`).
+2. **FASE 2 (switch) — PENDENTE (precisa OK + canary):** mover o gating de página para o core:
+   `auth.permissionKeys`/`getAllowedWorkspaces` passam a ler de `/v2/me/context` (RBAC core, já com as
+   chaves semeadas na FASE 1). Pré-requisito: verificar paridade por-usuário (core vs access) e rodar em
+   canary antes do switch atômico. Então a aba "Páginas" troca para o override core e o `access` pode sair.
+3. Remover o módulo `back/internal/modules/access` e a rota `/v1/access/*`.
+4. Remover `UsersAccessPermissionPanel.vue` / `stores/access-control.ts`.
+5. Plugar `LegacyMarker` na seção de overrides do `/operacao/usuarios` enquanto durar.
 
 ---
 

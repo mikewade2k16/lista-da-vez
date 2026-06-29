@@ -1,113 +1,54 @@
 <script setup lang="ts">
-import type { AccountMembershipItem, AdminUserItem } from '~/types/admin-users'
+import type { AdminUserItem } from '~/types/admin-users'
+import OmniEntityDrawer from '~/components/ui/OmniEntityDrawer.vue'
+import AdminUserDataPanel from './users/AdminUserDataPanel.vue'
+import AdminUserMembershipsPanel from './users/AdminUserMembershipsPanel.vue'
+import AdminUserRolesPanel from './users/AdminUserRolesPanel.vue'
+import AdminUserModulesPanel from './users/AdminUserModulesPanel.vue'
+import AdminUserPagesPanel from './users/AdminUserPagesPanel.vue'
 
 const PASSWORD_MIN_LENGTH = 8
-
-// Niveis editaveis por vinculo (tenant-scoped, nao exigem loja). Espelha a
-// validacao do backend (UpdateMembershipRole: owner/director/marketing).
-const ROLE_OPTIONS = [
-  { value: 'owner', label: 'Owner — acesso total do cliente/agencia' },
-  { value: 'director', label: 'Director — acesso amplo, sem gestao de usuarios' },
-  { value: 'marketing', label: 'Marketing — foco em campanhas/site' },
-]
-const ROLE_LABELS: Record<string, string> = {
-  owner: 'Owner',
-  director: 'Director',
-  marketing: 'Marketing',
-  manager: 'Gerente',
-  consultant: 'Consultor',
-  store_terminal: 'Terminal de loja',
-  supervisor: 'Supervisor',
-  '': 'Sem papel',
-}
 
 const props = defineProps<{ open: boolean; user: AdminUserItem | null }>()
 const emit = defineEmits<{ 'update:open': [boolean]; updated: [] }>()
 
-const { updateField, setPassword, fetchMemberships, updateMembershipRole, errorMessage } =
-  useAdminUsersManager()
+const { setPassword, errorMessage } = useAdminUsersManager()
 const auth = useAuthStore()
-const canManage = computed(() => auth.role === 'platform_admin')
+// Identidade global (senha, is_platform_admin, email, nome) so platform_admin edita.
+// O resto (vinculos, papeis, modulos) e delegado e o backend valida o escopo.
+const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
 
-// Dados basicos — espelham o user e salvam via PATCH ao perder o foco / mudar.
-const form = reactive({
-  displayName: '',
-  nick: '',
-  email: '',
-  isActive: true,
-  isPlatformAdmin: false,
+const mode = ref<'side' | 'center' | 'fullscreen'>('side')
+
+type TabKey = 'dados' | 'vinculos' | 'papeis' | 'modulos' | 'paginas' | 'senha'
+const tabs = computed<{ key: TabKey; label: string }[]>(() => {
+  const base: { key: TabKey; label: string }[] = [
+    { key: 'dados', label: 'Dados' },
+    { key: 'vinculos', label: 'Vinculos' },
+    { key: 'papeis', label: 'Papeis' },
+    { key: 'modulos', label: 'Modulos' },
+    { key: 'paginas', label: 'Paginas' },
+  ]
+  // Senha e identity-global: so platform_admin (espelha o backend, que retorna 403
+  // forbidden_field para campos de identidade vindos de ator delegado).
+  if (isPlatformAdmin.value) base.push({ key: 'senha', label: 'Senha' })
+  return base
 })
-watch(
-  () => props.user,
-  (u) => {
-    if (!u) return
-    form.displayName = u.displayName
-    form.nick = u.nick
-    form.email = u.email
-    form.isActive = u.isActive
-    form.isPlatformAdmin = u.isPlatformAdmin
-  },
-  { immediate: true },
-)
+const activeTab = ref<TabKey>('dados')
 
-function saveField(field: 'displayName' | 'nick' | 'email' | 'isActive' | 'isPlatformAdmin') {
-  if (!props.user || !canManage.value) return
-  updateField(props.user.id, field, form[field], { immediate: true })
-  emit('updated')
-}
-
-function toggleField(field: 'isActive' | 'isPlatformAdmin', value: unknown) {
-  form[field] = Boolean(value)
-  saveField(field)
-}
-
-// Vinculos (cliente/agencia) + nivel por vinculo.
-const memberships = ref<AccountMembershipItem[]>([])
-// Indicador read-only no header: o usuario e membro de alguma conta-agencia (ve
-// todos os clientes/modulos da agencia). O drawer NAO cria vinculo de agencia,
-// entao aqui e so sinalizacao.
-const isAgencyMember = computed(() => memberships.value.some((m) => m.isAgency))
-const loadingMemberships = ref(false)
-const savingAccountId = ref('')
-
-async function loadMemberships() {
-  if (!props.user) return
-  loadingMemberships.value = true
-  memberships.value = await fetchMemberships(props.user.id)
-  loadingMemberships.value = false
-}
-
+// Abrir um usuario diferente volta para a primeira aba.
 watch(
   () => [props.open, props.user?.id],
   () => {
-    if (props.open && props.user) void loadMemberships()
+    if (props.open) activeTab.value = 'dados'
   },
-  { immediate: true },
 )
 
-function roleOptionsFor(membership: AccountMembershipItem) {
-  // Garante que o papel atual apareca mesmo quando nao for um dos editaveis.
-  if (membership.role && !ROLE_OPTIONS.some((option) => option.value === membership.role)) {
-    return [
-      { value: membership.role, label: ROLE_LABELS[membership.role] || membership.role },
-      ...ROLE_OPTIONS,
-    ]
-  }
-  return ROLE_OPTIONS
+function onUpdated() {
+  emit('updated')
 }
 
-async function changeRole(accountId: string, role: string) {
-  if (!props.user || !canManage.value) return
-  savingAccountId.value = accountId
-  const next = await updateMembershipRole(props.user.id, accountId, role)
-  savingAccountId.value = ''
-  if (next) {
-    memberships.value = next
-    emit('updated')
-  }
-}
-
-// Senha (define/reseta).
+// --- Senha (define/reseta) ---
 const passwordValue = ref('')
 const passwordSaving = ref(false)
 const passwordError = computed(() => {
@@ -125,181 +66,138 @@ async function submitPassword() {
     emit('updated')
   }
 }
+
+const subtitle = computed(() => props.user?.email ?? '')
 </script>
 
 <template>
-  <UModal :open="open" @update:open="emit('update:open', $event)">
-    <template #content>
-      <UCard>
-        <template #header>
-          <div>
-            <div class="flex items-center gap-2">
-              <h3 class="text-base font-semibold">Editar usuario</h3>
-              <UBadge v-if="isAgencyMember" color="primary" variant="soft" size="xs">
-                Membro de agencia
-              </UBadge>
-            </div>
-            <p class="text-xs text-[rgb(var(--muted))]">{{ user?.email }}</p>
-          </div>
-        </template>
+  <OmniEntityDrawer
+    v-model:mode="mode"
+    :model-value="open"
+    title="Editar usuario"
+    :subtitle="subtitle"
+    @update:model-value="emit('update:open', $event)"
+  >
+    <div v-if="user" class="admin-user-edit">
+      <UAlert
+        v-if="errorMessage"
+        color="error"
+        variant="soft"
+        icon="i-lucide-alert-triangle"
+        :description="errorMessage"
+        class="mb-3"
+      />
 
-        <div class="space-y-5 max-h-[70vh] overflow-y-auto">
-          <UAlert
-            v-if="errorMessage"
-            color="error"
-            variant="soft"
-            icon="i-lucide-alert-triangle"
-            :description="errorMessage"
-          />
+      <nav class="admin-user-edit__tabs">
+        <button
+          v-for="t in tabs"
+          :key="t.key"
+          type="button"
+          class="admin-user-edit__tab"
+          :class="{ 'admin-user-edit__tab--active': activeTab === t.key }"
+          @click="activeTab = t.key"
+        >
+          {{ t.label }}
+        </button>
+      </nav>
 
-          <section class="space-y-3">
-            <h4 class="text-sm font-semibold">Dados</h4>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nome</label>
+      <div class="admin-user-edit__body">
+        <AdminUserDataPanel
+          v-if="activeTab === 'dados'"
+          :user="user"
+          :can-edit-identity="isPlatformAdmin"
+          @updated="onUpdated"
+        />
+        <AdminUserMembershipsPanel
+          v-else-if="activeTab === 'vinculos'"
+          :user="user"
+          @updated="onUpdated"
+        />
+        <AdminUserRolesPanel v-else-if="activeTab === 'papeis'" :user="user" @updated="onUpdated" />
+        <AdminUserModulesPanel
+          v-else-if="activeTab === 'modulos'"
+          :user="user"
+          @updated="onUpdated"
+        />
+        <AdminUserPagesPanel
+          v-else-if="activeTab === 'paginas'"
+          :user="user"
+          @updated="onUpdated"
+        />
+
+        <section v-else-if="activeTab === 'senha'" class="admin-user-edit__senha">
+          <h4 class="text-sm font-semibold">Senha</h4>
+          <p class="text-xs text-[rgb(var(--muted))] mb-2">
+            Define uma nova senha; o usuario passa a logar com ela na hora.
+          </p>
+          <div class="flex items-start gap-2">
+            <div class="flex-1">
               <UInput
-                :model-value="form.displayName"
-                :disabled="!canManage"
-                @update:model-value="form.displayName = String($event ?? '')"
-                @blur="saveField('displayName')"
+                :model-value="passwordValue"
+                type="password"
+                placeholder="minimo 8 chars"
+                @update:model-value="passwordValue = String($event ?? '')"
+                @keyup.enter="submitPassword"
               />
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nick</label>
-                <UInput
-                  :model-value="form.nick"
-                  :disabled="!canManage"
-                  @update:model-value="form.nick = String($event ?? '')"
-                  @blur="saveField('nick')"
-                />
-              </div>
-              <div>
-                <label class="block text-xs text-[rgb(var(--muted))] mb-1">Email</label>
-                <UInput
-                  :model-value="form.email"
-                  :disabled="!canManage"
-                  @update:model-value="form.email = String($event ?? '')"
-                  @blur="saveField('email')"
-                />
-              </div>
-            </div>
-            <div class="flex items-center gap-6">
-              <div class="flex items-center gap-2">
-                <USwitch
-                  :model-value="form.isActive"
-                  :disabled="!canManage"
-                  @update:model-value="toggleField('isActive', $event)"
-                />
-                <span class="text-sm">Ativo</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <USwitch
-                  :model-value="form.isPlatformAdmin"
-                  :disabled="!canManage"
-                  @update:model-value="toggleField('isPlatformAdmin', $event)"
-                />
-                <span class="text-sm">Platform admin</span>
-              </div>
-            </div>
-          </section>
-
-          <section class="space-y-3">
-            <div>
-              <h4 class="text-sm font-semibold">Vinculos e nivel de acesso</h4>
-              <p class="text-xs text-[rgb(var(--muted))]">
-                Cliente ou agencia que o usuario pertence. O nivel define o que ele acessa dentro
-                daquele cliente/agencia.
+              <p v-if="passwordError" class="text-xs text-[rgb(var(--danger))] mt-1">
+                {{ passwordError }}
               </p>
             </div>
-
-            <p v-if="loadingMemberships" class="text-xs text-[rgb(var(--muted))]">
-              Carregando vinculos...
-            </p>
-            <p v-else-if="memberships.length === 0" class="text-xs text-[rgb(var(--muted))]">
-              Sem vinculos. Sem cliente/agencia o usuario nao loga (a menos que seja platform
-              admin).
-            </p>
-
-            <div
-              v-for="m in memberships"
-              :key="m.accountId"
-              class="flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2"
-            >
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="font-medium truncate">{{ m.accountName }}</span>
-                  <UBadge :color="m.isAgency ? 'primary' : 'neutral'" variant="soft" size="xs">
-                    {{ m.isAgency ? 'agencia' : 'cliente' }}
-                  </UBadge>
-                  <UBadge v-if="!m.isActive" color="neutral" variant="soft" size="xs">
-                    inativo
-                  </UBadge>
-                </div>
-                <span class="text-xs text-[rgb(var(--muted))]">{{ m.accountSlug }}</span>
-              </div>
-              <select
-                class="rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-2 py-1 text-sm"
-                :value="m.role"
-                :disabled="!canManage || savingAccountId === m.accountId"
-                @change="changeRole(m.accountId, ($event.target as HTMLSelectElement).value)"
-              >
-                <option v-for="opt in roleOptionsFor(m)" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </div>
-          </section>
-
-          <section v-if="canManage" class="space-y-3">
-            <div>
-              <h4 class="text-sm font-semibold">Senha</h4>
-              <p class="text-xs text-[rgb(var(--muted))]">
-                Define uma nova senha; o usuario passa a logar com ela na hora.
-              </p>
-            </div>
-            <div class="flex items-start gap-2">
-              <div class="flex-1">
-                <UInput
-                  :model-value="passwordValue"
-                  type="password"
-                  placeholder="minimo 8 chars"
-                  @update:model-value="passwordValue = String($event ?? '')"
-                  @keyup.enter="submitPassword"
-                />
-                <p v-if="passwordError" class="text-xs text-[rgb(var(--danger))] mt-1">
-                  {{ passwordError }}
-                </p>
-              </div>
-              <UButton
-                label="Salvar senha"
-                color="primary"
-                :loading="passwordSaving"
-                :disabled="passwordSaving || Boolean(passwordError) || !passwordValue.trim()"
-                @click="submitPassword"
-              />
-            </div>
-          </section>
-
-          <section>
-            <h4 class="text-sm font-semibold">Modulos e paginas</h4>
-            <p class="text-xs text-[rgb(var(--muted))]">
-              Dar/remover acesso a modulos e paginas por usuario entra aqui na proxima etapa (Fase
-              1B). Por enquanto, ajuste pelo detalhe em /operacao/usuarios.
-            </p>
-          </section>
-        </div>
-
-        <template #footer>
-          <div class="flex justify-end">
             <UButton
-              label="Fechar"
-              color="neutral"
-              variant="ghost"
-              @click="emit('update:open', false)"
+              label="Salvar senha"
+              color="primary"
+              :loading="passwordSaving"
+              :disabled="passwordSaving || Boolean(passwordError) || !passwordValue.trim()"
+              @click="submitPassword"
             />
           </div>
-        </template>
-      </UCard>
+        </section>
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="flex w-full justify-end">
+        <UButton
+          label="Fechar"
+          color="neutral"
+          variant="ghost"
+          @click="emit('update:open', false)"
+        />
+      </div>
     </template>
-  </UModal>
+  </OmniEntityDrawer>
 </template>
+
+<style scoped>
+.admin-user-edit__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgb(var(--border));
+}
+
+.admin-user-edit__tab {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.85rem;
+  color: rgb(var(--muted));
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.admin-user-edit__tab:hover {
+  color: rgb(var(--text));
+}
+
+.admin-user-edit__tab--active {
+  color: rgb(var(--text));
+  border-bottom-color: rgb(var(--primary));
+  font-weight: 600;
+}
+
+.admin-user-edit__body {
+  min-height: 12rem;
+}
+</style>

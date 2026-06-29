@@ -95,6 +95,16 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 		n++
 	}
 
+	// Escopo de delegacao (multi-tenant): so usuarios visiveis ao ator. O MESMO
+	// predicado entra no count(*) e no SELECT (total e linhas batem — sem
+	// enumeration). actorUserID vem do Principal (nunca da query). Defesa em
+	// profundidade: a regra vive 100% no SQL, mesmo o handler tendo gateado antes.
+	if actor := strings.TrimSpace(filter.ActorUserID); actor != "" {
+		conds = append(conds, listUsersScopeWhere(n, n+1))
+		args = append(args, actor, adminManagePermKeys)
+		n += 2
+	}
+
 	where := strings.Join(conds, " and ")
 
 	var total int
@@ -239,32 +249,10 @@ func (r *PostgresAdminUserRepository) CreateUser(ctx context.Context, input Admi
 		if orgRole == "" {
 			orgRole = "agency_member"
 		}
-		if _, err := r.pool.Exec(ctx, `
-			insert into core.organization_users (organization_id, user_id, org_role, joined_at)
-			values ($1::uuid, $2::uuid, $3, now())
-			on conflict (organization_id, user_id) do update set org_role = $3
-		`, orgID, userID, orgRole); err != nil {
+		// Bloco de vinculo de agencia extraido para linkUserToOrganization (DRY):
+		// reaproveitado pelo endpoint POST /v1/admin/users/{id}/organizations/{orgId}.
+		if err := linkUserToOrganization(ctx, r.pool, orgID, userID, orgRole); err != nil {
 			return AdminUserView{}, err
-		}
-		// Cargo de agencia precisa logar: vira membro da conta-agencia (is_agency=true)
-		// da org com papel conforme o cargo (dono->owner total, membro->director
-		// limitado). O switcher org-aware (AGENCY_TENANT_ARCHITECTURE) abre os clientes
-		// da agencia. Sem isto o usuario de agencia nao resolve papel e o login falha.
-		var agencyAccountID string
-		err := r.pool.QueryRow(ctx, `
-			select id::text
-			from core.accounts
-			where organization_id = $1::uuid and is_agency = true and is_active = true
-			order by created_at asc
-			limit 1
-		`, orgID).Scan(&agencyAccountID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return AdminUserView{}, err
-		}
-		if strings.TrimSpace(agencyAccountID) != "" {
-			if err := enrollUserInAccount(ctx, r.pool, agencyAccountID, userID, agencyAccountRole(orgRole)); err != nil {
-				return AdminUserView{}, err
-			}
 		}
 	}
 

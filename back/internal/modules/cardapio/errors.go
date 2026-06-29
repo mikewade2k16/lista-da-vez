@@ -22,6 +22,7 @@ var (
 	ErrMinOrder        = errors.New("cardapio: below minimum order")
 	ErrItemUnavailable = errors.New("cardapio: item unavailable")
 	ErrOptionInvalid   = errors.New("cardapio: item option invalid")
+	ErrPaymentInvalid  = errors.New("cardapio: payment method invalid")
 
 	// ErrSlugConflict: slug duplicado (restaurante global ou produto/categoria no
 	// restaurante).

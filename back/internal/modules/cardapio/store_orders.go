@@ -56,6 +56,8 @@ type orderInsert struct {
 	CustomerName     string
 	CustomerPhone    string
 	DeliveryAddress  json.RawMessage
+	PaymentMethod    string
+	ChangeForCents   int64
 	Notes            string
 	SubtotalCents    int64
 	DeliveryFeeCents int64
@@ -65,16 +67,18 @@ type orderInsert struct {
 }
 
 const orderColumns = `id, restaurant_id, customer_id, order_number, status, type,
-	customer_name, customer_phone, delivery_address, notes, subtotal_cents,
-	delivery_fee_cents, discount_cents, total_cents, created_at, updated_at, code`
+	customer_name, customer_phone, delivery_address, payment_method, change_for_cents,
+	notes, subtotal_cents, delivery_fee_cents, discount_cents, total_cents,
+	created_at, updated_at, code`
 
 func scanOrder(row rowScanner) (Order, error) {
 	var o Order
 	var deliveryAddress []byte
 	err := row.Scan(
 		&o.ID, &o.RestaurantID, &o.CustomerID, &o.OrderNumber, &o.Status, &o.Type,
-		&o.CustomerName, &o.CustomerPhone, &deliveryAddress, &o.Notes, &o.SubtotalCents,
-		&o.DeliveryFeeCents, &o.DiscountCents, &o.TotalCents, &o.CreatedAt, &o.UpdatedAt, &o.Code,
+		&o.CustomerName, &o.CustomerPhone, &deliveryAddress, &o.PaymentMethod, &o.ChangeForCents,
+		&o.Notes, &o.SubtotalCents, &o.DeliveryFeeCents, &o.DiscountCents, &o.TotalCents,
+		&o.CreatedAt, &o.UpdatedAt, &o.Code,
 	)
 	if err != nil {
 		return Order{}, err
@@ -116,14 +120,14 @@ func (s *Store) CreateOrder(ctx context.Context, in orderInsert) (Order, error) 
 	}
 	const insQ = `insert into cardapio.orders
 		(account_id, restaurant_id, order_number, status, type, session_id, customer_name,
-		 customer_phone, delivery_address, notes, subtotal_cents, delivery_fee_cents,
-		 discount_cents, total_cents, code)
-		values ($1,$2,$3,'recebido',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		 customer_phone, delivery_address, payment_method, change_for_cents, notes,
+		 subtotal_cents, delivery_fee_cents, discount_cents, total_cents, code)
+		values ($1,$2,$3,'recebido',$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 		returning ` + orderColumns
 	order, err := scanOrder(tx.QueryRow(ctx, insQ,
 		in.AccountID, in.RestaurantID, orderNumber, in.Type, in.SessionID, in.CustomerName,
-		in.CustomerPhone, []byte(deliveryAddress), in.Notes, in.SubtotalCents,
-		in.DeliveryFeeCents, in.DiscountCents, in.TotalCents, code))
+		in.CustomerPhone, []byte(deliveryAddress), in.PaymentMethod, in.ChangeForCents, in.Notes,
+		in.SubtotalCents, in.DeliveryFeeCents, in.DiscountCents, in.TotalCents, code))
 	if err != nil {
 		return Order{}, err
 	}

@@ -191,10 +191,55 @@ func (f *fakeAdminUserRepo) MoveUserAccount(_ context.Context, userID, targetAcc
 	return f.moveResult, nil
 }
 
+// fakeScopeRepo implementa AdminScopeRepository com respostas configuraveis. Por
+// default tudo true (ator = platform_admin) para os testes de MoveUserAccount,
+// que so passam por IsPlatformAdmin antes de chegar no repo.
+type fakeScopeRepo struct {
+	canManageAccount bool
+	canManageUser    bool
+	canManageOrg     bool
+	isPlatformAdmin  bool
+	isAdminOfAny     bool
+}
+
+func (f fakeScopeRepo) CanManageAccount(context.Context, string, string) (bool, error) {
+	return f.canManageAccount, nil
+}
+func (f fakeScopeRepo) CanManageUser(context.Context, string, string) (bool, error) {
+	return f.canManageUser, nil
+}
+func (f fakeScopeRepo) CanManageOrganization(context.Context, string, string) (bool, error) {
+	return f.canManageOrg, nil
+}
+func (f fakeScopeRepo) IsPlatformAdmin(context.Context, string) (bool, error) {
+	return f.isPlatformAdmin, nil
+}
+func (f fakeScopeRepo) IsAdminOfAnything(context.Context, string) (bool, error) {
+	return f.isAdminOfAny, nil
+}
+
+// platformAdminScope devolve um resolver cujo ator e platform_admin (libera os
+// gates identity-global de MoveUserAccount/Create/Delete/Update).
+func platformAdminScope() *AdminScopeResolver {
+	return NewAdminScopeResolver(fakeScopeRepo{
+		canManageAccount: true,
+		canManageUser:    true,
+		canManageOrg:     true,
+		isPlatformAdmin:  true,
+		isAdminOfAny:     true,
+	})
+}
+
+// newTestAdminUserService monta o service com escopo de platform_admin e sem
+// links repo (os testes atuais nao exercitam vinculos).
+func newTestAdminUserService(repo AdminUserRepository) *AdminUserService {
+	return NewAdminUserService(repo, nil, platformAdminScope(), nil)
+}
+
 func TestMoveUserAccountRequiresAccountID(t *testing.T) {
 	repo := &fakeAdminUserRepo{}
-	svc := NewAdminUserService(repo, nil)
-	_, err := svc.MoveUserAccount(context.Background(), "user-1", MoveUserAccountInput{AccountID: "  "})
+	svc := newTestAdminUserService(repo)
+	_, err := svc.MoveUserAccount(context.Background(), "actor-1", "user-1", MoveUserAccountInput{AccountID: "  "})
 	if err == nil {
 		t.Fatal("expected error when accountId is blank")
 	}
@@ -205,8 +250,8 @@ func TestMoveUserAccountRequiresAccountID(t *testing.T) {
 
 func TestMoveUserAccountDefaultsRoleToOwner(t *testing.T) {
 	repo := &fakeAdminUserRepo{moveResult: AdminUserView{ID: "user-1", ClientAccountID: "acc-2"}}
-	svc := NewAdminUserService(repo, nil)
-	view, err := svc.MoveUserAccount(context.Background(), "user-1", MoveUserAccountInput{AccountID: "acc-2"})
+	svc := newTestAdminUserService(repo)
+	view, err := svc.MoveUserAccount(context.Background(), "actor-1", "user-1", MoveUserAccountInput{AccountID: "acc-2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -223,8 +268,8 @@ func TestMoveUserAccountDefaultsRoleToOwner(t *testing.T) {
 
 func TestMoveUserAccountRejectsInvalidRole(t *testing.T) {
 	repo := &fakeAdminUserRepo{}
-	svc := NewAdminUserService(repo, nil)
-	_, err := svc.MoveUserAccount(context.Background(), "user-1", MoveUserAccountInput{AccountID: "acc-2", Role: "superuser"})
+	svc := newTestAdminUserService(repo)
+	_, err := svc.MoveUserAccount(context.Background(), "actor-1", "user-1", MoveUserAccountInput{AccountID: "acc-2", Role: "superuser"})
 	if !errors.Is(err, ErrInvalidRole) {
 		t.Fatalf("expected ErrInvalidRole, got %v", err)
 	}
@@ -236,8 +281,8 @@ func TestMoveUserAccountRejectsInvalidRole(t *testing.T) {
 func TestMoveUserAccountAcceptsKnownRoles(t *testing.T) {
 	for _, role := range []string{"owner", "director", "marketing", "OWNER", " Director "} {
 		repo := &fakeAdminUserRepo{moveResult: AdminUserView{ID: "user-1"}}
-		svc := NewAdminUserService(repo, nil)
-		if _, err := svc.MoveUserAccount(context.Background(), "user-1", MoveUserAccountInput{AccountID: "acc-2", Role: role}); err != nil {
+		svc := newTestAdminUserService(repo)
+		if _, err := svc.MoveUserAccount(context.Background(), "actor-1", "user-1", MoveUserAccountInput{AccountID: "acc-2", Role: role}); err != nil {
 			t.Fatalf("role %q should be accepted, got %v", role, err)
 		}
 		if repo.movedRole != strings.ToLower(strings.TrimSpace(role)) {
@@ -259,8 +304,8 @@ func TestMoveUserAccountPropagatesRepoErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &fakeAdminUserRepo{moveErr: tc.err}
-			svc := NewAdminUserService(repo, nil)
-			_, err := svc.MoveUserAccount(context.Background(), "user-1", MoveUserAccountInput{AccountID: "acc-2"})
+			svc := newTestAdminUserService(repo)
+			_, err := svc.MoveUserAccount(context.Background(), "actor-1", "user-1", MoveUserAccountInput{AccountID: "acc-2"})
 			if !errors.Is(err, tc.err) {
 				t.Fatalf("expected %v to propagate, got %v", tc.err, err)
 			}

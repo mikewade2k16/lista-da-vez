@@ -3,6 +3,7 @@ package cardapio
 import (
 	"context"
 	"encoding/json"
+	"time"
 )
 
 // dataStore e o contrato de persistencia consumido pelo Service. *Store o
@@ -56,7 +57,30 @@ type dataStore interface {
 	ListOrders(ctx context.Context, accountID, restaurantID, status string, limit, offset int) ([]Order, int, error)
 	UpdateOrderStatus(ctx context.Context, accountID, id, status string) (Order, error)
 	InsertEvent(ctx context.Context, accountID, restaurantID, name, sessionID string, eventContext json.RawMessage) error
+	InsertEventsBatch(ctx context.Context, accountID, restaurantID string, rows []eventInsert) (int, error)
+	UpsertSession(ctx context.Context, in sessionUpsert) error
+	listProductSlugs(ctx context.Context, accountID, restaurantID string) (map[string]struct{}, error)
+	PruneTelemetry(ctx context.Context, retentionDays int) (events, sessions int64, err error)
 	ListEvents(ctx context.Context, accountID, restaurantID string, limit, offset int) ([]EventView, int, error)
+
+	// Analytics (Fase 10 / F2) — leitura/agregacao. O pertencimento do restaurante
+	// e validado no service via GetRestaurant (404 fora de escopo); estas queries
+	// filtram restaurant_id + account_id e a janela half-open [from, to) por
+	// created_at, excluindo bots por padrao. column/eventName/keyExpr vem sempre de
+	// allowlists fechadas do service (nunca entrada de usuario crua).
+	Overview(ctx context.Context, accountID, restaurantID string, from, to time.Time) (overviewRaw, error)
+	TimeseriesDaily(ctx context.Context, accountID, restaurantID string, from, to time.Time, tz string) (map[string]AnalyticsTimePoint, error)
+	TimeseriesHourOfDay(ctx context.Context, accountID, restaurantID string, from, to time.Time, tz string) (map[int]AnalyticsTimePoint, error)
+	TimeseriesWeekdayHour(ctx context.Context, accountID, restaurantID string, from, to time.Time, tz string) (map[int]AnalyticsTimePoint, error)
+	FunnelSteps(ctx context.Context, accountID, restaurantID string, from, to time.Time) ([]AnalyticsFunnelStep, error)
+	TopProductsByEvent(ctx context.Context, accountID, restaurantID, eventName string, from, to time.Time, limit int) ([]topProductRaw, error)
+	TopProductsByOrders(ctx context.Context, accountID, restaurantID string, from, to time.Time, limit int) ([]topProductRaw, error)
+	Sources(ctx context.Context, accountID, restaurantID, column string, from, to time.Time, limit int) ([]AnalyticsSource, error)
+	Devices(ctx context.Context, accountID, restaurantID, column string, from, to time.Time) ([]AnalyticsBreakdownItem, error)
+	Pages(ctx context.Context, accountID, restaurantID string, from, to time.Time, limit int) ([]AnalyticsPage, error)
+	Dwell(ctx context.Context, accountID, restaurantID, eventName, keyExpr string, from, to time.Time, limit int) ([]AnalyticsDwellItem, error)
+	Clicks(ctx context.Context, accountID, restaurantID string, from, to time.Time, limit int) ([]AnalyticsClick, error)
+	ProductNamesBySlug(ctx context.Context, accountID, restaurantID string, slugs []string) (map[string]string, error)
 
 	// Site layout (Fase 3 / Opcao B)
 	GetPublishedLayout(ctx context.Context, accountID, restaurantID string) (json.RawMessage, int64, error)

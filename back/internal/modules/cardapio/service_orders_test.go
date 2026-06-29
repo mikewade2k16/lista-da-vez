@@ -300,3 +300,51 @@ func TestPlaceOrder_PickupNoFee(t *testing.T) {
 		t.Fatalf("retirada: esperava fee 0 / total 5000, recebi fee %d total %d", order.DeliveryFeeCents, order.TotalCents)
 	}
 }
+
+// resolvePayment: token vazio passa; token aceito normaliza; token nao aceito ou
+// desconhecido => ErrPaymentInvalid; troco so sobrevive em entrega + dinheiro.
+func TestResolvePayment(t *testing.T) {
+	full := PaymentSettings{
+		Cash:   true,
+		Pix:    true,
+		Debit:  PaymentCard{Accepted: true},
+		Credit: PaymentCard{Accepted: false},
+		Ticket: false,
+		Other:  "Vale-refeicao",
+	}
+	settings := Settings{Payment: full}
+
+	cases := []struct {
+		name       string
+		method     string
+		changeFor  int64
+		orderType  string
+		wantMethod string
+		wantChange int64
+		wantErr    error
+	}{
+		{"vazio", "", 0, OrderTypeDelivery, "", 0, nil},
+		{"pix aceito", "PIX", 0, OrderTypePickup, "pix", 0, nil},
+		{"other aceito (other != \"\")", "other", 0, OrderTypeDelivery, "other", 0, nil},
+		{"credito nao aceito", "credit", 0, OrderTypeDelivery, "", 0, ErrPaymentInvalid},
+		{"token desconhecido", "boleto", 0, OrderTypeDelivery, "", 0, ErrPaymentInvalid},
+		{"troco em entrega+dinheiro", "cash", 5000, OrderTypeDelivery, "cash", 5000, nil},
+		{"troco ignorado em retirada", "cash", 5000, OrderTypePickup, "cash", 0, nil},
+		{"troco so vale para dinheiro", "pix", 5000, OrderTypeDelivery, "pix", 0, nil},
+		{"troco zero nao persiste", "cash", 0, OrderTypeDelivery, "cash", 0, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			method, change, err := resolvePayment(tc.method, tc.changeFor, tc.orderType, settings)
+			if err != tc.wantErr {
+				t.Fatalf("erro: esperava %v, recebi %v", tc.wantErr, err)
+			}
+			if method != tc.wantMethod {
+				t.Fatalf("method: esperava %q, recebi %q", tc.wantMethod, method)
+			}
+			if change != tc.wantChange {
+				t.Fatalf("change: esperava %d, recebi %d", tc.wantChange, change)
+			}
+		})
+	}
+}

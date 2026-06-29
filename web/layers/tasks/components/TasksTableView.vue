@@ -9,7 +9,7 @@ const {
   tableRows,
   tableColumns,
   viewerUserType,
-  pageBootstrapping,
+  activeBoardLoading,
   tableFocusCell,
   onTableCellUpdate,
   onTableRowAction,
@@ -25,7 +25,7 @@ const {
       :columns="tableColumns"
       row-key="id"
       :viewer-user-type="viewerUserType"
-      :loading="pageBootstrapping"
+      :loading="activeBoardLoading"
       :focus-cell="tableFocusCell"
       empty-text="Nenhuma task encontrada para os filtros atuais."
       @update:cell="onTableCellUpdate"

@@ -181,31 +181,57 @@ func (r *PostgresRepository) getByIDForViewer(id string, viewerUserID string) (*
 func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback, error) {
 	readAtExpr := "coalesce(user_feedback.user_last_read_at, user_feedback.created_at)"
 	readJoin := ""
-	query := `
-		select user_feedback.id::text, user_feedback.tenant_id::text, user_feedback.store_id::text,
-		       user_feedback.user_id::text, user_feedback.user_name, user_feedback.kind,
-		       user_feedback.status, user_feedback.subject, user_feedback.body, user_feedback.admin_note,
-		       user_feedback.created_at, user_feedback.updated_at, user_feedback.closed_at,
-		       %s
-		from user_feedback
-		%s
-		where 1=1
-	`
+	unreadExpr := "0"
 
 	args := []interface{}{}
 	argCount := 1
 
 	if input.ViewerUserID != "" {
+		viewerArg := argCount
 		readAtExpr = "coalesce(feedback_read_states.last_read_at, user_feedback.created_at)"
 		readJoin = fmt.Sprintf(`
 		left join feedback_read_states
 		  on feedback_read_states.feedback_id = user_feedback.id
-		 and feedback_read_states.user_id = $%d::uuid`, argCount)
+		 and feedback_read_states.user_id = $%d::uuid`, viewerArg)
+		// Nao-lidos pela perspectiva do viewer: se ele e o dono do feedback,
+		// conta as respostas de terceiros; se e admin, conta as mensagens do
+		// criador. Espelha getUnreadCount/isUnreadForViewer do front.
+		unreadExpr = fmt.Sprintf(`(
+			select count(*)
+			from feedback_messages fm
+			where fm.feedback_id = user_feedback.id
+			  and fm.created_at > %s
+			  and case when user_feedback.user_id = $%d::uuid
+			           then fm.author_user_id <> user_feedback.user_id
+			           else fm.author_user_id = user_feedback.user_id
+			      end
+		)`, readAtExpr, viewerArg)
 		args = append(args, input.ViewerUserID)
 		argCount++
 	}
 
-	query = fmt.Sprintf(query, readAtExpr, readJoin)
+	// last_message: ultima mensagem da conversa, para o preview do sino/lista.
+	// Como o backend marca o feedback como lido ao responder, a ultima mensagem
+	// e o sinal certo de "novidade" quando unread_count > 0.
+	query := fmt.Sprintf(`
+		select user_feedback.id::text, user_feedback.tenant_id::text, user_feedback.store_id::text,
+		       user_feedback.user_id::text, user_feedback.user_name, user_feedback.kind,
+		       user_feedback.status, user_feedback.subject, user_feedback.body, user_feedback.admin_note,
+		       user_feedback.created_at, user_feedback.updated_at, user_feedback.closed_at,
+		       %s,
+		       %s as unread_count,
+		       last_message.body, last_message.created_at
+		from user_feedback
+		%s
+		left join lateral (
+			select fm.body, fm.created_at
+			from feedback_messages fm
+			where fm.feedback_id = user_feedback.id
+			order by fm.created_at desc
+			limit 1
+		) last_message on true
+		where 1=1
+	`, readAtExpr, unreadExpr, readJoin)
 
 	if tenantID != "" {
 		query += fmt.Sprintf(" and user_feedback.tenant_id = $%d::uuid", argCount)
@@ -257,7 +283,7 @@ func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback,
 
 	feedbacks := make([]Feedback, 0)
 	for rows.Next() {
-		f, err := scanFeedback(rows.Scan)
+		f, err := scanFeedbackListRow(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
@@ -265,6 +291,37 @@ func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback,
 	}
 
 	return feedbacks, rows.Err()
+}
+
+func scanFeedbackListRow(scan func(...any) error) (*Feedback, error) {
+	var f Feedback
+	var tenantID, storeID, lastMessageBody *string
+	var closedAt, lastMessageAt *time.Time
+	var unreadCount int64
+	err := scan(
+		&f.ID, &tenantID, &storeID, &f.UserID, &f.UserName,
+		&f.Kind, &f.Status, &f.Subject, &f.Body, &f.AdminNote,
+		&f.CreatedAt, &f.UpdatedAt, &closedAt, &f.UserLastReadAt,
+		&unreadCount, &lastMessageBody, &lastMessageAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if tenantID != nil {
+		f.TenantID = *tenantID
+	}
+	if storeID != nil {
+		f.StoreID = *storeID
+	}
+	if closedAt != nil {
+		f.ClosedAt = closedAt
+	}
+	f.UnreadCount = int(unreadCount)
+	if lastMessageBody != nil {
+		f.LastMessageBody = *lastMessageBody
+	}
+	f.LastMessageAt = lastMessageAt
+	return &f, nil
 }
 
 func normalizeFeedbackStoreIDs(storeIDs []string) []string {

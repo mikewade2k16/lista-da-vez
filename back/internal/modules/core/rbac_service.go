@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -119,6 +120,17 @@ func (s *RBACService) UpdateRolePermissions(
 		if len(invalid) > 0 {
 			return Role{}, fmt.Errorf("core: permissões inválidas ou módulo desabilitado: %v", invalid)
 		}
+		// Defesa em profundidade (M1): bloqueia permissoes scope='platform' na
+		// matriz do papel — espelha o bloqueio dos overrides por-usuario. Sem isto
+		// um core.roles.manage de cliente concederia uma permissao de plataforma
+		// (ex.: core.organization.consolidated_read) via papel custom.
+		platform, err := s.rbac.PlatformScopedKeys(ctx, permKeys)
+		if err != nil {
+			return Role{}, err
+		}
+		if len(platform) > 0 {
+			return Role{}, ErrInvalidPermission
+		}
 	}
 
 	newLabel := strings.TrimSpace(label)
@@ -178,6 +190,64 @@ func (s *RBACService) RemoveRoleFromUser(
 	accountID, userID, roleID string,
 ) error {
 	return s.rbac.RemoveRoleFromUser(ctx, accountID, userID, roleID)
+}
+
+// SetUserRoles substitui em LOTE todos os papéis do usuário na account pelo
+// conjunto roleIDs. Valida que o alvo é membro da account (ErrNotMember -> 404) e
+// que CADA roleID pertence à account (FindRole -> ErrRoleNotFound). Replace
+// transacional. Mantém os assign/remove 1-a-1 (coexistência). Sem dedupe manual:
+// o ON CONFLICT do replace ignora repetidos. Retorna os papéis efetivos do
+// usuário NAQUELA account após o replace (RoleSummary[], mesmo shape do
+// GET .../roles) para o painel atualizar sem refetch.
+func (s *RBACService) SetUserRoles(
+	ctx context.Context,
+	accountID, userID string,
+	roleIDs []string,
+) ([]RoleSummary, error) {
+	if err := s.rbac.CheckMembership(ctx, accountID, userID); err != nil {
+		if errors.Is(err, ErrAccountNotMember) {
+			return nil, ErrNotMember
+		}
+		return nil, err
+	}
+	for _, roleID := range roleIDs {
+		if _, err := s.rbac.FindRole(ctx, accountID, roleID); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.rbac.ReplaceUserRoleAssignments(ctx, accountID, userID, roleIDs); err != nil {
+		return nil, err
+	}
+
+	return s.ListUserRoles(ctx, accountID, userID)
+}
+
+// ListUserRoles retorna os papéis core.roles atribuídos ao usuário NAQUELA account
+// como RoleSummary[] (mesmo shape do GET .../roles e da resposta do PUT roles).
+// Complemento de leitura de SetUserRoles — o gate de escopo fica no handler
+// (requireRolesManage em modo leitura).
+func (s *RBACService) ListUserRoles(
+	ctx context.Context,
+	accountID, userID string,
+) ([]RoleSummary, error) {
+	rawRoles, err := s.rbac.ListRolesForUser(ctx, accountID, userID)
+	if err != nil {
+		return nil, err
+	}
+	summaries := make([]RoleSummary, 0, len(rawRoles))
+	for _, ro := range rawRoles {
+		summaries = append(summaries, ro.ToSummary())
+	}
+	return summaries, nil
+}
+
+// HasAccountPermission resolve se o usuário tem a permissão na account (delega ao
+// repositório). Exposto para reuso por outros services/gates do core.
+func (s *RBACService) HasAccountPermission(
+	ctx context.Context,
+	accountID, userID, permKey string,
+) (bool, error) {
+	return s.rbac.HasAccountPermission(ctx, accountID, userID, permKey)
 }
 
 // ============================================================================

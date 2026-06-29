@@ -64,7 +64,25 @@ export const useCoreAccountStore = defineStore('core/account', () => {
 
   const api = createApiRequest(runtimeConfig, () => tokenCookie.value ?? '')
 
+  // Dedupe de chamadas concorrentes a fetchAccounts. No login com defer de runtime,
+  // o syncRuntimeAccess (background) e o auth.global.ts podem disparar fetchAccounts
+  // ao mesmo tempo na 1a navegacao — sem isto, duas requests a /v2/me/accounts em
+  // paralelo. Memoiza a promise em voo (mesmo padrao do ensureSession no auth store).
+  let fetchAccountsPromise: Promise<void> | null = null
+
   async function fetchAccounts() {
+    if (fetchAccountsPromise) {
+      return fetchAccountsPromise
+    }
+    fetchAccountsPromise = runFetchAccounts()
+    try {
+      await fetchAccountsPromise
+    } finally {
+      fetchAccountsPromise = null
+    }
+  }
+
+  async function runFetchAccounts() {
     loading.value = true
     error.value = ''
     try {

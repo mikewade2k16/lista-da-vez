@@ -3,6 +3,7 @@ package cardapio
 import (
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -68,17 +69,37 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	store := NewStore(deps.Pool)
 	media := NewDiskMediaStorage(strings.TrimSpace(os.Getenv("UPLOADS_DIR")))
+	telemetrySalt := strings.TrimSpace(os.Getenv("CARDAPIO_TELEMETRY_SALT"))
+	// Sem salt, o ip_hash da telemetria fica vazio (ipHashHex retorna "") — sem
+	// fail-open silencioso de IP cru, mas em prod o salt e obrigatorio (LGPD). Em dev
+	// apenas avisamos no boot, sem derrubar o modulo.
+	if telemetrySalt == "" && deps.Logger != nil {
+		deps.Logger.Warn("CARDAPIO_TELEMETRY_SALT vazio: ip_hash da telemetria sera vazio (obrigatorio em producao)")
+	}
 	svc := NewService(store, deps.Pool, ServiceConfig{
 		BaseDomain:     strings.TrimSpace(os.Getenv("CARDAPIO_BASE_DOMAIN")),
 		DevDefaultSlug: strings.TrimSpace(os.Getenv("CARDAPIO_DEV_DEFAULT_SLUG")),
 		PublicBaseURL:  strings.TrimSpace(os.Getenv("PUBLIC_API_BASE_URL")),
+		TelemetrySalt:  telemetrySalt,
 		Media:          media,
 	})
+
+	// Poda diaria da telemetria (LGPD). CARDAPIO_TELEMETRY_RETENTION_DAYS sobrescreve o
+	// default de 90 dias; <= 0 desliga a poda automatica. A goroutine para no Close.
+	retentionDays := defaultRetentionDays
+	if v := strings.TrimSpace(os.Getenv("CARDAPIO_TELEMETRY_RETENTION_DAYS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			retentionDays = n
+		}
+	}
+	stopPrune := make(chan struct{})
+	svc.startRetentionLoop(stopPrune, retentionDays)
 
 	m.handle = &handle{
 		service:        svc,
 		authMiddleware: deps.AuthMiddleware,
 		limiter:        newRateLimiter(),
+		stopPrune:      stopPrune,
 	}
 	return m.handle, nil
 }
@@ -91,6 +112,7 @@ type handle struct {
 	service        *Service
 	authMiddleware *auth.Middleware
 	limiter        *rateLimiter
+	stopPrune      chan struct{}
 }
 
 func (h *handle) ID() string { return "cardapio" }
@@ -103,10 +125,16 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterCatalogRoutes(mux, h.service, h.authMiddleware)
 	RegisterOrderRoutes(mux, h.service, h.authMiddleware)
 	RegisterLayoutRoutes(mux, h.service, h.authMiddleware)
+	RegisterAnalyticsRoutes(mux, h.service, h.authMiddleware)
 	RegisterPublicRoutes(mux, h.service, h.limiter)
 }
 
 // RegisterEventHandlers — cardapio nao consome eventos por enquanto.
 func (h *handle) RegisterEventHandlers(_ events.Bus) {}
 
-func (h *handle) Close() error { return nil }
+func (h *handle) Close() error {
+	if h.stopPrune != nil {
+		close(h.stopPrune)
+	}
+	return nil
+}

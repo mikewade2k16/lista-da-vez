@@ -4,8 +4,9 @@
 > `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md` (secoes 3, 4.3, 4.4, 6, 7).
 >
 > Este documento e' o setup especifico do ambiente de **staging**. O runbook
-> consolidado (prod + staging) fica em `docs/DEPLOY_VPS.md` e
-> `docs/DEPLOY_CHECKLIST.md` — NAO editar aqui; este arquivo e' aditivo.
+> consolidado (prod + staging) fica em `docs/DEPLOY_VPS.md` (doc unico de deploy;
+> o antigo `DEPLOY_CHECKLIST.md` foi consolidado la em 2026-06-23) — NAO editar aqui;
+> este arquivo e' aditivo.
 
 ## 1. Ideia central
 

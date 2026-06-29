@@ -7,11 +7,12 @@ import "encoding/json"
 // jsonb e o serve; o site renderiza. props fica como json.RawMessage (forma livre,
 // validada estruturalmente no service — sanitizacao pesada e Fase 4).
 
-// SiteLayout e o layout completo de um site (todas as paginas + tema).
+// SiteLayout e o layout completo de um site (todas as paginas + tema + barra de aviso).
 type SiteLayout struct {
-	Pages     map[string]PageLayout `json:"pages"`
-	Theme     *ThemeOverrides       `json:"theme,omitempty"`
-	UpdatedAt string                `json:"updatedAt"`
+	Pages        map[string]PageLayout `json:"pages"`
+	Theme        *ThemeOverrides       `json:"theme,omitempty"`
+	Announcement *SiteAnnouncement     `json:"announcement,omitempty"`
+	UpdatedAt    string                `json:"updatedAt"`
 }
 
 // PageLayout e a lista ordenada de blocos de uma pagina.
@@ -35,4 +36,15 @@ type ThemeOverrides struct {
 	Accent string            `json:"accent,omitempty"`
 	Font   string            `json:"font,omitempty"`
 	Tokens map[string]string `json:"tokens,omitempty"`
+}
+
+// SiteAnnouncement e a barra de aviso do site (config de nivel de site, irma do
+// tema). Espelha SiteAnnouncement do front (app/types/layout.ts): enabled liga a
+// faixa; text e a mensagem; link/linkLabel sao opcionais. Round-trip preservado
+// no struct (sem ele o json.Marshal de validateSiteLayout descartaria o campo).
+type SiteAnnouncement struct {
+	Enabled   bool   `json:"enabled"`
+	Text      string `json:"text"`
+	Link      string `json:"link,omitempty"`
+	LinkLabel string `json:"linkLabel,omitempty"`
 }

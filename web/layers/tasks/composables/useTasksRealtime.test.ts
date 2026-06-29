@@ -32,6 +32,12 @@ vi.mock('~/stores/auth', () => ({
   useAuthStore: () => authStore,
 }))
 
+// Account store mockado vazio: o fallback de resolveAccountId deve cair em auth.activeTenantId
+// (tenant-1). Quando activeAccountId estiver populado (switcher v2), ele vence — coberto no app real.
+vi.mock('../../core/stores/account', () => ({
+  useCoreAccountStore: () => ({ activeAccountId: '' }),
+}))
+
 describe('useTasksRealtime', () => {
   beforeEach(() => {
     vi.resetModules()

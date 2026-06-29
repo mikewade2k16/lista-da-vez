@@ -95,14 +95,14 @@ export default defineNuxtConfig({
         'lucide-vue-next',
       ],
     },
-    build: {
-      rollupOptions: {
-        // @tiptap/y-tiptap e peer opcional para colab Yjs. Como nao usamos
-        // collab em tempo real no editor Omni, marcamos como external para
-        // evitar bundle do Yjs/y-prosemirror desnecessariamente.
-        external: ['@tiptap/y-tiptap'],
-      },
-    },
+    // NAO externalizar @tiptap/y-tiptap: o drag-handle (@tiptap/extension-drag-handle,
+    // usado pelo OmniEditor via UEditorDragHandle) o importa ESTATICAMENTE. Marca-lo como
+    // `build.rollupOptions.external` deixa um bare specifier "@tiptap/y-tiptap" no bundle do
+    // browser -> o navegador nao resolve (sem import map) -> "Failed to resolve module
+    // specifier" -> o chunk do editor nao avalia -> o modal de tasks abre EM BRANCO em
+    // producao (em dev funciona porque `build.rollupOptions.external` nao se aplica ao dev
+    // server do Vite). Deixar o Rollup bundlar normalmente: yjs e todos os peers
+    // (y-protocols, prosemirror-*, lib0) ja estao em node_modules e o editor e lazy.
     server: {
       watch: shouldUsePollingWatcher
         ? {

@@ -80,6 +80,17 @@ const props = defineProps({
   color: var(--text-main);
 }
 
+.app-panel-button--danger {
+  background: rgb(var(--danger));
+  color: rgb(255 255 255);
+}
+
+.app-panel-button--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--line-soft);
+}
+
 .app-panel-button.is-disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { ApexOptions } from 'apexcharts'
 import { useMetaAdsStore } from '~/stores/meta-ads'
+import { defineLazyComponent } from '~/utils/lazy-component'
 
 const store = useMetaAdsStore()
 
 // ApexCharts quebra no SSR — carregado dinamicamente e renderizado so no cliente
 // (<ClientOnly> no template). O import dinamico tambem mantem a lib fora do
 // bundle inicial (principio de performance / bundle enxuto).
-const ApexChart = defineAsyncComponent(() => import('vue3-apexcharts'))
+const ApexChart = defineLazyComponent(() => import('vue3-apexcharts'))
 
 // Le os tokens do design system em runtime (client-only) para o grafico seguir
 // o tema. Sem isso, o Apex usa cores proprias que ignoram dark mode/rebranding.

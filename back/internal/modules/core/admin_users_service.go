@@ -10,14 +10,23 @@ import (
 
 // AdminUserService orquestra regras de negocio dos endpoints /v1/admin/users.
 // Valida unicidade de email, hash de senha e safeguard do ultimo platform_admin.
+// scope resolve a autoridade admin por-request (delegacao multi-tenant); links
+// cuida dos vinculos de cliente/agencia de um usuario.
 type AdminUserService struct {
 	repo   AdminUserRepository
 	hasher *auth.BcryptHasher
+	scope  *AdminScopeResolver
+	links  AdminUserLinksRepository
 }
 
 // NewAdminUserService cria o service com as dependencias necessarias.
-func NewAdminUserService(repo AdminUserRepository, hasher *auth.BcryptHasher) *AdminUserService {
-	return &AdminUserService{repo: repo, hasher: hasher}
+func NewAdminUserService(
+	repo AdminUserRepository,
+	hasher *auth.BcryptHasher,
+	scope *AdminScopeResolver,
+	links AdminUserLinksRepository,
+) *AdminUserService {
+	return &AdminUserService{repo: repo, hasher: hasher, scope: scope, links: links}
 }
 
 // ListUsers passa filtros para o repositorio e devolve a resposta paginada.
@@ -45,13 +54,30 @@ func (s *AdminUserService) ListUsers(ctx context.Context, filter AdminUserListFi
 	}, nil
 }
 
-// GetUser devolve um user pelo id.
-func (s *AdminUserService) GetUser(ctx context.Context, userID string) (AdminUserView, error) {
+// GetUser devolve um user pelo id, ESCOPADO ao ator: se o ator nao administra o
+// usuario (CanManageUser) -> 404 (nao vaza existencia de usuario de outro tenant).
+func (s *AdminUserService) GetUser(ctx context.Context, actorUserID, userID string) (AdminUserView, error) {
+	can, err := s.scope.CanManageUser(ctx, actorUserID, userID)
+	if err != nil {
+		return AdminUserView{}, err
+	}
+	if !can {
+		return AdminUserView{}, ErrUserNotFound
+	}
 	return s.repo.FindAdminUser(ctx, userID)
 }
 
-// CreateUser valida input, hasheia a senha (se fornecida) e cria o user.
-func (s *AdminUserService) CreateUser(ctx context.Context, input AdminCreateUserInput) (AdminUserView, error) {
+// CreateUser cria uma identidade global — acao identity-global, SO platform_admin
+// (mesmo que o ator administre a account/agencia informada no payload). Admin de
+// org/cliente vincula um usuario JA existente via POST memberships/organizations.
+func (s *AdminUserService) CreateUser(ctx context.Context, actorUserID string, input AdminCreateUserInput) (AdminUserView, error) {
+	isAdmin, err := s.scope.IsPlatformAdmin(ctx, actorUserID)
+	if err != nil {
+		return AdminUserView{}, err
+	}
+	if !isAdmin {
+		return AdminUserView{}, ErrForbidden
+	}
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
 	input.Nick = strings.TrimSpace(input.Nick)
@@ -111,9 +137,31 @@ func (s *AdminUserService) CreateUser(ctx context.Context, input AdminCreateUser
 	return s.repo.CreateUser(ctx, input, passwordHash)
 }
 
-// UpdateUser valida o patch e aplica safeguard: nao permitir rebaixar/desativar
-// o ultimo platform_admin ativo (evita perda total de acesso).
-func (s *AdminUserService) UpdateUser(ctx context.Context, userID string, input AdminUpdateUserInput) (AdminUserView, error) {
+// UpdateUser valida o patch e aplica os gates de delegacao. Todos os campos do
+// AdminUpdateUserInput sao identity-global (displayName/nick/email/password/
+// isPlatformAdmin/isActive) -> SO platform_admin pode altera-los. Um ator
+// nao-platform_admin que administre o usuario (escopo) mas envie QUALQUER campo
+// nao-nil -> 403 forbidden_field (a delegacao da poder sobre o vinculo, nao sobre
+// a identidade global). Mantem o safeguard do ultimo platform_admin.
+func (s *AdminUserService) UpdateUser(ctx context.Context, actorUserID, userID string, input AdminUpdateUserInput) (AdminUserView, error) {
+	// Escopo do alvo primeiro (404 antes de qualquer decisao de campo).
+	can, err := s.scope.CanManageUser(ctx, actorUserID, userID)
+	if err != nil {
+		return AdminUserView{}, err
+	}
+	if !can {
+		return AdminUserView{}, ErrUserNotFound
+	}
+
+	// Matriz de campo: identity-global so para platform_admin.
+	isAdmin, err := s.scope.IsPlatformAdmin(ctx, actorUserID)
+	if err != nil {
+		return AdminUserView{}, err
+	}
+	if !isAdmin && hasIdentityGlobalField(input) {
+		return AdminUserView{}, ErrForbiddenField
+	}
+
 	if err := s.guardLastPlatformAdmin(ctx, userID, input.IsPlatformAdmin, input.IsActive); err != nil {
 		return AdminUserView{}, err
 	}
@@ -156,8 +204,17 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, userID string, input 
 	return s.repo.UpdateUser(ctx, userID, input, passwordHash)
 }
 
-// DeleteUser aplica safeguard antes de soft-delete (chamado direto).
-func (s *AdminUserService) DeleteUser(ctx context.Context, userID string) error {
+// DeleteUser faz soft-delete da identidade global — acao identity-global, SO
+// platform_admin. Mantem o safeguard do ultimo platform_admin ativo. Um ator
+// nao-platform_admin -> 403 (forbidden); ele deve usar DELETE membership pontual.
+func (s *AdminUserService) DeleteUser(ctx context.Context, actorUserID, userID string) error {
+	isAdmin, err := s.scope.IsPlatformAdmin(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	if !isAdmin {
+		return ErrForbidden
+	}
 	current, err := s.repo.FindAdminUser(ctx, userID)
 	if err != nil {
 		return err
@@ -174,25 +231,37 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, userID string) error 
 	return s.repo.SoftDeleteUser(ctx, userID)
 }
 
-// GetMemberships devolve as accounts que o user e membro.
-func (s *AdminUserService) GetMemberships(ctx context.Context, userID string) (AdminMembershipsResponse, error) {
-	memberships, err := s.repo.GetMemberships(ctx, userID)
+// GetMemberships devolve as accounts que o user e membro, ESCOPADO ao ator: o
+// ator precisa poder administrar o usuario (CanManageUser, senao 404) e a
+// resposta so traz as accounts que o ator administra (getMembershipsScoped —
+// senao agency_owner veria vinculos do usuario em clientes de outra agencia).
+func (s *AdminUserService) GetMemberships(ctx context.Context, actorUserID, userID string) (AdminMembershipsResponse, error) {
+	can, err := s.scope.CanManageUser(ctx, actorUserID, userID)
 	if err != nil {
 		return AdminMembershipsResponse{}, err
 	}
-	return AdminMembershipsResponse{Memberships: memberships}, nil
+	if !can {
+		return AdminMembershipsResponse{}, ErrUserNotFound
+	}
+	return s.getMembershipsScoped(ctx, actorUserID, userID)
 }
 
 // UpdateMembershipRole troca o nivel/papel do usuario numa conta (cliente ou
 // conta-agencia). Aceita papeis tenant-scoped (owner/director/marketing) — nao
-// exigem vinculo de loja. Exige que o user ja seja membro da conta. Devolve as
-// memberships atualizadas para o front re-renderizar.
-func (s *AdminUserService) UpdateMembershipRole(ctx context.Context, userID, accountID string, input UpdateMembershipRoleInput) (AdminMembershipsResponse, error) {
+// exigem vinculo de loja. Escopo: CanManageAccount(accountId) senao 404; se a
+// conta for agencia, exige autoridade de organizacao (M2). Exige que o user ja
+// seja membro da conta. Devolve as memberships escopadas ao ator.
+func (s *AdminUserService) UpdateMembershipRole(ctx context.Context, actorUserID, userID, accountID string, input UpdateMembershipRoleInput) (AdminMembershipsResponse, error) {
+	accountID = strings.TrimSpace(accountID)
 	role := strings.ToLower(strings.TrimSpace(input.Role))
 	switch role {
 	case "owner", "director", "marketing":
 	default:
 		return AdminMembershipsResponse{}, ErrInvalidRole
+	}
+
+	if err := s.ensureCanMutateAccountLink(ctx, actorUserID, accountID); err != nil {
+		return AdminMembershipsResponse{}, err
 	}
 
 	member, err := s.repo.IsAccountMember(ctx, accountID, userID)
@@ -207,7 +276,7 @@ func (s *AdminUserService) UpdateMembershipRole(ctx context.Context, userID, acc
 		return AdminMembershipsResponse{}, err
 	}
 
-	return s.GetMemberships(ctx, userID)
+	return s.getMembershipsScoped(ctx, actorUserID, userID)
 }
 
 // MoveUserAccount MOVE o usuario para a conta-cliente destino: o repositorio
@@ -215,7 +284,16 @@ func (s *AdminUserService) UpdateMembershipRole(ctx context.Context, userID, acc
 // matricula no destino. Valida accountId obrigatorio e papel (default "owner").
 // Retorna o AdminUserView atualizado (mesmo shape do PATCH) para o front
 // atualizar a linha sem refetch.
-func (s *AdminUserService) MoveUserAccount(ctx context.Context, userID string, input MoveUserAccountInput) (AdminUserView, error) {
+func (s *AdminUserService) MoveUserAccount(ctx context.Context, actorUserID, userID string, input MoveUserAccountInput) (AdminUserView, error) {
+	// MOVE e destrutivo (desativa TODOS os vinculos de cliente atuais) — restrito
+	// a platform_admin. Admin de org/cliente usa POST/DELETE membership pontual.
+	isAdmin, err := s.scope.IsPlatformAdmin(ctx, actorUserID)
+	if err != nil {
+		return AdminUserView{}, err
+	}
+	if !isAdmin {
+		return AdminUserView{}, ErrForbidden
+	}
 	accountID := strings.TrimSpace(input.AccountID)
 	if accountID == "" {
 		return AdminUserView{}, errors.New("accountId is required")
@@ -258,4 +336,17 @@ func (s *AdminUserService) guardLastPlatformAdmin(ctx context.Context, userID st
 		return ErrLastPlatformAdmin
 	}
 	return nil
+}
+
+// hasIdentityGlobalField diz se o patch toca QUALQUER campo identity-global
+// (todos os campos do AdminUpdateUserInput sao globais — nome/nick/email/senha/
+// is_platform_admin/is_active). Usado para 403 forbidden_field quando o ator nao
+// e platform_admin.
+func hasIdentityGlobalField(input AdminUpdateUserInput) bool {
+	return input.Email != nil ||
+		input.DisplayName != nil ||
+		input.Nick != nil ||
+		input.IsActive != nil ||
+		input.IsPlatformAdmin != nil ||
+		input.Password != nil
 }

@@ -6,6 +6,42 @@ import {
   buildSettingsBundleFromState,
 } from './runtime-remote-state'
 
+// Opcoes de buildFallbackSettingsBundle: preservar ou descartar settings atuais.
+interface FallbackSettingsOptions {
+  preserveExistingSettings?: boolean
+}
+
+// Opcoes de refreshRuntimeStoreSettings.
+// canFetchQueueSettings: false pula /v1/settings em contas sem o modulo queue.
+interface RefreshSettingsOptions {
+  canFetchQueueSettings?: boolean
+}
+
+// Opcoes de resolveCanFetchConsultants: permite sobrescrever o calculo de papel
+// com valores ja resolvidos pelo caller (evita releitura do estado).
+interface CanFetchConsultantsOptions {
+  canViewConsultants?: boolean
+  role?: string
+  permissionKeys?: string[]
+  permissionsResolved?: boolean
+}
+
+// Opcoes de fetchRemoteStoreData.
+interface FetchRemoteDataOptions {
+  canFetchQueueSettings?: boolean
+  canFetchConsultants?: boolean
+}
+
+// Opcoes de hydrateRuntimeStoreContext.
+interface HydrateRuntimeOptions {
+  canFetchQueueSettings?: boolean
+  canViewConsultants?: boolean
+  role?: string
+  permissionKeys?: string[]
+  permissionsResolved?: boolean
+  preserveExistingSettings?: boolean
+}
+
 // Re-export para compatibilidade: callers historicos (stores/operations,
 // runtime-remote.test, etc.) importam estas funcoes de '~/utils/runtime-remote'.
 // A logica de normalizacao/estado vive agora em runtime-remote-normalize.ts e
@@ -41,7 +77,7 @@ function logSettingsDegraded(eventName, payload = {}) {
   })
 }
 
-function buildFallbackSettingsBundle(currentState, storeId, options = {}) {
+function buildFallbackSettingsBundle(currentState, storeId, options: FallbackSettingsOptions = {}) {
   const normalizedStoreId = String(storeId || '').trim()
   const fallbackBundle = buildSettingsBundleFromState(createEmptyState(), normalizedStoreId)
 
@@ -91,7 +127,7 @@ export async function refreshRuntimeStoreSettings(
   apiRequest,
   storeId,
   tenantId = '',
-  options = {},
+  options: RefreshSettingsOptions = {},
 ) {
   const normalizedStoreId = String(storeId || '').trim()
 
@@ -195,7 +231,7 @@ function resolveRuntimeRole(currentState) {
   return String(activeProfile?.role || '').trim()
 }
 
-function resolveCanFetchConsultants(currentState, options = {}) {
+function resolveCanFetchConsultants(currentState, options: CanFetchConsultantsOptions = {}) {
   if (typeof options?.canViewConsultants === 'boolean') {
     return options.canViewConsultants
   }
@@ -207,7 +243,12 @@ function resolveCanFetchConsultants(currentState, options = {}) {
   )
 }
 
-export async function fetchRemoteStoreData(apiRequest, storeId, tenantId = '', options = {}) {
+export async function fetchRemoteStoreData(
+  apiRequest,
+  storeId,
+  tenantId = '',
+  options: FetchRemoteDataOptions = {},
+) {
   const normalizedStoreId = String(storeId || '').trim()
   const storeQuery = encodeURIComponent(normalizedStoreId)
   const normalizedTenantId = String(tenantId || '').trim()
@@ -321,7 +362,7 @@ export async function hydrateRuntimeStoreContext(
   apiRequest,
   storeId,
   tenantId = '',
-  options = {},
+  options: HydrateRuntimeOptions = {},
 ) {
   const normalizedStoreID = String(storeId || '').trim()
 

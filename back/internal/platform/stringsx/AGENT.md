@@ -22,6 +22,11 @@ stringsx.NormalizeIDs(storeIDs)
 
 // jsonb (text[]/json serializado) -> []string. Vazio/invalido => slice nao-nil vazio.
 stringsx.DecodeJSONStringSlice(rawBytes)
+
+// Regra canonica de slug: NFD + sem acentos (Mn) + hifen como separador + colapsa
+// hifens + trim das pontas. Identica ao slugify() do front (domain/utils/slugify.ts).
+// Exemplos: "Acao" -> "acao", "Perola@RioMar!" -> "perola-riomar".
+stringsx.Slugify(raw)
 ```
 
 ## Convencoes
@@ -45,13 +50,15 @@ stringsx.DecodeJSONStringSlice(rawBytes)
   deliberada (decisao 2026-06-29): inocua para o front (trata `null` e `[]` como
   lista vazia) e mais consistente. Unica divergencia de saida assumida na
   consolidacao.
-- `slugify`/`normalizeSlug` NAO foram consolidados: as 6 copias geram slugs
-  DIFERENTES (NFKD vs. drop de acento vs. so-lowercase) e unificar mudaria o
-  slug gerado — precisa de decisao de produto sobre qual regra e canonica.
+- `Slugify` (decisao 2026-06-29): regra canonica unificada. Usa NFD (nao NFKD)
+  para decompor acentos; descarta marcas Unicode Mn; hifen como separador. Modules
+  `bio` e `cardapio` substituiram suas copias locais. `site.perolaSlug` e outra
+  logica (usa `_`, especifica do crow-notion) e permanece inalterada. O front
+  espelha a regra em `web/app/domain/utils/slugify.ts`. Slugs JA GRAVADOS no banco
+  nao sao re-gerados; so novos slugs seguem a regra canonica.
 - `crm/erp` mantem um alias local fino `firstNonEmpty` que delega para
   `stringsx.FirstNonEmpty`, so para nao reescrever os ~20 call-sites do pacote.
 
 ## Quando atualizar este AGENT.md
 
 - Ao adicionar/remover uma funcao consolidada.
-- Quando o slug ganhar uma regra canonica e puder ser movido para ca.

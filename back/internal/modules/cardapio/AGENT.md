@@ -9,7 +9,12 @@ do visitante** de um front Nuxt **estatico** hospedado no site do cliente.
 > `web/app/components/roadmap/roadmap-data.ts` (fase `cardapio-online`).
 > Contrato de saida (camelCase, centavos): types do front cardapio (Nuxt estatico).
 
-## Estado: C1 — back + banco (2026-06-12) · Fase 2 back (2026-06-19) · Fase 10/F1 ingestao de telemetria (2026-06-25) · Fase 10/F2 API de analytics (2026-06-25)
+## Estado: C1 — back + banco (2026-06-12) · Fase 2 back (2026-06-19) · Fase 10/F1 ingestao de telemetria (2026-06-25) · Fase 10/F2 API de analytics (2026-06-25) · slugify canonico (2026-06-29)
+
+Entregue slugify canonico (2026-06-29): `normalizeSlug` em `service.go` passou a
+delegar para `stringsx.Slugify` (NFD + sem acentos). Mudanca deliberada: slugs NOVOS
+de restaurante/categoria/produto passam a ter acentos normalizados (ex.: "Acai" em vez
+de "acai" de "Açaí"). Slugs ja gravados no banco NAO sao re-gerados.
 
 Entregue C1: migration `0153_cardapio_schema.sql`, modulo Go completo, CORS publico no
 middleware da plataforma, testes (recalculo de pedido, resolve por host, allowlist de

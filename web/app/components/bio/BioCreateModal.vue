@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { slugify } from '~/domain/utils/slugify'
 
 interface TenantOption {
   id: string
@@ -31,15 +32,6 @@ watch(
     form.accountId = props.isAdmin ? AGENCY_SENTINEL : ''
   },
 )
-
-// Slug global, regex ^[a-z0-9-]+$ (mesma normalizacao do backend).
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
 
 const slugPreview = computed(() => (form.slug.trim() ? slugify(form.slug) : slugify(form.name)))
 

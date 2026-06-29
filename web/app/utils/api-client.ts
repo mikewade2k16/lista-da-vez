@@ -1,4 +1,38 @@
+import type { FetchOptions } from 'ofetch'
+
 export const AUTH_TOKEN_COOKIE = 'ldv_access_token'
+
+// Metodos HTTP aceitos pelo $fetch (NitroFetchOptions narra method para
+// Uppercase<M> | M, onde M e um RouterMethod minusculo). O FetchOptions cru do
+// ofetch herda method?: string de RequestInit, largo demais para essa narrowing —
+// por isso restringimos aqui ao mesmo conjunto que o $fetch aceita.
+type ApiRequestMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'CONNECT'
+  | 'OPTIONS'
+  | 'TRACE'
+  | Lowercase<
+      'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'CONNECT' | 'OPTIONS' | 'TRACE'
+    >
+
+// Opcoes aceitas pelo apiRequest alem das do ofetch nativo:
+//   dedupe: false desativa a deduplicacao de GETs em voo (default: ativo).
+//   skipLoadingIndicator: true omite o overlay de loading global para esta chamada.
+// headers e restrito a Record<string,string> pois o apiRequest precisa adicionar
+// Authorization e X-Account-Id como propriedades simples de string.
+// method e restrito ao conjunto do $fetch (ver ApiRequestMethod) para o spread em
+// processedOptions casar com NitroFetchOptions sem alargar o tipo.
+interface ApiRequestOptions extends Omit<FetchOptions, 'headers' | 'method'> {
+  headers?: Record<string, string>
+  method?: ApiRequestMethod
+  dedupe?: boolean
+  skipLoadingIndicator?: boolean
+}
 
 export function getApiErrorMessage(error, fallbackMessage) {
   const baseMessage = error?.data?.error?.message || error?.message || fallbackMessage
@@ -195,7 +229,7 @@ function isAuthEndpoint(path: string) {
 }
 
 export function createApiRequest(runtimeConfig, getAccessToken = null) {
-  return function apiRequest(path, options = {}) {
+  return function apiRequest(path: string, options: ApiRequestOptions = {}) {
     const headers = {
       ...(options.headers || {}),
     }

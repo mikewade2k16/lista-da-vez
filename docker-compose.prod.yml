@@ -58,7 +58,6 @@ services:
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
       AUTH_PASSWORD_RESET_TTL: ${AUTH_PASSWORD_RESET_TTL:-30m}
-      AUTH_ROLES_SOURCE: ${AUTH_ROLES_SOURCE:-core}
       # Cookie de sessao do gate SSO (Caddy forward_auth -> /v1/auth/gateway/verify).
       # Prod: .crowvisuals.com.br (cookie vale em omni./n8n./waha.). Ver SSO_GATEWAY_PLAN.md.
       AUTH_GATEWAY_COOKIE_DOMAIN: ${AUTH_GATEWAY_COOKIE_DOMAIN:-}

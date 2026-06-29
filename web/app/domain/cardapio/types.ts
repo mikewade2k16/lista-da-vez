@@ -668,15 +668,7 @@ export function parseCents(input: string | number | null | undefined): number {
   return negative ? -cents : cents
 }
 
-// Normaliza um texto livre em slug (lowercase, hifens). Espelha o backend.
-export function slugify(value: string): string {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim()
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-')
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-}
+// slugify: re-exportado do util canonico compartilhado (domain/utils/slugify.ts).
+// Espelha exatamente o stringsx.Slugify do back (Go). Mantido como export aqui
+// para nao quebrar os imports existentes dos componentes de cardapio.
+export { slugify } from '~/domain/utils/slugify'

@@ -6,6 +6,13 @@ import (
 	"strings"
 )
 
+// batchModuleLoader e uma interface opcional implementada por PostgresRepository.
+// Permite ao Service usar uma unica query batch em vez de N queries por account
+// (OPT-2/F-22). Definida aqui para nao alterar a interface publica Repository.
+type batchModuleLoader interface {
+	ListEnabledModuleIDsForAccounts(ctx context.Context, accountIDs []string) (map[string][]string, error)
+}
+
 // Service expoe o contexto multi-account (v2) para o frontend.
 type Service struct {
 	repository  Repository
@@ -34,15 +41,19 @@ func (s *Service) MeAccounts(ctx context.Context, userID string) (MeAccountsResp
 		return MeAccountsResponse{}, err
 	}
 
+	// Carrega os modulos de todas as accounts em uma unica query batch (OPT-2/F-22),
+	// evitando N queries quando o usuario (especialmente platform_admin) enxerga
+	// muitas accounts. Fallback para o loop N+1 se o repositorio nao implementar
+	// batchModuleLoader (ex.: fake de teste que so satisfaz Repository).
+	modulesMap, err := s.loadModulesBatch(ctx, accounts)
+	if err != nil {
+		return MeAccountsResponse{}, err
+	}
+
 	summaries := make([]AccountSummary, 0, len(accounts))
 	var orgView *OrganizationView
 	for _, account := range accounts {
-		moduleIDs, err := s.repository.ListEnabledModuleIDs(ctx, account.ID)
-		if err != nil {
-			return MeAccountsResponse{}, err
-		}
-
-		summaries = append(summaries, account.Summary(moduleIDs))
+		summaries = append(summaries, account.Summary(modulesMap[account.ID]))
 
 		// Se mais de uma account compartilha a mesma organization, essa e a
 		// organization "principal" do user (cenario tipico de agencia).
@@ -69,6 +80,49 @@ func (s *Service) MeAccounts(ctx context.Context, userID string) (MeAccountsResp
 		Organization:     orgView,
 		DefaultAccountID: defaultAccountID,
 	}, nil
+}
+
+// loadModulesBatch carrega os modulos habilitados para uma lista de accounts
+// em uma unica query, usando batchModuleLoader quando o repositorio o suporta.
+// Fallback: loop N+1 via ListEnabledModuleIDs (compatibilidade com fakes de teste).
+// Garante que toda account do slice tenha entrada no map retornado (slice vazio
+// em vez de nil para as que nao tiverem modulos).
+func (s *Service) loadModulesBatch(ctx context.Context, accounts []Account) (map[string][]string, error) {
+	out := make(map[string][]string, len(accounts))
+	// Pre-popula com slice vazio para garantir entradas para todas as accounts.
+	for _, a := range accounts {
+		out[a.ID] = []string{}
+	}
+
+	if len(accounts) == 0 {
+		return out, nil
+	}
+
+	// Caminho otimizado: uma unica query batch.
+	if bl, ok := s.repository.(batchModuleLoader); ok {
+		ids := make([]string, len(accounts))
+		for i, a := range accounts {
+			ids[i] = a.ID
+		}
+		batch, err := bl.ListEnabledModuleIDsForAccounts(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		for accountID, moduleIDs := range batch {
+			out[accountID] = moduleIDs
+		}
+		return out, nil
+	}
+
+	// Fallback N+1 (repositorios que nao implementam batchModuleLoader).
+	for _, a := range accounts {
+		moduleIDs, err := s.repository.ListEnabledModuleIDs(ctx, a.ID)
+		if err != nil {
+			return nil, err
+		}
+		out[a.ID] = moduleIDs
+	}
+	return out, nil
 }
 
 // MeContext retorna o contexto completo de uma account especifica para o

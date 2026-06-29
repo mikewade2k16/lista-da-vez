@@ -13,6 +13,20 @@ import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { sanitizeTaskContentHtml } from '../utils/content'
 import { compactUserLabel } from '../utils/user-label'
 import { clampText as sharedClampText, normalizeText as sharedNormalizeText } from '../utils/text'
+import {
+  formatFileSize as sharedFormatFileSize,
+  normalizeTaskVideoItem as sharedNormalizeTaskVideoItem,
+  normalizeTaskVideoItems as sharedNormalizeTaskVideoItems,
+  taskVideoSignature as sharedTaskVideoSignature,
+} from '../utils/task-video'
+import {
+  decodeStructuredPresenceDraft,
+  encodeStructuredPresenceDraft,
+} from '../utils/presence-draft'
+import {
+  initialsFor as sharedInitialsFor,
+  selectOptionColor as sharedSelectOptionColor,
+} from '../utils/select-display'
 import { useTasksWorkspace } from './useTasksWorkspace'
 import { useTimeTracking } from './useTimeTracking'
 import type {
@@ -474,57 +488,25 @@ export function useTasksPageContext() {
     })
   }
 
+  // Re-bind dos helpers puros de video (impl. canonica em `utils/task-video.ts`). Mantidos como
+  // `function` para preservar o hoisting — `taskVideoSignature` e' usado na inicializacao de
+  // `lastSavedTaskVideoSignature` (ref acima), antes desta linha.
   function normalizeTaskVideoItem(value: unknown): TaskVideoItem | null {
-    if (!value || typeof value !== 'object') return null
-    const raw = value as Record<string, unknown>
-    const url = normalizeText(raw.url, 1000)
-    const id = normalizeText(raw.id, 240) || url
-    if (!id || !url) return null
-    return {
-      id,
-      name: normalizeText(raw.name, 240) || id,
-      url,
-      size: Math.max(0, Number(raw.size || 0) || 0),
-      contentType: normalizeText(raw.contentType, 120),
-      uploadedAt: normalizeText(raw.uploadedAt, 80),
-    }
+    return sharedNormalizeTaskVideoItem(value)
   }
 
   function normalizeTaskVideoItems(value: unknown): TaskVideoItem[] {
-    if (!Array.isArray(value)) return []
-    const seen = new Set<string>()
-    const normalized: TaskVideoItem[] = []
-    value.forEach((item) => {
-      const video = normalizeTaskVideoItem(item)
-      if (!video || seen.has(video.id)) return
-      seen.add(video.id)
-      normalized.push(video)
-    })
-    return normalized
+    return sharedNormalizeTaskVideoItems(value)
   }
 
   function taskVideoSignature(value: unknown) {
-    return JSON.stringify(
-      normalizeTaskVideoItems(value).map((video) => ({
-        id: video.id,
-        url: video.url,
-        size: video.size,
-        contentType: video.contentType,
-      })),
-    )
+    return sharedTaskVideoSignature(value)
   }
 
+  // `selectOptionColor` depende do `normalizeKey` local; injetamos a funcao para manter o
+  // comportamento identico (impl. canonica em `utils/select-display.ts`).
   function selectOptionColor(value: unknown, index = 0) {
-    const key = normalizeKey(value)
-    if (key === 'slate' || key === 'gray' || key === 'cinza') return 'gray'
-    if (key === 'emerald' || key === 'green' || key === 'verde') return 'green'
-    if (key === 'amber' || key === 'yellow' || key === 'amarelo') return 'yellow'
-    if (key === 'rose' || key === 'red' || key === 'vermelho') return 'red'
-    if (key === 'violet' || key === 'indigo' || key === 'purple' || key === 'roxo') return 'purple'
-    if (key === 'blue' || key === 'azul') return 'blue'
-    if (key === 'orange' || key === 'laranja') return 'orange'
-    if (key === 'pink' || key === 'rosa') return 'pink'
-    return ['blue', 'purple', 'green', 'orange', 'pink', 'yellow', 'red', 'gray'][index % 8]!
+    return sharedSelectOptionColor(normalizeKey, value, index)
   }
 
   function optionListFromLabels(labels: string[]): OmniSelectOption[] {
@@ -681,12 +663,9 @@ export function useTasksPageContext() {
       color: selectOptionColor(v, index + 4),
     }))
   })
+  // Re-bind do helper puro (impl. canonica em `utils/select-display.ts`).
   function initialsFor(value: unknown) {
-    const s = String(value ?? '').trim()
-    if (!s) return '?'
-    const parts = s.split(/\s+/).filter(Boolean).slice(0, 2)
-    const initials = parts.map((p) => p[0]?.toUpperCase() || '').join('')
-    return initials || s[0]!.toUpperCase()
+    return sharedInitialsFor(value)
   }
   const responsibleOptionsAvatar = computed<OmniSelectOption[]>(() =>
     responsibleOptions.value.map((o: OmniSelectOption) => ({
@@ -773,7 +752,9 @@ export function useTasksPageContext() {
   function valueForGroup(task: TaskItem, fieldKey: string) {
     if (fieldKey === 'clientId') return String(task.clientId || '')
     if (fieldKey === 'priority') return task.priority
-    return normalizeText((task as Record<string, unknown>)[fieldKey], 140)
+    // Duplo cast via unknown: TaskItem nao e' atribuivel a Record<string,unknown> diretamente
+    // (o campo priority e' union literal), mas o acesso por chave generica e' safe em runtime.
+    return normalizeText((task as unknown as Record<string, unknown>)[fieldKey], 140)
   }
 
   function labelForGroup(fieldKey: string, value: string) {
@@ -1089,10 +1070,9 @@ export function useTasksPageContext() {
     return tasksWorkspace.updateTask(taskId, { videos: nextVideos })
   }
 
+  // Re-bind do helper puro (impl. canonica em `utils/task-video.ts`).
   function formatFileSize(size: number) {
-    if (!Number.isFinite(size) || size <= 0) return '0 KB'
-    if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
-    return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+    return sharedFormatFileSize(size)
   }
 
   async function uploadTaskVideoFiles(files: FileList | File[] | null | undefined) {
@@ -1200,6 +1180,8 @@ export function useTasksPageContext() {
   }
 
   function taskDraftSignature() {
+    // Cast para o tipo estendido: prioritySet e' um campo extra (nao esta em TaskItem) que
+    // taskSignatureFromTask consome via cast interno. Aqui tornamos o contrato explicito.
     return taskSignatureFromTask({
       id: taskDraft.id,
       projectId: activeProject.value?.id || '',
@@ -1221,7 +1203,7 @@ export function useTasksPageContext() {
       createdBy: taskDraft.createdBy,
       createdAt: taskDraft.createdAt,
       updatedAt: '',
-    })
+    } as TaskItem & { prioritySet?: boolean })
   }
 
   function syncTaskDraftFromTask(
@@ -2422,25 +2404,9 @@ export function useTasksPageContext() {
     if (taskDraft.id) focusTaskCardPresence(taskDraft.id, fieldKey)
   }
 
-  const structuredPresenceDraftPrefix = '__tasks_presence_json__:'
-
-  function encodeStructuredPresenceDraft(value: unknown) {
-    try {
-      return `${structuredPresenceDraftPrefix}${JSON.stringify(value ?? null)}`
-    } catch {
-      return `${structuredPresenceDraftPrefix}null`
-    }
-  }
-
-  function decodeStructuredPresenceDraft<T>(value: unknown): T | null {
-    if (typeof value !== 'string' || !value.startsWith(structuredPresenceDraftPrefix)) return null
-    try {
-      return JSON.parse(value.slice(structuredPresenceDraftPrefix.length)) as T
-    } catch {
-      return null
-    }
-  }
-
+  // `encodeStructuredPresenceDraft`/`decodeStructuredPresenceDraft` sao puros e vivem em
+  // `utils/presence-draft.ts` (importados acima). A serializacao por campo abaixo continua aqui
+  // porque depende de `sanitizeInvolved`/`taskDraftResponsibleValue` (estado reativo).
   function serializePresenceDraftValue(fieldKey: string, value: unknown) {
     const key = normalizeText(fieldKey, 80)
     if (key === 'involved') {

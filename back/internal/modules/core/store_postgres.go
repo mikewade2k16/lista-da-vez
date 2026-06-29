@@ -189,6 +189,46 @@ func (r *PostgresRepository) ListEnabledModuleIDs(ctx context.Context, accountID
 	return moduleIDs, nil
 }
 
+// ListEnabledModuleIDsForAccounts resolve em UMA query os modulos habilitados
+// para uma lista de accounts. Retorna map[accountID -> []moduleID] contendo
+// apenas as accounts que tiverem ao menos um modulo habilitado; accounts sem
+// modulos aparecem com slice vazio depois do merge no service.
+//
+// Usado por MeAccounts para eliminar o N+1 de chamar ListEnabledModuleIDs
+// por account num loop (OPT-2/F-22).
+func (r *PostgresRepository) ListEnabledModuleIDsForAccounts(ctx context.Context, accountIDs []string) (map[string][]string, error) {
+	out := make(map[string][]string, len(accountIDs))
+	if len(accountIDs) == 0 {
+		return out, nil
+	}
+
+	const query = `
+		select account_id::text, module_id
+		from core.account_modules
+		where account_id = any($1::uuid[])
+		  and enabled = true
+		order by account_id asc, module_id asc
+	`
+
+	rows, err := r.pool.Query(ctx, query, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var accountID, moduleID string
+		if err := rows.Scan(&accountID, &moduleID); err != nil {
+			return nil, err
+		}
+		out[accountID] = append(out[accountID], moduleID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ============================================================================
 // Organizations
 // ============================================================================

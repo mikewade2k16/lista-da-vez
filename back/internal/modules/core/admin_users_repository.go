@@ -70,7 +70,7 @@ const accountAggLateralJoin = `
 // ListUsers
 // ============================================================================
 
-func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter AdminUserListFilter) ([]AdminUserView, int, error) {
+func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter AdminUserListFilter) ([]AdminUserListItem, int, error) {
 	args := []any{}
 	conds := []string{"1=1"}
 	n := 1
@@ -154,11 +154,15 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 		accountJoin = ""
 	}
 
+	// Projecao LEAN (OPT-4/F-26): a listagem NAO seleciona avatar_path/created_at/
+	// updated_at — nenhum consumidor da tabela /manage/users (workspace + colunas +
+	// popover de detalhes/acoes) renderiza esses campos. O detalhe (FindAdminUser)
+	// continua selecionando o conjunto completo. As colunas abaixo seguem a ordem
+	// lida por scanAdminUserListRow.
 	dataSQL := fmt.Sprintf(`
 		select
-			u.id, u.email, u.display_name, u.nick, u.avatar_path,
+			u.id, u.email, u.display_name, u.nick,
 			u.is_active, u.is_platform_admin, u.must_change_password,
-			u.created_at, u.updated_at,
 			%s,
 			%s,
 			%s
@@ -174,9 +178,9 @@ func (r *PostgresAdminUserRepository) ListUsers(ctx context.Context, filter Admi
 	}
 	defer rows.Close()
 
-	users := make([]AdminUserView, 0)
+	users := make([]AdminUserListItem, 0)
 	for rows.Next() {
-		u, err := scanAdminUser(rows)
+		u, err := scanAdminUserListRow(rows)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -422,6 +426,26 @@ func (r *PostgresAdminUserRepository) CountActivePlatformAdmins(ctx context.Cont
 // ============================================================================
 // Scanner
 // ============================================================================
+
+// scanAdminUserListRow le a projecao LEAN da listagem (OPT-4/F-26): mesma ordem do
+// SELECT de ListUsers, SEM avatar_path/created_at/updated_at. nick e nullable
+// (ponteiro). Ordem das colunas importa — manter alinhada com o SELECT.
+func scanAdminUserListRow(row scannable) (AdminUserListItem, error) {
+	var u AdminUserListItem
+	var nick *string
+	if err := row.Scan(
+		&u.ID, &u.Email, &u.DisplayName, &nick,
+		&u.IsActive, &u.IsPlatformAdmin, &u.MustChangePassword,
+		&u.AccountCount, &u.AccountNames, &u.ClientAccountID,
+		&u.IsAgencyMember,
+	); err != nil {
+		return AdminUserListItem{}, err
+	}
+	if nick != nil {
+		u.Nick = *nick
+	}
+	return u, nil
+}
 
 func scanAdminUser(row scannable) (AdminUserView, error) {
 	var u AdminUserView

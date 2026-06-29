@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode"
 
-	"golang.org/x/text/unicode/norm"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // slugPattern valida o slug publico: minusculas, digitos e hifen.
@@ -34,6 +33,7 @@ func (s *Service) uniqueSlug(ctx context.Context, base string) (string, error) {
 }
 
 // normalizeSlug baixa para lowercase, valida o padrao e devolve o slug limpo.
+// Usado para validar slugs ja fornecidos pelo usuario (nao deriva do texto livre).
 func normalizeSlug(raw string) (string, error) {
 	slug := strings.ToLower(strings.TrimSpace(raw))
 	if slug == "" || !slugPattern.MatchString(slug) {
@@ -43,25 +43,8 @@ func normalizeSlug(raw string) (string, error) {
 }
 
 // slugify deriva um slug valido (`^[a-z0-9-]+$`) de um texto livre (ex.: o nome
-// da bio): remove acentos (NFKD + descarta marcas), baixa para minusculo e troca
-// qualquer caractere fora de [a-z0-9] por hifen, colapsando hifens repetidos.
+// da bio). Delega para a regra canonica unica em stringsx.Slugify (NFD, sem
+// acentos, hifen como separador, sem hifens repetidos nem nas pontas).
 func slugify(raw string) string {
-	decomposed := norm.NFKD.String(strings.ToLower(strings.TrimSpace(raw)))
-	var b strings.Builder
-	prevHyphen := false
-	for _, r := range decomposed {
-		switch {
-		case unicode.Is(unicode.Mn, r):
-			// marca de combinacao (acento) — descarta
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			prevHyphen = false
-		default:
-			if !prevHyphen && b.Len() > 0 {
-				b.WriteByte('-')
-				prevHyphen = true
-			}
-		}
-	}
-	return strings.Trim(b.String(), "-")
+	return stringsx.Slugify(raw)
 }

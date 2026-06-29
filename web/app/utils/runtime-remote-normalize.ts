@@ -5,6 +5,27 @@ import { cloneValue } from '~/domain/utils/object'
 // Extraido de runtime-remote.ts para manter cada arquivo dentro do limite de
 // linhas (ver principios de engenharia).
 
+// Entrada de status de um consultor dentro do mapa consultantCurrentStatus.
+interface ConsultantStatusEntry {
+  status?: string
+  startedAt?: number
+}
+
+// Payload parcial do snapshot de operacao vindo de /v1/operations/snapshot.
+// Todos os campos sao opcionais: a funcao normalizeOperationSnapshot defende
+// contra shape parcial (back stale, degraded, null) e devolve estado estavel.
+// Os arrays usam Record<string, unknown> para que os normalizadores possam
+// acessar propriedades via optional chaining sem abrir mao da seguranca de tipo.
+interface OperationSnapshotPayload {
+  waitingList?: Record<string, unknown>[]
+  activeServices?: Record<string, unknown>[]
+  pausedEmployees?: Record<string, unknown>[]
+  consultantActivitySessions?: Record<string, unknown>[]
+  consultantCurrentStatus?: Record<string, ConsultantStatusEntry>
+  serviceHistory?: unknown[]
+  roster?: unknown[]
+}
+
 export function cloneOrFallback(value, fallback) {
   return cloneValue(value === undefined ? fallback : value)
 }
@@ -77,7 +98,7 @@ export function resolveOperationRoster(consultants, operationSnapshot) {
   return normalizeConsultants(operationSnapshot?.roster)
 }
 
-export function normalizeOperationSnapshot(snapshot = {}) {
+export function normalizeOperationSnapshot(snapshot: OperationSnapshotPayload = {}) {
   return {
     waitingList: Array.isArray(snapshot?.waitingList)
       ? snapshot.waitingList.map((item) => ({

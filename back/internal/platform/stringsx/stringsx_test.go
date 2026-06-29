@@ -5,6 +5,39 @@ import (
 	"testing"
 )
 
+func TestSlugify(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		// basico: lowercase + trim
+		{"Minha Bio", "minha-bio"},
+		// espacos multiplos colapsam
+		{"  Loja  da   Esquina  ", "loja-da-esquina"},
+		// acentos pt-BR removidos (NFD)
+		{"Ação", "acao"},
+		{"acentuação é legal", "acentuacao-e-legal"},
+		{"Pérola@RioMar!", "perola-riomar"},
+		// hifen existente e preservado (nao duplicado)
+		{"ja-ok-123", "ja-ok-123"},
+		// simbolos especiais viram hifen, colapsado
+		{"___", ""},
+		{"a--b", "a-b"},
+		// sem hifen nas pontas
+		{"@inicio", "inicio"},
+		{"fim@", "fim"},
+		// numeros preservados
+		{"versao2-beta", "versao2-beta"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			if got := Slugify(tc.in); got != tc.want {
+				t.Fatalf("Slugify(%q) = %q, quer %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFirstNonEmpty(t *testing.T) {
 	cases := []struct {
 		name   string

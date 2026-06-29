@@ -1,3 +1,5 @@
+import { slugify as _slugifyCanonical } from '~/domain/utils/slugify'
+
 const CONSULTANT_COLORS = [
   '#168aad',
   '#7a6ff0',
@@ -26,12 +28,10 @@ export function sampleItems(items, count) {
   return picked
 }
 
+// slugifyLabel delega para a regra canonica compartilhada (NFD + sem acentos).
+// Mudanca deliberada: antes nao normalizava acentos; agora normaliza.
 export function slugifyLabel(label) {
-  return String(label || '')
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
+  return _slugifyCanonical(String(label || ''))
 }
 
 export function createOptionId(prefix, label, existingItems = []) {

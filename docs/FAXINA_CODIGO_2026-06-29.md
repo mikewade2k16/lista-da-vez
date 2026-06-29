@@ -12,6 +12,38 @@ Legenda: 🔴 alto impacto · 🟡 médio · 🟢 baixo.
 
 ---
 
+## Atualização — Wave 2 (2026-06-29, commitada)
+
+> Status **corrente** após wave 1 + wave 2. Este bloco SUPERSEDE os rótulos "pendente wave 2" das tabelas abaixo (que refletem o planejamento inicial). Gates da wave 2: `go build/vet/test` verde + `eslint` 0 erros + `vue-tsc` sem erro novo (o único, em `useRealtimeSocket`, corrigido).
+
+**Feito na wave 2 (refactor puro):**
+- Helpers consolidados em `back/internal/platform/stringsx` — `FirstNonEmpty` (F-01), `NormalizeIDs` (F-02), `DecodeJSONStringSlice` (F-03) + teste; ~18 call-sites migrados.
+- Splits > 450 linhas: `AdminUsersWorkspace.vue` 881→491 (F-18), `AdminRoleMatrixEditor.vue` 633→492 (F-19), `admin_users_repository.go` 592→~420 (F-20); struct órfã `RoleTemplate` removida.
+- Extrações: `useRealtimeSocket.ts` (socket WS compartilhado, §6.2), `useInlineEditManager.ts` (6 managers, §6.3), `useFeedbackChat.js` (chat feedback, §6.4).
+- `filterPerolaERPWorkspaces` morto removido (task6).
+
+**Adiado de propósito (continua PENDENTE):**
+- **F-17 — split do `useTasksPageContext.ts` (3063 linhas):** único closure com refs compartilhados bidirecionais, 4 `watch` com flush post/sync/deep e ordem de `onMounted/onUnmounted` load-bearing. Fazer **incremental, com validação no browser**, começando pelos helpers puros (presence-draft, video-normalize).
+- **F-04 — `slugify` (6 variantes):** NÃO consolidado — as variantes geram slugs diferentes (NFD × sem-acento × só-lowercase); unificar mudaria o slug gerado = **decisão de produto** sobre a regra canônica.
+- Nuance assumida: `DecodeJSONStringSlice` padroniza `null→[]` em 3 campos de operations/reports (inócuo; documentado em `stringsx/AGENT.md`).
+
+**Pré-existentes a atacar (escopo confirmado — "arrumar o que já existia"):** erros de `vue-tsc` da baseline (`api-client.ts`, `runtime-remote*.ts`, `AppDatePicker.vue`, `useTaskComments/Relations`, `useTasksPageContext`), N+1 do `MeAccounts` (F-22/OPT-2), projeção lean (F-26/OPT-4), os demais 🟡/🟢 abaixo (F-11/13/14/15/16/24/25), e o cleanup do `AUTH_ROLES_SOURCE` no compose (F-08).
+
+---
+
+## Atualização — Wave 3 (2026-06-29, commitada)
+
+> Atacou parte dos pré-existentes acima. Modelos: opus high (tipagem api/runtime, N+1), sonnet high no resto. Todas as partições aprovadas na revisão; build da API verde + healthy.
+
+**Feito:**
+- **N+1 do MeAccounts/MeContext eliminado (F-22/OPT-2):** método batch `ListEnabledModuleIDsForAccounts` (`WHERE account_id = ANY($1::uuid[])`) + `loadModulesBatch` no service; nº de queries constante (antes 1 por conta — dói com platform_admin vendo todas). `MeContext` (N=1) segue no singular. `go build/vet/test` verde + imagem da API rebuildou e subiu healthy. **Validar no browser:** switcher de contas com os módulos certos por conta.
+- **Tipagem (sem any/@ts-ignore):** `api-client.ts` (`ApiRequestMethod`), `runtime-remote*` (payloads tipados), `sourceValue`/casts em `useTaskComments`/`useTaskRelations`/`useTasksPageContext`, e a prop `creatable` em `OmniSelectInput`/`OmniSelectMenuInput` (cast que destrava `OmniDataTable`/`TasksBoardView`). `prioritySet` confirmado como sentinel de runtime (não é typo).
+- **`AUTH_ROLES_SOURCE` (F-08):** removido dos compose/`.env*.example`; `auth/AGENT.md` e `LEGADO.md` corrigidos.
+
+**Realidade do vue-tsc:** total caiu de **348 → 340** erros (zero erro novo introduzido). O baseline do projeto tem **~340 erros de tipo pré-existentes** (ex.: resultados de `apiRequest` sem genérico caindo em `unknown` — `useTaskComments`/`Relations`/`useTasksPageContext`; `AppDatePicker` com tipos do `@internationalized/date`). **"vue-tsc 100% verde" é uma frente dedicada** (centenas de erros), não fechável numa única wave.
+
+---
+
 ## 1. Duplicação (helpers repetidos cross-módulo)
 
 > Mesmos helpers reimplementados por módulo. Consolidar num pacote utilitário único (back) sem mudar comportamento — cada call-site continua chamando a mesma assinatura.
@@ -105,5 +137,5 @@ Legenda: 🔴 alto impacto · 🟡 médio · 🟢 baixo.
 ## Resumo
 
 - **9 achados de segurança** → [SECURITY_OPTIMIZATION_BACKLOG.md](SECURITY_OPTIMIZATION_BACKLOG.md) §"Revisão 2026-06-29" (SEC-6..SEC-14): maioria **feita/em correção na wave 1**.
-- **36 achados de faxina** (este doc, F-01..F-26 + 6 refactors agrupados): parte **feita na wave 1** (códigos mortos do auth/manual, gating decorativo virou real, predicado de tenant no feedback); o grosso é **WAVE 2** (refactors grandes — splits e consolidação de helpers).
+- **36 achados de faxina** (este doc, F-01..F-26 + 6 refactors agrupados): wave 1 fechou os mortos do auth/manual, o gating decorativo virou real e o predicado de tenant no feedback; **wave 2 fechou helpers (stringsx), splits de admin/core, socket/inline-edit/chat e o task6**. Continuam pendentes só o split do `useTasksPageContext.ts` (F-17) e o `slugify` (F-04, decisão de produto) — ver §"Atualização — Wave 2" no topo.
 - **Economia estimada total da faxina:** ~400+ linhas em duplicação/código morto + redução substancial nos 4 arquivos > 450 linhas após os splits.

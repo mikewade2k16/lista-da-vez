@@ -257,6 +257,44 @@ cadeias de `computed`). Montar tudo na primeira pintura travava a rota /tasks (c
   15/15; `eslint` limpo nos arquivos novos; `npm run dev` compila `/tasks` (HTTP 200, sem warning
   de componente nao resolvido).
 
+### Split do useTasksPageContext — helpers puros extraidos (F-17 — 2026-06-29)
+
+`useTasksPageContext.ts` (3068 linhas) e' o AGREGADOR de todo o estado/logica da pagina e DEVE
+continuar retornando exatamente o mesmo objeto/chaves (sub-componentes consomem via inject). O
+split e' INCREMENTAL e comeca pelos blocos MENOS acoplados — funcoes puras sem dependencia do
+closure reativo, movidas para `utils/` (testaveis via Vitest, fonte unica), com o agregador
+re-bindando cada uma. O contrato de retorno nao mudou (refactor puro):
+
+- **`utils/task-video.ts`**: `normalizeTaskVideoItem`, `normalizeTaskVideoItems`,
+  `taskVideoSignature`, `formatFileSize`. Puras (so dependem de `normalizeText`). O contexto mantem
+  wrappers `function` locais de mesmo nome para preservar o HOISTING — `taskVideoSignature` e' usado
+  na inicializacao de `lastSavedTaskVideoSignature` (ref no topo do composable), antes do ponto de
+  definicao.
+- **`utils/presence-draft.ts`**: `encodeStructuredPresenceDraft`/`decodeStructuredPresenceDraft`
+  (encode/decode JSON do draft efemero de presence com prefixo magico). O prefixo virou constante
+  privada do util com o MESMO valor (`__tasks_presence_json__:`). A serializacao por campo
+  (`serializePresenceDraftValue`/`parsePresenceDraftValue`) continua no contexto porque depende de
+  `sanitizeInvolved`/`taskDraftResponsibleValue` (estado reativo).
+- **`utils/select-display.ts`**: `selectOptionColor` (mapa de cor da option, fallback ciclico) e
+  `initialsFor` (iniciais do avatar). `selectOptionColor` recebe `normalizeKey` por parametro
+  (injecao) para manter o comportamento identico sem acoplar ao closure.
+- **Pendente (skipped nesta passada)**: os blocos mais acoplados — autosave do draft
+  (`saveTask`/`scheduleTaskDraftAutosave`/`applyTaskDraftToLocalTask`, mutuamente recursivos sobre
+  `taskDraft`/`lastSaved*`), upload de video (REST + `taskDraft`/`auth`), DnD do board, draft do
+  project settings e a ponte de presence — exigem repassar muitos refs/computed e os watchers
+  `flush: post|sync|deep`. Extrair como sub-composables (`useTaskDraftAutosave`, `useTaskVideoUpload`,
+  etc.) na proxima iteracao, um bloco por vez, validando paridade de return/reatividade no browser.
+
+### Lazy-mount dos cards (F-24) — JA implementado
+
+F-24 ("montar editores pesados so quando o card e' aberto/focado, placeholder ate o clique") JA
+esta atendido pela entrega "Montagem tardia dos selects do card" acima: `OmniLazySelectMenuInput`
+faz exatamente isso (badge estatico ate clique/foco -> monta `OmniSelectMenuInput` real e abre), e
+`TasksBoardView`/`TasksTaskModal` ja usam o wrapper nos 6 selects de cada card. `AppDatePicker`
+ficou de fora de proposito (calendario ja so monta no `#content` do `UPopover`) e windowing por
+viewport foi avaliado e rejeitado (quebraria DnD/presence/realtime). Refazer F-24 duplicaria a
+solucao e arriscaria regressao — nao re-implementar sem prova de que o lazy atual nao cobre o caso.
+
 ### Conta ativa via switcher v2 (CoreAccountSwitcher) — 2026-06-15
 
 O Tasks resolve o `X-Account-Id` a partir do `useCoreAccountStore().activeAccountId` (switcher v2),

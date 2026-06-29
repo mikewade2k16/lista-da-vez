@@ -37,7 +37,9 @@ function sourceValue<T>(source: RelationsSource<T> | undefined, fallback: T): T 
     const value = (source as Ref<T>).value
     return value == null ? fallback : value
   }
-  return source == null ? fallback : source
+  // Apos descartar funcao e Ref/ComputedRef, sobra o valor cru (T); o cast e so
+  // para o vue-tsc, ja que o narrowing do union nao estreita o generico aqui.
+  return source == null ? fallback : (source as T)
 }
 
 function normalizeText(value: unknown, max = 240) {

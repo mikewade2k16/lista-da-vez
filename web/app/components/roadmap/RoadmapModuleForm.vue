@@ -6,6 +6,7 @@ import {
   type ModulePriority,
   type ModuleStatus,
 } from '~/components/roadmap/roadmap-data'
+import { slugify } from '~/domain/utils/slugify'
 
 const STATUS_OPTIONS: ModuleStatus[] = ['pending', 'in_progress', 'beta', 'done']
 const PRIORITY_OPTIONS: ModulePriority[] = ['P0', 'P1', 'P2', 'P3']
@@ -40,15 +41,6 @@ const status = ref<ModuleStatus>('pending')
 const priority = ref<ModulePriority>('P2')
 const category = ref('atendimento')
 const description = ref('')
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-}
 
 function onLabelBlur() {
   if (!sourceId.value.trim() && label.value.trim()) {

@@ -9,6 +9,20 @@ Estas instrucoes valem para o codigo tecnico de banco em `back/internal/platform
 - abrir pool PostgreSQL
 - carregar e aplicar migrations
 - servir como infraestrutura compartilhada para os modulos
+- expor o `Querier` e o resolver de conexao por request do Row-Level Security
+
+## Querier + conexao por request (RLS, SEC-1)
+
+`pool.go` define (alem de `OpenPool`):
+
+- `Querier` — interface minima `Query/QueryRow/Exec` que tanto `*pgxpool.Pool`
+  quanto `*pgx.Conn`/`*pgxpool.Conn` satisfazem. Os repositorios que migraram
+  para RLS dependem dela em vez do pool concreto.
+- `WithConn(ctx, conn)` — usado pelo middleware `httpapi.RLSConnGuard` para
+  carregar no context a conexao (com o GUC `app.account_id` ja setado) da request.
+- `ConnFromContext(ctx, pool)` — resolve o `Querier` da request: a conn do
+  context quando presente, senao o pool (fallback p/ jobs/boot/testes, onde o RLS
+  nao atua). Plano completo em `docs/RLS_PLAN.md`; piloto em `queue.feedback`.
 
 ## Regra principal
 

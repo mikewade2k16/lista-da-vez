@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // ServiceConfig agrupa a configuracao do modulo lida do ambiente.
@@ -75,8 +76,12 @@ func mapStoreErr(err error) error {
 	return err
 }
 
+// normalizeSlug aplica a regra canonica de slug ao valor recebido do cliente.
+// Antes era so ToLower+Trim; agora normaliza acentos tambem via stringsx.Slugify
+// (mudanca deliberada — slugs NOVOS podem diferir; os gravados no banco nao sao
+// re-gerados). Valores ja em formato ^[a-z0-9-]+$ nao mudam.
 func normalizeSlug(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
+	return stringsx.Slugify(value)
 }
 
 // ============================================================================

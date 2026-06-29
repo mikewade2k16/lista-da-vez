@@ -18,6 +18,12 @@ import {
 // Extraido de runtime-remote.ts para manter cada arquivo dentro do limite de
 // linhas (ver principios de engenharia).
 
+// Opcoes para applyOperationSnapshotToState.
+// resetFinishModal: true limpa o modal de encerrar ao aplicar o snapshot.
+interface ApplySnapshotOptions {
+  resetFinishModal?: boolean
+}
+
 function resolveSelectedConsultantId(currentState, storeId, roster) {
   const currentSnapshot = currentState.storeSnapshots?.[storeId] || {}
   const preferredId =
@@ -46,7 +52,7 @@ export function applyOperationSnapshotToState(
   currentState,
   storeId,
   operationSnapshot,
-  options = {},
+  options: ApplySnapshotOptions = {},
 ) {
   const normalizedStoreId = String(storeId || '').trim()
 

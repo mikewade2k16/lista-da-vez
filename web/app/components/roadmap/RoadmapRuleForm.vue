@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { ROADMAP_RULE_CATEGORY_LABEL, type RuleCategory } from '~/components/roadmap/roadmap-data'
+import { slugify } from '~/domain/utils/slugify'
 
 const CATEGORIES: RuleCategory[] = [
   'frontend',
@@ -32,15 +33,6 @@ const title = ref('')
 const body = ref('')
 const why = ref('')
 const appliesWhen = ref('')
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '')
-}
 
 function onTitleBlur() {
   if (!sourceId.value.trim() && title.value.trim()) {

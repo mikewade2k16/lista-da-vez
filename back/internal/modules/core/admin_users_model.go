@@ -83,12 +83,36 @@ type AdminUserListFilter struct {
 	IncludeAccounts bool
 }
 
+// AdminUserListItem e a projecao LEAN de um user na LISTAGEM /v1/admin/users.
+// Espelha o subconjunto de campos que a tabela /manage/users (AdminUsersWorkspace +
+// colunas + popover de detalhes/acoes) realmente renderiza — OPT-4/F-26. Em relacao
+// ao AdminUserView (detalhe/drawer), OMITE de proposito tres campos que NENHUM
+// consumidor da listagem usa: avatarPath, createdAt e updatedAt. O detalhe
+// (FindAdminUser/AdminUserView) continua devolvendo o objeto completo.
+type AdminUserListItem struct {
+	ID                 string `json:"id"`
+	Email              string `json:"email"`
+	DisplayName        string `json:"displayName"`
+	Nick               string `json:"nick"`
+	IsActive           bool   `json:"isActive"`
+	IsPlatformAdmin    bool   `json:"isPlatformAdmin"`
+	MustChangePassword bool   `json:"mustChangePassword"`
+	AccountCount       int    `json:"accountCount"`
+	AccountNames       string `json:"accountNames"`
+	// ClientAccountID: id do UNICO cliente ativo nao-agencia (ou "" p/ 0/>1). Habilita
+	// a edicao inline da coluna "Cliente". Mesma semantica do AdminUserView.
+	ClientAccountID string `json:"clientAccountId"`
+	// IsAgencyMember: membro ativo de ao menos uma conta-agencia. Gateia a celula
+	// "Cliente" e o badge "Agencia" na grade. Mesma semantica do AdminUserView.
+	IsAgencyMember bool `json:"isAgencyMember"`
+}
+
 // AdminUserListResponse e o body de GET /v1/admin/users.
 type AdminUserListResponse struct {
-	Users   []AdminUserView `json:"users"`
-	Total   int             `json:"total"`
-	Page    int             `json:"page"`
-	PerPage int             `json:"perPage"`
+	Users   []AdminUserListItem `json:"users"`
+	Total   int                 `json:"total"`
+	Page    int                 `json:"page"`
+	PerPage int                 `json:"perPage"`
 }
 
 // AdminCreateUserInput e o body de POST /v1/admin/users.
@@ -180,7 +204,9 @@ type AdminUserLinksRepository interface {
 
 // AdminUserRepository abstrai persistencia para os endpoints admin de users.
 type AdminUserRepository interface {
-	ListUsers(ctx context.Context, filter AdminUserListFilter) ([]AdminUserView, int, error)
+	// ListUsers devolve a projecao LEAN (AdminUserListItem) — so os campos que a
+	// tabela /manage/users renderiza. O detalhe completo (FindAdminUser) usa AdminUserView.
+	ListUsers(ctx context.Context, filter AdminUserListFilter) ([]AdminUserListItem, int, error)
 	FindAdminUser(ctx context.Context, userID string) (AdminUserView, error)
 	CreateUser(ctx context.Context, input AdminCreateUserInput, passwordHash string) (AdminUserView, error)
 	// UpdateUser aplica o patch. passwordHash != "" => SET password_hash +

@@ -125,7 +125,9 @@ const props = withDefaults(
     placeholder: 'Selecione',
     multiple: false,
     disabled: false,
-    creatable: false,
+    // cast: sem ele o vue-tsc estreita a prop creatable para boolean (default literal false),
+    // e os call-sites que passam o objeto de config (when/position) quebram. Runtime: false.
+    creatable: false as OmniCreateOptionConfig,
     searchInput: true,
     clear: false,
     manageOptions: false,

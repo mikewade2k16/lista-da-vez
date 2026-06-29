@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/database"
 )
 
 type PostgresRepository struct {
@@ -19,6 +21,29 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+// txBeginner abstrai quem inicia uma transacao: tanto *pgxpool.Pool quanto a
+// *pgxpool.Conn da request satisfazem. Sob RLS, a tx precisa rodar na MESMA
+// conexao em que o middleware setou o GUC do tenant — por isso resolvemos o
+// beginner a partir do context (com fallback pro pool).
+type txBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
+// querier resolve o Querier da request (conn do middleware de RLS) com fallback
+// pro pool quando a rota ainda nao passa pelo middleware.
+func (r *PostgresRepository) querier(ctx context.Context) database.Querier {
+	return database.ConnFromContext(ctx, r.pool)
+}
+
+// beginner resolve quem inicia a tx: a conn do context (sob RLS) ou o pool. Como
+// database.Querier nao expoe Begin, fazemos type assertion para txBeginner.
+func (r *PostgresRepository) beginner(ctx context.Context) txBeginner {
+	if conn, ok := r.querier(ctx).(txBeginner); ok {
+		return conn
+	}
+	return r.pool
+}
+
 func nullableUUID(s string) interface{} {
 	if s == "" {
 		return nil
@@ -26,10 +51,9 @@ func nullableUUID(s string) interface{} {
 	return s
 }
 
-func (r *PostgresRepository) Create(feedback *Feedback) (*Feedback, error) {
+func (r *PostgresRepository) Create(ctx context.Context, feedback *Feedback) (*Feedback, error) {
 	var id string
-	ctx := context.Background()
-	tx, err := r.pool.Begin(ctx)
+	tx, err := r.beginner(ctx).Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +157,10 @@ func scanFeedback(scan func(...any) error) (*Feedback, error) {
 	return &f, nil
 }
 
-func (r *PostgresRepository) GetByID(tenantID string, id string) (*Feedback, error) {
+func (r *PostgresRepository) GetByID(ctx context.Context, tenantID string, id string) (*Feedback, error) {
 	// Defesa em profundidade: filtra por tenant na query mesmo com a checagem no
 	// service. tenantID vazio (platform_admin) ignora o filtro e ve todos os tenants.
-	row := r.pool.QueryRow(context.Background(), `
+	row := r.querier(ctx).QueryRow(ctx, `
 		select id::text, tenant_id::text, store_id::text, user_id::text, user_name,
 		       kind, status, subject, body, admin_note, created_at, updated_at, closed_at, user_last_read_at
 		from user_feedback
@@ -155,8 +179,8 @@ func (r *PostgresRepository) GetByID(tenantID string, id string) (*Feedback, err
 	return f, nil
 }
 
-func (r *PostgresRepository) getByIDForViewer(tenantID string, id string, viewerUserID string) (*Feedback, error) {
-	row := r.pool.QueryRow(context.Background(), `
+func (r *PostgresRepository) getByIDForViewer(ctx context.Context, tenantID string, id string, viewerUserID string) (*Feedback, error) {
+	row := r.querier(ctx).QueryRow(ctx, `
 		select user_feedback.id::text, user_feedback.tenant_id::text, user_feedback.store_id::text,
 		       user_feedback.user_id::text, user_feedback.user_name, user_feedback.kind,
 		       user_feedback.status, user_feedback.subject, user_feedback.body, user_feedback.admin_note,
@@ -182,7 +206,7 @@ func (r *PostgresRepository) getByIDForViewer(tenantID string, id string, viewer
 	return f, nil
 }
 
-func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback, error) {
+func (r *PostgresRepository) List(ctx context.Context, tenantID string, input ListInput) ([]Feedback, error) {
 	readAtExpr := "coalesce(user_feedback.user_last_read_at, user_feedback.created_at)"
 	readJoin := ""
 	unreadExpr := "0"
@@ -279,7 +303,7 @@ func (r *PostgresRepository) List(tenantID string, input ListInput) ([]Feedback,
 
 	query += " order by user_feedback.created_at desc;"
 
-	rows, err := r.pool.Query(context.Background(), query, args...)
+	rows, err := r.querier(ctx).Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -328,8 +352,8 @@ func scanFeedbackListRow(scan func(...any) error) (*Feedback, error) {
 	return &f, nil
 }
 
-func (r *PostgresRepository) MarkRead(tenantID string, feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
-	_, err := r.pool.Exec(context.Background(), `
+func (r *PostgresRepository) MarkRead(ctx context.Context, tenantID string, feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
+	_, err := r.querier(ctx).Exec(ctx, `
 		insert into feedback_read_states (
 			feedback_id, user_id, last_read_at
 		) values (
@@ -350,12 +374,11 @@ func (r *PostgresRepository) MarkRead(tenantID string, feedbackID string, userID
 
 	// getByIDForViewer ja filtra por tenant e mapeia ErrNotFound; nao precisa
 	// de um GetByID extra antes so para descartar.
-	return r.getByIDForViewer(tenantID, feedbackID, userID)
+	return r.getByIDForViewer(ctx, tenantID, feedbackID, userID)
 }
 
-func (r *PostgresRepository) Update(tenantID string, feedback *Feedback) error {
-	ctx := context.Background()
-	tx, err := r.pool.Begin(ctx)
+func (r *PostgresRepository) Update(ctx context.Context, tenantID string, feedback *Feedback) error {
+	tx, err := r.beginner(ctx).Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -434,9 +457,8 @@ func scanFeedbackMessage(scan func(...any) error) (*FeedbackMessage, error) {
 	return &message, nil
 }
 
-func (r *PostgresRepository) CreateMessage(tenantID string, message *FeedbackMessage) (*FeedbackMessage, error) {
-	ctx := context.Background()
-	tx, err := r.pool.Begin(ctx)
+func (r *PostgresRepository) CreateMessage(ctx context.Context, tenantID string, message *FeedbackMessage) (*FeedbackMessage, error) {
+	tx, err := r.beginner(ctx).Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +505,7 @@ func (r *PostgresRepository) CreateMessage(tenantID string, message *FeedbackMes
 	return message, nil
 }
 
-func (r *PostgresRepository) ListMessages(tenantID string, feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error) {
+func (r *PostgresRepository) ListMessages(ctx context.Context, tenantID string, feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error) {
 	// Defesa em profundidade: filtra por tenant ($2). tenantID vazio
 	// (platform_admin) ignora o filtro e ve todos os tenants.
 	query := `
@@ -503,7 +525,7 @@ func (r *PostgresRepository) ListMessages(tenantID string, feedbackID string, in
 
 	query += " order by created_at asc;"
 
-	rows, err := r.pool.Query(context.Background(), query, args...)
+	rows, err := r.querier(ctx).Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -521,8 +543,8 @@ func (r *PostgresRepository) ListMessages(tenantID string, feedbackID string, in
 	return messages, rows.Err()
 }
 
-func (r *PostgresRepository) PurgeExpiredAttachments(cutoff time.Time, limit int) ([]string, error) {
-	rows, err := r.pool.Query(context.Background(), `
+func (r *PostgresRepository) PurgeExpiredAttachments(ctx context.Context, cutoff time.Time, limit int) ([]string, error) {
+	rows, err := r.querier(ctx).Query(ctx, `
 		with expired as (
 			select id, image_path
 			from feedback_messages

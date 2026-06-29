@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, watch } from 'vue'
+import { slugify } from '~/domain/utils/slugify'
 
 const props = defineProps<{ open: boolean; creating?: boolean }>()
 const emit = defineEmits<{
@@ -19,14 +20,6 @@ watch(
     form.adminEmail = ''
   },
 )
-
-function slugify(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
 
 // Preview do slug que sera enviado: usa o que foi digitado; se vazio, deriva do
 // nome. NAO pre-preenchemos o input (isso causava slug duplicado quando o campo

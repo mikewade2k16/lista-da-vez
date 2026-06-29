@@ -279,7 +279,29 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	reports.RegisterRoutes(mux, reportsService, authMiddleware)
 	analytics.RegisterRoutes(mux, analyticsService, authMiddleware)
 	access.RegisterRoutes(mux, accessService, authMiddleware)
-	feedback.RegisterRoutes(mux, feedbackService, authMiddleware)
+
+	// RLS fase 1 (SEC-1, docs/RLS_PLAN.md): conexao por request com o GUC de
+	// tenant setado, SO no grupo /v1/feedback. O scope vem do Principal ja
+	// resolvido pelo RequireAuth (a Wrap roda dentro dele). AccountID com fallback
+	// pro TenantID porque as rotas de feedback usam RequireAuth (sem X-Account-Id),
+	// entao Principal.AccountID e vazio mas TenantID = id da conta. platform_admin
+	// (sem tenant) entra via bypass.
+	feedbackRLSGuard := httpapi.NewRLSConnGuard(pool)
+	feedbackRLSGuard.SetScopeResolver(func(r *http.Request) (httpapi.RLSScope, bool) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			return httpapi.RLSScope{}, false
+		}
+		accountID := strings.TrimSpace(principal.AccountID)
+		if accountID == "" {
+			accountID = strings.TrimSpace(principal.TenantID)
+		}
+		return httpapi.RLSScope{
+			AccountID: accountID,
+			Bypass:    principal.Role == auth.RolePlatformAdmin,
+		}, true
+	})
+	feedback.RegisterRoutes(mux, feedbackService, authMiddleware, feedbackRLSGuard)
 	erp.RegisterRoutes(mux, erpService, authMiddleware)
 	bi.RegisterRoutes(mux, biService, authMiddleware)
 	users.RegisterRoutes(mux, usersService, authMiddleware)

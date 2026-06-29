@@ -42,8 +42,22 @@ type createMessageRequest struct {
 	Body string `json:"body"`
 }
 
-func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
-	mux.Handle("POST /v1/feedback", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// RegisterRoutes monta as rotas de /v1/feedback. rlsGuard (opcional, pode ser
+// nil) injeta uma conexao por request com o GUC de tenant do Row-Level Security
+// setado (fase 1 do RLS, ver docs/RLS_PLAN.md). Ele roda DENTRO do RequireAuth
+// (precisa do Principal) e SO neste grupo de rotas — nunca global. Quando nil,
+// as rotas seguem sem RLS (so o filtro de tenant na aplicacao), sem quebrar.
+func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware, rlsGuard *httpapi.RLSConnGuard) {
+	// secured embrulha o handler com RequireAuth e, em seguida, com o guard de
+	// RLS (quando presente): RequireAuth -> RLSConnGuard.Wrap -> handler.
+	secured := func(handler http.Handler) http.Handler {
+		if rlsGuard != nil {
+			handler = rlsGuard.Wrap(handler)
+		}
+		return middleware.RequireAuth(handler)
+	}
+
+	mux.Handle("POST /v1/feedback", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -71,7 +85,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
-	mux.Handle("GET /v1/feedback", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/feedback", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -99,7 +113,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
-	mux.Handle("GET /v1/feedback/me", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/feedback/me", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -127,7 +141,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
-	mux.Handle("PATCH /v1/feedback/{id}", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("PATCH /v1/feedback/{id}", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -157,7 +171,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
-	mux.Handle("GET /v1/feedback/{id}/messages", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("GET /v1/feedback/{id}/messages", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -189,7 +203,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
-	mux.Handle("POST /v1/feedback/{id}/read", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/feedback/{id}/read", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
@@ -213,7 +227,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		})
 	})))
 
-	mux.Handle("POST /v1/feedback/{id}/messages", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("POST /v1/feedback/{id}/messages", secured(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := auth.PrincipalFromContext(r.Context())
 		if !ok {
 			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")

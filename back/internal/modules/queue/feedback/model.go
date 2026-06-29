@@ -1,6 +1,7 @@
 package feedback
 
 import (
+	"context"
 	"time"
 )
 
@@ -182,15 +183,18 @@ type ListMessagesInput struct {
 }
 
 type Repository interface {
-	Create(feedback *Feedback) (*Feedback, error)
+	// Todos os metodos recebem ctx para que o repo resolva a conexao da request
+	// (com o GUC de tenant do RLS setado pelo middleware) via
+	// database.ConnFromContext; sem conn no ctx, cai no pool (fallback legado).
+	Create(ctx context.Context, feedback *Feedback) (*Feedback, error)
 	// GetByID/MarkRead/Update/CreateMessage/ListMessages recebem o tenantID do
 	// Principal para filtrar por tenant na query (defesa em profundidade). tenantID
 	// vazio (platform_admin) ignora o filtro e enxerga todos os tenants.
-	GetByID(tenantID string, id string) (*Feedback, error)
-	List(tenantID string, input ListInput) ([]Feedback, error)
-	MarkRead(tenantID string, feedbackID string, userID string, readAt time.Time) (*Feedback, error)
-	Update(tenantID string, feedback *Feedback) error
-	CreateMessage(tenantID string, message *FeedbackMessage) (*FeedbackMessage, error)
-	ListMessages(tenantID string, feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error)
-	PurgeExpiredAttachments(cutoff time.Time, limit int) ([]string, error)
+	GetByID(ctx context.Context, tenantID string, id string) (*Feedback, error)
+	List(ctx context.Context, tenantID string, input ListInput) ([]Feedback, error)
+	MarkRead(ctx context.Context, tenantID string, feedbackID string, userID string, readAt time.Time) (*Feedback, error)
+	Update(ctx context.Context, tenantID string, feedback *Feedback) error
+	CreateMessage(ctx context.Context, tenantID string, message *FeedbackMessage) (*FeedbackMessage, error)
+	ListMessages(ctx context.Context, tenantID string, feedbackID string, input ListMessagesInput) ([]FeedbackMessage, error)
+	PurgeExpiredAttachments(ctx context.Context, cutoff time.Time, limit int) ([]string, error)
 }

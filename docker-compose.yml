@@ -75,7 +75,6 @@ services:
       AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-12h}
       AUTH_INVITE_TTL: ${AUTH_INVITE_TTL:-168h}
       AUTH_PASSWORD_RESET_TTL: ${AUTH_PASSWORD_RESET_TTL:-30m}
-      AUTH_ROLES_SOURCE: ${AUTH_ROLES_SOURCE:-core}
       # Dominio do cookie de sessao do gate SSO (Caddy forward_auth libera n8n./waha.
       # com o login do Omni). Vazio em dev (sem subdominio/Caddy). Prod: .crowvisuals.com.br.
       AUTH_GATEWAY_COOKIE_DOMAIN: ${AUTH_GATEWAY_COOKIE_DOMAIN:-}

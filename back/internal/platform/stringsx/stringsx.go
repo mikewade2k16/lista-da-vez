@@ -8,6 +8,9 @@ package stringsx
 import (
 	"encoding/json"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // FirstNonEmpty devolve o PRIMEIRO valor nao-vazio (apos TrimSpace), ja
@@ -47,6 +50,48 @@ func NormalizeIDs(values []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+// Slugify deriva um slug valido (`^[a-z0-9-]+$`) de um texto livre.
+//
+// Regra canonica (identica no Go e no TS):
+//  1. Trim + lowercase.
+//  2. NFD: decompoe caracteres acentuados em letra-base + marca de combinacao.
+//  3. Descarta todas as marcas de combinacao (categoria Unicode Mn).
+//  4. Troca qualquer caractere fora de [a-z0-9] por hifen.
+//  5. Colapsa hifens repetidos.
+//  6. Remove hifens nas pontas.
+//
+// Exemplos: "Acao" -> "acao", "Pérola@RioMar!" -> "perola-riomar",
+// "  Loja  da  Esquina  " -> "loja-da-esquina".
+//
+// Mudanca deliberada vs. copias antigas:
+//   - cardapio: era so ToLower+Trim (sem normalizar acentos). Agora normaliza.
+//   - bio: usava NFKD em vez de NFD (resultado identico para os acentos pt-BR,
+//     mas NFD e o padrao canonico e mais previsivel para outros idiomas).
+//   - site.perolaSlug e uma logica diferente (usa "_", para o crow-notion) e
+//     NAO usa esta funcao — permanece inalterada.
+func Slugify(raw string) string {
+	// NFD decompoe letras acentuadas; Mn descarta as marcas de combinacao.
+	decomposed := norm.NFD.String(strings.ToLower(strings.TrimSpace(raw)))
+	var b strings.Builder
+	prevHyphen := false
+	for _, r := range decomposed {
+		switch {
+		case unicode.Is(unicode.Mn, r):
+			// marca de combinacao (acento) — descarta
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
+			b.WriteRune(r)
+			prevHyphen = false
+		default:
+			// qualquer outro caractere vira hifen (colapsa repeticoes)
+			if !prevHyphen && b.Len() > 0 {
+				b.WriteByte('-')
+				prevHyphen = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // DecodeJSONStringSlice decodifica um jsonb (coluna text[]/json serializada)

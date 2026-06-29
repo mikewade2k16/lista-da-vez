@@ -7,6 +7,7 @@ import (
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 type Service struct {
@@ -391,7 +392,7 @@ func (service *Service) resolveScopedAccess(ctx context.Context, principal auth.
 	}
 
 	normalizedTenantID := strings.TrimSpace(tenantID)
-	normalizedStoreIDs := normalizeStoreIDs(storeIDs)
+	normalizedStoreIDs := stringsx.NormalizeIDs(storeIDs)
 
 	if principal.Role != auth.RolePlatformAdmin && role == auth.RolePlatformAdmin {
 		return "", nil, ErrForbidden
@@ -503,27 +504,6 @@ func resolveTenantFilter(principal auth.Principal, tenantID string) string {
 
 func normalizeEmail(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
-}
-
-func normalizeStoreIDs(storeIDs []string) []string {
-	seen := map[string]struct{}{}
-	normalized := make([]string, 0, len(storeIDs))
-
-	for _, rawStoreID := range storeIDs {
-		storeID := strings.TrimSpace(rawStoreID)
-		if storeID == "" {
-			continue
-		}
-
-		if _, ok := seen[storeID]; ok {
-			continue
-		}
-
-		seen[storeID] = struct{}{}
-		normalized = append(normalized, storeID)
-	}
-
-	return normalized
 }
 
 func cloneStringSlice(values []string) []string {

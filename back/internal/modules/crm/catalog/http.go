@@ -9,6 +9,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middleware) {
@@ -46,7 +47,7 @@ func parseSearchProductsInput(r *http.Request) (SearchProductsInput, error) {
 	return SearchProductsInput{
 		StoreID:   strings.TrimSpace(query.Get("storeId")),
 		SourceKey: ProductSourceKey(strings.TrimSpace(query.Get("sourceKey"))),
-		Term:      strings.TrimSpace(firstNonEmpty(query.Get("term"), query.Get("search"))),
+		Term:      strings.TrimSpace(stringsx.FirstNonEmpty(query.Get("term"), query.Get("search"))),
 		Limit:     limit,
 	}, nil
 }
@@ -57,15 +58,6 @@ func parseOptionalInt(raw string) (int, error) {
 		return 0, nil
 	}
 	return strconv.Atoi(trimmed)
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func accessContextFromPrincipal(principal auth.Principal) AccessContext {

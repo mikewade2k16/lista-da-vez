@@ -3,9 +3,8 @@ import type {
   AdminOrganizationFieldKey,
   AdminOrganizationItem,
 } from '~/types/admin-organizations'
+import { useInlineEditManager } from '~/composables/useInlineEditManager'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
-
-const PATCH_DELAY_MS = 380
 
 // Mapeia campo frontend → campo do PATCH backend (AdminUpdateOrganizationInput).
 const FIELD_TO_PATCH: Record<AdminOrganizationFieldKey, string> = {
@@ -41,21 +40,11 @@ export function useAdminOrganizationsManager() {
   const creating = ref(false)
   const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
-  const savingMap = ref<Record<string, boolean>>({})
   const canResetFilters = computed(() => Boolean(filters.q || filters.status))
 
-  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function setSaving(key: string, value: boolean) {
-    const next = { ...savingMap.value }
-    if (value) next[key] = true
-    else delete next[key]
-    savingMap.value = next
-  }
-
-  function rowIsSaving(id: string) {
-    return Object.keys(savingMap.value).some((k) => k.startsWith(`${id}:`))
-  }
+  // Mecanica de edicao inline compartilhada (savingMap/setSaving/rowIsSaving +
+  // debounce + cleanup). Comportamento identico ao anterior.
+  const { savingMap, setSaving, rowIsSaving, schedulePatch } = useInlineEditManager()
 
   function applyPatch(id: string, raw: Record<string, unknown>) {
     const idx = organizations.value.findIndex((o) => o.id === id)
@@ -110,22 +99,9 @@ export function useAdminOrganizationsManager() {
     if (!backendField) return
 
     const patch = { [backendField]: value }
-    const timerKey = `${id}:${field}`
-
-    if (pendingTimers.has(timerKey)) clearTimeout(pendingTimers.get(timerKey)!)
-
-    if (opts?.immediate) {
-      void persistPatch(id, field, patch)
-      return
-    }
-
-    pendingTimers.set(
-      timerKey,
-      setTimeout(() => {
-        pendingTimers.delete(timerKey)
-        void persistPatch(id, field, patch)
-      }, PATCH_DELAY_MS),
-    )
+    schedulePatch(`${id}:${field}`, () => void persistPatch(id, field, patch), {
+      immediate: opts?.immediate,
+    })
   }
 
   async function createOrganization(input: AdminOrganizationCreateInput): Promise<string | null> {
@@ -166,11 +142,6 @@ export function useAdminOrganizationsManager() {
     filters.q = ''
     filters.status = ''
   }
-
-  onBeforeUnmount(() => {
-    for (const timer of pendingTimers.values()) clearTimeout(timer)
-    pendingTimers.clear()
-  })
 
   return {
     organizations,

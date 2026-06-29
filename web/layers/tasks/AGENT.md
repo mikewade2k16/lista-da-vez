@@ -118,6 +118,31 @@ Cuidados obrigatorios:
 
 ## Composables novos (Fases T2–T7)
 
+### useRealtimeSocket — base de WS compartilhada (refactor 2026-06-29)
+
+`composables/useRealtimeSocket.ts` concentra a maquina de ciclo de vida do WebSocket que antes
+estava DUPLICADA em `useTaskPresence.ts` e `useTasksRealtime.ts`: `desiredConnection` (resolucao de
+conta via `resolveRealtimeAccountId` — switcher v2 primeiro, fallback `auth.activeTenantId`/`principal.tenantId`/
+`tenantContext[0].id` — + montagem da key `${scope}:${accountId}:${boardId}:${taskId}:${accessToken}`),
+`scheduleReconnect` (backoff exponencial 1–10s), `silencedSockets` (isolamento por conta: fecha o
+socket antigo sem disparar reconexao), `ensureConnection` (handshake via ticket + open) e
+`updateStatus`. Tambem exporta os helpers `sourceValue` e `resolveRealtimeAccountId`.
+
+Cada consumidor so passa `path`/`scope`/`isValid` + hooks (`onOpen`, `onMessage`, `onSocketClosed`,
+`onError`, `onDisconnect`, `onBeforeConnect`, `preserveOnReconnect`, `logClose`, `logTicketError`):
+
+- **useTasksRealtime**: stateless — `onMessage` so encaminha o evento parseado (`applyEvent`); sem
+  heartbeat/draft/snapshot.
+- **useTaskPresence**: heartbeat 15s (`startHeartbeat` no `onOpen`), `draftTimers`, snapshot de
+  participantes; `onDisconnect` limpa heartbeat/drafts e (quando `clearState`) zera participantes;
+  `preserveOnReconnect` mantem `activeFieldKey`/draft local quando reconecta na mesma key;
+  `onBeforeConnect` zera participantes antes de reabrir; o `watch`/disconnect-no-unmount agora vivem
+  no base, e o composable so registra os listeners proprios (`visibilitychange`/`pagehide`).
+
+Comportamento de reconexao/isolamento por conta e a API publica de retorno dos dois composables
+ficaram IDENTICOS (refactor puro). O `normalizeText` dos dois composables agora importa de
+`utils/text.ts` (eram copias locais byte-a-byte); o re-export em `useTasksPageContext.ts` segue.
+
 ### useTasksRealtime (Fase T2)
 
 Clone de `web/app/composables/useOperationsRealtime.ts`:

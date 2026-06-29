@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 type PostgresRepository struct {
@@ -471,7 +473,7 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 		}
 
 		item.SkippedPeople = decodeSkippedPeople(skippedPeopleRaw)
-		item.SiblingServiceIDs = decodeStringSlice(siblingServiceIDsRaw)
+		item.SiblingServiceIDs = stringsx.DecodeJSONStringSlice(siblingServiceIDsRaw)
 		items = append(items, item)
 	}
 
@@ -690,14 +692,14 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)
 		entry.ProductsNotFound = decodeProducts(notFoundProductsRaw)
-		entry.VisitReasons = decodeStringSlice(visitReasonsRaw)
+		entry.VisitReasons = stringsx.DecodeJSONStringSlice(visitReasonsRaw)
 		entry.VisitReasonDetails = decodeStringMap(visitReasonDetailsRaw)
-		entry.CustomerSources = decodeStringSlice(customerSourcesRaw)
+		entry.CustomerSources = stringsx.DecodeJSONStringSlice(customerSourcesRaw)
 		entry.CustomerSourceDetails = decodeStringMap(customerSourceDetailsRaw)
-		entry.LossReasons = decodeStringSlice(lossReasonsRaw)
+		entry.LossReasons = stringsx.DecodeJSONStringSlice(lossReasonsRaw)
 		entry.LossReasonDetails = decodeStringMap(lossReasonDetailsRaw)
 		entry.CampaignMatches = decodeCampaignMatches(campaignMatchesRaw)
-		entry.SiblingServiceIDs = decodeStringSlice(siblingServiceIDsRaw)
+		entry.SiblingServiceIDs = stringsx.DecodeJSONStringSlice(siblingServiceIDsRaw)
 		items = append(items, entry)
 	}
 
@@ -1028,17 +1030,6 @@ func decodeProducts(raw []byte) []ProductEntry {
 	var items []ProductEntry
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return []ProductEntry{}
-	}
-	return items
-}
-
-func decodeStringSlice(raw []byte) []string {
-	if len(raw) == 0 {
-		return []string{}
-	}
-	var items []string
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return []string{}
 	}
 	return items
 }

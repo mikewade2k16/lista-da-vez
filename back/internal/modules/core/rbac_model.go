@@ -2,19 +2,8 @@ package core
 
 import "time"
 
-// RoleTemplate espelha core.role_templates. Declarado pelos módulos via
-// RoleTemplateDef e populado pelo SyncCatalog no boot.
-type RoleTemplate struct {
-	ID          string
-	ModuleID    string
-	Label       string
-	Description string
-	IsSystem    bool
-	IsLocked    bool
-	SortOrder   int
-}
-
-// Role é um cargo efetivo de uma Account — clone editável de RoleTemplate.
+// Role é um cargo efetivo de uma Account — clone editável de um template de cargo
+// (catalogo em platform/modules, sincronizado para core.role_templates no boot).
 // Vive em core.roles e pertence exclusivamente à Account (não ao catálogo).
 type Role struct {
 	ID                   string

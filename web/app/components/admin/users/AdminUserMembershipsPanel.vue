@@ -65,11 +65,22 @@ function saving(suffix: string) {
   return Boolean(m.savingMap.value[`${props.user.id}:${suffix}`])
 }
 
+// As opcoes de cliente/agencia NAO mudam por usuario — carregamos a lista de
+// clientes/organizacoes UMA vez (na primeira montagem) em vez de re-baixar
+// /v1/admin/accounts + /v1/admin/organizations inteiros a cada troca de usuario.
+// So as memberships (que sao por-usuario) recarregam no watch.
+const optionsLoaded = ref(false)
+async function ensureOptions() {
+  if (optionsLoaded.value) return
+  optionsLoaded.value = true
+  await Promise.all([clientsManager.fetchClients(), orgsManager.fetchOrganizations()])
+}
+
 async function load() {
   loading.value = true
   memberships.value = await m.fetchMemberships(props.user.id)
   loading.value = false
-  await Promise.all([clientsManager.fetchClients(), orgsManager.fetchOrganizations()])
+  await ensureOptions()
 }
 
 watch(() => props.user.id, load, { immediate: true })

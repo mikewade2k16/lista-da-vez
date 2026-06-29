@@ -12,6 +12,14 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
 - `AdminUsersWorkspace.vue` — tabela cross-account de usuários (`OmniDataTable`), filtros
   server-side, paginação. Coluna "Cliente" permite atribuir/mover cliente inline (inclui
   usuário SEM cliente — reusa `moveUserAccount`). Abre o drawer de edição pelo lápis.
+  É o **host** do manager: chama `provideAdminUsersContext()` UMA vez (provide/inject), e o
+  drawer + panels descendentes compartilham a MESMA instância (estado/ações unificados).
+  Host fino: criação/senha/ações de linha foram fatiadas em subcomponentes (abaixo).
+- `admin/users/AdminUserCreateDialog.vue` — modal de criação (form/validação/submit isolados);
+  recebe `accountOptions`/`organizationOptions` por prop, cria via manager compartilhado, emite `created`.
+- `admin/users/AdminUserPasswordDialog.vue` — modal de definir/resetar senha (só platform_admin).
+- `admin/users/AdminUsersActionsCell.vue` — célula de ações da linha (popover de memberships +
+  popover de detalhes + botões editar/senha/excluir); estado dos popovers é LOCAL da célula.
 - `AdminUserEditDrawer.vue` — drawer de edição em ABAS, montado sobre `OmniEntityDrawer`
   (`components/ui/` — TEMPLATE-CORE de modal: header fechar/expandir-toggle/popover de modo,
   resize no modo lado, modos lado/centro/fullscreen; ver `docs/frontend/MODAL_TEMPLATE.md`).
@@ -25,7 +33,9 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
   `setUserRoles`); embute o `AdminRoleMatrixEditor`. O escopo inclui clientes E a conta-agência
   (`isAgency`, badge "Organização"), para gerenciar papéis de usuário só-organização (sem cliente).
 - `admin/users/AdminRoleMatrixEditor.vue` — CRUD de papel custom + matriz de permissões
-  (catálogo `available` reaproveitado do `getOverrides`).
+  (catálogo `available` reaproveitado do `getOverrides`). Concentra o ESTADO (seleção, rascunho
+  de edição, persistência); a apresentação foi fatiada em `AdminRoleCreateForm.vue` (form de
+  criação) e `AdminRolePermissionMatrix.vue` (grade de checkboxes agrupada por módulo).
 - `admin/users/AdminUserModulesPanel.vue` — overrides por usuário por account
   (Herdar/Permitir/Negar por permissão), via `core.user_permission_overrides`. O seletor de escopo
   inclui clientes E a conta-agência (overrides de módulo também valem na conta-agência).
@@ -41,10 +51,16 @@ com `/operacao/usuarios` (módulo Fila legado, `back/internal/modules/users` + `
 
 - `useAdminUsersManager()` (+ auxiliar `useAdminUserLinks`) — CRUD de usuário, `fetchMemberships`,
   `updateMembershipRole`, `moveUserAccount`, `addMembership`/`removeMembership`,
-  `linkOrganization`/`unlinkOrganization`, `getOverrides`/`setOverrides`.
+  `linkOrganization`/`unlinkOrganization`, `getOverrides`/`setOverrides`. **Unificado via
+  provide/inject**: `useAdminUsersManager()` resolve a instância compartilhada provida pelo host
+  (`provideAdminUsersContext()`); sem contexto, cai num fallback que cria instância local (compat).
 - `useAccountRolesManager()` — `listRoles`, `getRole`, `createRole`, `updateRole`, `deleteRole`,
   `getUserRoles`, `setUserRoles`. Envia `X-Account-Id = accountId` explícito (escopo do recurso).
 - `useClientsManager()`/`useAdminOrganizationsManager()` — listas de clientes/organizações.
+- `useInlineEditManager()` — mecânica COMPARTILHADA de edição inline (`savingMap`/`setSaving`/
+  `rowIsSaving` + debounce `schedulePatch`/`cancelPatch` + cleanup de timers no unmount), reusada
+  pelos 6 managers de grade. Cada manager segue dono do seu `applyPatch`/`patchLocal`/`persistPatch`
+  (lista/endpoint próprios) e só delega o saving-map + a agenda de debounce.
 
 ## Delegação e gating (multi-tenant)
 

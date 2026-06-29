@@ -8,6 +8,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 func (service *Service) loadEntries(
@@ -21,7 +22,7 @@ func (service *Service) loadEntries(
 	}
 
 	if normalized.StoreID == "" {
-		resolvedTenantID := firstNonEmpty(normalized.TenantID, principal.TenantID)
+		resolvedTenantID := stringsx.FirstNonEmpty(normalized.TenantID, principal.TenantID)
 		if resolvedTenantID == "" {
 			return reportScope{}, Filters{}, nil, ErrStoreRequired
 		}

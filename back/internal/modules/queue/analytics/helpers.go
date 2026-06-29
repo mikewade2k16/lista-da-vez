@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 var analyticsLocation = func() *time.Location {
@@ -104,7 +105,7 @@ func groupLabels(values []string, limit int) []CountRow {
 func closedProductLabels(entry operations.ServiceHistoryEntry) []string {
 	labels := make([]string, 0, len(entry.ProductsClosed))
 	for _, product := range entry.ProductsClosed {
-		label := firstNonEmpty(product.Name, product.Code)
+		label := stringsx.FirstNonEmpty(product.Name, product.Code)
 		if label != "" {
 			labels = append(labels, label)
 		}
@@ -114,7 +115,7 @@ func closedProductLabels(entry operations.ServiceHistoryEntry) []string {
 		return labels
 	}
 
-	fallback := firstNonEmpty(entry.ProductClosed, entry.ProductSeen, entry.ProductDetails)
+	fallback := stringsx.FirstNonEmpty(entry.ProductClosed, entry.ProductSeen, entry.ProductDetails)
 	if fallback == "" {
 		return []string{}
 	}
@@ -157,17 +158,6 @@ func isSaleOutcome(outcome string) bool {
 
 func hasText(value string) bool {
 	return strings.TrimSpace(value) != ""
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-
-	return ""
 }
 
 func maxFloat(value float64, fallback float64) float64 {

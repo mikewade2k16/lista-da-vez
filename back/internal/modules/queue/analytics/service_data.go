@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 func buildCombinedTimeIntelligence(bundles []bundle) TimeIntelligence {
@@ -61,7 +62,7 @@ func buildRequestedProducts(history []operations.ServiceHistoryEntry) []CountRow
 	for _, entry := range history {
 		if len(entry.ProductsSeen) > 0 {
 			for _, product := range entry.ProductsSeen {
-				label := firstNonEmpty(product.Name, product.Code)
+				label := stringsx.FirstNonEmpty(product.Name, product.Code)
 				if label != "" {
 					labels = append(labels, label)
 				}
@@ -69,7 +70,7 @@ func buildRequestedProducts(history []operations.ServiceHistoryEntry) []CountRow
 			continue
 		}
 
-		label := firstNonEmpty(entry.ProductSeen, entry.ProductDetails)
+		label := stringsx.FirstNonEmpty(entry.ProductSeen, entry.ProductDetails)
 		if label != "" {
 			labels = append(labels, label)
 		}
@@ -82,7 +83,7 @@ func buildVisitReasons(history []operations.ServiceHistoryEntry, labels map[stri
 	values := make([]string, 0)
 	for _, entry := range history {
 		for _, value := range entry.VisitReasons {
-			values = append(values, firstNonEmpty(labels[strings.TrimSpace(value)], value))
+			values = append(values, stringsx.FirstNonEmpty(labels[strings.TrimSpace(value)], value))
 		}
 	}
 
@@ -93,7 +94,7 @@ func buildCustomerSources(history []operations.ServiceHistoryEntry, labels map[s
 	values := make([]string, 0)
 	for _, entry := range history {
 		for _, value := range entry.CustomerSources {
-			values = append(values, firstNonEmpty(labels[strings.TrimSpace(value)], value))
+			values = append(values, stringsx.FirstNonEmpty(labels[strings.TrimSpace(value)], value))
 		}
 	}
 

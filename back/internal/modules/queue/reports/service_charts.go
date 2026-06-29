@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 func buildChartData(entries []operations.ServiceHistoryEntry) ChartData {
@@ -156,7 +157,7 @@ func paginateRows(rows []ResultRow, page int, pageSize int) []ResultRow {
 func closedProductLabels(entry operations.ServiceHistoryEntry) []string {
 	labels := make([]string, 0, len(entry.ProductsClosed)+1)
 	for _, product := range entry.ProductsClosed {
-		label := firstNonEmpty(strings.TrimSpace(product.Name), strings.TrimSpace(product.Code))
+		label := stringsx.FirstNonEmpty(strings.TrimSpace(product.Name), strings.TrimSpace(product.Code))
 		if label != "" {
 			labels = append(labels, label)
 		}

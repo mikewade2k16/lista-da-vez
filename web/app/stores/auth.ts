@@ -2,7 +2,6 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   canUseAllStoresScope,
-  filterPerolaERPWorkspaces,
   getAllowedWorkspaces,
   normalizeAppRole,
   normalizePermissionKeys,
@@ -123,10 +122,11 @@ export const useAuthStore = defineStore('auth', () => {
     Boolean(accessToken.value && user.value && principal.value),
   )
   const mustChangePassword = computed(() => Boolean(user.value?.mustChangePassword))
+  // getAllowedWorkspaces ja retorna IDs limpos (string literais de
+  // WORKSPACE_ACCESS_DEFINITIONS), entao consumimos direto sem wrapper de
+  // normalizacao defensiva.
   const allowedWorkspaces = computed(() =>
-    filterPerolaERPWorkspaces(
-      getAllowedWorkspaces(role.value, permissionKeys.value, permissionsResolved.value),
-    ),
+    getAllowedWorkspaces(role.value, permissionKeys.value, permissionsResolved.value),
   )
   const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || 'operacao')
   const homePath = computed(() => getWorkspacePath(homeWorkspaceId.value))

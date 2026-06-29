@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import OmniCollectionFilters from '~/components/omni/filters/OmniCollectionFilters.vue'
-import OmniMinimalPopover from '~/components/omni/overlay/OmniMinimalPopover.vue'
 import OmniDataTable from '../../../layers/tasks/components/omni/table/OmniDataTable.vue'
-import type { AccountMembershipItem, AdminUserFieldKey, AdminUserItem } from '~/types/admin-users'
+import AdminUserCreateDialog from './users/AdminUserCreateDialog.vue'
+import AdminUserPasswordDialog from './users/AdminUserPasswordDialog.vue'
+import AdminUsersActionsCell from './users/AdminUsersActionsCell.vue'
+import { provideAdminUsersContext } from '~/composables/useAdminUsersManager'
+import type { AdminUserFieldKey, AdminUserItem } from '~/types/admin-users'
 import type {
   OmniFilterDefinition,
   OmniFocusCell,
@@ -10,9 +13,11 @@ import type {
   OmniTableColumn,
 } from '~/types/omni/collection'
 
-// Espelha o minimo do backend (admin_users_service.go: "must be at least 8 chars").
-const PASSWORD_MIN_LENGTH = 8
-
+// Host do manager: cria UMA instancia e a provê (provide/inject) para o drawer e os
+// panels descendentes compartilharem o mesmo estado/acoes (antes cada um instanciava
+// o seu, com estado desconectado). Os consumidores seguem chamando useAdminUsersManager().
+// createUser/setPassword nao sao desestruturados aqui: vivem nos modais filhos
+// (AdminUserCreateDialog/AdminUserPasswordDialog), que usam o mesmo manager via inject.
 const {
   users,
   filters,
@@ -25,12 +30,9 @@ const {
   errorMessage,
   fetchUsers,
   updateField,
-  createUser,
   deleteUser,
-  setPassword,
   moveUserAccount,
-  fetchMemberships,
-} = useAdminUsersManager()
+} = provideAdminUsersContext()
 
 const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
@@ -309,94 +311,28 @@ function onUserUpdated() {
   void fetchUsers()
 }
 
+// Modal de criacao (AdminUserCreateDialog): o host so controla a abertura e popula
+// as opcoes; a logica de form/validacao/submit vive no proprio dialog. Ao abrir,
+// carrega clientes/agencias para os selects (mesmo comportamento do openCreate antigo).
 const createDialogOpen = ref(false)
-const createForm = reactive({
-  email: '',
-  displayName: '',
-  nick: '',
-  isPlatformAdmin: false,
-  temporaryPassword: '',
-  accountId: '',
-  organizationId: '',
-  role: 'owner',
-  orgRole: 'agency_member',
-})
-
 function openCreate() {
-  createForm.email = ''
-  createForm.displayName = ''
-  createForm.nick = ''
-  createForm.isPlatformAdmin = false
-  createForm.temporaryPassword = ''
-  createForm.accountId = ''
-  createForm.organizationId = ''
-  createForm.role = 'owner'
-  createForm.orgRole = 'agency_member'
-  createAgencyConfirmed.value = false
   createDialogOpen.value = true
   void clientsManager.fetchClients()
   void orgsManager.fetchOrganizations()
 }
-
-// Senha na criacao: opcional (vazia = fluxo de convite), mas se preenchida tem
-// que respeitar o minimo do backend. Bloqueia o submit com hint inline.
-const createPasswordError = computed(() => {
-  const pw = createForm.temporaryPassword.trim()
-  if (!pw) return ''
-  return pw.length < PASSWORD_MIN_LENGTH ? `Minimo de ${PASSWORD_MIN_LENGTH} caracteres.` : ''
-})
-
-// Um usuario sem cliente/agencia e sem ser platform_admin nao consegue logar (sem
-// papel resolvido o login falha). Evita criar um usuario "inutil": exige cliente
-// (com papel), agencia (com cargo) OU a flag de platform admin.
-const createNeedsClient = computed(
-  () => !createForm.isPlatformAdmin && !createForm.accountId && !createForm.organizationId,
-)
-
-// Vincular Cliente + Agencia juntos torna o usuario MEMBRO DA AGENCIA (ve todos os
-// clientes/modulos da agencia) — perigoso para um usuario que deveria ser so deste
-// cliente. Quando os dois selects estao preenchidos, exigimos confirmacao explicita.
-const createBindsClientAndAgency = computed(
-  () => Boolean(createForm.accountId) && Boolean(createForm.organizationId),
-)
-const createAgencyConfirmed = ref(false)
-
-async function submitCreate() {
-  if (!canCreateUser.value || createPasswordError.value || createNeedsClient.value) return
-  if (createBindsClientAndAgency.value && !createAgencyConfirmed.value) return
-  const createdId = await createUser({ ...createForm })
-  if (!createdId) return
-  createDialogOpen.value = false
+function onUserCreated(createdId: string) {
   focusCell.value = { rowId: createdId, columnKey: 'email', token: Date.now() }
 }
 
 // Definir/Resetar senha de um usuario ja criado (acao explicita, so platform_admin).
-// O backend so toca no password_hash quando recebe `password` nao-vazio.
+// O backend so toca no password_hash quando recebe `password` nao-vazio. O modal
+// (AdminUserPasswordDialog) cuida do form/validacao/submit; o host so abre e alveja.
 const passwordDialogOpen = ref(false)
 const passwordTarget = ref<{ id: string; email: string } | null>(null)
-const passwordValue = ref('')
-const passwordSaving = ref(false)
-const passwordError = computed(() => {
-  const pw = passwordValue.value.trim()
-  if (!pw) return ''
-  return pw.length < PASSWORD_MIN_LENGTH ? `Minimo de ${PASSWORD_MIN_LENGTH} caracteres.` : ''
-})
-
 function openPassword(row: Record<string, unknown>) {
   if (!canCreateUser.value) return
   passwordTarget.value = { id: rowId(row), email: String(toUser(row).email ?? '') }
-  passwordValue.value = ''
   passwordDialogOpen.value = true
-}
-
-async function submitPassword() {
-  const target = passwordTarget.value
-  const pw = passwordValue.value.trim()
-  if (!target || pw.length < PASSWORD_MIN_LENGTH) return
-  passwordSaving.value = true
-  const ok = await setPassword(target.id, pw)
-  passwordSaving.value = false
-  if (ok) passwordDialogOpen.value = false
 }
 
 function onResetFilters() {
@@ -415,27 +351,8 @@ async function onDeleteUser(id: string) {
   await deleteUser(id)
 }
 
-const membershipsOpenFor = ref<string | null>(null)
-const memberships = ref<AccountMembershipItem[]>([])
-
-async function openMemberships(id: string) {
-  membershipsOpenFor.value = id
-  memberships.value = await fetchMemberships(id)
-}
-
-// Controle de open state dos popovers — OmniMinimalPopover é controlled.
-// Sem isto, click no trigger não abre o painel.
-const openPopovers = reactive<Record<string, boolean>>({})
-
-function popoverIsOpen(rowId: string, type: 'memberships' | 'info') {
-  return Boolean(openPopovers[`${rowId}:${type}`])
-}
-
-function setPopoverOpen(rowId: string, type: 'memberships' | 'info', value: boolean) {
-  const key = `${rowId}:${type}`
-  if (value) openPopovers[key] = true
-  else delete openPopovers[key]
-}
+// Memberships/detalhes por linha + estado dos popovers vivem na celula de acoes
+// (AdminUsersActionsCell), que busca via o manager compartilhado sob demanda.
 
 onMounted(() => {
   // Gate por permissao ANTES de disparar o fetch (espelha o back: rota exige
@@ -528,134 +445,16 @@ onMounted(() => {
         </template>
 
         <template #cell-actions="{ row }">
-          <div class="flex items-center justify-end gap-1">
-            <OmniMinimalPopover
-              :open="popoverIsOpen(rowId(row), 'memberships')"
-              title="Clientes (memberships)"
-              width-class="w-[300px] max-w-[90vw]"
-              @update:open="setPopoverOpen(rowId(row), 'memberships', $event)"
-              @opened="openMemberships(rowId(row))"
-            >
-              <template #trigger>
-                <UButton
-                  icon="i-lucide-building-2"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  title="Contas que este usuario participa"
-                  aria-label="Memberships"
-                />
-              </template>
-              <div v-if="membershipsOpenFor === rowId(row)" class="space-y-2 text-xs">
-                <p v-if="memberships.length === 0" class="text-[rgb(var(--muted))]">
-                  Este usuario nao e membro de nenhuma conta.
-                </p>
-                <ul v-else class="space-y-1">
-                  <li
-                    v-for="m in memberships"
-                    :key="m.accountId"
-                    class="flex items-center justify-between gap-2 rounded-[var(--radius-sm)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-2 py-1"
-                  >
-                    <span class="font-medium">{{ m.accountName }}</span>
-                    <span class="text-[rgb(var(--muted))]">{{ m.accountSlug }}</span>
-                    <UBadge :color="m.isActive ? 'success' : 'neutral'" variant="soft" size="xs">
-                      {{ m.isActive ? 'ativo' : 'inativo' }}
-                    </UBadge>
-                  </li>
-                </ul>
-              </div>
-            </OmniMinimalPopover>
-
-            <OmniMinimalPopover
-              :open="popoverIsOpen(rowId(row), 'info')"
-              title="Detalhes"
-              width-class="w-[280px] max-w-[90vw]"
-              @update:open="setPopoverOpen(rowId(row), 'info', $event)"
-            >
-              <template #trigger>
-                <UButton
-                  icon="i-lucide-info"
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  title="Detalhes do usuario"
-                  aria-label="Info"
-                />
-              </template>
-              <div class="space-y-1 text-xs">
-                <p>
-                  <strong>ID:</strong>
-                  {{ toUser(row).id }}
-                </p>
-                <p>
-                  <strong>Email:</strong>
-                  {{ toUser(row).email }}
-                </p>
-                <p>
-                  <strong>Nome:</strong>
-                  {{ toUser(row).displayName }}
-                </p>
-                <p>
-                  <strong>Nick:</strong>
-                  {{ toUser(row).nick || '-' }}
-                </p>
-                <p>
-                  <strong>Platform admin:</strong>
-                  {{ toUser(row).isPlatformAdmin ? 'sim' : 'nao' }}
-                </p>
-                <p>
-                  <strong>Trocar senha:</strong>
-                  {{ toUser(row).mustChangePassword ? 'sim' : 'nao' }}
-                </p>
-                <p>
-                  <strong>Qtd clientes:</strong>
-                  {{ toUser(row).accountCount }}
-                </p>
-                <p>
-                  <strong>Cliente:</strong>
-                  {{ toUser(row).accountNames || '-' }}
-                </p>
-                <p>
-                  <strong>Membro de agencia:</strong>
-                  {{ toUser(row).isAgencyMember ? 'sim' : 'nao' }}
-                </p>
-              </div>
-            </OmniMinimalPopover>
-
-            <UButton
-              v-if="canViewUsers"
-              icon="i-lucide-pencil"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              title="Editar usuario (dados, vinculos, papeis, modulos)"
-              aria-label="Editar"
-              @click="openEdit(row)"
-            />
-
-            <UButton
-              v-if="canCreateUser"
-              icon="i-lucide-key-round"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              title="Definir/Resetar senha"
-              aria-label="Definir senha"
-              @click="openPassword(row)"
-            />
-
-            <UButton
-              v-if="canDeleteUser"
-              icon="i-lucide-trash-2"
-              color="error"
-              variant="ghost"
-              size="sm"
-              title="Desativar usuario"
-              aria-label="Excluir"
-              :loading="deletingId === rowId(row)"
-              @click="onDeleteUser(rowId(row))"
-            />
-          </div>
+          <AdminUsersActionsCell
+            :user="toUser(row)"
+            :can-view="canViewUsers"
+            :can-manage="canCreateUser"
+            :can-delete="canDeleteUser"
+            :deleting="deletingId === rowId(row)"
+            @edit="openEdit(row)"
+            @password="openPassword(row)"
+            @delete="onDeleteUser(rowId(row))"
+          />
         </template>
       </OmniDataTable>
     </div>
@@ -677,204 +476,15 @@ onMounted(() => {
       />
     </div>
 
-    <UModal v-model:open="createDialogOpen">
-      <template #content>
-        <UCard>
-          <template #header>
-            <h3 class="text-base font-semibold">Novo usuario</h3>
-          </template>
+    <AdminUserCreateDialog
+      v-model:open="createDialogOpen"
+      :can-create="canCreateUser"
+      :account-options="accountOptions"
+      :organization-options="organizationOptions"
+      @created="onUserCreated"
+    />
 
-          <div class="space-y-3">
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Email</label>
-              <UInput
-                :model-value="createForm.email"
-                placeholder="usuario@exemplo.com"
-                @update:model-value="createForm.email = String($event ?? '')"
-              />
-            </div>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nome</label>
-              <UInput
-                :model-value="createForm.displayName"
-                placeholder="Nome completo"
-                @update:model-value="createForm.displayName = String($event ?? '')"
-              />
-            </div>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nick (opcional)</label>
-              <UInput
-                :model-value="createForm.nick"
-                placeholder="apelido curto"
-                @update:model-value="createForm.nick = String($event ?? '')"
-              />
-            </div>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">
-                Senha temporaria (opcional — se vazia, user precisa convite)
-              </label>
-              <UInput
-                :model-value="createForm.temporaryPassword"
-                type="password"
-                placeholder="minimo 8 chars"
-                @update:model-value="createForm.temporaryPassword = String($event ?? '')"
-              />
-              <p v-if="createPasswordError" class="text-xs text-[rgb(var(--danger))] mt-1">
-                {{ createPasswordError }}
-              </p>
-            </div>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Cliente (opcional)</label>
-              <select
-                class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
-                :value="createForm.accountId"
-                @change="createForm.accountId = ($event.target as HTMLSelectElement).value"
-              >
-                <option v-for="opt in accountOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-              <p v-if="createNeedsClient" class="text-xs text-[rgb(var(--danger))] mt-1">
-                Selecione um cliente, uma agencia (abaixo) ou marque platform admin — senao o
-                usuario nao consegue logar.
-              </p>
-            </div>
-            <div v-if="createForm.accountId">
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Papel no cliente</label>
-              <select
-                class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
-                :value="createForm.role"
-                @change="createForm.role = ($event.target as HTMLSelectElement).value"
-              >
-                <option value="owner">Owner (acesso total do cliente)</option>
-                <option value="director">Director</option>
-                <option value="marketing">Marketing</option>
-              </select>
-              <p class="text-xs text-[rgb(var(--muted))] mt-1">
-                Cria o papel legado (login + operacao). Sem isso o usuario nao consegue entrar.
-              </p>
-            </div>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Agencia (opcional)</label>
-              <select
-                class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
-                :value="createForm.organizationId"
-                @change="createForm.organizationId = ($event.target as HTMLSelectElement).value"
-              >
-                <option v-for="opt in organizationOptions" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </div>
-            <div v-if="createForm.organizationId">
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Cargo na agencia</label>
-              <select
-                class="w-full rounded-[var(--radius-md)] border border-[rgb(var(--border))] bg-[rgb(var(--surface-2))] px-3 py-2 text-sm"
-                :value="createForm.orgRole"
-                @change="createForm.orgRole = ($event.target as HTMLSelectElement).value"
-              >
-                <option value="agency_owner">Dono da agencia (acesso total)</option>
-                <option value="agency_member">Membro (acesso limitado)</option>
-              </select>
-              <p class="text-xs text-[rgb(var(--muted))] mt-1">
-                O cargo define o acesso: dono ve tudo da agencia; membro tem acesso limitado. Ele
-                entra como membro da conta-agencia e navega pelos clientes da agencia.
-              </p>
-            </div>
-            <div
-              v-if="createBindsClientAndAgency"
-              class="rounded-[var(--radius-md)] border border-[rgb(var(--danger))] bg-[rgb(var(--surface-2))] px-3 py-2"
-            >
-              <p class="text-xs text-[rgb(var(--danger))]">
-                Atencao: vincular uma agencia torna o usuario MEMBRO DA AGENCIA — ele passa a ver
-                todos os clientes e modulos da agencia. Para um usuario so deste cliente, deixe
-                Agencia vazio.
-              </p>
-              <label class="mt-2 flex items-center gap-2 text-xs">
-                <input v-model="createAgencyConfirmed" type="checkbox" />
-                <span>Entendo, e um membro de agencia</span>
-              </label>
-            </div>
-            <div class="flex items-center gap-2">
-              <USwitch v-model="createForm.isPlatformAdmin" />
-              <span class="text-sm">Platform admin (acesso global)</span>
-            </div>
-          </div>
-
-          <template #footer>
-            <div class="flex justify-end gap-2">
-              <UButton
-                label="Cancelar"
-                color="neutral"
-                variant="ghost"
-                @click="createDialogOpen = false"
-              />
-              <UButton
-                label="Criar"
-                color="primary"
-                :loading="creating"
-                :disabled="
-                  creating ||
-                  Boolean(createPasswordError) ||
-                  createNeedsClient ||
-                  (createBindsClientAndAgency && !createAgencyConfirmed)
-                "
-                @click="submitCreate"
-              />
-            </div>
-          </template>
-        </UCard>
-      </template>
-    </UModal>
-
-    <UModal v-model:open="passwordDialogOpen">
-      <template #content>
-        <UCard>
-          <template #header>
-            <h3 class="text-base font-semibold">Definir senha</h3>
-          </template>
-
-          <div class="space-y-3">
-            <p class="text-xs text-[rgb(var(--muted))]">
-              Define uma nova senha para
-              <strong>{{ passwordTarget?.email || 'este usuario' }}</strong>
-              . O usuario passa a logar com ela imediatamente.
-            </p>
-            <div>
-              <label class="block text-xs text-[rgb(var(--muted))] mb-1">Nova senha</label>
-              <UInput
-                :model-value="passwordValue"
-                type="password"
-                placeholder="minimo 8 chars"
-                @update:model-value="passwordValue = String($event ?? '')"
-                @keyup.enter="submitPassword"
-              />
-              <p v-if="passwordError" class="text-xs text-[rgb(var(--danger))] mt-1">
-                {{ passwordError }}
-              </p>
-            </div>
-          </div>
-
-          <template #footer>
-            <div class="flex justify-end gap-2">
-              <UButton
-                label="Cancelar"
-                color="neutral"
-                variant="ghost"
-                @click="passwordDialogOpen = false"
-              />
-              <UButton
-                label="Salvar senha"
-                color="primary"
-                :loading="passwordSaving"
-                :disabled="passwordSaving || Boolean(passwordError) || !passwordValue.trim()"
-                @click="submitPassword"
-              />
-            </div>
-          </template>
-        </UCard>
-      </template>
-    </UModal>
+    <AdminUserPasswordDialog v-model:open="passwordDialogOpen" :target="passwordTarget" />
 
     <AdminUserEditDrawer v-model:open="editDrawerOpen" :user="editUser" @updated="onUserUpdated" />
   </section>

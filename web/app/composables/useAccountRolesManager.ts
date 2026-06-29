@@ -1,4 +1,5 @@
 import type { RoleCreateInput, RoleDetail, RoleSummary, RoleUpdateInput } from '~/types/admin-users'
+import { useInlineEditManager } from '~/composables/useInlineEditManager'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
 // Papeis customizados por cliente (core.roles) via /v1/accounts/{accountId}/roles*.
@@ -29,15 +30,10 @@ export function useAccountRolesManager() {
 
   const errorMessage = ref('')
   // Reusa o padrao savingMap/setSaving do projeto (chave granular por operacao)
-  // para a UI desabilitar so o controle em voo, sem travar a tela inteira.
-  const savingMap = ref<Record<string, boolean>>({})
-
-  function setSaving(key: string, value: boolean) {
-    const next = { ...savingMap.value }
-    if (value) next[key] = true
-    else delete next[key]
-    savingMap.value = next
-  }
+  // para a UI desabilitar so o controle em voo, sem travar a tela inteira. Vem do
+  // useInlineEditManager compartilhado; este manager nao tem debounce nem grade,
+  // entao usa so o subconjunto savingMap/setSaving (sem rowIsSaving/schedulePatch).
+  const { savingMap, setSaving } = useInlineEditManager()
 
   // Header de escopo: account-id explicito da chamada (alvo no path). Vence o
   // header global da account ativa injetado pelo api-client.

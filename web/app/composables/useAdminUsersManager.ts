@@ -4,12 +4,27 @@ import type {
   AdminUserFieldKey,
   AdminUserItem,
 } from '~/types/admin-users'
+import type { InjectionKey } from 'vue'
+import { inject, provide } from 'vue'
 import { useAdminUserLinks } from '~/composables/useAdminUserLinks'
+import { useInlineEditManager } from '~/composables/useInlineEditManager'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 
-const PATCH_DELAY_MS = 380
 // Espelha o minimo do backend (admin_users_service.go: "must be at least 8 chars").
 const PASSWORD_MIN_LENGTH = 8
+
+// Tipo do retorno do manager (uma instancia compartilhada via provide/inject).
+export type AdminUsersManager = ReturnType<typeof createAdminUsersManager>
+
+// Antes o useAdminUsersManager() era instanciado 6x (drawer + 4 panels + workspace),
+// cada chamada criando estado PROPRIO e DESCONECTADO (users/savingMap/errorMessage
+// separados): a mensagem de erro ou o "salvando" de um painel nunca aparecia em
+// outro. Unificamos via provide/inject (mesmo padrao do provideUsersAccessContext):
+// o host (AdminUsersWorkspace) chama provideAdminUsersContext() UMA vez, e o drawer +
+// panels recebem a MESMA instancia por inject. useAdminUsersManager() continua sendo
+// a API publica: resolve o contexto provido se existir, senao cai num fallback que
+// cria uma instancia local (preserva compatibilidade para qualquer consumidor avulso).
+const adminUsersContextKey: InjectionKey<AdminUsersManager> = Symbol('adminUsersManager')
 
 // Campos editaveis inline → campo do PATCH backend (AdminUpdateUserInput).
 const FIELD_TO_PATCH: Record<AdminUserFieldKey, string> = {
@@ -51,7 +66,10 @@ function normalizeMembership(raw: Record<string, unknown>): AccountMembershipIte
   }
 }
 
-export function useAdminUsersManager() {
+// Implementacao real do manager. NAO chamar direto nos componentes — use
+// useAdminUsersManager() (resolve o contexto compartilhado via inject) ou
+// provideAdminUsersContext() (no host). Ver nota de unificacao abaixo.
+function createAdminUsersManager() {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
@@ -75,23 +93,15 @@ export function useAdminUsersManager() {
   const creating = ref(false)
   const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
-  const savingMap = ref<Record<string, boolean>>({})
   const canResetFilters = computed(() =>
     Boolean(filters.q || filters.status || filters.platformAdmin || filters.accountId),
   )
 
-  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function setSaving(key: string, value: boolean) {
-    const next = { ...savingMap.value }
-    if (value) next[key] = true
-    else delete next[key]
-    savingMap.value = next
-  }
-
-  function rowIsSaving(id: string) {
-    return Object.keys(savingMap.value).some((k) => k.startsWith(`${id}:`))
-  }
+  // Mecanica de edicao inline compartilhada (savingMap/setSaving/rowIsSaving +
+  // debounce + cleanup). Comportamento identico ao anterior; setSaving e reusado
+  // por delete/setPassword/moveUserAccount/updateMembershipRole e pelo auxiliar
+  // useAdminUserLinks.
+  const { savingMap, setSaving, rowIsSaving, schedulePatch } = useInlineEditManager()
 
   function applyPatch(id: string, raw: Record<string, unknown>) {
     const idx = users.value.findIndex((u) => u.id === id)
@@ -163,22 +173,9 @@ export function useAdminUsersManager() {
     if (!backendField) return
 
     const patch = { [backendField]: value }
-    const timerKey = `${id}:${field}`
-
-    if (pendingTimers.has(timerKey)) clearTimeout(pendingTimers.get(timerKey)!)
-
-    if (opts?.immediate) {
-      void persistPatch(id, field, patch)
-      return
-    }
-
-    pendingTimers.set(
-      timerKey,
-      setTimeout(() => {
-        pendingTimers.delete(timerKey)
-        void persistPatch(id, field, patch)
-      }, PATCH_DELAY_MS),
-    )
+    schedulePatch(`${id}:${field}`, () => void persistPatch(id, field, patch), {
+      immediate: opts?.immediate,
+    })
   }
 
   async function createUser(input: AdminUserCreateInput): Promise<string | null> {
@@ -323,11 +320,6 @@ export function useAdminUsersManager() {
     page.value = 1
   }
 
-  onBeforeUnmount(() => {
-    for (const timer of pendingTimers.values()) clearTimeout(timer)
-    pendingTimers.clear()
-  })
-
   return {
     users,
     filters,
@@ -358,4 +350,21 @@ export function useAdminUsersManager() {
     setOverrides: links.setOverrides,
     resetFilters,
   }
+}
+
+// Cria UMA instancia do manager e a disponibiliza via provide para os descendentes
+// (drawer + panels) compartilharem o mesmo estado/acoes. Chamado pelo host (workspace)
+// no setup. Devolve a instancia para o proprio host usar.
+export function provideAdminUsersContext(): AdminUsersManager {
+  const manager = createAdminUsersManager()
+  provide(adminUsersContextKey, manager)
+  return manager
+}
+
+// API publica (inalterada para os consumidores): retorna a instancia COMPARTILHADA
+// provida por um ancestral, se houver; senao cria uma instancia local (fallback que
+// preserva o comportamento antigo para qualquer uso fora da arvore que faz provide).
+export function useAdminUsersManager(): AdminUsersManager {
+  const shared = inject(adminUsersContextKey, null)
+  return shared ?? createAdminUsersManager()
 }

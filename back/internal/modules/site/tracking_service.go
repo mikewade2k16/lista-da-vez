@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // IngestTracking recebe um lote de eventos de tracking ja autenticado pelo
@@ -92,33 +94,33 @@ func normalizeTrackingWebhookEvent(raw map[string]any) (TrackingEventInput, bool
 		SessionID:      sessionID,
 		EventType:      eventType,
 		EventName:      eventName,
-		PageURL:        firstNonEmpty(firstString(raw, "page_url"), firstString(page, "url")),
-		PagePath:       firstNonEmpty(firstString(raw, "page_path"), firstString(page, "path")),
-		PageTitle:      firstNonEmpty(firstString(raw, "page_title"), firstString(page, "title")),
-		PageGroup:      firstNonEmpty(firstString(raw, "page_group"), firstString(page, "group")),
-		PageName:       firstNonEmpty(firstString(raw, "page_name"), firstString(page, "name")),
-		Referrer:       firstNonEmpty(firstString(raw, "referrer"), firstString(page, "referrer")),
-		ElementTag:     firstNonEmpty(firstString(raw, "element_tag"), firstString(element, "tag")),
-		ElementText:    firstNonEmpty(firstString(raw, "element_text"), firstString(element, "text")),
-		ElementHref:    firstNonEmpty(firstString(raw, "element_href"), firstString(element, "href")),
-		ElementID:      firstNonEmpty(firstString(raw, "element_id"), firstString(element, "id")),
-		ElementClasses: firstNonEmpty(firstString(raw, "element_classes"), firstString(element, "classes")),
-		ElementRole:    firstNonEmpty(firstString(raw, "element_role"), firstString(element, "role")),
-		ProductCode:    firstNonEmpty(firstString(raw, "product_code"), firstString(element, "product_code")),
+		PageURL:        stringsx.FirstNonEmpty(firstString(raw, "page_url"), firstString(page, "url")),
+		PagePath:       stringsx.FirstNonEmpty(firstString(raw, "page_path"), firstString(page, "path")),
+		PageTitle:      stringsx.FirstNonEmpty(firstString(raw, "page_title"), firstString(page, "title")),
+		PageGroup:      stringsx.FirstNonEmpty(firstString(raw, "page_group"), firstString(page, "group")),
+		PageName:       stringsx.FirstNonEmpty(firstString(raw, "page_name"), firstString(page, "name")),
+		Referrer:       stringsx.FirstNonEmpty(firstString(raw, "referrer"), firstString(page, "referrer")),
+		ElementTag:     stringsx.FirstNonEmpty(firstString(raw, "element_tag"), firstString(element, "tag")),
+		ElementText:    stringsx.FirstNonEmpty(firstString(raw, "element_text"), firstString(element, "text")),
+		ElementHref:    stringsx.FirstNonEmpty(firstString(raw, "element_href"), firstString(element, "href")),
+		ElementID:      stringsx.FirstNonEmpty(firstString(raw, "element_id"), firstString(element, "id")),
+		ElementClasses: stringsx.FirstNonEmpty(firstString(raw, "element_classes"), firstString(element, "classes")),
+		ElementRole:    stringsx.FirstNonEmpty(firstString(raw, "element_role"), firstString(element, "role")),
+		ProductCode:    stringsx.FirstNonEmpty(firstString(raw, "product_code"), firstString(element, "product_code")),
 		ActiveSeconds:  firstIntPointer(raw, metrics, "active_seconds"),
 		ScrollDepth:    firstIntPointer(raw, metrics, "scroll_depth"),
 		ScreenWidth:    firstIntPointer(raw, device, "screen_width"),
 		ScreenHeight:   firstIntPointer(raw, device, "screen_height"),
 		ViewportWidth:  firstIntPointer(raw, device, "viewport_width"),
 		ViewportHeight: firstIntPointer(raw, device, "viewport_height"),
-		DeviceType:     firstNonEmpty(firstString(raw, "device_type"), firstString(device, "type")),
-		BrowserLang:    firstNonEmpty(firstString(raw, "browser_lang"), firstString(device, "language")),
-		Timezone:       firstNonEmpty(firstString(raw, "timezone"), firstString(device, "timezone")),
-		UTMSource:      firstNonEmpty(firstString(raw, "utm_source"), firstString(utm, "utm_source")),
-		UTMMedium:      firstNonEmpty(firstString(raw, "utm_medium"), firstString(utm, "utm_medium")),
-		UTMCampaign:    firstNonEmpty(firstString(raw, "utm_campaign"), firstString(utm, "utm_campaign")),
-		UTMTerm:        firstNonEmpty(firstString(raw, "utm_term"), firstString(utm, "utm_term")),
-		UTMContent:     firstNonEmpty(firstString(raw, "utm_content"), firstString(utm, "utm_content")),
+		DeviceType:     stringsx.FirstNonEmpty(firstString(raw, "device_type"), firstString(device, "type")),
+		BrowserLang:    stringsx.FirstNonEmpty(firstString(raw, "browser_lang"), firstString(device, "language")),
+		Timezone:       stringsx.FirstNonEmpty(firstString(raw, "timezone"), firstString(device, "timezone")),
+		UTMSource:      stringsx.FirstNonEmpty(firstString(raw, "utm_source"), firstString(utm, "utm_source")),
+		UTMMedium:      stringsx.FirstNonEmpty(firstString(raw, "utm_medium"), firstString(utm, "utm_medium")),
+		UTMCampaign:    stringsx.FirstNonEmpty(firstString(raw, "utm_campaign"), firstString(utm, "utm_campaign")),
+		UTMTerm:        stringsx.FirstNonEmpty(firstString(raw, "utm_term"), firstString(utm, "utm_term")),
+		UTMContent:     stringsx.FirstNonEmpty(firstString(raw, "utm_content"), firstString(utm, "utm_content")),
 		EventData:      firstAny(raw, "event_data", "data"),
 		RawPayload:     raw,
 		IP:             firstString(raw, "ip"),
@@ -151,15 +153,6 @@ func firstAny(values map[string]any, keys ...string) any {
 		}
 	}
 	return nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 func firstIntPointer(flat map[string]any, nested map[string]any, key string) *int {

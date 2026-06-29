@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 func entryHasCampaign(entry operations.ServiceHistoryEntry, campaignIDs []string) bool {
@@ -152,17 +153,6 @@ func isSaleOutcome(outcome string) bool {
 	}
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-
-	return ""
-}
-
 func cloneStringSlice(values []string) []string {
 	cloned := make([]string, 0, len(values))
 	for _, value := range values {
@@ -177,7 +167,7 @@ func cloneStringSlice(values []string) []string {
 func cloneCampaignNames(matches []operations.CampaignMatch) []string {
 	cloned := make([]string, 0, len(matches))
 	for _, match := range matches {
-		label := firstNonEmpty(match.Name, match.ID)
+		label := stringsx.FirstNonEmpty(match.Name, match.ID)
 		if label != "" {
 			cloned = append(cloned, label)
 		}

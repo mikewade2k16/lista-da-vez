@@ -8,6 +8,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 type Service struct {
@@ -140,7 +141,7 @@ func (service *Service) loadBundles(ctx context.Context, principal auth.Principa
 		}, []bundle{storeBundle}, nil
 	}
 
-	resolvedTenantID := firstNonEmpty(tenantID, principal.TenantID)
+	resolvedTenantID := stringsx.FirstNonEmpty(tenantID, principal.TenantID)
 	if resolvedTenantID == "" {
 		return analyticsScope{}, nil, ErrScopeRequired
 	}

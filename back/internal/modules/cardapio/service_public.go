@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // Resolve mapeia um host -> slug do restaurante. Ordem:
@@ -316,7 +318,7 @@ func promoteContext(ctx json.RawMessage, slugs map[string]struct{}) promotedCont
 		_ = json.Unmarshal(ctx, &obj)
 	}
 	out := promotedContext{
-		pagePath:    strings.TrimSpace(firstNonEmpty(obj.PagePath, obj.Route)),
+		pagePath:    strings.TrimSpace(stringsx.FirstNonEmpty(obj.PagePath, obj.Route)),
 		deviceID:    strings.TrimSpace(obj.DeviceID),
 		utmSource:   strings.TrimSpace(obj.UTMSource),
 		utmMedium:   strings.TrimSpace(obj.UTMMedium),
@@ -331,15 +333,6 @@ func promoteContext(ctx json.RawMessage, slugs map[string]struct{}) promotedCont
 		}
 	}
 	return out
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // clampOccurredAt parseia o occurredAt do cliente (RFC3339) e o restringe a

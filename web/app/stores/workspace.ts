@@ -1,6 +1,6 @@
 import { computed } from 'vue'
 import { defineStore, storeToRefs } from 'pinia'
-import { filterPerolaERPWorkspaces, getAllowedWorkspaces } from '~/domain/utils/permissions'
+import { getAllowedWorkspaces } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useAppRuntimeStore } from '~/stores/app-runtime'
 
@@ -16,15 +16,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       null,
   )
   const activeRole = computed(() => auth.role || activeProfile.value?.role || 'consultant')
+  // getAllowedWorkspaces ja retorna IDs limpos; o wrapper anterior ignorava o 2o
+  // argumento (role/tenant), entao consumimos o resultado diretamente.
   const allowedWorkspaces = computed(() =>
-    filterPerolaERPWorkspaces(
-      getAllowedWorkspaces(activeRole.value, auth.permissionKeys, auth.permissionsResolved),
-      {
-        role: activeRole.value,
-        activeTenantId: auth.activeTenantId,
-        tenantContext: auth.tenantContext,
-      },
-    ),
+    getAllowedWorkspaces(activeRole.value, auth.permissionKeys, auth.permissionsResolved),
   )
 
   return {

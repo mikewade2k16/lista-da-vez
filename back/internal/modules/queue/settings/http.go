@@ -9,6 +9,7 @@ import (
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // As rotas continuam aceitando storeId legado, mas a configuracao agora e
@@ -47,7 +48,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		bundle.TenantID = firstNonEmpty(bundle.TenantID, requestTenantID(r))
+		bundle.TenantID = stringsx.FirstNonEmpty(bundle.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveBundle(r.Context(), principal, bundle)
 		if err != nil {
@@ -70,7 +71,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveOperationSection(r.Context(), principal, input)
 		if err != nil {
@@ -93,7 +94,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveCRMCommercialPolicy(r.Context(), principal, input)
 		if err != nil {
@@ -116,7 +117,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveModalSection(r.Context(), principal, input)
 		if err != nil {
@@ -139,7 +140,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveAppearanceSection(r.Context(), principal, input)
 		if err != nil {
@@ -181,7 +182,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		optionGroup, err := normalizeOptionGroupPath(r.PathValue("group"))
 		if err != nil {
@@ -210,7 +211,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		optionGroup, err := normalizeOptionGroupPath(r.PathValue("group"))
 		if err != nil {
@@ -270,7 +271,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		optionGroup, err := normalizeOptionGroupPath(r.PathValue("group"))
 		if err != nil {
@@ -299,7 +300,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveProductItem(r.Context(), principal, input)
 		if err != nil {
@@ -322,7 +323,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveProductItem(r.Context(), principal, ProductItemInput{
 			TenantID: input.TenantID,
@@ -375,7 +376,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveProductSection(r.Context(), principal, input)
 		if err != nil {
@@ -398,7 +399,7 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
 			return
 		}
-		input.TenantID = firstNonEmpty(input.TenantID, requestTenantID(r))
+		input.TenantID = stringsx.FirstNonEmpty(input.TenantID, requestTenantID(r))
 
 		ack, err := service.SaveGamificationSection(r.Context(), principal, input)
 		if err != nil {
@@ -452,16 +453,6 @@ func handleDebugSettingsFailure(w http.ResponseWriter, r *http.Request, env stri
 	default:
 		return false
 	}
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if normalized := strings.TrimSpace(value); normalized != "" {
-			return normalized
-		}
-	}
-
-	return ""
 }
 
 func normalizeOptionGroupPath(rawGroup string) (string, error) {

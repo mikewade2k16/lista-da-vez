@@ -10,6 +10,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 const (
@@ -134,7 +135,7 @@ func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.P
 		return MultiStoreOverviewResponse{}, err
 	}
 
-	resolvedTenantID := firstNonEmpty(normalized.TenantID, principal.TenantID)
+	resolvedTenantID := stringsx.FirstNonEmpty(normalized.TenantID, principal.TenantID)
 	if resolvedTenantID == "" {
 		return MultiStoreOverviewResponse{}, ErrStoreRequired
 	}

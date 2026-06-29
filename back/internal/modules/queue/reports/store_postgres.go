@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 type PostgresRepository struct {
@@ -219,11 +220,11 @@ func (repository *PostgresRepository) listHistoryQuery(
 		entry.SkippedPeople = decodeSkippedPeople(skippedRaw)
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)
-		entry.VisitReasons = decodeStringSlice(visitReasonsRaw)
+		entry.VisitReasons = stringsx.DecodeJSONStringSlice(visitReasonsRaw)
 		entry.VisitReasonDetails = decodeStringMap(visitReasonDetailsRaw)
-		entry.CustomerSources = decodeStringSlice(customerSourcesRaw)
+		entry.CustomerSources = stringsx.DecodeJSONStringSlice(customerSourcesRaw)
 		entry.CustomerSourceDetails = decodeStringMap(customerSourceDetailsRaw)
-		entry.LossReasons = decodeStringSlice(lossReasonsRaw)
+		entry.LossReasons = stringsx.DecodeJSONStringSlice(lossReasonsRaw)
 		entry.LossReasonDetails = decodeStringMap(lossReasonDetailsRaw)
 		entry.CampaignMatches = decodeCampaignMatches(campaignMatchesRaw)
 		items = append(items, entry)
@@ -388,19 +389,6 @@ func decodeProducts(raw []byte) []operations.ProductEntry {
 	var items []operations.ProductEntry
 	if err := json.Unmarshal(raw, &items); err != nil {
 		return []operations.ProductEntry{}
-	}
-
-	return items
-}
-
-func decodeStringSlice(raw []byte) []string {
-	if len(raw) == 0 {
-		return []string{}
-	}
-
-	var items []string
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return []string{}
 	}
 
 	return items

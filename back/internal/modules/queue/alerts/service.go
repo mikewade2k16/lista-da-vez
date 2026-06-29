@@ -9,6 +9,7 @@ import (
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/operations"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 type Service struct {
@@ -656,7 +657,7 @@ func resolveStoreScope(principal auth.Principal, requestedStoreID string) (strin
 			return "", nil, nil
 		}
 
-		return "", normalizeStoreIDs(principal.StoreIDs), nil
+		return "", stringsx.NormalizeIDs(principal.StoreIDs), nil
 	}
 	if principal.Role == auth.RolePlatformAdmin {
 		return normalizedStoreID, nil, nil
@@ -746,24 +747,6 @@ func validateRuleInput(input CreateRuleInput) error {
 	}
 
 	return nil
-}
-
-func normalizeStoreIDs(storeIDs []string) []string {
-	normalized := make([]string, 0, len(storeIDs))
-	seen := make(map[string]struct{}, len(storeIDs))
-	for _, storeID := range storeIDs {
-		trimmed := strings.TrimSpace(storeID)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; exists {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		normalized = append(normalized, trimmed)
-	}
-
-	return normalized
 }
 
 func cloneMetadata(metadata map[string]any) map[string]any {

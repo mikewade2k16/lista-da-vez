@@ -1,7 +1,7 @@
-﻿import { computed, onBeforeUnmount, onMounted, ref, watch, type ComputedRef, type Ref } from 'vue'
-import { buildRealtimeSocketURL } from '~/composables/useRealtimeConnection'
+﻿import { computed, onBeforeUnmount, onMounted, ref, type ComputedRef, type Ref } from 'vue'
 import { useAuthStore } from '~/stores/auth'
-import { useCoreAccountStore } from '../../core/stores/account'
+import { normalizeText } from '../utils/text'
+import { sourceValue, useRealtimeSocket } from './useRealtimeSocket'
 
 type PresenceSource<T> = T | Ref<T> | ComputedRef<T> | (() => T)
 
@@ -25,27 +25,6 @@ interface TaskPresenceOptions {
   taskId?: PresenceSource<string>
   boardId?: PresenceSource<string>
   accountId?: PresenceSource<string>
-}
-
-function sourceValue<T>(source: PresenceSource<T> | undefined, fallback: T): T {
-  if (typeof source === 'function') {
-    const value = (source as () => T)()
-    return value == null ? fallback : value
-  }
-
-  if (source && typeof source === 'object' && 'value' in source) {
-    const value = (source as Ref<T>).value
-    return value == null ? fallback : value
-  }
-
-  return source == null ? fallback : source
-}
-
-function normalizeText(value: unknown, max = 240) {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max)
 }
 
 function initialsFor(value: string) {
@@ -112,24 +91,6 @@ function normalizePresenceUser(raw: Record<string, unknown>): TaskPresenceUser {
   }
 }
 
-function resolveAccountId(
-  auth: ReturnType<typeof useAuthStore>,
-  accountStore: ReturnType<typeof useCoreAccountStore>,
-  explicitAccountId = '',
-) {
-  // Espelha a fonte do REST (stores/tasks.ts): conta do switcher v2 primeiro, fallback legado
-  // depois. Sem accountStore.activeAccountId aqui, um chamador que nao passe o prop cairia em
-  // auth.activeTenantId (seed aaaa... pro platform_admin) e o canal de board seria rejeitado (1006).
-  return normalizeText(
-    explicitAccountId ||
-      accountStore.activeAccountId ||
-      auth.activeTenantId ||
-      auth.principal?.tenantId ||
-      auth.tenantContext?.[0]?.id,
-    120,
-  )
-}
-
 function resolveCurrentUserId(auth: ReturnType<typeof useAuthStore>) {
   return normalizeText(
     auth.principal?.userId ||
@@ -143,24 +104,17 @@ function resolveCurrentUserId(auth: ReturnType<typeof useAuthStore>) {
 }
 
 export function useTaskPresence(options: TaskPresenceOptions) {
-  const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
-  const accountStore = useCoreAccountStore()
 
-  const status = ref<TaskPresenceStatus>('idle')
   const lastEvent = ref<Record<string, unknown> | null>(null)
   const participantsById = ref<Record<string, TaskPresenceUser>>({})
   const activeFieldKey = ref('')
   const localFieldDrafts = ref<Record<string, string>>({})
 
-  let socket: WebSocket | null = null
-  let socketKey = ''
-  let connectionGeneration = 0
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  // Timers especificos da presence (heartbeat 15s + drafts por campo). O ciclo de vida do socket
+  // (reconnect/silencedSockets/ensureConnection) fica no useRealtimeSocket compartilhado.
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   const draftTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  let reconnectAttempts = 0
-  const silencedSockets = new WeakSet<WebSocket>()
 
   const currentUserId = computed(() => resolveCurrentUserId(auth))
   const participants = computed(() =>
@@ -168,28 +122,6 @@ export function useTaskPresence(options: TaskPresenceOptions) {
       .filter((user) => user.userId && user.userId !== currentUserId.value)
       .sort((a, b) => a.displayName.localeCompare(b.displayName)),
   )
-
-  function desiredConnection() {
-    const enabled = Boolean(sourceValue(options.enabled, false))
-    const scope = sourceValue(options.scope, 'task')
-    const taskId = normalizeText(sourceValue(options.taskId, ''), 120)
-    const boardId = normalizeText(sourceValue(options.boardId, ''), 120)
-    const accountId = resolveAccountId(auth, accountStore, sourceValue(options.accountId, ''))
-    const accessToken = normalizeText(auth.accessToken, 2000)
-
-    if (!enabled || !auth.isAuthenticated || !accountId || !accessToken) return null
-    if (scope === 'task' && !taskId) return null
-    if (scope === 'board' && !boardId) return null
-
-    return {
-      key: `${scope}:${accountId}:${boardId}:${taskId}:${accessToken}`,
-      scope,
-      accountId,
-      boardId,
-      taskId,
-      accessToken,
-    }
-  }
 
   function replaceParticipant(user: TaskPresenceUser) {
     if (!user.userId) return
@@ -203,11 +135,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     participantsById.value = next
   }
 
-  function clearTimers() {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
+  function clearHeartbeatTimer() {
     if (heartbeatTimer) {
       clearInterval(heartbeatTimer)
       heartbeatTimer = null
@@ -238,6 +166,7 @@ export function useTaskPresence(options: TaskPresenceOptions) {
   }
 
   function send(payload: Record<string, unknown>) {
+    const socket = presenceSocket.currentSocket()
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       presenceLog('warn', 'envio ignorado; socket fechado', {
         type: normalizeText(payload.type, 80),
@@ -347,94 +276,69 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     }
   }
 
-  function updateStatus() {
-    if (!socket) {
-      status.value = reconnectTimer ? 'reconnecting' : 'idle'
-      return
-    }
-    if (socket.readyState === WebSocket.OPEN) {
-      status.value = 'connected'
-      return
-    }
-    if (socket.readyState === WebSocket.CONNECTING) {
-      status.value = 'connecting'
-      return
-    }
-    status.value = reconnectTimer ? 'reconnecting' : 'error'
-  }
-
-  function disconnect(clearParticipants = true, preserveActiveField = false) {
-    connectionGeneration += 1
-    clearTimers()
-    clearDraftTimers()
-
-    if (socket) {
-      silencedSockets.add(socket)
-      socket.close()
-      socket = null
-    }
-
-    socketKey = ''
-    reconnectAttempts = 0
-    if (!preserveActiveField) activeFieldKey.value = ''
-    if (!preserveActiveField) localFieldDrafts.value = {}
-    if (clearParticipants) participantsById.value = {}
-    updateStatus()
-  }
-
-  function scheduleReconnect() {
-    if (reconnectTimer || !desiredConnection()) {
-      updateStatus()
-      return
-    }
-
-    const delayMs = Math.min(10000, 1000 * Math.max(1, 2 ** reconnectAttempts))
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null
-      void ensureConnection()
-    }, delayMs)
-    updateStatus()
-  }
-
-  async function ensureConnection() {
-    if (import.meta.server) return
-
-    const desired = desiredConnection()
-    if (!desired) {
-      disconnect()
-      return
-    }
-
-    if (socket && socketKey === desired.key && socket.readyState <= WebSocket.OPEN) {
-      updateStatus()
-      return
-    }
-
-    const preserveActiveField = socketKey === desired.key
-    disconnect(false, preserveActiveField)
-    participantsById.value = {}
-    socketKey = desired.key
-    status.value = 'connecting'
-    const requestGeneration = (connectionGeneration += 1)
-
-    let socketURL = ''
-    try {
-      socketURL = await buildRealtimeSocketURL(
-        runtimeConfig,
-        '/v1/realtime/presence',
-        {
-          scope: desired.scope,
-          accountId: desired.accountId,
-          boardId: desired.boardId,
-          taskId: desired.taskId,
-        },
-        desired.accessToken,
-      )
-    } catch (error) {
-      if (requestGeneration === connectionGeneration && socketKey === desired.key) {
-        socketKey = ''
-        status.value = 'error'
+  // Maquina de socket compartilhada: scope direto ('task' | 'board'), validacao de id por escopo,
+  // preservacao do campo ativo no reconnect com a mesma key, reset de participantes antes de
+  // reconectar. As features da presence (heartbeat, drafts, snapshot) entram pelos hooks.
+  const presenceSocket = useRealtimeSocket({
+    enabled: options.enabled,
+    scope: options.scope ?? 'task',
+    accountId: options.accountId,
+    boardId: options.boardId,
+    taskId: options.taskId,
+    path: '/v1/realtime/presence',
+    scopeDefault: 'task',
+    normalizeScope: (value) => String(value ?? 'task'),
+    isValid: ({ scope, boardId, taskId }) => {
+      if (scope === 'task' && !taskId) return false
+      if (scope === 'board' && !boardId) return false
+      return true
+    },
+    watchSources: [
+      () => sourceValue(options.enabled, false),
+      () => sourceValue(options.scope, 'task'),
+      () => sourceValue(options.taskId, ''),
+      () => sourceValue(options.boardId, ''),
+      () => sourceValue(options.accountId, ''),
+      () => auth.isAuthenticated,
+      () => auth.accessToken,
+      () => auth.activeTenantId,
+      () => auth.principal?.tenantId,
+    ],
+    // disconnect: limpa heartbeat + drafts; preserva campo ativo/draft local no reconnect na mesma
+    // key; so zera participantes quando clearState (= clearParticipants do disconnect original).
+    onDisconnect: (clearParticipants, preserveActiveField) => {
+      clearHeartbeatTimer()
+      clearDraftTimers()
+      if (!preserveActiveField) activeFieldKey.value = ''
+      if (!preserveActiveField) localFieldDrafts.value = {}
+      if (clearParticipants) participantsById.value = {}
+    },
+    preserveOnReconnect: (desired, currentKey) => currentKey === desired.key,
+    onBeforeConnect: () => {
+      participantsById.value = {}
+    },
+    onOpen: (_socket, desired) => {
+      startHeartbeat()
+      if (activeFieldKey.value) {
+        sendFieldFocus(activeFieldKey.value)
+        const localDraft = localFieldDrafts.value[activeFieldKey.value]
+        if (localDraft !== undefined) sendFieldDraft(activeFieldKey.value, localDraft)
       }
+      presenceLog('info', 'socket OPEN', {
+        scope: desired.scope,
+        accountId: desired.accountId,
+        boardId: desired.boardId,
+        taskId: desired.taskId,
+      })
+    },
+    onMessage: (payload) => applyEvent(payload),
+    onSocketClosed: (_socket, _event, isCurrent) => {
+      if (isCurrent && heartbeatTimer) {
+        clearInterval(heartbeatTimer)
+        heartbeatTimer = null
+      }
+    },
+    logTicketError: (desired, error) => {
       presenceLog('error', 'ticket ERROR; socket nao aberto', {
         scope: desired.scope,
         accountId: desired.accountId,
@@ -442,83 +346,27 @@ export function useTaskPresence(options: TaskPresenceOptions) {
         taskId: desired.taskId,
         error,
       })
-      return
-    }
-
-    const latest = desiredConnection()
-    if (
-      requestGeneration !== connectionGeneration ||
-      !latest ||
-      latest.key !== desired.key ||
-      socketKey !== desired.key
-    ) {
-      return
-    }
-
-    const nextSocket = new WebSocket(socketURL)
-    socket = nextSocket
-    updateStatus()
-
-    nextSocket.addEventListener('open', () => {
-      if (socket !== nextSocket) return
-      reconnectAttempts = 0
-      startHeartbeat()
-      if (activeFieldKey.value) {
-        sendFieldFocus(activeFieldKey.value)
-        const localDraft = localFieldDrafts.value[activeFieldKey.value]
-        if (localDraft !== undefined) sendFieldDraft(activeFieldKey.value, localDraft)
-      }
-      updateStatus()
-      presenceLog('info', 'socket OPEN', {
-        scope: desired.scope,
-        accountId: desired.accountId,
-        boardId: desired.boardId,
-        taskId: desired.taskId,
-      })
-    })
-
-    nextSocket.addEventListener('message', (message) => {
-      if (socket !== nextSocket) return
-      try {
-        const payload = JSON.parse(String(message.data || '{}'))
-        if (payload && typeof payload === 'object') applyEvent(payload as Record<string, unknown>)
-      } catch {
-        // Payload invalido nao deve derrubar a tela de tasks.
-      }
-    })
-
-    nextSocket.addEventListener('close', () => {
-      if (socket === nextSocket && heartbeatTimer) {
-        clearInterval(heartbeatTimer)
-        heartbeatTimer = null
-      }
-
-      if (socket === nextSocket) socket = null
-      if (silencedSockets.has(nextSocket)) {
-        updateStatus()
-        return
-      }
-
+    },
+    logClose: (desired) => {
       presenceLog('warn', 'socket CLOSED; agendando reconexao', {
         scope: desired.scope,
         accountId: desired.accountId,
         boardId: desired.boardId,
         taskId: desired.taskId,
       })
-      reconnectAttempts += 1
-      scheduleReconnect()
-    })
-
-    nextSocket.addEventListener('error', () => {
-      status.value = 'error'
+    },
+    onError: (desired) => {
       presenceLog('error', 'socket ERROR', {
         scope: desired.scope,
         accountId: desired.accountId,
         boardId: desired.boardId,
         taskId: desired.taskId,
       })
-    })
-  }
+    },
+  })
+
+  const status = presenceSocket.status as Ref<TaskPresenceStatus>
+  const disconnect = presenceSocket.disconnect
 
   function focusField(fieldKey: string) {
     const key = normalizeFieldKey(fieldKey)
@@ -587,31 +435,16 @@ export function useTaskPresence(options: TaskPresenceOptions) {
     return user?.hasDraftValue ? user.draftValue : null
   }
 
+  // O watch que dispara ensureConnection e o disconnect no unmount ficam dentro do useRealtimeSocket.
+  // Aqui ficam so os listeners especificos da presence (liberar campo ativo ao esconder/sair da aba).
   onMounted(() => {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('pagehide', releaseActiveField)
-
-    watch(
-      [
-        () => sourceValue(options.enabled, false),
-        () => sourceValue(options.scope, 'task'),
-        () => sourceValue(options.taskId, ''),
-        () => sourceValue(options.boardId, ''),
-        () => sourceValue(options.accountId, ''),
-        () => auth.isAuthenticated,
-        () => auth.accessToken,
-        () => auth.activeTenantId,
-        () => auth.principal?.tenantId,
-      ],
-      () => void ensureConnection(),
-      { immediate: true },
-    )
   })
 
   onBeforeUnmount(() => {
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     window.removeEventListener('pagehide', releaseActiveField)
-    disconnect()
   })
 
   return {

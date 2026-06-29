@@ -9,6 +9,7 @@ import (
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 type sourceCandidate struct {
@@ -362,11 +363,9 @@ func isERPSystemAdmin(principal auth.Principal) bool {
 	return principal.Role == auth.RolePlatformAdmin
 }
 
+// firstNonEmpty e um alias fino para stringsx.FirstNonEmpty, mantido apenas para
+// nao reescrever os varios call-sites internos do pacote erp. Comportamento
+// identico: devolve o primeiro valor nao-vazio, ja trimado.
 func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
+	return stringsx.FirstNonEmpty(values...)
 }

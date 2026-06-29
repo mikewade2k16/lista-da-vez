@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import type { AvailablePermission, RoleSummary } from '~/types/admin-users'
+import type { AvailablePermission, RoleCreateInput, RoleSummary } from '~/types/admin-users'
+import AdminRoleCreateForm from '~/components/admin/users/AdminRoleCreateForm.vue'
+import AdminRolePermissionMatrix from '~/components/admin/users/AdminRolePermissionMatrix.vue'
 
 // Editor de papeis customizados (core.roles) de UMA account. Lista os papeis,
 // permite selecionar um para editar label/descricao + a matriz de permissoes
 // (checkbox por permissao agrupada por modulo), criar novos e deletar os
 // nao-bloqueados. Emite `changed` sempre que a lista de papeis muda, para o
-// painel-pai re-buscar. Apenas presentational + composable; nao toca em outros
-// arquivos. A fonte de verdade e sempre a resposta do backend (re-le apos salvar).
+// painel-pai re-buscar. A fonte de verdade e sempre a resposta do backend (re-le
+// apos salvar). O form de criacao (AdminRoleCreateForm) e a grade de permissoes
+// (AdminRolePermissionMatrix) foram fatiados para apresentacao; este componente
+// concentra o ESTADO (selecao, rascunho de edicao, persistencia).
 
 const props = defineProps<{
   accountId: string
@@ -32,11 +36,9 @@ const editLabel = ref('')
 const editDescription = ref('')
 const editPermissions = ref<Set<string>>(new Set())
 
-// Form de criacao de novo papel.
+// Form de criacao de novo papel (o rascunho vive no AdminRoleCreateForm; aqui so
+// controlamos a abertura). Fechar desmonta o form, que reseta no proximo open.
 const showCreate = ref(false)
-const newCode = ref('')
-const newLabel = ref('')
-const newDescription = ref('')
 
 // Permissoes agrupadas por moduleId, ordenadas, para a matriz. Cada grupo lista
 // suas permissoes; o checkbox reflete se a key esta em editPermissions.
@@ -71,15 +73,6 @@ const isCreating = computed(() =>
   Boolean(props.accountId ? r.savingMap.value[`${props.accountId}:role:create`] : false),
 )
 
-// Feedback de formulario: o que falta para criar (nunca botao morto e silencioso).
-const createMissing = computed(() => {
-  const missing: string[] = []
-  if (!newCode.value.trim()) missing.push('code (slug)')
-  if (!newLabel.value.trim()) missing.push('nome')
-  return missing
-})
-const canCreate = computed(() => createMissing.value.length === 0 && !isCreating.value)
-
 async function loadRoles() {
   if (!props.accountId) return
   loadingRoles.value = true
@@ -109,10 +102,6 @@ async function selectRole(roleId: string) {
   editPermissions.value = new Set(detail.permissions)
 }
 
-function isPermissionChecked(key: string): boolean {
-  return editPermissions.value.has(key)
-}
-
 function togglePermission(key: string, value: boolean) {
   const next = new Set(editPermissions.value)
   if (value) next.add(key)
@@ -135,17 +124,11 @@ async function saveDetail() {
   emit('changed')
 }
 
-async function createRole() {
-  if (!canCreate.value) return
-  const created = await r.createRole(props.accountId, {
-    code: newCode.value.trim(),
-    label: newLabel.value.trim(),
-    description: newDescription.value.trim(),
-  })
+// Recebe o payload validado do AdminRoleCreateForm e persiste. Fechar o form o
+// desmonta (reseta o rascunho), espelhando o reset manual de campos do fluxo antigo.
+async function createRole(input: RoleCreateInput) {
+  const created = await r.createRole(props.accountId, input)
   if (!created) return
-  newCode.value = ''
-  newLabel.value = ''
-  newDescription.value = ''
   showCreate.value = false
   await loadRoles()
   emit('changed')
@@ -186,55 +169,8 @@ onMounted(loadRoles)
       {{ r.errorMessage.value }}
     </p>
 
-    <!-- Form de criacao de papel -->
-    <form v-if="showCreate" class="role-matrix-editor__create" @submit.prevent="createRole">
-      <div class="role-matrix-editor__create-grid">
-        <label class="role-matrix-editor__field">
-          <span class="role-matrix-editor__label">
-            Code (slug)
-            <em>*</em>
-          </span>
-          <input
-            v-model="newCode"
-            class="role-matrix-editor__input"
-            type="text"
-            placeholder="ex.: gerente-loja"
-            autocomplete="off"
-          />
-        </label>
-        <label class="role-matrix-editor__field">
-          <span class="role-matrix-editor__label">
-            Nome
-            <em>*</em>
-          </span>
-          <input
-            v-model="newLabel"
-            class="role-matrix-editor__input"
-            type="text"
-            placeholder="ex.: Gerente da loja"
-            autocomplete="off"
-          />
-        </label>
-        <label class="role-matrix-editor__field role-matrix-editor__field--wide">
-          <span class="role-matrix-editor__label">Descricao (opcional)</span>
-          <input
-            v-model="newDescription"
-            class="role-matrix-editor__input"
-            type="text"
-            placeholder="Para que serve este papel"
-            autocomplete="off"
-          />
-        </label>
-      </div>
-      <div class="role-matrix-editor__create-actions">
-        <p v-if="createMissing.length" class="role-matrix-editor__missing">
-          Informe: {{ createMissing.join(', ') }}
-        </p>
-        <button class="role-matrix-editor__save-btn" type="submit" :disabled="!canCreate">
-          {{ isCreating ? 'Criando...' : 'Criar papel' }}
-        </button>
-      </div>
-    </form>
+    <!-- Form de criacao de papel (apresentacao isolada) -->
+    <AdminRoleCreateForm v-if="showCreate" :creating="isCreating" @submit="createRole" />
 
     <!-- Lista de papeis -->
     <p v-if="loadingRoles" class="role-matrix-editor__loading">Carregando papeis...</p>
@@ -303,32 +239,11 @@ onMounted(loadRoles)
               Papel de sistema: a edicao pode ser rejeitada pelo backend.
             </p>
 
-            <div v-if="!groupedPermissions.length" class="role-matrix-editor__empty">
-              Nenhuma permissao disponivel no catalogo deste cliente.
-            </div>
-
-            <div
-              v-for="group in groupedPermissions"
-              :key="group.moduleId"
-              class="role-matrix-editor__group"
-            >
-              <h5 class="role-matrix-editor__group-title">{{ group.moduleId }}</h5>
-              <div class="role-matrix-editor__perms">
-                <label v-for="perm in group.items" :key="perm.key" class="role-matrix-editor__perm">
-                  <input
-                    type="checkbox"
-                    :checked="isPermissionChecked(perm.key)"
-                    @change="
-                      togglePermission(perm.key, ($event.target as HTMLInputElement).checked)
-                    "
-                  />
-                  <span class="role-matrix-editor__perm-copy">
-                    <strong>{{ perm.label }}</strong>
-                    <span class="role-matrix-editor__perm-key">{{ perm.key }}</span>
-                  </span>
-                </label>
-              </div>
-            </div>
+            <AdminRolePermissionMatrix
+              :groups="groupedPermissions"
+              :checked-keys="editPermissions"
+              @toggle="togglePermission"
+            />
 
             <footer class="role-matrix-editor__detail-actions">
               <p v-if="!editLabel.trim()" class="role-matrix-editor__missing">
@@ -424,7 +339,6 @@ onMounted(loadRoles)
   font-size: 0.78rem;
 }
 
-.role-matrix-editor__create,
 .role-matrix-editor__detail {
   display: grid;
   gap: 0.75rem;
@@ -434,7 +348,6 @@ onMounted(loadRoles)
   background: rgb(var(--surface) / 0.7);
 }
 
-.role-matrix-editor__create-grid,
 .role-matrix-editor__detail-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
@@ -476,7 +389,6 @@ onMounted(loadRoles)
   opacity: 0.6;
 }
 
-.role-matrix-editor__create-actions,
 .role-matrix-editor__detail-actions {
   display: flex;
   align-items: center;
@@ -570,59 +482,6 @@ onMounted(loadRoles)
   margin: 0;
   font-size: 0.74rem;
   color: rgb(var(--muted));
-}
-
-.role-matrix-editor__group {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.role-matrix-editor__group-title {
-  margin: 0;
-  font-size: 0.76rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: rgb(var(--muted));
-}
-
-.role-matrix-editor__perms {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 0.45rem;
-}
-
-.role-matrix-editor__perm {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.45rem 0.55rem;
-  border-radius: var(--radius-xs);
-  border: 1px solid rgb(var(--border) / 0.7);
-  background: rgb(var(--surface-2) / 0.6);
-  cursor: pointer;
-}
-
-.role-matrix-editor__perm input {
-  margin-top: 0.15rem;
-}
-
-.role-matrix-editor__perm-copy {
-  display: grid;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.role-matrix-editor__perm-copy strong {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: rgb(var(--text));
-}
-
-.role-matrix-editor__perm-key {
-  font-size: 0.68rem;
-  color: rgb(var(--muted));
-  word-break: break-word;
 }
 
 @media (max-width: 720px) {

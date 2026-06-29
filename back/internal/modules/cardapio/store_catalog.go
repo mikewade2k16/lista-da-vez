@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // ============================================================================
@@ -97,27 +99,16 @@ func scanProduct(row rowScanner) (Product, error) {
 	if err != nil {
 		return Product{}, err
 	}
-	p.Gallery = decodeStringSlice(gallery)
-	p.Diet = decodeStringSlice(diet)
-	p.Allergens = decodeStringSlice(allergens)
-	p.Tags = decodeStringSlice(tags)
+	p.Gallery = stringsx.DecodeJSONStringSlice(gallery)
+	p.Diet = stringsx.DecodeJSONStringSlice(diet)
+	p.Allergens = stringsx.DecodeJSONStringSlice(allergens)
+	p.Tags = stringsx.DecodeJSONStringSlice(tags)
 	if len(pairing) > 0 {
 		p.Pairing = json.RawMessage(pairing)
 	}
 	p.Variations = []Variation{}
 	p.Addons = []Addon{}
 	return p, nil
-}
-
-func decodeStringSlice(raw []byte) []string {
-	out := []string{}
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &out)
-	}
-	if out == nil {
-		out = []string{}
-	}
-	return out
 }
 
 // ListProductsLean retorna a projecao enxuta de produtos de um restaurante.

@@ -153,16 +153,6 @@ func createServiceID(personID string, timestamp int64) string {
 	return personID + "-" + strings.TrimSpace(time.UnixMilli(timestamp).UTC().Format("20060102150405")) + "-" + hex.EncodeToString(buffer)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		trimmed := strings.TrimSpace(value)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
-}
-
 func maxFloat(value float64, minimum float64) float64 {
 	if value < minimum {
 		return minimum

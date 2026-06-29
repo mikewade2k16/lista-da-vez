@@ -2,6 +2,8 @@ package operations
 
 import (
 	"strings"
+
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 // buildSnapshotView e PURO/testavel: recebe o map de GoalStats por consultor
@@ -331,7 +333,7 @@ func normalizeHistoryEntry(entry ServiceHistoryEntry) ServiceHistoryEntry {
 		entry.ProductClosed = entry.ProductsClosed[0].Name
 	}
 	if entry.ProductDetails == "" {
-		entry.ProductDetails = firstNonEmpty(entry.ProductClosed, entry.ProductSeen)
+		entry.ProductDetails = stringsx.FirstNonEmpty(entry.ProductClosed, entry.ProductSeen)
 	}
 	return entry
 }

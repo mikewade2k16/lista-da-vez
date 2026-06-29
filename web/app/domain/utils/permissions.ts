@@ -886,9 +886,3 @@ export function canAccessMultiStore(role, permissionKeys = [], permissionsResolv
     normalized === 'manager'
   )
 }
-
-export function filterPerolaERPWorkspaces(workspaces = []) {
-  return Array.isArray(workspaces)
-    ? workspaces.map((workspace) => String(workspace || '').trim()).filter(Boolean)
-    : []
-}

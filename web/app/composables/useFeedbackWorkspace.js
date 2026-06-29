@@ -1,16 +1,7 @@
-import {
-  computed,
-  inject,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  provide,
-  reactive,
-  ref,
-  watch,
-} from 'vue'
+import { computed, inject, nextTick, onMounted, provide, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
+import { useFeedbackChat } from '~/composables/useFeedbackChat'
 import {
   feedbackDetailStatusOptions,
   feedbackKindLabel,
@@ -23,7 +14,6 @@ import { hasPermission, normalizeAppRole } from '~/domain/utils/permissions'
 import { useAuthStore } from '~/stores/auth'
 import { useFeedbackStore } from '~/stores/feedback'
 import { useUiStore } from '~/stores/ui'
-import { compressFeedbackImage } from '~/utils/feedback-image'
 
 export const feedbackWorkspaceContextKey = Symbol('feedbackWorkspace')
 
@@ -46,20 +36,13 @@ export function useFeedbackWorkspace() {
   const { storeContext, user } = storeToRefs(auth)
 
   const selectedFeedbackId = ref('')
-  const replyMessage = ref('')
   const editingStatus = ref('')
   const selectedKindFilter = ref('')
   const selectedStatusFilter = ref('')
   const searchValue = ref('')
   const saving = ref(false)
-  const messagesViewport = ref(null)
-  const replyTextarea = ref(null)
-  const replyImage = ref(null)
-  const replyImagePreviewUrl = ref('')
   const syncingStatusFromFeedback = ref(false)
   const feedbackSyncCursor = ref('')
-  let feedbackPollingTimer = null
-  let messagesPollingTimer = null
 
   const canEditFeedback = computed(() => {
     if (auth.permissionsResolved) {
@@ -116,41 +99,37 @@ export function useFeedbackWorkspace() {
     return feedbackStore.messagesByFeedbackId[selectedFeedback.value.id] || []
   })
 
-  const lastSelectedMessageCreatedAt = computed(() => {
-    const timestamps = selectedMessages.value
-      .map((message) => new Date(message.created_at).getTime())
-      .filter((value) => Number.isFinite(value))
-
-    return timestamps.length ? new Date(Math.max(...timestamps)).toISOString() : ''
+  // Nucleo de chat compartilhado com UserFeedbackWorkspace. No admin, nao-lido =
+  // mensagem do DONO do chamado (user_id). loadFeedbackUpdates eh hoisted (func
+  // declaration) e recarrega a lista filtrada.
+  const chat = useFeedbackChat({
+    selectedFeedback,
+    selectedMessages,
+    isReadFromOwnerPerspective: (authorUserId, feedback) =>
+      authorUserId === String(feedback.user_id || '').trim(),
+    loadFeedbackUpdates,
+    messagesLoadErrorMessage: 'Erro ao carregar mensagens',
   })
+  const {
+    replyMessage,
+    replyImage,
+    replyImagePreviewUrl,
+    replyTextarea,
+    messagesViewport,
+    isDocumentVisible,
+    getFeedbackPreview,
+    getUnreadCount,
+    loadSelectedMessages,
+    scrollMessagesToBottom,
+    clearReplyImage,
+    syncReplyTextareaHeight,
+    handleReplyImageChange,
+    startPolling,
+  } = chat
 
   const isSelectedFeedbackClosed = computed(
     () => String(editingStatus.value || selectedFeedback.value?.status || '').trim() === 'closed',
   )
-
-  function isDocumentVisible() {
-    return !import.meta.client || document.visibilityState === 'visible'
-  }
-
-  function getFeedbackMessages(feedbackId) {
-    return feedbackStore.messagesByFeedbackId[String(feedbackId || '').trim()] || []
-  }
-
-  function getFeedbackPreview(feedback) {
-    // O chamado aberto tem mensagens reais carregadas (loadSelectedMessages); os
-    // demais usam o preview que o list trouxe (last_message_body).
-    const localLatest = getFeedbackMessages(feedback.id).at(-1)
-    if (localLatest) {
-      return localLatest.body || (localLatest.image_url ? 'Imagem anexada' : feedback.body || '')
-    }
-    return feedback.last_message_body || feedback.body || ''
-  }
-
-  function getUnreadCount(feedback) {
-    // unread_count vem do backend (GET /v1/feedback), ja pela perspectiva do
-    // viewer. Zera localmente ao marcar como lido (applyLocalReadState).
-    return Number(feedback?.unread_count || 0)
-  }
 
   function syncEditingStatus(status) {
     syncingStatusFromFeedback.value = true
@@ -160,41 +139,14 @@ export function useFeedbackWorkspace() {
     })
   }
 
+  // O admin usa function-ref no template (:ref="ctx.setMessagesViewport"); estes
+  // setters apenas escrevem nos refs do nucleo de chat, mantendo a API publica.
   function setMessagesViewport(element) {
     messagesViewport.value = element
   }
 
   function setReplyTextarea(element) {
     replyTextarea.value = element
-  }
-
-  function setReplyImage(file) {
-    if (import.meta.client && replyImagePreviewUrl.value) {
-      URL.revokeObjectURL(replyImagePreviewUrl.value)
-    }
-
-    replyImage.value = file
-    replyImagePreviewUrl.value = file && import.meta.client ? URL.createObjectURL(file) : ''
-  }
-
-  function clearReplyImage() {
-    setReplyImage(null)
-  }
-
-  function syncReplyTextareaHeight(reset = false) {
-    const textarea = replyTextarea.value
-    if (!textarea) return
-
-    if (reset) {
-      textarea.style.height = ''
-      textarea.style.overflowY = 'hidden'
-      return
-    }
-
-    textarea.style.height = '0px'
-    const nextHeight = Math.min(textarea.scrollHeight, 176)
-    textarea.style.height = `${Math.max(nextHeight, 44)}px`
-    textarea.style.overflowY = textarea.scrollHeight > 176 ? 'auto' : 'hidden'
   }
 
   function handleReplyKeydown(event) {
@@ -208,21 +160,6 @@ export function useFeedbackWorkspace() {
     if (saving.value || !canEditFeedback.value || isSelectedFeedbackClosed.value) return
     if (!replyMessage.value.trim() && !replyImage.value) return
     void sendReply()
-  }
-
-  async function handleReplyImageChange(event) {
-    const target = event.target
-    const file = target.files?.[0] || null
-    if (!file) return
-
-    try {
-      const compressedImage = await compressFeedbackImage(file)
-      setReplyImage(compressedImage)
-    } catch (err) {
-      ui.error(err instanceof Error ? err.message : 'Nao foi possivel preparar a imagem.')
-    } finally {
-      target.value = ''
-    }
   }
 
   function syncRouteWithFeedbackId(feedbackId) {
@@ -273,52 +210,6 @@ export function useFeedbackWorkspace() {
 
   async function loadFeedbackUpdates() {
     await loadFeedbacks()
-  }
-
-  function hasUnreadMessages(feedback) {
-    if (!feedback?.id) return false
-    const feedbackOwnerId = String(feedback.user_id || '').trim()
-    const readAt = new Date(feedback.user_last_read_at || feedback.created_at).getTime()
-
-    return selectedMessages.value.some((message) => {
-      const authorUserId = String(message.author_user_id || '').trim()
-      const createdAt = new Date(message.created_at).getTime()
-      return authorUserId === feedbackOwnerId && createdAt > readAt
-    })
-  }
-
-  async function markSelectedFeedbackAsRead() {
-    if (
-      !selectedFeedback.value?.id ||
-      !isDocumentVisible() ||
-      !hasUnreadMessages(selectedFeedback.value)
-    ) {
-      return
-    }
-
-    const result = await feedbackStore.markFeedbackAsRead(selectedFeedback.value.id)
-    if (!result.ok) ui.error(result.message || 'Erro ao marcar chamado como lido')
-  }
-
-  async function loadSelectedMessages(options = {}) {
-    if (!selectedFeedback.value?.id || !isDocumentVisible()) return
-    const result = await feedbackStore.fetchMessages(selectedFeedback.value.id, {
-      after: lastSelectedMessageCreatedAt.value,
-    })
-
-    if (!result.ok) {
-      ui.error(result.message || 'Erro ao carregar mensagens')
-      return
-    }
-    if (options.markRead) await markSelectedFeedbackAsRead()
-    await scrollMessagesToBottom()
-  }
-
-  async function scrollMessagesToBottom() {
-    await nextTick()
-    if (messagesViewport.value) {
-      messagesViewport.value.scrollTop = messagesViewport.value.scrollHeight
-    }
   }
 
   function selectFeedback(feedbackId) {
@@ -395,32 +286,6 @@ export function useFeedbackWorkspace() {
     }
   }
 
-  function startPolling() {
-    stopPolling()
-    feedbackPollingTimer = window.setInterval(loadFeedbackUpdates, 30000)
-    // 15s: ritmo de chat sem martelar a API. As mensagens novas tambem chegam
-    // ao abrir/trocar de chamado e ao refocar a aba (handleVisibilityChange).
-    messagesPollingTimer = window.setInterval(loadSelectedMessages, 15000)
-  }
-
-  function stopPolling() {
-    if (feedbackPollingTimer) {
-      window.clearInterval(feedbackPollingTimer)
-      feedbackPollingTimer = null
-    }
-    if (messagesPollingTimer) {
-      window.clearInterval(messagesPollingTimer)
-      messagesPollingTimer = null
-    }
-  }
-
-  function handleVisibilityChange() {
-    if (isDocumentVisible()) {
-      void loadFeedbackUpdates()
-      void loadSelectedMessages()
-    }
-  }
-
   watch(filteredFeedbacks, syncSelectionFromRoute, { immediate: true })
   watch(selectedFeedbackId, (feedbackId) => {
     syncRouteWithFeedbackId(feedbackId)
@@ -456,17 +321,12 @@ export function useFeedbackWorkspace() {
   })
 
   onMounted(async () => {
+    // O nucleo de chat (useFeedbackChat) cuida do tracking de visibilidade e da
+    // limpeza (stopPolling/clearReplyImage) no onBeforeUnmount.
     await loadFeedbacks()
     await loadSelectedMessages({ markRead: true })
     syncReplyTextareaHeight(true)
     startPolling()
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-  })
-
-  onBeforeUnmount(() => {
-    stopPolling()
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-    clearReplyImage()
   })
 
   return reactive({

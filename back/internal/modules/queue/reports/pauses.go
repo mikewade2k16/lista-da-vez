@@ -9,6 +9,7 @@ import (
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/stringsx"
 )
 
 const (
@@ -66,7 +67,7 @@ func (service *Service) resolvePauseScope(
 		return store.ID, []string{store.ID}, store.TenantID, nil
 	}
 
-	resolvedTenantID := firstNonEmpty(normalized.TenantID, principal.TenantID)
+	resolvedTenantID := stringsx.FirstNonEmpty(normalized.TenantID, principal.TenantID)
 	if resolvedTenantID == "" {
 		return "", nil, "", ErrStoreRequired
 	}

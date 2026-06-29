@@ -1,7 +1,6 @@
 import type { LeadCreateInput, LeadFieldKey, LeadItem, LeadStatus } from '~/types/leads'
+import { useInlineEditManager } from '~/composables/useInlineEditManager'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
-
-const PATCH_DELAY_MS = 380
 
 const FIELD_TO_PATCH: Record<LeadFieldKey, string> = {
   nome: 'nome',
@@ -56,21 +55,11 @@ export function useLeadsManager() {
   const creating = ref(false)
   const deletingId = ref<string | null>(null)
   const errorMessage = ref('')
-  const savingMap = ref<Record<string, boolean>>({})
   const canResetFilters = computed(() => Boolean(filters.q || filters.status || filters.sourceId))
 
-  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
-
-  function setSaving(key: string, value: boolean) {
-    const next = { ...savingMap.value }
-    if (value) next[key] = true
-    else delete next[key]
-    savingMap.value = next
-  }
-
-  function rowIsSaving(id: string) {
-    return Object.keys(savingMap.value).some((k) => k.startsWith(`${id}:`))
-  }
+  // Mecanica de edicao inline (savingMap/setSaving/rowIsSaving + debounce + cleanup)
+  // compartilhada com os demais managers de grade. Comportamento identico ao anterior.
+  const { savingMap, setSaving, rowIsSaving, schedulePatch } = useInlineEditManager()
 
   function applyPatch(id: string, raw: Record<string, unknown>) {
     const idx = leads.value.findIndex((l) => l.id === id)
@@ -129,22 +118,9 @@ export function useLeadsManager() {
     if (!backendField) return
 
     const patch = { [backendField]: value }
-    const timerKey = `${id}:${field}`
-
-    if (pendingTimers.has(timerKey)) clearTimeout(pendingTimers.get(timerKey)!)
-
-    if (opts?.immediate) {
-      void persistPatch(id, field, patch)
-      return
-    }
-
-    pendingTimers.set(
-      timerKey,
-      setTimeout(() => {
-        pendingTimers.delete(timerKey)
-        void persistPatch(id, field, patch)
-      }, PATCH_DELAY_MS),
-    )
+    schedulePatch(`${id}:${field}`, () => void persistPatch(id, field, patch), {
+      immediate: opts?.immediate,
+    })
   }
 
   async function createLead(input: LeadCreateInput): Promise<string | null> {
@@ -190,11 +166,6 @@ export function useLeadsManager() {
     filters.status = ''
     filters.sourceId = ''
   }
-
-  onBeforeUnmount(() => {
-    for (const timer of pendingTimers.values()) clearTimeout(timer)
-    pendingTimers.clear()
-  })
 
   return {
     leads,

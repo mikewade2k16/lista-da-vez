@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type {
-  AccountMembershipItem,
-  AdminUserItem,
-  AvailablePermission,
-  PermissionEffect,
-  UserPermissionOverride,
-} from '~/types/admin-users'
+import type { AccountMembershipItem, AdminUserItem } from '~/types/admin-users'
+import OmniCollapse from '~/components/omni/OmniCollapse.vue'
+import AppSearchInput from '~/components/ui/AppSearchInput.vue'
+import AppSegmentedFilter from '~/components/ui/AppSegmentedFilter.vue'
+import AdminModuleGroupActions from '~/components/admin/users/AdminModuleGroupActions.vue'
+import AdminTriStateControl from '~/components/admin/users/AdminTriStateControl.vue'
+import { useModuleOverridesEditor } from '~/composables/useModuleOverridesEditor'
 
 // Painel "Modulos". Espelha a UX de overrides do UsersAccessPermissionPanel legado,
 // mas batendo no core (useAdminUsersManager.getOverrides/setOverrides). Cada
@@ -14,21 +14,21 @@ import type {
 // Escopo = cliente OU conta-agencia (organizacao): assim platform_admin/agency_owner
 // ajustam modulos tambem de usuarios "sem cliente". A conta-agencia tem todos os
 // modulos habilitados (migration 0158), entao o catalogo `available` vem completo.
+//
+// O ESTADO de edicao (rascunho/snapshot) e o estado de VIEW (busca/filtros/lote)
+// ficam no composable useModuleOverridesEditor; este componente so carrega/salva
+// pela API e renderiza. Busca/filtro/lote sao client-side e NAO mudam o contrato de
+// salvar (PUT .../overrides faz replace do tri-estado).
 const props = defineProps<{ user: AdminUserItem }>()
 const emit = defineEmits<{ updated: [] }>()
 
 const m = useAdminUsersManager()
-
-type TriState = 'inherit' | PermissionEffect
+const editor = useModuleOverridesEditor()
 
 const memberships = ref<AccountMembershipItem[]>([])
 const loadingMemberships = ref(false)
 const loadingOverrides = ref(false)
-
 const selectedAccountId = ref('')
-const available = ref<AvailablePermission[]>([])
-// Estado tri por permissionKey. 'inherit' = sem override explicito.
-const states = reactive<Record<string, TriState>>({})
 
 // Escopos editaveis: clientes E conta-agencia (organizacao). Overrides de modulo
 // sao por account_id; a conta-agencia (is_agency) tambem recebe overrides, o que
@@ -42,17 +42,6 @@ const hasScopes = computed(() => scopeMemberships.value.length > 0)
 function scopeLabel(mb: AccountMembershipItem): string {
   return mb.isAgency ? `${mb.accountName} (Organizacao)` : mb.accountName
 }
-
-// Agrupa as permissoes disponiveis por moduleId, preservando a ordem de chegada.
-const groups = computed(() => {
-  const map = new Map<string, AvailablePermission[]>()
-  for (const perm of available.value) {
-    const list = map.get(perm.moduleId) ?? []
-    list.push(perm)
-    map.set(perm.moduleId, list)
-  }
-  return [...map.entries()].map(([moduleId, permissions]) => ({ moduleId, permissions }))
-})
 
 const savingOverrides = computed(() =>
   Boolean(m.savingMap.value[`${props.user.id}:overrides:${selectedAccountId.value}`]),
@@ -68,46 +57,33 @@ async function loadMemberships() {
 
 async function loadOverrides() {
   if (!selectedAccountId.value) {
-    available.value = []
+    editor.reset()
     return
   }
   loadingOverrides.value = true
   const data = await m.getOverrides(props.user.id, selectedAccountId.value)
   loadingOverrides.value = false
   if (!data) {
-    available.value = []
+    editor.reset()
     return
   }
-  available.value = data.available
-  // Inicializa o tri-estado a partir dos overrides ativos; o resto herda.
-  for (const key of Object.keys(states)) delete states[key]
-  for (const perm of data.available) states[perm.key] = 'inherit'
-  for (const ov of data.overrides) states[ov.permissionKey] = ov.effect
+  // Re-hidrata rascunho + snapshot a partir da resposta autoritativa do backend.
+  editor.hydrate(data.available, data.overrides)
 }
 
 watch(() => props.user.id, loadMemberships, { immediate: true })
-watch(selectedAccountId, loadOverrides)
-
-function setState(key: string, value: TriState) {
-  states[key] = value
-}
-
-// Quantidade de overrides explicitos (allow/deny), para o resumo no botao.
-const overrideCount = computed(() => Object.values(states).filter((s) => s !== 'inherit').length)
+// Trocar de escopo zera a view (busca/filtros) para nao confundir entre clientes.
+watch(selectedAccountId, () => {
+  editor.clearView()
+  loadOverrides()
+})
 
 async function save() {
   if (!selectedAccountId.value) return
-  const payload: UserPermissionOverride[] = []
-  for (const [permissionKey, state] of Object.entries(states)) {
-    if (state === 'inherit') continue
-    payload.push({ permissionKey, effect: state })
-  }
-  const result = await m.setOverrides(props.user.id, selectedAccountId.value, payload)
+  const result = await m.setOverrides(props.user.id, selectedAccountId.value, editor.buildPayload())
   if (result) {
-    available.value = result.available
-    for (const key of Object.keys(states)) delete states[key]
-    for (const perm of result.available) states[perm.key] = 'inherit'
-    for (const ov of result.overrides) states[ov.permissionKey] = ov.effect
+    // Fonte de verdade = retorno do backend; re-hidrata rascunho + snapshot.
+    editor.hydrate(result.available, result.overrides)
     emit('updated')
   }
 }
@@ -155,62 +131,108 @@ async function save() {
 
       <p v-if="loadingOverrides" class="admin-user-modules__muted">Carregando permissoes...</p>
 
-      <p v-else-if="groups.length === 0" class="admin-user-modules__muted">
+      <p v-else-if="editor.groups.value.length === 0" class="admin-user-modules__muted">
         Nenhum modulo habilitado neste cliente para ajustar.
       </p>
 
-      <div v-else class="admin-user-modules__groups">
-        <div v-for="group in groups" :key="group.moduleId" class="admin-user-modules__group">
-          <h4 class="admin-user-modules__group-title">{{ group.moduleId }}</h4>
-          <ul class="admin-user-modules__perms">
-            <li v-for="perm in group.permissions" :key="perm.key" class="admin-user-modules__perm">
-              <div class="admin-user-modules__perm-copy">
-                <span class="admin-user-modules__perm-label">{{ perm.label }}</span>
-                <span class="admin-user-modules__perm-key">{{ perm.key }}</span>
-              </div>
-              <div class="admin-user-modules__tri" role="group" :aria-label="perm.label">
-                <button
-                  type="button"
-                  class="admin-user-modules__tri-btn"
-                  :class="{ 'is-active': states[perm.key] === 'inherit' }"
-                  @click="setState(perm.key, 'inherit')"
+      <template v-else>
+        <div class="admin-user-modules__toolbar">
+          <AppSearchInput
+            :model-value="editor.searchTerm.value"
+            placeholder="Buscar por nome ou chave (ex.: tasks.boards.manage)"
+            aria-label="Buscar permissoes"
+            @update:model-value="editor.searchTerm.value = $event"
+          />
+          <div class="admin-user-modules__filters">
+            <AppSegmentedFilter
+              :model-value="editor.effectFilter.value"
+              :options="editor.effectFilterOptions.value"
+              aria-label="Filtrar por efeito"
+              @update:model-value="editor.setEffectFilter($event)"
+            />
+            <label class="admin-user-modules__module-filter">
+              <span class="admin-user-modules__label">Modulo</span>
+              <select v-model="editor.moduleFilter.value" class="admin-user-modules__select">
+                <option
+                  v-for="opt in editor.moduleFilterOptions.value"
+                  :key="opt.value"
+                  :value="opt.value"
                 >
-                  Herdar
-                </button>
-                <button
-                  type="button"
-                  class="admin-user-modules__tri-btn admin-user-modules__tri-btn--allow"
-                  :class="{ 'is-active': states[perm.key] === 'allow' }"
-                  @click="setState(perm.key, 'allow')"
-                >
-                  Permitir
-                </button>
-                <button
-                  type="button"
-                  class="admin-user-modules__tri-btn admin-user-modules__tri-btn--deny"
-                  :class="{ 'is-active': states[perm.key] === 'deny' }"
-                  @click="setState(perm.key, 'deny')"
-                >
-                  Negar
-                </button>
-              </div>
-            </li>
-          </ul>
+                  {{ opt.label }}
+                </option>
+              </select>
+            </label>
+          </div>
         </div>
-      </div>
 
-      <div class="admin-user-modules__foot">
-        <span class="admin-user-modules__count">
-          {{ overrideCount }} override(s) explicito(s); o restante herda dos papeis.
-        </span>
-        <UButton
-          label="Salvar modulos"
-          color="primary"
-          :loading="savingOverrides"
-          :disabled="loadingOverrides || groups.length === 0"
-          @click="save"
-        />
-      </div>
+        <p v-if="editor.visibleGroups.value.length === 0" class="admin-user-modules__muted">
+          Nenhuma permissao corresponde a busca/filtro.
+          <button type="button" class="admin-user-modules__link" @click="editor.clearView">
+            Limpar
+          </button>
+        </p>
+
+        <div v-else class="admin-user-modules__groups">
+          <OmniCollapse
+            v-for="group in editor.visibleGroups.value"
+            :key="group.moduleId"
+            :title="group.moduleId"
+            :summary="editor.groupSummary(group.permissions)"
+            :default-open="editor.hasActiveView.value"
+          >
+            <AdminModuleGroupActions
+              :visible-count="group.permissions.length"
+              :dirty="editor.isModuleDirty(group.moduleId)"
+              :disabled="loadingOverrides || savingOverrides"
+              @apply="editor.applyBulkToModule(group.moduleId, $event)"
+              @restore="editor.restoreModule(group.moduleId)"
+            />
+
+            <ul class="admin-user-modules__perms">
+              <li
+                v-for="perm in group.permissions"
+                :key="perm.key"
+                class="admin-user-modules__perm"
+                :class="{ 'admin-user-modules__perm--dirty': editor.isRowDirty(perm.key) }"
+              >
+                <div class="admin-user-modules__perm-copy">
+                  <span class="admin-user-modules__perm-label">{{ perm.label }}</span>
+                  <span class="admin-user-modules__perm-key">{{ perm.key }}</span>
+                </div>
+                <AdminTriStateControl
+                  :model-value="editor.states[perm.key]"
+                  :aria-label="perm.label"
+                  @update="editor.setState(perm.key, $event)"
+                />
+              </li>
+            </ul>
+          </OmniCollapse>
+        </div>
+
+        <div class="admin-user-modules__foot">
+          <span class="admin-user-modules__count">
+            {{ editor.overrideCount.value }} override(s) explicito(s); o restante herda dos papeis.
+            <span v-if="editor.isDirty.value" class="admin-user-modules__pending">pendente</span>
+          </span>
+          <div class="admin-user-modules__foot-actions">
+            <button
+              type="button"
+              class="admin-user-modules__link"
+              :disabled="!editor.isDirty.value || savingOverrides"
+              @click="editor.restoreSaved"
+            >
+              Restaurar tudo
+            </button>
+            <UButton
+              label="Salvar modulos"
+              color="primary"
+              :loading="savingOverrides"
+              :disabled="loadingOverrides || !editor.isDirty.value"
+              @click="save"
+            />
+          </div>
+        </div>
+      </template>
     </template>
   </section>
 </template>
@@ -264,28 +286,62 @@ async function save() {
   color: rgb(var(--text));
 }
 
+.admin-user-modules__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.admin-user-modules__filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.admin-user-modules__module-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 12rem;
+}
+
+.admin-user-modules__link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: rgb(var(--primary-600));
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.admin-user-modules__link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-user-modules__foot-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.admin-user-modules__pending {
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary-600));
+}
+
 .admin-user-modules__groups {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-}
-
-.admin-user-modules__group {
-  display: flex;
-  flex-direction: column;
   gap: 0.5rem;
-  padding: 0.8rem;
-  border-radius: var(--radius-md);
-  border: 1px solid rgb(var(--border));
-  background: rgb(var(--surface));
-}
-
-.admin-user-modules__group-title {
-  margin: 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: rgb(var(--text));
-  text-transform: capitalize;
 }
 
 .admin-user-modules__perms {
@@ -304,7 +360,13 @@ async function save() {
   gap: 0.75rem;
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-md);
+  border-left: 2px solid transparent;
   background: rgb(var(--surface-2));
+}
+
+/* Realca a permissao com edicao pendente (difere do ultimo estado salvo). */
+.admin-user-modules__perm--dirty {
+  border-left-color: rgb(var(--primary));
 }
 
 .admin-user-modules__perm-copy {
@@ -323,40 +385,6 @@ async function save() {
 .admin-user-modules__perm-key {
   font-size: 0.7rem;
   color: rgb(var(--muted));
-}
-
-.admin-user-modules__tri {
-  display: inline-flex;
-  flex-shrink: 0;
-  border-radius: var(--radius-md);
-  border: 1px solid rgb(var(--border));
-  overflow: hidden;
-}
-
-.admin-user-modules__tri-btn {
-  padding: 0.3rem 0.6rem;
-  font-size: 0.74rem;
-  border: none;
-  background: rgb(var(--surface));
-  color: rgb(var(--muted));
-  cursor: pointer;
-}
-
-.admin-user-modules__tri-btn + .admin-user-modules__tri-btn {
-  border-left: 1px solid rgb(var(--border));
-}
-
-.admin-user-modules__tri-btn.is-active {
-  background: rgb(var(--primary));
-  color: rgb(var(--surface));
-}
-
-.admin-user-modules__tri-btn--allow.is-active {
-  background: rgb(var(--success));
-}
-
-.admin-user-modules__tri-btn--deny.is-active {
-  background: rgb(var(--danger));
 }
 
 .admin-user-modules__foot {

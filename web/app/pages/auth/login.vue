@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AdminAuthShell from '~/components/layout/AdminAuthShell.vue'
 import { useAuthStore } from '~/stores/auth'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 
 definePageMeta({
   layout: 'auth',
@@ -13,6 +14,7 @@ useHead({
 
 const route = useRoute()
 const auth = useAuthStore()
+const coreAccount = useCoreAccountStore()
 
 const form = reactive({
   email: '',
@@ -67,6 +69,20 @@ async function submitLogin() {
     if (auth.mustChangePassword) {
       await navigateTo('/perfil', { replace: true })
       return
+    }
+
+    // Etapa 2 (authn != authz): se o login veio SEM papel-coarse (usuario so-agencia
+    // ou so-papel-custom), a home nao pode sair do gating coarse legado (cairia em
+    // 'operacao' vazio). Carrega o contexto de contas custom (v2) ANTES de decidir o
+    // destino, para auth.homePath ja refletir os workspaces que a conta ativa concede.
+    // fetchAccounts e idempotente/deduped; o auth.global re-resolve no destino de toda
+    // forma (este await so evita o flash de roteamento para o caso novo).
+    if (!auth.hasCoarseRole) {
+      try {
+        await coreAccount.fetchAccounts()
+      } catch {
+        // Falha transitoria nao deve travar o login; o auth.global re-resolve no destino.
+      }
     }
 
     const redirectTarget = String(route.query.redirect || '').trim()

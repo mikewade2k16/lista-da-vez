@@ -112,6 +112,9 @@ type LinkedAccessSyncInput struct {
 
 type Repository interface {
 	StoreExists(ctx context.Context, storeID string) (bool, error)
+	// CanAccessTenant recheca no banco a membership real do principal naquele
+	// tenant (account) — defesa em profundidade, sem confiar no principal.TenantID.
+	CanAccessTenant(ctx context.Context, principal auth.Principal, tenantID string) (bool, error)
 	ResolveStoreAccessContext(ctx context.Context, storeID string) (StoreAccessContext, error)
 	ListByStore(ctx context.Context, storeID string) ([]Consultant, error)
 	ListOrphansByTenant(ctx context.Context, tenantID string) ([]Consultant, error)

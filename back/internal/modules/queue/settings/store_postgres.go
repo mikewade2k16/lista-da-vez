@@ -58,10 +58,11 @@ func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, princ
 		return false, nil
 	}
 
-	if principalTenantID := strings.TrimSpace(principal.TenantID); principalTenantID != "" {
-		return principalTenantID == normalizedTenantID, nil
-	}
-
+	// Sem atalho por principal.TenantID: o acesso e SEMPRE rechecado contra a
+	// membership real no banco (defesa em profundidade). Confiar no TenantID do
+	// principal sem rechecar concederia acesso a quem tivesse o escopo setado sem
+	// membership de fato (over-grant). O service ja negou requestedTenantID != escopo
+	// antes de chegar aqui; este metodo confirma a membership.
 	var (
 		query string
 		args  []any

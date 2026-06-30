@@ -75,6 +75,56 @@ func TestCoreOnlyResolvedUserLogsIn(t *testing.T) {
 	}
 }
 
+func TestEmptyScopeUserLogsIn(t *testing.T) {
+	// Authn != authz: usuario ATIVO sem papel-coarse resolvido (so-agencia ou
+	// so-papel-custom) NAO pode levar 403 no login. Espelha o platform_admin:
+	// autentica com escopo vazio; a autorizacao real vem depois, por account.
+	user := User{
+		ID:           "user-no-coarse-role",
+		DisplayName:  "Agency Only",
+		Email:        "agency-only@example.test",
+		PasswordHash: "hash:secret",
+		Role:         "",
+		TenantID:     "",
+		StoreIDs:     []string{},
+		Active:       true,
+		CreatedAt:    time.Now(),
+	}
+
+	service := NewService(
+		&fakeUserRepository{findByEmailUser: user},
+		fakePasswordHasher{},
+		fakeTokenManager{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	result, err := service.Login(context.Background(), LoginInput{
+		Email:    "agency-only@example.test",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("Login returned error for empty-scope active user: %v", err)
+	}
+	if result.User.Role != "" {
+		t.Fatalf("role = %q, want empty", result.User.Role)
+	}
+	if result.User.TenantID != "" || len(result.User.StoreIDs) != 0 {
+		t.Fatalf("empty scope = tenant %q stores %v, want empty", result.User.TenantID, result.User.StoreIDs)
+	}
+}
+
+func TestHasEmptyScope(t *testing.T) {
+	if !HasEmptyScope(User{Role: ""}) {
+		t.Fatal("expected empty Role to be empty scope")
+	}
+	if HasEmptyScope(User{Role: RoleDirector, TenantID: "t1"}) {
+		t.Fatal("expected resolved role to NOT be empty scope")
+	}
+}
+
 func TestPlatformAdminResolvedFromCoreLogsIn(t *testing.T) {
 	user := User{
 		ID:           "platform-user",

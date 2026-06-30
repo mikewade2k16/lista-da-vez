@@ -1377,6 +1377,69 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
   },
 
   {
+    id: "agency-login-2step",
+    code: "AL",
+    title: "Login authn≠authz (2 etapas) + gating de workspace por papel custom + UX do modal de usuário",
+    goal: "Destravar o login de usuário só-agência/só-papel-custom: a autenticação não barra mais por 'sem papel-coarse' (authn≠authz, igual platform_admin); a autoridade do que ele vê vem da RBAC custom por conta (v2). Front: menu/home passam a usar permissões EFETIVAS (login v1 + custom v2) e revelam workspaces de módulo (ex.: Tasks) por permissão. UX: modal Editar usuário com colapsáveis, busca, filtros e ações em lote por módulo. Origem: bug reportado 2026-06-30 (usuário vinculado só à org Crow Visuals levava 403 user_no_role no login após o painel remover, via replace, o papel-base de fila criado pelo enroll de org).",
+    status: "in_progress",
+    startedAt: "2026-06-30",
+    estimateWeeks: "1-2 dias",
+    group: "multi-tenant",
+    tasks: [
+      { id: "al-back-2step", label: "Back (auth): login não chama ValidateUserScope com escopo-coarse vazio — usuário ativo autentica igual platform_admin; ValidateUserScope segue rígido só p/ papel STORE-scoped; ErrInvalidRoleScope no login vira user_store_scope (não 'sem papel'); /me/context tolera TenantID vazio (stores=[] sem 403). NÃO deriva TenantID por org (evita over-grant pelo curto-circuito legado de CanAccessTenant). Enforcement por requisição (account_checker org-aware) intacto.", done: true, note: "2026-06-30 (agente Opus + revisão do supervisor): roles.go HasEmptyScope; store_postgres.go buildUser pula validação no escopo vazio; http.go user_store_scope; context_http.go guard local; core_role_resolver.go comentado. go build/vet/test verdes. Rebuild da api FEITO (healthy). Auto-cura usuários já quebrados no próximo login (sem migration)." },
+      { id: "al-front-gating", label: "Front (gating v1↔v2): auth/workspace stores usam permissões EFETIVAS = login v1 + custom da conta ativa (v2 /v2/me/context); getAllowedWorkspaces revela workspace de módulo sem viewPermission (tasks) por prefixo de permissão; login.vue carrega a Etapa 2 (fetchAccounts) antes da home quando o login vem sem papel-coarse. ADITIVO (só amplia; o back gateia de fato).", done: true, note: "2026-06-30 VALIDADO NO BROWSER: usuário só-agência (iasmin) loga e cai no Tasks (não em /operacao). auth.ts effectivePermissionKeys/Resolved + hasCoarseRole; workspace.ts usa efetivas; permissions.ts MODULE_WORKSPACE_PERMISSION_PREFIXES{tasks}; login.vue await fetchAccounts p/ escopo vazio. CAUSA-RAIZ do login era o gate do Parse do token (IsValidRole rejeitava Role vazio) — corrigido em al-2round." },
+      { id: "al-modal-ux", label: "Front (UX do modal Editar usuário): drawer ~960px; colapsáveis (OmniCollapse) em Módulos/Páginas/Papéis; busca por label/key; filtros por efeito (+módulo) com contagem; ações em lote POR MÓDULO dentro do collapse (Permitir/Negar/Herdar/Restaurar todos). Componentes extraídos (AppSearchInput, AppSegmentedFilter, AdminTriStateControl, AdminModuleGroupActions, useModuleOverridesEditor, usePageOverridesView). Todos os arquivos <=450 linhas.", done: false, note: "2026-06-30 (agente Opus): refactor sem mudar o contrato de salvar (replace tri-estado; re-hidrata do back). type-check sem erro novo. AGUARDA VALIDAÇÃO NO BROWSER do modal em /manage/users." },
+      { id: "al-footgun", label: "Achado a tratar (footgun): o replace de papéis do painel (ReplaceUserRoleAssignments) pode remover o papel-base de fila criado pelo enroll de org — era o que disparava o bug. Com o login two-step isso deixa de derrubar o acesso, mas avaliar travar (is_locked) o papel-base ou avisar no painel.", done: false, note: "2026-06-30: registrado. Mitigado pelo al-back-2step (login não depende mais do papel-coarse). Endurecimento opcional pendente de decisão." },
+      { id: "al-2round", label: "Back (2ª rodada — CAUSA-RAIZ do login + remoção de legado): (1) auth/tokens.go Parse passa a aceitar papel-coarse VAZIO (era a causa-raiz: o login emitia token mas o Parse rejeitava Role=='' via IsValidRole → 401 em todo request autenticado, incl. /me/context); (2) removido o curto-circuito legado do CanAccessTenant em queue/settings + crm/erp (sempre recheca membership no banco, sem confiar no principal.TenantID).", done: true, note: "2026-06-30: tokens.go só rejeita Role NÃO-vazio inválido; CanAccessTenant sem atalho. go test verdes, api rebuildada healthy. Login da iasmin validado no browser." },
+      { id: "al-fase0-sec", label: "Fase 0 (segurança — achados por varredura adversarial multiagente): consultants ListOrphans + Update órfão rechecam membership (CanAccessTenant org-aware) em vez de confiar no principal.TenantID (fecha cross-tenant + janela pós-revogação); stores ListAccessible devolve lista vazia p/ escopo-vazio (não 403, igual /me/context).", done: true, note: "2026-06-30: consultants.Repository.CanAccessTenant + 2 call-sites; stores guard principal.Role==''. go build/test verdes, api healthy." },
+      { id: "al-banner", label: "UX: banner 'Modo degradado de configuracoes' some p/ usuário só-agência/Tasks — canFetchQueueSettings pula /v1/settings quando escopo-coarse vazio OU conta ativa is_agency (god-view não é tenant de Fila).", done: true, note: "2026-06-30: web/app/stores/auth.ts canFetchQueueSettings com 2 guards. type-check sem erro novo. AGUARDA confirmação no browser (login iasmin sem banner)." },
+      { id: "al-coarse-retire", label: "ROADMAP APROVADO (faseado): aposentar o papel-coarse legado → default core.roles por cliente (editáveis/removíveis). Fase 1 = seed 6 templates + migration 0176 (aditivo); Fases 2-5 migram o enforcement por requisição (permissões + store scoping) p/ core.* por account, atrás de flag + shadow na Pérola; só então aposenta o enum. O coarse vira DADO (roles default por account), não enum.", done: false, note: "2026-06-30: plano aprovado pelo dono (C:\\Users\\Mike\\.claude\\plans\\cozy-sparking-bonbon.md). Achado estrutural: access_role_permissions (global, por enum coarse, sem account_id) é um 2º authz paralelo ao core.role_permissions; seedar roles não basta — o enforcement por requisição precisa ler core.* por account. defaultRolePermissionMap (access/permissions.go) é a fonte fiel das permissões a seedar. NÃO pode quebrar a Fila da Pérola (oráculo de regressão). FASE 1 ENTREGUE 2026-06-30 (contas existentes): a 0175 já tinha declarado workspace.* no catálogo + backfillado core.role_permissions; migration 0176 garante os 6 papéis (queue.owner/director/marketing/manager/consultant/store_terminal) is_default+editáveis em TODO cliente (8/8), labels limpos, perms preenchidas — migration_up_ok, validado no banco. PENDENTE: seed em conta NOVA — agora planejado na FASE RT (papéis-padrão gerenciáveis no painel → conta nova clona via cloneRoleTemplates) + Fases 2-5 (migrar enforcement por requisição p/ core.* por account)." }
+    ],
+    blockers: [],
+    verifiable: "1) Usuário ativo só vinculado à org (sem cliente, só papel custom) loga sem 403. 2) Ele cai no workspace que o papel custom concede (ex.: Tasks), não em /operacao vazio. 3) Menu reflete as permissões custom da conta ativa. 4) Usuário de cliente comum não ganha acesso novo (gating aditivo + back barra). 5) Modal Editar usuário: colapsáveis, busca, filtros e lote por módulo funcionando; salvar mantém o contrato (replace tri-estado)."
+  },
+
+  {
+    id: "role-templates-painel",
+    code: "RT",
+    title: "Papéis-padrão gerenciáveis no painel (role templates) → conta nova consome",
+    goal: "platform_admin CRIA/EDITA os papéis-padrão (core.role_templates + role_template_permissions) PELO PAINEL, e toda conta NOVA clona esse catálogo (cloneRoleTemplates já faz isso) com is_default. Tira o catálogo-padrão do código (hoje só via module.RoleTemplates()) e vira DADO gerenciável. Fecha o follow-up 'conta nova' da al-coarse-retire. Mapeado por exploração 2026-06-30; ENTREGUE no mesmo dia (back+front, validação local).",
+    status: "in_progress",
+    estimateWeeks: "3-5 dias",
+    group: "multi-tenant",
+    tasks: [
+      { id: "rt-have", label: "JÁ EXISTE (base pronta): schema core.role_templates (id, module_id, label, description, is_system default true, is_locked, sort_order — migration 0100/0102) + core.role_template_permissions; SyncCatalog (platform/modules/registry.go + catalog_postgres.go UpsertRoleTemplate) faz UPSERT só dos templates declarados por módulo e NUNCA deleta os não-declarados (regra CONTRACT_FREEZE 'NUNCA DELETE auto') → template criado pelo painel SOBREVIVE ao reboot; cloneRoleTemplates (core/admin_repository.go:237) clona TODOS os templates em core.roles + copia as permissões na criação da conta; CRUD de papéis POR-CONTA (core.roles) completo (API /v1/accounts/{id}/roles + AdminRoleMatrixEditor.vue); catálogo de permissões disponíveis via GET /v1/admin/users/{id}/accounts/{accountId}/overrides (.available — filtra módulo habilitado + deprecated_at null + scope!=platform).", done: true, note: "2026-06-30 (exploração read-only): confirmado file:line. is_system distingue template de módulo (true) do criado-pelo-painel (false)." },
+      { id: "rt-decisao-visibilidade", label: "DECISÃO DE DESIGN (antes de codar): template criado no painel é GLOBAL (toda conta nova clona) ou por-conta/por-plano? Hoje core.role_templates é global (module_id é FK NOT NULL → criado-pelo-painel usaria module_id='core' + is_system=false). Definir se há escopo/seleção de quais contas recebem, ou se é catálogo único global.", done: true, note: "2026-06-30 DECIDIDO (sem perguntar, conforme pedido): GLOBAL — template do painel é is_system=false + module_id='core'; conta nova clona via cloneRoleTemplates." },
+      { id: "rt-back-crud", label: "FALTA back: CRUD de templates (admin, gate platform_admin) — POST/GET/PATCH/DELETE /v1/admin/role-templates + PUT /v1/admin/role-templates/{id}/permissions. Service+Repository: List (módulos habilitados + globais do painel), Create (is_system=false, module_id='core'), Update (label/desc/sort_order), SetTemplatePermissions (registry já tem, reusar), Delete (bloquear is_system=true). Validar permission keys contra core.permissions. NÃO tocar core.roles/role_permissions (pertencem à account).", done: true, note: "2026-06-30 (agente): admin_role_templates_{model,repository,service,http}.go no core; rotas /v1/admin/role-templates* gate requirePlatformAdmin; is_system congelado (PATCH/PUT/DELETE→409); keys validadas (sem scope=platform/deprecated). + migration 0177 seeda os 6 papéis de Fila como templates (5 is_system=false editáveis; consultant/supervisor de sistema). go build/vet/test/golangci-lint limpos; rota montada+gateada (GET sem auth→401), 0177 migration_up_ok." },
+      { id: "rt-clone-isdefault", label: "FALTA back: cloneRoleTemplates passar a setar is_default=true nos papéis clonados (hoje o INSERT em core/admin_repository.go:239 não passa is_default → fica false). Assim conta nova nasce com os papéis-padrão marcados, igual ao que a migration 0176 fez nas contas existentes.", done: true, note: "2026-06-30: cloneRoleTemplates (core/admin_repository.go) agora insere is_default=true." },
+      { id: "rt-front-ui", label: "FALTA front: página admin (ex.: /manage/role-templates) p/ platform_admin listar/criar/editar (label, descrição, matriz de permissões reusando o catálogo .available)/deletar templates; lock visual nos is_system=true (não deletáveis), igual ao AdminRoleMatrixEditor. NÃO há NENHUMA UI de templates hoje (só a matriz por-conta).", done: true, note: "2026-06-30 (agente): pages/manage/role-templates.vue + components/admin/role-templates/* + useAdminRoleTemplatesManager + types/admin-role-templates; matriz binária com busca/filtro; gating em 4 lugares (workspaces.ts, permissions.ts ROLE_WORKSPACES.platform_admin só, nav agencyOnly, module-enabled AGENCY_ONLY_PATHS) + reforço host auth.role==='platform_admin'. type-check sem erro novo (só quirk ~/types)." },
+      { id: "rt-tests", label: "Testes E2E: criar template pelo painel → sobrevive ao reboot (SyncCatalog não apaga) → conta nova clona com is_default + permissões corretas; deletar template de sistema bloqueado; editar custom OK.", done: false, note: "2026-06-30: 11 testes Go novos no back (contrato SQL + service) verdes; verificação adversarial multiagente rodada. FALTA o E2E no browser (criar template → reboot → conta nova) — validação humana." }
+    ],
+    blockers: [],
+    verifiable: "1) platform_admin cria um papel-padrão no painel (ex.: 'Atendente') com permissões. 2) Reiniciar a api NÃO apaga o template criado. 3) Criar conta nova → nasce com 'Atendente' (is_default=true) + permissões. 4) Editar/deletar template de sistema bloqueado; custom editável/removível. 5) Matriz reflete o catálogo de permissões dos módulos."
+  },
+
+  {
+    id: "users-single-source",
+    code: "US",
+    title: "Fonte única de usuário/papel: operação (consultores) × /manage/users no mesmo core",
+    goal: "Hoje a gestão de usuário DIVERGE: o PAPEL vive em DOIS lugares que saem de sync — core.user_role_assignments (o 'Perfil' do /manage/users, via projeção) E queue.consultants.role_label (o que a operação/Fila grava). Editar consultor na operação NÃO grava papel no core (só em queue.consultants); SyncLinkedAccess é uni-direcional (core->queue) e só sincroniza identidade (nome/loja/ativo), NÃO papel. Resultado: 'consultor' na operação sem papel no core (caso acilene, corrigido na unha pela 0178). ALVO: papel é DADO único no core; operação e /manage/users leem/gravam a MESMA fonte; queue.consultants.role_label deixa de ser fonte de papel. Mapeado por exploração 2026-06-30; fazer depois.",
+    status: "pending",
+    estimateWeeks: "1-2 semanas",
+    group: "multi-tenant",
+    tasks: [
+      { id: "us-finding", label: "DIAGNÓSTICO (confirmado, file:line): (1) /manage/users = workspace usuarios_admin, SÓ platform_admin (web/app/pages/manage/users.vue:6,42 + domain/utils/permissions.ts:188); consome core.users + core.user_role_assignments via projeção (back/internal/modules/users/core_projection.go:10-181). (2) operação/usuários (consultores) consome queue.consultants DIRETO (role_label). (3) Consultor Create/Update grava em queue.consultants (queue/consultants/store_postgres.go:286-348) e NÃO em core.user_role_assignments. (4) SyncLinkedAccess (queue/consultants/profile_sync.go:32-57) é core->queue, só identidade, NÃO papel. (5) projeção filtra role_code<>'' (core_projection.go:13) → usuário sem papel core SOME do /manage/users. Sem hierarquia de papel: escopo é só por account/tenant.", done: true, note: "2026-06-30 (exploração). A migration 0178 foi o band-aid (backfill do papel pelo job_title) que PROVOU a divergência." },
+      { id: "us-papel-core-na-operacao", label: "Operação grava PAPEL no CORE: ao criar/editar consultor, o papel passa a gravar em core.user_role_assignments (papel real), não só em queue.consultants.role_label. Mapear role_label->core.roles.code (queue.consultant/manager/...). Ideal: queue.consultants.role_label vira espelho derivado do core (ou some).", done: false, note: "queue/consultants/service.go Create/Update + store_postgres.go. Reusar o mapa job_title/role_label->code da 0178." },
+      { id: "us-projecao-unica", label: "Operação e /manage/users leem a MESMA projeção (core): a lista de consultores/operação deriva o papel de core.user_role_assignments (igual /manage/users), não de queue.consultants.role_label. Remover a leitura divergente.", done: false, note: "Unificar em users/core_projection.go ou um service de leitura compartilhado." },
+      { id: "us-gestor-cliente-escopado", label: "Gestão de USUÁRIO escopada por cliente (GAP): hoje /manage/users é SÓ platform_admin (usuarios_admin) — owner/gerente do cliente NÃO abre. Ele JÁ consegue: gerenciar PAPÉIS da própria conta (/v1/accounts/{id}/roles* gateado por core.roles.manage — rbac_repository_assign.go:100, escopado por accountID) e consultores da própria loja (canEditConsultants=owner/manager — consultants/service.go:327). FALTA: criar/editar/vincular USUÁRIOS do próprio cliente sem ser platform_admin (/v1/admin/users* é platform_admin — admin_users_http.go:48 requireAdminActor). Decidir: estender p/ owner com core.users.manage por account, OU tela cliente-scoped.", done: false, note: "Definir escopo seguro (só a própria account; identity-global como criar/deletar/mover-conta fica platform_admin)." },
+      { id: "us-hierarquia-opcional", label: "(Opcional, decisão de produto) Hierarquia de papel ('usuários dele e ABAIXO'): hoje NÃO existe — quem tem a permissão edita TODOS da conta, sem nível. Avaliar restrição por nível (owner>director>manager>consultant) ao atribuir/editar papel.", done: false, note: "Sem isso, escopo é só por account." },
+      { id: "us-remove-legado", label: "Remover legado quando o core for fonte única: parar de gravar papel em queue.consultants.role_label; SyncLinkedAccess sincronizar papel (ou tornar desnecessário); remover/relaxar o filtro role_code<>'' (core_projection.go:13). Depende de us-papel-core-na-operacao + us-projecao-unica + Fases 2-5 (al-coarse-retire).", done: false, note: "Só depois do enforcement por requisição estar no core." }
+    ],
+    blockers: [],
+    verifiable: "1) Criar/editar consultor na operação grava o papel em core.user_role_assignments (não só queue.consultants). 2) O 'Perfil' do /manage/users e o papel da operação são SEMPRE iguais (sem caso 'acilene'). 3) Owner/gerente do cliente edita usuários/papéis da PRÓPRIA conta gravando no core, escopado. 4) Nenhum usuário 'some' do /manage/users por falta de papel."
+  },
+
+  {
     id: "agency-view-as",
     code: "AVA",
     title: "Switcher = view-as do cliente + conta-agência Crow Visuals",
@@ -1930,6 +1993,59 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     ],
     blockers: [],
     verifiable: "1) git status sem arquivo novo da revisão fora do stage e CARDAPIO_TELEMETRY_SALT/RETENTION_DAYS no .env.production da VPS. 2) No browser: papel sem cardapio.view não vê/edita o cardápio (admin/agência sim) e assignRole não atribui papel cross-tenant (404). 3) Smokes 1-3 do MULTITENANT_COMPLETION_PLAN passam no browser. 4) Wave 2 de faxina agendada/iniciada (helpers consolidados, splits dos arquivos > 450 linhas). Refs: docs/SECURITY_OPTIMIZATION_BACKLOG.md §Revisão 2026-06-29 + docs/FAXINA_CODIGO_2026-06-29.md."
+  },
+
+  // ─── Criação de usuário & convite (onboarding / login) ──────────────────
+  // Reporte do dono 2026-06-30 ao criar usuário em /manage/users (modal "Novo
+  // usuário"). Polimento de UX em cima da UAF (que já fez criar-com-senha-que-loga).
+  // Modal: web/app/components/admin/users/AdminUserCreateDialog.vue;
+  // back: back/internal/modules/core/admin_users_service.go (validação + BuildNickname).
+  {
+    id: "user-onboarding",
+    code: "UONB",
+    title: "Criação de usuário — erro em PT por campo, sugestão de nome/nick e convite por e-mail",
+    goal: "Deixar a criação de usuário em /manage/users clara e completa: (1) mensagem de erro em português e POR CAMPO (nunca o termo técnico 'displayName'; e-mail preenchido não pode acusar e-mail faltando); (2) sugerir Nome e Nick a partir do e-mail na modal (editáveis, opcionais, sem sobrescrever o que o usuário digitou); (3) fluxo REAL de convite — quando a senha temporária fica vazia, enviar e-mail para a própria pessoa criar a senha (hoje o texto promete 'convite' mas não há envio). Modal de criação e drawer de edição espelhados.",
+    status: "pending",
+    estimateWeeks: "2-4 dias",
+    startedAt: "2026-06-30",
+    tasks: [
+      { id: "uonb-erro-pt-campo", label: "Erro em PT por campo: back (admin_users_service.go:87) troca o texto fixo 'email and displayName are required' por erros específicos por campo (e-mail vs nome) num formato que o front mapeia; front (AdminUserCreateDialog) valida antes do submit e mostra o aviso INLINE no campo certo, em português ('Informe o nome.'), nunca 'displayName'. E-mail preenchido NÃO dispara erro de e-mail. Espelha a regra de feedback de formulário (marcar obrigatório/opcional + dizer o que falta).", done: false },
+      { id: "uonb-sugestao-nome-nick", label: "Sugestão na modal: ao digitar/sair do e-mail, sugerir Nome (parte antes do @, normalizada/capitalizada) e Nick; ao alterar o Nome, re-sugerir o Nick. Ambos editáveis e OPCIONAIS — só preenche enquanto o campo estiver vazio ou ainda for a sugestão (não sobrescreve o que o usuário digitou à mão). Reusa/espelha BuildNickname (core/nick.go ↔ person-display.ts) p/ o nick bater com o que o back gera quando vazio.", done: false },
+      { id: "uonb-convite-email", label: "Convite por e-mail REAL: senha temporária vazia gera token de convite (com expiração) e dispara um e-mail para a pessoa criar a própria senha (página /set-password por token). Endpoints: criar-convite + definir-senha-por-token + reenviar/expirar. UI da modal deixa explícito 'sem senha = enviaremos um convite por e-mail'. REUSA a infra SMTP da fase PWD (auth/password_reset_delivery.go já implementa o envio; o convite só precisa usar o mesmo caminho/credenciais). DECISÃO PENDENTE: provedor/credenciais SMTP (compartilhado com PWD) — anotar nas Notas de Deploy. Depende de pwd-smtp-config.", done: false },
+      { id: "uonb-modal-drawer-mirror", label: "Espelhar a UX (validação por campo + sugestão de nome/nick) entre a modal de criação (AdminUserCreateDialog) e o drawer de edição (AdminUserEditDrawer/AdminUserDataPanel) — regra modal↔card: mudança em um replica no outro.", done: false },
+      { id: "uonb-docs", label: "Ao concluir, sincronizar AGENT.md (core, components/admin/users) + doc canônico + este roadmap (regra dos 3 docs).", done: false },
+    ],
+    blockers: [],
+    verifiable: "Em /manage/users, criar usuário só com e-mail → o aviso é em português e aponta SÓ o Nome (não 'displayName', não acusa e-mail). Digitar o e-mail preenche Nome e Nick sugeridos (editáveis); mudar o Nome re-sugere o Nick; ambos podem ficar como o usuário quiser. Criar sem senha → a pessoa recebe um e-mail e define a própria senha por um link, e consegue logar. Mesma validação/sugestão no drawer de edição. vue-tsc/eslint/golangci-lint limpos."
+  },
+
+  // ─── Esqueci a senha (recuperação) + e-mail transacional (SMTP) ─────────
+  // Reporte do dono 2026-06-30: o botão "esqueci a senha" do login existe mas
+  // "não serve de nada". DIAGNÓSTICO no código: o fluxo está TODO construído —
+  // front web/app/pages/auth/esqueceu-senha.vue (pedir código → confirmar código
+  // + nova senha → sucesso) e back POST /v1/auth/password-reset/{request,confirm}
+  // (PasswordResetService: código 6 dígitos hasheado, TTL 30min, ConsumePasswordReset).
+  // A entrega SMTP TAMBÉM já existe (auth/password_reset_delivery.go: STARTTLS/TLS/none),
+  // MAS cai no fallback LogPasswordResetDelivery quando SMTP_HOST está vazio → o
+  // código só vai pro LOG, nenhum e-mail sai. Esse é o motivo do "não funciona".
+  // Esta mesma infra SMTP destrava o convite por e-mail da fase UONB.
+  {
+    id: "password-reset",
+    code: "PWD",
+    title: "Esqueci a senha — ligar o e-mail real (SMTP) + revisar checagens/UX",
+    goal: "Fazer a recuperação de senha funcionar de ponta a ponta: configurar o provedor de e-mail (SMTP) para o código realmente chegar (hoje só é logado), revisar/confirmar as checagens (existe/ativo/permissão) e deixar a UX honesta sem virar enumeração de contas. A mesma infra de e-mail destrava o convite da fase UONB.",
+    status: "pending",
+    estimateWeeks: "1-3 dias (back já existe; o grosso é configurar SMTP + validar)",
+    startedAt: "2026-06-30",
+    tasks: [
+      { id: "pwd-smtp-config", label: "Configurar o provedor de e-mail (SMTP) — o código de entrega JÁ existe (auth/password_reset_delivery.go); falta só ligar: env SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_PASSWORD/SMTP_FROM_EMAIL/SMTP_FROM_NAME/SMTP_TLS_MODE em dev e prod. Sem SMTP_HOST cai no LogPasswordResetDelivery (só loga o código, não envia). Escolher provedor (SES/Resend/Gmail SMTP/host próprio) + registrar nas Notas de Deploy. ESTE é o motivo de o botão 'não servir de nada'.", done: false },
+      { id: "pwd-checagens", label: "Revisar/confirmar as checagens (corrige a percepção 'não checa'): hoje o Request IGNORA em silêncio (retorna sucesso) quando o usuário não existe / está inativo / sem senha — anti-enumeração DE PROPÓSITO; o Confirm checa ativo (ErrUserInactive) e onboarding (ErrOnboardingRequired). Decidir se algum estado extra (ex.: usuário sem nenhum papel/vínculo) deve bloquear o reset e documentar a regra.", done: false },
+      { id: "pwd-ux-honesta", label: "UX honesta sem enumeração: a tela sempre avança pra 'digite o código' mesmo p/ e-mail inexistente (por segurança) — deixar isso explícito na UI ('se existir uma conta com este e-mail, enviaremos um código') p/ não parecer bug. Decisão do dono: manter anti-enumeração (recomendado) vs feedback explícito.", done: false },
+      { id: "pwd-rate-limit", label: "Anti-brute-force: garantir rate limit no request (cooldown de reenvio) e limite de tentativas no confirm do código de 6 dígitos (lockout). Auditar se já existe; senão adicionar.", done: false },
+      { id: "pwd-e2e-docs", label: "Teste e2e real (e-mail chega, código válido redefine a senha, login aceita a nova senha) + sincronizar AGENT.md (auth) + doc canônico + roadmap.", done: false },
+    ],
+    blockers: [],
+    verifiable: "Com SMTP configurado: pedir 'esqueci a senha' com um e-mail real ATIVO → o e-mail com o código chega; confirmar código + nova senha redefine e o login passa a aceitar a nova senha. E-mail inexistente/inativo → a tela avança igual (sem vazar existência) e nenhum e-mail sai. Reenvio/tentativas têm limite. SMTP ausente cai no log (dev). golangci-lint limpo."
   }
 ];
 

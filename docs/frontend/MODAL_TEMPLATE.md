@@ -61,6 +61,15 @@ incrementalmente conforme forem tocados.
   core, adicionar no core (não fork). Assim o ajuste vale para todos.
 - Conteúdo específico vive nos slots; nada de lógica de posicionamento/resize/modo no consumidor.
 - Ao mudar o core, validar os dois consumidores atuais (Tasks e edição de usuário).
+- **CSS de posição/tamanho do painel (`--side`/`--center`/`--fullscreen`) é GLOBAL, não
+  `scoped`.** O `USlideover` teleporta o painel de conteúdo para o `body` (Portal do Reka Dialog);
+  um seletor `scoped`/`:deep` vira `[data-v-hash] .x` e exige um ancestral com o `data-v` no
+  destino do teleport — que não existe. Resultado de errar isso: trocar de modo "não faz nada" e o
+  resize "só move o fundo" (a var de largura é setada mas a regra que a consome nunca casa). Por
+  isso essas regras ficam num bloco `<style>` sem `scoped` no core (prefixadas com
+  `.omni-entity-drawer` para não colidir). Estilo de elemento que o NOSSO template renderiza
+  (header, menu, corpo, handle, rodapé) pode seguir `scoped`, pois carrega o `data-v` no próprio
+  elemento.
 
 ## Modais ainda a migrar (incremental)
 

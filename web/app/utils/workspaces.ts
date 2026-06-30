@@ -55,6 +55,12 @@ export const WORKSPACES = [
     icon: 'corporate_fare',
     path: '/manage/organizations',
   },
+  {
+    id: 'role_templates_admin',
+    label: 'Papeis-padrao',
+    icon: 'admin_panel_settings',
+    path: '/manage/role-templates',
+  },
   { id: 'manage', label: 'Manage', icon: 'layout_panel_left', path: '/manage/users' },
   { id: 'configuracoes', label: 'Config', icon: 'tune', path: '/configuracoes' },
   { id: 'menu_layout', label: 'Organização do Menu', icon: 'tune', path: '/manage/menu-layout' },

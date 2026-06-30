@@ -314,12 +314,10 @@ func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, princ
 		return false, nil
 	}
 
-	if principalTenantID := strings.TrimSpace(principal.TenantID); principalTenantID != "" {
-		if principalTenantID == normalizedTenantID {
-			return true, nil
-		}
-	}
-
+	// Sem atalho por principal.TenantID: o acesso e SEMPRE rechecado contra a
+	// membership real (account_users OU organization_users) no banco. Confiar no
+	// TenantID do principal sem rechecar concederia acesso a quem tivesse o escopo
+	// setado sem membership de fato (over-grant). A query abaixo ja e org-aware.
 	var (
 		query string
 		args  []any

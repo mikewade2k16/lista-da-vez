@@ -2,6 +2,11 @@
 import type { AdminUserItem } from '~/types/admin-users'
 import { WORKSPACE_ACCESS_DEFINITIONS } from '~/domain/utils/permissions'
 import { useAccessControlStore } from '~/stores/access-control'
+import OmniCollapse from '~/components/omni/OmniCollapse.vue'
+import AppSearchInput from '~/components/ui/AppSearchInput.vue'
+import AppSegmentedFilter from '~/components/ui/AppSegmentedFilter.vue'
+import AdminTriStateControl from '~/components/admin/users/AdminTriStateControl.vue'
+import { usePageOverridesView } from '~/composables/usePageOverridesView'
 
 // Painel "Paginas". Liga/desliga por usuario a visibilidade de cada pagina do
 // painel (workspace) com tri-estado: Herdar (usa o padrao do papel) / Mostrar
@@ -68,6 +73,18 @@ function isDirty(): boolean {
 }
 
 const overrideCount = computed(() => Object.values(states).filter((s) => s !== 'inherit').length)
+
+// Estado de VIEW (busca + filtro + secoes colapsaveis) no composable; opera sobre
+// as paginas controlaveis e o rascunho `states`. Client-side; nao toca no salvar.
+const {
+  searchTerm,
+  effectFilter,
+  effectFilterOptions,
+  groupedRows,
+  hasActiveView,
+  clearView,
+  setEffectFilter,
+} = usePageOverridesView(controllableRows, states)
 
 function applyAccess(data: ReturnType<typeof access.getUserAccess>) {
   for (const key of Object.keys(states)) delete states[key]
@@ -185,63 +202,77 @@ async function save() {
         Nenhuma pagina com controle de visibilidade disponivel neste ambiente.
       </p>
 
-      <ul v-else class="admin-user-pages__list">
-        <li v-for="row in controllableRows" :key="row.id" class="admin-user-pages__row">
-          <div class="admin-user-pages__copy">
-            <span class="admin-user-pages__label">{{ row.label }}</span>
-            <span class="admin-user-pages__desc">{{ row.description }}</span>
-            <span class="admin-user-pages__meta">
-              <span>{{ baseLabel(row.viewPermission) }}</span>
-              <span class="admin-user-pages__meta-sep">·</span>
-              <span>Efetivo: {{ effectiveLabel(row) }}</span>
-            </span>
-          </div>
-          <div class="admin-user-pages__tri" role="group" :aria-label="row.label">
-            <button
-              type="button"
-              class="admin-user-pages__tri-btn"
-              :class="{ 'is-active': states[row.id] === 'inherit' }"
-              @click="setState(row.id, 'inherit')"
-            >
-              Herdar
-            </button>
-            <button
-              type="button"
-              class="admin-user-pages__tri-btn admin-user-pages__tri-btn--allow"
-              :class="{ 'is-active': states[row.id] === 'allow' }"
-              @click="setState(row.id, 'allow')"
-            >
-              Mostrar
-            </button>
-            <button
-              type="button"
-              class="admin-user-pages__tri-btn admin-user-pages__tri-btn--deny"
-              :class="{ 'is-active': states[row.id] === 'deny' }"
-              @click="setState(row.id, 'deny')"
-            >
-              Ocultar
-            </button>
-          </div>
-        </li>
-      </ul>
+      <template v-else>
+        <div class="admin-user-pages__toolbar">
+          <AppSearchInput
+            :model-value="searchTerm"
+            placeholder="Buscar pagina por nome ou descricao"
+            aria-label="Buscar paginas"
+            @update:model-value="searchTerm = $event"
+          />
+          <AppSegmentedFilter
+            :model-value="effectFilter"
+            :options="effectFilterOptions"
+            aria-label="Filtrar por efeito"
+            @update:model-value="setEffectFilter($event)"
+          />
+        </div>
 
-      <p v-if="uncontrollableCount > 0" class="admin-user-pages__muted">
-        {{ uncontrollableCount }} pagina(s) sao controladas por modulo/papel (aba Modulos) e nao tem
-        override de visibilidade por usuario.
-      </p>
+        <p v-if="!groupedRows.length" class="admin-user-pages__muted">
+          Nenhuma pagina corresponde a busca/filtro.
+          <button type="button" class="admin-user-pages__link" @click="clearView">Limpar</button>
+        </p>
 
-      <div class="admin-user-pages__foot">
-        <span class="admin-user-pages__count">
-          {{ overrideCount }} override(s) de pagina; o restante herda do papel.
-        </span>
-        <UButton
-          label="Salvar paginas"
-          color="primary"
-          :loading="saving"
-          :disabled="saving || !isDirty()"
-          @click="save"
-        />
-      </div>
+        <div v-else class="admin-user-pages__groups">
+          <OmniCollapse
+            v-for="section in groupedRows"
+            :key="section.key"
+            :title="section.title"
+            :summary="`${section.rows.length} pagina(s)`"
+            :default-open="section.key === 'overridden' || hasActiveView"
+          >
+            <ul class="admin-user-pages__list">
+              <li v-for="row in section.rows" :key="row.id" class="admin-user-pages__row">
+                <div class="admin-user-pages__copy">
+                  <span class="admin-user-pages__label">{{ row.label }}</span>
+                  <span class="admin-user-pages__desc">{{ row.description }}</span>
+                  <span class="admin-user-pages__meta">
+                    <span>{{ baseLabel(row.viewPermission) }}</span>
+                    <span class="admin-user-pages__meta-sep">·</span>
+                    <span>Efetivo: {{ effectiveLabel(row) }}</span>
+                  </span>
+                </div>
+                <AdminTriStateControl
+                  :model-value="states[row.id]"
+                  :aria-label="row.label"
+                  allow-label="Mostrar"
+                  deny-label="Ocultar"
+                  @update="setState(row.id, $event)"
+                />
+              </li>
+            </ul>
+          </OmniCollapse>
+        </div>
+
+        <p v-if="uncontrollableCount > 0" class="admin-user-pages__muted">
+          {{ uncontrollableCount }} pagina(s) sao controladas por modulo/papel (aba Modulos) e nao
+          tem override de visibilidade por usuario.
+        </p>
+
+        <div class="admin-user-pages__foot">
+          <span class="admin-user-pages__count">
+            {{ overrideCount }} override(s) de pagina; o restante herda do papel.
+            <span v-if="isDirty()" class="admin-user-pages__pending">pendente</span>
+          </span>
+          <UButton
+            label="Salvar paginas"
+            color="primary"
+            :loading="saving"
+            :disabled="saving || !isDirty()"
+            @click="save"
+          />
+        </div>
+      </template>
     </template>
   </section>
 </template>
@@ -271,6 +302,45 @@ async function save() {
 
 .admin-user-pages__legend strong {
   color: rgb(var(--text));
+}
+
+.admin-user-pages__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.admin-user-pages__toolbar > :first-child {
+  flex: 1;
+  min-width: 14rem;
+}
+
+.admin-user-pages__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-user-pages__link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: rgb(var(--primary-600));
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.admin-user-pages__pending {
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary-600));
 }
 
 .admin-user-pages__list {
@@ -322,40 +392,6 @@ async function save() {
 
 .admin-user-pages__meta-sep {
   opacity: 0.5;
-}
-
-.admin-user-pages__tri {
-  display: inline-flex;
-  flex-shrink: 0;
-  border-radius: var(--radius-md);
-  border: 1px solid rgb(var(--border));
-  overflow: hidden;
-}
-
-.admin-user-pages__tri-btn {
-  padding: 0.3rem 0.6rem;
-  font-size: 0.74rem;
-  border: none;
-  background: rgb(var(--surface));
-  color: rgb(var(--muted));
-  cursor: pointer;
-}
-
-.admin-user-pages__tri-btn + .admin-user-pages__tri-btn {
-  border-left: 1px solid rgb(var(--border));
-}
-
-.admin-user-pages__tri-btn.is-active {
-  background: rgb(var(--primary));
-  color: rgb(var(--surface));
-}
-
-.admin-user-pages__tri-btn--allow.is-active {
-  background: rgb(var(--success));
-}
-
-.admin-user-pages__tri-btn--deny.is-active {
-  background: rgb(var(--danger));
 }
 
 .admin-user-pages__foot {

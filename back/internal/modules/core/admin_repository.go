@@ -234,10 +234,13 @@ func (r *PostgresAdminRepository) CreateAccount(ctx context.Context, input Admin
 
 // cloneRoleTemplates clona role_templates em core.roles para a account e
 // popula core.role_permissions a partir de core.role_template_permissions.
+// Marca is_default=true nos papeis clonados — assim a conta NOVA nasce com os
+// papeis-padrao sinalizados, igual ao que a migration 0176 fez nas contas ja
+// existentes (paridade entre conta nova e legada).
 func cloneRoleTemplates(ctx context.Context, tx pgx.Tx, accountID string) error {
 	_, err := tx.Exec(ctx, `
-		insert into core.roles (account_id, cloned_from_template_id, code, label, description, is_locked)
-		select $1::uuid, rt.id, rt.id, rt.label, rt.description, rt.is_locked
+		insert into core.roles (account_id, cloned_from_template_id, code, label, description, is_default, is_locked)
+		select $1::uuid, rt.id, rt.id, rt.label, rt.description, true, rt.is_locked
 		from core.role_templates rt
 		on conflict (account_id, code) do nothing
 	`, accountID)

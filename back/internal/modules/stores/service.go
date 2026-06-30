@@ -26,6 +26,15 @@ func NewService(repository Repository, notifier ContextPublisher) *Service {
 }
 
 func (service *Service) ListAccessible(ctx context.Context, principal auth.Principal, input ListInput) ([]StoreView, error) {
+	// Two-step authn/authz: usuario logado SEM papel-coarse (escopo vazio — caso
+	// so-agencia/so-papel-custom) nao tem tenant de Fila legado. Devolve lista VAZIA
+	// (nao 403), igual ao /me/context (que checa principal.Role vazio). A autoridade
+	// do que ele ve vem da RBAC custom por account; este endpoint v1 e do escopo
+	// legado da Fila.
+	if strings.TrimSpace(string(principal.Role)) == "" {
+		return []StoreView{}, nil
+	}
+
 	tenantID, err := resolveTenantFilter(principal, input.TenantID)
 	if err != nil {
 		return nil, err

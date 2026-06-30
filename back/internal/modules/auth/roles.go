@@ -125,3 +125,15 @@ func ValidateUserScope(user User) error {
 
 	return nil
 }
+
+// HasEmptyScope diz que a resolucao de papel/escopo coarse nao mapeou nenhum
+// papel de fila para o usuario (Role == ""). Authn != authz (modelo two-step):
+// um usuario ATIVO sem papel-coarse resolvido AINDA autentica e recebe token —
+// igual ao platform_admin, que loga com TenantID/AccountID vazios. A autorizacao
+// real (o que ele enxerga) vem DEPOIS, por requisicao/account, da RBAC custom
+// (core.role_permissions + overrides via /v2/me/context), nunca do escopo-coarse.
+// Por isso o login NAO chama ValidateUserScope quando o escopo e vazio: barrar
+// aqui devolveria 403 a um usuario valido (ex.: so-agencia ou so-papel-custom).
+func HasEmptyScope(user User) bool {
+	return user.Role == ""
+}

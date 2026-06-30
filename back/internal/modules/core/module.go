@@ -213,6 +213,11 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	platformSettingsRepo := NewPostgresPlatformSettingsRepository(deps.Pool)
 	platformSettingsSvc := NewPlatformSettingsService(platformSettingsRepo)
 
+	// CRUD de role templates (catalogo GLOBAL de papeis-padrao) gerenciado por
+	// platform_admin. core.role_templates + core.role_template_permissions.
+	roleTemplateRepo := NewPostgresRoleTemplateAdminRepository(deps.Pool)
+	roleTemplateSvc := NewRoleTemplateAdminService(roleTemplateRepo)
+
 	m.handle = &handle{
 		service:                  svc,
 		rbacService:              rbacSvc,
@@ -221,6 +226,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		adminOverridesService:    adminOverridesSvc,
 		adminOrganizationService: adminOrgSvc,
 		platformSettingsService:  platformSettingsSvc,
+		roleTemplateService:      roleTemplateSvc,
 		authMiddleware:           deps.AuthMiddleware,
 	}
 	return m.handle, nil
@@ -238,6 +244,7 @@ type handle struct {
 	adminOverridesService    *AdminOverridesService
 	adminOrganizationService *AdminOrganizationService
 	platformSettingsService  *PlatformSettingsService
+	roleTemplateService      *RoleTemplateAdminService
 	authMiddleware           *auth.Middleware
 }
 
@@ -253,6 +260,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterAdminOverridesRoutes(mux, h.adminOverridesService, h.adminUserService, h.authMiddleware)
 	RegisterAdminOrganizationsRoutes(mux, h.adminOrganizationService, h.authMiddleware)
 	RegisterPlatformSettingsRoutes(mux, h.platformSettingsService, h.authMiddleware)
+	RegisterRoleTemplatesRoutes(mux, h.roleTemplateService, h.authMiddleware)
 }
 
 // RegisterEventHandlers — core nao consome eventos por enquanto (publica

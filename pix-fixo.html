@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pix da loja — escaneie e pague</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1115; --card: #181b22; --border: #262b36;
+      --text: #e6e8ec; --muted: #9aa3b2; --accent: #32bcad;
+      --accent-dark: #229488; --danger: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px;
+    }
+    .wrap { width: 100%; max-width: 420px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 28px 24px; text-align: center;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+    .qrbox { background: #fff; display: inline-block; padding: 16px; border-radius: 12px; }
+    .qrbox img { display: block; width: 260px; height: 260px; image-rendering: pixelated; }
+    .recebedor { font-size: 16px; font-weight: 700; margin: 20px 0 2px; }
+    .chave { color: var(--muted); font-size: 13px; margin: 0 0 4px; word-break: break-all; }
+    .copia {
+      margin-top: 18px; text-align: left; background: #11141a;
+      border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px;
+      font-size: 12px; word-break: break-all; color: var(--muted); font-family: ui-monospace, monospace;
+    }
+    button {
+      width: 100%; margin-top: 10px; padding: 12px; background: transparent;
+      border: 1px solid var(--accent); color: var(--accent); border-radius: 9px;
+      font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s;
+    }
+    button:hover { background: rgba(50,188,173,.1); }
+    .printbtn { border-color: var(--border); color: var(--muted); }
+    .printbtn:hover { background: rgba(255,255,255,.04); }
+    .err { color: var(--danger); font-size: 13px; margin-top: 12px; }
+
+    .controls {
+      margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border);
+      display: grid; grid-template-columns: 1fr 1fr; gap: 14px; text-align: left;
+    }
+    .controls .full { grid-column: 1 / -1; }
+    .ctrl label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .ctrl input[type=color] {
+      width: 100%; height: 40px; padding: 3px; background: #11141a;
+      border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    }
+    .ctrl input[type=color]:disabled { opacity: .4; cursor: not-allowed; }
+    .controls select {
+      width: 100%; padding: 9px 10px; background: #11141a; border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 14px; outline: none;
+    }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
+    .check input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+
+    /* Layout para impressão: só o essencial, fundo branco */
+    @media print {
+      body { background: #fff; color: #000; padding: 0; }
+      .card { border: none; background: #fff; }
+      .copia, button, .controls { display: none !important; }
+      .chave { color: #444; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Pague com Pix</h1>
+      <p class="sub">Escaneie o código no app do seu banco e digite o valor.</p>
+
+      <div class="qrbox"><div id="qr"></div></div>
+
+      <p class="recebedor" id="recebedor">—</p>
+      <p class="chave" id="chave">—</p>
+
+      <div class="controls">
+        <div class="ctrl">
+          <label for="corQR">Cor do QR</label>
+          <input type="color" id="corQR" value="#000000" />
+        </div>
+        <div class="ctrl">
+          <label for="corFundo">Cor do fundo</label>
+          <input type="color" id="corFundo" value="#ffffff" />
+        </div>
+        <label class="check full"><input type="checkbox" id="semFundo" /> Sem fundo (transparente)</label>
+        <div class="ctrl">
+          <label for="tamanho">Tamanho do PNG</label>
+          <select id="tamanho">
+            <option value="1000">1000 px</option>
+            <option value="1600" selected>1600 px</option>
+            <option value="2400">2400 px</option>
+            <option value="3000">3000 px (impressão grande)</option>
+          </select>
+        </div>
+        <div class="ctrl">
+          <label for="correcao">Correção de erro</label>
+          <select id="correcao">
+            <option value="M" selected>M — padrão</option>
+            <option value="Q">Q — alta</option>
+            <option value="H">H — máxima (p/ logo)</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="dlPng">Baixar QR (PNG alta resolução)</button>
+      <button class="printbtn" id="dlSvg">Baixar QR (SVG vetorial)</button>
+
+      <div class="copia" id="copia"></div>
+      <button class="printbtn" id="copyBtn">Copiar código Pix (copia e cola)</button>
+      <button class="printbtn" id="printBtn">Imprimir</button>
+      <div class="err" id="err"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Edite estes dois valores. =====
+    const CHAVE_PIX = '57.070.604/0001-21';   // sua chave Pix (formato já correto)
+    const NOME_LOJA = 'Minha Loja';       // aparece pra você; quem manda é o cadastro real da chave
+    // =====================================
+
+    // ===== Aparência do QR (vale pro download e pra prévia) =====
+    const ESTILO = {
+      corQR:     '#000000',   // cor dos quadradinhos — precisa ser ESCURA
+      corFundo:  '#ffffff',   // cor do fundo — clara; use 'transparent' pra sem fundo
+      tamanhoPx: 1600,        // resolução do PNG (lado em pixels)
+      correcao:  'M',         // M (padrão) | Q | H — use 'H' se for pôr logo no meio
+    };
+    // ===========================================================
+
+    function tlv(id, value) {
+      return id + String(value.length).padStart(2, '0') + value;
+    }
+    function crc16(payload) {
+      let crc = 0xFFFF;
+      for (let i = 0; i < payload.length; i++) {
+        crc ^= payload.charCodeAt(i) << 8;
+        for (let j = 0; j < 8; j++) {
+          crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+          crc &= 0xFFFF;
+        }
+      }
+      return crc.toString(16).toUpperCase().padStart(4, '0');
+    }
+    function sanitize(s, max) {
+      return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9 ]/g, '').toUpperCase().trim().slice(0, max);
+    }
+
+    // Limpa a chave: tira pontos/barra/traço do CPF/CNPJ, põe +55 no telefone, etc.
+    function normalizeKey(raw) {
+      const k = (raw || '').trim();
+      const digits = k.replace(/\D/g, '');
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (k.includes('@')) return k.toLowerCase();              // e-mail
+      if (uuid.test(k)) return k.toLowerCase();                 // chave aleatória
+      if (k.startsWith('+')) return '+' + digits;               // telefone internacional
+      if (digits.length === 11 || digits.length === 14) return digits; // CPF ou CNPJ
+      if (digits.length === 12 || digits.length === 13) return '+' + (digits.startsWith('55') ? digits : '55' + digits);
+      return k.replace(/\s+/g, '');                             // demais: só tira espaço
+    }
+
+    // QR estático SEM valor (campo 54 omitido): o pagador digita o valor no banco.
+    function buildPixPayload(key, name) {
+      const merchantAccount = tlv('26', tlv('00', 'br.gov.bcb.pix') + tlv('01', key));
+      let payload =
+        tlv('00', '01') + merchantAccount + tlv('52', '0000') + tlv('53', '986') +
+        tlv('58', 'BR') + tlv('59', sanitize(name, 25) || 'RECEBEDOR') +
+        tlv('60', 'SAO PAULO') + tlv('62', tlv('05', '***'));
+      payload += '6304';
+      return payload + crc16(payload);
+    }
+
+    const $ = (id) => document.getElementById(id);
+    let currentPayload = '';
+
+    // Quiet zone = borda branca padrão do QR (4 módulos). Necessária pra escanear,
+    // mas não é "texto" — é parte do próprio código.
+    const QUIET = 4;
+
+    // Gera o objeto QR já com o nível de correção escolhido.
+    function makeQr() {
+      const qr = qrcode(0, ESTILO.correcao || 'M');
+      qr.addData(currentPayload);
+      qr.make();
+      return qr;
+    }
+
+    // Desenha o QR num canvas de alta resolução (só o código), aplicando o ESTILO.
+    function buildCanvas(targetPx) {
+      const qr = makeQr();
+      const count = qr.getModuleCount();
+      const total = count + QUIET * 2;
+      const scale = Math.max(8, Math.ceil((targetPx || ESTILO.tamanhoPx) / total)); // px por módulo
+      const size = total * scale;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (ESTILO.corFundo && ESTILO.corFundo !== 'transparent') {
+        ctx.fillStyle = ESTILO.corFundo;
+        ctx.fillRect(0, 0, size, size);
+      } // senão deixa transparente
+      ctx.fillStyle = ESTILO.corQR;
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (qr.isDark(r, c)) {
+            ctx.fillRect((c + QUIET) * scale, (r + QUIET) * scale, scale, scale);
+          }
+        }
+      }
+      return canvas;
+    }
+
+    // Monta o SVG manualmente pra ter controle total de cor e transparência.
+    function buildSvg() {
+      const qr = makeQr();
+      const count = qr.getModuleCount();
+      const cell = 10;
+      const size = (count + QUIET * 2) * cell;
+      let rects = '';
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (qr.isDark(r, c)) {
+            rects += '<rect x="' + ((c + QUIET) * cell) + '" y="' + ((r + QUIET) * cell) +
+                     '" width="' + cell + '" height="' + cell + '"/>';
+          }
+        }
+      }
+      const bg = (ESTILO.corFundo && ESTILO.corFundo !== 'transparent')
+        ? '<rect width="' + size + '" height="' + size + '" fill="' + ESTILO.corFundo + '"/>'
+        : '';
+      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + size + ' ' + size +
+             '" width="' + size + '" height="' + size + '" shape-rendering="crispEdges">' +
+             bg + '<g fill="' + ESTILO.corQR + '">' + rects + '</g></svg>';
+    }
+
+    function triggerDownload(href, filename, revoke) {
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      if (revoke) URL.revokeObjectURL(href);
+    }
+
+    function downloadPng() {
+      const canvas = buildCanvas(ESTILO.tamanhoPx);     // tamanho escolhido na página
+      triggerDownload(canvas.toDataURL('image/png'), 'pix-qrcode.png');
+    }
+
+    function downloadSvg() {
+      const url = URL.createObjectURL(new Blob([buildSvg()], { type: 'image/svg+xml' }));
+      triggerDownload(url, 'pix-qrcode.svg', true);
+    }
+
+    function render() {
+      if (!CHAVE_PIX || CHAVE_PIX === 'sua-chave-aqui') {
+        $('err').textContent = '⚠ Coloque sua chave Pix na variável CHAVE_PIX no topo do arquivo.';
+        return;
+      }
+      const chave = normalizeKey(CHAVE_PIX);
+      currentPayload = buildPixPayload(chave, NOME_LOJA);
+
+      // prévia usando o mesmo estilo do download
+      const preview = buildCanvas(540);
+      preview.style.width = '260px';
+      preview.style.height = '260px';
+      preview.style.display = 'block';
+      $('qr').innerHTML = '';
+      $('qr').appendChild(preview);
+
+      $('recebedor').textContent = NOME_LOJA;
+      $('chave').textContent = 'Chave: ' + chave;
+      $('copia').textContent = currentPayload;
+    }
+
+    $('copyBtn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('copia').textContent);
+        $('copyBtn').textContent = '✓ Copiado!';
+        setTimeout(() => ($('copyBtn').textContent = 'Copiar código Pix (copia e cola)'), 1500);
+      } catch {
+        $('err').textContent = 'Não foi possível copiar. Selecione o texto manualmente.';
+      }
+    });
+    $('printBtn').addEventListener('click', () => window.print());
+    $('dlPng').addEventListener('click', downloadPng);
+    $('dlSvg').addEventListener('click', downloadSvg);
+
+    // ---- Controles de aparência na página ----
+    function aplicarEstilo() {
+      const semFundo = $('semFundo').checked;
+      ESTILO.corQR = $('corQR').value;
+      ESTILO.corFundo = semFundo ? 'transparent' : $('corFundo').value;
+      ESTILO.tamanhoPx = parseInt($('tamanho').value, 10);
+      ESTILO.correcao = $('correcao').value;
+      $('corFundo').disabled = semFundo;
+      render();
+    }
+    ['corQR', 'corFundo', 'semFundo', 'tamanho', 'correcao'].forEach((id) =>
+      $(id).addEventListener('input', aplicarEstilo)
+    );
+
+    // sincroniza os controles com os valores iniciais do ESTILO
+    $('corQR').value = ESTILO.corQR;
+    if (ESTILO.corFundo === 'transparent') $('semFundo').checked = true;
+    else $('corFundo').value = ESTILO.corFundo;
+    $('tamanho').value = String(ESTILO.tamanhoPx);
+    $('correcao').value = ESTILO.correcao;
+
+    aplicarEstilo();
+  </script>
+</body>
+</html>

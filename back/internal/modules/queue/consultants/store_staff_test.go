@@ -90,6 +90,9 @@ func TestNormalizeStaffRole(t *testing.T) {
 type staffStubRepository struct{}
 
 func (staffStubRepository) StoreExists(context.Context, string) (bool, error) { return false, nil }
+func (staffStubRepository) CanAccessTenant(context.Context, auth.Principal, string) (bool, error) {
+	return true, nil
+}
 func (staffStubRepository) ResolveStoreAccessContext(context.Context, string) (StoreAccessContext, error) {
 	return StoreAccessContext{}, nil
 }

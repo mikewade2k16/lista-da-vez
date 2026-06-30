@@ -200,6 +200,20 @@ legados fica para uma rodada futura (registrar em `docs/LEGADO.md`).
 
 `PATCH /v1/admin/accounts/{id}` agora aceita `organizationId` no body: string vazia (`""`) → desvincula (NULL); UUID válido → vincula. C15.
 
+### /v1/admin/role-templates — CRUD admin de papéis-padrão (catálogo GLOBAL, todos exigem platform_admin)
+
+Catálogo **GLOBAL** de papéis-padrão (`core.role_templates` + `core.role_template_permissions`). Templates são o molde que **toda conta nova clona** (`cloneRoleTemplates`). Templates `is_system=true` (declarados por código em `module.RoleTemplates`/`SyncCatalog`) são **congelados** (CONTRACT_FREEZE): `PATCH`/`PUT`/`DELETE` neles → 409. Templates `is_system=false` são criados aqui (sobrevivem ao boot porque `SyncCatalog` nunca deleta não-declarado) e clonados por contas novas. Gate via `requirePlatformAdmin` (mesmo dos demais `/v1/admin/*`).
+
+| Verbo | Path | Resposta | Notas |
+|---|---|---|---|
+| GET | `/v1/admin/role-templates` | `RoleTemplatesListResponse` | `templates[]` = TODOS (sistema + custom), ordenados por `sort_order, id`, cada um com `permissionKeys[]`. `available[]` = catálogo `core.permissions` (`deprecated_at is null and scope <> 'platform'`) com `key/label/moduleId/scope` p/ montar a matriz. |
+| POST | `/v1/admin/role-templates` | 201 `RoleTemplate` | body `{ id, label, description, permissionKeys[] }`. Cria `is_system=false`, `module_id='core'`, `sort_order=200`, `is_locked=false`. Valida: id único (409), charset id `^[a-z0-9._-]{1,120}$` (400), label não-vazio (400), keys válidas (422). Template + permissões em 1 transação. |
+| PATCH | `/v1/admin/role-templates/{id}` | 200 `RoleTemplate` | body `{ label?, description?, sortOrder? }` (patch semântico). **409 se `is_system=true`**. 404 se id não existe. |
+| PUT | `/v1/admin/role-templates/{id}/permissions` | 200 `RoleTemplate` | body `{ permissionKeys[] }`. REPLACE (delete+insert em transação) das `role_template_permissions`. **409 se `is_system=true`** (CONTRACT_FREEZE). Keys validadas (422). |
+| DELETE | `/v1/admin/role-templates/{id}` | 204 | **409 se `is_system=true`**. Remove template custom + permissões (cascade FK). 404 se não existe. |
+
+Erros: `role_template_not_found` (404), `role_template_conflict` (409), `role_template_system` (409), `invalid_id` (400), `label_required` (400), `invalid_permission` (422). `RoleTemplate` JSON: `{ id, moduleId, label, description, isSystem, isLocked, sortOrder, permissionKeys[] }`.
+
 ### /v1/platform/menu-layout — config GLOBAL do menu (platform-level)
 
 Config de **NÍVEL PLATAFORMA** (NÃO per-account, NÃO per-user): organiza o menu
@@ -343,6 +357,12 @@ Teste de contrato + traducao de erro em `store_postgres_test.go`.
 - `platform_settings_repository.go` — `PostgresPlatformSettingsRepository` (mesmo `*pgxpool.Pool` dos demais repos core): `GetByKey` (linha ausente → nil/nil/nil sem erro) e `Upsert` (`insert ... on conflict (key) do update ... returning updated_at`). `updated_at`/`updated_by` scaneados como ponteiros (nullable).
 - `platform_settings_service.go` — `PlatformSettingsService`: `GetMenuLayout` (default vazio quando não persistido) e `SaveMenuLayout` (valida placements → `ErrValidationFailed`, normaliza, marshal, upsert). Injeção via construtor.
 - `platform_settings_http.go` — `RegisterPlatformSettingsRoutes`: `GET /v1/platform/menu-layout` (RequireAuth, todos) e `PATCH` (RequireAuth + `requirePlatformAdmin`). userID do autor via `auth.PrincipalFromContext`. Placement inválido → 400 `validation_error`.
+- `admin_role_templates_model.go` — DTOs do CRUD de papéis-padrão: `RoleTemplate` (camelCase), `CreateRoleTemplateInput`/`PatchRoleTemplateInput`/`ReplaceRoleTemplatePermissionsInput`, `RoleTemplatesListResponse` (reusa `AvailablePermission` de `admin_overrides_model.go`). Charset do id (`isValidRoleTemplateID`) + sentinels `ErrRoleTemplateConflict`/`ErrRoleTemplateSystem`/`ErrRoleTemplateInvalidID`/`ErrRoleTemplateLabelRequired`. Constantes `roleTemplateCustomModuleID='core'`/`roleTemplateCustomSortOrder=200`.
+- `admin_role_templates_repository.go` — `PostgresRoleTemplateAdminRepository` (mesmo `*pgxpool.Pool` dos demais repos core). Catálogo GLOBAL (sem filtro por account). `ListRoleTemplates` (agrega `permissionKeys` via `array_agg ... filter`), `ListAvailablePermissions` (`deprecated_at is null and scope <> 'platform'`), `FindRoleTemplate`, `InvalidPermissionKeys`, `CreateRoleTemplate` (tx: insert template fixando `is_system=false`/`module_id`/`sort_order` + permissões), `PatchRoleTemplate` (SET dinâmico parametrizado), `ReplaceTemplatePermissions` (tx delete+insert via unnest), `DeleteRoleTemplate` (cascade FK). SQL exposto como `const` p/ teste de contrato. Reusa `pgxQuerier` de `admin_users_links_repository.go`.
+- `admin_role_templates_service.go` — `RoleTemplateAdminService`: valida charset do id, label obrigatório, **bloqueia template `is_system`** (`ensureCustom` → `ErrRoleTemplateSystem`) e valida keys contra catálogo (`InvalidPermissionKeys` → `ErrInvalidPermission`). `normalizeKeys` faz trim/dedup. Repo só executa SQL — toda regra no service.
+- `admin_role_templates_http.go` — `RegisterRoleTemplatesRoutes`: 5 endpoints `/v1/admin/role-templates*` (todos `requirePlatformAdmin`). `writeRoleTemplateError` mapeia os sentinels → 404/409/400/422.
+- `admin_role_templates_test.go` — contrato SQL (fragmentos: schema-qualificado/parametrizado/scope) + lógica do service contra `fakeRoleTemplateRepo` (criar valida id/perms/label/conflito; bloqueio is_system em patch/replace/delete; replace dedup; list com available; charset do id).
+- `cloneRoleTemplates` (admin_repository.go) agora insere com `is_default=true` nos papéis clonados — conta NOVA nasce com os papéis-padrão sinalizados (paridade com a migration 0176 nas contas existentes). Migration `0177_seed_default_fila_role_templates.sql` seeda os 6 papéis da Fila como TEMPLATES (`is_system=false`, `module_id='core'`, `sort_order=200`) com o mesmo mapa de permissões `workspace.*` da 0176 (ON CONFLICT DO NOTHING protege `queue.consultant`/`queue.supervisor` de sistema).
 
 ### Origem dos agregados (C9)
 

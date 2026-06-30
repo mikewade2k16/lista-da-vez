@@ -92,7 +92,17 @@ func (manager *HMACTokenManager) Parse(token string) (Principal, error) {
 		return Principal{}, ErrUnauthorized
 	}
 
-	if claims.Subject == "" || claims.Email == "" || !IsValidRole(claims.Role) {
+	// authn != authz (modelo two-step): identidade (Subject/Email) e obrigatoria,
+	// mas papel-coarse VAZIO e valido — o usuario so-agencia/so-papel-custom loga
+	// com escopo coarse vazio (igual platform_admin com TenantID/AccountID vazios) e
+	// a autoridade vem da RBAC custom por conta. So rejeitamos um papel NAO-vazio que
+	// seja invalido (token corrompido/forjado). Sem isto, o token emitido no login
+	// (Role="") seria rejeitado no Parse e TODA request autenticada apos o login
+	// daria 401 — o login "passava" mas o /me/context seguinte caia.
+	if claims.Subject == "" || claims.Email == "" {
+		return Principal{}, ErrUnauthorized
+	}
+	if claims.Role != "" && !IsValidRole(claims.Role) {
 		return Principal{}, ErrUnauthorized
 	}
 

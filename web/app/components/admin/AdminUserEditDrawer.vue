@@ -19,6 +19,13 @@ const auth = useAuthStore()
 const isPlatformAdmin = computed(() => auth.role === 'platform_admin')
 
 const mode = ref<'side' | 'center' | 'fullscreen'>('side')
+// Largura inicial mais generosa que o default global (720) do OmniEntityDrawer:
+// o editor de usuario tem abas densas (tri-estado por permissao, matriz de papeis)
+// que respiram melhor em ~960px. Continua redimensionavel pelo handle do drawer e
+// fica abaixo do SIDE_MAX_CAP (1120). NAO altera o default global (outros drawers
+// usam o 720) — so esta instancia abre mais larga via a prop width.
+const DRAWER_WIDTH = 960
+const drawerWidth = ref(DRAWER_WIDTH)
 
 type TabKey = 'dados' | 'vinculos' | 'papeis' | 'modulos' | 'paginas' | 'senha'
 const tabs = computed<{ key: TabKey; label: string }[]>(() => {
@@ -73,6 +80,7 @@ const subtitle = computed(() => props.user?.email ?? '')
 <template>
   <OmniEntityDrawer
     v-model:mode="mode"
+    v-model:width="drawerWidth"
     :model-value="open"
     title="Editar usuario"
     :subtitle="subtitle"

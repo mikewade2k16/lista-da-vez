@@ -65,7 +65,14 @@ func (service *Service) ListOrphans(ctx context.Context, principal auth.Principa
 		return nil, ErrValidation
 	}
 
-	if principal.Role != auth.RolePlatformAdmin && principal.TenantID != resolvedTenantID {
+	// Recheca a membership real no banco (nao confia no principal.TenantID, que
+	// pode estar setado sem membership de fato ou apos revogacao). platform_admin
+	// passa pelo proprio CanAccessTenant.
+	allowed, err := service.repository.CanAccessTenant(ctx, principal, resolvedTenantID)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
 		return nil, ErrForbidden
 	}
 
@@ -149,8 +156,16 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 		if !canManageStoreAllocation(principal) {
 			return ConsultantView{}, ErrForbidden
 		}
-		if existing.TenantID != "" && principal.Role != auth.RolePlatformAdmin && principal.TenantID != existing.TenantID {
-			return ConsultantView{}, ErrForbidden
+		if existing.TenantID != "" {
+			// Recheca a membership real no banco (fecha a janela pos-revogacao: um
+			// token ainda valido apos o usuario sair da account nao pode escrever).
+			allowed, err := service.repository.CanAccessTenant(ctx, principal, existing.TenantID)
+			if err != nil {
+				return ConsultantView{}, err
+			}
+			if !allowed {
+				return ConsultantView{}, ErrForbidden
+			}
 		}
 	} else {
 		if err := service.ensureStoreAccess(ctx, principal, existing.StoreID); err != nil {

@@ -339,6 +339,14 @@ export default {
               agencyOnly: true,
             },
             {
+              id: 'manage-role-templates',
+              label: 'Papeis-padrao',
+              icon: 'audit',
+              path: '/manage/role-templates',
+              workspaceId: 'role_templates_admin',
+              agencyOnly: true,
+            },
+            {
               id: 'erp',
               label: 'ERP',
               icon: 'boxes',

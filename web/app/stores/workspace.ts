@@ -17,9 +17,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   )
   const activeRole = computed(() => auth.role || activeProfile.value?.role || 'consultant')
   // getAllowedWorkspaces ja retorna IDs limpos; o wrapper anterior ignorava o 2o
-  // argumento (role/tenant), entao consumimos o resultado diretamente.
+  // argumento (role/tenant), entao consumimos o resultado diretamente. Usa as
+  // permissoes EFETIVAS (login v1 + custom da conta ativa v2) para o menu revelar os
+  // workspaces que o papel custom concede — espelha auth.allowedWorkspaces.
   const allowedWorkspaces = computed(() =>
-    getAllowedWorkspaces(activeRole.value, auth.permissionKeys, auth.permissionsResolved),
+    getAllowedWorkspaces(
+      activeRole.value,
+      auth.effectivePermissionKeys,
+      auth.effectivePermissionsResolved,
+    ),
   )
 
   return {

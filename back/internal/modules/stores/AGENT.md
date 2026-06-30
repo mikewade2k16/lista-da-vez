@@ -88,3 +88,7 @@ Quando crescer, este modulo deve absorver:
 1. configuracoes locais por loja
 2. auditoria de ciclo administrativo da loja
 3. leitura gerencial consolidada cross-store
+
+## Seguranca (2026-06-30)
+
+- `ListAccessible` devolve lista VAZIA (nao 403) quando o principal tem escopo-coarse vazio (`Role==""`, caso so-agencia/so-papel-custom), espelhando o `/me/context`. O `GET /v1/stores` e do escopo legado da Fila; a autoridade do que o usuario ve vem da RBAC custom por account.

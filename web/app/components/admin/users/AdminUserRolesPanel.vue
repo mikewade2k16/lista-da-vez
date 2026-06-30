@@ -6,6 +6,7 @@ import type {
   RoleSummary,
 } from '~/types/admin-users'
 import AdminRoleMatrixEditor from '~/components/admin/users/AdminRoleMatrixEditor.vue'
+import OmniCollapse from '~/components/omni/OmniCollapse.vue'
 
 // Painel de papeis (core.roles) por escopo de um usuario. Para cada conta ativa
 // (cliente OU conta-agencia/organizacao) renderiza um bloco colapsavel com os
@@ -94,8 +95,9 @@ async function load() {
   loading.value = false
 }
 
-function toggleExpanded(block: AccountBlock) {
-  block.expanded = !block.expanded
+// Resumo do cabecalho colapsavel: papeis atribuidos / total do escopo.
+function blockSummary(block: AccountBlock): string {
+  return `${block.selectedIds.size} de ${block.roles.length} papeis`
 }
 
 function isAssigned(block: AccountBlock, roleId: string): boolean {
@@ -160,89 +162,75 @@ onMounted(load)
       {{ r.errorMessage.value }}
     </p>
 
-    <article v-for="block in blocks" :key="block.accountId" class="user-roles-panel__block">
-      <button
-        class="user-roles-panel__block-toggle"
-        type="button"
-        :aria-expanded="block.expanded ? 'true' : 'false'"
-        @click="toggleExpanded(block)"
-      >
-        <span class="user-roles-panel__block-name">
-          {{ block.accountName }}
-          <span v-if="block.isAgency" class="user-roles-panel__org-badge">Organizacao</span>
-        </span>
-        <span class="user-roles-panel__block-meta">
-          <span class="user-roles-panel__count">
-            {{ block.selectedIds.size }} de {{ block.roles.length }} papeis
-          </span>
-          <span v-if="isDirty(block)" class="user-roles-panel__pending">pendente</span>
-          <span class="user-roles-panel__chevron">{{ block.expanded ? '−' : '+' }}</span>
-        </span>
-      </button>
+    <OmniCollapse
+      v-for="block in blocks"
+      :key="block.accountId"
+      :title="block.accountName"
+      :summary="blockSummary(block)"
+      :default-open="block.expanded"
+    >
+      <template #actions>
+        <span v-if="block.isAgency" class="user-roles-panel__org-badge">Organizacao</span>
+        <span v-if="isDirty(block)" class="user-roles-panel__pending">pendente</span>
+      </template>
 
-      <div v-if="block.expanded" class="user-roles-panel__body">
-        <p v-if="!block.roles.length" class="user-roles-panel__empty">
-          Este escopo ainda nao tem papeis. Use "Gerenciar papeis deste escopo" para criar.
-        </p>
+      <p v-if="!block.roles.length" class="user-roles-panel__empty">
+        Este escopo ainda nao tem papeis. Use "Gerenciar papeis deste escopo" para criar.
+      </p>
 
-        <ul v-else class="user-roles-panel__roles">
-          <li v-for="role in block.roles" :key="role.id" class="user-roles-panel__role">
-            <label class="user-roles-panel__role-label">
-              <input
-                type="checkbox"
-                :checked="isAssigned(block, role.id)"
-                @change="toggleRole(block, role.id, ($event.target as HTMLInputElement).checked)"
-              />
-              <span class="user-roles-panel__role-copy">
-                <span class="user-roles-panel__role-name">
-                  {{ role.label }}
-                  <span
-                    v-if="role.isLocked"
-                    class="user-roles-panel__lock"
-                    title="Papel de sistema"
-                  >
-                    cadeado
-                  </span>
-                </span>
-                <span v-if="role.description" class="user-roles-panel__role-desc">
-                  {{ role.description }}
+      <ul v-else class="user-roles-panel__roles">
+        <li v-for="role in block.roles" :key="role.id" class="user-roles-panel__role">
+          <label class="user-roles-panel__role-label">
+            <input
+              type="checkbox"
+              :checked="isAssigned(block, role.id)"
+              @change="toggleRole(block, role.id, ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="user-roles-panel__role-copy">
+              <span class="user-roles-panel__role-name">
+                {{ role.label }}
+                <span v-if="role.isLocked" class="user-roles-panel__lock" title="Papel de sistema">
+                  cadeado
                 </span>
               </span>
-            </label>
-          </li>
-        </ul>
-
-        <footer class="user-roles-panel__actions">
-          <button class="user-roles-panel__matrix-btn" type="button" @click="toggleMatrix(block)">
-            {{ block.showMatrix ? 'Ocultar gestao de papeis' : 'Gerenciar papeis deste escopo' }}
-          </button>
-
-          <div class="user-roles-panel__save-wrap">
-            <span v-if="!isDirty(block)" class="user-roles-panel__save-hint">
-              Sem alteracoes pendentes
+              <span v-if="role.description" class="user-roles-panel__role-desc">
+                {{ role.description }}
+              </span>
             </span>
-            <button
-              class="user-roles-panel__save-btn"
-              type="button"
-              :disabled="!isDirty(block) || isSavingRoles(block.accountId)"
-              @click="saveRoles(block)"
-            >
-              {{ isSavingRoles(block.accountId) ? 'Salvando...' : 'Salvar papeis' }}
-            </button>
-          </div>
-        </footer>
+          </label>
+        </li>
+      </ul>
 
-        <div v-if="block.showMatrix" class="user-roles-panel__matrix">
-          <p v-if="block.loading" class="user-roles-panel__loading">Carregando catalogo...</p>
-          <AdminRoleMatrixEditor
-            v-else
-            :account-id="block.accountId"
-            :available-permissions="block.available"
-            @changed="onMatrixChanged(block)"
-          />
+      <footer class="user-roles-panel__actions">
+        <button class="user-roles-panel__matrix-btn" type="button" @click="toggleMatrix(block)">
+          {{ block.showMatrix ? 'Ocultar gestao de papeis' : 'Gerenciar papeis deste escopo' }}
+        </button>
+
+        <div class="user-roles-panel__save-wrap">
+          <span v-if="!isDirty(block)" class="user-roles-panel__save-hint">
+            Sem alteracoes pendentes
+          </span>
+          <button
+            class="user-roles-panel__save-btn"
+            type="button"
+            :disabled="!isDirty(block) || isSavingRoles(block.accountId)"
+            @click="saveRoles(block)"
+          >
+            {{ isSavingRoles(block.accountId) ? 'Salvando...' : 'Salvar papeis' }}
+          </button>
         </div>
+      </footer>
+
+      <div v-if="block.showMatrix" class="user-roles-panel__matrix">
+        <p v-if="block.loading" class="user-roles-panel__loading">Carregando catalogo...</p>
+        <AdminRoleMatrixEditor
+          v-else
+          :account-id="block.accountId"
+          :available-permissions="block.available"
+          @changed="onMatrixChanged(block)"
+        />
       </div>
-    </article>
+    </OmniCollapse>
   </section>
 </template>
 
@@ -269,36 +257,6 @@ onMounted(load)
   font-size: 0.78rem;
 }
 
-.user-roles-panel__block {
-  border-radius: var(--radius-md);
-  border: 1px solid rgb(var(--border) / 0.85);
-  background: rgb(var(--surface) / 0.7);
-  overflow: hidden;
-}
-
-.user-roles-panel__block-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.7rem 0.85rem;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.user-roles-panel__block-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: rgb(var(--text));
-}
-
 .user-roles-panel__org-badge {
   font-size: 0.64rem;
   font-weight: 700;
@@ -310,18 +268,6 @@ onMounted(load)
   letter-spacing: 0.02em;
 }
 
-.user-roles-panel__block-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.user-roles-panel__count {
-  font-size: 0.74rem;
-  color: rgb(var(--muted));
-}
-
 .user-roles-panel__pending {
   font-size: 0.68rem;
   font-weight: 700;
@@ -331,24 +277,11 @@ onMounted(load)
   color: rgb(var(--primary-600));
 }
 
-.user-roles-panel__chevron {
-  font-size: 1rem;
-  font-weight: 700;
-  color: rgb(var(--muted));
-}
-
-.user-roles-panel__body {
-  display: grid;
-  gap: 0.75rem;
-  padding: 0 0.85rem 0.85rem;
-  border-top: 1px solid rgb(var(--border) / 0.7);
-}
-
 .user-roles-panel__roles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 0.5rem;
-  margin: 0.75rem 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }

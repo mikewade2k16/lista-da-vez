@@ -115,18 +115,46 @@ export const useAuthStore = defineStore('auth', () => {
   const hasLoadedRuntimeSettings = ref(false)
   let ensurePromise = null
 
+  const coreAccount = useCoreAccountStore()
+
   const role = computed(() => normalizeAppRole(principal.value?.role || ''))
+  // hasCoarseRole: o backend resolveu um papel-coarse de fila no login? Falso para
+  // usuario so-agencia/so-papel-custom (authn != authz — ele loga com escopo coarse
+  // vazio e a autoridade vem da RBAC custom por conta, via store v2). `role` (acima)
+  // normaliza vazio -> 'consultant' para o gating legado; este flag preserva a
+  // informacao crua "sem papel-coarse" para o roteamento da Etapa 2 (login.vue).
+  const hasCoarseRole = computed(() => Boolean(String(principal.value?.role || '').trim()))
   const permissionKeys = computed(() => normalizePermissionKeys(principal.value?.permissions))
   const permissionsResolved = computed(() => Boolean(principal.value?.permissionsResolved))
+  // effectivePermissionKeys/Resolved: une as permissoes do login (v1, global) com as
+  // permissoes CUSTOM da conta ativa (v2 — core.role_permissions resolvidas em
+  // /v2/me/context). E ADITIVO: so habilita workspaces que o papel custom da conta
+  // ja concede (o backend continua barrando por requisicao). Sem isso, um usuario
+  // so-custom resolveria apenas o gating coarse legado e cairia em 'operacao' vazio.
+  const effectivePermissionKeys = computed(() => {
+    const accountPerms = normalizePermissionKeys(coreAccount.permissions)
+    if (accountPerms.length === 0) {
+      return permissionKeys.value
+    }
+    return [...new Set([...permissionKeys.value, ...accountPerms])]
+  })
+  const effectivePermissionsResolved = computed(
+    () => permissionsResolved.value || coreAccount.permissions.length > 0,
+  )
   const isAuthenticated = computed(() =>
     Boolean(accessToken.value && user.value && principal.value),
   )
   const mustChangePassword = computed(() => Boolean(user.value?.mustChangePassword))
   // getAllowedWorkspaces ja retorna IDs limpos (string literais de
   // WORKSPACE_ACCESS_DEFINITIONS), entao consumimos direto sem wrapper de
-  // normalizacao defensiva.
+  // normalizacao defensiva. Usa as permissoes EFETIVAS (login v1 + custom v2) para o
+  // menu/home refletirem o que a conta ativa concede ao papel custom.
   const allowedWorkspaces = computed(() =>
-    getAllowedWorkspaces(role.value, permissionKeys.value, permissionsResolved.value),
+    getAllowedWorkspaces(
+      role.value,
+      effectivePermissionKeys.value,
+      effectivePermissionsResolved.value,
+    ),
   )
   const homeWorkspaceId = computed(() => allowedWorkspaces.value[0] || 'operacao')
   const homePath = computed(() => getWorkspacePath(homeWorkspaceId.value))
@@ -205,6 +233,20 @@ export const useAuthStore = defineStore('auth', () => {
     // Sem conta ativa resolvida (sem membership/lista vazia) tambem nao busca:
     // nao ha tenant de fila para configurar.
     if (!accountStore.activeAccount) {
+      return false
+    }
+    // Usuario SEM papel-coarse (escopo vazio — so-agencia/so-papel-custom) nao tem
+    // tenant de Fila legado; pular evita o banner "modo degradado" indevido (ele
+    // cairia em 'degraded' porque /v1/settings exige tenant). A autoridade do que
+    // ele ve vem da RBAC custom por account, nao da config de Fila.
+    if (!hasCoarseRole.value) {
+      return false
+    }
+    // Conta-agencia (is_agency) e um workspace god-view (todos os modulos habilitados,
+    // migration 0158), NAO um tenant de Fila — pular /v1/settings aqui tambem (ex.:
+    // platform_admin que defaulta na agencia). A operacao de Fila real e nas
+    // contas-cliente.
+    if (accountStore.activeAccount.isAgency) {
       return false
     }
     return accountStore.enabledModules.includes('queue')
@@ -685,8 +727,11 @@ export const useAuthStore = defineStore('auth', () => {
     runtimeSettingsNotice,
     runtimeSettingsLastError,
     role,
+    hasCoarseRole,
     permissionKeys,
     permissionsResolved,
+    effectivePermissionKeys,
+    effectivePermissionsResolved,
     isAuthenticated,
     mustChangePassword,
     allowedWorkspaces,

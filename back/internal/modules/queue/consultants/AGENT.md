@@ -122,3 +122,7 @@ seed: `queue.owner`, `queue.director`, `queue.marketing`, `queue.manager`,
 
 - amadurecer reset operacional com auditoria mais detalhada
 - avaliar se vale expor no roster algum indicativo visual de conta sem primeiro login concluido
+
+## Seguranca (2026-06-30)
+
+- `Repository.CanAccessTenant(principal, tenantID)` recheca a membership real no banco (`core.account_users` OU `core.organization_users`), org-aware (platform_admin acessa qualquer account ativa). `ListOrphans` e `Update` (consultor orfao) usam isso em vez de confiar no `principal.TenantID` — fecha vazamento cross-tenant e a janela pos-revogacao (token ainda valido apos o usuario sair da account nao pode ler/escrever). Espelha `queue/settings` e `crm/erp`.

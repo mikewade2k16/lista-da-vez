@@ -273,41 +273,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /*
-  CSS self-contained (BEM .omni-entity-drawer + --side/--center/--fullscreen).
-  As classes caem no slot :ui="{ content }" do USlideover, que renderiza o painel
-  fora do <style scoped> normal — por isso os seletores de posicao usam :deep para
-  alcancar o elemento de conteudo. Valores de posicao usam !important para vencer o
-  tema base do Nuxt UI (mesmo padrao do tasks-modal.css).
+  Estilos dos elementos renderizados pelo NOSSO template (header, menu de modo,
+  corpo, handle, rodape). Esses carregam o atributo data-v do scope mesmo dentro
+  do painel teleportado do USlideover, entao o `scoped` os alcanca normalmente.
+
+  ATENCAO: a posicao/tamanho do PAINEL (--side/--center/--fullscreen) NAO fica aqui
+  — fica no bloco <style> global abaixo. O USlideover teleporta o painel de conteudo
+  para fora desta subarvore (para o body via Portal), e um seletor scoped vira
+  `[data-v-hash] .x`, que exige um ancestral com o data-v no destino do teleport —
+  ancestral que nao existe. Por isso essas regras precisam ser GLOBAIS (era assim no
+  tasks-modal.css original). Ver docs/frontend/MODAL_TEMPLATE.md.
 */
-
-/* Largura/posicao do painel por modo --------------------------------------- */
-:deep(.omni-entity-drawer.omni-entity-drawer--side) {
-  width: var(--omni-drawer-side-width, min(720px, calc(100vw - 1rem))) !important;
-  max-width: min(var(--omni-drawer-side-width, 720px), calc(100vw - 1rem)) !important;
-  border-radius: 0 !important;
-  box-shadow: var(--shadow-md) !important;
-}
-
-:deep(.omni-entity-drawer.omni-entity-drawer--center) {
-  right: auto !important;
-  left: 50% !important;
-  top: 50% !important;
-  bottom: auto !important;
-  width: min(880px, calc(100vw - 2rem)) !important;
-  max-width: min(880px, calc(100vw - 2rem)) !important;
-  height: min(840px, calc(100vh - 2rem)) !important;
-  transform: translate(-50%, -50%) !important;
-  border-radius: var(--radius-md) !important;
-  box-shadow: var(--shadow-dropdown, 0 28px 70px rgb(15 23 42 / 0.22)) !important;
-}
-
-:deep(.omni-entity-drawer.omni-entity-drawer--fullscreen) {
-  inset: 0 !important;
-  width: 100vw !important;
-  max-width: 100vw !important;
-  height: 100vh !important;
-  border-radius: 0 !important;
-}
 
 /* Header ------------------------------------------------------------------- */
 .omni-entity-drawer__header {
@@ -445,19 +421,60 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 720px) {
+  .omni-entity-drawer__resize-handle {
+    display: none;
+  }
+}
+</style>
+
+<style>
+/*
+  Posicao/tamanho do PAINEL do USlideover — GLOBAL de proposito.
+  As classes `omni-entity-drawer omni-entity-drawer--{mode}` caem no painel de
+  conteudo do USlideover via :ui="{ content }". Esse painel e teleportado para o
+  body (Portal do Reka Dialog), fora desta subarvore — por isso um `:deep` scoped
+  nao o alcanca e estas regras precisam ser globais. !important vence o tema base do
+  Nuxt UI (mesmo padrao do tasks-modal.css original). O prefixo .omni-entity-drawer
+  mantem o escopo na pratica, sem colisao com o resto do app.
+*/
+.omni-entity-drawer.omni-entity-drawer--side {
+  width: var(--omni-drawer-side-width, min(720px, calc(100vw - 1rem))) !important;
+  max-width: min(var(--omni-drawer-side-width, 720px), calc(100vw - 1rem)) !important;
+  border-radius: 0 !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.omni-entity-drawer.omni-entity-drawer--center {
+  right: auto !important;
+  left: 50% !important;
+  top: 50% !important;
+  bottom: auto !important;
+  width: min(880px, calc(100vw - 2rem)) !important;
+  max-width: min(880px, calc(100vw - 2rem)) !important;
+  height: min(840px, calc(100vh - 2rem)) !important;
+  transform: translate(-50%, -50%) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-dropdown, 0 28px 70px rgb(15 23 42 / 0.22)) !important;
+}
+
+.omni-entity-drawer.omni-entity-drawer--fullscreen {
+  inset: 0 !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0 !important;
+}
+
+@media (max-width: 720px) {
   /* Em tela estreita, side e center viram tela cheia para nao espremer. */
-  :deep(.omni-entity-drawer.omni-entity-drawer--side),
-  :deep(.omni-entity-drawer.omni-entity-drawer--center) {
+  .omni-entity-drawer.omni-entity-drawer--side,
+  .omni-entity-drawer.omni-entity-drawer--center {
     width: 100vw !important;
     max-width: 100vw !important;
     height: 100vh !important;
     border-radius: 0 !important;
     inset: 0 !important;
     transform: none !important;
-  }
-
-  .omni-entity-drawer__resize-handle {
-    display: none;
   }
 }
 </style>

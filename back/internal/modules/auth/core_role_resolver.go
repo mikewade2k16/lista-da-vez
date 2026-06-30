@@ -94,6 +94,23 @@ func (store *PostgresUserStore) resolveCoreAuthRoleScope(ctx context.Context, us
 
 	role := CoarseRoleFromCoreRole(roleCode, templateID)
 	if role == "" || strings.TrimSpace(accountID) == "" {
+		// account_users nao deu papel-coarse mapeavel (usuario so-agencia ou
+		// so-papel-custom). Devolvemos escopo VAZIO: o login segue assim mesmo
+		// (igual platform_admin com TenantID/AccountID vazios) e a conta-ativa
+		// default + a autorizacao real vem DEPOIS, por account, da Etapa 2
+		// (GET /v2/me/accounts + /v2/me/context?accountId=..., RBAC custom).
+		//
+		// DECISAO DE SEGURANCA (por que NAO preenchemos um TenantID-default por
+		// org aqui): a autoridade do que o usuario ve mora na RBAC custom por
+		// account (Etapa 2), nao num escopo-coarse derivado no login. Um TenantID
+		// de login viraria "papel-coarse" e poderia herdar grants tenant-wide do
+		// roleCatalog legado que o papel custom nao concede (over-grant). O
+		// account_checker org-aware (Etapa 2) ja concede a conta-agencia ao usuario
+		// de org pelo caminho correto (header X-Account-Id validado por requisicao).
+		// (O atalho legado do CanAccessTenant — que confiava no principal.TenantID
+		// sem rechecar membership — foi REMOVIDO; o acesso a tenant e sempre
+		// rechecado no banco. Mesmo assim mantemos o escopo de login vazio: a fonte
+		// de verdade do acesso e a RBAC custom por account.)
 		return authRoleScope{}, false, nil
 	}
 

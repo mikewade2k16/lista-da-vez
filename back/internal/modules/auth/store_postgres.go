@@ -138,9 +138,6 @@ func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord
 	if err != nil {
 		return User{}, err
 	}
-	if scope.Role == "" {
-		return User{}, ErrInvalidRoleScope
-	}
 
 	user := User{
 		ID:                 record.ID,
@@ -155,6 +152,16 @@ func (store *PostgresUserStore) buildUser(ctx context.Context, record userRecord
 		StoreIDs:           append([]string{}, scope.StoreIDs...),
 		Active:             record.Active,
 		CreatedAt:          record.CreatedAt,
+	}
+
+	// Authn != authz: escopo-coarse vazio NAO barra o login. Um usuario ATIVO
+	// sem papel-coarse resolvido autentica com escopo vazio (igual ao
+	// platform_admin com TenantID/AccountID vazios) e resolve o que pode ver
+	// DEPOIS, por account, na RBAC custom. So validamos a corretude do escopo
+	// quando um papel realmente existe — assim consultant/manager/store_terminal
+	// continuam exigindo exatamente uma loja, sem que escopo vazio derrube ninguem.
+	if HasEmptyScope(user) {
+		return user, nil
 	}
 
 	if err := ValidateUserScope(user); err != nil {

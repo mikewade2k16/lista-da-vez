@@ -47,7 +47,12 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
 // (activeAccount.isAgency). Em qualquer conta-cliente (view-as do admin) esses
 // paths redirecionam para o fallback seguro. Espelha os itens agencyOnly do
 // nav.config.ts — se mover/renomear rota la, atualizar aqui.
-const AGENCY_ONLY_PATHS = ['/manage/users', '/manage/organizations', '/manage/clientes-web']
+const AGENCY_ONLY_PATHS = [
+  '/manage/users',
+  '/manage/organizations',
+  '/manage/role-templates',
+  '/manage/clientes-web',
+]
 
 export default defineNuxtRouteMiddleware((to) => {
   // Rotas /auth/* nao precisam de account.

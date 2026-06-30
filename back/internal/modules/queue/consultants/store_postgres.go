@@ -85,6 +85,71 @@ func (repository *PostgresRepository) ListByStore(ctx context.Context, storeID s
 	return consultants, nil
 }
 
+// CanAccessTenant recheca a membership real do principal naquele tenant (account)
+// no banco — defesa em profundidade, sem confiar no principal.TenantID (que pode
+// estar setado sem membership de fato, ou apos revogacao com token ainda valido).
+// Org-aware: platform_admin acessa qualquer account ativa; demais via
+// core.account_users OU membership de agencia (core.organization_users). Espelha
+// crm/erp.CanAccessTenant e queue/settings.CanAccessTenant.
+func (repository *PostgresRepository) CanAccessTenant(ctx context.Context, principal auth.Principal, tenantID string) (bool, error) {
+	normalizedTenantID := strings.TrimSpace(tenantID)
+	if normalizedTenantID == "" {
+		return false, nil
+	}
+
+	var (
+		query string
+		args  []any
+	)
+	switch principal.Role {
+	case auth.RolePlatformAdmin:
+		query = `
+			select exists(
+				select 1
+				from core.accounts t
+				where t.id::text = $1
+				  and t.is_active = true
+			);
+		`
+		args = []any{normalizedTenantID}
+	default:
+		query = `
+			select exists(
+				select 1
+				from core.accounts t
+				where t.id::text = $1
+				  and t.is_active = true
+				  and (
+					exists (
+						select 1
+						from core.account_users au
+						where au.account_id = t.id
+						  and au.user_id::text = $2
+						  and au.is_active = true
+					)
+					or exists (
+						select 1
+						from core.accounts a
+						join core.organizations o on o.id = a.organization_id
+						join core.organization_users ou on ou.organization_id = o.id
+						where a.id = t.id
+						  and a.is_active = true
+						  and o.is_active = true
+						  and ou.user_id::text = $2
+					)
+				  )
+			);
+		`
+		args = []any{normalizedTenantID, strings.TrimSpace(principal.UserID)}
+	}
+
+	var allowed bool
+	if err := repository.pool.QueryRow(ctx, query, args...).Scan(&allowed); err != nil {
+		return false, err
+	}
+	return allowed, nil
+}
+
 // ListOrphansByTenant retorna consultores ativos cuja loja foi deletada
 // (store_id IS NULL apos migration 0122).
 func (repository *PostgresRepository) ListOrphansByTenant(ctx context.Context, tenantID string) ([]Consultant, error) {

@@ -200,6 +200,14 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: 'workspace.organizations_admin.edit',
   },
   {
+    id: 'role_templates_admin',
+    label: 'Papeis-padrao',
+    description:
+      'Catalogo global de papeis-padrao (role templates) que as contas novas clonam (so platform_admin).',
+    viewPermission: 'workspace.role_templates_admin.view',
+    editPermission: 'workspace.role_templates_admin.edit',
+  },
+  {
     id: 'manage',
     label: 'Manage',
     description: 'Agrupa rotas administrativas internas do painel.',
@@ -321,6 +329,7 @@ const ROLE_WORKSPACES = {
     'usuarios',
     'usuarios_admin',
     'organizations_admin',
+    'role_templates_admin',
     'manage',
     'configuracoes',
     'menu_layout',
@@ -419,6 +428,23 @@ const ROLE_WORKSPACES = {
 }
 
 const SUPERUSER_ROLES = new Set(['platform_admin'])
+
+// Workspaces de modulo SEM viewPermission propria (gating historico por papel-default
+// em ROLE_WORKSPACES). Para suportar papeis CUSTOM (criados no painel, que concedem
+// permissoes do modulo mas nao um papel-coarse de fila), o workspace tambem aparece
+// quando o usuario tem QUALQUER permissao daquele modulo. ADITIVO: so amplia, nunca
+// remove; o backend continua gateando o acesso real por requisicao.
+const MODULE_WORKSPACE_PERMISSION_PREFIXES: Record<string, string> = {
+  tasks: 'tasks.',
+}
+
+function hasModuleWorkspacePermission(workspaceId, permissionKeys = []) {
+  const prefix = MODULE_WORKSPACE_PERMISSION_PREFIXES[String(workspaceId || '').trim()]
+  if (!prefix) {
+    return false
+  }
+  return normalizePermissionKeys(permissionKeys).some((key) => key.startsWith(prefix))
+}
 
 export function normalizeAppRole(role) {
   const normalized = String(role || '').trim()
@@ -613,7 +639,9 @@ export function getAllowedWorkspaces(role, permissionKeys = [], permissionsResol
   return WORKSPACE_ACCESS_DEFINITIONS.filter((workspace) => {
     const viewPermission = String(workspace.viewPermission || '').trim()
     if (!viewPermission) {
-      return roleDefaults.has(workspace.id)
+      return (
+        roleDefaults.has(workspace.id) || hasModuleWorkspacePermission(workspace.id, permissionKeys)
+      )
     }
     if (hasWorkspaceAccessAlias(workspace.id, permissionKeys, roleDefaults, normalizedRole)) {
       return true

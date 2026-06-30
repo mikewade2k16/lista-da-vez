@@ -152,7 +152,12 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, invitations *Invitatio
 			case errors.Is(err, ErrOnboardingRequired):
 				httpapi.WriteError(w, r, http.StatusForbidden, "onboarding_required", "Conta criada, mas ainda falta definir a primeira senha pelo convite.")
 			case errors.Is(err, ErrInvalidRoleScope):
-				httpapi.WriteError(w, r, http.StatusForbidden, "user_no_role", "Usuario sem cliente/agencia ou papel definido. Vincule a um cliente ou agencia para liberar o acesso.")
+				// Authn != authz: escopo-coarse vazio NAO chega aqui (login segue
+				// como o platform_admin, com escopo vazio). ErrInvalidRoleScope so
+				// sobra para papel STORE-scoped malformado (ex.: consultant sem
+				// exatamente uma loja vinculada), que e erro de configuracao do
+				// vinculo de loja — nao "usuario sem papel".
+				httpapi.WriteError(w, r, http.StatusForbidden, "user_store_scope", "Vinculo de loja invalido para o papel do usuario. Revise a loja vinculada para liberar o acesso.")
 			default:
 				httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao autenticar.")
 			}

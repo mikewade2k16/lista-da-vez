@@ -140,7 +140,10 @@ Ele nao deve cuidar de:
 - email deve ser tratado normalizado em lowercase
 - usuario inativo nao pode autenticar
 - usuario sem `password_hash` deve receber `onboarding_required` no login
-- usuario sem papel resolvivel (`ErrInvalidRoleScope` — sem cliente/agencia/papel) recebe `403 user_no_role` no login, NUNCA `500`. Vincular a um cliente ou agencia (com cargo) resolve.
+- **Login nao bloqueia por escopo (authn != authz, modelo two-step):** um usuario ATIVO cujo papel/escopo-coarse de fila NAO resolveu (so-agencia, ou so com papel custom nao-queue) AUTENTICA mesmo assim, com escopo VAZIO — espelha o `platform_admin`, que ja loga com `TenantID`/`AccountID` vazios. O login NUNCA devolve `403 user_no_role` por falta de papel-coarse. A autorizacao real (o que o usuario enxerga) e resolvida DEPOIS, por requisicao/account, na Etapa 2 — `GET /v2/me/accounts` (lista accounts org-aware) + `GET /v2/me/context?accountId=...` (papeis+permissoes CUSTOM por account via `RBACService.ResolveUserContext`). Ver `buildUser`/`HasEmptyScope` em `store_postgres.go`/`roles.go`.
+- `ErrInvalidRoleScope` NO LOGIN sobra SO para papel STORE-scoped malformado (ex.: `consultant`/`manager`/`store_terminal` sem exatamente uma loja vinculada) — vira `403 user_store_scope` ("vinculo de loja invalido"), NUNCA `500`. Escopo-coarse vazio NAO passa por `ValidateUserScope` (nao e barrado).
+- **A autoridade do que o usuario ve e a RBAC CUSTOM por account, nao o papel-coarse.** O papel-coarse de fila (`CoarseRoleFromCoreRole` + os Grants do `roleCatalog`) e LEGADO/queue e so alimenta `principal.Permissions` GLOBAL (`access.ResolveEffectivePermissions` por role coarse). O que o usuario realmente pode ver/editar por account vem de `core.role_permissions` (papeis criados no painel) + `core.user_permission_overrides`, resolvido por `accountId` (header `X-Account-Id`) — independente do coarse role e do `TenantID` de login.
+- **Fallback por organizacao NAO preenche `TenantID` de login (decisao de seguranca).** Quando `account_users` nao mapeia papel-coarse, `resolveCoreAuthRoleScope` devolve escopo VAZIO (login segue). NAO derivamos um `TenantID` da conta-agencia para o principal porque varias rotas legadas tenant-scoped tratam `principal.TenantID` como PROVA de acesso sem rechecar membership (ex.: `queue/settings CanAccessTenant` curto-circuita o join em `core.account_users` quando o principal tem `TenantID`). Preencher esse `TenantID` daria leitura com autoridade vinda do LOGIN, nao da RBAC custom — o over-grant que o modelo two-step proibe. A conta-agencia e concedida ao usuario de org pelo caminho correto: o `account_checker` org-aware valida o `X-Account-Id` por requisicao (Etapa 2).
 - usuario com `must_change_password = true` pode autenticar, mas deve ser conduzido ao fluxo de troca de senha no frontend
 - token invalido ou expirado gera `401`
 - role fora do catalogo e erro de modelagem
@@ -175,6 +178,7 @@ Quando este modulo crescer, a ordem certa e:
 
 - o front deve usar `POST /v1/auth/login` e `GET /v1/me/context` antes de qualquer realtime
 - `GET /v1/auth/me` continua util para leitura simples de identidade, mas o contexto de tenant/loja agora vem do endpoint composto
+- **escopo vazio (two-step):** um usuario pode logar com `role`/`tenantId`/`storeIds` vazios (so-agencia/so-papel-custom). Nesse caso `GET /v1/me/context` (legado) devolve `tenants`/`stores` VAZIOS sem 403 (guard local em `platform/app/context_http.go`: pula a leitura de stores quando `principal.Role` e vazio). O front NAO deve tratar contexto vazio como erro de login: deve seguir para a Etapa 2 e carregar as accounts/permissoes via `GET /v2/me/accounts` + `GET /v2/me/context?accountId=...` (RBAC custom por account), que e a fonte do que o usuario pode ver.
 - o dropdown de perfil de teste do frontend deve ficar oculto quando houver sessao real
 - workspaces visiveis no front devem derivar do principal autenticado, nao de mock local
 - a loja ativa do runtime local deve respeitar `store_ids` do principal autenticado
@@ -189,8 +193,8 @@ Quando este modulo crescer, a ordem certa e:
 - `middleware.go`
 - `http.go`
 - `gateway.go` — gate SSO: `GatewayConfig`, cookie `omni_gw` (Set/Clear) e `handleGatewayVerify` (200/302/403, `platform_admin`)
-- `store_postgres.go`
-- `core_role_resolver.go` — resolvedor `core|legacy|core_with_fallback` e mapeamento core role -> role coarse
+- `store_postgres.go` — `buildUser` constroi o usuario autenticado; quando `HasEmptyScope` (papel-coarse vazio), retorna o usuario SEM chamar `ValidateUserScope` (login nao-bloqueante, modelo two-step). So valida corretude STORE-scoped quando ha papel.
+- `core_role_resolver.go` — resolve papel/escopo 100% pelo core (`core.account_users` + `user_role_assignments` + `is_platform_admin`); mapeia core role -> role coarse. Quando `account_users` nao mapeia papel-coarse, devolve escopo VAZIO (login segue; sem `TenantID` derivado de org — ver invariantes).
 - `passwords.go`
 - `errors.go`
 - `account_checker.go` — `PostgresAccountMemberChecker.IsMember` (portão do `RequireAuthWithAccount` que valida `X-Account-Id`). **Org-aware desde 2026-06-15 (AGENCY_TENANT plan, Etapa 3):** account acessível quando ativa E (a) user é `platform_admin`, OU (b) `agency_owner` em `core.organization_users` da org da account, OU (c) membership ativa em `core.account_users`. Espelha `core.ListAccountsForUser` — sem isso o login-agência veria a conta no switcher mas levaria 403 ao usar o módulo (ex.: board Tasks na conta-agência Crow). Query em `accountAccessibleQuery` (const, testada em `account_checker_test.go`).

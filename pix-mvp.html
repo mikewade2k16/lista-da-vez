@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MVP Pix — Gerar QR Code de pagamento</title>
+  <!-- Lib de QR Code (gera o desenho a partir do payload Pix) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #181b22;
+      --border: #262b36;
+      --text: #e6e8ec;
+      --muted: #9aa3b2;
+      --accent: #32bcad; /* verde Pix */
+      --accent-dark: #229488;
+      --danger: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .wrap { width: 100%; max-width: 460px; }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin: 14px 0 6px;
+    }
+    label:first-of-type { margin-top: 0; }
+    input {
+      width: 100%;
+      padding: 11px 12px;
+      background: #11141a;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus { border-color: var(--accent); }
+    select {
+      width: 100%;
+      padding: 11px 12px;
+      background: #11141a;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: var(--text);
+      font-size: 15px;
+      outline: none;
+    }
+    select:focus { border-color: var(--accent); }
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+    button {
+      width: 100%;
+      margin-top: 18px;
+      padding: 13px;
+      background: var(--accent);
+      color: #07221f;
+      border: none;
+      border-radius: 9px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    button:hover { background: var(--accent-dark); }
+    .result {
+      margin-top: 20px;
+      display: none;
+      text-align: center;
+    }
+    .result.show { display: block; }
+    .qrbox {
+      background: #fff;
+      display: inline-block;
+      padding: 14px;
+      border-radius: 12px;
+    }
+    .qrbox img { display: block; width: 240px; height: 240px; image-rendering: pixelated; }
+    .amount-label {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 16px 0 2px;
+    }
+    .to-label { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+    .copia {
+      margin-top: 8px;
+      text-align: left;
+      background: #11141a;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 10px 12px;
+      font-size: 12px;
+      word-break: break-all;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+    }
+    .copybtn {
+      margin-top: 8px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+    .copybtn:hover { background: rgba(50,188,173,.1); }
+    .err { color: var(--danger); font-size: 13px; margin-top: 12px; display: none; }
+    .err.show { display: block; }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🔑 MVP Pix</h1>
+    <p class="sub">Digite a chave e o valor para gerar o QR Code de pagamento.</p>
+
+    <div class="card">
+      <label for="keytype">Tipo de chave</label>
+      <select id="keytype">
+        <option value="auto">Auto-detectar</option>
+        <option value="cpf">CPF</option>
+        <option value="cnpj">CNPJ</option>
+        <option value="telefone">Telefone</option>
+        <option value="email">E-mail</option>
+        <option value="aleatoria">Chave aleatória</option>
+      </select>
+
+      <label for="key">Chave Pix do recebedor</label>
+      <input id="key" type="text" placeholder="CPF, e-mail, telefone ou chave aleatória" autocomplete="off" />
+      <p class="hint" id="keyhint">Telefone é normalizado para o formato <code>+5511999998888</code>.</p>
+
+      <label for="amount">Valor (R$)</label>
+      <input id="amount" type="text" inputmode="decimal" placeholder="Ex.: 49,90 — deixe vazio para valor livre" autocomplete="off" />
+
+      <div class="row">
+        <div>
+          <label for="name">Nome do recebedor</label>
+          <input id="name" type="text" placeholder="Opcional" maxlength="25" autocomplete="off" />
+        </div>
+        <div>
+          <label for="city">Cidade</label>
+          <input id="city" type="text" placeholder="Opcional" maxlength="15" autocomplete="off" />
+        </div>
+      </div>
+
+      <button id="gen">Gerar QR Code</button>
+      <div class="err" id="err"></div>
+
+      <div class="result" id="result">
+        <div class="qrbox"><div id="qr"></div></div>
+        <div class="amount-label" id="amountOut"></div>
+        <div class="to-label" id="toOut"></div>
+        <div class="copia" id="copia"></div>
+        <button class="copybtn" id="copyBtn">Copiar código Pix (copia e cola)</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== Montagem do payload Pix (padrão EMV / BR Code do Banco Central) =====
+
+    // Campo TLV: id (2 dígitos) + tamanho (2 dígitos) + valor
+    function tlv(id, value) {
+      const len = String(value.length).padStart(2, '0');
+      return id + len + value;
+    }
+
+    // CRC16-CCITT (polinômio 0x1021, inicial 0xFFFF) — exigido pelo padrão Pix
+    function crc16(payload) {
+      let crc = 0xFFFF;
+      for (let i = 0; i < payload.length; i++) {
+        crc ^= payload.charCodeAt(i) << 8;
+        for (let j = 0; j < 8; j++) {
+          crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+          crc &= 0xFFFF;
+        }
+      }
+      return crc.toString(16).toUpperCase().padStart(4, '0');
+    }
+
+    // Remove acentos/caracteres especiais, deixa A-Z 0-9 e espaço, maiúsculo
+    function sanitize(s, max) {
+      return (s || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-zA-Z0-9 ]/g, '')
+        .toUpperCase().trim().slice(0, max) || '';
+    }
+
+    // Detecta/normaliza a chave conforme o tipo. Resolve a ambiguidade
+    // CPF x telefone (ambos com 11 dígitos) e formata cada tipo como o DICT espera.
+    function normalizeKey(raw, type) {
+      const k = raw.trim();
+      const digits = k.replace(/\D/g, '');
+      const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+      if (type === 'auto') {
+        if (k.includes('@')) type = 'email';
+        else if (uuid.test(k)) type = 'aleatoria';
+        else if (k.startsWith('+')) type = 'telefone';
+        else if (digits.length === 14) type = 'cnpj';
+        else if (digits.length === 11) type = 'cpf';        // ⚠ ambíguo com telefone
+        else if (digits.length === 12 || digits.length === 13) type = 'telefone';
+        else type = 'outro';
+      }
+
+      switch (type) {
+        case 'email':     return { key: k.toLowerCase(), type };
+        case 'aleatoria': return { key: k.toLowerCase(), type };
+        case 'cpf':
+        case 'cnpj':      return { key: digits, type };
+        case 'telefone': {
+          let d = digits;
+          if (!d.startsWith('55')) d = '55' + d;            // assume Brasil
+          return { key: '+' + d, type };
+        }
+        default:          return { key: k.replace(/\s+/g, ''), type };
+      }
+    }
+
+    // Normaliza o valor: aceita "49,90", "49.90", "R$ 1.234,56" -> "1234.56"
+    function normalizeAmount(v) {
+      if (!v) return '';
+      v = v.replace(/[R$\s]/g, '');
+      if (v.includes(',')) {
+        // formato BR: vírgula é decimal, ponto é separador de milhar
+        v = v.replace(/\./g, '').replace(',', '.');
+      }
+      // sem vírgula: o ponto (se houver) já é o decimal
+      const n = parseFloat(v);
+      if (isNaN(n) || n < 0) return '';
+      return n.toFixed(2);
+    }
+
+    function buildPixPayload({ key, amount, name, city }) {
+      const gui   = tlv('00', 'br.gov.bcb.pix');
+      const chave = tlv('01', key);
+      const merchantAccount = tlv('26', gui + chave);
+
+      let payload =
+        tlv('00', '01') +                 // formato do payload
+        merchantAccount +                 // conta do recebedor (Pix)
+        tlv('52', '0000') +               // MCC
+        tlv('53', '986') +                // moeda BRL
+        (amount ? tlv('54', amount) : '') + // valor (omitido = valor livre)
+        tlv('58', 'BR') +                 // país
+        tlv('59', name) +                 // nome do recebedor
+        tlv('60', city) +                 // cidade
+        tlv('62', tlv('05', '***'));      // dados adicionais (txid livre)
+
+      payload += '6304';                  // id+tam do CRC (calculado sobre tudo acima)
+      return payload + crc16(payload);
+    }
+
+    // ===== UI =====
+    const $ = (id) => document.getElementById(id);
+
+    function showError(msg) {
+      const e = $('err');
+      e.textContent = msg;
+      e.classList.add('show');
+      $('result').classList.remove('show');
+    }
+
+    function gerar() {
+      $('err').classList.remove('show');
+
+      const rawKey = $('key').value.trim();
+      if (!rawKey) return showError('Informe a chave Pix do recebedor.');
+
+      const { key, type } = normalizeKey(rawKey, $('keytype').value);
+      if (!key) return showError('Chave Pix inválida.');
+
+      const amount = normalizeAmount($('amount').value);
+      const name = sanitize($('name').value, 25) || 'RECEBEDOR';
+      const city = sanitize($('city').value, 15) || 'SAO PAULO';
+
+      const payload = buildPixPayload({ key, amount, name, city });
+
+      // Gera o QR a partir do payload
+      const qr = qrcode(0, 'M'); // tipo auto, correção média
+      qr.addData(payload);
+      qr.make();
+      $('qr').innerHTML = qr.createImgTag(5, 0);
+
+      $('amountOut').textContent = amount
+        ? 'R$ ' + amount.replace('.', ',')
+        : 'Valor livre';
+      $('toOut').textContent = 'para ' + name + ' • ' + key + ' (' + type + ')';
+      $('copia').textContent = payload;
+
+      $('result').classList.add('show');
+    }
+
+    $('gen').addEventListener('click', gerar);
+    // Enter em qualquer campo gera
+    document.querySelectorAll('input').forEach((inp) =>
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') gerar(); })
+    );
+
+    $('copyBtn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText($('copia').textContent);
+        $('copyBtn').textContent = '✓ Copiado!';
+        setTimeout(() => ($('copyBtn').textContent = 'Copiar código Pix (copia e cola)'), 1500);
+      } catch {
+        showError('Não foi possível copiar automaticamente. Selecione o texto manualmente.');
+      }
+    });
+  </script>
+</body>
+</html>

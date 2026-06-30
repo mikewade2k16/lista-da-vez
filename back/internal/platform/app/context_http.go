@@ -66,10 +66,22 @@ func registerContextRoutes(
 			return
 		}
 
-		storeViews, err := storeService.ListAccessible(r.Context(), principal, stores.ListInput{})
-		if err != nil {
-			httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao carregar o contexto de loja.")
-			return
+		// Two-step authn/authz: um usuario logado SEM papel-coarse resolvido
+		// (Role vazio — caso so-agencia/so-papel-custom) nao tem escopo de tenant
+		// para o filtro legado de stores. Pular storeService.ListAccessible (que
+		// retornaria ErrTenantForbidden para nao-admin sem tenant, virando 403) e
+		// devolver lista de stores VAZIA. Isso NAO afrouxa nada: a autoridade do
+		// que esse usuario enxerga vem da Etapa 2 (GET /v2/me/accounts +
+		// /v2/me/context?accountId=..., RBAC custom por account), nao do escopo de
+		// login. Guard LOCAL — a semantica global de resolveTenantFilter fica
+		// intacta. platform_admin (Role preenchida) segue o caminho normal.
+		storeViews := make([]stores.StoreView, 0)
+		if strings.TrimSpace(string(principal.Role)) != "" {
+			storeViews, err = storeService.ListAccessible(r.Context(), principal, stores.ListInput{})
+			if err != nil {
+				httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao carregar o contexto de loja.")
+				return
+			}
 		}
 
 		tenantIDsWithStores := make(map[string]struct{}, len(storeViews))

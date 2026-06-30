@@ -49,7 +49,7 @@ func (s *Service) Create(ctx context.Context, principal auth.Principal, input Cr
 		}
 	}
 
-	created, err := s.repository.Create(ctx, feedback)
+	created, err := s.repository.Create(feedback)
 	if err != nil {
 		if feedback.ImagePath != "" {
 			_ = s.deleteImage(feedback.ImagePath)
@@ -69,7 +69,7 @@ func (s *Service) List(ctx context.Context, principal auth.Principal, input List
 		input.StoreIDs = normalizeStoreIDs(principal.StoreIDs)
 	}
 
-	feedbacks, err := s.repository.List(ctx, principal.TenantID, input)
+	feedbacks, err := s.repository.List(principal.TenantID, input)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (s *Service) ListMine(ctx context.Context, principal auth.Principal, input 
 	input.UserID = principal.UserID
 	input.ViewerUserID = principal.UserID
 
-	feedbacks, err := s.repository.List(ctx, principal.TenantID, input)
+	feedbacks, err := s.repository.List(principal.TenantID, input)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *Service) ListMine(ctx context.Context, principal auth.Principal, input 
 }
 
 func (s *Service) MarkRead(ctx context.Context, principal auth.Principal, id string) (*FeedbackView, error) {
-	feedback, err := s.repository.GetByID(ctx, principal.TenantID, id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func (s *Service) MarkRead(ctx context.Context, principal auth.Principal, id str
 		return nil, err
 	}
 
-	updated, err := s.repository.MarkRead(ctx, principal.TenantID, feedback.ID, principal.UserID, time.Now().UTC())
+	updated, err := s.repository.MarkRead(principal.TenantID, feedback.ID, principal.UserID, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (s *Service) MarkRead(ctx context.Context, principal auth.Principal, id str
 }
 
 func (s *Service) ListMessages(ctx context.Context, principal auth.Principal, id string, input ListMessagesInput) ([]FeedbackMessageView, error) {
-	feedback, err := s.repository.GetByID(ctx, principal.TenantID, id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (s *Service) ListMessages(ctx context.Context, principal auth.Principal, id
 		return nil, err
 	}
 
-	messages, err := s.repository.ListMessages(ctx, principal.TenantID, id, input)
+	messages, err := s.repository.ListMessages(principal.TenantID, id, input)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +141,7 @@ func (s *Service) ListMessages(ctx context.Context, principal auth.Principal, id
 }
 
 func (s *Service) CreateMessage(ctx context.Context, principal auth.Principal, id string, input CreateMessageInput) (*FeedbackMessageView, error) {
-	feedback, err := s.repository.GetByID(ctx, principal.TenantID, id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -182,14 +182,14 @@ func (s *Service) CreateMessage(ctx context.Context, principal auth.Principal, i
 		}
 	}
 
-	created, err := s.repository.CreateMessage(ctx, principal.TenantID, message)
+	created, err := s.repository.CreateMessage(principal.TenantID, message)
 	if err != nil {
 		if message.ImagePath != "" {
 			_ = s.deleteImage(message.ImagePath)
 		}
 		return nil, err
 	}
-	if _, err := s.repository.MarkRead(ctx, principal.TenantID, feedback.ID, principal.UserID, created.CreatedAt); err != nil {
+	if _, err := s.repository.MarkRead(principal.TenantID, feedback.ID, principal.UserID, created.CreatedAt); err != nil {
 		return nil, err
 	}
 
@@ -201,7 +201,7 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 		return nil, ErrForbidden
 	}
 
-	feedback, err := s.repository.GetByID(ctx, principal.TenantID, id)
+	feedback, err := s.repository.GetByID(principal.TenantID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 		feedback.AdminNote = *input.AdminNote
 	}
 
-	if err := s.repository.Update(ctx, principal.TenantID, feedback); err != nil {
+	if err := s.repository.Update(principal.TenantID, feedback); err != nil {
 		return nil, err
 	}
 
@@ -243,7 +243,7 @@ func (s *Service) Update(ctx context.Context, principal auth.Principal, id strin
 func (s *Service) CleanupExpiredAttachments(ctx context.Context) (int, error) {
 	totalDeleted := 0
 	for {
-		paths, err := s.repository.PurgeExpiredAttachments(ctx, time.Now().UTC(), feedbackAttachmentCleanupBatch)
+		paths, err := s.repository.PurgeExpiredAttachments(time.Now().UTC(), feedbackAttachmentCleanupBatch)
 		if err != nil {
 			return totalDeleted, err
 		}

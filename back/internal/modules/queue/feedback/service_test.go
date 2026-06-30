@@ -56,11 +56,11 @@ func (storage *serviceTestImageStorage) Delete(path string) error {
 	return storage.deleteErr
 }
 
-func (repository *serviceTestRepository) Create(_ context.Context, feedback *Feedback) (*Feedback, error) {
+func (repository *serviceTestRepository) Create(feedback *Feedback) (*Feedback, error) {
 	return feedback, nil
 }
 
-func (repository *serviceTestRepository) GetByID(_ context.Context, _ string, _ string) (*Feedback, error) {
+func (repository *serviceTestRepository) GetByID(_ string, _ string) (*Feedback, error) {
 	if repository.getByIDErr != nil {
 		return nil, repository.getByIDErr
 	}
@@ -70,12 +70,12 @@ func (repository *serviceTestRepository) GetByID(_ context.Context, _ string, _ 
 	return repository.feedback, nil
 }
 
-func (repository *serviceTestRepository) List(_ context.Context, _ string, input ListInput) ([]Feedback, error) {
+func (repository *serviceTestRepository) List(_ string, input ListInput) ([]Feedback, error) {
 	repository.listInput = input
 	return repository.feedbacks, repository.listErr
 }
 
-func (repository *serviceTestRepository) MarkRead(_ context.Context, _ string, feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
+func (repository *serviceTestRepository) MarkRead(_ string, feedbackID string, userID string, readAt time.Time) (*Feedback, error) {
 	repository.markReadCallCount++
 	repository.lastMarkRead.feedbackID = feedbackID
 	repository.lastMarkRead.userID = userID
@@ -94,7 +94,7 @@ func (repository *serviceTestRepository) MarkRead(_ context.Context, _ string, f
 	return &updated, nil
 }
 
-func (repository *serviceTestRepository) Update(_ context.Context, _ string, _ *Feedback) error {
+func (repository *serviceTestRepository) Update(_ string, _ *Feedback) error {
 	repository.updateCallCount++
 	if repository.feedback != nil {
 		updated := *repository.feedback
@@ -103,7 +103,7 @@ func (repository *serviceTestRepository) Update(_ context.Context, _ string, _ *
 	return repository.updateErr
 }
 
-func (repository *serviceTestRepository) CreateMessage(_ context.Context, _ string, _ *FeedbackMessage) (*FeedbackMessage, error) {
+func (repository *serviceTestRepository) CreateMessage(_ string, _ *FeedbackMessage) (*FeedbackMessage, error) {
 	if repository.createMessageErr != nil {
 		return nil, repository.createMessageErr
 	}
@@ -113,11 +113,11 @@ func (repository *serviceTestRepository) CreateMessage(_ context.Context, _ stri
 	return repository.createdMessage, nil
 }
 
-func (repository *serviceTestRepository) ListMessages(_ context.Context, _ string, _ string, _ ListMessagesInput) ([]FeedbackMessage, error) {
+func (repository *serviceTestRepository) ListMessages(_ string, _ string, _ ListMessagesInput) ([]FeedbackMessage, error) {
 	return repository.messages, repository.listMessagesErr
 }
 
-func (repository *serviceTestRepository) PurgeExpiredAttachments(_ context.Context, _ time.Time, _ int) ([]string, error) {
+func (repository *serviceTestRepository) PurgeExpiredAttachments(_ time.Time, _ int) ([]string, error) {
 	if len(repository.purgedPaths) == 0 {
 		return nil, nil
 	}

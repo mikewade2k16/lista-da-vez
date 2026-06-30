@@ -52,14 +52,6 @@ So o list popula esses campos (via `ToListView`); as respostas de mutacao usam `
 - Em `CreateMessage` a checagem de acesso/tenant ocorre ANTES da checagem de `StatusClosed` (409); senao um feedback fechado de outro tenant vazaria 409 em vez de 404.
 - Defesa em profundidade: as queries do store (`GetByID`, `getByIDForViewer`, `MarkRead`, `Update`, `CreateMessage`, `ListMessages`) recebem o `tenantID` do Principal e filtram por `tenant_id` no WHERE (`$N::uuid is null or tenant_id = $N::uuid`). `tenantID` vazio (platform_admin) ignora o filtro e enxerga todos os tenants. A checagem no service permanece como camada extra.
 
-## Row-Level Security (RLS) — fase 1 SUSPENSA (SEC-1)
-
-Tentativa de piloto de RLS no feedback (plano: `docs/RLS_PLAN.md`). **A migration foi REMOVIDA e o RLS esta INERTE** — ver os 2 bloqueios abaixo. O que ficou no codigo e so a FUNDACAO (inerte, compila e boota): `database.Querier`/`ConnFromContext` (pool.go), o middleware `httpapi.RLSConnGuard` (so no grupo `/v1/feedback`: acquire/set GUC/`reset all`+Release por request) e o repo resolvendo a conn via `ConnFromContext`. As queries sao identicas; a protecao real continua sendo o filtro `tenant_id` no repo (defesa em profundidade — bullet acima).
-
-- **Bloqueio 1 — superuser:** a app conecta como `omni` = `POSTGRES_USER` = superuser, que IGNORA RLS por completo (nem `force` aplica). Sob esse role qualquer policy e no-op. Precisa de um role de app dedicado SEM superuser e SEM `BYPASSRLS` + `GRANT`s + `DATABASE_URL` apontando pra ele.
-- **Bloqueio 2 — `public.*` sao views:** a migration `0176` (removida) usava nome sem schema (`alter table user_feedback ...`), que o `search_path` resolveu para a VIEW de compat `public.user_feedback` -> erro 42809 (nao da pra indexar/ligar RLS em view; quebrou o boot da api). A tabela real e o relkind `r` schema-qualificado. Uma migration de RLS de verdade precisa QUALIFICAR o schema da tabela base e tratar RLS sob view (`security_invoker`).
-- **Quando destravar os 2:** nova migration schema-qualificada (enable/force/policy nas tabelas `r`) + o teste `store_postgres_rls_test.go` (gated por `TEST_DATABASE_URL`, e que PULA sob superuser) passa a provar o isolamento (conta A so ve A; platform_admin via bypass ve tudo).
-
 ## Regras de dados
 
 - feedback e criado dentro do escopo do tenant e loja do usuario autenticado

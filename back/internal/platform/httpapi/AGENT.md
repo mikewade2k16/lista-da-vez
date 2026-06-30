@@ -18,15 +18,6 @@ Logging, Gzip, `AccountModulesGuard` (multi-tenant), helpers de erro padronizado
   por testes em `rate_limit_test.go`.
 - `account_guard.go` — `AccountModulesGuard`: middleware multi-tenant que
   lê `core.account_modules` e bloqueia rotas de módulos desabilitados.
-- `rls.go` — `RLSConnGuard` (RLS fase 1, SEC-1, `docs/RLS_PLAN.md`): injeta uma
-  conexão por request com o GUC de tenant setado para o Row-Level Security do
-  Postgres. `Wrap(handler)` faz `pool.Acquire`, `set_config('app.account_id', ...)`
-  (e `app.bypass_rls=on` p/ platform_admin), põe a conn no context
-  (`database.WithConn`) e no `defer` faz `reset all` + `Release` SEMPRE (senão
-  vaza conexão do pool). O escopo (`RLSScope`) é extraído do `Principal` por um
-  resolver definido no `app.go` (httpapi não importa `auth` — ciclo). Aplicado
-  DENTRO do `RequireAuth` e SO no grupo de rotas que migrou (fase 1: `/v1/feedback`),
-  nunca global. Resolver nil / escopo vazio sem bypass => segue no pool (fail-safe).
 - `error.go` / `response.go` — `WriteError`, `WriteJSON` padronizados.
 
 ## `AccountModulesGuard` — ATIVO desde 2026-06-04 (C20)

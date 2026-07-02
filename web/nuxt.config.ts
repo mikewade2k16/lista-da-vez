@@ -1,11 +1,21 @@
 const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === 'true'
 const shouldUsePollingWatcher =
   process.env.CHOKIDAR_USEPOLLING === 'true' || process.env.WATCHPACK_POLLING === 'true'
-const watcherIgnorePatterns = ['**/.output/**', '**/dist/**']
+// Menos arquivos vigiados = menos CPU gasta no polling (obrigatorio no bind
+// mount Windows->container, onde eventos de arquivo nativos nao chegam, entao o
+// watcher precisa varrer periodicamente). node_modules e .git ja sao ignorados
+// por padrao pelo Vite; aqui somamos os diretorios gerados/pesados.
+const watcherIgnorePatterns = [
+  '**/.output/**',
+  '**/dist/**',
+  '**/.nuxt/**',
+  '**/coverage/**',
+  '**/*.log',
+]
 const watcherInterval = Number(process.env.CHOKIDAR_INTERVAL || 350)
 
 export default defineNuxtConfig({
-  extends: ['./layers/core', './layers/queue', './layers/tasks'],
+  extends: ['./layers/core', './layers/queue', './layers/tasks', './layers/finance'],
   compatibilityDate: '2026-03-23',
   devtools: {
     enabled: shouldEnableNuxtDevtools,
@@ -21,6 +31,7 @@ export default defineNuxtConfig({
     '/automation': { ssr: false },
     '/banco': { ssr: false },
     '/bi': { ssr: false },
+    '/calendario': { ssr: false },
     '/campanhas': { ssr: false },
     '/cardapio': { ssr: false },
     '/cardapio/**': { ssr: false },
@@ -53,6 +64,12 @@ export default defineNuxtConfig({
     '/tools/**': { ssr: false },
     '/tracking': { ssr: false },
     '/usuarios': { ssr: false },
+  },
+  // Vigia apenas os diretorios que o Nuxt realmente precisa (pages/layouts/
+  // components/composables/...) em vez de toda a srcDir — corta bastante a qtd de
+  // arquivos no polling, que e obrigatorio no bind mount do Docker no Windows.
+  experimental: {
+    watcher: 'chokidar-granular',
   },
   modules: ['@nuxt/ui', '@nuxt/eslint', '@pinia/nuxt'],
   colorMode: {
@@ -93,6 +110,13 @@ export default defineNuxtConfig({
         '@tiptap/suggestion',
         '@tiptap/vue-3',
         'lucide-vue-next',
+        // Pre-bundlados p/ o Vite NAO os "descobrir" no meio da navegacao (ao
+        // abrir uma tela de graficos: meta-ads, analytics do cardapio). Descoberta
+        // tardia de dep dispara re-otimizacao + full reload da pagina — a causa dos
+        // travamentos aleatorios de 5-10s no dev. Listar aqui elimina esse reload.
+        'apexcharts',
+        'vue3-apexcharts',
+        'pinia',
       ],
     },
     // NAO externalizar @tiptap/y-tiptap: o drag-handle (@tiptap/extension-drag-handle,
@@ -104,6 +128,21 @@ export default defineNuxtConfig({
     // server do Vite). Deixar o Rollup bundlar normalmente: yjs e todos os peers
     // (y-protocols, prosemirror-*, lib0) ja estao em node_modules e o editor e lazy.
     server: {
+      // Front-load do compile das telas SEMPRE usadas (shell do dashboard) no
+      // start do dev server, para a 1a navegacao apos um reload nao pagar o custo
+      // de compilar tudo sob demanda atravessando a ponte de FS (o que faz o
+      // primeiro clique/login demorar). Caminhos relativos a raiz do web.
+      warmup: {
+        clientFiles: [
+          './app/app.vue',
+          './app/layouts/dashboard.vue',
+          './app/components/dashboard/DashboardHeader.vue',
+          './app/components/dashboard/DashboardWorkspaceNav.vue',
+          './app/components/ui/AppDialogHost.vue',
+          './app/components/ui/AppToastStack.vue',
+          './layers/core/components/CoreLoadingOverlay.vue',
+        ],
+      },
       watch: shouldUsePollingWatcher
         ? {
             ignored: watcherIgnorePatterns,
@@ -140,6 +179,7 @@ export default defineNuxtConfig({
     '~/assets/styles/layout.css',
     '~/assets/styles/components.css',
     '~/assets/styles/tasks-modal.css',
+    '~/assets/styles/calendar.css',
     '~/assets/styles/presentation.css',
   ],
   app: {

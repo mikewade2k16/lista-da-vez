@@ -27,7 +27,7 @@ import {
   type ErpRun,
 } from '~/domain/utils/erp-display'
 import { useAuthStore } from '~/stores/auth'
-import { useErpStore } from '~/stores/erp'
+import { useErpStore, type ErpRecordsFacetOption } from '~/stores/erp'
 import { useUiStore } from '~/stores/ui'
 
 type ErpCrmWorkspaceHandle = {
@@ -47,7 +47,8 @@ export function useErpWorkspace() {
   const erpStore = useErpStore()
   const ui = useUiStore()
 
-  const activeTab = ref('sincronizacao')
+  // Pagina inicial do ERP = Compras (pedidos).
+  const activeTab = ref('pedidos')
   const activeBancoTab = ref('geral')
   const selectedSyncRunId = ref('')
   const searchValue = ref('')
@@ -60,8 +61,21 @@ export function useErpWorkspace() {
   const recordsSpecificSearchValue = ref('')
   const recordsSortBy = ref('source_batch_date')
   const recordsSortDir = ref('desc')
-  const recordsDateFrom = ref('')
-  const recordsDateTo = ref('')
+  // Default = mes atual (aba inicial e Compras), para sempre cair no range scan
+  // do indice order_date em vez de varrer o historico inteiro.
+  const initialRecordsRange = currentMonthRecordsRange()
+  const recordsDateFrom = ref(initialRecordsRange.from)
+  const recordsDateTo = ref(initialRecordsRange.to)
+  // Filtros do sorteio na aba Compras: data real da compra (order_date) por padrao
+  // com toggle para o lote importado (batch_date), e valor minimo da compra em reais.
+  const recordsDateField = ref('order_date')
+  const recordsMinValue = ref('')
+  // Filtros server-side de loja/consultor na aba Compras/Cancelados. Valor vazio =
+  // todas as lojas / todos os consultores. As opcoes (facetas) vem do periodo real.
+  const recordsStoreFilter = ref('')
+  const recordsEmployeeFilter = ref('')
+  const recordsStoreOptions = ref<ErpRecordsFacetOption[]>([])
+  const recordsEmployeeOptions = ref<ErpRecordsFacetOption[]>([])
   const crmRef = ref<ErpCrmWorkspaceHandle | null>(null)
   let productsLoadTimer: ReturnType<typeof setTimeout> | null = null
   let recordsLoadTimer: ReturnType<typeof setTimeout> | null = null
@@ -147,6 +161,15 @@ export function useErpWorkspace() {
   const activeBancoSection = computed(
     () => ERP_BANCO_SECTION_BY_TAB[activeBancoTab.value] || ERP_BANCO_SECTION_BY_TAB.geral,
   )
+  // Centavos derivados do valor minimo digitado em reais (input numerico). 0 = sem filtro.
+  const recordsMinValueCents = computed(() => {
+    const value = Number(recordsMinValue.value)
+    if (!Number.isFinite(value) || value <= 0) return 0
+    return Math.round(value * 100)
+  })
+  // Deve espelhar EXATAMENTE o queryKey de fetchStats (erp.ts), inclusive ordem e os
+  // filtros de loja/consultor — senao, com um filtro ativo, recordsStatsKey diverge e
+  // orderStats vira null (cards zerados). normalizeText = trim.
   const currentRecordsStatsKey = computed(() =>
     [
       activeRecordsDataType.value,
@@ -154,6 +177,10 @@ export function useErpWorkspace() {
       recordsSpecificSearchValue.value.trim(),
       recordsDateFrom.value.trim(),
       recordsDateTo.value.trim(),
+      recordsDateField.value,
+      String(recordsMinValueCents.value),
+      recordsStoreFilter.value.trim(),
+      recordsEmployeeFilter.value.trim(),
     ].join('|'),
   )
   const orderStats = computed(() => {
@@ -177,12 +204,16 @@ export function useErpWorkspace() {
     productsDateTo,
     productsSortBy,
     productsSortDir,
+    recordsDateField,
     recordsDateFrom,
     recordsDateTo,
+    recordsEmployeeFilter,
+    recordsMinValueCents,
     recordsSearchValue,
     recordsSortBy,
     recordsSortDir,
     recordsSpecificSearchValue,
+    recordsStoreFilter,
     searchValue,
     ui,
   })
@@ -242,6 +273,10 @@ export function useErpWorkspace() {
       sortDir: recordsSortDir.value,
       dateFrom: recordsDateFrom.value,
       dateTo: recordsDateTo.value,
+      dateField: recordsDateField.value,
+      minValueCents: recordsMinValueCents.value,
+      storeFilter: recordsStoreFilter.value,
+      employeeFilter: recordsEmployeeFilter.value,
     })
     if (!result.ok && result.message) ui.error(result.message)
   }
@@ -260,8 +295,53 @@ export function useErpWorkspace() {
       specificSearch: recordsSpecificSearchValue.value,
       dateFrom: recordsDateFrom.value,
       dateTo: recordsDateTo.value,
+      dateField: recordsDateField.value,
+      minValueCents: recordsMinValueCents.value,
+      storeFilter: recordsStoreFilter.value,
+      employeeFilter: recordsEmployeeFilter.value,
     })
     if (!result.ok && result.message) ui.error(result.message)
+  }
+
+  async function loadRecordsFacets() {
+    if (
+      import.meta.server ||
+      !isERPSystemAdmin.value ||
+      (activeTab.value !== 'pedidos' && activeTab.value !== 'cancelados')
+    ) {
+      return
+    }
+    const result = await erpStore.fetchRecordsFacets({
+      dataType: activeRecordsDataType.value,
+      dateFrom: recordsDateFrom.value,
+      dateTo: recordsDateTo.value,
+      dateField: recordsDateField.value,
+      // Cascata: as opcoes de consultor sao filtradas pela loja selecionada.
+      storeFilter: recordsStoreFilter.value,
+    })
+    if (!result.ok) {
+      if (result.message) ui.error(result.message)
+      recordsStoreOptions.value = []
+      recordsEmployeeOptions.value = []
+      return
+    }
+    recordsStoreOptions.value = Array.isArray(result.data?.stores) ? result.data.stores : []
+    recordsEmployeeOptions.value = Array.isArray(result.data?.employees)
+      ? result.data.employees
+      : []
+  }
+
+  function currentMonthRecordsRange() {
+    const now = new Date()
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0))
+    const toInput = (date: Date) =>
+      [
+        date.getUTCFullYear(),
+        String(date.getUTCMonth() + 1).padStart(2, '0'),
+        String(date.getUTCDate()).padStart(2, '0'),
+      ].join('-')
+    return { from: toInput(start), to: toInput(end) }
   }
 
   function handleProductsSortBy(col: string) {
@@ -339,6 +419,7 @@ export function useErpWorkspace() {
     if (activeTab.value !== 'banco') {
       await loadRecords()
       await loadOrderStats()
+      await loadRecordsFacets()
     }
   }
 
@@ -405,10 +486,26 @@ export function useErpWorkspace() {
     recordsSpecificSearchValue.value = ''
     recordsSortBy.value = 'source_batch_date'
     recordsSortDir.value = 'desc'
-    recordsDateFrom.value = ''
-    recordsDateTo.value = ''
+    recordsDateField.value = 'order_date'
+    recordsMinValue.value = ''
+    recordsStoreFilter.value = ''
+    recordsEmployeeFilter.value = ''
+    recordsStoreOptions.value = []
+    recordsEmployeeOptions.value = []
+    // Volume grande: abrir Compras/Cancelados ja no mes atual (range scan pelo
+    // indice order_date) em vez de varrer todo o historico. Demais abas seguem
+    // sem filtro de periodo.
+    if (activeTab.value === 'pedidos' || activeTab.value === 'cancelados') {
+      const range = currentMonthRecordsRange()
+      recordsDateFrom.value = range.from
+      recordsDateTo.value = range.to
+    } else {
+      recordsDateFrom.value = ''
+      recordsDateTo.value = ''
+    }
     void loadRecords({ page: 1 })
     void loadOrderStats()
+    void loadRecordsFacets()
   })
 
   watch(searchValue, scheduleProductsLoad)
@@ -417,8 +514,30 @@ export function useErpWorkspace() {
   watch(recordsSpecificSearchValue, scheduleRecordsLoad)
   watch(productsDateFrom, scheduleProductsLoad)
   watch(productsDateTo, scheduleProductsLoad)
-  watch(recordsDateFrom, scheduleRecordsLoad)
-  watch(recordsDateTo, scheduleRecordsLoad)
+  // O periodo (data de/ate e o campo de data) redefine as facetas de loja/consultor,
+  // entao alem de reagendar a busca dos registros tambem recarrega as opcoes.
+  watch(recordsDateFrom, () => {
+    scheduleRecordsLoad()
+    void loadRecordsFacets()
+  })
+  watch(recordsDateTo, () => {
+    scheduleRecordsLoad()
+    void loadRecordsFacets()
+  })
+  watch(recordsMinValue, scheduleRecordsLoad)
+  // Loja em cascata: trocar a loja reseta o consultor (a lista muda) e recarrega as
+  // facetas de consultor ja filtradas pela nova loja, alem de reagendar a busca.
+  watch(recordsStoreFilter, () => {
+    recordsEmployeeFilter.value = ''
+    void loadRecordsFacets()
+    scheduleRecordsLoad()
+  })
+  watch(recordsEmployeeFilter, scheduleRecordsLoad)
+  watch(recordsDateField, () => {
+    void loadRecords({ page: 1 })
+    void loadOrderStats()
+    void loadRecordsFacets()
+  })
   watch(
     tabs,
     (availableTabs) => {
@@ -500,13 +619,19 @@ export function useErpWorkspace() {
     productsSortBy,
     productsSortDir,
     rawItemRows,
+    recordsDateField,
     recordsDateFrom,
     recordsDateTo,
+    recordsEmployeeFilter,
+    recordsEmployeeOptions,
+    recordsMinValue,
     recordsRowKey,
     recordsSearchValue,
     recordsSortBy,
     recordsSortDir,
     recordsSpecificSearchValue,
+    recordsStoreFilter,
+    recordsStoreOptions,
     reloadWorkspace,
     searchValue,
     selectedSyncRun,

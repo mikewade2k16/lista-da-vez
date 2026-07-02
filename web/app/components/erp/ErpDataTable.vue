@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, useSlots } from 'vue'
-import { CalendarDays, Download } from 'lucide-vue-next'
+import { CalendarDays, Download, Mail } from 'lucide-vue-next'
 
 import AppEntityGrid from '~/components/ui/AppEntityGrid.vue'
+import IconWhatsApp from '~/components/ui/IconWhatsApp.vue'
+import type { ExportFormat, ExportRequest } from '~/domain/utils/erp-display'
+import { useUiStore } from '~/stores/ui'
 
 interface TableColumn {
   id: string
@@ -17,8 +20,6 @@ interface TableColumn {
 interface GenericRow {
   [key: string]: unknown
 }
-
-type ExportScope = 'page' | 'filtered' | 'all'
 
 const props = withDefaults(
   defineProps<{
@@ -109,7 +110,7 @@ const emit = defineEmits<{
   (e: 'update:pageSize', value: number): void
   (e: 'refresh'): void
   (e: 'bootstrap'): void
-  (e: 'export', scope: ExportScope): void
+  (e: 'export', request: ExportRequest): void
 }>()
 
 // Slots that ErpDataTable consumes internally and must NOT be forwarded to AppEntityGrid
@@ -117,15 +118,73 @@ const internalSlots = new Set([
   'toolbar-filters',
   'toolbar-actions',
   'cell-__counter',
+  'cell-order_date_raw',
   'cell-total_amount_raw',
   'cell-product_return_raw',
   'cell-amount_raw',
   'cell-total_exclusion_raw',
   'cell-total_debit_raw',
+  'cell-options',
+  'pagination-extra',
 ])
 
+// Data legivel: "26 jun 2026" com a hora embaixo. So exibicao — a ordenacao e o
+// filtro continuam por order_date (a coluna mantem o id order_date_raw).
+const MONTHS_PT_ABBR = [
+  'jan',
+  'fev',
+  'mar',
+  'abr',
+  'mai',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'out',
+  'nov',
+  'dez',
+]
+
+function formatOrderDateCell(raw: unknown) {
+  const text = String(raw ?? '').trim()
+  if (!text) return { date: '-', time: '' }
+  const [datePart, timePart] = text.split(/[ T]/)
+  const [year, month, day] = datePart.split('-')
+  const monthIndex = Number(month) - 1
+  const date =
+    year && day && monthIndex >= 0 && monthIndex < 12
+      ? `${Number(day)} ${MONTHS_PT_ABBR[monthIndex]} ${year}`
+      : text
+  return { date, time: (timePart || '').slice(0, 5) }
+}
+
 const slots = useSlots()
+const ui = useUiStore()
 const exportMenuOpen = ref(false)
+
+// Contato do cliente: o Celular vira link direto de WhatsApp e o Email um botao que
+// copia o endereco. So exibicao — o dado cru (numero/email) continua no export.
+function whatsappHref(value: unknown) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (!digits) return ''
+  // Numero local BR (10-11 digitos) ganha o codigo do pais; se ja vem com 55, mantem.
+  const withCountry = digits.length <= 11 ? `55${digits}` : digits
+  return `https://wa.me/${withCountry}`
+}
+
+async function copyEmail(value: unknown) {
+  const email = String(value ?? '').trim()
+  if (!email) return
+  try {
+    await navigator.clipboard.writeText(email)
+    ui.success(`Email copiado: ${email}`)
+  } catch {
+    ui.error('Nao foi possivel copiar o email.')
+  }
+}
+// Ids das colunas visiveis (na ordem do grid), vindos do AppEntityGrid — usados
+// para exportar exatamente o que esta na tela.
+const visibleColumnIds = ref<string[]>([])
 
 // All other slots from parent are forwarded to AppEntityGrid
 const forwardableSlots = computed(() =>
@@ -206,9 +265,16 @@ function resolveInputValue(value: Event | string) {
   return String(target?.value || '')
 }
 
-function emitExport(scope: ExportScope) {
+function emitExport(format: ExportFormat) {
   exportMenuOpen.value = false
-  emit('export', scope)
+  // Escopo 'filtered' = todos os resultados dos filtros atuais (periodo/valor),
+  // que e' o conjunto que interessa (ex.: base do sorteio). A coluna sintetica de
+  // acoes ('options') nao tem dado de linha — fica fora do arquivo exportado.
+  emit('export', {
+    format,
+    scope: 'filtered',
+    columns: visibleColumnIds.value.filter((id) => id !== 'options'),
+  })
 }
 </script>
 
@@ -223,6 +289,7 @@ function emitExport(scope: ExportScope) {
       </div>
 
       <div class="erp-data-table__pagination-controls">
+        <slot name="pagination-extra"></slot>
         <label class="erp-data-table__page-size">
           <span>Por página</span>
           <select :value="pageSize" :disabled="loading" @change="updatePageSize">
@@ -273,6 +340,7 @@ function emitExport(scope: ExportScope) {
       :sort-dir="sortDir"
       @update:search-value="emit('update:searchValue', $event)"
       @sort="handleSort"
+      @visible-columns-change="visibleColumnIds = $event"
     >
       <template #toolbar-filters>
         <input
@@ -322,21 +390,21 @@ function emitExport(scope: ExportScope) {
               @click="exportMenuOpen = !exportMenuOpen"
             >
               <Download :size="14" />
-              {{ exporting ? 'Exportando...' : 'Exportar CSV' }}
+              {{ exporting ? 'Exportando...' : 'Exportar' }}
             </button>
 
             <div v-if="exportMenuOpen" class="erp-data-table__export-menu">
-              <button type="button" @click="emitExport('page')">
-                <strong>Pagina atual</strong>
-                <span>Somente as linhas visiveis agora.</span>
+              <button type="button" @click="emitExport('csv')">
+                <strong>CSV</strong>
+                <span>Planilha (Excel, Google Sheets).</span>
               </button>
-              <button type="button" @click="emitExport('filtered')">
-                <strong>Filtrado inteiro</strong>
-                <span>Todos os resultados dos filtros atuais.</span>
+              <button type="button" @click="emitExport('json')">
+                <strong>JSON</strong>
+                <span>Estruturado; abre no navegador ou editor.</span>
               </button>
-              <button type="button" @click="emitExport('all')">
-                <strong>Tudo da aba</strong>
-                <span>Ignora busca e periodo para baixar a base completa.</span>
+              <button type="button" @click="emitExport('md')">
+                <strong>Markdown</strong>
+                <span>Tabela em texto; abre em qualquer editor.</span>
               </button>
             </div>
           </div>
@@ -369,6 +437,15 @@ function emitExport(scope: ExportScope) {
         <span class="erp-data-table__counter">{{ castRow(row).__counter }}</span>
       </template>
 
+      <template #cell-order_date_raw="{ row }">
+        <span class="erp-data-table__datecell">
+          <strong>{{ formatOrderDateCell(castRow(row).order_date_raw).date }}</strong>
+          <small v-if="formatOrderDateCell(castRow(row).order_date_raw).time">
+            {{ formatOrderDateCell(castRow(row).order_date_raw).time }}
+          </small>
+        </span>
+      </template>
+
       <template #cell-total_amount_raw="{ row }">
         <span class="erp-data-table__money">
           {{ formatCurrencyFromCents(castRow(row).total_amount_raw) }}
@@ -399,6 +476,39 @@ function emitExport(scope: ExportScope) {
         </span>
       </template>
 
+      <template #cell-options="{ row }">
+        <div class="erp-data-table__options">
+          <a
+            v-if="whatsappHref(castRow(row).customer_mobile)"
+            class="erp-data-table__contact erp-data-table__contact--whats"
+            :href="whatsappHref(castRow(row).customer_mobile)"
+            target="_blank"
+            rel="noopener noreferrer"
+            :title="`Abrir WhatsApp: ${castRow(row).customer_mobile}`"
+          >
+            <IconWhatsApp :size="16" />
+          </a>
+          <button
+            v-if="String(castRow(row).customer_email ?? '').trim()"
+            class="erp-data-table__contact erp-data-table__contact--email"
+            type="button"
+            :title="`Copiar email: ${castRow(row).customer_email}`"
+            @click="copyEmail(castRow(row).customer_email)"
+          >
+            <Mail :size="16" />
+          </button>
+          <span
+            v-if="
+              !whatsappHref(castRow(row).customer_mobile) &&
+              !String(castRow(row).customer_email ?? '').trim()
+            "
+            class="erp-data-table__contact-empty"
+          >
+            -
+          </span>
+        </div>
+      </template>
+
       <!-- Forward all remaining parent slots to AppEntityGrid -->
       <template v-for="(_, name) in forwardableSlots" :key="name" #[name]="slotProps">
         <slot :name="name" v-bind="(slotProps as Record<string, unknown>) ?? {}"></slot>
@@ -414,6 +524,7 @@ function emitExport(scope: ExportScope) {
       </div>
 
       <div class="erp-data-table__pagination-controls">
+        <slot name="pagination-extra"></slot>
         <label class="erp-data-table__page-size">
           <span>Por página</span>
           <select :value="pageSize" :disabled="loading" @change="updatePageSize">
@@ -628,6 +739,54 @@ function emitExport(scope: ExportScope) {
 .erp-data-table__money {
   color: var(--erp-success-text);
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.erp-data-table__options {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.erp-data-table__contact {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-control-bg);
+  color: var(--text-main);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.erp-data-table__contact:hover {
+  transform: translateY(-1px);
+  border-color: var(--erp-hover-border);
+}
+
+.erp-data-table__contact--whats {
+  color: var(--erp-success-text);
+}
+
+.erp-data-table__contact-empty {
+  color: var(--text-muted);
+}
+
+.erp-data-table__datecell {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.erp-data-table__datecell small {
+  color: var(--text-muted);
+  font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
 }
 

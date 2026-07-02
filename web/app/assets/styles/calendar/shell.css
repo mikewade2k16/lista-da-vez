@@ -1,0 +1,283 @@
+/* Calendario (/calendario) — BEM frouxo, somente tokens (claro/escuro pelo tema).
+   Cores de cliente sao DADO (triplet via inline style); aqui so estrutura e tema. */
+
+/* ===== Shell ================================================================= */
+.calendar-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Aurora aetheric VIVA — camada animada so por transform (compositor-only =
+   barato, sem reflow/paint). O vidro das colunas refrata essa cor em leve
+   movimento, dando vida ao liquid glass. So triplets do tema (claro/escuro). */
+.calendar-page::before {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 42% at 12% 8%, rgb(var(--primary) / 0.34), transparent 60%),
+    radial-gradient(38% 40% at 88% 14%, rgb(var(--primary-600) / 0.3), transparent 60%),
+    radial-gradient(42% 44% at 80% 88%, rgb(var(--success) / 0.2), transparent 62%),
+    radial-gradient(38% 40% at 18% 92%, rgb(var(--danger) / 0.16), transparent 62%);
+  animation: calendar-aurora 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* Conteudo acima da aurora (o vidro ainda refrata a camada de tras). */
+.calendar-body {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes calendar-aurora {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1.06) rotate(-1.5deg);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.16) rotate(1.5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calendar-page::before {
+    animation: none;
+  }
+}
+
+.calendar-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.calendar-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  /* respiro generoso para a semana em foco poder centralizar com peek igual */
+  padding: 1.5rem 0.35rem 10rem;
+  /* Scroll inteligente: encaixa (snap) na linha de semana centralizada. */
+  scroll-snap-type: y mandatory;
+}
+
+/* ===== Coluna esquerda = UM card de vidro (controles + notas, sem separacao) = */
+.calendar-leftcol {
+  position: relative;
+  flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-shell);
+  border: 1px solid rgb(var(--border) / 0.55);
+  background:
+    linear-gradient(150deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 45%),
+    rgb(var(--surface) / 0.46);
+  backdrop-filter: blur(24px) saturate(1.7);
+  -webkit-backdrop-filter: blur(24px) saturate(1.7);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 rgb(255 255 255 / 0.16);
+  overflow: hidden;
+}
+
+/* Setas flutuantes (‹ ›) nos cantos, por cima das notas. */
+.calendar-leftcol__arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 5;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--border) / 0.6);
+  background: rgb(var(--surface) / 0.7);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--text-main);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.calendar-leftcol__arrow:hover {
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
+}
+
+.calendar-leftcol__arrow--prev {
+  left: 0.5rem;
+}
+
+.calendar-leftcol__arrow--next {
+  right: 0.5rem;
+}
+
+/* ===== Controles (uma linha: mes + filtros + toggle + Novo, sem separacao) === */
+.calendar-controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.5rem;
+  padding: 0.75rem 0.9rem 0.55rem;
+}
+
+.calendar-controls__title {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 1.05rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.calendar-controls__client {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.calendar-controls__new {
+  flex: 0 0 auto;
+}
+
+.calendar-controls__seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--border) / 0.45);
+  background: rgb(var(--surface-2) / 0.6);
+}
+
+.calendar-controls__seg-btn {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.25rem 0.65rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.calendar-controls__seg-btn.is-active {
+  background: linear-gradient(135deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
+  color: rgb(255 255 255);
+}
+
+.calendar-controls .calendar-controls__today.app-panel-button {
+  min-height: 1.9rem;
+  padding: 0 0.7rem;
+  border-color: rgb(var(--primary) / 0.5);
+  color: rgb(var(--primary));
+  font-size: 0.76rem;
+}
+
+.calendar-controls .calendar-controls__today.app-panel-button:hover {
+  background: rgb(var(--primary) / 0.08);
+}
+
+.calendar-controls .calendar-controls__new.app-panel-button {
+  min-height: 1.9rem;
+  padding: 0 0.75rem;
+  font-size: 0.76rem;
+}
+
+.calendar-controls__mock {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-warning) 20%, transparent);
+  color: var(--accent-warning);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.calendar-controls__new-icon {
+  margin-right: 0.3rem;
+}
+
+/* ===== Week rail (S1..Sn) — coluna na borda esquerda, centralizada ========== */
+.calendar-weekrail {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 0.1rem;
+}
+
+.calendar-weekrail__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid rgb(var(--border) / 0.5);
+  border-radius: 999px;
+  background: rgb(var(--surface) / 0.4);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.calendar-weekrail__item:hover {
+  color: var(--text-main);
+  border-color: rgb(var(--primary) / 0.45);
+}
+
+.calendar-weekrail__item--today::after {
+  content: '';
+  position: absolute;
+  transform: translate(0.8rem, -0.8rem);
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: rgb(var(--primary));
+}
+
+.calendar-weekrail__item--month {
+  margin-bottom: 0.55rem;
+  font-weight: 800;
+}
+
+.calendar-weekrail__item--active {
+  background: linear-gradient(135deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
+  border-color: transparent;
+  color: rgb(255 255 255);
+  transform: scale(1.06);
+  box-shadow: 0 8px 22px rgb(var(--primary) / 0.35);
+}

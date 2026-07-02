@@ -14,6 +14,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/automation"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bi"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/bio"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/calendar"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/cardapio"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/core"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm"
@@ -53,6 +54,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 	avatarStorage := auth.NewDiskAvatarStorage(cfg.UploadsDir)
 	feedbackImageStorage := feedback.NewDiskImageStorage(cfg.UploadsDir)
 	taskVideoStorage := tasks.NewDiskVideoStorage(cfg.UploadsDir)
+	calendarMediaStorage := calendar.NewDiskMediaStorage(cfg.UploadsDir)
 	passwordResetDelivery, err := auth.BuildPasswordResetDelivery(auth.SMTPPasswordResetDeliveryConfig{
 		AppName:            cfg.AppName,
 		Host:               cfg.SMTPHost,
@@ -347,6 +349,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// Painel em /v1/bio (gating abaixo); rota publica /v1/public/bio/{slug}
 		// fora do gate. Plano: docs/bio/PLANO_MODULO_BIO.md.
 		registry.MustRegister(bio.New())
+		// calendar: agenda de conteudo por cliente (eventos + notas por mes).
+		// Painel em /v1/calendar (gating abaixo). Plano: docs/CALENDARIO_PLAN.md.
+		registry.MustRegister(calendar.New(calendarMediaStorage))
 		// cardapio: cardapios online servidos pelo front estatico no host do
 		// cliente. Painel em /v1/cardapio (gating abaixo); rotas publicas
 		// /v1/public/* fora do gate. Plano: docs/cardapio/PLANO_MODULO_CARDAPIO.md.
@@ -475,6 +480,9 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		{Prefix: "/v1/meta-ads", ModuleID: "meta_ads"},
 		// bio (paginas de link-in-bio). Rota publica /v1/public/bio fica fora.
 		{Prefix: "/v1/bio", ModuleID: "bio"},
+		// calendar (agenda de conteudo). platform_admin tem bypass; contas sem o
+		// modulo habilitado levam 403 module_disabled.
+		{Prefix: "/v1/calendar", ModuleID: "calendar"},
 		// cardapio (cardapio online). Rotas publicas /v1/public/* ficam fora.
 		{Prefix: "/v1/cardapio", ModuleID: "cardapio"},
 	}

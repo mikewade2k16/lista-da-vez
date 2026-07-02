@@ -1,5 +1,15 @@
 export type ExportScope = 'page' | 'filtered' | 'all'
 
+export type ExportFormat = 'csv' | 'json' | 'md'
+
+// Pedido de exportacao: formato + escopo + colunas VISIVEIS (ids, na ordem de
+// exibicao) — para exportar exatamente o que o usuario ve na tabela.
+export interface ExportRequest {
+  format: ExportFormat
+  scope: ExportScope
+  columns: string[]
+}
+
 export type ErpGridColumn = {
   id: string
   label: string
@@ -122,6 +132,159 @@ export const ERP_PRODUCT_COLUMNS: ErpGridColumn[] = [
   { id: 'sourceUpdatedAt', label: 'Atualizado', width: '160px', align: 'left', sortable: true },
 ]
 
+// Colunas da aba Compras/Cancelados. Predefinicao limpa: visiveis por padrao as
+// colunas legiveis (CPF, Nome, Loja, Data, Total, Produtos, Qtd); as cruas/tecnicas
+// (chave NFe, CNPJ, codigos de SKU, valores auxiliares) entram com defaultVisible
+// false e ficam disponiveis no botao de colunas. customer_name/store_label/
+// product_names sao enriquecidos no backend (repository_records_enrich.go).
+// Larguras minmax(min, fr): cada coluna tem um minimo legivel e ESTICA (fr) para
+// preencher a largura quando ha poucas colunas — some o "vazio" a direita. O canvas
+// e' forcado a width:100% (ErpRecordsTab) para o fr ser limitado pelo container e o
+// texto longo QUEBRAR na celula (overflow-wrap: anywhere) em vez de estourar a
+// largura. Muitas colunas (soma dos minimos > tela) => rolagem lateral normal.
+const ERP_ORDER_COLUMNS: ErpGridColumn[] = [
+  {
+    id: 'order_id',
+    label: 'Compra',
+    width: 'minmax(90px, 0.6fr)',
+    align: 'left',
+    locked: true,
+    sortable: false,
+  },
+  { id: 'customer_id', label: 'CPF', width: 'minmax(120px, 0.8fr)', align: 'left', sortable: true },
+  {
+    id: 'customer_name',
+    label: 'Nome',
+    width: 'minmax(150px, 1.5fr)',
+    align: 'left',
+    sortable: false,
+  },
+  {
+    id: 'store_label',
+    label: 'Loja',
+    width: 'minmax(90px, 0.6fr)',
+    align: 'left',
+    sortable: false,
+  },
+  {
+    id: 'order_date_raw',
+    label: 'Data',
+    width: 'minmax(135px, 0.9fr)',
+    align: 'left',
+    sortable: true,
+  },
+  {
+    id: 'total_amount_raw',
+    label: 'Total compra',
+    width: 'minmax(115px, 0.7fr)',
+    align: 'right',
+    sortable: true,
+  },
+  {
+    id: 'product_names',
+    label: 'Produtos',
+    width: 'minmax(190px, 1.6fr)',
+    align: 'left',
+    sortable: false,
+  },
+  {
+    id: 'quantity_raw',
+    label: 'Qtd',
+    width: 'minmax(60px, 0.4fr)',
+    align: 'right',
+    sortable: false,
+  },
+  {
+    id: 'employee_id',
+    label: 'Func. ID',
+    width: 'minmax(75px, 0.5fr)',
+    align: 'left',
+    sortable: false,
+  },
+  {
+    id: 'employee_name',
+    label: 'Funcionario',
+    width: 'minmax(135px, 1.2fr)',
+    align: 'left',
+    sortable: false,
+  },
+  // Ocultas por padrao (disponiveis no botao de colunas):
+  {
+    id: 'identifier',
+    label: 'Chave NFe',
+    width: 'minmax(150px, 1fr)',
+    align: 'left',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'store_id_raw',
+    label: 'CNPJ loja',
+    width: 'minmax(140px, 0.9fr)',
+    align: 'left',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'sku',
+    label: 'SKUs',
+    width: 'minmax(140px, 1fr)',
+    align: 'left',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'amount_raw',
+    label: 'Valor itens',
+    width: 'minmax(110px, 0.7fr)',
+    align: 'right',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'payment_type',
+    label: 'Pagamento',
+    width: 'minmax(120px, 0.8fr)',
+    align: 'left',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'product_return_raw',
+    label: 'Devolucao',
+    width: 'minmax(105px, 0.7fr)',
+    align: 'right',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'total_exclusion_raw',
+    label: 'Exclusao',
+    width: 'minmax(100px, 0.7fr)',
+    align: 'right',
+    sortable: false,
+    defaultVisible: false,
+  },
+  {
+    id: 'total_debit_raw',
+    label: 'Debito',
+    width: 'minmax(100px, 0.7fr)',
+    align: 'right',
+    sortable: false,
+    defaultVisible: false,
+  },
+  // Sempre a ULTIMA coluna: acoes de contato (WhatsApp + copiar email). Nao mapeia um
+  // campo do row — o slot cell-options le customer_mobile/customer_email do registro.
+  {
+    id: 'options',
+    label: 'Opções',
+    width: '104px',
+    align: 'center',
+    locked: true,
+    sortable: false,
+  },
+]
+
 export const ERP_RECORDS_COLUMNS_BY_TAB: Record<string, ErpGridColumn[]> = {
   clientes: [
     {
@@ -184,88 +347,8 @@ export const ERP_RECORDS_COLUMNS_BY_TAB: Record<string, ErpGridColumn[]> = {
     { id: 'zipcode', label: 'CEP', width: '130px', align: 'left', sortable: false },
     { id: 'is_active_raw', label: 'Ativo', width: '110px', align: 'center', sortable: false },
   ],
-  pedidos: [
-    {
-      id: 'order_id',
-      label: 'Compra',
-      width: '160px',
-      align: 'left',
-      locked: true,
-      sortable: false,
-    },
-    { id: 'identifier', label: 'Identificador', width: '140px', align: 'left', sortable: false },
-    { id: 'store_id_raw', label: 'Store ID ERP', width: '150px', align: 'left', sortable: false },
-    { id: 'customer_id', label: 'Cliente', width: '130px', align: 'left', sortable: true },
-    { id: 'order_date_raw', label: 'Data', width: '140px', align: 'left', sortable: true },
-    {
-      id: 'total_amount_raw',
-      label: 'Total compra',
-      width: '130px',
-      align: 'right',
-      sortable: true,
-    },
-    {
-      id: 'product_return_raw',
-      label: 'Devolucao',
-      width: '120px',
-      align: 'right',
-      sortable: false,
-    },
-    { id: 'sku', label: 'SKUs', width: '220px', align: 'left', sortable: false },
-    { id: 'amount_raw', label: 'Valor itens', width: '120px', align: 'right', sortable: false },
-    { id: 'quantity_raw', label: 'Qtd total', width: '100px', align: 'right', sortable: false },
-    { id: 'employee_id', label: 'Funcionario', width: '130px', align: 'left', sortable: false },
-    { id: 'payment_type', label: 'Pagamento', width: '140px', align: 'left', sortable: false },
-    {
-      id: 'total_exclusion_raw',
-      label: 'Exclusao',
-      width: '120px',
-      align: 'right',
-      sortable: false,
-    },
-    { id: 'total_debit_raw', label: 'Debito', width: '120px', align: 'right', sortable: false },
-  ],
-  cancelados: [
-    {
-      id: 'order_id',
-      label: 'Compra',
-      width: '160px',
-      align: 'left',
-      locked: true,
-      sortable: false,
-    },
-    { id: 'identifier', label: 'Identificador', width: '140px', align: 'left', sortable: false },
-    { id: 'store_id_raw', label: 'Store ID ERP', width: '150px', align: 'left', sortable: false },
-    { id: 'customer_id', label: 'Cliente', width: '130px', align: 'left', sortable: true },
-    { id: 'order_date_raw', label: 'Data', width: '140px', align: 'left', sortable: true },
-    {
-      id: 'total_amount_raw',
-      label: 'Total compra',
-      width: '130px',
-      align: 'right',
-      sortable: true,
-    },
-    {
-      id: 'product_return_raw',
-      label: 'Devolucao',
-      width: '120px',
-      align: 'right',
-      sortable: false,
-    },
-    { id: 'sku', label: 'SKUs', width: '220px', align: 'left', sortable: false },
-    { id: 'amount_raw', label: 'Valor itens', width: '120px', align: 'right', sortable: false },
-    { id: 'quantity_raw', label: 'Qtd total', width: '100px', align: 'right', sortable: false },
-    { id: 'employee_id', label: 'Funcionario', width: '130px', align: 'left', sortable: false },
-    { id: 'payment_type', label: 'Pagamento', width: '140px', align: 'left', sortable: false },
-    {
-      id: 'total_exclusion_raw',
-      label: 'Exclusao',
-      width: '120px',
-      align: 'right',
-      sortable: false,
-    },
-    { id: 'total_debit_raw', label: 'Debito', width: '120px', align: 'right', sortable: false },
-  ],
+  pedidos: ERP_ORDER_COLUMNS,
+  cancelados: ERP_ORDER_COLUMNS,
 }
 
 export const ERP_PAGE_SIZE_OPTIONS = [25, 50, 100, 200]
@@ -301,8 +384,8 @@ export const ERP_RECORDS_SPECIFIC_SEARCH_BY_TAB: Record<string, ErpSpecificSearc
 export const ERP_RECORDS_GENERAL_SEARCH_PLACEHOLDER_BY_TAB: Record<string, string> = {
   clientes: 'Busca geral (nome, email, telefone, cidade, store ID, tags...)',
   funcionarios: 'Busca geral (nome, store ID, cidade, UF, endereco, status...)',
-  pedidos: 'Busca geral (compra, store ID, cliente, SKU, valor, funcionario...)',
-  cancelados: 'Busca geral (compra cancelada, store ID, cliente, SKU, valor...)',
+  pedidos: 'Busca geral (nome do cliente, CPF, compra, SKU, valor, funcionario...)',
+  cancelados: 'Busca geral (nome do cliente, CPF, compra cancelada, SKU, valor...)',
 }
 
 export const ERP_BANCO_SECTION_BY_TAB: Record<string, ErpBancoSection> = {

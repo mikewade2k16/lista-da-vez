@@ -5,7 +5,7 @@ import type {
   ErpImportedFile,
   ErpRecord,
   ErpRun,
-  ExportScope,
+  ExportRequest,
 } from '~/domain/utils/erp-display'
 
 defineProps<{
@@ -40,7 +40,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'bootstrap' | 'refresh'): void
-  (e: 'export', scope: ExportScope): void
+  (e: 'export', request: ExportRequest): void
   (
     e:
       | 'update:dateFrom'

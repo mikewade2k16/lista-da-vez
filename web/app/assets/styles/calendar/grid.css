@@ -1,0 +1,242 @@
+/* ===== Mes / Semana (card) ================================================== */
+.calendar-month {
+  flex: 0 0 auto;
+  min-height: 600px; /* card do mes com bom tamanho vertical (full-HD) */
+  border: 1px solid rgb(var(--border) / 0.55);
+  border-radius: var(--radius-shell);
+  background:
+    linear-gradient(150deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 45%),
+    rgb(var(--surface) / 0.46);
+  backdrop-filter: blur(22px) saturate(1.7);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    inset 0 0 0 1px rgb(255 255 255 / 0.03);
+  padding: 0.4rem 0.95rem 1rem;
+  transition:
+    opacity 0.25s ease,
+    box-shadow 0.25s ease,
+    transform 0.25s ease;
+}
+
+/* Vizinhos (peek): atenuados para destacar o foco */
+.calendar-month--peek {
+  opacity: 0.42;
+  filter: saturate(0.85);
+}
+
+/* Em foco (qualquer mes/semana, mesmo nao sendo o vigente): anel + glow liquido */
+.calendar-month--focus {
+  opacity: 1;
+  border-color: rgb(var(--primary) / 0.42);
+  box-shadow:
+    0 18px 60px rgb(var(--primary) / 0.22),
+    0 0 34px rgb(var(--primary) / 0.12),
+    inset 0 0 0 1px rgb(var(--primary) / 0.16),
+    inset 0 1px 0 rgb(255 255 255 / 0.16);
+}
+
+/* Vigente (contem HOJE) mas NAO em foco: borda diferenciada (tracejada), sem
+   o glow do foco, e sem ser atenuado como os demais vizinhos. */
+.calendar-month--current:not(.calendar-month--focus) {
+  opacity: 0.95;
+  filter: none;
+  border-color: rgb(var(--primary) / 0.55);
+  border-style: dashed;
+  box-shadow:
+    0 0 0 1px rgb(var(--primary) / 0.22),
+    var(--shadow-card);
+}
+
+.calendar-month__header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.4rem 0.1rem 0.7rem;
+}
+
+.calendar-month__title {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.calendar-month__tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary-600));
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.calendar-grid__weekdays,
+.calendar-grid__days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.calendar-grid__weekdays {
+  margin-bottom: 0.4rem;
+}
+
+.calendar-grid__weekday {
+  padding: 0.15rem 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Snap forte: o card do mes / bloco da semana encaixa CENTRALIZADO no scroll. */
+.calendar-snap {
+  scroll-snap-align: center;
+}
+
+/* ===== Celula do dia ======================================================= */
+.calendar-cell {
+  min-height: 86px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.4rem;
+  border: 1px solid rgb(var(--border) / 0.4);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface) / 0.42);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.calendar-cell:hover {
+  border-color: rgb(var(--primary) / 0.45);
+  background: rgb(var(--surface) / 0.72);
+}
+
+.calendar-cell--outside {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.45;
+}
+
+.calendar-cell--selected {
+  box-shadow: inset 0 0 0 2px rgb(var(--primary));
+  border-color: transparent;
+}
+
+.calendar-cell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem;
+}
+
+.calendar-cell__num {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.calendar-cell__num--today {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  background: rgb(var(--primary));
+  color: rgb(255 255 255);
+}
+
+.calendar-cell__today {
+  color: rgb(var(--primary));
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.calendar-cell__holidays {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.calendar-cell__holiday {
+  overflow: hidden;
+  border-left: 2px solid color-mix(in srgb, var(--accent-warning) 70%, transparent);
+  padding: 0.02rem 0.28rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent-warning) 12%, transparent);
+  color: var(--accent-warning);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendar-cell__chips {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.calendar-cell__more {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 0.05rem 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendar-cell__more:hover {
+  color: rgb(var(--primary));
+}
+
+/* ===== Chip de evento ====================================================== */
+.calendar-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: 100%;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+  padding: 0.16rem 0.34rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.calendar-chip:hover {
+  filter: brightness(1.06);
+}
+
+.calendar-chip__icon {
+  flex-shrink: 0;
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.calendar-chip__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

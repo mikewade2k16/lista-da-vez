@@ -180,8 +180,22 @@ type RawRecordsQuery struct {
 	Dedup          bool   `json:"dedup,omitempty"`
 	SortBy         string `json:"sortBy,omitempty"`   // coluna do allowlist por dataType
 	SortDir        string `json:"sortDir,omitempty"`  // "asc" | "desc"
-	DateFrom       string `json:"dateFrom,omitempty"` // YYYY-MM-DD (source_batch_date >=)
-	DateTo         string `json:"dateTo,omitempty"`   // YYYY-MM-DD (source_batch_date <=)
+	DateFrom       string `json:"dateFrom,omitempty"` // YYYY-MM-DD
+	DateTo         string `json:"dateTo,omitempty"`   // YYYY-MM-DD
+	// DateField escolhe a coluna do filtro de periodo para pedidos:
+	// "order_date" (data real da compra, PADRAO) ou "batch_date" (data do lote
+	// importado, para auditoria). Ignorado para customer/employee (sempre lote).
+	DateField string `json:"dateField,omitempty"`
+	// MinValueCents filtra compras cujo total bruto da nota seja >= ao valor (em
+	// centavos). 0 = sem filtro. So se aplica a order/ordercanceled.
+	MinValueCents int64 `json:"minValueCents,omitempty"`
+	// StoreFilter restringe pedidos a uma ou mais lojas. Valor = chaves de loja
+	// (coalesce(nullif(store_id_raw,''), store_cnpj)) separadas por virgula, vindas
+	// das facetas. Vazio = todas. So se aplica a order/ordercanceled (modo dedup).
+	StoreFilter string `json:"storeFilter,omitempty"`
+	// EmployeeFilter restringe pedidos a um consultor (employee_id exato). Vazio =
+	// todos. So se aplica a order/ordercanceled (modo dedup).
+	EmployeeFilter string `json:"employeeFilter,omitempty"`
 }
 
 type RawRecordsListResponse struct {
@@ -762,6 +776,14 @@ type RecordsStatsQuery struct {
 	SpecificSearch string `json:"specificSearch,omitempty"`
 	DateFrom       string `json:"dateFrom,omitempty"`
 	DateTo         string `json:"dateTo,omitempty"`
+	// DateField: "order_date" (PADRAO p/ pedidos) ou "batch_date". Ver RawRecordsQuery.
+	DateField string `json:"dateField,omitempty"`
+	// MinValueCents: filtro de valor minimo da compra em centavos (0 = sem filtro).
+	MinValueCents int64 `json:"minValueCents,omitempty"`
+	// StoreFilter/EmployeeFilter: mesmos filtros de loja/consultor da lista, para os
+	// cards baterem com a tabela. Ver RawRecordsQuery.
+	StoreFilter    string `json:"storeFilter,omitempty"`
+	EmployeeFilter string `json:"employeeFilter,omitempty"`
 }
 
 type RecordsStatsResponse struct {
@@ -772,6 +794,35 @@ type RecordsStatsResponse struct {
 	TotalItems       int64   `json:"totalItems"`
 	PA               float64 `json:"pa"`
 	CustomerCount    int64   `json:"customerCount"`
+}
+
+// RecordsFacetsQuery pede as opcoes de filtro (lojas/consultores) disponiveis no
+// escopo + periodo. So order/ordercanceled tem facetas.
+type RecordsFacetsQuery struct {
+	TenantID  string
+	StoreCode string
+	DataType  string
+	DateFrom  string
+	DateTo    string
+	DateField string
+	// StoreFilter (chaves de loja separadas por virgula) restringe as facetas de
+	// CONSULTOR a quem vendeu na(s) loja(s) escolhida(s). As facetas de loja seguem
+	// sempre completas (para poder trocar de loja). Vazio = todos os consultores.
+	StoreFilter string
+}
+
+// RecordsFacetOption e' uma opcao de dropdown. Value = o token que o front devolve no
+// filtro (chaves de loja separadas por virgula, ou employee_id); Label = texto exibido.
+type RecordsFacetOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+	Count int64  `json:"count"`
+}
+
+type RecordsFacetsResponse struct {
+	DataType  string               `json:"dataType"`
+	Stores    []RecordsFacetOption `json:"stores"`
+	Employees []RecordsFacetOption `json:"employees"`
 }
 
 type itemBatchImportInput struct {

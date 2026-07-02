@@ -143,7 +143,7 @@ function handleProfileChange(profileId) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 8px 12px 0;
+  /*padding: 8px 12px 0;*/
 }
 
 .dashboard-feedback-btn {

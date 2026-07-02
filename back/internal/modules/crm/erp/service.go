@@ -96,8 +96,27 @@ func (service *Service) RecordsStats(ctx context.Context, principal auth.Princip
 		SpecificSearch: strings.TrimSpace(query.SpecificSearch),
 		DateFrom:       strings.TrimSpace(query.DateFrom),
 		DateTo:         strings.TrimSpace(query.DateTo),
+		DateField:      query.DateField,
+		MinValueCents:  query.MinValueCents,
+		StoreFilter:    strings.TrimSpace(query.StoreFilter),
+		EmployeeFilter: strings.TrimSpace(query.EmployeeFilter),
 	}
 	return service.repository.GetRecordsStats(ctx, store, normalized)
+}
+
+func (service *Service) RecordsFacets(ctx context.Context, principal auth.Principal, query RecordsFacetsQuery) (RecordsFacetsResponse, error) {
+	if !canViewERPAdminDetails(principal) {
+		return RecordsFacetsResponse{}, ErrForbidden
+	}
+	store, err := service.resolveERPScope(ctx, principal, query.TenantID, query.StoreCode)
+	if err != nil {
+		return RecordsFacetsResponse{}, err
+	}
+	query.DataType = strings.TrimSpace(strings.ToLower(query.DataType))
+	query.DateFrom = strings.TrimSpace(query.DateFrom)
+	query.DateTo = strings.TrimSpace(query.DateTo)
+	query.StoreFilter = strings.TrimSpace(query.StoreFilter)
+	return service.repository.GetRecordsFacets(ctx, store, query)
 }
 
 func (service *Service) Runs(ctx context.Context, principal auth.Principal, query RunsQuery) (SyncRunsListResponse, error) {

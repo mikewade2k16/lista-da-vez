@@ -7,8 +7,9 @@ import type {
   ErpRecord,
   ErpRun,
   ErpSpecificSearch,
-  ExportScope,
+  ExportRequest,
 } from '~/domain/utils/erp-display'
+import type { ErpRecordsFacetOption } from '~/stores/erp'
 
 defineProps<{
   activeRecordsBootstrapLabel: string
@@ -29,13 +30,19 @@ defineProps<{
   page: number
   pageSize: number
   pageSizeOptions: number[]
+  recordsDateField: string
   recordsDateFrom: string
   recordsDateTo: string
+  recordsEmployeeFilter: string
+  recordsEmployeeOptions: ErpRecordsFacetOption[]
+  recordsMinValue: string
   recordsRowKey: (row: ErpRecord, index: number) => string
   recordsSearchValue: string
   recordsSortBy: string
   recordsSortDir: string
   recordsSpecificSearchValue: string
+  recordsStoreFilter: string
+  recordsStoreOptions: ErpRecordsFacetOption[]
   rows: ErpRecord[]
   showAdminCards: boolean
   syncing: boolean
@@ -44,13 +51,17 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'bootstrap' | 'refresh'): void
-  (e: 'export', scope: ExportScope): void
+  (e: 'export', request: ExportRequest): void
   (
     e:
       | 'update:dateFrom'
       | 'update:dateTo'
+      | 'update:recordsDateField'
+      | 'update:recordsEmployeeFilter'
+      | 'update:recordsMinValue'
       | 'update:recordsSearchValue'
       | 'update:recordsSpecificSearchValue'
+      | 'update:recordsStoreFilter'
       | 'update:sortBy'
       | 'update:sortDir',
     value: string,
@@ -155,7 +166,7 @@ const emit = defineEmits<{
       bootstrap-busy-label="Sincronizando..."
       empty-title="Nenhum registro encontrado"
       empty-text="Nao ha linhas importadas para este tipo no escopo consolidado do ERP. Use a sincronizacao da aba para carregar os dados."
-      :storage-key="`erp-${activeTab}-grid-columns-v4`"
+      :storage-key="`erp-${activeTab}-grid-columns-v8`"
       :testid="`erp-${activeTab}-grid`"
       @update:search-value="emit('update:recordsSearchValue', $event)"
       @update:specific-search-value="emit('update:recordsSpecificSearchValue', $event)"
@@ -168,6 +179,101 @@ const emit = defineEmits<{
       @refresh="emit('refresh')"
       @bootstrap="emit('bootstrap')"
       @export="emit('export', $event)"
-    />
+    >
+      <template v-if="activeTab === 'pedidos' || activeTab === 'cancelados'" #toolbar-filters>
+        <input
+          class="erp-records-filter"
+          type="number"
+          min="0"
+          step="0.01"
+          inputmode="decimal"
+          placeholder="Valor min. (R$)"
+          :value="recordsMinValue"
+          @input="emit('update:recordsMinValue', ($event.target as HTMLInputElement).value)"
+        />
+        <select
+          class="erp-records-filter erp-records-filter--select"
+          :value="recordsStoreFilter"
+          @change="emit('update:recordsStoreFilter', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="">Todas as lojas</option>
+          <option v-for="opt in recordsStoreOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <select
+          class="erp-records-filter erp-records-filter--select"
+          :value="recordsEmployeeFilter"
+          @change="emit('update:recordsEmployeeFilter', ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="">Todos os consultores</option>
+          <option v-for="opt in recordsEmployeeOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+      </template>
+
+      <template v-if="activeTab === 'pedidos' || activeTab === 'cancelados'" #pagination-extra>
+        <label
+          class="erp-records-datefield"
+          title="Base do periodo: ligado usa a data real da compra; desligado, a data de importacao do lote."
+        >
+          <USwitch
+            :model-value="recordsDateField === 'order_date'"
+            size="sm"
+            @update:model-value="
+              emit('update:recordsDateField', $event ? 'order_date' : 'batch_date')
+            "
+          />
+          <span>
+            {{ recordsDateField === 'order_date' ? 'Data da compra' : 'Data de importação' }}
+          </span>
+        </label>
+      </template>
+    </ErpDataTable>
   </div>
 </template>
+
+<style scoped>
+/* Faz o grid PREENCHER a largura. O ErpDataTable usa min-width: max-content no
+   canvas, que empacotava as colunas a esquerda e deixava um vazio a direita quando
+   havia poucas colunas (e estourava a largura com texto longo). Com width:100% +
+   colunas minmax(min, fr) a tabela estica para preencher e o texto longo quebra na
+   celula. Escopado ao ErpRecordsTab (nao afeta a aba de produtos). */
+.erp-panel__tab-body :deep(.app-entity-grid__canvas) {
+  min-width: 0 !important;
+  width: 100%;
+}
+
+/* Controles inline de uma linha so, na mesma altura dos demais filtros do toolbar. */
+.erp-records-filter {
+  min-height: 2.45rem;
+  height: 2.45rem;
+  padding: 0 0.7rem;
+  border-radius: 0.8rem;
+  border: 1px solid var(--erp-primary-border);
+  background: var(--erp-control-bg);
+  color: var(--text-main);
+  font-size: 0.85rem;
+}
+
+.erp-records-filter[type='number'] {
+  width: 9.5rem;
+}
+
+.erp-records-filter--select {
+  cursor: pointer;
+}
+
+/* Switch sutil de base do periodo (compra x importacao), ao lado de "Por pagina".
+   Discreto de proposito: e' de uso raro, so quando precisa auditar pela data do lote. */
+.erp-records-datefield {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+</style>

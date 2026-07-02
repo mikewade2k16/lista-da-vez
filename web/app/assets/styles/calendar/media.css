@@ -1,0 +1,150 @@
+/* ===== Uploader de anexos (imagem/video) — evento e dia ==================== */
+.calendar-media {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.calendar-media__label {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.calendar-media__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.calendar-media__item {
+  position: relative;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-soft);
+  background: var(--bg-muted);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.calendar-media__item--empty {
+  border-style: dashed;
+}
+
+.calendar-media__thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.calendar-media__badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(255 255 255);
+  background: rgb(0 0 0 / 0.32);
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+.calendar-media__remove {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  color: rgb(255 255 255);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.calendar-media__remove:hover {
+  background: color-mix(in srgb, var(--accent-warning) 55%, rgb(0 0 0 / 0.55));
+}
+
+.calendar-media__item--loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  color: var(--text-muted);
+}
+
+.calendar-media__loading-icon {
+  font-size: 1.1rem;
+}
+
+.calendar-media__pct {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.calendar-media__bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--line-soft);
+}
+
+.calendar-media__bar-fill {
+  display: block;
+  height: 100%;
+  background: rgb(var(--primary));
+  transition: width 0.15s ease;
+}
+
+.calendar-media__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.calendar-media__add:hover {
+  border-color: rgb(var(--primary));
+  color: rgb(var(--primary));
+}
+
+.calendar-media__hint {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.calendar-media__error {
+  color: var(--accent-warning);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.calendar-media__input {
+  display: none;
+}
+
+/* Anexos do dia no drawer: separador acima da secao. */
+.calendar-drawer__daymedia {
+  padding: 0.9rem 1.1rem;
+  border-top: 1px solid var(--line-soft);
+}

@@ -249,8 +249,35 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 			SpecificSearch: strings.TrimSpace(firstNonEmpty(r.URL.Query().Get("specificSearch"), r.URL.Query().Get("keySearch"))),
 			DateFrom:       strings.TrimSpace(r.URL.Query().Get("dateFrom")),
 			DateTo:         strings.TrimSpace(r.URL.Query().Get("dateTo")),
+			DateField:      normalizeDateField(r.URL.Query().Get("dateField")),
+			MinValueCents:  parseOptionalCents(r.URL.Query().Get("minValueCents")),
+			StoreFilter:    strings.TrimSpace(r.URL.Query().Get("storeFilter")),
+			EmployeeFilter: strings.TrimSpace(r.URL.Query().Get("employeeFilter")),
 		}
 		result, err := service.RecordsStats(r.Context(), principal, query)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	})))
+
+	mux.Handle("GET /v1/erp/records/facets", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		query := RecordsFacetsQuery{
+			TenantID:    strings.TrimSpace(r.URL.Query().Get("tenantId")),
+			StoreCode:   strings.TrimSpace(r.URL.Query().Get("storeCode")),
+			DataType:    strings.TrimSpace(r.URL.Query().Get("dataType")),
+			DateFrom:    strings.TrimSpace(r.URL.Query().Get("dateFrom")),
+			DateTo:      strings.TrimSpace(r.URL.Query().Get("dateTo")),
+			DateField:   normalizeDateField(r.URL.Query().Get("dateField")),
+			StoreFilter: strings.TrimSpace(r.URL.Query().Get("storeFilter")),
+		}
+		result, err := service.RecordsFacets(r.Context(), principal, query)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -408,7 +435,35 @@ func parseRawRecordsQuery(r *http.Request) (RawRecordsQuery, error) {
 		SortDir:        strings.TrimSpace(query.Get("sortDir")),
 		DateFrom:       strings.TrimSpace(query.Get("dateFrom")),
 		DateTo:         strings.TrimSpace(query.Get("dateTo")),
+		DateField:      normalizeDateField(query.Get("dateField")),
+		MinValueCents:  parseOptionalCents(query.Get("minValueCents")),
+		StoreFilter:    strings.TrimSpace(query.Get("storeFilter")),
+		EmployeeFilter: strings.TrimSpace(query.Get("employeeFilter")),
 	}, nil
+}
+
+// normalizeDateField restringe o filtro de periodo de pedidos a um valor seguro:
+// "batch_date" (data do lote) ou "order_date" (PADRAO, data real da compra).
+// Qualquer outro valor cai em order_date. Vai para SQL como enum controlado.
+func normalizeDateField(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), "batch_date") {
+		return "batch_date"
+	}
+	return "order_date"
+}
+
+// parseOptionalCents le um valor em centavos da query; vazio/invalido/negativo = 0
+// (sem filtro). Tolerante por design: filtro ausente nao deve quebrar a requisicao.
+func parseOptionalCents(raw string) int64 {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return 0
+	}
+	value, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
 }
 
 func parseRunsQuery(r *http.Request) (RunsQuery, error) {

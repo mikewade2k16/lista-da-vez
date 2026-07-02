@@ -256,6 +256,18 @@ interface ErpRecordsStatsResponse {
   customerCount: number
 }
 
+export interface ErpRecordsFacetOption {
+  value: string
+  label: string
+  count: number
+}
+
+interface ErpRecordsFacetsResponse {
+  dataType: string
+  stores: ErpRecordsFacetOption[]
+  employees: ErpRecordsFacetOption[]
+}
+
 interface ErpSyncRunsResponse {
   store: ErpStoreScope
   dataType?: string
@@ -717,6 +729,10 @@ export const useErpStore = defineStore('erp', () => {
     sortDir?: string
     dateFrom?: string
     dateTo?: string
+    dateField?: string
+    minValueCents?: number
+    storeFilter?: string
+    employeeFilter?: string
   }) {
     const requestSeq = ++recordsRequestSeq
     try {
@@ -784,6 +800,26 @@ export const useErpStore = defineStore('erp', () => {
         params.set('dateTo', dateTo)
       }
 
+      const dateField = normalizeText(payload.dateField)
+      if (dateField) {
+        params.set('dateField', dateField)
+      }
+
+      const minValueCents = Math.max(0, Number(payload.minValueCents || 0) || 0)
+      if (minValueCents > 0) {
+        params.set('minValueCents', String(minValueCents))
+      }
+
+      const storeFilter = normalizeText(payload.storeFilter)
+      if (storeFilter) {
+        params.set('storeFilter', storeFilter)
+      }
+
+      const employeeFilter = normalizeText(payload.employeeFilter)
+      if (employeeFilter) {
+        params.set('employeeFilter', employeeFilter)
+      }
+
       let response: ErpRawRecordsResponse
       const endpoint = resolveRecordsEndpoint(dataType)
       try {
@@ -838,6 +874,10 @@ export const useErpStore = defineStore('erp', () => {
     sortDir?: string
     dateFrom?: string
     dateTo?: string
+    dateField?: string
+    minValueCents?: number
+    storeFilter?: string
+    employeeFilter?: string
   }) {
     try {
       await auth.ensureSession()
@@ -878,6 +918,18 @@ export const useErpStore = defineStore('erp', () => {
 
       const dateTo = normalizeText(payload.dateTo)
       if (dateTo) params.set('dateTo', dateTo)
+
+      const dateField = normalizeText(payload.dateField)
+      if (dateField) params.set('dateField', dateField)
+
+      const minValueCents = Math.max(0, Number(payload.minValueCents || 0) || 0)
+      if (minValueCents > 0) params.set('minValueCents', String(minValueCents))
+
+      const storeFilter = normalizeText(payload.storeFilter)
+      if (storeFilter) params.set('storeFilter', storeFilter)
+
+      const employeeFilter = normalizeText(payload.employeeFilter)
+      if (employeeFilter) params.set('employeeFilter', employeeFilter)
 
       let response: ErpRawRecordsResponse
       const endpoint = resolveRecordsEndpoint(dataType)
@@ -1120,6 +1172,10 @@ export const useErpStore = defineStore('erp', () => {
     specificSearch?: string
     dateFrom?: string
     dateTo?: string
+    dateField?: string
+    minValueCents?: number
+    storeFilter?: string
+    employeeFilter?: string
   }) {
     try {
       loadingStats.value = true
@@ -1133,7 +1189,21 @@ export const useErpStore = defineStore('erp', () => {
       const specificSearch = normalizeText(payload.specificSearch)
       const dateFrom = normalizeText(payload.dateFrom)
       const dateTo = normalizeText(payload.dateTo)
-      const queryKey = [dataType, search, specificSearch, dateFrom, dateTo].join('|')
+      const dateField = normalizeText(payload.dateField)
+      const minValueCents = Math.max(0, Number(payload.minValueCents || 0) || 0)
+      const storeFilter = normalizeText(payload.storeFilter)
+      const employeeFilter = normalizeText(payload.employeeFilter)
+      const queryKey = [
+        dataType,
+        search,
+        specificSearch,
+        dateFrom,
+        dateTo,
+        dateField,
+        String(minValueCents),
+        storeFilter,
+        employeeFilter,
+      ].join('|')
       recordsStatsKey.value = queryKey
 
       const params = new URLSearchParams({ dataType })
@@ -1143,6 +1213,10 @@ export const useErpStore = defineStore('erp', () => {
       if (specificSearch) params.set('specificSearch', specificSearch)
       if (dateFrom) params.set('dateFrom', dateFrom)
       if (dateTo) params.set('dateTo', dateTo)
+      if (dateField) params.set('dateField', dateField)
+      if (minValueCents > 0) params.set('minValueCents', String(minValueCents))
+      if (storeFilter) params.set('storeFilter', storeFilter)
+      if (employeeFilter) params.set('employeeFilter', employeeFilter)
 
       const response = (await apiRequest(
         `/v1/erp/stats?${params.toString()}`,
@@ -1156,6 +1230,44 @@ export const useErpStore = defineStore('erp', () => {
       return { ok: false, message }
     } finally {
       loadingStats.value = false
+    }
+  }
+
+  async function fetchRecordsFacets(payload: {
+    dataType: string
+    dateFrom?: string
+    dateTo?: string
+    dateField?: string
+    storeFilter?: string
+  }) {
+    try {
+      error.value = ''
+      await auth.ensureSession()
+
+      const dataType = normalizeText(payload.dataType).toLowerCase()
+      if (!dataType) {
+        return { ok: false, message: 'Tipo de dado ERP nao informado.' }
+      }
+
+      const params = new URLSearchParams({ dataType })
+      const dateFrom = normalizeText(payload.dateFrom)
+      if (dateFrom) params.set('dateFrom', dateFrom)
+      const dateTo = normalizeText(payload.dateTo)
+      if (dateTo) params.set('dateTo', dateTo)
+      const dateField = normalizeText(payload.dateField)
+      if (dateField) params.set('dateField', dateField)
+      // Cascata loja -> consultor: restringe as facetas de consultor a loja escolhida.
+      const storeFilter = normalizeText(payload.storeFilter)
+      if (storeFilter) params.set('storeFilter', storeFilter)
+
+      const response = (await apiRequest(
+        `/v1/erp/records/facets?${params.toString()}`,
+      )) as ErpRecordsFacetsResponse
+      return { ok: true, data: response }
+    } catch (err) {
+      const message = getApiErrorMessage(err, 'Erro ao carregar os filtros de loja e consultor.')
+      error.value = message
+      return { ok: false, message }
     }
   }
 
@@ -1438,6 +1550,7 @@ export const useErpStore = defineStore('erp', () => {
     fetchRuns,
     fetchOverview,
     fetchStats,
+    fetchRecordsFacets,
     fetchCRM,
     fetchCRMSnapshot,
     fetchConsultantLinks,

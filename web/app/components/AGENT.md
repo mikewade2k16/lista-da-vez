@@ -261,6 +261,83 @@ auditoria sobrescreve `perf-data.ts` e a pagina reflete na hora.
 - [UsersWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/users/UsersWorkspace.vue)
   Workspace dedicado da area administrativa de usuarios, com abas para usuarios e matriz por perfil.
 
+### `calendar`
+
+Pagina `/calendario` (workspace global, layout `dashboard`, `definePageMeta workspaceId: ''`
+para nao cair no gate de workspace). Calendario de conteudo por cliente da agencia. Layout em
+colunas: [coluna esquerda = controles + notas, UM card] [week rail S1..Sn] [calendario (scroll)]
+[drawer do dia]. DUAS VISOES (Mes / Semana), toggle nos controles. Estado em [stores/calendar.ts];
+helpers de data/constantes em [utils/calendar.ts]; nav em `layers/queue/nav.config.ts`.
+
+Interacao-chave:
+
+- **Scroll inteligente (CSS Scroll Snap, `scroll-snap-type: y mandatory`)**: o bloco em foco
+  (CARD DE MES na visao Mes, BLOCO DE SEMANA na visao Semana) e alvo do snap
+  (`.calendar-snap` = `scroll-snap-align: center`), ficando SEMPRE centralizado com peek do
+  anterior e do proximo. Scroll infinito nas duas direcoes (`renderedMonthKeys`/`renderedWeekKeys`).
+- **Foco segue o scroll**: o bloco mais proximo do centro vira o foco (`focusMonthKey` /
+  `focusWeekKey`); titulo, glow, week rail e notas acompanham. `data-block-key` alimenta a
+  deteccao; `data-focus="true"` marca o bloco em foco (usado no auto-center).
+- Toggle **Mes/Semana** e clicar em **S1..Sn** (rail) entram na visao Semana daquela semana.
+  Clicar num dia/chip abre o drawer e move o foco.
+
+> **DADOS 100% REAIS (sem mock/legado)**: EVENTOS, NOTAS, RESPONSAVEIS, MEMBROS, CONFIG e
+> FERIADOS vem do back real (`/v1/calendar/*`, modulo Go `back/internal/modules/calendar`) via
+> `createApiRequest` no `stores/calendar.ts` (janela por `from`/`to`; notas por mes com save
+> debounced; CRUD com refetch). CLIENTES reais do `useTenantsStore`. RESPONSAVEIS = usuarios reais
+> da conta (`/v1/calendar/responsibles`, subconjunto configuravel); `store.people` = responsaveis.
+> FERIADOS computados no back (`/v1/calendar/holidays?from=&to=`, conjuntos BR nacional / Sergipe /
+> Aracaju / luxo internacional, incl. moveis via Pascoa) e ligados/desligados na config. O composable
+> `useCalendarData` (mock) foi REMOVIDO. **ANEXOS (Fase 3)**: imagem/video no evento
+> (`event.media = CalendarMediaItem[]`) e avulsos no dia; upload via `useCalendarMedia` (XHR com
+> progresso real) → `POST /v1/calendar/media`, limite de video GLOBAL da plataforma
+> (`/v1/calendar/media-limits`, default 300MB). Rota/nav ainda sem gate proprio no front (preview); o
+> gate de API `/v1/calendar` ja existe (platform_admin bypassa). Fases seguintes (white-label, perfil
+> do cliente + IA, aprovacao WhatsApp) em
+> [docs/CALENDARIO_PLAN.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/CALENDARIO_PLAN.md).
+
+- [CalendarControls.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarControls.vue)
+  Topo da coluna esquerda (uma linha): titulo do mes + **engrenagem (`@config`)** + **select de
+  cliente** (Todos/especifico, via [AppSelectField]) + toggle Mes/Semana + Hoje + botao "Novo".
+- [CalendarConfigModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarConfigModal.vue)
+  Modal de **configuracao** da pagina (abre pela engrenagem): secao **Responsaveis** (checkboxes dos
+  usuarios reais da conta via `store.members`; vazio = todos) + secao **Feriados & datas
+  comemorativas** (toggles BR nacional / Sergipe / Aracaju / luxo internacional). Salva em
+  `store.saveConfig` (PUT `/v1/calendar/config`). Reutiliza `.calendar-form-overlay/.calendar-form`
+  - estilos `.calendar-config__*`. Esc/click-fora/X fecham.
+- [CalendarWeekRail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarWeekRail.vue)
+  Rail vertical na BORDA ESQUERDA: `M` (volta pra visao Mes) + `S1..Sn` (semanas do mes em
+  foco). Auto-detecta as semanas (`weeksOfFocusedMonth`); uma linha com <2 dias do mes (ex.: so
+  o domingo) NAO conta. Ativo (M na visao Mes, Sn na visao Semana) fica primary-preenchido;
+  marca a semana vigente.
+- [MonthGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/MonthGrid.vue)
+  Card do mes (glass, `.calendar-snap`) com cabecalho + grade de 7 colunas de [DayCell.vue].
+- [WeekView.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/WeekView.vue)
+  Bloco de UMA semana (glass, `.calendar-snap`) — 7 colunas altas com todos os eventos do dia;
+  a visao Semana e um scroll infinito desses blocos.
+- [DayCell.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/DayCell.vue) +
+  [EventChip.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/EventChip.vue)
+  Celula do dia (numero, HOJE, marcadores de **feriado** em `--accent-warning`, ate N chips +
+  "+N mais"); chip com a cor do cliente. Feriados vem de `store.holidaysByDate` (Map por data),
+  passados por [MonthGrid.vue] / [WeekView.vue].
+- [MonthNotesPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/MonthNotesPanel.vue)
+  Notas por mes (segue o foco); reutiliza o [OmniEditor](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/omni/OmniEditor.vue)
+  (TipTap). Preenche a coluna abaixo dos controles.
+- [DayDrawer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/DayDrawer.vue)
+  Drawer do dia (`role="dialog"`): detalhe do item (pilulas cliente/tipo, Status/Prioridade/
+  Responsavel/Horario) + **midia do post** (uploader readonly) + **Editar/Excluir** + lista dos itens
+  - **Anexos do dia** (uploader editavel, `useCalendarMedia.fetchDayMedia`/`saveDayMedia`). Espelha o
+    modal de Tasks (DESIGN_SYSTEM §9).
+- [CalendarMediaUploader.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaUploader.vue)
+  Widget reutilizavel de anexos (`v-model` = `CalendarMediaItem[]`): grade de previews (img/`video`)
+  - remover, tile de adicionar (input file oculto), barra de progresso por upload e validacao de
+    tipo/tamanho no cliente (contra `useCalendarMedia().mediaLimits`). `readonly` = so preview (midia do
+    post no drawer). Usado no [CalendarEventForm.vue] e no [DayDrawer.vue].
+- [CalendarEventForm.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarEventForm.vue)
+  Modal de **criar/editar** evento (titulo, cliente, responsavel, data, horario, tipo, status,
+  prioridade, descricao). Emite `submit`/`cancel`/`remove`; a pagina chama
+  `store.createEvent/updateEvent/deleteEvent` (API real).
+
 ## Diretrizes rapidas
 
 - se a tela for um painel inteiro, procurar primeiro um `*Workspace.vue`

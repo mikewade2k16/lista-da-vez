@@ -977,7 +977,14 @@ function clear() {
   background: var(--admin-header-panel-bg);
   border: 1px solid var(--admin-header-border);
   border-radius: 12px;
-  overflow: hidden;
+  /* Conteudo alto: limita a altura ao espaco real disponivel (o Floating UI/Reka
+     expoe --reka-popper-available-height no lado escolhido) e rola por dentro. Sem
+     isso, quando o gatilho fica alto na tela o popover vira pra cima e era CORTADO
+     no topo da viewport (calendario sumia). Fallback 85vh se a var nao existir. */
+  max-height: var(--reka-popper-available-height, 85vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ── Date boxes ── */

@@ -74,6 +74,10 @@ func normalizeRawRecordsQuery(query RawRecordsQuery) RawRecordsQuery {
 		SortDir:        strings.TrimSpace(strings.ToLower(query.SortDir)),
 		DateFrom:       strings.TrimSpace(query.DateFrom),
 		DateTo:         strings.TrimSpace(query.DateTo),
+		DateField:      strings.TrimSpace(query.DateField),
+		MinValueCents:  query.MinValueCents,
+		StoreFilter:    strings.TrimSpace(query.StoreFilter),
+		EmployeeFilter: strings.TrimSpace(query.EmployeeFilter),
 	}
 	if normalized.Page <= 0 {
 		normalized.Page = 1

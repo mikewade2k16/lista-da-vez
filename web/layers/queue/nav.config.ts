@@ -22,6 +22,15 @@ export default {
           beta: true,
         },
         {
+          // PREVIEW front: sem workspaceId/moduleId (visivel para revisar o layout).
+          // Ao plugar o back, gatear por workspace/modulo proprio do calendario.
+          id: 'calendario',
+          label: 'Calendário',
+          icon: 'calendar',
+          path: '/calendario',
+          beta: true,
+        },
+        {
           id: 'tracking',
           label: 'Tracking',
           icon: 'tracking',
@@ -246,7 +255,11 @@ export default {
             },
           ],
         },
-        { id: 'finance', label: 'Finance', icon: 'finance', path: '/finance', hidden: true },
+        // Finance: gate por modulo (some para contas sem o modulo; platform_admin
+        // ve via platformView). SEM workspaceId nesta fase mock — a pagina usa
+        // workspaceId:'' para nao ser barrada pelo auth.global (o workspace
+        // 'finance' so passa a existir quando o back real entrar). Front em mock BFF.
+        { id: 'finance', label: 'Finance', icon: 'finance', path: '/finance', moduleId: 'finance' },
         {
           id: 'monitoramento',
           label: 'Monitoramento',

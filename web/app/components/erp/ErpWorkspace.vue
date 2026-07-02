@@ -63,13 +63,19 @@ const {
   productsSortBy,
   productsSortDir,
   rawItemRows,
+  recordsDateField,
   recordsDateFrom,
   recordsDateTo,
+  recordsEmployeeFilter,
+  recordsEmployeeOptions,
+  recordsMinValue,
   recordsRowKey,
   recordsSearchValue,
   recordsSortBy,
   recordsSortDir,
   recordsSpecificSearchValue,
+  recordsStoreFilter,
+  recordsStoreOptions,
   reloadWorkspace,
   searchValue,
   selectedSyncRun,
@@ -176,19 +182,29 @@ const {
       :page="erpStore.recordsPage"
       :page-size="erpStore.recordsPageSize"
       :page-size-options="pageSizeOptions"
+      :records-date-field="recordsDateField"
       :records-date-from="recordsDateFrom"
       :records-date-to="recordsDateTo"
+      :records-employee-filter="recordsEmployeeFilter"
+      :records-employee-options="recordsEmployeeOptions"
+      :records-min-value="recordsMinValue"
       :records-row-key="recordsRowKey"
       :records-search-value="recordsSearchValue"
       :records-sort-by="recordsSortBy"
       :records-sort-dir="recordsSortDir"
       :records-specific-search-value="recordsSpecificSearchValue"
+      :records-store-filter="recordsStoreFilter"
+      :records-store-options="recordsStoreOptions"
       :rows="erpStore.records"
       :show-admin-cards="isERPSystemAdmin"
       :syncing="erpStore.syncing"
       :total="erpStore.totalRecords"
       @update:records-search-value="recordsSearchValue = $event"
       @update:records-specific-search-value="recordsSpecificSearchValue = $event"
+      @update:records-date-field="recordsDateField = $event"
+      @update:records-min-value="recordsMinValue = $event"
+      @update:records-store-filter="recordsStoreFilter = $event"
+      @update:records-employee-filter="recordsEmployeeFilter = $event"
       @update:date-from="recordsDateFrom = $event"
       @update:date-to="recordsDateTo = $event"
       @update:sort-by="handleRecordsSortBy"

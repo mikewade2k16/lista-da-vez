@@ -110,6 +110,11 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     id: "comissao-v2",
     label: "Comissão v2 — cálculo no back (API-first)",
     description: "Recebimento por atingimento de meta calculado no backend como serviço de domínio único (pacote queue/commission), embutido em /v1/erp/crm. Consultor sobre a PRÓPRIA venda com trava de meta e penalidade PA/Ticket; gerente sobre o total da loja com faixas por tipo de loja (Shopping/Bairro). Inclui a auditoria das demais lógicas só-no-front (P1-P3). Plano: planos/vamos-fazer-altera-es-em-purrfect-pony.md."
+  },
+  {
+    id: "calendario",
+    label: "Calendário de Conteúdo",
+    description: "Agenda de conteúdo por cliente da agência (/calendario): eventos (post/story/reels/reunião), notas por mês, responsáveis reais, feriados/datas comemorativas e config na página. Fonte 100% real (sem mock). Plano: docs/CALENDARIO_PLAN.md."
   }
 ];
 
@@ -576,19 +581,20 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     id: "fase-14",
     code: "Fase 14",
     title: "Módulo Finance",
-    goal: "Trazer financeiro só depois do lote simples do front, mantendo /finance como placeholder até a fase começar.",
+    goal: "Front portado para web/layers/finance/ rodando sobre mock BFF temporário; back Go desenhado em docs/finance/PLANO_MODULO_FINANCE.md, pendente de implementação.",
     status: "pending",
     estimateWeeks: "2-3 semanas",
     tasks: [
       { id: "sequencing", label: "Iniciar somente após validar profile, team, site e a frente nova de users/clientes no roadmap", done: false },
-      { id: "backend", label: "Criar back/internal/modules/finance/ com schema finance.*, lançamentos, categorias, recorrências e ajustes", done: false },
-      { id: "frontend-layer", label: "Criar web/layers/finance/ com página admin/finance.vue portada para o path /finance", done: false },
-      { id: "components", label: "Portar FinanceLineCard.vue, FinanceRecurringGroupCard.vue e OmniMoneyInput.vue no layer finance", done: false },
-      { id: "contacts-integration", label: "Integrar com contacts quando habilitado; usar entidade local quando contacts estiver desligado", done: false },
-      { id: "permissions", label: "Declarar permissões finance.read, finance.write, finance.recurring.manage e role templates", done: false },
-      { id: "acceptance", label: "Criar lançamento, efetivar recorrência, ajustar valor e consultar histórico via API Go", done: false }
+      { id: "frontend-layer", label: "Criar web/layers/finance/ com página finance.vue portada para o path /finance", done: true, note: "PORTADO 2026-06-30: layer web/layers/finance/ com pages/finance.vue como PORT FIEL do web-reference (layout UDashboardGroup + UDashboardSidebar redimensionável + UDashboardPanel, mesmas classes/estilos finances-page__*). Correção: no Nuxt UI v4 o 'Pro' foi unificado no @nuxt/ui, então UDashboard* existem no pacote community 4.8.0 (premissa anterior de 'trocar por grid' revertida). Lógica nos composables (sheet editor direto + provide(FINANCE_CONFIG_KEY) p/ o painel); helpers e tipos separados. Placeholder DemoWorkspacePage removido; layer registrado no nuxt.config; nav gateada por moduleId 'finance'; página com workspaceId '' (senão auth.global redirecionava p/ /operacao)." },
+      { id: "components", label: "Portar FinanceLineCard.vue, FinanceRecurringGroupCard.vue, FinanceConfigPanel.vue e reusar OmniMoneyInput", done: true, note: "FinanceLineCard/FinanceRecurringGroupCard/FinanceConfigPanel (slideover) portados fiéis; OmniMoneyInput reaproveitado do layer tasks (não duplicado). Componentes Omni + UDashboard* via auto-import." },
+      { id: "mock-bff", label: "Mock BFF temporário marcado (Nitro in-memory) para clicar a tela até o back existir", done: true, note: "web/server/api/admin/finance-* + web/server/utils/financeMockStore.ts (in-memory, só dev/SSR). Marcado com LegacyMarker kind='mock' (só admin) e registrado em docs/LEGADO.md #6. A REMOVER quando o back real entrar." },
+      { id: "backend", label: "Criar back/internal/modules/finance/ com schema finance.*, lançamentos, categorias, recorrências e ajustes", done: false, note: "DESENHADO em docs/finance/PLANO_MODULO_FINANCE.md (schema finance.* com 7 tabelas, endpoints /v1/admin/finance-*, module registry, migration 0181). Falta implementar." },
+      { id: "contacts-integration", label: "Integrar com contacts quando habilitado; usar entidade local quando contacts estiver desligado", done: false, note: "Metadata OptionalModules:['contacts'] previsto no doc; implementar junto do back." },
+      { id: "permissions", label: "Declarar permissões finance.sheets.view/manage, finance.config.manage, finance.recurring.manage e role templates", done: false, note: "Desenhadas no doc (concilia finance.read/write/recurring.manage do roadmap para o formato entity.verb); implementar em permissions.go." },
+      { id: "acceptance", label: "Criar lançamento, efetivar recorrência, ajustar valor e consultar histórico via API Go", done: false, note: "Hoje persiste só no mock BFF; aceite real depende do back Go." }
     ],
-    verifiable: "/finance deixa de ser placeholder, operações principais persistem no backend e o módulo respeita account_modules."
+    verifiable: "/finance deixa de ser placeholder (front real no ar sobre mock); back desenhado no doc canônico. Fase fecha quando as operações persistirem na API Go e o módulo respeitar account_modules (mock removido)."
   },
   {
     id: "fase-15",
@@ -895,6 +901,27 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
   },
   // ─── CRM 360 — Fila + ERP ─────────────────────────────────────────────────
 
+  {
+    id: "erp-sorteio",
+    code: "ERP Sorteio",
+    title: "Aba Compras do ERP — dados corretos + filtro de valor + ordenação",
+    goal: "Base exata por compra para sorteio 'compras do dia X ao Y acima de R$ V': filtrar pela data REAL da compra (order_date), excluir cancelados em toda query, filtrar por valor mínimo e ordenar de verdade (valor numérico, data cronológica). A aba Compras hoje filtra por data de importação do lote, não ordena por valor e inclui pedidos cancelados — diverge do CRM e oscila local↔online. Risco legal: contagem de compras precisa ser exata. Plano: planos/glowing-jingling-oasis.md.",
+    status: "in_progress",
+    estimateWeeks: "2–3 dias",
+    startedAt: "2026-06-30",
+    group: "crm-360",
+    tasks: [
+      { id: "sort-fix", label: "repository_raw_records.go: traduzir id da coluna do front → coluna de ordenação real (total_amount_raw→total_amount_cents numérico; order_date_raw→order_date cronológico, NULLS LAST); expor order_date no CTE de dedup", done: false },
+      { id: "date-toggle", label: "Filtro de período por data da compra (order_date) como padrão + toggle 'Data de importação' (source_batch_date), em GetRecordsStats e ListRawRecords (params dateField)", done: false },
+      { id: "min-value", label: "Filtro 'valor mínimo' (minValueCents) por total bruto da compra, nos cards (stats) e na lista", done: false },
+      { id: "exclude-canceled", label: "Anti-join erp_order_canceled_raw em TODA query de pedido ativo (Compras): cancelado nunca entra em card/lista/contagem/export", done: false },
+      { id: "front-filters", label: "Front: input de valor mínimo + toggle de data na aba Compras (useErpWorkspace/erp store/ErpRecordsTab/ErpDataTable); export CSV reflete os filtros", done: false },
+      { id: "go-tests", label: "Testes Go: mapeamento de ordenação + filtros (order_date, valor mínimo, exclusão de cancelados)", done: false },
+      { id: "agent-md", label: "Atualizar back/internal/modules/crm/erp/AGENT.md com o novo comportamento de filtro/ordenação", done: false },
+      { id: "verify", label: "Verificação: reconciliar Compras(todas as lojas) com CRM(mapeadas)+não-mapeadas no mesmo período; reportar order_date NULL", done: false }
+    ],
+    verifiable: "Ordenar por 'Valor total' ordena numérico e por 'Data' cronológico; período por data da compra; nenhum cancelado em card/lista/export; toggle reproduz o número antigo por lote; go test ./... passa.",
+  },
   {
     id: "crm-c1",
     code: "CRM C1",
@@ -2046,6 +2073,28 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
     ],
     blockers: [],
     verifiable: "Com SMTP configurado: pedir 'esqueci a senha' com um e-mail real ATIVO → o e-mail com o código chega; confirmar código + nova senha redefine e o login passa a aceitar a nova senha. E-mail inexistente/inativo → a tela avança igual (sem vazar existência) e nenhum e-mail sai. Reenvio/tentativas têm limite. SMTP ausente cai no log (dev). golangci-lint limpo."
+  },
+  {
+    id: "calendario",
+    code: "CAL",
+    title: "Calendário de Conteúdo (/calendario)",
+    goal: "Agenda de conteúdo por cliente da agência: cada dia mostra o que será entregue (cliente, tipo, status, prioridade, responsável), notas por mês, feriados/datas comemorativas e config na própria página. Dados 100% reais no back (módulo Go calendar), zero mock. Plano: docs/CALENDARIO_PLAN.md.",
+    status: "in_progress",
+    estimateWeeks: "Fases 1-2 entregues; 3-4 a estimar",
+    startedAt: "2026-06-30",
+    group: "calendario",
+    tasks: [
+      { id: "cal-f1-crud", label: "Fase 1 — Back CRUD: migration 0181 (calendar.events + calendar.notes) + módulo Go (model/store/service/http/module) + front integrado (stores/calendar.ts busca eventos por janela from/to, notas por mês com save debounced, CalendarEventForm criar/editar + Editar/Excluir no drawer). Clientes reais via useTenantsStore.", done: true, note: "2026-06-30: migration 0181 aplicada, api rebuildada, módulo registrado + gate /v1/calendar→calendar em app.go. Falta gate de rota/nav próprio no front (hoje preview, workspaceId:'')." },
+      { id: "cal-f2-responsaveis", label: "Fase 2a — Responsáveis reais: GET /v1/calendar/responsibles (usuários da conta, subconjunto configurável) + GET /v1/calendar/members + modal de config na página (engrenagem) escolhe quais usuários aparecem. store.people = responsáveis; useCalendarData (mock) REMOVIDO.", done: true, note: "2026-07-01: migration 0182 (calendar.config jsonb por conta) + GET/PUT /v1/calendar/config + CalendarConfigModal.vue. Dados 100% reais." },
+      { id: "cal-f2-feriados", label: "Fase 2b — Feriados/datas comemorativas: GET /v1/calendar/holidays?from=&to= computado no back (holidays.go: fixos + móveis via Páscoa/Meeus; conjuntos BR nacional/Sergipe/Aracaju/luxo internacional) + toggles por conjunto na config + render em DayCell/WeekView (faixa --accent-warning). Sem tabela de seed.", done: true, note: "2026-07-01: HolidaysInRange filtra pelos conjuntos ligados na config. Carnaval/Sexta Santa/Corpus/Mães/Pais/Black Friday/Cyber Monday móveis." },
+      { id: "cal-f2-skill", label: "Skill de engenharia (< 450 linhas/arquivo): calendar.css virou barrel + calendar/{shell,grid,notes-drawer,week-form}.css; store 560→407 com composables/useCalendarViewport.ts (foco/scroll/rail/nav) + domain/calendar/calendar-api.ts (I/O). Módulo Go todo < 450.", done: true, note: "2026-07-01." },
+      { id: "cal-f3-anexos-back", label: "Fase 3 (anexos) BACK — mídia no evento (event.media = MediaItem[]) + anexos avulsos no dia (migration 0183 calendar.day_media): POST /v1/calendar/media (upload multipart → uploads/calendar/{account}/, valida mime+tamanho) + GET/PUT day-media + limite em core.platform_settings (media_limits, GET authed / PUT platform_admin, default vídeo 300MB / imagem 10MB). Espelha tasks/cardapio.", done: true, note: "2026-07-01: media_storage.go + http_media.go + store/service; api rebuildada, migration 0183 aplicada, módulo built. Doc §3.6. DEPLOY: proxy precisa aceitar body 300MB (client_max_body_size)." },
+      { id: "cal-f3-anexos-front", label: "Fase 3 (anexos) FRONT — widget de upload (imagem/vídeo) com progresso + preview (thumb/player) + remover, no CalendarEventForm (mídia do post) e no DayDrawer (anexos do dia). Mostra o limite de vídeo e valida no cliente antes de subir.", done: false, note: "2026-07-01: CalendarMediaUploader.vue + useCalendarMedia.ts (XHR c/ progresso) + tipos MediaItem/limits implementados. PENDENTE só validar no dev (HMR, sem npm build ainda)." },
+      { id: "cal-f3-config-ia", label: "Fase 3 — Config avançada + white-label (cores por cliente/tipo, início da semana, aparência exposta ao cliente) + perfil do cliente (insumo p/ IA) + IA de sugestão de conteúdo nas notas do mês (Claude: perfil + mês + datas → pilares/ideias/copy).", done: false, note: "Perfil do cliente detalhado no doc §3.5." },
+      { id: "cal-f4-whatsapp-share", label: "Fase 4 — Aprovação via WhatsApp (n8n/WAHA) + visão compartilhável read-only para o cliente (respeitando white-label).", done: false },
+    ],
+    blockers: [],
+    verifiable: "/calendario com sessão real: eventos/notas/responsáveis/feriados vêm do back (Network mostra /v1/calendar/*, nunca mock). Criar/editar/excluir evento persiste; engrenagem abre config e salva responsáveis + toggles de feriado por conta; feriados aparecem no dia certo (inclusive móveis). Cada arquivo do módulo < 450 linhas."
   }
 ];
 

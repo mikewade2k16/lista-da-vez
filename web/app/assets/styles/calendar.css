@@ -1,0 +1,10 @@
+/*
+ * Estilos da pagina /calendario, divididos por area (limite de 450 linhas/arquivo).
+ * Este arquivo e apenas um barrel de @import; a ordem abaixo define a cascata.
+ * Ver componentes em web/app/components/calendar/ e AGENT.md desse diretorio.
+ */
+@import './calendar/shell.css';
+@import './calendar/grid.css';
+@import './calendar/notes-drawer.css';
+@import './calendar/week-form.css';
+@import './calendar/media.css';

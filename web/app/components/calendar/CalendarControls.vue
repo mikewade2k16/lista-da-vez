@@ -17,6 +17,7 @@ const emit = defineEmits<{
   'update:view': [view: CalendarView]
   'new-item': []
   config: []
+  ai: []
 }>()
 
 const clientOptions = computed(() => [
@@ -28,6 +29,16 @@ const clientOptions = computed(() => [
 <template>
   <div class="calendar-controls">
     <h2 class="calendar-controls__title">{{ periodTitle }}</h2>
+
+    <button
+      type="button"
+      class="calendar-controls__gear"
+      aria-label="IA do mês"
+      title="Gerar plano de conteúdo com IA"
+      @click="emit('ai')"
+    >
+      <UIcon name="i-lucide-sparkles" aria-hidden="true" />
+    </button>
 
     <button
       type="button"

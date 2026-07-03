@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useCalendarMedia } from '~/composables/useCalendarMedia'
+import CalendarMediaViewer from '~/components/calendar/CalendarMediaViewer.vue'
+import { getApiBase } from '~/utils/api-client'
+import { resolveMediaUrl } from '~/utils/media'
 import { formatBytes, type CalendarMediaItem } from '~/utils/calendar'
 
 const props = withDefaults(
@@ -14,7 +17,14 @@ const props = withDefaults(
 
 const emit = defineEmits<{ 'update:modelValue': [value: CalendarMediaItem[]] }>()
 
-const { mediaLimits, fetchMediaLimits, uploadMedia } = useCalendarMedia()
+const { mediaLimits, fetchMediaLimits, uploadMedia, uploadVideoWithPoster } = useCalendarMedia()
+
+// Indice do item aberto no viewer (null = fechado).
+const viewerIndex = ref<number | null>(null)
+
+function openViewer(idx: number): void {
+  viewerIndex.value = idx
+}
 
 // Uploads em voo (ainda sem MediaItem): id local + nome + tipo + progresso.
 interface Pending {
@@ -30,6 +40,29 @@ let pendingSeq = 0
 
 const videoLimitLabel = computed(() => formatBytes(mediaLimits.value.videoMaxBytes))
 const imageLimitLabel = computed(() => formatBytes(mediaLimits.value.imageMaxBytes))
+
+// Absolutiza /uploads/* para a apiBase (dev: web :3003 e api :9091 separados;
+// url relativa cairia no host do front e a thumb quebra).
+const apiBase = getApiBase(useRuntimeConfig())
+function srcOf(url: string): string {
+  return resolveMediaUrl(url, apiBase)
+}
+
+// Mensagem acionavel por code do back (principio: nunca um "falhou" seco).
+function uploadFailMessage(name: string, code: string, status: number): string {
+  switch (code) {
+    case 'invalid_media':
+      return `${name}: formato não aceito. Imagens: jpg, png, webp, gif, avif · vídeos: mp4, webm, mov.`
+    case 'media_too_large':
+      return `${name}: acima do limite do servidor (imagem ${imageLimitLabel.value} · vídeo ${videoLimitLabel.value}).`
+    case 'network':
+      return `${name}: falha de rede ao enviar — a api não respondeu.`
+    case 'timeout':
+      return `${name}: o envio travou e estourou o tempo limite. Tente de novo; se repetir, recrie o container da api.`
+    default:
+      return `Falha ao enviar ${name}${status ? ` (HTTP ${status})` : ''}.`
+  }
+}
 
 onMounted(() => void fetchMediaLimits())
 
@@ -68,13 +101,25 @@ async function handleFile(file: File): Promise<void> {
   const key = ++pendingSeq
   pending.value = [...pending.value, { key, name: file.name, kind, pct: 0 }]
 
-  const item = await uploadMedia(file, (pct) => {
+  const onPct = (pct: number): void => {
     pending.value = pending.value.map((p) => (p.key === key ? { ...p, pct } : p))
-  })
+  }
+  let failCode = ''
+  let failStatus = 0
+  const onErr = (code: string, status: number): void => {
+    failCode = code
+    failStatus = status
+  }
+  // Video sobe pelo fluxo que tambem gera+sobe o poster (falha do poster nao
+  // falha o upload); imagem segue no upload simples.
+  const item =
+    kind === 'video'
+      ? await uploadVideoWithPoster(file, onPct, onErr)
+      : await uploadMedia(file, onPct, onErr)
   pending.value = pending.value.filter((p) => p.key !== key)
 
   if (!item) {
-    error.value = `Falha ao enviar ${file.name}.`
+    error.value = uploadFailMessage(file.name, failCode, failStatus)
     return
   }
   emit('update:modelValue', [...props.modelValue, item])
@@ -94,20 +139,32 @@ function remove(id: string): void {
 
     <div class="calendar-media__grid">
       <div
-        v-for="item in modelValue"
+        v-for="(item, idx) in modelValue"
         :key="item.id"
-        class="calendar-media__item"
+        class="calendar-media__item calendar-media__item--clickable"
+        role="button"
+        tabindex="0"
         :title="`${item.name} · ${formatBytes(item.sizeBytes)}`"
+        :aria-label="`Abrir ${item.name}`"
+        @click="openViewer(idx)"
+        @keydown.enter.prevent="openViewer(idx)"
+        @keydown.space.prevent="openViewer(idx)"
       >
         <img
           v-if="item.type === 'image'"
-          :src="item.url"
+          :src="srcOf(item.url)"
+          :alt="item.name"
+          class="calendar-media__thumb"
+        />
+        <img
+          v-else-if="item.posterUrl"
+          :src="srcOf(item.posterUrl)"
           :alt="item.name"
           class="calendar-media__thumb"
         />
         <video
           v-else
-          :src="item.url"
+          :src="srcOf(item.url)"
           class="calendar-media__thumb"
           preload="metadata"
           muted
@@ -120,7 +177,7 @@ function remove(id: string): void {
           type="button"
           class="calendar-media__remove"
           aria-label="Remover anexo"
-          @click="remove(item.id)"
+          @click.stop="remove(item.id)"
         >
           <UIcon name="i-lucide-x" aria-hidden="true" />
         </button>
@@ -160,7 +217,8 @@ function remove(id: string): void {
 
     <p v-if="error" class="calendar-media__error">{{ error }}</p>
     <p v-else-if="!readonly" class="calendar-media__hint">
-      Imagem até {{ imageLimitLabel }} · vídeo até {{ videoLimitLabel }} (mp4/webm/mov).
+      Imagem até {{ imageLimitLabel }} (jpg/png/webp/gif/avif) · vídeo até {{ videoLimitLabel }}
+      (mp4/webm/mov).
     </p>
 
     <input
@@ -170,6 +228,13 @@ function remove(id: string): void {
       multiple
       class="calendar-media__input"
       @change="onFiles"
+    />
+
+    <CalendarMediaViewer
+      v-if="viewerIndex !== null && modelValue.length"
+      :items="modelValue"
+      :start-index="viewerIndex"
+      @close="viewerIndex = null"
     />
   </div>
 </template>

@@ -18,6 +18,16 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // Testes de realtime (useOperationsRealtime/useTasksRealtime) e de stores
+    // (cardapio) compartilham o mock global unico de `$fetch` (test/setup.ts) e
+    // alternam entre timers reais e fake timers. Sob execucao paralela de
+    // arquivos, o agendamento de microtasks/timers do worker fica sujeito a
+    // contencao de CPU: o fetch do ticket (timers reais) as vezes nao resolve a
+    // tempo do numero fixo de flushes, e `advanceTimersByTimeAsync` de um arquivo
+    // interfere no agendamento do outro — deixando esses testes intermitentes.
+    // Serializar os arquivos remove a corrida sem enfraquecer nenhum assert; a
+    // suite e pequena e o custo de tempo e desprezivel.
+    fileParallelism: false,
     setupFiles: ['./test/setup.ts'],
     include: [
       'app/**/*.test.ts',

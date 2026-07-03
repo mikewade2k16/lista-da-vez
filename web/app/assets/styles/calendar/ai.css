@@ -1,0 +1,363 @@
+/* ===== Modal "IA do mes" (SPEC-F5) =========================================
+   So tokens do design system (nada de hex hardcoded). Espelha o padrao do modal
+   de evento (.calendar-form*) mas com area de resultado rolavel. */
+.calendar-ai-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.calendar-ai {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-shell);
+  border: 1px solid var(--line-soft);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-shell);
+  overflow: hidden;
+}
+
+.calendar-ai__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.calendar-ai__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-main);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.calendar-ai__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.calendar-ai__close:hover {
+  background: var(--bg-muted);
+  color: var(--text-main);
+}
+
+.calendar-ai__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.calendar-ai__provider {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.calendar-ai__config-link,
+.calendar-ai__link {
+  border: 0;
+  background: transparent;
+  color: rgb(var(--primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.calendar-ai__link--danger {
+  color: rgb(var(--danger));
+}
+
+.calendar-ai__row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.calendar-ai__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.calendar-ai__label {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.calendar-ai__input {
+  min-height: 2.3rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.calendar-ai__clients-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.calendar-ai__clients {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.25rem 0.75rem;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 0.4rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.calendar-ai__client {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.calendar-ai__client input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: rgb(var(--primary));
+  cursor: pointer;
+}
+
+.calendar-ai__client-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-ai__empty {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+.calendar-ai__warn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
+  color: var(--accent-warning);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.calendar-ai__warn code {
+  font-size: 0.72rem;
+}
+
+.calendar-ai__pending {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.calendar-ai__spin {
+  animation: calendar-ai-spin 1s linear infinite;
+}
+
+@keyframes calendar-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== Resultado do plano =================================================== */
+.calendar-ai-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+}
+
+.calendar-ai-result__summary {
+  color: var(--text-main);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.calendar-ai-result__block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.calendar-ai-result__block-title {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.calendar-ai-result__pillars,
+.calendar-ai-result__days {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.calendar-ai-result__pillar,
+.calendar-ai-result__day {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.5rem;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface) / 0.45);
+}
+
+.calendar-ai-result__pillar-prop,
+.calendar-ai-result__day-type {
+  color: rgb(var(--primary));
+  font-weight: 700;
+}
+
+.calendar-ai-result__pillar-why,
+.calendar-ai-result__strategy,
+.calendar-ai-result__day-copy {
+  color: var(--text-muted);
+}
+
+.calendar-ai-result__strategy {
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.calendar-ai-result__day-date {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.calendar-ai-result__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.calendar-ai-result__applied {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgb(var(--success));
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+/* ===== Historico de planos ================================================= */
+.calendar-ai__history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.calendar-ai__history-title {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.calendar-ai__history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.calendar-ai__history-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+}
+
+.calendar-ai__history-status {
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.calendar-ai__history-status[data-status='done'],
+.calendar-ai__history-status[data-status='applied'] {
+  color: rgb(var(--success));
+}
+
+.calendar-ai__history-status[data-status='error'] {
+  color: rgb(var(--danger));
+}
+
+.calendar-ai__history-meta {
+  color: var(--text-muted);
+}
+
+.calendar-ai__spacer {
+  flex: 1;
+}
+
+.calendar-ai__footer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--line-soft);
+}

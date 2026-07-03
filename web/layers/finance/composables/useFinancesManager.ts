@@ -1,10 +1,9 @@
 // Camada de dados das planilhas financeiras.
 //
-// FONTE ATUAL: mock BFF Nitro (web/server/api/admin/finance-sheets). Adaptado do
-// web-reference: usa `$fetch` (Nitro local, mesma origem) no lugar do antigo
-// `useBffFetch`, escopo de cliente via useCoreAccountStore, e SEM realtime
-// (o mock so re-busca sob demanda). Quando o back Go real entrar, trocar `$fetch`
-// por createApiRequest (~/utils/api-client) com X-Account-Id e reativar realtime.
+// FONTE: API Go real (back/internal/modules/finance, /v1/finance/sheets) via
+// createApiRequest — substituiu o mock BFF Nitro em AC-12 (web/server/ removido).
+// X-Account-Id entra pelo provider global; escopo (coreTenantId) via
+// useCoreAccountStore. SEM realtime ainda (re-busca sob demanda; ver AGENT.md).
 import type {
   FinanceDetailResponse,
   FinanceLineMutationResponse,
@@ -20,6 +19,8 @@ import {
   normalizeFinanceLinkedUuid,
 } from '../utils/finance-ids'
 import { useCoreAccountStore } from '../../core/stores/account'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest } from '~/utils/api-client'
 
 interface FinancesFetchOptions {
   q?: string
@@ -53,7 +54,7 @@ interface FinanceLinePatchPayload {
 }
 
 const DEFAULT_FETCH_LIMIT = 240
-const FINANCE_SHEETS_API_BASE = '/api/admin/finance-sheets'
+const FINANCE_SHEETS_API_BASE = '/v1/finance/sheets'
 const COLLECTION_KEY = '__collection__'
 
 function normalizeText(value: unknown, max = 12000) {
@@ -170,6 +171,9 @@ function normalizeRows(value: FinanceLineItem[] | undefined, _kind: 'entrada' | 
 
 export function useFinancesManager() {
   const coreAccount = useCoreAccountStore()
+  const auth = useAuthStore()
+  const runtimeConfig = useRuntimeConfig()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
   const sheets = ref<FinanceSheetListItem[]>([])
   const activeSheet = ref<FinanceSheetItem | null>(null)
@@ -276,7 +280,8 @@ export function useFinancesManager() {
     activeDetailRequestId = requestId
 
     try {
-      const response = await $fetch<FinanceDetailResponse>(`${FINANCE_SHEETS_API_BASE}/${sheetId}`)
+      const path = `${FINANCE_SHEETS_API_BASE}/${sheetId}`
+      const response = (await apiRequest(path)) as FinanceDetailResponse
       if (requestId !== activeDetailRequestId) {
         return response.data
       }
@@ -304,7 +309,7 @@ export function useFinancesManager() {
     const coreTenantId = scopedCoreTenantId(options.coreTenantId)
 
     try {
-      const response = await $fetch<FinancesListResponse>(FINANCE_SHEETS_API_BASE, {
+      const response = (await apiRequest(FINANCE_SHEETS_API_BASE, {
         query: {
           page: 1,
           limit: DEFAULT_FETCH_LIMIT,
@@ -312,7 +317,7 @@ export function useFinancesManager() {
           coreTenantId: coreTenantId || undefined,
           period: normalizePeriod(options.period),
         },
-      })
+      })) as FinancesListResponse
       sheets.value = Array.isArray(response.data) ? response.data : []
       if (activeSheet.value && !sheets.value.some((item) => item.id === activeSheet.value?.id)) {
         activeSheet.value = null
@@ -331,7 +336,7 @@ export function useFinancesManager() {
     setSaving(keyFor(COLLECTION_KEY, 'create'), true)
 
     try {
-      const response = await $fetch<FinanceMutationResponse>(FINANCE_SHEETS_API_BASE, {
+      const response = (await apiRequest(FINANCE_SHEETS_API_BASE, {
         method: 'POST',
         body: {
           title: normalizeText(payload.title, 180),
@@ -342,7 +347,7 @@ export function useFinancesManager() {
           saidas: normalizeRows(payload.saidas, 'saida'),
           coreTenantId: scopedCoreTenantId(payload.coreTenantId) || undefined,
         },
-      })
+      })) as FinanceMutationResponse
 
       upsertSheet(response.data)
       activeSheet.value = response.data
@@ -364,21 +369,18 @@ export function useFinancesManager() {
     setSaving(keyFor(sheetId, 'update'), true)
 
     try {
-      const response = await $fetch<FinanceMutationResponse>(
-        `${FINANCE_SHEETS_API_BASE}/${sheetId}`,
-        {
-          method: 'PUT',
-          body: {
-            title: normalizeText(payload.title, 180),
-            period: normalizePeriod(payload.period),
-            status: normalizeText(payload.status, 120),
-            notes: normalizeText(payload.notes, 12000),
-            entradas: normalizeRows(payload.entradas, 'entrada') || [],
-            saidas: normalizeRows(payload.saidas, 'saida') || [],
-            coreTenantId: scopedCoreTenantId(payload.coreTenantId) || undefined,
-          },
+      const response = (await apiRequest(`${FINANCE_SHEETS_API_BASE}/${sheetId}`, {
+        method: 'PUT',
+        body: {
+          title: normalizeText(payload.title, 180),
+          period: normalizePeriod(payload.period),
+          status: normalizeText(payload.status, 120),
+          notes: normalizeText(payload.notes, 12000),
+          entradas: normalizeRows(payload.entradas, 'entrada') || [],
+          saidas: normalizeRows(payload.saidas, 'saida') || [],
+          coreTenantId: scopedCoreTenantId(payload.coreTenantId) || undefined,
         },
-      )
+      })) as FinanceMutationResponse
 
       upsertSheet(response.data)
       if (activeSheet.value?.id === response.data.id) {
@@ -402,7 +404,7 @@ export function useFinancesManager() {
     setSaving(keyFor(sheetId, 'delete'), true)
 
     try {
-      await $fetch<{ status: 'success' }>(`${FINANCE_SHEETS_API_BASE}/${sheetId}`, {
+      await apiRequest(`${FINANCE_SHEETS_API_BASE}/${sheetId}`, {
         method: 'DELETE',
       })
 
@@ -428,20 +430,17 @@ export function useFinancesManager() {
     setSaving(keyFor(sheetId, 'update'), true)
 
     try {
-      const response = await $fetch<FinanceLineMutationResponse>(
-        `${FINANCE_SHEETS_API_BASE}/${sheetId}/lines/${lineId}`,
-        {
-          method: 'PATCH',
-          body: {
-            effective: Object.prototype.hasOwnProperty.call(payload, 'effective')
-              ? Boolean(payload.effective)
-              : undefined,
-            effectiveDate: Object.prototype.hasOwnProperty.call(payload, 'effectiveDate')
-              ? normalizeDate(payload.effectiveDate)
-              : undefined,
-          },
+      const response = (await apiRequest(`${FINANCE_SHEETS_API_BASE}/${sheetId}/lines/${lineId}`, {
+        method: 'PATCH',
+        body: {
+          effective: Object.prototype.hasOwnProperty.call(payload, 'effective')
+            ? Boolean(payload.effective)
+            : undefined,
+          effectiveDate: Object.prototype.hasOwnProperty.call(payload, 'effectiveDate')
+            ? normalizeDate(payload.effectiveDate)
+            : undefined,
         },
-      )
+      })) as FinanceLineMutationResponse
 
       replaceActiveSheetLine(
         response.data.line,

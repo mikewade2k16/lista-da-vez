@@ -1,9 +1,8 @@
 // Contrato de dados do modulo Finance (planilhas mensais de entradas/saidas).
 //
-// FONTE ATUAL: mock BFF temporario (web/server/api/admin/finance-*). Estes tipos
-// espelham 1:1 o schema-alvo do back Go `finance.*` desenhado em
-// docs/finance/PLANO_MODULO_FINANCE.md. Quando o back real entrar, o contrato
-// permanece; muda apenas a origem (BFF -> API Go).
+// FONTE: API Go real `finance.*` (back/internal/modules/finance, /v1/finance/*).
+// Estes tipos espelham 1:1 o contrato do back (camelCase). O mock BFF que servia
+// este contrato antes foi removido em AC-12; ver docs/finance/PLANO_MODULO_FINANCE.md.
 
 export interface FinanceLineAdjustment {
   id: string

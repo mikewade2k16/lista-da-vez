@@ -71,6 +71,7 @@ export const WORKSPACES = [
   { id: 'banco', label: 'Banco', icon: 'storage', path: '/banco' },
   { id: 'automation', label: 'Automacao', icon: 'psychology', path: '/automation' },
   { id: 'meta_ads', label: 'Meta Ads', icon: 'campaign', path: '/meta-ads' },
+  { id: 'finance', label: 'Finance', icon: 'payments', path: '/finance' },
   { id: 'performance', label: 'Performance', icon: 'speed', path: '/performance' },
 ]
 

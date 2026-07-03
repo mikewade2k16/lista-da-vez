@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 
 import { useAuthStore } from '~/stores/auth'
+import * as calendarApi from '~/domain/calendar/calendar-api'
 import { createApiRequest, getApiBase } from '~/utils/api-client'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
 import {
@@ -8,6 +9,7 @@ import {
   type CalendarMediaItem,
   type CalendarMediaLimits,
 } from '~/utils/calendar'
+import { capturePosterFromVideo } from '~/utils/calendar-poster'
 
 // Limites globais (plataforma): singleton compartilhado entre os componentes que
 // usam o uploader (form de evento + drawer do dia). Uma leitura serve a todos.
@@ -29,23 +31,35 @@ export function useCalendarMedia() {
     await auth.ensureSession()
     if (!auth.isAuthenticated) return
     try {
-      const res = await apiRequest('/v1/calendar/media-limits')
-      mediaLimits.value = {
-        ...defaultCalendarMediaLimits(),
-        ...(res as Partial<CalendarMediaLimits>),
-      }
+      mediaLimits.value = await calendarApi.fetchMediaLimits(apiRequest)
       limitsLoaded = true
     } catch {
       // mantem o default
     }
   }
 
+  // Salva os tetos GLOBAIS (so platform_admin; o back retorna 403 fora disso).
+  // Atualiza o singleton compartilhado em sucesso (o uploader passa a validar
+  // contra o novo teto sem recarregar).
+  async function saveMediaLimits(next: CalendarMediaLimits): Promise<boolean> {
+    try {
+      mediaLimits.value = await calendarApi.putMediaLimits(apiRequest, next)
+      limitsLoaded = true
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // uploadMedia envia por XMLHttpRequest (o $fetch nao expoe progresso de upload).
   // Reaplica os headers que o apiRequest injeta (Authorization + X-Account-Id).
   // Resolve com o MediaItem salvo, ou null em erro (o chamador valida tamanho antes).
+  // onError recebe o code do back (invalid_media/media_too_large/...) + status HTTP
+  // para o chamador montar um aviso acionavel, nunca um "falhou" seco.
   function uploadMedia(
     file: File,
     onProgress?: (pct: number) => void,
+    onError?: (code: string, status: number) => void,
   ): Promise<CalendarMediaItem | null> {
     return new Promise((resolve) => {
       const form = new FormData()
@@ -54,6 +68,9 @@ export function useCalendarMedia() {
       const base = getApiBase(runtimeConfig).replace(/\/$/, '')
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${base}/v1/calendar/media`)
+      // Teto de tempo do upload: sem isso, um proxy travado (ex.: port-forward
+      // do Docker no Windows) deixa o envio pendurado em 0% para sempre.
+      xhr.timeout = 15 * 60 * 1000
 
       const token = auth.accessToken
       if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
@@ -74,37 +91,61 @@ export function useCalendarMedia() {
           }
           return
         }
+        // Extrai o code do payload de erro do back ({error:{code,message}}).
+        let code = ''
+        try {
+          const body = JSON.parse(xhr.responseText) as { error?: { code?: string } }
+          code = String(body?.error?.code || '')
+        } catch {
+          // corpo nao-JSON: mantem code vazio
+        }
+        if (onError) onError(code, xhr.status)
         resolve(null)
       }
-      xhr.onerror = () => resolve(null)
+      xhr.onerror = () => {
+        if (onError) onError('network', 0)
+        resolve(null)
+      }
+      xhr.ontimeout = () => {
+        if (onError) onError('timeout', 0)
+        resolve(null)
+      }
+      xhr.onabort = () => {
+        if (onError) onError('network', 0)
+        resolve(null)
+      }
       xhr.send(form)
     })
   }
 
-  async function fetchDayMedia(date: string): Promise<CalendarMediaItem[]> {
-    if (!date) return []
-    await auth.ensureSession()
-    if (!auth.isAuthenticated) return []
+  // uploadVideoWithPoster sobe o video (com progresso) e, em seguida, tenta
+  // capturar+subir um poster do primeiro frame silenciosamente. Falha do poster
+  // NAO falha o upload: o item volta sem posterUrl (fallback = <video>). O
+  // posterUrl so e aceito se o back devolver um /uploads/calendar/... valido.
+  async function uploadVideoWithPoster(
+    file: File,
+    onProgress?: (pct: number) => void,
+    onError?: (code: string, status: number) => void,
+  ): Promise<CalendarMediaItem | null> {
+    const item = await uploadMedia(file, onProgress, onError)
+    if (!item) return null
     try {
-      const params = new URLSearchParams({ from: date, to: date })
-      const res = await apiRequest(`/v1/calendar/day-media?${params.toString()}`)
-      const days = Array.isArray(res?.days) ? res.days : []
-      const match = days.find((d: { date?: string }) => d?.date === date)
-      return Array.isArray(match?.media) ? (match.media as CalendarMediaItem[]) : []
+      const poster = await capturePosterFromVideo(file)
+      if (!poster) return item
+      const posterItem = await uploadMedia(poster)
+      if (posterItem?.url) return { ...item, posterUrl: posterItem.url }
     } catch {
-      return []
+      // sem poster: mantem o item original
     }
+    return item
   }
 
-  async function saveDayMedia(date: string, media: CalendarMediaItem[]): Promise<boolean> {
-    if (!date) return false
-    try {
-      await apiRequest(`/v1/calendar/day-media/${date}`, { method: 'PUT', body: { media } })
-      return true
-    } catch {
-      return false
-    }
+  return {
+    mediaLimits,
+    fetchMediaLimits,
+    saveMediaLimits,
+    uploadMedia,
+    uploadVideoWithPoster,
+    capturePosterFromVideo,
   }
-
-  return { mediaLimits, fetchMediaLimits, uploadMedia, fetchDayMedia, saveDayMedia }
 }

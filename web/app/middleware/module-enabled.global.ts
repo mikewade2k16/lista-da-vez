@@ -26,6 +26,7 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/manage/leads-web', moduleId: 'site' },
   { prefix: '/manage/produtos-web', moduleId: 'site' },
   { prefix: '/meta-ads', moduleId: 'meta_ads' },
+  { prefix: '/finance', moduleId: 'finance' },
   // queue — paginas de uso da Fila/operacao. Conta sem o modulo queue nao acessa
   // (espelha as tags moduleId:'queue' no nav.config.ts). /operacao cobre tambem
   // /operacao/usuarios e /operacao/clientes (gestao da Fila).

@@ -3,13 +3,21 @@ import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { normalizeAppRole } from '~/domain/utils/permissions'
 
-type HeaderTheme = 'light' | 'dark'
+type SwitcherTheme = 'light' | 'dark' | 'liquidglass'
 
 const USER_THEME_STORAGE_KEY = 'omni-ui-user-theme'
-const USER_THEME_OPTIONS: Array<{ value: HeaderTheme; icon: string }> = [
+const THEME_OPTIONS: Array<{ value: SwitcherTheme; icon: string }> = [
   { value: 'light', icon: 'i-lucide-sun' },
   { value: 'dark', icon: 'i-lucide-moon' },
+  { value: 'liquidglass', icon: 'i-lucide-sparkles' },
 ]
+const THEME_ICONS: Record<string, string> = {
+  light: 'i-lucide-sun',
+  dark: 'i-lucide-moon',
+  liquidglass: 'i-lucide-sparkles',
+  apple: 'i-lucide-palette',
+  custom: 'i-lucide-palette',
+}
 
 const auth = useAuthStore()
 const { role, allowedWorkspaces } = storeToRefs(auth)
@@ -20,33 +28,24 @@ const canOpenThemeStudio = computed(
     normalizeAppRole(role.value) === 'platform_admin' || allowedWorkspaces.value.includes('themes'),
 )
 
-const activeHeaderTheme = computed<HeaderTheme>(() =>
-  currentTheme.value === 'dark' ? 'dark' : 'light',
-)
-
-const themeButton = computed(() => {
-  if (activeHeaderTheme.value === 'dark') {
-    return { icon: 'i-lucide-moon', label: getThemeLabel('dark') }
-  }
-
-  return { icon: 'i-lucide-sun', label: getThemeLabel('light') }
-})
+const themeButton = computed(() => ({
+  icon: THEME_ICONS[currentTheme.value] || 'i-lucide-palette',
+  label: getThemeLabel(currentTheme.value),
+}))
 
 const themeItems = computed(() =>
-  USER_THEME_OPTIONS.map((option) => ({
+  THEME_OPTIONS.map((option) => ({
     ...option,
     label: getThemeLabel(option.value),
   })),
 )
 
-function selectTheme(value: HeaderTheme) {
-  if (value !== 'light' && value !== 'dark') {
-    return
-  }
-
-  applyTheme(value, false)
-
-  if (import.meta.client) {
+function selectTheme(value: SwitcherTheme) {
+  // applyTheme com persist: platform_admin grava o tema GLOBAL da plataforma;
+  // usuário comum grava local. Para os temas-base (light/dark) também guardamos a
+  // preferência pessoal, que sobrepõe o tema global base no próximo load.
+  applyTheme(value, true)
+  if (import.meta.client && (value === 'light' || value === 'dark')) {
     window.localStorage.setItem(USER_THEME_STORAGE_KEY, value)
   }
 }
@@ -73,14 +72,14 @@ onMounted(() => {
           v-for="item in themeItems"
           :key="item.value"
           class="dashboard-theme-switcher__item"
-          :class="{ 'is-active': activeHeaderTheme === item.value }"
+          :class="{ 'is-active': currentTheme === item.value }"
           type="button"
           @click="selectTheme(item.value)"
         >
           <UIcon :name="item.icon" class="size-4" aria-hidden="true" />
           <span>{{ item.label }}</span>
           <UIcon
-            v-if="activeHeaderTheme === item.value"
+            v-if="currentTheme === item.value"
             name="i-lucide-check"
             class="dashboard-theme-switcher__check"
             aria-hidden="true"

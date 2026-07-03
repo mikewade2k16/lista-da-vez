@@ -6,6 +6,7 @@ import { useAuthStore } from '~/stores/auth'
 import { createApiRequest } from '~/utils/api-client'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { useCalendarViewport } from '~/composables/useCalendarViewport'
+import { useCalendarDayMedia } from '~/composables/useCalendarDayMedia'
 import * as calendarApi from '~/domain/calendar/calendar-api'
 import {
   addDaysToKey,
@@ -13,12 +14,14 @@ import {
   clientColorFor,
   defaultCalendarConfig,
   monthKeyOf,
+  resolveClientColor,
   startOfWeekKey,
   type CalendarClient,
   type CalendarConfig,
   type CalendarEvent,
   type CalendarEventInput,
   type CalendarHoliday,
+  type CalendarMediaItem,
   type CalendarMember,
   type CalendarPerson,
 } from '~/utils/calendar'
@@ -79,13 +82,17 @@ export const useCalendarStore = defineStore('calendar', () => {
   const config = ref<CalendarConfig>(defaultCalendarConfig())
 
   // --- Clientes (reais, do banco) -----------------------------------------------
+  // Cor: override da config (`#rrggbb`/`none`) vence a paleta-semente por indice.
   const clients = computed<CalendarClient[]>(() =>
     (tenantsStore.tenants || [])
       .filter((tenant) => tenant.id && tenant.active)
       .map((tenant, index) => ({
         id: tenant.id,
         name: tenant.name || tenant.slug || 'Cliente',
-        color: clientColorFor(tenant.id, index),
+        color: resolveClientColor(
+          config.value.clientColors?.[tenant.id],
+          clientColorFor(tenant.id, index),
+        ),
       })),
   )
 
@@ -177,11 +184,19 @@ export const useCalendarStore = defineStore('calendar', () => {
     })
   }
 
+  // Anexos avulsos por dia (fundo do dia SPEC-F2 + drawer): estado + I/O em
+  // composables/useCalendarDayMedia.ts (mantem este arquivo < 450 linhas). Busca
+  // na mesma janela dos eventos e alimenta o DayDrawer sem refetch por dia.
+  const dayMedia = useCalendarDayMedia(apiRequest, fetchRange, withSession)
+  const { dayMediaByDate, fetchDayMedia, saveDayMedia } = dayMedia
+  const selectedDayMedia = computed<CalendarMediaItem[]>(() => dayMedia.mediaForDate(selectedDate))
+
   function scheduleWindowFetch(): void {
     if (windowFetchTimer) window.clearTimeout(windowFetchTimer)
     windowFetchTimer = window.setTimeout(() => {
       void fetchEvents()
       void fetchHolidays()
+      void fetchDayMedia()
     }, 250)
   }
 
@@ -234,6 +249,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }
 
+  // A config manda no inicio da semana: espelha `config.weekStartsOn` no viewport
+  // (fonte unica = banco; o default sunday so vale ate a config chegar).
+  watch(
+    () => config.value.weekStartsOn,
+    (v) => (weekStartsOn.value = v === 'monday' ? 'monday' : 'sunday'),
+    { immediate: true },
+  )
+
   watch(fetchRange, scheduleWindowFetch)
   watch(activeNotesMonthKey, (month) => void fetchNotes(month))
   watch(
@@ -241,10 +264,12 @@ export const useCalendarStore = defineStore('calendar', () => {
     () => {
       events.value = []
       holidays.value = []
+      dayMedia.reset()
       notesByMonth.value = {}
       notesLoaded.value = new Set()
       void fetchEvents()
       void fetchHolidays()
+      void fetchDayMedia()
       void fetchNotes(activeNotesMonthKey.value)
       void fetchResponsibles()
       void fetchConfig()
@@ -348,6 +373,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     void fetchNotes(activeNotesMonthKey.value)
     void fetchEvents()
     void fetchHolidays()
+    void fetchDayMedia()
   }
 
   return {
@@ -376,7 +402,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     currentRailIndex,
     eventsByDate,
     holidaysByDate,
+    dayMediaByDate,
     selectedEvents,
+    selectedDayMedia,
     periodTitle,
     activeNotesMonthKey,
     activeNotes,
@@ -404,5 +432,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     fetchConfig,
     fetchMembers,
     saveConfig,
+    saveDayMedia,
   }
 })

@@ -20,6 +20,7 @@ Antes de criar componente novo:
   Ele segue a mesma linguagem visual do `.product-pick` do fechamento e deve substituir selects nativos soltos.
 - para grades administrativas reutilizaveis sem `<table>`, preferir [AppEntityGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppEntityGrid.vue)
 - para toggles booleanos compactos em linhas administrativas, preferir [AppToggleSwitch.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppToggleSwitch.vue)
+- para superficie de card/painel com estetica liquid glass, aplicar a classe `.omni-glass` (definida em `web/app/assets/styles/components.css`): fica solida nos temas normais e vira vidro (backdrop-filter) so no tema `.theme-liquidglass`, com fallback. Usa os tokens `--glass-*`. NAO cravar `backdrop-filter`/alpha por componente — reusar `.omni-glass` para nao duplicar e nao dar drift. Ver [docs/DESIGN_SYSTEM.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/DESIGN_SYSTEM.md) secao 2 e [docs/THEME_MODULE_PLAN.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/THEME_MODULE_PLAN.md).
 - para QUALQUER modal/drawer de edicao (entidade em abas, editor, painel lateral), usar o TEMPLATE-CORE [OmniEntityDrawer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/OmniEntityDrawer.vue) — header fechar/expandir-toggle/popover de modo, resize no modo lado, modos lado/centro/fullscreen; so o conteudo muda (slots `default`/`#header-extra`/`#footer`). NAO criar `USlideover`/`UModal` a mao; ajuste no core vale para todos. Ver [docs/frontend/MODAL_TEMPLATE.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/frontend/MODAL_TEMPLATE.md).
 - para modal de leitura detalhada simples, preferir [AppDetailDialog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppDetailDialog.vue)
 - para dialogos e prompts globais, usar [AppDialogHost.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/AppDialogHost.vue) via `uiStore`
@@ -263,11 +264,32 @@ auditoria sobrescreve `perf-data.ts` e a pagina reflete na hora.
 
 ### `calendar`
 
-Pagina `/calendario` (workspace global, layout `dashboard`, `definePageMeta workspaceId: ''`
-para nao cair no gate de workspace). Calendario de conteudo por cliente da agencia. Layout em
+Pagina `/calendario` (`pages/calendario/index.vue`; workspace global, layout `dashboard`,
+`definePageMeta workspaceId: ''` para nao cair no gate de workspace) + `pages/calendario/config.vue`
+(`/calendario/config`, mesmo criterio). Calendario de conteudo por cliente da agencia. Layout em
 colunas: [coluna esquerda = controles + notas, UM card] [week rail S1..Sn] [calendario (scroll)]
 [drawer do dia]. DUAS VISOES (Mes / Semana), toggle nos controles. Estado em [stores/calendar.ts];
-helpers de data/constantes em [utils/calendar.ts]; nav em `layers/queue/nav.config.ts`.
+helpers de data/constantes em [utils/calendar.ts]; tipos+helpers da CONFIG (contrato C2) em
+[utils/calendar-config.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-config.ts)
+(re-exportados por utils/calendar.ts); nav em `layers/queue/nav.config.ts`.
+
+> **CONFIG v2 (SPEC-F3)**: `CalendarConfig` (jsonb `calendar.config`) traz alem de responsaveis+feriados:
+> `weekStartsOn` (sunday|monday), `clientColors` ({ [clientId]: `#rrggbb`|`none` }), `typeColors`
+> ({ [tipo]: `#rrggbb` }), `whiteLabel` (logo/titulo/cor) e `ai` (provider/model/baseUrl/systemPrompt/
+> temperature — chaves de API NUNCA aqui, vivem no n8n). `normalizeConfig` (calendar-api.ts) faz merge
+> POR SECAO (linha antiga do banco ganha o shape completo). APLICACAO no calendario: `weekStartsOn` da
+> config espelha no viewport (store observa `config.weekStartsOn`); a cor do cliente vem de
+> `resolveClientColor(clientColors[id], semente)` no `clients` computed; `typeColors` desce como prop
+> `typeColors` por MonthGrid/WeekView/DayCell -> EventChip (override da cor do cliente quando setado).
+
+> **Liquid glass / aurora ambiente**: a AURORA de fundo (camada animada de gradientes que os
+> cards de vidro `backdrop-filter` refratam) NAO vive mais no `/calendario`. Virou parte do TEMA
+> proprio **Liquid Glass**: `.theme-liquidglass .module-workspace-full::before` /
+> `.theme-liquidglass .workspace::before` em `assets/styles/omni-tokens.css` (z-index:-1, atras do
+> conteudo), so aparece quando o tema Liquid Glass esta ativo (selecionavel no Theme Studio). O
+> `shell.css` do calendario so mantem os cards de vidro. Tema/aparencia sao GLOBAIS da plataforma
+> (modulo `theme` no back: `/v1/platform/appearance`), nao mais no queue/settings. Conversao do
+> resto da UI = fase `liquid-glass-ui` (GLASS) no roadmap; plano em docs/THEME_MODULE_PLAN.md.
 
 Interacao-chave:
 
@@ -291,20 +313,82 @@ Interacao-chave:
 > `useCalendarData` (mock) foi REMOVIDO. **ANEXOS (Fase 3)**: imagem/video no evento
 > (`event.media = CalendarMediaItem[]`) e avulsos no dia; upload via `useCalendarMedia` (XHR com
 > progresso real) → `POST /v1/calendar/media`, limite de video GLOBAL da plataforma
-> (`/v1/calendar/media-limits`, default 300MB). Rota/nav ainda sem gate proprio no front (preview); o
+> (`/v1/calendar/media-limits`, default 300MB). Video gera tambem um `posterUrl` (thumb): apos subir
+> o video, `useCalendarMedia.uploadVideoWithPoster` captura o 1o frame via
+> [utils/calendar-poster.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-poster.ts)
+> (`<video>`+`<canvas>`, JPEG 640px) e sobe como imagem normal; falha do poster NAO falha o upload.
+> **Fundo do dia (SPEC-F2)**: os anexos avulsos por dia vem do store via
+> [composables/useCalendarDayMedia.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarDayMedia.ts)
+> (estado `dayMediaByDate` + `fetchDayMedia`/`saveDayMedia`, extraido do store na SPEC-F3 p/ manter
+> < 450 linhas; `GET /v1/calendar/day-media?from=&to=` via `calendarApi.fetchDayMediaInRange`, buscado
+> na MESMA janela debounced dos eventos e zerado na troca de conta; PUT via `calendarApi.putDayMedia`).
+> [MonthGrid]/[WeekView] passam `bgUrls` por dia (helper `dayBackgroundUrls`) e [DayCell] pinta o fundo. Rota/nav ainda sem gate proprio no front (preview); o
 > gate de API `/v1/calendar` ja existe (platform_admin bypassa). Fases seguintes (white-label, perfil
 > do cliente + IA, aprovacao WhatsApp) em
 > [docs/CALENDARIO_PLAN.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/CALENDARIO_PLAN.md).
 
 - [CalendarControls.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarControls.vue)
-  Topo da coluna esquerda (uma linha): titulo do mes + **engrenagem (`@config`)** + **select de
-  cliente** (Todos/especifico, via [AppSelectField]) + toggle Mes/Semana + Hoje + botao "Novo".
-- [CalendarConfigModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarConfigModal.vue)
-  Modal de **configuracao** da pagina (abre pela engrenagem): secao **Responsaveis** (checkboxes dos
-  usuarios reais da conta via `store.members`; vazio = todos) + secao **Feriados & datas
-  comemorativas** (toggles BR nacional / Sergipe / Aracaju / luxo internacional). Salva em
-  `store.saveConfig` (PUT `/v1/calendar/config`). Reutiliza `.calendar-form-overlay/.calendar-form`
-  - estilos `.calendar-config__*`. Esc/click-fora/X fecham.
+  Topo da coluna esquerda (uma linha): titulo do mes + **botao IA (`@ai`, sparkles)** +
+  **engrenagem (`@config`)** + **select de cliente** (Todos/especifico, via [AppSelectField]) +
+  toggle Mes/Semana + Hoje + botao "Novo". O `@config` faz `navigateTo('/calendario/config')` (nao
+  abre mais modal — SPEC-F3); o `@ai` abre o [CalendarAiPlanModal.vue] (SPEC-F5).
+
+> **IA do mes (SPEC-F5, contrato C4/C5)**: o botao sparkles do [CalendarControls] abre o
+> [CalendarAiPlanModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarAiPlanModal.vue)
+> (Teleport body; fecha por X, Esc e clique no backdrop). Fluxo: seleciona 1+ clientes (multi) +
+> mes (default = `focusMonthKey`) + resumo do provider/modelo da config com link "configurar" ->
+> /calendario/config; "Gerar plano" -> `POST /v1/calendar/ai/plan` -> polling `GET
+/v1/calendar/ai/plans/{id}` a cada 3s (max 5min, PARA ao fechar o modal); 503 `ai_not_configured`
+> vira aviso acionavel (envs `CALENDAR_AI_WEBHOOK_URL`/`_SERVICE_TOKEN`/`_CALLBACK_BASE` + import do
+> workflow no n8n). Resultado renderizado por
+> [CalendarAiPlanResult.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarAiPlanResult.vue)
+> (summary + pilares + por cliente os dias). Acoes: **"Aplicar nas notas"** (anexa HTML formatado a
+> nota do mes-alvo — mes ativo via `store.setNotesForActiveMonth`, senao GET+append+PUT no composable
+> via `calendarApi.fetch/putNotesForMonth`) e **"Criar eventos"** (loop `store.createEvent`:
+> title=idea, description=copy, type mapeado por `planTypeToEventType` (fora do enum -> post), status
+> planejado, priority media, clientId do bloco, date do item) -> depois `POST
+/v1/calendar/ai/plans/{id}/applied`; reaplicar plano ja `applied` pede confirmacao (`ui.confirm`)
+> para nao duplicar em silencio. Lista dos planos anteriores do mes (index lean, `GET
+/v1/calendar/ai/plans?month=`) com abrir/excluir. I/O + polling em
+> [composables/useCalendarAiPlans.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarAiPlans.ts)
+> (account_id nunca no body — o back resolve pelo Principal); tipos+helpers (normalizacao,
+> `planContentToNotesHtml` com escape de HTML, `planTypeToEventType`) em
+> [utils/calendar-ai.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-ai.ts)
+> (re-exportados por utils/calendar.ts). Endpoints (calendar-api.ts): `POST /v1/calendar/ai/plan`
+> (body `{month, clientIds}` -> `{id, status}`), `GET /v1/calendar/ai/plans?month=` (index lean),
+> `GET /v1/calendar/ai/plans/{id}` (completo com content), `POST /v1/calendar/ai/plans/{id}/applied`,
+> `DELETE /v1/calendar/ai/plans/{id}`. Estilos `.calendar-ai*` + `.calendar-ai-result__*` em
+> `assets/styles/calendar/ai.css` (so tokens; o HTML de nota vem do plano via editor TipTap).
+
+- **Pagina de config** `pages/calendario/config.vue` (substitui o antigo `CalendarConfigModal.vue`,
+  DELETADO): header com voltar p/ `/calendario` + [AdminPageHeader]; monta um `draft` de
+  `CalendarConfig` re-hidratado de `store.config` (so preserva enquanto `touched`); botao unico
+  "Salvar configuracoes" -> `store.saveConfig` (PUT `/v1/calendar/config`) + feedback ui.success/error.
+  Secoes em `components/calendar/config/` (estilos `.calendar-config__*` + `.calendar-config-page__*`
+  em `assets/styles/calendar/config.css`):
+  - `ConfigResponsibles.vue` — checkboxes dos usuarios da conta (`store.members`; vazio = todos).
+  - `ConfigHolidays.vue` — toggles BR nacional / Sergipe / Aracaju / luxo internacional.
+  - `ConfigAppearance.vue` — inicio da semana (seg/dom) + cor por cliente (input color + "Sem cor" =
+    `none`) + cor por tipo (checkbox "Usar" + input color) + white-label (titulo/logo/cor).
+  - `ConfigAi.vue` — provider (select) + modelo + baseUrl (placeholder = default do provider) +
+    systemPrompt (textarea) + temperature; AVISO fixo "as chaves de API ficam no n8n, nunca aqui".
+  - `ConfigMediaLimits.vue` — tetos GLOBAIS de upload; GET sempre (via `useCalendarMedia`), edicao
+    so `platform_admin` (`auth.role === 'platform_admin'`; o back tambem restringe o PUT). Salva por
+    `useCalendarMedia().saveMediaLimits` (PUT `/v1/calendar/media-limits`), independente do config.
+  - `ConfigClientProfiles.vue` (SPEC-F4) — PERFIL ESTRATEGICO por cliente (contrato C3), usado pelo
+    assistente de IA do mes. Select de cliente (`store.clients`) com badge preenchido/vazio (via
+    `filled` do index) + form dos campos estaveis (segmento, posicionamento, site, instagram,
+    endereco, descricao, historia, objetivos, tom de voz) + textareas do bloco `extra` (publico-alvo,
+    oferta, pilares, cadencia, restricoes, performance, assets). Salva POR CLIENTE (botao proprio,
+    independente do "Salvar configuracoes" global) + feedback ui.success/error; dirty guard ao trocar
+    de cliente com edicao pendente (`window.confirm`). I/O em
+    [composables/useCalendarClientProfiles.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarClientProfiles.ts)
+    (index + load/save; `account_id` nunca no body — o back resolve pelo Principal); tipos+defaults em
+    [utils/calendar-profile.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-profile.ts)
+    (re-exportados por utils/calendar.ts). Endpoints (calendar-api.ts): `GET /v1/calendar/client-profile?clientId=`,
+    `PUT /v1/calendar/client-profile` (upsert full-replace), `GET /v1/calendar/client-profiles` (index
+    lean `{clientId,filled,updatedAt}`). Perfil inexistente = 200 com defaults (nunca 404). Estilos
+    `.calendar-profile__*` + `.calendar-config__section--wide` em `assets/styles/calendar/config.css`.
 - [CalendarWeekRail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarWeekRail.vue)
   Rail vertical na BORDA ESQUERDA: `M` (volta pra visao Mes) + `S1..Sn` (semanas do mes em
   foco). Auto-detecta as semanas (`weeksOfFocusedMonth`); uma linha com <2 dias do mes (ex.: so
@@ -318,21 +402,37 @@ Interacao-chave:
 - [DayCell.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/DayCell.vue) +
   [EventChip.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/EventChip.vue)
   Celula do dia (numero, HOJE, marcadores de **feriado** em `--accent-warning`, ate N chips +
-  "+N mais"); chip com a cor do cliente. Feriados vem de `store.holidaysByDate` (Map por data),
-  passados por [MonthGrid.vue] / [WeekView.vue].
+  "+N mais"); chip com a cor do cliente OU a **cor por tipo** quando setada na config (prop
+  `typeColors` desce MonthGrid/WeekView -> DayCell -> `EventChip.typeColor`; override so quando
+  ha `#rrggbb` para o tipo). Feriados vem de `store.holidaysByDate` (Map por data),
+  passados por [MonthGrid.vue] / [WeekView.vue]. **Fundo do dia (SPEC-F2)**: prop `bgUrls?: string[]`
+  (ate 4) renderiza `.calendar-cell__bg` (absolute, atras do conteudo) em grade por `data-count`
+  (1 inteiro / 2 colunas / 3 = 1 alto + 2 / 4 = 2x2) + overlay `rgb(var(--surface)/alpha)` para
+  legibilidade nos dois temas; conteudo com `z-index:1`. As URLs vem do helper puro
+  `dayBackgroundUrls(events, dayMedia)` (utils/calendar): midias dos EVENTOS filtrados primeiro
+  (imagem->`url`, video->`posterUrl`, video sem poster pulado), senao os anexos avulsos do dia.
+  [WeekView.vue] reusa as mesmas classes `.calendar-cell__bg*`.
 - [MonthNotesPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/MonthNotesPanel.vue)
   Notas por mes (segue o foco); reutiliza o [OmniEditor](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/omni/OmniEditor.vue)
   (TipTap). Preenche a coluna abaixo dos controles.
 - [DayDrawer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/DayDrawer.vue)
   Drawer do dia (`role="dialog"`): detalhe do item (pilulas cliente/tipo, Status/Prioridade/
   Responsavel/Horario) + **midia do post** (uploader readonly) + **Editar/Excluir** + lista dos itens
-  - **Anexos do dia** (uploader editavel, `useCalendarMedia.fetchDayMedia`/`saveDayMedia`). Espelha o
-    modal de Tasks (DESIGN_SYSTEM §9).
+  - **Anexos do dia** (uploader editavel). Fonte unica no store: le `store.selectedDayMedia` (do Map
+    `dayMediaByDate` buscado na janela, sem refetch por dia) e salva por `store.saveDayMedia(date, media)`
+    (PUT + atualiza o Map). Espelha o modal de Tasks (DESIGN_SYSTEM §9).
 - [CalendarMediaUploader.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaUploader.vue)
   Widget reutilizavel de anexos (`v-model` = `CalendarMediaItem[]`): grade de previews (img/`video`)
   - remover, tile de adicionar (input file oculto), barra de progresso por upload e validacao de
     tipo/tamanho no cliente (contra `useCalendarMedia().mediaLimits`). `readonly` = so preview (midia do
-    post no drawer). Usado no [CalendarEventForm.vue] e no [DayDrawer.vue].
+    post no drawer). Usado no [CalendarEventForm.vue] e no [DayDrawer.vue]. Clicar num item abre o
+    [CalendarMediaViewer.vue] (botao remover via `@click.stop`); thumb de video usa `posterUrl` como
+    `<img>` quando existe (senao `<video preload="metadata">`). Video sobe por `uploadVideoWithPoster`.
+- [CalendarMediaViewer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaViewer.vue)
+  Overlay em tela cheia (Teleport body) para imagem OU `<video controls autoplay :poster>`. Props
+  `items: CalendarMediaItem[]` + `startIndex`; navegacao < > (setas do teclado tambem), nome+tamanho
+  no rodape. Fecha por X, Esc E clique no backdrop (as tres coexistem). Estilos em
+  `assets/styles/calendar/media.css` (`.calendar-viewer__*`, so tokens).
 - [CalendarEventForm.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarEventForm.vue)
   Modal de **criar/editar** evento (titulo, cliente, responsavel, data, horario, tipo, status,
   prioridade, descricao). Emite `submit`/`cancel`/`remove`; a pagina chama

@@ -16,6 +16,7 @@ const label = computed(() => store.activeLabel)
       role="status"
       :aria-label="label || 'Carregando'"
     >
+      <div v-if="label" class="core-loading-overlay__veil"></div>
       <div class="core-loading-overlay__bar">
         <div class="core-loading-overlay__bar-fill"></div>
       </div>
@@ -39,7 +40,18 @@ const label = computed(() => store.activeLabel)
   padding-top: 0;
 }
 
+/* Véu sutil só quando há rótulo (navegação/fluxo longo): torna o "carregando"
+   inconfundível sem bloquear cliques (pointer-events herdado: none). Pushes
+   silenciosos do api-client (sem label) continuam mostrando só a barra fina. */
+.core-loading-overlay__veil {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 22, 0.32);
+  backdrop-filter: blur(1.5px);
+}
+
 .core-loading-overlay__bar {
+  position: relative;
   width: 100%;
   height: 3px;
   background: rgba(99, 102, 241, 0.12);

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import EventChip from '~/components/calendar/EventChip.vue'
+import { getApiBase } from '~/utils/api-client'
+import { resolveMediaUrl } from '~/utils/media'
 import {
   todayKey,
   type CalendarClient,
@@ -15,11 +17,22 @@ const props = withDefaults(
     events: CalendarEvent[]
     clientsById: Map<string, CalendarClient>
     holidays?: CalendarHoliday[]
+    /** URLs de midia usadas como fundo do dia (ate 4). Vazio = sem fundo. */
+    bgUrls?: string[]
+    /** Override de cor por tipo (config); `{ [type]: '#rrggbb' }`. Vazio = cor do cliente. */
+    typeColors?: Record<string, string>
     maxChips?: number
     selected?: boolean
     dense?: boolean
   }>(),
-  { holidays: () => [], maxChips: 2, selected: false, dense: false },
+  {
+    holidays: () => [],
+    bgUrls: () => [],
+    typeColors: () => ({}),
+    maxChips: 2,
+    selected: false,
+    dense: false,
+  },
 )
 
 const emit = defineEmits<{
@@ -30,6 +43,11 @@ const emit = defineEmits<{
 const isToday = computed(() => props.day.dateKey === todayKey())
 const visibleChips = computed(() => props.events.slice(0, props.maxChips))
 const overflow = computed(() => Math.max(0, props.events.length - props.maxChips))
+// Limita a 4 tiles; o layout da grade e' escolhido por data-count no CSS.
+// resolveMediaUrl absolutiza /uploads/* para a apiBase (dev roda web :3003 e
+// api :9091 em portas diferentes; url relativa cairia no host errado).
+const apiBase = getApiBase(useRuntimeConfig())
+const tiles = computed(() => props.bgUrls.slice(0, 4).map((url) => resolveMediaUrl(url, apiBase)))
 </script>
 
 <template>
@@ -40,11 +58,26 @@ const overflow = computed(() => Math.max(0, props.events.length - props.maxChips
       'calendar-cell--today': isToday,
       'calendar-cell--selected': selected,
       'calendar-cell--week': dense,
+      'calendar-cell--has-bg': tiles.length > 0,
     }"
     role="gridcell"
     :aria-selected="selected ? 'true' : 'false'"
     @click="emit('select-day', day.dateKey)"
   >
+    <div
+      v-if="tiles.length"
+      class="calendar-cell__bg"
+      :data-count="tiles.length"
+      aria-hidden="true"
+    >
+      <span
+        v-for="(url, index) in tiles"
+        :key="index"
+        class="calendar-cell__bg-tile"
+        :style="{ backgroundImage: `url(${url})` }"
+      ></span>
+    </div>
+
     <div class="calendar-cell__head">
       <span class="calendar-cell__num" :class="{ 'calendar-cell__num--today': isToday }">
         {{ day.day }}
@@ -69,6 +102,7 @@ const overflow = computed(() => Math.max(0, props.events.length - props.maxChips
         :key="event.id"
         :event="event"
         :client="clientsById.get(event.clientId)"
+        :type-color="typeColors[event.type]"
         @select="emit('select-event', $event)"
       />
       <button

@@ -417,7 +417,7 @@ export function parseGradient(
   const firstArg = (args[0] || '').trim()
 
   if (type === 'linear' || type === 'conic') {
-    const hasAngle = /\b(deg|turn|rad)\b/i.test(firstArg) || firstArg.startsWith('to ')
+    const hasAngle = /(deg|turn|rad)\b/i.test(firstArg) || firstArg.startsWith('to ')
     if (hasAngle) {
       angle = parseAngleToken(firstArg)
       colorArgs = args.slice(1)

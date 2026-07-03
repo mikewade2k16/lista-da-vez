@@ -143,9 +143,14 @@ function handleProfileChange(profileId) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /*padding: 8px 12px 0;*/
+  padding: 8px 12px 0;
 }
 
+/* A aurora ambiente (liquid glass) agora vive no TEMA `.theme-liquidglass`
+   (assets/styles/omni-tokens.css), gateada pelo Theme Studio — não mais
+   sempre-ligada aqui. Os containers de página (.module-workspace-full base e
+   .workspace) só mantêm position/z-index/overflow para conter a camada quando o
+   tema está ativo. */
 .dashboard-feedback-btn {
   position: fixed;
   bottom: 2rem;
@@ -153,25 +158,41 @@ function handleProfileChange(profileId) {
   width: 3rem;
   height: 3rem;
   border-radius: 50%;
-  background-color: #3b82f6;
+  /* tokens do design system (sem hex hardcoded) — acompanha o tema. */
+  background-color: rgb(var(--primary));
+  color: rgb(255 255 255);
   border: none;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 4px 12px rgb(var(--primary) / 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition:
+    background-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
   z-index: 500;
 }
 
 .dashboard-feedback-btn:hover {
-  background-color: #2563eb;
-  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+  background-color: rgb(var(--primary-600));
+  box-shadow: 0 6px 16px rgb(var(--primary) / 0.4);
   transform: scale(1.1);
 }
 
 .dashboard-feedback-btn:active {
   transform: scale(0.95);
+}
+
+/* Botao flutuante em vidro — SO no tema Liquid Glass. */
+.theme-liquidglass .dashboard-feedback-btn {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-highlight), rgb(var(--primary) / 0.55);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  box-shadow:
+    0 10px 28px rgb(var(--primary) / 0.35),
+    inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 
 .dashboard-feedback-btn__icon {

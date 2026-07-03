@@ -5,7 +5,7 @@ import {
   type OmniThemeName,
 } from './useOmniTheme'
 
-const THEME_ORDER: OmniThemeName[] = ['light', 'dark', 'apple', 'custom']
+const THEME_ORDER: OmniThemeName[] = ['light', 'dark', 'apple', 'liquidglass', 'custom']
 const GROUP_ORDER: Array<'surface' | 'accent' | 'foundation' | 'header' | 'page'> = [
   'surface',
   'accent',
@@ -113,6 +113,7 @@ export function useThemeStudio() {
     light: getThemeLabel('light'),
     dark: getThemeLabel('dark'),
     apple: getThemeLabel('apple'),
+    liquidglass: getThemeLabel('liquidglass'),
     custom: getThemeLabel('custom'),
   }))
 

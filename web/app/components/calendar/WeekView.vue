@@ -3,11 +3,13 @@ import { computed } from 'vue'
 import EventChip from '~/components/calendar/EventChip.vue'
 import {
   buildWeekDays,
+  dayBackgroundUrls,
   formatWeekRangeTitle,
   todayKey,
   type CalendarClient,
   type CalendarEvent,
   type CalendarHoliday,
+  type CalendarMediaItem,
 } from '~/utils/calendar'
 
 const props = defineProps<{
@@ -15,7 +17,10 @@ const props = defineProps<{
   weekdays: string[]
   eventsByDate: Map<string, CalendarEvent[]>
   holidaysByDate: Map<string, CalendarHoliday[]>
+  dayMediaByDate: Map<string, CalendarMediaItem[]>
   clientsById: Map<string, CalendarClient>
+  /** Override de cor por tipo (config). Vazio = cor do cliente. */
+  typeColors?: Record<string, string>
   isFocus: boolean
   isCurrent: boolean
   selectedDate: string
@@ -36,6 +41,11 @@ function eventsFor(dateKey: string): CalendarEvent[] {
 
 function holidaysFor(dateKey: string): CalendarHoliday[] {
   return props.holidaysByDate.get(dateKey) || []
+}
+
+// Fundo do dia (mesma regra da visao Mes): midias dos eventos filtrados + anexos.
+function bgUrlsFor(dateKey: string): string[] {
+  return dayBackgroundUrls(eventsFor(dateKey), props.dayMediaByDate.get(dateKey) || []).slice(0, 4)
 }
 </script>
 
@@ -62,9 +72,24 @@ function holidaysFor(dateKey: string): CalendarHoliday[] {
         :class="{
           'calendar-weekview__day--today': cell.dateKey === today,
           'calendar-weekview__day--selected': cell.dateKey === selectedDate,
+          'calendar-weekview__day--has-bg': bgUrlsFor(cell.dateKey).length > 0,
         }"
         @click="emit('select-day', cell.dateKey)"
       >
+        <div
+          v-if="bgUrlsFor(cell.dateKey).length"
+          class="calendar-cell__bg"
+          :data-count="bgUrlsFor(cell.dateKey).length"
+          aria-hidden="true"
+        >
+          <span
+            v-for="(url, i) in bgUrlsFor(cell.dateKey)"
+            :key="i"
+            class="calendar-cell__bg-tile"
+            :style="{ backgroundImage: `url(${url})` }"
+          ></span>
+        </div>
+
         <div class="calendar-weekview__day-head">
           <span class="calendar-weekview__weekday">{{ weekdays[index] }}</span>
           <span
@@ -92,6 +117,7 @@ function holidaysFor(dateKey: string): CalendarHoliday[] {
             :key="event.id"
             :event="event"
             :client="clientsById.get(event.clientId)"
+            :type-color="(typeColors || {})[event.type]"
             @select="emit('select-event', $event)"
           />
         </div>

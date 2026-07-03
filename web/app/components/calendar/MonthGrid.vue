@@ -3,10 +3,12 @@ import { computed } from 'vue'
 import DayCell from '~/components/calendar/DayCell.vue'
 import {
   buildMonthMatrix,
+  dayBackgroundUrls,
   formatMonthTitle,
   type CalendarClient,
   type CalendarEvent,
   type CalendarHoliday,
+  type CalendarMediaItem,
   type WeekStart,
 } from '~/utils/calendar'
 
@@ -16,7 +18,10 @@ const props = defineProps<{
   weekdays: string[]
   eventsByDate: Map<string, CalendarEvent[]>
   holidaysByDate: Map<string, CalendarHoliday[]>
+  dayMediaByDate: Map<string, CalendarMediaItem[]>
   clientsById: Map<string, CalendarClient>
+  /** Override de cor por tipo (config). Desce ate o EventChip. */
+  typeColors?: Record<string, string>
   isFocus: boolean
   isCurrent: boolean
   selectedDate: string
@@ -36,6 +41,12 @@ function eventsFor(dateKey: string): CalendarEvent[] {
 
 function holidaysFor(dateKey: string): CalendarHoliday[] {
   return props.holidaysByDate.get(dateKey) || []
+}
+
+// Fundo do dia: usa os eventos ja filtrados por cliente (eventsByDate) + anexos
+// avulsos. Helper puro em utils/calendar (mesma regra na visao Semana).
+function bgUrlsFor(dateKey: string): string[] {
+  return dayBackgroundUrls(eventsFor(dateKey), props.dayMediaByDate.get(dateKey) || [])
 }
 </script>
 
@@ -68,7 +79,9 @@ function holidaysFor(dateKey: string): CalendarHoliday[] {
           :day="cell"
           :events="eventsFor(cell.dateKey)"
           :holidays="holidaysFor(cell.dateKey)"
+          :bg-urls="bgUrlsFor(cell.dateKey)"
           :clients-by-id="clientsById"
+          :type-colors="typeColors || {}"
           :max-chips="2"
           :selected="cell.dateKey === selectedDate"
           @select-day="emit('select-day', $event)"

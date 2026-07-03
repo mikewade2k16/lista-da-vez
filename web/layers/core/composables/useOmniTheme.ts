@@ -1,19 +1,37 @@
 import { createApiRequest } from '~/utils/api-client'
+import {
+  ALL_THEMES,
+  OMNI_THEME_DEFAULTS,
+  OMNI_THEME_LABELS,
+  OMNI_THEME_VARIABLES,
+  OMNI_THEMES,
+  createEmptyOverrides,
+  getThemeDescriptor,
+  hexToRgbTriplet,
+  isBaseThemeName,
+  isThemeName,
+  normalizeVariableKey,
+  rgbTripletToHex,
+  sanitizeOverrides,
+  selectorByTheme,
+  type OmniThemeName,
+  type OmniThemeOverrides,
+  type OmniThemeVariable,
+  type OmniThemeVariableGroup,
+  type OmniThemeVariableKind,
+  type ThemeVars,
+} from './omni-theme-catalog'
 
-export type OmniThemeName = 'light' | 'dark' | 'apple' | 'custom'
-
-type ThemeVars = Record<string, string>
-type OmniThemeOverrides = Record<OmniThemeName, ThemeVars>
-
-export type OmniThemeVariableKind = 'text' | 'rgb-triplet' | 'css-color' | 'css-gradient'
-export type OmniThemeVariableGroup = 'foundation' | 'surface' | 'accent' | 'header' | 'page'
-
-export interface OmniThemeVariable {
-  key: string
-  label: string
-  group: OmniThemeVariableGroup
-  kind: OmniThemeVariableKind
+// Re-export para os consumidores que importam estes símbolos via useOmniTheme
+// (o catálogo passou a ser a fonte, mas mantemos o ponto de import estável).
+export {
+  OMNI_THEME_DEFAULTS,
+  OMNI_THEME_LABELS,
+  OMNI_THEME_VARIABLES,
+  hexToRgbTriplet,
+  rgbTripletToHex,
 }
+export type { OmniThemeName, OmniThemeVariable, OmniThemeVariableGroup, OmniThemeVariableKind }
 
 const THEME_STORAGE_KEY = 'omni-ui-theme'
 const USER_THEME_STORAGE_KEY = 'omni-ui-user-theme'
@@ -21,285 +39,17 @@ const OVERRIDES_STORAGE_KEY = 'omni-ui-theme-overrides'
 const CUSTOM_THEME_NAME_KEY = 'omni-ui-theme-custom-name'
 const STYLE_TAG_ID = 'omni-theme-overrides-style'
 
-const ALL_THEMES: OmniThemeName[] = ['light', 'dark', 'apple', 'custom']
-
-export const OMNI_THEME_LABELS: Record<OmniThemeName, string> = {
-  light: 'Light',
-  dark: 'Dark',
-  apple: 'Apple-Blue',
-  custom: 'Custom',
-}
-
-export const OMNI_THEME_VARIABLES: OmniThemeVariable[] = [
-  { key: 'font-sans', label: 'Font Sans', group: 'foundation', kind: 'text' },
-  { key: 'radius-xs', label: 'Radius XS', group: 'foundation', kind: 'text' },
-  { key: 'radius-sm', label: 'Radius SM', group: 'foundation', kind: 'text' },
-  { key: 'radius-md', label: 'Radius MD', group: 'foundation', kind: 'text' },
-  { key: 'radius-lg', label: 'Radius LG', group: 'foundation', kind: 'text' },
-  { key: 'shadow-color', label: 'Shadow Color', group: 'foundation', kind: 'css-color' },
-  { key: 'shadow-glow-color', label: 'Shadow Glow Color', group: 'foundation', kind: 'css-color' },
-  { key: 'shadow-xs', label: 'Shadow XS', group: 'foundation', kind: 'text' },
-  { key: 'shadow-sm', label: 'Shadow SM', group: 'foundation', kind: 'text' },
-  { key: 'shadow-md', label: 'Shadow MD', group: 'foundation', kind: 'text' },
-  { key: 'shadow-glow', label: 'Shadow Glow', group: 'foundation', kind: 'text' },
-
-  { key: 'bg', label: 'Background', group: 'surface', kind: 'rgb-triplet' },
-  { key: 'surface', label: 'Surface', group: 'surface', kind: 'rgb-triplet' },
-  { key: 'surface-2', label: 'Surface 2', group: 'surface', kind: 'rgb-triplet' },
-  { key: 'border', label: 'Border', group: 'surface', kind: 'rgb-triplet' },
-  { key: 'text', label: 'Text', group: 'surface', kind: 'rgb-triplet' },
-  { key: 'muted', label: 'Muted', group: 'surface', kind: 'rgb-triplet' },
-
-  { key: 'primary', label: 'Primary', group: 'accent', kind: 'rgb-triplet' },
-  { key: 'primary-600', label: 'Primary 600', group: 'accent', kind: 'rgb-triplet' },
-  { key: 'success', label: 'Success', group: 'accent', kind: 'rgb-triplet' },
-  { key: 'danger', label: 'Danger', group: 'accent', kind: 'rgb-triplet' },
-  { key: 'ring', label: 'Ring', group: 'accent', kind: 'rgb-triplet' },
-
-  { key: 'admin-header-brand-bg', label: 'Header Brand BG', group: 'header', kind: 'css-gradient' },
-  { key: 'admin-header-panel-bg', label: 'Header Panel BG', group: 'header', kind: 'css-gradient' },
-  { key: 'admin-header-brand-blur', label: 'Header Brand Blur', group: 'header', kind: 'text' },
-  { key: 'admin-header-panel-blur', label: 'Header Panel Blur', group: 'header', kind: 'text' },
-  { key: 'admin-header-border', label: 'Header Border', group: 'header', kind: 'css-color' },
-  { key: 'admin-header-separator', label: 'Header Separator', group: 'header', kind: 'css-color' },
-  { key: 'admin-header-text', label: 'Header Text', group: 'header', kind: 'css-color' },
-  { key: 'admin-header-muted', label: 'Header Muted', group: 'header', kind: 'css-color' },
-  { key: 'admin-header-hover-bg', label: 'Header Hover BG', group: 'header', kind: 'css-color' },
-  { key: 'admin-header-active-bg', label: 'Header Active BG', group: 'header', kind: 'css-color' },
-  { key: 'admin-header-shell-shadow', label: 'Header Shell Shadow', group: 'header', kind: 'text' },
-  { key: 'admin-header-fade-top', label: 'Header Fade Top', group: 'header', kind: 'css-gradient' },
-  {
-    key: 'admin-header-fade-bottom',
-    label: 'Header Fade Bottom',
-    group: 'header',
-    kind: 'css-gradient',
-  },
-  {
-    key: 'admin-header-fade-top-size',
-    label: 'Header Fade Top Size',
-    group: 'header',
-    kind: 'text',
-  },
-  {
-    key: 'admin-header-fade-bottom-size',
-    label: 'Header Fade Bottom Size',
-    group: 'header',
-    kind: 'text',
-  },
-
-  {
-    key: 'admin-page-header-eyebrow-display',
-    label: 'Page Header Eyebrow Display',
-    group: 'page',
-    kind: 'text',
-  },
-  {
-    key: 'admin-page-header-title-display',
-    label: 'Page Header Title Display',
-    group: 'page',
-    kind: 'text',
-  },
-  {
-    key: 'admin-page-header-description-display',
-    label: 'Page Header Description Display',
-    group: 'page',
-    kind: 'text',
-  },
-]
-
-const SHARED_THEME_DEFAULTS: ThemeVars = {
-  'font-sans':
-    '"Inter", ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
-  'radius-xs': '10px',
-  'radius-sm': '12px',
-  'radius-md': '14px',
-  'radius-lg': '18px',
-  'shadow-glow-color': 'rgb(var(--primary) / 0.34)',
-  'shadow-xs': '0 1px 0 color-mix(in srgb, var(--shadow-color) 35%, transparent)',
-  'shadow-sm': '0 8px 24px color-mix(in srgb, var(--shadow-color) 55%, transparent)',
-  'shadow-md': '0 14px 40px color-mix(in srgb, var(--shadow-color) 72%, transparent)',
-  'shadow-glow':
-    '0 0 0 1px color-mix(in srgb, var(--shadow-glow-color) 70%, transparent), 0 14px 44px color-mix(in srgb, var(--shadow-glow-color) 50%, transparent)',
-  'admin-header-brand-bg': 'linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)))',
-  'admin-header-panel-bg': 'linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)))',
-  'admin-header-brand-blur': '0px',
-  'admin-header-panel-blur': '0px',
-  'admin-header-border': 'rgb(var(--border) / 0.9)',
-  'admin-header-separator': 'rgb(var(--border) / 0.9)',
-  'admin-header-text': 'rgb(var(--text))',
-  'admin-header-muted': 'rgb(var(--muted))',
-  'admin-header-hover-bg': 'rgb(var(--primary) / 0.16)',
-  'admin-header-active-bg': 'rgb(var(--primary) / 0.16)',
-  'admin-header-shell-shadow': 'none',
-  'admin-header-fade-top': 'none',
-  'admin-header-fade-bottom': 'none',
-  'admin-header-fade-top-size': '0px',
-  'admin-header-fade-bottom-size': '0px',
-  'admin-page-header-eyebrow-display': 'block',
-  'admin-page-header-title-display': 'block',
-  'admin-page-header-description-display': 'block',
-}
-
-export const OMNI_THEME_DEFAULTS: Record<Exclude<OmniThemeName, 'custom'>, ThemeVars> = {
-  light: {
-    ...SHARED_THEME_DEFAULTS,
-    'shadow-color': 'rgba(15, 23, 42, 0.24)',
-    bg: '248 250 252',
-    surface: '255 255 255',
-    'surface-2': '244 246 250',
-    border: '226 232 240',
-    text: '15 23 42',
-    muted: '100 116 139',
-    primary: '99 102 241',
-    'primary-600': '79 70 229',
-    success: '34 197 94',
-    danger: '239 68 68',
-    ring: '99 102 241',
-  },
-  dark: {
-    ...SHARED_THEME_DEFAULTS,
-    'shadow-color': 'rgba(2, 6, 23, 0.72)',
-    bg: '6 10 18',
-    surface: '13 18 29',
-    'surface-2': '18 25 38',
-    border: '31 41 55',
-    text: '226 232 240',
-    muted: '148 163 184',
-    primary: '99 102 241',
-    'primary-600': '79 70 229',
-    success: '34 197 94',
-    danger: '248 113 113',
-    ring: '99 102 241',
-  },
-  apple: {
-    ...SHARED_THEME_DEFAULTS,
-    'shadow-color': 'rgba(8, 59, 125, 0.24)',
-    bg: '236 246 255',
-    surface: '247 252 255',
-    'surface-2': '228 241 255',
-    border: '176 210 242',
-    text: '12 52 98',
-    muted: '67 105 147',
-    primary: '10 132 255',
-    'primary-600': '0 122 255',
-    success: '34 197 94',
-    danger: '239 68 68',
-    ring: '10 132 255',
-  },
-}
-
-function createEmptyOverrides(): OmniThemeOverrides {
-  return {
-    light: {},
-    dark: {},
-    apple: {},
-    custom: {},
-  }
-}
-
-function isThemeName(value: string | null): value is OmniThemeName {
-  return value === 'light' || value === 'dark' || value === 'apple' || value === 'custom'
-}
-
-function isBaseThemeName(value: string | null): value is 'light' | 'dark' {
-  return value === 'light' || value === 'dark'
-}
-
-function normalizeVariableKey(key: string) {
-  return key.replace(/^--/, '').trim()
-}
-
-function sanitizeOverrides(value: unknown): OmniThemeOverrides {
-  const fallback = createEmptyOverrides()
-
-  if (!value || typeof value !== 'object') {
-    return fallback
-  }
-
-  for (const theme of ALL_THEMES) {
-    const source = (value as Record<string, unknown>)[theme]
-    if (!source || typeof source !== 'object') {
-      continue
-    }
-
-    for (const [rawKey, rawValue] of Object.entries(source as Record<string, unknown>)) {
-      const key = normalizeVariableKey(rawKey)
-      if (!key || typeof rawValue !== 'string') {
-        continue
-      }
-
-      fallback[theme][key] = rawValue
-    }
-  }
-
-  return fallback
-}
-
-function selectorByTheme(theme: OmniThemeName) {
-  if (theme === 'light') return ':root'
-  if (theme === 'dark') return '.dark'
-  if (theme === 'apple') return '.theme-apple-blue'
-  return '.theme-custom'
-}
-
-export function rgbTripletToHex(value: string) {
-  const numbers = value.trim().match(/\d+/g)
-  if (!numbers || numbers.length < 3) {
-    return null
-  }
-
-  const channelNumbers = numbers
-    .slice(0, 3)
-    .map((rawNumber) => Math.max(0, Math.min(255, Number(rawNumber) || 0)))
-
-  const [r = 0, g = 0, b = 0] = channelNumbers
-  return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
-}
-
-export function hexToRgbTriplet(hex: string) {
-  const parsed = hex.replace('#', '').trim()
-  if (!parsed) {
-    return null
-  }
-
-  const full =
-    parsed.length === 3
-      ? parsed
-          .split('')
-          .map((char) => `${char}${char}`)
-          .join('')
-      : parsed
-
-  if (full.length !== 6) {
-    return null
-  }
-
-  const r = Number.parseInt(full.slice(0, 2), 16)
-  const g = Number.parseInt(full.slice(2, 4), 16)
-  const b = Number.parseInt(full.slice(4, 6), 16)
-
-  if ([r, g, b].some((n) => Number.isNaN(n))) {
-    return null
-  }
-
-  return `${r} ${g} ${b}`
-}
-
 /**
- * Gerencia o tema visual do produto Omni, incluindo selecao persistida e overrides por variavel CSS.
+ * Gerencia o tema visual do produto Omni: seleção persistida e overrides por
+ * variável CSS.
  *
- * O composable sincroniza o tema atual com `useColorMode`, persiste escolha e overrides no
- * `localStorage`, injeta um `<style>` dinamico com variaveis customizadas e expõe utilitarios para
- * duplicar, resetar e rotular temas base e customizados.
- *
- * @returns Estado reativo do tema atual, overrides e helpers para inicializar, aplicar e editar temas.
- *
- * @example
- * ```ts
- * const { currentTheme, applyTheme, setThemeValue } = useOmniTheme()
- * applyTheme('apple')
- * setThemeValue('custom', 'primary', '10 132 255')
- * ```
+ * A APARÊNCIA é GLOBAL da plataforma: lida por qualquer usuário autenticado e
+ * escrita apenas por platform_admin, via o módulo `theme` do back
+ * (`GET/PUT /v1/platform/appearance`, guardado em core.platform_settings).
+ * Desacoplado do módulo `queue` — antes o appearance vivia no queue/settings e
+ * dependia de tenant não-vazio, então NÃO persistia para platform_admin (tenant
+ * vazio). A preferência pessoal light/dark do usuário continua local
+ * (localStorage), sobrepondo os temas-base.
  *
  * @see OMNI_THEME_DEFAULTS
  * @see OMNI_THEME_VARIABLES
@@ -308,7 +58,6 @@ export function useOmniTheme() {
   const runtimeConfig = useRuntimeConfig()
   const colorMode = useColorMode()
   const auth = useAuthStore()
-  const runtime = useAppRuntimeStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const initialized = useState<boolean>('omni-theme-initialized', () => false)
   const currentTheme = useState<OmniThemeName>('omni-theme-current', () => 'dark')
@@ -316,11 +65,12 @@ export function useOmniTheme() {
     createEmptyOverrides(),
   )
   const customThemeName = useState<string>('omni-theme-custom-name', () => OMNI_THEME_LABELS.custom)
-  const runtimeAppearance = computed(() => runtime.state?.appearance || null)
-  const isRemoteManaged = computed(
-    () =>
-      auth.isAuthenticated &&
-      String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim().length > 0,
+
+  // Ler a aparência global vale para qualquer autenticado; ESCREVER (persistir)
+  // é só platform_admin — o back gateia o PUT, e evita 403 para usuário comum.
+  const isAuthenticated = computed(() => auth.isAuthenticated && Boolean(auth.accessToken))
+  const canManageAppearance = computed(
+    () => isAuthenticated.value && auth.role === 'platform_admin',
   )
   const canAccessThemeStudio = computed(
     () =>
@@ -328,7 +78,7 @@ export function useOmniTheme() {
       runtimeConfig.public.themeStudioEnabled === true ||
       auth.allowedWorkspaces.includes('themes'),
   )
-  const advancedThemesEnabled = computed(() => canAccessThemeStudio.value || isRemoteManaged.value)
+  const advancedThemesEnabled = computed(() => canAccessThemeStudio.value || isAuthenticated.value)
 
   const hasCustomTheme = computed(() => Object.keys(overrides.value.custom).length > 0)
   let persistTimer: ReturnType<typeof window.setTimeout> | null = null
@@ -355,15 +105,6 @@ export function useOmniTheme() {
     return readStoredUserThemePreference() ?? theme
   }
 
-  function resolveTenantId() {
-    return String(auth.activeTenantId || auth.tenantContext?.[0]?.id || '').trim()
-  }
-
-  function appendTenantQuery(path: string, tenantId: string) {
-    const separator = path.includes('?') ? '&' : '?'
-    return `${path}${separator}tenantId=${encodeURIComponent(tenantId)}`
-  }
-
   function cloneOverridesSnapshot(
     source: OmniThemeOverrides = overrides.value,
   ): OmniThemeOverrides {
@@ -373,15 +114,18 @@ export function useOmniTheme() {
     }, createEmptyOverrides())
   }
 
-  function normalizeAppearanceSnapshot(appearance: any) {
-    const resolvedTheme = isThemeName(String(appearance?.activeTheme || '').trim())
-      ? String(appearance?.activeTheme || '').trim()
-      : 'dark'
+  function normalizeAppearanceSnapshot(appearance: unknown) {
+    const source = (appearance ?? {}) as {
+      activeTheme?: unknown
+      customThemeName?: unknown
+      overrides?: unknown
+    }
+    const activeTheme = String(source.activeTheme || '').trim()
 
     return {
-      activeTheme: resolvedTheme as OmniThemeName,
-      customThemeName: normalizeThemeName(String(appearance?.customThemeName || '')),
-      overrides: sanitizeOverrides(appearance?.overrides),
+      activeTheme: (isThemeName(activeTheme) ? activeTheme : 'dark') as OmniThemeName,
+      customThemeName: normalizeThemeName(String(source.customThemeName || '')),
+      overrides: sanitizeOverrides(source.overrides),
     }
   }
 
@@ -394,7 +138,7 @@ export function useOmniTheme() {
   }
 
   function persistOverrides() {
-    if (!import.meta.client || !advancedThemesEnabled.value || isRemoteManaged.value) {
+    if (!import.meta.client || !advancedThemesEnabled.value || canManageAppearance.value) {
       return
     }
 
@@ -467,26 +211,16 @@ export function useOmniTheme() {
     styleTag.textContent = cssText
   }
 
-  function detectThemeFromDom(): OmniThemeName {
-    if (!import.meta.client) {
-      return 'dark'
-    }
-
-    const root = document.documentElement
-    if (root.classList.contains('theme-custom')) return 'custom'
-    if (root.classList.contains('theme-apple-blue')) return 'apple'
-    if (root.classList.contains('dark') || colorMode.value === 'dark') return 'dark'
-    return readStoredUserThemePreference() ?? 'dark'
-  }
-
-  function applyRemoteAppearance(appearance: any, options: { markInitialized?: boolean } = {}) {
+  function applyRemoteAppearance(appearance: unknown, options: { markInitialized?: boolean } = {}) {
     const normalizedAppearance = normalizeAppearanceSnapshot(appearance)
     overrides.value = normalizedAppearance.overrides
     customThemeName.value = normalizedAppearance.customThemeName
     applyOverrides()
     applyTheme(resolvePreferredTheme(normalizedAppearance.activeTheme), false)
 
-    if (isRemoteManaged.value) {
+    // Só o admin escreve o global; ao carregar, limpamos o local dele para o
+    // remoto não ser sombreado. Usuário comum mantém a preferência local.
+    if (canManageAppearance.value) {
       clearLocalThemeStorage()
     }
 
@@ -495,15 +229,28 @@ export function useOmniTheme() {
     }
   }
 
-  async function persistRemoteAppearance(snapshot = buildAppearanceSnapshot()) {
-    const tenantId = resolveTenantId()
-
-    if (!import.meta.client || !tenantId || !auth.accessToken) {
+  async function loadRemoteAppearance(): Promise<void> {
+    if (!import.meta.client || !isAuthenticated.value) {
       return
     }
 
-    await apiRequest(appendTenantQuery('/v1/settings/appearance', tenantId), {
-      method: 'PATCH',
+    try {
+      const response = (await apiRequest('/v1/platform/appearance', { method: 'GET' })) as {
+        appearance?: unknown
+      }
+      applyRemoteAppearance(response?.appearance ?? {}, { markInitialized: true })
+    } catch (error) {
+      console.error('[omni-theme] failed to load platform appearance', error)
+    }
+  }
+
+  async function persistRemoteAppearance(snapshot = buildAppearanceSnapshot()) {
+    if (!import.meta.client || !canManageAppearance.value) {
+      return
+    }
+
+    await apiRequest('/v1/platform/appearance', {
+      method: 'PUT',
       body: {
         appearance: snapshot,
       },
@@ -511,7 +258,7 @@ export function useOmniTheme() {
   }
 
   function scheduleRemoteAppearancePersist() {
-    if (!import.meta.client || !isRemoteManaged.value) {
+    if (!import.meta.client || !canManageAppearance.value) {
       return
     }
 
@@ -532,6 +279,8 @@ export function useOmniTheme() {
     }, 250)
   }
 
+  // Aplica o tema resolvido: classes do html vêm do CATÁLOGO (base light/dark +
+  // selectorClass do tema), sem switch hardcoded — adicionar tema não mexe aqui.
   function applyTheme(theme: OmniThemeName, persist = true) {
     const resolvedTheme =
       advancedThemesEnabled.value || theme === 'light' || theme === 'dark'
@@ -545,26 +294,31 @@ export function useOmniTheme() {
     }
 
     const root = document.documentElement
-    root.classList.remove('theme-apple-blue', 'theme-custom')
+    for (const descriptor of OMNI_THEMES) {
+      if (descriptor.selectorClass.startsWith('.') && descriptor.selectorClass !== '.dark') {
+        root.classList.remove(descriptor.selectorClass.slice(1))
+      }
+    }
+    root.classList.remove('dark')
 
-    if (resolvedTheme === 'dark') {
+    const descriptor = getThemeDescriptor(resolvedTheme)
+    if ((descriptor?.base ?? 'light') === 'dark') {
       root.classList.add('dark')
       colorMode.preference = 'dark'
     } else {
-      root.classList.remove('dark')
       colorMode.preference = 'light'
     }
 
-    if (resolvedTheme === 'apple') {
-      root.classList.add('theme-apple-blue')
-    }
-
-    if (resolvedTheme === 'custom') {
-      root.classList.add('theme-custom')
+    if (
+      descriptor &&
+      descriptor.selectorClass.startsWith('.') &&
+      descriptor.selectorClass !== '.dark'
+    ) {
+      root.classList.add(descriptor.selectorClass.slice(1))
     }
 
     if (persist) {
-      if (isRemoteManaged.value) {
+      if (canManageAppearance.value) {
         scheduleRemoteAppearancePersist()
       } else {
         localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme)
@@ -574,11 +328,6 @@ export function useOmniTheme() {
 
   function initializeFromStorage() {
     if (!import.meta.client || initialized.value) {
-      return
-    }
-
-    if (isRemoteManaged.value) {
-      applyRemoteAppearance(runtimeAppearance.value || {}, { markInitialized: true })
       return
     }
 
@@ -612,7 +361,7 @@ export function useOmniTheme() {
       storedTheme === 'light' ||
       storedTheme === 'dark' ||
       (advancedThemesEnabled.value && isThemeName(storedTheme))
-        ? storedTheme
+        ? (storedTheme as OmniThemeName)
         : null
 
     const resolvedTheme =
@@ -623,13 +372,16 @@ export function useOmniTheme() {
     applyTheme(resolvedTheme, resolvedTheme !== storedTheme)
 
     initialized.value = true
+
+    // A aparência GLOBAL da plataforma sobrepõe o local assim que chega —
+    // inclusive para platform_admin (que antes não persistia por tenant vazio).
+    // O watch de isAuthenticated também dispara isto no login.
+    if (isAuthenticated.value) {
+      void loadRemoteAppearance()
+    }
   }
 
   function getThemeDefaults(theme: OmniThemeName): ThemeVars {
-    if (theme === 'custom') {
-      return { ...OMNI_THEME_DEFAULTS.light }
-    }
-
     return { ...OMNI_THEME_DEFAULTS[theme] }
   }
 
@@ -670,7 +422,7 @@ export function useOmniTheme() {
     }
 
     applyOverrides()
-    if (isRemoteManaged.value) {
+    if (canManageAppearance.value) {
       scheduleRemoteAppearancePersist()
     } else {
       persistOverrides()
@@ -699,7 +451,7 @@ export function useOmniTheme() {
     }
 
     applyOverrides()
-    if (isRemoteManaged.value) {
+    if (canManageAppearance.value) {
       scheduleRemoteAppearancePersist()
     } else {
       persistOverrides()
@@ -717,7 +469,7 @@ export function useOmniTheme() {
     }
 
     applyOverrides()
-    if (isRemoteManaged.value) {
+    if (canManageAppearance.value) {
       scheduleRemoteAppearancePersist()
     } else {
       persistOverrides()
@@ -744,7 +496,7 @@ export function useOmniTheme() {
       return
     }
 
-    if (isRemoteManaged.value) {
+    if (canManageAppearance.value) {
       scheduleRemoteAppearancePersist()
       return
     }
@@ -760,16 +512,18 @@ export function useOmniTheme() {
     return OMNI_THEME_LABELS[theme]
   }
 
+  // Ao autenticar (ou já autenticado no boot), carrega a aparência GLOBAL e
+  // sobrepõe o estado local.
   watch(
-    [() => auth.isAuthenticated, () => auth.activeTenantId, runtimeAppearance],
-    () => {
-      if (!import.meta.client || !isRemoteManaged.value) {
+    () => auth.isAuthenticated,
+    (authenticated) => {
+      if (!import.meta.client || !authenticated) {
         return
       }
 
-      applyRemoteAppearance(runtimeAppearance.value || {}, { markInitialized: true })
+      void loadRemoteAppearance()
     },
-    { immediate: true, deep: true },
+    { immediate: true },
   )
 
   return {
@@ -778,7 +532,7 @@ export function useOmniTheme() {
     customThemeName,
     hasCustomTheme,
     advancedThemesEnabled,
-    isRemoteManaged,
+    canManageAppearance,
     initializeFromStorage,
     applyTheme,
     getThemeLabel,

@@ -63,6 +63,8 @@ export interface CalendarMediaItem {
   type: 'image' | 'video'
   contentType: string
   sizeBytes: number
+  /** Poster (thumb) do video; mesmo prefixo /uploads/calendar/{accountId}/. Opcional. */
+  posterUrl?: string
 }
 
 /** Tetos de upload definidos NA PLATAFORMA (globais). */
@@ -100,23 +102,54 @@ export interface CalendarMember {
   name: string
 }
 
-/** Config do calendario por conta (responsaveis + feriados). */
-export interface CalendarConfig {
-  responsibleUserIds: string[]
-  holidays: {
-    brNational: boolean
-    sergipe: boolean
-    aracaju: boolean
-    luxuryIntl: boolean
-  }
-}
+// Config do calendario (contrato C2) e helpers de cor vivem em calendar-config.ts
+// (limite de 450 linhas/arquivo). Re-exportados aqui para manter a fonte unica de
+// import `~/utils/calendar` que o resto do modulo ja usa.
+export {
+  AI_PROVIDER_BASE_URL,
+  AI_PROVIDER_LABEL,
+  AI_PROVIDERS,
+  NEUTRAL_COLOR,
+  defaultCalendarConfig,
+  hexToTriplet,
+  isHexColor,
+  resolveClientColor,
+  tripletToHex,
+  type CalendarAiConfig,
+  type CalendarAiProvider,
+  type CalendarConfig,
+  type CalendarHolidayFlags,
+  type CalendarWhiteLabel,
+} from '~/utils/calendar-config'
 
-export function defaultCalendarConfig(): CalendarConfig {
-  return {
-    responsibleUserIds: [],
-    holidays: { brNational: true, sergipe: true, aracaju: true, luxuryIntl: true },
-  }
-}
+// Perfil estrategico do cliente (contrato C3) vive em calendar-profile.ts (limite
+// de 450 linhas/arquivo). Re-exportado aqui para manter a fonte unica de import.
+export {
+  defaultClientProfile,
+  defaultClientProfileExtra,
+  normalizeClientProfile,
+  type CalendarClientProfile,
+  type CalendarClientProfileExtra,
+  type CalendarClientProfileIndexItem,
+} from '~/utils/calendar-profile'
+
+// Plano de IA do mes (contrato C4) vive em calendar-ai.ts (limite de 450 linhas/
+// arquivo). Re-exportado aqui para manter a fonte unica de import `~/utils/calendar`.
+export {
+  defaultPlanContent,
+  normalizePlan,
+  normalizePlanContent,
+  normalizePlanIndexItem,
+  planContentToNotesHtml,
+  planTypeToEventType,
+  type CalendarAiPlan,
+  type CalendarAiPlanClient,
+  type CalendarAiPlanContent,
+  type CalendarAiPlanDay,
+  type CalendarAiPlanIndexItem,
+  type CalendarAiPlanPillar,
+  type CalendarAiPlanStatus,
+} from '~/utils/calendar-ai'
 
 /** Feriado/data comemorativa (vem do back, calculado). */
 export interface CalendarHoliday {
@@ -183,6 +216,44 @@ export function clientColorFor(id: string, index: number): RgbTriplet {
 /** Monta `rgb(r g b / alpha)` a partir de um triplet. */
 export function rgba(color: RgbTriplet, alpha = 1): string {
   return `rgb(${color[0]} ${color[1]} ${color[2]} / ${alpha})`
+}
+
+// Maximo de tiles no fundo do dia (grade ate 2x2).
+const DAY_BG_MAX = 4
+
+/** URL de exibicao de uma midia: imagem usa `url`; video usa `posterUrl` (sem poster -> null). */
+function mediaDisplayUrl(item: CalendarMediaItem): string | null {
+  if (item.type === 'video') return item.posterUrl || null
+  return item.url || null
+}
+
+/**
+ * URLs para o fundo do dia (ate 4). Regra: primeiro as midias dos EVENTOS do dia
+ * (ja ordenados por horario pelo chamador; imagem -> `url`, video -> `posterUrl`,
+ * video sem poster e' pulado); se nenhum evento tem midia, cai nos anexos avulsos
+ * do dia. Helper puro (sem estado/fetch).
+ */
+export function dayBackgroundUrls(
+  events: CalendarEvent[],
+  dayMedia: CalendarMediaItem[],
+): string[] {
+  const fromEvents: string[] = []
+  for (const event of events) {
+    for (const item of event.media || []) {
+      const url = mediaDisplayUrl(item)
+      if (url) fromEvents.push(url)
+      if (fromEvents.length >= DAY_BG_MAX) return fromEvents
+    }
+  }
+  if (fromEvents.length) return fromEvents
+
+  const fromDay: string[] = []
+  for (const item of dayMedia || []) {
+    const url = mediaDisplayUrl(item)
+    if (url) fromDay.push(url)
+    if (fromDay.length >= DAY_BG_MAX) break
+  }
+  return fromDay
 }
 
 // --- Helpers de data ------------------------------------------------------------

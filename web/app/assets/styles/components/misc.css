@@ -1,0 +1,42 @@
+@media (max-width: 640px) {
+  .brand-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-auth-card {
+    padding: 1.75rem 1.15rem;
+  }
+
+  .admin-auth-brand {
+    gap: 0.75rem;
+  }
+
+  .admin-auth-brand__name {
+    font-size: 1.2rem;
+  }
+
+  .admin-auth-summary-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ui-toast-stack {
+    top: auto;
+    right: 16px;
+    bottom: 16px;
+    left: 16px;
+    width: auto;
+  }
+
+  .ui-dialog__actions {
+    flex-direction: column-reverse;
+  }
+
+  .operation-campaign-brief {
+    align-items: flex-start;
+  }
+
+  .operation-campaign-brief__action {
+    width: 100%;
+  }
+}

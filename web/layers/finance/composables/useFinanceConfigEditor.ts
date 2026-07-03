@@ -14,9 +14,14 @@ import type {
 import { createFinanceUuid, normalizeFinanceLinkedUuid } from '../utils/finance-ids'
 import { normalizeText, CONFIG_AUTOSAVE_DEBOUNCE_MS } from '../utils/finance-helpers'
 import { useCoreAccountStore } from '../../core/stores/account'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest } from '~/utils/api-client'
 
 export function useFinanceConfigEditor() {
   const coreAccount = useCoreAccountStore()
+  const auth = useAuthStore()
+  const runtimeConfig = useRuntimeConfig()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const { config, loading, saving, errorMessage, fetchConfig, saveConfig } =
     useFinancesConfigManager()
 
@@ -152,7 +157,12 @@ export function useFinanceConfigEditor() {
 
   async function fetchClientRecurringEntries() {
     try {
-      const response = await $fetch<{
+      const response = (await apiRequest('/v1/finance/config/recurring-clients', {
+        query: {
+          limit: 300,
+          coreTenantId: targetCoreTenantId.value || undefined,
+        },
+      })) as {
         status: 'success'
         data: Array<{
           id: string
@@ -163,12 +173,7 @@ export function useFinanceConfigEditor() {
           billingMode: 'single' | 'per_store'
           stores: Array<{ id: string; name: string; amount: number }>
         }>
-      }>('/api/admin/finance-config/recurring-clients', {
-        query: {
-          limit: 300,
-          coreTenantId: targetCoreTenantId.value || undefined,
-        },
-      })
+      }
 
       clientRecurringEntries.value = (response.data || [])
         .map((client) => {

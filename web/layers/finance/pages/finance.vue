@@ -2,11 +2,10 @@
 // Pagina /finance — port fiel de web-reference/app/pages/admin/finance.vue.
 // O layout (UDashboardGroup + sidebar redimensionavel + painel) e os estilos sao
 // reproduzidos identicos; a logica vive nos composables (config + sheet). O
-// slideover de configuracao esta em FinanceConfigPanel. FONTE: mock BFF (badge
-// MOCK so para admin — LegacyMarker).
+// slideover de configuracao esta em FinanceConfigPanel. FONTE: API Go real
+// (/v1/finance/*) — mock BFF removido em AC-12.
 import { useCoreAccountStore } from '../../core/stores/account'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
-import LegacyMarker from '~/components/admin/LegacyMarker.vue'
 import { useFinanceConfigEditor, FINANCE_CONFIG_KEY } from '../composables/useFinanceConfigEditor'
 import { useFinanceSheetEditor } from '../composables/useFinanceSheetEditor'
 import {
@@ -19,10 +18,7 @@ import {
 
 definePageMeta({
   layout: 'dashboard',
-  // workspaceId vazio DE PROPOSITO nesta fase mock: 'finance' ainda nao existe em
-  // auth.allowedWorkspaces e o auth.global.ts barra workspaceId fora da lista
-  // (redireciona pro /operacao). Vazio = rota nao-gated por workspace.
-  workspaceId: '',
+  workspaceId: 'finance',
   pageLabel: 'Finance',
 })
 
@@ -126,12 +122,6 @@ onMounted(async () => {
       eyebrow="Finance"
       title="Finance v2"
       description="Planilhas mensais com entradas e saidas."
-    />
-
-    <LegacyMarker
-      kind="mock"
-      label="Finance roda sobre BFF temporario em memoria (nao persiste no banco real)."
-      detail="Back Go pendente — ver docs/finance/PLANO_MODULO_FINANCE.md e docs/LEGADO.md #6"
     />
 
     <UAlert

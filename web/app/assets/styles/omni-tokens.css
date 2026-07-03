@@ -80,6 +80,151 @@
   --ring: 10 132 255;
 }
 
+/* ===== Liquid Glass (tema proprio, selecionavel no Theme Studio) ============
+   Base escura + aurora ambiente atras do conteudo de TODA pagina (gated por
+   .theme-liquidglass) + tokens de vidro para as superficies (rollout por pagina
+   na fase GLASS). Mantenha em sincronia com LIQUIDGLASS_DEFAULTS do
+   omni-theme-catalog.ts (aquele alimenta o editor do Theme Studio). */
+.theme-liquidglass {
+  color-scheme: dark;
+  --shadow-color: rgba(2, 6, 23, 0.72);
+  --bg: 8 12 22;
+  --surface: 17 24 39;
+  --surface-2: 24 33 52;
+  --border: 51 65 92;
+  --text: 226 232 240;
+  --muted: 148 163 184;
+  --primary: 129 140 248;
+  --primary-600: 99 102 241;
+  --success: 52 211 153;
+  --danger: 248 113 113;
+  --ring: 129 140 248;
+  --brand-logo-filter: none;
+  /* Vidro: consumidos pelas superficies (.omni-glass) no rollout da fase GLASS. */
+  --glass-blur: 24px;
+  --glass-saturate: 1.7;
+  --glass-surface-alpha: 0.46;
+  --glass-border: rgb(var(--border) / 0.55);
+  --glass-highlight: linear-gradient(150deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 45%);
+  /* Header em vidro — o shell do header (DashboardHeader.vue) ja aplica
+     backdrop-filter: blur(var(--admin-header-panel-blur)) com estes tokens.
+     Editaveis no Theme Studio (grupo Header); aqui e o default do tema. */
+  --admin-header-panel-bg: linear-gradient(
+    120deg,
+    rgb(var(--primary) / 0.14),
+    rgb(var(--surface) / 0.72) 42%,
+    rgb(var(--surface-2) / 0.6)
+  );
+  --admin-header-brand-bg: linear-gradient(
+    120deg,
+    rgb(var(--primary) / 0.16),
+    rgb(var(--surface) / 0.6) 45%,
+    rgb(var(--surface-2) / 0.45)
+  );
+  --admin-header-panel-blur: 18px;
+  --admin-header-brand-blur: 18px;
+  --admin-header-border: rgb(var(--border) / 0.5);
+  --admin-header-separator: rgb(var(--border) / 0.4);
+  --admin-header-shell-shadow: 0 8px 30px rgb(2 6 23 / 0.35);
+}
+
+/* Aurora ambiente — SO no tema Liquid Glass. Cobre os dois containers de pagina
+   (.module-workspace-full e .workspace). z-index:-1 fica atras do conteudo (os
+   containers ja criam contexto de empilhamento; overflow contem a camada). So o
+   transform anima (compositor-only = barato). */
+.theme-liquidglass .workspace {
+  overflow: hidden;
+}
+
+.theme-liquidglass .module-workspace-full::before,
+.theme-liquidglass .workspace::before {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 42% at 12% 8%, rgb(var(--primary) / 0.34), transparent 60%),
+    radial-gradient(38% 40% at 88% 14%, rgb(var(--primary-600) / 0.3), transparent 60%),
+    radial-gradient(42% 44% at 80% 88%, rgb(var(--success) / 0.2), transparent 62%),
+    radial-gradient(38% 40% at 18% 92%, rgb(var(--danger) / 0.16), transparent 62%);
+  animation: omni-aurora 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes omni-aurora {
+  from {
+    transform: translate3d(-3%, -2%, 0) scale(1.06) rotate(-1.5deg);
+  }
+  to {
+    transform: translate3d(4%, 3%, 0) scale(1.16) rotate(1.5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-liquidglass .module-workspace-full::before,
+  .theme-liquidglass .workspace::before {
+    animation: none;
+  }
+}
+
+/* Superficies de vidro — SO no tema Liquid Glass. A primitiva .omni-glass e os
+   cards de metrica compartilhados (.metric-card) refratam a aurora atras deles.
+   Texto continua em --text (contraste). Nos outros temas, .omni-glass/.metric-card
+   ficam solidos (original intacto). */
+.theme-liquidglass .omni-glass,
+.theme-liquidglass .metric-card {
+  border-color: var(--glass-border);
+  background: var(--glass-highlight), rgb(var(--surface) / var(--glass-surface-alpha));
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* Fallback quando o navegador nao suporta backdrop-filter: superficie solida
+   translucida (sem blur), ainda legivel. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .theme-liquidglass .omni-glass,
+  .theme-liquidglass .metric-card {
+    background: rgb(var(--surface) / 0.92);
+  }
+}
+
+/* Rollout piloto — superficies de PAGINAS EXISTENTES cujas classes sao scoped
+   (tem [data-v]). O prefixo `html` eleva a especificidade p/ vencer o scoped sem
+   editar cada componente; reusa os mesmos tokens de vidro (sem drift). Componentes
+   NOVOS devem usar a classe `.omni-glass` em vez de entrar aqui.
+   Automacao (/automacao): status bar + QR + cards das 5 secoes. */
+html.theme-liquidglass .asb,
+html.theme-liquidglass .aw-qr,
+html.theme-liquidglass .abh,
+html.theme-liquidglass .asc-card,
+html.theme-liquidglass .am-section,
+html.theme-liquidglass .kd-section,
+html.theme-liquidglass .ctx-card {
+  border: 1px solid var(--glass-border);
+  background: var(--glass-highlight), rgb(var(--surface) / var(--glass-surface-alpha));
+  box-shadow:
+    var(--shadow-md),
+    inset 0 1px 0 rgb(255 255 255 / 0.14);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.theme-liquidglass .asb,
+  html.theme-liquidglass .aw-qr,
+  html.theme-liquidglass .abh,
+  html.theme-liquidglass .asc-card,
+  html.theme-liquidglass .am-section,
+  html.theme-liquidglass .kd-section,
+  html.theme-liquidglass .ctx-card {
+    background: rgb(var(--surface) / 0.92);
+  }
+}
+
 .finance-dashboard-group {
   display: grid;
   grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);

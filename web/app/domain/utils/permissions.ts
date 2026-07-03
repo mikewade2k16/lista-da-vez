@@ -57,6 +57,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: 'meta_ads.manage',
   },
   {
+    id: 'finance',
+    label: 'Finance',
+    description: 'Planilhas financeiras mensais (entradas/saidas, efetivacao, recorrencias).',
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'ranking',
     label: 'Ranking',
     description: 'Leitura de performance comercial.',
@@ -341,6 +348,7 @@ const ROLE_WORKSPACES = {
     'roadmap',
     'automation',
     'meta_ads',
+    'finance',
     'performance',
   ],
   owner: [
@@ -371,6 +379,7 @@ const ROLE_WORKSPACES = {
     'feedback',
     'tools',
     'roadmap',
+    'finance',
   ],
   marketing: [
     'operacao',
@@ -436,6 +445,7 @@ const SUPERUSER_ROLES = new Set(['platform_admin'])
 // remove; o backend continua gateando o acesso real por requisicao.
 const MODULE_WORKSPACE_PERMISSION_PREFIXES: Record<string, string> = {
   tasks: 'tasks.',
+  finance: 'finance.',
 }
 
 function hasModuleWorkspacePermission(workspaceId, permissionKeys = []) {

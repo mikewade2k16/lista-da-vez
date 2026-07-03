@@ -1,7 +1,8 @@
 // Camada de dados da configuracao financeira (categorias, contas fixas, recorrencias).
 //
-// FONTE ATUAL: mock BFF Nitro (web/server/api/admin/finance-config). Adaptado do
-// web-reference: `$fetch` no lugar de `useBffFetch`, escopo por useCoreAccountStore.
+// FONTE: API Go real (back/internal/modules/finance, /v1/finance/config) via
+// createApiRequest — substituiu o mock BFF Nitro em AC-12. X-Account-Id entra
+// pelo provider global; escopo (coreTenantId) via useCoreAccountStore.
 import type {
   FinanceCategoryConfig,
   FinanceRecurringEntryConfig,
@@ -10,6 +11,8 @@ import type {
 } from '../types/finances'
 import { isFinanceUuid, normalizeFinanceEntityId } from '../utils/finance-ids'
 import { useCoreAccountStore } from '../../core/stores/account'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest } from '~/utils/api-client'
 
 interface FinanceConfigState {
   categories: FinanceCategoryConfig[]
@@ -18,7 +21,7 @@ interface FinanceConfigState {
   updatedAt: string
 }
 
-const FINANCE_CONFIG_API_BASE = '/api/admin/finance-config'
+const FINANCE_CONFIG_API_BASE = '/v1/finance/config'
 
 function normalizeText(value: unknown, max = 300) {
   return String(value ?? '')
@@ -35,6 +38,9 @@ function normalizeAmount(value: unknown) {
 
 export function useFinancesConfigManager() {
   const coreAccount = useCoreAccountStore()
+  const auth = useAuthStore()
+  const runtimeConfig = useRuntimeConfig()
+  const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
   const loading = ref(false)
   const saving = ref(false)
   const errorMessage = ref('')
@@ -50,11 +56,11 @@ export function useFinancesConfigManager() {
 
     try {
       const resolvedCoreTenantId = resolveScopedCoreTenantId(coreTenantId)
-      const response = await $fetch<FinanceConfigResponse>(FINANCE_CONFIG_API_BASE, {
+      const response = (await apiRequest(FINANCE_CONFIG_API_BASE, {
         query: {
           coreTenantId: resolvedCoreTenantId || undefined,
         },
-      })
+      })) as FinanceConfigResponse
       config.value = response.data
       return response.data
     } catch {
@@ -92,7 +98,7 @@ export function useFinancesConfigManager() {
       )
       const coreTenantId = resolveScopedCoreTenantId(payload.coreTenantId)
 
-      const response = await $fetch<FinanceConfigResponse>(FINANCE_CONFIG_API_BASE, {
+      const response = (await apiRequest(FINANCE_CONFIG_API_BASE, {
         method: 'PUT',
         body: {
           coreTenantId: coreTenantId || undefined,
@@ -135,7 +141,7 @@ export function useFinancesConfigManager() {
               }))
             : undefined,
         },
-      })
+      })) as FinanceConfigResponse
 
       config.value = response.data
       return response.data

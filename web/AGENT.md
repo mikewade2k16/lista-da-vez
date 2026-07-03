@@ -29,21 +29,43 @@ Plano canonico: [docs/MULTITENANT_COMPLETION_PLAN.md](../docs/MULTITENANT_COMPLE
 
 ## Workflow oficial
 
-O frontend agora sobe por padrao dentro do Docker Compose da raiz.
+Dev do frontend roda NO DOCKER via `docker compose watch` desde 2026-07-03;
+producao continua 100% Docker (build multi-stage -> GHCR). O bind mount
+`./web:/app` FOI REMOVIDO do compose: caminho Windows atravessa a ponte 9P do
+WSL2 (~100x mais lento por arquivo) e o nuxt dev nao terminava nem o boot. O
+codigo agora e copiado no build da imagem (target dev) e o watch sincroniza as
+edicoes host -> container; o watcher usa inotify real (polling DESLIGADO).
 
-Pela raiz do repositorio:
+Dia a dia (duas formas equivalentes):
 
-```bash
+```powershell
+# A) stack completa + watch, attached:
 npm run dev
+
+# B) stack ja de pe — reconcilia o web (up -d --build) e liga so o watch:
+npm run dev:watch     # = scripts/dev/watch-web.ps1
 ```
 
-No Compose, o `web` roda em modo dev com bind mount e hot reload.
-Mudancas de layout, pagina, componente e CSS devem atualizar sem rebuild.
+IMPORTANTE:
+
+- O watch NAO faz sync inicial (verificado no Compose v2.38): edicao feita com
+  o watch DESLIGADO so chega ao container com rebuild — e por isso que o
+  dev:watch roda `docker compose up -d --build web` antes (BuildKit reenvia so
+  o que mudou; custa segundos).
+- `docker compose up -d web` sozinho sobe o servidor mas NAO sincroniza
+  edicoes — a pagina "congela" no codigo do ultimo build.
+- Mudanca em package.json/package-lock.json: o watch faz sync+restart do
+  container e o ensure-node-modules roda `npm ci` no volume. NUNCA rode
+  `npm install` no host (reescreve o package-lock e quebra o `npm ci` do
+  container; ja quebrou).
+- Fallback nativo (fora do Docker) continua existindo se um dia precisar:
+  `scripts/dev/start-web-native.ps1` (usa `dev:native`, --host :: dual-stack —
+  com `--host 0.0.0.0` o browser cai num 426 Upgrade Required no Windows).
 
 No browser:
 
 - `web` responde em `http://localhost:3003`
-- a API publica fica em `http://localhost:8080`
+- a API publica fica em `http://localhost:9091` (API_PORT do .env)
 
 No SSR/container:
 
@@ -235,6 +257,8 @@ Regras com peso especial:
 - `no-debugger` (ERROR)
 
 Baseline registrada em 2026-05-18: **0 errors, 193 warnings**. Top categorias: 75 `any`, 40 `max-lines`, 26 `no-dynamic-delete`, 24 unused vars. A redução acontece de forma incremental nas Fases 7 e 8 do PLANO_REFATORACAO.
+
+Onda 1 de testes (AC-15, 2026-07): cobertura de `domain/utils/permissions` (matriz role×workspace + fail-closed + bypass platform_admin), `reports`, `color`, `erp-display` e das stores `settings`/`multistore`/`cardapio` com `$fetch` global mockado (`web/test/setup.ts`). Testes determinísticos: sem rede, sem timers reais, datas sem timezone, moeda normalizando NBSP. `stores/erp.ts` ficou de fora de propósito (backlog de refatoração AC-07). Rodar com `docker compose run --rm web npm run test`.
 
 ## Validacao minima
 

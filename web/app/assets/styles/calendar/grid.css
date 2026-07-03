@@ -103,6 +103,7 @@
 
 /* ===== Celula do dia ======================================================= */
 .calendar-cell {
+  position: relative;
   min-height: 86px;
   display: flex;
   flex-direction: column;
@@ -112,6 +113,7 @@
   border-radius: var(--radius-sm);
   background: rgb(var(--surface) / 0.42);
   cursor: pointer;
+  overflow: hidden;
   transition:
     border-color 0.15s ease,
     background 0.15s ease;
@@ -131,6 +133,70 @@
 .calendar-cell--selected {
   box-shadow: inset 0 0 0 2px rgb(var(--primary));
   border-color: transparent;
+}
+
+/* ===== Fundo do dia (SPEC-F2): tiles de midia atras do conteudo ============ */
+/* Camada de fundo com os tiles + overlay de superficie para legibilidade. Fica
+   atras do conteudo (z-index abaixo do head/holidays/chips). A celula ja e'
+   position:relative + overflow:hidden. */
+.calendar-cell__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.calendar-cell__bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Overlay de superficie: escurece/clareia conforme o tema (token --surface) para
+     que numero do dia, feriado e chips fiquem legiveis no claro E no escuro. */
+  background: linear-gradient(180deg, rgb(var(--surface) / 0.62), rgb(var(--surface) / 0.86));
+}
+
+.calendar-cell__bg-tile {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+/* 1 = tile inteiro; 2 = duas colunas; 3 = 1 alto a esquerda + 2 empilhados a
+   direita; 4 = 2x2. */
+.calendar-cell__bg[data-count='1'] {
+  grid-template-columns: 1fr;
+}
+
+.calendar-cell__bg[data-count='2'] {
+  grid-template-columns: 1fr 1fr;
+}
+
+.calendar-cell__bg[data-count='3'] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.calendar-cell__bg[data-count='3'] .calendar-cell__bg-tile:first-child {
+  grid-row: 1 / span 2;
+}
+
+.calendar-cell__bg[data-count='4'] {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* Com fundo, a celula nao clareia o background no hover (o fundo ja preenche);
+   mantem so o realce de borda. */
+.calendar-cell--has-bg:hover {
+  background: rgb(var(--surface) / 0.42);
+}
+
+.calendar-cell__head,
+.calendar-cell__holidays,
+.calendar-cell__chips {
+  position: relative;
+  z-index: 1;
 }
 
 .calendar-cell__head {

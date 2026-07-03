@@ -1,0 +1,444 @@
+.campaign-perf {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg-raised);
+  border-radius: 10px;
+}
+
+.campaign-perf__col {
+  display: grid;
+  gap: 4px;
+}
+
+.campaign-perf__label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.campaign-perf__value {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.campaign-perf__col--hit .campaign-perf__value {
+  color: rgb(var(--success));
+}
+
+.campaign-perf__sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.campaign-perf__divider {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: center;
+}
+
+.campaign-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.campaign-grid--toggles {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.campaign-grid--options {
+  grid-template-columns: 1fr 1fr;
+}
+
+.campaign-option-list {
+  display: grid;
+  gap: 8px;
+  max-height: 160px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.settings-card {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgb(var(--surface));
+}
+
+.settings-card__header {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-card__title {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.settings-card__text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--text-main);
+}
+
+.settings-field input {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
+}
+
+.settings-field select {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
+}
+
+.settings-field .app-select-field__trigger {
+  min-height: 42px;
+  border-style: solid;
+  border-radius: 10px;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
+}
+
+.settings-field .app-select-field__trigger.is-filled {
+  background: rgb(var(--surface-2) / 0.82);
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  font-size: 0.78rem;
+}
+
+.settings-grid--modal {
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.settings-modal-section-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-modal-rules {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-modal-rule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgb(var(--surface-2) / 0.72);
+}
+
+.settings-modal-rule__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-modal-rule__title {
+  font-size: 0.82rem;
+  color: var(--text-main);
+}
+
+.settings-modal-rule__hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.settings-collapse {
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  background: rgb(var(--surface-2) / 0.86);
+  overflow: hidden;
+}
+
+.settings-collapse[open] {
+  background: rgb(var(--surface-2) / 0.92);
+}
+
+.settings-collapse__summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-collapse__summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-collapse__title-wrap {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-collapse__title {
+  font-size: 0.88rem;
+  color: var(--text-main);
+}
+
+.settings-collapse__text {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.settings-collapse__meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.settings-collapse__icon {
+  color: var(--text-muted);
+  transition:
+    transform 0.18s ease,
+    color 0.18s ease;
+}
+
+.settings-collapse[open] .settings-collapse__icon {
+  transform: rotate(180deg);
+  color: var(--text-main);
+}
+
+.settings-collapse__body {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid rgb(var(--border) / 0.72);
+}
+
+.settings-modal-field-list {
+  gap: 0;
+}
+
+.settings-modal-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgb(var(--border) / 0.62);
+}
+
+.settings-modal-field-row:first-child {
+  padding-top: 0;
+}
+
+.settings-modal-field-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.settings-modal-field-row__copy {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-width: 0;
+}
+
+.settings-modal-field-row__title {
+  font-size: 0.84rem;
+  color: var(--text-main);
+}
+
+.settings-modal-field-row__title-input {
+  width: min(100%, 320px);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.settings-modal-field-row__title-input:hover,
+.settings-modal-field-row__title-input:focus {
+  border-color: var(--line-soft);
+  background: rgb(var(--surface-2));
+  outline: none;
+}
+
+.settings-modal-field-row__title-input:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+.settings-modal-field-row__hint {
+  max-width: 48ch;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.settings-modal-field-row__switches {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  align-items: start;
+}
+
+.settings-modal-field-row__switch {
+  display: grid;
+  gap: 8px;
+  flex: 0 0 118px;
+  width: 118px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background: rgb(var(--surface-2));
+}
+
+.settings-modal-field-row__switch-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-modal-field-row__switch .app-toggle-switch {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.settings-modal-field-row__switch--number {
+  align-content: start;
+}
+
+.settings-modal-field-row__number-input {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 0.5rem 0.65rem;
+  background: rgb(var(--surface));
+  color: var(--text-main);
+  font: inherit;
+}
+
+.settings-modal-field-row__number-input:focus {
+  border-color: var(--line-soft);
+  outline: none;
+}
+
+.settings-modal-field-row__number-input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.settings-modal-text-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-modal-text-field {
+  min-width: 0;
+}
+
+.option-list,
+.product-list {
+  display: grid;
+  gap: 8px;
+}
+
+.option-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+}
+
+.option-row__input,
+.option-add__input,
+.product-add__input,
+.product-row__input {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
+}
+
+.option-row__input.app-select-field,
+.option-add__input.app-select-field,
+.product-add__input.app-select-field,
+.product-row__input.app-select-field {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.option-row__input.app-select-field .app-select-field__trigger,
+.option-add__input.app-select-field .app-select-field__trigger,
+.product-add__input.app-select-field .app-select-field__trigger,
+.product-row__input.app-select-field .app-select-field__trigger {
+  min-height: 38px;
+  padding: 0 10px;
+  border-style: solid;
+  border-radius: 10px;
+  background: rgb(var(--surface-2) / 0.82);
+  color: var(--text-main);
+}
+
+.option-row__input.app-select-field .app-select-field__trigger.is-filled,
+.option-add__input.app-select-field .app-select-field__trigger.is-filled,
+.product-add__input.app-select-field .app-select-field__trigger.is-filled,
+.product-row__input.app-select-field .app-select-field__trigger.is-filled {
+  background: rgb(var(--surface-2) / 0.82);
+}
+
+.option-row__save,
+.option-add__button,
+.product-add__button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: rgb(var(--primary));
+  color: rgb(255 255 255);
+  font-size: 0.76rem;
+  font-weight: 700;
+}

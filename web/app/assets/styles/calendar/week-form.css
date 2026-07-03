@@ -71,6 +71,7 @@
 }
 
 .calendar-weekview__day {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -79,6 +80,7 @@
   border-radius: var(--radius-sm);
   background: rgb(var(--surface) / 0.42);
   cursor: pointer;
+  overflow: hidden;
   transition:
     border-color 0.15s ease,
     background 0.15s ease;
@@ -86,6 +88,14 @@
 
 .calendar-weekview__day:hover {
   border-color: rgb(var(--primary) / 0.45);
+}
+
+/* Conteudo do dia acima da camada de fundo (.calendar-cell__bg, grid.css). */
+.calendar-weekview__day-head,
+.calendar-weekview__holidays,
+.calendar-weekview__events {
+  position: relative;
+  z-index: 1;
 }
 
 .calendar-weekview__day--outside {
@@ -306,73 +316,8 @@
   }
 }
 
-/* ===== Modal de configuracao (responsaveis + feriados) ==================== */
-.calendar-config {
-  width: min(480px, 100%);
-}
-
-.calendar-config__body {
-  display: flex;
-  flex-direction: column;
-  gap: 1.4rem;
-  padding: 1rem;
-  overflow-y: auto;
-}
-
-.calendar-config__section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.calendar-config__section-title {
-  color: var(--text-main);
-  font-size: 0.9rem;
-  font-weight: 800;
-}
-
-.calendar-config__hint {
-  color: var(--text-muted);
-  font-size: 0.74rem;
-  line-height: 1.4;
-}
-
-.calendar-config__members {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.35rem 0.75rem;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.calendar-config__check {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem 0.15rem;
-  color: var(--text-main);
-  font-size: 0.82rem;
-  cursor: pointer;
-}
-
-.calendar-config__check input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: rgb(var(--primary));
-  cursor: pointer;
-}
-
-.calendar-config__empty {
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-style: italic;
-}
-
-@media (max-width: 480px) {
-  .calendar-config__members {
-    grid-template-columns: 1fr;
-  }
-}
+/* Estilos da pagina de configuracao (/calendario/config) e das secoes de config
+   migradas do antigo modal vivem em calendar/config.css. */
 
 /* ===== Responsivo ========================================================== */
 @media (max-width: 1120px) {

@@ -17,6 +17,7 @@ export default withNuxt(
       // Documentos e dados gerados — não fazem parte de qualidade de código
       'app/components/roadmap/database-schema-data.ts',
       'app/components/roadmap/roadmap-data.ts',
+      'app/components/roadmap/data/**',
     ],
   },
   {

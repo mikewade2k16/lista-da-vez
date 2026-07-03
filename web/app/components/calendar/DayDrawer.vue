@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import CalendarMediaUploader from '~/components/calendar/CalendarMediaUploader.vue'
-import { useCalendarMedia } from '~/composables/useCalendarMedia'
+import { useCalendarStore } from '~/stores/calendar'
 import {
   EVENT_TYPE_META,
   PRIORITY_META,
@@ -35,8 +35,10 @@ const emit = defineEmits<{
 
 const activeEventId = ref('')
 
-const { fetchDayMedia, saveDayMedia } = useCalendarMedia()
-const dayMedia = ref<CalendarMediaItem[]>([])
+// Anexos avulsos do dia: fonte unica no store (buscados na janela, sem refetch por
+// dia). O uploader edita e o store persiste + atualiza o Map local.
+const store = useCalendarStore()
+const dayMedia = computed<CalendarMediaItem[]>(() => store.selectedDayMedia)
 
 watch(
   () => [props.dateKey, props.events] as const,
@@ -46,18 +48,8 @@ watch(
   { immediate: true, deep: true },
 )
 
-// Anexos avulsos do dia: recarrega ao trocar de dia.
-watch(
-  () => props.dateKey,
-  async (date) => {
-    dayMedia.value = date ? await fetchDayMedia(date) : []
-  },
-  { immediate: true },
-)
-
 async function onDayMedia(next: CalendarMediaItem[]): Promise<void> {
-  dayMedia.value = next
-  if (props.dateKey) await saveDayMedia(props.dateKey, next)
+  if (props.dateKey) await store.saveDayMedia(props.dateKey, next)
 }
 
 const activeEvent = computed(

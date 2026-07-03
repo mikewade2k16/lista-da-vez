@@ -11,46 +11,14 @@
   overflow: hidden;
 }
 
-/* Aurora aetheric VIVA — camada animada so por transform (compositor-only =
-   barato, sem reflow/paint). O vidro das colunas refrata essa cor em leve
-   movimento, dando vida ao liquid glass. So triplets do tema (claro/escuro). */
-.calendar-page::before {
-  content: '';
-  position: absolute;
-  inset: -30%;
-  z-index: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(40% 42% at 12% 8%, rgb(var(--primary) / 0.34), transparent 60%),
-    radial-gradient(38% 40% at 88% 14%, rgb(var(--primary-600) / 0.3), transparent 60%),
-    radial-gradient(42% 44% at 80% 88%, rgb(var(--success) / 0.2), transparent 62%),
-    radial-gradient(38% 40% at 18% 92%, rgb(var(--danger) / 0.16), transparent 62%);
-  animation: calendar-aurora 26s ease-in-out infinite alternate;
-  will-change: transform;
-}
-
-/* Conteudo acima da aurora (o vidro ainda refrata a camada de tras). */
+/* A aurora ambiente (liquid glass) foi movida para o shell global —
+   `.module-workspace-full` no layout `dashboard.vue` —, entao TODA pagina do
+   painel a recebe atras do conteudo. Os cards de vidro do calendario
+   (backdrop-filter) continuam refratando; agora refratam a camada GLOBAL.
+   A .calendar-body so precisa continuar acima dessa camada. */
 .calendar-body {
   position: relative;
   z-index: 1;
-}
-
-@keyframes calendar-aurora {
-  from {
-    transform: translate3d(-3%, -2%, 0) scale(1.06) rotate(-1.5deg);
-  }
-  to {
-    transform: translate3d(4%, 3%, 0) scale(1.16) rotate(1.5deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .calendar-page::before {
-    animation: none;
-  }
-}
-
-.calendar-body {
   flex: 1;
   min-height: 0;
   display: flex;

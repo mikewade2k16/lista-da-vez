@@ -7,3 +7,4 @@ package-lock.json
 .codex-devserver.*.log
 app/components/roadmap/database-schema-data.ts
 app/components/roadmap/roadmap-data.ts
+app/components/roadmap/data/**

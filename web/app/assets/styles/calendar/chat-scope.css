@@ -1,0 +1,45 @@
+/* ===== Seletor de escopo do chat do Calendario (SPEC-F11) ==================
+   Barra compacta ABAIXO do header da janela de chat: escolhe o contexto que a IA usa
+   (Todos os clientes x cliente especifico). So aparece p/ agencia/multi-cliente
+   (canSelect=true, resolvido no back); usuario-cliente (1 cliente) nao ve o seletor.
+   So tokens do design system (nada de hex hardcoded). O <select> e nativo: a lista
+   aberta usa o chrome do SO (limitacao conhecida do elemento), mas o controle fechado
+   segue o tema. */
+
+.calendar-chat-scope {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.85rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.calendar-chat-scope__icon {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.calendar-chat-scope__select {
+  flex: 1;
+  min-width: 0;
+  height: 1.9rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.calendar-chat-scope__select:hover {
+  border-color: rgb(var(--ring) / 0.42);
+}
+
+.calendar-chat-scope__select:focus {
+  outline: none;
+  border-color: rgb(var(--ring) / 0.42);
+}

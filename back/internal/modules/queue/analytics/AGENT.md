@@ -39,6 +39,24 @@ Ele nao deve cuidar de:
 - o `default` de `writeServiceError` (500) deve logar o erro real (`request_id` + path); 500 cego ja escondeu causa-raiz antes
 - se uma tela precisar de outro agregado, preferir abrir um endpoint especifico antes de devolver bundles genericos
 
+## Janela de carga do historico (default 90 dias)
+
+- O historico bruto e' carregado via `Repository.LoadSnapshotWithHistorySince`
+  (nunca mais o `LoadSnapshot` sem janela): so agregamos, entao carregar todo o
+  historico da loja a cada request era o gargalo (N lojas x historico completo em
+  memoria no escopo tenant).
+- A janela default e' `90` dias (`defaultHistoryWindowDays`), calculada por
+  `historySinceMillis(dateFrom, now)` em `helpers.go`:
+  - `ranking` passa o `dateFrom` da query; se o `dateFrom` explicito for MAIS
+    ANTIGO que a janela de 90 dias, a janela recua para respeita-lo (range antigo
+    do ranking nao pode perder dados).
+  - `data` e `intelligence` passam `dateFrom=""` -> sempre 90 dias. Decisao de
+    produto: essas 2 telas passam a agregar sobre os ultimos 90 dias (cobre mes
+    corrente + 2 anteriores). O front ja trabalha com mentalidade de mes corrente
+    e essas 2 rotas nem parseiam `dateFrom/dateTo` hoje.
+- Follow-up (fora deste corte): parsear `dateFrom/dateTo` tambem em
+  `/v1/analytics/data|intelligence` (o front ja envia; hoje sao ignorados).
+
 ## Direcao de plugabilidade
 
 Este modulo faz parte do core reutilizavel do painel.

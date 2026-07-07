@@ -18,6 +18,7 @@ type Filters struct {
 	Search                string   `json:"search,omitempty"`
 	Page                  int      `json:"page,omitempty"`
 	PageSize              int      `json:"pageSize,omitempty"`
+	Limit                 int      `json:"limit,omitempty"`
 }
 
 type repositoryFilters struct {
@@ -29,6 +30,17 @@ type repositoryFilters struct {
 	IsExistingCustomer *bool
 	MinSaleAmount      *float64
 	MaxSaleAmount      *float64
+	Limit              int
+}
+
+// HistoryWindow descreve a janela bruta de historico lida do banco antes dos
+// filtros em memoria. Total e' o count(*) com os MESMOS filtros SQL (sem os
+// filtros em memoria); Truncated indica que ha mais linhas do que o teto.
+type HistoryWindow struct {
+	Limit     int  `json:"limit"`
+	Fetched   int  `json:"fetched"`
+	Total     int  `json:"total"`
+	Truncated bool `json:"truncated"`
 }
 
 type StoreLiveCounts struct {
@@ -40,36 +52,40 @@ type StoreLiveCounts struct {
 }
 
 type OverviewResponse struct {
-	StoreID   string          `json:"storeId"`
-	Filters   Filters         `json:"filters"`
-	Metrics   Metrics         `json:"metrics"`
-	Quality   QualityOverview `json:"quality"`
-	ChartData ChartData       `json:"chartData"`
+	StoreID       string          `json:"storeId"`
+	Filters       Filters         `json:"filters"`
+	Metrics       Metrics         `json:"metrics"`
+	Quality       QualityOverview `json:"quality"`
+	ChartData     ChartData       `json:"chartData"`
+	HistoryWindow HistoryWindow   `json:"historyWindow"`
 }
 
 type ResultsResponse struct {
-	StoreID  string      `json:"storeId"`
-	Filters  Filters     `json:"filters"`
-	Page     int         `json:"page"`
-	PageSize int         `json:"pageSize"`
-	Total    int         `json:"total"`
-	Rows     []ResultRow `json:"rows"`
+	StoreID       string        `json:"storeId"`
+	Filters       Filters       `json:"filters"`
+	Page          int           `json:"page"`
+	PageSize      int           `json:"pageSize"`
+	Total         int           `json:"total"`
+	Rows          []ResultRow   `json:"rows"`
+	HistoryWindow HistoryWindow `json:"historyWindow"`
 }
 
 type RecentServicesResponse struct {
-	StoreID  string      `json:"storeId"`
-	Filters  Filters     `json:"filters"`
-	Page     int         `json:"page"`
-	PageSize int         `json:"pageSize"`
-	Total    int         `json:"total"`
-	Items    []ResultRow `json:"items"`
+	StoreID       string        `json:"storeId"`
+	Filters       Filters       `json:"filters"`
+	Page          int           `json:"page"`
+	PageSize      int           `json:"pageSize"`
+	Total         int           `json:"total"`
+	Items         []ResultRow   `json:"items"`
+	HistoryWindow HistoryWindow `json:"historyWindow"`
 }
 
 type MultiStoreOverviewResponse struct {
-	TenantID string                  `json:"tenantId"`
-	Filters  Filters                 `json:"filters"`
-	Summary  MultiStoreSummary       `json:"summary"`
-	Stores   []MultiStoreOverviewRow `json:"stores"`
+	TenantID      string                  `json:"tenantId"`
+	Filters       Filters                 `json:"filters"`
+	Summary       MultiStoreSummary       `json:"summary"`
+	Stores        []MultiStoreOverviewRow `json:"stores"`
+	HistoryWindow HistoryWindow           `json:"historyWindow"`
 }
 
 type MultiStoreSummary struct {

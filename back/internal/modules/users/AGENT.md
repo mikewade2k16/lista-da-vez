@@ -87,3 +87,8 @@ Historicamente havia DUAS tabelas de usuário que divergiam:
 - para contas de consultor, este modulo pode apenas listar e executar reset administrativo de senha
 - `platform_admin` pode usar override administrativo para manutencao/debug de contas `consultant`, inclusive mudanca de papel por PATCH quando isso for explicitamente necessario
 - esse override administrativo nao cria roster; ele apenas altera o acesso do usuario e deixa o sincronismo do consultor vinculado agir quando houver `consultants.user_id`
+
+## Invalidacao do PrincipalCache (AC-01)
+
+- `Service` recebe um `PrincipalCacheInvalidator` opcional via `SetPrincipalCacheInvalidator` (interface local so com `InvalidateUser`, para nao importar `httpapi`). Ligado no boot por `platform/app/principal_cache_wiring.go`; `nil` = cache desligado (helper `invalidatePrincipal` e nil-safe).
+- `Update` e `Archive` chamam `invalidatePrincipal(updated.ID)` apos o `repository.Update` bem-sucedido: cobre desativacao (`Active=false`), troca de papel e troca de tenant/lojas — tudo passa por `Update`. Assim a proxima request do usuario afetado releia do banco em vez de servir o Principal cacheado (papel/escopo antigos).

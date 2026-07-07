@@ -41,8 +41,14 @@ const emit = defineEmits<{
 }>()
 
 const isToday = computed(() => props.day.dateKey === todayKey())
-const visibleChips = computed(() => props.events.slice(0, props.maxChips))
-const overflow = computed(() => Math.max(0, props.events.length - props.maxChips))
+// maxChips <= 0 => SEM cap: mostra TODOS os itens do dia (a celula/linha do mes cresce e "vai
+// diagramando"; decisao do dono). > 0 mantem o corte + "+N mais" (usado no denso da semana).
+const visibleChips = computed(() =>
+  props.maxChips > 0 ? props.events.slice(0, props.maxChips) : props.events,
+)
+const overflow = computed(() =>
+  props.maxChips > 0 ? Math.max(0, props.events.length - props.maxChips) : 0,
+)
 // Limita a 4 tiles; o layout da grade e' escolhido por data-count no CSS.
 // resolveMediaUrl absolutiza /uploads/* para a apiBase (dev roda web :3003 e
 // api :9091 em portas diferentes; url relativa cairia no host errado).

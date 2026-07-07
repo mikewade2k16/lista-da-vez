@@ -80,10 +80,100 @@ func normalizeTaskUIMetadata(value map[string]any) map[string]any {
 	if item, ok := raw["createdBy"]; ok {
 		normalized["createdBy"] = strings.TrimSpace(fmt.Sprint(item))
 	}
+	// source identifica a origem da task quando criada por outro modulo (ex.: "calendar"
+	// no contrato C10). String curta na whitelist para o front distinguir a procedencia.
+	if item, ok := raw["source"]; ok {
+		normalized["source"] = strings.TrimSpace(fmt.Sprint(item))
+	}
 	if item, ok := raw["videos"]; ok {
 		normalized["videos"] = normalizeTaskVideoMetadata(item)
 	}
+	// calendarMedia (WAVE 6, cruzamento A): midia ESPELHADA do evento vinculado, read-only. O
+	// sync do calendario popula; aqui e' defesa (so /uploads/calendar/, dedup) contra body forjado.
+	if item, ok := raw["calendarMedia"]; ok {
+		normalized["calendarMedia"] = normalizeCalendarMediaMetadata(item)
+	}
 	return normalized
+}
+
+// normalizeCalendarMediaMetadata sanitiza a midia espelhada do calendario na task (cruzamento A,
+// read-only, exibicao). Aceita so url sob /uploads/calendar/ (bloqueia externo e /uploads/tasks/);
+// como e' display, imagem e video passam. Dedup por id. Mesma postura de prefixo do video da task.
+func normalizeCalendarMediaMetadata(value any) []map[string]any {
+	rawList, ok := value.([]any)
+	if !ok {
+		typed, tok := value.([]map[string]any)
+		if !tok {
+			return []map[string]any{}
+		}
+		rawList = make([]any, 0, len(typed))
+		for _, item := range typed {
+			rawList = append(rawList, item)
+		}
+	}
+	out := make([]map[string]any, 0, len(rawList))
+	seen := map[string]struct{}{}
+	for _, item := range rawList {
+		raw, rok := item.(map[string]any)
+		if !rok {
+			continue
+		}
+		url := strings.TrimSpace(fmt.Sprint(raw["url"]))
+		if !strings.HasPrefix(url, "/uploads/calendar/") {
+			continue
+		}
+		id := strings.TrimSpace(fmt.Sprint(raw["id"]))
+		if id == "" {
+			id = url
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		mediaType := strings.TrimSpace(fmt.Sprint(raw["type"]))
+		if mediaType != "video" {
+			mediaType = "image"
+		}
+		poster := strings.TrimSpace(fmt.Sprint(raw["posterUrl"]))
+		if !strings.HasPrefix(poster, "/uploads/calendar/") {
+			poster = ""
+		}
+		out = append(out, map[string]any{
+			"id":          id,
+			"url":         url,
+			"name":        strings.TrimSpace(fmt.Sprint(raw["name"])),
+			"type":        mediaType,
+			"contentType": strings.TrimSpace(fmt.Sprint(raw["contentType"])),
+			"sizeBytes":   max(metadataInt(raw["sizeBytes"]), 0),
+			"posterUrl":   poster,
+		})
+	}
+	return out
+}
+
+// metadataInt extrai um int de um valor generico de jsonb (int/float/json.Number/string), 0 se nao der.
+func metadataInt(value any) int {
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int32:
+		return int(typed)
+	case int64:
+		return int(typed)
+	case float32:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed)
+		}
+	default:
+		if parsed, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(value))); err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func normalizeTaskVideoMetadata(value any) []map[string]any {

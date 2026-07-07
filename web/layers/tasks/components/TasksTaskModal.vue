@@ -26,8 +26,6 @@ const {
   updateTaskDraftInvolved,
   taskDraftClientIdValue,
   updateTaskDraftClientId,
-  isMockClient,
-  isPlatformAdmin,
   taskDraftDueDateValue,
   taskDraftDueEndDateValue,
   updateTaskDraftDueDate,
@@ -71,6 +69,7 @@ const {
   onTaskVideoInput,
   onTaskVideoDrop,
   removeTaskVideoDraft,
+  taskCalendarMedia,
   deleteCurrentDraftTask,
 } = ctx
 
@@ -78,11 +77,6 @@ const presenceViewingParticipants = computed(() =>
   (Array.isArray(unref(presenceParticipants)) ? unref(presenceParticipants) : []).filter(
     (participant) => !participant.fieldKey,
   ),
-)
-
-// Cliente selecionado ainda e mock (nao ligado a core.accounts). Badge so para platform_admin.
-const clientDraftIsMock = computed(
-  () => unref(isPlatformAdmin) && isMockClient(taskDraftClientIdValue()),
 )
 
 const runtimeConfig = useRuntimeConfig()
@@ -320,15 +314,6 @@ function onEditorWidth(width: number) {
             <span class="tasks-page__task-property-label-main">
               <UIcon name="i-lucide-circle-dot" />
               Cliente
-              <UBadge
-                v-if="clientDraftIsMock"
-                color="warning"
-                variant="soft"
-                size="xs"
-                title="Cliente ficticio — ainda nao ligado a core.accounts. Criar e linkar."
-              >
-                MOCK
-              </UBadge>
             </span>
             <span v-if="presenceFieldLabel('clientId')" class="tasks-page__presence-field">
               {{ presenceFieldLabel('clientId') }}
@@ -616,6 +601,37 @@ function onEditorWidth(width: number) {
               @click="removeTaskVideoDraft(file.id)"
             />
           </div>
+        </div>
+      </div>
+
+      <!-- WAVE 6 (cruzamento A): midia do evento vinculado, espelhada read-only (do calendario). -->
+      <div v-if="taskCalendarMedia.length" class="tasks-page__task-calmedia">
+        <div class="tasks-page__task-calmedia-head">
+          <UIcon name="i-lucide-calendar" />
+          <span>Mídia do calendário</span>
+          <span class="tasks-page__task-calmedia-hint">do evento vinculado · só leitura</span>
+        </div>
+        <div class="tasks-page__task-calmedia-grid">
+          <a
+            v-for="media in taskCalendarMedia"
+            :key="media.id"
+            :href="taskVideoSrc(media.url)"
+            target="_blank"
+            rel="noopener"
+            class="tasks-page__task-calmedia-item"
+            :title="media.name"
+          >
+            <img v-if="media.type === 'image'" :src="taskVideoSrc(media.url)" :alt="media.name" />
+            <img
+              v-else-if="media.posterUrl"
+              :src="taskVideoSrc(media.posterUrl)"
+              :alt="media.name"
+            />
+            <video v-else :src="taskVideoSrc(media.url)" preload="metadata" muted></video>
+            <span v-if="media.type === 'video'" class="tasks-page__task-calmedia-play">
+              <UIcon name="i-lucide-play" />
+            </span>
+          </a>
         </div>
       </div>
 

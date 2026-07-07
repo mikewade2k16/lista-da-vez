@@ -20,6 +20,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/catalog"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/crm/erp"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance"
 	metaads "github.com/mikewade2k16/lista-da-vez/back/internal/modules/meta_ads"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
@@ -217,6 +218,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		}()
 	}
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
+	// AC-01: cache de Principals com TTL curto + invalidacao sincrona. nil quando
+	// AUTH_PRINCIPAL_CACHE_TTL=0s (comportamento legado preservado).
+	principalCache := wirePrincipalCache(cfg, logger, authService, accessService, usersService)
 	biService := bi.NewService(bi.Options{
 		CompanyKey:         cfg.PerolaBICompanyKey,
 		Login:              cfg.PerolaBILogin,
@@ -235,9 +239,26 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		mux.Handle("GET /uploads/", fileServer)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		httpapi.WriteJSON(w, http.StatusOK, map[string]any{
+		// AC-16: ping real no banco (o pool pgx e lazy — sem isso a api responde 200
+		// mesmo com o Postgres morto). 503 = healthcheck do compose marca unhealthy e
+		// o smoke do deploy falha alto. Erro NUNCA vai no corpo (endpoint publico).
+		pingCtx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+
+		status := http.StatusOK
+		overall := "ok"
+		dbStatus := "ok"
+		if err := pool.Ping(pingCtx); err != nil {
+			status = http.StatusServiceUnavailable
+			overall = "degraded"
+			dbStatus = "unreachable"
+			logger.Warn("healthz_db_ping_failed", "error", err)
+		}
+
+		httpapi.WriteJSON(w, status, map[string]any{
 			"service": cfg.AppName,
-			"status":  "ok",
+			"status":  overall,
+			"db":      dbStatus,
 			"modules": []string{
 				"auth",
 				"tenants",
@@ -326,12 +347,24 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 			erp.NewRelationResolver(pool),
 			erp.NewCRMRelationResolver(pool),
 			operations.NewRelationResolver(pool),
+			// calendar: resolve o vinculo evento<->task (contrato C10) para o expand de
+			// relations do tasks (label "<date> - <title>", url /calendario?date=).
+			calendar.NewRelationResolver(pool),
 		)
+		// WAVE 5 (E2): registry de sync INVERTIDO tasks->calendar. Fica vazio aqui; o handler
+		// do calendar entra abaixo (LAZY), depois que o calendarModule existe. Injetado no
+		// tasksModule (WithRelationSync) para o tasks avisar o calendar a cada mudanca de task.
+		syncRegistry := modules.NewRelationSyncRegistry()
 
 		registry := modules.NewRegistry(logger)
 		registry.MustRegister(core.New())
 		registry.MustRegister(notifications.New(notificationService))
-		registry.MustRegister(tasks.New(realtimeService, notificationService, relationRegistry, taskVideoStorage))
+		// tasksModule e retido para injetar seu Service no calendar (integracao C10) como
+		// provider LAZY — a closure resolve o Service so no primeiro uso, imune a ordem de
+		// Build no Registry.
+		tasksModule := tasks.New(realtimeService, notificationService, relationRegistry, taskVideoStorage).
+			WithRelationSync(syncRegistry) // WAVE 5 (E2): tasks avisa o calendar a cada mudanca de task
+		registry.MustRegister(tasksModule)
 		// queue e crm declaram catalogo (permissoes + role templates) para que
 		// core.modules contenha "queue"/"crm". Sem isso, a seed 0124 vira no-op
 		// e o RequireModuleByPath fail-close em todas as rotas de queue/crm.
@@ -351,11 +384,28 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		registry.MustRegister(bio.New())
 		// calendar: agenda de conteudo por cliente (eventos + notas por mes).
 		// Painel em /v1/calendar (gating abaixo). Plano: docs/CALENDARIO_PLAN.md.
-		registry.MustRegister(calendar.New(calendarMediaStorage))
+		// WithTasksService injeta o modulo tasks como provider LAZY (integracao C10:
+		// createTask/vincular/desvincular + taskId no EventView). WithPublisher injeta o
+		// realtimeService como transporte do canal calendar:account:{id} (contrato C11:
+		// o Service publica create/update/delete evento, notas, day media, config e plano).
+		calendarModule := calendar.New(
+			calendarMediaStorage,
+			calendar.WithTasksService(func() *tasks.Service { return tasksModule.Service() }),
+			calendar.WithPublisher(realtimeService),
+		)
+		registry.MustRegister(calendarModule)
+		// WAVE 5 (E2/E3): handler de sync INVERTIDO — quando uma task muda, o calendar mantem
+		// o evento-espelho. Provider LAZY (resolve o Service so no 1o uso, imune a ordem de
+		// Build). Registrado agora que o calendarModule existe.
+		syncRegistry.Register(calendar.NewTaskSyncHandler(func() *calendar.Service { return calendarModule.Service() }))
 		// cardapio: cardapios online servidos pelo front estatico no host do
 		// cliente. Painel em /v1/cardapio (gating abaixo); rotas publicas
 		// /v1/public/* fora do gate. Plano: docs/cardapio/PLANO_MODULO_CARDAPIO.md.
 		registry.MustRegister(cardapio.New())
+		// finance: planilhas financeiras mensais por cliente (substitui o mock BFF
+		// Nitro — ADR 0002). Painel em /v1/finance (gating abaixo).
+		// Plano: docs/finance/PLANO_MODULO_FINANCE.md.
+		registry.MustRegister(finance.New())
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -387,6 +437,7 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 			AuthMiddleware: authMiddleware,
 			ModulesGuard:   modulesGuard,
 			PasswordHasher: hasher,
+			PrincipalCache: principalCache,
 		})
 		if err != nil {
 			return nil, err
@@ -485,6 +536,9 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		{Prefix: "/v1/calendar", ModuleID: "calendar"},
 		// cardapio (cardapio online). Rotas publicas /v1/public/* ficam fora.
 		{Prefix: "/v1/cardapio", ModuleID: "cardapio"},
+		// finance (planilhas financeiras). platform_admin tem bypass; contas sem o
+		// modulo habilitado levam 403 module_disabled.
+		{Prefix: "/v1/finance", ModuleID: "finance"},
 	}
 }
 

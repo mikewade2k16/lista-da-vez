@@ -22,7 +22,16 @@ import {
   type CalendarEventInput,
 } from '~/utils/calendar'
 
-const props = defineProps<{ open: boolean; month: string }>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    month: string
+    // Realtime (SPEC-F9 / C11): ultimo plano que mudou de status via WS. Usado para
+    // recarregar o plano ativo antes do proximo tick de polling. `at` muda a cada evento.
+    planEvent?: { id: string; status: string; at: number } | null
+  }>(),
+  { planEvent: null },
+)
 const emit = defineEmits<{ close: [] }>()
 
 const store = useCalendarStore()
@@ -82,6 +91,19 @@ watch(monthKey, (next) => {
   if (props.open) void fetchPlans(next)
 })
 
+// Realtime (SPEC-F9 / C11 plan_updated): quando o plano ATIVO muda de status via WS,
+// recarrega ele (o proprio polling encerra no proximo tick ao ver status != pending) e
+// atualiza a lista do mes. `planEvent.at` muda a cada evento para o watch disparar.
+watch(
+  () => props.planEvent?.at,
+  () => {
+    const evt = props.planEvent
+    if (!evt || !props.open || !evt.id) return
+    if (activePlan.value?.id === evt.id) void openPlan(evt.id)
+    void fetchPlans(monthKey.value)
+  },
+)
+
 function toggleClient(id: string): void {
   selectedIds.value = selectedIds.value.includes(id)
     ? selectedIds.value.filter((cid) => cid !== id)
@@ -103,8 +125,9 @@ async function generate(): Promise<void> {
 }
 
 function goConfig(): void {
+  // SPEC-F6: a config virou drawer com abas; abre direto na aba IA (deep-link).
   emit('close')
-  void navigateTo('/calendario/config')
+  void navigateTo('/calendario?config=ia')
 }
 
 // Anexa o plano na nota do mes-alvo. Mes ativo => store.setNotesForActiveMonth

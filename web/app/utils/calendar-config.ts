@@ -4,8 +4,16 @@
 // SEM estado, SEM fetch — so tipos + funcoes puras.
 import type { RgbTriplet, WeekStart } from '~/utils/calendar'
 
-/** Provedor de IA suportado no plano do mes (contrato C2). */
-export type CalendarAiProvider = 'claude' | 'deepseek' | 'qwen' | 'kimi' | 'glm' | 'custom'
+/** Provedor de IA suportado (contrato C2/C6; +gemini na wave 2; +openai na wave 3). */
+export type CalendarAiProvider =
+  | 'claude'
+  | 'deepseek'
+  | 'qwen'
+  | 'kimi'
+  | 'glm'
+  | 'gemini'
+  | 'openai'
+  | 'custom'
 
 /** Feriados/datas comemorativas ligados na config. */
 export interface CalendarHolidayFlags {
@@ -22,16 +30,91 @@ export interface CalendarWhiteLabel {
   primaryColor: string
 }
 
-/** Config de IA do plano do mes. Chaves de API NUNCA aqui (vivem no n8n). */
+/** Provider de transcricao de audio (contrato CFG v4). 'local' = Whisper self-hosted
+ * (aceita o audio webm do navegador, sem key); 'openai' = Whisper hospedado; 'gemini'
+ * NAO transcreve o webm do navegador (fica so como opcao). */
+export type CalendarTranscribeProvider = 'openai' | 'gemini' | 'local'
+
+/** Provider que tem chave de API secreta (contrato SEC): so estes tres. */
+export type CalendarAiSecretProvider = 'gemini' | 'glm' | 'openai'
+
+/** Escopo da IA (WAVE 3.1): uma config geral p/ todos ou individual por cliente. */
+export type CalendarAiScopeMode = 'general' | 'perClient'
+
+/** Status MASCARADO de uma chave (contrato SEC): nunca a chave crua, so set+last4. */
+export interface CalendarAiKeyStatus {
+  set: boolean
+  last4: string
+}
+
+/**
+ * Config de IA do calendario (contrato CFG v4). As CHAVES de API NUNCA moram aqui:
+ * vivem em secrets server-side (calendar.ai_secrets / core.platform_settings) e o
+ * front so recebe status mascarado. `enabled` = kill switch da IA; `useGlobalKeys`
+ * = usar as chaves GLOBAIS da plataforma (true) ou as DESTA conta (false).
+ */
 export interface CalendarAiConfig {
+  enabled: boolean
+  useGlobalKeys: boolean
   provider: CalendarAiProvider
   model: string
   baseUrl: string
   systemPrompt: string
   temperature: number
+  transcribeProvider: CalendarTranscribeProvider
+  transcribeModel: string
+  /** WAVE 3.1: 'general' (uma config p/ todos) | 'perClient' (config por cliente). */
+  scopeMode: CalendarAiScopeMode
+  /** WAVE 3.1 (modo general): clientes com a IA DESLIGADA (excecoes por id). */
+  disabledClientIds: string[]
 }
 
-/** Config do calendario por conta (contrato C2, jsonb calendar.config). */
+/**
+ * Override de IA POR CLIENTE (WAVE 3.1, SEC+). So COMPORTAMENTO — as chaves de API
+ * seguem no nivel conta/global (contrato SEC). Cada campo em null/'' = HERDAR a config
+ * geral da conta; preenchido = vence no merge por campo (resolver EffectiveAIConfig no
+ * back). Override vazio (normalizado de {}) = o cliente usa 100% a config geral.
+ */
+export interface CalendarClientAiOverride {
+  enabled: boolean | null
+  provider: CalendarAiProvider | ''
+  model: string
+  baseUrl: string
+  systemPrompt: string
+  temperature: number | null
+}
+
+/** Posicao da janela de chat (contrato CFG v4): espelha o modo do modal. */
+export type CalendarChatPosition = 'center' | 'left' | 'right' | 'fullscreen'
+
+/** Layout da janela de chat por conta (contrato CFG v4). width/height 0 = default. */
+export interface CalendarChatConfig {
+  position: CalendarChatPosition
+  width: number
+  height: number
+}
+
+/** WAVE 5 (E5): mapeia UM status de evento a UMA coluna do board (nos dois sentidos). */
+export interface CalendarStatusColumnMapEntry {
+  eventStatus: string
+  columnId: string
+}
+
+/**
+ * Integracao calendario <-> tasks (contrato C6 + WAVE 5). Vazio = integracao DESLIGADA.
+ * boardId/defaultColumnId sao UUID (ou vazio); o back sanitiza no PUT. WAVE 5: mirrorTasks
+ * liga o espelho task->evento (default true); defaultEventType = tipo do evento-espelho;
+ * statusColumnMap = mapa status<->coluna (E5). Sem board, mirror/statusMap nao tem efeito.
+ */
+export interface CalendarTasksConfig {
+  boardId: string
+  defaultColumnId: string
+  mirrorTasks: boolean
+  defaultEventType: string
+  statusColumnMap: CalendarStatusColumnMapEntry[]
+}
+
+/** Config do calendario por conta (contrato C2/C6, jsonb calendar.config). */
 export interface CalendarConfig {
   responsibleUserIds: string[]
   holidays: CalendarHolidayFlags
@@ -43,6 +126,10 @@ export interface CalendarConfig {
   typeColors: Record<string, string>
   whiteLabel: CalendarWhiteLabel
   ai: CalendarAiConfig
+  /** Board/coluna de destino ao criar task pelo evento (contrato C6). */
+  tasks: CalendarTasksConfig
+  /** Layout da janela de chat por conta (contrato CFG v4). */
+  chat: CalendarChatConfig
 }
 
 export function defaultCalendarConfig(): CalendarConfig {
@@ -54,12 +141,26 @@ export function defaultCalendarConfig(): CalendarConfig {
     typeColors: {},
     whiteLabel: { logoUrl: '', title: '', primaryColor: '' },
     ai: {
-      provider: 'claude',
-      model: 'claude-sonnet-5',
+      enabled: true,
+      useGlobalKeys: true,
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
       baseUrl: '',
       systemPrompt: '',
       temperature: 0.7,
+      transcribeProvider: 'local',
+      transcribeModel: '',
+      scopeMode: 'general',
+      disabledClientIds: [],
     },
+    tasks: {
+      boardId: '',
+      defaultColumnId: '',
+      mirrorTasks: true, // WAVE 5: espelho task->evento ligado por padrao (decisao do dono)
+      defaultEventType: '',
+      statusColumnMap: [],
+    },
+    chat: { position: 'center', width: 0, height: 0 },
   }
 }
 
@@ -70,7 +171,10 @@ export const AI_PROVIDER_BASE_URL: Record<CalendarAiProvider, string> = {
   deepseek: 'https://api.deepseek.com',
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   kimi: 'https://api.moonshot.cn/v1',
-  glm: 'https://open.bigmodel.cn/api/paas/v4',
+  glm: 'https://api.z.ai/api/paas/v4',
+  // Camada OpenAI-compatible do Google AI Studio (free tier); mesmo mapa no n8n.
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  openai: 'https://api.openai.com/v1',
   custom: '',
 }
 
@@ -79,18 +183,71 @@ export const AI_PROVIDER_LABEL: Record<CalendarAiProvider, string> = {
   deepseek: 'DeepSeek',
   qwen: 'Qwen (Alibaba)',
   kimi: 'Kimi (Moonshot)',
-  glm: 'GLM (Zhipu)',
+  glm: 'GLM (z.ai)',
+  gemini: 'Gemini (Google, free tier)',
+  openai: 'OpenAI',
   custom: 'Personalizado',
 }
 
-export const AI_PROVIDERS: CalendarAiProvider[] = [
-  'claude',
-  'deepseek',
-  'qwen',
-  'kimi',
-  'glm',
-  'custom',
-]
+// Providers oferecidos no dropdown do painel. So os que tem slot de chave (SEC) e
+// workflow ligado na Wave 3 — claude/deepseek/qwen/kimi/custom ficam de fora (nao
+// resolvem chave, cairiam em ai_key_missing). O type CalendarAiProvider mantem os
+// demais para compat de dados antigos.
+export const AI_PROVIDERS: CalendarAiProvider[] = ['gemini', 'glm', 'openai']
+
+// Providers com chave de API secreta gerenciada pelo painel (contrato SEC). O front
+// so manipula o status mascarado destes; os demais nao usam chave propria por aqui.
+export const AI_SECRET_PROVIDERS: CalendarAiSecretProvider[] = ['gemini', 'glm', 'openai']
+
+// --- Override de IA por cliente (WAVE 3.1, SEC+) --------------------------------
+
+/** Override "vazio" = todos os campos herdam a config geral (null/''). */
+export function defaultClientAiOverride(): CalendarClientAiOverride {
+  return {
+    enabled: null,
+    provider: '',
+    model: '',
+    baseUrl: '',
+    systemPrompt: '',
+    temperature: null,
+  }
+}
+
+// Coincide com o back (jsonb {} = sem override). null/'' = herda a config geral; o
+// provider e' validado contra o enum conhecido (fora dele -> '' = herda); temperature
+// clampa 0..1 (invalida/fora de faixa -> null = herda). NUNCA carrega chave de API.
+export function normalizeClientAiOverride(res: unknown): CalendarClientAiOverride {
+  const raw = (res && typeof res === 'object' ? res : {}) as Partial<CalendarClientAiOverride>
+  const provider =
+    typeof raw.provider === 'string' && raw.provider in AI_PROVIDER_LABEL
+      ? (raw.provider as CalendarAiProvider)
+      : ''
+  let temperature: number | null = null
+  if (typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)) {
+    temperature = Math.min(1, Math.max(0, raw.temperature))
+  }
+  return {
+    enabled: typeof raw.enabled === 'boolean' ? raw.enabled : null,
+    provider,
+    model: typeof raw.model === 'string' ? raw.model : '',
+    baseUrl: typeof raw.baseUrl === 'string' ? raw.baseUrl : '',
+    systemPrompt: typeof raw.systemPrompt === 'string' ? raw.systemPrompt : '',
+    temperature,
+  }
+}
+
+// Override sem nada preenchido: usado pro badge "usa config geral" e pra saber se ha
+// algo persistido para o cliente.
+export function isEmptyClientAiOverride(o: CalendarClientAiOverride): boolean {
+  return (
+    o.enabled === null &&
+    o.provider === '' &&
+    o.model === '' &&
+    o.baseUrl === '' &&
+    o.systemPrompt === '' &&
+    o.temperature === null
+  )
+}
 
 // Cinza neutro para cliente com cor "none" (ou tipo sem override).
 export const NEUTRAL_COLOR: RgbTriplet = [148, 163, 184]

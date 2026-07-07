@@ -429,6 +429,13 @@ func (service *Service) resolvePresenceSubscription(ctx context.Context, princip
 			if err != nil {
 				return realtimeSubscription{}, err
 			}
+		case strings.HasPrefix(topic, "presence:calendar:"):
+			scope = "calendar"
+			var err error
+			accountID, err = mergeTopicID(accountID, strings.TrimPrefix(topic, "presence:calendar:"))
+			if err != nil {
+				return realtimeSubscription{}, err
+			}
 		default:
 			return realtimeSubscription{}, errRealtimeValidation
 		}
@@ -460,6 +467,13 @@ func (service *Service) resolvePresenceSubscription(ctx context.Context, princip
 			return realtimeSubscription{}, err
 		}
 		return realtimeSubscription{topic: presenceTaskTopic(authorized.taskID), accountID: authorized.accountID, boardID: authorized.boardID, taskID: authorized.taskID}, nil
+	case "calendar":
+		// Presenca do calendario (contrato C11): topico por conta, fieldKeys
+		// "notes:YYYY-MM" e "event:<id>" (o readPresencePump repassa o fieldKey livre).
+		if err := service.authorizeCalendarAccount(ctx, principal, resolvedAccountID); err != nil {
+			return realtimeSubscription{}, err
+		}
+		return realtimeSubscription{topic: presenceCalendarTopic(resolvedAccountID), accountID: resolvedAccountID}, nil
 	default:
 		return realtimeSubscription{}, errRealtimeValidation
 	}

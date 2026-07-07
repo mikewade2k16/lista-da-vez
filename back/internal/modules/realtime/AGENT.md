@@ -38,8 +38,9 @@ Ele nao deve cuidar de:
 - `GET /v1/realtime/operations?storeId=...&ticket=...`
 - `GET /v1/realtime/context?tenantId=...&ticket=...`
 - `GET /v1/realtime/tasks?scope=...&accountId=...&ticket=...`
-- `GET /v1/realtime/presence?scope=...&accountId=...&ticket=...`
+- `GET /v1/realtime/presence?scope=...&accountId=...&ticket=...` (scope in `board|task|calendar`)
 - `GET /v1/realtime/notifications?userId=...&accountId=...&ticket=...`
+- `GET /v1/realtime/calendar?scope=account&accountId=...&ticket=...` (Wave 2, C11)
 
 O ticket WS e efemero, fica apenas em memoria do processo, expira em 30s e e consumido com `LoadAndDelete`
 antes do upgrade WebSocket. Ele e single-use: reconexao precisa pedir um ticket novo.
@@ -185,6 +186,40 @@ type Publisher interface {
 ```
 
 `NoopPublisher` retorna nil em tudo (usado em testes de service).
+
+## Canal Calendar (Wave 2, contrato C11)
+
+`service_calendar.go` adiciona o canal de eventos do calendario sem mexer nos canais existentes:
+
+```
+calendar:account:{accountId}     eventos de invalidacao do calendario da conta
+presence:calendar:{accountId}    avatares/presenca no calendario (fieldKeys de C11)
+```
+
+- `GET /v1/realtime/calendar?scope=account&accountId=...` → `HandleCalendarSocket` reusa
+  `serveSubscriptionSocket`. Presenca em `GET /v1/realtime/presence?scope=calendar` — o ponto de
+  extensao e `resolvePresenceSubscription` (novo case `calendar` + prefixo `presence:calendar:`);
+  `HandlePresenceSocket` so delega. FieldKeys: `notes:YYYY-MM` (notas do mes) e `event:<id>`
+  (form de edicao de evento) — o `readPresencePump` repassa o fieldKey livre.
+- **Autorizacao** (`authorizeCalendarAccount`, copia adaptada de `authorizeTasksAccount`): conta
+  ativa + membership + permissao efetiva `calendar.view`; `platform_admin` bypass. Socket sem
+  `calendar.view` fecha antes do handshake (como em tasks). Conta diferente nunca recebe eventos.
+- **Eventos publicados** (INVALIDACAO, payload lean — o front refaz fetch, nunca patch local):
+
+```
+calendar.event_created | calendar.event_updated | calendar.event_deleted   (resourceId=eventId, payload.date; version no updated)
+calendar.note_updated       (payload.monthKey)
+calendar.day_media_updated  (payload.date)
+calendar.config_updated
+calendar.plan_updated       (resourceId=planId, payload.status)
+```
+
+- **Publisher (direcao realtime -> calendar)**: o modulo `calendar` define a interface
+  `calendar.Publisher` + o tipo `calendar.RealtimeEvent` (`calendar/publisher.go`); o `realtime`
+  a implementa em `PublishCalendarEvent`, mapeando `ResourceID`/`Version` para o `Event` e
+  jogando `date`/`monthKey`/`status` no `Payload map[string]any` (sem inchar o struct). O app
+  injeta `calendar.WithPublisher(realtimeService)`. Constantes espelhadas em `model.go`
+  (`EventTypeCalendar*`) e em `calendar/publisher.go` (privadas) — os dois lados concordam.
 
 ## Evolucao esperada
 

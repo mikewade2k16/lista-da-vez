@@ -31,6 +31,17 @@ const (
 	EventTypePresenceFieldUnlocked = "presence.field_unlocked"
 	EventTypeNotificationCreated   = "notification.created"
 	EventTypeNotificationRead      = "notification.read"
+	// Canal do calendario (contrato C11). Eventos LEAN de invalidacao publicados em
+	// calendar:account:{id}; o front refaz o fetch (nunca patch local). Os literais sao
+	// espelhados como constantes privadas em calendar/publisher.go (o calendar seta o
+	// Type; o realtime so repassa) — os dois lados precisam concordar.
+	EventTypeCalendarEventCreated    = "calendar.event_created"
+	EventTypeCalendarEventUpdated    = "calendar.event_updated"
+	EventTypeCalendarEventDeleted    = "calendar.event_deleted"
+	EventTypeCalendarNoteUpdated     = "calendar.note_updated"
+	EventTypeCalendarDayMediaUpdated = "calendar.day_media_updated"
+	EventTypeCalendarConfigUpdated   = "calendar.config_updated"
+	EventTypeCalendarPlanUpdated     = "calendar.plan_updated"
 )
 
 type Event struct {
@@ -93,6 +104,17 @@ func presenceBoardTopic(boardID string) string {
 
 func presenceTaskTopic(taskID string) string {
 	return "presence:task:" + taskID
+}
+
+// calendarAccountTopic e o canal de eventos do calendario por conta (contrato C11).
+func calendarAccountTopic(accountID string) string {
+	return "calendar:account:" + accountID
+}
+
+// presenceCalendarTopic e o canal de presenca do calendario por conta (contrato C11;
+// fieldKeys "notes:YYYY-MM" e "event:<id>").
+func presenceCalendarTopic(accountID string) string {
+	return "presence:calendar:" + accountID
 }
 
 func notificationsUserTopic(userID string) string {

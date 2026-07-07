@@ -268,6 +268,60 @@ dado real a partir de fonte parcial/fallback; draft re-hidrata do back assim que
 "nao salvou/reverteu", checar PRIMEIRO se o dado esta no banco (`psql`) e se a API o devolve, antes de
 mexer no back.
 
+### [2026-07-03] Dev "lento normal do Vite" era o bind mount Windows→container (meses de misdiagnóstico)
+
+**O que aconteceu:** o dev do painel foi ficando inutilizável — troca de página levava minutos e, no
+fim, o `nuxt dev` nem terminava o boot (localhost:3003 recusava conexão). Durante semanas o sintoma foi
+diagnosticado como "compile on-demand do Vite, normal em dev", e as tentativas de correção (polling do
+watcher, warmup de todas as páginas) PIORARAM o problema.
+
+**Causa raiz:** infraestrutura, não framework. O bind mount `./web:/app` montava pasta do WINDOWS num
+container Linux via a ponte 9P/gRPC-FUSE do Docker Desktop/WSL2 — cada stat/read fica ~100x mais lento,
+e o nuxt dev toca milhares de arquivos. Os "paliativos" multiplicaram o I/O exatamente na ponte lenta:
+polling varria a árvore toda a cada 350ms e o warmup pré-compilava o grafo INTEIRO no boot, tudo
+atravessando a ponte. O Vite era inocente: os mesmos comandos em FS nativo (VPS, container sem bind
+mount) sempre foram rápidos.
+
+**Correção:** bind mount removido; o código é copiado no build da imagem (target dev, overlayfs nativo)
+e `docker compose watch` (develop.watch, action sync) sincroniza as edições host→container; inotify real
+dentro do container, polling desligado. Fluxo: `npm run dev` (= `up --build --watch`) ou
+`npm run dev:watch` (= scripts/dev/watch-web.ps1: `up -d --build web` + `watch --no-up web`). Medido:
+boot 5+min-sem-terminar → ~60s; GET / em 0.04s; edição chega em ~2s. Detalhe completo em
+[OPERATION_DOCKER_BUG_LOG.md](OPERATION_DOCKER_BUG_LOG.md) §7.
+
+**Regra criada:** lentidão PATOLÓGICA em dev (minutos, não segundos) é infraestrutura até prova em
+contrário — medir ONDE o tempo é gasto (FS? CPU? rede?) antes de aceitar "é normal do framework".
+Nunca montar caminho Windows como bind mount de fonte de um dev server que varre muitos arquivos;
+usar compose watch/sync (código em FS nativo do container). E nunca empilhar paliativos (polling,
+warmup, cache) sem confirmar a causa raiz: paliativo em cima de diagnóstico errado multiplica o problema.
+Armadilhas do fluxo novo: o watch NÃO faz sync inicial (edição com watch desligado exige rebuild);
+`docker compose up -d web` sozinho deixa o código congelado no último build; só 1 watch por projeto
+(lock exclusivo — watch zumbi segura o lock).
+
+### [2026-07-03] deploy:fast:prod derrubou produção — runbook AC-04 pulado (~1h de 502)
+
+**O que aconteceu:** logo após um `npm run deploy:fast:prod`, o painel inteiro caiu (502 no Caddy).
+Na VPS: api em crash-loop, web preso em `Created` (depends_on api healthy), postgres saudável.
+
+**Causa raiz:** o `deploy:fast` builda do WORKING TREE local — embarcou o AC-04 (role de runtime
+`omni_app` least-privilege), que exige passos manuais na VPS ANTES da imagem nova: criar a role no
+Postgres (`scripts/db/create-app-role.sql`) e adicionar `APP_DB_ROLE`/`APP_DB_ROLE_PASSWORD` no
+`.env.production`. Nada disso tinha sido feito. O compose interpolou senha em branco para role
+inexistente → SASL 28P01 a cada boot (o mock SCRAM do Postgres reporta "password authentication
+failed" mesmo para role ausente — não confunda com senha errada). O runbook existia e previa a ordem
+(doc canônico, Notas de Deploy AC-04); o deploy foi rodado sem conferi-lo.
+
+**Correção:** criar a role + envs na VPS e recriar api/web (runbook passos 2–6); serviço voltou.
+Rollback alternativo sem trocar imagem (passo 8): apontar `APP_DB_ROLE` para o superuser
+temporariamente. Detalhe em [MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md) § AC-04.
+
+**Regra criada:** antes de QUALQUER `deploy:fast`, conferir as "Notas de Deploy" do doc canônico por
+passos manuais pendentes — o deploy:fast embarca TUDO que está no working tree, inclusive mudança que
+exige env var/role/script na VPS (env var nova NUNCA viaja na imagem). Mudança de infra de banco
+(role, extensão, grant) deve preferir auto-provisão idempotente no migrate (proposta `ac-04b`) a
+passo manual. E crash-loop com `28P01` logo após deploy = checar PRIMEIRO se role/env do banco
+existem no ambiente, antes de suspeitar do código.
+
 ## Referência cruzada
 
 - Plano canônico da branch atual → [MULTITENANT_COMPLETION_PLAN.md](MULTITENANT_COMPLETION_PLAN.md)

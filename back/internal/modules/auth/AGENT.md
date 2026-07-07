@@ -94,7 +94,11 @@ Ele nao deve cuidar de:
 - `auth.Service.SetSessionRepository(repo)` e chamado no `app.go`: `Login` cria linha em `core.user_sessions` + emite `sid`; `Authenticate` checa `IsRevoked` (revoked_at) por request; `Logout` revoga o `sid`.
 - Logout invalida o token no servidor de verdade: token com `sid` revogado -> 401 no proximo request. (Antes era no-op client-side.)
 - Tokens legados sem `sid` ignoram o check de sessao (validos ate expirar).
-- **PrincipalCache NAO ligado.** A interface `PrincipalCacheStore` + `SetPrincipalCache` existem, mas nenhuma impl concreta foi wired — `Authenticate` consulta `IsRevoked` no DB a cada request (lookup por PK, barato na escala atual). Cache com TTL + invalidacao por evento (`user.session.revoked`, `role.permissions.changed`, ...) fica como item de PERFORMANCE para quando escalar — NAO confundir com o que ja esta ativo.
+- **PrincipalCache LIGADO (AC-01, 2026-07-02).** `wirePrincipalCache` (`platform/app/principal_cache_wiring.go`) cria o cache no boot quando `AUTH_PRINCIPAL_CACHE_TTL > 0` (default `30s`; `0s` desliga e restaura o comportamento legado sem rebuild) e chama `SetPrincipalCache`. Na 2a request da mesma sessao, `AuthenticateToken` retorna o Principal cacheado sem `IsRevoked` nem `LoadUserForAuth` nem resolver permissoes.
+  - **Invalidacao SINCRONA** (direta via setter injection, NAO via bus — seguranca nao pode depender de flag de feature): `Logout` -> `InvalidateSession(sid)`; `access.UpdateUserOverrides`, `users.Update/Archive`, `core RBACService.AssignRoleToUser/RemoveRoleFromUser/SetUserRoles`, `core AdminUserService.UpdateUser/DeleteUser` -> `InvalidateUser`; `access.UpdateRolePermissions` (matriz v1 por papel-coarse) e `core RBACService.DeleteRole` -> `InvalidateAll`. Logout revoga no DB ANTES de invalidar.
+  - **Corrida conhecida (aceita, teto = TTL):** request A tem miss, le `IsRevoked=false`, e antes do `Set` o Logout revoga+invalida; o `Set` de A repovoa a entrada ja revogada. Janela de ms; exposicao maxima = TTL (30s). Tombstone fica para a versao Redis (AC-08).
+  - **Cache local ao processo.** Invalidacao e cache nao cruzam instancias — a VPS roda 1 instancia hoje. Escalar horizontalmente exige AC-08 (Redis) antes.
+  - Tokens legados sem `sid` NUNCA usam o cache (comportamento legado preservado). `sessions.Touch` continua nao sendo chamado.
 
 ### Roles atuais
 
@@ -187,7 +191,8 @@ Quando este modulo crescer, a ordem certa e:
 
 - `model.go` — structs, interfaces (incluindo `PrincipalCacheStore`, `SessionRepository`, `TokenManager`)
 - `roles.go`
-- `service.go` — `AuthenticateToken` consulta cache antes do DB; `Login` cria sessao em `core.user_sessions`
+- `service.go` — `AuthenticateToken` consulta o PrincipalCache (quando ligado) antes do DB; `Login` cria sessao em `core.user_sessions`; `Logout` revoga no DB e chama `InvalidateSession` no cache (AC-01). `PrincipalCacheStore` inclui `InvalidateSession/InvalidateUser`.
+- `service_principal_cache_test.go` — testes do fluxo de cache (hit na 2a request, logout invalida na hora, token legado ignora cache, cache desligado = comportamento legado)
 - `sessions.go` — `PostgresSessionRepository`: Create/IsRevoked/Revoke/Touch em `core.user_sessions`
 - `tokens.go` — JWT HMAC com claim `sid` (session UUID); `Issue(sessionID, user)` — sessionID pode ser ""
 - `middleware.go`

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 05 · Performance · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 05 — Performance</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./04-infraestrutura.html">← 04 Infraestrutura</a>
+      <a href="./06-seguranca.html">06 Segurança →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="backend">Backend &amp; banco</button>
+      <button data-tab="frontend">Frontend</button>
+      <button data-tab="realtime">Realtime</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ===================== VISÃO GERAL ===================== -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">Como o Omni gasta CPU, banco e rede hoje — e onde o custo cresce mais rápido que o uso. A lente é "custo por request": o que cada clique do usuário dispara no backend, no Postgres e no navegador.</p>
+
+  <div class="note">⚠️ <b>Metodologia:</b> este relatório é <b>análise estática de código</b>. Nenhum load test foi executado, nenhum <code>EXPLAIN</code> foi rodado e o banco <b>não foi tocado</b> nesta sessão. Os números vêm de contagem e leitura de código (arquivo:linha citados); onde faltaria medição real, o texto diz "não medido". Baseline de latência/throughput real fica como oportunidade (PF-01/PF-02).</div>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n" style="color:var(--red)">+1</div><div class="l">query de auth extra por request autenticado (AC-01 — IsRevoked no banco)</div></div>
+    <div class="stat"><div class="n" style="color:var(--orange)">5.000</div><div class="l">registros máx. num único payload do BI (pageLimit 100 × maxPages 50)</div></div>
+    <div class="stat"><div class="n ind">10</div><div class="l">conexões máx. no pool Postgres (default; min 0)</div></div>
+    <div class="stat"><div class="n cyan">60</div><div class="l">req/min de rate limit por identidade (token bucket em memória)</div></div>
+  </div>
+
+  <div class="verdict"><b>Veredito:</b> nenhum incêndio para o tamanho atual — o sistema é um Go enxuto contra um Postgres bem indexado servindo uma SPA estática. O que vai doer primeiro com crescimento são duas coisas conhecidas e baratas de atacar: o <b>custo por request autenticado</b> (uma ida ao banco em todo request porque o PrincipalCache está implementado mas desligado, AC-01) e as <b>listagens sem paginação</b> em reports/analytics/BI, que crescem linearmente com o histórico de cada loja (AC-06).</div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>O que joga a favor</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>243 índices criados ao longo de 59 migrations — as queries quentes têm suporte de índice.</li>
+        <li><span class="dot g"></span>N+1 tratados nos módulos novos: cardápio e calendário carregam filhos em batch com <code>= ANY($n)</code>; o bio resolve com joins numa query.</li>
+        <li><span class="dot g"></span>Pool pgx com healthcheck 30s, idle 5min, lifetime 30min; input HTTP limitado a 1MB por <code>io.LimitReader</code>.</li>
+        <li><span class="dot g"></span>Front SPA 100% estático (39 routeRules <code>ssr:false</code>): servir é barato, sem custo de SSR por request.</li>
+        <li><span class="dot g"></span>WebSocket gorilla bem configurado (ping 54s / pong 60s, mensagens de no máx. 1.024 bytes) e validado ponta a ponta.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>O que vai doer com crescimento</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>AC-01 (P0):</b> todo request autenticado paga 1 roundtrip de banco para checar revogação de sessão — o cache que elimina isso já existe e está desligado.</li>
+        <li><span class="dot y"></span><b>AC-06 (P1):</b> reports e analytics carregam o histórico <i>completo</i> da loja sem LIMIT; BI devolve até 5.000 registros num payload.</li>
+        <li><span class="dot b"></span><b>AC-08 (P2):</b> caches e rate limit vivem em memória do processo — funciona hoje (1 instância), vira bug na 2ª instância.</li>
+        <li><span class="dot b"></span><b>AC-19 (P2):</b> pool com máx. 10 conexões é adequado agora, mas precisa ser dimensionado junto com qualquer escala.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Nota da área</h3>
+    <div class="gauge">
+      <div class="ring" style="--p:65"><b>6,5</b></div>
+      <div>Fundamentos sólidos (índices, batch, pool saudável, SPA barata), mas os dois maiores ganhos de performance do sistema estão parados na prateleira: um cache pronto sem wiring e paginação ausente exatamente nas rotas que mais crescem com o uso. Sem baseline medido, a nota reflete o que o código promete — não o que foi comprovado sob carga.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== BACKEND & BANCO ===================== -->
+<section id="backend" class="tab">
+  <h2 class="section">Backend &amp; banco</h2>
+  <p class="lead">O caminho de um request autenticado hoje, o custo escondido nele, e as três rotas cuja resposta cresce sem teto junto com os dados.</p>
+
+  <div class="card">
+    <h3>Custo por request autenticado — caminho atual</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>SPA / cliente</b><span class="m">Bearer JWT + X-Account-Id</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>Verify HMAC-SHA256</b><span class="m">barato — CPU local, sem I/O</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>IsRevoked no banco</b><span class="m">1 roundtrip ao Postgres em TODO request (AC-01)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Resolução de permissões</b><span class="m">papéis + overrides por account</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Handler do módulo</b><span class="m">queries de negócio</span></div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin:12px 0 0">A verificação da assinatura do JWT é in-process e não pesa. O problema é o passo seguinte: para honrar o logout server-side (sessões em <code>core.user_sessions</code>), o <code>Authenticate</code> consulta <code>IsRevoked</code> no banco a cada request. Isso coloca o Postgres no caminho crítico de latência de <b>todas</b> as rotas autenticadas — e consome as 10 conexões do pool com queries que um cache de segundos eliminaria.</p>
+  </div>
+
+  <div class="note">💡 <b>Maior ganho / menor esforço do sistema inteiro:</b> o <code>PrincipalCache</code> já está implementado (<code>httpapi/principal_cache.go:24</code>, interface em <code>auth/service.go:12</code>, <code>SetPrincipalCache</code> na linha 59) — só não está ligado: zero chamadas fora de testes, e o próprio <code>auth/AGENT.md:97</code> confirma a consulta por request. Ligar com TTL curto e invalidar pelos eventos realtime que já existem (<code>user.session.revoked</code>, <code>role.permissions.changed</code>) remove um roundtrip de banco de ~377 rotas de uma vez, sem perder o logout imediato. É o AC-01 (P0) do backlog.</div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>AC-06 — listagens sem paginação: onde a resposta cresce sem teto</h3>
+    <table>
+      <thead><tr><th>Área</th><th>Rotas servidas</th><th>Evidência</th><th>Comportamento hoje</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>Reports</b></td>
+          <td><code>/v1/reports/overview|results|recent-services</code></td>
+          <td><code>queue/reports/store_postgres.go:39-150</code></td>
+          <td><code>listHistoryQuery</code> sem LIMIT/OFFSET — carrega o histórico completo de atendimentos da loja e agrega em Go.</td>
+        </tr>
+        <tr>
+          <td><b>Analytics</b></td>
+          <td><code>/v1/analytics/ranking|data|intelligence</code></td>
+          <td><code>queue/operations/store_postgres.go:565-617</code></td>
+          <td><code>loadServiceHistory</code> traz o histórico COMPLETO da loja sem LIMIT para calcular ranking/insights em memória.</td>
+        </tr>
+        <tr>
+          <td><b>BI</b></td>
+          <td><code>/v1/bi/perola/overview</code></td>
+          <td><code>bi/service.go:23-24</code></td>
+          <td>Até 5.000 registros por dataset num payload único (pageLimit 100 × maxPages 50).</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);margin:12px 0 0">Hoje, com lojas pequenas, isso responde rápido. O problema é a forma da curva: o custo dessas rotas é O(histórico), então cada mês de operação torna o mesmo clique mais caro — em banco, em memória do processo Go e em bytes na rede. A correção é a de sempre: LIMIT/OFFSET ou cursor + empurrar a agregação para o SQL (que tem os 243 índices a favor), com teto por página. Ver também os relatórios 01 (backend) e 03 (banco).</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Caches em memória — bons hoje, bug amanhã</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Goal progress</b> — TTL 120s; evita recálculo de metas a cada consulta.</li>
+        <li><span class="dot g"></span><b>Module guard</b> — TTL 60s; poupa a checagem de módulo habilitado por account.</li>
+        <li><span class="dot g"></span><b>Image cache</b> (módulo site) — evita reprocessar imagem.</li>
+        <li><span class="dot g"></span><b>Rate limit buckets</b> — token bucket por identidade, cleanup a cada 5min.</li>
+        <li><span class="dot y"></span>Todos são <b>in-process, sem Redis</b>. Em 1 instância funcionam bem; com 2+ instâncias cada processo enxerga um estado diferente — limite de rate vira 2×, invalidações não se propagam (<b>AC-08</b>).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Fundamentos que já estão certos</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>243 índices</b> (<code>CREATE [UNIQUE] INDEX</code>) distribuídos em 59 migrations.</li>
+        <li><span class="dot g"></span><b>Sem N+1 nos módulos novos:</b> cardápio carrega variations/addons e itens de pedido em batch (<code>store_catalog.go:153</code>, <code>store_orders.go:161</code>); calendário resolve nomes/perfis com <code>= ANY($2)</code> (<code>store_ai_context.go:12</code>); bio faz 1 query com joins.</li>
+        <li><span class="dot g"></span><b>Pool pgx saudável:</b> healthcheck 30s, idle 5min, lifetime 30min — conexões não apodrecem.</li>
+        <li><span class="dot g"></span><b>Input barato de rejeitar:</b> <code>ReadJSON</code> com <code>DisallowUnknownFields</code> + <code>io.LimitReader</code> 1MB; queries 100% parametrizadas.</li>
+        <li><span class="dot g"></span><b>Rate limit com resposta correta:</b> 429 + <code>Retry-After</code>, bucket extra por <code>X-Account-Id</code> (5×).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Pool Postgres — dimensionamento (AC-19)</h3>
+    <p style="font-size:13.5px;margin:0 0 8px">Default atual: <b>MinConns 0 / MaxConns 10</b> (<code>pool.go:24-29</code>; <code>DATABASE_MIN_CONNS</code> só aplica se &gt;0). Para o tráfego de hoje é suficiente — mas é exatamente o tipo de teto silencioso que só aparece sob pico: com AC-01 ativo (1 query de auth por request) somado a rotas AC-06 segurando conexão por mais tempo, 10 conexões saturam antes do que parecem.</p>
+    <p style="font-size:13px;color:var(--muted);margin:0">Regra ao escalar: <code>max_conns × instâncias &lt; max_connections</code> do Postgres. Ajuste via env, sem código. Ver também relatórios 03 e 09.</p>
+  </div>
+</section>
+
+<!-- ===================== FRONTEND ===================== -->
+<section id="frontend" class="tab">
+  <h2 class="section">Frontend</h2>
+  <p class="lead">A SPA é barata de servir e tem boas defesas contra requests duplicados; o peso está no CSS monolítico e no custo de desenvolvimento (arquivos gigantes), não no runtime do usuário final.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Pontos fortes confirmados</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>SPA 100% estática</b> — 39 routeRules <code>ssr:false</code>; servir é copiar arquivos, sem render por request no servidor.</li>
+        <li><span class="dot g"></span><b>Dedupe de GETs em voo</b> no <code>app/utils/api-client.ts</code> (331 linhas): duas telas pedindo o mesmo recurso ao mesmo tempo geram 1 request (chave método+URL+headers, <code>api-client.ts:272-273</code>).</li>
+        <li><span class="dot g"></span><b>Loading com threshold de 200ms</b> — spinner só aparece se demorar, evitando flicker em resposta rápida.</li>
+        <li><span class="dot g"></span><b>Lazy real em 5 componentes pesados</b> via <code>utils/lazy-component.ts</code> (<code>defineAsyncComponent</code>): OperationWorkspace, MetaAdsReportChart, CardapioAnalyticsChart, RoadmapModulesBoard, OmniEditor — gráficos e editor não entram no bundle inicial.</li>
+        <li><span class="dot g"></span><b>Dev tuning:</b> <code>vite.optimizeDeps</code> com 14 deps pré-bundladas + warmup de 7 arquivos do shell.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Pontos de atenção</h3>
+      <ul class="clean">
+        <li><span class="dot y"></span><b>components.css com 4.480 linhas</b>, sempre carregado, para todas as telas (os 16 .css de <code>assets/styles</code> somam 8.069 linhas). Todo usuário baixa e o browser parseia CSS de domínios que ele nunca abre (PF-03; detalhe em AC-07 no relatório 02-frontend).</li>
+        <li><span class="dot y"></span><b>105 arquivos de código acima de 450 linhas</b> (teto dos princípios de engenharia) — pesam no dev/HMR e no custo de manutenção, mais do que no runtime.</li>
+        <li><span class="dot b"></span><b>Sem <code>manualChunks</code> explícito</b> — split por rota default do Vite. Não é problema comprovado; é lacuna de medição (ver nota abaixo).</li>
+        <li><span class="dot b"></span><b>Pollings pontuais</b> em algumas features (tabela abaixo) — aceitáveis no escopo atual, mas cada um é um multiplicador de requests por usuário logado.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">📌 <b>Contexto importante (memória do projeto):</b> a lentidão sentida no dev <b>não é o app</b> — é o Docker bind mount no Windows (ponte de filesystem + polling do watcher). A auditoria de performance do projeto já mediu contra build de produção e o app em si responde bem. Ou seja: os 105 arquivos gigantes doem no HMR e na manutenção, mas não são a causa da lentidão de dev.</div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Pollings ativos no cliente</h3>
+    <table>
+      <thead><tr><th>Feature</th><th>Intervalo</th><th>Evidência</th><th>Avaliação</th></tr></thead>
+      <tbody>
+        <tr><td>Calendar IA (status do plano)</td><td>3s</td><td><code>composables/useCalendarAiPlans.ts:8</code></td><td>OK — só roda enquanto há plano em processamento; vigiar se virar polling permanente.</td></tr>
+        <tr><td>Automação (status)</td><td>3s</td><td><code>composables/useAutomation.ts:37</code></td><td>OK — mesma lógica: pontual, atrelado a operação em andamento.</td></tr>
+        <tr><td>Feedback (lista / chat aberto)</td><td>30s / 15s</td><td><code>composables/useFeedbackChat.js:167-170</code></td><td>OK — o fan-out foi resolvido (unread_count no list); plano existente de migrar para WebSocket.</td></tr>
+        <tr><td>Sino de notificações</td><td>60s</td><td><code>components/feedback/FeedbackNotificationsDropdown.vue:147</code></td><td>OK — leve.</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);margin:12px 0 0">Nenhum polling agressivo encontrado. O risco é acumulativo: cada nova feature que "resolve com setInterval" soma requests por aba aberta. A infra de WebSocket já existe (tab Realtime) — preferi-la para o próximo caso.</p>
+  </div>
+
+  <div class="note">⚠️ <b>Não medido:</b> nenhuma análise de bundle foi executada nesta fotografia (regra do projeto: sem npm/build sem aprovação). Quando autorizado, rodar <code>nuxi analyze</code>/rollup-visualizer contra build de produção para conferir tamanho dos chunks por rota e decidir com dado se <code>manualChunks</code> vale a pena. Até lá, qualquer afirmação sobre tamanho de bundle seria invenção.</div>
+</section>
+
+<!-- ===================== REALTIME ===================== -->
+<section id="realtime" class="tab">
+  <h2 class="section">Realtime</h2>
+  <p class="lead">WebSocket bem configurado e provado ponta a ponta; SSE para o público do bio. O único limite estrutural é conhecido: o hub vive na memória de uma instância.</p>
+
+  <div class="card">
+    <h3>Configuração do WebSocket (gorilla)</h3>
+    <table>
+      <thead><tr><th>Parâmetro</th><th>Valor</th><th>Comentário</th></tr></thead>
+      <tbody>
+        <tr><td><code>writeWait</code></td><td>10s</td><td>deadline de escrita — conexão travada não segura o hub (<code>realtime/service.go:22</code>).</td></tr>
+        <tr><td><code>pongWait</code></td><td>60s</td><td>cliente que não responde pong em 60s é derrubado (<code>service.go:23</code>).</td></tr>
+        <tr><td><code>pingPeriod</code></td><td>54s</td><td>9/10 do pongWait (<code>service.go:24</code>) — ping sempre chega antes do deadline; conexões mortas são limpas, não acumulam.</td></tr>
+        <tr><td><code>maxMessageSize</code></td><td>1.024 bytes</td><td>mensagens minúsculas por design — o WS sinaliza, o REST carrega (<code>service.go:25</code>).</td></tr>
+        <tr><td>Presence TTL</td><td>30s</td><td>presença expira sozinha; sem fantasmas de sessão.</td></tr>
+        <tr><td><code>CheckOrigin</code></td><td>whitelist CORS</td><td>upgrade só de origens permitidas.</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);margin:12px 0 0">É a configuração "de livro" para gorilla/websocket: heartbeats corretos, limites de mensagem e deadlines dos dois lados. Do ponto de vista de performance, o padrão mensagem-pequena + fetch via REST é o certo — o hub nunca serializa payloads grandes.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Caminho de um evento hoje — e o limite de escala</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Mutação no módulo</b><span class="m">ex.: task movida, sessão revogada</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>Hub in-memory</b><span class="m">fan-out para as conexões desta instância</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Clientes conectados</b><span class="m">recebem sinal, buscam dado via REST</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>2ª instância (futuro)</b><span class="m">não recebe nada — hub não atravessa processos</span></div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin:12px 0 0">Com 1 instância de API (cenário atual e do futuro próximo), isso é simplesmente o design mais rápido possível: zero I/O extra por evento. O limite aparece junto com o scale-out: um cliente conectado na instância A nunca vê o evento gerado na instância B. O pré-requisito de escala é interpor pub/sub (Redis) entre a mutação e o hub — e isso se resolve junto com o AC-08 (caches/rate limit em Redis), no mesmo movimento e na mesma dependência de infra. Não fazer antes de precisar.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>SSE no bio público</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><code>/v1/public/bio/{slug}/stream</code> — Server-Sent Events para o front separado (crow-nuxt) refletir mudanças de config sem refresh.</li>
+        <li><span class="dot g"></span>Escolha correta para o caso: tráfego unidirecional, público, sem necessidade do custo de um WS bidirecional.</li>
+        <li><span class="dot y"></span>Mesmo limite do hub: conexões SSE também são locais à instância.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Validação ponta a ponta (memória do projeto)</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Broadcast cross-session da operação foi <b>provado ao vivo</b>, ponta a ponta, no backend.</li>
+        <li><span class="dot g"></span>O episódio de "WS parado" investigado não era o backend: era o front que não re-renderizava (custo de render, não de transporte).</li>
+        <li><span class="dot b"></span>Lição de performance: quando o realtime "parece lento", medir primeiro o render do cliente — o transporte já se provou.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== OPORTUNIDADES ===================== -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog priorizado da área. P0 = agir já · P1 = próximas semanas · P2 = quando escalar. AC-* são achados canônicos da série (id/prioridade fixos); PF-* são achados locais desta página.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+
+    <details class="item" data-p="p0">
+      <summary><span class="id">AC-01</span><span class="ttl">PrincipalCache implementado mas desligado — auth consulta o banco a cada request</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> todo request autenticado paga 1 roundtrip ao Postgres (checagem <code>IsRevoked</code>) além da verificação HMAC, colocando o banco no caminho crítico de latência de ~377 rotas e consumindo o pool (máx. 10) com queries repetitivas. O cache que elimina isso já está escrito — só não foi ligado.</p>
+        <p><b>Evidência:</b> <code>httpapi/principal_cache.go:24</code> + <code>auth/AGENT.md:97</code>; zero wiring em <code>app.go</code> (nenhuma chamada fora de testes).</p>
+        <p><b>Ação recomendada:</b> ligar o cache com TTL curto + invalidação pelos eventos realtime já existentes (<code>user.session.revoked</code>, <code>role.permissions.changed</code>). É o maior ganho pelo menor esforço do sistema inteiro. Ver também os relatórios 01 (backend) e 07.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-06</span><span class="ttl">Listagens sem paginação (reports, analytics, BI)</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> três famílias de rotas têm custo O(histórico): reports e analytics carregam o histórico completo de atendimentos da loja para agregar em Go; o BI monta payloads de até 5.000 registros por dataset. Cada mês de operação torna o mesmo clique mais caro em banco, memória e rede.</p>
+        <p><b>Evidência:</b> <code>queue/reports/store_postgres.go:39-150</code> sem LIMIT; <code>queue/operations/store_postgres.go:565-617</code> histórico completo; BI até 5.000 registros/payload (<code>bi/service.go:23-24</code>, pageLimit 100 × maxPages 50).</p>
+        <p><b>Ação recomendada:</b> LIMIT/OFFSET ou cursor + agregação no SQL (os 243 índices ajudam); teto por página. Ver também os relatórios 01 (backend) e 03 (banco).</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">PF-01</span><span class="ttl">Medir baseline real de carga (k6/vegeta contra staging)</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> toda a análise desta página é estática — não existe nenhum número medido de latência p95, throughput ou saturação do pool. Sem baseline, não dá para saber quanto AC-01/AC-06 custam de verdade nem provar o ganho depois de corrigir.</p>
+        <p><b>Evidência:</b> nenhum load test no repo; observabilidade de produção limitada a <code>/healthz</code> + smoke no deploy (sem métricas exportadas).</p>
+        <p><b>Ação recomendada:</b> rodar k6 ou vegeta contra um ambiente de staging (nunca produção) cobrindo login, operação, reports e BI; registrar p50/p95/p99 e conexões de pool como baseline. <b>Não executar agora</b> — depende de staging de pé e de autorização; advisory.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">PF-02</span><span class="ttl">EXPLAIN ANALYZE nas queries de reports/analytics</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> as queries do AC-06 foram avaliadas só por leitura de código; não se sabe o plano real (seq scan? índice usado? sort em disco?) nem o custo atual com os dados de verdade. O banco não foi tocado nesta sessão, por regra.</p>
+        <p><b>Evidência:</b> <code>queue/reports/store_postgres.go:39-150</code> e <code>queue/operations/store_postgres.go:565-617</code> — planos de execução não medidos.</p>
+        <p><b>Ação recomendada:</b> quando autorizado, rodar <code>EXPLAIN (ANALYZE, BUFFERS)</code> nessas queries numa cópia/staging com volume realista, antes de desenhar a paginação — o plano real decide se a correção é só LIMIT ou também índice/agregação no SQL.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-08</span><span class="ttl">Caches e rate limit em memória local — travam scale-out horizontal</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto (na escala)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> goal progress (120s), module guard (60s), image cache e os buckets de rate limit são todos in-process. Com 1 instância funcionam bem; na 2ª instância cada processo enxerga um estado diferente — o limite de 60 req/min vira 2× e invalidações não se propagam. O hub de WebSocket tem o mesmo limite (evento de uma instância não chega ao cliente da outra).</p>
+        <p><b>Evidência:</b> goal progress 120s, module guard 60s, rate limit buckets — todos in-process; 2ª instância = inconsistência.</p>
+        <p><b>Ação recomendada:</b> abstrair atrás de interface e mover para Redis quando for escalar (pré-requisito do cenário Escala) — junto com o pub/sub do hub WS, que depende da mesma infra. Ver também os relatórios 01, 07 e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-19</span><span class="ttl">Pool Postgres MaxConns=10 default — dimensionar com a escala</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o pool sobe com no máximo 10 conexões (e min 0). Suficiente hoje, mas é um teto silencioso: com 1 query de auth por request (AC-01) e rotas que seguram conexão carregando histórico inteiro (AC-06), picos saturam o pool antes do esperado e enfileiram requests.</p>
+        <p><b>Evidência:</b> <code>pool.go:28-29</code>, <code>config.go:155-156</code>; min=0.</p>
+        <p><b>Ação recomendada:</b> subir via env conforme o cenário (regra: <code>max_conns × instâncias &lt; max_connections</code> do PG). Corrigir AC-01/AC-06 primeiro — reduzem a pressão no pool sem mexer no número. Ver também os relatórios 03 e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">PF-03</span><span class="ttl">Fatiar components.css (4.480 linhas sempre carregadas)</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>components.css</code> tem 4.480 linhas num arquivo único carregado para toda tela (os 16 .css de <code>assets/styles</code> somam 8.069 linhas). Todo usuário baixa e parseia CSS de domínios que nunca abre — custo pequeno por visita, pago por todos, para sempre.</p>
+        <p><b>Evidência:</b> <code>web/app/assets/styles/components.css</code> — 4.480 linhas (medição 2026-07-02); calendário já foi fatiado (<code>calendar/*.css</code>), provando o caminho.</p>
+        <p><b>Ação recomendada:</b> fatiar por domínio seguindo o padrão já usado no calendário; faz parte do achado canônico AC-07 (P1, esforço L) detalhado no relatório 02-frontend — aqui entra como P2 por ser a fatia de performance (o grosso do AC-07 é manutenibilidade).</p>
+      </div>
+    </details>
+
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

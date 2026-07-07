@@ -138,6 +138,33 @@ Arquivos:
 - `docker-compose.yml`
 - `scripts/dev/start-web-local.sh`
 
+### 7. Dev do web inviavel no Docker Desktop/WSL2 (boot de minutos, pagina nunca abria)
+
+Sintoma (2026-07-03):
+
+- `nuxt dev` no container levava 5+ minutos SEM terminar o boot; `localhost:3003` recusava conexao
+- troca de pagina levava ate ~10 minutos; paliativos (polling + warmup do grafo inteiro) PIORARAM
+
+Causa raiz:
+
+- o bind mount `./web:/app` de caminho Windows atravessa a ponte 9P/gRPC-FUSE do WSL2 — cada stat/read de arquivo fica ~100x mais lento, e o nuxt dev toca milhares de arquivos
+- os proprios paliativos multiplicaram o I/O nessa ponte: polling do watcher (varre a arvore a cada 350ms) + warmup de TODAS as paginas no boot
+
+Resolucao:
+
+- bind mount REMOVIDO; o codigo e copiado no build da imagem (target dev) e vive no overlayfs nativo do container
+- `docker compose watch` (develop.watch, action sync) sincroniza edicoes host -> container; inotify real dentro do container, polling desligado por padrao
+- package.json/package-lock.json usam `sync+restart` (ensure-node-modules faz `npm ci` no volume)
+- ATENCAO: o watch NAO faz sync inicial (verificado empiricamente no Compose v2.38) — por isso o fluxo oficial roda `docker compose up -d --build web` antes de ligar o watch (`npm run dev:watch` / scripts/dev/watch-web.ps1); `npm run dev` = `up --build --watch`
+- resultado medido: boot completo do nuxt dev em ~60s, GET / em ~0.04s, sync de edicao chega em ~2s
+
+Arquivos:
+
+- `docker-compose.yml`
+- `scripts/dev/watch-web.ps1`
+- `package.json` (scripts dev/dev:watch)
+- `AGENT.md`, `web/AGENT.md`, `scripts/dev/AGENT.md`
+
 ## Regra arquitetural consolidada
 
 Para `operations`, seguimos agora esta separacao:

@@ -7,14 +7,30 @@ import (
 	"strings"
 )
 
+// PrincipalCacheInvalidator derruba Principals cacheados quando papel/ativacao
+// de usuario muda (AC-01). Definida UMA vez no pacote core (reusada por
+// AdminUserService); local para nao importar httpapi.
+type PrincipalCacheInvalidator interface {
+	InvalidateUser(userID string)
+	InvalidateAll()
+}
+
 // RBACService gerencia roles e permissões de uma Account.
 type RBACService struct {
-	rbac RBACRepository
+	rbac           RBACRepository
+	principalCache PrincipalCacheInvalidator
 }
 
 // NewRBACService cria o serviço RBAC.
 func NewRBACService(rbac RBACRepository) *RBACService {
 	return &RBACService{rbac: rbac}
+}
+
+// SetPrincipalCacheInvalidator liga a invalidacao do PrincipalCache (AC-01) para
+// as mutacoes de atribuicao de papel core (core.user_role_assignments alimentam o
+// papel-coarse/escopo do Principal). nil = cache desligado (no-op).
+func (s *RBACService) SetPrincipalCacheInvalidator(cache PrincipalCacheInvalidator) {
+	s.principalCache = cache
 }
 
 // ============================================================================
@@ -102,6 +118,8 @@ func (s *RBACService) UpdateRolePermissions(
 		return Role{}, err
 	}
 
+	// AC-01: NAO invalida aqui. core.role_permissions alimenta a RBAC por-account
+	// resolvida a cada request (/v2/me/context), que NAO passa pelo Principal cacheado.
 	return s.rbac.FindRole(ctx, accountID, roleID)
 }
 
@@ -117,7 +135,14 @@ func (s *RBACService) DeleteRole(
 	if role.IsLocked {
 		return ErrRoleIsLocked
 	}
-	return s.rbac.DeleteRole(ctx, accountID, roleID)
+	if err := s.rbac.DeleteRole(ctx, accountID, roleID); err != nil {
+		return err
+	}
+	// AC-01: pode afetar N usuarios (sem indice papel->sessoes) — invalida tudo.
+	if s.principalCache != nil {
+		s.principalCache.InvalidateAll()
+	}
+	return nil
 }
 
 // ============================================================================
@@ -141,7 +166,14 @@ func (s *RBACService) AssignRoleToUser(
 	if _, err := s.rbac.FindRole(ctx, accountID, roleID); err != nil {
 		return err
 	}
-	return s.rbac.AssignRoleToUser(ctx, accountID, userID, roleID)
+	if err := s.rbac.AssignRoleToUser(ctx, accountID, userID, roleID); err != nil {
+		return err
+	}
+	// AC-01: core.user_role_assignments alimenta o papel-coarse/escopo do Principal.
+	if s.principalCache != nil {
+		s.principalCache.InvalidateUser(userID)
+	}
+	return nil
 }
 
 // RemoveRoleFromUser remove a atribuição user→role. Não falha se já não existia.
@@ -149,7 +181,14 @@ func (s *RBACService) RemoveRoleFromUser(
 	ctx context.Context,
 	accountID, userID, roleID string,
 ) error {
-	return s.rbac.RemoveRoleFromUser(ctx, accountID, userID, roleID)
+	if err := s.rbac.RemoveRoleFromUser(ctx, accountID, userID, roleID); err != nil {
+		return err
+	}
+	// AC-01: core.user_role_assignments alimenta o papel-coarse/escopo do Principal.
+	if s.principalCache != nil {
+		s.principalCache.InvalidateUser(userID)
+	}
+	return nil
 }
 
 // SetUserRoles substitui em LOTE todos os papéis do usuário na account pelo
@@ -177,6 +216,10 @@ func (s *RBACService) SetUserRoles(
 	}
 	if err := s.rbac.ReplaceUserRoleAssignments(ctx, accountID, userID, roleIDs); err != nil {
 		return nil, err
+	}
+	// AC-01: replace em lote do papel-coarse/escopo do usuario — invalida o Principal.
+	if s.principalCache != nil {
+		s.principalCache.InvalidateUser(userID)
 	}
 
 	return s.ListUserRoles(ctx, accountID, userID)

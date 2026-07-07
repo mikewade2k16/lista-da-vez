@@ -3,8 +3,9 @@
   "private": true,
   "scripts": {
     "prepare": "husky",
-    "dev": "docker compose up",
+    "dev": "docker compose up --build --watch",
     "dev:detach": "docker compose up -d",
+    "dev:watch": "powershell.exe -ExecutionPolicy Bypass -File scripts\\dev\\watch-web.ps1",
     "dev:build": "docker compose build",
     "dev:down": "docker compose down",
     "dev:down:volumes": "docker compose down -v",

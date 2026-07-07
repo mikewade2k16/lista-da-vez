@@ -360,6 +360,9 @@ type Repository interface {
 	AddShare(ctx context.Context, accountID string, input AddShareInput, sharedByUserID string) (Share, error)
 	ListRelations(ctx context.Context, access AccessContext, taskID string) ([]Relation, error)
 	AddRelation(ctx context.Context, accountID string, input AddRelationInput) (Relation, error)
+	// RemoveRelation apaga a relation de um recurso (module/resourceType/resourceID)
+	// numa task da account; devolve true quando alguma linha foi removida (idempotente).
+	RemoveRelation(ctx context.Context, accountID, taskID, module, resourceType, resourceID string) (bool, error)
 	ListAudit(ctx context.Context, accountID, taskID string) ([]AuditEntry, error)
 	InsertAuditEntry(ctx context.Context, entry AuditEntry) error
 

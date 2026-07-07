@@ -6,6 +6,13 @@
 // de tema; por isso vivem aqui como paleta-semente e sao aplicadas via
 // `rgb(r g b / alpha)` no ponto de uso, igual a filosofia dos tokens.
 
+import {
+  CONTENT_TYPES,
+  CONTENT_STATUSES,
+  CONTENT_PRIORITIES,
+  type StatusTone as SharedStatusTone,
+} from '~/utils/content-taxonomy'
+
 export type RgbTriplet = readonly [number, number, number]
 
 export type CalendarEventType = 'post' | 'story' | 'reels' | 'reuniao' | 'gravacao' | 'evento'
@@ -20,7 +27,8 @@ export type CalendarEventStatus =
 
 export type CalendarPriority = 'alta' | 'media' | 'baixa'
 
-export type StatusTone = 'info' | 'success' | 'warning' | 'danger' | 'neutral'
+// StatusTone e a taxonomia sao fonte UNICA em ~/utils/content-taxonomy (compartilhada com o tasks).
+export type StatusTone = SharedStatusTone
 
 export type CalendarView = 'month' | 'week'
 
@@ -52,7 +60,25 @@ export interface CalendarEvent {
   involvedIds: string[]
   /** Anexos (imagem/video) do post. */
   media: CalendarMediaItem[]
+  /**
+   * Midia ESPELHADA da task vinculada (WAVE 6 cruzamento B): os videos da task, read-only.
+   * O back mantem em events.linked_media; o front une na "Midia do post". Somente leitura.
+   */
+  linkedMedia?: CalendarMediaItem[]
   description: string
+  /**
+   * Task vinculada (contrato C10); vazio/ausente = sem vinculo. Somente leitura: o
+   * back preenche via LEFT JOIN em tasks.task_relations, nunca vai no input.
+   */
+  taskId?: string
+  /** Versao para optimistic locking (contrato C12). Somente leitura. */
+  version?: number
+  /**
+   * Procedencia do evento (WAVE 5): 'manual' (criado na tela) | 'task' (espelho de uma task)
+   * | 'ai' (proposta confirmada). Somente leitura; o front usa 'task' para estilizar o
+   * evento-espelho de forma distinta no calendario.
+   */
+  source?: string
 }
 
 /** Anexo (imagem ou video) de um evento ou dia. `url` = /uploads/calendar/... */
@@ -65,6 +91,10 @@ export interface CalendarMediaItem {
   sizeBytes: number
   /** Poster (thumb) do video; mesmo prefixo /uploads/calendar/{accountId}/. Opcional. */
   posterUrl?: string
+  /** WAVE 6: cliente dono do anexo (UUID) ou vazio = sem cliente. Derivado do evento quando eventId setado. */
+  clientId?: string
+  /** WAVE 6 (W6-4): evento/item do dia a que o anexo pertence (UUID) ou vazio = sem item. Liga o anexo ao item/task. */
+  eventId?: string
 }
 
 /** Tetos de upload definidos NA PLATAFORMA (globais). */
@@ -93,8 +123,14 @@ export interface DayCellModel {
   inMonth: boolean
 }
 
-/** Payload de criar/atualizar um evento (tudo menos o id, que o back gera). */
-export type CalendarEventInput = Omit<CalendarEvent, 'id'>
+/**
+ * Payload de criar/atualizar um evento. Omite os campos so-leitura (id gerado pelo
+ * back, taskId resolvido por join, version do optimistic locking). `createTask` (C10)
+ * so vale na CRIACAO: cria e vincula uma task no board configurado.
+ */
+export type CalendarEventInput = Omit<CalendarEvent, 'id' | 'taskId' | 'version' | 'source'> & {
+  createTask?: boolean
+}
 
 /** Usuario da conta (candidato/atual a responsavel). */
 export interface CalendarMember {
@@ -109,16 +145,28 @@ export {
   AI_PROVIDER_BASE_URL,
   AI_PROVIDER_LABEL,
   AI_PROVIDERS,
+  AI_SECRET_PROVIDERS,
   NEUTRAL_COLOR,
   defaultCalendarConfig,
+  defaultClientAiOverride,
   hexToTriplet,
+  isEmptyClientAiOverride,
   isHexColor,
+  normalizeClientAiOverride,
   resolveClientColor,
   tripletToHex,
   type CalendarAiConfig,
+  type CalendarAiKeyStatus,
   type CalendarAiProvider,
+  type CalendarAiScopeMode,
+  type CalendarAiSecretProvider,
+  type CalendarChatConfig,
+  type CalendarChatPosition,
+  type CalendarClientAiOverride,
   type CalendarConfig,
   type CalendarHolidayFlags,
+  type CalendarTasksConfig,
+  type CalendarTranscribeProvider,
   type CalendarWhiteLabel,
 } from '~/utils/calendar-config'
 
@@ -160,28 +208,33 @@ export interface CalendarHoliday {
 
 // --- Constantes de apresentacao -------------------------------------------------
 
-export const EVENT_TYPE_META: Record<CalendarEventType, { label: string; icon: string }> = {
-  post: { label: 'Post', icon: 'i-lucide-image' },
-  story: { label: 'Story', icon: 'i-lucide-circle-play' },
-  reels: { label: 'Reels', icon: 'i-lucide-film' },
-  reuniao: { label: 'Reuniao', icon: 'i-lucide-users' },
-  gravacao: { label: 'Gravacao', icon: 'i-lucide-video' },
-  evento: { label: 'Evento', icon: 'i-lucide-calendar' },
-}
+// Os *_META sao DERIVADOS da taxonomia compartilhada (fonte unica): mesmo tipo/status/prioridade
+// que o tasks. Nao editar aqui — mexer em ~/utils/content-taxonomy.
+export const EVENT_TYPE_META = Object.fromEntries(
+  CONTENT_TYPES.map((t) => [t.value, { label: t.label, icon: t.icon }]),
+) as Record<CalendarEventType, { label: string; icon: string }>
 
-export const STATUS_META: Record<CalendarEventStatus, { label: string; tone: StatusTone }> = {
-  planejado: { label: 'Planejado', tone: 'neutral' },
-  producao: { label: 'Producao', tone: 'info' },
-  revisao: { label: 'Em revisao', tone: 'warning' },
-  aprovada: { label: 'Aprovada', tone: 'success' },
-  standby: { label: 'Standby', tone: 'warning' },
-  publicado: { label: 'Publicado', tone: 'success' },
-}
+export const STATUS_META = Object.fromEntries(
+  CONTENT_STATUSES.map((s) => [s.value, { label: s.label, tone: s.tone }]),
+) as Record<CalendarEventStatus, { label: string; tone: StatusTone }>
 
-export const PRIORITY_META: Record<CalendarPriority, { label: string; tone: StatusTone }> = {
-  alta: { label: 'Alta', tone: 'danger' },
-  media: { label: 'Media', tone: 'warning' },
-  baixa: { label: 'Baixa', tone: 'success' },
+export const PRIORITY_META = Object.fromEntries(
+  CONTENT_PRIORITIES.map((p) => [p.value, { label: p.label, tone: p.tone }]),
+) as Record<CalendarPriority, { label: string; tone: StatusTone }>
+
+// Acessores SEGUROS dos metadados (WAVE 6): nunca crasham em valor desconhecido — ex.: um
+// tipo/status vindo de um sync com vocabulario diferente (task com type "site"). Sem isso,
+// META[valorDesconhecido].icon estoura e derruba o chip/DayDrawer. Fallback = o valor default.
+export function eventTypeMeta(type: string): { label: string; icon: string } {
+  return (
+    EVENT_TYPE_META[type as CalendarEventType] ?? { label: type || 'Item', icon: 'i-lucide-file' }
+  )
+}
+export function statusMeta(status: string): { label: string; tone: StatusTone } {
+  return STATUS_META[status as CalendarEventStatus] ?? { label: status || '—', tone: 'neutral' }
+}
+export function priorityMeta(priority: string): { label: string; tone: StatusTone } {
+  return PRIORITY_META[priority as CalendarPriority] ?? { label: priority || '—', tone: 'neutral' }
 }
 
 // Paleta-semente de cores por cliente. Triplets RGB (sem `rgb()`), aplicadas com

@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 01 · Backend · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 01 — Backend</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./index.html">← Índice</a>
+      <a href="./02-frontend.html">02 Frontend →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="modulos">Módulos</button>
+      <button data-tab="qualidade">Qualidade &amp; testes</button>
+      <button data-tab="criticos">Pontos críticos</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============================== VISÃO GERAL ============================== -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">API monolítica em Go organizada em módulos plugáveis. É a peça mais madura do produto: padrão de arquitetura consistente em 20 módulos, segurança de entrada bem resolvida e CI que de fato roda os testes. As dívidas são pontuais e conhecidas — cache de autenticação desligado, listagens sem paginação e alguns arquivos gigantes.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">485</div><div class="l">arquivos .go em back/</div></div>
+    <div class="stat"><div class="n ind">93.657</div><div class="l">linhas de código Go</div></div>
+    <div class="stat"><div class="n green">20</div><div class="l">módulos plugáveis (Module Registry)</div></div>
+    <div class="stat"><div class="n">~377</div><div class="l">rotas HTTP (method-pattern Go 1.22)</div></div>
+  </div>
+
+  <div class="verdict"><b>Veredito:</b> arquitetura modular sólida e consistente — o mesmo esqueleto <code>module.go / http.go / service.go / store_postgres.go</code> se repete em todos os módulos, com <code>AGENT.md</code> documentando cada um. A base de segurança (queries parametrizadas, JSON estrito, headers completos) é acima da média para o estágio do produto. O que pesa contra: o <b>PrincipalCache existe mas está desligado</b> (1 query extra em cada request autenticado — AC-01), três famílias de listagem sem paginação (AC-06) e uma minoria de arquivos muito acima do teto de 450 linhas (AC-13).</div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Stack</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Go 1.24</b>&nbsp;— binário único, <code>net/http</code> puro com rotas method-pattern (sem framework)</li>
+        <li><span class="dot g"></span><b>pgx/v5</b>&nbsp;— acesso direto ao PostgreSQL via pool, sem ORM</li>
+        <li><span class="dot g"></span><b>gorilla/websocket</b>&nbsp;— hub realtime in-memory (presença, eventos de operação/tasks)</li>
+        <li><span class="dot g"></span><b>JWT HMAC-SHA256 + bcrypt</b>&nbsp;— sessões persistidas em <code>core.user_sessions</code> com revogação server-side</li>
+        <li><span class="dot g"></span><b>slog</b>&nbsp;— logs estruturados para stdout (coletados via docker logs)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Nota da área</h3>
+      <div class="gauge">
+        <div class="ring" style="--p:75"><b>7,5</b></div>
+        <div>Fundação forte e disciplinada; perde ponto por dívidas de performance conhecidas e não atacadas (cache de auth desligado, paginação ausente) e pela ausência de contrato formal das ~377 rotas.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>O que está bem</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Padrão de módulo idêntico nos 20 módulos + <code>AGENT.md</code> por módulo</li>
+        <li><span class="dot g"></span>Queries 100% parametrizadas (<code>$1,$2</code>) — nenhuma concatenação de SQL encontrada</li>
+        <li><span class="dot g"></span><code>DisallowUnknownFields</code> + body limitado a 1MB em todo <code>ReadJSON</code></li>
+        <li><span class="dot g"></span>CI roda <code>go test ./...</code> + migrations contra Postgres real + <code>govulncheck</code> como gate do build</li>
+        <li><span class="dot g"></span>Rate limit por identidade (60 req/min) com cota extra por conta (anti noisy-neighbor)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>O que pesa contra</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>AC-01</b> — PrincipalCache implementado e não ligado: 1 query <code>IsRevoked</code> por request autenticado</li>
+        <li><span class="dot y"></span><b>AC-06</b> — reports, analytics e BI devolvem histórico sem paginação</li>
+        <li><span class="dot b"></span><b>AC-13</b> — arquivos gigantes: <code>bi/service.go</code> com 1.739 linhas (teto: 450)</li>
+        <li><span class="dot b"></span><b>AC-08</b> — caches e rate limit em memória local travam scale-out horizontal</li>
+        <li><span class="dot b"></span><b>AC-09</b> — guard do dev secret só dispara com <code>APP_ENV</code> exatamente <code>production</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">💡 <b>Metodologia:</b> todos os números desta página foram medidos localmente em 2026-07-02 (contagem de arquivos/linhas, grep de rotas e leitura de código na branch <code>refactor/multitenant-complete</code>). O total de rotas é aproximado: 386 chamadas <code>mux.Handle</code>, das quais ~377 usam method-pattern — a diferença (~9) são handlers sem método declarado, como os de WebSocket. Nada aqui é medição de produção.</div>
+</section>
+
+<!-- ============================== MÓDULOS ============================== -->
+<section id="modulos" class="tab">
+  <h2 class="section">Módulos</h2>
+  <p class="lead">O backend é um monólito modular: cada domínio vive em <code>back/internal/modules/&lt;nome&gt;</code> e se registra num Module Registry central que monta rotas e event handlers. Os 20 módulos somam ~89.101 linhas (média ~4.455/módulo) — o restante das 93.657 linhas fica na plataforma (httpapi, app, database, events).</p>
+
+  <div class="card">
+    <h3>Anatomia de um módulo</h3>
+    <div class="layer"><div class="num">1</div><div class="txt"><b>module.go</b> — registro no Module Registry: recebe <code>Dependencies</code> (pool, logger, bus, auth middleware, guard de módulos) e devolve o handle do módulo</div></div>
+    <div class="layer"><div class="num">2</div><div class="txt"><b>http.go</b> — handlers HTTP com method-pattern (<code>GET /v1/...</code>), parse/validação de input via <code>ReadJSON</code> estrito</div></div>
+    <div class="layer"><div class="num">3</div><div class="txt"><b>service.go</b> — regra de negócio, autorização fina e publicação de eventos no bus</div></div>
+    <div class="layer"><div class="num">4</div><div class="txt"><b>store_postgres.go</b> — SQL parametrizado direto no pgx; escopo por <code>tenant_id</code>/<code>account_id</code> em toda query (isolamento é aplicativo, sem RLS)</div></div>
+    <div class="layer"><div class="num">5</div><div class="txt"><b>AGENT.md</b> — contrato do módulo para humanos e agentes: escopo, responsabilidades e regras. Existe em todos os módulos e é mantido junto com o código</div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Pipeline de um request (medido em app.go:411-450)</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node acc"><b>SecurityHeaders</b><span class="m">nosniff, X-Frame DENY, CSP, COOP; HSTS só em produção</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>CORS + RequestID</b><span class="m">whitelist de origens; id por request p/ correlação de log</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>RateLimit</b><span class="m">token bucket 60 req/min por user/token/IP + cota 5× por X-Account-Id; 429 + Retry-After</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Logging + Recover</b><span class="m">slog estruturado; panic vira 500 logado</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Gzip</b><span class="m">mais interno p/ logar o status real; pula WS e uploads</span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node"><b>AccountModulesGuard</b><span class="m">403 module_disabled por prefixo de path; cache 60s + invalidação por evento; bypass p/ platform_admin</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>RequireAuth[WithAccount]</b><span class="m">valida JWT + membership da conta; consulta IsRevoked no banco A CADA request — cache existe e está desligado (AC-01)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>handler</b><span class="m">http.go do módulo</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>service</b><span class="m">regra de negócio + eventos</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>store → pgx pool</b><span class="m">SQL parametrizado; pool max 10 conexões default (AC-19)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Os 20 módulos</h3>
+    <table>
+      <thead><tr><th>Módulo</th><th>Propósito</th><th>Linhas</th></tr></thead>
+      <tbody>
+        <tr><td><code>queue</code></td><td>Domínio central da fila de atendimento; 7 subpacotes: operations, alerts, analytics, reports, feedback, consultants, settings</td><td><b>22.233</b> <span class="tag">maior módulo</span></td></tr>
+        <tr><td><code>crm</code></td><td>Domínio CRM/ERP da plataforma (integração Pérola/FTP, clientes, workspaces ERP)</td><td><b>12.237</b></td></tr>
+        <tr><td><code>cardapio</code></td><td>Cardápios online multitenant; API pública <code>/v1/public/cardapio/*</code> consumida pelo front TAVOLA</td><td><b>8.509</b></td></tr>
+        <tr><td><code>core</code></td><td>Plataforma multi-tenant nova: users, accounts, organizations, roles, permissions, sessions</td><td><b>8.136</b></td></tr>
+        <tr><td><code>tasks</code></td><td>Kanban multi-tenant com RBAC dinâmico, tracking server-side de tempo e compartilhamento com cliente externo</td><td><b>5.125</b></td></tr>
+        <tr><td><code>access</code></td><td>Catálogo de permissões do painel, grants padrão por papel e overrides por usuário</td><td>—</td></tr>
+        <tr><td><code>auth</code></td><td>Login, emissão/validação de JWT HMAC, sessões persistidas e middleware RequireAuth</td><td>—</td></tr>
+        <tr><td><code>automation</code></td><td>Painel de automação WhatsApp/IA; proxy escopado da WAHA (n8n/WAHA nunca expostos ao cliente)</td><td>—</td></tr>
+        <tr><td><code>bi</code></td><td>Integrações server-side com BIs externos; proxy controlado da Pérola BI</td><td>—</td></tr>
+        <tr><td><code>bio</code></td><td>Páginas link-in-bio: CRUD no painel + API pública/SSE consumida pelo front crow-nuxt</td><td>—</td></tr>
+        <tr><td><code>calendar</code></td><td>Agenda de conteúdo por cliente da agência: CRUD, mídia, perfil e planos de IA</td><td>—</td></tr>
+        <tr><td><code>meta_ads</code></td><td>Integração com a Meta Marketing API com cache local (fonte de verdade dos relatórios)</td><td>—</td></tr>
+        <tr><td><code>notifications</code></td><td>Notificações in-app com adapter de entrega</td><td>—</td></tr>
+        <tr><td><code>operationgoals</code></td><td>Metas de operação por loja/consultor/mês (<code>/v1/operations/goals</code>)</td><td>—</td></tr>
+        <tr><td><code>realtime</code></td><td>Transporte em tempo real: hub WebSocket, presença e distribuição de eventos</td><td>—</td></tr>
+        <tr><td><code>roadmap</code></td><td>Inventário editável de módulos/páginas pendentes e regras canônicas para agentes</td><td>—</td></tr>
+        <tr><td><code>site</code></td><td>Leads, produtos e tracking do site público do tenant</td><td>—</td></tr>
+        <tr><td><code>stores</code></td><td>Catálogo de lojas acessíveis no tenant e operações administrativas de loja</td><td>—</td></tr>
+        <tr><td><code>tenants</code></td><td>Leitura do escopo de cliente/grupo acessível ao usuário autenticado</td><td>—</td></tr>
+        <tr><td><code>users</code></td><td>Administração de usuários da plataforma no modelo multitenant</td><td>—</td></tr>
+      </tbody>
+    </table>
+    <div class="legend"><span>Linhas medidas apenas para o top 5; os demais não foram medidos individualmente nesta sessão.</span></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Tempo real (realtime)</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>gorilla/websocket: writeWait 10s, pongWait 60s, ping 54s, mensagem máx. 1.024 bytes</li>
+        <li><span class="dot g"></span><code>CheckOrigin</code> valida contra a whitelist de CORS — não aceita origem arbitrária</li>
+        <li><span class="dot y"></span>Hub e presença (TTL 30s) são in-memory — funciona em 1 instância; escalar exige pub/sub (ver AC-08)</li>
+        <li><span class="dot g"></span>SSE público no bio: <code>/v1/public/bio/{slug}/stream</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Superfície pública (sem auth)</h3>
+      <ul class="clean">
+        <li><span class="dot b"></span><code>/v1/public/bio/{slug}/config|stream</code> — consumida pelo front crow-nuxt</li>
+        <li><span class="dot b"></span><code>/v1/public/cardapio/{slug}/catalog|orders</code> — consumida pelo TAVOLA, com rate limit</li>
+        <li><span class="dot b"></span><code>/v1/auth/gateway/verify</code> — SSO via forward_auth do Caddy (platform_admin)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== QUALIDADE & TESTES ============================== -->
+<section id="qualidade" class="tab">
+  <h2 class="section">Qualidade &amp; testes</h2>
+  <p class="lead">O backend tem a melhor postura de testes do repositório: 13% das linhas são teste e — ponto que o briefing inicial errou — o CI <b>roda</b> esses testes como gate do build de imagem. Cobertura percentual por pacote não foi medida nesta sessão.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">65</div><div class="l">arquivos _test.go</div></div>
+    <div class="stat"><div class="n ind">12.188</div><div class="l">linhas de teste</div></div>
+    <div class="stat"><div class="n green">13%</div><div class="l">das linhas Go são teste</div></div>
+    <div class="stat"><div class="n green">gate</div><div class="l">job de teste bloqueia o build no CI</div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>O que o CI executa (build-images.yml) — ponto forte</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node acc"><b>go test ./...</b><span class="m">suíte completa do backend</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>TestAllMigrationsApply</b><span class="m">aplica TODAS as migrations contra um Postgres 16 real (service container)</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>govulncheck</b><span class="m">vulnerabilidades conhecidas nas deps Go</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>vitest + npm audit</b><span class="m">lado front no mesmo gate</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>build + push GHCR</b><span class="m">só roda se o job de teste passar</span></div>
+      </div>
+    </div>
+    <div class="note" style="margin-bottom:0">✅ <b>Correção de narrativa:</b> o briefing inicial desta série dizia que "os testes ficavam fora do CI". A verificação provou o contrário — o job de teste é pré-requisito do build de imagem, e uma migration quebrada falha o pipeline antes de qualquer deploy. Isso é um diferencial real de maturidade.</div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Práticas confirmadas no código</h3>
+      <ul class="clean">
+        <li><span class="pill ok">OK</span>&nbsp;Queries 100% parametrizadas (<code>$1,$2</code>) — nenhuma concatenação de SQL encontrada no grep</li>
+        <li><span class="pill ok">OK</span>&nbsp;<code>ReadJSON</code> com <code>DisallowUnknownFields</code> + <code>io.LimitReader</code> de 1MB em todo parse de body</li>
+        <li><span class="pill ok">OK</span>&nbsp;Headers de segurança completos: nosniff, X-Frame-Options DENY, Referrer-Policy strict, COOP, CSP <code>default-src 'none'</code>, HSTS em HTTPS</li>
+        <li><span class="pill ok">OK</span>&nbsp;Rotas com method-pattern do Go 1.22 (<code>"GET /v1/..."</code>) — método errado vira 405 automático, sem switch manual</li>
+        <li><span class="pill ok">OK</span>&nbsp;Guard do dev secret existe e tem teste (<code>config_test.go:75-82</code>) — com a ressalva do AC-09</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Limites do que foi medido</h3>
+      <ul class="clean">
+        <li><span class="dot y"></span>Cobertura por pacote (<code>go test -cover</code>) não medida — o 13% é proporção de linhas, não cobertura de branches</li>
+        <li><span class="dot y"></span>Distribuição dos testes entre módulos não levantada; módulos grandes como <code>queue</code> podem concentrar ou carecer de testes</li>
+        <li><span class="dot y"></span>Não há testes de carga/integração HTTP end-to-end no repo (smoke do deploy é só <code>curl /healthz</code>)</li>
+        <li><span class="dot b"></span>Sem OpenAPI/spec das ~377 rotas: o contrato vive só no código e nos AGENT.md (ver BE-01 em Oportunidades)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="scorecols" style="margin-top:16px">
+    <div class="score"><div class="ring" style="--p:85"><b>8,5</b></div><div><div class="lbl">Consistência</div><div class="why">mesmo padrão nos 20 módulos, AGENT.md em dia</div></div></div>
+    <div class="score"><div class="ring" style="--p:80"><b>8,0</b></div><div><div class="lbl">Segurança de entrada</div><div class="why">SQL parametrizado, JSON estrito, headers completos</div></div></div>
+    <div class="score"><div class="ring" style="--p:70"><b>7,0</b></div><div><div class="lbl">Testes</div><div class="why">13% de linhas de teste + CI como gate; cobertura real não medida</div></div></div>
+    <div class="score"><div class="ring" style="--p:55"><b>5,5</b></div><div><div class="lbl">Performance</div><div class="why">cache de auth desligado + listagens sem paginação</div></div></div>
+  </div>
+</section>
+
+<!-- ============================== PONTOS CRÍTICOS ============================== -->
+<section id="criticos" class="tab">
+  <h2 class="section">Pontos críticos</h2>
+  <p class="lead">Seis achados canônicos tocam o backend — cinco detalhados abaixo; o sexto (AC-10, refresh token) está no backlog da aba Oportunidades. Nenhum é incêndio de segurança; o P0 é uma dívida de performance com correção pequena e retorno em toda requisição autenticada do sistema.</p>
+
+  <div class="card">
+    <h3><span class="pill p0">P0</span>&nbsp; AC-01 — PrincipalCache implementado mas desligado</h3>
+    <p style="font-size:13.5px;color:#cdd6e8">O cache de principal está pronto em <code>httpapi/principal_cache.go:24</code>, com interface em <code>auth/service.go:12</code> e o setter <code>SetPrincipalCache</code> na linha 59 — mas <b>zero chamadas fora de testes</b>: nada em <code>app.go</code> liga o cache. O próprio <code>auth/AGENT.md:97</code> confirma o estado. Consequência prática: <code>Authenticate</code> consulta <code>IsRevoked</code> no banco <b>a cada request autenticado</b>. Como todo o painel é autenticado, isso é 1 query extra em praticamente 100% do tráfego — a query mais executada do sistema é uma checagem que quase nunca muda de resposta. O detalhe que dói: a infraestrutura de invalidação já existe (eventos <code>user.session.revoked</code> e <code>role.permissions.changed</code> no bus) — falta só o wiring. Esforço S, impacto alto. Ver também 05-Performance e a página 07.</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3><span class="pill p1">P1</span>&nbsp; AC-06 — Listagens sem paginação (reports, analytics, BI)</h3>
+    <ul class="clean">
+      <li><span class="dot r"></span><b>Reports:</b> <code>listHistoryQuery</code> não tem LIMIT/OFFSET (<code>queue/reports/store_postgres.go:39-150</code>) e serve <code>/v1/reports/overview|results|recent-services</code> — o histórico inteiro da loja vem do banco a cada chamada</li>
+      <li><span class="dot r"></span><b>Analytics:</b> <code>loadServiceHistory</code> carrega o histórico COMPLETO da loja sem LIMIT (<code>queue/operations/store_postgres.go:565-617</code>) para alimentar <code>/v1/analytics/ranking|data|intelligence</code></li>
+      <li><span class="dot r"></span><b>BI:</b> <code>/v1/bi/perola/overview</code> devolve até 5.000 registros por dataset num payload único — <code>pageLimit=100 × maxPages=50</code> (<code>bi/service.go:23-24</code>)</li>
+    </ul>
+    <p style="font-size:13.5px;color:#cdd6e8">Hoje funciona porque as lojas são pequenas; o custo cresce linear com o histórico e a conta chega junto com o sucesso do produto. Correção: LIMIT/OFFSET ou cursor + agregação no SQL, com teto por página. Esforço M, impacto alto. Ver também 03-Banco de dados e 05-Performance.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3><span class="pill p2">P2</span>&nbsp; AC-13 — Arquivos Go gigantes</h3>
+      <p style="font-size:13.5px;color:#cdd6e8">Os cinco maiores arquivos: <code>bi/service.go</code> 1.739, <code>queue/operations/store_postgres.go</code> 961, <code>queue/alerts/service.go</code> 831, <code>crm/erp/model.go</code> 798 e <code>realtime/service_tasks.go</code> 792 — a medição aponta 4 dos 5 acima do teto de 450 linhas dos princípios de engenharia do projeto. É exceção, não regra (485 arquivos no total), mas o <code>bi/service.go</code> em quase 4× o teto merece um split em subpacotes (client, aggregator, filter). Os demais entram na manutenção normal.</p>
+    </div>
+    <div class="card">
+      <h3><span class="pill p2">P2</span>&nbsp; AC-08 — Caches em memória local</h3>
+      <p style="font-size:13.5px;color:#cdd6e8">Quatro caches vivem no processo: goal progress (TTL 120s), module guard (60s), image cache do site e os buckets do rate limit. Em 1 instância, funciona bem e é rápido. O problema aparece no scale-out: uma 2ª instância teria caches e limites <b>inconsistentes</b> entre si (um usuário pode ser limitado numa instância e não na outra; módulo desabilitado pode continuar ativo até o TTL da outra). Não é bug hoje — é um pré-requisito documentado do cenário de escala: abstrair atrás de interface e mover para Redis quando for a hora. Ver também 05-Performance, 07 e 09.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h3><span class="pill p2">P2</span>&nbsp; AC-09 — Guard do dev secret: existe, mas só para <code>production</code> exato</h3>
+    <p style="font-size:13.5px;color:#cdd6e8"><b>A história certa, em ordem:</b> o briefing inicial desta série afirmava que o secret default de desenvolvimento (<code>devTokenSecretDefault="dev-secret-change-me"</code>, <code>config.go:12</code>) podia ir para produção sem nenhuma proteção. A verificação provou que <b>a proteção existe</b>: <code>Validate()</code> (<code>config.go:193-208</code>) rejeita o secret default quando <code>Env=="production"</code> (linha 199), e há teste cobrindo isso (<code>config_test.go:75-82</code>). O que sobra de risco é a comparação exata com a string <code>production</code>: um operador que configure <code>APP_ENV=prod</code> ou <code>staging</code> passa pelo guard com o secret default — e JWT HMAC com secret conhecido significa forjar token de qualquer usuário. Correção fail-closed simples: validar sempre que <code>Env != development/test</code>. Ver também 06-Segurança.</p>
+  </div>
+
+  <div class="note">⚠️ <b>O que NÃO apareceu aqui:</b> não foi encontrada concatenação de SQL, parse de JSON permissivo ou rota autenticada sem middleware. Os críticos do backend são de performance e operação, não de correção — um perfil raro e positivo para um produto nesta fase.</div>
+</section>
+
+<!-- ============================== OPORTUNIDADES ============================== -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog priorizado do backend. P0 = agir já · P1 = próximas semanas · P2 = quando escalar. Achados AC-* são canônicos da série (id, prioridade e evidência fixos); BE-* são locais desta página.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+
+    <details class="item" data-p="p0">
+      <summary><span class="id">AC-01</span><span class="ttl">PrincipalCache implementado mas desligado — auth consulta o banco a cada request</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o cache de principal está codificado e testado, mas nada o liga no boot — <code>Authenticate</code> faz a query <code>IsRevoked</code> em toda requisição autenticada, tornando a checagem de sessão a query mais executada do sistema.</p>
+        <p><b>Evidência:</b> <code>httpapi/principal_cache.go:24</code> + <code>auth/AGENT.md:97</code>; zero wiring em <code>app.go</code> (nenhuma chamada a <code>SetPrincipalCache</code> fora de testes).</p>
+        <p><b>Ação recomendada:</b> ligar o cache com TTL curto + invalidação pelos eventos realtime já existentes (<code>user.session.revoked</code>, <code>role.permissions.changed</code>). Ver também 05-Performance e página 07.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-06</span><span class="ttl">Listagens sem paginação (reports, analytics, BI)</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> três famílias de endpoint carregam o histórico completo do banco em cada chamada; o custo cresce linear com o volume de atendimentos e datasets.</p>
+        <p><b>Evidência:</b> <code>queue/reports/store_postgres.go:39-150</code> sem LIMIT; <code>queue/operations/store_postgres.go:565-617</code> histórico completo da loja; BI até 5.000 registros por payload (<code>bi/service.go:23-24</code>, pageLimit=100 × maxPages=50).</p>
+        <p><b>Ação recomendada:</b> LIMIT/OFFSET ou cursor + agregação no SQL; teto por página. Ver também 03-Banco de dados e 05-Performance.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-13</span><span class="ttl">Arquivos Go gigantes (4 dos top 5 acima de 450 linhas)</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> uma minoria de arquivos concentra responsabilidade demais e fura o teto de 450 linhas dos princípios de engenharia do projeto, dificultando revisão e manutenção.</p>
+        <p><b>Evidência:</b> <code>bi/service.go</code> 1.739 linhas; <code>queue/operations/store_postgres.go</code> 961; <code>queue/alerts/service.go</code> 831; <code>crm/erp/model.go</code> 798.</p>
+        <p><b>Ação recomendada:</b> split do <code>bi</code> em subpacotes (client, aggregator, filter); os demais quebrar na manutenção, sem big-bang.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-09</span><span class="ttl">Guard do dev secret só dispara com APP_ENV exatamente 'production'</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a proteção contra subir com o secret JWT default existe e tem teste — mas compara a string exata <code>production</code>; ambientes nomeados <code>prod</code> ou <code>staging</code> passam com o secret default, o que permitiria forjar tokens.</p>
+        <p><b>Evidência:</b> <code>config.go:193-208</code> (guard existe e tem teste em <code>config_test.go:75-82</code>); 'prod'/'staging' passam com secret default.</p>
+        <p><b>Ação recomendada:</b> fail-closed — validar sempre que <code>Env != development/test</code>. Ver também 06-Segurança.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-08</span><span class="ttl">Caches e rate limit em memória local — travam scale-out horizontal</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto (na escala)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> caches de goal progress (120s), module guard (60s), image cache e buckets de rate limit vivem no processo; uma 2ª instância da API teria estado inconsistente (limites e gating divergentes entre réplicas).</p>
+        <p><b>Evidência:</b> goal progress 120s, module guard 60s, rate limit buckets — todos in-process; 2ª instância = inconsistência.</p>
+        <p><b>Ação recomendada:</b> abstrair atrás de interface e mover para Redis quando for escalar — é pré-requisito de software do cenário Escala. Ver também 05-Performance, 07 e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">BE-01</span><span class="ttl">Sem OpenAPI/spec das ~377 rotas</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o contrato da API vive apenas no código (method-patterns em <code>http.go</code>) e nos AGENT.md por módulo. Sem uma spec formal, qualquer integração externa (automação n8n, fronts separados TAVOLA/crow-nuxt, futuros clientes) depende de ler código Go, e mudanças de payload não têm validação de contrato.</p>
+        <p><b>Evidência:</b> ~377 rotas method-pattern medidas por grep em <code>back/internal</code>; nenhum arquivo openapi/swagger no repositório.</p>
+        <p><b>Ação recomendada:</b> começar pequeno — especificar primeiro a superfície pública (<code>/v1/public/*</code>) e as rotas consumidas pela automação; gerar/validar via CI depois. Não precisa ser big-bang das 377.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-10</span><span class="ttl">Sem refresh token (sessão de 12h, logout só server-side)</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o access token JWT vive ~12h sem mecanismo de renovação; encurtar o TTL hoje significa deslogar usuários no meio da operação, então o TTL longo compensa a ausência de refresh — trade-off que aumenta a janela de uso de um token vazado.</p>
+        <p><b>Evidência:</b> <code>auth/tokens.go</code>; TTL via <code>AUTH_TOKEN_TTL</code> (~12h); sessões revogáveis em <code>core.user_sessions</code> (logout → 401).</p>
+        <p><b>Ação recomendada:</b> refresh token rotativo + encurtar o TTL do access. Achado canônico da série, detalhado em 06-Segurança — registrado aqui porque a implementação é no módulo <code>auth</code>.</p>
+      </div>
+    </details>
+
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

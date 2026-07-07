@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 02 · Frontend · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 02 — Frontend</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./01-backend.html">← 01 Backend</a>
+      <a href="./03-banco-de-dados.html">03 Banco de dados →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="arquitetura">Arquitetura</button>
+      <button data-tab="design">Design system &amp; CSS</button>
+      <button data-tab="qualidade">Qualidade &amp; testes</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ===================== VISÃO GERAL ===================== -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">O frontend do Omni é um painel SPA único que concentra 13+ domínios de produto (operação realtime, CRM/ERP, tasks, cardápio, calendário com IA, meta ads, financeiro…). É grande, funcional e com decisões de engenharia acima da média para o estágio — mas carrega dívida clara de tamanho de arquivo e de cobertura de testes.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">622</div><div class="l">arquivos .vue + .ts (app 537 + layers 85)</div></div>
+    <div class="stat"><div class="n ind">163.129</div><div class="l">linhas (app 137.161 + layers 25.968)</div></div>
+    <div class="stat"><div class="n green">313</div><div class="l">componentes .vue</div></div>
+    <div class="stat"><div class="n">49</div><div class="l">páginas em app/pages (+ páginas de layers)</div></div>
+  </div>
+
+  <div class="verdict"><b>Veredito:</b> front funcional e rico em features, com fundações boas (api-client com dedupe, permissões fail-closed, lazy loading real com retry) — mas <b>105 arquivos acima do teto de 450 linhas</b> e <b>apenas 17 arquivos de teste para 313 componentes</b> tornam a manutenção cada vez mais cara. A dívida é de disciplina, não de arquitetura.</div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Stack</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Nuxt 4.4.2</b>&nbsp;— 100% SPA: 39 routeRules com <code>ssr:false</code>; o painel inteiro é client-rendered por decisão explícita (bootstrap de auth no servidor era frágil no hard reload).</li>
+        <li><span class="dot g"></span><b>Vue 3 + Pinia 3.0.4</b>&nbsp;— 37 stores de código + 61 composables.</li>
+        <li><span class="dot g"></span><b>Tailwind 4.3 + Nuxt UI 4.7.1</b>&nbsp;— utilitários + biblioteca de componentes, complementados por CSS próprio (ver aba Design).</li>
+        <li><span class="dot g"></span><b>TipTap 3</b> (editor rico) e <b>ApexCharts 5</b> (gráficos BI/analytics).</li>
+        <li><span class="dot y"></span><b>Vitest 2.1.9</b>&nbsp;— instalado e no CI, mas subutilizado (17 arquivos de teste).</li>
+        <li><span class="dot b"></span><b>Node 24.11.1</b> no ambiente de build.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Leitura rápida</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Comunicação com a API centralizada num único cliente (<code>api-client.ts</code>, 331 linhas) — sem fetch espalhado.</li>
+        <li><span class="dot g"></span>Realtime via WebSocket com composables dedicados; polling só onde faz sentido (IA do calendário, feedback).</li>
+        <li><span class="dot g"></span>Gating de permissão fail-closed com 28 workspaces mapeados.</li>
+        <li><span class="dot y"></span>BFF Nitro mock de finance ainda vivo em <code>web/server/</code> — única parte do front que não fala com o banco real (AC-12).</li>
+        <li><span class="dot r"></span>105 arquivos acima de 450 linhas (AC-07) e cobertura de teste baixa (AC-15).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">💡 <b>Metodologia:</b> todos os números desta página vêm de medição local em 2026-07-02 (branch <code>refactor/multitenant-complete</code>, working tree com mudanças não commitadas). Descrições qualitativas foram conferidas lendo o código-fonte. Nada aqui é medição de produção.</div>
+</section>
+
+<!-- ===================== ARQUITETURA ===================== -->
+<section id="arquitetura" class="tab">
+  <h2 class="section">Arquitetura</h2>
+  <p class="lead">Nuxt Layers para os domínios maiores + um <code>app/</code> central organizado por domínio. Toda a comunicação com o backend Go passa por um cliente único; o realtime tem camada própria de composables sobre WebSocket.</p>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3>Camadas (4 Nuxt Layers + app/)</h3>
+    <div class="layer"><div class="num">1</div><div class="txt"><b>layers/core</b> — autenticação, tema (useOmniTheme/useThemeStudio), administração e componentes base compartilhados. É a fundação que as demais camadas estendem.</div></div>
+    <div class="layer"><div class="num">2</div><div class="txt"><b>layers/queue</b> — fila de atendimento / operação (o domínio original do produto).</div></div>
+    <div class="layer"><div class="num">3</div><div class="txt"><b>layers/tasks</b> — kanban de tarefas, com páginas e stores próprios (inclui os 4 únicos arquivos de teste fora do app/).</div></div>
+    <div class="layer"><div class="num">4</div><div class="txt"><b>layers/finance</b> — financeiro; hoje ainda alimentado pelo BFF mock (ver AC-12 abaixo).</div></div>
+    <div class="layer"><div class="num">5</div><div class="txt"><b>app/</b> — 49 páginas, componentes organizados por domínio (<code>components/calendar/</code>, <code>components/crm/</code>, <code>components/roadmap/</code>…), 37 stores Pinia, 61 composables e um diretório <code>domain/</code> com lógica pura (permissões, api de calendário etc.), separada da UI.</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3>Como o front fala com a API</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Componente / Store</b><span class="m">Pinia + composables por domínio</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>api-client.ts (331 linhas)</b><span class="m">dedupe de GETs em voo · loading global só após 200ms (sem flicker) · Bearer via cookie <code>ldv_access_token</code></span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Plugins bridge</b><span class="m">account-id-bridge injeta <code>X-Account-Id</code> · auth-bridge trata 401/expiração</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>API Go</b><span class="m">~377 rotas REST + WS</span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node"><b>Realtime (WS)</b><span class="m"><code>useRealtimeConnection</code> (conexão) → <code>useContextRealtime</code> / <code>useOperationsRealtime</code> (assinaturas por contexto)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Polling pontual</b><span class="m">planos de IA do calendário a cada 3s (<code>useCalendarAiPlans.ts:8</code>) e chat de feedback (<code>useFeedbackChat.js:167</code>) — resto é WS ou sob demanda</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>BFF mock (finance)</b><span class="m">web/server/ — Nitro em memória, fora do banco real (AC-12)</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Permissões no front</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><code>domain/utils/permissions.ts</code> — 916 linhas, 28 workspaces com <code>view</code>/<code>editPermission</code>, papéis de consultant a platform_admin.</li>
+        <li><span class="dot g"></span>Gating <b>fail-closed</b> por módulo: sem permissão explícita = sem acesso, alinhado ao RBAC do backend.</li>
+        <li><span class="dot y"></span>Padrão obrigatório <code>isPlatformAdmin || has(...)</code> em todo menu/seção: <code>has()</code> retorna false para o platform_admin (que não tem permissões granulares), então esquecer o curto-circuito faz a UI sumir para o admin. É convenção manual — não há lint que garanta.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>AC-12 — BFF mock de finance ainda vivo <span class="pill p1">P1</span></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 8px">10 arquivos em <code>web/server/</code>, todos de finance; o restante do BFF já foi removido conforme o ADR 0002. Rotas Nitro servidas de um store em memória (<code>financeMockStore.ts</code>) — dados somem no restart e não existem no banco:</p>
+      <ul class="clean">
+        <li><span class="dot r"></span><code>GET/PUT /api/admin/finance-config</code></li>
+        <li><span class="dot r"></span><code>GET /api/admin/finance-config/recurring-clients</code></li>
+        <li><span class="dot r"></span><code>GET/POST /api/admin/finance-sheets</code></li>
+        <li><span class="dot r"></span><code>GET/PUT/DELETE /api/admin/finance-sheets/[id]</code></li>
+        <li><span class="dot r"></span><code>PATCH /api/admin/finance-sheets/[id]/lines/[lineId]</code></li>
+      </ul>
+      <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0">Ação: portar finance para a API Go e apagar <code>web/server/</code>. Ver também o relatório 07.</p>
+    </div>
+  </div>
+
+  <div class="note">💡 A decisão de SPA total (39 <code>ssr:false</code> em <code>nuxt.config.ts</code>) é documentada no próprio config: rota de painel fora da lista roda SSR e o bootstrap de auth no servidor deslogava/estourava no hard reload. O efeito colateral é que <b>toda rota nova precisa ser adicionada manualmente</b> — e há um caso recente escapando (FE-03, aba Oportunidades).</div>
+</section>
+
+<!-- ===================== DESIGN SYSTEM & CSS ===================== -->
+<section id="design" class="tab">
+  <h2 class="section">Design system &amp; CSS</h2>
+  <p class="lead">Tokens centralizados com 4 temas, complementando Tailwind/Nuxt UI. O problema não é a abordagem — é a concentração: mais da metade do CSS próprio vive num único arquivo.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">16</div><div class="l">arquivos .css em assets/styles</div></div>
+    <div class="stat"><div class="n ind">8.069</div><div class="l">linhas de CSS próprio no total</div></div>
+    <div class="stat"><div class="n" style="color:var(--yellow)">4.480</div><div class="l">linhas só em components.css (monolítico)</div></div>
+    <div class="stat"><div class="n green">4</div><div class="l">temas: light · dark · apple-blue · liquidglass</div></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Estrutura de estilos</h3>
+      <table>
+        <thead><tr><th>Arquivo</th><th>Linhas</th><th>Papel</th></tr></thead>
+        <tbody>
+          <tr><td><code>components.css</code></td><td>4.480</td><td>Monólito multi-domínio (parte do AC-07)</td></tr>
+          <tr><td><code>tasks-modal.css</code></td><td>590</td><td>Modal de tasks</td></tr>
+          <tr><td><code>calendar/notes-drawer.css</code></td><td>423</td><td>Calendário — drawer de notas</td></tr>
+          <tr><td><code>calendar/ai.css</code></td><td>363</td><td>Calendário — planos de IA</td></tr>
+          <tr><td><code>calendar/config.css</code></td><td>352</td><td>Calendário — configuração</td></tr>
+          <tr><td><code>omni-tokens.css</code></td><td>—</td><td>Tokens dos 4 temas (fonte de verdade visual)</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">O subdiretório <code>calendar/</code> (7 arquivos fatiados por preocupação) mostra o padrão desejado; <code>components.css</code> é o legado que ainda não passou pelo mesmo tratamento.</p>
+    </div>
+    <div class="card">
+      <h3>Bugs conhecidos de tema (verificados)</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Tema liquidglass rejeitado pelo back:</b> a whitelist de <code>normalizeAppearanceTheme</code> aceita só <code>light | dark | apple | custom</code> (<code>back/internal/modules/queue/settings/sections.go:207-217</code>), enquanto os tokens do front definem <code>apple-blue</code> e <code>liquidglass</code>. Salvar a aparência com liquidglass cai silenciosamente no fallback. Vira FE-01.</li>
+        <li><span class="dot y"></span><b>Aparência do platform_admin sem tenant só em localStorage:</b> sem tenant ativo, a preferência de tema do admin não persiste no banco — troca de navegador/máquina perde a escolha. Vira FE-02.</li>
+        <li><span class="dot b"></span>Há trabalho em andamento na working tree (<code>core/platform_appearance_*</code>, não commitado) cujo comentário indica a intenção de temas novos não exigirem deploy do back — endereçaria a causa raiz do item acima.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Relação com Tailwind / Nuxt UI</h3>
+    <p style="font-size:13.5px;color:#cdd6e8;margin:0">O CSS próprio não compete com o Tailwind: os tokens em <code>omni-tokens.css</code> definem a identidade (cores, superfícies, temas) e os arquivos por domínio cobrem componentes complexos (calendário, modais, apresentação) onde utility-first ficaria ilegível. O risco real é o <code>components.css</code>: 4.480 linhas num arquivo só significam que qualquer ajuste visual exige buscar seletores num monólito, e estilos mortos não são detectáveis. A recomendação do AC-07 (ver aba Oportunidades) inclui fatiá-lo por domínio, seguindo o exemplo já dado pelo diretório <code>calendar/</code>.</p>
+  </div>
+</section>
+
+<!-- ===================== QUALIDADE & TESTES ===================== -->
+<section id="qualidade" class="tab">
+  <h2 class="section">Qualidade &amp; testes</h2>
+  <p class="lead">Os dois maiores passivos do front estão aqui: arquivos gigantes (AC-07) e cobertura de teste baixa (AC-15). Do outro lado da balança, a engenharia de carregamento é um ponto forte genuíno.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n" style="color:var(--red)">105</div><div class="l">arquivos acima do teto de 450 linhas</div></div>
+    <div class="stat"><div class="n" style="color:var(--red)">17</div><div class="l">arquivos .test.ts (13 app + 4 layers/tasks)</div></div>
+    <div class="stat"><div class="n cyan">313</div><div class="l">componentes .vue para essa cobertura</div></div>
+    <div class="stat"><div class="n green">5</div><div class="l">componentes pesados com lazy loading real</div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>AC-07 — Maiores arquivos (top 10 medido; a lista completa tem 105) <span class="pill p1">P1</span></h3>
+    <table>
+      <thead><tr><th>#</th><th>Arquivo</th><th>Linhas</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><code>composables/useTasksPageContext.ts</code></td><td>3.029</td><td>6,7× o teto — orquestra a página de tasks inteira</td></tr>
+        <tr><td>2</td><td><code>components/roadmap/roadmap-data.ts</code></td><td>2.614</td><td>Majoritariamente <b>dado declarativo</b> (fases/itens do roadmap), não lógica — o menos grave da lista, mas mereceria virar JSON/split por fase</td></tr>
+        <tr><td>3</td><td><code>MultiStoreGoalsSection.vue</code></td><td>2.334</td><td>Componente-página de metas multi-loja</td></tr>
+        <tr><td>4</td><td><code>layers/tasks/stores/tasks.ts</code></td><td>2.182</td><td>Store única do kanban</td></tr>
+        <tr><td>5</td><td><code>stores/erp.ts</code></td><td>1.566</td><td>Store do ERP</td></tr>
+        <tr><td>6</td><td><code>layers/tasks/pages/tasks.vue</code></td><td>1.408</td><td>Página do kanban</td></tr>
+        <tr><td>7</td><td><code>ErpCrmWorkspace.vue</code></td><td>1.329</td><td>Workspace ERP/CRM</td></tr>
+        <tr><td>8</td><td><code>AppDatePicker.vue</code></td><td>1.320</td><td>Date picker próprio (locale pt-BR, range, formatos)</td></tr>
+        <tr><td>9</td><td><code>CrmConsultantsSection.vue</code></td><td>1.047</td><td>Seção de consultores do CRM</td></tr>
+        <tr><td>10</td><td><code>OmniEditor.vue</code></td><td>1.013</td><td>Editor TipTap (já é lazy-loaded)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">O teto de 450 linhas é regra escrita dos princípios de engenharia do projeto — ou seja, são 105 violações da própria regra. Priorizar os &gt;1.000 primeiro: são os arquivos onde toda mudança tem raio de explosão máximo. Ver também o relatório 07.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>AC-15 — Cobertura de testes <span class="pill p1">P1</span></h3>
+      <ul class="clean">
+        <li><span class="dot r"></span>17 arquivos <code>.test.ts</code> no front inteiro (zero <code>.spec.ts</code>) contra 313 componentes, 37 stores e 61 composables.</li>
+        <li><span class="dot y"></span>Comparação interna: o backend Go tem 65 arquivos de teste com 12.188 linhas (13% do código) — o front está muito atrás do próprio padrão do repo.</li>
+        <li><span class="dot g"></span>O que existe está bem posicionado: entre os testados estão <code>useContextRealtime</code> e <code>useOperationsRealtime</code> (o coração do realtime da operação) e stores.</li>
+        <li><span class="dot b"></span>Maior retorno por esforço: stores e <code>domain/utils</code> (lógica pura, sem DOM) primeiro; componentes críticos da operação depois.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Pontos fortes de engenharia <span class="pill ok">OK</span></h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Lazy loading real com tratamento de falha:</b> <code>utils/lazy-component.ts</code> embrulha <code>defineAsyncComponent</code> com retry automático, timeout e errorComponent acionável ("Recarregar") — resposta direta ao incidente do "modal em branco em produção" (chunk 404 pós-deploy). Aplicado a 5 componentes pesados: OperationWorkspace, MetaAdsReportChart, CardapioAnalyticsChart, RoadmapModulesBoard e OmniEditor.</li>
+        <li><span class="dot g"></span><b>Dev experience deliberada:</b> <code>vite.optimizeDeps</code> com 14 deps pré-bundladas, warmup de 7 arquivos do shell e watcher chokidar granular com polling para o cenário Docker + Windows.</li>
+        <li><span class="dot y"></span><b>Sem manualChunks:</b> o split de bundle é o default por rota do Vite; nunca houve análise de bundle para saber se o vendor está saudável (FE-04).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Nota da área</h3>
+    <div class="gauge">
+      <div class="ring" style="--p:65"><b>6,5</b></div>
+      <div style="font-size:13.5px;color:#cdd6e8">Arquitetura e fundações acima da média (camada de API única, permissões fail-closed, lazy com retry, realtime estruturado), puxadas para baixo por dívida objetiva e mensurável: 105 arquivos fora do teto, 17 testes para 313 componentes e um mock de finance ainda em produção de código. Nada disso exige redesign — exige constância.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== OPORTUNIDADES ===================== -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog priorizado da área. P0 = agir já · P1 = próximas semanas · P2 = quando escalar. AC-* são achados canônicos da série (mesmo id/prioridade em todos os relatórios); FE-* são achados locais desta página.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-07</span><span class="ttl">105 arquivos front acima de 450 linhas + components.css monolítico (4.480)</span><span class="pill p1">P1</span><span class="tag">Esforço: L</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o teto de 450 linhas por arquivo é regra escrita dos princípios de engenharia do projeto, e 105 arquivos a violam — com casos extremos de 3.029 linhas num composable. Arquivos gigantes concentram risco: toda mudança tem raio de explosão máximo, review fica superficial e o Vite recompila blocos enormes no dev.</p>
+        <p><b>Evidência:</b> medição <code>wc -l</code> de 2026-07-02 — top: <code>useTasksPageContext.ts</code> 3.029, <code>roadmap-data.ts</code> 2.614 (majoritariamente dado declarativo), <code>MultiStoreGoalsSection.vue</code> 2.334; CSS: <code>web/app/assets/styles/components.css</code> 4.480 linhas.</p>
+        <p><b>Ação recomendada:</b> quebrar primeiro os arquivos &gt;1.000 linhas; fatiar <code>components.css</code> por domínio (o diretório <code>calendar/</code> já mostra o padrão); adicionar regra de tamanho no lint-staged para estancar o crescimento. Ver também o relatório 07.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-15</span><span class="ttl">Cobertura de testes do front baixa (17 arquivos para 313 componentes)</span><span class="pill p1">P1</span><span class="tag">Esforço: L</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> com 17 arquivos <code>.test.ts</code> para 313 componentes, 37 stores e 61 composables, quase toda regressão só é descoberta manualmente. O Vitest já roda como gate no CI — a infraestrutura existe, faltam os testes.</p>
+        <p><b>Evidência:</b> 17 <code>.test.ts</code> (13 em app, 4 em layers/tasks), zero <code>.spec.ts</code>; comparação interna: o back tem 65 arquivos de teste / 12.188 linhas (13% do código Go).</p>
+        <p><b>Ação recomendada:</b> começar por stores e <code>domain/utils</code> (lógica pura, maior retorno por esforço — <code>permissions.ts</code> com 916 linhas é o candidato nº 1); depois componentes críticos da operação. Ver também o relatório 07.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-12</span><span class="ttl">BFF mock de finance ainda vivo em web/server/</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o módulo financeiro do painel opera sobre um store em memória do Nitro — os dados não existem no banco real, somem no restart e violam o princípio de fonte única de verdade do projeto. O ADR 0002 já determina a remoção; o resto do BFF foi eliminado, só finance sobrou.</p>
+        <p><b>Evidência:</b> 10 arquivos em <code>web/server/</code>: 9 handlers (<code>GET/PUT /api/admin/finance-config</code>, <code>GET .../recurring-clients</code>, <code>GET/POST /api/admin/finance-sheets</code>, <code>GET/PUT/DELETE .../[id]</code>, <code>PATCH .../[id]/lines/[lineId]</code>) + <code>web/server/utils/financeMockStore.ts</code>.</p>
+        <p><b>Ação recomendada:</b> portar finance para a API Go (módulo + migrations) e apagar <code>web/server/</code> inteiro. Ver também o relatório 07.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">FE-01</span><span class="ttl">Tema liquidglass rejeitado pela whitelist do back</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: baixo</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o front oferece 4 temas (light, dark, apple-blue, liquidglass em <code>omni-tokens.css</code>), mas o normalizador de aparência do back só aceita <code>light | dark | apple | custom</code>. Salvar a aparência com liquidglass cai silenciosamente no fallback — o usuário escolhe um tema que não persiste, sem nenhum aviso.</p>
+        <p><b>Evidência:</b> <code>back/internal/modules/queue/settings/sections.go:207-217</code> (switch com a whitelist) vs. os 4 temas de <code>web/app/assets/styles/omni-tokens.css</code>.</p>
+        <p><b>Ação recomendada:</b> incluir os identificadores reais dos temas do front na whitelist (ou adotar o desenho em andamento em <code>core/platform_appearance_*</code>, cujo comentário já prevê temas novos sem deploy do back). Exigirá rebuild da api.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">FE-02</span><span class="ttl">Aparência do platform_admin sem tenant só persiste em localStorage</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: baixo</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a persistência de aparência é escopada por tenant; o platform_admin navegando sem tenant ativo tem a preferência salva apenas em localStorage. Trocar de navegador ou máquina perde o tema — inconsistente com o comportamento dos demais usuários.</p>
+        <p><b>Evidência:</b> bug conhecido verificado em 2026-07-02 (composables de tema em <code>web/layers/core/composables/useOmniTheme.ts</code> / <code>useThemeStudio.ts</code>); o trabalho não commitado em <code>back/internal/modules/core/platform_appearance_*</code> na working tree indica que a correção já está em andamento.</p>
+        <p><b>Ação recomendada:</b> persistir a aparência de plataforma (sem tenant) no banco via endpoint dedicado — concluir e commitar o trabalho já iniciado.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">FE-03</span><span class="ttl">routeRule de /calendario não cobre a nova subrota /calendario/config</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>pages/calendario.vue</code> foi deletado e virou diretório (<code>pages/calendario/index.vue</code> + <code>config.vue</code>). A rota <code>/calendario</code> continua coberta pelo routeRule <code>ssr:false</code>, mas <code>/calendario/config</code> <b>não</b> — a regra é exata, sem wildcard. Pelo próprio comentário do config, rota de painel fora da lista roda SSR e o bootstrap de auth no servidor é frágil: hard reload em <code>/calendario/config</code> pode deslogar/estourar.</p>
+        <p><b>Evidência:</b> <code>web/nuxt.config.ts:34</code> (<code>'/calendario': { ssr: false }</code>, sem <code>/**</code>) + existência de <code>web/app/pages/calendario/config.vue</code> na working tree; compare com <code>'/cardapio'</code> que tem as duas formas (linha exata + <code>/**</code>).</p>
+        <p><b>Ação recomendada:</b> trocar por <code>'/calendario/**': { ssr: false }</code> (mantendo a entrada exata, como no padrão do cardápio) antes de commitar a página nova.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">FE-04</span><span class="ttl">Sem manualChunks nem análise de bundle</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: baixo</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o split de bundle usa apenas o default por rota do Vite; nunca se mediu o tamanho do vendor nem se libs pesadas (TipTap, ApexCharts) vazam para o chunk inicial. Num SPA em que o primeiro paint depende do download do shell, isso é voo cego — pode estar ótimo ou péssimo, não há medição ("não medido").</p>
+        <p><b>Evidência:</b> ausência de <code>manualChunks</code> em <code>web/nuxt.config.ts</code>; lazy loading real limitado a 5 componentes via <code>web/app/utils/lazy-component.ts</code>.</p>
+        <p><b>Ação recomendada:</b> rodar uma análise de bundle (ex.: <code>nuxt analyze</code> / rollup-plugin-visualizer) <b>quando o build for aprovado pelo usuário</b> (regra do projeto: sem npm/build sem aprovação) e só então decidir se manualChunks vale a pena.</p>
+      </div>
+    </details>
+
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

@@ -16,6 +16,10 @@ Logging) e retorna o handler HTTP final.
 - `context_http.go` — `/v1/me/context` legado.
 - `*_adapter.go` — adapters finos entre módulos legados (ex:
   `operations_store_scope_adapter.go`).
+- `GET /healthz` (em `app.go`) — desde AC-16 faz `pool.Ping` (timeout 2s) e devolve
+  `200 + db:"ok"` ou `503 + db:"unreachable"` (erro só no `slog.Warn healthz_db_ping_failed`,
+  nunca no corpo — endpoint público). Consumidores do 200: healthcheck do compose, smoke do
+  deploy, UptimeRobot e `scripts/monitoring/check-vps.sh`.
 
 ## Estado do multi-tenant — atualizado 2026-06-04 (C20 — guard ATIVO)
 
@@ -48,6 +52,11 @@ Gateados: `queue` (`/v1/operations,/v1/alerts,/v1/reports,/v1/analytics,/v1/feed
 `CORE_V2_ENABLED=false` (default): Registry e guard não existem. Apenas wiring legado.
 
 `CORE_V2_ENABLED=true`: Registry roda, SyncCatalog popula catálogos, guard ativo, `RequireAuthWithAccount` disponível.
+
+## PrincipalCache wiring (AC-01)
+
+- `principal_cache_wiring.go` — `wirePrincipalCache(cfg, logger, authService, accessService, usersService)` cria o `httpapi.PrincipalCache[auth.Principal]` quando `AUTH_PRINCIPAL_CACHE_TTL > 0` (default `30s`; `0s` retorna `nil` e loga `principal_cache_disabled`). Liga os setters de `auth`/`access`/`users` e dispara a goroutine de manutencao (`Cleanup()` a cada 60s + log `principal_cache_stats` a cada 5 min quando houve trafego).
+- `app.go` (2 pontos): chama `wirePrincipalCache` logo apos criar `usersService`; injeta o cache retornado em `modules.Dependencies{PrincipalCache: principalCache}` (nil-safe — `core` faz nil-check no Build). Invalidacao e direta/sincrona, NAO via bus. Fora do bloco `CoreV2Enabled` o cache ja funciona para auth/access/users; os setters do `core` so ligam quando o Registry roda.
 
 ## Referências
 

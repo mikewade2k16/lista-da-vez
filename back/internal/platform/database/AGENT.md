@@ -125,6 +125,39 @@ go run ./cmd/migrate up
 go run ./cmd/migrate status
 ```
 
+## Role de runtime least-privilege (AC-04)
+
+Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
+
+- **`api`** conecta via `OpenAppPool` / `DATABASE_APP_URL` com a role `omni_app`
+  (`NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOREPLICATION`, sem `CREATE`
+  em schema algum). So DML — nao roda DDL. Fallback para `DATABASE_URL` quando
+  `DATABASE_APP_URL` esta vazia (dev local fora do docker); em `APP_ENV=production`
+  o `Validate()` da config exige `DATABASE_APP_URL` e aborta o boot sem ela.
+- **`migrate`** continua com `OpenPool` / `DATABASE_URL` (role privilegiada `omni`):
+  roda o DDL das migrations e o bootstrap.
+- Os GRANTs de runtime da `omni_app` (USAGE em schemas; SELECT/INSERT/UPDATE/DELETE
+  em tabelas/views; USAGE/SELECT/UPDATE em sequences; `ALTER DEFAULT PRIVILEGES`
+  global para objetos futuros) sao **auto-sincronizados** por `SyncAppRoleGrants`
+  (`app_role_grants.go`) a cada `migrate up` — cobre schemas/tabelas novos sem
+  passo manual. A lista de schemas vem de `pg_namespace` (nada hardcoded).
+- **ARMADILHA (incidente 2026-07-03):** so os GRANTs se auto-curam. A **existencia +
+  senha** da role NAO — se a role `omni_app` nao existe, `SyncAppRoleGrants` retorna
+  `(false, nil)` e loga `app_role_grants_skipped`, e a api entra em crash-loop (`28P01`)
+  ao abrir `OpenAppPool`. Num deploy novo isso significa outage total (api crash-loop →
+  web nao sobe → 502), porque criar a role e um passo manual de runbook (`create-app-role.sql`),
+  nao automatizado. **Fix planejado** (`ac-04b-migrate-auto-provision-role`): o `migrate`
+  (que roda como superuser e ja tem nome+senha em `DATABASE_APP_URL`) passa a criar a role
+  no boot — `CREATE ROLE IF NOT EXISTS` + `ALTER ROLE ... PASSWORD` + `GRANT CONNECT`,
+  idempotente. Runbook e causa raiz em `docs/DEPLOY_VPS.md` e `docs/MULTITENANT_COMPLETION_PLAN.md` (AC-04).
+- Script canonico de criacao da role: `scripts/db/create-app-role.sql` (idempotente,
+  cluster-level, senha via `-v pw`). Dev: `scripts/db/postgres-init/10-app-role.sh`
+  roda no init do volume (docker-entrypoint-initdb.d) e e reutilizavel em volume
+  existente via `docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-app-role.sh`.
+- Teste de integracao: `app_role_grants_test.go` (skip sem `TEST_DATABASE_URL`) —
+  prova DML permitido (`select core.users`) e DDL negado (`create table`/`create schema`
+  retornam SQLSTATE 42501).
+
 ## Notas recentes de schema
 
 - `0129_site_tracking_events.sql` adiciona `site.tracking_events` e amplia

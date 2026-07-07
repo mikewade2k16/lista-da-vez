@@ -47,6 +47,21 @@
   font-size: 0.72rem;
 }
 
+/* Presenca (SPEC-F9): "Fulano editando" quando outro usuario mexe nas notas do mes. */
+.calendar-notes__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .calendar-notes__mock {
   margin: 0 0.95rem 0.4rem;
   padding: 0.2rem 0.5rem;
@@ -91,7 +106,8 @@
 
 /* ===== Drawer do dia ======================================================= */
 .calendar-drawer {
-  flex: 0 0 354px;
+  /* PC: min 400px (decisao do dono) — cabe 2 anexos por linha grandes + o select com o nome inteiro. */
+  flex: 0 0 400px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -344,6 +360,47 @@
   flex: 1;
 }
 
+/* WAVE 6: cada item do dia e um COLLAPSE (accordion) — header clicavel + corpo (detalhe inline). */
+.calendar-drawer__acc {
+  margin-bottom: 0.45rem;
+  border: 1px solid rgb(var(--border) / 0.4);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface) / 0.4);
+  overflow: hidden;
+}
+
+.calendar-drawer__acc.is-open {
+  border-color: rgb(var(--primary) / 0.55);
+  background: rgb(var(--primary) / 0.04);
+}
+
+.calendar-drawer__acc-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.55rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.calendar-drawer__acc-head:hover {
+  background: rgb(var(--surface) / 0.65);
+}
+
+.calendar-drawer__acc-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.calendar-drawer__acc-body {
+  padding: 0.35rem 0.65rem 0.75rem;
+  border-top: 1px solid var(--line-soft);
+}
+
 .calendar-drawer__list-title {
   color: var(--text-main);
   font-size: 0.82rem;
@@ -356,6 +413,20 @@
 .calendar-drawer__list-meta {
   color: var(--text-muted);
   font-size: 0.72rem;
+}
+
+/* WAVE 6 (W6-4 refino): indicador "tem anexo" no item da lista do dia. */
+.calendar-drawer__list-anexo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: var(--surface-2, rgb(0 0 0 / 0.06));
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 .calendar-drawer__empty {

@@ -3,14 +3,22 @@ name: ${COMPOSE_PROJECT_NAME:-omni}
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-omni}
       POSTGRES_USER: ${POSTGRES_USER:-omni}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omni_dev}
+      # AC-04: role de runtime least-privilege criada no init do volume (10-app-role.sh).
+      APP_DB_ROLE: ${APP_DB_ROLE:-omni_app}
+      APP_DB_ROLE_PASSWORD: ${APP_DB_ROLE_PASSWORD:-omni_app_dev}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/db:/scripts/db:ro
+      - ./scripts/db/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test:
         [
@@ -26,6 +34,9 @@ services:
     build:
       context: ./back
       dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
     environment:
       APP_NAME: omni-api
       APP_ENV: docker
@@ -37,6 +48,9 @@ services:
       # relativa e quebra no front (que roda em outro dominio). Em prod = dominio da api.
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:9091}
       DATABASE_URL: postgres://${POSTGRES_USER:-omni}:${POSTGRES_PASSWORD:-omni_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
+      # AC-04: URL de RUNTIME da api (role least-privilege omni_app; sem DDL).
+      # O binario migrate continua com DATABASE_URL (privilegiada, roda DDL).
+      DATABASE_APP_URL: postgres://${APP_DB_ROLE:-omni_app}:${APP_DB_ROLE_PASSWORD:-omni_app_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
       MIGRATION_TIMEOUT: ${MIGRATION_TIMEOUT:-5m}
@@ -56,6 +70,18 @@ services:
       # que a api usa no Bearer Go->n8n do Omni Chat (M0). Deve bater com o
       # AUTOMATION_RUNTIME_TOKEN do servico n8n.
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN:-dev-automation-runtime-token}
+      # Calendario (agenda de conteudo) — IA por n8n. Plano do mes (Fase 6): webhook
+      # do n8n + token de servico do callback + base da api que o n8n chama de volta.
+      # Vazios => POST /v1/calendar/ai/plan responde 503 ai_not_configured.
+      CALENDAR_AI_WEBHOOK_URL: ${CALENDAR_AI_WEBHOOK_URL:-}
+      CALENDAR_AI_SERVICE_TOKEN: ${CALENDAR_AI_SERVICE_TOKEN:-}
+      CALENDAR_AI_CALLBACK_BASE: ${CALENDAR_AI_CALLBACK_BASE:-http://api:8080}
+      # Chat flutuante + voz (C7/C8): webhooks do n8n (proxy fino Go->n8n). Vazios =>
+      # /v1/calendar/chat/ask responde 503 chat_not_configured e /chat/transcribe
+      # responde 503 transcribe_not_configured. Ex. (profile automation no ar):
+      # http://n8n:5678/webhook/calendar-chat e .../calendar-transcribe.
+      CALENDAR_CHAT_WEBHOOK_URL: ${CALENDAR_CHAT_WEBHOOK_URL:-}
+      CALENDAR_TRANSCRIBE_WEBHOOK_URL: ${CALENDAR_TRANSCRIBE_WEBHOOK_URL:-}
       # Modulo meta_ads: base da Graph/Marketing API da Meta (bump de versao via env).
       META_ADS_GRAPH_BASE: ${META_ADS_GRAPH_BASE:-https://graph.facebook.com/v21.0}
       # Chave simetrica (pgcrypto) p/ cifrar o System User token at-rest. SEM ela,
@@ -143,14 +169,32 @@ services:
       retries: 10
       start_period: 15s
 
+  # DEV: o codigo NAO e mais bind mount (./web:/app) — ele vive DENTRO do
+  # container (copiado no build) e as edicoes do host sao sincronizadas pelo
+  # `docker compose watch`. Motivo: bind mount de caminho Windows atravessa a
+  # ponte 9P do WSL2 (~100x mais lento por arquivo); o nuxt dev varre milhares
+  # de arquivos e o boot/troca de pagina levava minutos. Com o codigo em
+  # overlayfs nativo + sync, boot e HMR ficam em velocidade normal e o watcher
+  # usa inotify de verdade (sem polling).
+  #
+  # COMO RODAR O DEV DO WEB:  docker compose watch web   (ou scripts/dev/watch-web.ps1)
+  # `docker compose up -d web` sozinho SOBE o servidor mas NAO sincroniza
+  # edicoes — a pagina fica "congelada" no codigo do ultimo build/sync.
   web:
     build:
       context: ./web
       dockerfile: Dockerfile
       target: dev
     command: sh -c "node ./scripts/ensure-node-modules.mjs && exec npm run dev"
+    restart: unless-stopped
+    # mem 4g: nuxt dev + Vite compilam no container (heap do build ja e 4096MB)
+    mem_limit: 4g
+    mem_reservation: 512m
     environment:
       NODE_ENV: development
+      # Node dimensiona o heap pelo RAM do HOST (nao respeita o cgroup de 4g);
+      # limitar o old-space evita o kernel matar o container por OOM no warmup.
+      NODE_OPTIONS: --max-old-space-size=3072
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-http://localhost:8080}
       NUXT_API_INTERNAL_BASE: ${NUXT_API_INTERNAL_BASE:-http://api:8080}
       # Base do front bio publico (crow-nuxt); link "Ver bio" do painel -> {base}/bio/{slug}.
@@ -159,18 +203,47 @@ services:
       NITRO_HOST: 0.0.0.0
       PORT: 3003
       NUXT_DEVTOOLS: ${NUXT_DEVTOOLS:-false}
-      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-true}
+      # Polling DESLIGADO: com o codigo no filesystem do container, o inotify
+      # funciona (o sync do compose watch gera eventos reais). Ligar polling
+      # aqui so queima CPU — era necessario apenas na era do bind mount.
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-false}
       CHOKIDAR_INTERVAL: ${CHOKIDAR_INTERVAL:-350}
-      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
     depends_on:
       api:
         condition: service_healthy
     ports:
       - "${WEB_PORT:-3003}:3003"
     volumes:
-      - ./web:/app
       - web_node_modules:/app/node_modules
       - web_nuxt:/app/.nuxt
+    develop:
+      watch:
+        # Mudou dependencia: sync + restart do container — o ensure-node-modules
+        # roda de novo no boot e faz `npm ci` no volume (nao precisa rebuild).
+        - action: sync+restart
+          path: ./web/package.json
+          target: /app/package.json
+        - action: sync+restart
+          path: ./web/package-lock.json
+          target: /app/package-lock.json
+        # Todo o resto do codigo: copia incremental host -> container.
+        - action: sync
+          path: ./web
+          target: /app
+          ignore:
+            - node_modules/
+            - .nuxt/
+            - .output/
+            - dist/
+            - coverage/
+            - "*.log"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
 
   # crow-nuxt — front publico da bio (BUILD DE PRODUCAO, leve). Serve as bios
   # publicadas E o /bio/preview que o painel embute no iframe do editor. Como
@@ -187,6 +260,8 @@ services:
     build:
       context: ../crow-nuxt
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 64m
     environment:
       NODE_ENV: production
       NITRO_HOST: 0.0.0.0
@@ -198,8 +273,15 @@ services:
     ports:
       # host:container — porta nao-padrao no host (3300); dentro do container e 3000.
       - "${CROW_NUXT_PORT:-3300}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   # Automacao WhatsApp/IA (n8n + WAHA + Redis) — modulo automation/.
   # Sobe so com `docker compose --profile automation up -d` (fica fora do dev normal).
@@ -209,6 +291,9 @@ services:
   redis:
     image: redis:8-alpine
     profiles: ["automation"]
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 32m
     command: redis-server --requirepass ${AUTOMATION_REDIS_PASSWORD:-default}
     environment:
       REDIS_PASSWORD: ${AUTOMATION_REDIS_PASSWORD:-default}
@@ -216,10 +301,19 @@ services:
       - "${AUTOMATION_REDIS_PORT:-6380}:6379"
     volumes:
       - automation_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   waha:
     image: devlikeapro/waha:gows-2026.5.1
     profiles: ["automation"]
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
     environment:
       WHATSAPP_HOOK_URL: http://n8n:5678/webhook/webhook
       WHATSAPP_DEFAULT_ENGINE: GOWS
@@ -232,10 +326,24 @@ services:
       - automation_waha_media:/app/.media
     ports:
       - "${AUTOMATION_WAHA_PORT:-3010}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:3000/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Ordena so o boot (WAHA posta webhooks no n8n). service_started, nao _healthy:
+    # a WAHA (QR/dashboard) precisa subir mesmo se o n8n estiver quebrado.
+    depends_on:
+      n8n:
+        condition: service_started
 
   n8n:
     image: n8nio/n8n:2.23.2
     profiles: ["automation"]
+    restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 192m
     environment:
       N8N_HOST: localhost
       WEBHOOK_URL: http://localhost:${AUTOMATION_N8N_PORT:-5680}
@@ -248,12 +356,48 @@ services:
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       # Token de servico p/ o workflow ler o runtime-config da API ($env no n8n).
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN:-dev-automation-runtime-token}
+      # API keys dos providers de IA do calendario (chat). Ficam SO aqui no n8n via $env;
+      # nunca no config lido pelo front, nunca no git (.env e gitignored). O workflow
+      # Calendar Chat le $env[keyEnv] conforme o provider escolhido no painel (gemini|glm).
+      CALENDAR_GEMINI_API_KEY: ${CALENDAR_GEMINI_API_KEY:-}
+      CALENDAR_ZAI_API_KEY: ${CALENDAR_ZAI_API_KEY:-}
     volumes:
       - automation_n8n_data:/home/node/.n8n
     ports:
       - "${AUTOMATION_N8N_PORT:-5680}:5678"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+
+  # Whisper self-hosted (STT do calendario). OpenAI-compatible: POST /v1/audio/transcriptions.
+  # Aceita o audio do navegador (webm/opus) — decodifica via ffmpeg interno; NAO precisa de key.
+  # O n8n (workflow calendar-transcribe, ramo "local") bate em http://whisper:8000. CPU, modelo
+  # base (troque WHISPER__MODEL por small/medium para mais qualidade). Sobe no profile automation.
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    container_name: omni-whisper
+    profiles: ["automation"]
+    restart: unless-stopped
+    mem_limit: 3g
+    environment:
+      WHISPER__MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-base}
+      WHISPER__INFERENCE_DEVICE: cpu
+      WHISPER__COMPUTE_TYPE: int8
+      # Mantem o modelo SEMPRE carregado (padrao descarrega em 5min ocioso e recarrega ~3s
+      # no proximo audio). -1 = nunca descarrega -> transcricao sempre rapida (~1s). Usa
+      # todos os cores da CPU (cpu_threads=0 = auto). Trocar model por small/medium = +qualidade.
+      WHISPER__TTL: "-1"
+      WHISPER__CPU_THREADS: "0"
+    volumes:
+      - automation_whisper_cache:/root/.cache/huggingface
+    ports:
+      - "${WHISPER_PORT:-8010}:8000"
 
   # Agent-runner do modulo meta_ads (MA1) — OPCIONAL, pensado p/ VPS/futuro.
   # O modo padrao LOCAL e rodar no host (npm start em meta-ads-assistant/),
@@ -265,6 +409,9 @@ services:
       context: ./meta-ads-assistant
       dockerfile: Dockerfile
     profiles: ["meta-ads-assistant"]
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 64m
     environment:
       META_ADS_ASSISTANT_PORT: 8765
       META_ADS_ASSISTANT_TOKEN: ${META_ADS_ASSISTANT_TOKEN:-dev-meta-assistant-token}
@@ -272,6 +419,12 @@ services:
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     ports:
       - "${META_ADS_ASSISTANT_PORT:-8765}:8765"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8765/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
 volumes:
   postgres_data:
@@ -283,3 +436,4 @@ volumes:
   automation_waha_sessions:
   automation_waha_media:
   automation_n8n_data:
+  automation_whisper_cache:

@@ -640,6 +640,62 @@ Lista cronológica de comandos/configurações que precisam rodar no ambiente co
    delete from core.roles where cloned_from_template_id is not null;
    ```
 
+### AC-04 (2026-07-02) — role de runtime least-privilege (`omni_app`)
+
+A api passa a conectar com a role `omni_app` (`NOSUPERUSER`, sem DDL); só o `migrate` mantém o superuser `omni`. **Ordem importa** — criar a role ANTES do deploy da imagem nova (a imagem com `Validate()` não sobe em production sem `DATABASE_APP_URL`).
+
+> **Status: EXECUTADO em produção 2026-07-03 — com incidente.** O primeiro `deploy:fast:prod` subiu
+> antes dos passos 2–4 (role/envs inexistentes na VPS) → api em crash-loop 28P01, web preso em
+> `Created`, ~1h de 502. Recuperado seguindo os passos abaixo; evidência pós-fix:
+> `pg_stat_activity` com 5 conexões `omni_app`. Lição registrada no ENGINEERING_PRINCIPLES
+> (registro de falhas 2026-07-03). Prevenção definitiva proposta: **ac-04b** — auto-provisão
+> idempotente da role no `migrate up` (cria/altera a role e aplica grants quando
+> `APP_DB_ROLE_PASSWORD` estiver definida), eliminando o passo manual.
+
+- **Migrations novas:** nenhuma. **Env vars novas:** `APP_DB_ROLE` (default `omni_app`), `APP_DB_ROLE_PASSWORD` (senha forte ALFANUMÉRICA — evita urlencode na URL), `DATABASE_APP_URL` (montada no compose a partir das duas). **Rebuild:** `docker compose up -d --build api` (back/ mudou).
+
+1. **Backup** (padrão existente): `pg_dump` via deploy-ship/deploy-vps antes de qualquer coisa.
+2. **Env na VPS** (`/home/deploy/lista-atendimento/.env.production` — é esse que o compose de prod usa via `--env-file`, não existe `.env` lá): adicionar `APP_DB_ROLE=omni_app` e `APP_DB_ROLE_PASSWORD=<senha forte alfanumérica>`. Nunca reutilizar `POSTGRES_PASSWORD`.
+3. **Copiar o script** (não está na imagem): `scp scripts/db/create-app-role.sql deploy@85.31.62.33:/home/deploy/lista-atendimento/scripts/db/` (criar a pasta se não existir).
+4. **Criar a role ANTES do deploy** (idempotente; re-rodável):
+   ```bash
+   cd /home/deploy/lista-atendimento && set -a && . ./.env.production && set +a
+   docker compose -f docker-compose.prod.yml exec -T postgres \
+     sh -c "psql -v ON_ERROR_STOP=1 -U \$POSTGRES_USER -d \$POSTGRES_DB -v role=omni_app -v pw='$APP_DB_ROLE_PASSWORD'" \
+     < scripts/db/create-app-role.sql
+   ```
+5. **Deploy da imagem nova** (GHCR pull + `up -d --no-build`). O `migrate up` do boot sincroniza os GRANTs (`app_role_grants_ok` no log) e a api sobe como `omni_app`.
+6. **Validar:** `docker compose -f docker-compose.prod.yml logs api | grep -E "app_role_grants|database_connected|api_listening"` (esperar `db_user=omni_app`); smoke `curl -fsS https://omni.crowvisuals.com.br/healthz`; login no painel.
+7. **Staging** (volume novo a cada subida): subir `postgres`, rodar o passo 4 com o env de staging, depois subir a api. Se a api subir antes da role, entra em crash-loop e se recupera no restart seguinte à criação da role.
+8. **Rollback sem trocar imagem:** setar `APP_DB_ROLE=<POSTGRES_USER real>` (na VPS o superuser é `listaatendimento`, NÃO `omni`) e `APP_DB_ROLE_PASSWORD=$POSTGRES_PASSWORD` no `.env.production` + `up -d` (a app volta a conectar como superuser, temporário). Rollback completo: voltar a imagem anterior.
+
+> **Incidente 2026-07-03 (outage total em prod) — causa raiz e prevenção:**
+>
+> **Sintoma:** api em crash-loop (`28P01 password authentication failed for user "omni_app"`, log `app_role_grants_skipped`), web presa em `Created` (`depends_on: api healthy` nunca satisfaz), 502 no painel.
+>
+> **Causa raiz:** o deploy usou o caminho automático (`deploy-fast.ps1` → `deploy-pull.ps1`), que na VPS só faz `pull + up` e **nunca cria a role** — os passos 2–4 acima são um runbook manual, só em doc. Subir a imagem AC-04 sem esse passo é uma falha garantida. Agravante: o `Validate()` só checa que `DATABASE_APP_URL` **não está vazia** — a URL existia (role inexistente, senha vazia), passou no check, e o container morreu na conexão em vez de falhar rápido com mensagem clara. Detalhe do design que virou armadilha: os **GRANTs** da role se auto-curam no boot (`SyncAppRoleGrants`), mas a **existência + senha** da role não — mesmo o `migrate` rodando como superuser e já tendo nome+senha dentro de `DATABASE_APP_URL`.
+>
+> **Fix aplicado na hora:** role criada via SQL inline (equivalente ao `create-app-role.sql`) + `APP_DB_ROLE`/`APP_DB_ROLE_PASSWORD` no `.env.production` + `up -d --force-recreate api web`. O `create-app-role.sql` ainda NÃO está na VPS — copiar no próximo deploy (passo 3).
+>
+> **Prevenção planejada (`ac-04b-migrate-auto-provision-role` no roadmap):** fazer o `migrate up` **auto-provisionar a role** a partir de `DATABASE_APP_URL`, antes dos GRANTs — `CREATE ROLE IF NOT EXISTS ... LOGIN` + `ALTER ROLE ... PASSWORD '<da url>' NOSUPERUSER ...` + `GRANT CONNECT`, idempotente, todo boot como o superuser que o `migrate` já é. Com guarda-corpo: em production com role ausente **e** senha vazia, `migrate` falha alto e cedo (antes da `api` no `migrate up && ... && api`), com mensagem clara em vez do loop opaco. Assunção: role do `migrate` tem `CREATEROLE`/superuser (verdade no Postgres self-hosted; revisar em banco gerenciado). Resultado: deploy AC-04 vira self-healing e o `deploy:fast` volta a bastar sozinho — este passo manual (2–4) deixa de existir.
+
+### AC-11 (2026-07-02) — limites de memória + healthchecks no compose
+
+Os dois compose (`docker-compose.yml` dev e `docker-compose.prod.yml`) ganharam `mem_limit`/`mem_reservation` em todos os serviços (prod também `cpus`), healthcheck em todo serviço que não tinha (web/crow-nuxt/redis/waha/n8n/meta-ads) e `depends_on` com condition (`n8n→redis healthy`, `waha→n8n started`, `crow-nuxt→api healthy`). **Nenhuma migration, nenhuma env var nova** (`AUTOMATION_REDIS_PASSWORD` já existe; só passa a ser exposta como env do container redis no prod). **Nenhum rebuild de imagem** (só config de container).
+
+Aplicar em prod (USUÁRIO roda, na VPS `/home/deploy/lista-atendimento`):
+```bash
+docker compose -f docker-compose.prod.yml config --quiet          # lint com o .env real
+docker compose -f docker-compose.prod.yml up -d                   # recria postgres→api→web (ordem via depends_on)
+docker compose -f docker-compose.prod.yml --profile automation up -d   # recria redis→n8n→waha
+docker compose -f docker-compose.prod.yml ps                      # conferir (healthy)
+```
+Janela curta (~30-60s no core); dados do postgres no volume; sessão WhatsApp da WAHA persiste (sem re-QR). Expectativa: unhealthy NÃO reinicia sozinho (sem swarm); quem ressuscita em OOM/crash é `restart: unless-stopped` + `mem_limit`. **NUNCA parar o Caddy da omnichannel-mvp.**
+
+### AC-16 (2026-07-02) — monitoração mínima (healthz com DB + log rotation + script de host)
+
+`GET /healthz` da api agora faz `pool.Ping` (2s) → `503 db:"unreachable"` com banco fora (**rebuild da api obrigatório** — `back/` mudou; deploy normal via GHCR). `docker-compose.prod.yml` ganhou `logging:` json-file (api 20m×5, demais 10m×3 via anchor) — **só aplica ao recriar o container** (`up -d --force-recreate` ou input `force_recreate`). Novo `scripts/monitoring/check-vps.sh` roda no cron do host + UptimeRobot externo; runbook completo em `docs/DEPLOY_VPS.md → Monitoração`. **Nenhuma migration; nenhuma env var da app** (as do script vivem em `/home/deploy/.omni-monitoring.env`, chmod 600, fora do repo).
+
 ---
 
 ## Critério de saída final

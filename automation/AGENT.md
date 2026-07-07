@@ -45,6 +45,10 @@ automation/
   docker-compose.reference.yml     <- recipe ORIGINAL standalone (so referencia historica)
   export/
     workflow-whatsapp.json         <- o workflow completo (36 nos; persona+guardrails embutidos)
+    workflow-omni-chat.json        <- chat interno da Operacao (Webhook -> AI Agent -> Respond)
+    workflow-calendar-omni.json    <- IA do Calendario: plano estrategico do mes (SPEC-W3)
+    workflow-calendar-chat.json    <- IA do Calendario: chat flutuante (SPEC-W1; C7)
+    workflow-calendar-transcribe.json <- voz do Calendario: OpenAI Whisper/Gemini (SPEC-W2)
     credentials.decrypted.json     <- credenciais do n8n (SEGREDO em texto puro)
 
 docs/automation/                   <- documentacao detalhada (migrada de docs/n8n/)
@@ -111,6 +115,17 @@ Runbook: docs/automation/SETUP.md secao 8.
   (`/v1/...` de `crm/catalog`, `erp`), com auth e escopo por account/tenant — nao SQL
   cru direto nas tabelas. Respeita RBAC, multi-tenant e single-source-of-truth.
 
+### Limites e healthchecks (AC-11, 2026-07)
+
+Os dois compose agora limitam memoria por servico do stack: `redis` 256m, `waha` 1g,
+`n8n` 768m (`mem_reservation` proporcional; no prod tambem `cpus`). Healthchecks:
+`waha` = `GET /ping` (`/health` e WAHA Plus → 422); `n8n` = `GET /healthz`;
+`redis` = `redis-cli ping` autenticado (`$$REDIS_PASSWORD`, dois cifroes = env do
+container). `depends_on`: `n8n→redis service_healthy`, `waha→n8n service_started`
+(so ordena o boot; a WAHA sobe mesmo com n8n quebrado). **Unhealthy NAO reinicia
+sozinho** (Docker sem swarm nao auto-restarta por health); `restart: unless-stopped`
+so ressuscita em OOM/crash. Log rotation (prod, AC-16): json-file 10m×3 por servico.
+
 ## Fases futuras (resumo)
 
 > **Visao de plataforma (multi-tenant):** cada cliente cria N automacoes (robos), BYOK,
@@ -135,6 +150,125 @@ Runbook: docs/automation/SETUP.md secao 8.
 > `multitenant-completion` (regra do MULTITENANT_COMPLETION_PLAN: nenhuma fase nova de
 > modulo satelite avanca antes). A migracao de infra/pastas feita em 2026-06-04 nao
 > mexe no core multi-tenant.
+
+## Workflow "Calendar Omni" (IA do Calendario — SPEC-W3)
+
+Workflow separado (`export/workflow-calendar-omni.json`, id `calendaromni0001`) que gera o
+**plano estrategico de conteudo do mes** do modulo Calendario. O n8n **nao fala com o Postgres
+direto** e e um EXECUTOR BURRO: quem orquestra e a fonte da verdade da IA (provider, modelo,
+baseUrl, prompt, temperatura E a key) e o back Go do Calendario (`POST /v1/calendar/ai/plan`), que
+dispara o webhook e recebe o resultado por callback.
+
+- **Webhook** POST path `calendar-omni` (responde na hora) — recebe o payload C5 (planId, month,
+  `ai` provider/model/baseUrl/systemPrompt/temperature **+ apiKey**, clients+perfil, holidays do
+  mes, monthNotes, callbackUrl, serviceToken).
+- **Montar prompt** (Code) — system (config OU DEFAULT pt-BR que exige JSON estrito no shape
+  C4.content) + user (mes/feriados/clientes/notas); resolve baseUrl default por provider (mapa C2,
+  agora com `openai`/`gemini` OpenAI-compat e `glm` = z.ai internacional, igual ao Calendar Chat),
+  clamp de temperature 0..1. **Expoe `apiKey = body.ai.apiKey`** (resolvida server-side pelo Go a
+  partir do banco, contrato PAY) para os nos HTTP.
+- **Switch provider** — `claude` -> HTTP `POST {baseUrl}/v1/messages` (header `x-api-key:
+  {{ $json.apiKey }}` + `anthropic-version`); demais (openai/gemini/deepseek/qwen/kimi/glm/custom)
+  -> HTTP `POST {baseUrl}/chat/completions` (header `Authorization: Bearer {{ $json.apiKey }}`). A
+  key vem SEMPRE do payload — **sem credential/`$env` no n8n** (mudanca SPEC-W3, 2026-07-04,
+  removendo as credentials `calendar-ai-claude`/`calendar-ai-openai-compat`). LLM nodes com
+  `onError: continueRegularOutput`.
+- **Extrair JSON** (Code) — normaliza Anthropic (`content[0].text`) vs OpenAI
+  (`choices[0].message.content`), remove cercas de codigo, `JSON.parse` com try/catch ->
+  `{status:'done', content}` ou `{status:'error', error}`. O `apiKey` NAO trafega para o callback
+  (so planId/status/content/error/callbackUrl/serviceToken) — a key nunca vaza no loop de volta.
+- **Callback** — POST `{{callbackUrl}}` com header `X-Service-Token: {{serviceToken}}`.
+
+**Sem credential/`$env` no n8n para a IA do plano** — a key crua trafega no payload server-to-server
+(Go -> n8n, rede docker) e nunca e logada nem persistida. Kill switch (`ai.enabled=false`) e
+"sem key" sao tratados no Go ANTES de disparar (contrato PAY: `ai_disabled`/`ai_key_missing` 409
+acionaveis). Envs do back: `CALENDAR_AI_WEBHOOK_URL`
+(`http://n8n:5678/webhook/calendar-omni`), `CALENDAR_AI_SERVICE_TOKEN`, `CALENDAR_AI_CALLBACK_BASE`
+(as envs `CALENDAR_AI_KEY_*` deixam de ser lidas por este workflow). Como o `versionId` mudou
+(`...calendaromni03`), **reimportar** para pegar a versao sem credential. Import + teste manual:
+**pendente** (workflow autorado, validado fora do n8n). Runbook completo:
+[docs/automation/CALENDAR_OMNI_WORKFLOW.md](../docs/automation/CALENDAR_OMNI_WORKFLOW.md).
+
+## Workflow "Calendar Chat" (chat de IA do Calendario — SPEC-W1)
+
+Workflow separado (`export/workflow-calendar-chat.json`, id `calendarchat0001`) que responde o
+**chat de IA** do Calendario. Contrato C7 (payload agora carrega a KEY, contrato PAY da wave 3). O
+back Go (`POST /v1/calendar/chat/ask`) monta o payload (`question` + `ai` + `context`, o `context`
+identico ao agregado C9 via a MESMA funcao `BuildAIContext`) e faz um POST **sincrono** ao webhook,
+esperando `{ "answer": "" }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
+o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, temperatura E a key).
+
+- **Webhook** POST path `calendar-chat`, `responseMode: responseNode` (responde pelo no Respond).
+- **Montar contexto** (Code) — system = `ai.systemPrompt` OU DEFAULT pt-BR ("assistente de
+  estrategia de conteudo") + serializa o `context` (perfil do cliente, feriados, eventos, notas,
+  planos) no system; resolve `provider`/`model`/`baseUrl`/`temperature` (mapa `DEFAULT_BASE` com
+  **gemini** OpenAI-compatible `https://generativelanguage.googleapis.com/v1beta/openai` e **glm**
+  z.ai; clamp 0..1) + guard modelo x provider (cai no default do provider se o modelo salvo nao
+  casa, evita 404). **A API key vem no payload** (`body.ai.apiKey`, resolvida server-side pelo Go a
+  partir do banco) e e exposta como `apiKey` no output — a key crua nunca fica no n8n. `keyEnv`
+  continua no output so como referencia/diagnostico. **Historico da conversa** (mudanca SPEC-W5,
+  2026-07-04): le `body.history` (array `{role,content}`, so `user`/`assistant` com content;
+  itens invalidos descartados) e monta a array `messages` do LLM na ordem
+  `[system+context, ...history, {user: question}]`, exposta como `messages` no output. O n8n **nao
+  guarda memoria** — a fonte do historico e o banco (persistido pelo Go), so repassado no payload.
+- **Chamar LLM** (HTTP `POST {baseUrl}/chat/completions`, OpenAI-compatible) — header
+  `Authorization: Bearer {{ $json.apiKey }}` (a key do payload). Body usa a array `messages` ja
+  montada no no anterior (`messages: $json.messages` = system + historico + pergunta; antes era
+  system+user fixo). **Nao le mais `$env`/credential** (mudanca SPEC-W1, 2026-07-04, revertendo o
+  `$env[keyEnv]` da wave anterior). `onError: continueRegularOutput`.
+- **Extrair resposta** (Code) — normaliza `choices[0].message.content` -> `{ answer }`; item de
+  erro do HTTP node vira mensagem acionavel pt-BR.
+- **Respond to Webhook** — `{ "answer": ... }`.
+
+**Sem credential/`$env` no n8n para a IA do chat** — a key trafega no payload server-to-server (Go
+-> n8n, rede docker) e nunca e logada nem persistida. Env do back: `CALENDAR_CHAT_WEBHOOK_URL`
+(`http://n8n:5678/webhook/calendar-chat`); vazio -> back responde 503 `chat_not_configured`. Kill
+switch e "sem key" sao tratados no Go ANTES de disparar (contrato PAY: `ai_disabled`/`ai_key_missing`
+409 acionaveis). **Memoria de conversa (SPEC-W5, 2026-07-04):** o workflow recebe o `history` no
+payload (persistido no banco pelo Go, ultimas N mensagens) e o inclui na array `messages` entre o
+system e a pergunta — o n8n segue stateless (sem memoria propria). **Limitacoes:** tools desligadas
+(o assistente responde so com o `context` do system + o historico; ligar ao
+`GET /v1/runtime/calendar/context` C9 e proximo passo, fora da wave). Como o `versionId` mudou
+(`...calendarcht03`), **reimportar** para pegar a versao com history. Import + teste manual:
+**pendente** (autorado, validado fora do n8n: parse + ordem da array messages).
+Runbook com curl de teste:
+[docs/automation/CALENDAR_CHAT_WORKFLOW.md](../docs/automation/CALENDAR_CHAT_WORKFLOW.md).
+
+## Workflow "Calendar Transcribe" (voz do Calendario — SPEC-W2)
+
+Workflow separado (`export/workflow-calendar-transcribe.json`, id `calendartrans001`) que
+**transcreve o audio** gravado no chat de voz do Calendario (SPEC-F7) em texto. Contrato C8 +
+PAY (wave 3). O back Go (`POST /v1/calendar/chat/transcribe`) aplica o kill switch (`ai.enabled`),
+resolve provider/model/**apiKey** no banco (`resolveAIKey`), valida mime + tamanho (max 15 MiB) e
+**repassa o multipart** ao webhook com esses campos; o n8n devolve `{ "text": "..." }` e o Go
+entrega ao painel (o texto entra no input, o usuario revisa antes de enviar). Nada e gravado em
+disco. **Multi-provider sem credential do n8n** — o painel/back e a fonte da verdade da IA; a key
+crua vem no payload (contrato PAY), nunca no n8n/`.env`/log.
+
+- **Webhook** POST path `calendar-transcribe`, `responseMode: responseNode`. Campos `provider`/
+  `apiKey`/`model` chegam em `$json.body`; o arquivo do campo `file` vira binario na propriedade
+  `data0` (webhook do n8n grava multipart como prefixo `data` + indice `0`).
+- **Preparar** (Code) — normaliza `provider` para `openai` OU `gemini` (outro -> `gemini`) e
+  reatacha o binario `data0` para os ramos.
+- **Switch por provider** (v3.2) — output 0 `openai`, output 1 `gemini`.
+- **Ramo openai** — HTTP `POST https://api.openai.com/v1/audio/transcriptions` (multipart:
+  `file` = binario `data0` + `model` = `body.model || whisper-1`; header `Authorization: Bearer
+  {{ body.apiKey }}`). OpenAI devolve `{ text }` nativo -> Respond.
+- **Ramo gemini** — Code `Montar base64` (le `data0` via `getBinaryDataBuffer` -> base64; monta
+  `contents.parts` com `inline_data` mime+base64 + prompt "Transcreva...") -> HTTP `POST
+  {geminiBase}/models/{model}:generateContent` (header `x-goog-api-key: {{ apiKey }}`; geminiBase
+  default `https://generativelanguage.googleapis.com/v1beta`, model default `gemini-2.5-flash`) ->
+  Code `Extrair texto` (`candidates[0].content.parts[].text`) -> Respond.
+- **Respond to Webhook** — `{ "text": ... }` (ambos os ramos convergem).
+
+Env do back: `CALENDAR_TRANSCRIBE_WEBHOOK_URL` (`http://n8n:5678/webhook/calendar-transcribe`);
+vazio -> back responde 503 `transcribe_not_configured`. Kill switch/sem-key sao tratados no Go
+ANTES de disparar (409 `ai_disabled`/`ai_key_missing`). **Whisper LOCAL** documentado como
+alternativa futura (enum previsto, NAO implementado — 3o ramo `local` apontando um faster-whisper
+self-host OpenAI-compativel; CUIDADO memoria da VPS/AC-11). Groq tambem citado. Import + teste
+manual: **pendente** (autorado, validado fora do n8n: parse, ramos, sintaxe dos Code). Como o
+`versionId` mudou, **reimportar** para pegar a versao multi-provider. Runbook completo com curl de
+teste: [docs/automation/CALENDAR_TRANSCRIBE_WORKFLOW.md](../docs/automation/CALENDAR_TRANSCRIBE_WORKFLOW.md).
 
 ## Gotchas tecnicos (do projeto n8n — nao esquecer)
 

@@ -27,23 +27,51 @@ type rowScanner interface {
 }
 
 // Colunas do evento na ordem esperada por scanEvent. client_id e event_date saem
-// como text ('' ->; 'YYYY-MM-DD'); os jsonb saem com coalesce para '[]'.
+// como text ('' ->; 'YYYY-MM-DD'); os jsonb saem com coalesce para '[]'. version e o
+// contador de optimistic locking (C12), sempre a ultima coluna base.
 const eventCols = `id, account_id, client_id::text, event_date::text, event_time, type, title,
 	status, priority, responsible_id, coalesce(involved_ids, '[]'::jsonb),
-	coalesce(media, '[]'::jsonb), description, created_at, updated_at`
+	coalesce(media, '[]'::jsonb), description, created_at, updated_at, version,
+	coalesce(source, 'manual'), coalesce(linked_media, '[]'::jsonb)`
+
+// eventTaskIDCol resolve a task vinculada ao evento (contrato C10) como subquery
+// ESCALAR (uma task por evento, sem multiplicar linhas no LEFT JOIN) sobre
+// tasks.task_relations, filtrada por module/resource_type e amarrada a MESMA account
+// (defesa em profundidade: nunca mostra task de outra conta). NULL = sem vinculo. Usa o
+// indice tasks_task_relations_module_idx (module, resource_type, resource_id) — sem N+1.
+// Exige o alias `e` na tabela calendar.events para a correlacao (e.id / e.account_id).
+const eventTaskIDCol = `,
+	(select tr.task_id::text
+	 from tasks.task_relations tr
+	 join tasks.tasks t on t.id = tr.task_id
+	 where tr.module = 'calendar' and tr.resource_type = 'event'
+	   and tr.resource_id = e.id::text and t.account_id = e.account_id
+	 order by tr.refreshed_at desc
+	 limit 1)`
 
 func scanEvent(row rowScanner) (CalendarEvent, error) {
 	var e CalendarEvent
 	err := row.Scan(&e.ID, &e.AccountID, &e.ClientID, &e.Date, &e.Time, &e.Type, &e.Title,
 		&e.Status, &e.Priority, &e.ResponsibleID, &e.InvolvedIDs, &e.Media, &e.Description,
-		&e.CreatedAt, &e.UpdatedAt)
+		&e.CreatedAt, &e.UpdatedAt, &e.Version, &e.Source, &e.LinkedMedia)
+	return e, err
+}
+
+// scanEventWithTask e o scanEvent + a coluna taskId (eventTaskIDCol). Usado so nas
+// leituras que fazem o join de vinculo (ListEvents/GetEvent). A ordem das colunas e
+// eventCols (com version por ultimo) seguido de eventTaskIDCol.
+func scanEventWithTask(row rowScanner) (CalendarEvent, error) {
+	var e CalendarEvent
+	err := row.Scan(&e.ID, &e.AccountID, &e.ClientID, &e.Date, &e.Time, &e.Type, &e.Title,
+		&e.Status, &e.Priority, &e.ResponsibleID, &e.InvolvedIDs, &e.Media, &e.Description,
+		&e.CreatedAt, &e.UpdatedAt, &e.Version, &e.Source, &e.LinkedMedia, &e.TaskID)
 	return e, err
 }
 
 // ListEvents retorna os eventos da account na janela [from, to] (inclusive),
 // opcionalmente filtrados por cliente. Datas/cliente vazios = sem aquele filtro.
 func (s *Store) ListEvents(ctx context.Context, accountID string, f EventFilter) ([]EventView, error) {
-	query := `select ` + eventCols + ` from calendar.events where account_id = $1::uuid`
+	query := `select ` + eventCols + eventTaskIDCol + ` from calendar.events e where account_id = $1::uuid`
 	args := []any{accountID}
 	if strings.TrimSpace(f.From) != "" {
 		args = append(args, strings.TrimSpace(f.From))
@@ -67,7 +95,7 @@ func (s *Store) ListEvents(ctx context.Context, accountID string, f EventFilter)
 
 	out := make([]EventView, 0)
 	for rows.Next() {
-		e, err := scanEvent(rows)
+		e, err := scanEventWithTask(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -79,13 +107,13 @@ func (s *Store) ListEvents(ctx context.Context, accountID string, f EventFilter)
 // GetEvent retorna um evento. accountID vazio = sem filtro de escopo (admin);
 // preenchido = defesa em profundidade (evento de outra account => ErrNoRows).
 func (s *Store) GetEvent(ctx context.Context, id, accountID string) (CalendarEvent, error) {
-	query := `select ` + eventCols + ` from calendar.events where id = $1::uuid`
+	query := `select ` + eventCols + eventTaskIDCol + ` from calendar.events e where id = $1::uuid`
 	args := []any{id}
 	if strings.TrimSpace(accountID) != "" {
 		args = append(args, accountID)
 		query += " and account_id = $2::uuid"
 	}
-	return scanEvent(s.pool.QueryRow(ctx, query, args...))
+	return scanEventWithTask(s.pool.QueryRow(ctx, query, args...))
 }
 
 // CreateEvent insere um novo evento na account.
@@ -93,31 +121,55 @@ func (s *Store) CreateEvent(ctx context.Context, accountID string, in EventInput
 	const q = `
 		insert into calendar.events
 			(account_id, client_id, event_date, event_time, type, title, status, priority,
-			 responsible_id, involved_ids, media, description)
-		values ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12)
+			 responsible_id, involved_ids, media, description, source)
+		values ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13)
 		returning ` + eventCols
+	source := strings.TrimSpace(in.Source)
+	if source == "" {
+		source = "manual"
+	}
 	return scanEvent(s.pool.QueryRow(ctx, q,
 		accountID, nullUUID(in.ClientID), in.Date, in.Time, in.Type, in.Title, in.Status,
-		in.Priority, in.ResponsibleID, jsonArray(in.InvolvedIDs), jsonMedia(in.Media), in.Description))
+		in.Priority, in.ResponsibleID, jsonArray(in.InvolvedIDs), jsonMedia(in.Media), in.Description, source))
 }
 
-// UpdateEvent substitui os campos mutaveis do evento (full replace). accountID
-// vazio = sem filtro (admin); preenchido = defesa em profundidade.
-func (s *Store) UpdateEvent(ctx context.Context, id, accountID string, in EventInput) (CalendarEvent, error) {
+// UpdateEvent substitui os campos mutaveis do evento (full replace) e incrementa
+// version (C12). accountID vazio = sem filtro (admin); preenchido = defesa em
+// profundidade. expectedVersion nao-nil adiciona o guard `and version = $n` (optimistic
+// locking): se ninguem casar, retorna pgx.ErrNoRows e o service desambigua 404 x 409.
+func (s *Store) UpdateEvent(ctx context.Context, id, accountID string, in EventInput, expectedVersion *int) (CalendarEvent, error) {
 	query := `
 		update calendar.events set
 			client_id = $2::uuid, event_date = $3::date, event_time = $4, type = $5, title = $6,
 			status = $7, priority = $8, responsible_id = $9, involved_ids = $10::jsonb,
-			media = $11::jsonb, description = $12, updated_at = now()
+			media = $11::jsonb, description = $12, updated_at = now(), version = version + 1
 		where id = $1::uuid`
 	args := []any{id, nullUUID(in.ClientID), in.Date, in.Time, in.Type, in.Title, in.Status,
 		in.Priority, in.ResponsibleID, jsonArray(in.InvolvedIDs), jsonMedia(in.Media), in.Description}
 	if strings.TrimSpace(accountID) != "" {
 		args = append(args, accountID)
-		query += " and account_id = $13::uuid"
+		query += " and account_id = $" + strconv.Itoa(len(args)) + "::uuid"
+	}
+	if expectedVersion != nil {
+		args = append(args, *expectedVersion)
+		query += " and version = $" + strconv.Itoa(len(args))
 	}
 	query += " returning " + eventCols
 	return scanEvent(s.pool.QueryRow(ctx, query, args...))
+}
+
+// SetEventLinkedMedia atualiza SO a coluna linked_media do evento (WAVE 6 cruzamento B): a midia
+// espelhada da task vinculada, read-only. NAO bumpa version (nao e conteudo editavel do usuario;
+// nao pode invalidar o optimistic locking dele) nem updated_at. accountID = defesa em profundidade.
+func (s *Store) SetEventLinkedMedia(ctx context.Context, id, accountID string, media []MediaItem) error {
+	query := `update calendar.events set linked_media = $2::jsonb where id = $1::uuid`
+	args := []any{id, jsonMedia(media)}
+	if strings.TrimSpace(accountID) != "" {
+		args = append(args, accountID)
+		query += " and account_id = $3::uuid"
+	}
+	_, err := s.pool.Exec(ctx, query, args...)
+	return err
 }
 
 // DeleteEvent remove um evento. Retorna pgx.ErrNoRows quando nada foi apagado.
@@ -184,8 +236,38 @@ func (s *Store) GetConfig(ctx context.Context, accountID string) (CalendarConfig
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &cfg)
 	}
+	// Garante shape estavel do C2 mesmo com jsonb parcial ou com null explicito
+	// (unmarshal de "clientColors": null zera o mapa; defaults acima nao bastam).
 	if cfg.ResponsibleUserIDs == nil {
 		cfg.ResponsibleUserIDs = []string{}
+	}
+	if cfg.ClientColors == nil {
+		cfg.ClientColors = map[string]string{}
+	}
+	if cfg.TypeColors == nil {
+		cfg.TypeColors = map[string]string{}
+	}
+	if strings.TrimSpace(cfg.WeekStartsOn) == "" {
+		cfg.WeekStartsOn = "sunday"
+	}
+	if strings.TrimSpace(cfg.AI.Provider) == "" {
+		cfg.AI.Provider = "claude"
+	}
+	// Shape v4 estavel mesmo com jsonb parcial ou null explicito nas secoes novas
+	// (unmarshal de "ai":{...} sem transcribeProvider, ou "chat":null, deixa vazio).
+	if strings.TrimSpace(cfg.AI.TranscribeProvider) == "" {
+		cfg.AI.TranscribeProvider = "gemini"
+	}
+	if strings.TrimSpace(cfg.Chat.Position) == "" {
+		cfg.Chat.Position = "center"
+	}
+	// Shape v4.1 estavel (WAVE 3.1) para conta antiga: scopeMode ausente => general;
+	// disabledClientIds null/ausente => lista vazia (nunca nil no round-trip do jsonb).
+	if strings.TrimSpace(cfg.AI.ScopeMode) == "" {
+		cfg.AI.ScopeMode = scopeModeGeneral
+	}
+	if cfg.AI.DisabledClientIDs == nil {
+		cfg.AI.DisabledClientIDs = []string{}
 	}
 	return cfg, nil
 }
@@ -231,6 +313,25 @@ func (s *Store) ListMembers(ctx context.Context, accountID string) ([]Member, er
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// ResolveUserLabel resolve o nome exibivel de UM usuario pelo id (WAVE 6): nick > display_name
+// > email. Usado no sync evento->task para gravar o nome fresco em ui_metadata.responsible (a
+// task cacheia o nome e ficava velho quando so o id era sincronizado). "" se nao achar.
+func (s *Store) ResolveUserLabel(ctx context.Context, userID string) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ""
+	}
+	var label string
+	err := s.pool.QueryRow(ctx, `
+		select coalesce(nullif(trim(nick), ''), nullif(trim(display_name), ''), email, '')
+		from core.users where id = $1::uuid
+	`, userID).Scan(&label)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(label)
 }
 
 // ============================================================================

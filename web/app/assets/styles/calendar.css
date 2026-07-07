@@ -10,3 +10,6 @@
 @import './calendar/media.css';
 @import './calendar/config.css';
 @import './calendar/ai.css';
+@import './calendar/chat.css';
+@import './calendar/chat-conversations.css';
+@import './calendar/chat-scope.css';

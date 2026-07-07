@@ -82,7 +82,7 @@ function bgUrlsFor(dateKey: string): string[] {
           :bg-urls="bgUrlsFor(cell.dateKey)"
           :clients-by-id="clientsById"
           :type-colors="typeColors || {}"
-          :max-chips="2"
+          :max-chips="0"
           :selected="cell.dateKey === selectedDate"
           @select-day="emit('select-day', $event)"
           @select-event="emit('select-event', $event)"

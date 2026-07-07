@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import CalendarMediaUploader from '~/components/calendar/CalendarMediaUploader.vue'
+import { useCalendarStore } from '~/stores/calendar'
 import {
   EVENT_TYPE_META,
   PRIORITY_META,
@@ -16,13 +17,18 @@ import {
   type CalendarPriority,
 } from '~/utils/calendar'
 
-const props = defineProps<{
-  open: boolean
-  event: CalendarEvent | null
-  defaultDate: string
-  clients: CalendarClient[]
-  people: CalendarPerson[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    event: CalendarEvent | null
+    defaultDate: string
+    clients: CalendarClient[]
+    people: CalendarPerson[]
+    // Presenca (SPEC-F9): "Fulano editando" quando OUTRO usuario edita ESTE evento.
+    editingLabel?: string
+  }>(),
+  { editingLabel: '' },
+)
 
 const emit = defineEmits<{
   submit: [input: CalendarEventInput]
@@ -40,6 +46,19 @@ const priority = ref('media')
 const responsibleId = ref('')
 const description = ref('')
 const media = ref<CalendarMediaItem[]>([])
+
+const store = useCalendarStore()
+
+// Integracao com Tasks (contrato C10 + WAVE 5): so vale na CRIACAO. O toggle vem LIGADO por
+// padrao (decisao do dono 2026-07-05) — toda criacao de evento sugere criar a task; o usuario
+// pode desligar. Se o board nao esta configurado (config tasks.boardId vazio), o toggle vira
+// aviso acionavel com link para a aba Integracoes da config (drawer aberto por ?config=integracoes).
+const createTask = ref(true)
+const tasksBoardConfigured = computed(() => Boolean(store.config.tasks?.boardId))
+
+function onToggleCreateTask(event: Event): void {
+  createTask.value = (event.target as HTMLInputElement).checked
+}
 
 const isEdit = computed(() => Boolean(props.event))
 const canSave = computed(() => title.value.trim() !== '' && date.value !== '')
@@ -72,13 +91,15 @@ watch(
     responsibleId.value = e?.responsibleId || ''
     description.value = e?.description || ''
     media.value = e?.media ? [...e.media] : []
+    // WAVE 5: o toggle de criar task volta LIGADO a cada abertura (default-on; so ao criar).
+    createTask.value = true
   },
   { immediate: true },
 )
 
 function submit(): void {
   if (!canSave.value) return
-  emit('submit', {
+  const payload: CalendarEventInput = {
     date: date.value,
     time: time.value.trim(),
     clientId: clientId.value,
@@ -90,7 +111,12 @@ function submit(): void {
     involvedIds: props.event?.involvedIds || [],
     media: media.value,
     description: description.value.trim(),
-  })
+  }
+  // createTask so vale ao CRIAR e com board configurado (C10); senao nem envia.
+  if (!isEdit.value && tasksBoardConfigured.value && createTask.value) {
+    payload.createTask = true
+  }
+  emit('submit', payload)
 }
 
 function remove(): void {
@@ -118,6 +144,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
     <div class="calendar-form">
       <header class="calendar-form__header">
         <strong class="calendar-form__title">{{ isEdit ? 'Editar item' : 'Novo item' }}</strong>
+        <span v-if="isEdit && editingLabel" class="calendar-form__presence" :title="editingLabel">
+          <UIcon name="i-lucide-pencil-line" aria-hidden="true" />
+          {{ editingLabel }}
+        </span>
         <button
           type="button"
           class="calendar-form__close"
@@ -207,6 +237,38 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
         <div class="calendar-form__field calendar-form__field--full">
           <CalendarMediaUploader v-model="media" label="Anexos (imagem / vídeo)" />
+        </div>
+
+        <!-- Integracao com Tasks (C10): so ao criar. Board configurado -> toggle;
+             sem board -> aviso acionavel que abre a config na aba Integracoes. -->
+        <div v-if="!isEdit" class="calendar-form__field calendar-form__field--full">
+          <label v-if="tasksBoardConfigured" class="calendar-form__toggle">
+            <input
+              type="checkbox"
+              class="calendar-form__toggle-input"
+              :checked="createTask"
+              @change="onToggleCreateTask"
+            />
+            <span class="calendar-form__toggle-text">
+              <span class="calendar-form__toggle-title">Criar task no board</span>
+              <span class="calendar-form__toggle-hint">
+                Gera uma task vinculada no board configurado em Integrações.
+              </span>
+            </span>
+          </label>
+          <p v-else class="calendar-form__task-warn">
+            <UIcon name="i-lucide-alert-triangle" aria-hidden="true" />
+            <span>
+              Nenhum board configurado para criar tasks.
+              <NuxtLink
+                to="/calendario?config=integracoes"
+                class="calendar-form__task-link"
+                @click="emit('cancel')"
+              >
+                Configurar
+              </NuxtLink>
+            </span>
+          </p>
         </div>
       </div>
 

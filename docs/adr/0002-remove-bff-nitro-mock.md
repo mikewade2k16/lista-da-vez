@@ -1,6 +1,6 @@
 # ADR 0002 — Remover BFF Nitro mock; frontend conversa direto com Go
 
-- **Status:** Aceito
+- **Status:** Aceito — concluído (2026-07-02)
 - **Data:** 2026-05-29
 - **Decisores:** Mike Wade
 - **Referência cruzada:** [MULTITENANT_COMPLETION_PLAN.md](../MULTITENANT_COMPLETION_PLAN.md) seção C7, C9, C14, C15, C17.
@@ -72,6 +72,7 @@ Webhooks de leads/products (C17) vão direto para Go em `POST /v1/webhooks/{lead
 4. **C14** (2026-05-29) — `useAdminUsersManager` novo contra `/v1/admin/users`.
 5. **C15** (2026-05-29) — `useAdminOrganizationsManager` novo contra `/v1/admin/organizations`.
 6. **C17** (2026-05-29) — `useLeadsManager` + `useProductsManager` reescritos contra `/v1/admin/{leads,products}` real (módulo Go novo `site`).
+7. **AC-12** (2026-07-02) — Removido o resquício final: mock finance (`web/server/` inteiro, incluindo `financeMockStore.ts`). Módulo Go novo `finance` (migration `0187`, rotas `/v1/finance/*`); composables da layer finance migrados para `createApiRequest`; `LegacyMarker` retirado de `/finance`. `web/server/` deixou de existir.
 
 ## Referências
 

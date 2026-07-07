@@ -160,31 +160,16 @@ radius (nada lê core `workspace.*` via `has()` hoje). É a base para a FASE 2 (
 
 ---
 
-## 6. Módulo Finance — front sobre mock BFF — `mock` (2026-06-30)
+## 6. Módulo Finance — front sobre mock BFF — RESOLVIDO 2026-07-02 (AC-12)
 
-**O que é:** o front do módulo financeiro foi portado do `web-reference` para
-`web/layers/finance/` (Fase 14 do roadmap), mas a fonte de dados é um **mock BFF
-temporário** — rotas Nitro `web/server/api/admin/finance-sheets/*` e
-`web/server/api/admin/finance-config/*`, com store in-memory em
-`web/server/utils/financeMockStore.ts`.
-
-**Por que é legado/mock:**
-- Não persiste no banco real — os dados vivem na memória do processo Nitro e **somem
-  a cada restart do dev**.
-- Só funciona em dev/SSR (`nuxt dev`); em `nuxt generate` estático não há server, a
-  tela fica sem back.
-- O back Go real (`finance.*`) ainda não existe.
-
-**Marcação:** `LegacyMarker kind="mock"` no topo de `/finance` (visível só p/
-platform_admin). AGENT do layer em `web/layers/finance/AGENT.md`.
-
-**Alvo / como remover:**
-1. Implementar o back Go seguindo `docs/finance/PLANO_MODULO_FINANCE.md` (schema
-   `finance.*`, endpoints `/v1/admin/finance-*`, permissões, migration `0181`).
-2. Trocar `$fetch` por `createApiRequest` (~/utils/api-client) com `X-Account-Id` nos
-   composables `useFinancesManager`/`useFinancesConfigManager`; re-habilitar realtime.
-3. **Apagar** `web/server/api/admin/finance-*` + `web/server/utils/financeMockStore.ts`.
-4. Remover o `LegacyMarker` de `/finance` e esta seção (#6).
+**RESOLVIDO 2026-07-02 (AC-12):** back Go real em `back/internal/modules/finance/`
+(migration `0187_finance_module.sql`, schema `finance.*`, rotas `/v1/finance/*`);
+`web/server/` removido por completo (mock BFF Nitro + `financeMockStore.ts`);
+composables `useFinancesManager`/`useFinancesConfigManager`/`useFinanceConfigEditor`
+migrados de `$fetch` para `createApiRequest` (X-Account-Id pelo provider global);
+`LegacyMarker` retirado de `/finance`; workspace `finance` registrado (gating por
+módulo + workspace). Dados persistem no banco real (sobrevivem a restart). ADR:
+`docs/adr/0002-remove-bff-nitro-mock.md`; módulo: `back/internal/modules/finance/AGENT.md`.
 
 ---
 

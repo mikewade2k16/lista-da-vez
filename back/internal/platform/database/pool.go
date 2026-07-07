@@ -11,12 +11,30 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 )
 
+// OpenPool abre o pool privilegiado (DATABASE_URL). Usado pelo binario migrate
+// (roda DDL das migrations) e por qualquer caller que precise da role padrao.
 func OpenPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
-	if cfg.DatabaseURL == "" {
+	return openPoolWithURL(ctx, cfg, cfg.DatabaseURL)
+}
+
+// OpenAppPool abre o pool de RUNTIME da api com DATABASE_APP_URL (role
+// least-privilege omni_app, AC-04). Fallback para DATABASE_URL quando a app
+// URL nao esta definida (dev local sem a role — em production o Validate() da
+// config impede esse fallback).
+func OpenAppPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
+	url := cfg.DatabaseAppURL
+	if url == "" {
+		url = cfg.DatabaseURL
+	}
+	return openPoolWithURL(ctx, cfg, url)
+}
+
+func openPoolWithURL(ctx context.Context, cfg config.Config, url string) (*pgxpool.Pool, error) {
+	if url == "" {
 		return nil, errors.New("database_url is required")
 	}
 
-	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	poolConfig, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse database config: %w", err)
 	}

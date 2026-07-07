@@ -3,10 +3,12 @@ import { defineStore } from 'pinia'
 
 import { useTenantsStore } from '~/stores/tenants'
 import { useAuthStore } from '~/stores/auth'
+import { useUiStore } from '~/stores/ui'
 import { createApiRequest } from '~/utils/api-client'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { useCalendarViewport } from '~/composables/useCalendarViewport'
 import { useCalendarDayMedia } from '~/composables/useCalendarDayMedia'
+import { useCalendarEventCrud } from '~/composables/useCalendarEventCrud'
 import * as calendarApi from '~/domain/calendar/calendar-api'
 import {
   addDaysToKey,
@@ -19,7 +21,6 @@ import {
   type CalendarClient,
   type CalendarConfig,
   type CalendarEvent,
-  type CalendarEventInput,
   type CalendarHoliday,
   type CalendarMediaItem,
   type CalendarMember,
@@ -46,6 +47,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   const runtimeConfig = useRuntimeConfig()
   const tenantsStore = useTenantsStore()
   const auth = useAuthStore()
+  const ui = useUiStore()
   const accountStore = useCoreAccountStore()
   const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
@@ -156,6 +158,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   // --- Fetch da janela (eventos + feriados) + notas -----------------------------
   let windowFetchTimer = 0
   let notesSaveTimer = 0
+  // notesSaving marca o PUT da nota EM VOO (o timer ja zerou ao disparar). Guarda o
+  // rascunho do usuario contra re-hidratacao remota durante a janela de rede (principio 1).
+  let notesSaving = false
 
   // Garante sessao antes de bater na API; engole erro (mantem o estado atual).
   async function withSession(run: () => Promise<void>): Promise<void> {
@@ -215,8 +220,50 @@ export const useCalendarStore = defineStore('calendar', () => {
     notesLoaded.value = new Set(notesLoaded.value).add(month)
     if (notesSaveTimer) window.clearTimeout(notesSaveTimer)
     notesSaveTimer = window.setTimeout(() => {
-      void calendarApi.putNotesForMonth(apiRequest, month, html).catch(() => {})
+      // Zera o timer ao disparar: enquanto ele esta ativo ha edicao pendente do usuario
+      // (reloadNoteFromRemote respeita isso e nao sobrescreve o rascunho — principio 1).
+      notesSaveTimer = 0
+      notesSaving = true
+      void calendarApi
+        .putNotesForMonth(apiRequest, month, html)
+        .catch(() => {})
+        .finally(() => {
+          notesSaving = false
+        })
     }, 800)
+  }
+
+  // Recarrega a nota de um mes a partir do banco quando um evento realtime avisa que ela
+  // mudou (C11 note_updated). SO recarrega se a nota ja estava carregada e se NAO ha
+  // edicao pendente do usuario (o rascunho local vence enquanto o save esta em voo).
+  async function reloadNoteFromRemote(month: string): Promise<void> {
+    if (!month || !notesLoaded.value.has(month) || notesSaveTimer || notesSaving) return
+    await withSession(async () => {
+      const content = await calendarApi.fetchNotesForMonth(apiRequest, month)
+      notesByMonth.value = { ...notesByMonth.value, [month]: content }
+    })
+  }
+
+  // Refetch da janela visivel (eventos + midia do dia) disparado por invalidacao do
+  // realtime (C11 event_*/day_media_updated). Feriados nao mudam por evento, ficam de fora.
+  async function refetchWindow(): Promise<void> {
+    await fetchEvents()
+    await fetchDayMedia()
+  }
+
+  // WAVE 6: cria (e vincula) uma task para um evento SEM task — o botao do badge "evento sem task".
+  // Apos criar, refetcha (o EventView rele o taskId da relation e o badge some). Devolve o taskId.
+  async function createTaskForEvent(eventId: string): Promise<string> {
+    const id = String(eventId || '').trim()
+    if (!id) return ''
+    try {
+      const taskId = await calendarApi.createEventTask(apiRequest, id)
+      await fetchEvents()
+      return taskId
+    } catch {
+      ui.error('Não foi possível criar a task (confira se há um board configurado).')
+      return ''
+    }
   }
 
   // --- Responsaveis / config / membros ------------------------------------------
@@ -277,34 +324,15 @@ export const useCalendarStore = defineStore('calendar', () => {
   )
 
   // --- CRUD de eventos ----------------------------------------------------------
-  async function createEvent(input: CalendarEventInput): Promise<boolean> {
-    try {
-      await calendarApi.postEvent(apiRequest, input)
-      await fetchEvents()
-      return true
-    } catch {
-      return false
-    }
-  }
+  // Extraido para composable na SPEC-F9 (mantem este arquivo < 450 linhas e concentra o
+  // optimistic locking C12). updateEvent(id, input, version) devolve 'ok'|'conflict'|'error';
+  // version = a que o form carregou (o chamador passa editingEvent.version).
+  const eventCrud = useCalendarEventCrud({ apiRequest, refetch: fetchEvents, ui })
+  const { createEvent, updateEvent, deleteEvent } = eventCrud
 
-  async function updateEvent(id: string, input: CalendarEventInput): Promise<boolean> {
-    try {
-      await calendarApi.putEvent(apiRequest, id, input)
-      await fetchEvents()
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  async function deleteEvent(id: string): Promise<boolean> {
-    try {
-      await calendarApi.deleteEvent(apiRequest, id)
-      await fetchEvents()
-      return true
-    } catch {
-      return false
-    }
+  // Evento carregado por id (para a UI re-hidratar o form apos um 409 version_conflict).
+  function getEventById(id: string): CalendarEvent | null {
+    return events.value.find((event) => event.id === id) || null
   }
 
   // Scroll infinito + foco/navegacao: em composables/useCalendarViewport.ts.
@@ -360,8 +388,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }
 
-  function init(): void {
-    if (initialized.value) return
+  // init faz a carga inicial UMA vez (guardado). Devolve true no primeiro load e false quando ja
+  // inicializado — a pagina usa isso para decidir refetchar a janela ao RE-entrar (dado fresco).
+  function init(): boolean {
+    if (initialized.value) return false
     initialized.value = true
 
     const storedPanel = readLocal(NOTES_PANEL_KEY)
@@ -374,6 +404,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     void fetchEvents()
     void fetchHolidays()
     void fetchDayMedia()
+    return true
   }
 
   return {
@@ -386,6 +417,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     notesPanelOpen,
     config,
     members,
+    isInitialized: computed(() => initialized.value),
     // derivados
     clients,
     clientsById,
@@ -429,9 +461,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     createEvent,
     updateEvent,
     deleteEvent,
+    createTaskForEvent,
+    getEventById,
     fetchConfig,
     fetchMembers,
     saveConfig,
     saveDayMedia,
+    // Aplicacao do realtime por invalidacao (SPEC-F9 / C11).
+    refetchWindow,
+    reloadNoteFromRemote,
   }
 })

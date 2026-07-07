@@ -41,3 +41,27 @@ func TestParseUpstreamBody(t *testing.T) {
 		t.Fatalf("expected parsed JSON body, got %s", encoded)
 	}
 }
+
+func TestNewServiceDefaultMaxPagesIsCapped(t *testing.T) {
+	service := NewService()
+
+	if service.options.MaxPages != 5 {
+		t.Fatalf("expected default MaxPages=5, got %d", service.options.MaxPages)
+	}
+
+	if service.options.PageLimit != 100 {
+		t.Fatalf("expected default PageLimit=100, got %d", service.options.PageLimit)
+	}
+}
+
+func TestOverviewDatasetDefinitionsKeepSinglePage(t *testing.T) {
+	for _, definition := range perolaDatasetDefinitions() {
+		if !definition.IncludeInOverview {
+			continue
+		}
+
+		if definition.MaxPages != 1 {
+			t.Fatalf("dataset %q no overview deve fixar MaxPages=1 (fan-out de paginas fica fora do overview), got %d", definition.Key, definition.MaxPages)
+		}
+	}
+}

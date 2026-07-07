@@ -41,6 +41,23 @@ func TestPresenceJoin_PublishesUserJoinedOnce(t *testing.T) {
 	}
 }
 
+func TestPresenceJoin_CalendarTopicBroadcastsLive(t *testing.T) {
+	// Regressao: presenceEventForTopic nao reconhecia o prefixo presence:calendar: e
+	// descartava join/left/field_locked, entao avatares/badge nunca atualizavam ao vivo.
+	hub := NewHub()
+	store := NewPresenceStore(hub, 30*time.Second)
+	topic := "presence:calendar:acc1"
+	sub := hub.Subscribe(topic, 8)
+	defer sub.Close()
+
+	store.Join(topic, PresenceUser{UserID: "u1", DisplayName: "Alice"})
+
+	events := drainEvents(t, sub, 100*time.Millisecond)
+	if events[EventTypePresenceUserJoined] != 1 {
+		t.Errorf("topico presence:calendar deve publicar user_joined ao vivo; got %d", events[EventTypePresenceUserJoined])
+	}
+}
+
 func TestPresenceLockField_ExclusiveByFieldKey(t *testing.T) {
 	hub := NewHub()
 	store := NewPresenceStore(hub, 30*time.Second)

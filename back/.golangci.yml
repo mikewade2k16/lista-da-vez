@@ -31,6 +31,7 @@ linters:
         - G404  # math/rand suficiente para IDs nao-criticos
         - G304  # File inclusion via variable — já validado em camadas anteriores no ERP
         - G115  # Integer overflow uint→int — falsos positivos em conversões controladas
+        - G117  # Campo JSON tipo "sessionKey"/"serviceToken" marshalado p/ o n8n e identificador/segredo enviado DE PROPOSITO (payloads de webhook), nao vazamento
 
   exclusions:
     rules:

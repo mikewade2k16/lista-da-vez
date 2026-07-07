@@ -9,6 +9,19 @@ export interface TaskVideoItem {
   uploadedAt: string
 }
 
+// TaskCalendarMediaItem = midia ESPELHADA do evento vinculado no calendario (WAVE 6 cruzamento A,
+// read-only). A task nao guarda imagem; aqui e' so exibicao, entao imagem+video do evento aparecem.
+// url aponta para /uploads/calendar/{conta}/ (servido global); populada pelo sync do backend.
+export interface TaskCalendarMediaItem {
+  id: string
+  url: string
+  name: string
+  type: 'image' | 'video'
+  sizeBytes: number
+  contentType: string
+  posterUrl: string
+}
+
 export interface TaskProjectFiltersConfig {
   search: boolean
   responsible: boolean
@@ -119,6 +132,8 @@ export interface TaskItem {
   createdAt: string
   updatedAt: string
   videos?: TaskVideoItem[]
+  // calendarMedia = midia do evento vinculado, espelhada read-only (WAVE 6 cruzamento A).
+  calendarMedia?: TaskCalendarMediaItem[]
 }
 
 export interface TasksWorkspaceState {

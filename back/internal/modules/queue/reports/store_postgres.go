@@ -98,56 +98,14 @@ func (repository *PostgresRepository) listHistoryQuery(
 	`)
 
 	args := []any{storeIDs}
-	position := 2
+	args = appendHistoryFilters(&query, args, filters)
 
-	if filters.FinishedAtFrom != nil {
-		fmt.Fprintf(&query, " and h.finished_at >= $%d", position)
-		args = append(args, *filters.FinishedAtFrom)
-		position++
+	query.WriteString(" order by h.finished_at desc, h.created_at desc")
+	if filters.Limit > 0 {
+		fmt.Fprintf(&query, " limit $%d", len(args)+1)
+		args = append(args, filters.Limit)
 	}
-
-	if filters.FinishedAtTo != nil {
-		fmt.Fprintf(&query, " and h.finished_at <= $%d", position)
-		args = append(args, *filters.FinishedAtTo)
-		position++
-	}
-
-	if len(filters.ConsultantIDs) > 0 {
-		fmt.Fprintf(&query, " and h.person_id::text = any($%d)", position)
-		args = append(args, filters.ConsultantIDs)
-		position++
-	}
-
-	if len(filters.Outcomes) > 0 {
-		fmt.Fprintf(&query, " and h.finish_outcome = any($%d)", position)
-		args = append(args, filters.Outcomes)
-		position++
-	}
-
-	if len(filters.StartModes) > 0 {
-		fmt.Fprintf(&query, " and h.start_mode = any($%d)", position)
-		args = append(args, filters.StartModes)
-		position++
-	}
-
-	if filters.IsExistingCustomer != nil {
-		fmt.Fprintf(&query, " and h.is_existing_customer = $%d", position)
-		args = append(args, *filters.IsExistingCustomer)
-		position++
-	}
-
-	if filters.MinSaleAmount != nil {
-		fmt.Fprintf(&query, " and h.sale_amount >= $%d", position)
-		args = append(args, *filters.MinSaleAmount)
-		position++
-	}
-
-	if filters.MaxSaleAmount != nil {
-		fmt.Fprintf(&query, " and h.sale_amount <= $%d", position)
-		args = append(args, *filters.MaxSaleAmount)
-	}
-
-	query.WriteString(" order by h.finished_at desc, h.created_at desc;")
+	query.WriteString(";")
 
 	rows, err := repository.pool.Query(ctx, query.String(), args...)
 	if err != nil {

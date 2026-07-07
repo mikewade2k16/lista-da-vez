@@ -149,6 +149,28 @@ Regra de resposta:
 - `POST /v1/operations/finish` deve receber apenas os campos aplicaveis ao desfecho atual; por exemplo, `lossReasons*` so sobem em `nao-compra`
 - campos opcionais/default sem valor de negocio nao devem subir como string vazia, array vazio ou objeto vazio
 
+## Carregamento do snapshot e janela de historico (`store_postgres_history.go`)
+
+- `LoadSnapshot` e `LoadSnapshotWithHistorySince` vivem em
+  `store_postgres_history.go` (movidos de `store_postgres.go`, junto de
+  `loadServiceHistory` e do helper puro `buildServiceHistoryQuery`).
+- `LoadSnapshot(ctx, storeID)` mantem o contrato atual: historico COMPLETO, SEM
+  janela (delega para `LoadSnapshotWithHistorySince(ctx, storeID, 0)`). E' o que a
+  operacao ao vivo usa (`service.go` -> `GET /v1/operations/snapshot`), entao esse
+  payload permanece byte-identico.
+- `LoadSnapshotWithHistorySince(ctx, storeID, historySinceMillis)` janela o
+  historico por `finished_at >= historySinceMillis` (0 = sem janela). Consumido
+  pelo `analytics`, que so agrega — carregar todo o historico da loja a cada
+  request era o gargalo.
+- `buildServiceHistoryQuery(storeID, sinceMillis)` e' pura (sem banco) para ser
+  testavel: adiciona `and finished_at >= $2` so quando `sinceMillis > 0` e mantem
+  `order by started_at asc, created_at asc`.
+- A interface `Repository` (model.go) NAO muda: continua declarando so
+  `LoadSnapshot`. `LoadSnapshotWithHistorySince` e' metodo concreto do
+  `PostgresRepository`, consumido pela interface propria do `analytics`.
+- Follow-up (fora deste corte): janelar o `serviceHistory` que o snapshot ao vivo
+  envia ao navegador (`snapshot.go`) e a janela em `loadSessions`.
+
 ## Regras de escopo
 
 - leitura: `consultant`, `store_terminal`, `manager`, `marketing`, `director`, `owner` e `platform_admin`

@@ -5,6 +5,8 @@
 > RLS é a mudança mais perigosa do projeto: feita errada, **tranca todo o acesso** (queries voltam 0 linhas) **ou vaza cross-tenant** (policy frouxa). Por isso este doc existe antes de qualquer linha.
 >
 > **PRÉ-REQUISITO CRÍTICO (descoberto na implementação da fundação, wave 4):** a app conecta como `omni` = `POSTGRES_USER` = **SUPERUSER**, e no Postgres **superuser ignora RLS por completo** (nem `FORCE ROW LEVEL SECURITY` aplica). Enquanto a app conectar como superuser, **toda policy RLS é um no-op silencioso** (falsa sensação de isolamento — a proteção real continua sendo só o filtro na aplicação). **Antes de RLS ter QUALQUER efeito** é obrigatório: criar um **role de app dedicado, SEM `SUPERUSER` e SEM `BYPASSRLS`**, com os `GRANT`s nas tabelas/schemas que ele usa, e apontar a `DATABASE_URL` (dev e prod) pra esse role. Isso é mudança de infra/deploy **com risco próprio** (GRANT incompleto = lockout total da app). A fundação (Querier + middleware + migration + teste) já está implementada e **fica inerte** até esse role existir.
+>
+> **ATENDIDO (AC-04, 2026-07-02):** role `omni_app` criada via `scripts/db/create-app-role.sql` + `DATABASE_APP_URL`; grants sincronizados por `SyncAppRoleGrants` a cada `migrate up`. A fundação RLS pode sair do estado inerte quando for retomada.
 
 ## 1. Objetivo e princípio
 

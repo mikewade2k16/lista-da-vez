@@ -51,6 +51,32 @@ Ele nao deve cuidar de:
 - backend deve filtrar por `store_id` e acesso do usuario antes de qualquer agregacao
 - quando `storeId` for omitido, leituras agregadas devem atravessar apenas as lojas acessiveis da sessao dentro do tenant resolvido
 
+## Teto de leitura do historico (`?limit=` + `historyWindow`)
+
+- `listHistoryQuery` aplica `LIMIT` no SQL. O teto default e' `2000`
+  (`defaultHistoryFetchLimit`); o cliente pode pedir outro via `?limit=`, clampado
+  em `5000` (`maxHistoryFetchLimit`). `?limit=` invalido (nao-inteiro) -> `400`
+  `validation_error`, mesmo padrao de `page`/`pageSize`.
+- A ordenacao `finished_at desc, created_at desc` garante que o truncamento
+  preserva os atendimentos MAIS RECENTES (indice `0007 (store_id, finished_at desc)`).
+- Os filtros dinamicos do SQL vivem em `appendHistoryFilters`
+  (`store_postgres_filters.go`), compartilhado entre `listHistoryQuery` e
+  `CountHistory` para nunca divergirem (placeholders numerados por `len(args)+1`).
+- Os 4 responses (`overview`, `results`, `recent-services`, `multistore-overview`)
+  carregam `historyWindow`: `{ limit, fetched, total, truncated }`.
+  - `fetched` = linhas que o SQL trouxe (apos LIMIT, ANTES dos filtros em memoria).
+  - `total` = `count(*)` com os MESMOS filtros SQL (sem os filtros em memoria como
+    `search`/`sourceIds`/`campaignIds`, que rodam depois no Go).
+  - `truncated=true` quando `total > fetched`.
+  - O `CountHistory` SO roda quando a janela bateu no teto (`fetched >= limit`);
+    abaixo do teto, `total == fetched` e nenhum count extra e' executado.
+- O front (`reports.ts`) le por campos nomeados e ignora `historyWindow`/`filters.limit`;
+  o comportamento so muda quando o historico filtrado por SQL passa do teto — e o
+  corte fica explicito no metadado.
+- Fora de escopo (follow-up): mover os filtros em memoria (`search`, `sourceIds`,
+  `visitReasonIds`, `completionLevels`, `campaignIds`) para SQL; cursor/keyset real
+  (`finished_at < $cursor`) se o teto de 2000 apertar.
+
 ## Regras de payload
 
 - nao devolver bundles gigantes quando o caso de uso for um card, tabela ou lista especifica

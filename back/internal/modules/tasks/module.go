@@ -15,6 +15,9 @@ type Module struct {
 	notifier         notifications.Notifier
 	relationRegistry *modules.RelationRegistry
 	videoStorage     TaskVideoStorage
+	// syncRegistry avisa os modulos donos de recursos espelhados (calendar) quando uma task
+	// muda (WAVE 5, E2). Injetado via WithRelationSync no app.go; nil = sync desligado.
+	syncRegistry *modules.RelationSyncRegistry
 }
 
 func New(publisher Publisher, notifier notifications.Notifier, relationRegistry *modules.RelationRegistry, videoStorage TaskVideoStorage) *Module {
@@ -24,6 +27,13 @@ func New(publisher Publisher, notifier notifications.Notifier, relationRegistry 
 		relationRegistry: relationRegistry,
 		videoStorage:     videoStorage,
 	}
+}
+
+// WithRelationSync injeta o registry de sync invertido (WAVE 5, E2), encadeavel no app.go
+// apos o New. Feito por setter (nao no New) para nao mexer nos callers de teste do modulo.
+func (module *Module) WithRelationSync(registry *modules.RelationSyncRegistry) *Module {
+	module.syncRegistry = registry
+	return module
 }
 
 func (module *Module) ID() string {
@@ -92,12 +102,24 @@ func (module *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	repository := NewPostgresRepository(deps.Pool)
 	service := NewService(repository, module.publisher, module.notifier, module.relationRegistry, module.videoStorage)
 	service.SetLogger(deps.Logger)
+	service.syncRegistry = module.syncRegistry // WAVE 5 (E2): sync invertido calendario<->tasks
 
 	module.handle = &handle{
 		service:        service,
 		authMiddleware: deps.AuthMiddleware,
 	}
 	return module.handle, nil
+}
+
+// Service devolve o Service construido no Build (nil antes do Build). Usado por
+// outros modulos que precisam do tasks como provider LAZY (ex.: calendar injeta
+// via closure `func() *tasks.Service { return tasksModule.Service() }`, resolvida
+// no primeiro uso e imune a ordem de Build no Registry).
+func (module *Module) Service() *Service {
+	if module.handle == nil {
+		return nil
+	}
+	return module.handle.service
 }
 
 type handle struct {

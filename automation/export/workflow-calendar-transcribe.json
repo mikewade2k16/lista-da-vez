@@ -1,0 +1,399 @@
+[
+  {
+    "id": "calendartrans001",
+    "name": "Calendar Transcribe",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "calendar-transcribe",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "b1f0c7a2-3d44-4e5a-9c11-8a2f4d6e7b01",
+        "name": "Webhook",
+        "webhookId": "c9d8e7f6-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Normaliza o provider (openai OU gemini; qualquer outro cai em gemini) e mantem o binario\n// do audio (data0) para os ramos seguintes. Campos provider/apiKey/model chegam em json.body\n// (form-data do multipart); o arquivo vira o binario data0 (1o arquivo do multipart do webhook).\nconst item = $input.first();\nconst body = (item.json && item.json.body) || {};\nconst raw = String(body.provider || 'gemini').toLowerCase();\nconst provider = raw === 'openai' ? 'openai' : (raw === 'local' ? 'local' : 'gemini');\nreturn [{ json: Object.assign({}, item.json, { provider: provider }), binary: item.binary }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          0
+        ],
+        "id": "c2d3e4f5-tr00-4000-8000-preparar00001",
+        "name": "Preparar"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "loose",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "cond-openai-0001",
+                      "leftValue": "={{ $json.provider }}",
+                      "rightValue": "openai",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "openai"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "loose",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "cond-gemini-0001",
+                      "leftValue": "={{ $json.provider }}",
+                      "rightValue": "gemini",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "gemini"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "loose",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "cond-local-0001",
+                      "leftValue": "={{ $json.provider }}",
+                      "rightValue": "local",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "local"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          440,
+          0
+        ],
+        "id": "d3e4f5a6-tr00-4000-8000-switchprov001",
+        "name": "Switch por provider"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + ($json.body.apiKey || '') }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "file",
+                "inputDataFieldName": "file"
+              },
+              {
+                "parameterType": "formData",
+                "name": "model",
+                "value": "={{ $json.body.model || 'whisper-1' }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          680,
+          -120
+        ],
+        "id": "e4f5a6b7-tr00-4000-8000-openaihttp001",
+        "name": "Transcrever (OpenAI Whisper)"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Converte o binario do audio (data0) em base64 e monta o corpo do generateContent do Gemini\n// com inline_data (mime do audio + base64) + um prompt de transcricao. A key vem do payload\n// (body.apiKey), resolvida server-side pelo Go; nunca e logada nem persistida no n8n.\nconst item = $input.first();\nconst body = (item.json && item.json.body) || {};\nconst apiKey = String(body.apiKey || '');\nconst model = String(body.model || '').trim() || 'gemini-2.5-flash';\nconst geminiBase = 'https://generativelanguage.googleapis.com/v1beta';\nconst binaries = item.binary || {};\nconst bkeys = Object.keys(binaries);\nif (!bkeys.length) { throw new Error('Sem audio no request (binary vazio)'); }\nconst bin = binaries[bkeys[0]] || {};\nconst base64 = String(bin.data || '');\nconst mime = String(bin.mimeType || 'audio/webm');\nconst url = geminiBase + '/models/' + model + ':generateContent';\nconst reqBody = { contents: [ { parts: [ { text: 'Transcreva este audio em pt-BR, responda so a transcricao.' }, { inline_data: { mime_type: mime, data: base64 } } ] } ] };\nreturn [{ json: { url: url, apiKey: apiKey, model: model, mime: mime, reqBody: reqBody } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          680,
+          120
+        ],
+        "id": "f5a6b7c8-tr00-4000-8000-gembase64001",
+        "name": "Montar base64 (Gemini)"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-goog-api-key",
+                "value": "={{ $json.apiKey }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.reqBody) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          900,
+          120
+        ],
+        "id": "a6b7c8d9-tr00-4000-8000-geminihttp01",
+        "name": "Gemini generateContent",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Extrai a transcricao do Gemini (candidates[0].content.parts[].text). Erro/vazio -> texto\n// vazio (o back Go so le { text }); nunca loga a key nem o payload cru.\nconst r = ($input.first() && $input.first().json) || {};\nconst cands = Array.isArray(r.candidates) ? r.candidates : [];\nconst parts = (((cands[0] || {}).content) || {}).parts || [];\nlet text = '';\nfor (const p of parts) { if (p && typeof p.text === 'string') text += p.text; }\nreturn [{ json: { text: String(text).trim() } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1120,
+          120
+        ],
+        "id": "b7c8d9e0-tr00-4000-8000-gemextrai001",
+        "name": "Extrair texto (Gemini)"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { \"text\": $json.text } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1360,
+          0
+        ],
+        "id": "d4e5f6a7-8b9c-40d1-a2e3-f4b5c6d7e8f9",
+        "name": "Respond to Webhook"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://whisper:8000/v1/audio/transcriptions",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "file",
+                "inputDataFieldName": "file"
+              },
+              {
+                "parameterType": "formData",
+                "name": "model",
+                "value": "={{ $json.body.model || 'Systran/faster-whisper-base' }}"
+              },
+              {
+                "parameterType": "formData",
+                "name": "language",
+                "value": "pt"
+              },
+              {
+                "parameterType": "formData",
+                "name": "response_format",
+                "value": "json"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          700,
+          460
+        ],
+        "id": "b1b2c3d4-tran-4000-8000-localwhisp01",
+        "name": "Transcrever (Whisper local)",
+        "onError": "continueRegularOutput"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Preparar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar": {
+        "main": [
+          [
+            {
+              "node": "Switch por provider",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch por provider": {
+        "main": [
+          [
+            {
+              "node": "Transcrever (OpenAI Whisper)",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Montar base64 (Gemini)",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Transcrever (Whisper local)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcrever (OpenAI Whisper)": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar base64 (Gemini)": {
+        "main": [
+          [
+            {
+              "node": "Gemini generateContent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini generateContent": {
+        "main": [
+          [
+            {
+              "node": "Extrair texto (Gemini)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extrair texto (Gemini)": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcrever (Whisper local)": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "b2d0ffee-0000-4000-8000-0d563e1a2002"
+  }
+]

@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Diagnóstico 2026-07 · Índice</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Diagnóstico 2026-07 — Índice</h1>
+        <div class="sub">Fotografia local em 2026-07-02 · <b style="color:var(--green)">deploy em produção 2026-07-03 — correções live</b> (ver aba Ações prioritárias) · 9 relatórios</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Panorama</button>
+      <button data-tab="relatorios">Relatórios</button>
+      <button data-tab="p0">Ações prioritárias</button>
+      <button data-tab="metodologia">Metodologia</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- SECTION: panorama -->
+<section id="visao" class="tab active">
+  <h2 class="section">Panorama</h2>
+  <p class="lead">Diagnóstico completo do Omni em 9 relatórios: backend, frontend, banco, infraestrutura, performance, segurança, design geral, limpeza e dimensionamento de VPS. Tudo medido no repositório local em 2026-07-02.</p>
+
+  <div class="grid g3">
+    <div class="stat"><div class="n cyan">93.657</div><div class="l">linhas Go no backend (485 arquivos, 20 módulos)</div></div>
+    <div class="stat"><div class="n ind">163.129</div><div class="l">linhas no frontend (622 arquivos, 4 layers)</div></div>
+    <div class="stat"><div class="n green">~377</div><div class="l">rotas HTTP na API</div></div>
+    <div class="stat"><div class="n">150</div><div class="l">migrations SQL (PostgreSQL 16)</div></div>
+    <div class="stat"><div class="n cyan">107</div><div class="l">documentos .md em docs/</div></div>
+    <div class="stat"><div class="n ind">1 VPS</div><div class="l">produção inteira em ~6GB compartilhados</div></div>
+  </div>
+
+  <div class="verdict"><b>Veredito global — estamos construindo certo?</b> Sim, com ressalvas. A fundação — backend modular de 20 módulos com padrão idêntico, multi-tenant no core, CI que roda testes reais como gate do build e documentação extensa — é a certa para escalar, e o caminho de crescimento não exige retrabalho estrutural. As dívidas pontuais que travavam (cache de auth desligado, superuser no banco, listagens sem paginação, VPS sem limites/monitoração/backup) <b>foram pagas e estão em produção desde 03/07</b>, com evidência medida (cache ~89% de hit, api como <code>omni_app</code>, mem_limit aplicado, backup agendado). Média re-medida: <b>6,5 → 7,7</b>. O que segura abaixo de 8 agora é estrutural e conhecido: AC-07b (105 arquivos gigantes), off-site do backup, cobertura de testes em expansão e a VPS única compartilhada — pendências completas na aba Ações prioritárias.</div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Nota média da série</h3>
+      <div class="gauge"><div class="ring" style="--p:77"><b>7,7</b></div><div>Média das 9 notas re-medidas: 6,5 no diagnóstico (02/07) → 6,8 com as melhorias de operação → <b>7,7</b> com o deploy de 03/07 comprovado em produção e o tmp/ higienizado. Meta ≥ 8: fechar AC-07b (recorte 2), off-site do backup e testes onda 2.</div></div>
+    </div>
+    <div class="card">
+      <h3>Achados consolidados</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:6px">
+        <span class="pill p0">8 P0</span>
+        <span class="pill p1">24 P1</span>
+        <span class="pill p2">29 P2</span>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Soma dos backlogs dos 9 relatórios (achados canônicos AC-* aparecem em mais de uma página, sempre com o mesmo id e prioridade). Os 3 P0 canônicos estão na aba Ações prioritárias.</p>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;margin:26px 0 12px">Notas por relatório</h3>
+  <div class="note" style="border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.06)">🎯 <b>Meta: média ≥ 8, buscando 10.</b> Notas <b>re-medidas em 03/07 pós-deploy</b>: cada nota só subiu pelo que está <b>comprovadamente em produção</b> (PrincipalCache ~89% de hit, api como <code>omni_app</code> no <code>pg_stat_activity</code>, mem_limit via <code>docker inspect</code>, /healthz com ping de banco, backup agendado). As páginas internas guardam a fotografia do diagnóstico (02/07) como baseline. O que ainda segura a média: AC-07b (105 arquivos gigantes), testes em expansão, UptimeRobot externo, off-site de backup e a VPS única compartilhada — lista completa de pendências na aba Ações prioritárias.</div>
+  <div class="scorecols">
+    <div class="score"><div class="ring" style="--p:85"><b>8,5</b></div><div><div class="lbl"><a href="./01-backend.html">01 Backend</a> <span class="pill ok" style="font-size:10px">↑ 7,5</span></div><div class="why">cache de auth e paginação live em prod; resta o recorte de arquivos grandes</div></div></div>
+    <div class="score"><div class="ring" style="--p:70"><b>7,0</b></div><div><div class="lbl"><a href="./02-frontend.html">02 Frontend</a> <span class="pill ok" style="font-size:10px">↑ 6,5</span></div><div class="why">BFF mock morto + 144 testes verdes; travam os 105 arquivos gigantes (AC-07)</div></div></div>
+    <div class="score"><div class="ring" style="--p:80"><b>8,0</b></div><div><div class="lbl"><a href="./03-banco-de-dados.html">03 Banco de dados</a> <span class="pill ok" style="font-size:10px">↑ 6,5</span></div><div class="why">omni_app live (sem superuser) + backup diário; faltam off-site e drill de restore</div></div></div>
+    <div class="score"><div class="ring" style="--p:75"><b>7,5</b></div><div><div class="lbl"><a href="./04-infraestrutura.html">04 Infraestrutura</a> <span class="pill ok" style="font-size:10px">↑ 6,5</span></div><div class="why">mem_limit + healthchecks + monitoração live; VPS compartilhada e runbook manual (ac-04b) seguram</div></div></div>
+    <div class="score"><div class="ring" style="--p:80"><b>8,0</b></div><div><div class="lbl"><a href="./05-performance.html">05 Performance</a> <span class="pill ok" style="font-size:10px">↑ 6,5</span></div><div class="why">cache ~89% hit + paginação em prod; próximo salto exige load test/EXPLAIN</div></div></div>
+    <div class="score"><div class="ring" style="--p:80"><b>8,0</b></div><div><div class="lbl"><a href="./06-seguranca.html">06 Segurança</a> <span class="pill ok" style="font-size:10px">↑ 7,5</span></div><div class="why">superuser eliminado e tmp/ limpo; resta RLS (2ª rede, pré-req 1 destravado)</div></div></div>
+    <div class="score"><div class="ring" style="--p:75"><b>7,5</b></div><div><div class="lbl"><a href="./07-design-geral.html">07 Design geral</a> <span class="pill ok" style="font-size:10px">↑ 6,5</span></div><div class="why">dívidas centrais pagas e live; restam AC-07 e o teto estrutural da VPS</div></div></div>
+    <div class="score"><div class="ring" style="--p:75"><b>7,5</b></div><div><div class="lbl"><a href="./08-lixo-e-limpeza.html">08 Lixo &amp; limpeza</a> <span class="pill ok" style="font-size:10px">↑ 7,0</span></div><div class="why">onda 1 executada: tmp/ higienizado (dump + segredos fora); restam ondas 2/3</div></div></div>
+    <div class="score"><div class="ring" style="--p:70"><b>7,0</b></div><div><div class="lbl"><a href="./09-vps.html">09 VPS</a> <span class="pill ok" style="font-size:10px">↑ 6,5</span></div><div class="why">backup, monitoração e mem_limit live; VPS única compartilhada segue sendo o teto</div></div></div>
+  </div>
+</section>
+
+<!-- SECTION: relatorios -->
+<section id="relatorios" class="tab">
+  <h2 class="section">Relatórios</h2>
+  <p class="lead">Os 9 relatórios da série. Cada página tem tabs próprias e um backlog filtrável por P0/P1/P2. Bolinha: <span class="dot g" style="display:inline-block;margin-top:0;vertical-align:middle"></span> nota ≥ 7 · <span class="dot y" style="display:inline-block;margin-top:0;vertical-align:middle"></span> 5–6,9 · <span class="dot r" style="display:inline-block;margin-top:0;vertical-align:middle"></span> &lt; 5.</p>
+
+  <div class="grid g3">
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./01-backend.html">01 · Backend</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">API monolítica em Go com 20 módulos plugáveis (~93,6 mil linhas, ~377 rotas), a peça mais madura do produto: padrão idêntico em todos os módulos, segurança de entrada acima da média e CI com testes como gate. As duas dívidas críticas foram pagas e estão em produção (PrincipalCache ~89% de hit; paginação com teto); resta o recorte de arquivos grandes.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">1 P0</span><span class="pill p1">1 P1</span><span class="pill p2">5 P2</span>
+        <span class="tag" style="margin-left:auto">nota 8,5</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./02-frontend.html">02 · Frontend</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Nuxt 4.4.2 100% SPA com 622 arquivos e 163.129 linhas em 4 layers; rico em features, com api-client enxuto (dedupe de GETs) e realtime WS. Avanços live: BFF mock removido (finance na API Go), components.css fatiado e onda 1 de testes (144 verdes). Trava principal: 105 arquivos acima de 450 linhas (AC-07, parcial).</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">0 P0</span><span class="pill p1">3 P1</span><span class="pill p2">4 P2</span>
+        <span class="tag" style="margin-left:auto">nota 7,0</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./03-banco-de-dados.html">03 · Banco de dados</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Um PostgreSQL 16 único serve todos os domínios, e a migração longa do public.* legado para schemas por domínio foi bem executada (backfills incrementais, drift zero antes do drop). Os dois riscos operacionais foram pagos: api conecta como <code>omni_app</code> least-privilege (live em prod) e o backup é diário agendado com retenção. Faltam off-site (rclone) e drill de restore mensal.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">0 P0</span><span class="pill p1">4 P1</span><span class="pill p2">3 P2</span>
+        <span class="tag" style="margin-left:auto">nota 8,0</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./04-infraestrutura.html">04 · Infraestrutura</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Pipeline de build/deploy maduro (CI com gate de testes reais, imagens GHCR, portas só em 127.0.0.1). Limites de memória, healthchecks, monitoração e backup agendado estão live desde 03/07. O que segura: VPS única compartilhada com stacks alheias e o runbook AC-04 manual (causou ~1h de 502 no deploy — prevenção ac-04b proposta).</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">1 P0</span><span class="pill p1">3 P1</span><span class="pill p2">3 P2</span>
+        <span class="tag" style="margin-left:auto">nota 7,5</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./05-performance.html">05 · Performance</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Go enxuto contra Postgres bem indexado (243 índices, pool pgx saudável, SPA estática), sem incêndio para o tamanho atual. Os dois maiores custos com crescimento foram pagos e estão live: PrincipalCache em prod com ~89% de hit e paginação com teto em reports/analytics/BI. Próximo salto honesto exige medição sob carga (load test + EXPLAIN), ainda não feita.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">1 P0</span><span class="pill p1">3 P1</span><span class="pill p2">3 P2</span>
+        <span class="tag" style="margin-left:auto">nota 8,0</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./06-seguranca.html">06 · Segurança</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Fundação de código acima da média para o estágio: SQL 100% parametrizado, 6 headers de segurança em toda resposta, sessões revogáveis de verdade e guard de secret no boot de produção. Os dois maiores riscos operacionais foram eliminados: a api roda como <code>omni_app</code> least-privilege em produção e o tmp/ foi higienizado (dump + segredos removidos). Resta o isolamento multi-tenant só no WHERE da aplicação — RLS futuro, com o 1º pré-requisito destravado pelo AC-04.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">1 P0</span><span class="pill p1">1 P1</span><span class="pill p2">5 P2</span>
+        <span class="tag" style="margin-left:auto">nota 8,0</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./07-design-geral.html">07 · Design geral</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">A pergunta central respondida: sim, a fundação (backend modular, multi-tenant no core, CI com testes, docs excepcionais) é a certa para escalar. As dívidas pontuais que travavam a nota foram pagas e estão em produção; restam AC-07 (arquivos gigantes, parcial) e o teto estrutural da VPS única. Capacidade estimada em dezenas a poucas centenas de usuários simultâneos; escala em 3 estágios sem retrabalho.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">2 P0</span><span class="pill p1">5 P1</span><span class="pill p2">2 P2</span>
+        <span class="tag" style="margin-left:auto">nota 7,5</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./08-lixo-e-limpeza.html">08 · Lixo &amp; limpeza</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Relatório consultivo com a onda 1 já executada: o tmp/ foi higienizado (o dump real de 245MB e os segredos saíram do disco em 03/07). O repo versionado é pequeno e saudável (12,63MB de .git); ~99% dos 2,10GB do working tree é artefato local ignorado. Restam as ondas 2/3 do plano de limpeza.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">1 P0</span><span class="pill p1">1 P1</span><span class="pill p2">1 P2</span>
+        <span class="tag" style="margin-left:auto">nota 7,5</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="display:flex;align-items:center;gap:8px"><span class="dot g" style="margin-top:0"></span><a href="./09-vps.html">09 · VPS</a></h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px">A VPS atual de ~7,8GB segura o presente: órfãs paradas, backup diário, monitoração e agora mem_limit/healthchecks live (03/07). O teto é estrutural — máquina única compartilhada com stacks alheias. Cenários dimensionados: hoje 4vCPU/8GB; 6–12 meses 6–8vCPU/16GB com automação separada; escala com PG gerenciado + Redis + CDN, condicionada a 4 pré-requisitos de software.</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill p0">1 P0</span><span class="pill p1">3 P1</span><span class="pill p2">3 P2</span>
+        <span class="tag" style="margin-left:auto">nota 7,0</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION: acoes prioritarias -->
+<section id="p0" class="tab">
+  <h2 class="section">Ações prioritárias</h2>
+  <p class="lead">Consolidação dos achados canônicos P0 e P1 da série. Cada achado tem um id único (AC-*) usado em todas as páginas onde aparece — mesma prioridade, mesma evidência. Detalhe completo (problema, evidência, ação) nos relatórios linkados.</p>
+
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Status (03/07)</th><th>Título</th><th>Prio</th><th>Esf.</th><th>Impacto</th><th>Detalhado em</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>AC-01</code></td>
+          <td><span class="pill ok">✔ live em prod</span></td>
+          <td>PrincipalCache implementado mas desligado — auth consulta o banco a cada request</td>
+          <td><span class="pill p0">P0</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="./01-backend.html">01</a> · <a href="./05-performance.html">05</a> · <a href="./07-design-geral.html">07</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-02</code></td>
+          <td><span class="pill ok">✔ resolvido</span></td>
+          <td>Stacks órfãs na VPS em crash-loop consumindo CPU/RAM (nunca parar o Caddy que roteia o painel)</td>
+          <td><span class="pill p0">P0</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="./04-infraestrutura.html">04</a> · <a href="./07-design-geral.html">07</a> · <a href="./09-vps.html">09</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-03</code></td>
+          <td><span class="pill ok">✔ limpo</span></td>
+          <td>tmp/ local com dump real de banco (245MB) e tokens/secret.key em disco</td>
+          <td><span class="pill p0">P0</span></td>
+          <td>S</td>
+          <td>médio</td>
+          <td><a href="./06-seguranca.html">06</a> · <a href="./08-lixo-e-limpeza.html">08</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-04</code></td>
+          <td><span class="pill ok">✔ live em prod</span></td>
+          <td>App conecta no Postgres como superuser (RLS/least-privilege impossíveis)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>M</td>
+          <td>alto</td>
+          <td><a href="./03-banco-de-dados.html">03</a> · <a href="./06-seguranca.html">06</a> · <a href="./07-design-geral.html">07</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-05</code></td>
+          <td><span class="tag">◐ agendado ✔ · falta off-site</span></td>
+          <td>Backup de banco só on-demand no deploy; sem agendamento nem off-site</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="./03-banco-de-dados.html">03</a> · <a href="./04-infraestrutura.html">04</a> · <a href="./07-design-geral.html">07</a> · <a href="./09-vps.html">09</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-06</code></td>
+          <td><span class="pill ok">✔ live em prod</span></td>
+          <td>Listagens sem paginação (reports, analytics, BI)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>M</td>
+          <td>alto</td>
+          <td><a href="./01-backend.html">01</a> · <a href="./03-banco-de-dados.html">03</a> · <a href="./05-performance.html">05</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-07</code></td>
+          <td><span class="tag">◐ recorte 1 ✔ · recorte 2 pendente</span></td>
+          <td>105 arquivos front acima de 450 linhas + components.css monolítico (4.480)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>L</td>
+          <td>médio</td>
+          <td><a href="./02-frontend.html">02</a> · <a href="./07-design-geral.html">07</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-11</code></td>
+          <td><span class="pill ok">✔ live em prod</span></td>
+          <td>Compose sem limites de memória e healthchecks faltando (web, redis, waha, n8n)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="./04-infraestrutura.html">04</a> · <a href="./09-vps.html">09</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-12</code></td>
+          <td><span class="pill ok">✔ live em prod</span></td>
+          <td>BFF mock de finance ainda vivo em web/server/</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>M</td>
+          <td>médio</td>
+          <td><a href="./02-frontend.html">02</a> · <a href="./07-design-geral.html">07</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-15</code></td>
+          <td><span class="tag">◐ onda 1 ✔ (144) · onda 2 pendente</span></td>
+          <td>Cobertura de testes do front baixa (17 arquivos para 313 componentes)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>L</td>
+          <td>médio</td>
+          <td><a href="./02-frontend.html">02</a> · <a href="./07-design-geral.html">07</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-16</code></td>
+          <td><span class="pill ok">✔ live (host + /healthz)</span></td>
+          <td>Sem monitoração de produção (métricas, alertas, uptime, agregação de logs)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>M</td>
+          <td>alto</td>
+          <td><a href="./04-infraestrutura.html">04</a> · <a href="./07-design-geral.html">07</a> · <a href="./09-vps.html">09</a></td>
+        </tr>
+        <tr><td colspan="7" style="padding:14px 10px 6px;color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;border-bottom:0"><b>O que ainda falta</b> — pendências sincronizadas com o roadmap do painel (fases <code>ac-fixes-2026-07</code>, <code>observabilidade-n8n</code>, <code>deploy-registry-staging</code>) em 03/07</td></tr>
+        <tr>
+          <td><code>AC-04b</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Auto-provisionar a role <code>omni_app</code> no migrate — deploy self-healing (prevenção do 502 de 03/07)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="../../specs/ac-fixes-2026-07/AC-04b-migrate-auto-provision-role.md">spec</a> · plano §AC-04</td>
+        </tr>
+        <tr>
+          <td><code>GIT</code></td>
+          <td><span class="pill p0">seu passo</span></td>
+          <td>Commit/push do working tree — torna o deploy reprodutível e libera o caminho CI/GHCR (<code>deploy:prod</code>)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td>processo</td>
+        </tr>
+        <tr>
+          <td><code>AC-05b</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Off-site do backup (rclone) + drill de restore mensal — backup que nunca restaurou não é backup</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="../../specs/ac-fixes-2026-07/AC-05b-offsite-restore-drill.md">spec</a> · <a href="./03-banco-de-dados.html">03</a></td>
+        </tr>
+        <tr>
+          <td><code>OBS-01</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>check-vps.sh → webhook n8n (alerta sai do log local e vira notificação)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="../../specs/ac-fixes-2026-07/OBS-01-check-vps-webhook-n8n.md">spec</a> · <a href="./09-vps.html">09</a></td>
+        </tr>
+        <tr>
+          <td><code>OBS-02</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Fan-out de alertas no n8n (e-mail + Telegram + ntfy, com dedup/severidade)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="../../specs/ac-fixes-2026-07/OBS-02-n8n-fanout-alertas.md">spec</a></td>
+        </tr>
+        <tr>
+          <td><code>OBS-03</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Uptime externo no /healthz (UptimeRobot/BetterStack) — pega queda total quando o host não consegue avisar</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>S</td>
+          <td>alto</td>
+          <td><a href="../../specs/ac-fixes-2026-07/OBS-03-uptime-externo.md">spec</a> · DEPLOY_VPS</td>
+        </tr>
+        <tr>
+          <td><code>AC-07b</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Refactor front recorte 2 — os 105 arquivos .vue/.ts acima de 450 linhas (recorte 1 cobriu CSS + dado)</td>
+          <td><span class="pill p1">P1</span></td>
+          <td>L</td>
+          <td>médio</td>
+          <td><a href="../../specs/ac-fixes-2026-07/AC-07b-onda-2a-tasks.md">specs 2a–2f</a> · <a href="./02-frontend.html">02</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-15b</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Testes front onda 2 — 13 alvos (operação/cardápio/dashboard); calendário fica FORA até estabilizar</td>
+          <td><span class="pill p2">P2</span></td>
+          <td>L</td>
+          <td>médio</td>
+          <td><a href="../../specs/ac-fixes-2026-07/AC-15b-testes-onda-2.md">spec</a> · <a href="./02-frontend.html">02</a></td>
+        </tr>
+        <tr>
+          <td><code>AC-17</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Load test + EXPLAIN ANALYZE — o diagnóstico foi 100% estático; performance ≥9 exige prova sob carga</td>
+          <td><span class="pill p2">P2</span></td>
+          <td>M</td>
+          <td>alto</td>
+          <td><a href="../../specs/ac-fixes-2026-07/AC-17-load-test-explain.md">spec</a> · <a href="./05-performance.html">05</a></td>
+        </tr>
+        <tr>
+          <td><code>OBS-04..06</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Anomalia de métricas + painel de status interno + alertas de negócio (fila parada, backup falhou)</td>
+          <td><span class="pill p2">P2</span></td>
+          <td>M</td>
+          <td>médio</td>
+          <td>specs <a href="../../specs/ac-fixes-2026-07/OBS-04-anomalia-n8n.md">04</a> · <a href="../../specs/ac-fixes-2026-07/OBS-05-painel-status-interno.md">05</a> · <a href="../../specs/ac-fixes-2026-07/OBS-06-alertas-negocio.md">06</a></td>
+        </tr>
+        <tr>
+          <td><code>D3</code></td>
+          <td><span class="tag">⏳ pendente</span></td>
+          <td>Criar <code>.env.staging</code> real na VPS — staging sob demanda já especificado (example pronto)</td>
+          <td><span class="pill p2">P2</span></td>
+          <td>S</td>
+          <td>médio</td>
+          <td><a href="../../specs/ac-fixes-2026-07/D3-staging-env-vps.md">spec</a> · deploy-registry</td>
+        </tr>
+        <tr>
+          <td><code>SEC-1</code></td>
+          <td><span class="tag">⏸ futuro (destravando)</span></td>
+          <td>RLS no Postgres — 2ª rede de isolamento. Pré-requisito 1 <b>DESTRAVADO em 03/07</b> (app já não é superuser); falta pré-req 2 (migration schema-qualificada nas tabelas base) + medir custo</td>
+          <td><span class="pill p2">P2</span></td>
+          <td>L</td>
+          <td>alto</td>
+          <td>roadmap · docs/RLS_PLAN.md</td>
+        </tr>
+        <tr>
+          <td><code>VPS-2</code></td>
+          <td><span class="tag">⏸ quando escalar</span></td>
+          <td>VPS dedicada (ou separar a automação) — máquina única compartilhada é o teto estrutural das notas de infra</td>
+          <td><span class="pill p2">P2</span></td>
+          <td>L</td>
+          <td>alto</td>
+          <td><a href="./09-vps.html">09</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="legend">
+    <span><span class="pill p0">P0</span> agir já</span>
+    <span><span class="pill p1">P1</span> próximas semanas</span>
+    <span><span class="pill p2">P2</span> quando escalar (nas páginas de cada relatório)</span>
+  </div>
+
+  <div class="note">💡 <b>Os 3 P0 e 8 dos 11 achados do diagnóstico estão fechados e live em produção.</b> A próxima onda de maior retorno pelo menor esforço: <code>AC-04b</code> (self-healing do deploy — nunca repetir o 502), <code>GIT</code> (commit/push — deploy reprodutível), <code>AC-05b</code> (off-site + drill de restore) e <code>OBS-01..03</code> (alerta chegando em você, não no log). O maior esforço restante é o <code>AC-07b</code> (105 arquivos gigantes). E o <code>SEC-1</code> (RLS) destravou o 1º pré-requisito de graça com o AC-04.</div>
+
+  <div class="card" style="margin-top:24px;border-color:rgba(52,211,153,.35)">
+    <h3 style="display:flex;align-items:center;gap:8px"><span class="pill ok">Execução</span> Estado das correções — atualizado 2026-07-03</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">As 11 correções acima foram especificadas (specs em <code>docs/specs/ac-fixes-2026-07/</code>) e implementadas por agentes em pipeline. Em <b>03/07 o <code>deploy:fast:prod</code> levou o código para produção</b> (tag <code>local-20260703-101734</code>) — evidências live medidas na VPS abaixo. <b>Git ainda pendente</b> (commit/push é passo manual seu).</p>
+    <table>
+      <thead><tr><th>Correção</th><th>Estado</th><th>Evidência</th></tr></thead>
+      <tbody>
+        <tr><td><code>AC-01</code> PrincipalCache</td><td><span class="pill ok">✔ live em prod</span></td><td><code>principal_cache_stats</code> em prod: <b>~89% de hit rate</b></td></tr>
+        <tr><td><code>AC-04</code> Role least-privilege</td><td><span class="pill ok">✔ live em prod</span></td><td><code>pg_stat_activity</code>: 5 conexões <code>omni_app</code>; superuser só no migrate</td></tr>
+        <tr><td><code>AC-06</code> Paginação</td><td><span class="pill ok">✔ live em prod</span></td><td>teto em reports/analytics/BI na imagem do deploy; shape preservado</td></tr>
+        <tr><td><code>AC-12</code> Finance na API Go</td><td><span class="pill ok">✔ live em prod</span></td><td>módulo <code>finance</code> + migration <code>0187</code> aplicada no boot; <code>web/server/</code> removido</td></tr>
+        <tr><td><code>AC-05</code> Backup agendado</td><td><span class="pill ok">✔ live na VPS</span></td><td>cron diário 06:40 UTC + retenção 7d/4sem (instalado 03/07)</td></tr>
+        <tr><td><code>AC-11</code> Limites + healthchecks</td><td><span class="pill ok">✔ live em prod</span></td><td><code>docker inspect</code>: api mem 512MB, web 768MB; healthchecks ativos</td></tr>
+        <tr><td><code>AC-16</code> Monitoração</td><td><span class="pill ok">✔ live (host + /healthz)</span></td><td>/healthz com ping de banco respondendo 200 em prod; check-vps no cron; falta só UptimeRobot externo</td></tr>
+        <tr><td><code>AC-15</code> Testes front</td><td><span class="pill ok">✔ onda 1</span></td><td>144 testes verdes; cobertura segue em expansão</td></tr>
+        <tr><td><code>AC-02</code> Stacks órfãs VPS</td><td><span class="pill ok">✔ já paradas</span></td><td>diagnóstico: órfãs em <code>restart=no</code>/exited; CPU ~0%; Caddy intocado</td></tr>
+        <tr><td><code>AC-07</code> Arquivos gigantes</td><td><span class="tag">◐ parcial</span></td><td>components.css fatiado (11 arquivos) + roadmap-data.ts em <code>data/</code>; splits .vue/.ts = recorte 2</td></tr>
+        <tr><td><code>AC-03</code> Dump + segredos tmp/</td><td><span class="pill ok">✔ limpo</span></td><td>tmp/ vazio conferido em 03/07 (dump de 245MB e segredos removidos)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:#fca5a5;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.3);border-radius:10px;padding:12px 14px;margin:14px 0 0"><b>Incidente do deploy (03/07, ~1h de 502):</b> o primeiro <code>deploy:fast:prod</code> subiu SEM os passos manuais do runbook AC-04 (criar a role <code>omni_app</code> e as envs <code>APP_DB_ROLE*</code> no <code>.env.production</code> da VPS). A api entrou em crash-loop (28P01: senha em branco para role inexistente) e o web nunca subiu — 502 no painel. Recuperado criando a role + envs e recriando api/web. Lição no registro de falhas do <a href="../../ENGINEERING_PRINCIPLES.md">ENGINEERING_PRINCIPLES</a>: o deploy:fast embarca o working tree INTEIRO — antes de rodar, conferir as "Notas de Deploy" do doc canônico por passos manuais pendentes. Prevenção definitiva proposta: <code>ac-04b</code> (auto-provisão da role no migrate).</p>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0"><b>Correção de fato na verificação da VPS:</b> a máquina tem <b>~7,8&nbsp;GB</b> de RAM (não ~6&nbsp;GB), e as stacks órfãs já estavam <b>paradas</b> (o pico de 158% de CPU foi histórico — o <code>RestartCount</code> de 78&nbsp;mil ficou registrado, mas os containers estão em <code>exited</code>). O que continua valendo: <b>nenhum</b> serviço tem limite de memória (AC-11) e não há monitoração (AC-16).</p>
+  </div>
+</section>
+
+<!-- SECTION: metodologia -->
+<section id="metodologia" class="tab">
+  <h2 class="section">Metodologia</h2>
+  <p class="lead">Como esta série foi produzida, o que foi medido de verdade, o que é estimativa declarada e o que ficou fora do escopo.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Como foi feito</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Exploração + verificação com medições reais no repositório local em 2026-07-02 (contagem de linhas, grep de padrões, leitura de código e configs).</li>
+        <li><span class="dot g"></span>Regra dura: <b>nenhum número entra em página HTML se não estiver no fatos.json</b> consolidado da sessão — formato pt-BR.</li>
+        <li><span class="dot y"></span>Estimativas são sempre marcadas como tal (capacidade de usuários, consumo por serviço e cenários de VPS no relatório 09).</li>
+        <li><span class="dot g"></span>Achados canônicos (AC-*) têm id, prioridade e evidência únicos em toda a série — a mesma dívida nunca aparece com id ou prioridade diferente em dois relatórios.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Limites do diagnóstico</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Sem load test</b> — a análise de performance é estática (código + configs), não medida sob carga.</li>
+        <li><span class="dot r"></span><b>Sem EXPLAIN</b> — nenhum plano de query foi executado contra o banco.</li>
+        <li><span class="dot r"></span><b>Sem acesso à VPS nesta sessão</b> — dados de produção vêm de auditorias anteriores documentadas.</li>
+        <li><span class="dot g"></span><b>Relatório 08 é 100% advisory</b> — nada foi excluído; todo plano de limpeza depende de confirmação do dono.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Divergências corrigidas na verificação</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 10px">O briefing inicial trazia estimativas que a medição desmentiu — os números finais foram conferidos, não chutados. Exemplos:</p>
+    <ul class="clean">
+      <li><span class="dot y"></span>Linhas do front: briefing dizia ~46k; medição = <b>163.129</b>.</li>
+      <li><span class="dot y"></span>Arquivos front acima de 450 linhas: briefing dizia 16; medição = <b>105</b>.</li>
+      <li><span class="dot g"></span>Guard do dev secret: briefing dizia "sem guard"; medição = guard <b>EXISTE</b> (config.go:193-208), com ressalva de só disparar com APP_ENV exatamente "production".</li>
+      <li><span class="dot y"></span>tmp/: briefing dizia 7MB; medição = <b>254,18MB</b> (245,35MB é um pg_dump real pré-rename).</li>
+      <li><span class="dot g"></span>"back;C" na raiz: briefing dizia 22MB; medição = diretório <b>VAZIO</b> (0 bytes) — resíduo de comando mal-escapado.</li>
+    </ul>
+  </div>
+
+  <div class="note">📌 Nota: os HTMLs de documentação (esta série e os panoramas em docs/) são isentos da regra de 450 linhas por arquivo dos princípios de engenharia — o teto vale para código, não para relatório.</div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Como usar a série</h3>
+    <ul class="clean">
+      <li><span class="dot b"></span>Abra os arquivos direto no navegador via <code>file://</code> — não precisa de servidor.</li>
+      <li><span class="dot b"></span>As tabs no topo de cada página são clicáveis e trocam de seção sem recarregar.</li>
+      <li><span class="dot b"></span>Cada relatório tem uma aba de oportunidades com filtros <b>P0 / P1 / P2</b> para priorizar o backlog da área.</li>
+      <li><span class="dot b"></span>Navegação entre páginas pelos crumbs (☰ Índice · anterior · próximo) abaixo do cabeçalho de cada relatório.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · statuses atualizados em 2026-07-03 pós-deploy (evidências medidas na VPS).<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

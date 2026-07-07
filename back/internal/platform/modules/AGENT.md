@@ -78,6 +78,10 @@ pacote.
 `CORE_V2_ENABLED=true`: Registry e instanciado, SyncCatalog roda, modulos do
 registry sao construidos e expostos.
 
+## Dependencies notaveis
+
+- `PrincipalCache *httpapi.PrincipalCache[auth.Principal]` (AC-01) — cache de Principal autenticado, passado aos modulos para invalidacao sincrona quando papel/ativacao de usuario muda. Campo CONCRETO (nao interface) para evitar typed-nil em interface quando o cache esta desligado; `nil` = cache off. `core.Module.Build` faz nil-check antes de ligar os setters de `RBACService`/`AdminUserService`.
+
 ## Quando atualizar este AGENT.md
 
 - Quando trocar/adicionar campo em `Module`, `Handle`, `Dependencies`.

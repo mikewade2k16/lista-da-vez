@@ -51,13 +51,29 @@ em [omni-tokens.css](../web/app/assets/styles/omni-tokens.css).
 | Claro (default) | `:root` | base light |
 | Escuro | `.dark` | **preferência padrão do app** |
 | Apple Blue | `.theme-apple-blue` | tema alternativo (azul iOS) |
+| Liquid Glass | `.theme-liquidglass` | base escura + aurora ambiente + superfícies de vidro |
 
-- A troca de tema é feita pelo [DashboardThemeSwitcher.vue](../web/app/components/dashboard/DashboardThemeSwitcher.vue),
-  que persiste a escolha em `localStorage` na chave `omni-ui-user-theme` e usa o composable
-  `useOmniTheme()`.
+- O **catálogo** de temas é data-driven em
+  [omni-theme-catalog.ts](../web/layers/core/composables/omni-theme-catalog.ts) (`OMNI_THEMES`):
+  rótulos/defaults/seletor/base derivam de UM array. Adicionar um tema = uma entrada no array
+  (+ o bloco CSS do tema em `omni-tokens.css`). NÃO há enum de tema no back — a API valida só um
+  slug; o catálogo do front é a fonte de verdade.
+- A troca de tema usa o composable `useOmniTheme()`. A **aparência é GLOBAL da plataforma** (tema
+  ativo + overrides + toggles de Page Header): lida por qualquer autenticado e escrita só por
+  `platform_admin`, via `GET/PUT /v1/platform/appearance` (módulo `theme` no back, em
+  `core.platform_settings` — desacoplado do módulo `queue`). A preferência pessoal light/dark do
+  usuário continua local (`localStorage` `omni-ui-user-theme`) e vence sobre os temas-base.
 - `platform_admin` (ou quem tem o workspace `themes`) vê o atalho para o **Theme Studio** (`/themes`).
 - Cada tema também ajusta `color-scheme` (light/dark) e `--brand-logo-filter` (inverte o logo no
   tema claro).
+
+**Liquid Glass** é um tema próprio (não um modificador): base escura + uma **aurora ambiente**
+animada atrás do conteúdo de toda página (`.theme-liquidglass .module-workspace-full::before` /
+`.workspace::before`, z-index:-1) que as superfícies de vidro refratam. Tokens de vidro:
+`--glass-blur`, `--glass-saturate`, `--glass-surface-alpha`, `--glass-border`, `--glass-highlight`.
+A superfície reutilizável é a classe **`.omni-glass`** (sólida nos outros temas; vira vidro só sob
+`.theme-liquidglass`, com fallback `@supports` quando `backdrop-filter` não é suportado). Ela e o
+card compartilhado `.metric-card` já refratam a aurora. Plano: [THEME_MODULE_PLAN.md](./THEME_MODULE_PLAN.md).
 
 ---
 

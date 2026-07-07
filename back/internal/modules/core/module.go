@@ -202,6 +202,13 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	adminUserLinksRepo := NewPostgresAdminUserLinksRepository(adminUserRepo)
 	adminUserSvc := NewAdminUserService(adminUserRepo, deps.PasswordHasher, scopeResolver, adminUserLinksRepo)
 
+	// AC-01: invalidacao sincrona do PrincipalCache nas mutacoes de papel (RBAC) e de
+	// identidade (AdminUser). nil quando o cache esta desligado (AUTH_PRINCIPAL_CACHE_TTL=0s).
+	if deps.PrincipalCache != nil {
+		rbacSvc.SetPrincipalCacheInvalidator(deps.PrincipalCache)
+		adminUserSvc.SetPrincipalCacheInvalidator(deps.PrincipalCache)
+	}
+
 	// Overrides allow/deny por usuario por account (core.user_permission_overrides),
 	// validados via InvalidPermissionKeys do RBAC repo (reuso, sem catalogo novo).
 	adminOverridesRepo := NewPostgresAdminOverridesRepository(deps.Pool)
@@ -212,6 +219,10 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 
 	platformSettingsRepo := NewPostgresPlatformSettingsRepository(deps.Pool)
 	platformSettingsSvc := NewPlatformSettingsService(platformSettingsRepo)
+
+	// Aparência GLOBAL da plataforma (tema visual). Reusa o mesmo repositório de
+	// platform_settings (chave 'appearance'); desacoplado do módulo queue.
+	appearanceSvc := NewAppearanceService(platformSettingsRepo)
 
 	// CRUD de role templates (catalogo GLOBAL de papeis-padrao) gerenciado por
 	// platform_admin. core.role_templates + core.role_template_permissions.
@@ -226,6 +237,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		adminOverridesService:    adminOverridesSvc,
 		adminOrganizationService: adminOrgSvc,
 		platformSettingsService:  platformSettingsSvc,
+		appearanceService:        appearanceSvc,
 		roleTemplateService:      roleTemplateSvc,
 		authMiddleware:           deps.AuthMiddleware,
 	}
@@ -244,6 +256,7 @@ type handle struct {
 	adminOverridesService    *AdminOverridesService
 	adminOrganizationService *AdminOrganizationService
 	platformSettingsService  *PlatformSettingsService
+	appearanceService        *AppearanceService
 	roleTemplateService      *RoleTemplateAdminService
 	authMiddleware           *auth.Middleware
 }
@@ -260,6 +273,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	RegisterAdminOverridesRoutes(mux, h.adminOverridesService, h.adminUserService, h.authMiddleware)
 	RegisterAdminOrganizationsRoutes(mux, h.adminOrganizationService, h.authMiddleware)
 	RegisterPlatformSettingsRoutes(mux, h.platformSettingsService, h.authMiddleware)
+	RegisterAppearanceRoutes(mux, h.appearanceService, h.authMiddleware)
 	RegisterRoleTemplatesRoutes(mux, h.roleTemplateService, h.authMiddleware)
 }
 

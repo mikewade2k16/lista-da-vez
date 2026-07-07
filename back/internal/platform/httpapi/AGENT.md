@@ -102,6 +102,11 @@ noisy-neighbor: um tenant com muitos usuários não degrada vizinhos. As duas co
 (user + account) compartilham a mesma `Window`; qualquer estouro retorna 429.
 Testes: `rate_limit_test.go` — `TestRateLimit_AccountQuota*`.
 
+## PrincipalCache (AC-01)
+
+- `principal_cache.go` — `PrincipalCache[T]` generico e thread-safe (indexado por `sessionID`, com `byUser` para invalidacao por usuario). Ganhou `Stats() (hits, misses int64)` e `Len() int` (telemetria de hit rate; contadores `atomic.Int64` cumulativos desde o boot).
+- Quem LIGA e injeta o cache e `platform/app/principal_cache_wiring.go` (nao este pacote): cria com `AUTH_PRINCIPAL_CACHE_TTL`, chama os setters de `auth`/`access`/`users`/`core` e roda a goroutine de `Cleanup()` (60s) + log `principal_cache_stats` (5 min). O tipo aqui e apenas a estrutura de dados.
+
 ## Quando atualizar este AGENT.md
 
 - Adicionar/remover middleware.

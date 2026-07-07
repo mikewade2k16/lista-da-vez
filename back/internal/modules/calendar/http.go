@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -27,6 +28,7 @@ func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middlewar
 	mux.Handle("GET /v1/calendar/events/{id}", wrap(handleGetEvent(svc)))
 	mux.Handle("PUT /v1/calendar/events/{id}", wrap(handleUpdateEvent(svc)))
 	mux.Handle("DELETE /v1/calendar/events/{id}", wrap(handleDeleteEvent(svc)))
+	mux.Handle("POST /v1/calendar/events/{id}/task", wrap(handleCreateEventTask(svc)))
 	mux.Handle("GET /v1/calendar/notes/{month}", wrap(handleGetNotes(svc)))
 	mux.Handle("PUT /v1/calendar/notes/{month}", wrap(handlePutNotes(svc)))
 	mux.Handle("GET /v1/calendar/config", wrap(handleGetConfig(svc)))
@@ -107,13 +109,39 @@ func handleUpdateEvent(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
-		view, err := svc.UpdateEvent(r.Context(), accountID, r.PathValue("id"), in)
+		// If-Match opcional (contrato C12): sem header = comportamento atual (compat).
+		// Com header, o valor e a version que o front carregou; divergencia => 409.
+		expectedVersion, ok := parseIfMatch(w, r)
+		if !ok {
+			return
+		}
+		view, err := svc.UpdateEvent(r.Context(), accountID, r.PathValue("id"), in, expectedVersion)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusOK, view)
 	}
+}
+
+// parseIfMatch le o cabecalho If-Match (contrato C12). Ausente/vazio => (nil, true)
+// (sem optimistic locking, comportamento legado). Presente e numerico => (&version,
+// true). Presente e invalido => escreve 400 e devolve (nil, false). Aceita ETag entre
+// aspas e o prefixo weak "W/" por robustez, mas o contrato e um inteiro simples.
+func parseIfMatch(w http.ResponseWriter, r *http.Request) (*int, bool) {
+	raw := strings.TrimSpace(r.Header.Get("If-Match"))
+	if raw == "" {
+		return nil, true
+	}
+	raw = strings.TrimSpace(strings.TrimPrefix(raw, "W/"))
+	raw = strings.TrimSpace(strings.Trim(raw, `"`))
+	version, err := strconv.Atoi(raw)
+	if err != nil {
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_if_match",
+			"Cabecalho If-Match invalido (use o numero de versao do evento).")
+		return nil, false
+	}
+	return &version, true
 }
 
 func handleDeleteEvent(svc *Service) http.HandlerFunc {
@@ -123,11 +151,32 @@ func handleDeleteEvent(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
-		if err := svc.DeleteEvent(r.Context(), accountID, r.PathValue("id")); err != nil {
+		// archiveTask=true (WAVE 6): a politica "excluir os dois" do modal — arquiva a task
+		// vinculada junto. Ausente/false = so remove a relation (task fica).
+		archiveTask := r.URL.Query().Get("archiveTask") == "true"
+		if err := svc.DeleteEvent(r.Context(), accountID, r.PathValue("id"), archiveTask); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleCreateEventTask cria (e vincula) uma task para um evento SEM task (WAVE 6): o botao
+// "Criar task" do badge "evento sem task". Idempotente (se ja tem, devolve o taskId existente).
+func handleCreateEventTask(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, ok := accountScope(r)
+		if !ok {
+			writeNoAccount(w, r)
+			return
+		}
+		taskID, err := svc.CreateTaskForEvent(r.Context(), accountID, r.PathValue("id"))
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]string{"taskId": taskID})
 	}
 }
 
@@ -309,9 +358,45 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Anexo invalido (tipo nao suportado).")
 	case errors.Is(err, ErrMediaTooLarge):
 		httpapi.WriteError(w, r, http.StatusRequestEntityTooLarge, "media_too_large", "Arquivo acima do limite permitido.")
+	case errors.Is(err, ErrInvalidClient):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_client", "Informe um cliente valido (clientId UUID).")
+	case errors.Is(err, ErrAINotConfigured):
+		httpapi.WriteError(w, r, http.StatusServiceUnavailable, "ai_not_configured",
+			"IA do calendario nao configurada. Defina CALENDAR_AI_WEBHOOK_URL e configure as credenciais no n8n.")
+	case errors.Is(err, ErrPlanConflict):
+		httpapi.WriteError(w, r, http.StatusConflict, "plan_conflict", "Plano em estado que nao permite esta operacao.")
+	case errors.Is(err, ErrInvalidStatus):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_status", "Status invalido (use done|error).")
+	case errors.Is(err, ErrTasksNotConfigured):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "tasks_not_configured",
+			"Integracao com tasks nao configurada. Selecione um board na aba Integracoes da config do calendario.")
+	case errors.Is(err, ErrVersionConflict):
+		httpapi.WriteError(w, r, http.StatusConflict, "version_conflict",
+			"Este evento foi alterado por outra pessoa. Recarregue o item e tente novamente.")
+	case errors.Is(err, ErrInvalidProvider):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_provider",
+			"Provider invalido (use gemini, glm ou openai).")
+	case errors.Is(err, ErrAIDisabled):
+		writeAIDisabled(w, r)
+	case errors.Is(err, ErrAIKeyMissing):
+		writeAIKeyMissing(w, r)
 	case errors.Is(err, ErrForbidden):
 		writeNoAccount(w, r)
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Falha ao processar a requisicao.")
 	}
+}
+
+// writeAIDisabled responde 409 ai_disabled: a IA do calendario esta com o kill switch
+// desligado (config ai.enabled=false). Mensagem acionavel citando a aba IA (SPEC-B2).
+func writeAIDisabled(w http.ResponseWriter, r *http.Request) {
+	httpapi.WriteError(w, r, http.StatusConflict, "ai_disabled",
+		"IA do calendario desligada. Ligue a IA na aba IA da configuracao do calendario.")
+}
+
+// writeAIKeyMissing responde 409 ai_key_missing: o provider ativo nao tem chave
+// gravada (nem na conta nem global). Mensagem acionavel citando a aba IA (SPEC-B2).
+func writeAIKeyMissing(w http.ResponseWriter, r *http.Request) {
+	httpapi.WriteError(w, r, http.StatusConflict, "ai_key_missing",
+		"Chave de IA nao configurada. Defina a chave do provider na aba IA (ou peca ao admin as chaves globais).")
 }

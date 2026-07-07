@@ -146,6 +146,11 @@ func parseFilters(r *http.Request) (Filters, error) {
 		return Filters{}, ErrValidation
 	}
 
+	limit, err := parseOptionalInt(query.Get("limit"))
+	if err != nil {
+		return Filters{}, ErrValidation
+	}
+
 	return Filters{
 		TenantID:              strings.TrimSpace(query.Get("tenantId")),
 		StoreID:               strings.TrimSpace(query.Get("storeId")),
@@ -164,6 +169,7 @@ func parseFilters(r *http.Request) (Filters, error) {
 		Search:                strings.TrimSpace(query.Get("search")),
 		Page:                  page,
 		PageSize:              pageSize,
+		Limit:                 limit,
 	}, nil
 }
 

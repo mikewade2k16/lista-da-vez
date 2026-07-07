@@ -2,6 +2,8 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+// Status COMPARTILHADO com o Calendario (WAVE 6): colunas padrao de board novo = mesmos status.
+import { CONTENT_STATUSES } from '~/utils/content-taxonomy'
 import { useCoreAccountStore } from '../../core/stores/account'
 import { sanitizeTaskContentHtml, stripHtmlToText } from '../utils/content'
 import { compactUserLabel } from '../utils/user-label'
@@ -16,6 +18,7 @@ import type {
   TaskProjectFiltersConfig,
   TaskProjectItem,
   TaskVideoItem,
+  TaskCalendarMediaItem,
 } from '../types/tasks'
 
 const LEGACY_STORAGE_KEY = 'omni.admin.tasks.workspace.v1'
@@ -23,20 +26,15 @@ const LEGACY_NOTICE_KEY = 'tasks.legacy-migrated.v1'
 const UI_METADATA_STORAGE_KEY = 'omni.tasks.api.workspace.ui.v1'
 const UI_METADATA_VERSION = 1
 const DEFAULT_TASKS_PROJECT_NAME = 'Tasks'
-const DEFAULT_TASKS_COLUMNS = [
-  { id: 'column-raw', label: 'Raw', color: 'slate', order: 100 },
-  { id: 'column-standby', label: 'Standby', color: 'violet', order: 200 },
-  { id: 'column-running', label: 'Running', color: 'blue', order: 300 },
-  {
-    id: 'column-awaiting-approval',
-    label: 'Aguardando aprovacao',
-    color: 'amber',
-    order: 400,
-  },
-  { id: 'column-approved', label: 'Aprovada', color: 'emerald', order: 500 },
-  { id: 'column-finished', label: 'Finalizada', color: 'indigo', order: 600 },
-  { id: 'column-routine', label: 'Rotina', color: 'rose', order: 700 },
-] as const
+// WAVE 6: colunas padrao de um board NOVO = os STATUS compartilhados com o Calendario (mesma ordem/
+// rotulos). Board existente mantem suas colunas (nao mexemos); a sincronizacao status<->coluna do
+// calendario (statusColumnMap) faz a ponte quando diferem. Fonte unica: ~/utils/content-taxonomy.
+const DEFAULT_TASKS_COLUMNS = CONTENT_STATUSES.map((status, index) => ({
+  id: `column-${status.value}`,
+  label: status.label,
+  color: status.color,
+  order: (index + 1) * 100,
+}))
 const LEGACY_DEFAULT_TASKS_COLUMN_LABELS = ['A fazer', 'Em andamento', 'Concluido'] as const
 const ORDER_STEP = 10
 const SUPPORTED_COLUMN_COLORS = new Set([
@@ -617,6 +615,33 @@ function normalizeTaskVideos(value: unknown): TaskVideoItem[] {
   return normalized
 }
 
+// normalizeCalendarMedia le a midia espelhada do evento vinculado (WAVE 6 cruzamento A, read-only).
+// So url sob /uploads/calendar/ (o backend ja valida; aqui e' defesa e dedup). type video|image.
+function normalizeCalendarMedia(value: unknown): TaskCalendarMediaItem[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  const out: TaskCalendarMediaItem[] = []
+  value.forEach((item) => {
+    if (!item || typeof item !== 'object') return
+    const raw = item as Record<string, any>
+    const url = normalizeText(raw.url, 1000)
+    if (!url.startsWith('/uploads/calendar/')) return
+    const id = normalizeText(raw.id, 240) || url
+    if (seen.has(id)) return
+    seen.add(id)
+    out.push({
+      id,
+      url,
+      name: normalizeText(raw.name, 240) || id,
+      type: raw.type === 'video' ? 'video' : 'image',
+      sizeBytes: Math.max(0, Number(raw.sizeBytes || 0) || 0),
+      contentType: normalizeText(raw.contentType, 120),
+      posterUrl: normalizeText(raw.posterUrl, 1000),
+    })
+  })
+  return out
+}
+
 function taskUiPatchFromPayload(payload: Record<string, any>): TaskUiMetadata {
   const patch: TaskUiMetadata = {}
   if (Object.prototype.hasOwnProperty.call(payload, 'responsible')) {
@@ -766,6 +791,7 @@ function mapTaskToStoreItem(
     createdAt: normalizeText(task.createdAt, 80) || new Date().toISOString(),
     updatedAt: normalizeText(task.updatedAt, 80) || new Date().toISOString(),
     videos: normalizeTaskVideos(resolvedTaskUi?.videos),
+    calendarMedia: normalizeCalendarMedia(resolvedTaskUi?.calendarMedia),
     columnId: normalizeText(mappedColumn?.id || explicitColumnId, 80),
     version: Number(task.version || 0) || 0,
     responsibleUserId: responsibleUserId || undefined,

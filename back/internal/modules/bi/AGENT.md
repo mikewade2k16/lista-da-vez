@@ -17,6 +17,15 @@ pela aplicacao. A primeira integracao e o proxy controlado da Perola BI.
 - Retornar status/body/headers relevantes da API externa para facilitar
   diagnostico operacional sem vazar segredo em logs.
 - Usar timeout e `http.NewRequestWithContext` para chamadas externas.
+- Teto de paginacao do fallback: `PEROLA_BI_MAX_PAGES` tem default `5`
+  (`defaultPerolaMaxPages=5`). Esse teto so vale quando um dataset NAO fixa
+  `MaxPages` proprio. As 4 definicoes de dataset do overview
+  (`perolaDatasetDefinitions()`) fixam `MaxPages: 1`, entao o overview busca no
+  maximo 1 pagina/dataset; o default alto so era bomba armada para datasets
+  futuros sem `MaxPages` explicito. A flag `source.truncated` continua sendo
+  emitida quando ha mais paginas do que o teto. Para subir o teto de volta num
+  ambiente especifico (ex.: proxy de datasets futuros), setar
+  `PEROLA_BI_MAX_PAGES` no `.env`/compose.
 
 ## Rotas
 

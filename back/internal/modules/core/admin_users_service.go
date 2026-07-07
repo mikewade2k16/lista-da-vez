@@ -13,10 +13,18 @@ import (
 // scope resolve a autoridade admin por-request (delegacao multi-tenant); links
 // cuida dos vinculos de cliente/agencia de um usuario.
 type AdminUserService struct {
-	repo   AdminUserRepository
-	hasher *auth.BcryptHasher
-	scope  *AdminScopeResolver
-	links  AdminUserLinksRepository
+	repo           AdminUserRepository
+	hasher         *auth.BcryptHasher
+	scope          *AdminScopeResolver
+	links          AdminUserLinksRepository
+	principalCache PrincipalCacheInvalidator
+}
+
+// SetPrincipalCacheInvalidator liga a invalidacao do PrincipalCache (AC-01) para as
+// mutacoes identity-global do painel admin v2 (desativacao / is_platform_admin /
+// soft-delete). nil = cache desligado (no-op).
+func (s *AdminUserService) SetPrincipalCacheInvalidator(cache PrincipalCacheInvalidator) {
+	s.principalCache = cache
 }
 
 // NewAdminUserService cria o service com as dependencias necessarias.
@@ -201,7 +209,12 @@ func (s *AdminUserService) UpdateUser(ctx context.Context, actorUserID, userID s
 	// Evita que o texto puro da senha trafegue alem deste ponto.
 	input.Password = nil
 
-	return s.repo.UpdateUser(ctx, userID, input, passwordHash)
+	view, err := s.repo.UpdateUser(ctx, userID, input, passwordHash)
+	if err == nil && s.principalCache != nil {
+		// AC-01: cobre desativacao (isActive) e is_platform_admin via painel admin v2.
+		s.principalCache.InvalidateUser(userID)
+	}
+	return view, err
 }
 
 // DeleteUser faz soft-delete da identidade global — acao identity-global, SO
@@ -228,7 +241,14 @@ func (s *AdminUserService) DeleteUser(ctx context.Context, actorUserID, userID s
 			return ErrLastPlatformAdmin
 		}
 	}
-	return s.repo.SoftDeleteUser(ctx, userID)
+	if err := s.repo.SoftDeleteUser(ctx, userID); err != nil {
+		return err
+	}
+	// AC-01: soft-delete desativa a identidade — derruba as sessoes cacheadas.
+	if s.principalCache != nil {
+		s.principalCache.InvalidateUser(userID)
+	}
+	return nil
 }
 
 // GetMemberships devolve as accounts que o user e membro, ESCOPADO ao ator: o

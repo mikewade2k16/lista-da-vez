@@ -15,23 +15,23 @@ func (service *Service) loadEntries(
 	ctx context.Context,
 	principal auth.Principal,
 	filters Filters,
-) (reportScope, Filters, []operations.ServiceHistoryEntry, error) {
+) (reportScope, Filters, []operations.ServiceHistoryEntry, HistoryWindow, error) {
 	normalized, repositoryFilters, err := normalizeFilters(filters)
 	if err != nil {
-		return reportScope{}, Filters{}, nil, err
+		return reportScope{}, Filters{}, nil, HistoryWindow{}, err
 	}
 
 	if normalized.StoreID == "" {
 		resolvedTenantID := stringsx.FirstNonEmpty(normalized.TenantID, principal.TenantID)
 		if resolvedTenantID == "" {
-			return reportScope{}, Filters{}, nil, ErrStoreRequired
+			return reportScope{}, Filters{}, nil, HistoryWindow{}, ErrStoreRequired
 		}
 
 		storeRows, err := service.storeFinder.ListAccessible(ctx, principal, stores.ListInput{
 			TenantID: resolvedTenantID,
 		})
 		if err != nil {
-			return reportScope{}, Filters{}, nil, err
+			return reportScope{}, Filters{}, nil, HistoryWindow{}, err
 		}
 
 		storeLookup := make(map[string]stores.StoreView, len(storeRows))
@@ -43,7 +43,13 @@ func (service *Service) loadEntries(
 
 		history, err := service.repository.ListHistoryByStores(ctx, storeIDs, repositoryFilters)
 		if err != nil {
-			return reportScope{}, Filters{}, nil, err
+			return reportScope{}, Filters{}, nil, HistoryWindow{}, err
+		}
+
+		// A janela mede o resultado bruto do SQL, ANTES dos filtros em memoria.
+		window, err := service.computeHistoryWindow(ctx, storeIDs, repositoryFilters, len(history))
+		if err != nil {
+			return reportScope{}, Filters{}, nil, HistoryWindow{}, err
 		}
 
 		for index := range history {
@@ -67,17 +73,22 @@ func (service *Service) loadEntries(
 		})
 
 		normalized.TenantID = resolvedTenantID
-		return reportScope{TenantID: resolvedTenantID}, normalized, filtered, nil
+		return reportScope{TenantID: resolvedTenantID}, normalized, filtered, window, nil
 	}
 
 	store, err := service.storeFinder.FindAccessible(ctx, principal, normalized.StoreID)
 	if err != nil {
-		return reportScope{}, Filters{}, nil, err
+		return reportScope{}, Filters{}, nil, HistoryWindow{}, err
 	}
 
 	history, err := service.repository.ListHistory(ctx, store.ID, repositoryFilters)
 	if err != nil {
-		return reportScope{}, Filters{}, nil, err
+		return reportScope{}, Filters{}, nil, HistoryWindow{}, err
+	}
+
+	window, err := service.computeHistoryWindow(ctx, []string{store.ID}, repositoryFilters, len(history))
+	if err != nil {
+		return reportScope{}, Filters{}, nil, HistoryWindow{}, err
 	}
 
 	for index := range history {
@@ -99,7 +110,7 @@ func (service *Service) loadEntries(
 		StoreID:   store.ID,
 		TenantID:  store.TenantID,
 		StoreName: store.Name,
-	}, normalized, filtered, nil
+	}, normalized, filtered, window, nil
 }
 
 func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
@@ -119,6 +130,7 @@ func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
 		Search:                strings.TrimSpace(input.Search),
 		Page:                  input.Page,
 		PageSize:              input.PageSize,
+		Limit:                 input.Limit,
 	}
 
 	if normalized.Page <= 0 {
@@ -131,6 +143,14 @@ func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
 
 	if normalized.PageSize > maxPageSize {
 		normalized.PageSize = maxPageSize
+	}
+
+	if normalized.Limit <= 0 {
+		normalized.Limit = defaultHistoryFetchLimit
+	}
+
+	if normalized.Limit > maxHistoryFetchLimit {
+		normalized.Limit = maxHistoryFetchLimit
 	}
 
 	var repositoryInput repositoryFilters
@@ -160,6 +180,7 @@ func normalizeFilters(input Filters) (Filters, repositoryFilters, error) {
 	repositoryInput.ConsultantIDs = normalized.ConsultantIDs
 	repositoryInput.Outcomes = normalized.Outcomes
 	repositoryInput.StartModes = normalized.StartModes
+	repositoryInput.Limit = normalized.Limit
 
 	if len(normalized.ExistingCustomerModes) == 1 {
 		value := normalized.ExistingCustomerModes[0] == "yes"

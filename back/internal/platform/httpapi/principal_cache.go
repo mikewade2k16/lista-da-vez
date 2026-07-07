@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,6 +27,8 @@ type PrincipalCache[T any] struct {
 	bySession map[string]*PrincipalCached[T]
 	byUser    map[string][]string // userID -> []sessionID
 	ttl       time.Duration
+	hits      atomic.Int64 // contadores cumulativos para telemetria de hit rate (AC-01)
+	misses    atomic.Int64
 }
 
 // NewPrincipalCache cria um cache com TTL especificado.
@@ -41,6 +44,7 @@ func NewPrincipalCache[T any](ttl time.Duration) *PrincipalCache[T] {
 // Retorna false se nao encontrado ou se a entrada expirou.
 func (c *PrincipalCache[T]) Get(sessionID string) (T, bool) {
 	if sessionID == "" {
+		c.misses.Add(1)
 		var zero T
 		return zero, false
 	}
@@ -50,9 +54,11 @@ func (c *PrincipalCache[T]) Get(sessionID string) (T, bool) {
 	c.mu.RUnlock()
 
 	if !ok || time.Now().After(entry.ExpiresAt) {
+		c.misses.Add(1)
 		var zero T
 		return zero, false
 	}
+	c.hits.Add(1)
 	return entry.Value, true
 }
 
@@ -132,6 +138,19 @@ func (c *PrincipalCache[T]) Cleanup() {
 		}
 	}
 	c.mu.Unlock()
+}
+
+// Stats retorna contadores cumulativos desde o boot (nao resetam).
+func (c *PrincipalCache[T]) Stats() (hits, misses int64) {
+	return c.hits.Load(), c.misses.Load()
+}
+
+// Len retorna o numero de entradas atualmente no cache (inclui expiradas
+// ainda nao varridas pelo Cleanup).
+func (c *PrincipalCache[T]) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.bySession)
 }
 
 func appendUniq(slice []string, s string) []string {

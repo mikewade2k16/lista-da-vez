@@ -192,6 +192,72 @@
   color: rgb(var(--danger));
 }
 
+/* Link "Task vinculada" (contrato C10): aparece quando o evento tem taskId. Leva
+   pro board de Tasks (/tasks); ainda sem deep-link para a task especifica. */
+.calendar-drawer__tasklink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  margin-bottom: 0.9rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgb(var(--primary) / 0.35);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
+  font-size: 0.76rem;
+  font-weight: 700;
+  transition: background 0.15s ease;
+}
+
+.calendar-drawer__tasklink:hover {
+  background: rgb(var(--primary) / 0.14);
+}
+
+/* WAVE 6: evento sem task vinculada — badge de aviso + botao criar. */
+.calendar-drawer__notask {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.calendar-drawer__notask-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-warning) 14%, transparent);
+  color: var(--accent-warning);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.calendar-drawer__notask-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgb(var(--primary) / 0.35);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.calendar-drawer__notask-btn:hover:not(:disabled) {
+  background: rgb(var(--primary) / 0.16);
+}
+
+.calendar-drawer__notask-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ===== Formulario de evento (modal) ======================================== */
 .calendar-form-overlay {
   position: fixed;
@@ -231,6 +297,21 @@
   color: var(--text-main);
   font-size: 1rem;
   font-weight: 800;
+}
+
+/* Presenca (SPEC-F9): "Fulano editando" quando outro usuario edita ESTE evento. */
+.calendar-form__presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: auto;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .calendar-form__close {
@@ -308,6 +389,68 @@
 
 .calendar-form__footer-spacer {
   flex: 1;
+}
+
+/* ===== Toggle "Criar task no board" (contrato C10, so ao criar) ============ */
+.calendar-form__toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  cursor: pointer;
+}
+
+.calendar-form__toggle-input {
+  margin-top: 0.15rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: rgb(var(--primary));
+  cursor: pointer;
+}
+
+.calendar-form__toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.calendar-form__toggle-title {
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.calendar-form__toggle-hint {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Aviso acionavel quando nao ha board configurado (tasks.boardId vazio). */
+.calendar-form__task-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgb(var(--warning) / 0.4);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--warning) / 0.1);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.calendar-form__task-link {
+  color: rgb(var(--primary));
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.calendar-form__task-link:hover {
+  color: rgb(var(--primary-600));
 }
 
 @media (max-width: 560px) {

@@ -1,0 +1,159 @@
+[
+  {
+    "id": "calendarchat0001",
+    "name": "Calendar Chat",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "calendar-chat",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "a1b2c3d4-calc-4000-8000-webhookcht01",
+        "name": "Webhook",
+        "webhookId": "c0ffee00-calc-4000-8000-webhookcht01"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Monta o system (persona + contexto serializado C7), resolve baseUrl/model/temperature\n// por provider e repassa a API key que veio no payload (body.ai.apiKey), resolvida\n// server-side pelo Go a partir do banco. O no HTTP usa Authorization Bearer com essa key —\n// nao le mais $env/credential; a key crua nunca e logada nem persistida no n8n.\n// Providers OpenAI-compatible: gemini + glm(z.ai).\nconst body = ($('Webhook').first().json.body) || {};\nconst ai = body.ai || {};\nconst ctx = body.context || {};\n// Base URLs default por provider. glm aponta para o endpoint INTERNACIONAL z.ai (a key do\n// dono e da z.ai, nao do bigmodel.cn). Config da conta (ai.baseUrl) vence quando preenchida.\nconst DEFAULT_BASE = {\n  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',\n  glm: 'https://api.z.ai/api/paas/v4',\n  openai: 'https://api.openai.com/v1',\n  deepseek: 'https://api.deepseek.com',\n  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',\n  kimi: 'https://api.moonshot.cn/v1'\n};\nconst DEFAULT_MODEL = {\n  gemini: 'gemini-2.5-flash',\n  glm: 'glm-4.6',\n  openai: 'gpt-4o-mini',\n  deepseek: 'deepseek-chat',\n  qwen: 'qwen-plus',\n  kimi: 'moonshot-v1-8k'\n};\n// Nome da env por provider — mantido so como referencia/diagnostico; a key real vem no payload.\nconst KEY_ENV = {\n  gemini: 'CALENDAR_GEMINI_API_KEY',\n  glm: 'CALENDAR_ZAI_API_KEY'\n};\nconst provider = String(ai.provider || 'gemini').toLowerCase();\n// A API key vem no payload (body.ai.apiKey), resolvida server-side pelo Go a partir do banco.\nconst apiKey = String(ai.apiKey || '');\n// Se o modelo salvo na config nao bate com o provider (ex.: sobrou claude-sonnet-5 ao\n// trocar pra Gemini), cai no default do provider — evita 404 de modelo inexistente.\nconst PREFIX = { gemini: 'gemini', glm: 'glm' };\nlet model = ai.model || DEFAULT_MODEL[provider] || 'gemini-2.5-flash';\nif (PREFIX[provider] && String(model).toLowerCase().indexOf(PREFIX[provider]) !== 0) { model = DEFAULT_MODEL[provider] || model; }\nconst baseUrl = String(ai.baseUrl || DEFAULT_BASE[provider] || '').replace(/\\/+$/, '');\nconst keyEnv = KEY_ENV[provider] || 'CALENDAR_GEMINI_API_KEY';\nlet temperature = Number(ai.temperature);\nif (isNaN(temperature)) temperature = 0.7;\nif (temperature < 0) temperature = 0;\nif (temperature > 1) temperature = 1;\nconst DEFAULT_SYSTEM = [\n  'Voce e um assistente de estrategia de conteudo de uma agencia brasileira.',\n  'Use o contexto do cliente e do mes fornecido abaixo para responder de forma direta e pratica, em pt-BR.',\n  'Nao invente dados que nao estejam no contexto; quando faltar, diga o que falta de forma objetiva.'\n].join(String.fromCharCode(10));\nconst baseSystem = (ai.systemPrompt && String(ai.systemPrompt).trim()) ? String(ai.systemPrompt) : DEFAULT_SYSTEM;\nconst NL = String.fromCharCode(10);\nlet cx = NL + NL + '=== CONTEXTO ===' + NL;\ncx += 'Mes em foco: ' + (ctx.month || '(mes corrente)') + NL;\nconst client = ctx.client || null;\nif (client && (client.id || client.name)) {\n  cx += NL + 'Cliente em foco: ' + (client.name || '') + ' (id: ' + (client.id || '') + ')' + NL;\n  cx += 'Perfil do cliente: ' + JSON.stringify(client.profile || {}) + NL;\n} else {\n  cx += NL + 'Nenhum cliente filtrado (visao geral da agencia).' + NL;\n}\nconst holidays = Array.isArray(ctx.holidays) ? ctx.holidays : [];\nif (holidays.length) {\n  cx += NL + 'Datas comemorativas / feriados do mes:' + NL;\n  for (const h of holidays) {\n    cx += '- ' + (h.date || '') + ': ' + (h.name || '') + ' (' + (h.set || '') + ')' + NL;\n  }\n} else {\n  cx += NL + 'Sem feriados cadastrados para este mes.' + NL;\n}\nconst events = Array.isArray(ctx.events) ? ctx.events : [];\nif (events.length) {\n  cx += NL + 'Eventos ja agendados no mes:' + NL;\n  for (const e of events) {\n    cx += '- ' + (e.date || '') + ' [' + (e.type || '') + '] ' + (e.title || '') + ' (status: ' + (e.status || '') + ')' + NL;\n  }\n} else {\n  cx += NL + 'Nenhum evento agendado no mes.' + NL;\n}\nconst monthNotes = ctx.monthNotes || '';\nif (monthNotes) {\n  cx += NL + 'Notas do mes (HTML, use como contexto):' + NL + monthNotes + NL;\n}\nconst plans = Array.isArray(ctx.plans) ? ctx.plans : [];\nif (plans.length) {\n  cx += NL + 'Planos estrategicos gerados (resumo):' + NL;\n  for (const p of plans) {\n    cx += '- plano ' + (p.id || '') + ' mes ' + (p.month || '') + ' status ' + (p.status || '') + ' (' + (p.provider || '') + '/' + (p.model || '') + ')' + NL;\n  }\n}\nconst ENVELOPE_RULE = NL + NL + 'INSTRUCAO FINAL (vale MAIS que tudo acima, inclusive a de responder em texto): responda SEMPRE com UM objeto JSON plano, nada fora dele, sem crase nem markdown:' + NL +\n  '{\"answer\":\"sua resposta em pt-BR\",\"create\":\"none\"}' + NL +\n  '- create: \"none\" = conversa normal; \"event\" = criar um evento no calendario; \"task\" = criar uma tarefa.' + NL +\n  '- Quando create for \"event\" ou \"task\", inclua NO MESMO objeto (mesmo nivel): title, date (YYYY-MM-DD), time (HH:MM), type, status, clientId. Para task use dueDate no lugar de date.' + NL +\n  '- Se o usuario pedir para criar/agendar/marcar/adicionar algo, create NUNCA pode ser \"none\".' + NL +\n  '- clientId = id do cliente em foco do CONTEXTO quando houver, senao \"\" (nunca invente). status padrao \"planejado\". Use o mes em foco para datas relativas.' + NL +\n  'Exemplo: usuario \"cria uma gravacao pra Perola dia 10 de julho\" vira {\"answer\":\"Vou propor uma gravacao da Perola em 10/07.\",\"create\":\"event\",\"title\":\"Gravacao Perola\",\"date\":\"2026-07-10\",\"time\":\"09:00\",\"type\":\"gravacao\",\"status\":\"planejado\",\"clientId\":\"\"}';\nconst system = baseSystem + cx + ENVELOPE_RULE;\nconst question = String(body.question || '').trim();\n// Historico da conversa: vem do payload (body.history), persistido no banco pelo Go.\n// O n8n NAO guarda memoria; so repassa o que o back mandou. Sanitiza cada item\n// (so role user/assistant com content) e monta a array de messages do LLM na ordem\n// system+context, depois o historico, depois a pergunta atual.\nconst historyIn = Array.isArray(body.history) ? body.history : [];\nconst history = [];\nfor (const h of historyIn) {\n  if (!h || typeof h !== 'object') continue;\n  const role = String(h.role || '');\n  const content = String(h.content || '');\n  if ((role === 'user' || role === 'assistant') && content) { history.push({ role: role, content: content }); }\n}\nconst messages = [{ role: 'system', content: system }];\nfor (const h of history) { messages.push(h); }\nmessages.push({ role: 'user', content: question });\nreturn [{ json: {\n  provider: provider,\n  model: model,\n  baseUrl: baseUrl,\n  keyEnv: keyEnv,\n  apiKey: apiKey,\n  temperature: temperature,\n  system: system,\n  question: question,\n  messages: messages\n} }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          0
+        ],
+        "id": "b2c3d4e5-calc-4000-8000-montarctx001",
+        "name": "Montar contexto"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.baseUrl }}/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + ($json.apiKey || '') }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: $json.model, temperature: $json.temperature, messages: $json.messages, response_format: { type: 'json_object' } }) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          460,
+          0
+        ],
+        "id": "d4e5f6a7-calc-4000-8000-httpchat0001",
+        "name": "Chamar LLM",
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 4,
+        "waitBetweenTries": 2500
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Normaliza a resposta OpenAI-compatible (choices[0].message.content) para { answer }.\n// Erro do HTTP node (apos retryOnFail): mensagem LIMPA por tipo, sem JSON cru na tela.\nlet r = $input.first().json || {};\nif (Array.isArray(r)) r = r[0] || {};\nif (r.error) {\n  const raw = String((r.error && (r.error.message || r.error.description)) || '');\n  const low = raw.toLowerCase();\n  let friendly;\n  if (low.indexOf('503') >= 0 || low.indexOf('unavailable') >= 0 || low.indexOf('overload') >= 0 || low.indexOf('high demand') >= 0) {\n    friendly = 'O provedor de IA esta sobrecarregado agora (limite temporario do modelo). Tente de novo em instantes.';\n  } else if (low.indexOf('429') >= 0 || low.indexOf('quota') >= 0 || low.indexOf('rate') >= 0 || low.indexOf('exceeded') >= 0) {\n    friendly = 'Limite de uso do provedor de IA atingido (cota). Tente mais tarde ou troque de modelo/provedor na aba IA.';\n  } else if (low.indexOf('401') >= 0 || low.indexOf('403') >= 0 || low.indexOf('api key') >= 0 || low.indexOf('unauthorized') >= 0) {\n    friendly = 'A chave de API do provedor foi recusada. Confira a chave na aba IA.';\n  } else {\n    let detail = '';\n    const m = raw.match(/\"message\"\\s*:\\s*\"([^\"]+)\"/);\n    if (m) detail = m[1];\n    friendly = detail ? ('Nao consegui falar com a IA: ' + detail) : 'Nao consegui falar com a IA agora. Tente de novo.';\n  }\n  return [{ json: { answer: friendly, aiError: true } }];\n}\n// WAVE 5 (E7): o LLM responde SEMPRE num JSON PLANO {answer, create, ...campos} (json mode).\n// Monta a proposal a partir dos campos planos; create='none'/ausente = conversa normal.\nconst choices = Array.isArray(r.choices) ? r.choices : [];\nconst msg = (choices[0] && choices[0].message && choices[0].message.content) || '';\nif (!msg) {\n  return [{ json: { answer: 'A IA respondeu vazio. Verifique o modelo/base URL do provider na aba IA.', aiError: true } }];\n}\nfunction parseEnvelope(text) {\n  let s = String(text).trim();\n  const fence = s.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\n  if (fence) s = fence[1].trim();\n  const a = s.indexOf('{'), b = s.lastIndexOf('}');\n  if (a < 0 || b <= a) return null;\n  try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }\n}\nconst env = parseEnvelope(msg);\nif (!env || typeof env !== 'object') {\n  return [{ json: { answer: String(msg) } }];\n}\nconst answer = String(env.answer == null ? '' : env.answer) || String(msg);\nconst create = String(env.create || 'none').toLowerCase();\nif (create === 'event' || create === 'task') {\n  const fields = {\n    title: String(env.title || ''),\n    date: String(env.date || ''),\n    time: String(env.time || ''),\n    type: String(env.type || ''),\n    status: String(env.status || ''),\n    dueDate: String(env.dueDate || env.date || ''),\n    columnId: String(env.columnId || ''),\n    clientId: String(env.clientId || '')\n  };\n  if (fields.title) {\n    return [{ json: { answer: answer, proposal: { kind: create, fields: fields } } }];\n  }\n}\nreturn [{ json: { answer: answer } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          700,
+          0
+        ],
+        "id": "e5f6a7b8-calc-4000-8000-extrresp0001",
+        "name": "Extrair resposta"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { \"answer\": $json.answer, \"proposal\": ($json.proposal || null), \"aiError\": ($json.aiError || false) } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          940,
+          0
+        ],
+        "id": "c9d0e1f2-calc-4000-8000-respondcht01",
+        "name": "Respond to Webhook"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Montar contexto",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar contexto": {
+        "main": [
+          [
+            {
+              "node": "Chamar LLM",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Chamar LLM": {
+        "main": [
+          [
+            {
+              "node": "Extrair resposta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extrair resposta": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "calcffee-0000-4000-8000-calendarcht03"
+  }
+]

@@ -104,6 +104,20 @@ func TestPrincipalCache_InvalidateAll(t *testing.T) {
 	}
 }
 
+func TestPrincipalCache_Stats(t *testing.T) {
+	cache := httpapi.NewPrincipalCache[testPrincipal](2 * time.Minute)
+	cache.Set("s1", "u1", testPrincipal{UserID: "u1"})
+	cache.Get("s1")         // hit
+	cache.Get("nao-existe") // miss
+	hits, misses := cache.Stats()
+	if hits != 1 || misses != 1 {
+		t.Fatalf("esperado 1 hit / 1 miss, veio %d/%d", hits, misses)
+	}
+	if cache.Len() != 1 {
+		t.Fatalf("esperado Len=1, veio %d", cache.Len())
+	}
+}
+
 func TestPrincipalCache_CleanupPrunesExpired(t *testing.T) {
 	cache := httpapi.NewPrincipalCache[testPrincipal](1 * time.Millisecond)
 	cache.Set("session1", "u1", testPrincipal{UserID: "u1"})

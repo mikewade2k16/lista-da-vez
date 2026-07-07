@@ -136,6 +136,11 @@ type Dependencies struct {
 	// PasswordHasher e o BcryptHasher compartilhado para gerar/verificar hashes
 	// de senha. Usado por modulos que criam usuarios (ex.: core /v1/admin/users).
 	PasswordHasher *auth.BcryptHasher
+
+	// PrincipalCache permite aos modulos derrubar Principals cacheados quando
+	// papel/ativacao de usuario muda (AC-01). nil = cache desligado. Campo concreto
+	// (nao interface) para evitar typed-nil em interface quando o cache esta off.
+	PrincipalCache *httpapi.PrincipalCache[auth.Principal]
 }
 
 // PermissionDef declara uma permissao do catalogo do modulo.

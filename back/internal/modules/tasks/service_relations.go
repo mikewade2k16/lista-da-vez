@@ -99,6 +99,41 @@ func (service *Service) ExpandRelations(ctx context.Context, access AccessContex
 	return relations, nil
 }
 
+// RemoveRelation apaga o vinculo (module/resourceType/resourceID) de uma task e,
+// quando algo e removido, publica `task.relation_removed` (o front `useTaskRelations`
+// escuta esse evento para invalidar o cache). Idempotente: relation inexistente nao
+// e erro. Uso interno service-to-service (ex.: calendar desvincula a task ao apagar o
+// evento); exige PermRelationsManage no access. task de outra account nao e vista
+// (scopedQuery + GetTask no escopo => ErrTaskNotFound => 404 na borda que chamar).
+func (service *Service) RemoveRelation(ctx context.Context, access AccessContext, taskID, module, resourceType, resourceID string) error {
+	if !access.Has(PermRelationsManage) {
+		return ErrForbidden
+	}
+	taskID = strings.TrimSpace(taskID)
+	module = strings.TrimSpace(module)
+	resourceType = strings.TrimSpace(resourceType)
+	resourceID = strings.TrimSpace(resourceID)
+	if taskID == "" || module == "" || resourceType == "" || resourceID == "" {
+		return ErrValidation
+	}
+	// GetTask amarra o taskID ao escopo da account (cross-account => ErrTaskNotFound)
+	// e da o BoardID/Version para o evento de realtime.
+	task, err := service.repository.GetTask(ctx, access, taskID)
+	if err != nil {
+		return err
+	}
+	removed, err := service.repository.RemoveRelation(ctx, access.AccountID, taskID, module, resourceType, resourceID)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return nil
+	}
+	service.audit(ctx, access, "task.relation_removed", "task", taskID, nil, nil)
+	service.publisher.PublishTaskEvent(ctx, TaskEvent{Type: "task.relation_removed", AccountID: access.AccountID, BoardID: task.BoardID, TaskID: task.ID, Version: task.Version})
+	return nil
+}
+
 func relationNeedsRefresh(relation Relation, now time.Time) bool {
 	if strings.TrimSpace(relation.LabelCache) == "" || len(relation.MetadataCache) == 0 {
 		return true

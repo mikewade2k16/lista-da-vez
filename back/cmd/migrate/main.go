@@ -42,6 +42,17 @@ func main() {
 		}
 
 		logger.Info("migration_up_ok")
+
+		granted, err := database.SyncAppRoleGrants(ctx, pool, cfg.DatabaseAppURL)
+		if err != nil {
+			logger.Error("app_role_grants_failed", slog.Any("error", err))
+			os.Exit(1)
+		}
+		if granted {
+			logger.Info("app_role_grants_ok")
+		} else {
+			logger.Info("app_role_grants_skipped") // sem DATABASE_APP_URL, mesma role, ou role ausente
+		}
 	case "bootstrap-owner":
 		password := strings.TrimSpace(os.Getenv("BOOTSTRAP_OWNER_PASSWORD"))
 		if password == "" {

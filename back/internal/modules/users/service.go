@@ -16,10 +16,17 @@ type Service struct {
 	invites            InvitationIssuer
 	notifier           ContextPublisher
 	consultantProfiles ConsultantProfileSync
+	principalCache     PrincipalCacheInvalidator
 }
 
 type ContextPublisher interface {
 	PublishContextEvent(ctx context.Context, tenantID string, resource string, action string, resourceID string, savedAt time.Time)
+}
+
+// PrincipalCacheInvalidator derruba Principals cacheados de um usuario quando
+// papel/escopo/ativacao muda (AC-01). Definida aqui para nao importar httpapi.
+type PrincipalCacheInvalidator interface {
+	InvalidateUser(userID string)
 }
 
 type ConsultantProfileSync interface {
@@ -38,6 +45,13 @@ func NewService(repository Repository, password auth.PasswordHasher, invites Inv
 		notifier:           notifier,
 		consultantProfiles: consultantProfiles,
 	}
+}
+
+// SetPrincipalCacheInvalidator liga a invalidacao do PrincipalCache (AC-01). Toda
+// mutacao que muda papel/escopo/ativacao (Update, Archive) passa a derrubar as
+// sessoes cacheadas do usuario. nil = cache desligado (no-op).
+func (service *Service) SetPrincipalCacheInvalidator(cache PrincipalCacheInvalidator) {
+	service.principalCache = cache
 }
 
 func (service *Service) ListAccessible(ctx context.Context, principal auth.Principal, input ListInput) ([]UserView, error) {
@@ -254,6 +268,10 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 		}
 	}
 
+	// AC-01: desativacao, troca de papel e troca de tenant/lojas passam por Update —
+	// derruba o Principal cacheado para que a proxima request releia do banco.
+	service.invalidatePrincipal(updated.ID)
+
 	service.publishContextEvents(ctx, uniqueTenantIDs(existing.TenantID, updated.TenantID), "user", "updated", updated.ID)
 	return updated.View(), nil
 }
@@ -292,6 +310,9 @@ func (service *Service) Archive(ctx context.Context, principal auth.Principal, u
 			return UserView{}, err
 		}
 	}
+
+	// AC-01: arquivamento desativa o usuario — derruba as sessoes cacheadas na hora.
+	service.invalidatePrincipal(updated.ID)
 
 	service.publishContextEvent(ctx, updated.TenantID, "user", "archived", updated.ID)
 	return updated.View(), nil
@@ -566,6 +587,14 @@ func (service *Service) publishContextEvent(ctx context.Context, tenantID string
 	}
 
 	service.notifier.PublishContextEvent(ctx, tenantID, resource, action, resourceID, time.Now().UTC())
+}
+
+// invalidatePrincipal derruba as sessoes cacheadas do usuario (AC-01). Nil-safe:
+// no-op quando o cache esta desligado (AUTH_PRINCIPAL_CACHE_TTL=0s).
+func (service *Service) invalidatePrincipal(userID string) {
+	if service.principalCache != nil {
+		service.principalCache.InvalidateUser(userID)
+	}
 }
 
 func (service *Service) publishContextEvents(ctx context.Context, tenantIDs []string, resource string, action string, resourceID string) {

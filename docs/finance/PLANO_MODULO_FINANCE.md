@@ -4,10 +4,14 @@ Doc canonico do modulo financeiro. Fase 14 do roadmap ("Modulo Finance").
 Espelha o padrao dos modulos `site` e `cardapio` (Module Registry + schema proprio +
 permissoes no banco + `account_modules`).
 
-> **Estado (2026-06-30):** o **front ja foi portado** para `web/layers/finance/`
-> e roda sobre um **mock BFF temporario** (`web/server/api/admin/finance-*`,
-> in-memory). Este doc e' o desenho do **back real**, ainda NAO implementado.
-> Ao implementar, o mock BFF e' apagado (ver secao 9 e docs/LEGADO.md #6).
+> **Estado (implementado 2026-07-02, AC-12):** back Go real em
+> `back/internal/modules/finance/` (migration `0187_finance_module.sql`, schema
+> `finance.*`, rotas **`/v1/finance/*`**). O mock BFF (`web/server/`) foi
+> **removido**; os composables da layer finance passaram a usar `createApiRequest`.
+> DIVERGENCIAS deste doc original ja corrigidas abaixo: migration `0181`->`0187`
+> e prefixo de rota `/v1/admin/finance-*`->`/v1/finance/*` (decisao AC-12, casa com
+> o gating por prefixo `moduleGatingRules`). Ver `back/internal/modules/finance/AGENT.md`,
+> ADR 0002 e docs/LEGADO.md #6.
 
 ---
 
@@ -126,25 +130,25 @@ Unico: `(account_id, core_tenant_id, source_core_tenant_id)`.
 ### Read model: recorrencias de clientes (`recurring-clients`)
 NAO e' tabela nova. E' um **read model** montado por join entre `core.accounts`
 (clientes que pagam mensalidade) + suas lojas + `finance.recurring_entries`
-(ajuste/notas do mes). Alimenta `GET /v1/admin/finance-config/recurring-clients`.
+(ajuste/notas do mes). Alimenta `GET /v1/finance/config/recurring-clients`.
 Regra de `billingMode`/`stores` a definir na implementacao (hoje o mock devolve vazio).
 
-## 4. Endpoints (`/v1/admin/...`)
+## 4. Endpoints (`/v1/finance/...`)
 
 Todos account-scoped, `DisallowUnknownFields` no decode, erros especificos.
 Mapa mock BFF -> API real:
 
 | Metodo | Rota | Acao | Permissao |
 | --- | --- | --- | --- |
-| GET | `/v1/admin/finance-sheets` | lista (`page,limit,q,coreTenantId,period`) + meta | `finance.sheets.view` |
-| POST | `/v1/admin/finance-sheets` | cria planilha | `finance.sheets.manage` |
-| GET | `/v1/admin/finance-sheets/{id}` | detalhe (entradas/saidas) | `finance.sheets.view` |
-| PUT | `/v1/admin/finance-sheets/{id}` | atualiza (full-replace das linhas) | `finance.sheets.manage` |
-| DELETE | `/v1/admin/finance-sheets/{id}` | remove | `finance.sheets.manage` |
-| PATCH | `/v1/admin/finance-sheets/{id}/lines/{lineId}` | efetiva/`effectiveDate` | `finance.sheets.manage` |
-| GET | `/v1/admin/finance-config` (`coreTenantId`) | categorias+contas fixas+recorrencias | `finance.sheets.view` |
-| PUT | `/v1/admin/finance-config` | salva config | `finance.config.manage` |
-| GET | `/v1/admin/finance-config/recurring-clients` | read model de mensalidades | `finance.sheets.view` |
+| GET | `/v1/finance/sheets` | lista (`page,limit,q,coreTenantId,period`) + meta | `finance.sheets.view` |
+| POST | `/v1/finance/sheets` | cria planilha | `finance.sheets.manage` |
+| GET | `/v1/finance/sheets/{id}` | detalhe (entradas/saidas) | `finance.sheets.view` |
+| PUT | `/v1/finance/sheets/{id}` | atualiza (full-replace das linhas) | `finance.sheets.manage` |
+| DELETE | `/v1/finance/sheets/{id}` | remove | `finance.sheets.manage` |
+| PATCH | `/v1/finance/sheets/{id}/lines/{lineId}` | efetiva/`effectiveDate` | `finance.sheets.manage` |
+| GET | `/v1/finance/config` (`coreTenantId`) | categorias+contas fixas+recorrencias | `finance.sheets.view` |
+| PUT | `/v1/finance/config` | salva config | `finance.config.manage` |
+| GET | `/v1/finance/config/recurring-clients` | read model de mensalidades | `finance.sheets.view` |
 
 Resposta padrao: `{ status: 'success', data, meta? }` (igual ao contrato do front).
 
@@ -195,43 +199,48 @@ desligado, usa a entidade local (account/tenant). Nao bloqueia o modulo.
 
 ## 7. Migrations
 
-SQL plano idempotente (proximos numeros apos `0180`):
-- `0181_finance_schema.sql` — `create schema if not exists finance;` + as 7 tabelas
-  (secao 3) com `create table if not exists`, checks, FKs e indices.
-- `account_modules`: **opt-in por conta** (habilitado no painel admin, como os demais
-  satelites). NAO seedar `finance` para todas as contas. Basta o `SyncCatalog` garantir
-  `finance` em `core.modules` (roda no boot com o modulo registrado).
+SQL plano idempotente. Implementada como **`0187_finance_module.sql`** (a proxima
+livre no momento do AC-12 era 0187, nao 0181): `create schema if not exists finance;`
++ as tabelas da secao 3 com `create table if not exists`, checks, FKs e indices.
 
-Sem `-- +goose Down` (o migrator roda o arquivo inteiro; Down se auto-destroi).
+Divergencias conscientes do desenho original (para espelhar o mock 1:1):
+- `fixed_account_id`/`category_id` ficaram **text** (nao uuid/FK): o front usa ids
+  deterministicos de recorrencia (`finance-ids.ts`) e trata como snapshot textual.
+- **SEM** unique de `lower(name)` em categories e **SEM** unique em recurring_entries:
+  o PUT de config e full-replace e o autosave nao valida duplicata (unique quebraria).
+- `finance.config_state` guarda o `updated_at` do payload de config.
+
+`account_modules`: **opt-in por conta** (habilitado no painel admin). NAO seedado
+para todas as contas. O `SyncCatalog` garante `finance` em `core.modules`/`permissions`/
+`role_templates` no boot. Sem `-- +goose Down` (o migrator roda o arquivo inteiro).
 
 ## 8. Notas de Deploy
 
-- Nova migration `0181_finance_schema.sql`.
+- Migration `0187_finance_module.sql` — roda automatica no start da api. Sem backfill.
 - Mexe em `back/` -> **rebuild obrigatorio**: `docker compose up -d --build api`.
-- Sem novas env vars. Sem dependencia nova de infra.
-- Habilitar o modulo por conta em `core.account_modules` via painel (ou migration
-  pontual de seed se o cliente pedir).
+- Sem novas env vars. Sem dependencia nova de infra. Portas inalteradas.
+- Web: rebuild/deploy do bundle quando aprovado (composables da layer finance mudaram).
+- Habilitar o modulo por conta em `core.account_modules` via painel para contas
+  nao-admin; `platform_admin` ja acessa via bypass do guard.
 
-## 9. Passo-a-passo de implementacao (proxima leva)
+## 9. Passo-a-passo de implementacao — FEITO (AC-12, 2026-07-02)
 
-1. `0181_finance_schema.sql` + subir a api para o `SyncCatalog` registrar `finance`.
-2. `back/internal/modules/finance/` (model, repos, service, http, module, permissions, errors, AGENT.md).
-3. `registry.MustRegister(finance.New())` em `app.go`.
-4. Trocar no front (`web/layers/finance/composables/useFinances*Manager.ts`) o `$fetch`
-   por `createApiRequest(runtimeConfig, () => auth.accessToken)` com `X-Account-Id`
-   (padrao de `web/app/composables/useProductsManager.ts`), e re-habilitar realtime.
-5. **Apagar o mock BFF:** `web/server/api/admin/finance-*` + `web/server/utils/financeMockStore.ts`.
-6. Remover o `LegacyMarker` da pagina `/finance` e a entrada #6 do docs/LEGADO.md.
-7. Habilitar `account_modules(finance)` nas contas-alvo e **restaurar o gating de rota**:
-   - registrar o workspace `finance` (`web/app/utils/workspaces.ts` + `allowedWorkspaces`
-     por papel) e voltar `definePageMeta workspaceId: 'finance'` na pagina;
-   - adicionar `{ prefix: '/finance', moduleId: 'finance' }` em
-     `web/app/middleware/module-enabled.global.ts` (`MODULE_PATH_GUARDS`);
-   - devolver `workspaceId: 'finance'` ao item do `nav.config.ts`.
-   (Na fase mock a pagina usa `workspaceId: ''` de proposito — senao o `auth.global`
-   redireciona `/finance` para `/operacao`.)
-8. Aceite: criar planilha, efetivar recorrencia, ajustar valor e consultar historico
-   via API Go (criterio da Fase 14 no roadmap).
+1. [x] `0187_finance_module.sql` + `SyncCatalog` registra `finance` no boot.
+2. [x] `back/internal/modules/finance/` (model, service, service_config, store_sheets,
+   store_config, http, module, errors, AGENT.md).
+3. [x] `registry.MustRegister(finance.New())` + gating `{Prefix:"/v1/finance"}` em `app.go`.
+4. [x] Front (`useFinancesManager`/`useFinancesConfigManager`/`useFinanceConfigEditor`)
+   migrado de `$fetch` para `createApiRequest(runtimeConfig, () => auth.accessToken)`;
+   X-Account-Id entra pelo provider global. Realtime: pendente (fase futura).
+5. [x] Mock BFF removido: `web/server/` inteiro apagado (inclui `financeMockStore.ts`).
+6. [x] `LegacyMarker` retirado de `/finance`; docs/LEGADO.md #6 marcado RESOLVIDO.
+7. [x] Gating restaurado: workspace `finance` em `workspaces.ts` + `permissions.ts`
+   (WORKSPACE_ACCESS_DEFINITIONS, ROLE_WORKSPACES platform_admin/owner,
+   MODULE_WORKSPACE_PERMISSION_PREFIXES `finance.`); `definePageMeta workspaceId:'finance'`;
+   `{ prefix:'/finance', moduleId:'finance' }` em `module-enabled.global.ts`;
+   `workspaceId:'finance'` no item do `nav.config.ts`.
+8. Aceite (validar no browser): criar planilha, efetivar recorrencia, ajustar valor,
+   config/autosave via API Go — dados persistem (sobrevivem a restart).
 
 ## 10. Referencias
 

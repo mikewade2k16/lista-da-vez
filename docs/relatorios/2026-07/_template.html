@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório NN · TEMA · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório NN — TEMA</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <!-- CRUMBS: ajustar prev/next conforme a página -->
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./01-backend.html">← NN-1 Anterior</a>
+      <a href="./03-banco-de-dados.html">NN+1 Próximo →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="secao2">Seção 2</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- SECTION: visao-geral (sempre a primeira; id deve casar com data-tab) -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">Resumo executivo em 2–3 frases.</p>
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">485</div><div class="l">exemplo de stat</div></div>
+    <div class="stat"><div class="n green">20</div><div class="l">exemplo de stat</div></div>
+    <div class="stat"><div class="n ind">150</div><div class="l">exemplo de stat</div></div>
+    <div class="stat"><div class="n">65</div><div class="l">exemplo de stat</div></div>
+  </div>
+  <div class="verdict"><b>Veredito:</b> uma frase honesta sobre o estado da área.</div>
+  <div class="note">💡 Exemplo de nota destacada (metodologia, disclaimer, aviso advisory).</div>
+</section>
+
+<!-- SECTION: temáticas (uma <section class="tab"> por tab) -->
+<section id="secao2" class="tab">
+  <h2 class="section">Seção 2</h2>
+  <p class="lead">Exemplos de componentes disponíveis.</p>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Card com lista</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Ponto forte confirmado</li>
+        <li><span class="dot y"></span>Atenção</li>
+        <li><span class="dot r"></span>Problema crítico</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Card com gauge</h3>
+      <div class="gauge"><div class="ring" style="--p:72"><b>7,2</b></div><div>Nota da área com justificativa curta.</div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Fluxo</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node acc"><b>Nó destacado</b><span class="m">descrição</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Nó normal</b><span class="m">descrição</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>Nó problema</b><span class="m">descrição</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="layer"><div class="num">1</div><div class="txt"><b>Camada ok</b> — descrição</div></div>
+  <div class="layer gap"><div class="num">2</div><div class="txt"><b>Camada faltando</b> — o que falta</div></div>
+  <div class="scorecols">
+    <div class="score"><div class="ring" style="--p:70"><b>7</b></div><div><div class="lbl">Área</div><div class="why">justificativa de 1 linha</div></div></div>
+  </div>
+</section>
+
+<!-- SECTION: oportunidades (sempre a última) -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog priorizado da área. P0 = agir já · P1 = próximas semanas · P2 = quando escalar.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+    <details class="item" data-p="p0">
+      <summary><span class="id">XX-01</span><span class="ttl">Título do achado</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> descrição do problema.</p>
+        <p><b>Evidência:</b> <code>caminho/arquivo.go:123</code> — número/fato do fatos.json.</p>
+        <p><b>Ação recomendada:</b> o que fazer.</p>
+      </div>
+    </details>
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

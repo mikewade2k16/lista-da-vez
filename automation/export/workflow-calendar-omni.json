@@ -1,0 +1,205 @@
+[
+  {
+    "id": "calendaromni0001",
+    "name": "Calendar Omni",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "calendar-omni",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [0, 0],
+        "id": "a1b2c3d4-cal0-4000-8000-webhookcal001",
+        "name": "Webhook",
+        "webhookId": "c0ffee00-cal0-4000-8000-webhookcal001"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Monta o prompt (system + user) para o plano estrategico do mes.\n// Le o payload C5 do Webhook e devolve os campos usados pelos nos de LLM e callback.\n// A API key vem NO PAYLOAD (body.ai.apiKey), resolvida server-side pelo Go a partir do\n// banco (contrato PAY, wave 3). Os nos HTTP usam essa key — sem credential/$env no n8n;\n// a key crua nunca e logada nem persistida aqui.\nconst body = ($('Webhook').first().json.body) || {};\nconst ai = body.ai || {};\nconst clients = Array.isArray(body.clients) ? body.clients : [];\nconst holidays = Array.isArray(body.holidays) ? body.holidays : [];\n// Base URLs default por provider (espelha C2 do Omni). Vazio na config = usa o default.\nconst DEFAULT_BASE = {\n  claude: 'https://api.anthropic.com',\n  openai: 'https://api.openai.com/v1',\n  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai',\n  glm: 'https://api.z.ai/api/paas/v4',\n  deepseek: 'https://api.deepseek.com',\n  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',\n  kimi: 'https://api.moonshot.cn/v1'\n};\nconst provider = String(ai.provider || 'claude').toLowerCase();\n// A API key vem no payload (body.ai.apiKey), resolvida server-side pelo Go a partir do banco.\nconst apiKey = String(ai.apiKey || '');\nconst model = ai.model || 'claude-sonnet-5';\nconst baseUrl = String(ai.baseUrl || DEFAULT_BASE[provider] || '').replace(/\\/+$/, '');\nlet temperature = Number(ai.temperature);\nif (isNaN(temperature)) temperature = 0.7;\nif (temperature < 0) temperature = 0;\nif (temperature > 1) temperature = 1;\n// System prompt: usa o da config OU o DEFAULT (estrategia de conteudo pt-BR, saida JSON estrito).\nconst DEFAULT_SYSTEM = [\n  'Voce e um estrategista de conteudo para redes sociais de uma agencia brasileira.',\n  'Monte um plano estrategico do mes por cliente, em pt-BR, com base no perfil de cada cliente,',\n  'nas datas comemorativas/feriados do mes e nas notas do mes.',\n  'Responda SOMENTE com um objeto JSON valido (sem markdown, sem cercas de codigo, sem comentarios),',\n  'exatamente neste shape:',\n  '{',\n  '  \"summary\": \"resumo geral do plano\",',\n  '  \"pillars\": [{ \"name\": \"pilar\", \"proportion\": \"ex: 40%\", \"rationale\": \"por que\" }],',\n  '  \"clients\": [{',\n  '    \"clientId\": \"id recebido\", \"clientName\": \"nome recebido\", \"strategy\": \"estrategia do cliente\",',\n  '    \"days\": [{ \"date\": \"YYYY-MM-DD\", \"type\": \"post|story|reels\", \"idea\": \"ideia\", \"copy\": \"rascunho de copy\" }]',\n  '  }]',\n  '}',\n  'Use apenas os clientId e clientName recebidos. Datas sempre dentro do mes informado.',\n  'Nao invente dados que nao estejam no perfil; quando faltar, seja generico e seguro.'\n].join('\\n');\nconst system = (ai.systemPrompt && String(ai.systemPrompt).trim()) ? String(ai.systemPrompt) : DEFAULT_SYSTEM;\n// Monta a parte do usuario com mes, feriados, clientes/perfis e notas.\nconst NL = String.fromCharCode(10);\nlet user = 'Mes alvo: ' + (body.month || '') + NL;\nuser += 'Idioma: ' + (body.language || 'pt-BR') + NL + NL;\nif (holidays.length) {\n  user += 'Datas comemorativas / feriados do mes:' + NL;\n  for (const h of holidays) {\n    user += '- ' + (h.date || '') + ': ' + (h.name || '') + ' (' + (h.set || '') + ')' + NL;\n  }\n  user += NL;\n} else {\n  user += 'Sem feriados cadastrados para este mes.' + NL + NL;\n}\nuser += 'Clientes e perfis:' + NL;\nfor (const c of clients) {\n  user += '### ' + (c.name || '') + ' (id: ' + (c.id || '') + ')' + NL;\n  user += 'Perfil: ' + JSON.stringify(c.profile || {}) + NL + NL;\n}\nconst monthNotes = body.monthNotes || '';\nif (monthNotes) {\n  user += 'Notas do mes (HTML, use como contexto):' + NL + monthNotes + NL;\n}\nreturn [{ json: {\n  planId: body.planId || '',\n  month: body.month || '',\n  provider: provider,\n  model: model,\n  baseUrl: baseUrl,\n  apiKey: apiKey,\n  temperature: temperature,\n  system: system,\n  user: user,\n  callbackUrl: body.callbackUrl || '',\n  serviceToken: body.serviceToken || ''\n} }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [220, 0],
+        "id": "b2c3d4e5-cal0-4000-8000-montarprompt01",
+        "name": "Montar prompt"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "id": "c1c1c1c1-cal0-4000-8000-provclaude001",
+                      "leftValue": "={{ $json.provider }}",
+                      "rightValue": "claude",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ]
+                },
+                "outputKey": "claude"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "extra"
+          }
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [440, 0],
+        "id": "c3d4e5f6-cal0-4000-8000-switchprov001",
+        "name": "Switch provider"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.baseUrl }}/v1/messages",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-api-key",
+                "value": "={{ $json.apiKey }}"
+              },
+              {
+                "name": "anthropic-version",
+                "value": "2023-06-01"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: $json.model, max_tokens: 4096, temperature: $json.temperature, system: $json.system, messages: [ { role: 'user', content: $json.user } ] }) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [700, -140],
+        "id": "d4e5f6a7-cal0-4000-8000-httpclaude001",
+        "name": "Claude",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.baseUrl }}/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + ($json.apiKey || '') }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: $json.model, temperature: $json.temperature, messages: [ { role: 'system', content: $json.system }, { role: 'user', content: $json.user } ] }) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [700, 140],
+        "id": "e5f6a7b8-cal0-4000-8000-httpopenai001",
+        "name": "OpenAI compat",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Normaliza a resposta do LLM (anthropic vs openai-compat), remove cercas de codigo\n// e faz JSON.parse com try/catch. Devolve { status:'done', content } ou { status:'error', error }.\nconst prompt = $('Montar prompt').first().json;\nconst planId = prompt.planId;\nconst provider = prompt.provider;\nconst r = $input.first().json || {};\n// Item de erro do HTTP node (continueRegularOutput): tem a chave 'error'.\nif (r.error && !r.content && !r.choices) {\n  const emsg = (r.error && (r.error.message || r.error.description)) || 'LLM request failed';\n  return [{ json: { planId: planId, status: 'error', content: {}, error: String(emsg), callbackUrl: prompt.callbackUrl, serviceToken: prompt.serviceToken } }];\n}\nlet text = '';\nif (provider === 'claude') {\n  // Anthropic: content e um array de blocos; pega o primeiro bloco de texto.\n  const blocks = Array.isArray(r.content) ? r.content : [];\n  const first = blocks.find(function (b) { return b && b.type === 'text'; }) || blocks[0] || {};\n  text = String(first.text || '');\n} else {\n  // OpenAI-compat: choices[0].message.content.\n  const choices = Array.isArray(r.choices) ? r.choices : [];\n  const msg = (choices[0] || {}).message || {};\n  text = String(msg.content || '');\n}\ntext = text.trim();\n// Remove cercas de codigo (```json ... ``` ou ``` ... ```).\nif (text.indexOf('```') !== -1) {\n  text = text.replace(/^```[a-zA-Z]*[ \\t]*[\\r\\n]?/, '').replace(/```\\s*$/, '').trim();\n}\n// Se ainda houver texto antes/depois do JSON, tenta recortar do primeiro { ao ultimo }.\nif (text.charAt(0) !== '{') {\n  const start = text.indexOf('{');\n  const end = text.lastIndexOf('}');\n  if (start !== -1 && end !== -1 && end > start) text = text.slice(start, end + 1);\n}\ntry {\n  const content = JSON.parse(text);\n  return [{ json: { planId: planId, status: 'done', content: content, error: '', callbackUrl: prompt.callbackUrl, serviceToken: prompt.serviceToken } }];\n} catch (e) {\n  return [{ json: { planId: planId, status: 'error', content: {}, error: 'invalid_json_from_llm: ' + String((e && e.message) || e), callbackUrl: prompt.callbackUrl, serviceToken: prompt.serviceToken } }];\n}"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [960, 0],
+        "id": "f6a7b8c9-cal0-4000-8000-extrairjson01",
+        "name": "Extrair JSON"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.callbackUrl }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "X-Service-Token",
+                "value": "={{ $json.serviceToken }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ status: $json.status, content: $json.content, error: $json.error }) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [1200, 0],
+        "id": "a7b8c9d0-cal0-4000-8000-callbackomni1",
+        "name": "Callback"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [[{ "node": "Montar prompt", "type": "main", "index": 0 }]]
+      },
+      "Montar prompt": {
+        "main": [[{ "node": "Switch provider", "type": "main", "index": 0 }]]
+      },
+      "Switch provider": {
+        "main": [
+          [{ "node": "Claude", "type": "main", "index": 0 }],
+          [{ "node": "OpenAI compat", "type": "main", "index": 0 }]
+        ]
+      },
+      "Claude": {
+        "main": [[{ "node": "Extrair JSON", "type": "main", "index": 0 }]]
+      },
+      "OpenAI compat": {
+        "main": [[{ "node": "Extrair JSON", "type": "main", "index": 0 }]]
+      },
+      "Extrair JSON": {
+        "main": [[{ "node": "Callback", "type": "main", "index": 0 }]]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "cal0ffee-0000-4000-8000-calendaromni03"
+  }
+]

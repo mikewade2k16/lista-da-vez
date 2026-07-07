@@ -51,3 +51,8 @@ O catalogo cobre workspaces (`operacao`, `consultor`, `ranking`, `dados`, `intel
 WebSocket ainda nao usa permissoes `realtime.*` no catalogo Go atual; a conexao operacional valida `workspace.operacao.view` quando o principal ja vem com permissoes resolvidas.
 
 Alteracoes em grants padrao por papel e overrides por usuario precisam publicar `context.updated` com `resource = access` no canal de contexto do tenant, para que outras sessoes revalidem `GET /v1/me/context` e a UI administrativa de acessos sem depender de reload manual.
+
+## Invalidacao do PrincipalCache (AC-01)
+
+- `Service` recebe um `PrincipalCacheInvalidator` opcional via `SetPrincipalCacheInvalidator` (interface local `{InvalidateUser, InvalidateAll}` para nao importar `httpapi`). Ligado no boot por `platform/app/principal_cache_wiring.go`; `nil` quando o cache esta desligado (no-op).
+- `UpdateRolePermissions` -> `InvalidateAll()` (matriz v1 e por papel-coarse; o cache nao indexa por papel — operacao administrativa rara). `UpdateUserOverrides` -> `InvalidateUser(subject.UserID)` (overrides mudam as permissoes efetivas cacheadas no Principal). Invalidacao sincrona, depois do replace no repo.

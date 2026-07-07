@@ -1,0 +1,146 @@
+/* ===== Menu "Conversas" do chat do Calendario (SPEC-F10) ===================
+   Dropdown das conversas persistidas, ancorado no botao do header da janela de chat.
+   So tokens do design system (nada de hex hardcoded). Renderiza DENTRO da janela
+   (.calendar-chat tem overflow:hidden): o menu cai sobre o stream sem escapar; z-index
+   local (acima do stream) e com scroll interno quando ha muitas conversas. */
+
+.calendar-chat-convos {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Estado ativo do botao de icone (menu aberto) — espelha o .is-active do seletor de posicao. */
+.calendar-chat__icon-btn.is-active {
+  color: rgb(var(--primary));
+  border-color: rgb(var(--ring) / 0.42);
+  background: rgb(var(--primary) / 0.16);
+}
+
+.calendar-chat-convos__menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 17rem;
+  max-width: min(20rem, 78vw);
+  max-height: min(60vh, 22rem);
+  padding: 0.35rem;
+  overflow-y: auto;
+  border: 1px solid rgb(var(--border) / 0.55);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface) / 0.98);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  box-shadow: var(--shadow-shell);
+}
+
+.calendar-chat-convos__new {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgb(var(--ring) / 0.42);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.calendar-chat-convos__new:hover {
+  filter: brightness(1.05);
+}
+
+.calendar-chat-convos__hint {
+  margin: 0;
+  padding: 0.5rem 0.55rem;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.calendar-chat-convos__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.calendar-chat-convos__item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.2rem;
+  border-radius: var(--radius-sm);
+}
+
+.calendar-chat-convos__item.is-active {
+  background: rgb(var(--primary) / 0.12);
+}
+
+.calendar-chat-convos__open {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-chat-convos__open:hover {
+  background: var(--bg-muted);
+}
+
+.calendar-chat-convos__title {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendar-chat-convos__sub {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.calendar-chat-convos__del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.9rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.calendar-chat-convos__del:hover {
+  color: rgb(var(--danger));
+  background: rgb(var(--danger) / 0.1);
+}
+
+.calendar-chat-convos__del.is-confirming {
+  color: rgb(var(--danger));
+  background: rgb(var(--danger) / 0.16);
+}

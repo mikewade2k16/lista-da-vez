@@ -17,6 +17,11 @@ const (
 	defaultPageSize   = 50
 	maxPageSize       = 200
 	defaultRecentSize = 20
+	// defaultHistoryFetchLimit cobre o mes de uma loja grande sem filtro de
+	// data; maxHistoryFetchLimit e' o teto aceito via ?limit=. O front pede
+	// pageSize <= 200, que pagina DENTRO dessa janela ja carregada.
+	defaultHistoryFetchLimit = 2000
+	maxHistoryFetchLimit     = 5000
 )
 
 var (
@@ -27,6 +32,7 @@ var (
 type Repository interface {
 	ListHistory(ctx context.Context, storeID string, filters repositoryFilters) ([]operations.ServiceHistoryEntry, error)
 	ListHistoryByStores(ctx context.Context, storeIDs []string, filters repositoryFilters) ([]operations.ServiceHistoryEntry, error)
+	CountHistory(ctx context.Context, storeIDs []string, filters repositoryFilters) (int, error)
 	ListLiveCounts(ctx context.Context, storeIDs []string) (map[string]StoreLiveCounts, error)
 	ListPauseSessions(ctx context.Context, storeIDs []string, fromMillis *int64, toMillis *int64, consultantIDs []string) ([]PauseSessionRow, error)
 }
@@ -59,17 +65,18 @@ func (service *Service) Overview(ctx context.Context, principal auth.Principal, 
 		return OverviewResponse{}, stores.ErrForbidden
 	}
 
-	scope, normalized, history, err := service.loadEntries(ctx, principal, filters)
+	scope, normalized, history, window, err := service.loadEntries(ctx, principal, filters)
 	if err != nil {
 		return OverviewResponse{}, err
 	}
 
 	return OverviewResponse{
-		StoreID:   scope.StoreID,
-		Filters:   normalized,
-		Metrics:   buildMetrics(history),
-		Quality:   buildQuality(history),
-		ChartData: buildChartData(history),
+		StoreID:       scope.StoreID,
+		Filters:       normalized,
+		Metrics:       buildMetrics(history),
+		Quality:       buildQuality(history),
+		ChartData:     buildChartData(history),
+		HistoryWindow: window,
 	}, nil
 }
 
@@ -78,7 +85,7 @@ func (service *Service) Results(ctx context.Context, principal auth.Principal, f
 		return ResultsResponse{}, stores.ErrForbidden
 	}
 
-	scope, normalized, history, err := service.loadEntries(ctx, principal, filters)
+	scope, normalized, history, window, err := service.loadEntries(ctx, principal, filters)
 	if err != nil {
 		return ResultsResponse{}, err
 	}
@@ -88,12 +95,13 @@ func (service *Service) Results(ctx context.Context, principal auth.Principal, f
 	pageRows := paginateRows(rows, normalized.Page, normalized.PageSize)
 
 	return ResultsResponse{
-		StoreID:  scope.StoreID,
-		Filters:  normalized,
-		Page:     normalized.Page,
-		PageSize: normalized.PageSize,
-		Total:    total,
-		Rows:     pageRows,
+		StoreID:       scope.StoreID,
+		Filters:       normalized,
+		Page:          normalized.Page,
+		PageSize:      normalized.PageSize,
+		Total:         total,
+		Rows:          pageRows,
+		HistoryWindow: window,
 	}, nil
 }
 
@@ -106,7 +114,7 @@ func (service *Service) RecentServices(ctx context.Context, principal auth.Princ
 		filters.PageSize = defaultRecentSize
 	}
 
-	scope, normalized, history, err := service.loadEntries(ctx, principal, filters)
+	scope, normalized, history, window, err := service.loadEntries(ctx, principal, filters)
 	if err != nil {
 		return RecentServicesResponse{}, err
 	}
@@ -116,12 +124,13 @@ func (service *Service) RecentServices(ctx context.Context, principal auth.Princ
 	pageRows := paginateRows(rows, normalized.Page, normalized.PageSize)
 
 	return RecentServicesResponse{
-		StoreID:  scope.StoreID,
-		Filters:  normalized,
-		Page:     normalized.Page,
-		PageSize: normalized.PageSize,
-		Total:    total,
-		Items:    pageRows,
+		StoreID:       scope.StoreID,
+		Filters:       normalized,
+		Page:          normalized.Page,
+		PageSize:      normalized.PageSize,
+		Total:         total,
+		Items:         pageRows,
+		HistoryWindow: window,
 	}, nil
 }
 
@@ -155,6 +164,11 @@ func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.P
 	}
 
 	history, err := service.repository.ListHistoryByStores(ctx, storeIDs, repositoryInput)
+	if err != nil {
+		return MultiStoreOverviewResponse{}, err
+	}
+
+	window, err := service.computeHistoryWindow(ctx, storeIDs, repositoryInput, len(history))
 	if err != nil {
 		return MultiStoreOverviewResponse{}, err
 	}
@@ -265,11 +279,34 @@ func (service *Service) MultiStoreOverview(ctx context.Context, principal auth.P
 	}
 
 	return MultiStoreOverviewResponse{
-		TenantID: resolvedTenantID,
-		Filters:  normalized,
-		Summary:  summary,
-		Stores:   rows,
+		TenantID:      resolvedTenantID,
+		Filters:       normalized,
+		Summary:       summary,
+		Stores:        rows,
+		HistoryWindow: window,
 	}, nil
+}
+
+// computeHistoryWindow mede a janela bruta lida do SQL (ANTES de filtros em
+// memoria). Total = count(*) SQL-filtrado; so roda o count quando a janela
+// bateu no teto (len(history) >= Limit), evitando um scan a mais no caso comum.
+func (service *Service) computeHistoryWindow(
+	ctx context.Context,
+	storeIDs []string,
+	repositoryInput repositoryFilters,
+	fetched int,
+) (HistoryWindow, error) {
+	window := HistoryWindow{Limit: repositoryInput.Limit, Fetched: fetched, Total: fetched}
+	if repositoryInput.Limit > 0 && fetched >= repositoryInput.Limit {
+		total, countErr := service.repository.CountHistory(ctx, storeIDs, repositoryInput)
+		if countErr != nil {
+			return HistoryWindow{}, countErr
+		}
+		window.Total = total
+		window.Truncated = total > window.Fetched
+	}
+
+	return window, nil
 }
 
 func canViewReports(principal auth.Principal) bool {

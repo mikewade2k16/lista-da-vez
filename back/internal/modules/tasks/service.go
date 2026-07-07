@@ -3,6 +3,7 @@ package tasks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -18,6 +19,10 @@ type Service struct {
 	relations  *platformmodules.RelationRegistry
 	videoStore TaskVideoStorage
 	logger     *slog.Logger
+	// syncRegistry avisa os modulos donos de recursos espelhados (ex.: calendar) quando uma
+	// task muda (WAVE 5, E2). nil = sync invertido desligado. Injetado no Build via
+	// Module.WithRelationSync (nao no NewService, para nao mexer nos callers de teste).
+	syncRegistry *platformmodules.RelationSyncRegistry
 }
 
 func NewService(repository Repository, publisher Publisher, notifier notifications.Notifier, relationRegistry *platformmodules.RelationRegistry, videoStore ...TaskVideoStorage) *Service {
@@ -380,6 +385,9 @@ func (service *Service) CreateTask(ctx context.Context, access AccessContext, in
 	service.audit(ctx, access, "task.created", "task", task.ID, nil, task)
 	service.publisher.PublishTaskEvent(ctx, TaskEvent{Type: "task.created", AccountID: access.AccountID, BoardID: task.BoardID, TaskID: task.ID, Version: task.Version})
 	service.notifyTaskAssigned(ctx, access, task, optionalStringValue(task.ResponsibleUserID))
+	// WAVE 5 (E2/E3): avisa o calendar para criar o evento-espelho de uma task com prazo (o
+	// handler ignora tasks source=calendar, que ja tem seu evento).
+	service.dispatchTaskSync(ctx, access, task, false)
 	return service.BuildTaskDTO(task, access.Perspective), nil
 }
 
@@ -423,6 +431,8 @@ func (service *Service) UpdateTask(ctx context.Context, access AccessContext, in
 	if optionalStringValue(before.Status) != optionalStringValue(after.Status) {
 		service.notifyTaskSubscribers(ctx, access, after, "task.status_changed", "Task atualizada", taskStatusChangedBody(after), access.UserID)
 	}
+	// WAVE 5 (E2/E4): sync bidirecional — a edicao da task reflete no evento-espelho.
+	service.dispatchTaskSync(ctx, access, after, false)
 	return service.BuildTaskDTO(after, access.Perspective), nil
 }
 
@@ -448,6 +458,8 @@ func (service *Service) MoveTask(ctx context.Context, access AccessContext, inpu
 	if optionalStringValue(before.ColumnID) != optionalStringValue(after.ColumnID) {
 		service.notifyTaskSubscribers(ctx, access, after, "task.moved", "Task movida", taskMovedBody(after), access.UserID)
 	}
+	// WAVE 5 (E2/E5): mover a task de coluna reflete no status do evento-espelho (mapa E5).
+	service.dispatchTaskSync(ctx, access, after, false)
 	return service.BuildTaskDTO(after, access.Perspective), nil
 }
 
@@ -469,7 +481,124 @@ func (service *Service) ArchiveTask(ctx context.Context, access AccessContext, t
 	}
 	service.audit(ctx, access, "task.deleted", "task", after.ID, before, after)
 	service.publisher.PublishTaskEvent(ctx, TaskEvent{Type: "task.deleted", AccountID: access.AccountID, BoardID: after.BoardID, TaskID: after.ID, Version: after.Version})
+	// WAVE 5 (E2/E3): arquivar a task remove o evento-espelho (source='task') no calendar.
+	// Usa o `before` (tem as relations/campos; o after ja veio do update de arquivamento).
+	service.dispatchTaskSync(ctx, access, before, true)
 	return nil
+}
+
+// dispatchTaskSync avisa os handlers de sync invertido (WAVE 5, E2) que a task mudou. Roda
+// APOS o commit; best-effort (erro nunca desfaz a operacao). deleted=true = task arquivada.
+// Carrega as relations da task (o handler filtra as do seu modulo para achar o espelho).
+func (service *Service) dispatchTaskSync(ctx context.Context, access AccessContext, task Task, deleted bool) {
+	if service.syncRegistry == nil {
+		return
+	}
+	relations, err := service.repository.ListRelations(ctx, access, task.ID)
+	if err != nil {
+		relations = nil // best-effort: sem relations o handler pode nao achar o espelho
+	}
+	refs := make([]platformmodules.RelationRef, 0, len(relations))
+	for _, r := range relations {
+		refs = append(refs, platformmodules.RelationRef{ModuleID: r.Module, ResourceType: r.ResourceType, ResourceID: r.ResourceID})
+	}
+	snap := platformmodules.TaskSyncSnapshot{
+		TaskID:            task.ID,
+		BoardID:           task.BoardID,
+		Title:             task.Title,
+		Status:            optionalStringValue(task.Status),
+		Priority:          strings.TrimSpace(task.Priority),
+		Type:              taskMetadataType(task.UIMetadata),
+		Source:            taskMetadataSource(task.UIMetadata),
+		DueDate:           task.DueDate,
+		ColumnID:          task.ColumnID,
+		ClientAccountID:   task.ClientAccountID,
+		ResponsibleUserID: task.ResponsibleUserID,
+		Relations:         refs,
+		Media:             taskMetadataMediaSnapshots(task.UIMetadata),
+	}
+	service.syncRegistry.Dispatch(ctx, access.AccountID, snap, deleted)
+}
+
+// taskMetadataMediaSnapshots extrai os videos da task (ui_metadata.videos) como MediaSnapshot
+// neutros (WAVE 6 cruzamento B), para o dono do recurso espelhar read-only (ex.: linked_media do
+// evento). Todos type="video" (a task so guarda video); url interna /uploads/tasks/.
+func taskMetadataMediaSnapshots(md map[string]any) []platformmodules.MediaSnapshot {
+	if md == nil {
+		return nil
+	}
+	raw, ok := md["videos"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]platformmodules.MediaSnapshot, 0, len(raw))
+	for _, item := range raw {
+		v, vok := item.(map[string]any)
+		if !vok {
+			continue
+		}
+		url := strings.TrimSpace(fmt.Sprint(v["url"]))
+		if url == "" {
+			continue
+		}
+		id := strings.TrimSpace(fmt.Sprint(v["id"]))
+		if id == "" {
+			id = url
+		}
+		out = append(out, platformmodules.MediaSnapshot{
+			ID:          id,
+			URL:         url,
+			Name:        strings.TrimSpace(fmt.Sprint(v["name"])),
+			Type:        "video",
+			ContentType: strings.TrimSpace(fmt.Sprint(v["contentType"])),
+			SizeBytes:   metadataInt(v["size"]),
+		})
+	}
+	return out
+}
+
+// taskMetadataSource extrai ui_metadata.source da task ('calendar' = nasceu de um evento).
+func taskMetadataSource(md map[string]any) string {
+	if md == nil {
+		return ""
+	}
+	if v, ok := md["source"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+// taskMetadataType extrai ui_metadata.type da task (tipo tipo "post"/"gravacao"); espelha o
+// tipo do evento no calendario (WAVE 6).
+func taskMetadataType(md map[string]any) string {
+	if md == nil {
+		return ""
+	}
+	if v, ok := md["type"].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+// ApplyCalendarSync aplica no task os campos vindos de um evento do calendario (WAVE 5,
+// E4/E5), SEM re-disparar o handler de sync (metodo TERMINAL — impede o loop de eco). Uso
+// service-to-service pelo calendar (provider LAZY). Exige PermTasksEdit. Publica o evento de
+// realtime (o board atualiza) mas nao gera audit/notificacao (nao e acao de usuario).
+// columnId+sortOrder juntos movem a task de coluna (sync de status E5).
+func (service *Service) ApplyCalendarSync(ctx context.Context, access AccessContext, input UpdateTaskInput) (Task, error) {
+	if !access.Has(PermTasksEdit) {
+		return Task{}, ErrForbidden
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		return Task{}, ErrValidation
+	}
+	after, err := service.repository.UpdateTask(ctx, access.AccountID, input)
+	if err != nil {
+		return Task{}, err
+	}
+	service.publisher.PublishTaskEvent(ctx, TaskEvent{Type: "task.updated", AccountID: access.AccountID, BoardID: after.BoardID, TaskID: after.ID, Version: after.Version})
+	return after, nil
 }
 
 func (service *Service) AddComment(ctx context.Context, access AccessContext, input AddCommentInput) (Comment, error) {

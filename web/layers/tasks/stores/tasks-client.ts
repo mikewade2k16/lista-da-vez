@@ -19,8 +19,6 @@ interface BackendTenant {
   isActive?: boolean
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
 export const useTasksClientStore = defineStore('tasks-client', () => {
   const runtimeConfig = useRuntimeConfig()
   const auth = useAuthStore()
@@ -81,17 +79,6 @@ export const useTasksClientStore = defineStore('tasks-client', () => {
     }
   }
 
-  // isMockClient: true quando o valor NAO e um UUID — ou seja, e o clientId integer LEGADO de tasks
-  // antigas (ui_metadata.clientId) que ainda nao foi reatribuido a um cliente real. Mantem o badge
-  // "MOCK" util durante a transicao; clientes reais (UUID) nunca disparam.
-  function isMockClient(value: number | string) {
-    const normalized = String(value ?? '').trim()
-    if (!normalized) {
-      return false
-    }
-    return !UUID_RE.test(normalized)
-  }
-
   return {
     userType,
     userLevel,
@@ -105,6 +92,5 @@ export const useTasksClientStore = defineStore('tasks-client', () => {
     initialize,
     refreshClientOptions,
     setClientId,
-    isMockClient,
   }
 })

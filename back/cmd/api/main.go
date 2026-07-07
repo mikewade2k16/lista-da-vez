@@ -5,6 +5,9 @@ import (
 	"log/slog"
 	"os"
 	"time"
+	// tzdata embute a base de fusos no binario: LoadLocation("America/Sao_Paulo")
+	// funciona mesmo em container sem /usr/share/zoneinfo (due date de task, C10).
+	_ "time/tzdata"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/app"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
@@ -24,12 +27,15 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := database.OpenPool(ctx, cfg)
+	pool, err := database.OpenAppPool(ctx, cfg)
 	if err != nil {
 		logger.Error("database_connect_failed", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	// Loga a role efetiva de runtime (AC-04), nunca a senha. Em prod deve ser omni_app.
+	logger.Info("database_connected", slog.String("db_user", pool.Config().ConnConfig.User))
 
 	handler, err := app.BuildHTTPHandler(cfg, logger, pool)
 	if err != nil {

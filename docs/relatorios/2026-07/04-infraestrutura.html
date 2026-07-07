@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 04 · Infraestrutura · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 04 — Infraestrutura</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./03-banco-de-dados.html">← 03 Banco de dados</a>
+      <a href="./05-performance.html">05 Performance →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="topologia">Topologia</button>
+      <button data-tab="cicd">CI/CD &amp; deploy</button>
+      <button data-tab="riscos">Riscos operacionais</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ VISÃO GERAL ============ -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">Toda a produção do Omni roda em <b>uma única VPS</b> (85.31.62.33, Ubuntu 24.04 LTS, ~7,8GB de RAM medidos em 03/07), compartilhada com stacks de outros projetos. O build nunca acontece na VPS: as imagens saem do GitHub Actions para o GHCR e a máquina só faz pull. Essa disciplina de pipeline convivia com uma operação quase sem rede de proteção: zero monitoração, backup só no deploy e nenhum limite de memória nos containers.</p>
+
+  <div class="note" style="border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.06)">✅ <b>Atualização 03/07:</b> com acesso à VPS, dois furos já foram tapados — <b>backup diário agendado</b> (cron 06:40, retenção 7/4, testado: dump de 177&nbsp;MB) e <b>monitoração de host</b> (cron a cada 5&nbsp;min: disco, RAM, load, containers unhealthy/restarting, healthz). As órfãs já estavam <b>paradas</b> (o pico de CPU foi histórico) e a RAM real é <b>7,8&nbsp;GB</b>. <b>Ainda pendente (próximo deploy):</b> mem_limits + healthchecks no compose (AC-11) e o <code>/healthz</code> com ping de banco + rotação de logs (AC-16).</div>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">1</div><div class="l">VPS de produção (~7,8GB RAM, compartilhada)</div></div>
+    <div class="stat"><div class="n ind">8</div><div class="l">serviços no compose de dev (com profiles)</div></div>
+    <div class="stat"><div class="n ind">6</div><div class="l">serviços no compose de prod (127.0.0.1)</div></div>
+    <div class="stat"><div class="n green">2</div><div class="l">workflows de CI (build gate + deploy manual)</div></div>
+  </div>
+  <div class="verdict"><b>Veredito:</b> o pipeline de build/deploy é <b>maduro para o tamanho do projeto</b> — testes reais como gate do build, imagens imutáveis por SHA, deploy por pull com backup e smoke test. O que preocupa não é o caminho até a produção, e sim a produção em si: uma VPS única dividida com uma stack alheia (cujo Caddy roteia o painel), containers órfãos em crash-loop, nenhum limite de memória e <b>nenhuma monitoração</b> — hoje quem descobre que caiu é o usuário.</div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Pontos fortes confirmados</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Build fora da VPS</b> — <code>build-images.yml</code> compila e publica no GHCR; a VPS só faz <code>pull</code> + <code>up --no-build</code>. Elimina o risco de OOM de build em máquina pequena.</li>
+        <li><span class="dot g"></span><b>Testes como gate</b> — migrations aplicadas em Postgres 16 real, <code>go test ./...</code>, vitest, npm audit (raiz bloqueante) e govulncheck rodam ANTES de qualquer imagem existir.</li>
+        <li><span class="dot g"></span><b>Nada exposto direto</b> — em prod, todos os serviços publicam porta apenas em <code>127.0.0.1</code>; a entrada é só pelo reverse proxy.</li>
+        <li><span class="dot g"></span><b>Imagens imutáveis por SHA</b> — tag <code>sha-&lt;40hex&gt;</code>; o byte testado em staging é o promovido para prod.</li>
+        <li><span class="dot g"></span><b>Deploy com trilha de auditoria</b> — workflow manual com inputs explícitos (ambiente, tag, backup, recreate) e resumo publicado por execução.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Fraquezas principais</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>AC-02</b> — stacks órfãs na VPS em crash-loop já consumiram 158% de CPU do dockerd (ver também 07-design-geral e 09-vps).</li>
+        <li><span class="dot r"></span><b>AC-16</b> — sem métricas, sem alertas, sem uptime monitor, sem agregação de logs: só <code>/healthz</code> + smoke no deploy (ver 07, 09).</li>
+        <li><span class="dot y"></span><b>AC-11</b> — nenhum serviço tem limite de memória; healthcheck só em postgres e api (ver 09-vps).</li>
+        <li><span class="dot y"></span><b>AC-05</b> — backup do banco só on-demand no deploy; sem cron nem cópia off-site (ver 03-banco-de-dados, 07, 09).</li>
+        <li><span class="dot y"></span>Acoplamento com stack alheia: a rede <code>proxy</code> de prod é a <code>omnichannel-mvp_default</code> de outro projeto.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Nota da área</h3>
+      <div class="gauge"><div class="ring" style="--p:65"><b>6,5</b></div><div>Pipeline de CI/CD acima da média para projeto solo; a operação em produção (monitoração, limites, backup agendado, isolamento de stack) puxa a nota para baixo.</div></div>
+    </div>
+    <div class="card">
+      <h3>Escopo desta página</h3>
+      <ul class="clean">
+        <li><span class="dot b"></span><b>Topologia</b> — dev vs prod, portas, redes, healthchecks, profile automation.</li>
+        <li><span class="dot b"></span><b>CI/CD &amp; deploy</b> — os 2 workflows, os métodos de deploy e os Dockerfiles.</li>
+        <li><span class="dot b"></span><b>Riscos operacionais</b> — o que pode derrubar a produção hoje e por quê.</li>
+        <li><span class="dot b"></span><b>Oportunidades</b> — backlog priorizado (4 achados canônicos + 3 locais).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">💡 <b>Metodologia:</b> compose, Dockerfiles e workflows foram lidos diretamente do repositório nesta sessão. O estado da VPS (stacks órfãs, CPU do dockerd, automação inativa) vem de auditoria anterior registrada — não houve acesso à VPS hoje. Consumos de RAM por serviço são <b>estimativas declaradas</b>, não medições.</div>
+</section>
+
+<!-- ============ TOPOLOGIA ============ -->
+<section id="topologia" class="tab">
+  <h2 class="section">Topologia</h2>
+  <p class="lead">Dois caminhos: o de build (código → CI → registry → VPS) e o de tráfego (Internet → Caddy compartilhado → containers do Omni). O ponto sensível dos dois é o mesmo — a VPS única e o proxy que não pertence ao projeto.</p>
+
+  <div class="card">
+    <h3>Caminho do build (dev → prod)</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Código</b><span class="m">push em <code>main</code> ou <code>refactor/multitenant-complete</code></span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>build-images.yml</b><span class="m">job <code>test</code> é GATE: migrations em PG 16 real, go test, vitest, audits, govulncheck</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>GHCR</b><span class="m"><code>omni-api</code> / <code>omni-web</code> · tag <code>sha-&lt;40hex&gt;</code> + branch</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>deploy-vps.yml</b><span class="m">manual: SSH → pull → <code>up --no-build</code> → smoke</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Caminho do tráfego (produção)</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Internet</b><span class="m">omni.crowvisuals.com.br (HTTPS)</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>Caddy compartilhado</b><span class="m">pertence à stack <code>omnichannel-mvp</code> (outro projeto) — roteia o painel; NUNCA parar</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>lista-web</b><span class="m">Nuxt/Nitro · 127.0.0.1:13003</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>lista-api</b><span class="m">Go · 127.0.0.1:18080 · <code>/healthz</code></span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>postgres</b><span class="m">16-alpine · sem porta no host</span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node"><b>redis</b><span class="m">profile automation · 127.0.0.1:16380 · só rede interna</span></div>
+        <div class="node"><b>waha</b><span class="m">WhatsApp (GOWS) · 127.0.0.1:13010 · dashboard via proxy</span></div>
+        <div class="node"><b>n8n</b><span class="m">workflows IA · 127.0.0.1:15680 · editor via proxy</span></div>
+        <div class="node warn"><b>Stacks órfãs</b><span class="m">omnichannel-mvp (2 containers em crash-loop) + omni-crow/omni-staging — dividem a mesma máquina (AC-02)</span></div>
+      </div>
+    </div>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">A automação (redis/waha/n8n) está deployada na VPS mas <b>inativa</b>: workflow importado sem ativar, WhatsApp sem QR pareado e subdomínios <code>n8n.</code>/<code>waha.</code> sem DNS. Consome recurso de produção sem entregar função ainda.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Serviços de produção (docker-compose.prod.yml)</h3>
+    <table>
+      <thead><tr><th>Serviço</th><th>Imagem</th><th>Porta (host)</th><th>Healthcheck</th><th>Redes</th></tr></thead>
+      <tbody>
+        <tr><td><b>api</b></td><td><code>ghcr.io/.../omni-api:${IMAGE_TAG}</code></td><td>127.0.0.1:18080</td><td><span class="pill ok">SIM</span> <code>/healthz</code></td><td>app + proxy (alias <code>lista-api</code>)</td></tr>
+        <tr><td><b>web</b></td><td><code>ghcr.io/.../omni-web:${IMAGE_TAG}</code></td><td>127.0.0.1:13003</td><td><span class="pill p1">NÃO</span></td><td>app + proxy (alias <code>lista-web</code>)</td></tr>
+        <tr><td><b>postgres</b></td><td><code>postgres:16-alpine</code></td><td>— (sem porta no host)</td><td><span class="pill ok">SIM</span> <code>pg_isready</code></td><td>app</td></tr>
+        <tr><td><b>redis</b> <span class="tag">automation</span></td><td><code>redis:8-alpine</code></td><td>127.0.0.1:16380</td><td><span class="pill p1">NÃO</span></td><td>app (nunca no proxy)</td></tr>
+        <tr><td><b>waha</b> <span class="tag">automation</span></td><td><code>devlikeapro/waha:gows-2026.5.1</code></td><td>127.0.0.1:13010</td><td><span class="pill p1">NÃO</span></td><td>app + proxy (alias <code>automation-waha</code>)</td></tr>
+        <tr><td><b>n8n</b> <span class="tag">automation</span></td><td><code>n8nio/n8n:2.23.2</code></td><td>127.0.0.1:15680</td><td><span class="pill p1">NÃO</span></td><td>app + proxy (alias <code>automation-n8n</code>)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0"><b>Ponto forte:</b> todas as portas publicadas amarradas em <code>127.0.0.1</code> — nada responde direto na interface pública; a única porta de entrada é o Caddy. <b>Ponto fraco (AC-11):</b> healthcheck só em postgres e api, e nenhum serviço tem limite de memória — o compose inteiro dá 0 matches para <code>mem_limit</code>/<code>deploy.resources</code>.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Compose dev vs prod</h3>
+    <table>
+      <thead><tr><th>Aspecto</th><th>Dev (docker-compose.yml)</th><th>Prod (docker-compose.prod.yml)</th></tr></thead>
+      <tbody>
+        <tr><td>Serviços</td><td>8: postgres, api, web, crow-nuxt (bio) + profiles automation (redis/waha/n8n) e meta-ads-assistant</td><td>6: postgres, api, web + profile automation (redis/waha/n8n)</td></tr>
+        <tr><td>Portas no host</td><td>expostas: postgres 5432, api ${API_PORT:-8080} (local usa 9091), web 3003, crow-nuxt 3300, redis 6380, waha 3010, n8n 5680, meta-ads 8765</td><td>todas em 127.0.0.1 (18080/13003/16380/13010/15680); postgres sem porta</td></tr>
+        <tr><td>Origem das imagens</td><td>build local dos Dockerfiles</td><td>pull do GHCR por SHA (<code>build:</code> mantido só para emergência)</td></tr>
+        <tr><td>Healthchecks</td><td>postgres + api apenas</td><td>postgres + api apenas</td></tr>
+        <tr><td>Limites de memória/CPU</td><td>nenhum</td><td>nenhum (AC-11)</td></tr>
+        <tr><td>Redes</td><td>rede default do compose</td><td><code>app</code> interna + <code>proxy</code> EXTERNA (<code>${PROXY_NETWORK_NAME:-omnichannel-mvp_default}</code>)</td></tr>
+        <tr><td>Restart policy</td><td>—</td><td><code>unless-stopped</code> em todos</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">A paridade dev/prod da automação é intencional: mesmos nomes de serviço (<code>redis</code>/<code>waha</code>/<code>n8n</code>) para as credenciais do n8n funcionarem idênticas nos dois ambientes — decisão boa, que já evitou uma classe de bug de configuração.</p>
+  </div>
+</section>
+
+<!-- ============ CI/CD & DEPLOY ============ -->
+<section id="cicd" class="tab">
+  <h2 class="section">CI/CD &amp; deploy</h2>
+  <p class="lead">Dois workflows com papéis limpos: <code>build-images.yml</code> testa e publica; <code>deploy-vps.yml</code> promove. A VPS nunca compila nada — regra escrita em comentário no próprio workflow e respeitada pelos métodos recomendados.</p>
+
+  <div class="card">
+    <h3>build-images.yml — o gate que vale a pena destacar</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Dispara em push para <code>main</code> e <code>refactor/multitenant-complete</code> (ou manual). O job <code>build</code> só roda com <code>needs: [test]</code> verde — nenhuma imagem nasce sem passar pelos gates abaixo, na ordem:</p>
+    <div class="layer"><div class="num">1</div><div class="txt"><b>Migrations reais</b> — <code>TestAllMigrationsApply</code> contra um service container Postgres 16 de verdade (não mock). Pega migration quebrada antes de ela chegar perto da VPS.</div></div>
+    <div class="layer"><div class="num">2</div><div class="txt"><b>Front</b> — <code>npm ci</code> + <code>nuxt prepare</code> + suíte vitest (<code>npm run test</code>).</div></div>
+    <div class="layer"><div class="num">3</div><div class="txt"><b>Auditoria de dependências</b> — <code>npm audit</code> da raiz é <b>bloqueante</b> em high; o do <code>web/</code> é warning-only (baseline conhecido, com aviso explícito no log até as deps do front serem atualizadas).</div></div>
+    <div class="layer"><div class="num">4</div><div class="txt"><b>Back</b> — <code>go test ./...</code> completo + <code>go list -m -u</code> (visibilidade de updates) + <b>govulncheck</b> (vulnerabilidades conhecidas no grafo Go).</div></div>
+    <div class="layer"><div class="num">5</div><div class="txt"><b>Build + push</b> — Buildx com cache do GHA por escopo (api/web), tags <code>sha-&lt;40hex&gt;</code> (imutável) + branch sanitizada, labels OCI apontando pro repo. Concurrency cancela build antigo da mesma ref.</div></div>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Esse conjunto — migration test com banco real, govulncheck e audit bloqueante — é um ponto forte <b>real</b>, incomum em projeto deste porte. A ressalva fica para a cobertura que alimenta o gate: o front tem só 17 arquivos de teste para 313 componentes (AC-15, tratado em 02-frontend), então o gate do vitest cobre pouco do que poderia.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>deploy-vps.yml — promoção manual e auditável</h3>
+    <ul class="clean">
+      <li><span class="dot g"></span><b>Só <code>workflow_dispatch</code></b> — nada vai para produção sem ação humana. Inputs: <code>environment</code> (staging/prod), <code>image_tag</code> (vazio = SHA do HEAD do ref), <code>git_ref</code>, <code>backup_database</code> (default <b>true</b>), <code>force_recreate</code>, <code>skip_smoke_tests</code>.</li>
+      <li><span class="dot g"></span><b>Backup opcional antes do deploy</b> — <code>pg_dump | gzip</code> via SSH para <code>backups/</code> na VPS. É a única forma de backup existente (AC-05: sem cron, sem off-site).</li>
+      <li><span class="dot g"></span><b>Pull + up --no-build</b> — copia o compose por scp, grava <code>IMAGE_TAG</code> no <code>.env</code> remoto, puxa só api+web e sobe sem build. Migrations rodam no boot da imagem da api.</li>
+      <li><span class="dot g"></span><b>Smoke test</b> — <code>curl</code> em <code>/</code> e <code>/healthz</code> do domínio público; deploy falha se qualquer um não devolver 200. Simples e suficiente como primeiro guarda-corpo.</li>
+      <li><span class="dot y"></span><b>Staging existe no workflow</b> (path <code>lista-atendimento-staging</code> + <code>.env.staging</code>) mas não há rito documentado de usá-lo antes de release (IN-03).</li>
+    </ul>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Métodos de deploy (scripts npm)</h3>
+      <table>
+        <thead><tr><th>Método</th><th>Fluxo</th><th>Tempo</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td><code>deploy:fast:prod</code></td><td>build local → push GHCR → pull na VPS (com backup e rollback)</td><td>~5–10min</td><td><span class="pill ok">recomendado</span></td></tr>
+          <tr><td><code>deploy:prod</code></td><td>pull de imagem já buildada pelo CI</td><td>~2–3min</td><td><span class="pill ok">recomendado</span></td></tr>
+          <tr><td>GitHub Actions</td><td><code>deploy-vps.yml</code> manual (acima)</td><td>—</td><td><span class="pill ok">recomendado</span></td></tr>
+          <tr><td>deploy-vps-fast / incremental</td><td>build <b>NA VPS</b></td><td>—</td><td><span class="pill p1">legado · risco OOM</span></td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Os métodos legados estão documentados como não recomendados — o histórico de OOM ao buildar Nuxt numa VPS de ~6GB foi o que motivou a arquitetura registry-first.</p>
+    </div>
+    <div class="card">
+      <h3>Imagens (Dockerfiles)</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>api</b> — multi-stage: builder Go → runtime <code>bookworm-slim</code>. O <code>CMD</code> encadeia <code>migrate up &amp;&amp; migrate bootstrap-erp-store &amp;&amp; api</code>: o schema sobe junto com o binário, sem passo manual.</li>
+        <li><span class="dot g"></span><b>web</b> — multi-stage Node 24; o stage de build usa <code>NODE_OPTIONS=--max-old-space-size=4096</code> (web/Dockerfile:13) por causa do OOM histórico do build Nuxt — mais um motivo para o build viver no CI, não na VPS.</li>
+        <li><span class="dot y"></span>Migração automática no boot significa que <b>todo</b> deploy que toca schema precisa do <code>backup_database=true</code> — o default true do workflow protege, mas os scripts npm dependem de disciplina.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RISCOS OPERACIONAIS ============ -->
+<section id="riscos" class="tab">
+  <h2 class="section">Riscos operacionais</h2>
+  <p class="lead">Nenhum destes riscos é teórico: a VPS já registrou crash-loop com 158% de CPU do dockerd, e um estouro de memória do waha ou do n8n hoje derrubaria o painel junto — sem que nenhum alerta disparasse.</p>
+
+  <div class="card">
+    <h3><span class="pill p0">P0</span>&nbsp; AC-02 — Stacks órfãs em crash-loop na mesma VPS <span class="tag">ver também 07-design-geral · 09-vps</span></h3>
+    <p style="font-size:13.5px;margin:8px 0 0">A stack <code>omnichannel-mvp</code> em <code>/opt/omnichannel</code> mantém 2 containers em crash-loop (postgres morto) que já consumiram <b>158% de CPU do dockerd</b> na auditoria; as stacks <code>omni-crow</code> e <code>omni-staging</code> também estão órfãs na máquina. CPU e RAM queimadas são roubadas diretamente do orçamento de ~6GB do Omni.</p>
+    <p style="font-size:13.5px;margin:10px 0 0"><b>⚠ Atenção crítica:</b> o <b>Caddy dessa mesma stack alheia é quem roteia o painel</b> (omni.crowvisuals.com.br). Remover a stack inteira derruba a produção do Omni. A ação é cirúrgica: parar/remover apenas os containers quebrados, <b>nunca o Caddy</b>. Achado advisory — executar manualmente na VPS.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3><span class="pill p1">P1</span>&nbsp; AC-11 — Sem limites de memória; healthchecks incompletos <span class="tag">ver também 09-vps</span></h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><code>mem_limit</code>/<code>deploy.resources</code>: <b>0 ocorrências</b> nos dois compose. Qualquer container pode consumir a VPS inteira até o OOM killer do kernel escolher a vítima — que pode ser o postgres.</li>
+        <li><span class="dot r"></span>O waha (engine de WhatsApp) é o candidato clássico a comer memória sem teto; n8n vem logo atrás.</li>
+        <li><span class="dot y"></span>Healthcheck só em postgres e api: web, redis, waha e n8n podem estar mortos-vivos (processo up, serviço quebrado) sem que o Docker perceba ou reinicie.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3><span class="pill p1">P1</span>&nbsp; AC-16 — Zero monitoração de produção <span class="tag">ver também 07-design-geral · 09-vps</span></h3>
+      <ul class="clean">
+        <li><span class="dot r"></span>Hoje existe: logs slog no stdout (via <code>docker logs</code>), <code>/healthz</code> e o smoke test do deploy. Só.</li>
+        <li><span class="dot r"></span><b>Não</b> existe: métricas (Prometheus/Grafana), alertas, uptime monitor externo, agregação de logs. Se o painel cair às 3h, ninguém sabe até um cliente reclamar.</li>
+        <li><span class="dot y"></span>O crash-loop do AC-02 é a prova: consumiu CPU por tempo indeterminado sem nenhum alarme — foi descoberto por auditoria manual.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3><span class="pill p1">P1</span>&nbsp; AC-05 — Backup só on-demand, sem off-site <span class="tag">ver também 03-banco · 07 · 09</span></h3>
+      <ul class="clean">
+        <li><span class="dot r"></span>Backup existe apenas acoplado a deploy: <code>deploy-ship.ps1:87</code>, <code>deploy-vps-incremental.ps1:204-217</code> e o input <code>backup_database</code> do <code>deploy-vps.yml:131-145</code>.</li>
+        <li><span class="dot r"></span>Nenhum cron/timer no repo; semanas sem deploy = semanas sem backup.</li>
+        <li><span class="dot r"></span>Dumps ficam em <code>/home/deploy/lista-atendimento/backups/</code> — <b>no mesmo disco</b> do banco. Falha da VPS leva dado e backup juntos.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3><span class="pill p2">P2</span>&nbsp; Acoplamento à rede <code>omnichannel-mvp_default</code> (IN-01)</h3>
+      <ul class="clean">
+        <li><span class="dot y"></span>A rede <code>proxy</code> de prod é <b>externa e pertence a outra stack</b> (<code>docker-compose.prod.yml:250-254</code>). Se alguém fizer <code>docker compose down</code> na stack omnichannel-mvp, a rede some e o compose do Omni deixa de subir.</li>
+        <li><span class="dot y"></span>O nome já é parametrizado (<code>${PROXY_NETWORK_NAME}</code>) — a migração para uma rede + Caddy próprios é factível sem tocar código, só infra.</li>
+        <li><span class="dot b"></span>Enquanto o acoplamento existir, vale a regra operacional já registrada: <b>nunca parar o Caddy da stack alheia</b>.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Orçamento de memória da VPS (estimativa declarada)</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Perfis típicos de consumo — <b>não medidos nesta sessão</b>: postgres 512MB–1GB · api Go 100–300MB · web Node 300–500MB · caddy ~50MB · redis 50–150MB · waha 300MB–1GB · n8n 300–500MB · overhead Docker+SO ~600MB–1GB. Soma com automação plena: <b>~2,2–5,5GB</b> numa VPS de ~6GB dividida com stacks alheias — funciona no cenário bom, mas sem folga para pico do waha nem para os órfãos do AC-02. O passo 0 de custo zero (remover órfãos + configurar limites) resolve a margem antes de qualquer upgrade de máquina; cenários de dimensionamento estão em 09-vps.</p>
+  </div>
+</section>
+
+<!-- ============ OPORTUNIDADES ============ -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog priorizado da área. P0 = agir já · P1 = próximas semanas · P2 = quando escalar. AC-* são achados canônicos da série; IN-* são locais desta página.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+    <details class="item" data-p="p0">
+      <summary><span class="id">AC-02</span><span class="ttl">Stacks órfãs na VPS em crash-loop consumindo CPU/RAM</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a stack omnichannel-mvp mantém 2 containers em crash-loop (postgres morto) que já consumiram 158% de CPU do dockerd; omni-crow e omni-staging também estão órfãs na mesma máquina de ~6GB que roda a produção do Omni.</p>
+        <p><b>Evidência:</b> auditoria anterior na VPS (<code>/opt/omnichannel</code>); registrada em memória de projeto. <b>Atenção:</b> o Caddy dessa stack roteia o painel — nunca parar o Caddy, só os containers quebrados.</p>
+        <p><b>Ação recomendada:</b> parar/remover os containers órfãos (advisory — executar manualmente na VPS, com o Caddy preservado). Ver também 07-design-geral e 09-vps.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-11</span><span class="ttl">Compose sem limites de memória e healthchecks faltando (web, redis, waha, n8n)</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> nenhum serviço tem teto de memória — o waha pode consumir a VPS inteira e o OOM killer do kernel decide quem morre (podendo ser o postgres). Sem healthcheck, web/redis/waha/n8n mortos-vivos passam despercebidos pelo Docker.</p>
+        <p><b>Evidência:</b> grep <code>mem_limit|deploy.resources</code> = 0 matches em <code>docker-compose.yml</code> e <code>docker-compose.prod.yml</code>; healthcheck presente só em postgres e api (<code>docker-compose.prod.yml:13-22,116-125</code>).</p>
+        <p><b>Ação recomendada:</b> definir <code>mem_limit</code> por serviço (waha e n8n primeiro), adicionar healthchecks e revisar restart policies. Ver também 09-vps.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-16</span><span class="ttl">Sem monitoração de produção (métricas, alertas, uptime, agregação de logs)</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a única visibilidade de produção é healthz + smoke no momento do deploy e <code>docker logs</code> sob demanda. Queda fora do horário de deploy só é descoberta por reclamação de usuário; incidentes como o crash-loop do AC-02 correm por tempo indeterminado.</p>
+        <p><b>Evidência:</b> nenhuma métrica exportada em nenhum serviço; sem Prometheus/Grafana, sem alertas, sem uptime monitor (levantamento de observabilidade desta série, 2026-07-02).</p>
+        <p><b>Ação recomendada:</b> mínimo viável em camadas — (1) uptime monitor externo no domínio público, (2) node_exporter/cAdvisor na VPS, (3) alerta de disco/RAM/crash-loop. Ver também 07-design-geral e 09-vps.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-05</span><span class="ttl">Backup de banco só on-demand no deploy; sem agendamento nem off-site</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o pg_dump só roda quando alguém faz deploy com backup habilitado; período sem release = período sem backup. Os dumps ficam no mesmo disco do banco — falha catastrófica da VPS perde dado e backup de uma vez.</p>
+        <p><b>Evidência:</b> <code>deploy-ship.ps1:87</code>, <code>deploy-vps.yml:131-145</code>, <code>docs/DEPLOY_VPS.md:252</code>; nenhum cron/timer no repo.</p>
+        <p><b>Ação recomendada:</b> cron diário de pg_dump com retenção + cópia off-site (storage S3-like) + teste periódico de restore. Ver também 03-banco-de-dados, 07 e 09.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p2">
+      <summary><span class="id">IN-01</span><span class="ttl">Rede proxy própria + Caddy próprio — desacoplar da stack omnichannel-mvp</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a entrada de tráfego da produção do Omni depende de uma rede Docker e de um Caddy que pertencem a outra stack (<code>omnichannel-mvp_default</code>). Um <code>docker compose down</code> na stack alheia remove a rede e quebra o boot do Omni; qualquer mudança de Caddyfile de lá afeta o painel de cá.</p>
+        <p><b>Evidência:</b> <code>docker-compose.prod.yml:250-254</code> — <code>proxy: external: true, name: ${PROXY_NETWORK_NAME:-omnichannel-mvp_default}</code>; regra operacional "nunca parar esse Caddy" registrada em memória de projeto.</p>
+        <p><b>Ação recomendada:</b> criar rede <code>omni_proxy</code> própria + serviço Caddy próprio no compose do Omni, migrar o roteamento de <code>omni.crowvisuals.com.br</code> em janela controlada e só então aposentar a dependência. O nome parametrizado torna a troca só-infra, sem mudança de código.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p2">
+      <summary><span class="id">IN-02</span><span class="ttl">Healthcheck no serviço web</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o web (Nuxt/Nitro) é o único serviço sempre-ativo voltado ao usuário sem healthcheck — se o Node travar com o processo vivo, o Docker considera o container saudável e não reinicia; o Caddy segue roteando para um serviço morto.</p>
+        <p><b>Evidência:</b> <code>docker-compose.prod.yml:132-160</code> — bloco do web sem <code>healthcheck:</code>, enquanto api (linhas 116-125) e postgres (13-22) têm. A api inclusive usa <code>depends_on: condition: service_healthy</code> do postgres — o padrão já existe no arquivo.</p>
+        <p><b>Ação recomendada:</b> healthcheck HTTP simples na porta 3003 (mesmo padrão do da api) + o Caddy passa a ter um upstream confiável. Subconjunto rápido do AC-11 — vale fazer junto.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p2">
+      <summary><span class="id">IN-03</span><span class="ttl">Staging sob demanda já existe — falta rito de uso antes de release</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a infra de staging está pronta (path <code>lista-atendimento-staging</code>, <code>.env.staging</code>, input <code>environment</code> no workflow, mesma imagem por SHA), mas não há rito documentado de passar por ela antes de promover para prod — o benefício de "mesmo byte testado" só se realiza se staging for de fato usado.</p>
+        <p><b>Evidência:</b> <code>deploy-vps.yml:79-82</code> resolve staging como default do workflow; plano em <code>docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md</code> descreve staging same-VPS sob demanda.</p>
+        <p><b>Ação recomendada:</b> documentar checklist curto no doc de deploy: releases que tocam schema ou fluxo crítico sobem primeiro em staging (mesmo IMAGE_TAG), smoke manual, depois promoção para prod com a mesma tag.</p>
+      </div>
+    </details>
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

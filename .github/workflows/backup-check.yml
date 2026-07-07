@@ -1,0 +1,96 @@
+name: Backup Check
+
+# Camada EXTRA do backup diario (o primario e' o cron do host da VPS — ver
+# docs/BACKUP_RESTORE.md). Este workflow: (1) sincroniza scripts/backup/backup-db.sh
+# do repo pra VPS; (2) confere o status do ultimo backup; (3) se ausente/velho/falho,
+# roda o script como fallback; (4) se ainda assim falhar, o job fica vermelho e o
+# GitHub notifica por e-mail (alerta minimo viavel — sem stack de monitoracao).
+# ATENCAO: `schedule` so dispara na branch default (main); antes do merge, usar
+# workflow_dispatch manual.
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # 09:00 UTC, ~2h20 depois do cron da VPS (06:40 UTC)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-check-lista-atendimento
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: 85.31.62.33
+      DEPLOY_PORT: "22"
+      DEPLOY_USER: deploy
+      REMOTE_PATH: /home/deploy/lista-atendimento
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure SSH access
+        env:
+          DEPLOY_VPS_SSH_KEY: ${{ secrets.DEPLOY_VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DEPLOY_VPS_SSH_KEY" ]]; then
+            echo "Secret DEPLOY_VPS_SSH_KEY ausente." >&2
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_VPS_SSH_KEY" > ~/.ssh/deploy_vps
+          chmod 600 ~/.ssh/deploy_vps
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync backup script to VPS
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH/scripts'"
+          scp -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" \
+            scripts/backup/backup-db.sh "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_PATH/scripts/backup-db.sh"
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "chmod +x '$REMOTE_PATH/scripts/backup-db.sh'"
+
+      - name: Check last backup (fallback roda o script)
+        run: |
+          set -euo pipefail
+          cat > /tmp/check.sh << 'REMOTE_SCRIPT'
+          set -euo pipefail
+          REMOTE_PATH=/home/deploy/lista-atendimento
+          STATUS="$REMOTE_PATH/backups/last_backup_status"
+          MAX_AGE_S=93600 # 26h
+
+          is_fresh_ok() {
+            [ -f "$STATUS" ] || return 1
+            [ "$(awk '{print $1}' "$STATUS")" = "ok" ] || return 1
+            age=$(( $(date +%s) - $(stat -c %Y "$STATUS") ))
+            [ "$age" -lt "$MAX_AGE_S" ]
+          }
+
+          if is_fresh_ok; then
+            echo "backup em dia:"; cat "$STATUS"; exit 0
+          fi
+          echo "backup ausente/velho/falho — rodando fallback agora"
+          [ -f "$STATUS" ] && cat "$STATUS" || echo "(sem status file)"
+          "$REMOTE_PATH/scripts/backup-db.sh"
+          is_fresh_ok || { echo "fallback tambem falhou" >&2; exit 1; }
+          echo "fallback OK:"; cat "$STATUS"
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/check.sh
+
+      - name: Publish summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Backup Check"
+            echo ""
+            echo "- Host: \`$DEPLOY_HOST\` | path: \`$REMOTE_PATH/backups\`"
+            echo "- Primario: cron do host (06:40 UTC). Este job e' a camada extra + alerta."
+            echo "- Job vermelho = backup do dia falhou nas DUAS camadas."
+          } >> "$GITHUB_STEP_SUMMARY"

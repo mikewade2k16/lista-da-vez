@@ -82,7 +82,7 @@ POST   /v1/tasks/:taskId/comments
 POST   /v1/tasks/:taskId/shares           { clientAccountId, permission }
 ```
 
-**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet` e `createdBy`. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
+**Metadata visual da task (2026-05-15):** `tasks.tasks.ui_metadata` persiste os campos que ainda nao viraram field values dedicados no backend: `responsible`, `involved`, `clientId`, `clientName`, `type`, `dueEndDate`, `prioritySet`, `createdBy`, `source` (procedencia; ex.: `"calendar"` no contrato C10 — WAVE 2), `videos` (`/uploads/tasks/` only) e `calendarMedia` (WAVE 6 cruzamento A: midia ESPELHADA read-only do evento vinculado; `/uploads/calendar/` only via `normalizeCalendarMediaMetadata`; populada pelo sync do calendar, o front so exibe). `normalizeTaskUIMetadata` (`repository_helpers.go`) e WHITELIST: chave fora da lista e descartada. O DTO de task deve sempre devolver `uiMetadata`, mesmo `{}`, para impedir que o front use cache local antigo como fonte autoritativa entre usuarios.
 
 **Paginacao cursor-based em ListTasks (T5 — fechamento 2026-05-15):** o repository usa keyset pagination
 sobre a tupla `(sort_order, created_at, id)` — ordem total estavel mesmo quando varias tasks
@@ -117,9 +117,31 @@ estrategia (ex: adicionar filtro) sem quebrar URLs salvas.
 - **Logger injetado via `deps.Logger`**: `module.Build(...)` chama `service.SetLogger(deps.Logger)`.
   Quando o Module Registry nao for usado (tests, scripts), o servico cai para `slog.Default()`.
 
-**Quando implementar `RemoveRelation` (sem rota DELETE ainda):** lembrar de publicar
-`task.relation_removed` no `Publisher.PublishTaskEvent`. O composable front `useTaskRelations`
-ja escuta esse evento para invalidar cache.
+**`RemoveRelation` (WAVE 2 / calendar C10):** `service_relations.go` — `RemoveRelation(ctx, access,
+taskID, module, resourceType, resourceID)` apaga a relation (via `repository.RemoveRelation`,
+`delete ... using tasks.tasks` no escopo da account) e, quando remove algo, publica
+`task.relation_removed` no `Publisher.PublishTaskEvent` (o composable front `useTaskRelations`
+escuta e invalida cache). Idempotente (relation inexistente nao e erro); exige `PermRelationsManage`;
+`GetTask` amarra o `taskID` ao escopo (cross-account => `ErrTaskNotFound` => 404). SEM rota HTTP DELETE
+nesta wave (uso interno service-to-service; o calendar chama no delete do evento). Se um dia expor,
+`DELETE /v1/tasks/{taskId}/relations/{relationId}` coexiste (nao remove nada).
+
+**`Module.Service()` (accessor):** `module.go` devolve o `*Service` construido no `Build` (nil antes
+do Build). Usado por outros modulos como provider LAZY — ex.: o calendar injeta
+`calendar.WithTasksService(func() *tasks.Service { return tasksModule.Service() })` no `app.go`,
+resolvido no primeiro uso (imune a ordem de Build no Registry).
+
+**Sync invertido tasks->calendar (WAVE 5):** `Module.WithRelationSync(*modules.RelationSyncRegistry)`
+(setter encadeado no `app.go`, nao no `New` — nao mexe nos callers de teste) injeta o registry no
+`Service.syncRegistry`. Create/Update/Move/Archive chamam `dispatchTaskSync` (best-effort, pos-commit;
+carrega as relations e monta `TaskSyncSnapshot`) -> `RelationSyncRegistry.Dispatch` -> os handlers
+donos de recurso espelhado (ex.: calendar mantem o evento-espelho). Sentido calendar->task usa o
+metodo TERMINAL `ApplyCalendarSync` (repository.UpdateTask + publish, SEM re-disparar o handler — anti
+loop). Card criado pelo calendar nasce no topo (`CreateTaskInput.SortOrder` negativo, sort_order asc).
+O snapshot tambem carrega `Media []MediaSnapshot` (WAVE 6 cruzamento B): os videos da task
+(`taskMetadataMediaSnapshots` <- `ui_metadata.videos`) que o calendar espelha read-only em
+`events.linked_media`. Tipo/status/prioridade sao COMPARTILHADOS com o calendar (fonte unica no front
+`content-taxonomy.ts`): novo board nasce com colunas = os 6 status; o seletor de tipo lidera com os 6 tipos.
 
 ## Testes (T9 — fechada 2026-05-15)
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import CalendarControls from '~/components/calendar/CalendarControls.vue'
 import CalendarWeekRail from '~/components/calendar/CalendarWeekRail.vue'
@@ -9,8 +9,12 @@ import WeekView from '~/components/calendar/WeekView.vue'
 import DayDrawer from '~/components/calendar/DayDrawer.vue'
 import CalendarEventForm from '~/components/calendar/CalendarEventForm.vue'
 import CalendarAiPlanModal from '~/components/calendar/CalendarAiPlanModal.vue'
+import CalendarChatPanel from '~/components/calendar/CalendarChatPanel.vue'
+import CalendarConfigDrawer from '~/components/calendar/config/CalendarConfigDrawer.vue'
+import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useCalendarStore } from '~/stores/calendar'
 import { useUiStore } from '~/stores/ui'
+import { useCalendarLiveSync } from '~/composables/useCalendarLiveSync'
 import {
   formatMonthTitle,
   todayKey,
@@ -29,6 +33,19 @@ definePageMeta({
 
 const store = useCalendarStore()
 const ui = useUiStore()
+// Chat singleton: o gatilho dos controles reabre a MESMA conversa (igual a aba IA).
+const chat = useCalendarChat()
+
+// Coluna esquerda (anotacoes) minimizavel -> vira um sidebar SLIM (mes vertical + setas + clicar
+// para reabrir). Persistido em localStorage. Libera espaco para o calendario quando nao esta usando.
+const LEFT_MIN_KEY = 'omni.calendar.leftcol.min'
+const leftMinimized = ref(false)
+function toggleLeftMin(): void {
+  leftMinimized.value = !leftMinimized.value
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(LEFT_MIN_KEY, leftMinimized.value ? '1' : '0')
+  }
+}
 const {
   view,
   weekStartsOn,
@@ -80,6 +97,36 @@ const formDate = ref('')
 
 // Modal "IA do mes" (SPEC-F5): plano de conteudo gerado por IA para o mes em foco.
 const aiModalOpen = ref(false)
+
+// Drawer de configuracao (SPEC-F6): abre SEM sair do calendario (estado local).
+// Deep-link ?config=<aba> abre direto na aba (o drawer le/escreve a query).
+const configOpen = ref(false)
+const route = useRoute()
+
+// Abre o drawer sempre que ha ?config na URL: cobre o mount direto, o redirect de
+// /calendario/config e a navegacao in-app (ex.: link "configurar" do modal de IA
+// -> ?config=ia). Nunca FECHA por aqui (fechar e acao do usuario no drawer, que
+// tira o ?config da URL); a aba certa e resolvida pelo proprio drawer via query.
+watch(
+  () => route.query.config,
+  (value) => {
+    if (typeof value === 'string' && value) configOpen.value = true
+  },
+  { immediate: true },
+)
+
+// Realtime + presenca + conflito 409 (SPEC-F9 / contratos C11-C12): wiring extraido para
+// composable dedicado (mantem esta pagina < 450 linhas). 2 abas na mesma conta refletem
+// create/edit/delete sem F5, indicam quem edita notas/evento e barram edicao concorrente.
+const {
+  presenceParticipants,
+  notesPresenceLabel,
+  eventPresenceLabel,
+  lastPlanEvent,
+  onNotesFocus,
+  onNotesBlur,
+  handleEventConflict,
+} = useCalendarLiveSync({ formOpen, editingEvent, formDate })
 
 // Centraliza o bloco em foco (mes OU semana) no meio; o snap encaixa nele.
 function scrollToFocus(smooth = false): void {
@@ -213,9 +260,9 @@ function onEditEvent(event: CalendarEvent): void {
   formOpen.value = true
 }
 
-// Engrenagem: abre a pagina de configuracao (nao mais um modal). SPEC-F3.
+// Engrenagem: abre o drawer de configuracao SEM sair do calendario. SPEC-F6.
 function onConfig(): void {
-  void navigateTo('/calendario/config')
+  configOpen.value = true
 }
 
 // Botao sparkles: abre o modal de plano de IA do mes em foco. SPEC-F5.
@@ -223,30 +270,82 @@ function onAi(): void {
   aiModalOpen.value = true
 }
 
+// Botao chat: abre/reabre a janela do assistente (SPEC-F2; some com o FAB de canto).
+function onChat(): void {
+  chat.openPanel()
+}
+
 async function onSubmitForm(input: CalendarEventInput): Promise<void> {
   const editing = editingEvent.value
-  const ok = editing ? await store.updateEvent(editing.id, input) : await store.createEvent(input)
+  if (editing) {
+    // C12: envia a version que ESTE form carregou (editing.version), nao a atual do store
+    // (o realtime pode te-la atualizado). updateEvent devolve 'ok'|'conflict'|'error'.
+    const outcome = await store.updateEvent(editing.id, input, editing.version)
+    if (outcome === 'ok') {
+      formOpen.value = false
+      ui.success('Item atualizado.')
+    } else if (outcome === 'conflict') {
+      await handleEventConflict(editing.id)
+    } else {
+      ui.error('Não foi possível salvar o item.')
+    }
+    return
+  }
+  const ok = await store.createEvent(input)
   if (ok) {
     formOpen.value = false
-    ui.success(editing ? 'Item atualizado.' : 'Item criado.')
+    ui.success('Item criado.')
   } else {
     ui.error('Não foi possível salvar o item.')
   }
 }
 
 async function onRemoveEvent(id: string): Promise<void> {
-  const ok = await store.deleteEvent(id)
+  const ev = store.getEventById(id)
+  // 1) Confirma a exclusao do evento.
+  const del = await ui.confirm({
+    title: 'Excluir item',
+    message: `Excluir "${ev?.title || 'este item'}" do calendário?`,
+    confirmLabel: 'Excluir',
+    cancelLabel: 'Cancelar',
+  })
+  if (!del?.confirmed) return
+  // 2) Politica "perguntar na hora": se tem task vinculada, pergunta se arquiva a task tambem.
+  let archiveTask = false
+  if (ev?.taskId) {
+    const both = await ui.confirm({
+      title: 'Task vinculada',
+      message: 'Este item tem uma task no board. Arquivar a task também?',
+      confirmLabel: 'Arquivar a task também',
+      cancelLabel: 'Manter a task',
+    })
+    archiveTask = Boolean(both?.confirmed)
+  }
+  const ok = await store.deleteEvent(id, archiveTask)
   if (ok) {
     formOpen.value = false
-    ui.success('Item excluído.')
+    ui.success(archiveTask ? 'Item e task excluídos.' : 'Item excluído.')
   } else {
     ui.error('Não foi possível excluir o item.')
   }
 }
 
 onMounted(() => {
-  store.init()
+  if (typeof localStorage !== 'undefined') {
+    leftMinimized.value = localStorage.getItem(LEFT_MIN_KEY) === '1'
+  }
+  const first = store.init()
+  // Ao (RE)entrar na pagina, refetcha a janela SEMPRE (menos no 1o load, que o init ja faz): pega
+  // mudancas feitas com o calendario fechado — ex.: mexer na data/responsavel de uma TASK no board
+  // sincroniza o evento-espelho no back, mas o WS do calendario so entrega com a pagina aberta.
+  // Sem isto, voltar mostrava estado velho ("sumiu"/"precisa recarregar"). Cobre navegacao SPA.
+  if (first === false) void store.refetchWindow()
   centerFocus(false)
+})
+
+// keepalive (se a rota for cacheada): onMounted nao re-dispara; onActivated cobre a re-entrada.
+onActivated(() => {
+  if (store.isInitialized) void store.refetchWindow()
 })
 
 onBeforeUnmount(() => {
@@ -266,43 +365,89 @@ onBeforeUnmount(() => {
         @month="() => onSetView('month')"
       />
 
-      <div class="calendar-leftcol">
-        <button
-          type="button"
-          class="calendar-leftcol__arrow calendar-leftcol__arrow--prev"
-          :aria-label="view === 'week' ? 'Semana anterior' : 'Mês anterior'"
-          @click="onPrev"
-        >
-          <UIcon name="i-lucide-chevron-left" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="calendar-leftcol__arrow calendar-leftcol__arrow--next"
-          :aria-label="view === 'week' ? 'Próxima semana' : 'Próximo mês'"
-          @click="onNext"
-        >
-          <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
-        </button>
+      <div class="calendar-leftcol" :class="{ 'calendar-leftcol--min': leftMinimized }">
+        <!-- MINIMIZADA: sidebar slim (expandir + setas de mes + nome do mes vertical clicavel). -->
+        <template v-if="leftMinimized">
+          <button
+            type="button"
+            class="calendar-leftcol__expand"
+            aria-label="Expandir anotações"
+            title="Expandir as anotações"
+            @click="toggleLeftMin"
+          >
+            <UIcon name="i-lucide-panel-left-open" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="calendar-leftcol__mini-arrow"
+            :aria-label="view === 'week' ? 'Semana anterior' : 'Mês anterior'"
+            @click="onPrev"
+          >
+            <UIcon name="i-lucide-chevron-up" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="calendar-leftcol__mini-month"
+            title="Abrir anotações do mês"
+            @click="toggleLeftMin"
+          >
+            {{ periodTitle }}
+          </button>
+          <button
+            type="button"
+            class="calendar-leftcol__mini-arrow"
+            :aria-label="view === 'week' ? 'Próxima semana' : 'Próximo mês'"
+            @click="onNext"
+          >
+            <UIcon name="i-lucide-chevron-down" aria-hidden="true" />
+          </button>
+        </template>
 
-        <CalendarControls
-          :period-title="periodTitle"
-          :clients="clients"
-          :selected-client-id="selectedClientId"
-          :view="view"
-          @today="onToday"
-          @update:client="store.setClientFilter"
-          @update:view="onSetView"
-          @new-item="onNew"
-          @config="onConfig"
-          @ai="onAi"
-        />
-        <MonthNotesPanel
-          :title="notesTitle"
-          :model-value="activeNotes"
-          :people-names="peopleNames"
-          :client-names="clientNames"
-          @update:model-value="store.setNotesForActiveMonth"
-        />
+        <!-- EXPANDIDA: setas + controles (com botao minimizar) + editor de anotacoes. -->
+        <template v-else>
+          <button
+            type="button"
+            class="calendar-leftcol__arrow calendar-leftcol__arrow--prev"
+            :aria-label="view === 'week' ? 'Semana anterior' : 'Mês anterior'"
+            @click="onPrev"
+          >
+            <UIcon name="i-lucide-chevron-left" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            class="calendar-leftcol__arrow calendar-leftcol__arrow--next"
+            :aria-label="view === 'week' ? 'Próxima semana' : 'Próximo mês'"
+            @click="onNext"
+          >
+            <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
+          </button>
+
+          <CalendarControls
+            :period-title="periodTitle"
+            :clients="clients"
+            :selected-client-id="selectedClientId"
+            :view="view"
+            :participants="presenceParticipants"
+            @today="onToday"
+            @update:client="store.setClientFilter"
+            @update:view="onSetView"
+            @new-item="onNew"
+            @config="onConfig"
+            @ai="onAi"
+            @chat="onChat"
+            @minimize="toggleLeftMin"
+          />
+          <MonthNotesPanel
+            :title="notesTitle"
+            :model-value="activeNotes"
+            :people-names="peopleNames"
+            :client-names="clientNames"
+            :editing-label="notesPresenceLabel"
+            @update:model-value="store.setNotesForActiveMonth"
+            @focus="onNotesFocus"
+            @blur="onNotesBlur"
+          />
+        </template>
       </div>
 
       <div ref="scrollContainer" class="calendar-scroll" @scroll.passive="onScroll">
@@ -365,11 +510,25 @@ onBeforeUnmount(() => {
       :default-date="formDate"
       :clients="clients"
       :people="peopleList"
+      :editing-label="eventPresenceLabel"
       @submit="onSubmitForm"
       @cancel="formOpen = false"
       @remove="onRemoveEvent"
     />
 
-    <CalendarAiPlanModal :open="aiModalOpen" :month="focusMonthKey" @close="aiModalOpen = false" />
+    <CalendarAiPlanModal
+      :open="aiModalOpen"
+      :month="focusMonthKey"
+      :plan-event="lastPlanEvent"
+      @close="aiModalOpen = false"
+    />
+
+    <CalendarConfigDrawer v-model:open="configOpen" />
+
+    <!-- Janela de chat + voz (SPEC-F2): sem FAB de canto; abre centralizada sobre a
+         area do calendario (Teleport body), com minimizar/fechar e posicao/tamanho
+         em config.chat. Estado singleton (useCalendarChat): o botao chat dos controles
+         e o "Abrir chat" da aba IA mexem no MESMO chat. -->
+    <CalendarChatPanel />
   </div>
 </template>

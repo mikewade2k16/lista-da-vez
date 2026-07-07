@@ -76,13 +76,18 @@ onMounted(() => {
 })
 
 // Troca de cliente com edicao pendente: confirma antes de descartar o rascunho.
+// Dirty-guard unico da casa via ui.confirm (padrao do drawer de config — SPEC-F6).
 async function selectClient(clientId: string): Promise<void> {
   if (clientId === selectedClientId.value) return
   if (touched.value) {
-    const ok = window.confirm(
-      'Ha alteracoes nao salvas neste perfil. Trocar de cliente vai descarta-las. Continuar?',
-    )
-    if (!ok) return
+    const { confirmed } = await ui.confirm({
+      title: 'Descartar alterações?',
+      message:
+        'Há alterações não salvas neste perfil. Trocar de cliente vai descartá-las. Continuar?',
+      confirmLabel: 'Descartar',
+      cancelLabel: 'Continuar editando',
+    })
+    if (!confirmed) return
   }
   selectedClientId.value = clientId
   touched.value = false

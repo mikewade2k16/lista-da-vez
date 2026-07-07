@@ -1,9 +1,26 @@
 name: ${COMPOSE_PROJECT_NAME:-omni}
 
+# AC-11: mem_limit por servico soma ~4,25 GiB de TETO (nao alocacao) numa VPS de
+# ~6 GB compartilhada. Se um servico estoura o limit, o kernel OOM-killa (exit 137)
+# e o `restart: unless-stopped` ressuscita — auto-recuperacao em vez de derrubar a VPS.
+
+# AC-16: Log rotation. Sem isso o json-file default cresce sem limite e enche o disco
+# da VPS (~6GB compartilhada). Mudanca de logging so aplica ao RECRIAR o container
+# (up -d --force-recreate) — ver docs/DEPLOY_VPS.md secao Monitoracao.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
+    cpus: 2.0
+    logging: *default-logging
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -33,6 +50,15 @@ services:
       context: ./back
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 2.0
+    # AC-16: janela maior que o anchor (o slog loga cada request; 30MB seria curto p/ depurar).
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     environment:
       APP_NAME: ${APP_NAME:-omni-api}
       APP_ENV: production
@@ -51,6 +77,9 @@ services:
       # em mostarda.crowvisuals.com.br) nao acha a imagem. Ver DEPLOY_MOSTARDA_PROD.md.
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      # AC-04: role de runtime least-privilege. Criar a role ANTES do deploy
+      # (runbook: docs/MULTITENANT_COMPLETION_PLAN.md, Notas de Deploy AC-04).
+      DATABASE_APP_URL: postgres://${APP_DB_ROLE:-omni_app}:${APP_DB_ROLE_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-0}
       DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
@@ -137,6 +166,10 @@ services:
       context: ./web
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 128m
+    cpus: 1.0
+    logging: *default-logging
     environment:
       NODE_ENV: production
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
@@ -153,6 +186,12 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${WEB_PORT:-13003}:3003"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       app:
       proxy:
@@ -173,11 +212,25 @@ services:
     image: redis:8-alpine
     profiles: ["automation"]
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 32m
+    cpus: 0.5
+    logging: *default-logging
     command: redis-server --requirepass ${AUTOMATION_REDIS_PASSWORD}
+    # REDIS_PASSWORD dentro do container so p/ o healthcheck autenticar (mesma var
+    # que o command ja usa; nenhuma env nova no .env da VPS).
+    environment:
+      REDIS_PASSWORD: ${AUTOMATION_REDIS_PASSWORD}
     volumes:
       - automation_redis:/data
     ports:
       - "127.0.0.1:${AUTOMATION_REDIS_PORT:-16380}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - app
 
@@ -185,6 +238,10 @@ services:
     image: devlikeapro/waha:gows-2026.5.1
     profiles: ["automation"]
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
+    cpus: 1.5
+    logging: *default-logging
     environment:
       WHATSAPP_HOOK_URL: http://n8n:5678/webhook/webhook
       WHATSAPP_DEFAULT_ENGINE: GOWS
@@ -198,6 +255,17 @@ services:
       - automation_waha_media:/app/.media
     ports:
       - "127.0.0.1:${AUTOMATION_WAHA_PORT:-13010}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:3000/ping > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Ordena so o boot (service_started, nao _healthy): a WAHA precisa subir mesmo
+    # se o n8n estiver quebrado, p/ nao travar QR/dashboard.
+    depends_on:
+      n8n:
+        condition: service_started
     networks:
       app:
       proxy:
@@ -208,6 +276,10 @@ services:
     image: n8nio/n8n:2.23.2
     profiles: ["automation"]
     restart: unless-stopped
+    mem_limit: 768m
+    mem_reservation: 192m
+    cpus: 1.0
+    logging: *default-logging
     environment:
       N8N_HOST: ${AUTOMATION_N8N_HOST}
       N8N_PORT: 5678
@@ -230,8 +302,15 @@ services:
       - automation_n8n_data:/home/node/.n8n
     ports:
       - "127.0.0.1:${AUTOMATION_N8N_PORT:-15680}:5678"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       app:
       proxy:

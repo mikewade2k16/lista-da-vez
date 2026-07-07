@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  EVENT_TYPE_META,
   NEUTRAL_COLOR,
+  eventTypeMeta,
   hexToTriplet,
   isHexColor,
   rgba,
@@ -19,7 +19,11 @@ const props = defineProps<{
 
 defineEmits<{ select: [event: CalendarEvent] }>()
 
-const typeIcon = computed(() => EVENT_TYPE_META[props.event.type].icon)
+const typeIcon = computed(() => eventTypeMeta(props.event.type).icon)
+
+// WAVE 5 (E3): evento-espelho nascido de uma task (source='task') ganha um marcador visual
+// distinto (icone de task + borda tracejada) para diferenciar do evento manual.
+const isMirror = computed(() => props.event.source === 'task')
 
 const chipStyle = computed(() => {
   // A cor do tipo (config) vence a do cliente quando setada; senao cor do cliente;
@@ -41,11 +45,33 @@ const chipStyle = computed(() => {
   <button
     type="button"
     class="calendar-chip"
+    :class="{ 'calendar-chip--mirror': isMirror }"
     :style="chipStyle"
-    :title="`${event.time ? event.time + ' · ' : ''}${event.title}`"
+    :title="`${event.time ? event.time + ' · ' : ''}${event.title}${isMirror ? ' (espelho de task)' : ''}`"
     @click.stop="$emit('select', event)"
   >
     <UIcon :name="typeIcon" class="calendar-chip__icon" aria-hidden="true" />
     <span class="calendar-chip__title">{{ event.title }}</span>
+    <UIcon
+      v-if="isMirror"
+      name="i-lucide-square-check-big"
+      class="calendar-chip__mirror"
+      aria-hidden="true"
+    />
   </button>
 </template>
+
+<style scoped>
+/* Evento-espelho de task (WAVE 5): borda tracejada + iconezinho de task ao fim do chip. */
+.calendar-chip--mirror {
+  border-left-style: dashed;
+}
+
+.calendar-chip__mirror {
+  margin-left: auto;
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: 0 0 auto;
+  opacity: 0.7;
+}
+</style>

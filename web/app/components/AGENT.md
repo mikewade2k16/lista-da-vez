@@ -265,22 +265,60 @@ auditoria sobrescreve `perf-data.ts` e a pagina reflete na hora.
 ### `calendar`
 
 Pagina `/calendario` (`pages/calendario/index.vue`; workspace global, layout `dashboard`,
-`definePageMeta workspaceId: ''` para nao cair no gate de workspace) + `pages/calendario/config.vue`
-(`/calendario/config`, mesmo criterio). Calendario de conteudo por cliente da agencia. Layout em
+`definePageMeta workspaceId: ''` para nao cair no gate de workspace). A config NAO e mais pagina:
+`pages/calendario/config.vue` virou um REDIRECT (SPEC-F6) que manda pra `/calendario?config=responsaveis`
+(preserva o link antigo); a config vive num drawer lateral (ver `CalendarConfigDrawer.vue` abaixo).
+Calendario de conteudo por cliente da agencia. Layout em
 colunas: [coluna esquerda = controles + notas, UM card] [week rail S1..Sn] [calendario (scroll)]
 [drawer do dia]. DUAS VISOES (Mes / Semana), toggle nos controles. Estado em [stores/calendar.ts];
 helpers de data/constantes em [utils/calendar.ts]; tipos+helpers da CONFIG (contrato C2) em
 [utils/calendar-config.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-config.ts)
 (re-exportados por utils/calendar.ts); nav em `layers/queue/nav.config.ts`.
 
-> **CONFIG v2 (SPEC-F3)**: `CalendarConfig` (jsonb `calendar.config`) traz alem de responsaveis+feriados:
-> `weekStartsOn` (sunday|monday), `clientColors` ({ [clientId]: `#rrggbb`|`none` }), `typeColors`
-> ({ [tipo]: `#rrggbb` }), `whiteLabel` (logo/titulo/cor) e `ai` (provider/model/baseUrl/systemPrompt/
-> temperature — chaves de API NUNCA aqui, vivem no n8n). `normalizeConfig` (calendar-api.ts) faz merge
-> POR SECAO (linha antiga do banco ganha o shape completo). APLICACAO no calendario: `weekStartsOn` da
-> config espelha no viewport (store observa `config.weekStartsOn`); a cor do cliente vem de
-> `resolveClientColor(clientColors[id], semente)` no `clients` computed; `typeColors` desce como prop
-> `typeColors` por MonthGrid/WeekView/DayCell -> EventChip (override da cor do cliente quando setado).
+> **CONFIG v2/v3 (SPEC-F3/F6)**: `CalendarConfig` (jsonb `calendar.config`) traz alem de responsaveis+
+> feriados: `weekStartsOn` (sunday|monday), `clientColors` ({ [clientId]: `#rrggbb`|`none` }),
+> `typeColors` ({ [tipo]: `#rrggbb` }), `whiteLabel` (logo/titulo/cor), `ai` e `tasks` ({ boardId,
+> defaultColumnId } — vazio = integracao com Tasks DESLIGADA; contrato C6). `normalizeConfig`
+> (calendar-api.ts) faz merge POR SECAO **incluindo `tasks`/`chat`** (linha antiga do banco ganha o shape
+> completo; draft sem a secao NUNCA apaga o valor persistido no full-replace do PUT). APLICACAO no
+> calendario: `weekStartsOn` da config espelha no viewport (store observa `config.weekStartsOn`); a cor do
+> cliente vem de `resolveClientColor(clientColors[id], semente)` no `clients` computed; `typeColors` desce
+> como prop `typeColors` por MonthGrid/WeekView/DayCell -> EventChip (override da cor do cliente).
+
+> **CONFIG v4 — IA 100% pelo painel (SPEC-F1, contratos CFG/SEC)**: o `ai` da config ganhou `enabled`
+> (kill switch), `useGlobalKeys` (true = chaves GLOBAIS da plataforma; false = chaves DESTA conta),
+> `transcribeProvider` (openai|gemini) e `transcribeModel`, alem do ja existente provider/model/baseUrl/
+> systemPrompt/temperature. Novo bloco `chat` ({ position: center|left|right, width, height }) pro layout
+> da janela de chat (aplicado na SPEC-F2 pelo [CalendarChatPanel.vue] + composable useCalendarChatWindow). O enum de provider ganhou `openai` (base `https://api.openai.com/v1`,
+> label "OpenAI") nos 3 mapas de `utils/calendar-config.ts` (+ o `gemini` da wave 2). As **CHAVES de API
+> NUNCA moram na config nem no n8n**: vivem em secrets server-side (contrato SEC); o front so recebe status
+> MASCARADO `{set,last4}` via `GET /v1/calendar/ai-keys` (fonte ativa global|conta) e grava write-only
+> (`PUT /ai-keys` conta, `PUT /ai-keys/global` so platform_admin; apiKey vazio = limpar). I/O em
+> `calendar-api.ts` (`fetchAiKeys`/`putAiKey`/`fetchGlobalAiKeys`/`putGlobalAiKey`, tipo `CalendarAiKeys`).
+> A aba IA ([ConfigAi.vue]) tem o kill switch, o toggle de escopo (aviso "salve pra aplicar" enquanto o
+> rascunho diverge do salvo), o subcomponente [ConfigAiKeys.vue] (chaves mascaradas + input write-only +
+> limpar, edicao gateada por `isPlatformAdmin` quando a fonte ativa e global), provider+modelo, transcricao
+> e o prompt do sistema (a lei da IA). ConfigAiKeys le o escopo ATIVO do banco (prop `useGlobalKeys` do
+> `store.config`, nao do rascunho) e re-le apos cada PUT (fonte unica = banco).
+
+> **CONFIG WAVE 3.1 — escopo da IA por cliente (SPEC-F3, contratos CFG+/SEC+)**: o `ai` da config ganhou
+> `scopeMode` (`general` | `perClient`, default general) e `disabledClientIds` (`string[]` — no modo geral,
+> clientes com a IA DESLIGADA). `normalizeConfig` (calendar-api.ts) coere os dois na secao `ai` (enum +
+> filtro de strings; nunca apaga no full-replace). Novo tipo `CalendarClientAiOverride` (COMPORTAMENTO por
+> cliente, SEM chaves): `{ enabled: boolean|null, provider: CalendarAiProvider|'', model, baseUrl,
+systemPrompt, temperature: number|null }` — cada campo null/'' = HERDA a config geral; em
+> `utils/calendar-config.ts` (`defaultClientAiOverride`/`normalizeClientAiOverride`/`isEmptyClientAiOverride`,
+> re-exportados por utils/calendar.ts). I/O em calendar-api.ts: `GET/PUT /v1/calendar/ai-config/client?clientId=`
+> (`fetchClientAiConfig`/`putClientAiConfig`; account_id NUNCA no body/query — o back resolve pelo Principal;
+> override vazio `{}` = usa a config geral). Sub-aba [ConfigAiClientScope.vue] (extraida do ConfigAi p/ nao
+> passar de 450 linhas), montada como `<details>` "Escopo por cliente" na aba IA: seletor Geral × Individual
+> (`ai.scopeMode`). GERAL = multi-select (checkbox) de clientes p/ DESATIVAR a IA (`ai.disabledClientIds`,
+> parte do draft compartilhado — salva no footer). INDIVIDUAL = seletor de cliente (`store.clients`) + form de
+> override (status tri-state Herdar/Ligada/Desligada, provider, modelo, baseUrl, temperatura, prompt) salvo
+> POR CLIENTE com botao proprio via `putClientAiConfig`; badge "usa config geral" quando o override persistido
+> e' vazio; dirty-guard ao trocar de cliente com edicao pendente (`ui.confirm`, padrao unico da casa). As
+> CHAVES de API NAO aparecem aqui — seguem no nivel conta/global (SEC). Estilo `.calendar-config__client-scope`
+> em `assets/styles/calendar/config.css`.
 
 > **Liquid glass / aurora ambiente**: a AURORA de fundo (camada animada de gradientes que os
 > cards de vidro `backdrop-filter` refratam) NAO vive mais no `/calendario`. Virou parte do TEMA
@@ -328,10 +366,12 @@ Interacao-chave:
 > [docs/CALENDARIO_PLAN.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/CALENDARIO_PLAN.md).
 
 - [CalendarControls.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarControls.vue)
-  Topo da coluna esquerda (uma linha): titulo do mes + **botao IA (`@ai`, sparkles)** +
-  **engrenagem (`@config`)** + **select de cliente** (Todos/especifico, via [AppSelectField]) +
-  toggle Mes/Semana + Hoje + botao "Novo". O `@config` faz `navigateTo('/calendario/config')` (nao
-  abre mais modal — SPEC-F3); o `@ai` abre o [CalendarAiPlanModal.vue] (SPEC-F5).
+  Topo da coluna esquerda (uma linha): titulo do mes + **botao chat (`@chat`, message-circle)** +
+  **botao IA (`@ai`, sparkles)** + **engrenagem (`@config`)** + **select de cliente** (Todos/especifico,
+  via [AppSelectField]) + toggle Mes/Semana + Hoje + botao "Novo". O `@config` ABRE O DRAWER de config
+  no proprio calendario (estado local `configOpen` no index; SPEC-F6, antes navegava pra
+  `/calendario/config`); o `@ai` abre o [CalendarAiPlanModal.vue] (SPEC-F5); o `@chat` reabre a janela
+  do assistente (`chat.openPanel()`; SPEC-F2, substitui o antigo FAB de canto).
 
 > **IA do mes (SPEC-F5, contrato C4/C5)**: o botao sparkles do [CalendarControls] abre o
 > [CalendarAiPlanModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarAiPlanModal.vue)
@@ -360,28 +400,45 @@ Interacao-chave:
 > `DELETE /v1/calendar/ai/plans/{id}`. Estilos `.calendar-ai*` + `.calendar-ai-result__*` em
 > `assets/styles/calendar/ai.css` (so tokens; o HTML de nota vem do plano via editor TipTap).
 
-- **Pagina de config** `pages/calendario/config.vue` (substitui o antigo `CalendarConfigModal.vue`,
-  DELETADO): header com voltar p/ `/calendario` + [AdminPageHeader]; monta um `draft` de
-  `CalendarConfig` re-hidratado de `store.config` (so preserva enquanto `touched`); botao unico
-  "Salvar configuracoes" -> `store.saveConfig` (PUT `/v1/calendar/config`) + feedback ui.success/error.
-  Secoes em `components/calendar/config/` (estilos `.calendar-config__*` + `.calendar-config-page__*`
-  em `assets/styles/calendar/config.css`):
-  - `ConfigResponsibles.vue` — checkboxes dos usuarios da conta (`store.members`; vazio = todos).
-  - `ConfigHolidays.vue` — toggles BR nacional / Sergipe / Aracaju / luxo internacional.
-  - `ConfigAppearance.vue` — inicio da semana (seg/dom) + cor por cliente (input color + "Sem cor" =
+- **Drawer de config** [CalendarConfigDrawer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/config/CalendarConfigDrawer.vue)
+  (SPEC-F6; substitui a antiga pagina `/calendario/config`, hoje so um redirect, e o antigo
+  `CalendarConfigModal.vue` DELETADO). Sobe sobre [OmniEntityDrawer](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/ui/OmniEntityDrawer.vue)
+  (modo `side`), montado no `pages/calendario/index.vue` via `v-model:open="configOpen"`. 7 ABAS (nav
+  `.calendar-config__tabs`): responsaveis · feriados · aparencia · ia · clientes · integracoes · midia.
+  Deep-link `?config=<aba>`: o index abre o drawer sempre que ha `?config` na URL (watch imediato,
+  cobre mount/redirect/nav in-app como o link "configurar" do modal de IA -> `?config=ia`); o drawer
+  resolve a aba pela query e escreve `router.replace` ao trocar de aba, e limpa `?config` ao fechar.
+  Abas so montam na 1a visita (`visited` Set) e ficam vivas via `v-show` (preserva estado das abas de
+  salvar-proprio ao trocar). MODELOS DE SALVAR: responsaveis/feriados/aparencia/ia/integracoes
+  compartilham um `draft` do `CalendarConfig` (re-hidratado de `store.config` enquanto nao `touched`)
+  - botao "Salvar configuracoes" no FOOTER do drawer -> `store.saveConfig` (PUT `/v1/calendar/config`);
+    clientes e midia salvam com botao PROPRIO na aba (footer some nessas abas). Dirty-guard UNICO via
+    `ui.confirm`: fechar com o draft compartilhado sujo pergunta antes de descartar. No open o drawer
+    refaz `store.fetchConfig()` + `store.fetchMembers()`. Secoes em `components/calendar/config/`
+    (estilos `.calendar-config__*` + `.calendar-config-drawer*` em `assets/styles/calendar/config.css`):
+  * `ConfigResponsibles.vue` — checkboxes dos usuarios da conta (`store.members`; vazio = todos).
+  * `ConfigHolidays.vue` — toggles BR nacional / Sergipe / Aracaju / luxo internacional.
+  * `ConfigAppearance.vue` — inicio da semana (seg/dom) + cor por cliente (input color + "Sem cor" =
     `none`) + cor por tipo (checkbox "Usar" + input color) + white-label (titulo/logo/cor).
-  - `ConfigAi.vue` — provider (select) + modelo + baseUrl (placeholder = default do provider) +
-    systemPrompt (textarea) + temperature; AVISO fixo "as chaves de API ficam no n8n, nunca aqui".
-  - `ConfigMediaLimits.vue` — tetos GLOBAIS de upload; GET sempre (via `useCalendarMedia`), edicao
+  * `ConfigAi.vue` — provider (select, inclui `gemini`) + modelo + baseUrl (placeholder = default do
+    provider) + systemPrompt (textarea) + temperature; AVISO fixo "as chaves de API ficam no n8n, nunca aqui".
+    Tem botao "Abrir chat com o assistente" que so chama `useCalendarChat().openPanel()` — a janela de
+    chat (SPEC-F2) vive montada na pagina index (fora do drawer), aqui so aciona o MESMO estado singleton.
+  * `ConfigTasks.vue` (SPEC-F6, aba `integracoes`) — select de board + coluna de destino ao criar task
+    a partir de um evento (contrato C6, `draft.tasks`). Fonte: `useTasksStore` (import cross-layer
+    `../../../../layers/tasks/stores/tasks`), boards carregados LAZY so ao abrir a aba
+    (`initialize({ allowAutoCreate:false })`, sem criar board fantasma). Sem board -> aviso acionavel
+    com link pra `/tasks`. Trocar de board invalida a coluna se ela nao pertence ao novo board.
+  * `ConfigMediaLimits.vue` — tetos GLOBAIS de upload; GET sempre (via `useCalendarMedia`), edicao
     so `platform_admin` (`auth.role === 'platform_admin'`; o back tambem restringe o PUT). Salva por
     `useCalendarMedia().saveMediaLimits` (PUT `/v1/calendar/media-limits`), independente do config.
-  - `ConfigClientProfiles.vue` (SPEC-F4) — PERFIL ESTRATEGICO por cliente (contrato C3), usado pelo
+  * `ConfigClientProfiles.vue` (SPEC-F4) — PERFIL ESTRATEGICO por cliente (contrato C3), usado pelo
     assistente de IA do mes. Select de cliente (`store.clients`) com badge preenchido/vazio (via
     `filled` do index) + form dos campos estaveis (segmento, posicionamento, site, instagram,
     endereco, descricao, historia, objetivos, tom de voz) + textareas do bloco `extra` (publico-alvo,
     oferta, pilares, cadencia, restricoes, performance, assets). Salva POR CLIENTE (botao proprio,
     independente do "Salvar configuracoes" global) + feedback ui.success/error; dirty guard ao trocar
-    de cliente com edicao pendente (`window.confirm`). I/O em
+    de cliente com edicao pendente (`ui.confirm` — padrao unico da casa, SPEC-F6). I/O em
     [composables/useCalendarClientProfiles.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarClientProfiles.ts)
     (index + load/save; `account_id` nunca no body — o back resolve pelo Principal); tipos+defaults em
     [utils/calendar-profile.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-profile.ts)
@@ -389,6 +446,89 @@ Interacao-chave:
     `PUT /v1/calendar/client-profile` (upsert full-replace), `GET /v1/calendar/client-profiles` (index
     lean `{clientId,filled,updatedAt}`). Perfil inexistente = 200 com defaults (nunca 404). Estilos
     `.calendar-profile__*` + `.calendar-config__section--wide` em `assets/styles/calendar/config.css`.
+- **Janela de chat + voz** [CalendarChatPanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatPanel.vue)
+  (SPEC-F2/F10, contratos C7/C8/CHATUI/D3/D4). **SEM FAB de canto** (removido na F2): a janela abre CENTRALIZADA
+  sobre a area interna do calendario (`.calendar-page`, medida em runtime) e ganhou **MINIMIZAR**
+  (colapsa numa **pill** re-expansivel `.calendar-chat-pill`, sem perder a conversa) e **FECHAR**
+  (some; reabre pelo botao chat dos [CalendarControls] ou pelo "Abrir chat" da aba IA). **Posicao/tamanho
+  (`config.chat`)**: seletor no header (`center` = largura da area do calendario; `left` = ~painel
+  esquerdo 360px; `right` = ~modal direito 560px) + **resize por arrasto** (handle no canto inferior,
+  molde do OmniEntityDrawer; no modo right cresce pela borda esquerda). Toda a matematica de layout +
+  persistencia vive em
+  [composables/useCalendarChatWindow.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarChatWindow.ts)
+  (mede `.calendar-page`, calcula `panelStyle` left/top/width/height em px, clamps MIN 320 / margem 12,
+  persiste em `config.chat` via `store.saveConfig` DEBOUNCED 600ms — trocar de posicao zera width/height
+  pro default; `localChat` re-hidrata de `store.config.chat` exceto com save pendente, principio 1).
+  Render via `Teleport to="body"` (a `.calendar-page` tem `overflow:hidden`; precedente CalendarAiPlanModal)
+  com `position:fixed` + style calculado; `.calendar-chat`/`.calendar-chat-pill` z-index 9810 em
+  `assets/styles/calendar/chat.css` (so tokens). Montado 1x em `pages/calendario/index.vue`. Bolhas
+  user/assistant espelham o OperationSidePanel; input textarea auto-grow (Enter envia, Shift+Enter quebra
+  linha), "digitando...", header com seletor de posicao + nova conversa + minimizar + fechar (Esc fecha,
+  preservando o draft). Estado SINGLETON via
+  [composables/useCalendarChat.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarChat.ts)
+  (`useState`: messages/draft/sending/errorMessage/**panelOpen/minimized**/conversationId + wave 4:
+  **conversationTitle/conversations/loadingConversations/loadingConversation/chatScope/scopeMode/
+  scopeClientId**; `openPanel` reabre cheia zerando `minimized` E dispara `ensureChatLoaded()` — busca
+  a lista de conversas + o escopo do banco; `minimize`/`restore` alternam a pill): `ask()` -> POST
+  `/v1/calendar/chat/ask` com `{question, conversationId, scopeMode, scopeClientId, month}` (account*id
+  nunca no body — o back resolve pelo Principal), a RESPOSTA `{answer, conversationId, title}` adota o
+  id/titulo que o back resolveu e atualiza a lista; AbortController cancela a pergunta anterior em voo;
+  erros 503/`chat_not_configured`, 502/504 viram `errorMessage` acionavel (cita `CALENDAR_CHAT_WEBHOOK_URL`).
+  **WAVE 4 — PERSISTENCIA + MEMORIA + ESCOPO (SPEC-F10, contrato D3/D4)**: conversas e mensagens agora
+  PERSISTEM no banco (`calendar.chat*_`), entao o historico NAO some no reload e a IA tem MEMORIA (o back
+carrega as ultimas N mensagens). `openConversation(id)`carrega as mensagens do banco (SUBSTITUI as
+locais) e adota o escopo salvo;`newConversation()`limpa e zera o id (o back cria a conversa no 1o`ask`, lazy — sem conversas vazias); `removeConversation(id)` soft-delete. I/O em
+[domain/calendar/calendar-chat-api.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/domain/calendar/calendar-chat-api.ts)
+(`fetchConversations`/`getConversation`/`createConversation`/`deleteConversation`/`fetchChatScope`+
+tipos`CalendarChatConversation`/`CalendarChatScope`; separado de calendar-api.ts p/ manter < 450
+linhas). SEGURANCA: o ACESSO (quais conversas/clientes o usuario ve) e resolvido SEMPRE server-side
+pela permissao (`resolveChatAccess`, nunca do body); conversa/cliente fora do visivel => 404. O escopo
+(client|all) vem do `GET /chat/scope`: cliente-side (canSelect=false) trava no `lockedClientId`, agencia
+escolhe. **WAVE 4 — SELECT DE ESCOPO (SPEC-F11)**: barra abaixo do header via
+[CalendarChatScope.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatScope.vue)
+(apresentacional: recebe `scope`/`mode`/`clientId`e emite`change(mode, clientId)`->`chat.setScope`;
+`<select>`NATIVO — fecha no clique-fora/Esc sozinho, acessivel/mobile). So renderiza com`canSelect=true`
+(agencia/multi-cliente): opcoes "Todos os clientes" (`scopeMode='all'`) + cada cliente visivel
+(`scopeMode='client'`); cliente-side nao ve o seletor. A escolha viaja no `ask()`e fica salva na conversa;`openConversation`adota o escopo salvo dela; default do`applyScopeDefault`(cliente-side ->`lockedClientId`;
+agencia -> cliente filtrado na tela se visivel, senao "Todos"). Estilos `.calendar-chat-scope_`em`assets/styles/calendar/chat-scope.css`(so tokens). Menu "Conversas" no header via
+[CalendarChatConversations.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatConversations.vue)
+(dropdown apresentacional: recebe a lista + emite select/new/delete; fecha no clique-fora/Esc; agencia
+ve todas com autor+data, cliente-side so as suas; estilos`.calendar-chat-convos\*`em`assets/styles/calendar/chat-conversations.css`).
+VOZ: [composables/useVoiceRecorder.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useVoiceRecorder.ts)
+(`MediaRecorder` `audio/webm;codecs=opus`-> fallback`audio/mp4`, limite 2min para sozinho, estados
+idle/recording/transcribing, permissao negada -> mensagem acionavel). Botao mic: gravar -> parar ->
+POST multipart `/v1/calendar/chat/transcribe`(campo`file`; FormData nao serializado pelo api-client)
+-> texto entra no INPUT (usuario revisa e envia, nao envia direto); erros C8 (503/413/400/502/504)
+com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMessage`.
+- **Realtime + presenca (SPEC-F9, contratos C11/C12)**. Dois composables NOVOS moldados sobre a
+  base generica de tasks (import cross-layer `../../layers/tasks/composables/useRealtimeSocket`;
+  a conta e' resolvida pela cadeia `resolveRealtimeAccountId`, NUNCA so `auth.activeTenantId`),
+  montados 1x em `pages/calendario/index.vue` (desligam no unmount; troca de conta reconecta):
+  - [composables/useCalendarRealtime.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarRealtime.ts)
+    — canal por conta (`/v1/realtime/calendar`, scope=account, topico `calendar:account:{id}`).
+    Aplica por INVALIDACAO (o WS so avisa "mudou", o front refaz o fetch, nunca patch local):
+    `calendar.event_*`/`calendar.day_media_updated` -> `store.refetchWindow()` (debounce 250ms,
+    coalesce de rajada); `calendar.note_updated` -> `store.reloadNoteFromRemote(monthKey)` (SO se a
+    nota ja carregada e SEM save pendente — o rascunho local vence, principio 1); `calendar.config_updated`
+    -> `store.fetchConfig()`; `calendar.plan_updated` -> `lastPlanEvent` repassado ao `CalendarAiPlanModal`
+    (`:plan-event`) que recarrega o plano ativo e encerra o polling. Guard de conta (defesa em
+    profundidade): descarta evento cujo `accountId` != conta resolvida.
+  - [composables/useCalendarPresence.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarPresence.ts)
+    — presenca estilo Google Docs, versao REDUZIDA (so INDICADOR, sem lock nem sync de draft na v1;
+    `/v1/realtime/presence`, scope=calendar, topico `presence:calendar:{id}`). Heartbeat 15s;
+    `participants` (exclui o proprio usuario); `focusField`/`blurField` com fieldKey `notes:YYYY-MM`
+    (editor de notas) e `event:<id>` (form de edicao). UI: avatares no [CalendarControls]
+    (`:participants`, `.calendar-controls__presence*` em shell.css) + badge "Fulano editando" no
+    [MonthNotesPanel] (`:editing-label` + `@focus/@blur` do editor via focusin/focusout;
+    `.calendar-notes__presence` em notes-drawer.css) e no [CalendarEventForm] (`:editing-label`,
+    `.calendar-form__presence` em week-form.css; so ao EDITAR, presenca ligada por watch no index).
+  - **Optimistic locking C12**: `CalendarEvent.version` guardado no store; `calendarApi.putEvent`
+    envia header `If-Match: <version>`; o `updateEvent` (agora em
+    [composables/useCalendarEventCrud.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarEventCrud.ts),
+    EXTRAIDO do store na F9 p/ manter < 450 linhas) devolve `'ok' | 'conflict' | 'error'`. No 409
+    `version_conflict` o index abre `ui.confirm` "alterado por outra pessoa" + "Recarregar"
+    (`store.getEventById` re-hidrata o form com a versao do banco); sem confirmar, o rascunho do
+    usuario NAO e descartado. Sem `If-Match` = comportamento antigo (compat).
 - [CalendarWeekRail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarWeekRail.vue)
   Rail vertical na BORDA ESQUERDA: `M` (volta pra visao Mes) + `S1..Sn` (semanas do mes em
   foco). Auto-detecta as semanas (`weeksOfFocusedMonth`); uma linha com <2 dias do mes (ex.: so
@@ -421,6 +561,10 @@ Interacao-chave:
   - **Anexos do dia** (uploader editavel). Fonte unica no store: le `store.selectedDayMedia` (do Map
     `dayMediaByDate` buscado na janela, sem refetch por dia) e salva por `store.saveDayMedia(date, media)`
     (PUT + atualiza o Map). Espelha o modal de Tasks (DESIGN_SYSTEM §9).
+  - **Task vinculada (SPEC-F8, contrato C10)**: quando `activeEvent.taskId` != '' mostra o link
+    `.calendar-drawer__tasklink` -> `/tasks` (NuxtLink). Ainda SEM deep-link para a task especifica no
+    board (o board `/tasks` nao le query `?task=`); leva pra pagina e o usuario acha a task. `EventChip`
+    NAO ganhou badge (anti-poluicao visual). Estilo em `week-form.css`.
 - [CalendarMediaUploader.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaUploader.vue)
   Widget reutilizavel de anexos (`v-model` = `CalendarMediaItem[]`): grade de previews (img/`video`)
   - remover, tile de adicionar (input file oculto), barra de progresso por upload e validacao de
@@ -437,6 +581,18 @@ Interacao-chave:
   Modal de **criar/editar** evento (titulo, cliente, responsavel, data, horario, tipo, status,
   prioridade, descricao). Emite `submit`/`cancel`/`remove`; a pagina chama
   `store.createEvent/updateEvent/deleteEvent` (API real).
+  - **Toggle "Criar task no board" (SPEC-F8, contrato C10)**: so ao CRIAR (`v-if="!isEdit"`). Le
+    `useCalendarStore().config.tasks.boardId`. Com board configurado -> checkbox sugerido pre-ligado
+    para tipos `{gravacao, reuniao, evento}` (acompanha o tipo enquanto o usuario nao mexe:
+    `createTaskTouched`); o `submit` inclui `createTask: true` no `CalendarEventInput`. Sem board ->
+    aviso acionavel `.calendar-form__task-warn` com link `Configurar` -> `/calendario?config=integracoes`
+    (abre o drawer de config na aba Integracoes via watcher de `route.query.config` no index) + `emit('cancel')`
+    pra fechar o form. Estilos `.calendar-form__toggle*` / `.calendar-form__task-*` em `week-form.css`.
+  - Fluxo do aviso de task no store: `createEvent` chama `calendarApi.postEvent` que agora devolve
+    `{ taskId, taskWarning }`; se `taskWarning` != '' (evento salvou 201 mas a task falhou) o store dispara
+    `ui.info(taskWarning, 'Task não criada')` sem derrubar o sucesso. `CalendarEvent` ganhou `taskId?`/
+    `version?` (so leitura; `version` e' base do optimistic locking da SPEC-F9) e `CalendarEventInput`
+    ganhou `createTask?` (omitindo `id`/`taskId`/`version`) em `utils/calendar.ts`.
 
 ## Diretrizes rapidas
 

@@ -12,10 +12,18 @@ type Service struct {
 	repository      Repository
 	subjectResolver SubjectResolver
 	notifier        ContextPublisher
+	principalCache  PrincipalCacheInvalidator
 }
 
 type ContextPublisher interface {
 	PublishContextEvent(ctx context.Context, tenantID string, resource string, action string, resourceID string, savedAt time.Time)
+}
+
+// PrincipalCacheInvalidator derruba Principals cacheados quando permissao muda.
+// Definida aqui para nao importar httpapi (mesma razao do auth.PrincipalCacheStore).
+type PrincipalCacheInvalidator interface {
+	InvalidateUser(userID string)
+	InvalidateAll()
 }
 
 func NewService(repository Repository, subjectResolver SubjectResolver) *Service {
@@ -27,6 +35,12 @@ func NewService(repository Repository, subjectResolver SubjectResolver) *Service
 
 func (service *Service) SetContextPublisher(notifier ContextPublisher) {
 	service.notifier = notifier
+}
+
+// SetPrincipalCacheInvalidator liga a invalidacao do PrincipalCache (AC-01) quando
+// a matriz de papel ou overrides de usuario mudam. nil = cache desligado (no-op).
+func (service *Service) SetPrincipalCacheInvalidator(cache PrincipalCacheInvalidator) {
+	service.principalCache = cache
 }
 
 func (service *Service) ResolveUserPermissions(ctx context.Context, userID string, role auth.Role) ([]string, error) {
@@ -84,6 +98,12 @@ func (service *Service) UpdateRolePermissions(ctx context.Context, principal aut
 		return RoleMatrixEntry{}, err
 	}
 
+	// AC-01: matriz v1 e por papel-coarse e o cache nao indexa por papel; invalida
+	// tudo (operacao administrativa rara, custo = 1 rajada de queries no repovoamento).
+	if service.principalCache != nil {
+		service.principalCache.InvalidateAll()
+	}
+
 	service.publishRoleMatrixUpdate(ctx, role)
 
 	for _, definition := range auth.RoleCatalog() {
@@ -138,6 +158,11 @@ func (service *Service) UpdateUserOverrides(ctx context.Context, principal auth.
 
 	if _, err := service.repository.ReplaceUserOverrides(ctx, subject.UserID, normalizedOverrides, principal.UserID); err != nil {
 		return UserAccessView{}, err
+	}
+
+	// AC-01: overrides mudam as permissoes efetivas do usuario cacheadas no Principal.
+	if service.principalCache != nil {
+		service.principalCache.InvalidateUser(subject.UserID)
 	}
 
 	service.publishContextEvent(ctx, subject.TenantID, "user-overrides-updated", subject.UserID)

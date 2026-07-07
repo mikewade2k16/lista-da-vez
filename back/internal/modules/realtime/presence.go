@@ -405,6 +405,11 @@ func presenceEventForTopic(topic string, eventType string, user PresenceUser) Ev
 		event.BoardID = strings.TrimPrefix(topic, "presence:board:")
 	case strings.HasPrefix(topic, "presence:task:"):
 		event.TaskID = strings.TrimPrefix(topic, "presence:task:")
+	case strings.HasPrefix(topic, "presence:calendar:"):
+		// Presenca do calendario e escopada por conta (topico presence:calendar:{accountId}).
+		// Sem este case os broadcasts (join/left/field_locked) caiam no default e eram
+		// descartados por publishPresenceEvent (Type vazio) — avatares/badge nunca ao vivo.
+		event.AccountID = strings.TrimPrefix(topic, "presence:calendar:")
 	default:
 		return Event{}
 	}

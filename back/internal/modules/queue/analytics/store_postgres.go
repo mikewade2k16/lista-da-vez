@@ -23,8 +23,8 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	}
 }
 
-func (repository *PostgresRepository) LoadSnapshot(ctx context.Context, storeID string) (operations.SnapshotState, error) {
-	return repository.operations.LoadSnapshot(ctx, storeID)
+func (repository *PostgresRepository) LoadSnapshotWithHistorySince(ctx context.Context, storeID string, historySinceMillis int64) (operations.SnapshotState, error) {
+	return repository.operations.LoadSnapshotWithHistorySince(ctx, storeID, historySinceMillis)
 }
 
 func (repository *PostgresRepository) ListRoster(ctx context.Context, storeID string) ([]operations.ConsultantProfile, error) {

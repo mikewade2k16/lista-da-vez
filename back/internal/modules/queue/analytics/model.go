@@ -21,7 +21,7 @@ type StoreSettings struct {
 }
 
 type Repository interface {
-	LoadSnapshot(ctx context.Context, storeID string) (operations.SnapshotState, error)
+	LoadSnapshotWithHistorySince(ctx context.Context, storeID string, historySinceMillis int64) (operations.SnapshotState, error)
 	ListRoster(ctx context.Context, storeID string) ([]operations.ConsultantProfile, error)
 	LoadSettings(ctx context.Context, storeID string) (StoreSettings, error)
 }

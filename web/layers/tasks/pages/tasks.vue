@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { provide } from 'vue'
+import { onMounted, provide } from 'vue'
 import { defineLazyComponent } from '~/utils/lazy-component'
 import AdminPageHeader from '../../core/components/admin/AdminPageHeader.vue'
 import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
@@ -25,6 +25,20 @@ definePageMeta({
 
 const context = useTasksPageContext()
 provide(TASKS_PAGE_CONTEXT_KEY, context)
+
+// WAVE 5 (E6): deep-link do calendario para um card — /tasks?board=<id>&task=<id>. Abre o
+// editor da task assim que ela carrega e limpa o query (refresh nao reabre).
+const route = useRoute()
+const router = useRouter()
+onMounted(() => {
+  const taskId = String(route.query.task || '')
+  if (!taskId) return
+  context.openTaskById(String(route.query.board || ''), taskId)
+  const query = { ...route.query }
+  delete query.task
+  delete query.board
+  void router.replace({ query })
+})
 
 const {
   pageBootstrapping,

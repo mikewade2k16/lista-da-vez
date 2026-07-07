@@ -5,15 +5,45 @@ import CalendarMediaViewer from '~/components/calendar/CalendarMediaViewer.vue'
 import { getApiBase } from '~/utils/api-client'
 import { resolveMediaUrl } from '~/utils/media'
 import { formatBytes, type CalendarMediaItem } from '~/utils/calendar'
+// Select customizado do Tasks (mesmo componente do board) — dropdown com busca + largura de conteúdo.
+import OmniSelectMenuInput from '../../../layers/tasks/components/inputs/OmniSelectMenuInput.vue'
 
 const props = withDefaults(
   defineProps<{
     modelValue: CalendarMediaItem[]
     readonly?: boolean
     label?: string
+    // WAVE 6 (W6-4): itens (eventos) do dia para vincular cada anexo. value=eventId,
+    // label=titulo, clientId=cliente do evento (HERDADO pelo anexo). Vazio = sem seletor
+    // (ex.: midia do evento, que ja e' do proprio evento).
+    items?: { value: string; label: string; clientId?: string }[]
   }>(),
-  { readonly: false, label: 'Anexos' },
+  { readonly: false, label: 'Anexos', items: () => [] },
 )
+
+// Mostra o seletor de item (evento) por anexo so quando ha itens do dia.
+const showItemPicker = computed(() => !props.readonly && props.items.length > 0)
+
+// Largura MINIMA da coluna do grid (%). auto-fit + minmax(--min, 1fr) faz os itens ESTICAREM para
+// preencher a linha inteira (imagens+selects maiores). Anexos do dia (com seletor): 45% => 2 por
+// linha (o select cabe o nome do evento). Midia do post (read-only, compacto): 30% => ~3 por linha.
+const gridMin = computed(() => (showItemPicker.value ? '45%' : '30%'))
+
+function itemLabel(eventId: string | undefined): string {
+  if (!eventId) return ''
+  return props.items.find((i) => i.value === eventId)?.label || ''
+}
+
+// Vincula (ou desvincula) o anexo a um evento/item do dia; o anexo HERDA o cliente do evento.
+function setItemEvent(id: string, eventId: string): void {
+  const chosen = props.items.find((i) => i.value === eventId)
+  emit(
+    'update:modelValue',
+    props.modelValue.map((m) =>
+      m.id === id ? { ...m, eventId, clientId: eventId ? chosen?.clientId || '' : m.clientId } : m,
+    ),
+  )
+}
 
 const emit = defineEmits<{ 'update:modelValue': [value: CalendarMediaItem[]] }>()
 
@@ -122,6 +152,7 @@ async function handleFile(file: File): Promise<void> {
     error.value = uploadFailMessage(file.name, failCode, failStatus)
     return
   }
+  // O anexo entra sem item; o usuario escolhe o evento na barrinha da miniatura (W6-4).
   emit('update:modelValue', [...props.modelValue, item])
 }
 
@@ -134,53 +165,78 @@ function remove(id: string): void {
 </script>
 
 <template>
-  <div class="calendar-media">
+  <div class="calendar-media" :class="{ 'calendar-media--withpicker': showItemPicker }">
     <span v-if="label" class="calendar-media__label">{{ label }}</span>
 
-    <div class="calendar-media__grid">
-      <div
-        v-for="(item, idx) in modelValue"
-        :key="item.id"
-        class="calendar-media__item calendar-media__item--clickable"
-        role="button"
-        tabindex="0"
-        :title="`${item.name} · ${formatBytes(item.sizeBytes)}`"
-        :aria-label="`Abrir ${item.name}`"
-        @click="openViewer(idx)"
-        @keydown.enter.prevent="openViewer(idx)"
-        @keydown.space.prevent="openViewer(idx)"
-      >
-        <img
-          v-if="item.type === 'image'"
-          :src="srcOf(item.url)"
-          :alt="item.name"
-          class="calendar-media__thumb"
-        />
-        <img
-          v-else-if="item.posterUrl"
-          :src="srcOf(item.posterUrl)"
-          :alt="item.name"
-          class="calendar-media__thumb"
-        />
-        <video
-          v-else
-          :src="srcOf(item.url)"
-          class="calendar-media__thumb"
-          preload="metadata"
-          muted
-        ></video>
-        <span v-if="item.type === 'video'" class="calendar-media__badge">
-          <UIcon name="i-lucide-play" aria-hidden="true" />
-        </span>
-        <button
-          v-if="!readonly"
-          type="button"
-          class="calendar-media__remove"
-          aria-label="Remover anexo"
-          @click.stop="remove(item.id)"
+    <div class="calendar-media__grid" :style="{ '--min': gridMin }">
+      <div v-for="(item, idx) in modelValue" :key="item.id" class="calendar-media__cell">
+        <div
+          class="calendar-media__item calendar-media__item--clickable"
+          role="button"
+          tabindex="0"
+          :title="`${item.name} · ${formatBytes(item.sizeBytes)}`"
+          :aria-label="`Abrir ${item.name}`"
+          @click="openViewer(idx)"
+          @keydown.enter.prevent="openViewer(idx)"
+          @keydown.space.prevent="openViewer(idx)"
         >
-          <UIcon name="i-lucide-x" aria-hidden="true" />
-        </button>
+          <img
+            v-if="item.type === 'image'"
+            :src="srcOf(item.url)"
+            :alt="item.name"
+            class="calendar-media__thumb"
+          />
+          <img
+            v-else-if="item.posterUrl"
+            :src="srcOf(item.posterUrl)"
+            :alt="item.name"
+            class="calendar-media__thumb"
+          />
+          <video
+            v-else
+            :src="srcOf(item.url)"
+            class="calendar-media__thumb"
+            preload="metadata"
+            muted
+          ></video>
+          <span v-if="item.type === 'video'" class="calendar-media__badge">
+            <UIcon name="i-lucide-play" aria-hidden="true" />
+          </span>
+          <button
+            v-if="!readonly"
+            type="button"
+            class="calendar-media__remove"
+            aria-label="Remover anexo"
+            @click.stop="remove(item.id)"
+          >
+            <UIcon name="i-lucide-x" aria-hidden="true" />
+          </button>
+        </div>
+
+        <!-- WAVE 6 (W6-4): a que ITEM/evento do dia o anexo pertence. Dropdown legivel ABAIXO da
+             miniatura (antes era uma barrinha sobreposta e cortada). Escolher herda o cliente do evento. -->
+        <OmniSelectMenuInput
+          v-if="showItemPicker"
+          class="calendar-media__pick"
+          :model-value="item.eventId || null"
+          :items="items"
+          placeholder="Sem item"
+          :searchable="items.length > 6"
+          :full-content-width="true"
+          item-display-mode="text"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          :clear="true"
+          @update:model-value="(v: unknown) => setItemEvent(item.id, v ? String(v) : '')"
+        />
+        <span
+          v-else-if="item.eventId && itemLabel(item.eventId)"
+          class="calendar-media__pick-tag"
+          :title="itemLabel(item.eventId)"
+        >
+          {{ itemLabel(item.eventId) }}
+        </span>
       </div>
 
       <div
@@ -238,3 +294,5 @@ function remove(id: string): void {
     />
   </div>
 </template>
+
+<!-- estilos do uploader (grid/cell/pick) ficam em ~/assets/styles/calendar/media.css (fonte unica) -->

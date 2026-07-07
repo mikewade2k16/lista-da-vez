@@ -10,6 +10,8 @@ import { useTasksRealtime, type TasksRealtimeEvent } from './useTasksRealtime'
 import { useTaskRelations } from './useTaskRelations'
 import { useTaskComments } from './useTaskComments'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
+// Taxonomia de conteudo compartilhada com o Calendario (WAVE 6): mesmos TIPOS nos dois modulos.
+import { CONTENT_TYPES } from '~/utils/content-taxonomy'
 import { sanitizeTaskContentHtml } from '../utils/content'
 import { compactUserLabel } from '../utils/user-label'
 import { clampText as sharedClampText, normalizeText as sharedNormalizeText } from '../utils/text'
@@ -42,6 +44,7 @@ import type {
   TaskPriority,
   TaskProjectItem,
   TaskVideoItem,
+  TaskCalendarMediaItem,
 } from '../types/tasks'
 
 export const TASKS_PAGE_CONTEXT_KEY: InjectionKey<TasksPageContext> = Symbol('tasksPageContext')
@@ -373,17 +376,12 @@ export function useTasksPageContext() {
   const projectOptions = computed(() =>
     tasksWorkspace.projects.value.map((p) => ({ label: p.name, value: p.id })),
   )
-  // Marcador de mock visivel SO para platform_admin (regra AGENT_RULES: legado/mock sinalizado no
-  // front). Enquanto o cliente nao for criado em core.accounts e linkado, a option ganha
-  // description "MOCK" (renderizada no dropdown) e a label da modal mostra badge.
   const isPlatformAdmin = computed(() => String(auth.role || '') === 'platform_admin')
+  // Clientes reais de core.accounts (/v1/tenants); sem marcador de mock (WAVE 6: mock removido).
   const clientOptions = computed(() =>
     tasksClient.clientOptions.map((c) => ({
       label: c.label,
       value: c.value,
-      ...(isPlatformAdmin.value && tasksClient.isMockClient(c.value)
-        ? { description: 'MOCK' }
-        : {}),
     })),
   )
   const currentUserName = computed(
@@ -651,17 +649,28 @@ export function useTasksPageContext() {
     ])
   })
   const typeOptions = computed<OmniSelectOption[]>(() => {
+    // Lidera com a taxonomia COMPARTILHADA (mesmos tipos do calendario: post/story/reels/...).
+    const shared: OmniSelectOption[] = CONTENT_TYPES.map((t, index) => ({
+      label: t.label,
+      value: t.value,
+      color: selectOptionColor(t.value, index),
+    }))
     const project = activeProject.value
-    if (!project) return []
-    const values = uniqueValues([
+    if (!project) return shared
+    // Tipos LEGADOS (fora da taxonomia) ainda aparecem para nao sumir de tasks antigas.
+    const sharedValues = new Set(CONTENT_TYPES.map((t) => t.value))
+    const legacy = uniqueValues([
       ...project.types,
       ...tasksWorkspace.tasks.value.filter((t) => t.projectId === project.id).map((t) => t.type),
-    ])
-    return values.map((v, index) => ({
-      label: v,
-      value: v,
-      color: selectOptionColor(v, index + 4),
-    }))
+    ]).filter((v) => v && !sharedValues.has(v))
+    return [
+      ...shared,
+      ...legacy.map((v, index) => ({
+        label: v,
+        value: v,
+        color: selectOptionColor(v, index + 10),
+      })),
+    ]
   })
   // Re-bind do helper puro (impl. canonica em `utils/select-display.ts`).
   function initialsFor(value: unknown) {
@@ -1238,6 +1247,52 @@ export function useTasksPageContext() {
     nextTick(() => {
       taskDraftHydrating.value = false
     })
+  }
+
+  // mergeExternalTaskChanges (WAVE 6 — fix espelho modal<->card): quando o draft esta SUJO (o
+  // usuario editou algo e o autosave ainda nao rodou), em vez de bloquear TODO o sync do store,
+  // adota as mudancas EXTERNAS (ex.: o sync do calendario setou o cliente, ou outro usuario
+  // editou) SO nos campos que o usuario NAO tocou — preservando os que ele esta editando. Assim
+  // o modal reflete o card na hora, sem perder o rascunho. Os campos adotados vem do servidor,
+  // entao o autosave que ja ia rodar so os re-grava idempotente.
+  function mergeExternalTaskChanges(task: TaskItem): void {
+    let saved: Record<string, unknown>
+    try {
+      saved = JSON.parse(lastSavedTaskDraftSignature.value || '{}') as Record<string, unknown>
+    } catch {
+      return
+    }
+    const draftRecord = taskDraft as unknown as Record<string, unknown>
+    const taskRecord = task as unknown as Record<string, unknown>
+    // TODOS os campos comuns tem que espelhar (nao so titulo/cliente): status, prioridade,
+    // responsavel, tipo, prazo tambem. Campos escalares aqui; `involved` (array) logo abaixo.
+    const fields = [
+      'title',
+      'status',
+      'responsible',
+      'clientId',
+      'clientName',
+      'type',
+      'priority',
+      'dueDate',
+      'dueEndDate',
+    ] as const
+    for (const field of fields) {
+      const current = String(draftRecord[field] ?? '')
+      const savedValue = String(saved[field] ?? '')
+      const incoming = taskRecord[field]
+      // So adota quando o usuario NAO tocou o campo (draft == ultimo salvo) e o servidor mudou.
+      if (current === savedValue && String(incoming ?? '') !== current) {
+        draftRecord[field] = incoming
+      }
+    }
+    // Envolvidos (array): adota se o usuario nao mexeu na lista.
+    const draftInvolved = JSON.stringify(taskDraft.involved || [])
+    const savedInvolved = JSON.stringify(Array.isArray(saved.involved) ? saved.involved : [])
+    const incomingInvolved = JSON.stringify(task.involved || [])
+    if (draftInvolved === savedInvolved && incomingInvolved !== draftInvolved) {
+      taskDraft.involved = [...(task.involved || [])]
+    }
   }
 
   function resetTaskDraft() {
@@ -2221,6 +2276,39 @@ export function useTasksPageContext() {
     if (payload.action === 'delete') deleteTask(task)
   }
 
+  // WAVE 5 (E6): deep-link para um card especifico (o calendario linka ?task=&board=). Como as
+  // tasks carregam async — e trocar de board recarrega a lista — guardamos o id pendente e
+  // abrimos o editor assim que a task aparece na lista. Best-effort: id inexistente / sem
+  // permissao = no-op silencioso.
+  const pendingDeepLinkTaskId = ref('')
+  function tryOpenPendingDeepLinkTask() {
+    const id = pendingDeepLinkTaskId.value
+    if (!id) return
+    const task = tasksWorkspace.tasks.value.find((t) => t.id === id)
+    if (task) {
+      pendingDeepLinkTaskId.value = ''
+      openTaskEditor(task)
+    }
+  }
+  function openTaskById(boardId?: string | null, taskId?: string | null) {
+    const id = normalizeText(taskId, 120)
+    if (!id) return
+    pendingDeepLinkTaskId.value = id
+    const board = normalizeText(boardId, 120)
+    if (
+      board &&
+      tasksWorkspace.activeProjectId.value !== board &&
+      tasksWorkspace.projects.value.some((p) => p.id === board)
+    ) {
+      tasksWorkspace.setActiveProject(board) // recarrega as tasks do board alvo
+    }
+    tryOpenPendingDeepLinkTask()
+  }
+  watch(
+    () => tasksWorkspace.tasks.value,
+    () => tryOpenPendingDeepLinkTask(),
+  )
+
   // setTaskEditorMode segue exposto: o RoadmapModulesBoard abre a task em modo
   // 'center'. O resize e o toggle de fullscreen do modal vivem no OmniEntityDrawer
   // (template-core); o modo/largura sao espelhados aqui via v-model.
@@ -2716,6 +2804,12 @@ export function useTasksPageContext() {
     { flush: 'sync' },
   )
 
+  // WAVE 6 (cruzamento A): midia do evento vinculado, espelhada read-only na task. Fonte unica no
+  // store (calendarMedia da TaskItem, populada pelo sync do backend). Nao entra no draft (nao editavel).
+  const taskCalendarMedia = computed<TaskCalendarMediaItem[]>(
+    () => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id)?.calendarMedia || [],
+  )
+
   watch(
     () => tasksWorkspace.tasks.value.find((task) => task.id === taskDraft.id),
     (task) => {
@@ -2731,7 +2825,10 @@ export function useTasksPageContext() {
         taskDraftSignature() !== lastSavedTaskDraftSignature.value ||
         taskVideoSignature(taskVideoDrafts.value) !== lastSavedTaskVideoSignature.value
       ) {
-        // A refresh do store nao pode sobrescrever o draft local antes do autosave.
+        // Draft SUJO: NAO bloqueia todo o sync (WAVE 6 — espelho modal<->card). Faz o MERGE
+        // dos campos que o usuario NAO tocou (ex.: o cliente setado pelo sync do calendario),
+        // preservando os que ele esta editando. Sem isso, o card atualizava e o modal nao.
+        mergeExternalTaskChanges(task)
         return
       }
       if (
@@ -2782,9 +2879,22 @@ export function useTasksPageContext() {
     },
   )
 
+  // Refetch de SEGURANCA ao voltar pra aba/pagina do board (espelho do calendario). O WS so
+  // entrega enquanto o board esta aberto; se um EVENTO do calendario foi editado e o
+  // evento-espelho sincronizou a task no back enquanto o board estava fora de foco, voltar
+  // ao board refaz o fetch e mostra o estado fresco SEM recarregar.
+  function refetchTasksOnReturn() {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    if (pageBootstrapping.value || !auth.isAuthenticated) return
+    void tasksWorkspace.refresh().catch(() => undefined)
+  }
+
   onMounted(async () => {
-    if (import.meta.client)
+    if (import.meta.client) {
       document.addEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
+      document.addEventListener('visibilitychange', refetchTasksOnReturn)
+      window.addEventListener('focus', refetchTasksOnReturn)
+    }
     try {
       await pageLoading.withLoading('Carregando tasks...', async () => {
         tasksClient.initialize()
@@ -2816,8 +2926,11 @@ export function useTasksPageContext() {
     clearTaskCardTitleAutosaveTimer()
     clearTasksRealtimeRefreshTimer()
     clearTaskVideoDrafts()
-    if (import.meta.client)
+    if (import.meta.client) {
       document.removeEventListener('pointerdown', onTaskEditorDocumentPointerDown, true)
+      document.removeEventListener('visibilitychange', refetchTasksOnReturn)
+      window.removeEventListener('focus', refetchTasksOnReturn)
+    }
   })
 
   return {
@@ -2939,7 +3052,6 @@ export function useTasksPageContext() {
     toPriority,
     columnColorClass,
     clientLabel,
-    isMockClient: tasksClient.isMockClient,
     taskSort,
     fieldLabel,
     fieldSwitchValue,
@@ -2947,6 +3059,7 @@ export function useTasksPageContext() {
     hydrateProjectDraft,
     resetTaskDraft,
     openTaskEditor,
+    openTaskById,
     closeTaskEditor,
     taskDraftTitleValue,
     updateTaskDraftTitle,
@@ -2973,6 +3086,7 @@ export function useTasksPageContext() {
     onTaskVideoInput,
     onTaskVideoDrop,
     removeTaskVideoDraft,
+    taskCalendarMedia,
     onCreateProject,
     saveProjectSettings,
     deleteProject,

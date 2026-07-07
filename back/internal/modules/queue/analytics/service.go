@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"strings"
+	"time"
 
 	accesscontrol "github.com/mikewade2k16/lista-da-vez/back/internal/modules/access"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
@@ -43,7 +44,7 @@ func (service *Service) Ranking(ctx context.Context, principal auth.Principal, s
 		return RankingResponse{}, ErrForbidden
 	}
 
-	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID)
+	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID, historySinceMillis(dateFrom, time.Now().In(analyticsLocation)))
 	if err != nil {
 		return RankingResponse{}, err
 	}
@@ -64,7 +65,7 @@ func (service *Service) Data(ctx context.Context, principal auth.Principal, stor
 		return DataResponse{}, ErrForbidden
 	}
 
-	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID)
+	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID, historySinceMillis("", time.Now().In(analyticsLocation)))
 	if err != nil {
 		return DataResponse{}, err
 	}
@@ -90,7 +91,7 @@ func (service *Service) Intelligence(ctx context.Context, principal auth.Princip
 		return IntelligenceResponse{}, ErrForbidden
 	}
 
-	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID)
+	scope, bundles, err := service.loadBundles(ctx, principal, storeID, tenantID, historySinceMillis("", time.Now().In(analyticsLocation)))
 	if err != nil {
 		return IntelligenceResponse{}, err
 	}
@@ -122,7 +123,7 @@ func canViewIntelligence(principal auth.Principal) bool {
 	return principal.Role == auth.RolePlatformAdmin || principal.Role == auth.RoleOwner || principal.Role == auth.RoleStoreTerminal
 }
 
-func (service *Service) loadBundles(ctx context.Context, principal auth.Principal, storeID string, tenantID string) (analyticsScope, []bundle, error) {
+func (service *Service) loadBundles(ctx context.Context, principal auth.Principal, storeID string, tenantID string, historySinceMillis int64) (analyticsScope, []bundle, error) {
 	normalizedStoreID := strings.TrimSpace(storeID)
 	if normalizedStoreID != "" {
 		store, err := service.storeFinder.FindAccessible(ctx, principal, normalizedStoreID)
@@ -130,7 +131,7 @@ func (service *Service) loadBundles(ctx context.Context, principal auth.Principa
 			return analyticsScope{}, nil, err
 		}
 
-		storeBundle, err := service.loadStoreBundle(ctx, store)
+		storeBundle, err := service.loadStoreBundle(ctx, store, historySinceMillis)
 		if err != nil {
 			return analyticsScope{}, nil, err
 		}
@@ -155,7 +156,7 @@ func (service *Service) loadBundles(ctx context.Context, principal auth.Principa
 
 	bundles := make([]bundle, 0, len(storeRows))
 	for _, store := range storeRows {
-		storeBundle, loadErr := service.loadStoreBundle(ctx, store)
+		storeBundle, loadErr := service.loadStoreBundle(ctx, store, historySinceMillis)
 		if loadErr != nil {
 			return analyticsScope{}, nil, loadErr
 		}
@@ -168,8 +169,8 @@ func (service *Service) loadBundles(ctx context.Context, principal auth.Principa
 	}, bundles, nil
 }
 
-func (service *Service) loadStoreBundle(ctx context.Context, store stores.StoreView) (bundle, error) {
-	snapshot, err := service.repository.LoadSnapshot(ctx, store.ID)
+func (service *Service) loadStoreBundle(ctx context.Context, store stores.StoreView, historySinceMillis int64) (bundle, error) {
+	snapshot, err := service.repository.LoadSnapshotWithHistorySince(ctx, store.ID, historySinceMillis)
 	if err != nil {
 		return bundle{}, err
 	}

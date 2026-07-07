@@ -201,6 +201,24 @@ func (repository *PostgresRepository) AddRelation(ctx context.Context, accountID
 	return relation, err
 }
 
+func (repository *PostgresRepository) RemoveRelation(ctx context.Context, accountID, taskID, module, resourceType, resourceID string) (bool, error) {
+	sql, args := repository.scopedQuery(accountID, `
+		delete from tasks.task_relations r
+		using tasks.tasks t
+		where r.task_id = t.id
+		  and t.account_id = $1::uuid
+		  and r.task_id = $2::uuid
+		  and r.module = $3
+		  and r.resource_type = $4
+		  and r.resource_id = $5
+	`, taskID, module, resourceType, resourceID)
+	tag, err := repository.pool.Exec(ctx, sql, args...)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func scanComment(scan func(...any) error) (Comment, error) {
 	var comment Comment
 	err := scan(&comment.ID, &comment.TaskID, &comment.AuthorUserID, &comment.BodyHTML, &comment.CreatedAt, &comment.UpdatedAt, &comment.DeletedAt)

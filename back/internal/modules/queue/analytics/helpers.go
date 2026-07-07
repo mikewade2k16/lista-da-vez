@@ -19,6 +19,20 @@ var analyticsLocation = func() *time.Location {
 	return location
 }()
 
+const defaultHistoryWindowDays = 90
+
+// historySinceMillis define a janela de carga do historico: 90 dias por
+// default; se o dateFrom explicito for mais antigo que a janela, respeita-o
+// (o ranking com range antigo nao pode perder dados). O Go so agrega, entao
+// carregar todo o historico da loja a cada request era o gargalo.
+func historySinceMillis(dateFrom string, now time.Time) int64 {
+	windowStart := now.AddDate(0, 0, -defaultHistoryWindowDays)
+	if parsed, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(dateFrom), analyticsLocation); err == nil && parsed.Before(windowStart) {
+		return parsed.UnixMilli()
+	}
+	return windowStart.UnixMilli()
+}
+
 func isCompleteEntry(entry operations.ServiceHistoryEntry) bool {
 	hasCustomer := hasText(entry.CustomerName) || hasText(entry.CustomerPhone)
 	hasProduct := len(entry.ProductsSeen) > 0 || hasText(entry.ProductSeen) || hasText(entry.ProductDetails) || entry.ProductsSeenNone

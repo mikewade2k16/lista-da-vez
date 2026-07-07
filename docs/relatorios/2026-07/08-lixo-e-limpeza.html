@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 08 · Lixo & limpeza · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 08 — Lixo & limpeza</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./07-design-geral.html">← 07 Design geral</a>
+      <a href="./09-vps.html">09 VPS →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="arquivos">Arquivos & diretórios</button>
+      <button data-tab="docs">Docs obsoletos</button>
+      <button data-tab="plano">Plano de limpeza sugerido</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ===================== VISÃO GERAL ===================== -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">Inventário do que ocupa espaço no working tree local, do que está versionado sem uso e dos documentos que já cumpriram seu papel. O objetivo é dar ao dono do projeto uma decisão informada — não uma faxina automática.</p>
+
+  <div class="note" style="border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.08);color:#fde68a;font-size:14px">
+    ⚠️ <b>Relatório consultivo — NENHUM arquivo foi excluído, movido ou alterado.</b> Cada item traz justificativa e risco para decisão do dono do projeto. Os comandos da aba "Plano de limpeza sugerido" estão prontos, mas <b>não foram executados</b>.
+  </div>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">2,10GB</div><div class="l">working tree local (83.918 arquivos)</div></div>
+    <div class="stat"><div class="n green">~1,0GB</div><div class="l">recuperável em disco sem tocar no git</div></div>
+    <div class="stat"><div class="n ind">~1,5MB</div><div class="l">órfãos versionados (pix-*.html + 3 PNGs)</div></div>
+    <div class="stat"><div class="n">12,63MB</div><div class="l">tamanho do .git — repo versionado enxuto</div></div>
+  </div>
+
+  <div class="verdict"><b>Veredito:</b> o repositório versionado é saudável e pequeno — <b>~99% do peso do working tree é dependência ou artefato local corretamente ignorado pelo git</b> (node_modules, dumps, caches de teste, fonte de referência). O "lixo" real no git são ~1,5MB de arquivos órfãos na raiz. O maior risco não é espaço: é um <b>dump real de banco (245,35MB) e tokens/secret.key parados em <code>tmp/</code></b> (AC-03) e um diretório de 493,3MB que mistura insumo ativo com arquivo morto (AC-18).</div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>A descoberta central</h3>
+      <p style="font-size:13.5px;color:#cdd6e8;margin:0 0 10px">O briefing inicial sugeria um repo "pesado". A medição mostrou outra coisa: o <b>.git inteiro tem 12,63MB</b> — o que pesa 2,10GB é o working tree local, dominado por conteúdo que o <code>.gitignore</code> já exclui corretamente. Ou seja: a higiene de versionamento está boa; o que falta é higiene de <i>disco</i> e sinalização do que é histórico.</p>
+      <div class="flow">
+        <div class="flowrow">
+          <div class="node"><b>Working tree 2,10GB</b><span class="m">83.918 arquivos no disco</span></div>
+          <div class="arrow">→</div>
+          <div class="node acc"><b>~99% local/ignorado</b><span class="m">node_modules, dumps, caches, referência</span></div>
+          <div class="arrow">→</div>
+          <div class="node"><b>.git 12,63MB</b><span class="m">só ~1,5MB de órfãos versionados</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Nota da área</h3>
+      <div class="gauge"><div class="ring" style="--p:70"><b>7,0</b></div><div style="font-size:13px;color:#cdd6e8">Repo versionado limpo e <code>.gitignore</code> funcionando descontam pouco; o que pesa contra é o dump real + segredos em <code>tmp/</code>, a mistura insumo/arquivo-morto em <code>erp-source-local/</code> e docs concluídos sem sinalização de histórico.</div></div>
+      <ul class="clean" style="margin-top:12px">
+        <li><span class="dot g"></span>Versionamento enxuto: .git de 12,63MB para um produto com 20 módulos Go + SPA Nuxt.</li>
+        <li><span class="dot y"></span>~1,0GB de artefatos locais acumulados (web-reference, tmp, caches de teste).</li>
+        <li><span class="dot r"></span>Dump de dados reais + tokens em disco (AC-03) — decisão pendente do dono.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Diretórios de 1º nível por tamanho medido</h3>
+    <table>
+      <tr><th>Diretório</th><th style="width:110px">Tamanho</th><th>Natureza</th><th style="width:32%">Proporção (barra relativa ao maior)</th></tr>
+      <tr><td><code>erp-source-local/</code></td><td>493,3MB</td><td>Dados ERP locais — <b>parte é insumo ativo</b> do bootstrap (AC-18)</td><td><div class="barwrap"><div class="bar" style="width:100%;background:var(--orange)"></div></div></td></tr>
+      <tr><td><code>web/</code></td><td>471,7MB</td><td>App ativo — quase tudo <code>node_modules</code> (necessário)</td><td><div class="barwrap"><div class="bar" style="width:96%;background:var(--acc)"></div></div></td></tr>
+      <tr><td><code>web-reference/</code></td><td>414,1MB</td><td>Front legado inativo — 98,6% é <code>node_modules</code></td><td><div class="barwrap"><div class="bar" style="width:84%;background:var(--yellow)"></div></div></td></tr>
+      <tr><td><code>meta-ads-assistant/</code></td><td>258,7MB</td><td>Runner ativo do assistente Meta Ads</td><td><div class="barwrap"><div class="bar" style="width:52%;background:var(--acc)"></div></div></td></tr>
+      <tr><td><code>tmp/</code></td><td>254,2MB</td><td>Dump real pré-rename + segredos de teste (AC-03)</td><td><div class="barwrap"><div class="bar" style="width:52%;background:var(--red)"></div></div></td></tr>
+      <tr><td><code>qa-bot/</code></td><td>116,2MB</td><td>Bot de QA — código ativo + caches/artefatos de teste</td><td><div class="barwrap"><div class="bar" style="width:24%;background:var(--yellow)"></div></div></td></tr>
+      <tr><td><code>.playwright-mcp/</code></td><td>109,7MB</td><td>Artefatos locais do MCP Playwright (regeneráveis)</td><td><div class="barwrap"><div class="bar" style="width:22%;background:var(--yellow)"></div></div></td></tr>
+      <tr><td><code>back/</code></td><td>25,5MB</td><td>Backend Go inteiro — 485 arquivos, 93.657 linhas</td><td><div class="barwrap"><div class="bar" style="width:5%;background:var(--green)"></div></div></td></tr>
+      <tr><td><code>docs/</code></td><td>1,8MB</td><td>107 .md com 20.058 linhas — maioria ativa</td><td><div class="barwrap"><div class="bar" style="width:1%;background:var(--green)"></div></div></td></tr>
+    </table>
+    <p style="font-size:12px;color:var(--muted);margin:10px 0 0">Leitura rápida: o backend inteiro (25,5MB) é menor do que qualquer cache local da lista. Laranja = precisa de triagem antes de excluir; vermelho = contém dados reais; amarelo = regenerável/inativo; azul = ativo e necessário.</p>
+  </div>
+
+  <div class="note">💡 <b>Metodologia:</b> tamanhos medidos no disco em 2026-07-02 nesta sessão de auditoria; status de versionamento conferido contra o <code>.gitignore</code> e o índice do git; referências cruzadas por busca de conteúdo no repo inteiro. Nenhum número desta página vem de estimativa — onde não houve medição, está escrito "não medido".</div>
+</section>
+
+<!-- ===================== ARQUIVOS & DIRETÓRIOS ===================== -->
+<section id="arquivos" class="tab">
+  <h2 class="section">Arquivos & diretórios</h2>
+  <p class="lead">Triagem item a item: o que é, quanto pesa, se está versionado, o risco de excluir e a recomendação. Nada aqui foi tocado — a coluna "Recomendação" aponta para a onda correspondente no plano de limpeza.</p>
+
+  <div class="card">
+    <h3>Tabela de triagem completa</h3>
+    <table>
+      <tr><th>Item</th><th>Tamanho medido</th><th>Versionado?</th><th>Justificativa</th><th>Risco de excluir</th><th>Recomendação</th></tr>
+      <tr>
+        <td><code>back;C</code> (raiz)</td>
+        <td>0 bytes — <b>vazio</b></td>
+        <td>Não (untracked)</td>
+        <td>Resíduo de comando mal-escapado de 2026-05-21. O briefing inicial estimava 22MB; a medição provou que o diretório está <b>vazio</b> (0 entradas).</td>
+        <td><span class="pill ok">nenhum</span></td>
+        <td><code>rmdir</code> seguro — Onda 1</td>
+      </tr>
+      <tr>
+        <td><code>web-reference/node_modules</code></td>
+        <td>408,41MB</td>
+        <td>Não (<code>.gitignore:33</code>)</td>
+        <td>Dependências do front de referência inativo; 100% regenerável por <code>npm install</code> se algum dia for preciso.</td>
+        <td><span class="pill ok">nenhum</span></td>
+        <td>Excluir — Onda 1</td>
+      </tr>
+      <tr>
+        <td><code>web-reference/</code> (completo)</td>
+        <td>414,11MB (35.877 arquivos)</td>
+        <td>Não (<code>.gitignore:33</code>)</td>
+        <td>Front legado inativo. As 21 referências no repo (11 em docs, 10 em arquivos de <code>web/</code>) são <b>apenas comentários de proveniência</b> — remover não quebra nenhum build.</td>
+        <td><span class="pill p2">baixo</span> — perde-se a fonte de consulta histórica</td>
+        <td>Conservador: só <code>node_modules</code> (Onda 1). Completo: tudo, após ok do dono (Onda 3)</td>
+      </tr>
+      <tr>
+        <td><code>tmp/</code></td>
+        <td>254,18MB</td>
+        <td>Não (<code>.gitignore:42</code>)</td>
+        <td>Contém <code>omni-rename-20260521_200120/lista-da-vez-before-omni.dump</code> (<b>245,35MB — pg_dump REAL pré-rename de 2026-05-21</b>), mais <code>task-video-smoke.mp4</code> 5,49MB, <code>omni-before-restore.dump</code> 1,08MB, <code>tasks_dump.sql</code> 0,99MB, <code>tasks_dump_filtered.sql</code> 0,44MB, <code>tasks-import/</code> ~0,8MB e <b>segredos de teste</b>: <code>token.txt</code>, <code>runtime_token*.txt</code>, <code>full_token.txt</code>, <code>secret.key</code>.</td>
+        <td><span class="pill p0">alto até confirmar</span> — o dump é backup de dados reais</td>
+        <td><b>AC-03</b>: excluir SÓ após o dono confirmar que o dump pré-rename não é mais necessário — Onda 2</td>
+      </tr>
+      <tr>
+        <td><code>erp-source-local/</code></td>
+        <td>493,3MB</td>
+        <td>Não (local)</td>
+        <td>Maior diretório do working tree. <b>ATENÇÃO: não é só arquivo morto</b> — com <code>ERP_SOURCE_KIND=local</code>, o subdiretório <code>consolidados/</code> é <b>insumo ATIVO</b> do bootstrap do ERP (o CMD da imagem da API roda <code>migrate bootstrap-erp-store</code>).</td>
+        <td><span class="pill p0">alto se excluir junto o insumo</span></td>
+        <td><b>AC-18</b>: NÃO excluir em bloco; separar insumo ativo de arquivo morto antes — Onda 3</td>
+      </tr>
+      <tr>
+        <td><code>.playwright-mcp/</code></td>
+        <td>109,7MB</td>
+        <td>Não (local)</td>
+        <td>Artefatos de sessões de teste do MCP Playwright (screenshots, traces). Regenerável em qualquer nova sessão.</td>
+        <td><span class="pill ok">nenhum</span></td>
+        <td>Limpar — Onda 1</td>
+      </tr>
+      <tr>
+        <td><code>qa-bot/</code> (caches)</td>
+        <td>116,2MB (diretório total)</td>
+        <td>Parcial — código versionado, artefatos não</td>
+        <td>O diretório mistura o código do bot de QA (ativo — inclusive <code>perf_audit.py</code> usado na auditoria de performance) com caches e artefatos de execução locais.</td>
+        <td><span class="pill p2">baixo</span> — só limpar artefatos, nunca o código</td>
+        <td>Limpar apenas artefatos/caches gerados — Onda 1</td>
+      </tr>
+      <tr>
+        <td><code>pix-fixo.html</code> + <code>pix-mvp.html</code> (raiz)</td>
+        <td>13,22KB + 10,97KB</td>
+        <td><b>SIM (tracked)</b></td>
+        <td><b>AC-17</b>: último commit 2026-06-30, <b>zero referências</b> em todo o repo. Parecem specs/protótipos de PIX que ficaram na raiz.</td>
+        <td><span class="pill p2">baixo</span> — o histórico do git preserva o conteúdo</td>
+        <td>Decisão do dono: excluir do git OU mover para <code>docs/</code> se a spec PIX ainda vale — Onda 2</td>
+      </tr>
+      <tr>
+        <td>3 PNGs na raiz</td>
+        <td>mostarda.png 990,77KB · themes-smoke.png 348,87KB · bi-page.png 155,11KB (~1,46MB)</td>
+        <td><b>SIM (tracked)</b></td>
+        <td><b>AC-17</b>: screenshots de smoke/teste (2026-06-22 e 2026-05-23) com <b>zero referências</b> — são ~1,46MB de imagem órfã inflando todo clone do repo.</td>
+        <td><span class="pill ok">nenhum funcional</span></td>
+        <td>Excluir do git — Onda 2</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Os dois itens que exigem cautela</h3>
+      <div class="layer gap"><div class="num">!</div><div class="txt"><b>tmp/ — AC-03 <span class="pill p0">P0</span></b> — não é lixo comum: 245,35MB são um backup real do banco pré-rename, e há tokens e <code>secret.key</code> em texto no disco. Excluir sem confirmar = perder um backup; manter para sempre = dados reais e segredos esquecidos numa pasta temporária. Ver também <b>06-segurança</b>, que trata o ângulo de exposição de segredos.</div></div>
+      <div class="layer gap"><div class="num">!</div><div class="txt"><b>erp-source-local/ — AC-18 <span class="pill p2">P2</span></b> — o reflexo de "apagar o maior diretório" quebraria o bootstrap do ERP: <code>ERP_SOURCE_KIND=local</code> consome <code>consolidados/</code> como insumo ativo. A limpeza aqui é de triagem (separar o que o bootstrap usa do que é histórico), não de exclusão.</div></div>
+    </div>
+    <div class="card">
+      <h3>O que é seguro hoje, sem depender de ninguém</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><code>back;C</code> — vazio, untracked, resíduo de shell. Zero risco.</li>
+        <li><span class="dot g"></span><code>web-reference/node_modules</code> — 408,41MB regeneráveis de um projeto inativo.</li>
+        <li><span class="dot g"></span><code>.playwright-mcp/</code> — 109,7MB de artefatos de teste regeneráveis.</li>
+        <li><span class="dot y"></span>Caches do <code>qa-bot/</code> — seguro, desde que se preserve o código do bot.</li>
+      </ul>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Somando os itens seguros + <code>tmp/</code> (após confirmação), chega-se ao <b>~1,0GB recuperável</b> citado na visão geral (AC-20) — tudo sem nenhum <code>git rm</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== DOCS OBSOLETOS ===================== -->
+<section id="docs" class="tab">
+  <h2 class="section">Docs obsoletos</h2>
+  <p class="lead">A documentação do Omni é grande (107 arquivos .md, 20.058 linhas) e, na maioria, ativa e de boa qualidade. O problema não é volume — é a falta de sinalização do que já é histórico. Abaixo, os candidatos a arquivamento/exclusão, com data da última modificação no git.</p>
+
+  <div class="card">
+    <h3>Candidatos, doc a doc</h3>
+    <table>
+      <tr><th>Documento</th><th>Última modificação (git)</th><th>Linhas</th><th>Status proposto</th><th>Justificativa</th></tr>
+      <tr><td><code>docs/historico/todo-alertas.md</code></td><td>2026-05-18</td><td>862</td><td><span class="pill ok">ok manter</span> ou excluir</td><td>TODO da feature de alertas, concluída — já está corretamente em <code>historico/</code>; manter custa 0, excluir também é legítimo.</td></tr>
+      <tr><td><code>docs/historico/todo-settings.md</code></td><td>2026-05-18</td><td>600</td><td><span class="pill ok">ok manter</span> ou excluir</td><td>Mesma situação: feature concluída, doc já arquivado no lugar certo.</td></tr>
+      <tr><td><code>docs/historico/todo-reuniao.md</code></td><td>2026-05-18</td><td>239</td><td><span class="pill ok">ok manter</span> ou excluir</td><td>Notas de reunião antigas, já em <code>historico/</code>.</td></tr>
+      <tr><td><code>docs/historico/dev-compose-perfis.md</code></td><td>2026-05-18</td><td>59</td><td>excluir ou manter arquivado</td><td>Superseded por <code>DEPLOY_VPS.md</code> — conteúdo coberto pelo doc atual.</td></tr>
+      <tr><td><code>docs/historico/deploy-main-vps-auto.md</code></td><td>2026-05-23</td><td>43</td><td>excluir ou manter arquivado</td><td>Superseded — o fluxo de deploy atual é outro (GHCR + workflow manual).</td></tr>
+      <tr><td><code>docs/COMPONENT_INVENTORY_AUTO.md</code></td><td>2026-05-23</td><td>191</td><td><span class="pill p1">excluir</span></td><td>Auto-gerado e desatualizado; existe o <code>COMPONENT_INVENTORY.md</code> manual ao lado. Dois inventários = fonte dupla de verdade.</td></tr>
+      <tr><td><code>docs/agents/CODEX.md</code></td><td>2026-05-23</td><td>243</td><td>confirmar com o dono</td><td>Instruções para um agente que aparentemente não é mais usado no fluxo atual — confirmar antes de excluir.</td></tr>
+      <tr><td><code>docs/agents/COPILOT.md</code></td><td>2026-05-23</td><td>400</td><td>confirmar com o dono</td><td>Mesma situação do CODEX.md; se os agentes saíram do fluxo, os dois docs saem juntos.</td></tr>
+      <tr><td><code>docs/adr/0001-rename-omni.md</code></td><td>2026-05-23</td><td>47</td><td><span class="pill ok">MANTER</span></td><td>ADRs são histórico <b>por design</b> — registram decisões de arquitetura e nunca devem ser "limpos".</td></tr>
+      <tr><td><code>docs/codex/</code> (6 arquivos)</td><td>2026-06-08</td><td>—</td><td>arquivar em <code>historico/</code></td><td>Specs de sprints concluídos (DEPLOY_P0, ITEM23_QUEUE_STORES, UMU_U2/U3/U4a/U4b) — cumpriram o papel; lugar deles é o histórico.</td></tr>
+    </table>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Leitura honesta do acervo</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>107 .md / 20.058 linhas: a maioria é <b>ativa</b> — planos canônicos (MULTITENANT_COMPLETION_PLAN, CALENDARIO_PLAN), AGENT.md por módulo (31 no back), guias de deploy.</li>
+        <li><span class="dot g"></span>Já existe a convenção certa: <code>docs/historico/</code> para o que acabou e <code>docs/adr/</code> para decisões — metade do trabalho é só usá-la com consistência.</li>
+        <li><span class="dot y"></span>O que falta é o gesto de <b>mover na hora que o sprint fecha</b> (caso <code>docs/codex/</code>: concluído em 2026-06-08 e ainda na raiz de docs/).</li>
+        <li><span class="dot y"></span>Duplicidade pontual: inventário de componentes auto × manual convivendo.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Critério sugerido para o futuro</h3>
+      <div class="layer"><div class="num">1</div><div class="txt"><b>Plano ativo</b> — fica na raiz de <code>docs/</code> enquanto guia trabalho em andamento.</div></div>
+      <div class="layer"><div class="num">2</div><div class="txt"><b>Concluído</b> — move para <code>docs/historico/</code> no mesmo PR que fecha a última fase.</div></div>
+      <div class="layer"><div class="num">3</div><div class="txt"><b>Decisão</b> — vira ADR em <code>docs/adr/</code> e nunca sai de lá.</div></div>
+      <div class="layer"><div class="num">4</div><div class="txt"><b>Auto-gerado</b> — ou tem gerador rodando e data no cabeçalho, ou não existe (caso do INVENTORY_AUTO).</div></div>
+    </div>
+  </div>
+
+  <div class="note">💡 As datas acima são as de última modificação no git. "Obsoleto" aqui significa "não guia mais nenhum trabalho ativo" — não é juízo sobre a qualidade do conteúdo, que em geral é boa.</div>
+</section>
+
+<!-- ===================== PLANO DE LIMPEZA ===================== -->
+<section id="plano" class="tab">
+  <h2 class="section">Plano de limpeza sugerido</h2>
+  <p class="lead">Checklist em 3 ondas, da menor para a maior necessidade de decisão humana. <b>Nenhum destes comandos foi executado</b> — estão prontos para o dono do projeto rodar manualmente (PowerShell para disco, git para versionados).</p>
+
+  <div class="card">
+    <h3>Onda 1 — sem risco (executável hoje, ~520MB recuperados)</h3>
+    <ul class="clean">
+      <li><span class="dot g"></span><b>Remover o resíduo <code>back;C</code></b> (vazio, untracked):<br><code>Remove-Item -LiteralPath '.\back;C'</code></li>
+      <li><span class="dot g"></span><b>Apagar <code>node_modules</code> do front de referência inativo</b> (408,41MB regeneráveis):<br><code>Remove-Item -Recurse -Force .\web-reference\node_modules</code></li>
+      <li><span class="dot g"></span><b>Limpar artefatos do MCP Playwright</b> (109,7MB):<br><code>Remove-Item -Recurse -Force .\.playwright-mcp\*</code></li>
+      <li><span class="dot g"></span><b>Limpar caches/artefatos gerados do qa-bot</b> — preservando o código do bot (inclusive <code>perf_audit.py</code>): revisar o conteúdo de <code>qa-bot/</code> e remover apenas saídas de execução (screenshots, relatórios, caches).</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Onda 2 — com confirmação do dono (~254MB + ~1,5MB no git)</h3>
+    <ul class="clean">
+      <li><span class="dot y"></span><b>Validar e então excluir <code>tmp/</code></b> (AC-03, 254,18MB): confirmar que <code>omni-rename-20260521_200120/lista-da-vez-before-omni.dump</code> (245,35MB, backup real pré-rename de 2026-05-21) não é mais necessário — o rename foi concluído e o banco atual está íntegro? Só então:<br><code>Remove-Item -Recurse -Force .\tmp</code><br>Se preferir manter o dump, mover para fora do repo e apagar ao menos os segredos: <code>Remove-Item .\tmp\token.txt, .\tmp\full_token.txt, .\tmp\secret.key; Remove-Item .\tmp\runtime_token*.txt</code></li>
+      <li><span class="dot y"></span><b>Decidir os órfãos versionados</b> (AC-17): se a spec PIX ainda vale, mover: <code>git mv pix-fixo.html pix-mvp.html docs/</code>; se não, excluir junto com os PNGs:<br><code>git rm pix-fixo.html pix-mvp.html mostarda.png themes-smoke.png bi-page.png</code><br>(o histórico do git preserva tudo; ~1,46MB deixam de inflar cada clone)</li>
+    </ul>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Onda 3 — organizacional (triagem, não exclusão)</h3>
+    <ul class="clean">
+      <li><span class="dot b"></span><b>Arquivar docs concluídos</b>: <code>git mv docs/codex docs/historico/codex</code> e <code>git rm docs/COMPONENT_INVENTORY_AUTO.md</code> (existe o manual).</li>
+      <li><span class="dot b"></span><b>Confirmar <code>docs/agents/CODEX.md</code> e <code>COPILOT.md</code></b> com o dono: se os agentes saíram do fluxo, <code>git mv docs/agents/CODEX.md docs/agents/COPILOT.md docs/historico/</code>. ADRs ficam onde estão.</li>
+      <li><span class="dot b"></span><b>Triar <code>erp-source-local/</code></b> (AC-18, 493,3MB): listar o que <code>ERP_SOURCE_KIND=local</code> realmente consome (<code>consolidados/</code> é insumo ativo do <code>migrate bootstrap-erp-store</code>) e mover o restante para armazenamento fora do repo. <b>Nunca excluir em bloco.</b></li>
+      <li><span class="dot b"></span><b>Decidir o destino final de <code>web-reference/</code></b> (o que sobrou após a Onda 1): os fronts ativos são <code>web/</code>, TAVOLA e crow-nuxt; a referência pode ser zipada para fora do repo ou removida.</li>
+    </ul>
+  </div>
+
+  <div class="note">📌 <b>Regra permanente:</b> quando um novo artefato local surgir (dump, cache de ferramenta, saída de teste), adicionar a entrada correspondente no <code>.gitignore</code> na mesma hora — foi exatamente isso que manteve o .git em 12,63MB até aqui. E reforçando: <b>nada desta página foi executado</b>; os comandos são sugestão para execução manual do dono do projeto.</div>
+
+  <h2 class="section" style="margin-top:34px">Mini-backlog da área</h2>
+  <p class="lead">Esta página não tem a aba "Oportunidades" tradicional — o plano acima é a entrega. Ficam registrados três itens rastreáveis.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+    <details class="item" data-p="p0">
+      <summary><span class="id">AC-03</span><span class="ttl">tmp/ local com dump real de banco (245MB) e tokens/secret.key em disco</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>tmp/</code> guarda um pg_dump real de 245,35MB (pré-rename, 2026-05-21) e segredos de teste (<code>token.txt</code>, <code>runtime_token*.txt</code>, <code>full_token.txt</code>, <code>secret.key</code>) — dados reais e credenciais esquecidos numa pasta "temporária". É advisory: a decisão é do dono, porque o dump é um backup.</p>
+        <p><b>Evidência:</b> <code>tmp/omni-rename-20260521_200120/lista-da-vez-before-omni.dump</code> — 245,35MB dos 254,18MB do diretório; gitignored em <code>.gitignore:42</code>. Achado canônico da série (P0) — ver também <b>06-segurança</b>.</p>
+        <p><b>Ação recomendada:</b> confirmar que o dump pré-rename não é mais necessário e excluir (Onda 2); se mantiver, mover para fora do repo e apagar os arquivos de token/secret imediatamente. Nunca automatizar sem confirmação.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p1">
+      <summary><span class="id">LX-01</span><span class="ttl">Executar a Onda 1 de limpeza (itens sem risco)</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> ~520MB de artefatos locais comprovadamente seguros de remover (diretório vazio <code>back;C</code>, <code>web-reference/node_modules</code> 408,41MB, <code>.playwright-mcp/</code> 109,7MB, caches do qa-bot) seguem ocupando disco e poluindo buscas/indexação do editor.</p>
+        <p><b>Evidência:</b> medições desta sessão; <code>web-reference</code> gitignored em <code>.gitignore:33</code> com 98,6% do peso em node_modules; as 21 referências a web-reference no repo são só comentários de proveniência. Relaciona-se ao canônico <b>AC-20</b> (P2, higiene local ~1GB).</p>
+        <p><b>Ação recomendada:</b> rodar os comandos da Onda 1 (aba "Plano de limpeza sugerido") — execução manual do dono; nenhum item exige backup prévio.</p>
+      </div>
+    </details>
+    <details class="item" data-p="p2">
+      <summary><span class="id">LX-03</span><span class="ttl">Política de artefatos locais e sinalização de histórico</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: baixo</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> não há regra escrita para o ciclo de vida de artefatos locais (dumps, caches, saídas de teste) nem para arquivar docs concluídos — por isso <code>tmp/</code> acumulou 254,18MB, <code>docs/codex/</code> ficou fora de <code>historico/</code> após o fim dos sprints e dois inventários de componentes convivem.</p>
+        <p><b>Evidência:</b> <code>docs/codex/</code> (6 arquivos, última modificação 2026-06-08) ainda na raiz de docs/; <code>docs/COMPONENT_INVENTORY_AUTO.md</code> (2026-05-23) duplicando o manual. Relaciona-se aos canônicos <b>AC-17</b> e <b>AC-18</b> (ambos P2, exclusivos desta página).</p>
+        <p><b>Ação recomendada:</b> registrar a regra em AGENT_RULES.md ou nos princípios de engenharia: novo artefato local → entrada no <code>.gitignore</code> na hora; sprint fechado → doc movido para <code>historico/</code> no mesmo PR; auto-gerado sem gerador ativo → excluído.</p>
+      </div>
+    </details>
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

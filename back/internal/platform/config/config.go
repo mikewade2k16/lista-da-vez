@@ -58,6 +58,7 @@ type Config struct {
 	PerolaBIPageLimit             int
 	PerolaBIMaxPages              int
 	DatabaseURL                   string
+	DatabaseAppURL                string
 	DatabaseMinConns              int
 	DatabaseMaxConns              int
 	CORSAllowedOrigins            []string
@@ -65,6 +66,7 @@ type Config struct {
 	AuthTokenTTL                  time.Duration
 	AuthInviteTTL                 time.Duration
 	AuthPasswordResetTTL          time.Duration
+	AuthPrincipalCacheTTL         time.Duration
 	SMTPHost                      string
 	SMTPPort                      int
 	SMTPUsername                  string
@@ -150,8 +152,9 @@ func Load() Config {
 			12*time.Second,
 		),
 		PerolaBIPageLimit: getEnvInt("PEROLA_BI_PAGE_LIMIT", 100),
-		PerolaBIMaxPages:  getEnvInt("PEROLA_BI_MAX_PAGES", 50),
+		PerolaBIMaxPages:  getEnvInt("PEROLA_BI_MAX_PAGES", 5),
 		DatabaseURL:       getEnv("DATABASE_URL", ""),
+		DatabaseAppURL:    getEnv("DATABASE_APP_URL", ""),
 		DatabaseMinConns:  getEnvInt("DATABASE_MIN_CONNS", 0),
 		DatabaseMaxConns:  getEnvInt("DATABASE_MAX_CONNS", 10),
 		CORSAllowedOrigins: getEnvCSV(
@@ -162,10 +165,12 @@ func Load() Config {
 				"http://[::1]:*",
 			},
 		),
-		AuthTokenSecret:           getEnv("AUTH_TOKEN_SECRET", "dev-secret-change-me"),
-		AuthTokenTTL:              getEnvDuration("AUTH_TOKEN_TTL", 12*time.Hour),
-		AuthInviteTTL:             getEnvDuration("AUTH_INVITE_TTL", 7*24*time.Hour),
-		AuthPasswordResetTTL:      getEnvDuration("AUTH_PASSWORD_RESET_TTL", 30*time.Minute),
+		AuthTokenSecret:      getEnv("AUTH_TOKEN_SECRET", "dev-secret-change-me"),
+		AuthTokenTTL:         getEnvDuration("AUTH_TOKEN_TTL", 12*time.Hour),
+		AuthInviteTTL:        getEnvDuration("AUTH_INVITE_TTL", 7*24*time.Hour),
+		AuthPasswordResetTTL: getEnvDuration("AUTH_PASSWORD_RESET_TTL", 30*time.Minute),
+		// AC-01: cache de Principal autenticado. 0s desliga (comportamento legado).
+		AuthPrincipalCacheTTL:     getEnvDuration("AUTH_PRINCIPAL_CACHE_TTL", 30*time.Second),
 		SMTPHost:                  getEnv("SMTP_HOST", ""),
 		SMTPPort:                  getEnvInt("SMTP_PORT", 587),
 		SMTPUsername:              getEnv("SMTP_USERNAME", ""),
@@ -201,6 +206,9 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.BcryptCost < productionMinBcrypt {
 		problems = append(problems, fmt.Sprintf("AUTH_BCRYPT_COST=%d é menor que o mínimo recomendado para produção (%d)", cfg.BcryptCost, productionMinBcrypt))
+	}
+	if strings.TrimSpace(cfg.DatabaseAppURL) == "" {
+		problems = append(problems, "DATABASE_APP_URL ausente (AC-04: a api deve conectar com a role least-privilege omni_app, nunca com o superuser)")
 	}
 
 	if len(problems) > 0 {

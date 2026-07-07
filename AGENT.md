@@ -11,11 +11,33 @@ O fluxo padrao do projeto agora e Docker-first.
 Suba a stack completa pela raiz com:
 
 ```bash
-npm run dev
+npm run dev        # docker compose up --build --watch
 ```
 
-O `web` roda em modo dev dentro do container, com bind mount e hot reload.
-Mudancas de layout, componentes e CSS devem refletir sem rebuild completo.
+O `web` roda em modo dev dentro do container SEM bind mount (2026-07-03): o
+codigo e copiado no build e o `docker compose watch` sincroniza as edicoes do
+host pra dentro (sync). Motivo: bind mount de caminho Windows atravessa a
+ponte 9P do WSL2 (~100x mais lento por arquivo) — boot e troca de pagina
+levavam minutos. Hot reload continua funcionando (inotify real, sem polling).
+
+REGRA DE OURO: desenvolva sempre com o watch LIGADO (`npm run dev`, ou
+`npm run dev:watch` se a stack ja estiver de pe). O watch NAO faz sync
+inicial: edicao feita com watch desligado so entra com rebuild
+(`docker compose up -d --build web` — e exatamente o que o dev:watch faz
+antes de ligar o watch).
+
+NOTA: os scripts `npm run dev*` da raiz sao SO ATALHOS para `docker compose`
+— nenhum Node/npm do app roda no host (o npm que serve o painel e o de dentro
+do container). Sem npm, os equivalentes diretos sao:
+
+```bash
+docker compose up --build --watch                                  # = npm run dev
+docker compose up -d --build web && docker compose watch --no-up web  # = npm run dev:watch
+```
+
+Dar "play" no container web pelo Docker Desktop sobe o painel para USO, mas
+NAO liga o watch — edicoes de codigo nao entram ate rodar um dos comandos
+acima num terminal (o watch nao existe na UI do Docker Desktop).
 
 Isso sobe:
 
@@ -25,8 +47,9 @@ Isso sobe:
 
 Comandos principais:
 
-- `npm run dev`
-- `npm run dev:detach`
+- `npm run dev` (stack completa + watch/sync do web)
+- `npm run dev:watch` (so reconcilia o web + liga o watch; stack ja de pe)
+- `npm run dev:detach` (sobe SEM watch — edicoes no web nao chegam!)
 - `npm run dev:build`
 - `npm run dev:logs`
 - `npm run dev:ps`

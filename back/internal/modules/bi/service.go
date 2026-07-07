@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	perolaAPIBase               = "https://api.perola.c10.srv.br/api/v1"
-	perolaLoginURL              = perolaAPIBase + "/sessoes"
-	defaultPerolaPageLimit      = 100
-	defaultPerolaMaxPages       = 50
+	perolaAPIBase          = "https://api.perola.c10.srv.br/api/v1"
+	perolaLoginURL         = perolaAPIBase + "/sessoes"
+	defaultPerolaPageLimit = 100
+	// teto de seguranca do fallback; datasets do overview fixam MaxPages:1
+	defaultPerolaMaxPages       = 5
 	defaultPerolaTokenTTL       = 50 * time.Minute
 	defaultPerolaRequestTimeout = 12 * time.Second
 	perolaOverviewConcurrency   = 8

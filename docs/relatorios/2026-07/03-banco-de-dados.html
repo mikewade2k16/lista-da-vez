@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 03 · Banco de dados · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 03 — Banco de dados</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./02-frontend.html">← 02 Frontend</a>
+      <a href="./04-infraestrutura.html">04 Infraestrutura →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">Visão geral</button>
+      <button data-tab="schemas">Schemas &amp; migrations</button>
+      <button data-tab="isolamento">Acesso &amp; isolamento</button>
+      <button data-tab="operacao">Operação</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ VISÃO GERAL ============ -->
+<section id="visao" class="tab active">
+  <h2 class="section">Visão geral</h2>
+  <p class="lead">Um PostgreSQL 16 único serve todos os domínios do Omni. O modelo de dados passou por uma migração longa de <code>public.*</code> legado para schemas por domínio com identidade centralizada em <code>core.*</code> — e essa migração terminou bem. O que sobrou de risco não está na modelagem: está em como o banco é acessado e operado.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">16</div><div class="l">PostgreSQL (alpine) — versão única, dev e prod</div></div>
+    <div class="stat"><div class="n ind">150</div><div class="l">migrations .sql (0001_init → 0186_calendar_ai_plans)</div></div>
+    <div class="stat"><div class="n green">243</div><div class="l">CREATE [UNIQUE] INDEX em 59 migrations</div></div>
+    <div class="stat"><div class="n">6</div><div class="l">schemas principais: core, public, queue, site, crm, calendar</div></div>
+  </div>
+
+  <div class="verdict"><b>Veredito:</b> a transição legado→core foi bem executada — backfills incrementais, FKs repontadas antes do drop e verificação de drift zero antes de remover o legado (migration <code>0136</code>). Mas o banco roda com dois riscos operacionais sérios: a aplicação conecta como <b>superuser</b> (AC-04 — sem RLS possível, sem least-privilege) e o <b>backup só existe on-demand no deploy</b> (AC-05 — sem cron, sem off-site, restore não testado). O esquema está maduro; a operação do banco, não.</div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>O que está sólido</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Indexação disciplinada</b> — 243 índices distribuídos em 59 migrations, incluindo índices dedicados recentes para consulta de ERP (<code>0180</code>, <code>0184</code>).</li>
+        <li><span class="dot g"></span><b>Queries 100% parametrizadas</b> — nenhuma concatenação de SQL encontrada no backend; <code>$1,$2</code> em tudo.</li>
+        <li><span class="dot g"></span><b>Migrator próprio, simples e transacional</b> — cada migration roda numa transação com rollback e tracking em <code>schema_migrations</code>.</li>
+        <li><span class="dot g"></span><b>Legado removido de verdade</b> — <code>0136</code> repontou as FKs de <code>public.tenants</code> para <code>core.accounts</code> e dropou views compat e tabela, com backup pré-drop.</li>
+        <li><span class="dot g"></span><b>Postgres protegido na borda</b> — no compose de produção não expõe porta no host e é um dos únicos serviços com healthcheck.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Onde mora o risco</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Superuser em runtime</b> — a app conecta como <code>omni</code> = SUPERUSER; qualquer bug tem poder total sobre o banco e RLS é impossível (AC-04).</li>
+        <li><span class="dot r"></span><b>Backup manual</b> — <code>pg_dump</code> só quando alguém deploya; sem agendamento, retenção ou cópia off-site (AC-05).</li>
+        <li><span class="dot y"></span><b>Isolamento multi-tenant só na aplicação</b> — um <code>WHERE</code> esquecido vaza dados entre contas sem rede de segurança no banco.</li>
+        <li><span class="dot y"></span><b>Listagens sem teto</b> — reports, analytics e BI trazem históricos completos ou até 5.000 registros num payload (AC-06).</li>
+        <li><span class="dot b"></span><b>Pool default de 10 conexões</b> por instância de API — suficiente hoje, precisa de conta na escala (AC-19).</li>
+        <li><span class="dot b"></span><b>Numeração de migrations confusa</b> — 4 números duplicados e buracos na sequência (AC-14); funciona, mas confunde.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Caminho de uma query</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node acc"><b>API Go</b><span class="m">pgx/v5 · queries parametrizadas</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>pgxpool</b><span class="m">min 0 / max 10 · idle 5min · lifetime 30min</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>PostgreSQL 16</b><span class="m">conexão como omni = SUPERUSER (AC-04)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>6 schemas</b><span class="m">core / public / queue / site / crm / calendar</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Nota da área</h3>
+      <div class="gauge"><div class="ring" style="--p:65"><b>6,5</b></div><div>Modelagem e migração legado→core acima da média para o estágio do produto; a nota é puxada para baixo pela operação: superuser, backup sem rotina e ausência de defesa em profundidade no isolamento.</div></div>
+    </div>
+    <div class="card">
+      <h3>Como ler este relatório</h3>
+      <ul class="clean">
+        <li><span class="dot b"></span><b>Schemas &amp; migrations</b> — o mapa do dado e como ele evolui.</li>
+        <li><span class="dot b"></span><b>Acesso &amp; isolamento</b> — a decisão sobre RLS e o que o modelo atual garante (e não garante).</li>
+        <li><span class="dot b"></span><b>Operação</b> — pool, backup, índices e boot.</li>
+        <li><span class="dot b"></span><b>Oportunidades</b> — backlog priorizado (P0/P1/P2).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">💡 Metodologia: fotografia do repositório local em 2026-07-02 (branch <code>refactor/multitenant-complete</code>). Números vêm de medições desta sessão sobre o código e as migrations; não houve acesso ao banco da VPS. Estado real de produção pode divergir.</div>
+</section>
+
+<!-- ============ SCHEMAS & MIGRATIONS ============ -->
+<section id="schemas" class="tab">
+  <h2 class="section">Schemas &amp; migrations</h2>
+  <p class="lead">O dado é organizado por domínio: identidade e RBAC vivem em <code>core.*</code>, a operação de fila em <code>queue.*</code>, e o <code>public</code> — que era o schema de tudo — foi esvaziado gradualmente até o drop final na <code>0136</code>.</p>
+
+  <div class="grid g3">
+    <div class="card">
+      <h3><code>core</code> — identidade nova</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0">Fonte única de usuários, contas (tenants), organizações, papéis, permissões e sessões. Tudo que é "quem é e o que pode" mora aqui desde os backfills 0125/0131/0133.</p>
+    </div>
+    <div class="card">
+      <h3><code>public</code> — legado encerrado</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0">O legado virou views compat sobre <code>core.*</code>/<code>queue.*</code> e, na <code>0136</code>, views e <code>public.tenants</code> foram removidas com FKs repontadas. Restam objetos ERP criados sem qualificação de schema (ver DB-02).</p>
+    </div>
+    <div class="card">
+      <h3><code>queue</code> — operação de fila</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0">Lojas, consultores, fila da vez, sessões de atendimento, histórico de serviços, metas, feedback e configurações de operação por tenant. É o maior domínio do produto.</p>
+    </div>
+    <div class="card">
+      <h3><code>site</code> — bio/site público</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0">Produtos, leads, eventos de tracking e fontes de webhook consumidos pelos fronts públicos (bio/crow-nuxt).</p>
+    </div>
+    <div class="card">
+      <h3><code>crm</code> — CRM/ERP</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0">Domínio de CRM e política comercial. A ingestão histórica do ERP via FTP (<code>erp_*_raw</code>, <code>erp_sync_*</code>, das migrations 0034/0058) foi criada sem prefixo de schema e vive no <code>public</code>.</p>
+    </div>
+    <div class="card">
+      <h3><code>calendar</code> — calendário + IA</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0">Domínio mais novo: <code>events</code>, <code>notes</code>, <code>config</code>, <code>day_media</code>, <code>client_profiles</code> e <code>ai_plans</code> (migrations 0181→0186, ainda em evolução nesta branch).</p>
+    </div>
+  </div>
+
+  <div class="note">Além dos 6 principais, as migrations declaram schemas auxiliares por domínio (<code>automation</code>, <code>bio</code>, <code>cardapio</code>, <code>meta_ads</code>, <code>notifications</code>, <code>roadmap</code>, <code>tasks</code>) — mesmo padrão: cada módulo do backend é dono do seu schema.</div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Principais tabelas de <code>core</code></h3>
+    <table>
+      <thead><tr><th>Tabela</th><th>Papel</th></tr></thead>
+      <tbody>
+        <tr><td><code>core.users</code> / <code>core.user_sessions</code></td><td>Usuários e sessões persistidas (revogação de JWT via <code>sid</code>).</td></tr>
+        <tr><td><code>core.accounts</code></td><td>A conta/tenant — substituiu <code>public.tenants</code> mantendo os mesmos ids (seed na 0101, drift zero verificado no drop).</td></tr>
+        <tr><td><code>core.organizations</code> / <code>core.organization_users</code></td><td>Organização = grupo de contas (rede/multi-loja); membership escopa o que cada usuário enxerga.</td></tr>
+        <tr><td><code>core.account_users</code></td><td>Vínculo usuário↔conta, base da validação do header <code>X-Account-Id</code>.</td></tr>
+        <tr><td><code>core.roles</code> / <code>core.role_permissions</code></td><td>Papéis clonados por conta a partir de templates; a autoridade real de autorização.</td></tr>
+        <tr><td><code>core.role_templates</code> / <code>core.role_template_permissions</code></td><td>Templates globais dos quais os papéis por conta são derivados.</td></tr>
+        <tr><td><code>core.permissions</code> / <code>core.user_permission_overrides</code></td><td>Catálogo de permissões e exceções por usuário.</td></tr>
+        <tr><td><code>core.modules</code> / <code>core.account_modules</code></td><td>Catálogo de módulos do produto e habilitação por conta (gating fail-closed).</td></tr>
+        <tr><td><code>core.user_module_settings</code> / <code>core.platform_settings</code></td><td>Config jsonb por usuário/módulo e configurações de plataforma.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>A linha do tempo da migração legado → core <span class="pill ok">bem executada</span></h3>
+    <div class="layer"><div class="num">1</div><div class="txt"><b>0101</b> — seed de <code>core.accounts</code> a partir de <code>public.tenants</code>, preservando os mesmos ids (convivência sem drift).</div></div>
+    <div class="layer"><div class="num">2</div><div class="txt"><b>0125</b> — backfill do RBAC Fase 3 (papéis por conta clonados de templates).</div></div>
+    <div class="layer"><div class="num">3</div><div class="txt"><b>0131 / 0133</b> — backfill de usuários e papéis legados para <code>core.*</code>; código Go passa a ler/gravar só no destino.</div></div>
+    <div class="layer"><div class="num">4</div><div class="txt"><b>0135</b> — drop das tabelas de papéis legadas.</div></div>
+    <div class="layer"><div class="num">5</div><div class="txt"><b>0136</b> — reponta as FKs de <code>public.tenants</code> → <code>core.accounts</code> e dropa as views compat (<code>users</code>, <code>stores</code>, <code>consultants</code>) e a tabela <code>public.tenants</code>, com backup <code>pg_dump -Fc</code> pré-drop e SQL idempotente.</div></div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Numeração das migrations <span class="pill p2">AC-14 · P2</span></h3>
+      <ul class="clean">
+        <li><span class="dot b"></span>150 arquivos de <code>0001_init.sql</code> a <code>0186_calendar_ai_plans.sql</code> — a numeração <b>não é contígua</b>: a faixa <code>0060–0099</code> não existe e a <code>0134</code> está ausente.</li>
+        <li><span class="dot y"></span><b>4 números duplicados</b>: <code>0019</code>, <code>0031</code>, <code>0039</code> e <code>0110</code> têm 2 arquivos cada (ex.: <code>0019_user_password_resets.sql</code> e <code>0019_workspace_access_matrix.sql</code>).</li>
+        <li><span class="dot b"></span>Existe uma <code>0015a_access_foundation_schema.sql</code> com sufixo alfabético — encaixada entre 0015 e 0016 pela ordenação lexicográfica.</li>
+        <li><span class="dot g"></span>Nada disso quebra: o migrator ordena e rastreia pelo <b>nome completo do arquivo</b>, não pelo número. Mas confunde leitura humana e dificulta saber "qual é a próxima".</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>O migrator próprio</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Embed FS</b> — os .sql são embutidos no binário (<code>//go:embed</code>, <code>migrator.go:15</code>); a imagem da API carrega suas próprias migrations.</li>
+        <li><span class="dot g"></span><b>Ordenação lexicográfica</b> (<code>migrator.go:54</code>) e <b>transação por migration</b> com rollback e registro em <code>schema_migrations</code> (<code>migrator.go:156-176</code>).</li>
+        <li><span class="dot g"></span><b>Flag <code>SkipDataSeeds</code></b> — lista fixa de seeds de dev que podem ser puladas em ambientes limpos.</li>
+        <li><span class="dot y"></span><b>Sem "down" — de propósito.</b> O migrator executa o arquivo .sql <b>inteiro</b>; quando se tentou o formato goose, o bloco <code>-- +goose Down</code> com DROP rodava junto com o Up — a migration criava e destruía o próprio objeto na mesma execução. A regra do projeto virou: SQL plano, idempotente, sem Down. Rollback = migration nova corrigindo pra frente.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ACESSO & ISOLAMENTO ============ -->
+<section id="isolamento" class="tab">
+  <h2 class="section">Acesso &amp; isolamento</h2>
+  <p class="lead">O Omni é multi-tenant num banco só. A pergunta central desta aba: o que impede a conta A de ler o dado da conta B? Hoje a resposta é "a aplicação, e só ela".</p>
+
+  <div class="card">
+    <h3>A decisão de 2026-06-29 — por que não há RLS <span class="pill p1">AC-04 · P1</span></h3>
+    <p style="font-size:13.5px;color:#cdd6e8">Row-Level Security chegou a ser implementada como fundação (interface <code>Querier</code> + middleware + migration + teste) e foi <b>removida por design</b>, por dois motivos verificados:</p>
+    <ul class="clean">
+      <li><span class="dot r"></span><b>A app conecta como superuser.</b> <code>omni</code> = <code>POSTGRES_USER</code> = SUPERUSER, e no Postgres superuser <b>ignora RLS por completo</b> — nem <code>FORCE ROW LEVEL SECURITY</code> se aplica. Toda policy seria um no-op silencioso: pareceria proteção, não protegeria nada.</li>
+      <li><span class="dot r"></span><b>Na época, <code>public.*</code> eram views</b> — e RLS não funciona em view. A policy teria que ir nas tabelas-base, que estavam no meio da migração para <code>core.*</code>/<code>queue.*</code>.</li>
+      <li><span class="dot b"></span>A migration foi removida e a fundação ficou <b>inerte</b> no código. O redesenho completo está em <code>docs/RLS_PLAN.md</code>, que trava qualquer nova tentativa no pré-requisito: role de app dedicada, sem SUPERUSER e sem BYPASSRLS.</li>
+    </ul>
+    <p style="font-size:13px;color:var(--muted)">Remover uma RLS que não funcionava foi a decisão certa — falsa sensação de isolamento é pior que isolamento assumidamente aplicativo. O problema em aberto não é "faltou RLS": é que a conexão superuser <b>impede</b> qualquer defesa em profundidade no banco.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Como o isolamento funciona hoje (100% aplicativo)</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node acc"><b>Request</b><span class="m">JWT + header X-Account-Id</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Auth/guards</b><span class="m">X-Account-Id validado contra membership em core.account_users</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Service</b><span class="m">resolveTenantScope define a conta ativa</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>Repo</b><span class="m">WHERE account_id / tenant_id em toda query</span></div>
+        <div class="arrow">→</div>
+        <div class="node warn"><b>Postgres</b><span class="m">nenhuma policy — confia 100% no WHERE</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>O que esse modelo garante</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Toda rota multi-tenant exige <code>X-Account-Id</code> validado contra o vínculo real do usuário — não dá pra "pedir" outra conta pelo header.</li>
+        <li><span class="dot g"></span>O escopo é resolvido no service e aplicado no repo — o padrão está estabelecido e é seguido pelos módulos existentes.</li>
+        <li><span class="dot g"></span>Queries 100% parametrizadas eliminam o vetor clássico de SQL injection para burlar o filtro.</li>
+        <li><span class="dot g"></span>Habilitação de módulo por conta (fail-closed) reduz a superfície: conta sem o módulo nem chega no dado.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>O que ele NÃO garante</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Um WHERE esquecido vaza.</b> Handler novo sem <code>resolveTenantScope</code>, ou query nova sem o filtro, devolve dado de todas as contas — e nada no banco segura. Não há rede embaixo.</li>
+        <li><span class="dot r"></span><b>Blast radius máximo.</b> Qualquer bug com acesso à conexão tem poder de superuser: DDL, DROP, leitura de qualquer schema.</li>
+        <li><span class="dot y"></span><b>Sem trilha de menor privilégio</b> — migrations, runtime e operação manual usam a mesma identidade onipotente; impossível auditar "quem podia o quê".</li>
+        <li><span class="dot y"></span>A garantia depende de <b>disciplina de code review</b> a cada rota nova — funciona com o time atual, não escala sozinha.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>O caminho para defesa em profundidade (ordem obrigatória)</h3>
+    <div class="layer gap"><div class="num">1</div><div class="txt"><b>Role não-superuser</b> — criar role de runtime sem SUPERUSER/BYPASSRLS, com GRANTs explícitos por schema, e apontar a <code>DATABASE_URL</code> pra ela; superuser fica só no <code>migrate</code>. É o AC-04 — sem isso, nada abaixo tem efeito. Risco próprio: GRANT incompleto = lockout da app.</div></div>
+    <div class="layer gap"><div class="num">2</div><div class="txt"><b>Migrations schema-qualificadas</b> — objetos criados sem prefixo caem no <code>search_path</code> (ex.: <code>erp_customer_raw</code> da <code>0034</code> vive no <code>public</code>); com role dedicada e GRANT por schema, migration não-qualificada vira bomba. Ver DB-02.</div></div>
+    <div class="layer gap"><div class="num">3</div><div class="txt"><b>RLS de verdade</b> — policies fail-closed por tabela tenant-scoped com GUC <code>app.account_id</code> setado por request (conexão via <code>Querier</code>), bypass auditável para platform_admin. Design pronto em <code>docs/RLS_PLAN.md</code>; a fundação inerte no código adianta parte do trabalho.</div></div>
+    <p style="font-size:12.5px;color:var(--muted);margin:8px 0 0">Critério de aceite do plano: remover o <code>resolveTenantScope</code> de um service de teste e a query <b>ainda assim</b> não devolver linha de outro tenant.</p>
+  </div>
+</section>
+
+<!-- ============ OPERAÇÃO ============ -->
+<section id="operacao" class="tab">
+  <h2 class="section">Operação</h2>
+  <p class="lead">Pool de conexões, backup, índices e o ciclo de vida do banco no deploy — a parte do banco que ninguém vê até o dia em que falta.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>Pool de conexões (pgxpool) <span class="pill p2">AC-19 · P2</span></h3>
+      <table>
+        <thead><tr><th>Parâmetro</th><th>Valor</th><th>Origem</th></tr></thead>
+        <tbody>
+          <tr><td>MinConns</td><td>0 (default pgxpool)</td><td><code>pool.go:24-25</code> — env <code>DATABASE_MIN_CONNS</code> só aplica se &gt; 0</td></tr>
+          <tr><td>MaxConns</td><td>10 (default)</td><td><code>pool.go:28-29</code> · <code>config.go:155-156</code></td></tr>
+          <tr><td>MaxConnIdleTime</td><td>5min</td><td><code>pool.go:32</code></td></tr>
+          <tr><td>MaxConnLifetime</td><td>30min</td><td><code>pool.go:33</code></td></tr>
+          <tr><td>HealthCheckPeriod</td><td>30s</td><td><code>pool.go:34</code></td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 0">A conta: cada instância da API abre no máximo <b>10 conexões</b>. Com 1 instância (cenário atual) isso é confortável — mas queries lentas sem LIMIT (AC-06) seguram conexão por mais tempo e encolhem o pool efetivo. Ao escalar horizontalmente, a regra é <code>max_conns × instâncias &lt; max_connections</code> do Postgres, ajustando via env. MinConns 0 significa cold start de conexão após idle — aceitável no perfil atual.</p>
+    </div>
+    <div class="card">
+      <h3>Backup: só quando alguém deploya <span class="pill p1">AC-05 · P1</span></h3>
+      <ul class="clean">
+        <li><span class="dot y"></span><code>deploy-ship.ps1:87</code> — <code>pg_dump | gzip</code> antes de subir imagem nova.</li>
+        <li><span class="dot y"></span><code>deploy-vps-incremental.ps1:204-217</code> — mesmo padrão no fluxo incremental legado.</li>
+        <li><span class="dot y"></span><code>deploy-vps.yml:131-145</code> — no GitHub Actions o backup é um <b>input opcional</b> (<code>backup_database</code>) do dispatch manual.</li>
+        <li><span class="dot r"></span>Dumps ficam em <code>/home/deploy/lista-atendimento/backups/</code> — <b>no mesmo disco da mesma VPS</b>. Nenhum cron/timer no repo, nenhuma cópia off-site, nenhuma política de retenção.</li>
+        <li><span class="dot r"></span><b>Restore nunca é ensaiado</b> — backup que nunca foi restaurado é uma hipótese, não um backup (DB-01).</li>
+      </ul>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 0">Tradução do risco: o RPO é "desde o último deploy" — dias ou semanas de dados de operação, CRM e pedidos. Um incidente de disco na VPS leva o banco <b>e</b> os backups juntos. Ver também os relatórios 04, 07 e 09.</p>
+    </div>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Índices <span class="pill ok">ponto forte</span></h3>
+      <p style="font-size:13.5px;color:#cdd6e8;margin:0 0 8px"><b>243</b> <code>CREATE [UNIQUE] INDEX</code> espalhados por <b>59</b> migrations — índice nasce junto com a feature, não como remendo depois do incidente de lentidão.</p>
+      <ul class="clean">
+        <li><span class="dot g"></span>Cobertura consistente das colunas de escopo (<code>tenant_id</code>/<code>account_id</code>) — pré-requisito que o próprio <code>RLS_PLAN.md</code> já valida para a futura policy.</li>
+        <li><span class="dot g"></span>Ajustes recentes orientados a consulta real: <code>0180_erp_customer_raw_identifier_idx</code> e <code>0184_erp_customer_raw_recency_idx</code> para o CRM 360.</li>
+        <li><span class="dot b"></span>Não medido nesta sessão: uso real dos índices (<code>pg_stat_user_indexes</code>) e índices mortos — vale uma passada quando houver acesso ao banco de produção.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Consultas sem teto — a ótica do banco <span class="pill p1">AC-06 · P1</span></h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Reports</b>: <code>listHistoryQuery</code> sem LIMIT/OFFSET (<code>queue/reports/store_postgres.go:39-150</code>) servindo <code>/v1/reports/*</code>.</li>
+        <li><span class="dot r"></span><b>Analytics</b>: <code>loadServiceHistory</code> carrega o histórico <b>completo</b> da loja (<code>queue/operations/store_postgres.go:565-617</code>).</li>
+        <li><span class="dot y"></span><b>BI</b>: <code>/v1/bi/perola/overview</code> devolve até <b>5.000</b> registros por dataset num payload único (<code>bi/service.go:23-24</code>).</li>
+      </ul>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 0">Para o banco isso significa result sets que crescem linearmente com a vida do tenant: mais memória por query, conexões do pool presas por mais tempo e latência que degrada em silêncio. A correção é SQL (LIMIT/cursor + agregação no banco), não cache. Ver também os relatórios 01 e 05.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Ciclo de vida no deploy</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Container api sobe</b><span class="m">imagem multi-stage Go → bookworm-slim</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>migrate up</b><span class="m">CMD roda migrations + bootstrap-erp-store antes do binário da API</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>API atende</b><span class="m">healthcheck /healthz + smoke test no deploy</span></div>
+      </div>
+    </div>
+    <ul class="clean" style="margin-top:10px">
+      <li><span class="dot g"></span>Migrations no boot garantem que imagem e schema andam juntos — e o CI roda <code>TestAllMigrationsApply</code> contra um Postgres 16 real como gate do build.</li>
+      <li><span class="dot g"></span>No compose de produção o Postgres não expõe porta no host e tem healthcheck; acesso só pela rede interna.</li>
+      <li><span class="dot y"></span>Migration falhou = container da API não sobe. Com SQL idempotente isso tem sido seguro, mas sem "down" o plano de reversão é sempre "migration nova pra frente" — mais um motivo para backup agendado (AC-05).</li>
+      <li><span class="dot y"></span>Higiene relacionada: existe um dump real pré-rename de <b>245,35MB</b> parado em <code>tmp/</code> local (AC-03 — tratado nos relatórios 06 e 08).</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ OPORTUNIDADES ============ -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog priorizado da área de banco. P0 = agir já · P1 = próximas semanas · P2 = quando escalar. Ids AC-* são os achados canônicos da série (mesma prioridade em todas as páginas); DB-* são achados locais desta página.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-04</span><span class="ttl">App conecta no Postgres como superuser</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a aplicação usa a identidade <code>omni</code> = <code>POSTGRES_USER</code> = SUPERUSER em runtime. Além do blast radius total de qualquer bug, isso torna RLS impossível (superuser ignora policies) — foi o motivo da remoção da RLS em 2026-06-29.</p>
+        <p><b>Evidência:</b> decisão RLS 2026-06-29; <code>docs/RLS_PLAN.md</code> exige role dedicada antes de qualquer RLS.</p>
+        <p><b>Ação recomendada:</b> criar role least-privilege (sem DDL, sem BYPASSRLS) para runtime com GRANTs por schema; superuser fica restrito ao <code>migrate</code>. Aparece também nos relatórios 06 e 07.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-05</span><span class="ttl">Backup de banco só on-demand no deploy; sem agendamento nem off-site</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o único <code>pg_dump</code> acontece acoplado a deploy (e no Actions é input opcional). Dumps ficam no mesmo disco da mesma VPS; sem cron, sem retenção, sem cópia externa. RPO = "desde o último deploy".</p>
+        <p><b>Evidência:</b> <code>deploy-ship.ps1:87</code>, <code>deploy-vps.yml:131-145</code>, <code>docs/DEPLOY_VPS.md:252</code>; nenhum cron/timer no repo.</p>
+        <p><b>Ação recomendada:</b> cron diário de <code>pg_dump</code> + política de retenção + cópia off-site (objeto S3-like); testar restore (ver DB-01). Aparece também nos relatórios 04, 07 e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-06</span><span class="ttl">Listagens sem paginação (reports, analytics, BI)</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> na ótica do banco, queries sem teto devolvem result sets que crescem com a vida do tenant: memória por query, conexões do pool (max 10) presas por mais tempo e latência degradando conforme o histórico acumula.</p>
+        <p><b>Evidência:</b> <code>queue/reports/store_postgres.go:39-150</code> sem LIMIT; <code>queue/operations/store_postgres.go:565-617</code> carrega histórico completo; BI até 5.000 registros por payload (<code>bi/service.go:23-24</code>).</p>
+        <p><b>Ação recomendada:</b> LIMIT/OFFSET ou cursor + agregação no SQL; teto por página. Aparece também nos relatórios 01 e 05.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">DB-01</span><span class="ttl">Testar restore do backup periodicamente (runbook)</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> mesmo quando o dump é gerado no deploy, nenhum restore é ensaiado — não se sabe se os dumps são íntegros, quanto tempo o restore leva, nem os passos exatos sob pressão. Backup não testado é uma hipótese, não uma garantia.</p>
+        <p><b>Evidência:</b> dumps gerados em <code>deploy-ship.ps1:87</code> e <code>deploy-vps.yml:131-145</code> ficam em <code>/home/deploy/lista-atendimento/backups/</code>; não existe script, doc ou job de restore de verificação no repo.</p>
+        <p><b>Ação recomendada:</b> runbook documentado (em <code>docs/deploy/</code>) com o procedimento de restore em container Postgres descartável + verificação de sanidade (contagem de contas/usuários), executado em cadência fixa (ex.: mensal) e após cada mudança de formato de dump. Complementa o AC-05: o cron gera, o runbook prova.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-19</span><span class="ttl">Pool Postgres MaxConns=10 default — dimensionar com a escala</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> 10 conexões por instância de API é o default silencioso (e MinConns 0 significa que env só aplica se &gt; 0). Suficiente para 1 instância hoje; vira gargalo com mais instâncias ou queries longas (AC-06) segurando o pool.</p>
+        <p><b>Evidência:</b> <code>pool.go:28-29</code>, <code>config.go:155-156</code>; min=0 (<code>pool.go:24-25</code>).</p>
+        <p><b>Ação recomendada:</b> subir via env conforme cenário, respeitando <code>max_conns × instâncias &lt; max_connections</code> do Postgres. Aparece também no relatório 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-14</span><span class="ttl">Migrations com 4 números duplicados e buracos na numeração</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: baixo</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> <code>0019</code>, <code>0031</code>, <code>0039</code> e <code>0110</code> têm 2 arquivos cada; a faixa <code>0060–0099</code> e a <code>0134</code> não existem; há uma <code>0015a</code> com sufixo. O migrator ordena por nome, então funciona — mas confunde leitura e abre espaço pra colisão futura.</p>
+        <p><b>Evidência:</b> listagem de <code>back/internal/platform/database/migrations/</code> (150 arquivos, 0001→0186); ordenação em <code>migrator.go:54</code>.</p>
+        <p><b>Ação recomendada:</b> documentar a convenção (número nunca reutilizado, buracos ok) e adicionar checagem de duplicata ao lint de migrations que já roda no pre-commit.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">DB-02</span><span class="ttl">Migrations sem qualificação de schema — objetos ERP caem no public</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> parte das migrations cria tabelas sem prefixo de schema, e o objeto cai onde o <code>search_path</code> apontar. Hoje é só inconsistência (as tabelas <code>erp_*</code> vivem no <code>public</code> em vez do domínio crm); no dia em que existir role não-superuser com GRANT por schema (AC-04), migration não-qualificada quebra ou concede acesso errado — <code>docs/RLS_PLAN.md</code> lista schema-qualificação como pré-requisito explícito.</p>
+        <p><b>Evidência:</b> <code>0034_erp_ftp_foundation.sql</code> e <code>0058_erp_raw_fidelity.sql</code> — <code>create table if not exists erp_customer_raw</code> (e demais <code>erp_*_raw</code>, <code>erp_sync_*</code>) sem <code>schema.</code>.</p>
+        <p><b>Ação recomendada:</b> regra no lint de migrations do pre-commit exigindo <code>schema.tabela</code> em CREATE/ALTER novos; migrar os objetos <code>erp_*</code> existentes para o schema do domínio numa migration planejada (com janela, pois envolve rename qualificado e código Go).</p>
+      </div>
+    </details>
+
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

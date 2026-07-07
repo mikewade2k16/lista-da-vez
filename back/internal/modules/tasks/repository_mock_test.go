@@ -41,6 +41,7 @@ type repositoryMock struct {
 	onAddShare              func(ctx context.Context, accountID string, input AddShareInput, sharedByUserID string) (Share, error)
 	onListRelations         func(ctx context.Context, access AccessContext, taskID string) ([]Relation, error)
 	onAddRelation           func(ctx context.Context, accountID string, input AddRelationInput) (Relation, error)
+	onRemoveRelation        func(ctx context.Context, accountID, taskID, module, resourceType, resourceID string) (bool, error)
 	onListAudit             func(ctx context.Context, accountID, taskID string) ([]AuditEntry, error)
 	auditEntries            []AuditEntry // captura passive das audit entries para verificacao
 	onInsertAuditEntry      func(ctx context.Context, entry AuditEntry) error
@@ -232,6 +233,13 @@ func (m *repositoryMock) AddRelation(ctx context.Context, accountID string, inpu
 		return m.onAddRelation(ctx, accountID, input)
 	}
 	return Relation{}, nil
+}
+
+func (m *repositoryMock) RemoveRelation(ctx context.Context, accountID, taskID, module, resourceType, resourceID string) (bool, error) {
+	if m.onRemoveRelation != nil {
+		return m.onRemoveRelation(ctx, accountID, taskID, module, resourceType, resourceID)
+	}
+	return false, nil
 }
 
 func (m *repositoryMock) ListAudit(ctx context.Context, accountID, taskID string) ([]AuditEntry, error) {

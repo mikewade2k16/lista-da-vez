@@ -12,6 +12,8 @@ import (
 type PrincipalCacheStore interface {
 	Get(sessionID string) (Principal, bool)
 	Set(sessionID, userID string, p Principal)
+	InvalidateSession(sessionID string)
+	InvalidateUser(userID string)
 }
 
 type Service struct {
@@ -117,7 +119,17 @@ func (service *Service) Logout(ctx context.Context, principal Principal) error {
 		return nil
 	}
 
-	return service.sessions.Revoke(ctx, principal.SessionID)
+	// Ordem importa: revoga no DB primeiro, depois invalida o cache — assim um miss
+	// concorrente que va ao banco ja le revoked_at preenchido (AC-01).
+	if err := service.sessions.Revoke(ctx, principal.SessionID); err != nil {
+		return err
+	}
+
+	if service.principalCache != nil {
+		service.principalCache.InvalidateSession(principal.SessionID)
+	}
+
+	return nil
 }
 
 func (service *Service) Authenticate(ctx context.Context, authorizationHeader string) (Principal, error) {
@@ -135,8 +147,8 @@ func (service *Service) AuthenticateToken(ctx context.Context, token string) (Pr
 		return Principal{}, err
 	}
 
-	// Cache hit: evitar DB se Principal ainda e valido (TTL 2min).
-	// Tokens legados (sem SessionID) ignoram o cache.
+	// Cache hit: evitar DB se Principal ainda e valido (TTL configuravel via
+	// AUTH_PRINCIPAL_CACHE_TTL, default 30s). Tokens legados (sem SessionID) ignoram o cache.
 	if principal.SessionID != "" && service.principalCache != nil {
 		if cached, ok := service.principalCache.Get(principal.SessionID); ok {
 			return cached, nil

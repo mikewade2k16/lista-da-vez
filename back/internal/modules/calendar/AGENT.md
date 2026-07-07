@@ -9,26 +9,232 @@ Front em `web/app/components/calendar/` + `web/app/stores/calendar.ts` (ver
 Segue o molde do modulo `bio`: `model.go` (tipos + views), `store_postgres.go`
 (pgxpool, schema `calendar.*`), `service.go` (regras + validacao + escopo),
 `http.go` (rotas `/v1/calendar/*` + handlers), `http_media.go` (anexos/upload),
-`media_storage.go` (disco), `holidays.go` (datas comemorativas), `module.go` (Registry).
+`media_storage.go` (disco), `media_normalize.go` (sanitizacao/escopo de `MediaItem` por conta),
+`holidays.go` (datas comemorativas), `module.go` (Registry).
+Perfil estrategico do cliente (Fase 4) em `profile.go` (tipos + service), `store_profile.go`
+(persistencia) e `http_profile.go` (`RegisterProfileRoutes`, chamado no `module.go`).
+Planos de IA (Fase 6) em `ai_plans.go` (tipos + service + `WithAI`), `ai_dispatch.go`
+(payload C5 + POST ao n8n em goroutine + log), `store_ai_plans.go` (CRUD + transicoes de
+status), `store_ai_context.go` (insumos do payload: nomes/perfis/feriados/nota sem N+1; `loadAccountNames`
+resolve nome SO de contas ja referenciadas por evento/perfil DESTA account — barra enumeracao
+cross-account de nomes por UUID arbitrario; tambem `ListEventsLean` = projecao lean de eventos
+para o contexto compartilhado das IAs) e
+`http_ai_plans.go` (`RegisterAIPlanRoutes`: painel autenticado + callback publico).
+Contexto compartilhado das IAs (C9, WAVE 2) em `runtime_context.go` (`BuildAIContext` = agregado
+account/client/month/holidays/monthNotes/events/plans, montado reusando `planContext` +
+`ListEventsLean` + `ListAIPlans`; a MESMA funcao alimenta o bloco `context` do chat C7, apenas
+sem o campo `account`) e `http_runtime.go` (`RegisterRuntimeRoutes`: `GET /v1/runtime/calendar/context`,
+sem JWT, autenticado por `AUTOMATION_RUNTIME_TOKEN` em comparacao constant-time).
+Integracao calendario<->tasks (C10, WAVE 2) em `task_link.go` (`WithTasksService` = Option do
+`New`; `WithTasks` encadeia o provider LAZY no Build; `createLinkedTask`/`unlinkTask`/`eventDueDate`)
+e `relations.go` (`NewRelationResolver` = interface `platformmodules.RelationResolver` do modulo,
+registrada no `NewRelationRegistry` do `app.go`; label "<date> - <title>", url `/calendario?date=`).
+O provider do modulo tasks entra via `calendar.New(storage, calendar.WithTasksService(func()
+*tasks.Service { return tasksModule.Service() }))` no `app.go` — closure LAZY, imune a ordem de
+Build. `createTask` NUNCA desfaz o evento: pre-condicao (sem `tasks.boardId` => 400
+`tasks_not_configured`, antes de gravar) e best-effort depois (falha vira `taskWarning` no 201).
+Integracao BIDIRECIONAL (WAVE 5) em `task_sync.go`: `taskSyncHandler` implementa
+`platformmodules.RelationSyncHandler` (registrado LAZY no `RelationSyncRegistry` do `app.go`) — o
+tasks avisa o calendar a cada mudanca de task e o `handleTaskSync` mantem o evento-espelho
+(`maybeCreateMirrorEvent` com `events.source='task'`, `applyTaskSyncToEvent`, `deleteMirrorEvent`).
+Sentido evento->task no `UpdateEvent` via `syncTaskFromEvent` -> `tasks.ApplyCalendarSync` (TERMINAL,
+nao re-dispara). Guarda anti-loop: metodos terminais + `events.source` (0192) + `ui_metadata.source`.
+Sync de status (E5) bidi pelo mapa `config.tasks.statusColumnMap` (`statusForColumn`/`columnForStatus`).
+Cruzamento de MIDIA A (WAVE 6, read-only): a midia do evento (ev.Media + anexos do dia apontados via
+`MediaItem.eventId`) e espelhada na task vinculada em `ui_metadata.calendarMedia` (so exibicao — a task
+so guarda video, aqui imagem+video cruzam; MESMA url `/uploads/calendar/{conta}/`, sem duplicar arquivo).
+Coletada por `eventMediaForTask`; empurrada no `syncTaskFromEvent` (update do evento) e por
+`syncEventMediaToTask` (leve, so a midia) no gatilho `PutDayMedia`->`pushDayMediaToTasks` (reespelha os
+eventos que ganharam OU perderam anexo do dia). Cruzamento de MIDIA B (WAVE 6, o outro sentido): os
+VIDEOS da task (`ui_metadata.videos`) sao espelhados no evento em `calendar.events.linked_media` (jsonb,
+migration 0193). O `TaskSyncSnapshot.Media` (`MediaSnapshot` neutro) carrega os videos; `applyTaskSyncToEvent`
+e `maybeCreateMirrorEvent` gravam via `store.SetEventLinkedMedia` (NAO passa por normalizeMedia — coluna
+de exibicao propria, url `/uploads/tasks/`). `EventView.linkedMedia` -> o front une na "Midia do post".
+Ambos TERMINAIS (ApplyCalendarSync / store direto; sem loop). TIPO/STATUS/PRIORIDADE do calendario sao
+os MESMOS do tasks: fonte unica no front `web/app/utils/content-taxonomy.ts` (o `calendar.ts` deriva os
+`*_META`; o tasks usa a mesma lista). O sync task->evento ainda valida o tipo (`eventTypeSet`) para tasks
+antigas com tipo legado fora da taxonomia.
+FUSO do mirror (WAVE 6): `mirrorEventDateTime` deriva a (data,hora) do evento a partir do dueDate da
+task — task data-only nasce meia-noite UTC; converter cru para SP rolava para o DIA ANTERIOR, entao
+meia-noite UTC = "sem hora" usa a DATA em UTC (dia inteiro) e hora real converte para SP.
+"Evento sem task" (WAVE 6): `POST /v1/calendar/events/{id}/task` (`CreateTaskForEvent`) cria+vincula a
+task de um evento sem task (reusa `createLinkedTask` C10, idempotente) — o botao do badge no DayDrawer.
+EXCLUSAO (WAVE 6, "perguntar na hora"): `DELETE /v1/calendar/events/{id}?archiveTask=true` arquiva a
+task vinculada junto (`archiveLinkedTask`); sem o param so remove a relation (task fica). Tolera 404
+quando o archive ja apagou o evento-espelho (source='task') pelo sync.
+Espelho task->evento ligado por padrao (`config.tasks.mirrorTasks=true`). Card nasce no topo
+(`topSortOrder`, sort_order asc). IA propoe criar (E7): `ChatProposal` passthrough do webhook em
+`chat.go` (`sanitizeProposal`); a criacao real e do FRONT pela API autenticada do usuario (sem
+service-token escrevendo).
+Secrets de IA (WAVE 3, SEC) em `secrets.go` (tipos `KeyStatus{set,last4}`/`KeyStatusView{scope,keys}`/
+`GlobalSecrets` + service: `GetAccountKeyStatus`/`PutAccountKey`/`GetGlobalKeyStatus`/`PutGlobalKey`/
+`resolveAIKey`/`mask`), `store_secrets.go` (interface `secretStore` + CRUD de `calendar.ai_secrets` por
+conta e da chave GLOBAL em `core.platform_settings` key `calendar_ai_secrets`, mesmo padrao do
+`media_limits`) e `http_secrets.go` (`RegisterSecretRoutes`, chamado no `module.go`). A API key CRUA
+SO existe server-side (resolver/dispatch); o front recebe SO o status MASCARADO `{set,last4}` — NUNCA
+a key crua. Escopo por PK composta `(account_id, provider)`: conta A nunca le/escreve o secret de B.
+Chat de IA + voz (C7/C8, WAVE 2) em `chat.go` (tipos + service + `WithChat`: monta o payload C7
+reusando `BuildAIContext` — bloco `context` = agregado C9 SEM `account`, via `chatContextFrom`, sem
+remontar — e faz proxy fino ao n8n com `http.Client` sem Timeout global e deadline por `context`
+(ask 60s / transcribe 120s); `sessionKey = accountId|userId|conversationId`, espelho de
+`omniChatSessionKey`) e `http_chat.go` (`RegisterChatRoutes`: `POST /v1/calendar/chat/ask` +
+`/chat/transcribe` + as rotas D3 de conversas/scope, RequireAuthWithAccount; `writeChatError` mapeia
+os sentinels de upstream + `ErrInvalidClient` => 404 no chat). **WAVE 4 (D4)**: o Go passou a PERSISTIR
+a conversa e a memoria (banco, ver "Chat com memoria" abaixo); o `sessionKey` agora usa o id da conversa
+PERSISTIDA e o payload leva `history` (ultimas N do banco) — a memoria e o banco, nao mais so o Redis do n8n.
+Dispatch com key + kill switch (WAVE 3, SPEC-B2, contrato PAY): o gate comum `resolveDispatchKey`
+(em `ai_dispatch.go`) aplica o kill switch (`ai.enabled=false` => `ErrAIDisabled` => 409 `ai_disabled`)
+e resolve a KEY CRUA do provider via `resolveAIKey` (`""` => `ErrAIKeyMissing` => 409 `ai_key_missing`),
+SINCRONO, ANTES de disparar/criar a linha. A key crua entra no payload em `ai.apiKey` (chat: `chatPayloadAI`
+= AIConfig + apiKey; plano: `aiPayloadAI.apiKey`, C5) e no multipart de transcribe (campos
+`provider`+`apiKey`+`model`+`file`; provider `openai` usa a key `openai`, `gemini` usa `gemini`). A key
+so existe server-to-server: NUNCA e logada (o payload cru nao vai para log) nem devolvida ao front. Os
+mesmos sentinels sao mapeados em `writeChatError` E `writeServiceError` (helpers `writeAIDisabled`/`writeAIKeyMissing`).
+Escopo da IA por cliente (WAVE 3.1, SPEC-B3, contratos CFG+/SEC+) em `client_ai.go` (constantes
+`scopeModeGeneral`/`scopeModePerClient`; `EffectiveAIConfig(account,clientID)` = resolver da config
+EFETIVA por cliente; service `GetClientAIOverride`/`PutClientAIOverride`; `mergeOverride`/`sanitizeOverride`/
+`overrideHasValue`/`containsID`; view `ClientAIOverrideView{clientId,hasOverride,override}`), `store_client_ai.go`
+(interface `clientAIStore` + CRUD do override em `calendar.client_profiles.ai_config`) e `http_client_ai.go`
+(`RegisterClientAIRoutes`, chamado no `module.go`). A config `ai` da conta e o default GERAL; o modo
+(`ai.scopeMode` = general|perClient) e as excecoes (`ai.disabledClientIds`) vivem no `config` jsonb (CFG+,
+sem migration). O override de COMPORTAMENTO por cliente (`{enabled,provider,model,baseUrl,systemPrompt,
+temperature}`, ponteiros p/ distinguir "nao setado" de zero) mora em `client_profiles.ai_config` (migration
+0190) — a KEY NUNCA vive aqui (segue no nivel conta/global da 3.0; a key resolve pelo provider EFETIVO).
+`EffectiveAIConfig`: `enabled` efetivo = `ai.enabled` E cliente fora de `disabledClientIds` E (perClient com
+override => o `enabled` do override); em perClient com override, merge por campo (override nao-vazio vence).
+Dispatch: o CHAT usa `EffectiveAIConfig(account, req.clientId)` (o clientId chega no request); o PLANO honra
+`disabledClientIds` (`filterDisabledClients` pula clientes desativados na montagem do payload) mas mantem o ai
+config GERAL da conta (override por-cliente no plano fica p/ depois); a TRANSCRICAO usa o config geral (sem
+cliente no contexto do audio). O gate `resolveDispatchKey(ctx, account, enabled, provider)` passou a receber
+`enabled bool` + `provider` (efetivo no chat, geral no plano/transcricao). Endpoints `GET/PUT /v1/calendar/
+ai-config/client?clientId=` sob `RequireAuthWithAccount` (account-scoped e sensivel, como os secrets/chat da
+3.0); `clientId` UUID obrigatorio (senao 400 `invalid_client`). Isolamento: conta A nunca le/escreve o override
+de B (PK composta `(account_id, client_id)` + WHERE account_id no store).
+Realtime + optimistic locking (C11/C12, WAVE 2) em `publisher.go` (interface `Publisher` +
+`RealtimeEvent` + `noopPublisher` default + `WithPublisher` = Option do `New`; o modulo `realtime`
+implementa a interface, direcao realtime->calendar, sem ciclo). O `Service` publica eventos LEAN
+de invalidacao (`s.publishCalendar`) nos pontos de escrita: create/update/delete evento, `PutNotes`,
+`PutDayMedia`, `PutConfig` e `ApplyPlanResult`. O front so recebe a dica e refaz o fetch (nunca
+patch local). Injecao no `app.go`: `calendar.New(storage, ..., calendar.WithPublisher(realtimeService))`.
+Chat com memoria + escopo de clientes (WAVE 4, D1/D2, SPEC-B10) em `chat_store.go` (tipos
+`ChatConversation`/`ChatMessage`/`ChatConversationInput` + interface `chatConversationStore` embutida em
+`calendarStore`; CRUD account-scoped de conversas/mensagens em `calendar.chat_conversations`/
+`calendar.chat_messages`, soft-delete + `order by created_at`, espelho do `tasks.repository_postgres_collab`;
+`ListConversations` = agencia ve TODAS da conta com o nome do autor, cliente-side so as `created_by=ele`;
+`AppendMessage` grava SO em conversa VIVA da MESMA conta via insert-select-where (senao `ErrNotFound`);
+`ListLastMessages(n)` = ultimas N em ordem cronologica p/ a memoria do LLM; `IsAgencyOfAccount` resolve a
+visibilidade org-aware NO BANCO, espelho de `auth/account_checker` + `core/store_postgres`) e `chat_access.go`
+(`resolveChatAccess(principal,account) -> ChatAccess{IsAgency,VisibleClientIDs}`; `IsAgency` = platform_admin
+OU agency_owner na org da conta; `VisibleClientIDs` REUSA a lista permission-scoped de `/v1/tenants` via
+`clientScopeLister` = `tenants.Service.ListAccessible`, injetada por `WithClientScope` no Build — sem duplicar
+a query de escopo; `canSelectScope = IsAgency || len(visibleClients)>1`, `lockedClientID` trava o cliente-side;
+`validateScope` normaliza (`scopeMode` `client`|`all` + `scopeClientId`) SEM confiar no body — cliente fora do
+visivel => `ErrInvalidClient`, `all` so p/ quem tem select; `authorizeConversation` = dono OU IsAgency, senao
+`ErrNotFound`/404). Acesso resolvido 100% server-side; conversa/cliente fora do visivel NUNCA vaza (404).
+**SPEC-B11 (D3/D4/D5)** consome a fundacao B10: `chat.go` `ChatAsk` reescrito (assinatura `(ctx, account,
+principal, req)`) persiste a conversa COM memoria e escopo — (1) `resolveChatAccess`; (2) `resolveChatTarget`
+normaliza o escopo (existente valida dono-ou-agencia + REVALIDA o escopo salvo contra o acesso atual; nova ainda
+NAO materializa); (3) checa IA EFETIVA + KEY CRUA ANTES de materializar/gravar (sem conversa orfa se a IA esta
+off); (4) cria a conversa nova so entao; (5) `history` = ultimas N (`chatHistoryLimit=12`) JA existentes carregadas
+ANTES de gravar a pergunta (a pergunta vai no campo `question`, nao no `history`, p/ nao duplicar quando o n8n
+concatena system+history+question, D5); (6) contexto `client` => `BuildAIContext`, `all` => `BuildAIContextAll`;
+(7) grava a resposta (role=assistant), titula pela 1a pergunta (`deriveChatTitle`, `TouchConversation` bump de
+`updated_at` — `AppendMessage` NAO move) e responde `{answer,conversationId,title}`. `chatWebhookPayload` ganhou
+`History []chatHistoryMessage{role,content}` e `Context any` (client => `calendarChatContext`, all =>
+`AIContextAll`). `runtime_context.go` `BuildAIContextAll(account,visibleClientIDs,month)` = agregado LEAN
+multi-cliente (contrato D4): resumo `{id,name,segment,brandVoice(trunc 280)}` de cada cliente (teto
+`maxContextClients=30`, reusa `planContext` sem N+1) + feriados/nota + eventos lean do mes de TODOS os clientes
+(teto 100); helpers `capClientIDs`/`truncateRunes`. `chat_conversations.go` (novo) = camada service das rotas D3
+(`ListChatConversations`/`GetChatConversation`/`CreateChatConversation`/`DeleteChatConversation`/`ChatScope`) +
+views (`ChatConversationSummary`/`ChatConversationDetail`/`ChatMessageView`/`ChatScopeView`/`ChatScopeClient`) +
+helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToStr`). `chat_access.go` ganhou
+`resolveChatContext` (acesso + clientes NOMEADOS numa UNICA ida ao tenants scope) e `visibleClients` (id+name).
 
-## Schema (`calendar`) — migrations 0181/0182/0183
-- `calendar.events` (0181): id, **account_id** (dono, FK core.accounts), **client_id**
-  (cliente/tenant do evento, nullable FK core.accounts), event_date, event_time,
+## Schema (`calendar`) — migrations 0181/0182/0183/0185/0186/0188/0189/0190/0191
+- `calendar.events` (0181; **+`version` na 0188**): id, **account_id** (dono, FK core.accounts),
+  **client_id** (cliente/tenant do evento, nullable FK core.accounts), event_date, event_time,
   type, title, status, priority, responsible_id, involved_ids (jsonb), media
-  (jsonb = `MediaItem[]`), description, timestamps.
+  (jsonb = `MediaItem[]`), description, timestamps, **`version` (integer not null default 1)**.
+  `version` e o contador de optimistic locking (C12): toda escrita bem-sucedida faz
+  `version = version + 1`; o PUT pode enviar `If-Match: <version>` e divergencia => 409.
 - `calendar.notes` (0181): (account_id, month_key `YYYY-MM`) PK, content (HTML), updated_by, updated_at.
-- `calendar.config` (0182): account_id PK + `config jsonb` (shape em `CalendarConfig`:
-  `responsibleUserIds[]` + `holidays{brNational,sergipe,aracaju,luxuryIntl}`).
+- `calendar.config` (0182): account_id PK + `config jsonb` (shape em `CalendarConfig`).
+  **C2 (SPEC-B3, sem migration nova)**: `responsibleUserIds[]`,
+  `holidays{brNational,sergipe,aracaju,luxuryIntl}`, `weekStartsOn` (sunday|monday,
+  default sunday), `clientColors{[clientId]:"#rrggbb"|"none"}`, `typeColors{[tipo]:"#rrggbb"}`,
+  `whiteLabel{logoUrl,title,primaryColor}`, `ai{provider(claude|deepseek|qwen|kimi|glm|gemini|custom),
+  model,baseUrl,systemPrompt,temperature}`.
+  **C6 (SPEC-B5, sem migration nova)**: provider ganha `gemini` (camada OpenAI-compatible do
+  Google AI Studio, free tier) + secao `tasks{boardId,defaultColumnId}` (integracao
+  calendario<->tasks; ambos UUID-ou-vazio, vazio = integracao DESLIGADA). `defaultConfig()`
+  preenche TODOS os campos (incl. `Tasks:{}`) e o `GetConfig` desserializa POR CIMA dos defaults
+  (linha antiga so com responsaveis/feriados, ou sem a secao `tasks`, ganha o shape completo —
+  struct de valor com chave ausente/null vira no-op, entao `tasks` fica `{boardId:"",defaultColumnId:""}`).
+  **CFG v4 (WAVE 3, sem migration nova)**: `ai` ganha `enabled` (kill switch, default true),
+  `useGlobalKeys` (true = chaves GLOBAIS da plataforma, false = chaves DESTA conta; default true),
+  `provider` ganha `openai`, `transcribeProvider(openai|gemini, default gemini)` + `transcribeModel`;
+  nova secao `chat{position(center|left|right, default center),width,height(px, clamp 0..2000)}`
+  (layout da janela de chat). `PutConfig` sanitiza (enums + clamps via `sanitizeAI`/`sanitizeChat`);
+  `GetConfig` completa o shape v4 para conta antiga (transcribeProvider->gemini, chat.position->center).
+  CHAVES de API NUNCA vivem no `config` jsonb — moram nos secrets (`calendar.ai_secrets` / global no
+  `platform_settings`), resolvidas SO server-side (ver "Secrets de IA").
+  **CFG+ (WAVE 3.1, sem migration nova)**: `ai` ganha `scopeMode(general|perClient, default general)` +
+  `disabledClientIds[]` (clientes com a IA desligada, excecoes; valem nos DOIS modos). `sanitizeAI`
+  normaliza (scopeMode case-insensitive canonico; disabledClientIds = UUIDs validos dedup via
+  `normalizeClientIDs`); `GetConfig` completa o shape v4.1 para conta antiga (scopeMode->general,
+  disabledClientIds->[]). O override de COMPORTAMENTO por cliente NAO vive no `config` — mora em
+  `client_profiles.ai_config` (ver abaixo); a config aqui so guarda o modo + a lista de excecoes.
 - `calendar.day_media` (0183): (account_id, event_date) PK + `media jsonb` (`MediaItem[]`) —
   anexos AVULSOS do dia (sem vinculo com evento).
+- `calendar.client_profiles` (0185; **+`ai_config` na 0190**): (**account_id**, **client_id**) PK, ambos
+  FK core.accounts on delete cascade. Perfil estrategico 1:1 por cliente (segment, positioning, description,
+  history, site_url, instagram, address, objectives, brand_voice, `extra jsonb`, updated_by,
+  timestamps). Insumo da IA (Fase 6). Perfil e OPCIONAL por design. Contrato C3.
+  **`ai_config jsonb not null default '{}'` (0190, WAVE 3.1 SEC+)**: override de COMPORTAMENTO da IA por
+  cliente (`{enabled,provider,model,baseUrl,systemPrompt,temperature}`, sem keys — so muda comportamento,
+  nunca a credencial). `PutClientAIOverride` faz upsert: cria a linha so com account/client/ai_config se o
+  perfil nao existe, ou no conflito atualiza SO o `ai_config` (preserva o perfil estrategico). So o modo
+  `perClient` consulta o override (ver `EffectiveAIConfig`). Contrato SEC+.
+- `calendar.ai_plans` (0186): `id` PK (uuid), **account_id** (dona do calendario, FK core.accounts
+  on delete cascade), `month_key` (`YYYY-MM`), `client_ids jsonb` (uuids escolhidos), `status`
+  (pending -> done|error -> applied), `provider`/`model` (snapshot da config no disparo),
+  `content jsonb` (shape C4.content, preenchido no callback), `error`, `created_by`, timestamps.
+  Indices (account_id, month_key) e (account_id, created_at desc). Contrato C4.
+- `calendar.ai_secrets` (0189, WAVE 3 SEC): (**account_id** FK core.accounts on delete cascade,
+  **provider** text) PK composta + `api_key` (raw, server-side apenas), `updated_by` (text),
+  `updated_at`. Guarda a API key CRUA da IA por conta. A key SO sai no resolver/dispatch; o front
+  recebe apenas o status MASCARADO `{set,last4}`. A chave GLOBAL da plataforma vive fora desta tabela,
+  em `core.platform_settings` key `calendar_ai_secrets` (`{gemini,glm,openai}`, so platform_admin escreve).
+- `calendar.chat_conversations` (0191, WAVE 4 D1): `id` PK (uuid), **account_id** (FK core.accounts on
+  delete cascade), **created_by_user_id** (FK core.users on delete cascade, o dono da conversa), `title`,
+  `scope_mode` (`client`|`all`, default client), `scope_client_id` (uuid nullable, preenchido no modo client),
+  timestamps + `deleted_at` (soft-delete). Indice parcial `(account_id, created_by_user_id, updated_at desc)
+  where deleted_at is null`. Conversas HIBRIDAS: cliente-side ve so as suas, agencia ve todas da conta.
+- `calendar.chat_messages` (0191, WAVE 4 D1): `id` PK (uuid), **conversation_id** (FK
+  calendar.chat_conversations on delete cascade), **account_id** (FK core.accounts on delete cascade, defesa
+  em profundidade), `role` (`user`|`assistant`), `content`, `created_at`. Indice `(conversation_id,
+  created_at)`. Sem soft-delete (some junto com a conversa via cascade). Fonte da memoria do LLM (ultimas N).
 
 ## Anexos / midia (Fase 3)
-- `MediaItem` = `{id,url,name,type("image"|"video"),contentType,sizeBytes}`; `url` sempre
-  `/uploads/calendar/{accountId}/{arquivo}` (validado no service — descarta url externa).
+- `MediaItem` = `{id,url,name,type("image"|"video"),contentType,sizeBytes,posterUrl?}`; `url` e
+  `posterUrl` sempre `/uploads/calendar/{accountId}/{arquivo}`. A sanitizacao (`normalizeMedia`
+  em `media_normalize.go`) valida AMBOS contra o prefixo COM o accountId do Principal
+  (`/uploads/calendar/{accountId}/`, nunca o generico) — `url` fora do prefixo descarta o item,
+  `posterUrl` fora apenas zera o campo. Isolamento multi-tenant (contrato C1): o file server em
+  `/uploads/` e publico e sem escopo de conta, entao essa amarra e a UNICA barreira contra
+  referenciar arquivo de outra conta no jsonb. accountID vem do `accountScope(r)`, nunca do body.
+  `posterUrl` e a
+  capa do video (opcional, so p/ `type "video"`), capturada no FRONT via canvas e subida como
+  imagem normal via `POST /v1/calendar/media` (upload nao muda). Contrato C1 (SPEC-B1).
 - Storage em disco (`media_storage.go`, `DiskMediaStorage` sob `cfg.UploadsDir`/calendar/{account}/),
-  injetado via `calendar.New(storage)` no `app.go` (igual `tasks`). Servido em `/uploads/...`.
-- Upload stateless: `POST /v1/calendar/media` valida mime (jpg/png/webp/gif, mp4/webm/mov) +
+  injetado via `calendar.New(storage, ...opts)` no `app.go` (igual `tasks`). Servido em `/uploads/...`.
+- Upload stateless: `POST /v1/calendar/media` valida mime (jpg/png/webp/gif/avif, mp4/webm/mov) +
   tamanho e devolve o `MediaItem`; o front anexa ao evento/dia e salva (full replace).
+  OBS: avif nao e sniffado pelo http.DetectContentType — passa pelo fallback do contentType
+  declarado (normalizeImageMime). No FRONT, `/uploads/*` e SEMPRE absolutizado com
+  `resolveMediaUrl(url, apiBase)` (utils/media.ts) — em dev web (:3003) e api (:9091) sao
+  origens diferentes e a url relativa quebra thumb/viewer/fundo do dia (bug real corrigido
+  2026-07-02 na validacao do dono).
 - **Limite = config GLOBAL da plataforma** em `core.platform_settings` chave `media_limits`
   (`{imageMaxBytes(10MB), videoMaxBytes(300MB)}`), lida no upload. Sem tabela nova.
 
@@ -47,13 +253,30 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
 
 ## Endpoints
 - `GET /v1/calendar/events?from=&to=&clientId=` — eventos da janela (datas inclusive).
-- `POST /v1/calendar/events` — cria (body = EventInput).
-- `GET /v1/calendar/events/{id}` — detalhe.
-- `PUT /v1/calendar/events/{id}` — substitui (full replace).
-- `DELETE /v1/calendar/events/{id}`.
+- `POST /v1/calendar/events` — cria (body = EventInput). **C10 (WAVE 2)**: aceita `createTask:true`
+  para criar+vincular uma task no board da config C6. Sem `tasks.boardId` => **400 `tasks_not_configured`**
+  (nao cria evento orfao). Com config ok: task no board (`uiMetadata.source='calendar'`, dueDate =
+  date+time RFC3339 [time vazio = 09:00, UTC], clientAccountId = clientId do evento, responsibleUserId
+  = responsibleId se UUID, coluna = `defaultColumnId` ou 1a do board) + relation (module=`calendar`,
+  resourceType=`event`, resourceId=eventId) + `taskId` no 201. Falha na task DEPOIS do evento salvo =>
+  evento permanece + `taskWarning` no 201 (best-effort; nunca desfaz o evento).
+- `GET /v1/calendar/events/{id}` — detalhe (inclui `taskId` via LEFT JOIN de relations, C10; e
+  `version`, C12).
+- `PUT /v1/calendar/events/{id}` — substitui (full replace) e incrementa `version` (C12).
+  Header `If-Match: <version>` **OPCIONAL** (sem header = comportamento legado, compat): com header,
+  `version` divergente => **409 `version_conflict`**; `If-Match` nao-numerico => 400 `invalid_if_match`.
+  A resposta traz `version` (novo) mas ainda NAO traz `taskId` (so `GET /events`, `GET /events/{id}`
+  e o 201 do POST); o front preserva/refaz fetch. Escrita bem-sucedida publica `calendar.event_updated`.
+- `DELETE /v1/calendar/events/{id}` — se ha task vinculada, remove a relation ANTES de apagar
+  (a task NAO e arquivada; best-effort). C10. Publica `calendar.event_deleted`.
 - `GET /v1/calendar/notes/{month}` — nota do mes (`YYYY-MM`; vazia se nao existe).
 - `PUT /v1/calendar/notes/{month}` — upsert da nota (body `{content}`).
-- `GET/PUT /v1/calendar/config` — config da account (responsaveis + feriados).
+- `GET/PUT /v1/calendar/config` — config da account (shape completo C2/C6: responsaveis,
+  feriados, weekStartsOn, clientColors, typeColors, whiteLabel, ai, tasks). PUT sanitiza no
+  service (weekStartsOn no enum, cores `#rrggbb`/`none` validadas, provider no enum — inclui
+  `gemini`, temperature clamp 0..1, `tasks.boardId`/`defaultColumnId` UUID-ou-vazio via
+  `sanitizeTasks`, strings trim) e continua full-replace; GET devolve o shape completo mesmo
+  para conta antiga (`tasks:{boardId:"",defaultColumnId:""}`).
 - `GET /v1/calendar/members` — usuarios da account (candidatos a responsavel).
 - `GET /v1/calendar/responsibles` — responsaveis efetivos (subconjunto do config ou todos).
 - `GET /v1/calendar/holidays?from=&to=` — feriados/datas comemorativas da janela
@@ -68,13 +291,167 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
 - `PUT /v1/calendar/day-media/{date}` — full replace da lista do dia (body `{media:[MediaItem]}`).
 - `GET /v1/calendar/media-limits` — tetos de upload (qualquer autenticado; o front mostra/valida).
 - `PUT /v1/calendar/media-limits` — altera os tetos (**so platform_admin**; body = `MediaLimits`).
+- `GET /v1/calendar/ai-keys` — status MASCARADO da FONTE ATIVA da conta (WAVE 3 SEC). Resposta
+  `{scope:"global|account", keys:{gemini:{set,last4}, glm:{...}, openai:{...}}}`. `scope` depende de
+  `ai.useGlobalKeys` da config. NUNCA devolve a key crua.
+- `PUT /v1/calendar/ai-keys` — grava/limpa a key DESTA conta (body `{provider(gemini|glm|openai),
+  apiKey}`; `apiKey` vazio = **limpar**; provider fora do enum => 400 `invalid_provider`). Devolve o
+  status mascarado atualizado. So faz sentido com `useGlobalKeys=false` (o front so mostra em escopo conta).
+- `GET /v1/calendar/ai-keys/global` — status mascarado das chaves GLOBAIS (**so platform_admin**, senao 403).
+- `PUT /v1/calendar/ai-keys/global` — grava/limpa a key GLOBAL (**so platform_admin**; body `{provider,apiKey}`;
+  vazio = limpar). Preserva as demais keys do conjunto. Devolve o status mascarado.
+- `GET /v1/calendar/client-profile?clientId=<uuid>` — perfil estrategico do cliente. Perfil
+  inexistente => objeto vazio com defaults (**200, nao 404** — perfil e opcional). `clientId`
+  nao-UUID => 400 `invalid_client`.
+- `PUT /v1/calendar/client-profile?clientId=<uuid>` — upsert full-replace do perfil (body =
+  `ProfileInput`, contrato C3 sem `clientId`/`updatedAt`); `updated_by` = rotulo do Principal.
+- `GET /v1/calendar/client-profiles` — indice lean `{profiles:[{clientId,filled,updatedAt}]}`;
+  `filled` = algum campo estavel (fora de `extra`) nao-vazio. Ordenado por `updatedAt desc`.
+- `POST /v1/calendar/ai/plan` — cria plano `pending` e dispara o n8n em goroutine (payload C5,
+  com a KEY CRUA em `ai.apiKey`). Body `{month:"YYYY-MM", clientIds:["uuid"]}`. Resposta **201
+  `{id,status}`**. `month` malformado => 400 `invalid_date`; nenhum `clientId` UUID valido => 400
+  `invalid_client`; sem `CALENDAR_AI_WEBHOOK_URL` no env => **503 `ai_not_configured`** (nao cria
+  linha). **WAVE 3 (SPEC-B2)**: `ai.enabled=false` => **409 `ai_disabled`** e provider sem key gravada
+  => **409 `ai_key_missing`**, ambos SINCRONO ANTES de criar a linha (nao cria plano orfao preso em
+  pending). Falha no dispatch => a goroutine marca `status=error` via a mesma transicao do callback.
+- `GET /v1/calendar/ai/plans?month=` — lista LEAN `{plans:[{id,month,clientIds,status,provider,model,createdAt}]}` (sem `content`), mais recentes primeiro.
+- `GET /v1/calendar/ai/plans/{id}` — plano completo (com `content`), no escopo da account (404 fora).
+- `POST /v1/calendar/ai/plans/{id}/applied` — marca `applied` (**so se `done`**; outro estado =>
+  409 `plan_conflict`; fora do escopo => 404).
+- `DELETE /v1/calendar/ai/plans/{id}` — remove no escopo da account (404 fora).
+- `POST /v1/public/calendar-ai/plans/{id}/result` — **callback do n8n, SEM JWT** (fora do gate
+  de modulo — o prefixo `/v1/public` nao esta em `moduleGatingRules`). Autentica por header
+  `X-Service-Token` (comparacao constant-time com `CALENDAR_AI_SERVICE_TOKEN`). Env ausente =>
+  503 `ai_not_configured`; token errado => 403 `invalid_token`; body `{status:"done|error",
+  content:{...},error}` (max 2 MiB, `status` fora de done|error => 400 `invalid_status`). So
+  transiciona a partir de `pending` (plano ja `done`/`applied` => 409 `plan_conflict`; inexistente => 404).
+- `GET /v1/runtime/calendar/context?accountId=<uuid>&clientId=<uuid>&month=YYYY-MM` — **contexto
+  compartilhado das IAs (C9, WAVE 2), SEM JWT** (chamada service-to-service; fora do gate — o
+  prefixo `/v1/runtime` nao esta em `moduleGatingRules`, junto com o runtime do automation).
+  Autentica por `Authorization: Bearer <AUTOMATION_RUNTIME_TOKEN>` (constant-time, `crypto/subtle`).
+  `accountId` OBRIGATORIO e validado UUID; `clientId`/`month` opcionais (`month` vazio = mes
+  corrente). Resposta 200 `{account{id}, client|null, month, holidays[], monthNotes,
+  events[{date,type,title,status,clientId}] (lean, max 100), plans[{id,month,status,provider,model}]
+  (lean, max 10)}`. Env ausente => **503 `runtime_not_configured`**; Bearer errado/ausente => **401
+  `unauthorized`**; `accountId` ausente/nao-UUID => **400 `invalid_account`**. Isolamento: o
+  `accountId` vem do query (sem X-Account-Id), mas TODAS as queries do `BuildAIContext` filtram
+  por `account_id` e o nome/perfil de `clientId` forjado de outra conta volta vazio (mesma amarra
+  de `loadAccountNames`/`loadProfiles`). O bloco `context` do chat (C7) e este agregado SEM
+  `account`, montado pela MESMA `BuildAIContext`.
+- `POST /v1/calendar/chat/ask` — **chat de IA com memoria + escopo (C7/D4, WAVE 4)**.
+  RequireAuthWithAccount. Body `{question, conversationId?, scopeMode?('client'|'all'), scopeClientId?,
+  clientId?(legado, fallback de scopeClientId), month?}` (`question` obrigatoria, trim, max 4000 chars).
+  Persiste na conversa (cria se `conversationId` vazio), grava a pergunta, carrega as ultimas N=12 como
+  `history`, monta o payload (`ai` = config EFETIVA + KEY CRUA em `ai.apiKey`; `context` = `BuildAIContext`
+  no `client` OU `BuildAIContextAll` no `all`, SEM `account`; `history:[{role,content}]`) e faz proxy ao
+  `calendar-chat`; grava a resposta e titula a conversa. Resposta 200 `{answer, conversationId, title}`.
+  Escopo SEMPRE normalizado server-side (`validateScope`): cliente-side (1 cliente) trava no seu cliente;
+  `scopeClientId` fora do visivel => **404 `not_found`** (nao vaza QUAIS clientes existem); `all` so p/ quem
+  tem select (agency/multi-cliente). Erros: 400 `invalid_question`; 400 `invalid_date` (`month` malformado);
+  404 (`conversationId`/cliente fora do visivel); **409 `ai_disabled`**/`ai_key_missing` (WAVE 3, checados
+  ANTES de materializar a conversa — sem conversa orfa); 503 `chat_not_configured`; 502 `upstream_error`;
+  504 `upstream_timeout` (>60s). `sessionKey = accountId|userId|conversationId` (id da conversa PERSISTIDA);
+  a memoria e o BANCO (`calendar.chat_messages`), o n8n so recebe o `history`.
+- `GET /v1/calendar/chat/conversations` — **lista de conversas (D3)**. RequireAuthWithAccount. Agency ve
+  TODAS da conta (com `createdByName` via join); cliente-side so as `created_by = ele`. Resposta lean
+  `{conversations:[{id,title,scopeMode,scopeClientId,createdByUserId,createdByName,updatedAt}]}` (updated_at desc).
+- `GET /v1/calendar/chat/conversations/{id}` — **conversa + mensagens (D3)**. Dono OU agency (senao 404).
+  Resposta `{id,title,scopeMode,scopeClientId,messages:[{id,role,content,createdAt}]}` (ordem cronologica).
+- `POST /v1/calendar/chat/conversations` — **cria conversa vazia (D3)**. Body `{scopeMode?,scopeClientId?,title?}`
+  (escopo normalizado server-side; cliente fora do visivel => 404). Resposta **201** com o resumo da conversa.
+- `DELETE /v1/calendar/chat/conversations/{id}` — **soft-delete (D3)**. Dono OU agency (senao 404). 204.
+- `GET /v1/calendar/chat/scope` — **alimenta o SELECT de escopo (D3)**. Resposta `{canSelect, lockedClientId,
+  clients:[{id,name}]}` — `canSelect = IsAgency || >1 cliente visivel`; `lockedClientId` = unico cliente do
+  cliente-side (select escondido). Clientes REUSAM a lista permission-scoped de `/v1/tenants` (server-side).
+- `POST /v1/calendar/chat/transcribe` — **transcricao de voz (C8, WAVE 2)**. RequireAuth +
+  accountScope. Multipart campo `file`, max **15 MiB** (`MaxBytesReader` + `ParseMultipartForm`
+  com `maxMemory` = teto; NADA gravado em disco). Whitelist de mime: `audio/webm|ogg|mp4|mpeg|wav`
+  (parametros do mime ignorados, ex.: `audio/webm;codecs=opus`). **WAVE 3 (SPEC-B2)**: repassa multipart
+  (file + campos `provider`+`apiKey`+`model`+`language=pt`) ao webhook `calendar-transcribe`; `provider`/
+  `model` vem da config v4 (`transcribeProvider`/`transcribeModel`) e a KEY CRUA do resolver (`openai`
+  usa a key `openai`, `gemini` usa `gemini`). Devolve 200 `{text}`. Erros: 400 `invalid_media` (mime
+  fora da whitelist / arquivo ausente / multipart malformado); 413 `media_too_large` (>15 MiB); **409
+  `ai_disabled`** (kill switch) / **409 `ai_key_missing`** (provider de transcricao sem key); 503
+  `transcribe_not_configured` (sem `CALENDAR_TRANSCRIBE_WEBHOOK_URL`); 502/504 (upstream).
+
+### Realtime + optimistic locking (WAVE 2, C11/C12)
+- Canal do transporte no modulo `realtime`: `GET /v1/realtime/calendar?scope=account&accountId=`
+  (topico `calendar:account:{id}`) + presenca `GET /v1/realtime/presence?scope=calendar`
+  (topico `presence:calendar:{id}`, fieldKeys `notes:YYYY-MM` e `event:<id>`). Autorizacao =
+  conta ativa + membership + permissao efetiva `calendar.view` (platform_admin bypass) — ver
+  `back/internal/modules/realtime/AGENT.md`.
+- O modulo `calendar` so PUBLICA (via `Publisher`, `publisher.go`): eventos LEAN de invalidacao
+  (o front refaz fetch, nunca patch local): `calendar.event_created|updated|deleted`
+  (resourceId=eventId, payload.date; +version no updated), `calendar.note_updated`
+  (payload.monthKey), `calendar.day_media_updated` (payload.date), `calendar.config_updated`,
+  `calendar.plan_updated` (resourceId=planId, payload.status; publicado no `ApplyPlanResult`).
+- Optimistic locking (C12): `EventView` ganha `version`; o PUT compara `If-Match` no service
+  (guard `and version = $n` no UPDATE; ausencia de linha desambigua 404 x 409 via GET escopado).
+
+### Envs da IA (Fase 6)
+Lidos no `Build` do modulo (mesmo padrao do `cardapio`, via `os.Getenv`; injetados no service via
+`WithAI`). As CHAVES de API dos provedores NAO ficam aqui nem em `.env`/log — a partir da WAVE 3
+(SPEC-B2) o Go resolve a key CRUA dos secrets (`resolveAIKey`) e a injeta no payload (`ai.apiKey`),
+tornando o n8n um executor burro (sem credential/$env de IA).
+- `CALENDAR_AI_WEBHOOK_URL` — webhook "Calendar Omni" do n8n. Vazio => `POST /ai/plan` responde 503.
+- `CALENDAR_AI_SERVICE_TOKEN` — token do callback (header `X-Service-Token`). Vazio => callback 503.
+- `CALENDAR_AI_CALLBACK_BASE` — base publica da api que o n8n usa para chamar de volta
+  (`{base}/v1/public/calendar-ai/plans/{id}/result`). Vazio => caminho relativo no payload.
+- `AUTOMATION_RUNTIME_TOKEN` (WAVE 2, C9) — REUSADO do runtime do automation. Autentica
+  `GET /v1/runtime/calendar/context` (Bearer, constant-time). Vazio => a rota responde 503
+  `runtime_not_configured` (nao aceita chamada anonima). Lido no `Build` e guardado no `handle`.
+- `CALENDAR_CHAT_WEBHOOK_URL` (WAVE 2, C7) — webhook `calendar-chat` do n8n. Vazio => `POST
+  /v1/calendar/chat/ask` responde 503 `chat_not_configured`. Injetado no service via `WithChat`.
+- `CALENDAR_TRANSCRIBE_WEBHOOK_URL` (WAVE 2, C8) — webhook `calendar-transcribe` do n8n (Whisper).
+  Vazio => `POST /v1/calendar/chat/transcribe` responde 503 `transcribe_not_configured`.
 
 As chaves JSON de `EventView` batem 1:1 com o tipo `CalendarEvent` do front
 (`web/app/utils/calendar.ts`). `client_id` nao-UUID (ex.: clientes de demonstracao
 do mock) e descartado no service (vira sem-cliente) para nao estourar o cast `::uuid`.
 
-## Fases seguintes (nao implementadas)
-Campos de agencia (canal, aprovacao do cliente, deadline x publicacao), aprovacao
-via WhatsApp (n8n/WAHA), config/white-label, perfil do cliente + IA de sugestao de
-conteudo. Ver o plano canonico. (Feriados/datas comemorativas: implementado — ver
-`holidays.go` e `GET /v1/calendar/holidays`.)
+## Deploy na VPS — WAVE 3 (IA pelo painel) — CHECKLIST OBRIGATORIO
+
+Ao subir a WAVE 3 pra producao, NAO basta o deploy da imagem. Fazer, em ordem:
+1. **Migrations**: garantir que rodam **0188** (`calendar.events.version`), **0189**
+   (`calendar.ai_secrets`) e **0190** (`calendar.client_profiles.ai_config`, WAVE 3.1 — `add column
+   if not exists`, sem backfill). O migrate roda no boot da api; conferir `migration_up_ok` no log.
+2. **Envs no `docker-compose.prod.yml` (servico `api`)** — HOJE SO EXISTEM NO DEV, faltam no prod:
+   `CALENDAR_AI_WEBHOOK_URL`, `CALENDAR_AI_SERVICE_TOKEN`, `CALENDAR_AI_CALLBACK_BASE`,
+   `CALENDAR_CHAT_WEBHOOK_URL`, `CALENDAR_TRANSCRIBE_WEBHOOK_URL` (apontando pro n8n de prod) +
+   valores no `.env.production`. Sem eles => chat/plano/transcricao respondem 503.
+3. **Chaves de API dos provedores (Gemini/GLM/OpenAI)**: NAO vao em env/git. Configurar PELO PAINEL
+   (aba IA) OU semear as **globais** em `core.platform_settings` chave `calendar_ai_secrets`
+   (`{gemini,glm,openai}`) — mesmo shape do dev. A partir da WAVE 3 o n8n NAO usa mais credential/$env
+   de IA: o Go injeta a key no payload (`resolveAIKey`).
+4. **n8n de prod**: importar e ATIVAR os 3 workflows (`workflow-calendar-chat.json`,
+   `workflow-calendar-transcribe.json`, `workflow-calendar-omni.json`) — todos passam a ler
+   `body.ai.apiKey`. Reiniciar o n8n apos ativar (o webhook so registra depois do restart).
+5. **Proxy**: `POST /chat/transcribe` sobe audio (ate 15 MiB) — o proxy da frente precisa aceitar o
+   body. WebSocket `/v1/realtime/calendar` precisa de upgrade liberado (igual aos canais existentes).
+6. **Seguranca**: rotas `/ai-keys`, `/ai-config/client` (WAVE 3.1), `/chat/*` e `/ai/*` usam
+   `RequireAuthWithAccount` (membership). O restante do modulo (events/notes/config) ainda usa
+   `RequireAuth`+header (item pre-existente de plataforma a fechar depois).
+
+## Fases seguintes (nao implementadas) — ver plano canonico §3.6-3.8
+- **Midia rica (3c)**: `MediaItem.posterUrl` no back = IMPLEMENTADO (SPEC-B1: struct + validacao
+  de prefixo no service, sem ffmpeg). Falta o FRONT: abrir visualizador ao clicar e usar a midia
+  da postagem como fundo do dia em grade (SPEC-F1/F2).
+- **Perfil estrategico do cliente (Fase 4)**: IMPLEMENTADO (SPEC-B2) — tabela DEDICADA
+  `calendar.client_profiles` 1:1 por (account, cliente) na migration 0185 (NAO em core.accounts);
+  `GET/PUT /v1/calendar/client-profile?clientId=` + `GET /v1/calendar/client-profiles` (indice).
+  Insumo da IA. Falta o FRONT (SPEC-F4).
+- **Config v2 (Fase 5, back)**: IMPLEMENTADO (SPEC-B3) — `CalendarConfig` estendido com o
+  contrato C2 (weekStartsOn, clientColors, typeColors, whiteLabel, ai) sem migration nova
+  (mesma coluna `config jsonb` da 0182); defaults completos + sanitizacao no `PutConfig`.
+  Falta o FRONT (SPEC-F3): pagina `/calendario/config` que aplica cores/semana/white-label
+  e edita a config da IA. Chaves de API ficam server-side (credentials do n8n).
+- **IA de calendario + n8n "Calendar Omni" (Fase 6, back)**: IMPLEMENTADO (SPEC-B4) — migration
+  0186 `calendar.ai_plans` + `POST /v1/calendar/ai/plan` (clientIds[]+month) cria linha `pending`
+  e dispara o n8n em goroutine (payload C5: perfis/nomes/feriados/nota do mes; `http.Client`
+  timeout 15s; falha marca `error`). Callback publico `POST /v1/public/calendar-ai/plans/{id}/result`
+  autenticado por `X-Service-Token` (constant-time, `crypto/subtle`); so transiciona de `pending`.
+  Lista lean + get completo + `applied` + delete. Provider plugavel (snapshot da config no disparo);
+  n8n nunca fala com o Postgres direto (so via callback). Envs em "Envs da IA (Fase 6)". Falta o
+  FRONT (SPEC-F5) e o workflow n8n (SPEC-W1).
+- **Aprovacao via WhatsApp (Fase 7)** + visao compartilhavel read-only pro cliente.
+(Feriados/datas comemorativas: implementado — ver `holidays.go` e `GET /v1/calendar/holidays`.)

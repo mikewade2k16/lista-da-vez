@@ -101,3 +101,5 @@ Ao alterar scripts desta pasta:
 - `../../.github/workflows/build-images.yml`
 - `../../.github/workflows/deploy-vps.yml`
 - `../dev/AGENT.md`
+- `../backup/AGENT.md` (backup agendado do Postgres — complementa o `-BackupDatabase` on-demand)
+- `../../docs/BACKUP_RESTORE.md` (runbook de backup/restore)

@@ -13,9 +13,53 @@
 }
 
 .calendar-media__grid {
-  display: flex;
-  flex-wrap: wrap;
+  /* Grid que ESTICA: auto-fit + minmax(--min, 1fr) preenche a linha inteira (imagens/selects
+     maiores, sem espaco vazio a direita). --min (inline) = 45% nos anexos do dia (2 por linha) /
+     30% na midia do post. Teto de altura + rolagem: a secao nunca passa de ~40% (decisao do dono). */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--min, 45%), 1fr));
+  align-items: start;
   gap: 0.5rem;
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding-right: 0.15rem;
+}
+
+/* WAVE 6 (W6-4): cada anexo = uma CELULA (miniatura + dropdown do item ABAIXO). Preenche a coluna
+   do grid (1fr) — nao tem largura fixa; a miniatura vira um quadrado grande. */
+.calendar-media__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.calendar-media__cell .calendar-media__item {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+/* Select do item = componente OmniSelectMenuInput (mesmo do Tasks); w-full preenche a celula. */
+.calendar-media__pick {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Rotulo read-only (ex.: quando nao ha seletor mas o anexo ja tem item). */
+.calendar-media__pick-tag {
+  width: 100%;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.08);
+  color: rgb(var(--primary));
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .calendar-media__item {
@@ -90,6 +134,9 @@
   justify-content: center;
   gap: 0.2rem;
   color: var(--text-muted);
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .calendar-media__loading-icon {
@@ -119,18 +166,18 @@
 }
 
 .calendar-media__add {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 4.5rem;
-  height: 4.5rem;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
   border: 1px dashed var(--line-soft);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   font-size: 1.2rem;
   cursor: pointer;
-  flex: 0 0 auto;
 }
 
 .calendar-media__add:hover {

@@ -155,6 +155,11 @@ printf '%s\n' "$remotePath/backups/`$latest"
 }
 
 # 5. Pull + up SEM build (a VPS nunca compila).
+# PRE-REQUISITO AC-04 (incidente 2026-07-03): a imagem conecta como a role least-privilege
+# `omni_app`. Se ela nao existir no banco, a api entra em crash-loop (28P01), a web nao sobe
+# e o painel da 502 — este script NAO cria a role. Runbook em docs/DEPLOY_VPS.md
+# (secao "Role de runtime omni_app"). Prevencao planejada: auto-provisao no `migrate up`
+# (roadmap ac-04b-migrate-auto-provision-role).
 $deployCmd = @"
 set -euo pipefail
 cd $remotePathQ

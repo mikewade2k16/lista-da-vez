@@ -61,6 +61,7 @@
     var(--shadow-card),
     inset 0 1px 0 rgb(255 255 255 / 0.16);
   overflow: hidden;
+  margin-left: -8px !important;
 }
 
 /* Setas flutuantes (‹ ›) nos cantos, por cima das notas. */
@@ -100,6 +101,67 @@
   right: 0.5rem;
 }
 
+/* ===== Coluna esquerda MINIMIZADA (sidebar slim) ========================= */
+.calendar-leftcol--min {
+  flex: 0 0 2.75rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  overflow: hidden;
+}
+
+.calendar-leftcol__expand,
+.calendar-leftcol__mini-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.calendar-leftcol__expand:hover,
+.calendar-leftcol__mini-arrow:hover {
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
+}
+
+.calendar-leftcol__expand {
+  color: rgb(var(--primary));
+}
+
+/* Nome do mes vertical (spine), clicavel para reabrir as anotacoes. */
+.calendar-leftcol__mini-month {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.calendar-leftcol__mini-month:hover {
+  color: rgb(var(--primary));
+}
+
 /* ===== Controles (uma linha: mes + filtros + toggle + Novo, sem separacao) === */
 .calendar-controls {
   flex: 0 0 auto;
@@ -116,6 +178,29 @@
   font-size: 1.05rem;
   font-weight: 800;
   white-space: nowrap;
+}
+
+/* Presenca (SPEC-F9): avatares de quem mais esta no calendario agora. */
+.calendar-controls__presence {
+  display: inline-flex;
+  align-items: center;
+}
+
+.calendar-controls__presence-avatar {
+  margin-left: -0.3rem;
+  box-shadow: 0 0 0 2px rgb(var(--surface));
+  border-radius: 999px;
+}
+
+.calendar-controls__presence-avatar:first-child {
+  margin-left: 0;
+}
+
+.calendar-controls__presence-more {
+  margin-left: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .calendar-controls__client {
@@ -199,6 +284,7 @@
   justify-content: center;
   gap: 0.5rem;
   padding: 0 0.1rem;
+  margin-left: -15px !important;
 }
 
 .calendar-weekrail__item {

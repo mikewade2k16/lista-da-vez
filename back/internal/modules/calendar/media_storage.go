@@ -129,6 +129,8 @@ func normalizeImageMime(value string) string {
 		return "image/webp"
 	case "image/gif":
 		return "image/gif"
+	case "image/avif":
+		return "image/avif"
 	default:
 		return ""
 	}
@@ -177,6 +179,8 @@ func mediaExtension(contentType, fileName string) string {
 		return ".webp"
 	case "image/gif":
 		return ".gif"
+	case "image/avif":
+		return ".avif"
 	case "video/mp4":
 		return ".mp4"
 	case "video/webm":
@@ -193,6 +197,8 @@ func mediaExtension(contentType, fileName string) string {
 		return ".webp"
 	case ".gif":
 		return ".gif"
+	case ".avif":
+		return ".avif"
 	case ".mp4":
 		return ".mp4"
 	case ".webm":

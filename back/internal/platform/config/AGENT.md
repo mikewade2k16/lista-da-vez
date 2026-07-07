@@ -17,6 +17,11 @@ Estas instrucoes valem para `back/internal/platform/config/`.
 - Defaults: producao deve preferir falhar cedo (env obrigatoria) quando o valor nao tiver fallback seguro. Dev/local pode usar valores razoaveis (ex: `APP_ADDR=:8080`).
 - Guards de producao vao no metodo `(Config).Validate()`. Em dev/docker ele e no-op; em `APP_ENV=production` aborta o boot se algum default inseguro escapou. Adicionado em 2026-05-21 (Fase 8.6): aborta com `AUTH_TOKEN_SECRET` em branco ou igual ao default de dev, e com `AUTH_BCRYPT_COST < 10`. `cmd/api/main.go` chama `cfg.Validate()` logo apos `config.Load()` e faz `os.Exit(1)` se falhar.
 
+## Variaveis de ambiente notaveis
+
+- `AUTH_PRINCIPAL_CACHE_TTL` (duration, default `30s`) — TTL do cache de Principal autenticado (AC-01). `0s` desliga o cache e restaura o comportamento legado (1 rajada de queries por request), sem rebuild. Consumida em `platform/app/principal_cache_wiring.go`. Documentada comentada nos `.env*.example`.
+- `DATABASE_APP_URL` (AC-04) — URL de RUNTIME da api com a role least-privilege `omni_app` (sem DDL). `OpenAppPool` a usa; sem ela cai no fallback `DATABASE_URL` (dev). `Validate()` em `APP_ENV=production` aborta o boot se estiver vazia — a api nunca deve conectar como o superuser em prod. O binario `migrate` continua com `DATABASE_URL` (privilegiada). Runbook em `docs/MULTITENANT_COMPLETION_PLAN.md` (Notas de Deploy AC-04).
+
 ## Feature flags ativas
 
 | Flag | Tipo | Default | Propos

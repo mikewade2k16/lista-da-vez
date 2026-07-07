@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omni — Relatório 07 · Design geral da aplicação · 2026-07-02</title>
+<style>
+  :root{
+    --bg:#0b0f1a; --bg2:#111726; --bg3:#162033; --line:#233047;
+    --txt:#e6ebf5; --muted:#93a1bd; --dim:#64748b;
+    --acc:#6366f1; --acc2:#22d3ee;
+    --green:#34d399; --yellow:#fbbf24; --orange:#fb923c; --red:#f87171;
+    --p0:#f87171; --p1:#fbbf24; --p2:#60a5fa;
+    --radius:14px; --shadow:0 8px 30px rgba(0,0,0,.35);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#1a2238 0,var(--bg) 55%);color:var(--txt);line-height:1.5}
+  a{color:var(--acc2);text-decoration:none}
+  header.top{position:sticky;top:0;z-index:50;background:rgba(11,15,26,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  .brandrow{display:flex;align-items:center;gap:14px;padding:16px 0}
+  .logo{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--acc),var(--acc2));display:grid;place-items:center;font-weight:800;color:#0b0f1a}
+  .brandrow h1{font-size:18px;margin:0;letter-spacing:.3px}
+  .brandrow .sub{color:var(--muted);font-size:12.5px}
+  nav.tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px}
+  nav.tabs button{background:var(--bg3);color:var(--muted);border:1px solid var(--line);padding:8px 14px;border-radius:999px;cursor:pointer;font-size:13px;transition:.15s}
+  nav.tabs button:hover{color:var(--txt)}
+  nav.tabs button.active{background:linear-gradient(135deg,var(--acc),#4f46e5);color:#fff;border-color:transparent}
+  main{padding:30px 0 80px}
+  section.tab{display:none;animation:fade .25s ease}
+  section.tab.active{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  h2.section{font-size:21px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 22px;max-width:760px}
+  .grid{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,1fr)} .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  @media(max-width:880px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.g2,.g3,.g4{grid-template-columns:1fr}.brandrow h1{font-size:16px}}
+  .card{background:linear-gradient(180deg,var(--bg2),var(--bg2));border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .card h3{margin:0 0 10px;font-size:14px;letter-spacing:.4px;color:var(--txt)}
+  .stat{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px}
+  .stat .n{font-size:30px;font-weight:800;letter-spacing:.5px}
+  .stat .l{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .stat .n.green{color:var(--green)} .stat .n.cyan{color:var(--acc2)} .stat .n.ind{color:#a5b4fc}
+  .gauge{display:flex;align-items:center;gap:18px}
+  .ring{--p:75;width:96px;height:96px;border-radius:50%;flex:none;background:conic-gradient(var(--acc2) calc(var(--p)*1%),var(--bg3) 0);display:grid;place-items:center;position:relative}
+  .ring::before{content:'';position:absolute;width:72px;height:72px;border-radius:50%;background:var(--bg2)}
+  .ring b{position:relative;font-size:22px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid transparent}
+  .pill.p0{background:rgba(248,113,113,.14);color:var(--p0);border-color:rgba(248,113,113,.3)}
+  .pill.p1{background:rgba(251,191,36,.14);color:var(--p1);border-color:rgba(251,191,36,.3)}
+  .pill.p2{background:rgba(96,165,250,.14);color:var(--p2);border-color:rgba(96,165,250,.3)}
+  .pill.ok{background:rgba(52,211,153,.14);color:var(--green);border-color:rgba(52,211,153,.3)}
+  .tag{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  ul.clean{list-style:none;padding:0;margin:0}
+  ul.clean li{padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px;display:flex;gap:9px;align-items:flex-start}
+  ul.clean li:last-child{border:0}
+  .dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.g{background:var(--green)}.dot.y{background:var(--yellow)}.dot.r{background:var(--red)}.dot.b{background:var(--p2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+  tr:hover td{background:rgba(255,255,255,.015)}
+  code{background:var(--bg3);padding:1px 6px;border-radius:5px;font-size:12px;color:#c7d2fe}
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:10px}
+  .flowrow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .node{flex:1;min-width:130px;background:var(--bg3);border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-size:12.5px}
+  .node b{display:block;font-size:13px;margin-bottom:3px}
+  .node .m{color:var(--muted);font-size:11.5px}
+  .node.acc{border-color:rgba(99,102,241,.5);background:linear-gradient(180deg,rgba(99,102,241,.12),var(--bg3))}
+  .node.warn{border-color:rgba(248,113,113,.45)}
+  .arrow{align-self:center;color:var(--dim);font-size:18px}
+  /* layers */
+  .layer{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--bg3)}
+  .layer .num{width:26px;height:26px;border-radius:7px;background:var(--acc);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+  .layer .txt{font-size:13px}.layer .txt b{font-size:13.5px}
+  .layer.gap{border-style:dashed;border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.05)}
+  .layer.gap .num{background:var(--red)}
+  /* backlog */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+  .filters button{background:var(--bg3);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:999px;cursor:pointer;font-size:12.5px}
+  .filters button.active{background:var(--acc);color:#fff;border-color:transparent}
+  .item{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;background:var(--bg2)}
+  .item summary{list-style:none;cursor:pointer;padding:14px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .item summary::-webkit-details-marker{display:none}
+  .item summary:hover{background:rgba(255,255,255,.02)}
+  .item .chev{margin-left:auto;color:var(--dim);transition:.2s}
+  .item[open] .chev{transform:rotate(90deg)}
+  .item .ttl{font-weight:600;font-size:14px}
+  .item .id{font-family:monospace;font-size:11.5px;color:var(--muted);background:var(--bg3);padding:2px 7px;border-radius:5px}
+  .item .body{padding:2px 16px 16px;border-top:1px solid var(--line);font-size:13.5px;color:#cdd6e8}
+  .item .body p{margin:10px 0 4px}
+  .item .body b{color:var(--txt)}
+  .when{font-size:11px;color:var(--muted);border:1px solid var(--line);padding:2px 8px;border-radius:6px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .note{background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.3);border-radius:10px;padding:13px 15px;font-size:13px;color:#c7d2fe;margin:16px 0}
+  .foot{color:var(--dim);font-size:12px;text-align:center;padding:30px 0 0;border-top:1px solid var(--line);margin-top:40px}
+  .barwrap{height:8px;background:var(--bg3);border-radius:999px;overflow:hidden;margin-top:8px}
+  .bar{height:100%;border-radius:999px}
+  /* === relatorios (adições 2026-07) === */
+  .crumbs{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .crumbs a{color:var(--muted);border:1px solid var(--line);background:var(--bg3);padding:4px 12px;border-radius:999px;transition:.15s}
+  .crumbs a:hover{color:var(--txt);border-color:var(--acc)}
+  .crumbs a.idx{color:var(--acc2)}
+  .scorecols{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:880px){.scorecols{grid-template-columns:1fr 1fr}}
+  @media(max-width:560px){.scorecols{grid-template-columns:1fr}}
+  .score{background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px}
+  .score .ring{--p:50;width:54px;height:54px}
+  .score .ring::before{width:38px;height:38px}
+  .score .ring b{font-size:14px}
+  .score .lbl{font-size:13px;font-weight:600}
+  .score .why{font-size:11.5px;color:var(--muted)}
+  .verdict{border-left:4px solid var(--acc);background:linear-gradient(180deg,rgba(99,102,241,.10),var(--bg2));border-radius:var(--radius);padding:16px 18px;margin:16px 0}
+  .verdict b{color:var(--txt)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="logo">Ω</div>
+      <div>
+        <h1>Omni · Relatório 07 — Design geral da aplicação</h1>
+        <div class="sub">Fotografia local em 2026-07-02 — não reflete necessariamente produção · série docs/relatorios/2026-07</div>
+      </div>
+    </div>
+    <div class="crumbs">
+      <a class="idx" href="./index.html">☰ Índice</a>
+      <a href="./06-seguranca.html">← 06 Segurança</a>
+      <a href="./08-lixo-e-limpeza.html">08 Lixo &amp; limpeza →</a>
+    </div>
+    <nav class="tabs">
+      <button class="active" data-tab="visao">O que estamos construindo</button>
+      <button data-tab="scorecard">Scorecard de maturidade</button>
+      <button data-tab="capacidade">Capacidade estimada</button>
+      <button data-tab="escala">Caminho de escala</button>
+      <button data-tab="oportunidades">Oportunidades</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============ TAB 1: O QUE ESTAMOS CONSTRUINDO ============ -->
+<section id="visao" class="tab active">
+  <h2 class="section">O que estamos construindo</h2>
+  <p class="lead">Esta é a página-âncora da série: ela responde à pergunta "estamos construindo, desde o início, a melhor aplicação para escalar e ser usada por muitas pessoas?" — cruzando os achados dos relatórios 01 a 06 numa visão única de produto e arquitetura.</p>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n cyan">20</div><div class="l">módulos Go padronizados (module/http/service/store + AGENT.md)</div></div>
+    <div class="stat"><div class="n ind">93.657</div><div class="l">linhas Go no back/ (485 arquivos, ~377 rotas HTTP)</div></div>
+    <div class="stat"><div class="n ind">163.129</div><div class="l">linhas no front (313 componentes, 49 páginas, 4 layers)</div></div>
+    <div class="stat"><div class="n green">107</div><div class="l">docs .md (20.058 linhas) + ADRs + AGENT.md por módulo</div></div>
+  </div>
+
+  <div class="verdict"><b>Resposta curta: sim, com ressalvas.</b> A fundação — monorepo com backend modular, multi-tenant no core do modelo de dados, SPA + API stateless, CI que testa migrações de verdade e documentação incomum para este estágio — é a arquitetura certa para virar algo grande. O que precisa de correção não é retrabalho estrutural: é dívida pontual (cache de auth desligado, listagens sem paginação) e higiene operacional (VPS compartilhada, backup sem agendamento, zero monitoração). O detalhe da resposta está na aba "Caminho de escala".</div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>O produto em um parágrafo</h3>
+    <p style="font-size:13.5px;color:#cdd6e8;margin:0">O Omni é um painel SaaS multi-tenant de gestão para agências e suas lojas/clientes: operação de fila de atendimento em tempo real (WebSocket), CRM/ERP com BI (integração Pérola via FTP), tasks em kanban, cardápio digital e bio públicos servidos por fronts separados, calendário editorial com IA, automação de WhatsApp (n8n + WAHA + Claude) e assistente de Meta Ads. Uma agência (organization) agrupa contas (accounts); cada conta liga módulos, papéis clonados de templates e usuários com overrides — o RBAC é dinâmico e resolvido no banco, não hardcoded.</p>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Mapa dos domínios — quem fala com quem</h3>
+    <div class="flow">
+      <div class="flowrow">
+        <div class="node"><b>Painel Omni</b><span class="m">Nuxt 4 SPA (39 routeRules ssr:false) · Pinia · REST + WebSocket</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>API Go modular</b><span class="m">20 módulos · ~377 rotas · JWT + sessões revogáveis · rate limit 60 req/min</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>PostgreSQL 16</b><span class="m">schemas core/public/queue/site/crm/calendar · 150 migrations · 243 índices</span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node"><b>TAVOLA (cardápio)</b><span class="m">front estático separado · consome /v1/public/cardapio/*</span></div>
+        <div class="node"><b>crow-nuxt (bio)</b><span class="m">front separado :3000 · /v1/public/bio/* + SSE</span></div>
+        <div class="arrow">→</div>
+        <div class="node acc"><b>/v1/public/*</b><span class="m">rotas públicas com rate limit; mesmo backend, sem sessão</span></div>
+      </div>
+      <div class="flowrow">
+        <div class="node"><b>Automação WhatsApp</b><span class="m">n8n + WAHA + Redis (profile docker à parte)</span></div>
+        <div class="node"><b>meta-ads runner</b><span class="m">assistente de campanhas (profile próprio)</span></div>
+        <div class="arrow">→</div>
+        <div class="node"><b>API Go via HTTP</b><span class="m">bot acessa o CRM pela mesma API — sem acesso direto ao banco</span></div>
+      </div>
+    </div>
+    <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">A leitura importante: <b>tudo converge para uma única API Go stateless</b>. Fronts públicos e automação não têm caminho paralelo para o banco — o isolamento multi-tenant e as regras de negócio vivem num lugar só. Isso é o que torna o desenho escalável horizontalmente (ver aba "Caminho de escala") e auditável.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>Decisões estruturais que são a base certa</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>Monorepo</b>&nbsp;— back, web, automação, deploy e docs versionados juntos; uma mudança de contrato API↔front vive num diff só.</li>
+        <li><span class="dot g"></span><b>Backend modular padronizado</b>&nbsp;— 20 módulos com o mesmo esqueleto (<code>module.go/http.go/service.go/store_postgres.go</code>) e um <code>AGENT.md</code> por módulo (31 no back). Custo de entender/mexer num módulo novo é baixo e previsível.</li>
+        <li><span class="dot g"></span><b>Trilha única de migrations</b>&nbsp;— migrator próprio, transacional, com tracking em <code>schema_migrations</code>; o schema evolui num caminho só, sem drift entre ambientes.</li>
+        <li><span class="dot g"></span><b>Multi-tenant no core do modelo</b>&nbsp;— <code>core.accounts/organizations/account_users</code>, papéis clonados de templates por conta, overrides por usuário, header <code>X-Account-Id</code>. Não é multi-tenant "colado depois": é o eixo do dado.</li>
+        <li><span class="dot g"></span><b>SPA + API stateless</b>&nbsp;— sessão no banco (revogável), token no cliente, nenhum estado de request no servidor; é o pré-requisito nº 1 para rodar N instâncias.</li>
+        <li><span class="dot g"></span><b>CI com teste real de migração</b>&nbsp;— <code>build-images.yml</code> sobe Postgres 16 e roda <code>TestAllMigrationsApply</code> + go test + vitest + govulncheck como gate do build de imagem. Migração quebrada não vira imagem.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Trade-offs conscientes (e por que são aceitáveis)</h3>
+      <ul class="clean">
+        <li><span class="dot y"></span><b>RLS adiada por design</b>&nbsp;— o app conecta como superuser e <code>public.*</code> são views, então RLS no Postgres seria no-op; o isolamento é 100% aplicativo (WHERE tenant/account). Decisão documentada (2026-06-29, <code>docs/RLS_PLAN.md</code>) com pré-requisito claro: role não-superuser primeiro (AC-04, ver 03 e 06).</li>
+        <li><span class="dot y"></span><b>BFF eliminado</b>&nbsp;— ADR 0002 matou a camada Nitro intermediária; o front fala direto com a API Go. Menos um hop, menos um lugar para lógica vazar. Resíduo: o mock de finance ainda vive em <code>web/server/</code> (10 arquivos — AC-12, ver 02).</li>
+        <li><span class="dot y"></span><b>Sem microserviços</b>&nbsp;— um binário Go com módulos internos é a escolha correta para o estágio: deploy de uma imagem, transações locais, zero rede interna. A modularidade já dá as costuras se um dia for preciso extrair algo.</li>
+        <li><span class="dot y"></span><b>Caches em memória local</b>&nbsp;— goal progress (120s), module guard (60s), rate limit — funcionam bem em 1 instância; viram pré-requisito de Redis apenas no cenário multi-instância (AC-08).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">💡 Metodologia: esta página não mede nada novo — consolida os números verificados nos relatórios 01 (backend), 02 (frontend), 03 (banco), 04 (infra), 05 (performance) e 06 (segurança), todos medidos no working tree local em 2026-07-02. Estimativas de capacidade são declaradas como tal na aba própria.</div>
+</section>
+
+<!-- ============ TAB 2: SCORECARD ============ -->
+<section id="scorecard" class="tab">
+  <h2 class="section">Scorecard de maturidade</h2>
+  <p class="lead">Nota 0–10 por área, com a justificativa em uma linha. O critério não é "está bonito?", é "isso aguenta crescer sem retrabalho?". A régua é a de um SaaS que quer atender muitas contas — por isso observabilidade zero pesa tanto quanto código bom puxa para cima.</p>
+
+  <div class="scorecols">
+    <div class="score"><div class="ring" style="--p:75"><b>7,5</b></div><div><div class="lbl">Backend</div><div class="why">Padrão modular forte e consistente; dívidas pontuais AC-01 (cache auth), AC-06 (paginação), AC-13 (arquivos gigantes)</div></div></div>
+    <div class="score"><div class="ring" style="--p:65"><b>6,5</b></div><div><div class="lbl">Frontend</div><div class="why">Rico e funcional (313 componentes, 4 layers), mas 105 arquivos acima do teto de 450 linhas (AC-07) e só 17 arquivos de teste (AC-15)</div></div></div>
+    <div class="score"><div class="ring" style="--p:70"><b>7,0</b></div><div><div class="lbl">Banco</div><div class="why">243 índices, transição public→core bem executada via views; pendem role não-superuser (AC-04) e backup agendado (AC-05)</div></div></div>
+    <div class="score"><div class="ring" style="--p:60"><b>6,0</b></div><div><div class="lbl">Infra</div><div class="why">CI com gate de testes e deploy por imagem GHCR; VPS única (~7,8GB) compartilhada; backup+monitoração agora live (03/07); falta mem_limits no deploy (AC-11)</div></div></div>
+    <div class="score"><div class="ring" style="--p:75"><b>7,5</b></div><div><div class="lbl">Segurança</div><div class="why">Queries 100% parametrizadas, headers completos, sessões revogáveis, RBAC fail-closed; pendem superuser no runtime (AC-04) e dump/tokens em tmp/ (AC-03)</div></div></div>
+    <div class="score"><div class="ring" style="--p:30"><b>3,0</b></div><div><div class="lbl">Observabilidade</div><div class="why">Quase nada: slog p/ stdout + healthz + smoke de deploy; sem métricas, alertas, uptime ou agregação de logs (AC-16)</div></div></div>
+    <div class="score"><div class="ring" style="--p:60"><b>6,0</b></div><div><div class="lbl">Testes / CI</div><div class="why">CI real e bloqueante (raro nesse estágio); back com 13% de linhas de teste; front com 17 arquivos para 313 componentes</div></div></div>
+    <div class="score"><div class="ring" style="--p:85"><b>8,5</b></div><div><div class="lbl">Docs</div><div class="why">107 docs (20.058 linhas), AGENT.md por módulo, ADRs, planos canônicos por feature — nível raro para um produto deste tamanho</div></div></div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3>Nota global</h3>
+    <div class="gauge">
+      <div class="ring" style="--p:65"><b>6,5</b></div>
+      <div style="font-size:13.5px;color:#cdd6e8">Média honesta das oito áreas. A leitura certa não é "produto mediano" — é <b>produto com espinha dorsal acima da média (docs 8,5; backend e segurança 7,5) sendo puxado para baixo por operação</b> (observabilidade 3,0; infra 6,0). É o perfil típico de time que constrói bem mas ainda não opera em produção com rede de segurança. A boa notícia: as áreas fracas são as mais baratas de subir — monitoração mínima e backup agendado custam dias, não meses; refatorar uma arquitetura errada custaria meses, e esse não é o caso aqui.</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Onde dói cada área — mapa de dívidas</h3>
+    <table>
+      <thead><tr><th>Área</th><th>Ponto forte verificado</th><th>Dívida principal</th><th>Achado</th></tr></thead>
+      <tbody>
+        <tr><td>Backend</td><td>20 módulos no mesmo padrão; input com <code>DisallowUnknownFields</code> + limite 1MB</td><td>Auth consulta o banco a cada request (cache pronto, desligado)</td><td><span class="pill p0">AC-01</span></td></tr>
+        <tr><td>Frontend</td><td>Permissões fail-closed (28 workspaces); lazy-loading nos componentes pesados</td><td>105 arquivos &gt;450 linhas; components.css com 4.480 linhas</td><td><span class="pill p1">AC-07</span></td></tr>
+        <tr><td>Banco</td><td>150 migrations numa trilha só; 243 índices</td><td>Backup só on-demand no deploy; app roda como superuser</td><td><span class="pill p1">AC-05</span> <span class="pill p1">AC-04</span></td></tr>
+        <tr><td>Infra</td><td>Build no CI → GHCR; VPS só faz pull</td><td>Vizinhos em crash-loop na mesma VPS; sem mem_limit</td><td><span class="pill p0">AC-02</span> <span class="pill p1">AC-11</span></td></tr>
+        <tr><td>Observabilidade</td><td>healthz + smoke test no deploy</td><td>Nenhuma métrica, alerta ou uptime monitor</td><td><span class="pill p1">AC-16</span></td></tr>
+        <tr><td>Testes/CI</td><td>Gate real: migração + go test + vitest + govulncheck antes da imagem</td><td>Front sub-testado (17 arquivos)</td><td><span class="pill p1">AC-15</span></td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Cada achado AC-* tem página de origem com a análise completa — a coluna é só o ponteiro. O backlog consolidado desta página está na aba "Oportunidades".</p>
+  </div>
+</section>
+
+<!-- ============ TAB 3: CAPACIDADE ESTIMADA ============ -->
+<section id="capacidade" class="tab">
+  <h2 class="section">Capacidade estimada</h2>
+  <p class="lead">Quantas pessoas o Omni aguenta hoje, do jeito que está? Resposta honesta com a conta aberta — e com as premissas explícitas antes de qualquer número.</p>
+
+  <div class="note">⚠️ <b>Premissas — leia antes dos números.</b> Isto é uma <b>estimativa estática</b>: nenhum load test foi executado (não há k6/baseline no repo). Os números de consumo por serviço são perfis típicos declarados como <i>estimados</i> no levantamento; os fatos de configuração (pool, rate limit, caches) são medidos no código. A faixa final é uma conta de engenharia, não uma medição — trate como ordem de grandeza até existir um teste de carga.</div>
+
+  <div class="grid g4">
+    <div class="stat"><div class="n">10</div><div class="l">conexões máx. no pool Postgres (default; min 0)</div></div>
+    <div class="stat"><div class="n">60</div><div class="l">req/min por identidade no rate limit (em memória)</div></div>
+    <div class="stat"><div class="n">~6GB</div><div class="l">RAM da VPS única — dividida com automação e stacks órfãs</div></div>
+    <div class="stat"><div class="n">5.000</div><div class="l">registros por payload no pior endpoint sem paginação (BI overview)</div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>A conta de padeiro, passo a passo</h3>
+    <div class="layer"><div class="num">1</div><div class="txt"><b>O que um usuário ativo custa.</b> O painel é SPA: depois do primeiro load (estático, barato de servir), um usuário ativo gera na ordem de 2–6 requests/min à API + 1 conexão WebSocket persistente (estimativa declarada; varia por tela — a Operação é mais falante que o CRM). O rate limit de 60 req/min por identidade confirma que o sistema foi dimensionado para esse perfil.</div></div>
+    <div class="layer"><div class="num">2</div><div class="txt"><b>O que a API teoricamente entrega.</b> Go stateless com pool de 10 conexões e queries típicas de milissegundos suporta, no papel, centenas de requests/segundo — ordens de magnitude acima do que dezenas de usuários geram. O gargalo <i>não</i> é o modelo de execução do Go.</div></div>
+    <div class="layer gap"><div class="num">3</div><div class="txt"><b>O que corta a teoria na prática.</b> (a) Toda request autenticada faz uma query extra de auth porque o PrincipalCache está desligado (AC-01) — o pool de 10 vira o funil sob pico; (b) endpoints de reports/analytics/BI carregam histórico completo ou até 5.000 registros num payload (AC-06) — um relatório aberto no fim do mês compete por RAM e conexões com a operação ao vivo; (c) a VPS de ~6GB é dividida com n8n/waha/redis e com stacks órfãs que já consumiram 158% de CPU do dockerd (AC-02), sem nenhum <code>mem_limit</code> isolando os vizinhos (AC-11).</div></div>
+    <div class="layer"><div class="num">4</div><div class="txt"><b>Faixa honesta hoje.</b> <b>Dezenas a poucas centenas de usuários simultâneos ativos</b> no painel sem degradar — o teto real vem da RAM/CPU compartilhada e dos payloads sem paginação, não do código Go. Para os fronts públicos (cardápio/bio), que são estáticos e consomem <code>/v1/public/*</code> com rate limit, <b>milhares de visitantes</b> são viáveis desde que haja cache na borda — o custo por visitante é muito menor que o de um operador logado.</div></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>O que quebra primeiro (em ordem)</h3>
+    <table>
+      <thead><tr><th>#</th><th>Gargalo</th><th>Por que quebra</th><th>Achado</th></tr></thead>
+      <tbody>
+        <tr><td>1º</td><td>RAM/CPU da VPS compartilhada</td><td>Vizinhos sem limite de memória na mesma máquina de ~6GB; um crash-loop alheio já roubou 158% de CPU do dockerd. O Omni pode cair por culpa de código que não é dele.</td><td><span class="pill p0">AC-02</span> <span class="pill p1">AC-11</span></td></tr>
+        <tr><td>2º</td><td>Payloads sem LIMIT em picos</td><td>Reports sem LIMIT/OFFSET, analytics carregando histórico completo da loja, BI até 5.000 registros/payload — sob concorrência, RAM e pool saturam juntos.</td><td><span class="pill p1">AC-06</span></td></tr>
+        <tr><td>3º</td><td>Pool de 10 + query de auth por request</td><td>Cada request paga uma ida ao banco só para validar sessão; em pico, auth compete com dados pelo mesmo pool de 10.</td><td><span class="pill p0">AC-01</span> <span class="pill p2">AC-19</span></td></tr>
+        <tr><td>4º</td><td>Caches locais — só na 2ª instância</td><td>Hoje não quebra nada; no dia em que subir a segunda instância da API, rate limit e caches em memória divergem entre processos.</td><td><span class="pill p2">AC-08</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>Consumo estimado por serviço na VPS (perfis típicos — não medido nesta sessão)</h3>
+    <table>
+      <thead><tr><th>Serviço</th><th>Faixa estimada</th><th>Observação</th></tr></thead>
+      <tbody>
+        <tr><td>PostgreSQL 16</td><td>512MB–1GB</td><td>único serviço stateful crítico</td></tr>
+        <tr><td>API Go</td><td>100–300MB</td><td>o mais leve da stack — mérito do Go</td></tr>
+        <tr><td>Web (Node/Nitro serve)</td><td>300–500MB</td><td>serve o SPA; candidato natural a CDN no futuro</td></tr>
+        <tr><td>WAHA</td><td>300MB–1GB</td><td>o mais imprevisível; primeiro candidato a mem_limit</td></tr>
+        <tr><td>n8n</td><td>300–500MB</td><td>automação; hoje inativo na VPS</td></tr>
+        <tr><td>Redis + Caddy</td><td>~100–200MB</td><td>leves</td></tr>
+        <tr><td>Docker + SO</td><td>~600MB–1GB</td><td>overhead fixo</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Soma plena: ~2,2–5,5GB numa VPS de ~6GB <b>dividida com stacks alheias</b> — a margem hoje depende do comportamento dos vizinhos, o que é exatamente o problema. Dimensionamentos de máquina e custos estão no relatório 09.</p>
+  </div>
+</section>
+
+<!-- ============ TAB 4: CAMINHO DE ESCALA ============ -->
+<section id="escala" class="tab">
+  <h2 class="section">Caminho de escala</h2>
+  <p class="lead">Três estágios, do custo zero ao multi-instância. O ponto central: nenhum estágio exige reescrever o que existe — a arquitetura atual já deixou as costuras prontas; falta executar a lista de cada degrau.</p>
+
+  <div class="layer"><div class="num">1</div><div class="txt"><b>Estágio 1 — A casa de hoje, arrumada (custo ~zero, dias de trabalho).</b> Remover as stacks órfãs da VPS (AC-02), colocar <code>mem_limit</code> e healthchecks no compose (AC-11), ligar o PrincipalCache que já está implementado (AC-01) e agendar backup diário com cópia off-site (AC-05). Nada disso é feature — é tirar risco de mesa. Resultado: a mesma VPS passa a suportar o curto prazo com folga e sem sustos causados por terceiros.</div></div>
+  <div class="layer"><div class="num">2</div><div class="txt"><b>Estágio 2 — Pronta pra crescer (semanas).</b> Redis externo assumindo cache, rate limit e pub/sub do WebSocket (AC-08); role de banco não-superuser para o runtime (AC-04) — que também destrava o replano de RLS; monitoração mínima viável: uptime externo + métricas de host + alerta de disco/RAM/crash-loop (AC-16); e um baseline de carga com k6 para trocar a estimativa estática desta série por número medido. Resultado: centenas a milhares de usuários com margem conhecida.</div></div>
+  <div class="layer"><div class="num">3</div><div class="txt"><b>Estágio 3 — Multi-instância (quando a demanda pedir).</b> N réplicas da API atrás de load balancer (o stateless já permite), Postgres gerenciado com réplica de leitura, SPA servido por CDN/objeto estático. Pré-requisitos de software são exatamente os do estágio 2 — por isso a ordem importa. Resultado: dezenas de milhares de usuários sem mudança de arquitetura.</div></div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="card">
+      <h3>O que JÁ está pronto para escalar</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span><b>API stateless</b> — sessão no banco, zero estado de request no processo; replicar é subir container.</li>
+        <li><span class="dot g"></span><b>Modularidade</b> — 20 módulos com fronteiras claras; se um domínio explodir de carga (ex.: queue, com 22.233 linhas), a costura para extraí-lo existe.</li>
+        <li><span class="dot g"></span><b>WS hub isolável</b> — o hub in-memory está atrás de um módulo realtime próprio; trocar o transporte interno por pub/sub é mudança local, não espalhada.</li>
+        <li><span class="dot g"></span><b>CI por imagem</b> — build no GitHub Actions → GHCR; a VPS só faz pull. Adicionar uma segunda máquina não muda o pipeline.</li>
+        <li><span class="dot g"></span><b>Fronts públicos desacoplados</b> — TAVOLA e crow-nuxt são estáticos e falam só com <code>/v1/public/*</code>; escalam por CDN sem tocar no painel.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>O que TRAVA a escala hoje</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Caches e rate limit locais</b> — em 2 instâncias, cada processo tem sua própria contagem e seu próprio cache (AC-08). É o único bloqueio técnico real do scale-out.</li>
+        <li><span class="dot r"></span><b>VPS única e compartilhada</b> — não há segunda máquina, e a primeira divide RAM com vizinhos sem limites (AC-02/AC-11).</li>
+        <li><span class="dot r"></span><b>Superuser no runtime</b> — além do risco, impede RLS como segunda camada de isolamento quando houver mais contas (AC-04).</li>
+        <li><span class="dot r"></span><b>Voar às cegas</b> — sem métricas nem alertas (AC-16), qualquer degradação em escala será descoberta pelo cliente, não pelo dashboard.</li>
+        <li><span class="dot y"></span><b>Payloads sem paginação</b> — não bloqueia replicar, mas multiplica o custo de cada instância (AC-06).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="verdict" style="margin-top:20px">
+    <b>Veredito explícito — "estamos construindo desde o início a melhor aplicação para escalar e ser usada por muitas pessoas?"</b><br><br>
+    <b>Sim, com ressalvas — e as ressalvas têm nome e preço.</b> A fundação está certa: backend modular e stateless, multi-tenant no coração do modelo de dados, trilha única de migrations, CI que bloqueia imagem em teste quebrado, e uma cultura de documentação (107 docs, ADRs, AGENT.md por módulo) que normalmente só aparece em times bem maiores. Nada do que foi encontrado nesta série exige retrabalho estrutural — não há "arquitetura errada" para desfazer. O que existe é dívida pontual e operacional, concentrada em cinco ações que destravam o resto:
+    <br><br>
+    <span class="pill p0">AC-01</span> ligar o PrincipalCache (já implementado) &nbsp;·&nbsp;
+    <span class="pill p0">AC-02</span> limpar as stacks órfãs da VPS &nbsp;·&nbsp;
+    <span class="pill p1">AC-05</span> backup agendado + off-site &nbsp;·&nbsp;
+    <span class="pill p1">AC-16</span> monitoração mínima viável &nbsp;·&nbsp;
+    <span class="pill p1">AC-06</span> paginação nas listagens pesadas.
+    <br><br>
+    Feito isso, o Omni entra no estágio 2 com a consciência tranquila de quem construiu para durar.
+  </div>
+</section>
+
+<!-- ============ TAB 5: OPORTUNIDADES ============ -->
+<section id="oportunidades" class="tab">
+  <h2 class="section">Oportunidades de melhoria</h2>
+  <p class="lead">Backlog consolidado da visão geral — os achados canônicos que definem o caminho de escala, com referência cruzada às páginas onde cada um foi analisado em profundidade. P0 = agir já · P1 = próximas semanas · P2 = quando escalar.</p>
+  <div class="filters" id="filters">
+    <button class="active" data-f="all">Todas</button>
+    <button data-f="p0">P0</button>
+    <button data-f="p1">P1</button>
+    <button data-f="p2">P2</button>
+  </div>
+  <div id="backlog">
+
+    <details class="item" data-p="p0">
+      <summary><span class="id">AC-01</span><span class="ttl">PrincipalCache implementado mas desligado — auth consulta o banco a cada request</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o cache de principal existe e está testado, mas não há nenhum wiring em produção — toda request autenticada paga uma consulta de revogação de sessão no banco, transformando o pool de 10 conexões no funil de qualquer pico.</p>
+        <p><b>Evidência:</b> <code>httpapi/principal_cache.go:24</code> + <code>auth/AGENT.md:97</code>; zero chamadas de <code>SetPrincipalCache</code> fora de testes em <code>app.go</code>.</p>
+        <p><b>Ação recomendada:</b> ligar o cache com TTL curto + invalidação pelos eventos realtime já existentes (<code>user.session.revoked</code>, <code>role.permissions.changed</code>). Ver também 01-backend e 05-performance.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p0">
+      <summary><span class="id">AC-02</span><span class="ttl">Stacks órfãs na VPS em crash-loop consumindo CPU/RAM</span><span class="pill p0">P0</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a mesma VPS de ~6GB que roda o Omni hospeda a stack omnichannel-mvp com 2 containers em crash-loop que já consumiram 158% de CPU do dockerd — o teto de capacidade do produto é definido por código que não é dele.</p>
+        <p><b>Evidência:</b> auditoria anterior na VPS: omnichannel-mvp em <code>/opt/omnichannel</code>, 2 containers em crash-loop (postgres morto). <b>Atenção:</b> o Caddy dessa stack roteia o painel — nunca parar o Caddy, só os containers quebrados.</p>
+        <p><b>Ação recomendada:</b> parar/remover os containers órfãos (advisory — executar manualmente na VPS, preservando o Caddy). Ver também 04-infra e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-05</span><span class="ttl">Backup de banco só on-demand no deploy; sem agendamento nem off-site</span><span class="pill p1">P1</span><span class="tag">Esforço: S</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o pg_dump só acontece acoplado a deploy; se a VPS morrer numa semana sem deploy, perde-se a semana — e não há cópia fora da própria máquina.</p>
+        <p><b>Evidência:</b> <code>deploy-ship.ps1:87</code>, <code>deploy-vps.yml:131-145</code>, <code>docs/DEPLOY_VPS.md:252</code>; nenhum cron/timer no repo.</p>
+        <p><b>Ação recomendada:</b> cron diário de pg_dump + retenção + cópia off-site (objeto S3-like); testar restore periodicamente. Ver também 03-banco, 04-infra e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-16</span><span class="ttl">Sem monitoração de produção (métricas, alertas, uptime, agregação de logs)</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> a única visibilidade de produção é healthz + smoke test no deploy + docker logs manual; degradação, disco cheio ou crash-loop serão descobertos pelo cliente, não por alerta. É a nota mais baixa do scorecard (3,0).</p>
+        <p><b>Evidência:</b> nenhuma métrica exportada (sem Prometheus/Grafana), sem alertas, sem uptime monitor, sem agregação de logs — verificado no repo e nos workflows.</p>
+        <p><b>Ação recomendada:</b> mínimo viável primeiro: uptime externo + node_exporter/cAdvisor + alerta de disco/RAM/crash-loop. Ver também 04-infra e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-06</span><span class="ttl">Listagens sem paginação (reports, analytics, BI)</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> três famílias de endpoints carregam dados sem teto: reports sem LIMIT/OFFSET, analytics puxando o histórico completo da loja e BI devolvendo até 5.000 registros num payload único — o custo cresce com o tamanho do cliente, exatamente o oposto do que um SaaS multi-tenant quer.</p>
+        <p><b>Evidência:</b> <code>queue/reports/store_postgres.go:39-150</code> (sem LIMIT); <code>queue/operations/store_postgres.go:565-617</code> (histórico completo); <code>bi/service.go:23-24</code> (pageLimit=100 × maxPages=50).</p>
+        <p><b>Ação recomendada:</b> LIMIT/OFFSET ou cursor + agregação no SQL; teto por página. Ver também 01-backend, 03-banco e 05-performance.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-07</span><span class="ttl">105 arquivos front acima de 450 linhas + components.css monolítico (4.480)</span><span class="pill p1">P1</span><span class="tag">Esforço: L</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> um sexto dos arquivos de código do front está acima do teto de 450 linhas dos princípios de engenharia; arquivos de 2.000–3.000 linhas concentram lógica que deveria estar distribuída, e o CSS monolítico dificulta saber o que é seguro mexer.</p>
+        <p><b>Evidência:</b> medição wc -l 2026-07-02; top: <code>useTasksPageContext.ts</code> 3.029, <code>roadmap-data.ts</code> 2.614 (majoritariamente dado declarativo), <code>MultiStoreGoalsSection.vue</code> 2.334; <code>components.css</code> 4.480 linhas.</p>
+        <p><b>Ação recomendada:</b> quebrar os &gt;1.000 primeiro; fatiar components.css por domínio; regra no lint-staged. Ver também 02-frontend.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p1">
+      <summary><span class="id">AC-04</span><span class="ttl">App conecta no Postgres como superuser</span><span class="pill p1">P1</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> o runtime roda com o usuário <code>omni</code> = SUPERUSER — qualquer bug de SQL vira acesso total, e é o bloqueio explícito para RLS como segunda camada de isolamento multi-tenant.</p>
+        <p><b>Evidência:</b> decisão RLS de 2026-06-29 (omni=SUPERUSER; <code>docs/RLS_PLAN.md</code> exige role dedicada antes de qualquer RLS).</p>
+        <p><b>Ação recomendada:</b> criar role least-privilege (sem DDL) para o runtime; superuser só no migrate. Ver também 03-banco e 06-seguranca.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">AC-08</span><span class="ttl">Caches e rate limit em memória local — travam scale-out horizontal</span><span class="pill p2">P2</span><span class="tag">Esforço: M</span><span class="tag">Impacto: alto (na escala)</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> goal progress (120s), module guard (60s) e os buckets do rate limit vivem dentro do processo; em 1 instância funcionam bem, mas na 2ª instância cada processo tem sua própria verdade — rate limit dobra na prática e caches divergem.</p>
+        <p><b>Evidência:</b> caches todos in-process, sem Redis (verificado no back); é o único bloqueio técnico real do estágio multi-instância.</p>
+        <p><b>Ação recomendada:</b> abstrair atrás de interface e mover para Redis quando for escalar — é pré-requisito do cenário Escala, não urgência de hoje. Ver também 01-backend, 05-performance e 09.</p>
+      </div>
+    </details>
+
+    <details class="item" data-p="p2">
+      <summary><span class="id">DG-01</span><span class="ttl">Definir SLO simples (latência p95 + uptime) quando houver métricas</span><span class="pill p2">P2</span><span class="tag">Esforço: S</span><span class="tag">Impacto: médio</span><span class="chev">›</span></summary>
+      <div class="body">
+        <p><b>Problema:</b> "escalar sem degradar" não tem definição operacional no projeto — sem um alvo explícito de latência e disponibilidade, capacidade e prioridade de dívida viram opinião, e esta própria série teve que estimar em vez de medir.</p>
+        <p><b>Evidência:</b> nenhuma métrica exportada hoje (AC-16) e nenhum documento de SLO/SLA em <code>docs/</code>; a estimativa de capacidade desta página é estática por falta de baseline.</p>
+        <p><b>Ação recomendada:</b> depois do mínimo de monitoração (AC-16), fixar dois números simples — ex.: p95 de latência da API e uptime mensal alvo — e usar o baseline de k6 do estágio 2 para validar a faixa de capacidade estimada aqui. Achado local desta página.</p>
+      </div>
+    </details>
+
+  </div>
+  <div class="legend">
+    <span><span class="pill p0">P0</span> crítico</span>
+    <span><span class="pill p1">P1</span> importante</span>
+    <span><span class="pill p2">P2</span> planejável</span>
+    <span><span class="pill ok">OK</span> ponto forte</span>
+  </div>
+</section>
+
+</main>
+
+<div class="foot wrap">
+  Gerado em 2026-07-02 · fotografia do estado local do repositório — não é promessa do que está em produção.<br>
+  Série: <a href="./index.html">docs/relatorios/2026-07</a>
+</div>
+
+<script>
+  // tabs
+  document.querySelectorAll('nav.tabs button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('nav.tabs button').forEach(function(x){x.classList.remove('active')});
+      document.querySelectorAll('section.tab').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      document.getElementById(b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  // backlog filter
+  document.querySelectorAll('#filters button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#filters button').forEach(function(x){x.classList.remove('active')});
+      b.classList.add('active');
+      var f = b.dataset.f;
+      document.querySelectorAll('#backlog .item').forEach(function(it){
+        var show = (f==='all') || (it.dataset.p===f) || (it.dataset.area===f);
+        it.style.display = show ? '' : 'none';
+      });
+    });
+  });
+</script>
+</body>
+</html>

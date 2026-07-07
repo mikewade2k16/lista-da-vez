@@ -5,9 +5,9 @@
 > SPEC-W1 em [../CALENDARIO_SPECS.md](../CALENDARIO_SPECS.md). Contratos C2/C4/C5.
 > JSON importavel: [`../../automation/export/workflow-calendar-omni.json`](../../automation/export/workflow-calendar-omni.json).
 >
-> **Status: autorado — precisa de import + criacao das credentials + teste manual no n8n.**
-> Nunca foi executado no n8n real. O JSON foi validado (parse, conexoes, sintaxe e logica
-> dos nos Code testadas fora do n8n).
+> **Status: importado e ativo no n8n de producao em 2026-07-07.** Estrutura exportada da VPS
+> confere com o JSON local. O teste com chamada ao modelo continua manual para evitar consumo
+> involuntario de tokens durante o deploy.
 
 ---
 
@@ -119,7 +119,7 @@ Local (profile `automation`):
 # 1. copia o JSON para dentro do container
 docker compose --profile automation cp automation/export/workflow-calendar-omni.json n8n:/tmp/wf.json
 # 2. importa (Git Bash no Windows: prefixe MSYS_NO_PATHCONV=1 senao /tmp vira path Windows)
-docker compose --profile automation exec n8n n8n import:workflow --input=/tmp/wf.json --overwrite
+docker compose --profile automation exec n8n n8n import:workflow --input=/tmp/wf.json
 # 3. cria as credentials calendar-ai-claude e calendar-ai-openai-compat (UI ou import:credentials)
 # 4. ativa e reinicia
 docker compose --profile automation exec n8n n8n update:workflow --id=calendaromni0001 --active=true
@@ -179,9 +179,8 @@ Token errado -> **403**; plano ja `done`/`applied` -> **409**; env ausente -> **
 
 ## 7. Limitacoes / dividas
 
-- **Nao testado no n8n real.** Autorado e validado fora do n8n (parse do JSON, conexoes dos
-  nos, sintaxe e logica dos nos Code). Precisa de import + credentials + teste manual antes de
-  confiar em prod.
+- **Sem teste de prompt real no deploy.** Importado/publicado no n8n de prod e comparado com o
+  JSON local; a chamada ao provider ficou manual para nao consumir tokens involuntariamente.
 - **Um provider OpenAI-compat por vez** (credential unica `calendar-ai-openai-compat`). Multi
   provider chines em paralelo = duplicar no + credential + ramo no Switch (§3).
 - **Escrita de workflow via n8n-MCP e quebrada** nesta versao do n8n (PUT publico estrito) —

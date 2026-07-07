@@ -69,8 +69,8 @@ var chatPositions = map[string]bool{"center": true, "left": true, "right": true,
 // calendarStore e a fatia da persistencia que o Service consome.
 type calendarStore interface {
 	ListEvents(ctx context.Context, accountID string, f EventFilter) ([]EventView, error)
-	// ListEventsLean projeta os eventos do mes para o agregado de contexto das IAs
-	// (C9/C7): date,type,title,status,client_id, com teto de linhas (sem N+1).
+	// ListEventsLean projeta eventos reais do mes para o agregado das IAs, incluindo
+	// identidade, horario e midia, com teto de linhas (sem N+1).
 	ListEventsLean(ctx context.Context, accountID, from, to, clientID string, limit int) ([]AIContextEvent, error)
 	// ListEventsLeanForClients projeta os eventos do mes SO dos clientes visiveis (WAVE 4,
 	// modo 'all'): client_id = ANY(visiveis) OR NULL. Barra vazamento de evento de cliente
@@ -212,6 +212,18 @@ func (s *Service) UpdateEvent(ctx context.Context, accountID, id string, in Even
 	if err != nil {
 		return EventView{}, err
 	}
+	// Descricao antiga + taskId ANTES do update: usados no forward sync para (a) achar a task
+	// vinculada e (b) so empurrar a descricao pro corpo da task quando ELA mudou (evita apagar
+	// o texto rico da task numa edicao de outro campo do evento). So consulta com tasks ativo.
+	oldDesc, taskID := "", ""
+	if s.tasksSvc() != nil {
+		if old, gerr := s.store.GetEvent(ctx, id, account); gerr == nil {
+			oldDesc = old.Description
+			if old.TaskID != nil {
+				taskID = strings.TrimSpace(*old.TaskID)
+			}
+		}
+	}
 	e, err := s.store.UpdateEvent(ctx, id, account, in, expectedVersion)
 	if err != nil {
 		if expectedVersion != nil && errors.Is(err, pgx.ErrNoRows) {
@@ -236,10 +248,9 @@ func (s *Service) UpdateEvent(ctx context.Context, accountID, id string, in Even
 	// WAVE 5 (E4/E5): reflete a edicao do evento na task vinculada (forward sync). O
 	// UpdateEvent basico nao traz o taskId; le via join so quando a integracao tasks esta
 	// ativa. Terminal do lado tasks (ApplyCalendarSync nao volta pro calendar) — sem loop.
-	if s.tasksSvc() != nil {
-		if linked, gerr := s.store.GetEvent(ctx, e.ID, account); gerr == nil && linked.TaskID != nil {
-			s.syncTaskFromEvent(ctx, account, e, strings.TrimSpace(*linked.TaskID))
-		}
+	if s.tasksSvc() != nil && taskID != "" {
+		s.syncTaskFromEvent(ctx, account, e, taskID,
+			strings.TrimSpace(oldDesc) != strings.TrimSpace(e.Description))
 	}
 	return e.view(), nil
 }

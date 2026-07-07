@@ -19,9 +19,9 @@ type ChatAskResult struct {
 	Answer         string
 	ConversationID string
 	Title          string
-	// Proposal (WAVE 5, E7) e opcional: a proposta de criacao de evento/task da IA (nil na
-	// conversa normal). O front confirma e cria pela API autenticada do usuario.
-	Proposal *ChatProposal
+	// Message carrega as propostas (multi-tarefa, WAVE 5.1) no campo Proposals: o front le
+	// dali. A IA propoe; o usuario confirma cada uma e cria pela API autenticada.
+	Message ChatMessageView
 	// AIError (WAVE 5) = a IA nao respondeu (503/cota/chave/vazio). O front mostra o estado
 	// "IA fora do ar" (visual distinto) em vez de um balao normal; a mensagem nao e persistida.
 	AIError bool
@@ -41,11 +41,21 @@ type ChatConversationSummary struct {
 }
 
 // ChatMessageView e a projecao de uma mensagem no GET da conversa (contrato D3).
+// Proposals (WAVE 5.1) e a lista autoritativa (multi-tarefa); proposal/proposalStatus
+// (singular) ficam so p/ retrocompat de front antigo.
 type ChatMessageView struct {
-	ID        string    `json:"id"`
-	Role      string    `json:"role"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID             string           `json:"id"`
+	Role           string           `json:"role"`
+	Content        string           `json:"content"`
+	Proposal       *ChatProposal    `json:"proposal,omitempty"`
+	ProposalStatus string           `json:"proposalStatus"`
+	Proposals      []StoredProposal `json:"proposals"`
+	CalendarItems  []AIContextEvent `json:"calendarItems"`
+	CreatedAt      time.Time        `json:"createdAt"`
+}
+
+type UpdateChatProposalRequest struct {
+	Status string `json:"status"`
 }
 
 // ChatConversationDetail e a conversa + suas mensagens em ordem cronologica (GET, D3).
@@ -242,6 +252,32 @@ func (s *Service) DeleteChatConversation(ctx context.Context, accountID, id stri
 	return mapNotFound(s.store.SoftDeleteConversation(ctx, strings.TrimSpace(id), account))
 }
 
+// UpdateChatProposal registra a decisao explicita do usuario sobre UMA proposta (por
+// proposalID, multi-tarefa WAVE 5.1). O cartao continua na mensagem e apenas troca de
+// estado; conversa e account sao reautorizadas antes do update. Idempotente no store
+// (so muda item ainda 'pending'); item ja resolvido / inexistente => ErrNotFound.
+func (s *Service) UpdateChatProposal(ctx context.Context, accountID, conversationID, messageID, proposalID string, principal auth.Principal, req UpdateChatProposalRequest) (ChatMessageView, error) {
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status != "accepted" && status != "rejected" {
+		return ChatMessageView{}, ErrInvalidProposalStatus
+	}
+	account := strings.TrimSpace(accountID)
+	access, err := s.resolveChatAccess(ctx, principal, account)
+	if err != nil {
+		return ChatMessageView{}, err
+	}
+	conv, err := s.authorizeConversation(ctx, access, account, conversationID, principal.UserID)
+	if err != nil || !access.canAccessSavedScope(conv.ScopeMode, ptrToStr(conv.ScopeClientID)) {
+		return ChatMessageView{}, ErrNotFound
+	}
+	message, err := s.store.SetProposalStatus(ctx, account, conv.ID,
+		strings.TrimSpace(messageID), strings.TrimSpace(proposalID), status)
+	if err != nil {
+		return ChatMessageView{}, mapNotFound(err)
+	}
+	return messageViewFrom(message), nil
+}
+
 // ChatScope alimenta o SELECT de escopo do front (contrato D3): canSelect + lockedClientId
 // (derivados do acesso) + a lista NOMEADA de clientes visiveis. Uma UNICA ida ao tenants
 // scope via resolveChatContext (acesso + nomes juntos).
@@ -275,9 +311,22 @@ func summaryFrom(c ChatConversation, name string) ChatConversationSummary {
 func toMessageViews(msgs []ChatMessage) []ChatMessageView {
 	out := make([]ChatMessageView, 0, len(msgs))
 	for _, m := range msgs {
-		out = append(out, ChatMessageView{ID: m.ID, Role: m.Role, Content: m.Content, CreatedAt: m.CreatedAt})
+		out = append(out, messageViewFrom(m))
 	}
 	return out
+}
+
+func messageViewFrom(m ChatMessage) ChatMessageView {
+	items := m.CalendarItems
+	if items == nil {
+		items = []AIContextEvent{}
+	}
+	proposals := m.Proposals
+	if proposals == nil {
+		proposals = []StoredProposal{}
+	}
+	return ChatMessageView{ID: m.ID, Role: m.Role, Content: m.Content, Proposal: m.Proposal,
+		ProposalStatus: m.ProposalStatus, Proposals: proposals, CalendarItems: items, CreatedAt: m.CreatedAt}
 }
 
 // principalDisplayName resolve um rotulo do autor a partir do Principal (nome > email >

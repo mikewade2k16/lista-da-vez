@@ -66,9 +66,11 @@ func (s *Service) createLinkedTask(ctx context.Context, accountID string, cfg Ca
 	}
 
 	input := tasks.CreateTaskInput{
-		BoardID:           cfg.Tasks.BoardID,
-		ColumnID:          s.resolveTaskColumn(ctx, svc, access, cfg, e.Status),
-		Title:             e.Title,
+		BoardID:  cfg.Tasks.BoardID,
+		ColumnID: s.resolveTaskColumn(ctx, svc, access, cfg, e.Status),
+		Title:    e.Title,
+		// WAVE 6.1: a descricao do evento vira o corpo (editor) da task ja na criacao.
+		ContentHTML:       descToHTML(e.Description),
 		DueDate:           eventDueDate(e.Date, e.Time),
 		ResponsibleUserID: nonEmptyPtr(normalizeUUID(e.ResponsibleID)),
 		ClientAccountID:   e.ClientID,

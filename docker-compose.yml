@@ -209,6 +209,9 @@ services:
       CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-false}
       CHOKIDAR_INTERVAL: ${CHOKIDAR_INTERVAL:-350}
       WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
+      # PWA-01: SW de dev e opt-in para nao interferir no HMR normal.
+      NUXT_PWA_ENABLED: ${NUXT_PWA_ENABLED:-false}
+      NUXT_PWA_DEV: ${NUXT_PWA_DEV:-false}
     depends_on:
       api:
         condition: service_healthy

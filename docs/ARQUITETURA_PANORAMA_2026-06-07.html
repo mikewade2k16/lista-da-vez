@@ -109,7 +109,7 @@
       <div class="logo">Ω</div>
       <div>
         <h1>Omni · Panorama de Arquitetura</h1>
-        <div class="sub">Fotografia em 2026-06-07 · atualizado 2026-06-11 — banco, backend Go, Nuxt, realtime, multi-tenant, segurança e plano de evolução</div>
+        <div class="sub">Fotografia em 2026-06-07 · atualizado 2026-07-06 — banco, backend Go, Nuxt, realtime, multi-tenant, segurança, plano de evolução e gap analysis ERP</div>
       </div>
     </div>
     <nav class="tabs">
@@ -118,11 +118,18 @@
       <button data-tab="seg">Multi-tenant &amp; Segurança</button>
       <button data-tab="perf">Performance</button>
       <button data-tab="plano">Plano de melhoria</button>
+      <button data-tab="erp">ERP · Gap Analysis</button>
     </nav>
   </div>
 </header>
 
 <main class="wrap">
+
+<div class="note" style="border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08);color:#fde68a;margin-top:20px">
+  ⚠️ <b>DOCUMENTO CONGELADO em 2026-07-06.</b> Este panorama foi consolidado no
+  <a href="./relatorios/2026-07/index.html"><b>Diagnóstico 2026-07</b></a> (abas <b>Arquitetura</b>, <b>Calendário</b> e <b>ERP · Gap</b>) — que é o documento vivo daqui pra frente.
+  Este arquivo fica como histórico do backlog de junho (P0/P1/P2); não atualizar mais aqui.
+</div>
 
 <!-- ============ PANORAMA ============ -->
 <section class="tab active" id="panorama">
@@ -130,10 +137,10 @@
   <p class="lead">Onde o sistema está hoje: fundação modular sólida, multi-tenant funcional, com um conjunto claro de frentes de endurecimento antes de escalar e fazer o deploy.</p>
 
   <div class="grid g4" style="margin-bottom:18px">
-    <div class="stat"><div class="n ind">87</div><div class="l">tabelas base no banco</div></div>
-    <div class="stat"><div class="n cyan">7</div><div class="l">schemas de domínio</div></div>
-    <div class="stat"><div class="n">4 / 66</div><div class="l">accounts / usuários (local)</div></div>
-    <div class="stat"><div class="n green">0136</div><div class="l">migration atual (public.* removido)</div></div>
+    <div class="stat"><div class="n ind">139</div><div class="l">tabelas base no banco</div></div>
+    <div class="stat"><div class="n cyan">13</div><div class="l">schemas de domínio</div></div>
+    <div class="stat"><div class="n">9 / 65</div><div class="l">accounts / usuários ativos (local)</div></div>
+    <div class="stat"><div class="n green">0193</div><div class="l">migration atual (calendar linked_media)</div></div>
   </div>
 
   <div class="grid g2">
@@ -236,16 +243,19 @@
       <h3>SCHEMAS DO BANCO</h3>
       <table>
         <tr><th>Schema</th><th>Tabelas</th><th>Domínio</th></tr>
-        <tr><td><code>core</code></td><td>16</td><td>accounts, users, RBAC, módulos, sessões</td></tr>
+        <tr><td><code>core</code></td><td>17</td><td>accounts, users, RBAC, módulos, sessões, orgs, billing</td></tr>
         <tr><td><code>queue</code></td><td>26</td><td>fila, lojas, consultores, operação, ERP</td></tr>
-        <tr><td><code>tasks</code></td><td>17</td><td>boards, tasks, campos, comentários</td></tr>
-        <tr><td><code>site</code></td><td>4</td><td>leads, produtos, tracking, webhooks</td></tr>
-        <tr><td><code>bio</code></td><td>3</td><td>bios (draft/published jsonb), defaults, media — migration 0152 pendente de aplicar</td></tr>
-        <tr><td><code>cardapio</code></td><td>10</td><td>restaurants, domains, categories, products, variations, addons, reviews, orders, order_items, events — migration 0153 pendente de aplicar</td></tr>
-        <tr><td><code>calendar</code></td><td>6</td><td>events, notes, config, day_media, client_profiles, ai_plans — migrations 0181-0186 aplicadas (2026-07-02)</td></tr>
+        <tr><td><code>tasks</code></td><td>17</td><td>boards, tasks, campos, comentários, audit_log</td></tr>
+        <tr><td><code>cardapio</code></td><td>13</td><td>restaurants, products, variations, addons, orders, telemetria</td></tr>
+        <tr><td><code>automation</code></td><td>9</td><td>personas, knowledge, messages, lead_state (WhatsApp/n8n)</td></tr>
+        <tr><td><code>calendar</code></td><td>9</td><td>events, notes, config, day_media, client_profiles, ai_plans, ai_secrets, chat</td></tr>
+        <tr><td><code>finance</code></td><td>8</td><td>sheets, lines, adjustments, categories, fixed_accounts, recorrências (0187)</td></tr>
+        <tr><td><code>site</code></td><td>6</td><td>leads, produtos, tracking, webhooks, product_sources</td></tr>
+        <tr><td><code>meta_ads</code></td><td>6</td><td>conexões (pgcrypto), campanhas, insights cache</td></tr>
         <tr><td><code>notifications</code></td><td>4</td><td>notificações, canais, mutes</td></tr>
+        <tr><td><code>bio</code></td><td>3</td><td>bios (draft/published jsonb), defaults, media</td></tr>
         <tr><td><code>roadmap</code></td><td>2</td><td>módulos/regras de roadmap</td></tr>
-        <tr><td><code>public</code></td><td>18</td><td>residual/compat (reset, ERP raw, access)</td></tr>
+        <tr><td><code>public</code></td><td>19</td><td>residual/compat (reset, ERP raw, access)</td></tr>
       </table>
     </div>
     <div class="card">
@@ -259,12 +269,13 @@
         <tr><td><code>crm</code></td><td>✅</td><td><span class="tag">catálogo + wiring legado</span></td></tr>
         <tr><td><code>automation</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
         <tr><td><code>meta_ads</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
-        <tr><td><code>bio</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">aguarda migration 0152 + rebuild</span></td></tr>
-        <tr><td><code>cardapio</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">aguarda migration 0153 + rebuild</span></td></tr>
-        <tr><td><code>calendar</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">fases 1-6 no código (2026-07-02); IA aguarda import do workflow n8n</span></td></tr>
-        <tr><td><code>site</code></td><td>✅</td><td><span class="pill p1">não registrado</span></td></tr>
-        <tr><td><code>roadmap</code></td><td>✅</td><td><span class="pill p1">não registrado</span></td></tr>
-        <tr><td><code>operationgoals</code></td><td>—</td><td><span class="pill p1">não registrado</span></td></tr>
+        <tr><td><code>bio</code></td><td>✅</td><td><span class="pill ok">registrado</span></td></tr>
+        <tr><td><code>cardapio</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">Mostarda em produção</span></td></tr>
+        <tr><td><code>calendar</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">0181-0193; IA aguarda import do workflow n8n</span></td></tr>
+        <tr><td><code>finance</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">back Go real desde 2026-07-02 (AC-12); BFF Nitro eliminado</span></td></tr>
+        <tr><td><code>site</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">RegisterAdminRoutes + ingest</span></td></tr>
+        <tr><td><code>roadmap</code></td><td>✅</td><td><span class="pill ok">registrado</span> <span class="tag">RegisterRoutes</span></td></tr>
+        <tr><td><code>operationgoals</code></td><td>—</td><td><span class="pill ok">registrado</span> <span class="tag">RegisterRoutes</span></td></tr>
       </table>
     </div>
   </div>
@@ -624,8 +635,115 @@
   <div class="note">🗺️ <b>1ª onda paralela sugerida (zero conflito de arquivo):</b> P0·1 (front) + P0·2 (auth/app.go) + P0·3 (compose) podem ir em 3 frentes. P0·4/P0·6 são front. RLS (P1·7) precisa de design dedicado — abrir sozinho. Detalhe do mapa de conflito em <code>docs/SECURITY_OPTIMIZATION_BACKLOG.md</code>.</div>
 </section>
 
+<!-- ============ ERP GAP ANALYSIS ============ -->
+<section class="tab" id="erp">
+  <h2 class="section">Omni → ERP · Gap Analysis</h2>
+  <p class="lead">Varredura multi-agente de 2026-07-06 (6 dimensões + crítico de completude, evidência por arquivo). Veredito honesto: o Omni hoje é um <b>painel operacional multi-tenant</b> muito bem fundado — mas ERP exige as camadas <b>transacionais</b> (contábil, estoque, compras, fiscal) que ainda não existem, e <b>serviços de plataforma</b> (auditoria, workflow, API pública) que hoje são pontuais.</p>
+
+  <div class="grid g3" style="margin-bottom:18px">
+    <div class="card">
+      <h3>MULTI-TENANT &amp; SEGURANÇA · 6.5/10</h3>
+      <div class="barwrap"><div class="bar" style="width:65%;background:var(--green)"></div></div>
+      <ul class="clean">
+        <li><span class="dot g"></span>Membership org-aware, RBAC v2 por conta, authn≠authz, fonte única <code>core.users</code></li>
+        <li><span class="dot r"></span>RLS <b>inerte</b> (role omni_app existe, zero policies), sem MFA, sem audit de plataforma</li>
+        <li><span class="dot y"></span>2 camadas RBAC coexistem; rotas legadas confiam no escopo do login</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>FINANCEIRO · 3/10</h3>
+      <div class="barwrap"><div class="bar" style="width:30%;background:var(--orange)"></div></div>
+      <ul class="clean">
+        <li><span class="dot g"></span>Planilhas mensais multi-tenant reais (schema <code>finance</code>, 0187) + comissão testada</li>
+        <li><span class="dot r"></span>Sem AP/AR (títulos/parcelas), plano de contas, partida dobrada, conciliação, DRE</li>
+        <li><span class="dot y"></span><code>float64</code> em dinheiro, full-replace sem lock, "fechada" sem trava, zero testes</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>VENDAS / CRM / PRODUTOS · 4/10</h3>
+      <div class="barwrap"><div class="bar" style="width:40%;background:var(--yellow)"></div></div>
+      <ul class="clean">
+        <li><span class="dot g"></span>Checkout do cardápio recalcula tudo server-side; fila+metas+relatórios sólidos</li>
+        <li><span class="dot r"></span>Sem pedido de venda nativo, orçamento/proposta, funil, tabela de preços</li>
+        <li><span class="dot y"></span>Cliente final em <b>5 silos</b>; 4 catálogos de produto sem chave comum</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>ESTOQUE / COMPRAS / FISCAL · 0.5/10</h3>
+      <div class="barwrap"><div class="bar" style="width:5%;background:var(--red)"></div></div>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>Nada nativo</b>: sem saldo/movimento/inventário, sem OC/fornecedor, fiscal = zero absoluto</li>
+        <li><span class="dot y"></span>"Estoque" do BI = proxy read-only Pérola; aba "Compras" = <b>vendas</b> importadas</li>
+        <li><span class="dot g"></span>Ativo reaproveitável: pipeline ERP (item/order raw) como master data seed</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>INFRA / NFRs · 5/10</h3>
+      <div class="barwrap"><div class="bar" style="width:50%;background:var(--yellow)"></div></div>
+      <ul class="clean">
+        <li><span class="dot g"></span>CI/CD GHCR validado, backup 3 camadas c/ alerta, healthz real, role least-privilege</li>
+        <li><span class="dot r"></span>Zero métricas/tracing/uptime-alert; RPO 24h sem PITR; uploads fora do backup</li>
+        <li><span class="dot y"></span>Escala horizontal bloqueada (hub WS, rate limit, cache in-memory); sem graceful shutdown</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>INTEGRAÇÕES / PLATAFORMA · 4/10</h3>
+      <div class="barwrap"><div class="bar" style="width:40%;background:var(--yellow)"></div></div>
+      <ul class="clean">
+        <li><span class="dot g"></span>n8n desacoplado ("executor burro" via API Go), webhooks de entrada HMAC, import FTP idempotente</li>
+        <li><span class="dot r"></span>Sem API pública (API keys/OpenAPI), sem webhooks de saída, e-mail só p/ reset</li>
+        <li><span class="dot y"></span>Token de serviço único cross-tenant; export CSV em exatamente 1 endpoint</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3>🕳️ DIMENSÕES QUE NEM TANGENCIAMOS (crítico)</h3>
+      <ul class="clean">
+        <li><span class="dot r"></span><b>RH/DP/folha</b> — funcionário só existe como espelho CSV + consultor da fila</li>
+        <li><span class="dot r"></span><b>Workflow de aprovação/alçadas</b> como motor de plataforma</li>
+        <li><span class="dot r"></span><b>Numeração de documentos</b> (séries por filial/tipo, gapless) — só o cardápio tem contador</li>
+        <li><span class="dot r"></span><b>Contratos</b> (vigência, reajuste IGPM/IPCA, renovação, assinatura)</li>
+        <li><span class="dot y"></span><b>PDF/documentos impressos</b> (recibo, fatura, romaneio) — zero no back</li>
+        <li><span class="dot y"></span><b>GED</b> (versão, retenção, permissão por documento), <b>ativos fixos</b>, <b>produção/BOM</b>, <b>logística/WMS</b></li>
+        <li><span class="dot y"></span><b>i18n</b> (pt-BR hardcoded), <b>offline/PWA</b> (fila morre sem internet), <b>WCAG</b>, <b>busca global</b></li>
+        <li><span class="dot y"></span><b>Lock otimista + soft-delete/lixeira</b> — PUT full-replace last-write-wins é sistêmico</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>🧱 OS 3 BURACOS ESTRUTURAIS</h3>
+      <div class="layer gap"><div class="num">1</div><div class="txt"><b>Camada transacional de negócio</b> — não há documento interno de venda/compra/título: tudo é espelho read-only de ERP externo ou declaração manual (finish modal)</div></div>
+      <div class="layer gap"><div class="num">2</div><div class="txt"><b>Serviços de plataforma transversais</b> — audit trail (só tasks tem), workflow de aprovação, numeração, PDF, import/export: em ERP são motores; aqui são pontuais ou ausentes</div></div>
+      <div class="layer gap"><div class="num">3</div><div class="txt"><b>Entidades mestre unificadas</b> — "parceiro de negócio" (cliente/fornecedor/funcionário com dedupe por CPF/CNPJ) e produto interno (NCM/EAN/custo): hoje 5 silos de cliente e 4 catálogos</div></div>
+      <h3 style="margin-top:16px">✅ ATIVOS REAPROVEITÁVEIS</h3>
+      <ul class="clean">
+        <li><span class="dot g"></span>Fundação multi-tenant + RBAC + módulos por conta = o "shell" de ERP já existe</li>
+        <li><span class="dot g"></span>Pipeline ERP (raw + projeção + scheduler) = esqueleto de import/master data</li>
+        <li><span class="dot g"></span>Cardápio = referência interna correta (cents, checkout server-side, telemetria c/ retenção)</li>
+        <li><span class="dot g"></span>n8n desacoplado = camada de automação vendável junto</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h3>🌊 CAMINHO RECOMENDADO — ONDAS E0→E5</h3>
+    <div class="layer"><div class="num">E0</div><div class="txt"><b>Fundação de plataforma (pré-ERP)</b> — RLS efetivo (policies + GUC, a fundação já existe), audit trail transversal, lock otimista (version/ETag) padrão, dinheiro em cents no finance, graceful shutdown, refresh token + MFA, secrets cifrados (calendar.ai_secrets está em texto plano)</div></div>
+    <div class="layer"><div class="num">E1</div><div class="txt"><b>Master data</b> — entidade Parceiro de Negócio (cliente/fornecedor/funcionário, dedupe CPF/CNPJ, unifica os 5 silos), produto interno mestre (NCM/EAN/custo/fornecedor; provider <code>internal_products</code> já previsto em <code>crm/catalog</code>), motor de numeração de documentos</div></div>
+    <div class="layer"><div class="num">E2</div><div class="txt"><b>Transacional</b> — pedido de venda nativo c/ máquina de estados; contas a pagar/receber (títulos, parcelas, baixa); estoque (saldo, movimentos, inventário, mínimo); compras (cotação → OC → recebimento)</div></div>
+    <div class="layer"><div class="num">E3</div><div class="txt"><b>Fiscal &amp; pagamentos</b> — NF-e/NFS-e/NFC-e via gateway (Focus/PlugNotas/eNotas), gateway de pagamento (Pix/boleto/cartão), conciliação OFX/Open Finance, impostos por regime</div></div>
+    <div class="layer"><div class="num">E4</div><div class="txt"><b>Plataforma integrável</b> — API keys por tenant + OpenAPI, webhooks de saída (retry/DLQ), import/export genérico (CSV/XLSX c/ preview), e-mail transacional geral, PDF templável, workflow de aprovação</div></div>
+    <div class="layer"><div class="num">E5</div><div class="txt"><b>Escala enterprise</b> — Redis pub/sub (WS/cache/rate limit), deploy sem downtime, observabilidade (métricas/tracing/SLO), PITR + backup de uploads, LGPD completa (exportação/esquecimento), i18n, RH mínimo ou integração DP</div></div>
+    <div class="legend" style="margin-top:12px">
+      <span>⚠️ E2 e E3 são as ondas mais caras — e as que efetivamente transformam "painel" em "ERP". E0/E1 são pré-requisitos: construir transacional sem audit/lock/master data unificado gera retrabalho.</span>
+    </div>
+  </div>
+
+  <div class="note">📌 <b>Calibragem honesta:</b> a distância para "um SAP" não é incremental, é estrutural — mas o caminho não exige reescrever nada: o shell multi-tenant, o registry de módulos e o pipeline de dados já são formato ERP. A decisão de produto que antecede tudo: <b>quais ondas fazem sentido para os clientes da Crow</b> (varejo + agência) — talvez "ERP de gestão comercial + financeiro leve + fiscal via gateway" seja o alvo certo, e não paridade com SAP (produção, RH, ativos podem ser declarados fora de escopo).</div>
+</section>
+
 <div class="foot wrap">
-  Gerado em 2026-06-07 · consolida <code>ARQUITETURA_ESTADO_ATUAL</code> + <code>ARQUITETURA_MELHORIAS</code> + <code>ENGINEERING_PRINCIPLES §10</code> + <code>SECURITY_OPTIMIZATION_BACKLOG</code>.<br>
+  Gerado em 2026-06-07 · atualizado 2026-07-06 · consolida <code>ARQUITETURA_ESTADO_ATUAL</code> + <code>ARQUITETURA_MELHORIAS</code> + <code>ENGINEERING_PRINCIPLES §10</code> + <code>SECURITY_OPTIMIZATION_BACKLOG</code> + gap analysis ERP (varredura multi-agente 2026-07-06).<br>
   Fotografia do estado local em disco/banco — não é promessa do que está em produção.
 </div>
 </main>

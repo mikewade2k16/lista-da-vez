@@ -11,6 +11,9 @@ import (
 const (
 	maxContextEvents = 100
 	maxContextPlans  = 10
+	// maxContextMediaPerEvent mantem o prompt e o snapshot do chat limitados sem esconder
+	// que o evento possui midia; o card mostra as primeiras e sinaliza o restante recebido.
+	maxContextMediaPerEvent = 6
 	// maxContextClients e o teto de clientes no agregado multi-cliente do chat
 	// (contrato D4, scope 'all'): quando a agencia enxerga muitos clientes, so os
 	// primeiros N entram — mantem o payload token-bounded.
@@ -43,14 +46,21 @@ type AIContextAccount struct {
 	ID string `json:"id"`
 }
 
-// AIContextEvent e a projecao lean de um evento do mes (contrato C9/C7): so os
-// campos que a IA precisa, sem media/involved (evita over-fetch no payload).
+// AIContextEvent e a projecao segura de um evento enviada ao chat. Alem dos campos
+// textuais, leva IDs e midias reais para o LLM referenciar; o backend usa esses IDs para
+// montar os cards ricos, portanto uma URL inventada pelo modelo nunca chega ao front.
 type AIContextEvent struct {
-	Date     string `json:"date"`
-	Type     string `json:"type"`
-	Title    string `json:"title"`
-	Status   string `json:"status"`
-	ClientID string `json:"clientId"`
+	ID          string      `json:"id"`
+	Date        string      `json:"date"`
+	Time        string      `json:"time"`
+	Type        string      `json:"type"`
+	Title       string      `json:"title"`
+	Status      string      `json:"status"`
+	Priority    string      `json:"priority"`
+	ClientID    string      `json:"clientId"`
+	ClientName  string      `json:"clientName"`
+	Description string      `json:"description,omitempty"`
+	Media       []MediaItem `json:"media"`
 }
 
 // AIContextPlan e a projecao lean de um plano de IA (contrato C9/C7): sem o
@@ -109,6 +119,13 @@ func (s *Service) BuildAIContext(ctx context.Context, accountID, clientID, month
 	// contexto da tela (cliente filtrado + mes) e mantem o payload lean.
 	events, err := s.store.ListEventsLean(ctx, account, from, to, clientID, maxContextEvents)
 	if err != nil {
+		return AIContext{}, err
+	}
+	clientNames := map[string]string{}
+	for _, c := range pc.Clients {
+		clientNames[c.ID] = c.Name
+	}
+	if err := s.enrichContextEvents(ctx, account, from, to, events, clientNames); err != nil {
 		return AIContext{}, err
 	}
 	plans, err := s.leanPlans(ctx, account)
@@ -198,6 +215,13 @@ func (s *Service) BuildAIContextAll(ctx context.Context, accountID string, visib
 	if err != nil {
 		return AIContextAll{}, err
 	}
+	clientNames := make(map[string]string, len(pc.Clients))
+	for _, c := range pc.Clients {
+		clientNames[c.ID] = c.Name
+	}
+	if err := s.enrichContextEvents(ctx, account, from, to, events, clientNames); err != nil {
+		return AIContextAll{}, err
+	}
 	return AIContextAll{
 		Scope:      chatScopeAll,
 		Month:      month,
@@ -206,6 +230,44 @@ func (s *Service) BuildAIContextAll(ctx context.Context, accountID string, visib
 		MonthNotes: pc.MonthNote,
 		Events:     events,
 	}, nil
+}
+
+// enrichContextEvents associa nomes e anexos avulsos do dia marcados com eventId. A
+// midia propria/espelhada ja vem da query de eventos; a leitura de day_media e unica
+// para todo o mes (sem N+1). URLs continuam internas e ja foram validadas no upload.
+func (s *Service) enrichContextEvents(ctx context.Context, accountID, from, to string, events []AIContextEvent, clientNames map[string]string) error {
+	byID := make(map[string]*AIContextEvent, len(events))
+	for i := range events {
+		events[i].ClientName = clientNames[events[i].ClientID]
+		byID[events[i].ID] = &events[i]
+	}
+	days, err := s.store.ListDayMedia(ctx, accountID, from, to)
+	if err != nil {
+		return err
+	}
+	for _, day := range days {
+		for _, media := range day.Media {
+			if event := byID[strings.TrimSpace(media.EventID)]; event != nil {
+				event.Media = appendContextMedia(event.Media, media)
+			}
+		}
+	}
+	return nil
+}
+
+func appendContextMedia(items []MediaItem, candidate MediaItem) []MediaItem {
+	if strings.TrimSpace(candidate.URL) == "" {
+		return items
+	}
+	for _, item := range items {
+		if (candidate.ID != "" && item.ID == candidate.ID) || item.URL == candidate.URL {
+			return items
+		}
+	}
+	if len(items) >= maxContextMediaPerEvent {
+		return items
+	}
+	return append(items, candidate)
 }
 
 // capClientIDs normaliza (UUID) e limita a lista de clientes ao teto, preservando a

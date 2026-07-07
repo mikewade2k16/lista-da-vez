@@ -1,4 +1,7 @@
 const shouldEnableNuxtDevtools = process.env.NUXT_DEVTOOLS === 'true'
+// PWA estacionado por decisao de produto. So volta a registrar manifest/SW
+// quando for explicitamente habilitado no ambiente.
+const shouldEnablePwa = process.env.NUXT_PWA_ENABLED === 'true'
 const shouldUsePollingWatcher =
   process.env.CHOKIDAR_USEPOLLING === 'true' || process.env.WATCHPACK_POLLING === 'true'
 // Menos arquivos vigiados = menos CPU gasta no polling (obrigatorio no bind
@@ -50,6 +53,7 @@ export default defineNuxtConfig({
     '/meus-feedbacks': { ssr: false },
     '/monitoramento': { ssr: false },
     '/multiloja': { ssr: false },
+    '/offline': { prerender: true },
     '/omnichannel': { ssr: false },
     '/operacao/**': { ssr: false },
     '/perfil': { ssr: false },
@@ -71,7 +75,7 @@ export default defineNuxtConfig({
   experimental: {
     watcher: 'chokidar-granular',
   },
-  modules: ['@nuxt/ui', '@nuxt/eslint', '@pinia/nuxt'],
+  modules: ['@nuxt/ui', '@nuxt/eslint', '@pinia/nuxt', '@vite-pwa/nuxt'],
   colorMode: {
     preference: 'dark',
     fallback: 'dark',
@@ -159,6 +163,75 @@ export default defineNuxtConfig({
           },
     },
   },
+  pwa: {
+    disable: !shouldEnablePwa,
+    // DECISAO: registerType 'prompt' (nao 'autoUpdate'). O painel tem operacao
+    // ao vivo, chat e formularios longos; a pessoa escolhe quando recarregar.
+    registerType: 'prompt',
+    manifest: {
+      id: '/',
+      name: 'Omni',
+      short_name: 'Omni',
+      description: 'Painel Omni: operacao, tasks, calendario e clientes.',
+      lang: 'pt-BR',
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      theme_color: '#060a12',
+      background_color: '#060a12',
+      icons: [
+        { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+        { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+        {
+          src: '/maskable-icon-512x512.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable',
+        },
+      ],
+    },
+    registerWebManifestInRouteRules: true,
+    client: {
+      installPrompt: true,
+    },
+    workbox: {
+      // ================= REGRA MULTI-TENANT (NAO REMOVER) =================
+      // Precache SOMENTE do app shell e de assets estaticos, iguais para todos
+      // os tenants. NUNCA adicionar runtimeCaching para a origem da API nem
+      // para /v1/*: o cache do Service Worker nao inclui X-Account-Id na chave
+      // e poderia servir dados de uma conta em outra sessao/conta.
+      // =====================================================================
+      globPatterns: ['**/*.{html,css,ico,png,svg,webp,woff2}'],
+      globIgnores: ['perola-bi-teste.html', 'erp-agent.md'],
+      navigateFallback: null,
+      cleanupOutdatedCaches: true,
+      maximumFileSizeToCacheInBytes: 3145728,
+      runtimeCaching: [
+        {
+          urlPattern: ({ sameOrigin, url }) => sameOrigin && url.pathname.startsWith('/_nuxt/'),
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'omni-build-assets',
+            expiration: { maxEntries: 400, maxAgeSeconds: 2592000 },
+            cacheableResponse: { statuses: [200] },
+          },
+        },
+        {
+          urlPattern: ({ sameOrigin, request }) => sameOrigin && request.mode === 'navigate',
+          handler: 'NetworkOnly',
+          options: {
+            precacheFallback: { fallbackURL: '/offline/index.html' },
+          },
+        },
+      ],
+    },
+    devOptions: {
+      // Opt-in em dev para o SW nao interferir no HMR por padrao.
+      enabled: process.env.NUXT_PWA_DEV === 'true',
+      type: 'module',
+      suppressWarnings: true,
+    },
+  },
   runtimeConfig: {
     apiInternalBase:
       process.env.NUXT_API_INTERNAL_BASE ||
@@ -193,12 +266,18 @@ export default defineNuxtConfig({
         lang: 'pt-BR',
       },
       title: 'Omni',
-      meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
+      meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'theme-color', content: '#060a12' },
+      ],
       link: [
         {
           rel: 'stylesheet',
           href: 'https://fonts.googleapis.com/icon?family=Material+Icons+Round',
         },
+        ...(shouldEnablePwa ? [{ rel: 'manifest', href: '/manifest.webmanifest' }] : []),
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon-180x180.png' },
+        { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
       ],
     },
   },

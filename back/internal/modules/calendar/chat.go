@@ -10,6 +10,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +34,9 @@ const (
 	// chatAskTimeout e a janela do POST /chat/ask ao n8n. O AI Agent e sincrono
 	// (LLM headless), entao a janela e larga; timeout vira 504 (DeadlineExceeded).
 	chatAskTimeout = 60 * time.Second
+	// chatStatusTimeout limita a verificacao leve do n8n feita ao abrir o chat e
+	// antes de enviar. A rota /healthz nao chama modelo e nao consome tokens.
+	chatStatusTimeout = 3 * time.Second
 	// chatTranscribeTimeout e a janela do POST /chat/transcribe (Whisper demora
 	// mais que uma resposta de texto).
 	chatTranscribeTimeout = 120 * time.Second
@@ -51,6 +57,10 @@ const (
 	chatRoleAssistant = "assistant"
 	// maxChatTitleRunes limita o titulo derivado da 1a pergunta (contrato D4).
 	maxChatTitleRunes = 80
+	// maxChatProposals limita quantas propostas de criacao (evento/task) uma unica
+	// resposta pode trazer (multi-tarefa, WAVE 5.1). Teto ~1 mes (uma por dia); pedidos
+	// maiores a IA fatia e avisa. Protege o payload/persistencia e a UX de aprovacao.
+	maxChatProposals = 31
 )
 
 // Sentinels do chat (mapeados em writeChatError, http_chat.go):
@@ -63,7 +73,14 @@ var (
 	ErrChatNotConfigured       = errors.New("calendar: chat webhook nao configurado")
 	ErrTranscribeNotConfigured = errors.New("calendar: transcribe webhook nao configurado")
 	ErrInvalidQuestion         = errors.New("calendar: pergunta invalida")
+	ErrInvalidProposalStatus   = errors.New("calendar: status de proposta invalido")
 	errChatUpstream            = errors.New("calendar: chat upstream falhou")
+)
+
+var (
+	chatISOYearMonthRe = regexp.MustCompile(`\b(20\d{2})-(0[1-9]|1[0-2])\b`)
+	chatNumericDateRe  = regexp.MustCompile(`\b(?:0?[1-9]|[12]\d|3[01])[/-](0?[1-9]|1[0-2])(?:[/-](20\d{2}|\d{2}))?\b`)
+	chatMonthNameRe    = regexp.MustCompile(`\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de)?\s*(20\d{2})?\b`)
 )
 
 // chatConfig guarda os webhooks do chat/transcricao (envs lidos no Build) e o
@@ -141,6 +158,13 @@ type calendarChatContext struct {
 type chatAnswer struct {
 	Answer   string        `json:"answer"`
 	Proposal *ChatProposal `json:"proposal"`
+	// Proposals (WAVE 5.1, multi-tarefa) = lista de propostas de criacao. O workflow novo
+	// devolve isto; Proposal (singular) fica so p/ retrocompat de workflow antigo. O
+	// sanitizeProposalList unifica os dois (lista tem prioridade; singular vira lista de 1).
+	Proposals []ChatProposal `json:"proposals"`
+	// EventIDs contem somente IDs do context.events que a resposta utilizou. O backend
+	// cruza a lista com o contexto autoritativo antes de persistir/exibir qualquer card.
+	EventIDs []string `json:"eventIds"`
 	// AIError (WAVE 5) = o n8n nao conseguiu falar com o LLM (503/cota/chave/vazio). O
 	// answer traz a mensagem amigavel; o front mostra isso como estado "IA off" (visual
 	// distinto) e o back NAO persiste como mensagem (nao suja a memoria da conversa).
@@ -150,6 +174,10 @@ type chatAnswer struct {
 // ChatProposal e a proposta de criacao devolvida pela IA (WAVE 5, E7). A IA NAO cria nada; e'
 // passthrough validado (shape fechado) para o front confirmar. Kind = "event" | "task".
 type ChatProposal struct {
+	// Action (WAVE 5.1, preparado p/ CRUD futuro): create|update|delete. HOJE o front so
+	// executa 'create'; update/delete ficam RESERVADOS (o schema ja carrega o campo para
+	// nao exigir migration/quebra depois). Vazio/desconhecido => 'create'.
+	Action string             `json:"action,omitempty"`
 	Kind   string             `json:"kind"`
 	Fields ChatProposalFields `json:"fields"`
 }
@@ -165,6 +193,9 @@ type ChatProposalFields struct {
 	DueDate  string `json:"dueDate,omitempty"`
 	ColumnID string `json:"columnId,omitempty"`
 	ClientID string `json:"clientId,omitempty"`
+	// TargetID (WAVE 5.1, preparado p/ CRUD): id do evento/task alvo de update/delete. Vazio
+	// em create. Reservado — o front so usa em create hoje.
+	TargetID string `json:"targetId,omitempty"`
 }
 
 // sanitizeProposal descarta propostas malformadas (kind fora de event|task ou sem titulo):
@@ -177,11 +208,71 @@ func sanitizeProposal(p *ChatProposal) *ChatProposal {
 	if kind != "event" && kind != "task" {
 		return nil
 	}
-	if strings.TrimSpace(p.Fields.Title) == "" {
+	// Action (CRUD): create|update|delete; fora disso => create.
+	action := strings.ToLower(strings.TrimSpace(p.Action))
+	if action != "create" && action != "update" && action != "delete" {
+		action = "create"
+	}
+	// Validacao por acao: update/delete precisam do ALVO (targetId, um id que existe no
+	// contexto); create/update precisam de titulo. delete nao exige titulo (so o alvo).
+	if (action == "update" || action == "delete") && strings.TrimSpace(p.Fields.TargetID) == "" {
 		return nil
 	}
+	if action != "delete" && strings.TrimSpace(p.Fields.Title) == "" {
+		return nil
+	}
+	p.Action = action
 	p.Kind = kind
 	return p
+}
+
+// StoredProposal e uma proposta PERSISTIDA na mensagem (multi-tarefa, WAVE 5.1): a
+// proposta + um id estavel (indice dentro da mensagem) + o status proprio. O front
+// aprova/recusa cada uma pelo id; o status so muda por acao explicita do usuario.
+type StoredProposal struct {
+	ID     string             `json:"id"`
+	Action string             `json:"action"`
+	Kind   string             `json:"kind"`
+	Fields ChatProposalFields `json:"fields"`
+	Status string             `json:"status"`
+}
+
+// sanitizeProposalList unifica a saida do n8n (lista `proposals` do workflow novo OU o
+// `proposal` singular do antigo), descarta malformadas (via sanitizeProposal) e aplica o
+// teto maxChatProposals. Lista vazia = nenhuma proposta (resposta de texto normal).
+func sanitizeProposalList(single *ChatProposal, list []ChatProposal) []ChatProposal {
+	src := list
+	if len(src) == 0 && single != nil {
+		src = []ChatProposal{*single}
+	}
+	out := make([]ChatProposal, 0, len(src))
+	for i := range src {
+		p := src[i]
+		if clean := sanitizeProposal(&p); clean != nil {
+			out = append(out, *clean)
+			if len(out) >= maxChatProposals {
+				break
+			}
+		}
+	}
+	return out
+}
+
+// storedProposalsFrom projeta as propostas sanitizadas em StoredProposal para persistir:
+// id = indice (estavel e unico DENTRO da mensagem, suficiente para o update por proposta)
+// e status inicial 'pending'.
+func storedProposalsFrom(list []ChatProposal) []StoredProposal {
+	out := make([]StoredProposal, 0, len(list))
+	for i, p := range list {
+		action := p.Action
+		if action == "" {
+			action = "create"
+		}
+		out = append(out, StoredProposal{
+			ID: strconv.Itoa(i), Action: action, Kind: p.Kind, Fields: p.Fields, Status: "pending",
+		})
+	}
+	return out
 }
 
 // transcribeText e a resposta do webhook calendar-transcribe.
@@ -213,6 +304,82 @@ func (s *Service) chatClient() *http.Client {
 		return http.DefaultClient
 	}
 	return s.chat.client
+}
+
+// ChatStatus valida tudo que pode ser conferido sem executar prompt: webhook configurado,
+// escopo permitido, kill switch, chave do provider efetivo e saude do n8n. Nenhuma conversa
+// ou mensagem e criada e nenhum modelo e chamado, portanto a checagem nao consome tokens.
+func (s *Service) ChatStatus(ctx context.Context, accountID string, principal auth.Principal, scopeMode, scopeClientID string) error {
+	if !s.chatConfigured() {
+		return ErrChatNotConfigured
+	}
+	account := strings.TrimSpace(accountID)
+	access, err := s.resolveChatAccess(ctx, principal, account)
+	if err != nil {
+		return err
+	}
+	mode, clientID, err := access.validateScope(scopeMode, scopeClientID)
+	if err != nil {
+		return err
+	}
+	if mode != chatScopeClient {
+		clientID = ""
+	}
+	effAI, err := s.EffectiveAIConfig(ctx, account, clientID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.resolveDispatchKey(ctx, account, effAI.Enabled, effAI.Provider); err != nil {
+		return err
+	}
+	return s.pingChatUpstream(ctx)
+}
+
+// chatHealthEndpoint aponta o webhook para o /healthz da mesma instancia n8n.
+func chatHealthEndpoint(askURL string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(askURL))
+	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("%w: url do webhook invalida", errChatUpstream)
+	}
+	// Preserva um eventual subpath do n8n (ex.: /n8n/webhook/... -> /n8n/healthz).
+	prefix := ""
+	if idx := strings.Index(u.Path, "/webhook/"); idx >= 0 {
+		prefix = strings.TrimRight(u.Path[:idx], "/")
+	}
+	u.Path = prefix + "/healthz"
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func (s *Service) pingChatUpstream(ctx context.Context) error {
+	healthURL, err := chatHealthEndpoint(s.chat.askURL)
+	if err != nil {
+		return err
+	}
+	callCtx, cancel := context.WithTimeout(ctx, chatStatusTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errChatUpstream, err)
+	}
+	resp, err := s.chatClient().Do(req)
+	if err != nil {
+		if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
+		if errors.Is(callCtx.Err(), context.Canceled) {
+			return context.Canceled
+		}
+		return fmt.Errorf("%w: %v", errChatUpstream, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 512))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("%w: health http %d", errChatUpstream, resp.StatusCode)
+	}
+	return nil
 }
 
 // ChatAsk faz proxy ao webhook calendar-chat COM memoria e escopo persistidos (contrato
@@ -277,10 +444,11 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if err != nil {
 		return ChatAskResult{}, err
 	}
-	if _, err := s.store.AppendMessage(ctx, account, conv.ID, chatRoleUser, question); err != nil {
+	if _, err := s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{Role: chatRoleUser, Content: question}); err != nil {
 		return ChatAskResult{}, err
 	}
-	contextBlock, err := s.buildChatContext(ctx, account, access, target.mode, target.clientID, req.Month)
+	contextMonth := inferChatMonth(question, req.Month, time.Now())
+	contextBlock, err := s.buildChatContext(ctx, account, access, target.mode, target.clientID, contextMonth)
 	if err != nil {
 		return ChatAskResult{}, err
 	}
@@ -292,7 +460,7 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 		Context:    contextBlock,
 		History:    toHistory(prior),
 	}
-	answer, proposal, aiError, err := s.postChatAsk(ctx, payload)
+	answer, proposals, eventIDs, aiError, err := s.postChatAsk(ctx, payload)
 	if err != nil {
 		return ChatAskResult{}, err
 	}
@@ -303,15 +471,93 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	// Falha da IA (aiError) NAO vira mensagem persistida: o front mostra o estado "IA off"
 	// (visual distinto) e a memoria da conversa nao guarda "nao consegui falar com a IA".
 	// A conversa ainda e titulada/bumpada (a pergunta do usuario ja foi gravada).
+	var assistant ChatMessage
 	if !aiError {
-		if _, err := s.store.AppendMessage(ctx, account, conv.ID, chatRoleAssistant, answer); err != nil {
+		items := selectContextEvents(contextEvents(contextBlock), eventIDs)
+		assistant, err = s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{
+			Role: chatRoleAssistant, Content: answer,
+			Proposals: storedProposalsFrom(proposals), CalendarItems: items,
+		})
+		if err != nil {
 			return ChatAskResult{}, err
 		}
 	}
 	if err := s.store.TouchConversation(ctx, account, conv.ID, title); err != nil {
 		return ChatAskResult{}, err
 	}
-	return ChatAskResult{Answer: answer, ConversationID: conv.ID, Title: title, Proposal: proposal, AIError: aiError}, nil
+	return ChatAskResult{Answer: answer, ConversationID: conv.ID, Title: title,
+		Message: messageViewFrom(assistant), AIError: aiError}, nil
+}
+
+// inferChatMonth reconhece formatos comuns em pt-BR para que uma pergunta sobre outro mês
+// consulte o período citado, não apenas o mês que estava aberto na tela. Sem mês explícito,
+// preserva o fallback enviado pelo calendário.
+func inferChatMonth(question, fallback string, now time.Time) string {
+	normalized := strings.ToLower(question)
+	normalized = strings.NewReplacer("á", "a", "à", "a", "â", "a", "ã", "a", "é", "e",
+		"ê", "e", "í", "i", "ó", "o", "ô", "o", "õ", "o", "ú", "u", "ç", "c").Replace(normalized)
+	if match := chatISOYearMonthRe.FindStringSubmatch(normalized); len(match) == 3 {
+		return match[1] + "-" + match[2]
+	}
+	baseYear := now.Year()
+	if monthRe.MatchString(strings.TrimSpace(fallback)) {
+		if year, err := strconv.Atoi(fallback[:4]); err == nil {
+			baseYear = year
+		}
+	}
+	if match := chatNumericDateRe.FindStringSubmatch(normalized); len(match) == 3 {
+		year := baseYear
+		if match[2] != "" {
+			parsed, _ := strconv.Atoi(match[2])
+			if parsed < 100 {
+				parsed += 2000
+			}
+			year = parsed
+		}
+		month, _ := strconv.Atoi(match[1])
+		return fmt.Sprintf("%04d-%02d", year, month)
+	}
+	if match := chatMonthNameRe.FindStringSubmatch(normalized); len(match) == 3 {
+		months := map[string]int{"janeiro": 1, "fevereiro": 2, "marco": 3, "abril": 4,
+			"maio": 5, "junho": 6, "julho": 7, "agosto": 8, "setembro": 9,
+			"outubro": 10, "novembro": 11, "dezembro": 12}
+		year := baseYear
+		if match[2] != "" {
+			year, _ = strconv.Atoi(match[2])
+		}
+		return fmt.Sprintf("%04d-%02d", year, months[match[1]])
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func contextEvents(block any) []AIContextEvent {
+	switch value := block.(type) {
+	case calendarChatContext:
+		return value.Events
+	case AIContextAll:
+		return value.Events
+	default:
+		return nil
+	}
+}
+
+// selectContextEvents descarta IDs inventados pelo modelo, remove duplicados e preserva
+// a ordem pedida pelo LLM. Os dados retornados sao sempre o snapshot real do backend.
+func selectContextEvents(events []AIContextEvent, ids []string) []AIContextEvent {
+	byID := make(map[string]AIContextEvent, len(events))
+	for _, event := range events {
+		byID[event.ID] = event
+	}
+	out := make([]AIContextEvent, 0, len(ids))
+	seen := map[string]bool{}
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if event, ok := byID[id]; ok && !seen[id] {
+			seen[id] = true
+			out = append(out, event)
+		}
+	}
+	return out
 }
 
 // toHistory projeta as mensagens persistidas em {role,content} para o payload do n8n
@@ -354,29 +600,29 @@ func calendarChatSessionKey(accountID, userID, conversationID string) string {
 // postChatAsk envia o payload C7 ao webhook calendar-chat e devolve o answer. Erros:
 // errChatUpstream (rede/HTTP nao-2xx/JSON invalido), context.DeadlineExceeded
 // (timeout, puro para o handler mapear em 504).
-func (s *Service) postChatAsk(ctx context.Context, payload chatWebhookPayload) (string, *ChatProposal, bool, error) {
+func (s *Service) postChatAsk(ctx context.Context, payload chatWebhookPayload) (string, []ChatProposal, []string, bool, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", nil, false, fmt.Errorf("%w: %v", errChatUpstream, err)
+		return "", nil, nil, false, fmt.Errorf("%w: %v", errChatUpstream, err)
 	}
 	callCtx, cancel := context.WithTimeout(ctx, chatAskTimeout)
 	defer cancel()
 	raw, status, err := s.doChatRequest(callCtx, s.chat.askURL, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return "", nil, false, err
+		return "", nil, nil, false, err
 	}
 	if status < 200 || status >= 300 {
-		return "", nil, false, fmt.Errorf("%w: http %d", errChatUpstream, status)
+		return "", nil, nil, false, fmt.Errorf("%w: http %d", errChatUpstream, status)
 	}
 	var out chatAnswer
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", nil, false, fmt.Errorf("%w: resposta invalida: %v", errChatUpstream, err)
+		return "", nil, nil, false, fmt.Errorf("%w: resposta invalida: %v", errChatUpstream, err)
 	}
 	// aiError = o LLM falhou (n8n devolveu o aviso amigavel); sem proposta nesse caso.
 	if out.AIError {
-		return out.Answer, nil, true, nil
+		return out.Answer, nil, nil, true, nil
 	}
-	return out.Answer, sanitizeProposal(out.Proposal), false, nil
+	return out.Answer, sanitizeProposalList(out.Proposal, out.Proposals), out.EventIDs, false, nil
 }
 
 // ChatTranscribe repassa o audio ao webhook calendar-transcribe (multipart file +

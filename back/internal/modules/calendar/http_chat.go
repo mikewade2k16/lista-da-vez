@@ -37,6 +37,7 @@ func RegisterChatRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middl
 	// a API key da conta (dispatch server->n8n). Sem o gate, a conta A gastaria a key da
 	// conta B via X-Account-Id forjado.
 	wrap := func(h http.HandlerFunc) http.Handler { return middleware.RequireAuthWithAccount(h) }
+	mux.Handle("GET /v1/calendar/chat/status", wrap(handleChatStatus(svc)))
 	mux.Handle("POST /v1/calendar/chat/ask", wrap(handleChatAsk(svc)))
 	mux.Handle("POST /v1/calendar/chat/transcribe", wrap(handleChatTranscribe(svc)))
 	// Conversas persistidas + escopo (WAVE 4, contrato D3). Todas RequireAuthWithAccount
@@ -45,7 +46,30 @@ func RegisterChatRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middl
 	mux.Handle("POST /v1/calendar/chat/conversations", wrap(handleCreateChatConversation(svc)))
 	mux.Handle("GET /v1/calendar/chat/conversations/{id}", wrap(handleGetChatConversation(svc)))
 	mux.Handle("DELETE /v1/calendar/chat/conversations/{id}", wrap(handleDeleteChatConversation(svc)))
+	mux.Handle("PATCH /v1/calendar/chat/conversations/{id}/messages/{messageId}/proposals/{proposalId}/status", wrap(handleUpdateChatProposal(svc)))
 	mux.Handle("GET /v1/calendar/chat/scope", wrap(handleChatScope(svc)))
+}
+
+// handleChatStatus faz o preflight sem tokens usado ao abrir o painel e antes de cada
+// envio. Nao persiste conversa/mensagem e nao dispara o workflow de IA.
+func handleChatStatus(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := chatAuth(w, r)
+		if !ok {
+			return
+		}
+		if err := svc.ChatStatus(
+			r.Context(),
+			accountID,
+			principal,
+			r.URL.Query().Get("scopeMode"),
+			r.URL.Query().Get("scopeClientId"),
+		); err != nil {
+			writeChatError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, map[string]bool{"available": true})
+	}
 }
 
 // chatAuth resolve a account (X-Account-Id / TenantID) + o Principal para as rotas do
@@ -87,11 +111,31 @@ func handleChatAsk(svc *Service) http.HandlerFunc {
 			"answer":         res.Answer,
 			"conversationId": res.ConversationID,
 			"title":          res.Title,
-			// proposal (WAVE 5, E7): nil na conversa normal; presente quando a IA sugere criar.
-			"proposal": res.Proposal,
+			// message carrega as propostas (multi-tarefa, WAVE 5.1) em message.proposals.
+			"message": res.Message,
 			// aiError (WAVE 5): true quando o LLM nao respondeu — o front mostra "IA off".
 			"aiError": res.AIError,
 		})
+	}
+}
+
+func handleUpdateChatProposal(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := chatAuth(w, r)
+		if !ok {
+			return
+		}
+		var req UpdateChatProposalRequest
+		if err := decodeJSONBody(w, r, &req); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		message, err := svc.UpdateChatProposal(r.Context(), accountID, r.PathValue("id"), r.PathValue("messageId"), r.PathValue("proposalId"), principal, req)
+		if err != nil {
+			writeChatError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, message)
 	}
 }
 
@@ -277,6 +321,9 @@ func writeChatError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ErrInvalidQuestion):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_question",
 			"Informe uma pergunta (ate 4000 caracteres).")
+	case errors.Is(err, ErrInvalidProposalStatus):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_proposal_status",
+			"Status da proposta invalido.")
 	case errors.Is(err, ErrInvalidClient):
 		// Escopo/cliente fora do visivel do usuario (contrato D2): 404, nao 400/403 —
 		// nao vaza QUAIS clientes existem (enumeration). Difere do writeServiceError

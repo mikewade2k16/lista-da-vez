@@ -130,8 +130,7 @@ watch(
 
       <div ref="chatStreamRef" class="operation-side__chat-stream">
         <p v-if="!chat.messages.value.length" class="operation-side__chat-empty">
-          O assistente do Omni vai responder aqui sobre atendimento, produtos, operação e pesquisa
-          de mercado.
+          O assistente Omni vai ajudar com atendimento, produtos, operação e pesquisa de mercado.
         </p>
 
         <template v-else>

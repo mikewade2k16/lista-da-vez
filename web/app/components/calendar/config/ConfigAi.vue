@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import ConfigAiKeys from '~/components/calendar/config/ConfigAiKeys.vue'
+import ConfigAiModelSelect from '~/components/calendar/config/ConfigAiModelSelect.vue'
 import ConfigAiClientScope from '~/components/calendar/config/ConfigAiClientScope.vue'
 import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useCalendarStore } from '~/stores/calendar'
@@ -176,15 +177,11 @@ function setTemperature(value: string): void {
             </select>
           </label>
 
-          <label class="calendar-config__field">
-            <span class="calendar-config__field-label">Modelo</span>
-            <input
-              class="calendar-config__input"
-              :value="ai.model"
-              placeholder="ex.: gemini-2.5-flash"
-              @input="patch({ model: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
+          <ConfigAiModelSelect
+            :provider="ai.provider"
+            :model-value="ai.model"
+            @update:model-value="patch({ model: $event })"
+          />
 
           <label class="calendar-config__field calendar-config__field--full">
             <span class="calendar-config__field-label">Base URL (opcional)</span>

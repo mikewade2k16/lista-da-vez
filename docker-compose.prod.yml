@@ -70,6 +70,13 @@ services:
       AUTOMATION_WAHA_SESSION: ${AUTOMATION_WAHA_SESSION:-default}
       AUTOMATION_N8N_INTERNAL_URL: ${AUTOMATION_N8N_INTERNAL_URL:-http://n8n:5678}
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN}
+      # Calendario: plano mensal, chat e transcricao executados pelo n8n interno.
+      # As chaves dos providers continuam no banco e viajam somente no payload server-to-server.
+      CALENDAR_AI_WEBHOOK_URL: ${CALENDAR_AI_WEBHOOK_URL:-}
+      CALENDAR_AI_SERVICE_TOKEN: ${CALENDAR_AI_SERVICE_TOKEN:-}
+      CALENDAR_AI_CALLBACK_BASE: ${CALENDAR_AI_CALLBACK_BASE:-http://api:8080}
+      CALENDAR_CHAT_WEBHOOK_URL: ${CALENDAR_CHAT_WEBHOOK_URL:-}
+      CALENDAR_TRANSCRIBE_WEBHOOK_URL: ${CALENDAR_TRANSCRIBE_WEBHOOK_URL:-}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
       # Absolutiza /uploads/* nas respostas publicas (cardapio/bio). Sem isso o

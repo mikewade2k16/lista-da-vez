@@ -82,7 +82,10 @@ watch(
     if (!props.open) return
     const e = props.event
     title.value = e?.title || ''
-    clientId.value = e?.clientId || ''
+    // Cliente (WAVE 5.2): ao EDITAR usa o do evento; ao CRIAR pre-seleciona o cliente do
+    // CONTEXTO (filtro ativo do calendario, store.selectedClientId) — mesma regra do chat:
+    // criar com um cliente selecionado ja assinala esse cliente (vazio = "todos" = sem cliente).
+    clientId.value = e ? e.clientId || '' : store.selectedClientId || ''
     date.value = e?.date || props.defaultDate || ''
     time.value = e?.time || ''
     type.value = e?.type || 'post'

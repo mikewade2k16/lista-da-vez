@@ -1,7 +1,7 @@
 -- Modulo Calendario — persistencia do chat com memoria (WAVE 4, contrato D1)
 -- Plano: docs/CALENDARIO_SPECS4.md (SPEC-B10).
 --
--- O chat do calendario (Crow Assistente) passa a PERSISTIR conversas e mensagens
+-- O chat do calendario (Crow Assistant) passa a PERSISTIR conversas e mensagens
 -- (antes era stateless: a memoria vivia so no n8n por sessionKey). Duas tabelas no
 -- schema calendar:
 --   - chat_conversations: uma conversa por (account, usuario), com escopo do chat

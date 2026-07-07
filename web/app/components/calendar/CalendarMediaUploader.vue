@@ -13,21 +13,18 @@ const props = withDefaults(
     modelValue: CalendarMediaItem[]
     readonly?: boolean
     label?: string
+    // Layout compacto e limitado usado exclusivamente na secao "Anexos do dia" do drawer.
+    dayLayout?: boolean
     // WAVE 6 (W6-4): itens (eventos) do dia para vincular cada anexo. value=eventId,
     // label=titulo, clientId=cliente do evento (HERDADO pelo anexo). Vazio = sem seletor
     // (ex.: midia do evento, que ja e' do proprio evento).
     items?: { value: string; label: string; clientId?: string }[]
   }>(),
-  { readonly: false, label: 'Anexos', items: () => [] },
+  { readonly: false, label: 'Anexos', dayLayout: false, items: () => [] },
 )
 
 // Mostra o seletor de item (evento) por anexo so quando ha itens do dia.
 const showItemPicker = computed(() => !props.readonly && props.items.length > 0)
-
-// Largura MINIMA da coluna do grid (%). auto-fit + minmax(--min, 1fr) faz os itens ESTICAREM para
-// preencher a linha inteira (imagens+selects maiores). Anexos do dia (com seletor): 45% => 2 por
-// linha (o select cabe o nome do evento). Midia do post (read-only, compacto): 30% => ~3 por linha.
-const gridMin = computed(() => (showItemPicker.value ? '45%' : '30%'))
 
 function itemLabel(eventId: string | undefined): string {
   if (!eventId) return ''
@@ -165,10 +162,25 @@ function remove(id: string): void {
 </script>
 
 <template>
-  <div class="calendar-media" :class="{ 'calendar-media--withpicker': showItemPicker }">
-    <span v-if="label" class="calendar-media__label">{{ label }}</span>
+  <div class="calendar-media" :class="{ 'calendar-media--day': dayLayout }">
+    <div v-if="dayLayout" class="calendar-media__head">
+      <span v-if="label" class="calendar-media__label">{{ label }}</span>
+      <button
+        type="button"
+        class="calendar-media__add-compact"
+        aria-label="Adicionar anexo"
+        @click="pick"
+      >
+        <UIcon name="i-lucide-plus" aria-hidden="true" />
+        Adicionar
+      </button>
+    </div>
+    <span v-else-if="label" class="calendar-media__label">{{ label }}</span>
 
-    <div class="calendar-media__grid" :style="{ '--min': gridMin }">
+    <div
+      class="calendar-media__grid"
+      :class="{ 'calendar-media__grid--scrollable': dayLayout && modelValue.length > 6 }"
+    >
       <div v-for="(item, idx) in modelValue" :key="item.id" class="calendar-media__cell">
         <div
           class="calendar-media__item calendar-media__item--clickable"
@@ -256,7 +268,7 @@ function remove(id: string): void {
       </div>
 
       <button
-        v-if="!readonly"
+        v-if="!readonly && !dayLayout"
         type="button"
         class="calendar-media__add"
         aria-label="Adicionar anexo"
@@ -272,6 +284,9 @@ function remove(id: string): void {
     </div>
 
     <p v-if="error" class="calendar-media__error">{{ error }}</p>
+    <p v-else-if="!readonly && dayLayout" class="calendar-media__hint">
+      Imagem até {{ imageLimitLabel }} · vídeo até {{ videoLimitLabel }}
+    </p>
     <p v-else-if="!readonly" class="calendar-media__hint">
       Imagem até {{ imageLimitLabel }} (jpg/png/webp/gif/avif) · vídeo até {{ videoLimitLabel }}
       (mp4/webm/mov).

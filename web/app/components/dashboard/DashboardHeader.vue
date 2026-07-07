@@ -182,22 +182,130 @@ function handleProfileChange(value) {
 
 @media (max-width: 900px) {
   .dashboard-header__bar {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 0.45rem;
+    padding-block: 0.45rem;
   }
 
   .dashboard-header__brand {
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 0.4rem;
+  }
+
+  /* No mobile toda a navegacao vive no drawer. O header fica em uma unica
+     linha: menu, logo, acoes, seletor de conta e perfil. */
+  .dashboard-header__bar :deep(.dashboard-header__nav) {
+    display: none;
   }
 
   .dashboard-header__meta {
-    justify-content: flex-start;
+    min-width: 0;
+    margin-left: auto;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+  }
+
+  .dashboard-header__client-actions {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 0.38rem;
+  }
+
+  .dashboard-header__client-actions :deep(.core-account-switcher) {
+    min-width: 5.5rem;
+    max-width: 9.5rem;
+    flex: 1 1 8rem;
+  }
+
+  .dashboard-header__client-actions :deep(.core-account-switcher__trigger) {
+    width: 100%;
+    min-height: 2.35rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 999px;
+  }
+
+  .dashboard-header__client-actions :deep(.core-account-switcher__name) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dashboard-header__client-actions :deep(.core-account-switcher__menu) {
+    right: 0;
+    left: auto;
+    width: min(17rem, calc(100vw - 1.25rem));
+  }
+
+  .dashboard-header__client-actions :deep(.feedback-notifications__trigger),
+  .dashboard-header__client-actions :deep(.dashboard-header__profile-trigger) {
+    width: 2.35rem;
+    height: 2.35rem;
+  }
+
+  .dashboard-header__client-actions :deep(.dashboard-header-avatar) {
+    width: 1.9rem;
+    height: 1.9rem;
   }
 }
 
 @media (max-width: 640px) {
   .dashboard-header__bar {
-    padding-inline: 0.85rem;
+    width: 100%;
+    padding-inline: 0.55rem;
+    gap: 0.32rem;
+  }
+
+  .dashboard-header__brand {
+    gap: 0.25rem;
+  }
+
+  .dashboard-header__brand > :deep(button) {
+    width: 2.2rem;
+    height: 2.2rem;
+    padding: 0;
+  }
+
+  .dashboard-header__logo {
+    width: clamp(3.65rem, 16vw, 4.4rem);
+  }
+
+  .dashboard-header__client-actions {
+    gap: 0.25rem;
+  }
+
+  .dashboard-header__client-actions :deep(.core-account-switcher) {
+    min-width: 4.75rem;
+    max-width: 8.25rem;
+  }
+
+  .dashboard-header__client-actions :deep(.core-account-switcher__trigger) {
+    min-height: 2.2rem;
+    gap: 0.25rem;
+    padding-inline: 0.48rem;
+    font-size: 0.74rem;
+  }
+
+  .dashboard-header__client-actions :deep(.feedback-notifications__trigger),
+  .dashboard-header__client-actions :deep(.dashboard-header__profile-trigger) {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+
+  .dashboard-header__client-actions :deep(.dashboard-header-avatar) {
+    width: 1.78rem;
+    height: 1.78rem;
+  }
+
+  .dashboard-header__client-actions :deep(.dashboard-header__profile-dropdown) {
+    right: 0;
+    left: auto;
+    width: min(18.5rem, calc(100vw - 1rem));
   }
 }
 </style>

@@ -3,6 +3,7 @@
 // MINIMIZAR/FECHAR/resize (useCalendarChatWindow), menu "Conversas" + escopo (wave 4).
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import CalendarChatConversations from '~/components/calendar/CalendarChatConversations.vue'
+import CalendarChatMessage from '~/components/calendar/CalendarChatMessage.vue'
 import CalendarChatScope from '~/components/calendar/CalendarChatScope.vue'
 import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useCalendarChatWindow } from '~/composables/useCalendarChatWindow'
@@ -17,17 +18,9 @@ const live = useLiveDictation()
 const store = useCalendarStore()
 
 // WAVE 5 (E7): proposta de criacao da IA (evento/task) — o cartao de confirmacao usa isto.
-const proposal = computed(() => chat.pendingProposal.value)
-const proposalDate = computed(() => {
-  const f = proposal.value?.fields
-  if (!f) return ''
-  const base = f.date || f.dueDate || ''
-  return base && f.time ? `${base} ${f.time}` : base
-})
-
 // WAVE 5: repete a ultima pergunta do usuario (botao do bloco "IA fora do ar").
 function retryLast(): void {
-  if (chat.sending.value) return
+  if (chat.sending.value || chat.checkingAvailability.value) return
   const lastUser = [...chat.messages.value].reverse().find((m) => m.role === 'user')
   const text = lastUser?.text?.trim()
   if (text) void chat.ask(text)
@@ -166,8 +159,9 @@ watch(
   },
 )
 
-// Teleport pro body + MediaRecorder: renderiza so apos montar no cliente (evita
-// descasamento de hidratacao com um Teleport sempre presente).
+// Teleport pro `.app-surface` (DENTRO do shell, mesmo contexto de empilhamento do header,
+// nao no body): no body o chat escapa do stacking context do app e cobre o header do painel.
+// Renderiza so apos montar no cliente (evita descasamento de hidratacao com Teleport sempre presente).
 const mounted = ref(false)
 
 // Auto-grow do input: ajusta a altura ao conteudo (min 1 linha, max ~5 linhas).
@@ -295,17 +289,17 @@ async function onMic(): Promise<void> {
   <div>
     <!-- Launcher flutuante (centro-baixo): aparece sempre que a janela nao esta visivel
          (fechada OU minimizada). Clicar abre/restaura a MESMA conversa (openPanel). -->
-    <Teleport v-if="mounted" to="body">
+    <Teleport v-if="mounted" to=".app-surface">
       <div v-if="!windowVisible" class="calendar-chat-pill">
         <button
           type="button"
           class="calendar-chat-pill__open"
-          aria-label="Abrir o Crow Assistente"
-          title="Abrir o Crow Assistente"
+          aria-label="Abrir o Crow Assistant"
+          title="Abrir o Crow Assistant"
           @click="chat.openPanel()"
         >
           <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-          <span class="calendar-chat-pill__label">Crow Assistente</span>
+          <span class="calendar-chat-pill__label">Crow Assistant</span>
           <span
             v-if="chat.errorMessage.value"
             class="calendar-chat-pill__badge"
@@ -316,24 +310,24 @@ async function onMic(): Promise<void> {
     </Teleport>
 
     <!-- Janela: aberta e nao minimizada. Posicao/tamanho via style calculado. -->
-    <Teleport v-if="mounted" to="body">
+    <Teleport v-if="mounted" to=".app-surface">
       <section
         v-if="windowVisible"
         class="calendar-chat"
         :class="{ 'calendar-chat--resizing': resizing }"
         :style="panelStyle"
         role="dialog"
-        aria-label="Crow Assistente do calendario"
+        aria-label="Crow Assistant do calendario"
         @keydown.esc="closePanel"
       >
         <header class="calendar-chat__header">
           <strong class="calendar-chat__title">
             <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-            Crow Assistente
+            Crow Assistant
             <span
               v-if="chat.aiOffline.value"
               class="calendar-chat__aistatus"
-              title="A IA não respondeu na última tentativa"
+              title="A IA está indisponível no momento"
             >
               <span class="calendar-chat__aistatus-dot" aria-hidden="true"></span>
               IA fora do ar
@@ -414,14 +408,17 @@ async function onMic(): Promise<void> {
           </p>
 
           <template v-else>
-            <div
+            <CalendarChatMessage
               v-for="message in chat.messages.value"
               :key="message.id"
-              class="calendar-chat__msg"
-              :class="`calendar-chat__msg--${message.role}`"
-            >
-              {{ message.text }}
-            </div>
+              :message="message"
+              :busy="chat.proposalBusyId.value === message.id"
+              :clients="chat.chatScope.value.clients"
+              :scope-mode="chat.scopeMode.value"
+              :scope-client-id="chat.scopeClientId.value"
+              @accept-selected="chat.confirmSelectedProposals"
+              @reject-selected="chat.rejectSelectedProposals"
+            />
           </template>
 
           <div
@@ -449,69 +446,12 @@ async function onMic(): Promise<void> {
           <button
             type="button"
             class="calendar-chat__aioff-retry"
-            :disabled="chat.sending.value"
+            :disabled="chat.sending.value || chat.checkingAvailability.value"
             @click="retryLast"
           >
             <UIcon name="i-lucide-rotate-cw" aria-hidden="true" />
             Repetir
           </button>
-        </div>
-
-        <!-- Cartao de proposta (WAVE 5, E7): a IA sugere criar; o usuario confirma. A criacao
-             usa a API autenticada do proprio usuario (permissao/escopo normais). -->
-        <div v-if="proposal" class="calendar-chat__proposal">
-          <div class="calendar-chat__proposal-head">
-            <UIcon
-              :name="
-                proposal.kind === 'task' ? 'i-lucide-square-check-big' : 'i-lucide-calendar-plus'
-              "
-              aria-hidden="true"
-            />
-            <strong>{{ proposal.kind === 'task' ? 'Criar tarefa' : 'Criar evento' }}</strong>
-          </div>
-          <dl class="calendar-chat__proposal-fields">
-            <div v-if="proposal.fields.title">
-              <dt>Título</dt>
-              <dd>{{ proposal.fields.title }}</dd>
-            </div>
-            <div v-if="proposalDate">
-              <dt>Data</dt>
-              <dd>{{ proposalDate }}</dd>
-            </div>
-            <div v-if="proposal.kind === 'event' && proposal.fields.type">
-              <dt>Tipo</dt>
-              <dd>{{ proposal.fields.type }}</dd>
-            </div>
-            <div v-if="proposal.kind === 'event' && proposal.fields.status">
-              <dt>Status</dt>
-              <dd>{{ proposal.fields.status }}</dd>
-            </div>
-          </dl>
-          <div class="calendar-chat__proposal-actions">
-            <button
-              type="button"
-              class="calendar-chat__proposal-dismiss"
-              :disabled="chat.creatingProposal.value"
-              @click="chat.dismissProposal()"
-            >
-              Descartar
-            </button>
-            <button
-              type="button"
-              class="calendar-chat__proposal-confirm"
-              :disabled="chat.creatingProposal.value"
-              @click="chat.confirmProposal()"
-            >
-              <UIcon
-                v-if="chat.creatingProposal.value"
-                name="i-lucide-loader-circle"
-                class="calendar-chat__spin"
-                aria-hidden="true"
-              />
-              <UIcon v-else name="i-lucide-check" aria-hidden="true" />
-              Criar
-            </button>
-          </div>
         </div>
 
         <p v-if="chat.errorMessage.value" class="calendar-chat__error" role="alert">
@@ -648,9 +588,11 @@ async function onMic(): Promise<void> {
             v-if="!isCapturing"
             type="button"
             class="calendar-chat__send"
-            :disabled="chat.sending.value || !chat.draft.value.trim()"
+            :disabled="
+              chat.sending.value || chat.checkingAvailability.value || !chat.draft.value.trim()
+            "
             aria-label="Enviar"
-            title="Enviar"
+            :title="chat.checkingAvailability.value ? 'Verificando IA...' : 'Enviar'"
             @click="chat.send()"
           >
             <UIcon name="i-lucide-send" aria-hidden="true" />

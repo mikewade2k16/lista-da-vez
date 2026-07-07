@@ -201,11 +201,12 @@ function onSelect(event: Event): string {
 // Cliente/responsável/horário só aparecem se TÊM valor OU foram adicionados pelo botão
 // "Adicionar campo". Status/prioridade/tipo têm default, então mostram sempre. A lista de
 // "adicionados" zera ao trocar de evento (cada evento decide o que mostrar).
-type DrawerField = 'client' | 'responsible' | 'time'
+type DrawerField = 'client' | 'responsible' | 'time' | 'description'
 const OPTIONAL_FIELDS: { key: DrawerField; label: string; icon: string }[] = [
   { key: 'client', label: 'Cliente', icon: 'i-lucide-circle-dot' },
   { key: 'responsible', label: 'Responsável', icon: 'i-lucide-user' },
   { key: 'time', label: 'Horário', icon: 'i-lucide-clock' },
+  { key: 'description', label: 'Descrição', icon: 'i-lucide-align-left' },
 ]
 const addedFields = ref<Set<DrawerField>>(new Set())
 
@@ -221,6 +222,7 @@ function fieldHasValue(key: DrawerField): boolean {
   if (!ev) return false
   if (key === 'client') return Boolean(ev.clientId)
   if (key === 'responsible') return Boolean(ev.responsibleId)
+  if (key === 'description') return Boolean(ev.description)
   return Boolean(ev.time)
 }
 
@@ -496,6 +498,30 @@ function addField(key: DrawerField): void {
                 />
               </dd>
             </div>
+
+            <!-- Descrição (textarea simples; salva no blur via @change, como os demais inline). -->
+            <div
+              v-if="isFieldVisible('description')"
+              class="calendar-drawer__field calendar-drawer__field--full"
+            >
+              <dt class="calendar-drawer__field-label">
+                <UIcon name="i-lucide-align-left" aria-hidden="true" />
+                Descrição
+              </dt>
+              <dd class="calendar-drawer__field-value">
+                <textarea
+                  class="calendar-drawer__inline calendar-drawer__inline--textarea"
+                  :value="activeEvent.description"
+                  :disabled="savingInline"
+                  rows="3"
+                  aria-label="Descrição"
+                  placeholder="Anotações, roteiro, referências…"
+                  @change="
+                    updateField({ description: ($event.target as HTMLTextAreaElement).value })
+                  "
+                ></textarea>
+              </dd>
+            </div>
           </dl>
 
           <!-- Adicionar campo (W6-3): revela os campos opcionais que estao vazios. -->
@@ -528,6 +554,7 @@ function addField(key: DrawerField): void {
       <CalendarMediaUploader
         :model-value="dayMedia"
         label="Anexos do dia"
+        day-layout
         :items="dayItemOptions"
         @update:model-value="onDayMedia"
       />
@@ -577,6 +604,18 @@ function addField(key: DrawerField): void {
 .calendar-drawer__inline option {
   color: rgb(var(--text));
   background: rgb(var(--surface));
+}
+
+/* Descrição (D): textarea multilinha ocupando a linha inteira (label em cima, campo largo). */
+.calendar-drawer__inline--textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.calendar-drawer__field--full {
+  grid-template-columns: 1fr;
+  align-items: stretch;
 }
 
 /* Botões "Adicionar campo" (W6-3): revelam os campos opcionais vazios. */

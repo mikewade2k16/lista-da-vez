@@ -376,6 +376,9 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ErrInvalidProvider):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_provider",
 			"Provider invalido (use gemini, glm ou openai).")
+	case errors.Is(err, ErrModelsUnavailable):
+		httpapi.WriteError(w, r, http.StatusBadGateway, "models_unavailable",
+			"Nao foi possivel listar os modelos deste provedor (a API falhou ou a chave e invalida). Verifique a chave e tente novamente.")
 	case errors.Is(err, ErrAIDisabled):
 		writeAIDisabled(w, r)
 	case errors.Is(err, ErrAIKeyMissing):

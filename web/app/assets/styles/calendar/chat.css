@@ -215,6 +215,157 @@
   word-break: break-word;
 }
 
+.calendar-chat__message {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: min(92%, 46rem);
+}
+
+.calendar-chat__message--user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.calendar-chat__message--assistant {
+  align-self: flex-start;
+  align-items: stretch;
+}
+
+.calendar-chat__message .calendar-chat__msg {
+  max-width: 100%;
+}
+
+.calendar-chat__results {
+  overflow: hidden;
+  border: 1px solid rgb(var(--ring) / 0.28);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--bg-muted) 90%, rgb(var(--primary)) 10%);
+}
+
+.calendar-chat__results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.calendar-chat__results-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: rgb(var(--primary));
+  font-weight: 800;
+}
+
+.calendar-chat__results-list {
+  display: grid;
+  gap: 1px;
+  background: var(--line-soft);
+}
+
+.calendar-chat__result {
+  display: grid;
+  grid-template-columns: minmax(0, 7rem) 1fr;
+  min-height: 5.5rem;
+  background: var(--bg-panel);
+}
+
+.calendar-chat__result:not(:has(.calendar-chat__result-media)) {
+  grid-template-columns: 1fr;
+}
+
+.calendar-chat__result-media {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 1px;
+  overflow: hidden;
+  background: var(--line-soft);
+}
+
+.calendar-chat__result-media img,
+.calendar-chat__result-video {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  object-fit: cover;
+}
+
+.calendar-chat__result-media-btn {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.calendar-chat__result-video {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: rgb(var(--primary) / 0.34);
+}
+
+.calendar-chat__result-more {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.3rem;
+  padding: 0.1rem 0.32rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.calendar-chat__result-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.65rem;
+}
+
+.calendar-chat__result-body > strong {
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-chat__result-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.calendar-chat__result-status {
+  padding: 0.08rem 0.35rem;
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  font-weight: 700;
+}
+
+.calendar-chat__result-client {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .calendar-chat__msg--user {
   align-self: flex-end;
   color: rgb(var(--primary));
@@ -259,11 +410,29 @@
 
 /* ----- Cartao de proposta da IA (WAVE 5, E7) ------------------------------ */
 .calendar-chat__proposal {
-  margin: 0 0.7rem 0.5rem;
+  margin: 0;
   padding: 0.6rem 0.7rem;
   border: 1px solid rgb(var(--ring) / 0.42);
   border-radius: var(--radius-sm);
   background: rgb(var(--primary) / 0.08);
+}
+
+.calendar-chat__proposal-state {
+  margin-left: auto;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.calendar-chat__proposal-state.is-accepted {
+  color: rgb(var(--success));
+  background: rgb(var(--success) / 0.14);
+}
+
+.calendar-chat__proposal-state.is-rejected {
+  color: var(--text-muted);
+  background: var(--bg-muted);
 }
 
 .calendar-chat__proposal-head {
@@ -347,6 +516,190 @@
 .calendar-chat__proposal-confirm:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* ----- Lista de propostas (multi-tarefa, WAVE 5.1) ----------------------- */
+.calendar-chat__proposal-list {
+  list-style: none;
+  margin: 0 0 0.55rem;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.calendar-chat__proposal-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.45rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface-2));
+}
+
+.calendar-chat__proposal-item.is-resolved {
+  opacity: 0.6;
+}
+
+/* Acao da proposta (CRUD): Editar/Excluir; delete tem acento de perigo. */
+.calendar-chat__proposal-item.is-delete {
+  background: rgb(var(--danger) / 0.06);
+}
+
+.calendar-chat__proposal-action {
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.calendar-chat__proposal-action.is-update {
+  color: rgb(var(--primary));
+  background: rgb(var(--primary) / 0.14);
+}
+
+.calendar-chat__proposal-action.is-delete {
+  color: rgb(var(--danger));
+  background: rgb(var(--danger) / 0.14);
+}
+
+.calendar-chat__proposal-check {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.calendar-chat__proposal-check input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: rgb(var(--primary));
+  cursor: pointer;
+}
+
+.calendar-chat__proposal-item-body {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.calendar-chat__proposal-item-body strong {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-chat__proposal-item-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.calendar-chat__proposal-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.calendar-chat__proposal-remove:hover:not(:disabled) {
+  color: rgb(var(--danger));
+  background: var(--bg-muted);
+}
+
+.calendar-chat__proposal-remove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ----- Colapso + cliente por proposta (WAVE 5.2) ------------------------- */
+.calendar-chat__proposal-toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.calendar-chat__proposal-summary {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.calendar-chat__proposal-scope {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 0 0.45rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.calendar-chat__proposal-scope strong {
+  color: var(--text-main);
+}
+
+.calendar-chat__proposal-client {
+  margin-top: 0.2rem;
+  width: 100%;
+  height: 1.7rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--surface));
+  color: var(--text-main);
+  font-size: 0.72rem;
+  /* Acompanha o tema no controle nativo (borda/seta). */
+  color-scheme: light dark;
+}
+
+/* O popup nativo do <select> ignora color-scheme no Windows/Chrome — forcamos as cores
+   do tema nas opcoes para nao renderizar claro no tema escuro. */
+.calendar-chat__proposal-client option {
+  background-color: rgb(var(--surface));
+  color: var(--text-main);
+}
+
+.calendar-chat__proposal-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.08);
+  font-size: 0.78rem;
+  color: var(--text-main);
+}
+
+.calendar-chat__proposal-ask > span {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.calendar-chat__proposal-ask .calendar-chat__proposal-client {
+  margin-top: 0;
+  width: auto;
+  min-width: 8rem;
+  flex: 1;
 }
 
 /* ----- Estado "IA fora do ar" (WAVE 5) ------------------------------------ */

@@ -1,5 +1,6 @@
 <script setup>
 import AppDialogHost from '~/components/ui/AppDialogHost.vue'
+import PwaReloadPrompt from '~/components/pwa/PwaReloadPrompt.vue'
 import AppToastStack from '~/components/ui/AppToastStack.vue'
 import CoreLoadingOverlay from '../layers/core/components/CoreLoadingOverlay.vue'
 import { useCoreLoadingStore } from '../layers/core/stores/loading'
@@ -66,6 +67,7 @@ nuxtApp.hook('vue:error', () => {
       <CoreLoadingOverlay />
       <AppDialogHost />
       <AppToastStack />
+      <PwaReloadPrompt />
     </ClientOnly>
   </UApp>
 </template>

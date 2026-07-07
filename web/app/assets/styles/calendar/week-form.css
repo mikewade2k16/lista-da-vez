@@ -467,6 +467,9 @@
   .calendar-leftcol {
     flex-basis: 300px;
   }
+  .calendar-leftcol.calendar-leftcol--min {
+    flex-basis: content !important;
+  }
 
   .calendar-drawer {
     flex-basis: 300px;

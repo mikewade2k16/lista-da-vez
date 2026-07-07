@@ -195,12 +195,13 @@ Workflow separado (`export/workflow-calendar-chat.json`, id `calendarchat0001`) 
 **chat de IA** do Calendario. Contrato C7 (payload agora carrega a KEY, contrato PAY da wave 3). O
 back Go (`POST /v1/calendar/chat/ask`) monta o payload (`question` + `ai` + `context`, o `context`
 identico ao agregado C9 via a MESMA funcao `BuildAIContext`) e faz um POST **sincrono** ao webhook,
-esperando `{ "answer": "" }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
+esperando `{ "answer": "", "eventIds": [], "proposal": null }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
 o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, temperatura E a key).
 
 - **Webhook** POST path `calendar-chat`, `responseMode: responseNode` (responde pelo no Respond).
 - **Montar contexto** (Code) — system = `ai.systemPrompt` OU DEFAULT pt-BR ("assistente de
-  estrategia de conteudo") + serializa o `context` (perfil do cliente, feriados, eventos, notas,
+  calendario de conteudo") + serializa o `context` (perfil do cliente, feriados, eventos ricos com
+  ID/horário/cliente/mídias, notas,
   planos) no system; resolve `provider`/`model`/`baseUrl`/`temperature` (mapa `DEFAULT_BASE` com
   **gemini** OpenAI-compatible `https://generativelanguage.googleapis.com/v1beta/openai` e **glm**
   z.ai; clamp 0..1) + guard modelo x provider (cai no default do provider se o modelo salvo nao
@@ -216,9 +217,11 @@ o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, tem
   montada no no anterior (`messages: $json.messages` = system + historico + pergunta; antes era
   system+user fixo). **Nao le mais `$env`/credential** (mudanca SPEC-W1, 2026-07-04, revertendo o
   `$env[keyEnv]` da wave anterior). `onError: continueRegularOutput`.
-- **Extrair resposta** (Code) — normaliza `choices[0].message.content` -> `{ answer }`; item de
+- **Extrair resposta** (Code) — normaliza `choices[0].message.content` -> `{ answer, eventIds,
+  proposal }`; `eventIds` identifica os eventos listados para o Go montar cards somente com dados
+  autoritativos; item de
   erro do HTTP node vira mensagem acionavel pt-BR.
-- **Respond to Webhook** — `{ "answer": ... }`.
+- **Respond to Webhook** — `{ "answer": ..., "eventIds": [...], "proposal": ... }`.
 
 **Sem credential/`$env` no n8n para a IA do chat** — a key trafega no payload server-to-server (Go
 -> n8n, rede docker) e nunca e logada nem persistida. Env do back: `CALENDAR_CHAT_WEBHOOK_URL`
@@ -227,9 +230,8 @@ switch e "sem key" sao tratados no Go ANTES de disparar (contrato PAY: `ai_disab
 409 acionaveis). **Memoria de conversa (SPEC-W5, 2026-07-04):** o workflow recebe o `history` no
 payload (persistido no banco pelo Go, ultimas N mensagens) e o inclui na array `messages` entre o
 system e a pergunta — o n8n segue stateless (sem memoria propria). **Limitacoes:** tools desligadas
-(o assistente responde so com o `context` do system + o historico; ligar ao
-`GET /v1/runtime/calendar/context` C9 e proximo passo, fora da wave). Como o `versionId` mudou
-(`...calendarcht03`), **reimportar** para pegar a versao com history. Import + teste manual:
+(o assistente responde so com o `context` autoritativo do system + o historico). Como o `versionId` mudou
+(`...calendarcht04`), **reimportar** para pegar a versao com eventos ricos/eventIds. Import + teste manual:
 **pendente** (autorado, validado fora do n8n: parse + ordem da array messages).
 Runbook com curl de teste:
 [docs/automation/CALENDAR_CHAT_WORKFLOW.md](../docs/automation/CALENDAR_CHAT_WORKFLOW.md).
@@ -294,6 +296,11 @@ ambiente, considerar rotacionar as chaves.
 
 ## Notas de Deploy
 
+- Calendario em prod (2026-07-07): `Calendar Chat` (`calendarchat0001`), `Calendar Omni`
+  (`calendaromni0001`) e `Calendar Transcribe` (`calendartrans001`) importados, publicados e
+  validados estruturalmente contra os JSONs locais; n8n `2.23.2` healthy. As cinco envs
+  `CALENDAR_*` foram configuradas na VPS e passaram a ser repassadas pela API no
+  `docker-compose.prod.yml`. Backup anterior: `backups/n8n/workflows-before-calendar-20260707_124922.json`.
 - A stack `automation` esta no `docker-compose.yml` (dev local) **e** no
   `docker-compose.prod.yml` (profile `automation`, infra preparada 2026-06-08). O deploy
   na VPS em si (Caddy, DNS, QR, ativacao, backups) e do Mike — passo a passo em

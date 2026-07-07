@@ -117,14 +117,16 @@ func (s *Store) loadAccountNames(ctx context.Context, accountID string, clientID
 	return out, rows.Err()
 }
 
-// ListEventsLean devolve a projecao lean dos eventos da account na janela
+// ListEventsLean devolve a projecao dos eventos da account na janela
 // [from, to] (inclusive), opcionalmente filtrados por cliente, com teto de linhas
 // (limit). Projecao date,type,title,status,client_id do contrato C9/C7: NAO carrega
 // media/involved (evita over-fetch no agregado de contexto das IAs). Mesma ordem do
 // ListEvents (event_date, event_time, created_at). Escopo por account_id (defesa em
 // profundidade). limit <= 0 = sem teto.
 func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientID string, limit int) ([]AIContextEvent, error) {
-	q := `select event_date::text, type, title, status, coalesce(client_id::text, '')
+	q := `select id::text, event_date::text, event_time, type, title, status, priority,
+		coalesce(client_id::text, ''), left(description, 500),
+		coalesce(media, '[]'::jsonb), coalesce(linked_media, '[]'::jsonb)
 		from calendar.events where account_id = $1::uuid`
 	args := []any{accountID}
 	if strings.TrimSpace(from) != "" {
@@ -153,8 +155,8 @@ func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientI
 
 	out := make([]AIContextEvent, 0)
 	for rows.Next() {
-		var e AIContextEvent
-		if err := rows.Scan(&e.Date, &e.Type, &e.Title, &e.Status, &e.ClientID); err != nil {
+		e, err := scanAIContextEvent(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -167,7 +169,9 @@ func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientI
 // da conta, sem cliente, entram). Fecha o vazamento de eventos de cliente fora do escopo do
 // usuario (a agencia recebe todos os seus clientes; um usuario subset recebe so os que ve).
 func (s *Store) ListEventsLeanForClients(ctx context.Context, accountID, from, to string, clientIDs []string, limit int) ([]AIContextEvent, error) {
-	q := `select event_date::text, type, title, status, coalesce(client_id::text, '')
+	q := `select id::text, event_date::text, event_time, type, title, status, priority,
+		coalesce(client_id::text, ''), left(description, 500),
+		coalesce(media, '[]'::jsonb), coalesce(linked_media, '[]'::jsonb)
 		from calendar.events where account_id = $1::uuid`
 	args := []any{accountID}
 	if strings.TrimSpace(from) != "" {
@@ -193,13 +197,37 @@ func (s *Store) ListEventsLeanForClients(ctx context.Context, accountID, from, t
 	defer rows.Close()
 	out := make([]AIContextEvent, 0)
 	for rows.Next() {
-		var e AIContextEvent
-		if err := rows.Scan(&e.Date, &e.Type, &e.Title, &e.Status, &e.ClientID); err != nil {
+		e, err := scanAIContextEvent(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func scanAIContextEvent(row rowScanner) (AIContextEvent, error) {
+	var event AIContextEvent
+	var ownMedia, linkedMedia json.RawMessage
+	if err := row.Scan(&event.ID, &event.Date, &event.Time, &event.Type, &event.Title,
+		&event.Status, &event.Priority, &event.ClientID, &event.Description,
+		&ownMedia, &linkedMedia); err != nil {
+		return AIContextEvent{}, err
+	}
+	event.Media = make([]MediaItem, 0)
+	var items []MediaItem
+	if err := json.Unmarshal(ownMedia, &items); err == nil {
+		for _, item := range items {
+			event.Media = appendContextMedia(event.Media, item)
+		}
+	}
+	items = nil
+	if err := json.Unmarshal(linkedMedia, &items); err == nil {
+		for _, item := range items {
+			event.Media = appendContextMedia(event.Media, item)
+		}
+	}
+	return event, nil
 }
 
 // monthBounds devolve o primeiro e o ultimo dia do mes ('YYYY-MM') como

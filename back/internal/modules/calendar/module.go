@@ -155,6 +155,10 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	// Keys de IA /v1/calendar/ai-keys[/global] (Wave 3, SEC; RequireAuth; global exige
 	// platform_admin). Status mascarado {set,last4} — a key crua nunca sai do server.
 	RegisterSecretRoutes(mux, h.service, h.authMiddleware)
+	// Listagem de modelos por provedor /v1/calendar/ai/models (Opcao C; RequireAuthWithAccount,
+	// key-adjacent). Resolve a chave server-side e busca o /models do provedor — o select
+	// do painel deixa de ser texto livre. Ver ai_models.go.
+	RegisterAIModelsRoutes(mux, h.service, h.authMiddleware)
 	// Override de IA por cliente /v1/calendar/ai-config/client (Wave 3.1, SEC+;
 	// RequireAuthWithAccount — account-scoped e sensivel). So COMPORTAMENTO; key nunca sai.
 	RegisterClientAIRoutes(mux, h.service, h.authMiddleware)

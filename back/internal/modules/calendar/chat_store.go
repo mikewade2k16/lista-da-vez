@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"time"
@@ -46,7 +47,22 @@ type ChatMessage struct {
 	ConversationID string
 	Role           string
 	Content        string
-	CreatedAt      time.Time
+	Proposal       *ChatProposal
+	ProposalStatus string
+	// Proposals (WAVE 5.1, multi-tarefa) = lista de propostas com status proprio por item.
+	// Fonte da verdade a partir da 0195; Proposal/ProposalStatus (singular) so p/ retrocompat.
+	Proposals     []StoredProposal
+	CalendarItems []AIContextEvent
+	CreatedAt     time.Time
+}
+
+type ChatMessageInput struct {
+	Role           string
+	Content        string
+	Proposal       *ChatProposal
+	ProposalStatus string
+	Proposals      []StoredProposal
+	CalendarItems  []AIContextEvent
 }
 
 // chatConversationStore e a fatia de persistencia do chat com memoria consumida pelo
@@ -61,7 +77,8 @@ type chatConversationStore interface {
 	// TouchConversation sobe updated_at e titula pela 1a pergunta (so se sem titulo);
 	// AppendMessage NAO move updated_at, por isso o bump explicito (contrato D4).
 	TouchConversation(ctx context.Context, accountID, conversationID, titleIfEmpty string) error
-	AppendMessage(ctx context.Context, accountID, conversationID, role, content string) (ChatMessage, error)
+	AppendMessage(ctx context.Context, accountID, conversationID string, in ChatMessageInput) (ChatMessage, error)
+	SetProposalStatus(ctx context.Context, accountID, conversationID, messageID, proposalID, status string) (ChatMessage, error)
 	ListLastMessages(ctx context.Context, accountID, conversationID string, limit int) ([]ChatMessage, error)
 	ListMessages(ctx context.Context, accountID, conversationID string) ([]ChatMessage, error)
 	IsAgencyOfAccount(ctx context.Context, accountID, userID string) (bool, error)
@@ -81,9 +98,42 @@ func scanChatConversation(row rowScanner) (ChatConversation, error) {
 
 func scanChatMessage(row rowScanner) (ChatMessage, error) {
 	var m ChatMessage
-	err := row.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &m.CreatedAt)
+	var proposalRaw, proposalsRaw, itemsRaw json.RawMessage
+	err := row.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &proposalRaw,
+		&m.ProposalStatus, &proposalsRaw, &itemsRaw, &m.CreatedAt)
+	if err == nil {
+		if len(proposalRaw) > 0 && string(proposalRaw) != "null" {
+			var proposal ChatProposal
+			if json.Unmarshal(proposalRaw, &proposal) == nil {
+				m.Proposal = &proposal
+			}
+		}
+		_ = json.Unmarshal(proposalsRaw, &m.Proposals)
+		if m.Proposals == nil {
+			m.Proposals = []StoredProposal{}
+		}
+		// Retrocompat: mensagem antiga sem `proposals` mas com `proposal` singular vira lista de
+		// 1 (id '0'), preservando o status. O backfill da 0195 ja cobre as existentes; isto e a
+		// rede de seguranca para qualquer linha nao migrada.
+		if len(m.Proposals) == 0 && m.Proposal != nil {
+			status := m.ProposalStatus
+			if status == "" || status == "none" {
+				status = "pending"
+			}
+			m.Proposals = []StoredProposal{{
+				ID: "0", Action: "create", Kind: m.Proposal.Kind, Fields: m.Proposal.Fields, Status: status,
+			}}
+		}
+		_ = json.Unmarshal(itemsRaw, &m.CalendarItems)
+		if m.CalendarItems == nil {
+			m.CalendarItems = []AIContextEvent{}
+		}
+	}
 	return m, err
 }
+
+const chatMessageCols = `id::text, conversation_id::text, role, content,
+	proposal, proposal_status, proposals, calendar_items, created_at`
 
 // CreateConversation insere uma conversa na account. Escopo por account_id + o dono
 // (created_by_user_id) vem SEMPRE do Principal, nunca do body.
@@ -182,14 +232,62 @@ func (s *Store) SoftDeleteConversation(ctx context.Context, id, accountID string
 // AppendMessage grava uma mensagem amarrando-a a uma conversa VIVA da MESMA account
 // (insert ... select ... where account_id + deleted_at is null): conversa de outra
 // conta ou apagada => nenhuma linha (ErrNotFound). Espelha o AddComment do tasks.
-func (s *Store) AppendMessage(ctx context.Context, accountID, conversationID, role, content string) (ChatMessage, error) {
+func (s *Store) AppendMessage(ctx context.Context, accountID, conversationID string, in ChatMessageInput) (ChatMessage, error) {
+	proposal, err := json.Marshal(in.Proposal)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	proposals := in.Proposals
+	if proposals == nil {
+		proposals = []StoredProposal{}
+	}
+	proposalsRaw, err := json.Marshal(proposals)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	items, err := json.Marshal(in.CalendarItems)
+	if err != nil {
+		return ChatMessage{}, err
+	}
+	status := in.ProposalStatus
+	if status == "" {
+		status = "none"
+	}
 	const q = `
-		insert into calendar.chat_messages (conversation_id, account_id, role, content)
-		select c.id, c.account_id, $3, $4
+		insert into calendar.chat_messages
+			(conversation_id, account_id, role, content, proposal, proposal_status, proposals, calendar_items)
+		select c.id, c.account_id, $3, $4, $5::jsonb, $6, $7::jsonb, $8::jsonb
 		from calendar.chat_conversations c
 		where c.id = $1::uuid and c.account_id = $2::uuid and c.deleted_at is null
-		returning id::text, conversation_id::text, role, content, created_at`
-	msg, err := scanChatMessage(s.pool.QueryRow(ctx, q, conversationID, accountID, role, content))
+		returning ` + chatMessageCols
+	msg, err := scanChatMessage(s.pool.QueryRow(ctx, q, conversationID, accountID,
+		in.Role, in.Content, proposal, status, proposalsRaw, items))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ChatMessage{}, ErrNotFound
+	}
+	return msg, err
+}
+
+// SetProposalStatus resolve UMA proposta (por id, dentro do array `proposals`) de forma
+// idempotente: so muda o elemento cujo status ainda e 'pending', preservando a ordem
+// (with ordinality). Nenhum elemento pending com esse id (ja resolvido / inexistente /
+// conta errada) => pgx.ErrNoRows => ErrNotFound. account + conversation barram acesso cruzado.
+func (s *Store) SetProposalStatus(ctx context.Context, accountID, conversationID, messageID, proposalID, status string) (ChatMessage, error) {
+	const q = `update calendar.chat_messages m
+		set proposals = coalesce((
+			select jsonb_agg(
+				case when elem->>'id' = $4 then jsonb_set(elem, '{status}', to_jsonb($5::text)) else elem end
+				order by ord
+			)
+			from jsonb_array_elements(m.proposals) with ordinality as t(elem, ord)
+		), '[]'::jsonb)
+		where m.id = $1::uuid and m.account_id = $2::uuid and m.conversation_id = $3::uuid
+		  and exists (
+			select 1 from jsonb_array_elements(m.proposals) e
+			where e->>'id' = $4 and e->>'status' = 'pending'
+		  )
+		returning ` + chatMessageCols
+	msg, err := scanChatMessage(s.pool.QueryRow(ctx, q, messageID, accountID, conversationID, proposalID, status))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ChatMessage{}, ErrNotFound
 	}
@@ -200,7 +298,8 @@ func (s *Store) AppendMessage(ctx context.Context, accountID, conversationID, ro
 // contrato D4) em ordem CRONOLOGICA (asc) para virar o historico. Escopo por account_id
 // (defesa em profundidade). limit <= 0 = sem teto.
 func (s *Store) ListLastMessages(ctx context.Context, accountID, conversationID string, limit int) ([]ChatMessage, error) {
-	inner := `select m.id, m.conversation_id, m.role, m.content, m.created_at
+	inner := `select m.id, m.conversation_id, m.role, m.content, m.proposal,
+		m.proposal_status, m.proposals, m.calendar_items, m.created_at
 		from calendar.chat_messages m
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid
 		order by m.created_at desc, m.id desc`
@@ -209,7 +308,8 @@ func (s *Store) ListLastMessages(ctx context.Context, accountID, conversationID 
 		args = append(args, limit)
 		inner += " limit $" + strconv.Itoa(len(args))
 	}
-	q := `select id::text, conversation_id::text, role, content, created_at
+	q := `select id::text, conversation_id::text, role, content, proposal,
+		proposal_status, proposals, calendar_items, created_at
 		from (` + inner + `) recent
 		order by recent.created_at asc, recent.id asc`
 	return s.queryChatMessages(ctx, q, args...)
@@ -218,7 +318,7 @@ func (s *Store) ListLastMessages(ctx context.Context, accountID, conversationID 
 // ListMessages devolve TODAS as mensagens da conversa em ordem cronologica (asc),
 // no escopo da account. Usado pelo GET da conversa (contrato D3).
 func (s *Store) ListMessages(ctx context.Context, accountID, conversationID string) ([]ChatMessage, error) {
-	const q = `select id::text, conversation_id::text, role, content, created_at
+	const q = `select ` + chatMessageCols + `
 		from calendar.chat_messages
 		where account_id = $1::uuid and conversation_id = $2::uuid
 		order by created_at asc, id asc`

@@ -245,6 +245,20 @@ export async function fetchGlobalAiKeys(api: ApiRequest): Promise<CalendarAiKeys
   return normalizeAiKeys(await api('/v1/calendar/ai-keys/global'))
 }
 
+// fetchAiModels lista os modelos de CHAT do provedor (Opcao C): o back resolve a chave
+// server-side e bate no /models do provedor. Devolve so os IDs (o front popula o select).
+// Erros propagam o codigo do back (ai_key_missing / models_unavailable / invalid_provider)
+// para o chamador escolher a mensagem. dedupe:false garante um refetch real no botao
+// "Tentar novamente" (senao o GET em voo seria deduplicado).
+export async function fetchAiModels(api: ApiRequest, provider: string): Promise<string[]> {
+  const q = new URLSearchParams({ provider }).toString()
+  const res = await api(`/v1/calendar/ai/models?${q}`, { dedupe: false })
+  const list = Array.isArray((res as { models?: unknown })?.models)
+    ? (res as { models: unknown[] }).models
+    : []
+  return list.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+}
+
 // Grava a chave GLOBAL da plataforma (contrato SEC): so platform_admin (o back
 // devolve 403 fora disso). apiKey vazio = limpar.
 export async function putGlobalAiKey(

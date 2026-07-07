@@ -3,6 +3,7 @@ package calendar
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"strings"
 	"time"
 
@@ -210,7 +211,7 @@ func (s *Service) deleteMirrorEvent(ctx context.Context, accountID, eventID stri
 // syncTaskFromEvent reflete a edicao do evento na task vinculada (E4/E5) — sentido forward,
 // chamado pelo UpdateEvent. TERMINAL do lado tasks (ApplyCalendarSync nao re-dispara o
 // handler). taskID vazio = evento sem task (no-op). Best-effort.
-func (s *Service) syncTaskFromEvent(ctx context.Context, accountID string, ev CalendarEvent, taskID string) {
+func (s *Service) syncTaskFromEvent(ctx context.Context, accountID string, ev CalendarEvent, taskID string, syncContent bool) {
 	svc := s.tasksSvc()
 	if svc == nil || strings.TrimSpace(taskID) == "" {
 		return
@@ -236,6 +237,13 @@ func (s *Service) syncTaskFromEvent(ctx context.Context, accountID string, ev Ca
 		DueDate:           &due,
 		ClientAccountID:   &client,
 		ResponsibleUserID: &resp,
+	}
+	// Descricao do evento -> corpo (ContentHTML) da task (WAVE 6.1). SO quando a descricao
+	// MUDOU (syncContent): evitar sobrescrever o texto rico da task numa edicao de outro campo
+	// do evento (ex.: mudar status). A descricao do calendario e texto simples; vira <p> no editor.
+	if syncContent {
+		body := descToHTML(ev.Description)
+		input.ContentHTML = &body
 	}
 	// WAVE 6: campos que a task guarda em ui_metadata (o repo faz merge, nao apaga o resto).
 	// tipo -> ui_metadata.type; e o NOME do responsavel resolvido do id -> ui_metadata.responsible
@@ -268,6 +276,17 @@ func (s *Service) syncTaskFromEvent(ctx context.Context, accountID string, ev Ca
 	if _, err := svc.ApplyCalendarSync(ctx, access, input); err != nil {
 		s.logTaskWarn(ctx, "calendar: forward sync evento->task falhou", accountID, ev.ID, err)
 	}
+}
+
+// descToHTML converte a descricao (texto SIMPLES do calendario) no ContentHTML do editor da
+// task: escapa HTML e transforma quebras de linha em <br>, num paragrafo. Vazio => "" (limpa o
+// corpo). Assim o texto digitado no calendario aparece no editor rico da task sem injetar HTML.
+func descToHTML(desc string) string {
+	d := strings.TrimSpace(desc)
+	if d == "" {
+		return ""
+	}
+	return "<p>" + strings.ReplaceAll(html.EscapeString(d), "\n", "<br>") + "</p>"
 }
 
 // syncEventMediaToTask espelha SO a midia do evento na task (ui_metadata.calendarMedia), sem

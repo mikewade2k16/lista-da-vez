@@ -30,6 +30,13 @@ Antes de criar componente novo:
 
 ## Catalogo atual
 
+### `pwa`
+
+- [PwaReloadPrompt.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/pwa/PwaReloadPrompt.vue)
+  Aviso global de nova versao do service worker. Usa o fluxo `registerType: 'prompt'`
+  para que a pessoa escolha quando recarregar o painel; fica montado em `app.vue`
+  dentro de `ClientOnly`.
+
 ### `admin`
 
 Area cross-account de plataforma (so `platform_admin`), backed pela API real
@@ -300,6 +307,16 @@ helpers de data/constantes em [utils/calendar.ts]; tipos+helpers da CONFIG (cont
 > limpar, edicao gateada por `isPlatformAdmin` quando a fonte ativa e global), provider+modelo, transcricao
 > e o prompt do sistema (a lei da IA). ConfigAiKeys le o escopo ATIVO do banco (prop `useGlobalKeys` do
 > `store.config`, nao do rascunho) e re-le apos cada PUT (fonte unica = banco).
+>
+> **MODELO = SELECT do provedor (Opcao C)**: o campo Modelo NAO e mais texto livre — virou o subcomponente
+> [ConfigAiModelSelect.vue], um `<select>` populado por `fetchAiModels(provider)` (calendar-api.ts ->
+> `GET /v1/calendar/ai/models`). Isso mata a armadilha provider=OpenAI + model=gemini-\*. Comportamento
+> (decisao do usuario): SELECT SEMPRE; quando nao da pra listar o campo fica DESABILITADO com aviso do
+> motivo + botao "Tentar novamente" — 409 `ai_key_missing` ("configure a chave acima"), 502
+> `models_unavailable` ("API falhou/chave invalida"), 400 `invalid_provider`. Numa busca BEM-SUCEDIDA, se o
+> modelo salvo nao esta na lista do provedor atual o componente EMITE `''` (limpa) para nao persistir modelo
+> invalido; erro NAO limpa (preserva o valor salvo, mostrado no hint). Contador de geracao (`reqGen`)
+> descarta resposta de busca antiga ao trocar o provedor no meio.
 
 > **CONFIG WAVE 3.1 — escopo da IA por cliente (SPEC-F3, contratos CFG+/SEC+)**: o `ai` da config ganhou
 > `scopeMode` (`general` | `perClient`, default general) e `disabledClientIds` (`string[]` — no modo geral,
@@ -420,7 +437,8 @@ Interacao-chave:
   * `ConfigHolidays.vue` — toggles BR nacional / Sergipe / Aracaju / luxo internacional.
   * `ConfigAppearance.vue` — inicio da semana (seg/dom) + cor por cliente (input color + "Sem cor" =
     `none`) + cor por tipo (checkbox "Usar" + input color) + white-label (titulo/logo/cor).
-  * `ConfigAi.vue` — provider (select, inclui `gemini`) + modelo + baseUrl (placeholder = default do
+  * `ConfigAi.vue` — provider (select, inclui `gemini`) + modelo (subcomponente `ConfigAiModelSelect.vue`,
+    SELECT populado pelo `/models` do provedor — Opcao C, sem texto livre) + baseUrl (placeholder = default do
     provider) + systemPrompt (textarea) + temperature; AVISO fixo "as chaves de API ficam no n8n, nunca aqui".
     Tem botao "Abrir chat com o assistente" que so chama `useCalendarChat().openPanel()` — a janela de
     chat (SPEC-F2) vive montada na pagina index (fora do drawer), aqui so aciona o MESMO estado singleton.
@@ -469,13 +487,16 @@ Interacao-chave:
   (`useState`: messages/draft/sending/errorMessage/**panelOpen/minimized**/conversationId + wave 4:
   **conversationTitle/conversations/loadingConversations/loadingConversation/chatScope/scopeMode/
   scopeClientId**; `openPanel` reabre cheia zerando `minimized` E dispara `ensureChatLoaded()` — busca
-  a lista de conversas + o escopo do banco; `minimize`/`restore` alternam a pill): `ask()` -> POST
+  a lista de conversas + o escopo do banco e consulta `GET /v1/calendar/chat/status` sem tokens;
+  `minimize`/`restore` alternam a pill): `ask()` repete o mesmo preflight ANTES de inserir a pergunta
+  no historico e so entao faz POST
   `/v1/calendar/chat/ask` com `{question, conversationId, scopeMode, scopeClientId, month}` (account*id
   nunca no body — o back resolve pelo Principal), a RESPOSTA `{answer, conversationId, title}` adota o
   id/titulo que o back resolveu e atualiza a lista; AbortController cancela a pergunta anterior em voo;
-  erros 503/`chat_not_configured`, 502/504 viram `errorMessage` acionavel (cita `CALENDAR_CHAT_WEBHOOK_URL`).
+  erros 503/`chat_not_configured`, 502/504 viram o bloco acionavel `IA fora do ar`; envio bloqueado
+  preserva o draft e nao cria mensagem/conversa.
   **WAVE 4 — PERSISTENCIA + MEMORIA + ESCOPO (SPEC-F10, contrato D3/D4)**: conversas e mensagens agora
-  PERSISTEM no banco (`calendar.chat*_`), entao o historico NAO some no reload e a IA tem MEMORIA (o back
+  PERSISTEM no banco (`calendar.chat*\_`), entao o historico NAO some no reload e a IA tem MEMORIA (o back
 carrega as ultimas N mensagens). `openConversation(id)`carrega as mensagens do banco (SUBSTITUI as
 locais) e adota o escopo salvo;`newConversation()`limpa e zera o id (o back cria a conversa no 1o`ask`, lazy — sem conversas vazias); `removeConversation(id)` soft-delete. I/O em
 [domain/calendar/calendar-chat-api.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/domain/calendar/calendar-chat-api.ts)
@@ -483,6 +504,42 @@ locais) e adota o escopo salvo;`newConversation()`limpa e zera o id (o back cria
 tipos`CalendarChatConversation`/`CalendarChatScope`; separado de calendar-api.ts p/ manter < 450
 linhas). SEGURANCA: o ACESSO (quais conversas/clientes o usuario ve) e resolvido SEMPRE server-side
 pela permissao (`resolveChatAccess`, nunca do body); conversa/cliente fora do visivel => 404. O escopo
+
+  **MENSAGENS RICAS + PROPOSTAS DURÁVEIS (0194):** respostas podem carregar `calendarItems[]`
+  (snapshot backend de eventos reais com horário, status, cliente e `media[]`) e são renderizadas por
+  [CalendarChatMessage.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatMessage.vue)
+  em cards com galeria/`CalendarMediaViewer`. A UI nunca usa URL/objeto inventado pelo modelo: o Go
+  aceita somente `eventIds` existentes no contexto.
+
+  **MULTI-TAREFA — PROPOSTAS EM LOTE (WAVE 5.1):** a mensagem carrega `proposals[]` (não mais uma proposta
+  única): cada item tem `id`, `kind`, `fields`, `status` próprio e `action` (reservado p/ CRUD futuro).
+  [CalendarChatMessage.vue] renderiza a LISTA com checkbox por item pendente (marcados por padrão), badge
+  `Criado`/`Recusado` nos resolvidos, `×` para recusar um, e o rodapé `Recusar todas` + `Criar N
+  selecionadas`. O composable [useCalendarChat.ts] expõe `confirmSelectedProposals(msgId, ids[])` (cria em
+  LOTE via API autenticada — `applyProposal` por item; falha parcial não aborta, conta e avisa) e
+  `rejectSelectedProposals(msgId, ids[])`. Cada aceite/recusa chama `updateProposalStatus(conv, msg,
+  proposalId, status)` (PATCH `.../proposals/{proposalId}/status`) e o `replaceMessage` atualiza o card item
+  a item; o histórico persiste `accepted`/`rejected` após fechar/recarregar. Retrocompat: mensagem antiga
+  (proposta única) é normalizada como lista de 1.
+
+  **CLIENTE NA CRIAÇÃO (WAVE 5.2):** o card recebe `clients`/`scopeMode`/`scopeClientId` (do `chat.chatScope`).
+  Escopo **cliente** => tudo criado já vai para ELE (rótulo fixo "Tudo será criado para X"; o clientId é
+  FORÇADO, ignora o que a IA sugeriu). Escopo **todos** => cada proposta pendente ganha um `<select>` de
+  cliente (editar uma a uma) e, ao "Criar N selecionadas", se algum selecionado ficar sem cliente abre o
+  popup inline **[Continuar sem cliente] / [Escolher cliente]** — escolher aplica **um para todas** e cria. O
+  clientId resolvido sobe no `accept-selected` (`items:[{id,clientId}]`) e o composable cria com ele
+  (`applyProposal(proposal, clientId)`). O bloco de propostas é **colapsável** (chevron no header) para
+  minimizar listas grandes.
+
+  **CRUD PELO CHAT (2026-07-07):** `applyProposal` faz switch por `proposal.action`: `create` (createEvent/
+  createTask), `update` (evento existente por `fields.targetId` = id de `context.events`; `store.getEventById`
+  - `updateEvent` full-replace mesclando campos não-vazios; conflito de versão vira aviso) e `delete`
+    (`store.deleteEvent`). O card mostra a ação por item (tag **Editar**/**Excluir**, delete com acento de perigo),
+    esconde o seletor de cliente no delete e o botão vira "Aplicar N" quando há edição/exclusão. **Limite:**
+    update/delete só em EVENTOS (estão no contexto); editar/excluir TASKS do board pelo chat depende do chat ler
+    as tasks (roadmap) — por ora responde "em breve". O painel teleporta o chat para `.app-surface` (dentro do
+    shell, mesmo stacking context do header) — não mais `body`, senão cobre o header do painel.
+
 (client|all) vem do `GET /chat/scope`: cliente-side (canSelect=false) trava no `lockedClientId`, agencia
 escolhe. **WAVE 4 — SELECT DE ESCOPO (SPEC-F11)**: barra abaixo do header via
 [CalendarChatScope.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarChatScope.vue)
@@ -500,6 +557,7 @@ idle/recording/transcribing, permissao negada -> mensagem acionavel). Botao mic:
 POST multipart `/v1/calendar/chat/transcribe`(campo`file`; FormData nao serializado pelo api-client)
 -> texto entra no INPUT (usuario revisa e envia, nao envia direto); erros C8 (503/413/400/502/504)
 com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMessage`.
+
 - **Realtime + presenca (SPEC-F9, contratos C11/C12)**. Dois composables NOVOS moldados sobre a
   base generica de tasks (import cross-layer `../../layers/tasks/composables/useRealtimeSocket`;
   a conta e' resolvida pela cadeia `resolveRealtimeAccountId`, NUNCA so `auth.activeTenantId`),
@@ -569,7 +627,9 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
   Widget reutilizavel de anexos (`v-model` = `CalendarMediaItem[]`): grade de previews (img/`video`)
   - remover, tile de adicionar (input file oculto), barra de progresso por upload e validacao de
     tipo/tamanho no cliente (contra `useCalendarMedia().mediaLimits`). `readonly` = so preview (midia do
-    post no drawer). Usado no [CalendarEventForm.vue] e no [DayDrawer.vue]. Clicar num item abre o
+    post no drawer). Nos **Anexos do dia**, usa 3 colunas, ocupa no maximo 35% da altura do drawer e
+    ativa a rolagem interna somente acima de 6 midias; o botao de upload fica no cabecalho para nao
+    contar como uma celula extra. Usado no [CalendarEventForm.vue] e no [DayDrawer.vue]. Clicar num item abre o
     [CalendarMediaViewer.vue] (botao remover via `@click.stop`); thumb de video usa `posterUrl` como
     `<img>` quando existe (senao `<video preload="metadata">`). Video sobe por `uploadVideoWithPoster`.
 - [CalendarMediaViewer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaViewer.vue)

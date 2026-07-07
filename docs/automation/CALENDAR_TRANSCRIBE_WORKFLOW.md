@@ -5,8 +5,9 @@
 > SPEC-W2 em [../CALENDARIO_SPECS3.md](../CALENDARIO_SPECS3.md) (contratos PAY/SEC). Contrato C8.
 > JSON importavel: [`../../automation/export/workflow-calendar-transcribe.json`](../../automation/export/workflow-calendar-transcribe.json).
 >
-> **Status: autorado — precisa de import + teste manual no n8n.** Nunca foi executado no n8n
-> real. O JSON foi validado fora do n8n (parse, conexoes, sintaxe dos nos Code, ramos do Switch).
+> **Status: importado e ativo no n8n de producao em 2026-07-07.** Estrutura exportada da VPS
+> confere com o JSON local. O teste com transcricao real continua manual para evitar consumo
+> involuntario de tokens durante o deploy.
 >
 > **Mudanca da wave 3 (2026-07-04):** a transcricao virou multi-provider **sem credential do n8n**.
 > O painel/back e a fonte da verdade: o Go resolve a API key no banco (`resolveAIKey`) e a manda
@@ -117,9 +118,9 @@ Local (profile `automation`):
 # 1. copia o JSON para dentro do container
 docker compose --profile automation cp automation/export/workflow-calendar-transcribe.json n8n:/tmp/wf.json
 # 2. importa (Git Bash no Windows: prefixe MSYS_NO_PATHCONV=1 senao /tmp vira path Windows)
-MSYS_NO_PATHCONV=1 docker compose --profile automation exec n8n n8n import:workflow --input=/tmp/wf.json --overwrite
+MSYS_NO_PATHCONV=1 docker compose --profile automation exec n8n n8n import:workflow --input=/tmp/wf.json
 # 3. NAO precisa de credential (a key vem no payload). Se o n8n destino tinha a versao antiga
-#    com a credential OpenAI, o import --overwrite (mesmo id calendartrans001) substitui o node.
+#    com a credential OpenAI, importar o mesmo id calendartrans001 atualiza o workflow.
 # 4. ativa e reinicia
 docker compose --profile automation exec n8n n8n update:workflow --id=calendartrans001 --active=true
 docker compose --profile automation restart n8n
@@ -199,7 +200,8 @@ whitelist -> **400 `invalid_media`**; n8n fora do ar -> **502**; timeout -> **50
 - **Base64 via helper, nao via `.data`:** o Code do Gemini usa `this.helpers.getBinaryDataBuffer`
   (funciona com binario em memoria E em filesystem, conforme o `N8N_DEFAULT_BINARY_DATA_MODE`);
   ler `item.binary.data0.data` direto so funciona no modo memoria.
-- **Nao testado no n8n real.** Autorado e validado fora do n8n (parse, ramos, sintaxe dos Code).
+- **Sem teste de audio real no deploy.** Importado/publicado no n8n de prod e comparado com o
+  JSON local; a transcricao ficou manual para nao consumir tokens involuntariamente.
 - **Escrita de workflow via n8n-MCP e quebrada** nesta versao (`n8nio/n8n:2.23.2`, PUT publico
   estrito) — importar por CLI (`import:workflow`), nao pela API do MCP.
 - **Seguranca da key:** a key crua trafega so no payload server-to-server (Go -> n8n, rede docker).

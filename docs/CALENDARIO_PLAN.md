@@ -180,6 +180,39 @@ Hoje a config é um **modal** (só responsáveis + feriados). Evoluir para uma *
 - **Config da IA de calendário**: provider ativo + modelo + *Base URL* (por provider) + **prompts
   editáveis** (system prompt do plano) + limites (tamanho do plano, temperatura). Chaves de API
   **server-side**. Espelha o padrão "config-driven pelo painel" da automação.
+  - **Modelo = SELECT do provedor (Opção C, 2026-07-07)**: o campo Modelo deixou de ser texto livre. Ao
+    escolher o provedor, o painel lista os modelos REAIS via `GET /v1/calendar/ai/models?provider=` (o back
+    resolve a chave server-side e bate no `/models` do provedor no endpoint **canônico** — a *Base URL* do
+    cliente **não** é usada na listagem, para não abrir SSRF; segue valendo no dispatch). Isso elimina a
+    armadilha `provider=OpenAI` + `model=gemini-*`. Decisão: **select sempre, sem digitação**; sem
+    conseguir listar (sem chave / provedor sem `/models` / API falhou) o campo fica **desabilitado com
+    aviso + "Tentar novamente"** (o provedor precisa expor `/models`). Front: `ConfigAiModelSelect.vue`;
+    back: `ai_models.go`/`http_ai_models.go`.
+- **Criação MULTI-TAREFA pelo chat (WAVE 5.1, 2026-07-07)**: o chat deixou de propor 1 item por resposta —
+  agora devolve `proposals[]` (lista) e o usuário aprova em LOTE. Decisão: **enumerar cada item** (a IA lista
+  uma proposta por data; "uma por dia" = N itens, teto 31) + **seleção com criar em lote** (checkbox por item,
+  `Criar N selecionadas` / `Recusar todas` / `×` individual). Persistência: `calendar.chat_messages.proposals`
+  jsonb (migration 0195), cada proposta com `status` próprio + `action` (`create`|`update`|`delete`)
+  usado pelo **CRUD pelo chat (2026-07-07)**: `action=update` (editar evento existente por `targetId` = id de
+  `context.events`, full-replace mesclando campos não-vazios) e `action=delete` (excluir por `targetId`), além de
+  `create`. Front `applyProposal` (era `createFromProposal`) faz o switch via `store.getEventById`/`updateEvent`/
+  `deleteEvent`; o card mostra a ação (Criar/Editar/**Excluir** com acento de perigo) e some o seletor de cliente
+  no delete; `sanitizeProposal` (Go) valida por ação (update/delete exigem `targetId`; delete dispensa título).
+  **Limite atual:** update/delete só em **EVENTOS** (estão no contexto). Editar/excluir **tasks do board** pelo
+  chat depende do chat LER as tasks (roadmap) — por ora responde "em breve". n8n `workflow-calendar-chat` reimportado (prompt
+  → `proposals[]`, parse/respond em array). Front: `CalendarChatMessage.vue` (lista) + `useCalendarChat.ts`
+  (`confirmSelectedProposals`/`rejectSelectedProposals`). **Roadmap encadeado (pedido do dono):** (a) CRUD
+  completo pelo chat (pegar tarefa → editar/excluir, com confirmação — o schema `action`/`targetId` já está
+  pronto); (b) chat LER todas as tasks (não só as espelhadas no calendário) — exige o contexto puxar do módulo
+  `tasks`; (c) levar o chat para a **página de Tasks** (o composable é singleton, é wiring de montagem).
+- **Cliente na criação + cards colapsáveis (WAVE 5.2, 2026-07-07, só front)**: escopo **cliente** → tudo
+  criado já vai para ele (clientId forçado, sem perguntar); escopo **todos** → seletor de cliente por
+  proposta (editar uma a uma) + popup **[Continuar sem cliente]/[Escolher cliente]** (aplica um para todas)
+  quando falta cliente em algum selecionado. Os cards de propostas viraram **colapsáveis** (minimizar).
+  `CalendarChatMessage.vue` recebe `clients`/`scopeMode`/`scopeClientId`; `createFromProposal(proposal,
+  clientId)`. Sem back/n8n/migration — o clientId entra na criação autenticada existente. **Mesma regra no
+  BOTÃO** (`CalendarEventForm.vue`): criar evento novo pré-seleciona o cliente do filtro ativo do calendário
+  (`store.selectedClientId`); editar mantém o do evento; "todos" = sem cliente (o usuário escolhe no select).
 - **Limites de mídia** (imagem/vídeo) — hoje só via `PUT /media-limits` (platform_admin); expor na
   página para o admin.
 

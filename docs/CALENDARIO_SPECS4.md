@@ -1,7 +1,7 @@
 # Calendário — SPECS WAVE 4 (Chat com memória, persistência e escopo de clientes)
 
 > Specs atômicas para subagentes. Fonte da visão: decisões do dono (2026-07-04). Base já no ar:
-> chat do calendário (Crow Assistente) com voz (Whisper self-hosted + ditado ao vivo), provider
+> chat do calendário (Crow Assistant) com voz (Whisper self-hosted + ditado ao vivo), provider
 > IA por conta/cliente (waves 3/3.1). Este doc adiciona PERSISTÊNCIA + MEMÓRIA + CONTEXTO DE
 > CLIENTES + SELECT DE ESCOPO com controle de acesso. Regras gerais idênticas às waves anteriores
 > (skill principios-engenharia; NUNCA git/npm/docker nos agentes; máx 450 linhas/arquivo; pt-BR

@@ -732,6 +732,13 @@ erDiagram
   - eventos brutos de analytics do site, recebidos em lote assinado por HMAC
   - idempotencia por `source_id + source_event_id` para retries do outbox
 
+## Calendario — chat persistido
+
+- `calendar.chat_conversations`: conversa por conta/usuário, com escopo `client|all` e soft-delete.
+- `calendar.chat_messages`: histórico por conversa; além de `role/content`, guarda `proposal`,
+  `proposal_status` e `calendar_items` (snapshot de eventos/mídias reais mostrado no chat).
+- Uma proposta nasce `pending` e só passa para `accepted` ou `rejected` por ação explícita do usuário.
+
 ## Seeds atuais
 
 A migration de seed cria:

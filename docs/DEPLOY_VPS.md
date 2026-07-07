@@ -251,6 +251,11 @@ NUXT_PUBLIC_API_WS_BASE=wss://omni.crowvisuals.com.br
 NUXT_API_INTERNAL_BASE=http://api:8080
 CORS_ALLOWED_ORIGINS=https://omni.crowvisuals.com.br
 AUTH_TOKEN_SECRET=<segredo-longo-e-aleatorio>
+CALENDAR_AI_WEBHOOK_URL=http://n8n:5678/webhook/calendar-omni
+CALENDAR_AI_SERVICE_TOKEN=<segredo-forte>
+CALENDAR_AI_CALLBACK_BASE=http://api:8080
+CALENDAR_CHAT_WEBHOOK_URL=http://n8n:5678/webhook/calendar-chat
+CALENDAR_TRANSCRIBE_WEBHOOK_URL=http://n8n:5678/webhook/calendar-transcribe
 IMAGE_TAG=<sha-ou-local-timestamp>   # gravado pelos scripts a cada deploy
 ```
 

@@ -7,6 +7,7 @@
 // server-side pela permissao (resolveChatAccess): agencia ve todas as conversas da
 // conta, cliente-side so as suas; conversa/cliente fora do visivel => 404.
 import type { ApiRequest } from './calendar-api'
+import type { CalendarMediaItem } from '~/utils/calendar'
 
 // Escopo do contexto que a IA usa: 'client' = um cliente especifico; 'all' = todos os
 // clientes visiveis (so a agencia/multi-cliente pode escolher 'all').
@@ -28,7 +29,49 @@ export interface CalendarChatStoredMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  // proposals (multi-tarefa, WAVE 5.1): lista de propostas, cada uma com status proprio.
+  proposals: CalendarChatStoredProposal[]
+  calendarItems: CalendarChatCalendarItem[]
   createdAt: string
+}
+
+export type CalendarChatProposalStatus = 'none' | 'pending' | 'accepted' | 'rejected'
+// action reservado p/ CRUD futuro (create|update|delete); hoje o front so executa 'create'.
+export type CalendarChatProposalAction = 'create' | 'update' | 'delete'
+
+export interface CalendarChatProposalFields {
+  title?: string
+  date?: string
+  time?: string
+  type?: string
+  status?: string
+  dueDate?: string
+  columnId?: string
+  clientId?: string
+  targetId?: string
+}
+
+/** Proposta PERSISTIDA: id estavel (indice na mensagem) + status proprio (aprova/recusa por item). */
+export interface CalendarChatStoredProposal {
+  id: string
+  action: CalendarChatProposalAction
+  kind: 'event' | 'task'
+  fields: CalendarChatProposalFields
+  status: CalendarChatProposalStatus
+}
+
+export interface CalendarChatCalendarItem {
+  id: string
+  date: string
+  time: string
+  type: string
+  title: string
+  status: string
+  priority: string
+  clientId: string
+  clientName: string
+  description?: string
+  media: CalendarMediaItem[]
 }
 
 /** Conversa + mensagens (GET /chat/conversations/{id}, contrato D3). */
@@ -83,21 +126,73 @@ function normalizeConversation(raw: unknown): CalendarChatConversation {
   }
 }
 
+function normalizeProposal(raw: unknown, index: number): CalendarChatStoredProposal {
+  const o = asRecord(raw)
+  const action: CalendarChatProposalAction = ['create', 'update', 'delete'].includes(
+    asString(o.action),
+  )
+    ? (asString(o.action) as CalendarChatProposalAction)
+    : 'create'
+  const status: CalendarChatProposalStatus = ['pending', 'accepted', 'rejected'].includes(
+    asString(o.status),
+  )
+    ? (asString(o.status) as CalendarChatProposalStatus)
+    : 'pending'
+  return {
+    id: asString(o.id) || String(index),
+    action,
+    kind: o.kind === 'task' ? 'task' : 'event',
+    fields: asRecord(o.fields) as CalendarChatProposalFields,
+    status,
+  }
+}
+
 function normalizeStoredMessage(raw: unknown): CalendarChatStoredMessage {
   const o = asRecord(raw)
+  let proposals: CalendarChatStoredProposal[] = Array.isArray(o.proposals)
+    ? o.proposals.map((p, i) => normalizeProposal(p, i))
+    : []
+  // Retrocompat: mensagem no shape antigo (proposal singular + proposalStatus) vira lista de 1.
+  if (!proposals.length && o.proposal) {
+    const p = asRecord(o.proposal)
+    const legacyStatus = ['pending', 'accepted', 'rejected'].includes(asString(o.proposalStatus))
+      ? asString(o.proposalStatus)
+      : 'pending'
+    proposals = [
+      normalizeProposal({ id: '0', kind: p.kind, fields: p.fields, status: legacyStatus }, 0),
+    ]
+  }
   return {
     id: asString(o.id),
     role: o.role === 'assistant' ? 'assistant' : 'user',
     content: asString(o.content),
+    proposals,
+    calendarItems: Array.isArray(o.calendarItems)
+      ? (o.calendarItems as CalendarChatCalendarItem[])
+      : [],
     createdAt: asString(o.createdAt),
   }
+}
+
+export async function updateProposalStatus(
+  api: ApiRequest,
+  conversationId: string,
+  messageId: string,
+  proposalId: string,
+  status: 'accepted' | 'rejected',
+): Promise<CalendarChatStoredMessage> {
+  const raw = await api(
+    `/v1/calendar/chat/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/proposals/${encodeURIComponent(proposalId)}/status`,
+    { method: 'PATCH', body: { status } },
+  )
+  return normalizeStoredMessage(raw)
 }
 
 // Lista as conversas visiveis (agency=todas; cliente-side=so as suas — o back ja
 // filtra pela permissao). Filtra itens sem id (defesa contra shape inesperado).
 export async function fetchConversations(api: ApiRequest): Promise<CalendarChatConversation[]> {
-  const res = await api('/v1/calendar/chat/conversations')
-  const list = Array.isArray(res?.conversations) ? res.conversations : []
+  const res = asRecord(await api('/v1/calendar/chat/conversations'))
+  const list = Array.isArray(res.conversations) ? res.conversations : []
   return list.map(normalizeConversation).filter((c: CalendarChatConversation) => c.id)
 }
 
@@ -107,13 +202,13 @@ export async function getConversation(
   api: ApiRequest,
   id: string,
 ): Promise<CalendarChatConversationDetail> {
-  const res = await api(`/v1/calendar/chat/conversations/${encodeURIComponent(id)}`)
-  const messages = Array.isArray(res?.messages) ? res.messages : []
+  const res = asRecord(await api(`/v1/calendar/chat/conversations/${encodeURIComponent(id)}`))
+  const messages = Array.isArray(res.messages) ? res.messages : []
   return {
-    id: asString(res?.id) || id,
-    title: asString(res?.title),
-    scopeMode: normalizeScopeMode(res?.scopeMode),
-    scopeClientId: asString(res?.scopeClientId),
+    id: asString(res.id) || id,
+    title: asString(res.title),
+    scopeMode: normalizeScopeMode(res.scopeMode),
+    scopeClientId: asString(res.scopeClientId),
     messages: messages.map(normalizeStoredMessage).filter((m: CalendarChatStoredMessage) => m.id),
   }
 }
@@ -129,8 +224,8 @@ export async function createConversation(
   const body: Record<string, unknown> = { scopeMode }
   if (scopeClientId) body.scopeClientId = scopeClientId
   if (title) body.title = title
-  const res = await api('/v1/calendar/chat/conversations', { method: 'POST', body })
-  return asString(res?.id)
+  const res = asRecord(await api('/v1/calendar/chat/conversations', { method: 'POST', body }))
+  return asString(res.id)
 }
 
 // Soft-delete de uma conversa (dono ou agencia; fora do visivel => 404 no back).
@@ -140,11 +235,11 @@ export async function deleteConversation(api: ApiRequest, id: string): Promise<v
 
 // Escopo do SELECT (GET /chat/scope): acesso 100% resolvido no back pela permissao.
 export async function fetchChatScope(api: ApiRequest): Promise<CalendarChatScope> {
-  const res = await api('/v1/calendar/chat/scope')
-  const clients = Array.isArray(res?.clients) ? res.clients : []
+  const res = asRecord(await api('/v1/calendar/chat/scope'))
+  const clients = Array.isArray(res.clients) ? res.clients : []
   return {
-    canSelect: res?.canSelect === true,
-    lockedClientId: asString(res?.lockedClientId),
+    canSelect: res.canSelect === true,
+    lockedClientId: asString(res.lockedClientId),
     clients: clients
       .map((c: unknown) => {
         const o = asRecord(c)

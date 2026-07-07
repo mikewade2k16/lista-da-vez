@@ -10,7 +10,11 @@ import {
   fetchChatScope,
   fetchConversations,
   getConversation,
+  updateProposalStatus,
   type CalendarChatConversation,
+  type CalendarChatCalendarItem,
+  type CalendarChatStoredProposal,
+  type CalendarChatStoredMessage,
   type CalendarChatScope,
   type CalendarChatScopeMode,
 } from '~/domain/calendar/calendar-chat-api'
@@ -32,29 +36,16 @@ export interface CalendarChatMessage {
   id: string
   role: 'user' | 'assistant'
   text: string
-}
-
-// WAVE 5 (E7): proposta de criacao devolvida pela IA. A IA NAO cria nada; o painel mostra um
-// cartao de confirmacao e, se o usuario confirmar, cria pela API autenticada dele (store).
-export interface CalendarChatProposal {
-  kind: 'event' | 'task'
-  fields: {
-    title?: string
-    date?: string
-    time?: string
-    type?: string
-    status?: string
-    dueDate?: string
-    columnId?: string
-    clientId?: string
-  }
+  // proposals (multi-tarefa, WAVE 5.1): lista de propostas, cada uma com status proprio.
+  proposals: CalendarChatStoredProposal[]
+  calendarItems: CalendarChatCalendarItem[]
 }
 
 interface CalendarChatAskResponse {
   answer?: string
   conversationId?: string
   title?: string
-  proposal?: CalendarChatProposal | null
+  message?: CalendarChatStoredMessage
   // aiError (WAVE 5) = a IA nao respondeu (503/cota/chave/vazio). O front mostra o estado
   // "IA fora do ar" (visual distinto), nao um balao normal, e nao persiste a mensagem.
   aiError?: boolean
@@ -70,9 +61,24 @@ const DEFAULT_SCOPE: CalendarChatScope = { canSelect: false, lockedClientId: '',
 // anterior ainda em voo quando o usuario dispara outra. NAO abortamos no unmount de
 // componente porque o estado e compartilhado por varios (FAB/painel/drawer).
 let inflightController: AbortController | null = null
+let availabilitySequence = 0
 
 function newId(): string {
   return crypto.randomUUID()
+}
+
+function localMessage(role: 'user' | 'assistant', text: string): CalendarChatMessage {
+  return { id: newId(), role, text, proposals: [], calendarItems: [] }
+}
+
+function storedMessage(message: CalendarChatStoredMessage): CalendarChatMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    text: message.content,
+    proposals: message.proposals,
+    calendarItems: message.calendarItems,
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -112,17 +118,14 @@ export function useCalendarChat() {
 
   // WAVE 5 (E7): proposta pendente de criacao (evento/task) sugerida pela IA. O painel
   // renderiza um cartao de confirmacao; confirmar cria pela API do proprio usuario.
-  const pendingProposal = useState<CalendarChatProposal | null>(
-    'calendar-chat:proposal',
-    () => null,
-  )
-  const creatingProposal = useState<boolean>('calendar-chat:proposal-busy', () => false)
+  const proposalBusyId = useState<string>('calendar-chat:proposal-busy-id', () => '')
 
   // WAVE 5: estado "IA fora do ar" — true quando a ULTIMA tentativa falhou (503/cota/chave/
   // timeout/kill switch). O painel mostra um indicador no cabecalho + um bloco distinto no
   // chat (nunca um balao normal), para o usuario SEMPRE saber que a IA nao esta funcionando.
   const aiOffline = useState<boolean>('calendar-chat:ai-offline', () => false)
   const aiOfflineReason = useState<string>('calendar-chat:ai-offline-reason', () => '')
+  const checkingAvailability = useState<boolean>('calendar-chat:ai-checking', () => false)
 
   // Lista de conversas persistidas (menu "Conversas") + estados de carga.
   const conversations = useState<CalendarChatConversation[]>('calendar-chat:list', () => [])
@@ -159,6 +162,7 @@ export function useCalendarChat() {
   function setScope(mode: CalendarChatScopeMode, clientId: string): void {
     scopeMode.value = mode === 'client' ? 'client' : 'all'
     scopeClientId.value = mode === 'client' ? clientId : ''
+    void checkAvailability()
   }
 
   async function loadConversations(): Promise<void> {
@@ -182,11 +186,44 @@ export function useCalendarChat() {
     }
   }
 
-  // Chamado ao abrir o chat: busca a lista de conversas + o escopo do banco.
+  // Preflight barato: valida config/chave/kill switch e o /healthz do n8n. A rota nao
+  // executa prompt, nao cria mensagem e nao consome tokens.
+  async function checkAvailability(): Promise<boolean> {
+    const sequence = ++availabilitySequence
+    checkingAvailability.value = true
+    try {
+      await apiRequest('/v1/calendar/chat/status', {
+        query: {
+          scopeMode: scopeMode.value,
+          scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
+        },
+        dedupe: false,
+        skipLoadingIndicator: true,
+      })
+      if (sequence === availabilitySequence) {
+        aiOffline.value = false
+        aiOfflineReason.value = ''
+      }
+      return true
+    } catch (error) {
+      if (sequence === availabilitySequence) {
+        aiOffline.value = true
+        aiOfflineReason.value = actionableError(error)
+      }
+      return false
+    } finally {
+      if (sequence === availabilitySequence) {
+        checkingAvailability.value = false
+      }
+    }
+  }
+
+  // Chamado ao abrir o chat: busca lista/escopo e so entao verifica a IA sem tokens.
   async function ensureChatLoaded(): Promise<void> {
     await auth.ensureSession()
     if (!auth.isAuthenticated) return
     await Promise.all([loadConversations(), loadScope()])
+    await checkAvailability()
   }
 
   function openPanel(): void {
@@ -256,13 +293,17 @@ export function useCalendarChat() {
   // Envia a pergunta com o escopo escolhido + a conversa ativa. O back persiste as duas
   // mensagens (user/assistant), carrega a memoria e devolve { answer, conversationId,
   // title } — adotamos o id/titulo que ele resolveu.
-  async function ask(question: string): Promise<void> {
+  async function ask(question: string, availabilityChecked = false): Promise<void> {
     const trimmed = String(question || '').trim()
     if (!trimmed || sending.value) {
       return
     }
     if (trimmed.length > QUESTION_MAX_LENGTH) {
       errorMessage.value = `A pergunta passou de ${QUESTION_MAX_LENGTH} caracteres. Resuma e tente de novo.`
+      return
+    }
+    // O preflight acontece ANTES de adicionar a pergunta ao historico e antes de chamar /ask.
+    if (!availabilityChecked && !(await checkAvailability())) {
       return
     }
 
@@ -272,8 +313,7 @@ export function useCalendarChat() {
 
     errorMessage.value = ''
     sending.value = true
-    pendingProposal.value = null // nova pergunta descarta uma proposta anterior nao confirmada
-    messages.value = [...messages.value, { id: newId(), role: 'user', text: trimmed }]
+    messages.value = [...messages.value, localMessage('user', trimmed)]
 
     try {
       const response = (await apiRequest('/v1/calendar/chat/ask', {
@@ -301,7 +341,6 @@ export function useCalendarChat() {
         aiOffline.value = true
         aiOfflineReason.value =
           String(response?.answer || '').trim() || 'A IA não respondeu agora. Tente de novo.'
-        pendingProposal.value = null
         return
       }
 
@@ -310,14 +349,13 @@ export function useCalendarChat() {
       const answer = String(response?.answer || '').trim()
       messages.value = [
         ...messages.value,
-        {
-          id: newId(),
-          role: 'assistant',
-          text: answer || 'A IA nao retornou uma resposta. Tente reformular a pergunta.',
-        },
+        response?.message
+          ? storedMessage(response.message)
+          : localMessage(
+              'assistant',
+              answer || 'A IA nao retornou uma resposta. Tente reformular a pergunta.',
+            ),
       ]
-      // WAVE 5 (E7): a IA pode devolver uma proposta de criacao junto da resposta.
-      pendingProposal.value = response?.proposal || null
       upsertConversationSummary(conversationId.value, conversationTitle.value)
     } catch (error) {
       // Pergunta cancelada de proposito (o usuario enviou outra) nao vira erro.
@@ -337,14 +375,16 @@ export function useCalendarChat() {
     }
   }
 
-  // Envia o rascunho do input (Enter ou botao). Limpa o input na hora.
-  function send(): void {
+  // Envia o rascunho somente depois do preflight. Se a IA estiver indisponivel, preserva
+  // o texto no campo para o usuario nao perder o que escreveu.
+  async function send(): Promise<void> {
     const question = draft.value.trim()
-    if (!question) {
+    if (!question || sending.value || checkingAvailability.value) {
       return
     }
-    draft.value = ''
-    void ask(question)
+    if (!(await checkAvailability())) return
+    if (draft.value.trim() === question) draft.value = ''
+    await ask(question, true)
   }
 
   // Abre uma conversa persistida: carrega as mensagens do banco (SUBSTITUI as locais) e
@@ -356,17 +396,16 @@ export function useCalendarChat() {
     inflightController = null
     loadingConversation.value = true
     errorMessage.value = ''
-    aiOffline.value = false
-    aiOfflineReason.value = ''
     try {
       const detail = await getConversation(apiRequest, id)
       conversationId.value = detail.id
       conversationTitle.value = detail.title
       scopeMode.value = detail.scopeMode
       scopeClientId.value = detail.scopeClientId
-      messages.value = detail.messages.map((m) => ({ id: m.id, role: m.role, text: m.content }))
+      messages.value = detail.messages.map(storedMessage)
       draft.value = ''
       sending.value = false
+      void checkAvailability()
     } catch (error) {
       errorMessage.value = actionableError(error)
     } finally {
@@ -387,82 +426,181 @@ export function useCalendarChat() {
     loadingConversation.value = false
     conversationId.value = ''
     conversationTitle.value = ''
-    pendingProposal.value = null
-    aiOffline.value = false
-    aiOfflineReason.value = ''
+    proposalBusyId.value = ''
     applyScopeDefault(chatScope.value)
+    void checkAvailability()
   }
 
   // WAVE 5 (E7): descarta a proposta sem criar nada.
-  function dismissProposal(): void {
-    pendingProposal.value = null
+  function replaceMessage(updated: CalendarChatStoredMessage): void {
+    messages.value = messages.value.map((message) =>
+      message.id === updated.id ? storedMessage(updated) : message,
+    )
   }
 
-  // noteAssistant empurra uma nota da IA no historico visivel (ex.: confirmacao de criacao).
-  function noteAssistant(text: string): void {
-    messages.value = [...messages.value, { id: newId(), role: 'assistant', text }]
+  // applyProposal EXECUTA a proposta pela API autenticada do usuario conforme a `action`:
+  // create (item novo), update (edita um EVENTO existente do contexto por targetId, full-replace
+  // mesclando os campos nao-vazios) ou delete (exclui). clientId ja vem resolvido pelo componente.
+  // Devolve '' no sucesso ou uma mensagem de erro acionavel. UPDATE/DELETE so em EVENTO (o CRUD
+  // de tasks do board pelo chat ainda nao existe — falta o chat ler as tasks).
+  async function applyProposal(
+    proposal: CalendarChatStoredProposal,
+    clientId: string,
+  ): Promise<string> {
+    const f = proposal.fields || {}
+    const action = proposal.action || 'create'
+    const targetId = String(f.targetId || '')
+
+    if (action === 'update' || action === 'delete') {
+      // Roteia pelo targetId (que vem de context.events = EVENTOS), NAO pelo kind: a IA as vezes
+      // rotula um evento do calendario como kind:'task'. Se o id e um evento carregado, edita/
+      // exclui o evento; senao, mensagem conforme o caso (task do board ainda nao, ou fora do mes).
+      const existing = store.getEventById(targetId)
+      if (!existing) {
+        return proposal.kind === 'task'
+          ? 'Editar/excluir tasks do board pelo chat ainda não está disponível — por ora só eventos do calendário.'
+          : 'Não encontrei esse item no calendário (abra o mês dele e tente de novo).'
+      }
+      if (action === 'delete') {
+        const ok = await store.deleteEvent(existing.id)
+        return ok ? '' : 'Não consegui excluir o item.'
+      }
+      // update = full-replace: campos NAO-VAZIOS da proposta vencem; o resto mantem o existente.
+      const outcome = await store.updateEvent(
+        existing.id,
+        {
+          date: String(f.date || existing.date || ''),
+          time: String(f.time || existing.time || ''),
+          clientId: clientId || existing.clientId || '',
+          type: String(f.type || existing.type || 'post'),
+          title: String(f.title || existing.title || ''),
+          status: String(f.status || existing.status || 'planejado'),
+          priority: existing.priority,
+          responsibleId: existing.responsibleId || '',
+          involvedIds: existing.involvedIds || [],
+          media: existing.media || [],
+          description: String(existing.description || ''),
+        } as unknown as CalendarEventInput,
+        existing.version,
+      )
+      if (outcome === 'conflict') {
+        return 'Esse item mudou enquanto isso. Recarregue o calendário e tente de novo.'
+      }
+      return outcome === 'ok' ? '' : 'Não consegui editar o item.'
+    }
+
+    // CREATE (comportamento existente). Evento -> calendar store; task -> tasks store.
+    if (proposal.kind === 'task') {
+      const boardId = String(store.config.tasks?.boardId || '')
+      if (!boardId) return 'Configure um board na aba Integrações da config para criar tasks.'
+      const tasksStore = useTasksStore()
+      await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
+      const created = await tasksStore.createTask({
+        projectId: boardId,
+        title: String(f.title || ''),
+        dueDate: String(f.dueDate || f.date || ''),
+        clientId,
+      })
+      return created ? '' : 'Não consegui criar a task.'
+    }
+    // createEvent tipa os enums (type/status/priority); a proposta vem validada e o back
+    // re-valida, entao usamos um cast controlado no payload.
+    const ok = await store.createEvent({
+      date: String(f.date || f.dueDate || ''),
+      time: String(f.time || ''),
+      clientId,
+      type: String(f.type || 'post'),
+      title: String(f.title || ''),
+      status: String(f.status || 'planejado'),
+      priority: 'media',
+      responsibleId: '',
+      involvedIds: [],
+      media: [],
+      description: '',
+      createTask: Boolean(store.config.tasks?.boardId),
+    } as unknown as CalendarEventInput)
+    return ok ? '' : 'Não consegui criar o evento (confira a data proposta).'
   }
 
-  // confirmProposal CRIA o evento/task proposto pela API autenticada do usuario (permissao e
-  // escopo normais — o back valida). Evento -> calendar store (createTask default se ha board);
-  // task -> tasks store (board = config.tasks.boardId). Sucesso => nota no chat + limpa a proposta.
-  async function confirmProposal(): Promise<void> {
-    const proposal = pendingProposal.value
-    if (!proposal || creatingProposal.value) return
-    creatingProposal.value = true
+  // pendingTargets resolve as propostas AINDA pendentes de uma mensagem para os ids pedidos
+  // (ignora ids ja resolvidos ou inexistentes) — base comum de criar/recusar em lote.
+  function pendingTargets(messageId: string, proposalIds: string[]): CalendarChatStoredProposal[] {
+    const message = messages.value.find((m) => m.id === messageId)
+    if (!message) return []
+    return message.proposals.filter((p) => proposalIds.includes(p.id) && p.status === 'pending')
+  }
+
+  // confirmSelectedProposals cria em LOTE as propostas selecionadas (multi-tarefa). `items`
+  // traz, por proposta, o clientId JA resolvido pelo componente ({id, clientId}). Para cada uma
+  // cria o item e, no sucesso, marca 'accepted' no back (replaceMessage atualiza o card item a
+  // item). Falha parcial NAO aborta o lote — conta as que falharam e avisa no fim.
+  async function confirmSelectedProposals(
+    messageId: string,
+    items: { id: string; clientId: string }[],
+  ): Promise<void> {
+    if (proposalBusyId.value) return
+    const targets = pendingTargets(
+      messageId,
+      items.map((i) => i.id),
+    )
+    if (!targets.length) return
+    const clientById = new Map(items.map((i) => [i.id, i.clientId]))
+    proposalBusyId.value = messageId
+    errorMessage.value = ''
+    let failed = 0
+    try {
+      for (const proposal of targets) {
+        try {
+          const err = await applyProposal(proposal, clientById.get(proposal.id) || '')
+          if (err) {
+            failed++
+            continue
+          }
+          const updated = await updateProposalStatus(
+            apiRequest,
+            conversationId.value,
+            messageId,
+            proposal.id,
+            'accepted',
+          )
+          replaceMessage(updated)
+        } catch {
+          failed++
+        }
+      }
+      if (failed > 0) {
+        errorMessage.value = `Criei ${targets.length - failed} de ${targets.length}. ${failed} falharam — revise e tente as restantes.`
+      }
+    } finally {
+      proposalBusyId.value = ''
+    }
+  }
+
+  // rejectSelectedProposals recusa em lote (persiste 'rejected'); serve tanto o "×" de um item
+  // quanto o "Recusar todas". Nao cria nada.
+  async function rejectSelectedProposals(messageId: string, proposalIds: string[]): Promise<void> {
+    if (proposalBusyId.value) return
+    const targets = pendingTargets(messageId, proposalIds)
+    if (!targets.length) return
+    proposalBusyId.value = messageId
     errorMessage.value = ''
     try {
-      const f = proposal.fields || {}
-      const clientId = String(
-        f.clientId || (scopeMode.value === 'client' ? scopeClientId.value : '') || '',
-      )
-      if (proposal.kind === 'task') {
-        const boardId = String(store.config.tasks?.boardId || '')
-        if (!boardId) {
-          errorMessage.value = 'Configure um board na aba Integrações da config para criar tasks.'
-          return
+      for (const proposal of targets) {
+        try {
+          const updated = await updateProposalStatus(
+            apiRequest,
+            conversationId.value,
+            messageId,
+            proposal.id,
+            'rejected',
+          )
+          replaceMessage(updated)
+        } catch (error) {
+          errorMessage.value = actionableError(error)
         }
-        const tasksStore = useTasksStore()
-        await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
-        const created = await tasksStore.createTask({
-          projectId: boardId,
-          title: String(f.title || ''),
-          dueDate: String(f.dueDate || f.date || ''),
-          clientId,
-        })
-        if (!created) {
-          errorMessage.value = 'Não consegui criar a task agora.'
-          return
-        }
-        noteAssistant('Task criada no board ✅')
-      } else {
-        // createEvent tipa os enums (type/status/priority); a proposta vem validada e o back
-        // re-valida, entao usamos um cast controlado no payload.
-        const ok = await store.createEvent({
-          date: String(f.date || f.dueDate || ''),
-          time: String(f.time || ''),
-          clientId,
-          type: String(f.type || 'post'),
-          title: String(f.title || ''),
-          status: String(f.status || 'planejado'),
-          priority: 'media',
-          responsibleId: '',
-          involvedIds: [],
-          media: [],
-          description: '',
-          createTask: Boolean(store.config.tasks?.boardId),
-        } as unknown as CalendarEventInput)
-        if (!ok) {
-          errorMessage.value = 'Não consegui criar o evento (confira a data proposta).'
-          return
-        }
-        noteAssistant('Evento criado no calendário ✅')
       }
-      pendingProposal.value = null
-    } catch (error) {
-      errorMessage.value = actionableError(error)
     } finally {
-      creatingProposal.value = false
+      proposalBusyId.value = ''
     }
   }
 
@@ -493,12 +631,13 @@ export function useCalendarChat() {
     chatScope,
     scopeMode,
     scopeClientId,
-    pendingProposal,
-    creatingProposal,
-    confirmProposal,
-    dismissProposal,
+    proposalBusyId,
+    confirmSelectedProposals,
+    rejectSelectedProposals,
     aiOffline,
     aiOfflineReason,
+    checkingAvailability,
+    checkAvailability,
     ask,
     send,
     setScope,

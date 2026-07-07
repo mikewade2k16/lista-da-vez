@@ -39,6 +39,11 @@ tasks avisa o calendar a cada mudanca de task e o `handleTaskSync` mantem o even
 (`maybeCreateMirrorEvent` com `events.source='task'`, `applyTaskSyncToEvent`, `deleteMirrorEvent`).
 Sentido evento->task no `UpdateEvent` via `syncTaskFromEvent` -> `tasks.ApplyCalendarSync` (TERMINAL,
 nao re-dispara). Guarda anti-loop: metodos terminais + `events.source` (0192) + `ui_metadata.source`.
+DESCRICAO (WAVE 6.1): `event.Description` (texto simples) espelha no CORPO da task (`ContentHTML`, o editor
+rico) via `descToHTML` (escapa + `<br>` + `<p>`). No `createLinkedTask` sempre; no `syncTaskFromEvent` SO
+quando a descricao MUDOU (`UpdateEvent` compara old/new e passa `syncContent`) — assim editar outro campo do
+evento NAO sobrescreve o texto rico que o usuario escreveu direto no editor da task. Sentido unico
+(evento->task); o task->event preserva a descricao propria do evento (`eventToInput`).
 Sync de status (E5) bidi pelo mapa `config.tasks.statusColumnMap` (`statusForColumn`/`columnForStatus`).
 Cruzamento de MIDIA A (WAVE 6, read-only): a midia do evento (ev.Media + anexos do dia apontados via
 `MediaItem.eventId`) e espelhada na task vinculada em `ui_metadata.calendarMedia` (so exibicao — a task
@@ -63,9 +68,13 @@ EXCLUSAO (WAVE 6, "perguntar na hora"): `DELETE /v1/calendar/events/{id}?archive
 task vinculada junto (`archiveLinkedTask`); sem o param so remove a relation (task fica). Tolera 404
 quando o archive ja apagou o evento-espelho (source='task') pelo sync.
 Espelho task->evento ligado por padrao (`config.tasks.mirrorTasks=true`). Card nasce no topo
-(`topSortOrder`, sort_order asc). IA propoe criar (E7): `ChatProposal` passthrough do webhook em
-`chat.go` (`sanitizeProposal`); a criacao real e do FRONT pela API autenticada do usuario (sem
-service-token escrevendo).
+(`topSortOrder`, sort_order asc). IA propoe criar (E7 + **multi-tarefa WAVE 5.1**): o webhook devolve
+`proposals[]` (lista); `chat.go` sanitiza cada uma (`sanitizeProposalList`/`sanitizeProposal`, teto
+`maxChatProposals=31`), gera id por indice + status `pending` (`storedProposalsFrom`) e persiste em
+`chat_messages.proposals`. A criacao real e do FRONT pela API autenticada do usuario (sem service-token
+escrevendo), aprovando em LOTE. Status por proposta muda em `PATCH /v1/calendar/chat/conversations/{id}/
+messages/{messageId}/proposals/{proposalId}/status` (`SetProposalStatus` idempotente: so item ainda
+`pending`, via `jsonb_agg`+`jsonb_set` preservando a ordem).
 Secrets de IA (WAVE 3, SEC) em `secrets.go` (tipos `KeyStatus{set,last4}`/`KeyStatusView{scope,keys}`/
 `GlobalSecrets` + service: `GetAccountKeyStatus`/`PutAccountKey`/`GetGlobalKeyStatus`/`PutGlobalKey`/
 `resolveAIKey`/`mask`), `store_secrets.go` (interface `secretStore` + CRUD de `calendar.ai_secrets` por
@@ -73,11 +82,19 @@ conta e da chave GLOBAL em `core.platform_settings` key `calendar_ai_secrets`, m
 `media_limits`) e `http_secrets.go` (`RegisterSecretRoutes`, chamado no `module.go`). A API key CRUA
 SO existe server-side (resolver/dispatch); o front recebe SO o status MASCARADO `{set,last4}` — NUNCA
 a key crua. Escopo por PK composta `(account_id, provider)`: conta A nunca le/escreve o secret de B.
+Listagem de modelos por provedor (Opcao C do painel) em `ai_models.go` (`ListAIModels` + mapa
+`providerDefaultBaseURL` espelho do front + `filterChatModels`/`isChatModel` + `ErrModelsUnavailable`)
+e `http_ai_models.go` (`RegisterAIModelsRoutes`, chamado no `module.go`). O campo Modelo do painel deixa
+de ser texto livre: o back resolve a chave server-side (`resolveAIKey`) e faz `GET {baseURL}/models` do
+provedor (endpoint CANONICO do mapa — a Base URL vinda do cliente NAO e usada aqui, para nao abrir SSRF;
+a Base URL customizada segue valendo no dispatch/n8n). NAO passa pelo n8n e NAO aplica o kill switch
+(e config, nao dispatch). A key so vai no header Bearer, nunca em log.
 Chat de IA + voz (C7/C8, WAVE 2) em `chat.go` (tipos + service + `WithChat`: monta o payload C7
 reusando `BuildAIContext` — bloco `context` = agregado C9 SEM `account`, via `chatContextFrom`, sem
 remontar — e faz proxy fino ao n8n com `http.Client` sem Timeout global e deadline por `context`
 (ask 60s / transcribe 120s); `sessionKey = accountId|userId|conversationId`, espelho de
-`omniChatSessionKey`) e `http_chat.go` (`RegisterChatRoutes`: `POST /v1/calendar/chat/ask` +
+`omniChatSessionKey`) e `http_chat.go` (`RegisterChatRoutes`: preflight sem tokens
+`GET /v1/calendar/chat/status` + `POST /v1/calendar/chat/ask` +
 `/chat/transcribe` + as rotas D3 de conversas/scope, RequireAuthWithAccount; `writeChatError` mapeia
 os sentinels de upstream + `ErrInvalidClient` => 404 no chat). **WAVE 4 (D4)**: o Go passou a PERSISTIR
 a conversa e a memoria (banco, ver "Chat com memoria" abaixo); o `sessionKey` agora usa o id da conversa
@@ -210,10 +227,21 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   `scope_mode` (`client`|`all`, default client), `scope_client_id` (uuid nullable, preenchido no modo client),
   timestamps + `deleted_at` (soft-delete). Indice parcial `(account_id, created_by_user_id, updated_at desc)
   where deleted_at is null`. Conversas HIBRIDAS: cliente-side ve so as suas, agencia ve todas da conta.
-- `calendar.chat_messages` (0191, WAVE 4 D1): `id` PK (uuid), **conversation_id** (FK
+- `calendar.chat_messages` (0191 + 0194 + **0195**): `id` PK (uuid), **conversation_id** (FK
   calendar.chat_conversations on delete cascade), **account_id** (FK core.accounts on delete cascade, defesa
-  em profundidade), `role` (`user`|`assistant`), `content`, `created_at`. Indice `(conversation_id,
-  created_at)`. Sem soft-delete (some junto com a conversa via cascade). Fonte da memoria do LLM (ultimas N).
+  em profundidade), `role` (`user`|`assistant`), `content`, `proposal jsonb`, `proposal_status`
+  (`none`|`pending`|`accepted`|`rejected`), **`proposals jsonb not null default '[]'` (0195, multi-tarefa)**,
+  `calendar_items jsonb` e `created_at`. Indice `(conversation_id, created_at)`.
+  **MULTI-TAREFA (WAVE 5.1)**: uma mensagem pode trazer VARIAS propostas de criacao — `proposals` e um array
+  `[{id,action,kind,fields,status}]`, cada uma com **status proprio** (`pending|accepted|rejected`) e id
+  estavel (indice na mensagem). `action` (`create`|`update`|`delete`) + `fields.targetId` dirigem o **CRUD pelo chat** (create/update/delete
+  de EVENTOS). `sanitizeProposal` valida por acao: update/delete exigem `targetId`; delete dispensa titulo;
+  create/update exigem titulo. O front (`applyProposal`) executa via `store.updateEvent`/`deleteEvent`. CRUD de
+  TASKS do board pelo chat ainda nao (falta o chat ler tasks) — o front responde "em breve".
+  O `proposal`/`proposal_status` singular vira retrocompat: o backfill da 0195 migra mensagem antiga para a
+  lista de 1 (id '0') e o scan tem a mesma rede de seguranca. `calendar_items` guarda o snapshot de eventos
+  reais cujos IDs vieram do contexto e foram revalidados pelo Go. Sem soft-delete (some junto com a conversa
+  via cascade). Fonte da memória do LLM.
 
 ## Anexos / midia (Fase 3)
 - `MediaItem` = `{id,url,name,type("image"|"video"),contentType,sizeBytes,posterUrl?}`; `url` e
@@ -300,6 +328,14 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
 - `GET /v1/calendar/ai-keys/global` — status mascarado das chaves GLOBAIS (**so platform_admin**, senao 403).
 - `PUT /v1/calendar/ai-keys/global` — grava/limpa a key GLOBAL (**so platform_admin**; body `{provider,apiKey}`;
   vazio = limpar). Preserva as demais keys do conjunto. Devolve o status mascarado.
+- `GET /v1/calendar/ai/models?provider=<gemini|glm|openai>` — **listagem de modelos do provedor (Opcao C)**.
+  `RequireAuthWithAccount` (key-adjacent: resolve a chave da conta server-side, tao sensivel quanto os
+  secrets). Faz `GET {baseURL}/models` no endpoint CANONICO do provedor (mapa `providerDefaultBaseURL`; a
+  Base URL do cliente NAO entra — evita SSRF), filtra os modelos de CHAT e devolve `{models:[...]}`. NAO
+  aplica o kill switch (`ai.enabled`) — listar e config. Erros: 400 `invalid_provider` (fora do enum),
+  **409 `ai_key_missing`** (provider sem chave gravada), **502 `models_unavailable`** (provedor falhou /
+  chave invalida / endpoint sem `/models`). Alimenta o SELECT nao-editavel do painel (fim do texto livre
+  em Modelo). A key so vai no header Bearer server-to-server, nunca logada nem devolvida.
 - `GET /v1/calendar/client-profile?clientId=<uuid>` — perfil estrategico do cliente. Perfil
   inexistente => objeto vazio com defaults (**200, nao 404** — perfil e opcional). `clientId`
   nao-UUID => 400 `invalid_client`.
@@ -352,6 +388,11 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   ANTES de materializar a conversa — sem conversa orfa); 503 `chat_not_configured`; 502 `upstream_error`;
   504 `upstream_timeout` (>60s). `sessionKey = accountId|userId|conversationId` (id da conversa PERSISTIDA);
   a memoria e o BANCO (`calendar.chat_messages`), o n8n so recebe o `history`.
+- `GET /v1/calendar/chat/status?scopeMode=&scopeClientId=` — **preflight sem tokens** usado ao abrir
+  o chat e antes de cada envio. RequireAuthWithAccount; valida webhook configurado, escopo efetivo,
+  kill switch e chave do provider, depois consulta apenas o `/healthz` da mesma instancia n8n (timeout
+  3s). Nao cria conversa/mensagem e nao chama modelo. Resposta 200 `{available:true}`; indisponibilidade
+  reutiliza os erros do chat (`ai_disabled`, `ai_key_missing`, `chat_not_configured`, upstream/timeout).
 - `GET /v1/calendar/chat/conversations` — **lista de conversas (D3)**. RequireAuthWithAccount. Agency ve
   TODAS da conta (com `createdByName` via join); cliente-side so as `created_by = ele`. Resposta lean
   `{conversations:[{id,title,scopeMode,scopeClientId,createdByUserId,createdByName,updatedAt}]}` (updated_at desc).

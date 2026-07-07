@@ -3,6 +3,12 @@ import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { AUTH_TOKEN_COOKIE } from '~/utils/api-client'
 
 export default defineNuxtRouteMiddleware(async (to) => {
+  // Fallback publico e estatico do PWA. Sem este bypass, a pagina offline
+  // seria redirecionada para o login durante a hidratacao.
+  if (to.path === '/offline') {
+    return
+  }
+
   const auth = useAuthStore()
   const isAuthRoute = to.path.startsWith('/auth')
   const accessToken = useCookie(AUTH_TOKEN_COOKIE)

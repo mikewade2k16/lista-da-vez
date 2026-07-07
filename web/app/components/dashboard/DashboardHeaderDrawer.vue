@@ -93,9 +93,24 @@ useDropdownDismiss(() => props.open, close)
 .dashboard-header__drawer-nav {
   width: 100%;
   height: 100%;
+  max-height: none;
   border-radius: 0;
   border: 0;
   box-shadow: none;
+}
+
+/* DashboardSidebarNav usa grades e alturas menores quando aparece solto no
+   conteudo mobile. Dentro do drawer ele deve ocupar toda a altura e rolar como
+   uma lista unica, senao sobra um bloco vazio enorme antes do rodape. */
+.dashboard-header__drawer-nav :deep(.dashboard-sidebar__scroll) {
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.dashboard-header__drawer-nav :deep(.dashboard-sidebar__section + .dashboard-sidebar__section) {
+  margin-top: 0.9rem;
 }
 
 .dashboard-header__sidebar-drawer {
@@ -168,15 +183,18 @@ useDropdownDismiss(() => props.open, close)
 }
 
 .dashboard-header__sidebar-actions {
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 0.7rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .dashboard-header__sidebar-profile {
   min-width: 0;
+  margin-right: auto;
+  order: -1;
   display: inline-flex;
   align-items: center;
   gap: 0.7rem;
@@ -185,6 +203,29 @@ useDropdownDismiss(() => props.open, close)
   color: var(--admin-header-text);
   cursor: pointer;
   text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .dashboard-header__sidebar-panel {
+    width: min(18rem, calc(100vw - 1.5rem));
+  }
+
+  .dashboard-header__sidebar-footer {
+    padding: 0.68rem 0.8rem;
+  }
+
+  .dashboard-header__sidebar-actions {
+    gap: 0.45rem;
+  }
+
+  .dashboard-header__sidebar-profile {
+    gap: 0.55rem;
+  }
+
+  .dashboard-header__sidebar-profile-copy strong,
+  .dashboard-header__sidebar-profile-copy small {
+    max-width: 7.5rem;
+  }
 }
 
 .dashboard-header__sidebar-profile-copy {

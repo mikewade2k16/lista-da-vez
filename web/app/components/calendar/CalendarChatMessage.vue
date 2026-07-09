@@ -9,6 +9,7 @@ import type {
 import { getApiBase } from '~/utils/api-client'
 import { resolveMediaUrl } from '~/utils/media'
 import type { CalendarMediaItem } from '~/utils/calendar'
+import { useCalendarStore } from '~/stores/calendar'
 
 // Multi-tarefa (WAVE 5.1): a mensagem pode trazer VARIAS propostas de criacao (colapsaveis).
 // Cliente (WAVE 5.2): escopo cliente => tudo criado ja vai para ELE (rotulo fixo); escopo
@@ -40,6 +41,7 @@ const clientOverride = ref<Map<string, string>>(new Map())
 const askClient = ref(false)
 const picking = ref(false)
 const pickId = ref('')
+const calendarStore = useCalendarStore()
 
 const isAll = computed(() => props.scopeMode === 'all')
 const pending = computed(() => props.message.proposals.filter((p) => p.status === 'pending'))
@@ -54,11 +56,32 @@ function clientName(id: string): string {
   if (!id) return 'Sem cliente'
   return props.clients.find((c) => c.id === id)?.name || 'Cliente'
 }
-// Cliente resolvido de uma proposta: escopo cliente => o cliente da conversa (forcado);
-// escopo "todos" => o override do item, senao o que a IA sugeriu (fields.clientId), senao vazio.
+function targetClientId(p: CalendarChatStoredProposal): string {
+  const targetId = String(p.fields.targetId || '')
+  if (!targetId) return ''
+  const existing = calendarStore.getEventById(targetId)
+  if (existing?.clientId) return String(existing.clientId)
+  return props.message.calendarItems.find((item) => item.id === targetId)?.clientId || ''
+}
+function targetTitle(p: CalendarChatStoredProposal): string {
+  const targetId = String(p.fields.targetId || '')
+  if (!targetId) return ''
+  const existing = calendarStore.getEventById(targetId)
+  if (existing?.title) return String(existing.title)
+  return props.message.calendarItems.find((item) => item.id === targetId)?.title || ''
+}
+function proposalTitle(p: CalendarChatStoredProposal): string {
+  return String(p.fields.title || '').trim() || targetTitle(p) || '(sem titulo)'
+}
+// Cliente resolvido de uma proposta: edicoes herdam o cliente atual do alvo quando a IA nao pediu
+// troca de cliente. Assim o modo "todos" nao zera o cliente de um item ja vinculado.
 function resolvedClientId(p: CalendarChatStoredProposal): string {
   if (!isAll.value) return props.scopeClientId
-  return clientOverride.value.get(p.id) ?? String(p.fields.clientId || '')
+  if (clientOverride.value.has(p.id)) return clientOverride.value.get(p.id) || ''
+  const proposedClientId = String(p.fields.clientId || '')
+  if (proposedClientId) return proposedClientId
+  if (p.action === 'update') return targetClientId(p)
+  return ''
 }
 const selectedItems = computed(() =>
   selectedIds.value.map((id) => {
@@ -72,7 +95,7 @@ const missingCount = computed(
   () =>
     selectedIds.value.filter((id) => {
       const p = pending.value.find((x) => x.id === id)
-      return !!p && p.action !== 'delete' && !resolvedClientId(p)
+      return !!p && p.action === 'create' && !resolvedClientId(p)
     }).length,
 )
 
@@ -282,7 +305,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
             </span>
 
             <div class="calendar-chat__proposal-item-body">
-              <strong>{{ p.fields.title || '(sem título)' }}</strong>
+              <strong>{{ proposalTitle(p) }}</strong>
               <span class="calendar-chat__proposal-item-meta">
                 <span
                   v-if="p.action !== 'create'"
@@ -316,7 +339,7 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
               type="button"
               class="calendar-chat__proposal-remove"
               :disabled="busy"
-              :aria-label="`Recusar ${p.fields.title || 'item'}`"
+              :aria-label="`Recusar ${proposalTitle(p) || 'item'}`"
               title="Recusar"
               @click="rejectOne(p.id)"
             >

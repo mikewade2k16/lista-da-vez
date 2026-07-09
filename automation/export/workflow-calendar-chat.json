@@ -12,7 +12,10 @@
         },
         "type": "n8n-nodes-base.webhook",
         "typeVersion": 2.1,
-        "position": [0, 0],
+        "position": [
+          0,
+          0
+        ],
         "id": "a1b2c3d4-calc-4000-8000-webhookcht01",
         "name": "Webhook",
         "webhookId": "c0ffee00-calc-4000-8000-webhookcht01"
@@ -20,11 +23,14 @@
       {
         "parameters": {
           "mode": "runOnceForAllItems",
-          "jsCode": "const body = ($('Webhook').first().json.body) || {};\nconst ai = body.ai || {};\nconst ctx = body.context || {};\nconst DEFAULT_BASE = { gemini: 'https://generativelanguage.googleapis.com/v1beta/openai', glm: 'https://api.z.ai/api/paas/v4', openai: 'https://api.openai.com/v1', deepseek: 'https://api.deepseek.com', qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1', kimi: 'https://api.moonshot.cn/v1' };\nconst DEFAULT_MODEL = { gemini: 'gemini-2.5-flash', glm: 'glm-4.6', openai: 'gpt-4o-mini', deepseek: 'deepseek-chat', qwen: 'qwen-plus', kimi: 'moonshot-v1-8k' };\nconst provider = String(ai.provider || 'gemini').toLowerCase();\nconst apiKey = String(ai.apiKey || '');\nconst PREFIX = { gemini: 'gemini', glm: 'glm' };\nlet model = ai.model || DEFAULT_MODEL[provider] || 'gemini-2.5-flash';\nif (PREFIX[provider] && !String(model).toLowerCase().startsWith(PREFIX[provider])) model = DEFAULT_MODEL[provider] || model;\nconst baseUrl = String(ai.baseUrl || DEFAULT_BASE[provider] || '').replace(/\\/+$/, '');\nlet temperature = Number(ai.temperature);\nif (isNaN(temperature)) temperature = 0.7;\ntemperature = Math.max(0, Math.min(1, temperature));\nconst NL = String.fromCharCode(10);\nconst defaultSystem = ['Voce e o assistente do calendario de conteudo de uma agencia brasileira.', 'Responda em pt-BR, de forma direta, usando somente os dados reais do contexto.', 'Nao invente eventos, clientes, IDs, datas ou midias. Quando faltar um dado, diga objetivamente.'].join(NL);\nlet system = String(ai.systemPrompt || '').trim() || defaultSystem;\nsystem += NL + NL + '=== CONTEXTO AUTORITATIVO DO CALENDARIO ===' + NL;\nsystem += 'Mes em foco: ' + (ctx.month || '(mes corrente)') + NL;\nif (ctx.client) system += 'Cliente em foco: ' + JSON.stringify(ctx.client) + NL;\nif (Array.isArray(ctx.clients)) system += 'Clientes visiveis: ' + JSON.stringify(ctx.clients) + NL;\nsystem += 'Feriados: ' + JSON.stringify(Array.isArray(ctx.holidays) ? ctx.holidays : []) + NL;\nsystem += 'Nota do mes: ' + String(ctx.monthNotes || '') + NL;\nsystem += 'Eventos reais do mes (incluem id, data, horario, cliente e midias):' + NL;\nfor (const event of (Array.isArray(ctx.events) ? ctx.events : [])) system += '- ' + JSON.stringify(event) + NL;\nif (Array.isArray(ctx.plans)) system += 'Planos existentes: ' + JSON.stringify(ctx.plans) + NL;\nsystem += NL + 'INSTRUCAO FINAL: devolva somente um objeto JSON plano, sem markdown, neste formato:' + NL;\nsystem += '{\"answer\":\"resposta em pt-BR\",\"proposals\":[],\"eventIds\":[]}' + NL;\nsystem += '- Ao responder sobre um dia ou periodo, conte e liste exatamente os eventos correspondentes e coloque em eventIds os IDs de TODOS os eventos listados.' + NL;\nsystem += '- eventIds aceita somente IDs presentes no contexto. Se houver midia, diga que ela aparece nos cards; nao copie URLs no texto.' + NL;\nsystem += '- proposals e a LISTA de itens a criar; vazio [] = nao criar nada. UM item por evento/tarefa. Pedido de criar N, uma por dia, toda semana etc.: gere UM item para CADA data/ocorrencia (enumere as datas reais). No maximo 31 itens; se pedirem mais, gere os 31 primeiros e avise no answer para pedir o restante.' + NL;\nsystem += '- Cada item de proposals tem: action (create|update|delete), kind (event ou task), title, date, time, type, status, dueDate, columnId, clientId, targetId. Nunca invente clientId; use o do contexto quando houver.' + NL;\nsystem += '- CRUD: create = item novo. update = editar um item EXISTENTE — targetId = o id de context.events, mande so os campos que mudam E o title (para eu exibir no cartao). delete = excluir — targetId + title. Em update/delete o kind e SEMPRE \\\"event\\\" (os itens editaveis vem de context.events). Use update/delete SO com id que existe em context.events; se nao achar o item, NAO invente id: pergunte no answer.' + NL;\nsystem += '- Seja PROATIVO: quando pedirem para criar, JA gere as propostas (nao fique so perguntando). Escolha a data mais provavel a partir do pedido (proxima segunda/terca, etc.) e crie.' + NL;\nsystem += '- Quando houver proposals (criar/editar/excluir), o answer deve ser CURTO (1 frase) e NAO repetir a lista de itens — eles ja aparecem como cartoes para o usuario aprovar. Ex.: Preparei os itens abaixo, e so revisar e confirmar.' + NL;\nsystem += '- HORARIO: preencha time SO com hora exata (ex.: 14:00, 9h30). Periodo vago (manha/tarde/noite) ou so o dia => time VAZIO; NAO converta manha em 09:00. So peca confirmacao no answer se for REALMENTE impossivel decidir a data.';\nconst history = [];\nfor (const h of (Array.isArray(body.history) ? body.history : [])) {\n  const role = String((h && h.role) || '');\n  const content = String((h && h.content) || '');\n  if ((role === 'user' || role === 'assistant') && content) history.push({ role, content });\n}\nconst messages = [{ role: 'system', content: system }, ...history, { role: 'user', content: String(body.question || '').trim() }];\nreturn [{ json: { provider, model, baseUrl, apiKey, temperature, messages } }];"
+          "jsCode": "const body = ($('Webhook').first().json.body) || {};\nconst ai = body.ai || {};\nconst ctx = body.context || {};\nconst DEFAULT_BASE = { gemini: 'https://generativelanguage.googleapis.com/v1beta/openai', glm: 'https://api.z.ai/api/paas/v4', openai: 'https://api.openai.com/v1', deepseek: 'https://api.deepseek.com', qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1', kimi: 'https://api.moonshot.cn/v1' };\nconst DEFAULT_MODEL = { gemini: 'gemini-2.5-flash', glm: 'glm-4.6', openai: 'gpt-4o-mini', deepseek: 'deepseek-chat', qwen: 'qwen-plus', kimi: 'moonshot-v1-8k' };\nconst CONTENT_TYPES = ['post','story','reels','reuniao','gravacao','evento'];\nconst CONTENT_STATUSES = ['planejado','producao','revisao','aprovada','standby','publicado'];\nconst CONTENT_PRIORITIES = ['alta','media','baixa'];\nconst provider = String(ai.provider || 'gemini').toLowerCase();\nconst apiKey = String(ai.apiKey || '');\nconst PREFIX = { gemini: 'gemini', glm: 'glm' };\nlet model = ai.model || DEFAULT_MODEL[provider] || 'gemini-2.5-flash';\nif (PREFIX[provider] && !String(model).toLowerCase().startsWith(PREFIX[provider])) model = DEFAULT_MODEL[provider] || model;\nconst baseUrl = String(ai.baseUrl || DEFAULT_BASE[provider] || '').replace(/\\/+$/, '');\nlet temperature = Number(ai.temperature);\nif (isNaN(temperature)) temperature = 0.7;\ntemperature = Math.max(0, Math.min(1, temperature));\nconst NL = String.fromCharCode(10);\nconst defaultSystem = ['Voce e o assistente do calendario de conteudo de uma agencia brasileira.', 'Responda em pt-BR, de forma direta, usando somente os dados reais do contexto.', 'Nao invente eventos, tasks, clientes, IDs, datas ou midias. Quando faltar um dado, diga objetivamente.'].join(NL);\nlet system = String(ai.systemPrompt || '').trim() || defaultSystem;\nsystem += NL + NL + '=== CONTEXTO AUTORITATIVO DO CALENDARIO ===' + NL;\nsystem += 'Mes em foco: ' + (ctx.month || '(mes corrente)') + NL;\nif (ctx.client) system += 'Cliente em foco: ' + JSON.stringify(ctx.client) + NL;\nif (Array.isArray(ctx.clients)) system += 'Clientes visiveis: ' + JSON.stringify(ctx.clients) + NL;\nsystem += 'Taxonomia valida: type=' + JSON.stringify(CONTENT_TYPES) + '; status=' + JSON.stringify(CONTENT_STATUSES) + '; priority=' + JSON.stringify(CONTENT_PRIORITIES) + NL;\nsystem += 'Feriados: ' + JSON.stringify(Array.isArray(ctx.holidays) ? ctx.holidays : []) + NL;\nsystem += 'Nota do mes: ' + String(ctx.monthNotes || '') + NL;\nsystem += 'Eventos reais do mes (incluem id, taskId quando vinculado, data, horario, cliente, status, prioridade, responsaveis, descricao e midias):' + NL;\nfor (const event of (Array.isArray(ctx.events) ? ctx.events : [])) system += '- ' + JSON.stringify(event) + NL;\nsystem += 'Tasks reais do board configurado (incluem id, boardId, coluna, cliente, status, prioridade, responsavel, descricao e datas):' + NL;\nfor (const task of (Array.isArray(ctx.tasks) ? ctx.tasks : [])) system += '- ' + JSON.stringify(task) + NL;\nif (Array.isArray(ctx.plans)) system += 'Planos existentes: ' + JSON.stringify(ctx.plans) + NL;\nsystem += NL + 'INSTRUCAO FINAL: devolva somente um objeto JSON plano, sem markdown, neste formato:' + NL;\nsystem += '{\"answer\":\"resposta em pt-BR\",\"proposals\":[],\"eventIds\":[]}' + NL;\nsystem += '- Ao responder sobre um dia ou periodo, use answer apenas para um resumo curto (total, periodo e observacoes como feriados). NAO liste item a item no texto quando eventIds tiver itens; os cards exibem a lista completa. Coloque em eventIds os IDs de TODOS os eventos correspondentes.' + NL;\nsystem += '- eventIds aceita somente IDs presentes em context.events. Se houver midia, diga que ela aparece nos cards; nao copie URLs no texto.' + NL;\nsystem += '- proposals e a LISTA de itens a criar/editar/excluir; vazio [] = nenhuma acao. UM item por evento/tarefa. No maximo 31 itens; se pedirem mais, gere os 31 primeiros e avise no answer para pedir o restante.' + NL;\nsystem += '- Cada item de proposals tem action (create|update|delete), kind (event|task) e fields. Campos aceitos em fields: targetId, title, date, time, type, status, priority, responsibleId, involvedIds, description, contentHtml, dueDate, startDate, dueEndDate, columnId, clientId, clientName, archived.' + NL;\nsystem += '- EVENTO create/update usa: title, date, time, type, status, priority, responsibleId, involvedIds, description, clientId. Valores de type/status/priority devem vir da taxonomia valida acima. Em update, targetId = id de context.events e envie SOMENTE campos que mudam; title e opcional se a mudanca for prioridade/descricao/status/etc.' + NL;\nsystem += '- TASK create usa: title, description/contentHtml, status, priority, dueDate, dueEndDate, type, responsibleId, involvedIds, clientId. TASK update/delete usa fields.targetId = id real de context.tasks. Se a task estiver vinculada a um evento, tambem pode usar taskId real presente em context.events. Nao invente targetId/taskId.' + NL;\nsystem += '- CLIENTE: nunca invente clientId. Use clientId do contexto/cliente selecionado quando houver. Se estiver em todos os clientes e nao souber o cliente de uma criacao, deixe clientId vazio para o usuario escolher no card.' + NL;\nsystem += '- CRUD: create = item novo. update = editar item EXISTENTE. delete = excluir. Use update/delete SO com targetId real de context.events ou context.tasks; se nao achar alvo, nao gere proposal e pergunte no answer.' + NL;\nsystem += '- Seja PROATIVO: quando pedirem para criar/editar/excluir e o alvo estiver claro, gere as propostas em vez de so responder texto.' + NL;\nsystem += '- Quando houver proposals, o answer deve ser CURTO (1 frase) e NAO repetir a lista de itens; eles ja aparecem como cartoes para o usuario aprovar. Ex.: Preparei os ajustes abaixo, e so revisar e confirmar.' + NL;\nsystem += '- HORARIO: preencha time SO com hora exata (ex.: 14:00, 09:30). Periodo vago (manha/tarde/noite) ou so o dia => time VAZIO; NAO converta manha em 09:00. So peca confirmacao se for realmente impossivel decidir a data.';\nconst history = [];\nfor (const h of (Array.isArray(body.history) ? body.history : [])) {\n  const role = String((h && h.role) || '');\n  const content = String((h && h.content) || '');\n  if ((role === 'user' || role === 'assistant') && content) history.push({ role, content });\n}\nconst messages = [{ role: 'system', content: system }, ...history, { role: 'user', content: String(body.question || '').trim() }];\nreturn [{ json: { provider, model, baseUrl, apiKey, temperature, messages } }];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [220, 0],
+        "position": [
+          220,
+          0
+        ],
         "id": "b2c3d4e5-calc-4000-8000-montarctx001",
         "name": "Montar contexto"
       },
@@ -35,8 +41,14 @@
           "sendHeaders": true,
           "headerParameters": {
             "parameters": [
-              { "name": "Authorization", "value": "={{ 'Bearer ' + ($json.apiKey || '') }}" },
-              { "name": "content-type", "value": "application/json" }
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + ($json.apiKey || '') }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
             ]
           },
           "sendBody": true,
@@ -46,7 +58,10 @@
         },
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [460, 0],
+        "position": [
+          460,
+          0
+        ],
         "id": "d4e5f6a7-calc-4000-8000-httpchat0001",
         "name": "Chamar LLM",
         "onError": "continueRegularOutput",
@@ -57,11 +72,14 @@
       {
         "parameters": {
           "mode": "runOnceForAllItems",
-          "jsCode": "let r = $input.first().json || {};\nif (Array.isArray(r)) r = r[0] || {};\nif (r.error) {\n  const raw = String((r.error && (r.error.message || r.error.description)) || '');\n  const low = raw.toLowerCase();\n  let answer = 'Nao consegui falar com a IA agora. Tente de novo.';\n  if (low.includes('503') || low.includes('unavailable') || low.includes('overload')) answer = 'O provedor de IA esta sobrecarregado agora. Tente de novo em instantes.';\n  else if (low.includes('429') || low.includes('quota') || low.includes('rate')) answer = 'Limite de uso do provedor de IA atingido. Tente mais tarde ou troque de modelo.';\n  else if (low.includes('401') || low.includes('403') || low.includes('api key')) answer = 'A chave de API do provedor foi recusada. Confira a chave na aba IA.';\n  return [{ json: { answer, eventIds: [], aiError: true } }];\n}\nconst choices = Array.isArray(r.choices) ? r.choices : [];\nconst msg = (choices[0] && choices[0].message && choices[0].message.content) || '';\nif (!msg) return [{ json: { answer: 'A IA respondeu vazio. Verifique o modelo configurado.', eventIds: [], aiError: true } }];\nlet text = String(msg).trim();\nconst fence = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\nif (fence) text = fence[1].trim();\nconst a = text.indexOf('{'), b = text.lastIndexOf('}');\nlet env = null;\ntry { if (a >= 0 && b > a) env = JSON.parse(text.slice(a, b + 1)); } catch (_) {}\nif (!env || typeof env !== 'object') return [{ json: { answer: String(msg), eventIds: [] } }];\nconst answer = String(env.answer == null ? '' : env.answer) || String(msg);\nconst eventIds = Array.isArray(env.eventIds) ? env.eventIds.map(String) : [];\nlet srcList = Array.isArray(env.proposals) ? env.proposals : [];\nconst legacy = String(env.create || 'none').toLowerCase();\nif (!srcList.length && (legacy === 'event' || legacy === 'task')) srcList = [{ kind: legacy, title: env.title, date: env.date, time: env.time, type: env.type, status: env.status, dueDate: env.dueDate, columnId: env.columnId, clientId: env.clientId }];\nconst proposals = [];\nfor (const p of srcList) {\n  const kind = String((p && p.kind) || '').toLowerCase();\n  if (kind !== 'event' && kind !== 'task') continue;\n  let action = String((p && p.action) || 'create').toLowerCase();\n  if (action !== 'create' && action !== 'update' && action !== 'delete') action = 'create';\n  const src = (p && p.fields) ? p.fields : (p || {});\n  const fields = { title: String(src.title || ''), date: String(src.date || ''), time: String(src.time || ''), type: String(src.type || ''), status: String(src.status || ''), dueDate: String(src.dueDate || src.date || ''), columnId: String(src.columnId || ''), clientId: String(src.clientId || ''), targetId: String(src.targetId || src.eventId || src.id || '') };\n  if ((action === 'update' || action === 'delete') && !fields.targetId) continue;\n  if (action !== 'delete' && !fields.title) continue;\n  proposals.push({ action, kind, fields });\n  if (proposals.length >= 31) break;\n}\nreturn [{ json: { answer, eventIds, proposals } }];"
+          "jsCode": "let r = $input.first().json || {};\nif (Array.isArray(r)) r = r[0] || {};\nif (r.error) {\n  const raw = String((r.error && (r.error.message || r.error.description)) || '');\n  const low = raw.toLowerCase();\n  let answer = 'Nao consegui falar com a IA agora. Tente de novo.';\n  if (low.includes('503') || low.includes('unavailable') || low.includes('overload')) answer = 'O provedor de IA esta sobrecarregado agora. Tente de novo em instantes.';\n  else if (low.includes('429') || low.includes('quota') || low.includes('rate')) answer = 'Limite de uso do provedor de IA atingido. Tente mais tarde ou troque de modelo.';\n  else if (low.includes('401') || low.includes('403') || low.includes('api key')) answer = 'A chave de API do provedor foi recusada. Confira a chave na aba IA.';\n  return [{ json: { answer, eventIds: [], aiError: true } }];\n}\nconst choices = Array.isArray(r.choices) ? r.choices : [];\nconst msg = (choices[0] && choices[0].message && choices[0].message.content) || '';\nif (!msg) return [{ json: { answer: 'A IA respondeu vazio. Verifique o modelo configurado.', eventIds: [], aiError: true } }];\nlet text = String(msg).trim();\nconst fence = text.match(/```(?:json)?\\s*([\\s\\S]*?)```/i);\nif (fence) text = fence[1].trim();\nconst a = text.indexOf('{'), b = text.lastIndexOf('}');\nlet env = null;\ntry { if (a >= 0 && b > a) env = JSON.parse(text.slice(a, b + 1)); } catch (_) {}\nif (!env || typeof env !== 'object') return [{ json: { answer: String(msg), eventIds: [] } }];\nconst answer = String(env.answer == null ? '' : env.answer) || String(msg);\nconst eventIds = Array.isArray(env.eventIds) ? env.eventIds.map(String) : [];\nlet srcList = Array.isArray(env.proposals) ? env.proposals : [];\nconst legacy = String(env.create || 'none').toLowerCase();\nif (!srcList.length && (legacy === 'event' || legacy === 'task')) srcList = [{ kind: legacy, fields: env }];\nfunction has(obj, key) { return !!obj && Object.prototype.hasOwnProperty.call(obj, key); }\nfunction firstText(src, keys) {\n  for (const key of keys) {\n    if (!has(src, key)) continue;\n    const value = String(src[key] == null ? '' : src[key]).trim();\n    if (value) return value;\n  }\n  return '';\n}\nfunction setText(fields, outKey, src, keys) {\n  const value = firstText(src, keys || [outKey]);\n  if (value) fields[outKey] = value;\n}\nfunction setArray(fields, outKey, src, keys) {\n  for (const key of keys || [outKey]) {\n    if (!has(src, key)) continue;\n    const raw = src[key];\n    const value = Array.isArray(raw) ? raw.map((item) => String(item || '').trim()).filter(Boolean) : [];\n    if (value.length) fields[outKey] = Array.from(new Set(value));\n    return;\n  }\n}\nfunction setBool(fields, outKey, src, keys) {\n  for (const key of keys || [outKey]) {\n    if (!has(src, key)) continue;\n    if (typeof src[key] === 'boolean') fields[outKey] = src[key];\n    return;\n  }\n}\nfunction hasEditable(fields) {\n  return Object.keys(fields).some((key) => key !== 'targetId' && key !== 'clientId' && key !== 'clientName');\n}\nconst proposals = [];\nfor (const p of srcList) {\n  const kind = String((p && p.kind) || '').toLowerCase();\n  if (kind !== 'event' && kind !== 'task') continue;\n  let action = String((p && p.action) || 'create').toLowerCase();\n  if (action !== 'create' && action !== 'update' && action !== 'delete') action = 'create';\n  const src = (p && p.fields && typeof p.fields === 'object') ? p.fields : (p || {});\n  const fields = {};\n  setText(fields, 'targetId', src, ['targetId', 'eventId', 'taskId', 'id']);\n  setText(fields, 'title', src, ['title', 'titulo', 'name']);\n  setText(fields, 'date', src, ['date', 'data']);\n  setText(fields, 'time', src, ['time', 'hora', 'horario']);\n  setText(fields, 'type', src, ['type', 'tipo']);\n  setText(fields, 'status', src, ['status']);\n  setText(fields, 'priority', src, ['priority', 'prioridade']);\n  setText(fields, 'responsibleId', src, ['responsibleId', 'responsibleUserId']);\n  setArray(fields, 'involvedIds', src, ['involvedIds', 'involved', 'assignees']);\n  setText(fields, 'description', src, ['description', 'descricao', 'body', 'copy']);\n  setText(fields, 'contentHtml', src, ['contentHtml']);\n  setText(fields, 'dueDate', src, ['dueDate', 'date', 'dataEntrega']);\n  setText(fields, 'startDate', src, ['startDate']);\n  setText(fields, 'dueEndDate', src, ['dueEndDate']);\n  setText(fields, 'columnId', src, ['columnId']);\n  setText(fields, 'clientId', src, ['clientId', 'clientAccountId']);\n  setText(fields, 'clientName', src, ['clientName']);\n  setBool(fields, 'archived', src, ['archived', 'arquivada']);\n  if ((action === 'update' || action === 'delete') && !fields.targetId) continue;\n  if (action === 'create' && !fields.title) continue;\n  if (action === 'update' && !hasEditable(fields)) continue;\n  proposals.push({ action, kind, fields });\n  if (proposals.length >= 31) break;\n}\nreturn [{ json: { answer, eventIds, proposals } }];"
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [700, 0],
+        "position": [
+          700,
+          0
+        ],
         "id": "e5f6a7b8-calc-4000-8000-extrresp0001",
         "name": "Extrair resposta"
       },
@@ -73,22 +91,69 @@
         },
         "type": "n8n-nodes-base.respondToWebhook",
         "typeVersion": 1.1,
-        "position": [940, 0],
+        "position": [
+          940,
+          0
+        ],
         "id": "c9d0e1f2-calc-4000-8000-respondcht01",
         "name": "Respond to Webhook"
       }
     ],
     "connections": {
-      "Webhook": { "main": [[{ "node": "Montar contexto", "type": "main", "index": 0 }]] },
-      "Montar contexto": { "main": [[{ "node": "Chamar LLM", "type": "main", "index": 0 }]] },
-      "Chamar LLM": { "main": [[{ "node": "Extrair resposta", "type": "main", "index": 0 }]] },
-      "Extrair resposta": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Montar contexto",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar contexto": {
+        "main": [
+          [
+            {
+              "node": "Chamar LLM",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Chamar LLM": {
+        "main": [
+          [
+            {
+              "node": "Extrair resposta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extrair resposta": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
     },
     "active": false,
-    "settings": { "executionOrder": "v1" },
+    "settings": {
+      "executionOrder": "v1"
+    },
     "staticData": null,
-    "meta": { "templateCredsSetupCompleted": true },
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
     "pinData": {},
-    "versionId": "calcffee-0000-4000-8000-calendarcht04"
+    "versionId": "calcffee-0000-4000-8000-calendarcht07"
   }
 ]

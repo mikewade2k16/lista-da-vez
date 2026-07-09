@@ -324,6 +324,28 @@ services:
         aliases:
           - ${AUTOMATION_N8N_PROXY_ALIAS:-automation-n8n}
 
+  # Whisper (transcricao de voz do calendario): o n8n (workflow calendar-transcribe, ramo
+  # "local") bate em http://whisper:8000. CPU, modelo base int8, sempre carregado (TTL -1).
+  # Profile automation; SO na rede interna `app` (n8n resolve pelo nome do servico) — sem
+  # porta exposta no host. mem 2g (o base int8 usa <1g; teto folgado). Espelha o dev.
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    profiles: ["automation"]
+    restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 256m
+    logging: *default-logging
+    environment:
+      WHISPER__MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-base}
+      WHISPER__INFERENCE_DEVICE: cpu
+      WHISPER__COMPUTE_TYPE: int8
+      WHISPER__TTL: "-1"
+      WHISPER__CPU_THREADS: "0"
+    volumes:
+      - automation_whisper_cache:/root/.cache/huggingface
+    networks:
+      - app
+
 volumes:
   postgres_data:
   api_uploads:
@@ -332,6 +354,7 @@ volumes:
   automation_waha_sessions:
   automation_waha_media:
   automation_n8n_data:
+  automation_whisper_cache:
 
 networks:
   app:

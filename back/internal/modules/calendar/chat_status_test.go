@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
@@ -59,5 +60,29 @@ func TestPingChatUpstreamUsesHealthEndpointOnly(t *testing.T) {
 	}
 	if got := <-called; got != "GET /healthz" {
 		t.Fatalf("called %q, want GET /healthz", got)
+	}
+}
+
+func TestPingChatUpstreamRetriesTransientHealthFailure(t *testing.T) {
+	t.Parallel()
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	svc := &Service{chat: chatConfig{
+		askURL: server.URL + "/webhook/calendar-chat",
+		client: server.Client(),
+	}}
+	if err := svc.pingChatUpstream(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("calls = %d, want 2", got)
 	}
 }

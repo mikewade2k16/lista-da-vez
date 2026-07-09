@@ -81,6 +81,9 @@ var (
 	chatISOYearMonthRe = regexp.MustCompile(`\b(20\d{2})-(0[1-9]|1[0-2])\b`)
 	chatNumericDateRe  = regexp.MustCompile(`\b(?:0?[1-9]|[12]\d|3[01])[/-](0?[1-9]|1[0-2])(?:[/-](20\d{2}|\d{2}))?\b`)
 	chatMonthNameRe    = regexp.MustCompile(`\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de)?\s*(20\d{2})?\b`)
+	chatAnswerBulletRe = regexp.MustCompile(`^\s*(?:[-*]|\d+[.)])\s+`)
+	chatAnswerDateRe   = regexp.MustCompile(`^\s*(?:[-*]\s*)?\d{1,2}[/-]\d{1,2}\b`)
+	chatAnswerCountRe  = regexp.MustCompile(`(?i)\b\d+\s+eventos?\s+no\s+total\b`)
 )
 
 // chatConfig guarda os webhooks do chat/transcricao (envs lidos no Build) e o
@@ -149,6 +152,7 @@ type calendarChatContext struct {
 	Holidays   []Holiday        `json:"holidays"`
 	MonthNotes string           `json:"monthNotes"`
 	Events     []AIContextEvent `json:"events"`
+	Tasks      []AIContextTask  `json:"tasks,omitempty"`
 	Plans      []AIContextPlan  `json:"plans"`
 }
 
@@ -185,20 +189,30 @@ type ChatProposal struct {
 // ChatProposalFields sao os campos sugeridos (uniao dos de evento e task; o front usa os que
 // fazem sentido para o kind). Nada aqui e autoritativo: a criacao real valida no endpoint.
 type ChatProposalFields struct {
-	Title    string `json:"title"`
-	Date     string `json:"date,omitempty"`
-	Time     string `json:"time,omitempty"`
-	Type     string `json:"type,omitempty"`
-	Status   string `json:"status,omitempty"`
-	DueDate  string `json:"dueDate,omitempty"`
-	ColumnID string `json:"columnId,omitempty"`
-	ClientID string `json:"clientId,omitempty"`
+	Title         string   `json:"title,omitempty"`
+	Date          string   `json:"date,omitempty"`
+	Time          string   `json:"time,omitempty"`
+	Type          string   `json:"type,omitempty"`
+	Status        string   `json:"status,omitempty"`
+	Priority      string   `json:"priority,omitempty"`
+	ResponsibleID string   `json:"responsibleId,omitempty"`
+	InvolvedIDs   []string `json:"involvedIds,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	ContentHTML   string   `json:"contentHtml,omitempty"`
+	DueDate       string   `json:"dueDate,omitempty"`
+	StartDate     string   `json:"startDate,omitempty"`
+	DueEndDate    string   `json:"dueEndDate,omitempty"`
+	ColumnID      string   `json:"columnId,omitempty"`
+	ClientID      string   `json:"clientId,omitempty"`
+	ClientName    string   `json:"clientName,omitempty"`
+	Archived      *bool    `json:"archived,omitempty"`
 	// TargetID (WAVE 5.1, preparado p/ CRUD): id do evento/task alvo de update/delete. Vazio
 	// em create. Reservado — o front so usa em create hoje.
 	TargetID string `json:"targetId,omitempty"`
 }
 
-// sanitizeProposal descarta propostas malformadas (kind fora de event|task ou sem titulo):
+// sanitizeProposal descarta propostas malformadas (kind fora de event|task, create sem titulo
+// ou update/delete sem targetId):
 // nesse caso a resposta e tratada como texto normal (proposal nil).
 func sanitizeProposal(p *ChatProposal) *ChatProposal {
 	if p == nil {
@@ -213,17 +227,77 @@ func sanitizeProposal(p *ChatProposal) *ChatProposal {
 	if action != "create" && action != "update" && action != "delete" {
 		action = "create"
 	}
+	normalizeProposalFields(&p.Fields)
 	// Validacao por acao: update/delete precisam do ALVO (targetId, um id que existe no
-	// contexto); create/update precisam de titulo. delete nao exige titulo (so o alvo).
+	// contexto); create precisa de titulo. Update pode alterar so prioridade/descricao/etc.
 	if (action == "update" || action == "delete") && strings.TrimSpace(p.Fields.TargetID) == "" {
 		return nil
 	}
-	if action != "delete" && strings.TrimSpace(p.Fields.Title) == "" {
+	if action == "create" && strings.TrimSpace(p.Fields.Title) == "" {
+		return nil
+	}
+	if action == "update" && !proposalHasEditableField(p.Fields) {
 		return nil
 	}
 	p.Action = action
 	p.Kind = kind
 	return p
+}
+
+func normalizeProposalFields(f *ChatProposalFields) {
+	if f == nil {
+		return
+	}
+	f.Title = strings.TrimSpace(f.Title)
+	f.Date = strings.TrimSpace(f.Date)
+	f.Time = strings.TrimSpace(f.Time)
+	f.Type = strings.TrimSpace(f.Type)
+	f.Status = strings.TrimSpace(f.Status)
+	f.Priority = strings.TrimSpace(f.Priority)
+	f.ResponsibleID = strings.TrimSpace(f.ResponsibleID)
+	f.Description = strings.TrimSpace(f.Description)
+	f.ContentHTML = strings.TrimSpace(f.ContentHTML)
+	f.DueDate = strings.TrimSpace(f.DueDate)
+	f.StartDate = strings.TrimSpace(f.StartDate)
+	f.DueEndDate = strings.TrimSpace(f.DueEndDate)
+	f.ColumnID = strings.TrimSpace(f.ColumnID)
+	f.ClientID = strings.TrimSpace(f.ClientID)
+	f.ClientName = strings.TrimSpace(f.ClientName)
+	f.TargetID = strings.TrimSpace(f.TargetID)
+	if len(f.InvolvedIDs) == 0 {
+		return
+	}
+	out := make([]string, 0, len(f.InvolvedIDs))
+	seen := map[string]bool{}
+	for _, raw := range f.InvolvedIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	f.InvolvedIDs = out
+}
+
+func proposalHasEditableField(f ChatProposalFields) bool {
+	return strings.TrimSpace(f.Title) != "" ||
+		strings.TrimSpace(f.Date) != "" ||
+		strings.TrimSpace(f.Time) != "" ||
+		strings.TrimSpace(f.Type) != "" ||
+		strings.TrimSpace(f.Status) != "" ||
+		strings.TrimSpace(f.Priority) != "" ||
+		strings.TrimSpace(f.ResponsibleID) != "" ||
+		strings.TrimSpace(f.Description) != "" ||
+		strings.TrimSpace(f.ContentHTML) != "" ||
+		strings.TrimSpace(f.DueDate) != "" ||
+		strings.TrimSpace(f.StartDate) != "" ||
+		strings.TrimSpace(f.DueEndDate) != "" ||
+		strings.TrimSpace(f.ColumnID) != "" ||
+		strings.TrimSpace(f.ClientID) != "" ||
+		strings.TrimSpace(f.ClientName) != "" ||
+		len(f.InvolvedIDs) > 0 ||
+		f.Archived != nil
 }
 
 // StoredProposal e uma proposta PERSISTIDA na mensagem (multi-tarefa, WAVE 5.1): a
@@ -360,16 +434,37 @@ func (s *Service) pingChatUpstream(ctx context.Context) error {
 	}
 	callCtx, cancel := context.WithTimeout(ctx, chatStatusTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, healthURL, nil)
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-time.After(250 * time.Millisecond):
+			case <-callCtx.Done():
+				return callCtx.Err()
+			}
+		}
+		lastErr = s.pingChatHealthOnce(callCtx, healthURL)
+		if lastErr == nil {
+			return nil
+		}
+		if callCtx.Err() != nil {
+			return callCtx.Err()
+		}
+	}
+	return lastErr
+}
+
+func (s *Service) pingChatHealthOnce(ctx context.Context, healthURL string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errChatUpstream, err)
 	}
 	resp, err := s.chatClient().Do(req)
 	if err != nil {
-		if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return context.DeadlineExceeded
 		}
-		if errors.Is(callCtx.Err(), context.Canceled) {
+		if errors.Is(ctx.Err(), context.Canceled) {
 			return context.Canceled
 		}
 		return fmt.Errorf("%w: %v", errChatUpstream, err)
@@ -448,7 +543,7 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 		return ChatAskResult{}, err
 	}
 	contextMonth := inferChatMonth(question, req.Month, time.Now())
-	contextBlock, err := s.buildChatContext(ctx, account, access, target.mode, target.clientID, contextMonth)
+	contextBlock, err := s.buildChatContext(ctx, account, principal, access, target.mode, target.clientID, contextMonth)
 	if err != nil {
 		return ChatAskResult{}, err
 	}
@@ -474,6 +569,7 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	var assistant ChatMessage
 	if !aiError {
 		items := selectContextEvents(contextEvents(contextBlock), eventIDs)
+		answer = compactCalendarCardAnswer(answer, len(items))
 		assistant, err = s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{
 			Role: chatRoleAssistant, Content: answer,
 			Proposals: storedProposalsFrom(proposals), CalendarItems: items,
@@ -558,6 +654,54 @@ func selectContextEvents(events []AIContextEvent, ids []string) []AIContextEvent
 		}
 	}
 	return out
+}
+
+func compactCalendarCardAnswer(answer string, itemCount int) string {
+	trimmed := strings.TrimSpace(answer)
+	if itemCount <= 0 || trimmed == "" {
+		return trimmed
+	}
+	lines := strings.Split(trimmed, "\n")
+	listLines := 0
+	kept := make([]string, 0, len(lines))
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if isCalendarAnswerListLine(line) {
+			listLines++
+			continue
+		}
+		if chatAnswerCountRe.MatchString(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	threshold := itemCount
+	if threshold > 4 {
+		threshold = 4
+	}
+	if listLines < threshold {
+		return trimmed
+	}
+	noun := "itens"
+	if itemCount == 1 {
+		noun = "item"
+	}
+	parts := []string{fmt.Sprintf("Encontrei %d %s no calendario.", itemCount, noun)}
+	parts = append(parts, kept...)
+	if !strings.Contains(strings.ToLower(strings.Join(kept, " ")), "card") {
+		parts = append(parts, "A lista completa esta nos cards abaixo.")
+	}
+	return strings.Join(parts, " ")
+}
+
+func isCalendarAnswerListLine(line string) bool {
+	clean := strings.TrimSpace(line)
+	return strings.HasPrefix(clean, "\u2022") ||
+		chatAnswerBulletRe.MatchString(clean) ||
+		chatAnswerDateRe.MatchString(clean)
 }
 
 // toHistory projeta as mensagens persistidas em {role,content} para o payload do n8n

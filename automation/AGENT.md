@@ -195,13 +195,13 @@ Workflow separado (`export/workflow-calendar-chat.json`, id `calendarchat0001`) 
 **chat de IA** do Calendario. Contrato C7 (payload agora carrega a KEY, contrato PAY da wave 3). O
 back Go (`POST /v1/calendar/chat/ask`) monta o payload (`question` + `ai` + `context`, o `context`
 identico ao agregado C9 via a MESMA funcao `BuildAIContext`) e faz um POST **sincrono** ao webhook,
-esperando `{ "answer": "", "eventIds": [], "proposal": null }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
+esperando `{ "answer": "", "eventIds": [], "proposals": [] }` de volta. O n8n nao fala com o Postgres direto e e um EXECUTOR BURRO:
 o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, temperatura E a key).
 
 - **Webhook** POST path `calendar-chat`, `responseMode: responseNode` (responde pelo no Respond).
 - **Montar contexto** (Code) — system = `ai.systemPrompt` OU DEFAULT pt-BR ("assistente de
   calendario de conteudo") + serializa o `context` (perfil do cliente, feriados, eventos ricos com
-  ID/horário/cliente/mídias, notas,
+  ID/horario/cliente/midias, notas, tasks reais do board configurado,
   planos) no system; resolve `provider`/`model`/`baseUrl`/`temperature` (mapa `DEFAULT_BASE` com
   **gemini** OpenAI-compatible `https://generativelanguage.googleapis.com/v1beta/openai` e **glm**
   z.ai; clamp 0..1) + guard modelo x provider (cai no default do provider se o modelo salvo nao
@@ -217,11 +217,13 @@ o painel/back e a fonte da verdade da IA (provider, modelo, baseUrl, prompt, tem
   montada no no anterior (`messages: $json.messages` = system + historico + pergunta; antes era
   system+user fixo). **Nao le mais `$env`/credential** (mudanca SPEC-W1, 2026-07-04, revertendo o
   `$env[keyEnv]` da wave anterior). `onError: continueRegularOutput`.
-- **Extrair resposta** (Code) — normaliza `choices[0].message.content` -> `{ answer, eventIds,
-  proposal }`; `eventIds` identifica os eventos listados para o Go montar cards somente com dados
-  autoritativos; item de
-  erro do HTTP node vira mensagem acionavel pt-BR.
-- **Respond to Webhook** — `{ "answer": ..., "eventIds": [...], "proposal": ... }`.
+- **Extrair resposta** (Code) - normaliza `choices[0].message.content` -> `{ answer, eventIds, proposals[] }`; `eventIds` identifica os eventos que o Go monta como cards somente com dados
+  autoritativos. `proposals[].fields` preserva campos de evento/task (`priority`, `description`,
+  `responsibleId`, `involvedIds`, `taskId`/`targetId`, datas etc.). Quando houver `eventIds`, o
+  `answer` deve ser resumo curto (sem repetir a lista item a item); o Go ainda compacta
+  defensivamente respostas longas antes de persistir. Item de erro do HTTP node vira mensagem
+  acionavel pt-BR.
+- **Respond to Webhook** - `{ "answer": ..., "eventIds": [...], "proposals": [...] }`.
 
 **Sem credential/`$env` no n8n para a IA do chat** — a key trafega no payload server-to-server (Go
 -> n8n, rede docker) e nunca e logada nem persistida. Env do back: `CALENDAR_CHAT_WEBHOOK_URL`
@@ -231,7 +233,7 @@ switch e "sem key" sao tratados no Go ANTES de disparar (contrato PAY: `ai_disab
 payload (persistido no banco pelo Go, ultimas N mensagens) e o inclui na array `messages` entre o
 system e a pergunta — o n8n segue stateless (sem memoria propria). **Limitacoes:** tools desligadas
 (o assistente responde so com o `context` autoritativo do system + o historico). Como o `versionId` mudou
-(`...calendarcht04`), **reimportar** para pegar a versao com eventos ricos/eventIds. Import + teste manual:
+(`...calendarcht07`), **reimportar** para pegar a versao com campos completos de proposta e `context.tasks` do board configurado. Import + teste manual:
 **pendente** (autorado, validado fora do n8n: parse + ordem da array messages).
 Runbook com curl de teste:
 [docs/automation/CALENDAR_CHAT_WORKFLOW.md](../docs/automation/CALENDAR_CHAT_WORKFLOW.md).

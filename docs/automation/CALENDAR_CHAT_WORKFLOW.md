@@ -6,7 +6,7 @@
 > JSON importavel: [`../../automation/export/workflow-calendar-chat.json`](../../automation/export/workflow-calendar-chat.json).
 >
 > **Status:** a versão anterior foi importada em produção em 2026-07-07. O JSON local agora está na
-> revisão `calendarcht04` (eventos ricos + `eventIds`) e precisa ser reimportado após o deploy desta mudança.
+> revisao `calendarcht07` (campos completos de proposta + `context.tasks` do board configurado) e precisa ser reimportado apos o deploy desta mudanca.
 
 ---
 
@@ -15,7 +15,7 @@
 O n8n **nunca fala com o Postgres direto** (mesmo principio dos outros workflows do Omni). Quem
 orquestra e o back Go do Calendario (SPEC-B6). O back monta o payload C7 (com o bloco `context`
 identico ao agregado C9, montado pela MESMA funcao `BuildAIContext`) e faz um POST **sincrono** ao
-webhook, esperando `{ "answer": "", "eventIds": [], "proposal": null }` de volta:
+webhook, esperando `{ "answer": "", "eventIds": [], "proposals": [] }` de volta:
 
 ```
 Painel Calendario (chat flutuante)
@@ -42,10 +42,10 @@ somente as últimas mensagens no campo `history`. Propostas e cards continuam no
 | No | Tipo | O que faz |
 |---|---|---|
 | **Webhook** | `n8n-nodes-base.webhook` v2.1 | POST path `calendar-chat`, `responseMode=responseNode` (responde pelo no Respond). Recebe o payload C7 no `body`. |
-| **Montar contexto** | `code` v2 | Monta `system + context + history`; serializa eventos reais com ID, horário, cliente e mídia; exige JSON com `answer/create/eventIds`. |
+| **Montar contexto** | `code` v2 | Monta `system + context + history`; serializa eventos reais com ID, `taskId`, horario, cliente, status, prioridade, descricao e midia, e tambem `context.tasks` do board configurado; exige JSON com `answer/proposals/eventIds`. Quando `eventIds` tiver itens, o `answer` deve ser so uma sintese curta; a lista completa aparece nos cards do Go. |
 | **Chamar LLM** | `httpRequest` v4.2 | Chama o endpoint OpenAI-compatible configurado usando a key enviada server-to-server pelo Go. |
-| **Extrair resposta** | `code` v2 | Normaliza `answer`, proposta e `eventIds`; erros viram mensagem acionável com `aiError=true`. |
-| **Respond to Webhook** | `respondToWebhook` v1.1 | Responde `{answer, proposal, eventIds, aiError}`. |
+| **Extrair resposta** | `code` v2 | Normaliza `answer`, `proposals[]` e `eventIds`; preserva campos de create/update/delete (`priority`, `description`, `responsibleId`, `involvedIds`, datas de task etc.); erros do provedor viram mensagem acionável com `aiError=true`. Erros 502/504 antes desse nó indicam n8n/webhook indisponível ou timeout, não uma resposta ruim do modelo. |
+| **Respond to Webhook** | `respondToWebhook` v1.1 | Responde `{answer, proposals, eventIds, aiError}`. |
 
 O `sessionKey` continua identificando a conversa no payload, mas a memória autoritativa é o
 `history` carregado do Postgres pelo Go; o workflow não mantém estado próprio.
@@ -80,7 +80,8 @@ O payload C7 que o back manda ao webhook:
     "client": { "id": "", "name": "", "profile": { /* C3 sem clientId */ } },  // ou null
     "holidays": [{ "date": "", "name": "", "set": "" }],
     "monthNotes": "<html, pode ser vazio>",
-    "events": [{ "id": "", "date": "", "time": "", "type": "", "title": "", "status": "", "clientId": "", "clientName": "", "media": [] }], // max 100
+    "events": [{ "id": "", "taskId": "", "date": "", "time": "", "type": "", "title": "", "status": "", "priority": "", "responsibleId": "", "involvedIds": [], "clientId": "", "clientName": "", "description": "", "media": [] }], // max 100
+    "tasks": [{ "id": "", "boardId": "", "columnId": "", "title": "", "status": "", "priority": "", "dueDate": "", "dueEndDate": "", "responsibleId": "", "involvedIds": [], "clientId": "", "clientName": "", "type": "", "description": "" }], // max 100, board configurado
     "plans": [{ "id": "", "month": "", "status": "", "provider": "", "model": "" }]    // lean, max 10
   }
 }
@@ -143,7 +144,7 @@ curl -s -X POST http://localhost:5680/webhook/calendar-chat \
 Resposta esperada (sincrona):
 
 ```jsonc
-{ "answer": "1) ... 2) ... 3) ...", "eventIds": [], "proposal": null, "aiError": false }
+{ "answer": "1) ... 2) ... 3) ...", "eventIds": [], "proposals": [], "aiError": false }
 ```
 
 Para testar memória, use o endpoint do **back Go**, pois é ele que persiste e envia o `history`.

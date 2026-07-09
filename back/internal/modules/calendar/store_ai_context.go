@@ -119,29 +119,29 @@ func (s *Store) loadAccountNames(ctx context.Context, accountID string, clientID
 
 // ListEventsLean devolve a projecao dos eventos da account na janela
 // [from, to] (inclusive), opcionalmente filtrados por cliente, com teto de linhas
-// (limit). Projecao date,type,title,status,client_id do contrato C9/C7: NAO carrega
-// media/involved (evita over-fetch no agregado de contexto das IAs). Mesma ordem do
-// ListEvents (event_date, event_time, created_at). Escopo por account_id (defesa em
-// profundidade). limit <= 0 = sem teto.
+// (limit). Projecao lean do contrato C9/C7: inclui campos editaveis do evento, descricao
+// truncada, midias limitadas e taskId vinculado. Mesma ordem do ListEvents
+// (event_date, event_time, created_at). Escopo por account_id (defesa em profundidade).
+// limit <= 0 = sem teto.
 func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientID string, limit int) ([]AIContextEvent, error) {
-	q := `select id::text, event_date::text, event_time, type, title, status, priority,
-		coalesce(client_id::text, ''), left(description, 500),
-		coalesce(media, '[]'::jsonb), coalesce(linked_media, '[]'::jsonb)
-		from calendar.events where account_id = $1::uuid`
+	q := `select e.id::text, e.event_date::text, e.event_time, e.type, e.title, e.status, e.priority,
+		e.responsible_id, coalesce(e.involved_ids, '[]'::jsonb), coalesce(e.client_id::text, ''),
+		left(e.description, 500), coalesce(e.media, '[]'::jsonb), coalesce(e.linked_media, '[]'::jsonb)` +
+		eventTaskIDCol + ` from calendar.events e where e.account_id = $1::uuid`
 	args := []any{accountID}
 	if strings.TrimSpace(from) != "" {
 		args = append(args, strings.TrimSpace(from))
-		q += " and event_date >= $" + strconv.Itoa(len(args)) + "::date"
+		q += " and e.event_date >= $" + strconv.Itoa(len(args)) + "::date"
 	}
 	if strings.TrimSpace(to) != "" {
 		args = append(args, strings.TrimSpace(to))
-		q += " and event_date <= $" + strconv.Itoa(len(args)) + "::date"
+		q += " and e.event_date <= $" + strconv.Itoa(len(args)) + "::date"
 	}
 	if strings.TrimSpace(clientID) != "" {
 		args = append(args, strings.TrimSpace(clientID))
-		q += " and client_id = $" + strconv.Itoa(len(args)) + "::uuid"
+		q += " and e.client_id = $" + strconv.Itoa(len(args)) + "::uuid"
 	}
-	q += " order by event_date, event_time, created_at"
+	q += " order by e.event_date, e.event_time, e.created_at"
 	if limit > 0 {
 		args = append(args, limit)
 		q += " limit $" + strconv.Itoa(len(args))
@@ -169,23 +169,23 @@ func (s *Store) ListEventsLean(ctx context.Context, accountID, from, to, clientI
 // da conta, sem cliente, entram). Fecha o vazamento de eventos de cliente fora do escopo do
 // usuario (a agencia recebe todos os seus clientes; um usuario subset recebe so os que ve).
 func (s *Store) ListEventsLeanForClients(ctx context.Context, accountID, from, to string, clientIDs []string, limit int) ([]AIContextEvent, error) {
-	q := `select id::text, event_date::text, event_time, type, title, status, priority,
-		coalesce(client_id::text, ''), left(description, 500),
-		coalesce(media, '[]'::jsonb), coalesce(linked_media, '[]'::jsonb)
-		from calendar.events where account_id = $1::uuid`
+	q := `select e.id::text, e.event_date::text, e.event_time, e.type, e.title, e.status, e.priority,
+		e.responsible_id, coalesce(e.involved_ids, '[]'::jsonb), coalesce(e.client_id::text, ''),
+		left(e.description, 500), coalesce(e.media, '[]'::jsonb), coalesce(e.linked_media, '[]'::jsonb)` +
+		eventTaskIDCol + ` from calendar.events e where e.account_id = $1::uuid`
 	args := []any{accountID}
 	if strings.TrimSpace(from) != "" {
 		args = append(args, strings.TrimSpace(from))
-		q += " and event_date >= $" + strconv.Itoa(len(args)) + "::date"
+		q += " and e.event_date >= $" + strconv.Itoa(len(args)) + "::date"
 	}
 	if strings.TrimSpace(to) != "" {
 		args = append(args, strings.TrimSpace(to))
-		q += " and event_date <= $" + strconv.Itoa(len(args)) + "::date"
+		q += " and e.event_date <= $" + strconv.Itoa(len(args)) + "::date"
 	}
 	// Escopo de cliente: so os visiveis (+ eventos sem cliente = gerais da conta).
 	args = append(args, clientIDs)
-	q += " and (client_id = any($" + strconv.Itoa(len(args)) + "::uuid[]) or client_id is null)"
-	q += " order by event_date, event_time, created_at"
+	q += " and (e.client_id = any($" + strconv.Itoa(len(args)) + "::uuid[]) or e.client_id is null)"
+	q += " order by e.event_date, e.event_time, e.created_at"
 	if limit > 0 {
 		args = append(args, limit)
 		q += " limit $" + strconv.Itoa(len(args))
@@ -208,11 +208,19 @@ func (s *Store) ListEventsLeanForClients(ctx context.Context, accountID, from, t
 
 func scanAIContextEvent(row rowScanner) (AIContextEvent, error) {
 	var event AIContextEvent
-	var ownMedia, linkedMedia json.RawMessage
+	var involvedRaw, ownMedia, linkedMedia json.RawMessage
+	var taskID *string
 	if err := row.Scan(&event.ID, &event.Date, &event.Time, &event.Type, &event.Title,
-		&event.Status, &event.Priority, &event.ClientID, &event.Description,
-		&ownMedia, &linkedMedia); err != nil {
+		&event.Status, &event.Priority, &event.ResponsibleID, &involvedRaw, &event.ClientID,
+		&event.Description, &ownMedia, &linkedMedia, &taskID); err != nil {
 		return AIContextEvent{}, err
+	}
+	if taskID != nil {
+		event.TaskID = strings.TrimSpace(*taskID)
+	}
+	_ = json.Unmarshal(involvedRaw, &event.InvolvedIDs)
+	if event.InvolvedIDs == nil {
+		event.InvolvedIDs = []string{}
 	}
 	event.Media = make([]MediaItem, 0)
 	var items []MediaItem

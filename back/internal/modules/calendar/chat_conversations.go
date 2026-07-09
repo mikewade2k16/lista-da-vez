@@ -130,16 +130,23 @@ func (s *Service) resolveChatTarget(ctx context.Context, access ChatAccess, acco
 // buildChatContext monta o bloco context do payload conforme o escopo (contrato D4): em
 // 'client' reusa BuildAIContext (agregado C9 SEM account, via chatContextFrom); em 'all'
 // usa BuildAIContextAll (resumo lean de cada cliente visivel + eventos/nota do mes). O
-// retorno e `any` porque as duas formas tem shapes diferentes no payload.
-func (s *Service) buildChatContext(ctx context.Context, accountID string, access ChatAccess, mode, clientID, month string) (any, error) {
+// chat tambem recebe as tasks reais do board configurado para poder propor CRUD por ID.
+// O retorno e `any` porque as duas formas tem shapes diferentes no payload.
+func (s *Service) buildChatContext(ctx context.Context, accountID string, principal auth.Principal, access ChatAccess, mode, clientID, month string) (any, error) {
 	if mode == chatScopeAll {
-		return s.BuildAIContextAll(ctx, accountID, access.VisibleClientIDs, month)
+		block, err := s.BuildAIContextAll(ctx, accountID, access.VisibleClientIDs, month)
+		if err != nil {
+			return nil, err
+		}
+		block.Tasks = s.chatTasksContext(ctx, accountID, principal, "", access.VisibleClientIDs)
+		return block, nil
 	}
 	aic, err := s.BuildAIContext(ctx, accountID, clientID, month)
 	if err != nil {
 		return nil, err
 	}
 	block := chatContextFrom(aic)
+	block.Tasks = s.chatTasksContext(ctx, accountID, principal, clientID, []string{clientID})
 	// Planos sao metadata da conta INTEIRA (todos os clientes); so a agencia ve. Cliente-side
 	// (ou usuario subset) NAO recebe metadata (mes/status/provider) de planos de clientes que
 	// nao pode ver — WAVE 4, achado da revisao.

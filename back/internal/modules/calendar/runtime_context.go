@@ -11,6 +11,7 @@ import (
 const (
 	maxContextEvents = 100
 	maxContextPlans  = 10
+	maxContextTasks  = 100
 	// maxContextMediaPerEvent mantem o prompt e o snapshot do chat limitados sem esconder
 	// que o evento possui midia; o card mostra as primeiras e sinaliza o restante recebido.
 	maxContextMediaPerEvent = 6
@@ -50,17 +51,42 @@ type AIContextAccount struct {
 // textuais, leva IDs e midias reais para o LLM referenciar; o backend usa esses IDs para
 // montar os cards ricos, portanto uma URL inventada pelo modelo nunca chega ao front.
 type AIContextEvent struct {
-	ID          string      `json:"id"`
-	Date        string      `json:"date"`
-	Time        string      `json:"time"`
-	Type        string      `json:"type"`
-	Title       string      `json:"title"`
-	Status      string      `json:"status"`
-	Priority    string      `json:"priority"`
-	ClientID    string      `json:"clientId"`
-	ClientName  string      `json:"clientName"`
-	Description string      `json:"description,omitempty"`
-	Media       []MediaItem `json:"media"`
+	ID            string      `json:"id"`
+	Date          string      `json:"date"`
+	Time          string      `json:"time"`
+	Type          string      `json:"type"`
+	Title         string      `json:"title"`
+	Status        string      `json:"status"`
+	Priority      string      `json:"priority"`
+	ResponsibleID string      `json:"responsibleId,omitempty"`
+	InvolvedIDs   []string    `json:"involvedIds,omitempty"`
+	ClientID      string      `json:"clientId"`
+	ClientName    string      `json:"clientName"`
+	Description   string      `json:"description,omitempty"`
+	TaskID        string      `json:"taskId,omitempty"`
+	Media         []MediaItem `json:"media"`
+}
+
+// AIContextTask e a projecao segura das tasks do board configurado do calendario. O
+// chat usa estes IDs reais para propor update/delete de task sem inventar targetId.
+type AIContextTask struct {
+	ID            string   `json:"id"`
+	BoardID       string   `json:"boardId"`
+	ColumnID      string   `json:"columnId,omitempty"`
+	Title         string   `json:"title"`
+	Status        string   `json:"status,omitempty"`
+	Priority      string   `json:"priority"`
+	DueDate       string   `json:"dueDate,omitempty"`
+	StartDate     string   `json:"startDate,omitempty"`
+	DueEndDate    string   `json:"dueEndDate,omitempty"`
+	ResponsibleID string   `json:"responsibleId,omitempty"`
+	InvolvedIDs   []string `json:"involvedIds,omitempty"`
+	ClientID      string   `json:"clientId,omitempty"`
+	ClientName    string   `json:"clientName,omitempty"`
+	Type          string   `json:"type,omitempty"`
+	Description   string   `json:"description,omitempty"`
+	Archived      bool     `json:"archived,omitempty"`
+	Version       int      `json:"version,omitempty"`
 }
 
 // AIContextPlan e a projecao lean de um plano de IA (contrato C9/C7): sem o
@@ -167,6 +193,7 @@ type AIContextAll struct {
 	Holidays   []Holiday             `json:"holidays"`
 	MonthNotes string                `json:"monthNotes"`
 	Events     []AIContextEvent      `json:"events"`
+	Tasks      []AIContextTask       `json:"tasks,omitempty"`
 }
 
 // BuildAIContextAll monta o agregado LEAN multi-cliente (contrato D4) para o chat em

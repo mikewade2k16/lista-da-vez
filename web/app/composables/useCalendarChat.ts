@@ -13,6 +13,7 @@ import {
   updateProposalStatus,
   type CalendarChatConversation,
   type CalendarChatCalendarItem,
+  type CalendarChatProposalFields,
   type CalendarChatStoredProposal,
   type CalendarChatStoredMessage,
   type CalendarChatScope,
@@ -93,6 +94,44 @@ function httpStatus(error: unknown): number {
 function errorCode(error: unknown): string {
   const e = error as { data?: { error?: { code?: string } } }
   return String(e?.data?.error?.code || '')
+}
+
+function hasProposalField(
+  fields: CalendarChatProposalFields,
+  key: keyof CalendarChatProposalFields,
+) {
+  return Object.prototype.hasOwnProperty.call(fields, key)
+}
+
+function proposalText(
+  fields: CalendarChatProposalFields,
+  key: keyof CalendarChatProposalFields,
+): string {
+  const value = fields[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function proposalArray(
+  fields: CalendarChatProposalFields,
+  key: keyof CalendarChatProposalFields,
+): string[] {
+  const value = fields[key]
+  return Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : []
+}
+
+function proposalBody(fields: CalendarChatProposalFields): string {
+  return proposalText(fields, 'description') || proposalText(fields, 'contentHtml')
+}
+
+function firstProposalText(
+  fields: CalendarChatProposalFields,
+  keys: Array<keyof CalendarChatProposalFields>,
+): string {
+  for (const key of keys) {
+    const value = proposalText(fields, key)
+    if (value) return value
+  }
+  return ''
 }
 
 export function useCalendarChat() {
@@ -259,8 +298,17 @@ export function useCalendarChat() {
     if (status === 503 || code === 'chat_not_configured') {
       return 'O chat do calendario ainda nao esta configurado. Defina o env CALENDAR_CHAT_WEBHOOK_URL e importe o workflow "Calendar Chat" no n8n.'
     }
-    if (status === 502 || status === 504) {
-      return 'A IA do calendario nao respondeu agora (servico indisponivel). Tente novamente em instantes.'
+    if (code === 'ai_disabled') {
+      return getApiErrorMessage(error, 'A IA do calendario esta desligada na aba IA.')
+    }
+    if (code === 'ai_key_missing') {
+      return getApiErrorMessage(error, 'A chave do provedor de IA nao esta configurada na aba IA.')
+    }
+    if (status === 504 || code === 'upstream_timeout') {
+      return 'O n8n demorou para responder ao chat do calendario. Tente novamente; se repetir, confira se o container n8n esta reiniciando ou sem memoria.'
+    }
+    if (status === 502 || code === 'upstream_error') {
+      return 'O n8n nao respondeu ao chat do calendario. Confira se o workflow "Calendar Chat" esta ativo e se o container n8n esta healthy.'
     }
     if (status === 400) {
       return getApiErrorMessage(error, 'Pergunta invalida. Revise e tente de novo.')
@@ -439,10 +487,9 @@ export function useCalendarChat() {
   }
 
   // applyProposal EXECUTA a proposta pela API autenticada do usuario conforme a `action`:
-  // create (item novo), update (edita um EVENTO existente do contexto por targetId, full-replace
-  // mesclando os campos nao-vazios) ou delete (exclui). clientId ja vem resolvido pelo componente.
-  // Devolve '' no sucesso ou uma mensagem de erro acionavel. UPDATE/DELETE so em EVENTO (o CRUD
-  // de tasks do board pelo chat ainda nao existe — falta o chat ler as tasks).
+  // create (item novo), update (edita item existente por targetId, full-replace mesclando os
+  // campos nao-vazios) ou delete (exclui/arquiva). clientId ja vem resolvido pelo componente.
+  // Devolve '' no sucesso ou uma mensagem de erro acionavel.
   async function applyProposal(
     proposal: CalendarChatStoredProposal,
     clientId: string,
@@ -451,14 +498,81 @@ export function useCalendarChat() {
     const action = proposal.action || 'create'
     const targetId = String(f.targetId || '')
 
+    async function loadConfiguredTasksBoard(includeArchived = false): Promise<string> {
+      const boardId = String(store.config.tasks?.boardId || '')
+      const tasksStore = useTasksStore()
+      await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
+      if (boardId) {
+        await tasksStore
+          .ensureBoardTasksLoaded(boardId, { includeArchived, force: true })
+          .catch(() => undefined)
+      }
+      return boardId
+    }
+
+    async function applyTaskTarget(): Promise<string> {
+      const boardId = await loadConfiguredTasksBoard(action !== 'create')
+      if (!boardId)
+        return 'Configure um board na aba Integrações da config para usar tasks pelo chat.'
+      const tasksStore = useTasksStore()
+      const eventTaskId = store.getEventById(targetId)?.taskId || ''
+      const taskId = eventTaskId || targetId
+      const existingTask = tasksStore.tasks.find((task) => task.id === taskId)
+      if ((action === 'update' || action === 'delete') && !existingTask) {
+        return 'Não encontrei essa task no board configurado. Abra/recarregue o board e tente de novo.'
+      }
+      if (action === 'delete') {
+        const ok = await tasksStore.removeTask(existingTask!.id)
+        return ok ? '' : 'Não consegui excluir a task.'
+      }
+      if (action === 'update') {
+        const patch: Record<string, unknown> = {}
+        const title = proposalText(f, 'title')
+        const body = proposalBody(f)
+        const dueDate = firstProposalText(f, ['dueDate', 'date'])
+        const involvedIds = proposalArray(f, 'involvedIds')
+        if (title) patch.title = title
+        if (body) patch.description = body
+        if (proposalText(f, 'status')) patch.status = proposalText(f, 'status')
+        if (proposalText(f, 'priority')) patch.priority = proposalText(f, 'priority')
+        if (dueDate) patch.dueDate = dueDate
+        if (proposalText(f, 'dueEndDate')) patch.dueEndDate = proposalText(f, 'dueEndDate')
+        if (proposalText(f, 'type')) patch.type = proposalText(f, 'type')
+        if (proposalText(f, 'responsibleId')) patch.responsible = proposalText(f, 'responsibleId')
+        if (involvedIds.length) patch.involved = involvedIds
+        if (clientId || proposalText(f, 'clientId'))
+          patch.clientId = clientId || proposalText(f, 'clientId')
+        if (proposalText(f, 'clientName')) patch.clientName = proposalText(f, 'clientName')
+        if (hasProposalField(f, 'archived')) patch.archived = Boolean(f.archived)
+        if (!Object.keys(patch).length) return 'Não encontrei campos para alterar nessa task.'
+        const updated = await tasksStore.updateTask(existingTask!.id, patch)
+        return updated ? '' : 'Não consegui editar a task.'
+      }
+      const created = await tasksStore.createTask({
+        projectId: boardId,
+        title: proposalText(f, 'title'),
+        description: proposalBody(f),
+        status: proposalText(f, 'status'),
+        priority: proposalText(f, 'priority') || 'media',
+        dueDate: firstProposalText(f, ['dueDate', 'date']),
+        dueEndDate: proposalText(f, 'dueEndDate'),
+        responsible: proposalText(f, 'responsibleId'),
+        involved: proposalArray(f, 'involvedIds'),
+        clientId: clientId || proposalText(f, 'clientId'),
+        clientName: proposalText(f, 'clientName'),
+        type: proposalText(f, 'type'),
+      })
+      return created ? '' : 'Não consegui criar a task.'
+    }
+
     if (action === 'update' || action === 'delete') {
-      // Roteia pelo targetId (que vem de context.events = EVENTOS), NAO pelo kind: a IA as vezes
-      // rotula um evento do calendario como kind:'task'. Se o id e um evento carregado, edita/
-      // exclui o evento; senao, mensagem conforme o caso (task do board ainda nao, ou fora do mes).
+      // Roteia primeiro pelo targetId real: a IA as vezes rotula um evento do calendario como
+      // kind:'task'. Se o id e um evento carregado, edita/exclui o evento; se nao, task usa o
+      // board configurado (context.tasks/taskId).
       const existing = store.getEventById(targetId)
       if (!existing) {
         return proposal.kind === 'task'
-          ? 'Editar/excluir tasks do board pelo chat ainda não está disponível — por ora só eventos do calendário.'
+          ? applyTaskTarget()
           : 'Não encontrei esse item no calendário (abra o mês dele e tente de novo).'
       }
       if (action === 'delete') {
@@ -466,20 +580,23 @@ export function useCalendarChat() {
         return ok ? '' : 'Não consegui excluir o item.'
       }
       // update = full-replace: campos NAO-VAZIOS da proposta vencem; o resto mantem o existente.
+      const proposedDate = firstProposalText(f, ['date', 'dueDate'])
+      const proposedBody = proposalBody(f)
+      const proposedInvolved = proposalArray(f, 'involvedIds')
       const outcome = await store.updateEvent(
         existing.id,
         {
-          date: String(f.date || existing.date || ''),
-          time: String(f.time || existing.time || ''),
-          clientId: clientId || existing.clientId || '',
-          type: String(f.type || existing.type || 'post'),
-          title: String(f.title || existing.title || ''),
-          status: String(f.status || existing.status || 'planejado'),
-          priority: existing.priority,
-          responsibleId: existing.responsibleId || '',
-          involvedIds: existing.involvedIds || [],
+          date: proposedDate || existing.date || '',
+          time: proposalText(f, 'time') || existing.time || '',
+          clientId: clientId || proposalText(f, 'clientId') || existing.clientId || '',
+          type: proposalText(f, 'type') || existing.type || 'post',
+          title: proposalText(f, 'title') || existing.title || '',
+          status: proposalText(f, 'status') || existing.status || 'planejado',
+          priority: proposalText(f, 'priority') || existing.priority || 'media',
+          responsibleId: proposalText(f, 'responsibleId') || existing.responsibleId || '',
+          involvedIds: proposedInvolved.length ? proposedInvolved : existing.involvedIds || [],
           media: existing.media || [],
-          description: String(existing.description || ''),
+          description: proposedBody || String(existing.description || ''),
         } as unknown as CalendarEventInput,
         existing.version,
       )
@@ -489,34 +606,24 @@ export function useCalendarChat() {
       return outcome === 'ok' ? '' : 'Não consegui editar o item.'
     }
 
-    // CREATE (comportamento existente). Evento -> calendar store; task -> tasks store.
+    // CREATE. Evento -> calendar store; task -> tasks store.
     if (proposal.kind === 'task') {
-      const boardId = String(store.config.tasks?.boardId || '')
-      if (!boardId) return 'Configure um board na aba Integrações da config para criar tasks.'
-      const tasksStore = useTasksStore()
-      await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
-      const created = await tasksStore.createTask({
-        projectId: boardId,
-        title: String(f.title || ''),
-        dueDate: String(f.dueDate || f.date || ''),
-        clientId,
-      })
-      return created ? '' : 'Não consegui criar a task.'
+      return applyTaskTarget()
     }
     // createEvent tipa os enums (type/status/priority); a proposta vem validada e o back
     // re-valida, entao usamos um cast controlado no payload.
     const ok = await store.createEvent({
-      date: String(f.date || f.dueDate || ''),
-      time: String(f.time || ''),
-      clientId,
-      type: String(f.type || 'post'),
-      title: String(f.title || ''),
-      status: String(f.status || 'planejado'),
-      priority: 'media',
-      responsibleId: '',
-      involvedIds: [],
+      date: firstProposalText(f, ['date', 'dueDate']),
+      time: proposalText(f, 'time'),
+      clientId: clientId || proposalText(f, 'clientId'),
+      type: proposalText(f, 'type') || 'post',
+      title: proposalText(f, 'title'),
+      status: proposalText(f, 'status') || 'planejado',
+      priority: proposalText(f, 'priority') || 'media',
+      responsibleId: proposalText(f, 'responsibleId'),
+      involvedIds: proposalArray(f, 'involvedIds'),
       media: [],
-      description: '',
+      description: proposalBody(f),
       createTask: Boolean(store.config.tasks?.boardId),
     } as unknown as CalendarEventInput)
     return ok ? '' : 'Não consegui criar o evento (confira a data proposta).'

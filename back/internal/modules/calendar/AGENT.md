@@ -235,9 +235,13 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   **MULTI-TAREFA (WAVE 5.1)**: uma mensagem pode trazer VARIAS propostas de criacao — `proposals` e um array
   `[{id,action,kind,fields,status}]`, cada uma com **status proprio** (`pending|accepted|rejected`) e id
   estavel (indice na mensagem). `action` (`create`|`update`|`delete`) + `fields.targetId` dirigem o **CRUD pelo chat** (create/update/delete
-  de EVENTOS). `sanitizeProposal` valida por acao: update/delete exigem `targetId`; delete dispensa titulo;
-  create/update exigem titulo. O front (`applyProposal`) executa via `store.updateEvent`/`deleteEvent`. CRUD de
-  TASKS do board pelo chat ainda nao (falta o chat ler tasks) — o front responde "em breve".
+  de EVENTOS e TASKS do board configurado via `context.tasks` ou `taskId` vinculado). `fields` cobre `title/date/time/type/status/priority`,
+  `responsibleId/involvedIds`, `description/contentHtml`, `dueDate/dueEndDate`, `clientId/clientName`,
+  `columnId`, `archived`, `targetId`. `sanitizeProposal` valida por acao: update/delete exigem `targetId`;
+  delete dispensa titulo; create exige titulo; update aceita edicao parcial (ex.: so prioridade/descricao).
+  O front (`applyProposal`) executa evento via `store.updateEvent`/`deleteEvent`; task via store de tasks
+  quando `targetId` for id real de `context.tasks` ou evento com `taskId` vinculado. `buildChatContext` acrescenta
+  `tasks` com a projecao lean do board configurado (`maxContextTasks=100`) usando permissao real do usuario.
   O `proposal`/`proposal_status` singular vira retrocompat: o backfill da 0195 migra mensagem antiga para a
   lista de 1 (id '0') e o scan tem a mesma rede de seguranca. `calendar_items` guarda o snapshot de eventos
   reais cujos IDs vieram do contexto e foram revalidados pelo Go. Sem soft-delete (some junto com a conversa
@@ -381,6 +385,9 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   `history`, monta o payload (`ai` = config EFETIVA + KEY CRUA em `ai.apiKey`; `context` = `BuildAIContext`
   no `client` OU `BuildAIContextAll` no `all`, SEM `account`; `history:[{role,content}]`) e faz proxy ao
   `calendar-chat`; grava a resposta e titula a conversa. Resposta 200 `{answer, conversationId, title}`.
+  Quando o webhook devolve `eventIds`, o Go cruza os IDs com o contexto autoritativo e persiste
+  `calendarItems[]` para os cards; se o `answer` vier com lista textual repetida, compacta para uma
+  sintese curta + "lista nos cards" antes de gravar.
   Escopo SEMPRE normalizado server-side (`validateScope`): cliente-side (1 cliente) trava no seu cliente;
   `scopeClientId` fora do visivel => **404 `not_found`** (nao vaza QUAIS clientes existem); `all` so p/ quem
   tem select (agency/multi-cliente). Erros: 400 `invalid_question`; 400 `invalid_date` (`month` malformado);
@@ -390,8 +397,9 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   a memoria e o BANCO (`calendar.chat_messages`), o n8n so recebe o `history`.
 - `GET /v1/calendar/chat/status?scopeMode=&scopeClientId=` — **preflight sem tokens** usado ao abrir
   o chat e antes de cada envio. RequireAuthWithAccount; valida webhook configurado, escopo efetivo,
-  kill switch e chave do provider, depois consulta apenas o `/healthz` da mesma instancia n8n (timeout
-  3s). Nao cria conversa/mensagem e nao chama modelo. Resposta 200 `{available:true}`; indisponibilidade
+  kill switch e chave do provider, depois consulta apenas o `/healthz` da mesma instancia n8n (janela
+  curta de 3s, com 1 retry de 250ms para falha transiente). Nao cria conversa/mensagem e nao chama
+  modelo. Resposta 200 `{available:true}`; indisponibilidade
   reutiliza os erros do chat (`ai_disabled`, `ai_key_missing`, `chat_not_configured`, upstream/timeout).
 - `GET /v1/calendar/chat/conversations` — **lista de conversas (D3)**. RequireAuthWithAccount. Agency ve
   TODAS da conta (com `createdByName` via join); cliente-side so as `created_by = ele`. Resposta lean

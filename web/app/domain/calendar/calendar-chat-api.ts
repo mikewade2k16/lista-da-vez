@@ -45,9 +45,18 @@ export interface CalendarChatProposalFields {
   time?: string
   type?: string
   status?: string
+  priority?: string
+  responsibleId?: string
+  involvedIds?: string[]
+  description?: string
+  contentHtml?: string
   dueDate?: string
+  startDate?: string
+  dueEndDate?: string
   columnId?: string
   clientId?: string
+  clientName?: string
+  archived?: boolean
   targetId?: string
 }
 
@@ -68,9 +77,12 @@ export interface CalendarChatCalendarItem {
   title: string
   status: string
   priority: string
+  responsibleId?: string
+  involvedIds?: string[]
   clientId: string
   clientName: string
   description?: string
+  taskId?: string
   media: CalendarMediaItem[]
 }
 

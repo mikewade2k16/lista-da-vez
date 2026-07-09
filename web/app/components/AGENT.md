@@ -529,16 +529,18 @@ pela permissao (`resolveChatAccess`, nunca do body); conversa/cliente fora do vi
   popup inline **[Continuar sem cliente] / [Escolher cliente]** — escolher aplica **um para todas** e cria. O
   clientId resolvido sobe no `accept-selected` (`items:[{id,clientId}]`) e o composable cria com ele
   (`applyProposal(proposal, clientId)`). O bloco de propostas é **colapsável** (chevron no header) para
-  minimizar listas grandes.
+  minimizar listas grandes. Cliente faltante so bloqueia **create**; em `update`, se a IA nao enviar
+  `fields.clientId`, o card herda o cliente atual do evento alvo (`targetId`) quando houver e nao dispara
+  "sem cliente"; cliente so muda por override explicito do usuario/IA.
 
   **CRUD PELO CHAT (2026-07-07):** `applyProposal` faz switch por `proposal.action`: `create` (createEvent/
   createTask), `update` (evento existente por `fields.targetId` = id de `context.events`; `store.getEventById`
-  - `updateEvent` full-replace mesclando campos não-vazios; conflito de versão vira aviso) e `delete`
-    (`store.deleteEvent`). O card mostra a ação por item (tag **Editar**/**Excluir**, delete com acento de perigo),
-    esconde o seletor de cliente no delete e o botão vira "Aplicar N" quando há edição/exclusão. **Limite:**
-    update/delete só em EVENTOS (estão no contexto); editar/excluir TASKS do board pelo chat depende do chat ler
-    as tasks (roadmap) — por ora responde "em breve". O painel teleporta o chat para `.app-surface` (dentro do
-    shell, mesmo stacking context do header) — não mais `body`, senão cobre o header do painel.
+  - `updateEvent` full-replace mesclando campos nao-vazios; conflito de versao vira aviso) e `delete`
+    (`store.deleteEvent`). Para `kind:'task'`, o composable carrega o board configurado e usa `targetId` real de
+    `context.tasks` (ou `taskId` de evento vinculado) para `updateTask`/`removeTask`; se `targetId` tambem for
+    evento real, o alvo real vence o `kind`. O card mostra a acao por item (tag **Editar**/**Excluir**, delete com acento de perigo),
+    esconde o seletor de cliente no delete e o botao vira "Aplicar N" quando ha edicao/exclusao. O painel teleporta o chat para `.app-surface` (dentro do
+    shell, mesmo stacking context do header) - nao mais `body`, senao cobre o header do painel.
 
 (client|all) vem do `GET /chat/scope`: cliente-side (canSelect=false) trava no `lockedClientId`, agencia
 escolhe. **WAVE 4 — SELECT DE ESCOPO (SPEC-F11)**: barra abaixo do header via

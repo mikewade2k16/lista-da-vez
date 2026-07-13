@@ -11,6 +11,10 @@ import (
 // len(args)+1. Compartilhado entre listagem e count para nunca divergirem.
 // NAO inclui o LIMIT — o teto e' aplicado so na listagem, apos o order by.
 func appendHistoryFilters(query *strings.Builder, args []any, filters repositoryFilters) []any {
+	// Auto-encerramento (2h): pendencias canceladas pelo gerente saem da metrica
+	// (a linha fica no historico para auditoria). Predicado estatico, sempre aplicado.
+	query.WriteString(" and h.validation_status <> 'cancelled'")
+
 	if filters.FinishedAtFrom != nil {
 		fmt.Fprintf(query, " and h.finished_at >= $%d", len(args)+1)
 		args = append(args, *filters.FinishedAtFrom)

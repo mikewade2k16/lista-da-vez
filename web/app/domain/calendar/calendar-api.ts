@@ -101,6 +101,8 @@ export function normalizeConfig(res: unknown): CalendarConfig {
       width: clampChatSize(rawChat.width),
       height: clampChatSize(rawChat.height),
     },
+    // Atalhos (WAVE 11): acao ausente cai no default; valor do banco vence (inclusive '').
+    shortcuts: { ...base.shortcuts, ...asStringMap(raw.shortcuts) },
   }
 }
 

@@ -2,9 +2,11 @@ import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { useAuthStore } from '~/stores/auth'
 import { useCalendarStore } from '~/stores/calendar'
 import type { CalendarEventInput } from '~/utils/calendar'
+import { applyClientProfileProposal, applyNoteProposal } from '~/utils/calendar-chat-crud'
 // Store de Tasks vive em outra layer; import cross-layer (precedente: ConfigTasks.vue). So
 // e usado ao CONFIRMAR uma proposta de task (WAVE 5, E7); a Pinia instancia sob demanda.
 import { useTasksStore } from '../../layers/tasks/stores/tasks'
+import type { TaskPriority } from '../../layers/tasks/types/tasks'
 import {
   deleteConversation as apiDeleteConversation,
   fetchChatScope,
@@ -132,6 +134,10 @@ function firstProposalText(
     if (value) return value
   }
   return ''
+}
+
+function taskPriority(value: string): TaskPriority {
+  return value === 'alta' || value === 'baixa' || value === 'media' ? value : 'media'
 }
 
 export function useCalendarChat() {
@@ -486,6 +492,40 @@ export function useCalendarChat() {
     )
   }
 
+  function normalizePersonLabel(value: string): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+  }
+
+  function resolveResponsibleId(value: string): string {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    const people = store.people || []
+    if (people.some((person) => person.id === raw)) return raw
+    const needle = normalizePersonLabel(raw)
+    const matches = people.filter((person) => {
+      const name = normalizePersonLabel(person.name)
+      return name === needle || name.startsWith(`${needle} `)
+    })
+    return matches.length === 1 ? matches[0]!.id : raw
+  }
+
+  // matchByTitle acha o UNICO item cujo titulo casa com `name` (igual ou contido em qualquer
+  // direcao) — rede de seguranca quando a IA manda o NOME em vez do id. Qualquer modelo escorrega
+  // nisso (visto no gpt-4o-mini); a resolucao robusta e aqui, nao no prompt.
+  function matchByTitle<T extends { title: string }>(items: T[], name: string): T | undefined {
+    const needle = normalizePersonLabel(name)
+    if (!needle) return undefined
+    const cands = items.filter((it) => {
+      const t = normalizePersonLabel(it.title)
+      return t === needle || t.includes(needle) || needle.includes(t)
+    })
+    return cands.length === 1 ? cands[0] : undefined
+  }
+
   // applyProposal EXECUTA a proposta pela API autenticada do usuario conforme a `action`:
   // create (item novo), update (edita item existente por targetId, full-replace mesclando os
   // campos nao-vazios) ou delete (exclui/arquiva). clientId ja vem resolvido pelo componente.
@@ -496,7 +536,15 @@ export function useCalendarChat() {
   ): Promise<string> {
     const f = proposal.fields || {}
     const action = proposal.action || 'create'
+    // WAVE 7: anotacao do mes e perfil do cliente tem execucao propria (kinds note/clientProfile,
+    // em calendar-chat-crud.ts). Deps: apiRequest + os 3 pontos de nota da store + tradutor de erro.
+    const crudDeps = { apiRequest, store, actionableError }
+    if (proposal.kind === 'note') return applyNoteProposal(crudDeps, action, f.note || {})
+    if (proposal.kind === 'clientProfile') {
+      return applyClientProfileProposal(crudDeps, action, f, clientId)
+    }
     const targetId = String(f.targetId || '')
+    const proposedResponsibleId = resolveResponsibleId(proposalText(f, 'responsibleId'))
 
     async function loadConfiguredTasksBoard(includeArchived = false): Promise<string> {
       const boardId = String(store.config.tasks?.boardId || '')
@@ -517,7 +565,12 @@ export function useCalendarChat() {
       const tasksStore = useTasksStore()
       const eventTaskId = store.getEventById(targetId)?.taskId || ''
       const taskId = eventTaskId || targetId
-      const existingTask = tasksStore.tasks.find((task) => task.id === taskId)
+      let existingTask = tasksStore.tasks.find((task) => task.id === taskId)
+      if (!existingTask) {
+        // Rede de seguranca: a IA manda o NOME da task no targetId em vez do UUID, as vezes parcial.
+        // Casa pelo titulo (igual/contido) se UNICO — cobre "Brasil GMS" -> "Brasil GMS Tooop".
+        existingTask = matchByTitle(tasksStore.tasks, taskId)
+      }
       if ((action === 'update' || action === 'delete') && !existingTask) {
         return 'Não encontrei essa task no board configurado. Abra/recarregue o board e tente de novo.'
       }
@@ -530,15 +583,22 @@ export function useCalendarChat() {
         const title = proposalText(f, 'title')
         const body = proposalBody(f)
         const dueDate = firstProposalText(f, ['dueDate', 'date'])
+        const dueTime = proposalText(f, 'time')
         const involvedIds = proposalArray(f, 'involvedIds')
         if (title) patch.title = title
         if (body) patch.description = body
         if (proposalText(f, 'status')) patch.status = proposalText(f, 'status')
         if (proposalText(f, 'priority')) patch.priority = proposalText(f, 'priority')
-        if (dueDate) patch.dueDate = dueDate
+        // HORARIO (WAVE 11): a task guarda o prazo com hora (datetime). Quando a IA manda time
+        // junto da data, compomos 'YYYY-MM-DDTHH:MM' (hora local; toOptionalDateTime converte).
+        // Time SEM data nova: reusa a data atual da task para so trocar a hora.
+        if (dueDate) patch.dueDate = dueTime ? `${dueDate}T${dueTime}` : dueDate
+        else if (dueTime && existingTask!.dueDate) {
+          patch.dueDate = `${String(existingTask!.dueDate).slice(0, 10)}T${dueTime}`
+        }
         if (proposalText(f, 'dueEndDate')) patch.dueEndDate = proposalText(f, 'dueEndDate')
         if (proposalText(f, 'type')) patch.type = proposalText(f, 'type')
-        if (proposalText(f, 'responsibleId')) patch.responsible = proposalText(f, 'responsibleId')
+        if (proposedResponsibleId) patch.responsible = proposedResponsibleId
         if (involvedIds.length) patch.involved = involvedIds
         if (clientId || proposalText(f, 'clientId'))
           patch.clientId = clientId || proposalText(f, 'clientId')
@@ -548,15 +608,18 @@ export function useCalendarChat() {
         const updated = await tasksStore.updateTask(existingTask!.id, patch)
         return updated ? '' : 'Não consegui editar a task.'
       }
+      const createDate = firstProposalText(f, ['dueDate', 'date'])
+      const createTime = proposalText(f, 'time')
       const created = await tasksStore.createTask({
         projectId: boardId,
         title: proposalText(f, 'title'),
         description: proposalBody(f),
         status: proposalText(f, 'status'),
-        priority: proposalText(f, 'priority') || 'media',
-        dueDate: firstProposalText(f, ['dueDate', 'date']),
+        priority: taskPriority(proposalText(f, 'priority')),
+        // HORARIO (WAVE 11): data+hora viram datetime local (toOptionalDateTime converte).
+        dueDate: createDate && createTime ? `${createDate}T${createTime}` : createDate,
         dueEndDate: proposalText(f, 'dueEndDate'),
-        responsible: proposalText(f, 'responsibleId'),
+        responsible: proposedResponsibleId,
         involved: proposalArray(f, 'involvedIds'),
         clientId: clientId || proposalText(f, 'clientId'),
         clientName: proposalText(f, 'clientName'),
@@ -569,7 +632,13 @@ export function useCalendarChat() {
       // Roteia primeiro pelo targetId real: a IA as vezes rotula um evento do calendario como
       // kind:'task'. Se o id e um evento carregado, edita/exclui o evento; se nao, task usa o
       // board configurado (context.tasks/taskId).
-      const existing = store.getEventById(targetId)
+      let existing = store.getEventById(targetId)
+      if (!existing && proposal.kind !== 'task') {
+        // kind=event mas targetId pode ser um NOME (a IA escorrega). Casa o evento pelo titulo (a
+        // store expoe eventsByDate: Record<data, eventos[]>, entao achatamos).
+        const allEvents = Object.values(store.eventsByDate || {}).flat()
+        existing = matchByTitle(allEvents, targetId) ?? null
+      }
       if (!existing) {
         return proposal.kind === 'task'
           ? applyTaskTarget()
@@ -583,23 +652,28 @@ export function useCalendarChat() {
       const proposedDate = firstProposalText(f, ['date', 'dueDate'])
       const proposedBody = proposalBody(f)
       const proposedInvolved = proposalArray(f, 'involvedIds')
-      const outcome = await store.updateEvent(
-        existing.id,
-        {
-          date: proposedDate || existing.date || '',
-          time: proposalText(f, 'time') || existing.time || '',
-          clientId: clientId || proposalText(f, 'clientId') || existing.clientId || '',
-          type: proposalText(f, 'type') || existing.type || 'post',
-          title: proposalText(f, 'title') || existing.title || '',
-          status: proposalText(f, 'status') || existing.status || 'planejado',
-          priority: proposalText(f, 'priority') || existing.priority || 'media',
-          responsibleId: proposalText(f, 'responsibleId') || existing.responsibleId || '',
-          involvedIds: proposedInvolved.length ? proposedInvolved : existing.involvedIds || [],
-          media: existing.media || [],
-          description: proposedBody || String(existing.description || ''),
-        } as unknown as CalendarEventInput,
-        existing.version,
-      )
+      const buildPatch = (base: NonNullable<ReturnType<typeof store.getEventById>>) =>
+        ({
+          date: proposedDate || base.date || '',
+          time: proposalText(f, 'time') || base.time || '',
+          clientId: clientId || proposalText(f, 'clientId') || base.clientId || '',
+          type: proposalText(f, 'type') || base.type || 'post',
+          title: proposalText(f, 'title') || base.title || '',
+          status: proposalText(f, 'status') || base.status || 'planejado',
+          priority: proposalText(f, 'priority') || base.priority || 'media',
+          responsibleId: proposedResponsibleId || base.responsibleId || '',
+          involvedIds: proposedInvolved.length ? proposedInvolved : base.involvedIds || [],
+          media: base.media || [],
+          description: proposedBody || String(base.description || ''),
+        }) as unknown as CalendarEventInput
+      let outcome = await store.updateEvent(existing.id, buildPatch(existing), existing.version)
+      if (outcome === 'conflict') {
+        // Versao defasada (ex.: o evento mudou por sync de task no back). Refetch + tenta 1x com a
+        // versao fresca — evita pedir "recarregue" quando o proprio sistema ja atualizou o item.
+        await store.refetchWindow()
+        const fresh = store.getEventById(existing.id)
+        if (fresh) outcome = await store.updateEvent(fresh.id, buildPatch(fresh), fresh.version)
+      }
       if (outcome === 'conflict') {
         return 'Esse item mudou enquanto isso. Recarregue o calendário e tente de novo.'
       }
@@ -620,7 +694,7 @@ export function useCalendarChat() {
       title: proposalText(f, 'title'),
       status: proposalText(f, 'status') || 'planejado',
       priority: proposalText(f, 'priority') || 'media',
-      responsibleId: proposalText(f, 'responsibleId'),
+      responsibleId: proposedResponsibleId,
       involvedIds: proposalArray(f, 'involvedIds'),
       media: [],
       description: proposalBody(f),
@@ -643,7 +717,7 @@ export function useCalendarChat() {
   // item). Falha parcial NAO aborta o lote — conta as que falharam e avisa no fim.
   async function confirmSelectedProposals(
     messageId: string,
-    items: { id: string; clientId: string }[],
+    items: { id: string; clientId: string; fields?: CalendarChatProposalFields }[],
   ): Promise<void> {
     if (proposalBusyId.value) return
     const targets = pendingTargets(
@@ -652,15 +726,23 @@ export function useCalendarChat() {
     )
     if (!targets.length) return
     const clientById = new Map(items.map((i) => [i.id, i.clientId]))
+    // Edit inline (WAVE 9): campos ajustados pelo dono no cartao antes de aprovar; senao usa os da IA.
+    const fieldsById = new Map(items.filter((i) => i.fields).map((i) => [i.id, i.fields!]))
     proposalBusyId.value = messageId
     errorMessage.value = ''
     let failed = 0
+    let lastError = ''
     try {
       for (const proposal of targets) {
         try {
-          const err = await applyProposal(proposal, clientById.get(proposal.id) || '')
+          const edited = fieldsById.get(proposal.id)
+          const err = await applyProposal(
+            edited ? { ...proposal, fields: edited } : proposal,
+            clientById.get(proposal.id) || '',
+          )
           if (err) {
             failed++
+            lastError = err
             continue
           }
           const updated = await updateProposalStatus(
@@ -671,12 +753,18 @@ export function useCalendarChat() {
             'accepted',
           )
           replaceMessage(updated)
-        } catch {
+        } catch (error) {
           failed++
+          lastError = actionableError(error)
         }
       }
       if (failed > 0) {
-        errorMessage.value = `Criei ${targets.length - failed} de ${targets.length}. ${failed} falharam — revise e tente as restantes.`
+        const okCount = targets.length - failed
+        const reason = lastError ? ` Motivo: ${lastError}` : ''
+        errorMessage.value =
+          okCount > 0
+            ? `Apliquei ${okCount} de ${targets.length}. ${failed} falhou.${reason}`
+            : `Não consegui aplicar.${reason}`
       }
     } finally {
       proposalBusyId.value = ''

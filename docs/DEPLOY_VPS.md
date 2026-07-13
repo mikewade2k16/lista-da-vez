@@ -14,6 +14,8 @@ arquitetura da VPS e procedimentos raros (primeiro go-live, ERP, release especia
 
 **`npm run deploy:fast:prod`** -> builda na sua maquina e ja manda. Um comando, na hora.
 Nao depende de git nem de CI. (Faz backup do banco; rollback disponivel.) **E' o do dia-a-dia.**
+Tambem reconcilia o profile `automation` em prod (`redis`/`waha`/`n8n`/`whisper`) e reimporta os
+workflows versionados do n8n quando eles mudarem.
 
 **`npm run deploy:prod`** -> nao builda nada. So puxa uma imagem que o CI ja construiu.
 Por isso exige duas coisas, em ordem, com espera no meio:
@@ -49,9 +51,28 @@ Atalhos uteis:
 
 ```bash
 npm run deploy:fast:prod -- -Service api   # so a API (1a vez por tag use -Service both)
+npm run deploy:fast:prod -- -ForceAutomationWorkflowImport  # reimporta n8n mesmo sem hash novo
 npm run deploy:staging -- -Tag sha-<40hex> # sobe um SHA em staging
 npm run deploy:promote                     # promove a MESMA imagem do staging pra prod
 ```
+
+### Automation/n8n no deploy rapido
+
+Desde 2026-07-09, o atalho `deploy:fast:prod` chama `deploy-fast.ps1 -DeployAutomation`.
+Na pratica, alem de `api`/`web`, ele:
+
+- envia para a VPS somente `automation/export/workflow-*.json` (NAO envia
+  `credentials.decrypted.json`);
+- roda `docker compose --profile automation pull/up -d --no-build redis waha n8n whisper`;
+- compara o hash dos workflows com `.deploy/automation-workflows.sha256`;
+- se mudou, faz backup dos workflows atuais em `backups/n8n/`, importa os JSONs, mantem ativos
+  `calendaromni0001`, `calendarchat0001`, `calendartrans001` e `omnichatmvp00001`, preserva
+  qualquer outro workflow que ja estava ativo antes do import, reinicia o n8n e grava o hash novo;
+- se nao mudou, so garante os containers do profile automation e pula import/restart do n8n.
+
+Pre-requisito one-time: o `.env.production` da VPS precisa ter o bloco `AUTOMATION_*`, o n8n ja
+precisa ter as credenciais/community nodes necessarios no volume, e a WAHA precisa estar pareada
+quando o workflow de WhatsApp estiver em uso. Credenciais continuam manuais por seguranca.
 
 ---
 
@@ -211,10 +232,28 @@ omni.crowvisuals.com.br {
   handle /v1/* { reverse_proxy lista-api:8080 }
   handle /v2/* { reverse_proxy lista-api:8080 }   # <- necessario p/ o switcher de contas
   handle /uploads/* { reverse_proxy lista-api:8080 }
+  handle /s/* { reverse_proxy lista-api:8080 }    # <- redirects do encurtador (modulo tools)
+  handle /q/* { reverse_proxy lista-api:8080 }    # <- redirects rastreados dos QR Codes
   handle /healthz { reverse_proxy lista-api:8080 }
   handle { reverse_proxy lista-web:3003 }
 }
 ```
+
+#### Links curtos na raiz `crowvisuals.com.br` (sem o `omni.`)
+
+Por padrao o `shortUrl` sai como `https://omni.crowvisuals.com.br/s/{slug}` (segue o
+`PUBLIC_API_BASE_URL`). Para o link ficar mais limpo em `https://crowvisuals.com.br/s/{slug}`:
+
+1. Setar `TOOLS_PUBLIC_BASE_URL=https://crowvisuals.com.br` no `.env.production` e recriar a api
+   (`docker compose up -d api`). Isso muda **so** o texto exibido do link; quem resolve o redirect
+   e o host que o Caddy rotear.
+2. Garantir que a raiz `crowvisuals.com.br` exista como host no Caddy central **e** aponte pra este
+   stack. Se hoje a raiz e o site da agencia (outro servidor/stack), so os paths `/s/*` e `/q/*`
+   precisam vir pra ca — adicionar no bloco `crowvisuals.com.br` do Caddy os mesmos
+   `handle /s/* { reverse_proxy lista-api:8080 }` e `/q/*`, deixando o resto no destino atual.
+
+> Se a raiz nao estiver disponivel/roteada pra este stack, mantenha o `omni.crowvisuals.com.br/s/{slug}`
+> (nao setar `TOOLS_PUBLIC_BASE_URL`), que ja funciona com o bloco acima.
 
 Aplicar mudanca no Caddy:
 
@@ -270,11 +309,12 @@ por SHA sem usar Windows.
   push de `main`/`refactor/multitenant-complete` ou `gh workflow run build-images.yml`.
 - `deploy-vps.yml` — deploy por pull (`workflow_dispatch`). Inputs: `environment`, `image_tag`
   (vazio => `sha-<HEAD do git_ref>`), `git_ref`, `backup_database`, `force_recreate`,
-  `skip_smoke_tests`. Secret necessario: `DEPLOY_VPS_SSH_KEY`.
+  `skip_smoke_tests`, `deploy_automation`, `force_automation_workflow_import`. Secret necessario:
+  `DEPLOY_VPS_SSH_KEY`.
 
 ```bash
 gh workflow run deploy-vps.yml --repo mikewade2k16/lista-da-vez \
-  -f environment=prod -f image_tag=sha-<40hex> -f backup_database=true
+  -f environment=prod -f image_tag=sha-<40hex> -f backup_database=true -f deploy_automation=true
 gh run list --repo mikewade2k16/lista-da-vez --workflow deploy-vps.yml --limit 1
 ```
 

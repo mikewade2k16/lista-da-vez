@@ -5,6 +5,7 @@ import { formatClock, formatDuration } from '~/domain/utils/time'
 import { useAlertsStore } from '~/stores/alerts'
 import { alertCardStyle } from '~/utils/alert-colors'
 import OperationConsultantAvatarRing from '~/components/operation/OperationConsultantAvatarRing.vue'
+import OperationServiceCountdownBar from '~/components/operation/OperationServiceCountdownBar.vue'
 
 const props = defineProps({
   services: {
@@ -41,7 +42,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['finish', 'stop', 'startParallel'])
+const emit = defineEmits(['finish', 'stop', 'startParallel', 'keepOpen'])
 
 const alertsStore = useAlertsStore()
 
@@ -255,6 +256,16 @@ function handleStop(service) {
 function handleStartParallel() {
   emit('startParallel', primaryService.value?.id || '')
 }
+
+// Auto-encerramento (2h): mostra a barra so quando o backend abriu o countdown
+// (graceDeadline > 0) para este atendimento.
+function isAutoCloseGraceActive(service) {
+  return Number(service?.graceDeadline || 0) > 0
+}
+
+function handleKeepOpen(service) {
+  emit('keepOpen', service || null)
+}
 </script>
 
 <template>
@@ -305,6 +316,12 @@ function handleStartParallel() {
             <span class="queue-card__note">{{ serviceMetaLabel(service) }}</span>
             <strong class="service-card__timer">{{ timerLabel(service) }}</strong>
           </div>
+          <OperationServiceCountdownBar
+            v-if="isAutoCloseGraceActive(service)"
+            :grace-deadline="Number(service.graceDeadline || 0)"
+            :now="now"
+            :snooze-count="Number(service.snoozeCount || 0)"
+          />
         </div>
 
         <div
@@ -326,7 +343,18 @@ function handleStartParallel() {
             <span class="material-icons-round">stop_circle</span>
           </button>
           <button
+            v-if="isAutoCloseGraceActive(service)"
+            class="column-action column-action--primary service-card__action service-card__action-continue"
+            type="button"
+            :data-testid="`operation-keep-open-${service.serviceId}`"
+            @click="handleKeepOpen(service)"
+          >
+            <span class="service-card__action-label">Continuar atendimento</span>
+          </button>
+          <button
+            v-else
             class="column-action column-action--primary service-card__action service-card__action-button"
+            :class="{ 'service-card__action-button--cancel': isWithinCancelWindow(service) }"
             type="button"
             :data-testid="`operation-finish-${service.serviceId}`"
             @click="handleFinish(service)"

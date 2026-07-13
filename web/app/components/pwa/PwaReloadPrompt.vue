@@ -30,10 +30,10 @@ const { $pwa } = useNuxtApp()
   align-items: center;
   gap: 0.6rem;
   padding: 0.7rem 0.9rem;
-  border: 1px solid var(--line-soft, rgba(255, 255, 255, 0.15));
+  border: 1px solid var(--line-soft, rgb(var(--border) / 0.72));
   border-radius: 0.6rem;
-  background: var(--bg-panel, #0d121d);
-  color: var(--text-strong, #fff);
+  background: var(--bg-panel, rgb(var(--surface)));
+  color: var(--text-strong, rgb(var(--text)));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 

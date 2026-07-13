@@ -86,11 +86,13 @@
   border-top: 1px solid var(--line-soft);
 }
 
-/* O editor reaproveitado tem toolbar com fundo solido (--surface) que viraria um
-   "quadrado" sobre o vidro do painel — deixa transparente para o glass aparecer. */
+/* Toolbar do editor de notas: fundo FROSTED (nem solido, que viraria um "quadrado" sobre o
+   vidro; nem transparente, senao o conteudo rolado vaza POR CIMA dela). Semi-opaco + blur:
+   a barra fica sticky e legivel e o conteudo passa por baixo, borrado. */
 .calendar-notes__editor .omni-editor .omni-editor__toolbar {
-  background: transparent;
-  backdrop-filter: none;
+  background: rgb(var(--surface) / 0.85);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
 }
 
 .calendar-notes__footer {

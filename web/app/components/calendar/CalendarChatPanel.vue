@@ -7,6 +7,7 @@ import CalendarChatMessage from '~/components/calendar/CalendarChatMessage.vue'
 import CalendarChatScope from '~/components/calendar/CalendarChatScope.vue'
 import { useCalendarChat } from '~/composables/useCalendarChat'
 import { useCalendarChatWindow } from '~/composables/useCalendarChatWindow'
+import { useCalendarShortcuts } from '~/composables/useCalendarShortcuts'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import { useLiveDictation } from '~/composables/useLiveDictation'
 import { useCalendarStore } from '~/stores/calendar'
@@ -283,6 +284,29 @@ async function onMic(): Promise<void> {
   }
   await voice.start()
 }
+
+// Atalhos do ASSISTENTE (WAVE 11; mapa em config.shortcuts): gravar/parar (reusa o toggle do
+// onMic com guarda de estado) e fechar a janela. Parar (Enter) e Fechar (Esc) sao `force` —
+// valem mesmo com o foco num campo (o dono pediu Esc "mesmo sem input em foco").
+useCalendarShortcuts([
+  {
+    action: 'chatRecordStart',
+    when: () => chat.panelOpen.value && !isCapturing.value && !isTranscribing.value,
+    handler: () => void onMic(),
+  },
+  {
+    action: 'chatRecordStop',
+    force: true,
+    when: () => chat.panelOpen.value && isCapturing.value,
+    handler: () => void onMic(),
+  },
+  {
+    action: 'chatClose',
+    force: true,
+    when: () => chat.panelOpen.value,
+    handler: () => chat.closePanel(),
+  },
+])
 </script>
 
 <template>

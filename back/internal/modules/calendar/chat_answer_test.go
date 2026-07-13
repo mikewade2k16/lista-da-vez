@@ -68,3 +68,22 @@ func TestSanitizeProposalRejectsEmptyUpdate(t *testing.T) {
 		t.Fatalf("expected empty update proposal to be rejected: %#v", clean)
 	}
 }
+
+func TestSanitizeProposalListDeduplicatesEquivalentItems(t *testing.T) {
+	t.Parallel()
+	list := sanitizeProposalList(nil, []ChatProposal{
+		{
+			Action: "update",
+			Kind:   "event",
+			Fields: ChatProposalFields{TargetID: "event-1", ResponsibleID: "user-1"},
+		},
+		{
+			Action: "update",
+			Kind:   "event",
+			Fields: ChatProposalFields{TargetID: "event-1", ResponsibleID: "user-1"},
+		},
+	})
+	if len(list) != 1 {
+		t.Fatalf("expected 1 proposal after dedupe, got %d: %#v", len(list), list)
+	}
+}

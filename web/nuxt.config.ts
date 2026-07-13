@@ -35,6 +35,7 @@ export default defineNuxtConfig({
     '/banco': { ssr: false },
     '/bi': { ssr: false },
     '/calendario': { ssr: false },
+    '/calendario/**': { ssr: false },
     '/campanhas': { ssr: false },
     '/cardapio': { ssr: false },
     '/cardapio/**': { ssr: false },

@@ -31,6 +31,11 @@ const rulesDraft = reactive({
   notifyDashboard: true,
   notifyOperationContext: true,
   notifyExternal: false,
+  // Auto-encerramento de atendimento (2h) — config por tenant.
+  autoCloseEnabled: false,
+  autoCloseMinutes: 120,
+  autoCloseGraceSeconds: 60,
+  snoozeRepromptMinutes: 30,
 })
 
 const typeOptions = [
@@ -128,7 +133,11 @@ const rulesDirty = computed(() => {
   return (
     Boolean(rulesDraft.notifyDashboard) !== Boolean(rules.notifyDashboard) ||
     Boolean(rulesDraft.notifyOperationContext) !== Boolean(rules.notifyOperationContext) ||
-    Boolean(rulesDraft.notifyExternal) !== Boolean(rules.notifyExternal)
+    Boolean(rulesDraft.notifyExternal) !== Boolean(rules.notifyExternal) ||
+    Boolean(rulesDraft.autoCloseEnabled) !== Boolean(rules.autoCloseEnabled) ||
+    Number(rulesDraft.autoCloseMinutes) !== Number(rules.autoCloseMinutes) ||
+    Number(rulesDraft.autoCloseGraceSeconds) !== Number(rules.autoCloseGraceSeconds) ||
+    Number(rulesDraft.snoozeRepromptMinutes) !== Number(rules.snoozeRepromptMinutes)
   )
 })
 
@@ -149,6 +158,10 @@ function syncRulesDraft() {
   rulesDraft.notifyDashboard = Boolean(rules.notifyDashboard)
   rulesDraft.notifyOperationContext = Boolean(rules.notifyOperationContext)
   rulesDraft.notifyExternal = Boolean(rules.notifyExternal)
+  rulesDraft.autoCloseEnabled = Boolean(rules.autoCloseEnabled)
+  rulesDraft.autoCloseMinutes = Math.max(1, Number(rules.autoCloseMinutes || 120) || 120)
+  rulesDraft.autoCloseGraceSeconds = Math.max(5, Number(rules.autoCloseGraceSeconds || 60) || 60)
+  rulesDraft.snoozeRepromptMinutes = Math.max(1, Number(rules.snoozeRepromptMinutes || 30) || 30)
 }
 
 function resolveStoreLabel(storeId: string) {
@@ -447,6 +460,55 @@ onMounted(async () => {
           />
         </div>
 
+        <!-- Auto-encerramento de atendimento (2h) -->
+        <div class="alerts-panel__autoclose">
+          <AppToggleSwitch
+            v-model="rulesDraft.autoCloseEnabled"
+            :disabled="!canManageRules || savingRules"
+            label="Encerrar atendimentos esquecidos automaticamente"
+          />
+          <p class="settings-card__text">
+            Ao atingir o limite, uma barra conta o tempo de aviso e o operador pode continuar
+            (re-perguntamos no intervalo). Sem resposta, o atendimento e encerrado e vai para as
+            Pendencias, onde a gestao valida ou cancela a metrica.
+          </p>
+          <div
+            class="alerts-panel__autoclose-grid"
+            :class="{ 'is-disabled': !rulesDraft.autoCloseEnabled }"
+          >
+            <label class="alerts-panel__field">
+              <span class="settings-card__text">Encerrar apos (min)</span>
+              <input
+                v-model.number="rulesDraft.autoCloseMinutes"
+                type="number"
+                min="1"
+                :disabled="!canManageRules || savingRules || !rulesDraft.autoCloseEnabled"
+                class="alerts-panel__number"
+              />
+            </label>
+            <label class="alerts-panel__field">
+              <span class="settings-card__text">Barra de aviso (seg)</span>
+              <input
+                v-model.number="rulesDraft.autoCloseGraceSeconds"
+                type="number"
+                min="5"
+                :disabled="!canManageRules || savingRules || !rulesDraft.autoCloseEnabled"
+                class="alerts-panel__number"
+              />
+            </label>
+            <label class="alerts-panel__field">
+              <span class="settings-card__text">Re-perguntar a cada (min)</span>
+              <input
+                v-model.number="rulesDraft.snoozeRepromptMinutes"
+                type="number"
+                min="1"
+                :disabled="!canManageRules || savingRules || !rulesDraft.autoCloseEnabled"
+                class="alerts-panel__number"
+              />
+            </label>
+          </div>
+        </div>
+
         <div v-if="canManageRules" class="alerts-panel__actions">
           <AppPanelButton
             class="alerts-panel__secondary-btn"
@@ -715,6 +777,49 @@ onMounted(async () => {
   padding: 0.75rem 0.9rem;
   background: rgb(var(--surface-2) / 0.78);
   color: var(--text-main);
+}
+
+.alerts-panel__autoclose {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.alerts-panel__autoclose-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.alerts-panel__autoclose-grid.is-disabled {
+  opacity: 0.6;
+}
+
+.alerts-panel__field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.alerts-panel__number {
+  width: 100%;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
+  background: rgb(var(--surface-2) / 0.78);
+  color: var(--text-main);
+}
+
+.alerts-panel__number:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@media (max-width: 780px) {
+  .alerts-panel__autoclose-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .alerts-panel__number-input:disabled,

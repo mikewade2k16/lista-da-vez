@@ -80,6 +80,11 @@ async function loadOperationView() {
 onMounted(async () => {
   await auth.ensureSession()
   await loadOperationView()
+  // Carrega a loja OPERAVEL (filtro de "Todas as lojas") ja no primeiro mount. O
+  // watch(integratedStoreId) so dispara em MUDANCA, entao numa navegacao SPA com o
+  // filtro ja setado (persistido no Pinia) o board ficava vazio ate trocar de loja
+  // ou recarregar. loadOperableStoreSnapshot faz no-op quando nao ha filtro/escopo.
+  await loadOperableStoreSnapshot()
 })
 
 const { state, overview, overviewPending, overviewError } = storeToRefs(operationsStore)

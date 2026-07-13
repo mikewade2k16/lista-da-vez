@@ -17,9 +17,12 @@ import (
 // opcionais como ponteiro (nil = ausente). Source = ui_metadata.source da task ('calendar' =
 // nasceu de um evento; o handler usa isso para nao recriar o espelho, evitando ping-pong).
 type TaskSyncSnapshot struct {
-	TaskID            string
-	BoardID           string
-	Title             string
+	TaskID  string
+	BoardID string
+	Title   string
+	// ContentHTML = corpo rico da task (content_html). O dono do recurso pode espelhar (ex.: o
+	// calendar reflete como DESCRICAO — texto simples — do evento vinculado). Vazio = sem corpo.
+	ContentHTML       string
 	Status            string
 	Priority          string
 	Type              string

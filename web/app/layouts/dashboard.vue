@@ -62,17 +62,23 @@ function handleProfileChange(profileId) {
           <p>{{ runtimeSettingsNotice }}</p>
         </div>
       </div>
-      <div v-if="usesQueueWorkspace" class="workspace">
+      <!-- Wrapper UNICO e estavel: so a classe muda entre a Fila (.workspace, com o
+           nav de abas) e os demais modulos (.module-workspace-full). Antes eram dois
+           <div v-if/v-else>, cada um com seu proprio <slot> — ao cruzar /operacao <->
+           outra rota o wrapper inteiro era destruido/recriado no MESMO tick da troca de
+           pagina do NuxtPage, e o vnode/Suspense cacheado do NuxtPage remontava o
+           conteudo fora de lugar (a pagina "sumia" ate dar F5; sintoma classico no
+           Calendario, primeiro modulo aberto depois da Operacao). Um unico <div> com
+           :class dinamica e um unico <slot> mantem a pagina no lugar (patch, nao remount). -->
+      <div :class="usesQueueWorkspace ? 'workspace' : 'module-workspace-full'">
         <DashboardWorkspaceNav
+          v-if="usesQueueWorkspace"
           :active-workspace="activeWorkspaceId"
           :allowed-workspaces="allowedWorkspaces"
           :state="state"
           show-operations-context
           @profile-change="handleProfileChange"
         />
-        <slot></slot>
-      </div>
-      <div v-else class="module-workspace-full">
         <slot></slot>
       </div>
     </section>

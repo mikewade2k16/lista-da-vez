@@ -23,6 +23,7 @@ interface OperationSnapshotPayload {
   consultantActivitySessions?: Record<string, unknown>[]
   consultantCurrentStatus?: Record<string, ConsultantStatusEntry>
   serviceHistory?: unknown[]
+  pendingValidations?: Record<string, unknown>[]
   roster?: unknown[]
 }
 
@@ -117,6 +118,11 @@ export function normalizeOperationSnapshot(snapshot: OperationSnapshotPayload = 
           stoppedAt: Math.max(0, Number(item?.stoppedAt || 0) || 0),
           effectiveFinishedAt: Math.max(0, Number(item?.effectiveFinishedAt || 0) || 0),
           stopReason: String(item?.stopReason || '').trim(),
+          // Auto-encerramento (2h): epoch ms de servidor; a barra do card compara
+          // graceDeadline contra adjustedNow (nunca Date.now).
+          graceDeadline: Math.max(0, Number(item?.graceDeadline || 0) || 0),
+          snoozedUntil: Math.max(0, Number(item?.snoozedUntil || 0) || 0),
+          snoozeCount: Math.max(0, Number(item?.snoozeCount || 0) || 0),
         }))
       : [],
     pausedEmployees: Array.isArray(snapshot?.pausedEmployees)
@@ -155,5 +161,22 @@ export function normalizeOperationSnapshot(snapshot: OperationSnapshotPayload = 
           )
         : {},
     serviceHistory: Array.isArray(snapshot?.serviceHistory) ? snapshot.serviceHistory : [],
+    // Auto-encerramento (2h): atendimentos fechados pelo sweep aguardando o gerente
+    // validar/cancelar. Array proprio (o servico ja saiu de activeServices).
+    pendingValidations: Array.isArray(snapshot?.pendingValidations)
+      ? snapshot.pendingValidations
+          .map((item) => ({
+            serviceId: String(item?.serviceId || '').trim(),
+            storeId: String(item?.storeId || '').trim(),
+            personId: String(item?.personId || '').trim(),
+            personName: String(item?.personName || '').trim(),
+            startedAt: Math.max(0, Number(item?.startedAt || 0) || 0),
+            finishedAt: Math.max(0, Number(item?.finishedAt || 0) || 0),
+            autoClosedAt: Math.max(0, Number(item?.autoClosedAt || 0) || 0),
+            durationMs: Math.max(0, Number(item?.durationMs || 0) || 0),
+            snoozeCount: Math.max(0, Number(item?.snoozeCount || 0) || 0),
+          }))
+          .filter((item) => item.serviceId)
+      : [],
   }
 }

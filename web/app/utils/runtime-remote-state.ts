@@ -134,7 +134,15 @@ export function applyRemoteStoreData(
   const nextSnapshot = normalizeStoreScopedState(
     {
       ...buildStoreSnapshot(currentState, storeId, roster),
-      ...normalizeOperationSnapshot(operationSnapshot),
+      // So sobrescreve as listas operacionais quando um snapshot REAL veio da API.
+      // operationSnapshot=null significa "NAO BUSQUEI" (conta agencia/sem modulo
+      // queue pulam o fetch em canFetchQueueSettings; degradacao por erro tambem
+      // cai aqui) — nesses casos PRESERVA o que ja esta carregado. Antes,
+      // normalizeOperationSnapshot(null) espalhava listas VAZIAS por cima do
+      // snapshot existente: um context.updated qualquer (ex.: alerta materializado
+      // no mesmo tick do grace do auto-encerramento) re-rodava syncRuntimeAccess e
+      // ZERAVA fila/atendimentos/historico/pendencias do board sem nenhuma request.
+      ...(operationSnapshot ? normalizeOperationSnapshot(operationSnapshot) : {}),
       roster,
     },
     createEmptyStoreScopedState(roster),
@@ -143,7 +151,11 @@ export function applyRemoteStoreData(
   )
   const nextSnapshotWithMetadata = {
     ...nextSnapshot,
-    _operationSnapshotFetchedAt: Date.now(),
+    // fetchedAt so avanca quando houve fetch de verdade; sem snapshot, preserva o
+    // carimbo anterior (o trust do board nao pode ficar "fresco" sem dado novo).
+    _operationSnapshotFetchedAt: operationSnapshot
+      ? Date.now()
+      : Number(currentState?.storeSnapshots?.[storeId]?._operationSnapshotFetchedAt || 0),
   }
 
   return {

@@ -32,6 +32,10 @@ type updateRulesRequest struct {
 	NotifyDashboard          *bool `json:"notifyDashboard"`
 	NotifyOperationContext   *bool `json:"notifyOperationContext"`
 	NotifyExternal           *bool `json:"notifyExternal"`
+	AutoCloseEnabled         *bool `json:"autoCloseEnabled"`
+	AutoCloseMinutes         *int  `json:"autoCloseMinutes"`
+	AutoCloseGraceSeconds    *int  `json:"autoCloseGraceSeconds"`
+	SnoozeRepromptMinutes    *int  `json:"snoozeRepromptMinutes"`
 }
 
 type actionRequest struct {

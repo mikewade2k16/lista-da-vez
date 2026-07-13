@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAlertsStore } from '~/stores/alerts'
+import { useOperationsStore } from '~/stores/operations'
 import { alertBannerStyle } from '~/utils/alert-colors'
 
 const props = defineProps<{
@@ -8,6 +9,7 @@ const props = defineProps<{
 }>()
 
 const alertsStore = useAlertsStore()
+const operationsStore = useOperationsStore()
 const respondingAlertId = ref('')
 const nowMs = ref(Date.now())
 let timerId: ReturnType<typeof window.setInterval> | null = null
@@ -61,14 +63,23 @@ function getAlertBody(alert: Record<string, any>) {
   return alert.body || ''
 }
 
-async function respond(alertId: string, optionValue: string) {
-  if (respondingAlertId.value) {
+async function respond(alert: Record<string, any>, optionValue: string) {
+  const alertId = String(alert?.id || '').trim()
+  if (!alertId || respondingAlertId.value) {
     return
   }
 
   respondingAlertId.value = alertId
 
   try {
+    // "Ainda esta acontecendo" (still_happening) do alerta de atendimento longo deve
+    // se comportar como o botao "Continuar atendimento" do card: adia o
+    // auto-encerramento (2h) daquele serviceId, alem de responder o alerta.
+    const serviceId = String(alert?.serviceId || alert?.metadata?.serviceId || '').trim()
+    if (optionValue === 'still_happening' && serviceId) {
+      await operationsStore.keepServiceOpen(serviceId, String(alert?.storeId || '').trim())
+    }
+
     await alertsStore.respondToAlert(alertId, optionValue as any)
   } finally {
     respondingAlertId.value = ''
@@ -115,7 +126,7 @@ onBeforeUnmount(() => {
           :key="opt.value"
           class="operation-alert-banner__btn operation-alert-banner__btn--secondary"
           :disabled="respondingAlertId === alert.id"
-          @click="respond(alert.id, opt.value)"
+          @click="respond(alert, opt.value)"
         >
           <span
             v-if="respondingAlertId === alert.id"

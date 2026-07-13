@@ -65,12 +65,26 @@ func (s *Service) createLinkedTask(ctx context.Context, accountID string, cfg Ca
 		return "", "Sem acesso ao modulo tasks nesta conta."
 	}
 
+	// A task nasce com TUDO que o evento tem (paridade com syncTaskFromEvent, cobrança do dono):
+	// titulo, corpo (descricao), prazo, cliente, responsavel (id + NOME cacheado), prioridade,
+	// tipo e a midia do evento espelhada read-only (ui_metadata.calendarMedia).
+	md := map[string]any{"source": taskSourceCalendar}
+	if t := strings.TrimSpace(e.Type); t != "" {
+		md["type"] = t
+	}
+	if rid := normalizeUUID(e.ResponsibleID); rid != "" {
+		md["responsible"] = s.store.ResolveUserLabel(ctx, rid)
+	}
+	if media := s.eventMediaForTask(ctx, accountID, e); len(media) > 0 {
+		md["calendarMedia"] = media
+	}
 	input := tasks.CreateTaskInput{
 		BoardID:  cfg.Tasks.BoardID,
 		ColumnID: s.resolveTaskColumn(ctx, svc, access, cfg, e.Status),
 		Title:    e.Title,
 		// WAVE 6.1: a descricao do evento vira o corpo (editor) da task ja na criacao.
 		ContentHTML:       descToHTML(e.Description),
+		Priority:          strings.TrimSpace(e.Priority),
 		DueDate:           eventDueDate(e.Date, e.Time),
 		ResponsibleUserID: nonEmptyPtr(normalizeUUID(e.ResponsibleID)),
 		ClientAccountID:   e.ClientID,
@@ -78,7 +92,7 @@ func (s *Service) createLinkedTask(ctx context.Context, accountID string, cfg Ca
 		SortOrder: topSortOrder(),
 		// source=calendar marca a procedencia (C10): guarda anti-loop do espelho (E3) — o
 		// handler de sync nao cria outro evento para esta task. O vinculo reverso fica na relation.
-		UIMetadata: map[string]any{"source": taskSourceCalendar},
+		UIMetadata: md,
 	}
 	task, err := svc.CreateTask(ctx, access, input)
 	if err != nil {

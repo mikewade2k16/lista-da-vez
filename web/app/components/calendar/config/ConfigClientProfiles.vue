@@ -2,6 +2,8 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import { useCalendarClientProfiles } from '~/composables/useCalendarClientProfiles'
+import { useCalendarRealtime } from '~/composables/useCalendarRealtime'
+import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import {
   defaultClientProfile,
@@ -60,6 +62,20 @@ const selectedClientId = ref('')
 // de cliente (fonte unica = banco); so preserva enquanto ha edicao pendente.
 const draft = ref<CalendarClientProfile>(defaultClientProfile())
 const touched = ref(false)
+
+// WAVE 10: tempo real do perfil. O back publica calendar.client_profile_updated no PutClientProfile;
+// aqui refazemos o fetch (indice + perfil aberto) SEM reload — para o dono e para quem editar junto.
+// O reload do perfil aberto respeita edicao pendente (touched): nunca clobbera o rascunho do usuario.
+const auth = useAuthStore()
+useCalendarRealtime({
+  enabled: computed(() => auth.isAuthenticated),
+  onClientProfileUpdated: async (clientId) => {
+    await fetchIndex()
+    if (clientId && clientId === selectedClientId.value && !touched.value) {
+      draft.value = await loadProfile(clientId)
+    }
+  },
+})
 
 const filledSet = computed(() => {
   const set = new Set<string>()

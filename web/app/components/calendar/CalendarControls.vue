@@ -13,8 +13,10 @@ const props = withDefaults(
     view: CalendarView
     // Presenca (SPEC-F9): quem mais esta no calendario agora (exclui o proprio usuario).
     participants?: CalendarPresenceUser[]
+    // Barras multi-dia (WAVE 11): estado do toggle mostrar/ocultar as tasks com inicio->fim.
+    showSpans?: boolean
   }>(),
-  { participants: () => [] },
+  { participants: () => [], showSpans: true },
 )
 
 const emit = defineEmits<{
@@ -26,6 +28,7 @@ const emit = defineEmits<{
   ai: []
   chat: []
   minimize: []
+  'toggle-spans': []
 }>()
 
 const clientOptions = computed(() => [
@@ -85,6 +88,22 @@ const clientOptions = computed(() => [
       @click="emit('config')"
     >
       <UIcon name="i-lucide-settings" aria-hidden="true" />
+    </button>
+
+    <!-- WAVE 11: mostrar/ocultar as BARRAS multi-dia (tasks com inicio->fim). -->
+    <button
+      type="button"
+      class="calendar-controls__gear"
+      :class="{ 'is-active': showSpans }"
+      aria-label="Tarefas com início e fim"
+      :title="
+        showSpans
+          ? 'Ocultar as tarefas com início e fim (barras)'
+          : 'Mostrar as tarefas com início e fim (barras)'
+      "
+      @click="emit('toggle-spans')"
+    >
+      <UIcon :name="showSpans ? 'i-lucide-gantt-chart' : 'i-lucide-eye-off'" aria-hidden="true" />
     </button>
 
     <button

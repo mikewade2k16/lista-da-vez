@@ -72,7 +72,11 @@ function compactValue(row: Record<string, unknown>, key: string, fallback = '-')
         </header>
 
         <div class="bi-intelligence__items">
-          <article v-for="item in section.items" :key="`${section.key}-${item.label}`" class="bi-intelligence__item">
+          <article
+            v-for="item in section.items"
+            :key="`${section.key}-${item.label}`"
+            class="bi-intelligence__item"
+          >
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
             <small>{{ item.detail || ' ' }}</small>
@@ -86,18 +90,27 @@ function compactValue(row: Record<string, unknown>, key: string, fallback = '-')
         <div>
           <h3>Preview do mix</h3>
           <p>
-            A API atual nao traz foto real do produto. Aqui usamos tipo, marca, colecao,
-            material e cor para uma leitura visual rapida.
+            A API atual nao traz foto real do produto. Aqui usamos tipo, marca, colecao, material e
+            cor para uma leitura visual rapida.
           </p>
         </div>
       </header>
 
       <div class="bi-mix-preview__grid">
-        <article v-for="(row, index) in previewRows" :key="row.__rowId || index" class="bi-mix-card">
+        <article
+          v-for="(row, index) in previewRows"
+          :key="row.__rowId || index"
+          class="bi-mix-card"
+        >
           <div class="bi-mix-card__visual" :style="{ '--swatch': swatchForRow(row) }">
             <component :is="iconForRow(row)" :size="26" aria-hidden="true" />
             <span class="bi-mix-card__swatch">
-              <Circle :size="10" :fill="swatchForRow(row)" :color="swatchForRow(row)" aria-hidden="true" />
+              <Circle
+                :size="10"
+                :fill="swatchForRow(row)"
+                :color="swatchForRow(row)"
+                aria-hidden="true"
+              />
               {{ compactValue(row, 'cor', compactValue(row, 'material')) }}
             </span>
           </div>
@@ -117,7 +130,9 @@ function compactValue(row: Record<string, unknown>, key: string, fallback = '-')
           </div>
           <div class="bi-mix-card__body">
             <strong>Aguardando itens</strong>
-            <small>Assim que a Perola responder com o cadastro, a vitrine do mix aparece aqui.</small>
+            <small>
+              Assim que a Perola responder com o cadastro, a vitrine do mix aparece aqui.
+            </small>
           </div>
         </article>
       </div>
@@ -145,7 +160,7 @@ function compactValue(row: Record<string, unknown>, key: string, fallback = '-')
 .bi-mix-card {
   border: 1px solid var(--line-soft);
   border-radius: 0.95rem;
-  background: rgba(13, 18, 29, 0.9);
+  background: rgb(var(--surface) / 0.9);
   box-shadow: var(--shadow-card);
 }
 
@@ -245,7 +260,11 @@ function compactValue(row: Record<string, unknown>, key: string, fallback = '-')
   min-height: 6.5rem;
   padding: 1rem;
   background:
-    radial-gradient(circle at top right, color-mix(in srgb, var(--swatch) 55%, transparent), transparent 58%),
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--swatch) 55%, transparent),
+      transparent 58%
+    ),
     linear-gradient(145deg, rgba(22, 29, 44, 0.98), rgba(12, 17, 27, 0.95));
   color: #f6f7fb;
 }

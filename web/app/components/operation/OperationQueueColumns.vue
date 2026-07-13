@@ -5,6 +5,8 @@ import { buildNickname } from '~/domain/utils/person-display'
 import OperationActiveServiceCard from '~/components/operation/OperationActiveServiceCard.vue'
 import OperationConsultantAvatarRing from '~/components/operation/OperationConsultantAvatarRing.vue'
 import OperationSidePanel from '~/components/operation/OperationSidePanel.vue'
+import OperationPendingListModal from '~/components/operation/OperationPendingListModal.vue'
+import { useAuthStore } from '~/stores/auth'
 import { useOperationsStore } from '~/stores/operations'
 import { useUiStore } from '~/stores/ui'
 
@@ -386,6 +388,47 @@ function openStopModal(serviceOrId) {
   openActionModal(service, 'stop')
 }
 
+// Auto-encerramento (2h): "Continuar atendimento" adia o fechamento (snooze). O
+// backend reancora o timer; o front revalida o snapshot (a barra some ate o snooze
+// vencer, quando o sweep reabre o countdown = re-pergunta).
+async function keepServiceOpen(serviceOrId) {
+  const service = resolveService(serviceOrId)
+  if (!service) {
+    return
+  }
+
+  const result = await operationsStore.keepServiceOpen(service.serviceId, service.storeId || '')
+  if (result?.ok === false) {
+    ui.error(result.message || 'Nao foi possivel continuar o atendimento.')
+  } else {
+    ui.success('Atendimento mantido. Perguntaremos de novo em alguns minutos.')
+  }
+}
+
+// Auto-encerramento (2h): atendimentos encerrados automaticamente aguardando a
+// GESTAO encerrar de verdade. O botao "Pendencias (N)" (acima do "Atender primeiro
+// da fila") abre a lista; "Encerrar" abre o MESMO modal de encerramento do fluxo
+// normal — fica registrado que foi pelo gerente, quando, e com a justificativa
+// obrigatoria de por que o consultor nao encerrou (base das metricas de cobranca).
+const auth = useAuthStore()
+const pendingValidations = computed(() =>
+  Array.isArray(props.state.pendingValidations) ? props.state.pendingValidations : [],
+)
+// Espelha o gate do backend (CanValidateAutoCloseRole): gestao encerra pendencia.
+const canFinishPending = computed(() =>
+  ['manager', 'owner', 'platform_admin'].includes(String(auth.role || '')),
+)
+const pendingListOpen = ref(false)
+
+function openPendingFinish(item) {
+  const serviceId = String(item?.serviceId || '').trim()
+  if (!serviceId) {
+    return
+  }
+  pendingListOpen.value = false
+  void operationsStore.openFinishModal(serviceId)
+}
+
 async function startParallelService(personId) {
   const consultant = props.state.roster?.find((item) => item.id === personId)
   const consultantName = displayName(consultant) || 'Consultor'
@@ -506,10 +549,25 @@ onBeforeUnmount(() => {
     <section class="queue-column queue-column--waiting" data-testid="operation-waiting-column">
       <header class="queue-column__header">Lista da vez</header>
       <div
-        v-if="waitingList.length > 0 && !props.readOnly && !props.integratedMode"
+        v-if="
+          (canFinishPending && pendingValidations.length > 0) ||
+          (waitingList.length > 0 && !props.readOnly && !props.integratedMode)
+        "
         class="queue-column__action-bar"
       >
         <button
+          v-if="canFinishPending && pendingValidations.length > 0"
+          class="column-action queue-pending-button"
+          type="button"
+          data-testid="operation-pending-open"
+          @click="pendingListOpen = true"
+        >
+          <span class="material-icons-round" aria-hidden="true">assignment_late</span>
+          <span>Pendencias para encerrar</span>
+          <span class="queue-pending-button__count">{{ pendingValidations.length }}</span>
+        </button>
+        <button
+          v-if="waitingList.length > 0 && !props.readOnly && !props.integratedMode"
           class="column-action column-action--primary"
           type="button"
           :disabled="isLimitReached"
@@ -631,6 +689,7 @@ onBeforeUnmount(() => {
               @finish="openFinishModal"
               @stop="openStopModal"
               @start-parallel="startParallelService"
+              @keep-open="keepServiceOpen"
             />
           </div>
         </template>
@@ -646,6 +705,13 @@ onBeforeUnmount(() => {
 
     <OperationSidePanel />
   </div>
+
+  <OperationPendingListModal
+    :open="pendingListOpen"
+    :items="pendingValidations"
+    @close="pendingListOpen = false"
+    @finish="openPendingFinish"
+  />
 
   <Teleport to="body">
     <div
@@ -731,6 +797,7 @@ onBeforeUnmount(() => {
           </button>
           <button
             class="column-action column-action--primary"
+            :class="{ 'column-action--cancel': actionModal.action === 'cancel' }"
             type="button"
             :disabled="actionModal.submitting"
             data-testid="operation-service-action-submit"

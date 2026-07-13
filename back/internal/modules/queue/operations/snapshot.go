@@ -73,6 +73,9 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			StoppedAt:            maxInt64(item.StoppedAt, 0),
 			EffectiveFinishedAt:  deriveActiveServiceFreezeAt(item, snapshotState.ActiveServices, snapshotState.ServiceHistory),
 			StopReason:           strings.TrimSpace(item.StopReason),
+			GraceDeadline:        maxInt64(item.GraceDeadline, 0),
+			SnoozedUntil:         maxInt64(item.SnoozedUntil, 0),
+			SnoozeCount:          maxInt(item.SnoozeCount, 0),
 			GoalStats:            lookupGoalStats(goalStatsByConsultant, person.ID),
 		})
 	}
@@ -88,6 +91,7 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 	}
 
 	history := make([]ServiceHistoryEntry, 0, len(snapshotState.ServiceHistory))
+	pendingValidations := make([]PendingValidation, 0)
 	for _, entry := range snapshotState.ServiceHistory {
 		normalized := normalizeHistoryEntry(entry)
 		if normalized.StoreID == "" {
@@ -97,6 +101,21 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 			normalized.StoreName = storeName
 		}
 		history = append(history, normalized)
+
+		if normalized.ValidationStatus == validationStatusPending {
+			pendingValidations = append(pendingValidations, PendingValidation{
+				ServiceID:    normalized.ServiceID,
+				StoreID:      normalized.StoreID,
+				StoreName:    normalized.StoreName,
+				PersonID:     normalized.PersonID,
+				PersonName:   normalized.PersonName,
+				StartedAt:    normalized.StartedAt,
+				FinishedAt:   normalized.FinishedAt,
+				AutoClosedAt: normalized.FinishedAt,
+				DurationMs:   normalized.DurationMs,
+				SnoozeCount:  normalized.SnoozeCount,
+			})
+		}
 	}
 
 	return Snapshot{
@@ -108,6 +127,7 @@ func buildSnapshotView(storeID string, storeName string, roster []ConsultantProf
 		ConsultantActivitySessions: cloneSessions(snapshotState.ConsultantActivitySessions),
 		ConsultantCurrentStatus:    cloneCurrentStatus(snapshotState.ConsultantCurrentStatus),
 		ServiceHistory:             history,
+		PendingValidations:         pendingValidations,
 	}
 }
 
@@ -143,6 +163,9 @@ func normalizeSnapshotState(storeID string, roster []ConsultantProfile, snapshot
 				StartOffsetMs:        maxInt64(item.StartOffsetMs, 0),
 				StoppedAt:            maxInt64(item.StoppedAt, 0),
 				StopReason:           strings.TrimSpace(item.StopReason),
+				GraceDeadline:        maxInt64(item.GraceDeadline, 0),
+				SnoozedUntil:         maxInt64(item.SnoozedUntil, 0),
+				SnoozeCount:          maxInt(item.SnoozeCount, 0),
 			})
 		}
 	}
@@ -321,6 +344,7 @@ func normalizeHistoryEntry(entry ServiceHistoryEntry) ServiceHistoryEntry {
 	entry.CustomerProfession = strings.TrimSpace(entry.CustomerProfession)
 	entry.QueueJumpReason = strings.TrimSpace(entry.QueueJumpReason)
 	entry.Notes = strings.TrimSpace(entry.Notes)
+	entry.ValidationReason = strings.TrimSpace(entry.ValidationReason)
 	entry.CampaignMatches = normalizeCampaignMatches(entry.CampaignMatches)
 	entry.CampaignBonusTotal = maxFloat(entry.CampaignBonusTotal, 0)
 	entry.SaleAmount = maxFloat(entry.SaleAmount, 0)

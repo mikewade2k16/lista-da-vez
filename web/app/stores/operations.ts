@@ -387,7 +387,22 @@ export const useOperationsStore = defineStore('operations', () => {
 
       return { ok: true, response }
     } catch (error) {
-      runtime.hydrate(previousState)
+      // Comando falhou: a fonte de verdade e o BANCO. Restaurar o clone local aqui
+      // reintroduzia estado stale capturado no instante do clique (ex.: keep-open 400
+      // de um servico que o sweep de auto-encerramento ja fechou) e DESFAZIA refetches
+      // legitimos que completaram durante o request — travando o board vazio ate o
+      // proximo evento (que, com 0 atendimentos ativos, nunca vem). Ressincroniza do
+      // servidor; o clone local fica so como ultimo recurso se o refetch tambem falhar.
+      try {
+        if (storeId === runtime.state.activeStoreId || runtime.state.storeSnapshots?.[storeId]) {
+          await refreshOperationSnapshot(storeId, options)
+        }
+        if (options?.refreshOverview || overview.value) {
+          await refreshOverview()
+        }
+      } catch {
+        runtime.hydrate(previousState)
+      }
 
       return {
         ok: false,
@@ -505,6 +520,17 @@ export const useOperationsStore = defineStore('operations', () => {
         refreshOverview: Boolean(options?.storeId),
         resetFinishModal: true,
       })
+    },
+    // Auto-encerramento (2h): "Continuar atendimento" adia o fechamento (snooze).
+    keepServiceOpen(serviceId, storeId = '') {
+      return runCommand(
+        '/v1/operations/keep-open',
+        { serviceId: normalizeText(serviceId) },
+        {
+          storeId: normalizeText(storeId),
+          refreshOverview: Boolean(storeId),
+        },
+      )
     },
     async finishService(serviceId, closureData: LooseRecord = {}, options: LooseRecord = {}) {
       const normalizedProductsSeen = normalizeProductEntries(closureData?.productsSeen)
@@ -728,11 +754,24 @@ export const useOperationsStore = defineStore('operations', () => {
         finishPayload.campaignBonusTotal = campaignBonusTotal
       }
 
-      const result = await runCommand('/v1/operations/finish', finishPayload, {
-        storeId: targetStoreId,
-        resetFinishModal: true,
-        refreshOverview: Boolean(targetStoreId),
-      })
+      // Encerramento de PENDENCIA (auto-encerramento 2h): mesmo payload do finish,
+      // mas via POST /validate (UPDATE da linha pendente no historico, preservando a
+      // metrica de tempo) + justificativa obrigatoria de por que o consultor nao
+      // encerrou na hora.
+      const isValidateFlow = Boolean(options?.validate)
+      if (isValidateFlow) {
+        finishPayload.validationReason = normalizeText(options?.validationReason)
+      }
+
+      const result = await runCommand(
+        isValidateFlow ? '/v1/operations/validate' : '/v1/operations/finish',
+        finishPayload,
+        {
+          storeId: targetStoreId,
+          resetFinishModal: true,
+          refreshOverview: Boolean(targetStoreId),
+        },
+      )
 
       if (result.ok !== false) {
         const hasProfession =

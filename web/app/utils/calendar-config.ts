@@ -130,6 +130,121 @@ export interface CalendarConfig {
   tasks: CalendarTasksConfig
   /** Layout da janela de chat por conta (contrato CFG v4). */
   chat: CalendarChatConfig
+  /** Atalhos de teclado (WAVE 11): { acao: tecla }. Vazio = atalho desligado. */
+  shortcuts: Record<string, string>
+}
+
+/** Teclas default dos atalhos (WAVE 11) — espelho de shortcutDefaults() do back. */
+export const CALENDAR_SHORTCUT_DEFAULTS: Record<string, string> = {
+  chatOpen: 'c',
+  chatRecordStart: 'a',
+  chatRecordStop: 'enter',
+  chatClose: 'escape',
+  calToday: 't',
+  calMonthView: 'm',
+  calWeekView: 'w',
+  calNewItem: 'n',
+  calNotesSidebar: 's',
+  calSpans: 'b',
+  calPrev: 'arrowleft',
+  calNext: 'arrowright',
+}
+
+/** Acoes de atalho para a UI de config (label + grupo), na ordem de exibicao. */
+export const CALENDAR_SHORTCUT_ACTIONS: { key: string; label: string; group: 'chat' | 'cal' }[] = [
+  { key: 'chatOpen', label: 'Abrir/fechar o assistente', group: 'chat' },
+  { key: 'chatRecordStart', label: 'Iniciar gravação de voz', group: 'chat' },
+  { key: 'chatRecordStop', label: 'Parar gravação', group: 'chat' },
+  { key: 'chatClose', label: 'Fechar a janela da IA', group: 'chat' },
+  { key: 'calToday', label: 'Ir para hoje', group: 'cal' },
+  { key: 'calMonthView', label: 'Visão mensal', group: 'cal' },
+  { key: 'calWeekView', label: 'Visão semanal', group: 'cal' },
+  { key: 'calNewItem', label: 'Novo item', group: 'cal' },
+  { key: 'calNotesSidebar', label: 'Recolher/mostrar as anotações', group: 'cal' },
+  { key: 'calSpans', label: 'Mostrar/ocultar as barras multi-dia', group: 'cal' },
+  { key: 'calPrev', label: 'Mês/semana anterior', group: 'cal' },
+  { key: 'calNext', label: 'Próximo mês/semana', group: 'cal' },
+]
+
+/** Teclas especiais aceitas no vocabulario de atalhos (espelho do back sanitizeShortcuts). */
+export const CALENDAR_SHORTCUT_SPECIAL_KEYS = [
+  'enter',
+  'escape',
+  'space',
+  'arrowleft',
+  'arrowright',
+  'arrowup',
+  'arrowdown',
+]
+
+/** Modificadores aceitos, na ORDEM CANONICA do combo (front e back gravam nesta ordem). */
+export const CALENDAR_SHORTCUT_MODIFIERS = ['ctrl', 'alt', 'shift', 'meta']
+
+// baseKeyFromCode deriva a tecla-base a partir do event.code (posicao FISICA — estavel
+// independente de layout e de Shift/Alt; Shift+2 vira 'shift+2', nao 'shift+@'). Vazio =
+// modificador sozinho ou tecla nao suportada.
+function baseKeyFromCode(code: string): string {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase()
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5)
+  if (/^Numpad[0-9]$/.test(code)) return code.slice(6)
+  switch (code) {
+    case 'ArrowLeft':
+      return 'arrowleft'
+    case 'ArrowRight':
+      return 'arrowright'
+    case 'ArrowUp':
+      return 'arrowup'
+    case 'ArrowDown':
+      return 'arrowdown'
+    case 'Enter':
+    case 'NumpadEnter':
+      return 'enter'
+    case 'Escape':
+      return 'escape'
+    case 'Space':
+      return 'space'
+    default:
+      return ''
+  }
+}
+
+/**
+ * Deriva o COMBO de atalho de um KeyboardEvent: modificadores (ctrl/alt/shift/meta, ordem
+ * canonica) + tecla-base, ex.: 'shift+t', 'ctrl+shift+k', 'alt+arrowleft', 't'. Modificador
+ * sozinho / tecla nao suportada => '' (o chamador ignora). Mesma regra no runtime e no back.
+ */
+export function shortcutComboFromEvent(event: KeyboardEvent): string {
+  const base = baseKeyFromCode(event.code)
+  if (!base) return ''
+  const parts: string[] = []
+  if (event.ctrlKey) parts.push('ctrl')
+  if (event.altKey) parts.push('alt')
+  if (event.shiftKey) parts.push('shift')
+  if (event.metaKey) parts.push('meta')
+  parts.push(base)
+  return parts.join('+')
+}
+
+/** Rotulo amigavel de um combo para exibir no painel ('' => travessao). Ex.: 'Ctrl+Shift+K'. */
+export function shortcutKeyLabel(combo: string): string {
+  if (!combo) return '—'
+  const map: Record<string, string> = {
+    ctrl: 'Ctrl',
+    alt: 'Alt',
+    shift: 'Shift',
+    meta: 'Meta',
+    enter: 'Enter',
+    escape: 'Esc',
+    space: 'Espaço',
+    arrowleft: '←',
+    arrowright: '→',
+    arrowup: '↑',
+    arrowdown: '↓',
+  }
+  return combo
+    .split('+')
+    .map((p) => map[p] || p.toUpperCase())
+    .join('+')
 }
 
 export function defaultCalendarConfig(): CalendarConfig {
@@ -161,6 +276,7 @@ export function defaultCalendarConfig(): CalendarConfig {
       statusColumnMap: [],
     },
     chat: { position: 'center', width: 0, height: 0 },
+    shortcuts: { ...CALENDAR_SHORTCUT_DEFAULTS },
   }
 }
 

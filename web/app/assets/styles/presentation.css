@@ -81,11 +81,14 @@ body {
   grid-template-rows: auto auto 1fr;
 }
 
-/* Botao fixo no topo da coluna (action-bar inserido via JS) */
+/* Botao fixo no topo da coluna. Fundo transparente de proposito: a coluna
+   (.queue-column) ja pinta o fundo theme-aware via var(--bg-panel); qualquer
+   cor fixa aqui quebraria a troca de tema. */
 .queue-column__action-bar {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--line-soft);
-  background: rgba(13, 18, 29, 0.96);
+  display: grid;
+  gap: 6px;
+  padding: 6px 8px 0;
+  background: transparent;
 }
 
 .queue-column__action-bar .column-action {

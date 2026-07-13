@@ -9,6 +9,7 @@ Componentes da workspace CRM em `web/app/components/crm/`.
 - `CrmWorkspace.vue` orquestra filtros, resumo, lojas e consultores usando `useCrmStore()` e `useCrmConsultantMetrics()`.
 - `CrmSummarySection.vue` recebe dados prontos por props. Nao faz fetch.
 - `CrmStoresSection.vue` exibe venda ERP por loja comercial e metas operacionais.
+- Meta de loja e do summary sao FONTE UNICA do back: `/v1/erp/crm` ja entrega `monthlyGoalCents`/`goalProgress`/`remainingToGoalCents` por loja e no summary com a meta EFETIVA (fallback consultant-sum). O `useCrmStore` NAO re-mescla mais `/v1/operations/goals` por fora (a antiga `mergeOperationGoals` foi removida — zerava a meta quando ela vinha do fallback e era over-fetch).
 - `CrmConsultantsSection.vue` cruza consultor ERP com fila via vinculo resolvido, codigo ou nome, sempre respeitando loja comercial quando ela existe.
 - A metrica `Uso da lista` e cobertura por consultor: consultor com pedido ERP no periodo conta como coberto quando `atendimentos da fila >= pedidos ERP`. Nao usar `atendimentos / pedidos ERP` como KPI principal porque pode passar de 100%.
 - A porcentagem exibida por consultor em `Cobertura lista` e `min(atendimentos / pedidos ERP, 100%)`.

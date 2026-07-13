@@ -39,8 +39,77 @@
   inset: auto 0 0 0;
   height: 4px;
   width: 0;
-  background: linear-gradient(90deg, rgb(var(--danger)) 0%, rgb(var(--danger) / 0.78) 100%);
+  background: rgb(0 0 0 / 0.35);
   transition: width 200ms linear;
+}
+
+/* Acoes de CANCELAR na operacao usam VERMELHO SOLIDO (decisao do dono: nada de
+   danger translucido/rosado): o botao do card durante a janela de cancelamento e
+   o "Confirmar cancelamento" do modal de acao. A barra de progresso (acima) vira
+   um preenchimento escuro sobre o vermelho. */
+.service-card__action-button--cancel,
+.column-action--cancel {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--danger-strong)) 0%,
+    rgb(var(--danger-strong) / 0.88) 100%
+  );
+  color: var(--admin-header-text);
+}
+
+/* Auto-encerramento (2h): barra de countdown de 1 min + "Continuar atendimento".
+   Aviso ambar (vai fechar), distinto do estado vermelho ja fechado (pendencia). */
+.service-card__autoclose {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.service-card__autoclose-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-warning);
+}
+
+.service-card__autoclose-icon {
+  font-size: 1rem;
+}
+
+.service-card__autoclose-track {
+  height: 6px;
+  width: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-warning) 22%, transparent);
+  overflow: hidden;
+}
+
+.service-card__autoclose-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--accent-warning);
+  transition: width 250ms linear;
+}
+
+/* Botao "Continuar atendimento" — SUBSTITUI o "Encerrar" na fila de acoes enquanto
+   o aviso de auto-encerramento esta ativo. Tom ambar para casar com a barra de aviso. */
+.service-card__action-continue {
+  background: color-mix(in srgb, var(--accent-warning) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 55%, transparent);
+  color: var(--accent-warning);
+}
+
+.service-card__action-continue:hover {
+  background: color-mix(in srgb, var(--accent-warning) 32%, transparent);
 }
 
 .service-card__action--full {
@@ -63,8 +132,14 @@
 
 .column-action--primary {
   border-color: transparent;
-  background: linear-gradient(135deg, rgb(var(--primary)) 0%, rgb(var(--primary-600)) 100%);
-  color: var(--admin-header-text);
+  /* WAVE 11: achatado (era gradiente diagonal saturado) e texto BRANCO fixo — antes usava
+     --admin-header-text, que no tema claro vira texto escuro sobre o botao colorido. */
+  background: rgb(var(--primary));
+  color: rgb(255 255 255);
+}
+
+.column-action--primary:hover:not(:disabled) {
+  background: rgb(var(--primary-600));
 }
 
 .column-action--secondary {

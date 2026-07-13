@@ -247,6 +247,42 @@ export const ROADMAP_PHASES_PART5: RoadmapPhase[] = [
     verifiable: "Board da operação mostra a 3a coluna com Comunicados (topo) e Omni Chat (rodapé); largura ajustável via .queue-grid no layout.css; mobile colapsa para 1 coluna. Etapas reais (dados + chat) pendentes."
   },
 
+  // ─── Auto-encerramento de atendimento (2h) ──
+  //
+  // Criada em 2026-07-09. Plano canônico: docs/operacao/AUTO_ENCERRAMENTO_PLAN.md;
+  // contrato de fronteira em docs/OPERATIONS_ALERTS_TIMER_FLOW.md (§Auto-encerramento).
+  // Encerrar automaticamente atendimentos esquecidos (limite configurável, default 2h)
+  // preservando a métrica de tempo e mandando o auto-fechado para uma caixa de Pendências
+  // onde o gerente valida (real) ou cancela (erro). SERVIDOR AUTORITATIVO: o sweep de 3s
+  // (ProcessTimedAlerts) decide e fecha; a barra de 1min no front é só aviso; "Continuar"
+  // é mutação real (snooze durável em coluna de DB, re-pergunta a cada 30min). Decisões do
+  // dono: limites configuráveis por tenant; consultor volta à fila na hora; sai do board →
+  // caixa Pendências vermelha; cancelar mantém p/ auditoria + motivo obrigatório.
+  // Migration 0196. Exige rebuild da api (usuário).
+  {
+    id: "operacao-auto-encerramento",
+    code: "OPS-AUTO",
+    title: "Auto-encerramento de atendimento (2h) + caixa de Pendências",
+    goal: "Encerrar automaticamente atendimentos que passam de um limite configurável (default 2h): ao atingir o limite, uma barra de 1min conta para o fechamento e um botão 'Continuar' adia (re-perguntando a cada 30min); sem resposta, o backend fecha de forma autoritativa (mesmo com a aba fechada), o consultor volta à fila, e o atendimento vai vermelho para uma caixa de Pendências onde o gerente valida (grava o desfecho real) ou cancela (fora da métrica, mantido para auditoria com motivo). Preserva a métrica de tempo e identifica atendimentos esquecidos.",
+    status: "in_progress",
+    startedAt: "2026-07-09",
+    estimateWeeks: "CÓDIGO LOCAL CONCLUÍDO 2026-07-09 (7 fases); migration 0196 aplicada no dev + api/web rebuildados; go build/vet/test + eslint 0 erros. FALTA (dono): validar no browser + aplicar migration na VPS no deploy.",
+    group: "fila-operacao",
+    tasks: [
+      { id: "opsauto-f0-doc", label: "Fase 0 — Doc-first: plano canônico docs/operacao/AUTO_ENCERRAMENTO_PLAN.md + esta fase no roadmap + seção §Auto-encerramento em docs/OPERATIONS_ALERTS_TIMER_FLOW.md.", done: true, note: "FEITO 2026-07-09." },
+      { id: "opsauto-f1-migration", label: "Fase 1 — Migration 0196 (grace/snooze em operation_active_services; close_reason/validation_status/validated_* em operation_service_history; auto_close_* em tenant_operational_alert_rules; relaxar CHECK finish_outcome p/ 'auto'; índice parcial de pendências; recriar as 2 views public.*) + round-trip nos structs/Scan/INSERT + estender OperationalRules/OperationalAlertRules/LoadOperationalRules.", done: true, note: "FEITO 2026-07-09: migration APLICADA no dev (colunas confirmadas nas views public.*, CHECK finish_outcome com 'auto'). Bloco DO drop dinâmico do check auto-gerado pelo LIKE." },
+      { id: "opsauto-f2-closecore", label: "Fase 2 — Extrair o close-core de Finish num helper autoCloseService (sem AccessContext) que grava history pending (duration = fechamento−start) via persistAndAck + resolve o alerta long_open_service; const actionAutoClose. Testável isolado.", done: true, note: "FEITO 2026-07-09: service_autoclose.go + testes (pending history + volta à fila + sinal resolve)." },
+      { id: "opsauto-f3-sweep", label: "Fase 3 — Sweep de decisão (novo service_autoclose.go) dentro de ProcessTimedAlerts: elapsed>=autoClose → grace; now>=graceDeadline → autoClose; handling de snoozed_until; reabertura de grace na re-pergunta (um por tick).", done: true, note: "FEITO 2026-07-09: processAutoClose + persistGraceState (zera sessões p/ não reinserir a última, tabela append-only). Testes de grace/snooze/disabled." },
+      { id: "opsauto-f4-api", label: "Fase 4 — Snapshot ganha graceDeadline/snoozedUntil/snoozeCount + array pendingValidations[]; endpoints POST /v1/operations/keep-open (operador), /validate e /cancel-metric (gerente, gerente via canValidateAutoClose; cancel exige motivo).", done: true, note: "FEITO 2026-07-09: http.go + service + store_postgres_autoclose.go (UPDATE, nunca re-INSERT). Gate por papel gerente/owner/platform_admin (permissão dedicada queue.operations.validate fica como refino futuro de RBAC dinâmico). Testes KeepOpen/Validate/Cancel." },
+      { id: "opsauto-f5-front-bar", label: "Fase 5 (front) — barra de countdown + botão Continuar no card (OperationServiceCountdownBar.vue; remaining = graceDeadline − adjustedNow, nunca Date.now); threading dos campos nos 2 normalizadores.", done: true, note: "FEITO 2026-07-09: OperationServiceCountdownBar.vue (janela auto-medida) + wiring card/QueueColumns + keepServiceOpen no store + CSS âmbar. eslint 0 erros." },
+      { id: "opsauto-f6-front-pend", label: "Fase 6 (front) — caixa Pendências vermelha em OperationSidePanel.vue (timer parado, durationMs fixo); Validar (finish modal → /validate, corrigir fonte do controller p/ achar pendências) e Cancelar (dialog de motivo → /cancel-metric); bloco de config na workspace de Alertas; filtro de cancelados em reports + analytics.", done: true, note: "FEITO 2026-07-09: OperationPendingValidationDialog.vue (validar=desfecho enxuto, NÃO o finish modal 2118 linhas; cancelar=motivo obrigatório); threading pendingValidations até o flat state; CRUD de config estendido + bloco na AlertsWorkspace; appendHistoryFilters + excludeCancelledMetrics ignoram cancelled." },
+      { id: "opsauto-f7-docs", label: "Fase 7 — Sincronizar 3 docs (plano canônico + AGENT.md operations/alerts + este roadmap + doc canônico) + Notas de Deploy (migration 0196 antes do rebuild).", done: true, note: "FEITO 2026-07-09." },
+      { id: "opsauto-f8-ux-encerrar", label: "Fase 8 — UX de encerramento pela gestão (redesenho pós-validação do dono): botão 'Pendencias para encerrar (N)' com badge no topo da Lista da vez (acima do Atender primeiro) → modal de LISTA → 'Encerrar' abre o MESMO finish modal do fluxo normal (diálogo dedicado removido); justificativa OBRIGATÓRIA de por que o consultor não encerrou (migration 0197, validation_reason) + registrado quem/quando (validated_by/at) — base das métricas de cobrança por consultor/gerente/loja (fase futura).", done: true, note: "FEITO 2026-07-10: /validate aceita o payload COMPLETO do modal + validationReason obrigatória; controller resolve service-like da pendência (openFinishModal + findFinishModalService + hydrate aceitam pendência); OperationPendingListModal novo; caixa lateral e OperationPendingValidationDialog REMOVIDOS; cancel-metric segue só no back (UI de cancelar métrica fica p/ fase de métricas). Bugfix crítico da mesma frente: applyRemoteStoreData com snapshot null ZERAVA o board (conta agência pulava o fetch e sobrescrevia com vazio) — reproduzido e provado com Playwright + probe do Pinia; fix preserva o estado quando não houve fetch (registro-de-falhas nº 14)." }
+    ],
+    blockers: [],
+    verifiable: "Config liga o auto-encerramento com limites baixos de teste. Atendimento passa do limite → barra no card; Continuar adia e re-pergunta; expirar → some do board, consultor volta à fila, aparece vermelho na caixa Pendências com tempo congelado, alerta long_open_service resolve. Fechar a aba antes do fim: fecha mesmo assim (server-authoritative). Gerente valida (grava desfecho real) e cancela (com motivo, fora da métrica, mantido). Analytics: cancelado não conta. go build/vet + golangci + eslint/vue-tsc limpos; validado no browser."
+  },
+
   // ─── Organização do Menu (Header × Sidebar) — 2 subagentes (back × front) ──
   //
   // Criada em 2026-06-16. Plano canônico: docs/MENU_LAYOUT_CONFIG.md.

@@ -12,6 +12,7 @@ import CalendarAiPlanModal from '~/components/calendar/CalendarAiPlanModal.vue'
 import CalendarChatPanel from '~/components/calendar/CalendarChatPanel.vue'
 import CalendarConfigDrawer from '~/components/calendar/config/CalendarConfigDrawer.vue'
 import { useCalendarChat } from '~/composables/useCalendarChat'
+import { useCalendarShortcuts } from '~/composables/useCalendarShortcuts'
 import { useCalendarStore } from '~/stores/calendar'
 import { useUiStore } from '~/stores/ui'
 import { useCalendarLiveSync } from '~/composables/useCalendarLiveSync'
@@ -23,12 +24,20 @@ import {
   type CalendarEventInput,
   type CalendarView,
 } from '~/utils/calendar'
+import { taskSpansFrom, type CalendarTaskSpan } from '~/utils/calendar-task-spans'
+// Store de tasks (layer): fonte das BARRAS multi-dia (precedente de import cross-layer:
+// useCalendarChat). So carrega o board configurado; sem board = sem barras.
+import { useTasksStore } from '../../../layers/tasks/stores/tasks'
 
 definePageMeta({
   layout: 'dashboard',
-  // Tela global (sem modulo): workspaceId vazio evita o gate de workspace do
-  // auth.global.ts (igual /perfil). Preview front; o gating real entra no back.
-  workspaceId: '',
+  // Duas camadas de gating, iguais aos demais modulos (tasks/crm/meta-ads):
+  //  - workspaceId 'calendar' → gate de PAPEL no auth.global.ts: papel sem o
+  //    workspace volta pra auth.homePath (ex.: /operacao), como todo modulo.
+  //  - MODULE_PATH_GUARDS (/calendario → 'calendar') no module-enabled.global.ts
+  //    → gate de MODULO por conta (core.account_modules), espelha o back
+  //    (/v1/calendar). Conta sem o modulo cai no fallback seguro (/perfil).
+  workspaceId: 'calendar',
 })
 
 const store = useCalendarStore()
@@ -46,6 +55,55 @@ function toggleLeftMin(): void {
     localStorage.setItem(LEFT_MIN_KEY, leftMinimized.value ? '1' : '0')
   }
 }
+
+// Barras multi-dia (WAVE 11): tasks do board configurado com inicio->fim atravessando dias
+// viram barra continua na grade (estilo Google). Toggle mostrar/ocultar persistido.
+const SPANS_KEY = 'omni.calendar.spans.show'
+const showTaskSpans = ref(true)
+function toggleTaskSpans(): void {
+  showTaskSpans.value = !showTaskSpans.value
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(SPANS_KEY, showTaskSpans.value ? '1' : '0')
+  }
+}
+const tasksStore = useTasksStore()
+const spansBoardId = computed(() => String(store.config.tasks?.boardId || ''))
+// Carrega as tasks do board configurado quando ha board + barras visiveis (lazy; silencioso).
+watch(
+  [spansBoardId, showTaskSpans],
+  async ([boardId, show]) => {
+    if (!boardId || !show) return
+    await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
+    await tasksStore.ensureBoardTasksLoaded(boardId).catch(() => undefined)
+  },
+  { immediate: true },
+)
+const taskSpans = computed<CalendarTaskSpan[]>(() => {
+  if (!showTaskSpans.value || !spansBoardId.value) return []
+  const boardTasks = tasksStore.tasks.filter((t) => t.projectId === spansBoardId.value)
+  const spans = taskSpansFrom(boardTasks)
+  // Respeita o filtro de cliente da tela (mesma regra dos eventos).
+  if (!selectedClientId.value) return spans
+  return spans.filter((s) => !s.clientId || s.clientId === selectedClientId.value)
+})
+// Clique na barra abre o CARD da task no board (deep-link da WAVE 5, item 4).
+function onSelectSpan(span: CalendarTaskSpan): void {
+  void navigateTo({ path: '/tasks', query: { board: spansBoardId.value, task: span.id } })
+}
+
+// Atalhos de teclado da PAGINA (WAVE 11; mapa configuravel em config.shortcuts, aba
+// Aparencia). Os do chat (gravar/parar/fechar) vivem no CalendarChatPanel.
+useCalendarShortcuts([
+  { action: 'calToday', handler: () => onToday() },
+  { action: 'calMonthView', handler: () => onSetView('month') },
+  { action: 'calWeekView', handler: () => onSetView('week') },
+  { action: 'calNewItem', handler: () => onNew() },
+  { action: 'calNotesSidebar', handler: () => toggleLeftMin() },
+  { action: 'calSpans', handler: () => toggleTaskSpans() },
+  { action: 'calPrev', handler: () => onPrev() },
+  { action: 'calNext', handler: () => onNext() },
+  { action: 'chatOpen', handler: () => chat.togglePanel() },
+])
 const {
   view,
   weekStartsOn,
@@ -333,6 +391,7 @@ async function onRemoveEvent(id: string): Promise<void> {
 onMounted(() => {
   if (typeof localStorage !== 'undefined') {
     leftMinimized.value = localStorage.getItem(LEFT_MIN_KEY) === '1'
+    showTaskSpans.value = localStorage.getItem(SPANS_KEY) !== '0'
   }
   const first = store.init()
   // Ao (RE)entrar na pagina, refetcha a janela SEMPRE (menos no 1o load, que o init ja faz): pega
@@ -428,6 +487,7 @@ onBeforeUnmount(() => {
             :selected-client-id="selectedClientId"
             :view="view"
             :participants="presenceParticipants"
+            :show-spans="showTaskSpans"
             @today="onToday"
             @update:client="store.setClientFilter"
             @update:view="onSetView"
@@ -436,6 +496,7 @@ onBeforeUnmount(() => {
             @ai="onAi"
             @chat="onChat"
             @minimize="toggleLeftMin"
+            @toggle-spans="toggleTaskSpans"
           />
           <MonthNotesPanel
             :title="notesTitle"
@@ -462,12 +523,14 @@ onBeforeUnmount(() => {
             :holidays-by-date="holidaysByDate"
             :day-media-by-date="dayMediaByDate"
             :clients-by-id="clientsById"
+            :task-spans="taskSpans"
             :type-colors="typeColors"
             :is-focus="monthKey === focusMonthKey"
             :is-current="monthKey === currentMonthKey"
             :selected-date="selectedDate"
             @select-day="onSelectDay"
             @select-event="onSelectEvent"
+            @select-span="onSelectSpan"
           />
         </template>
         <template v-else>

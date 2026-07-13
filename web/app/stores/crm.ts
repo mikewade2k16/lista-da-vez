@@ -134,77 +134,6 @@ function normalizeText(value: unknown) {
   return String(value || '').trim()
 }
 
-function extractMonthKey(value: string): string {
-  return String(value || '').slice(0, 7)
-}
-
-function mergeOperationGoals(
-  response: CRMOverviewResponse,
-  goals: Array<Record<string, any>>,
-): CRMOverviewResponse {
-  if (!goals || !goals.length) return response
-
-  const byCode = new Map<string, Record<string, any>>()
-  for (const goal of goals) {
-    if (goal.scope !== 'store') continue
-    const code = String(goal.storeCode || '')
-      .trim()
-      .toUpperCase()
-    if (code) byCode.set(code, goal)
-  }
-
-  if (!byCode.size) return response
-
-  let mergedTotalGoalCents = 0
-
-  const newStores = (response.stores || []).map((store) => {
-    const code = String(store.storeCode || '')
-      .trim()
-      .toUpperCase()
-    const goal = byCode.get(code)
-    if (!goal) {
-      mergedTotalGoalCents += store.monthlyGoalCents || 0
-      return store
-    }
-
-    const monthlyGoalCents = Math.round((Number(goal.monthlyGoal) || 0) * 100)
-    const avgTicketGoalCents = Math.round((Number(goal.avgTicketGoal) || 0) * 100)
-    const paGoal = Number(goal.paGoal) || 0
-    const salesCents = store.salesCents || 0
-    const remainingToGoalCents = Math.max(0, monthlyGoalCents - salesCents)
-    const goalProgress =
-      monthlyGoalCents > 0 ? Math.round((salesCents / monthlyGoalCents) * 10000) / 100 : 0
-
-    mergedTotalGoalCents += monthlyGoalCents
-
-    return {
-      ...store,
-      monthlyGoalCents,
-      avgTicketGoalCents,
-      paGoal,
-      remainingToGoalCents,
-      goalProgress,
-    }
-  })
-
-  const totalSalesCents = response.summary?.salesCents || 0
-  const summary = {
-    ...response.summary,
-    monthlyGoalCents: mergedTotalGoalCents,
-    remainingToGoalCents: Math.max(0, mergedTotalGoalCents - totalSalesCents),
-    goalProgress:
-      mergedTotalGoalCents > 0
-        ? Math.round((totalSalesCents / mergedTotalGoalCents) * 10000) / 100
-        : 0,
-  }
-
-  return {
-    ...response,
-    stores: newStores,
-    summary,
-  }
-}
-
 function createEmptyOverview(dateFrom: string, dateTo: string): CRMOverviewResponse {
   return {
     store: null,
@@ -272,21 +201,6 @@ export const useCrmStore = defineStore('crm', () => {
     lastLoadedKey.value = ''
   }
 
-  async function loadOperationGoalsForMonth(monthKey: string): Promise<Array<Record<string, any>>> {
-    if (!monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) return []
-    try {
-      const params = new URLSearchParams()
-      if (activeTenantId.value) params.set('tenantId', activeTenantId.value)
-      params.set('month', monthKey)
-      const response = (await apiRequest(`/v1/operations/goals?${params.toString()}`)) as {
-        items?: Array<Record<string, any>>
-      }
-      return Array.isArray(response?.items) ? response.items : []
-    } catch {
-      return []
-    }
-  }
-
   async function refreshOverview() {
     if (!auth.isAuthenticated) {
       clearState()
@@ -315,19 +229,16 @@ export const useCrmStore = defineStore('crm', () => {
         params.set('dateTo', dateTo.value)
       }
 
-      const monthKey = extractMonthKey(dateFrom.value)
-      const isSingleMonth = monthKey.length === 7 && monthKey === extractMonthKey(dateTo.value)
-
-      const [crmResponse, operationGoals] = await Promise.all([
-        apiRequest(`/v1/erp/crm?${params.toString()}`) as Promise<CRMOverviewResponse>,
-        isSingleMonth ? loadOperationGoalsForMonth(monthKey) : Promise.resolve([]),
-      ])
-
-      const merged = mergeOperationGoals(crmResponse, operationGoals)
-      overview.value = merged
+      // Fonte unica: o back (/v1/erp/crm) ja entrega a meta EFETIVA por loja e no
+      // summary (com fallback consultant-sum), entao o painel nao re-mescla mais
+      // /v1/operations/goals por fora — merge que zerava a meta do fallback.
+      const crmResponse = (await apiRequest(
+        `/v1/erp/crm?${params.toString()}`,
+      )) as CRMOverviewResponse
+      overview.value = crmResponse
       ready.value = true
       lastLoadedKey.value = buildRequestKey()
-      return merged
+      return crmResponse
     } catch (error) {
       errorMessage.value = getApiErrorMessage(error, 'Nao foi possivel carregar o CRM do ERP.')
       throw error

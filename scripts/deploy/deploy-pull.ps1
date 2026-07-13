@@ -12,6 +12,11 @@ param(
   [switch]$BackupDatabase,
   [switch]$ForceRecreate,
   [switch]$SkipSmokeTests,
+  # Sobe/reconcilia tambem o profile automation (redis/waha/n8n/whisper) e reimporta
+  # os workflows versionados em automation/export/workflow-*.json quando houver mudanca.
+  # Nao envia credentials.decrypted.json; credenciais continuam geridas no volume do n8n.
+  [switch]$DeployAutomation,
+  [switch]$ForceAutomationWorkflowImport,
   # Login opcional no GHCR antes do pull (imagens privadas). Se vazios, assume que
   # a VPS ja tem `docker login ghcr.io` valido (~/.docker/config.json).
   [string]$GhcrUser = "",
@@ -23,9 +28,17 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $composeLocal = Join-Path $repoDir "docker-compose.prod.yml"
+$workflowLocalDir = Join-Path $repoDir "automation\export"
 
 if (-not (Test-Path $KeyPath)) { throw "Chave SSH nao encontrada em $KeyPath" }
 if (-not (Test-Path $composeLocal)) { throw "docker-compose.prod.yml nao encontrado em $composeLocal" }
+
+$automationWorkflowFiles = @()
+if ($DeployAutomation) {
+  if (-not (Test-Path $workflowLocalDir)) { throw "Diretorio de workflows nao encontrado em $workflowLocalDir" }
+  $automationWorkflowFiles = @(Get-ChildItem -Path $workflowLocalDir -Filter "workflow-*.json" -File | Sort-Object Name)
+  if ($automationWorkflowFiles.Count -eq 0) { throw "Nenhum workflow-*.json encontrado em $workflowLocalDir" }
+}
 
 # Config por ambiente.
 switch ($Environment) {
@@ -66,6 +79,7 @@ $sshHardening = @(
   "-o", "ServerAliveCountMax=3"
 )
 $sshArgs = @("-i", $resolvedKeyPath, "-o", "StrictHostKeyChecking=accept-new", "-p", $Port.ToString()) + $sshHardening
+$scpBaseArgs = @("-i", $resolvedKeyPath, "-o", "StrictHostKeyChecking=accept-new", "-P", $Port.ToString()) + $sshHardening
 $remoteTarget = "$User@$VpsHost"
 $forceRecreateFlag = if ($ForceRecreate) { " --force-recreate" } else { "" }
 
@@ -101,17 +115,21 @@ function Invoke-RemoteCommand {
 $remotePathQ = Convert-ToBashSingleQuoted $remotePath
 $envFileQ = Convert-ToBashSingleQuoted $envFile
 $composeArgs = "--env-file $envFileQ -f docker-compose.prod.yml"
+$composeAutomationArgs = "$composeArgs --profile automation"
 
 Write-Host "Ambiente:     $Environment"
 Write-Host "Host remoto:  ${remoteTarget}:$remotePath"
 Write-Host "Imagem tag:   $Tag"
+if ($DeployAutomation) {
+  Write-Host "Automation:   redis/waha/n8n/whisper + $($automationWorkflowFiles.Count) workflow(s)"
+}
 
 # 1. Garante o diretorio remoto e envia o compose (a VPS so precisa do compose +
 #    .env; o codigo vive nas imagens). NAO sobrescreve o .env remoto.
 Invoke-RemoteCommand -Description "Garantindo diretorio remoto" -Command "mkdir -p $remotePathQ"
 
 Write-Host "==> Enviando docker-compose.prod.yml"
-$scpArgs = @("-i", $resolvedKeyPath, "-o", "StrictHostKeyChecking=accept-new", "-P", $Port.ToString()) + $sshHardening + @($composeLocal, "${remoteTarget}:${remotePath}/docker-compose.prod.yml")
+$scpArgs = $scpBaseArgs + @($composeLocal, "${remoteTarget}:${remotePath}/docker-compose.prod.yml")
 & $ScpExe @scpArgs
 if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o docker-compose.prod.yml (scp)." }
 
@@ -169,7 +187,76 @@ docker compose $composeArgs ps api web
 "@
 Invoke-RemoteCommand -Description "Pull + up --no-build (api web) no $Environment" -Command $deployCmd
 
-# 6. Smoke tests publicos.
+# 6. Automation opcional: sobe profile automation e reimporta workflows versionados se mudaram.
+if ($DeployAutomation) {
+  $remoteWorkflowDir = "$remotePath/automation/export"
+  $remoteWorkflowDirQ = Convert-ToBashSingleQuoted $remoteWorkflowDir
+  Invoke-RemoteCommand -Description "Garantindo diretorio remoto dos workflows n8n" -Command "mkdir -p $remoteWorkflowDirQ"
+
+  Write-Host "==> Enviando workflows n8n versionados (sem credenciais)"
+  foreach ($workflowFile in $automationWorkflowFiles) {
+    $remoteWorkflowPath = "${remoteTarget}:${remoteWorkflowDir}/$($workflowFile.Name)"
+    $workflowScpArgs = $scpBaseArgs + @($workflowFile.FullName, $remoteWorkflowPath)
+    & $ScpExe @workflowScpArgs
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar workflow $($workflowFile.Name) (scp)." }
+  }
+
+  $forceAutomationImportValue = if ($ForceAutomationWorkflowImport) { "1" } else { "0" }
+  $automationCmd = @"
+set -euo pipefail
+cd $remotePathQ
+mkdir -p .deploy backups/n8n
+
+docker compose $composeAutomationArgs pull redis waha n8n whisper
+docker compose $composeAutomationArgs up -d --no-build$forceRecreateFlag redis waha n8n whisper
+docker compose $composeAutomationArgs ps redis waha n8n whisper
+
+manifest=`$(find automation/export -maxdepth 1 -type f -name 'workflow-*.json' -print0 | sort -z | xargs -0 sha256sum)
+marker=.deploy/automation-workflows.sha256
+changed=1
+if [ "$forceAutomationImportValue" = "0" ] && [ -f "`$marker" ] && printf '%s\n' "`$manifest" | cmp -s "`$marker" -; then
+  changed=0
+fi
+
+if [ "`$changed" = "0" ]; then
+  echo "Workflows n8n sem mudanca; import pulado."
+  exit 0
+fi
+
+backup_name="backups/n8n/workflows-before-automation-deploy_`$(date +%Y%m%d_%H%M%S).json"
+active_ids_file=.deploy/n8n-active-workflows-before.txt
+: > "`$active_ids_file"
+if docker compose $composeAutomationArgs exec -T n8n n8n export:workflow --all --output=/tmp/workflows-before-automation-deploy.json; then
+  docker compose $composeAutomationArgs exec -T n8n node -e "const fs=require('fs'); const raw=JSON.parse(fs.readFileSync('/tmp/workflows-before-automation-deploy.json','utf8')); const list=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:(Array.isArray(raw.workflows)?raw.workflows:[raw])); for (const w of list) { if (w && w.id && (w.active===true || w.active==='true' || w.isActive===true)) console.log(w.id); }" > "`$active_ids_file" || true
+  docker compose $composeAutomationArgs cp n8n:/tmp/workflows-before-automation-deploy.json "`$backup_name" || true
+  echo "Backup workflows n8n: $remotePath/`$backup_name"
+else
+  echo "AVISO: nao consegui exportar backup dos workflows n8n; seguindo com import." >&2
+fi
+
+for wf in automation/export/workflow-*.json; do
+  base=`$(basename "`$wf")
+  docker compose $composeAutomationArgs cp "`$wf" "n8n:/tmp/`$base"
+  docker compose $composeAutomationArgs exec -T n8n n8n import:workflow --input="/tmp/`$base"
+done
+
+# Mantem ativos os workflows internos que prod usa hoje e preserva qualquer workflow
+# que ja estava ativo antes do import (ex.: WhatsApp, quando estiver em uso).
+{
+  printf '%s\n' calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001
+  cat "`$active_ids_file"
+} | awk 'NF && !seen[`$0]++' | while IFS= read -r workflow_id; do
+  docker compose $composeAutomationArgs exec -T n8n n8n update:workflow --id="`$workflow_id" --active=true
+done
+docker compose $composeAutomationArgs restart n8n
+
+printf '%s\n' "`$manifest" > "`$marker"
+echo "Workflows n8n importados e n8n reiniciado."
+"@
+  Invoke-RemoteCommand -Description "Profile automation + import de workflows n8n no $Environment" -Command $automationCmd
+}
+
+# 7. Smoke tests publicos.
 if (-not $SkipSmokeTests) {
   $smokeCmd = @"
 set -euo pipefail

@@ -18,6 +18,8 @@ const {
   PRODUCT_SEARCH_MIN_CHARS,
   modalConfig,
   service,
+  isPendingValidation,
+  validationReason,
   hasRestoredDraft,
   clearCurrentDraft,
   closeModal,
@@ -327,6 +329,8 @@ const {
             />
             <FinishStepNotes
               :justifications-revealed="step2JustificationsRevealed"
+              :is-pending-validation="isPendingValidation"
+              :validation-reason="validationReason"
               :is-queue-jump-service="service.startMode === 'queue-jump'"
               :show-queue-jump-reason-field="showQueueJumpReasonField"
               :queue-jump-reason-label="queueJumpReasonLabel"
@@ -385,6 +389,7 @@ const {
                 form.lossReasonDetails = syncSelectedDetails(form.lossReasonIds, $event)
               "
               @update:notes="form.notes = $event"
+              @update:validation-reason="validationReason = $event"
               @update:field-justification="form.fieldJustifications[$event.key] = $event.value"
               @previous="goToStep1"
               @submit="submitForm"

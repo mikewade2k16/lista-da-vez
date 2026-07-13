@@ -187,6 +187,11 @@ function onWeekStart(value: WeekStart): void {
   draft.value.weekStartsOn = value
   mark()
 }
+// Atalhos de teclado (WAVE 11): { acao: tecla }; o back sanitiza no PUT.
+function onShortcuts(value: Record<string, string>): void {
+  draft.value.shortcuts = value
+  mark()
+}
 function onClientColors(value: Record<string, string>): void {
   draft.value.clientColors = value
   mark()
@@ -252,10 +257,12 @@ function onTasks(value: CalendarTasksConfig): void {
             :type-colors="draft.typeColors"
             :white-label="draft.whiteLabel"
             :clients="clients"
+            :shortcuts="draft.shortcuts"
             @update:week-starts-on="onWeekStart"
             @update:client-colors="onClientColors"
             @update:type-colors="onTypeColors"
             @update:white-label="onWhiteLabel"
+            @update:shortcuts="onShortcuts"
           />
         </div>
 

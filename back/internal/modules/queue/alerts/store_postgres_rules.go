@@ -20,11 +20,15 @@ func (repository *PostgresRepository) LoadRules(ctx context.Context, tenantID st
 		       notify_dashboard,
 		       notify_operation_context,
 		       notify_external,
+		       coalesce(auto_close_enabled, false),
+		       coalesce(auto_close_minutes, $2),
+		       coalesce(auto_close_grace_seconds, $3),
+		       coalesce(snooze_reprompt_minutes, $4),
 		       updated_at
 		from tenant_operational_alert_rules
 		where tenant_id = $1::uuid
 		limit 1;
-	`, strings.TrimSpace(tenantID))
+	`, strings.TrimSpace(tenantID), defaultAutoCloseMinutes, defaultAutoCloseGraceSeconds, defaultSnoozeRepromptMinutes)
 
 	var rules RulesView
 	var updatedAt time.Time
@@ -36,6 +40,10 @@ func (repository *PostgresRepository) LoadRules(ctx context.Context, tenantID st
 		&rules.NotifyDashboard,
 		&rules.NotifyOperationContext,
 		&rules.NotifyExternal,
+		&rules.AutoCloseEnabled,
+		&rules.AutoCloseMinutes,
+		&rules.AutoCloseGraceSeconds,
+		&rules.SnoozeRepromptMinutes,
 		&updatedAt,
 	)
 	if err != nil {
@@ -74,6 +82,18 @@ func (repository *PostgresRepository) UpsertRules(ctx context.Context, tenantID 
 	if input.NotifyExternal != nil {
 		current.NotifyExternal = *input.NotifyExternal
 	}
+	if input.AutoCloseEnabled != nil {
+		current.AutoCloseEnabled = *input.AutoCloseEnabled
+	}
+	if input.AutoCloseMinutes != nil {
+		current.AutoCloseMinutes = *input.AutoCloseMinutes
+	}
+	if input.AutoCloseGraceSeconds != nil {
+		current.AutoCloseGraceSeconds = *input.AutoCloseGraceSeconds
+	}
+	if input.SnoozeRepromptMinutes != nil {
+		current.SnoozeRepromptMinutes = *input.SnoozeRepromptMinutes
+	}
 
 	var updatedAt time.Time
 	err = repository.pool.QueryRow(ctx, `
@@ -85,6 +105,10 @@ func (repository *PostgresRepository) UpsertRules(ctx context.Context, tenantID 
 			notify_dashboard,
 			notify_operation_context,
 			notify_external,
+			auto_close_enabled,
+			auto_close_minutes,
+			auto_close_grace_seconds,
+			snooze_reprompt_minutes,
 			updated_by,
 			updated_at
 		) values (
@@ -95,7 +119,11 @@ func (repository *PostgresRepository) UpsertRules(ctx context.Context, tenantID 
 			$5,
 			$6,
 			$7,
-			nullif($8, '')::uuid,
+			$8,
+			$9,
+			$10,
+			$11,
+			nullif($12, '')::uuid,
 			now()
 		)
 		on conflict (tenant_id) do update
@@ -106,6 +134,10 @@ func (repository *PostgresRepository) UpsertRules(ctx context.Context, tenantID 
 			notify_dashboard = excluded.notify_dashboard,
 			notify_operation_context = excluded.notify_operation_context,
 			notify_external = excluded.notify_external,
+			auto_close_enabled = excluded.auto_close_enabled,
+			auto_close_minutes = excluded.auto_close_minutes,
+			auto_close_grace_seconds = excluded.auto_close_grace_seconds,
+			snooze_reprompt_minutes = excluded.snooze_reprompt_minutes,
 			updated_by = excluded.updated_by,
 			updated_at = now()
 		returning updated_at;
@@ -117,6 +149,10 @@ func (repository *PostgresRepository) UpsertRules(ctx context.Context, tenantID 
 		current.NotifyDashboard,
 		current.NotifyOperationContext,
 		current.NotifyExternal,
+		current.AutoCloseEnabled,
+		current.AutoCloseMinutes,
+		current.AutoCloseGraceSeconds,
+		current.SnoozeRepromptMinutes,
 		strings.TrimSpace(updatedByUserID),
 	).Scan(&updatedAt)
 	if err != nil {
@@ -456,6 +492,10 @@ func defaultRules(tenantID string) RulesView {
 		NotifyDashboard:          true,
 		NotifyOperationContext:   true,
 		NotifyExternal:           false,
+		AutoCloseEnabled:         false,
+		AutoCloseMinutes:         defaultAutoCloseMinutes,
+		AutoCloseGraceSeconds:    defaultAutoCloseGraceSeconds,
+		SnoozeRepromptMinutes:    defaultSnoozeRepromptMinutes,
 		Source:                   RulesSourceDefaults,
 	}
 }

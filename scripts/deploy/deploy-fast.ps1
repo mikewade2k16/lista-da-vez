@@ -17,6 +17,10 @@ param(
   [switch]$BackupDatabase,
   [switch]$ForceRecreate,
   [switch]$SkipSmokeTests,
+  # Tambem reconcilia o profile automation na VPS (redis/waha/n8n/whisper) e
+  # reimporta automation/export/workflow-*.json quando os arquivos mudarem.
+  [switch]$DeployAutomation,
+  [switch]$ForceAutomationWorkflowImport,
   # docker login LOCAL no GHCR antes do push (one-time; depois fica no config.json).
   [string]$GhcrUser = "",
   [string]$GhcrToken = ""
@@ -82,6 +86,8 @@ $forward = @{
 if ($BackupDatabase) { $forward.BackupDatabase = $true }
 if ($ForceRecreate) { $forward.ForceRecreate = $true }
 if ($SkipSmokeTests) { $forward.SkipSmokeTests = $true }
+if ($DeployAutomation) { $forward.DeployAutomation = $true }
+if ($ForceAutomationWorkflowImport) { $forward.ForceAutomationWorkflowImport = $true }
 
 & $deployPull @forward
 

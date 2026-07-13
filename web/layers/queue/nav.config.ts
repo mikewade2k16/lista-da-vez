@@ -22,12 +22,16 @@ export default {
           beta: true,
         },
         {
-          // PREVIEW front: sem workspaceId/moduleId (visivel para revisar o layout).
-          // Ao plugar o back, gatear por workspace/modulo proprio do calendario.
+          // Gateado como os irmaos (tasks/automation): workspaceId 'calendar'
+          // (gate de PAPEL) + moduleId 'calendar' (gate de MODULO por conta,
+          // core.account_modules, espelhando o back em /v1/calendar). Some do
+          // menu para papel sem o workspace OU conta sem o modulo.
           id: 'calendario',
           label: 'Calendário',
           icon: 'calendar',
           path: '/calendario',
+          workspaceId: 'calendar',
+          moduleId: 'calendar',
           beta: true,
         },
         {
@@ -82,7 +86,7 @@ export default {
               icon: 'qr',
               path: '/tools/qr-code',
               workspaceId: 'tools',
-              hidden: true,
+              moduleId: 'tools',
             },
             {
               id: 'link-shortener',
@@ -90,7 +94,7 @@ export default {
               icon: 'link',
               path: '/tools/encurtador-de-link',
               workspaceId: 'tools',
-              hidden: true,
+              moduleId: 'tools',
             },
             {
               id: 'scripts',

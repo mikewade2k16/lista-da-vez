@@ -23,7 +23,7 @@ func (service *Service) ProcessTimedAlerts(ctx context.Context) error {
 			continue
 		}
 
-		_, snapshotState, err := service.loadSnapshotState(ctx, storeID)
+		roster, snapshotState, err := service.loadSnapshotState(ctx, storeID)
 		if err != nil {
 			continue
 		}
@@ -37,17 +37,20 @@ func (service *Service) ProcessTimedAlerts(ctx context.Context) error {
 		}
 
 		triggerSignals, err := service.buildLongOpenSignals(ctx, storeID, snapshotState, time.Now().UTC())
-		if err != nil {
-			continue
+		if err == nil {
+			triggerSignals = service.filterUnseenTimedAlertSignals(triggerSignals)
+			if len(triggerSignals) > 0 {
+				if err := service.alertCoordinator.ReceiveOperationalSignals(ctx, triggerSignals); err == nil {
+					service.markTimedAlertSignals(triggerSignals)
+				}
+			}
 		}
 
-		triggerSignals = service.filterUnseenTimedAlertSignals(triggerSignals)
-		if len(triggerSignals) == 0 {
+		// Auto-encerramento (2h): avalia countdown/adiamento/fechamento autoritativo.
+		// Best effort — falha aqui nao pode travar a varredura das demais lojas nem os
+		// alertas temporais. Roda por ultimo porque muta e persiste o snapshotState.
+		if autoCloseErr := service.processAutoClose(ctx, storeID, roster, snapshotState, nowUnixMilli()); autoCloseErr != nil {
 			continue
-		}
-
-		if err := service.alertCoordinator.ReceiveOperationalSignals(ctx, triggerSignals); err == nil {
-			service.markTimedAlertSignals(triggerSignals)
 		}
 	}
 

@@ -101,6 +101,16 @@ export const useSettingsStore = defineStore('settings', () => {
     })
   }
 
+  // Politica comercial do CRM tem rota canonica dedicada (autoriza director, nao so
+  // owner/admin como /v1/settings/operation). Enviar os campos no TOPO do body (o
+  // back le CRMCommercialPolicyInput), nao aninhados em settings.
+  async function persistCrmCommercialPolicy(body = {}) {
+    await apiRequest(settingsPath('/v1/settings/crm-policy'), {
+      method: 'PATCH',
+      body: cloneValue(body),
+    })
+  }
+
   async function persistModalSection() {
     await apiRequest(settingsPath('/v1/settings/modal'), {
       method: 'PATCH',
@@ -553,9 +563,7 @@ export const useSettingsStore = defineStore('settings', () => {
     })
 
     try {
-      await persistOperationPatch({
-        settings: body,
-      })
+      await persistCrmCommercialPolicy(body)
       return { ok: true }
     } catch (error) {
       runtime.hydrate(previousState)

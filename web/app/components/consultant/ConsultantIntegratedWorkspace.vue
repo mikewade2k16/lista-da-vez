@@ -339,6 +339,10 @@ async function setPreviousMonthRange() {
   consultantsStore.resetIntegratedPreviousMonth()
   await consultantsStore.applyIntegratedFilters()
 }
+async function setWeekRange(week: number) {
+  consultantsStore.setIntegratedWeek(week)
+  await consultantsStore.applyIntegratedFilters()
+}
 </script>
 
 <template>
@@ -378,6 +382,7 @@ async function setPreviousMonthRange() {
         @apply="applyPeriodFilters"
         @reset-current-month="resetPeriodRange"
         @set-previous-month="setPreviousMonthRange"
+        @set-week="setWeekRange"
       />
 
       <ConsultantSingleStoreView

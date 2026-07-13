@@ -56,6 +56,37 @@
   filter: brightness(1.05);
 }
 
+/* Busca de conversa: filtra a lista por titulo/autor enquanto digita. */
+.calendar-chat-convos__search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+}
+
+.calendar-chat-convos__search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  outline: none;
+}
+
+.calendar-chat-convos__search input::placeholder {
+  color: var(--text-muted);
+}
+
+.calendar-chat-convos__search:focus-within {
+  border-color: rgb(var(--primary) / 0.55);
+}
+
 .calendar-chat-convos__hint {
   margin: 0;
   padding: 0.5rem 0.55rem;

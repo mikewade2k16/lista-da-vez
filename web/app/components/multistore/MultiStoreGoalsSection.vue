@@ -92,6 +92,13 @@ const periodOptions = [
   { value: 'p4', label: 'Semana 4' },
 ]
 
+// Semana selecionada como inteiro do banco: 0 = meta mensal; 1..4 = semana do mes.
+// As metas do multi-loja passam a ser CADASTRADAS por semana (fonte dos valores).
+const selectedWeek = computed(() => {
+  const match = /^p([1-4])$/.exec(String(selectedPeriod.value || ''))
+  return match ? Number(match[1]) : 0
+})
+
 /* ===== Lojas e opções ===== */
 
 const activeStores = computed(() =>
@@ -128,8 +135,14 @@ const bulkConsultantStoreOptions = computed(() =>
 
 /* ===== Particionamento por escopo ===== */
 
-const storeGoals = computed(() => goals.value.filter((g) => g.scope === 'store'))
-const consultantGoals = computed(() => goals.value.filter((g) => g.scope === 'consultant'))
+// Metas do escopo E da semana selecionada (week=0 no modo Mes). Cada semana tem seu
+// proprio conjunto de metas cadastradas; sem meta na semana, o back rateia a mensal.
+const storeGoals = computed(() =>
+  goals.value.filter((g) => g.scope === 'store' && (g.week || 0) === selectedWeek.value),
+)
+const consultantGoals = computed(() =>
+  goals.value.filter((g) => g.scope === 'consultant' && (g.week || 0) === selectedWeek.value),
+)
 
 const storesWithoutGoal = computed(() => {
   const existing = new Set(storeGoals.value.map((g) => g.storeId))
@@ -152,7 +165,6 @@ const selectedPeriodRange = computed(() =>
   buildGoalPeriodDateRange(selectedMonth.value, selectedPeriod.value),
 )
 const selectedPeriodLabel = computed(() => selectedPeriodRange.value.label)
-const selectedPeriodRatio = computed(() => selectedPeriodRange.value.goalRatio)
 const isFullMonthPeriod = computed(() => selectedPeriod.value === 'month')
 
 const crmOverviewMatchesSelectedMonth = computed(() => {
@@ -210,7 +222,9 @@ const performanceRows = computed(() => {
   if (!crmDataReady.value) return []
   const rows = []
   for (const goal of storeGoals.value) {
-    const monthlyGoal = (Number(goal.monthlyGoal) || 0) * selectedPeriodRatio.value
+    // A linha ja e do periodo selecionado (mensal ou semana N), entao a meta e o
+    // proprio valor cadastrado — sem rateio (o rateio da mensal e feito no back).
+    const monthlyGoal = Number(goal.monthlyGoal) || 0
     if (monthlyGoal <= 0) continue
     const perf = buildStorePerformance(goal)
     if (!perf) continue
@@ -243,6 +257,19 @@ const completionRemaining = computed(() => {
   if (!totalGoalWithRealized.value) return 0
   return Math.max(0, totalGoalWithRealized.value - totalRealized.value)
 })
+
+// Distingue "sem meta cadastrada" de "sem venda": lojas sem meta OU com meta zerada
+// (ex.: criadas pelo bulk sem valor) nao entram em performanceRows, entao os cards
+// zeram por FALTA DE META, nao por falta de venda. O aviso vira honesto e acionavel
+// em vez de "Sem vendas registradas" enganoso.
+const storesMissingGoalCount = computed(() => {
+  const zeroGoal = storeGoals.value.filter((g) => (Number(g.monthlyGoal) || 0) <= 0).length
+  return storesWithoutGoal.value.length + zeroGoal
+})
+const noGoalConfigured = computed(
+  () => crmDataReady.value && !performanceRows.value.length && storesMissingGoalCount.value > 0,
+)
+const noGoalReason = computed(() => `${storesMissingGoalCount.value} loja(s) sem meta cadastrada`)
 
 /** Card 2: Projeção de fechamento (ritmo atual) */
 const projectionPct = computed(() => {
@@ -306,18 +333,13 @@ const storeGridColumns = computed(() => {
       sortable: true,
       locked: true,
     },
-    { id: 'monthlyGoal', label: 'Meta total', width: '140px', align: 'end', sortable: true },
-    ...(isFullMonthPeriod.value
-      ? []
-      : [
-          {
-            id: 'periodGoal',
-            label: 'Meta semana',
-            width: '130px',
-            align: 'end',
-            sortable: true,
-          },
-        ]),
+    {
+      id: 'monthlyGoal',
+      label: isFullMonthPeriod.value ? 'Meta total' : 'Meta da semana',
+      width: '140px',
+      align: 'end',
+      sortable: true,
+    },
     { id: 'realizedSales', label: 'Realizado', width: '130px', align: 'end', sortable: true },
     { id: 'goalCompletionPct', label: 'Ating.', width: '92px', align: 'end', sortable: true },
     { id: 'avgTicketGoal', label: 'Ticket medio', width: '140px', align: 'end', sortable: true },
@@ -359,7 +381,13 @@ const consultantGridColumns = computed(() => {
       sortable: true,
       locked: true,
     },
-    { id: 'monthlyGoal', label: 'Meta total', width: '140px', align: 'end', sortable: true },
+    {
+      id: 'monthlyGoal',
+      label: isFullMonthPeriod.value ? 'Meta total' : 'Meta da semana',
+      width: '140px',
+      align: 'end',
+      sortable: true,
+    },
     { id: 'avgTicketGoal', label: 'Ticket medio', width: '140px', align: 'end', sortable: true },
     { id: 'conversionGoal', label: 'Conversao', width: '120px', align: 'end', sortable: true },
     { id: 'paGoal', label: 'P.A.', width: '100px', align: 'end', sortable: true },
@@ -412,7 +440,8 @@ const sortedConsultantRows = computed(() => {
 function decorateRow(row) {
   const performance = row.scope === 'store' ? buildStorePerformance(row) : null
   const monthlyGoal = Number(row.monthlyGoal) || 0
-  const periodGoal = monthlyGoal * selectedPeriodRatio.value
+  // Linha ja e do periodo (mensal ou semana N): a meta do periodo e o proprio valor.
+  const periodGoal = monthlyGoal
   const realizedSales = performance ? Number(performance.soldValue || 0) : null
   return {
     ...row,
@@ -610,6 +639,7 @@ async function createAllStoreGoals() {
       const result = await operationGoals.createGoal({
         storeId: store.id,
         month,
+        week: selectedWeek.value,
         monthlyGoal: 0,
         avgTicketGoal: 0,
         conversionGoal: 0,
@@ -623,7 +653,10 @@ async function createAllStoreGoals() {
   }
 
   storeSearch.value = ''
-  if (created && !failed) ui.success(`${created} meta(s) de loja criada(s) para ${month}.`)
+  if (created && !failed)
+    ui.success(
+      `${created} meta(s) de loja criada(s) para ${month} sem valor — defina os valores na tabela abaixo.`,
+    )
   else if (created) ui.info(`${created} criada(s), ${failed} erro(s).`)
   else ui.error('Nao foi possivel criar as metas.')
 }
@@ -643,7 +676,9 @@ async function createConsultantGoalsForStore() {
 
     const existing = new Set(
       consultantGoals.value
-        .filter((g) => g.storeId === storeId && g.month === month)
+        .filter(
+          (g) => g.storeId === storeId && g.month === month && (g.week || 0) === selectedWeek.value,
+        )
         .map((g) => g.consultantId),
     )
 
@@ -660,6 +695,7 @@ async function createConsultantGoalsForStore() {
         storeId,
         consultantId: c.id,
         month,
+        week: selectedWeek.value,
         monthlyGoal: 0,
         avgTicketGoal: 0,
         conversionGoal: 0,
@@ -670,7 +706,10 @@ async function createConsultantGoalsForStore() {
     }
 
     consultantSearch.value = ''
-    if (created && !failed) ui.success(`${created} meta(s) de consultor criada(s).`)
+    if (created && !failed)
+      ui.success(
+        `${created} meta(s) de consultor criada(s) sem valor — defina os valores na tabela abaixo.`,
+      )
     else if (created) ui.info(`${created} criada(s), ${failed} erro(s).`)
     else ui.error('Nao foi possivel criar as metas de consultor.')
   } finally {
@@ -1213,7 +1252,9 @@ function escapeCsvCell(value) {
         :class="`is-${pctStatus(completionPct)}`"
         :title="
           completionPct === null
-            ? 'Sem dados de vendas para a semana'
+            ? noGoalConfigured
+              ? 'Nenhuma meta cadastrada para o periodo'
+              : 'Sem dados de vendas para a semana'
             : `R$ ${formatCurrencyBRL(totalRealized).replace('R$', '').trim()} de R$ ${formatCurrencyBRL(totalGoalWithRealized).replace('R$', '').trim()}`
         "
       >
@@ -1227,7 +1268,13 @@ function escapeCsvCell(value) {
         </strong>
         <small class="multistore-goals__card-meta">
           <template v-if="completionPct === null">
-            {{ cardsLoadingCrm ? 'Carregando CRM...' : 'Sem vendas registradas' }}
+            {{
+              cardsLoadingCrm
+                ? 'Carregando CRM...'
+                : noGoalConfigured
+                  ? noGoalReason
+                  : 'Sem vendas registradas'
+            }}
           </template>
           <template v-else-if="completionPct >= 100">
             Bateu +{{ formatCurrencyBRL(totalRealized - totalGoalWithRealized) }}
@@ -1267,7 +1314,9 @@ function escapeCsvCell(value) {
                 ? 'Carregando CRM...'
                 : isCurrentMonthSelected
                   ? isFullMonthPeriod
-                    ? 'Sem dados suficientes'
+                    ? noGoalConfigured
+                      ? noGoalReason
+                      : 'Sem dados suficientes'
                     : 'Disponivel no mes completo'
                   : 'Mes nao corrente'
             }}
@@ -1292,7 +1341,9 @@ function escapeCsvCell(value) {
         </strong>
         <small class="multistore-goals__card-meta">
           <template v-if="!topStore">
-            {{ cardsLoadingCrm ? 'Carregando CRM...' : 'Sem dados' }}
+            {{
+              cardsLoadingCrm ? 'Carregando CRM...' : noGoalConfigured ? noGoalReason : 'Sem dados'
+            }}
           </template>
           <template v-else>{{ Math.round(topStore.completionPct) }}% atingido</template>
         </small>
@@ -1311,7 +1362,9 @@ function escapeCsvCell(value) {
         </strong>
         <small class="multistore-goals__card-meta">
           <template v-if="!worstGapStore">
-            {{ cardsLoadingCrm ? 'Carregando CRM...' : 'Sem dados' }}
+            {{
+              cardsLoadingCrm ? 'Carregando CRM...' : noGoalConfigured ? noGoalReason : 'Sem dados'
+            }}
           </template>
           <template v-else>
             {{ Math.round(worstGapStore.completionPct) }}% / faltam

@@ -347,8 +347,8 @@ await loadRoleMatrix()
   min-height: 2rem;
   padding: 0 0.8rem;
   border-radius: 999px;
-  background: rgba(129, 140, 248, 0.16);
-  color: #dbe4ff;
+  background: rgb(var(--primary) / 0.16);
+  color: rgb(var(--primary));
   font-size: 0.74rem;
   font-weight: 700;
 }
@@ -374,18 +374,18 @@ await loadRoleMatrix()
   flex-wrap: wrap;
   padding: 1rem;
   border-radius: 1rem;
-  border: 1px solid rgba(248, 113, 113, 0.2);
-  background: rgba(69, 10, 10, 0.2);
+  border: 1px solid rgb(var(--danger) / 0.2);
+  background: rgb(var(--surface-2));
 }
 
 .users-role-matrix__empty-card {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(15, 23, 42, 0.44);
+  border-color: rgb(var(--border) / 0.08);
+  background: rgb(var(--surface-2));
 }
 
 .users-role-matrix__error-card strong,
 .users-role-matrix__empty-card strong {
-  color: #ffffff;
+  color: var(--text-main);
   font-size: 0.85rem;
 }
 
@@ -401,8 +401,8 @@ await loadRoleMatrix()
   min-height: 2.35rem;
   padding: 0 0.95rem;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(18, 25, 38, 0.92);
+  border: 1px solid rgb(var(--border) / 0.12);
+  background: rgb(var(--surface-2));
   color: var(--text-main);
   font-weight: 700;
   font-size: 0.78rem;
@@ -447,7 +447,7 @@ await loadRoleMatrix()
   min-height: 1.75rem;
   padding: 0 0.68rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.14);
+  background: rgb(var(--surface-2));
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 700;
@@ -474,7 +474,7 @@ await loadRoleMatrix()
   display: grid;
   gap: 1rem;
   padding: 0 1rem 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgb(var(--border) / 0.06);
 }
 
 .users-role-matrix__workspace-list,
@@ -491,8 +491,8 @@ await loadRoleMatrix()
   align-items: start;
   padding: 0.9rem;
   border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(15, 23, 42, 0.44);
+  border: 1px solid rgb(var(--border) / 0.06);
+  background: rgb(var(--surface-2));
 }
 
 .users-role-matrix__workspace-copy,
@@ -503,7 +503,7 @@ await loadRoleMatrix()
 
 .users-role-matrix__workspace-copy strong,
 .users-role-matrix__advanced-row strong {
-  color: #ffffff;
+  color: var(--text-main);
   font-size: 0.84rem;
 }
 
@@ -533,16 +533,16 @@ await loadRoleMatrix()
 }
 
 .users-role-matrix__draft-state.is-dirty {
-  color: #fde68a;
+  color: #f59e0b;
 }
 
 .users-role-matrix__save-btn {
   min-height: 2.35rem;
   padding: 0 0.95rem;
   border-radius: 999px;
-  border: 1px solid rgba(34, 197, 94, 0.28);
-  background: rgba(34, 197, 94, 0.16);
-  color: #dcfce7;
+  border: 1px solid rgb(var(--success) / 0.28);
+  background: rgb(var(--success) / 0.16);
+  color: rgb(var(--success));
   font-weight: 700;
   font-size: 0.78rem;
   cursor: pointer;

@@ -57,9 +57,14 @@ function isSemanticallyEmptyContent(value: string) {
   return normalized.length === 0
 }
 
+// Emissao PASSIVA vazia = o editor virou "vazio" SEM o usuario estar editando (montagem, troca de
+// modelValue, normalizacao do tiptap para <p></p>). Nunca propagar isso: senao, no reload a nota
+// carrega async e o editor monta vazio -> emitiria <p></p> -> PUT vazio agendado dispara DEPOIS que
+// o conteudo real chegou e o apaga (bug real: toda nota virava <p></p>). Limpar de verdade acontece
+// com o editor FOCADO (isFocused), e ai a emissao passa normalmente.
 function shouldIgnorePassiveEmptyEmission(value: string, editor?: Editor | null) {
   if (editor?.isFocused) return false
-  return isSemanticallyEmptyContent(value) && !isSemanticallyEmptyContent(props.modelValue)
+  return isSemanticallyEmptyContent(value)
 }
 
 function serializeEditorContent(editor: Editor) {
@@ -857,25 +862,30 @@ function onImageFileChange(event: Event) {
 </template>
 
 <style scoped>
+/* LAYOUT (fix estrutural, WAVE 11): a TOOLBAR fica FORA da area de rolagem — so o CONTEUDO
+   rola (overflow no .omni-editor__content). Antes a toolbar era sticky DENTRO do scroll e o
+   texto rolado vazava por cima dela (bug visual das anotacoes); com a coluna flex + scroll
+   apenas no conteudo, a sobreposicao e impossivel em qualquer tema/browser. */
 .omni-editor {
   position: relative;
   max-height: var(--omni-editor-max-height);
   min-height: var(--omni-editor-min-height);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border-top: 1px solid rgb(var(--border));
   color: rgb(var(--text));
-  scrollbar-gutter: stable;
 }
 
 .omni-editor__instance {
-  min-height: var(--omni-editor-min-height);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .omni-editor__toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 25;
+  flex: 0 0 auto;
   border-bottom: 1px solid rgb(var(--border));
   background: rgb(var(--surface));
   padding: 0.45rem 0.15rem;
@@ -888,7 +898,11 @@ function onImageFileChange(event: Event) {
 }
 
 .omni-editor :deep(.omni-editor__content) {
-  min-height: var(--omni-editor-min-height);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   padding: 1.4rem 2.2rem 5rem 2.55rem;
   outline: none;
   line-height: 1.75;

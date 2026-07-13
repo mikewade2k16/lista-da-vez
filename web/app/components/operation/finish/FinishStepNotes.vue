@@ -66,6 +66,16 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  // Encerramento de pendencia (auto-encerramento 2h): exibe o bloco de
+  // justificativa OBRIGATORIA de por que o consultor nao encerrou na hora.
+  isPendingValidation: {
+    type: Boolean,
+    default: false,
+  },
+  validationReason: {
+    type: String,
+    default: '',
+  },
   notesLabel: {
     type: String,
     default: '',
@@ -221,6 +231,7 @@ const emit = defineEmits([
   'update:loss-reason-selected-items',
   'update:loss-reason-details',
   'update:notes',
+  'update:validation-reason',
   'update:field-justification',
   'previous',
   'submit',
@@ -228,6 +239,23 @@ const emit = defineEmits([
 </script>
 
 <template>
+  <!-- Encerramento de pendencia (auto-encerramento 2h): justificativa OBRIGATORIA
+       de por que o consultor nao encerrou na hora — base das metricas de cobranca. -->
+  <section v-if="isPendingValidation" class="finish-form__section finish-form__section--pending">
+    <label class="finish-form__label" for="operation-validation-reason">
+      Por que este atendimento nao foi encerrado pelo consultor? *
+    </label>
+    <textarea
+      id="operation-validation-reason"
+      :value="validationReason"
+      class="finish-form__textarea"
+      rows="2"
+      placeholder="Ex.: consultor esqueceu de encerrar; cliente saiu sem aviso"
+      data-testid="operation-validation-reason"
+      @input="emit('update:validation-reason', $event.target.value)"
+    ></textarea>
+  </section>
+
   <section
     v-if="isQueueJumpService && showQueueJumpReasonField"
     class="finish-form__section operation-modal__picker-cell"

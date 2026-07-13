@@ -173,12 +173,39 @@ func (s *Service) BuildAIContext(ctx context.Context, accountID, clientID, month
 // AIContextClientLean e a projecao ENXUTA de um cliente no agregado multi-cliente do
 // chat (contrato D4, scope 'all'): so id/nome/segmento + um resumo do brandVoice. Os
 // campos pesados do perfil (positioning/description/history/objectives/extra) ficam de
-// fora — com muitos clientes eles estourariam a janela de contexto da IA.
+// fora — com muitos clientes eles estourariam a janela de contexto da IA. ProfileMissing
+// (WAVE 7) leva SO os NOMES dos campos estaveis ainda vazios (token-cheap) para a IA saber
+// o que pedir/insistir mesmo no escopo 'all', onde o perfil completo nao viaja.
 type AIContextClientLean struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Segment    string `json:"segment"`
-	BrandVoice string `json:"brandVoice"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Segment        string   `json:"segment"`
+	BrandVoice     string   `json:"brandVoice"`
+	ProfileMissing []string `json:"profileMissing,omitempty"`
+}
+
+// missingProfileFields devolve as CHAVES dos campos estaveis do perfil ainda vazios (contrato C3),
+// na ordem C3, para a IA saber o que pedir e insistir (WAVE 7). So os estaveis (o extra e detalhe;
+// no escopo 'client' o perfil completo ja viaja e a IA ve os vazios do extra tambem).
+func missingProfileFields(p planProfile) []string {
+	pairs := []struct{ key, val string }{
+		{"segment", p.Segment},
+		{"positioning", p.Positioning},
+		{"description", p.Description},
+		{"history", p.History},
+		{"siteUrl", p.SiteURL},
+		{"instagram", p.Instagram},
+		{"address", p.Address},
+		{"objectives", p.Objectives},
+		{"brandVoice", p.BrandVoice},
+	}
+	missing := make([]string, 0, len(pairs))
+	for _, f := range pairs {
+		if strings.TrimSpace(f.val) == "" {
+			missing = append(missing, f.key)
+		}
+	}
+	return missing
 }
 
 // AIContextAll e o agregado LEAN multi-cliente do chat em escopo 'all' (contrato D4):
@@ -225,10 +252,11 @@ func (s *Service) BuildAIContextAll(ctx context.Context, accountID string, visib
 	clients := make([]AIContextClientLean, 0, len(pc.Clients))
 	for _, c := range pc.Clients {
 		clients = append(clients, AIContextClientLean{
-			ID:         c.ID,
-			Name:       c.Name,
-			Segment:    c.Profile.Segment,
-			BrandVoice: truncateRunes(c.Profile.BrandVoice, maxBrandVoiceRunes),
+			ID:             c.ID,
+			Name:           c.Name,
+			Segment:        c.Profile.Segment,
+			BrandVoice:     truncateRunes(c.Profile.BrandVoice, maxBrandVoiceRunes),
+			ProfileMissing: missingProfileFields(c.Profile),
 		})
 	}
 	from, to, err := monthBounds(month)

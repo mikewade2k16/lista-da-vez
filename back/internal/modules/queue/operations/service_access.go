@@ -43,3 +43,23 @@ func canMutateOperations(access AccessContext) bool {
 
 	return CanMutateOperationsRole(access.Role)
 }
+
+// CanValidateAutoCloseRole decide quem pode VALIDAR/CANCELAR uma pendencia de
+// auto-encerramento (2h). E' uma acao de GESTAO: gerente, dono e platform_admin.
+// Consultor e terminal operam a fila mas NAO validam a metrica (least-privilege).
+func CanValidateAutoCloseRole(role string) bool {
+	switch role {
+	case RoleManager, RoleOwner, RolePlatformAdmin:
+		return true
+	default:
+		return false
+	}
+}
+
+// canValidateAutoClose gateia validar/cancelar pendencia. Exige poder mutar a
+// operacao E ser papel de gestao (gerente+). O gate por papel vale mesmo com
+// permissoes resolvidas, ate existir uma permissao dinamica dedicada
+// (queue.operations.validate) semeada nos role templates.
+func canValidateAutoClose(access AccessContext) bool {
+	return canMutateOperations(access) && CanValidateAutoCloseRole(access.Role)
+}

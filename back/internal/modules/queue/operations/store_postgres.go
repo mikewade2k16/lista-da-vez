@@ -396,7 +396,10 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
 			coalesce(start_offset_ms, 0) as start_offset_ms,
 			coalesce(stopped_at, 0) as stopped_at,
-			coalesce(stop_reason, '') as stop_reason
+			coalesce(stop_reason, '') as stop_reason,
+			coalesce(grace_deadline, 0) as grace_deadline,
+			coalesce(snoozed_until, 0) as snoozed_until,
+			coalesce(snooze_count, 0) as snooze_count
 		from operation_active_services
 		where store_id = $1::uuid
 		order by service_started_at asc;
@@ -426,6 +429,9 @@ func (repository *PostgresRepository) loadActiveServices(ctx context.Context, st
 			&item.StartOffsetMs,
 			&item.StoppedAt,
 			&item.StopReason,
+			&item.GraceDeadline,
+			&item.SnoozedUntil,
+			&item.SnoozeCount,
 		); err != nil {
 			return nil, err
 		}
@@ -569,9 +575,12 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 				sibling_service_ids_json,
 				start_offset_ms,
 				stopped_at,
-				stop_reason
+				stop_reason,
+				grace_deadline,
+				snoozed_until,
+				snooze_count
 			)
-			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, $13, $14, $15);
+			values ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18);
 		`,
 			storeID,
 			item.ConsultantID,
@@ -588,6 +597,9 @@ func replaceActiveServices(ctx context.Context, tx pgx.Tx, storeID string, items
 			item.StartOffsetMs,
 			item.StoppedAt,
 			strings.TrimSpace(item.StopReason),
+			maxInt64(item.GraceDeadline, 0),
+			maxInt64(item.SnoozedUntil, 0),
+			maxInt(item.SnoozeCount, 0),
 		); err != nil {
 			return err
 		}
@@ -663,6 +675,15 @@ func appendSessions(ctx context.Context, tx pgx.Tx, storeID string, items []Cons
 
 func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []ServiceHistoryEntry) error {
 	for _, item := range items {
+		closeReason := strings.TrimSpace(item.CloseReason)
+		if closeReason == "" {
+			closeReason = closeReasonManual
+		}
+		validationStatus := strings.TrimSpace(item.ValidationStatus)
+		if validationStatus == "" {
+			validationStatus = validationStatusValidated
+		}
+
 		skippedRaw, err := json.Marshal(item.SkippedPeople)
 		if err != nil {
 			return err
@@ -760,14 +781,17 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 				parallel_start_index,
 				sibling_service_ids_json,
 				start_offset_ms,
-				products_not_found_json
+				products_not_found_json,
+				close_reason,
+				validation_status,
+				snooze_count
 			)
 			values (
 				$1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10,
 				$11, $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20::jsonb, $21::jsonb,
 				$22, $23, $24, $25, $26, $27, $28, $29::jsonb, $30::jsonb, $31::jsonb,
 				$32::jsonb, $33::jsonb, $34::jsonb, $35, $36, $37, $38, $39, $40, $41::jsonb, $42,
-				$43, $44, $45::jsonb, $46, $47::jsonb
+				$43, $44, $45::jsonb, $46, $47::jsonb, $48, $49, $50
 			)
 			on conflict (store_id, service_id) do nothing;
 		`,
@@ -818,6 +842,9 @@ func appendHistory(ctx context.Context, tx pgx.Tx, storeID string, items []Servi
 			string(siblingServiceIDsRaw),
 			item.StartOffsetMs,
 			string(productsNotFoundRaw),
+			closeReason,
+			validationStatus,
+			maxInt(item.SnoozeCount, 0),
 		); err != nil {
 			return err
 		}

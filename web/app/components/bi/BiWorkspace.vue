@@ -56,8 +56,12 @@ const tabs = computed(() => [
   { id: 'inteligencia', label: 'Inteligencia', icon: 'psychology' },
 ])
 
-const activeTable = computed(() => tables.value.find((table) => table.key === activeTab.value) || null)
-const activeSource = computed(() => sources.value.find((source) => source.key === activeTab.value) || null)
+const activeTable = computed(
+  () => tables.value.find((table) => table.key === activeTab.value) || null,
+)
+const activeSource = computed(
+  () => sources.value.find((source) => source.key === activeTab.value) || null,
+)
 const activeTableLoading = computed(
   () => loading.value || (activeTable.value?.key === 'inventario' && inventoryLoading.value),
 )
@@ -104,7 +108,9 @@ async function generateManualToken() {
     return
   }
 
-  ui.success('Token manual da Perola gerado. Clique em "Atualizar BI" quando quiser carregar os dados.')
+  ui.success(
+    'Token manual da Perola gerado. Clique em "Atualizar BI" quando quiser carregar os dados.',
+  )
 }
 
 function inputValue(event: Event) {
@@ -154,9 +160,15 @@ watch(
           <span
             class="bi-manual__badge"
             :data-state="hasManualToken ? 'ok' : 'off'"
-            :title="hasManualToken ? `Token: ${manualTokenPreview}` : 'Usando credenciais do backend'"
+            :title="
+              hasManualToken ? `Token: ${manualTokenPreview}` : 'Usando credenciais do backend'
+            "
           >
-            <component :is="hasManualToken ? ShieldCheck : ShieldOff" :size="13" aria-hidden="true" />
+            <component
+              :is="hasManualToken ? ShieldCheck : ShieldOff"
+              :size="13"
+              aria-hidden="true"
+            />
             {{ hasManualToken ? 'Token manual' : 'Automatico' }}
           </span>
         </div>
@@ -168,7 +180,8 @@ watch(
 
       <div v-if="manualOpen" class="bi-manual__body">
         <p class="bi-manual__hint">
-          Se colar um Bearer Token, nao precisa preencher Login e Pass. Se gerar token, preencha CompanyKey, Login e Pass.
+          Se colar um Bearer Token, nao precisa preencher Login e Pass. Se gerar token, preencha
+          CompanyKey, Login e Pass.
         </p>
 
         <div class="bi-manual__grid">
@@ -234,17 +247,32 @@ watch(
         <p v-if="loginError" class="bi-manual__error">{{ loginError }}</p>
 
         <div class="bi-manual__actions">
-          <button class="bi-manual__button bi-manual__button--primary" type="button" :disabled="loggingIn" @click="generateManualToken">
+          <button
+            class="bi-manual__button bi-manual__button--primary"
+            type="button"
+            :disabled="loggingIn"
+            @click="generateManualToken"
+          >
             <LogIn :size="14" aria-hidden="true" />
             {{ loggingIn ? 'Gerando...' : 'Gerar token + carregar' }}
           </button>
 
-          <button class="bi-manual__button" type="button" :disabled="!hasManualToken || loading" @click="refresh">
+          <button
+            class="bi-manual__button"
+            type="button"
+            :disabled="!hasManualToken || loading"
+            @click="refresh"
+          >
             <RefreshCw :size="14" aria-hidden="true" />
             Carregar com token
           </button>
 
-          <button class="bi-manual__button bi-manual__button--ghost" type="button" :disabled="!hasManualToken" @click="clearManualSession">
+          <button
+            class="bi-manual__button bi-manual__button--ghost"
+            type="button"
+            :disabled="!hasManualToken"
+            @click="clearManualSession"
+          >
             <Trash2 :size="14" aria-hidden="true" />
             Limpar manual
           </button>
@@ -260,7 +288,12 @@ watch(
     <p v-if="error" class="bi-panel__error">{{ error }}</p>
 
     <section class="bi-panel__metrics" aria-label="Resumo Perola BI">
-      <article v-for="metric in metrics" :key="metric.key" class="bi-panel__metric" :data-tone="metric.tone">
+      <article
+        v-for="metric in metrics"
+        :key="metric.key"
+        class="bi-panel__metric"
+        :data-tone="metric.tone"
+      >
         <span>{{ metric.label }}</span>
         <strong>{{ metric.value }}</strong>
         <small>{{ metric.detail }}</small>
@@ -276,7 +309,12 @@ watch(
 
     <section v-if="activeTab === 'visao'" class="bi-panel__overview">
       <div class="bi-panel__insights">
-        <article v-for="insight in insights" :key="insight.title" class="bi-panel__insight" :data-tone="insight.tone">
+        <article
+          v-for="insight in insights"
+          :key="insight.title"
+          class="bi-panel__insight"
+          :data-tone="insight.tone"
+        >
           <BrainCircuit :size="18" aria-hidden="true" />
           <div>
             <h3>{{ insight.title }}</h3>
@@ -292,20 +330,17 @@ watch(
           <div>
             <strong>{{ source.label }}</strong>
             <span>
-              {{
-                source.pending
-                  ? 'Em carga'
-                  : source.ok
-                    ? 'OK'
-                    : 'Falha'
-              }} - {{ source.fetched.toLocaleString('pt-BR') }}
+              {{ source.pending ? 'Em carga' : source.ok ? 'OK' : 'Falha' }} -
+              {{ source.fetched.toLocaleString('pt-BR') }}
               <template v-if="source.total > source.fetched">
                 de {{ source.total.toLocaleString('pt-BR') }}
               </template>
               registros -
               {{ source.durationMs }} ms
             </span>
-            <small v-if="source.truncated && !source.error">Amostra rapida carregada para manter a tela agil.</small>
+            <small v-if="source.truncated && !source.error">
+              Amostra rapida carregada para manter a tela agil.
+            </small>
             <small v-if="source.error">{{ source.error }}</small>
           </div>
         </article>
@@ -495,7 +530,7 @@ watch(
   padding: 0 0.7rem;
   border: 1px solid var(--line-soft);
   border-radius: 0.7rem;
-  background: rgba(13, 18, 29, 0.95);
+  background: rgb(var(--surface) / 0.95);
   color: var(--text-main);
   font: inherit;
 }
@@ -560,7 +595,7 @@ watch(
 .bi-panel__opportunity {
   border: 1px solid var(--line-soft);
   border-radius: 0.9rem;
-  background: rgba(13, 18, 29, 0.9);
+  background: rgb(var(--surface) / 0.9);
   box-shadow: var(--shadow-card);
 }
 

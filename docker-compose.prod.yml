@@ -83,6 +83,9 @@ services:
       # publico devolve caminho relativo e o front em outro dominio (ex.: TAVOLA
       # em mostarda.crowvisuals.com.br) nao acha a imagem. Ver DEPLOY_MOSTARDA_PROD.md.
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-}
+      # Base absoluta dos links curtos/QR do modulo tools (shortUrl = {base}/s/{slug}).
+      # Vazio = usa PUBLIC_API_BASE_URL. Prod: crowvisuals.com.br (ver PLANO_MODULO_TOOLS.md).
+      TOOLS_PUBLIC_BASE_URL: ${TOOLS_PUBLIC_BASE_URL:-}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       # AC-04: role de runtime least-privilege. Criar a role ANTES do deploy
       # (runbook: docs/MULTITENANT_COMPLETION_PLAN.md, Notas de Deploy AC-04).

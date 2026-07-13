@@ -314,8 +314,8 @@ function fkLabel(field: SchemaField): string {
   gap: 0.1rem;
   padding: 0.6rem 0.9rem;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
   min-width: 100px;
 }
 
@@ -334,24 +334,24 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-view__total--implemented {
-  border-color: rgba(34, 197, 94, 0.45);
-  background: rgba(34, 197, 94, 0.12);
+  border-color: rgb(var(--success) / 0.45);
+  background: rgb(var(--success) / 0.12);
 }
 .schema-view__total--implemented .schema-view__total-value {
-  color: #4ade80;
+  color: rgb(var(--success));
 }
 
 .schema-view__total--building {
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgb(var(--primary) / 0.45);
+  background: rgb(var(--primary) / 0.12);
 }
 .schema-view__total--building .schema-view__total-value {
-  color: #60a5fa;
+  color: rgb(var(--primary));
 }
 
 .schema-view__total--planned {
-  border-color: rgba(148, 163, 184, 0.35);
-  background: rgba(148, 163, 184, 0.1);
+  border-color: rgb(var(--border));
+  background: rgb(var(--surface-2));
 }
 
 .schema-view__schemas {
@@ -366,8 +366,8 @@ function fkLabel(field: SchemaField): string {
   gap: 0.45rem;
   padding: 0.5rem 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
   color: var(--text-main);
   font-size: 0.85rem;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -376,14 +376,14 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-chip:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.08);
+  border-color: rgb(var(--primary) / 0.4);
+  background: rgb(var(--primary) / 0.08);
 }
 
 .schema-chip.is-active {
-  border-color: rgba(99, 102, 241, 0.7);
-  background: rgba(99, 102, 241, 0.18);
-  color: #c7d2fe;
+  border-color: rgb(var(--primary) / 0.7);
+  background: rgb(var(--primary) / 0.18);
+  color: var(--text-main);
 }
 
 .schema-chip__icon {
@@ -392,10 +392,10 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-chip--implemented .schema-chip__icon {
-  color: #4ade80;
+  color: rgb(var(--success));
 }
 .schema-chip--building .schema-chip__icon {
-  color: #60a5fa;
+  color: rgb(var(--primary));
 }
 .schema-chip--planned .schema-chip__icon {
   color: var(--text-muted);
@@ -405,15 +405,15 @@ function fkLabel(field: SchemaField): string {
   display: inline-block;
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 600;
 }
 
 .schema-chip.is-active .schema-chip__count {
-  background: rgba(99, 102, 241, 0.25);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.25);
+  color: var(--text-main);
 }
 
 .schema-detail {
@@ -421,15 +421,15 @@ function fkLabel(field: SchemaField): string {
   gap: 1rem;
   padding: 1.1rem;
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
 }
 
 .schema-detail--implemented {
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: rgb(var(--success) / 0.3);
 }
 .schema-detail--building {
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgb(var(--primary) / 0.35);
 }
 
 .schema-detail__header {
@@ -452,8 +452,8 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-detail__title code {
-  background: rgba(99, 102, 241, 0.18);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.18);
+  color: var(--text-main);
   padding: 0.1rem 0.45rem;
   border-radius: 6px;
   font-size: 0.95rem;
@@ -469,16 +469,16 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-detail__status--implemented {
-  background: rgba(34, 197, 94, 0.18);
-  color: #86efac;
+  background: rgb(var(--success) / 0.18);
+  color: rgb(var(--success));
 }
 .schema-detail__status--building {
-  background: rgba(59, 130, 246, 0.18);
-  color: #93c5fd;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 .schema-detail__status--planned {
-  background: rgba(148, 163, 184, 0.18);
-  color: #cbd5f5;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
 }
 
 .schema-detail__phase {
@@ -501,7 +501,7 @@ function fkLabel(field: SchemaField): string {
   text-align: center;
   color: var(--text-muted);
   font-style: italic;
-  border: 1px dashed rgba(148, 163, 184, 0.25);
+  border: 1px dashed rgb(var(--border));
   border-radius: 12px;
 }
 
@@ -510,8 +510,8 @@ function fkLabel(field: SchemaField): string {
   gap: 0.25rem;
   padding: 0.25rem;
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
+  border: 1px solid rgb(var(--border));
   width: max-content;
 }
 
@@ -533,13 +533,13 @@ function fkLabel(field: SchemaField): string {
 }
 
 .view-toggle__btn:hover {
-  background: rgba(99, 102, 241, 0.12);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.12);
+  color: var(--text-main);
 }
 
 .view-toggle__btn.is-active {
-  background: rgba(99, 102, 241, 0.22);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.22);
+  color: var(--text-main);
 }
 
 .view-toggle__btn .material-icons-round {
@@ -559,15 +559,15 @@ function fkLabel(field: SchemaField): string {
   gap: 0.4rem;
   padding: 0.85rem 1rem;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
 }
 
 .schema-table--implemented {
-  border-color: rgba(34, 197, 94, 0.25);
+  border-color: rgb(var(--success) / 0.25);
 }
 .schema-table--building {
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgb(var(--primary) / 0.3);
 }
 
 .schema-table__head {
@@ -596,10 +596,10 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-table--implemented .schema-table__icon {
-  color: #4ade80;
+  color: rgb(var(--success));
 }
 .schema-table--building .schema-table__icon {
-  color: #60a5fa;
+  color: rgb(var(--primary));
 }
 .schema-table--planned .schema-table__icon {
   color: var(--text-muted);
@@ -621,16 +621,16 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-table__status--implemented {
-  background: rgba(34, 197, 94, 0.15);
-  color: #86efac;
+  background: rgb(var(--success) / 0.15);
+  color: rgb(var(--success));
 }
 .schema-table__status--building {
-  background: rgba(59, 130, 246, 0.15);
-  color: #93c5fd;
+  background: rgb(var(--primary) / 0.15);
+  color: rgb(var(--primary));
 }
 .schema-table__status--planned {
-  background: rgba(148, 163, 184, 0.15);
-  color: #cbd5f5;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
 }
 
 .schema-table__phase {
@@ -656,7 +656,7 @@ function fkLabel(field: SchemaField): string {
   display: grid;
   gap: 0.7rem;
   padding-top: 0.5rem;
-  border-top: 1px solid rgba(148, 163, 184, 0.15);
+  border-top: 1px solid rgb(var(--border));
 }
 
 .schema-table__empty {
@@ -682,7 +682,7 @@ function fkLabel(field: SchemaField): string {
 .schema-fields td {
   padding: 0.45rem 0.6rem;
   text-align: left;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  border-bottom: 1px solid rgb(var(--border));
   vertical-align: top;
 }
 
@@ -692,7 +692,7 @@ function fkLabel(field: SchemaField): string {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgb(var(--surface-2));
 }
 
 .schema-fields code {
@@ -702,7 +702,7 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-fields__name code {
-  color: #93c5fd;
+  color: rgb(var(--primary));
 }
 
 .schema-fields__type code {
@@ -722,18 +722,18 @@ function fkLabel(field: SchemaField): string {
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  background: rgba(148, 163, 184, 0.15);
+  background: rgb(var(--surface-2));
   color: var(--text-muted);
 }
 
 .schema-flag--pk {
-  background: rgba(34, 197, 94, 0.18);
-  color: #86efac;
+  background: rgb(var(--success) / 0.18);
+  color: rgb(var(--success));
 }
 
 .schema-flag--fk {
-  background: rgba(99, 102, 241, 0.18);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.18);
+  color: var(--text-main);
 }
 
 .schema-flag--unique {
@@ -742,12 +742,12 @@ function fkLabel(field: SchemaField): string {
 }
 
 .schema-flag--null {
-  background: rgba(148, 163, 184, 0.15);
+  background: rgb(var(--surface-2));
   color: var(--text-muted);
 }
 
 .schema-fk code {
-  color: #c7d2fe;
+  color: var(--text-main);
 }
 
 .schema-fields__muted {

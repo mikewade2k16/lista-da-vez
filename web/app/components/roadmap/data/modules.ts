@@ -247,17 +247,18 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
   },
   {
     id: "qr-tools",
-    label: "Tools secundarias (QR / Encurtador / Scripts)",
+    label: "Tools (QR Code + Encurtador)",
     route: "/tools/qr-code",
-    status: "pending",
+    status: "in_progress",
     priority: "P3",
     category: "tools",
     description:
-      "Ferramentas auxiliares hoje meio implementadas. Atualmente ocultas do menu. Reativar so quando tiver demanda real.",
+      "Encurtador de link e gerador de QR Code customizavel. O projeto antigo era mock (globalThis no BFF Nitro eliminado); em reconstrucao COMO MODULO REAL: back Go modulo tools/ + schema tools (migration 0197), isolado por account_id. QR rastreado (codifica /q/{slug} -> 302 + scan_count, respeita is_active); encurtador rastreado (/s/{slug} -> 302 + hits). Reaproveita o design system (OmniDataTable/Filters). Dono do link escolhido no modal (cross-conta para platform_admin). Plano: docs/tools/PLANO_MODULO_TOOLS.md.",
     scope: [
-      "QR Code com tracking de cliques",
-      "Encurtador integrado com tracking",
-      "Scripts: snippets reutilizaveis de mensagens"
+      "Migration 0197 + modulo Go (short_links + qr_codes, redirect publico /s e /q)",
+      "Paginas reais tools/qr-code + tools/encurtador-de-link (substituem os mocks do demo-pages)",
+      "QR customizavel (cor/fundo/tamanho) gerado no cliente + download",
+      "Scripts (snippets de mensagens): fase futura, ainda mock"
     ],
     dependsOn: []
   }

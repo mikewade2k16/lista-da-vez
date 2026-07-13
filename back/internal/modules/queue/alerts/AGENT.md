@@ -131,6 +131,16 @@ Exemplos:
 - severidade padrao
 - cooldown entre reenvios
 
+### Config do auto-encerramento (2h) — vive aqui, consumida por `operations`
+
+`tenant_operational_alert_rules` ganhou (migration 0196) `auto_close_enabled`,
+`auto_close_minutes`, `auto_close_grace_seconds`, `snooze_reprompt_minutes`. Sao expostos
+por `LoadRules`/`UpsertRules`/`RulesView`/`UpdateRulesInput` (CRUD via
+`PATCH /v1/alerts/rules`, front em `AlertsWorkspace.vue` bloco "Auto-encerramento") E por
+`LoadOperationalRules` (o `operations` le pelo mesmo contrato para decidir o sweep). Manter
+a fronteira: `alerts` guarda a config; `operations` e' dono do timer e do fechamento. Ver
+`docs/operacao/AUTO_ENCERRAMENTO_PLAN.md` e `docs/OPERATIONS_ALERTS_TIMER_FLOW.md`.
+
 ### Horario de funcionamento da loja
 
 Nao pertence a `alerts`.

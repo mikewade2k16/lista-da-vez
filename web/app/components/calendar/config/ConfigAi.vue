@@ -130,33 +130,23 @@ function setTemperature(value: string): void {
       </span>
     </div>
 
-    <!-- Escopo das chaves + chaves mascaradas por provider. Colapsavel: abre so o que
-         vai mexer (aberto por padrao por ser o setup mais comum). -->
-    <details class="calendar-config__collapse" open>
-      <summary class="calendar-config__collapse-head">Chaves de API</summary>
+    <!-- Ordem e estado dos collapses (pedido do dono, 2026-07-11): PROMPT primeiro (e a
+         "lei da IA", o que mais se ajusta no dia a dia), Chaves de API por ULTIMO, e TODOS
+         os collapses iniciam FECHADOS. -->
+    <details class="calendar-config__collapse">
+      <summary class="calendar-config__collapse-head">Prompt do sistema (a lei da IA)</summary>
       <div class="calendar-config__collapse-body">
-        <div class="calendar-config__seg" role="group" aria-label="Escopo das chaves de API">
-          <button
-            type="button"
-            class="calendar-config__seg-btn"
-            :class="{ 'is-active': ai.useGlobalKeys }"
-            @click="patch({ useGlobalKeys: true })"
-          >
-            Globais da plataforma
-          </button>
-          <button
-            type="button"
-            class="calendar-config__seg-btn"
-            :class="{ 'is-active': !ai.useGlobalKeys }"
-            @click="patch({ useGlobalKeys: false })"
-          >
-            Desta conta
-          </button>
-        </div>
-        <span v-if="scopePending" class="calendar-config__hint">
-          Salve as configurações para aplicar o novo escopo das chaves.
-        </span>
-        <ConfigAiKeys :use-global-keys="savedUseGlobalKeys" />
+        <label class="calendar-config__field">
+          <textarea
+            class="calendar-config__input calendar-config__textarea calendar-config__textarea--tall"
+            :value="ai.systemPrompt"
+            placeholder="Defina o comportamento do assistente: tom, foco, regras. Vazio = prompt padrão do workflow."
+            @input="patch({ systemPrompt: ($event.target as HTMLTextAreaElement).value })"
+          ></textarea>
+          <span class="calendar-config__hint">
+            Este texto comanda o assistente, o plano do mês e as respostas. É a instrução principal.
+          </span>
+        </label>
       </div>
     </details>
 
@@ -255,26 +245,38 @@ function setTemperature(value: string): void {
     </details>
 
     <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Prompt do sistema (a lei da IA)</summary>
-      <div class="calendar-config__collapse-body">
-        <label class="calendar-config__field">
-          <textarea
-            class="calendar-config__input calendar-config__textarea calendar-config__textarea--tall"
-            :value="ai.systemPrompt"
-            placeholder="Defina o comportamento do assistente: tom, foco, regras. Vazio = prompt padrão do workflow."
-            @input="patch({ systemPrompt: ($event.target as HTMLTextAreaElement).value })"
-          ></textarea>
-          <span class="calendar-config__hint">
-            Este texto comanda o assistente, o plano do mês e as respostas. É a instrução principal.
-          </span>
-        </label>
-      </div>
-    </details>
-
-    <details class="calendar-config__collapse">
       <summary class="calendar-config__collapse-head">Escopo por cliente</summary>
       <div class="calendar-config__collapse-body">
         <ConfigAiClientScope :model-value="ai" @update:model-value="onScope" />
+      </div>
+    </details>
+
+    <!-- Chaves de API por ULTIMO e FECHADO (mexe-se raramente; setup e feito uma vez). -->
+    <details class="calendar-config__collapse">
+      <summary class="calendar-config__collapse-head">Chaves de API</summary>
+      <div class="calendar-config__collapse-body">
+        <div class="calendar-config__seg" role="group" aria-label="Escopo das chaves de API">
+          <button
+            type="button"
+            class="calendar-config__seg-btn"
+            :class="{ 'is-active': ai.useGlobalKeys }"
+            @click="patch({ useGlobalKeys: true })"
+          >
+            Globais da plataforma
+          </button>
+          <button
+            type="button"
+            class="calendar-config__seg-btn"
+            :class="{ 'is-active': !ai.useGlobalKeys }"
+            @click="patch({ useGlobalKeys: false })"
+          >
+            Desta conta
+          </button>
+        </div>
+        <span v-if="scopePending" class="calendar-config__hint">
+          Salve as configurações para aplicar o novo escopo das chaves.
+        </span>
+        <ConfigAiKeys :use-global-keys="savedUseGlobalKeys" />
       </div>
     </details>
 

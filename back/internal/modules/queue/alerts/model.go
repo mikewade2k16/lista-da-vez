@@ -43,6 +43,11 @@ const (
 	defaultIdleStoreMinutes         = 20
 	defaultAfterClosingGraceMinutes = 15
 
+	// Auto-encerramento (2h): defaults da config por tenant (tenant_operational_alert_rules).
+	defaultAutoCloseMinutes      = 120
+	defaultAutoCloseGraceSeconds = 60
+	defaultSnoozeRepromptMinutes = 30
+
 	InteractionKindNone             = "none"
 	InteractionKindReminder         = "reminder"
 	InteractionKindResponseRequired = "response_required"
@@ -213,15 +218,20 @@ type Overview struct {
 }
 
 type RulesView struct {
-	TenantID                 string     `json:"tenantId"`
-	LongOpenServiceMinutes   int        `json:"longOpenServiceMinutes"`
-	IdleStoreMinutes         int        `json:"idleStoreMinutes"`
-	AfterClosingGraceMinutes int        `json:"afterClosingGraceMinutes"`
-	NotifyDashboard          bool       `json:"notifyDashboard"`
-	NotifyOperationContext   bool       `json:"notifyOperationContext"`
-	NotifyExternal           bool       `json:"notifyExternal"`
-	Source                   string     `json:"source"`
-	UpdatedAt                *time.Time `json:"updatedAt,omitempty"`
+	TenantID                 string `json:"tenantId"`
+	LongOpenServiceMinutes   int    `json:"longOpenServiceMinutes"`
+	IdleStoreMinutes         int    `json:"idleStoreMinutes"`
+	AfterClosingGraceMinutes int    `json:"afterClosingGraceMinutes"`
+	NotifyDashboard          bool   `json:"notifyDashboard"`
+	NotifyOperationContext   bool   `json:"notifyOperationContext"`
+	NotifyExternal           bool   `json:"notifyExternal"`
+	// Auto-encerramento de atendimento (2h) — config por tenant.
+	AutoCloseEnabled      bool       `json:"autoCloseEnabled"`
+	AutoCloseMinutes      int        `json:"autoCloseMinutes"`
+	AutoCloseGraceSeconds int        `json:"autoCloseGraceSeconds"`
+	SnoozeRepromptMinutes int        `json:"snoozeRepromptMinutes"`
+	Source                string     `json:"source"`
+	UpdatedAt             *time.Time `json:"updatedAt,omitempty"`
 }
 
 type UpdateRulesInput struct {
@@ -231,6 +241,10 @@ type UpdateRulesInput struct {
 	NotifyDashboard          *bool `json:"notifyDashboard,omitempty"`
 	NotifyOperationContext   *bool `json:"notifyOperationContext,omitempty"`
 	NotifyExternal           *bool `json:"notifyExternal,omitempty"`
+	AutoCloseEnabled         *bool `json:"autoCloseEnabled,omitempty"`
+	AutoCloseMinutes         *int  `json:"autoCloseMinutes,omitempty"`
+	AutoCloseGraceSeconds    *int  `json:"autoCloseGraceSeconds,omitempty"`
+	SnoozeRepromptMinutes    *int  `json:"snoozeRepromptMinutes,omitempty"`
 }
 
 type Actor struct {
@@ -244,6 +258,11 @@ type OperationalRules struct {
 	NotifyDashboard        bool
 	NotifyOperationContext bool
 	NotifyExternal         bool
+	// Auto-encerramento (2h): config por tenant lida pelo sweep de operations.
+	AutoCloseEnabled      bool
+	AutoCloseMinutes      int
+	AutoCloseGraceSeconds int
+	SnoozeRepromptMinutes int
 }
 
 type AlertRespondInput struct {

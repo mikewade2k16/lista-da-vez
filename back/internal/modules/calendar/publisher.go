@@ -19,6 +19,8 @@ const (
 	realtimeDayMediaUpdated = "calendar.day_media_updated"
 	realtimeConfigUpdated   = "calendar.config_updated"
 	realtimePlanUpdated     = "calendar.plan_updated"
+	// WAVE 10: perfil estrategico do cliente mudou (PutClientProfile). ResourceID=clientId.
+	realtimeClientProfileUpdated = "calendar.client_profile_updated"
 )
 
 // RealtimeEvent e o payload lean de um evento do canal do calendario (C11). O realtime

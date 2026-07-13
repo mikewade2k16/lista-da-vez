@@ -158,7 +158,22 @@ function hasTrustedScopedSnapshot(storeId) {
     return false
   }
 
-  return Number(snapshot?._operationSnapshotFetchedAt || 0) > 0
+  // Sinal PRIMARIO: o snapshot foi buscado do servidor.
+  if (Number(snapshot?._operationSnapshotFetchedAt || 0) > 0) {
+    return true
+  }
+
+  // Sinal SECUNDARIO (resiliencia): o snapshot ja carrega dados reais da loja
+  // (fila/atendimentos/historico). Sob rajada de refreshes concorrentes o flag
+  // _operationSnapshotFetchedAt pode oscilar por um tick e derrubava o board para a
+  // visao agregada (sem historico => "0 finalizados", parecia bug de tela vazia). A
+  // presenca de dados ja hidratados e um sinal ESTAVEL de que a loja e operavel,
+  // mantendo o board sob a rajada.
+  return (
+    (Array.isArray(snapshot?.activeServices) && snapshot.activeServices.length > 0) ||
+    (Array.isArray(snapshot?.waitingList) && snapshot.waitingList.length > 0) ||
+    (Array.isArray(snapshot?.serviceHistory) && snapshot.serviceHistory.length > 0)
+  )
 }
 
 function mapScopedActiveItem(service, storeMeta) {
@@ -296,6 +311,9 @@ function buildOperableStoreState(storeId) {
       (item) => ({ ...item, storeId }),
     ),
     serviceHistory: Array.isArray(snapshot.serviceHistory) ? snapshot.serviceHistory : [],
+    pendingValidations: Array.isArray(snapshot.pendingValidations)
+      ? snapshot.pendingValidations.map((item) => ({ ...item, storeId }))
+      : [],
     consultantActivitySessions: Array.isArray(snapshot.consultantActivitySessions)
       ? snapshot.consultantActivitySessions
       : [],
@@ -347,6 +365,11 @@ const displayState = computed(() => {
     activeServices: activeItems,
     pausedEmployees: pausedSource.map(mapIntegratedPausedItem),
     roster,
+    // Auto-encerramento (2h): pendencias AGREGADAS de todas as lojas acessiveis, para
+    // a caixa de Pendencias funcionar na visao "Todas as lojas" (nao so por loja).
+    pendingValidations: Array.isArray(props.overview?.pendingValidations)
+      ? props.overview.pendingValidations
+      : [],
   }
 })
 

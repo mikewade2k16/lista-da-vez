@@ -28,6 +28,12 @@ type OperationalAlertRules struct {
 	LongOpenServiceMinutes int
 	NotifyDashboard        bool
 	NotifyOperationContext bool
+	// Auto-encerramento (2h): config por tenant que o sweep usa para decidir o
+	// countdown/adiamento. AutoCloseEnabled desligado (default) => nada auto-fecha.
+	AutoCloseEnabled      bool
+	AutoCloseMinutes      int
+	AutoCloseGraceSeconds int
+	SnoozeRepromptMinutes int
 }
 
 type OperationalAlertSignal struct {

@@ -9,6 +9,8 @@ import { hydrateRuntimeStoreContext } from '~/utils/runtime-remote'
 import {
   normalizeText,
   buildCurrentMonthRange,
+  buildPreviousMonthRange,
+  buildMonthWeekRange,
   filterHistoryByDateRange,
   normalizeConsultantList,
 } from '~/domain/utils/consultant-transforms'
@@ -148,20 +150,18 @@ export const useConsultantsStore = defineStore('consultants', () => {
     integratedDateTo.value = nextRange.dateTo
   }
 
-  // Espelha setRankingPreviousMonth de ranking.vue: range do mês anterior em UTC
-  // (início = primeiro dia; fim = dia 0 do mês atual = último dia do mês anterior).
   function resetIntegratedPreviousMonth() {
-    const now = new Date()
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0))
-    const formatDateInput = (date: Date) =>
-      [
-        date.getUTCFullYear(),
-        String(date.getUTCMonth() + 1).padStart(2, '0'),
-        String(date.getUTCDate()).padStart(2, '0'),
-      ].join('-')
-    integratedDateFrom.value = formatDateInput(start)
-    integratedDateTo.value = formatDateInput(end)
+    const nextRange = buildPreviousMonthRange()
+    integratedDateFrom.value = nextRange.dateFrom
+    integratedDateTo.value = nextRange.dateTo
+  }
+
+  // Recorte por semana (metas semanais): fatia fixa do mês do período ATIVO, então
+  // compõe com "Mês anterior" (a semana usa o mês que estiver selecionado).
+  function setIntegratedWeek(week: number) {
+    const nextRange = buildMonthWeekRange(integratedDateFrom.value, week)
+    integratedDateFrom.value = nextRange.dateFrom
+    integratedDateTo.value = nextRange.dateTo
   }
 
   async function refreshIntegratedView() {
@@ -438,6 +438,7 @@ export const useConsultantsStore = defineStore('consultants', () => {
     clearIntegratedView,
     resetIntegratedCurrentMonth,
     resetIntegratedPreviousMonth,
+    setIntegratedWeek,
     setSelectedConsultant(personId: string) {
       return runtime.run('setSelectedConsultant', personId)
     },

@@ -111,6 +111,12 @@ func normalizeCampaignMatches(matches []CampaignMatch) []CampaignMatch {
 
 func normalizeOutcome(value string) string {
 	trimmed := strings.TrimSpace(value)
+	// 'auto' e o sentinela de um atendimento auto-encerrado (2h) aguardando o gerente
+	// gravar o desfecho real; nao entra em finishOutcomes (validacao estrita do input
+	// manual), mas precisa sobreviver ao normalizar o historico.
+	if trimmed == outcomeAuto {
+		return outcomeAuto
+	}
 	if _, ok := finishOutcomes[trimmed]; ok {
 		return trimmed
 	}
@@ -161,6 +167,13 @@ func maxFloat(value float64, minimum float64) float64 {
 }
 
 func maxInt64(value int64, minimum int64) int64 {
+	if value < minimum {
+		return minimum
+	}
+	return value
+}
+
+func maxInt(value int, minimum int) int {
 	if value < minimum {
 		return minimum
 	}

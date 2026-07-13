@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 
 import SettingsCrmConsultantRules from '~/components/settings/sections/SettingsCrmConsultantRules.vue'
 
@@ -62,6 +62,11 @@ function groupSummary(groupId) {
   return `${count} ${suffix}${pending}`
 }
 
+const listUsageSummary = computed(() => {
+  const count = props.ctx.crmListUsageTiers?.length || 0
+  return `${count} ${count === 1 ? 'faixa' : 'faixas'}`
+})
+
 function markDirty(groupId) {
   dirty[groupId] = true
 }
@@ -111,70 +116,81 @@ async function saveGroup(groupId) {
 <template>
   <div class="settings-grid">
     <article class="settings-card">
-      <header class="settings-card__header">
-        <h3 class="settings-card__title">Uso da lista</h3>
-      </header>
+      <details class="settings-collapse">
+        <summary class="settings-collapse__summary">
+          <div class="settings-collapse__title-wrap">
+            <strong class="settings-collapse__title">Uso da lista</strong>
+            <span class="settings-collapse__text">Faixas de cobertura e destaque</span>
+          </div>
+          <span class="settings-collapse__meta">{{ listUsageSummary }}</span>
+          <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
+            expand_more
+          </span>
+        </summary>
 
-      <label class="settings-field">
-        <span>Pedidos minimos para destaque</span>
-        <input
-          :value="ctx.crmListUsageMinOrdersForHighlight"
-          type="number"
-          min="1"
-          step="1"
-          :disabled="!ctx.canEditCrmCommercialPolicy"
-          @change="ctx.updateCrmListUsageMinOrders($event.target.value)"
-        />
-      </label>
-
-      <div class="crm-policy-list">
-        <div
-          v-for="(tier, index) in ctx.crmListUsageTiers"
-          :key="tier.id || index"
-          class="crm-policy-row"
-        >
+        <div class="settings-collapse__body">
           <label class="settings-field">
-            <span>Nome</span>
+            <span>Pedidos minimos para destaque</span>
             <input
-              :value="tier.label"
-              type="text"
-              :disabled="!ctx.canEditCrmCommercialPolicy"
-              @change="ctx.updateCrmListUsageTier(index, 'label', $event.target.value)"
-            />
-          </label>
-          <label class="settings-field">
-            <span>Minimo %</span>
-            <input
-              :value="tier.minRate"
+              :value="ctx.crmListUsageMinOrdersForHighlight"
               type="number"
-              min="0"
-              max="100"
-              step="0.1"
+              min="1"
+              step="1"
               :disabled="!ctx.canEditCrmCommercialPolicy"
-              @change="ctx.updateCrmListUsageTier(index, 'minRate', $event.target.value)"
+              @change="ctx.updateCrmListUsageMinOrders($event.target.value)"
             />
           </label>
+
+          <div class="crm-policy-list">
+            <div
+              v-for="(tier, index) in ctx.crmListUsageTiers"
+              :key="tier.id || index"
+              class="crm-policy-row"
+            >
+              <label class="settings-field">
+                <span>Nome</span>
+                <input
+                  :value="tier.label"
+                  type="text"
+                  :disabled="!ctx.canEditCrmCommercialPolicy"
+                  @change="ctx.updateCrmListUsageTier(index, 'label', $event.target.value)"
+                />
+              </label>
+              <label class="settings-field">
+                <span>Minimo %</span>
+                <input
+                  :value="tier.minRate"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  :disabled="!ctx.canEditCrmCommercialPolicy"
+                  @change="ctx.updateCrmListUsageTier(index, 'minRate', $event.target.value)"
+                />
+              </label>
+              <button
+                type="button"
+                class="crm-payout__icon-btn"
+                title="Remover faixa"
+                aria-label="Remover faixa"
+                :disabled="!ctx.canEditCrmCommercialPolicy"
+                @click="ctx.removeCrmListUsageTier(index)"
+              >
+                <span class="material-icons-round" aria-hidden="true">delete_outline</span>
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
-            class="crm-payout__icon-btn"
-            title="Remover faixa"
-            aria-label="Remover faixa"
+            class="settings-action-btn"
             :disabled="!ctx.canEditCrmCommercialPolicy"
-            @click="ctx.removeCrmListUsageTier(index)"
+            @click="ctx.addCrmListUsageTier"
           >
-            <span class="material-icons-round" aria-hidden="true">delete_outline</span>
+            Adicionar faixa
           </button>
         </div>
-      </div>
-
-      <button
-        type="button"
-        class="settings-action-btn"
-        :disabled="!ctx.canEditCrmCommercialPolicy"
-        @click="ctx.addCrmListUsageTier"
-      >
-        Adicionar faixa
-      </button>
+      </details>
     </article>
 
     <article class="settings-card settings-card--wide">
@@ -183,12 +199,7 @@ async function saveGroup(groupId) {
       </header>
 
       <div class="crm-payout__groups">
-        <details
-          v-for="group in payoutGroups"
-          :key="group.id"
-          class="settings-collapse"
-          :open="group.id === 'consultant'"
-        >
+        <details v-for="group in payoutGroups" :key="group.id" class="settings-collapse">
           <summary class="settings-collapse__summary">
             <div class="settings-collapse__title-wrap">
               <strong class="settings-collapse__title">{{ group.label }}</strong>

@@ -80,7 +80,13 @@ type ActiveService struct {
 	StoppedAt            int64           `json:"stoppedAt,omitempty"`
 	EffectiveFinishedAt  int64           `json:"effectiveFinishedAt,omitempty"`
 	StopReason           string          `json:"stopReason,omitempty"`
-	GoalStats            *GoalStats      `json:"goalStats,omitempty"`
+	// Auto-encerramento (2h): GraceDeadline (>0) = epoch ms ABSOLUTO em que o
+	// countdown de 1 min vence; a barra do front encolhe ate ele (comparado contra
+	// adjustedNow, nunca Date.now). SnoozedUntil = ate quando o "Continuar" adia.
+	GraceDeadline int64      `json:"graceDeadline,omitempty"`
+	SnoozedUntil  int64      `json:"snoozedUntil,omitempty"`
+	SnoozeCount   int        `json:"snoozeCount,omitempty"`
+	GoalStats     *GoalStats `json:"goalStats,omitempty"`
 }
 
 type PausedEmployee struct {
@@ -167,6 +173,18 @@ type ServiceHistoryEntry struct {
 	Notes                      string            `json:"notes"`
 	CampaignMatches            []CampaignMatch   `json:"campaignMatches"`
 	CampaignBonusTotal         float64           `json:"campaignBonusTotal"`
+	// Auto-encerramento (2h): CloseReason='auto' e ValidationStatus='pending' quando
+	// o sweep fechou; o gerente valida (validated + outcome real) ou cancela
+	// (cancelled + CancelReason). ValidatedBy/At = auditoria. SnoozeCount = adiamentos.
+	CloseReason      string `json:"closeReason,omitempty"`
+	ValidationStatus string `json:"validationStatus,omitempty"`
+	ValidatedBy      string `json:"validatedBy,omitempty"`
+	ValidatedAt      int64  `json:"validatedAt,omitempty"`
+	SnoozeCount      int    `json:"snoozeCount,omitempty"`
+	// ValidationReason: justificativa (obrigatoria) registrada pela gestao ao
+	// encerrar uma pendencia — por que o consultor nao encerrou na hora. Base das
+	// metricas de cobranca por consultor/gerente/loja.
+	ValidationReason string `json:"validationReason,omitempty"`
 }
 
 type CampaignMatch struct {
@@ -199,10 +217,31 @@ type Snapshot struct {
 	ConsultantActivitySessions []ConsultantSession         `json:"consultantActivitySessions"`
 	ConsultantCurrentStatus    map[string]ConsultantStatus `json:"consultantCurrentStatus"`
 	ServiceHistory             []ServiceHistoryEntry       `json:"serviceHistory"`
+	// PendingValidations sao os atendimentos auto-encerrados (close_reason='auto')
+	// aguardando o gerente validar/cancelar. Derivado do historico
+	// (validation_status='pending'); array proprio porque o servico ja saiu de
+	// operation_active_services no auto-close.
+	PendingValidations []PendingValidation `json:"pendingValidations"`
 	// ServerTime e o relogio do servidor no momento da resposta. O front usa para
 	// re-sincronizar o serverClockOffsetMs a cada leitura ao vivo (nao so no ack de
 	// mutacao), evitando que a sessao que apenas observa drifte o timer ate o reload.
 	ServerTime time.Time `json:"serverTime"`
+}
+
+// PendingValidation e um atendimento encerrado automaticamente (2h) aguardando
+// validacao do gerente. O cronometro esta PARADO: DurationMs e fixo (fechamento
+// menos inicio), sem contador ao vivo no front.
+type PendingValidation struct {
+	ServiceID    string `json:"serviceId"`
+	StoreID      string `json:"storeId"`
+	StoreName    string `json:"storeName,omitempty"`
+	PersonID     string `json:"personId"`
+	PersonName   string `json:"personName"`
+	StartedAt    int64  `json:"startedAt"`
+	FinishedAt   int64  `json:"finishedAt"`
+	AutoClosedAt int64  `json:"autoClosedAt"`
+	DurationMs   int64  `json:"durationMs"`
+	SnoozeCount  int    `json:"snoozeCount"`
 }
 
 type SnapshotState struct {
@@ -235,6 +274,12 @@ type ActiveServiceState struct {
 	StartOffsetMs        int64
 	StoppedAt            int64
 	StopReason           string
+	// Auto-encerramento (2h): estado corrente do countdown/adiamento persistido em
+	// queue.operation_active_services. GraceDeadline = epoch ms absoluto do vencimento
+	// da barra (0 = sem countdown). SnoozedUntil = ate quando o "Continuar" adia.
+	GraceDeadline int64
+	SnoozedUntil  int64
+	SnoozeCount   int
 }
 
 type PausedStateItem struct {
@@ -295,6 +340,10 @@ type OperationOverview struct {
 	ActiveServices       []OperationOverviewPerson `json:"activeServices"`
 	PausedEmployees      []OperationOverviewPerson `json:"pausedEmployees"`
 	AvailableConsultants []OperationOverviewPerson `json:"availableConsultants"`
+	// PendingValidations: auto-encerramentos (2h) aguardando validacao da gestao,
+	// AGREGADOS de todas as lojas acessiveis (a caixa de Pendencias funciona tambem
+	// na visao "Todas as lojas").
+	PendingValidations []PendingValidation `json:"pendingValidations"`
 	// ServerTime: relogio do servidor na resposta, para o front re-sincronizar o
 	// serverClockOffsetMs a cada refresh ao vivo (ver Snapshot.ServerTime).
 	ServerTime time.Time `json:"serverTime"`
@@ -375,6 +424,25 @@ type FinishCommandInput struct {
 	Notes                      string            `json:"notes"`
 	CampaignMatches            []CampaignMatch   `json:"campaignMatches"`
 	CampaignBonusTotal         float64           `json:"campaignBonusTotal"`
+	// ValidationReason so e usada pelo POST /v1/operations/validate (encerramento de
+	// pendencia pela gestao): justificativa OBRIGATORIA de por que o consultor nao
+	// encerrou na hora. Ignorada pelo /finish normal.
+	ValidationReason string `json:"validationReason"`
+}
+
+// KeepOpenCommandInput e o "Continuar atendimento": adia o auto-encerramento (2h)
+// por mais uma janela de re-pergunta (snooze) e limpa o countdown corrente.
+type KeepOpenCommandInput struct {
+	StoreID   string `json:"storeId"`
+	ServiceID string `json:"serviceId"`
+}
+
+// CancelMetricCommandInput cancela a metrica de uma pendencia auto-encerrada
+// (fora da metrica, preservada para auditoria). Motivo obrigatorio.
+type CancelMetricCommandInput struct {
+	StoreID   string `json:"storeId"`
+	ServiceID string `json:"serviceId"`
+	Reason    string `json:"reason"`
 }
 
 type Repository interface {
@@ -397,6 +465,13 @@ type Repository interface {
 	EffectiveMonthlyGoalByConsultant(ctx context.Context, storeIDs []string, month time.Time) (map[string]float64, error)
 	LoadSnapshot(ctx context.Context, storeID string) (SnapshotState, error)
 	Persist(ctx context.Context, input PersistInput) error
+	// ValidateAutoClose promove uma pendencia (validation_status='pending') a validada,
+	// gravando o desfecho real + dados do modal de fechamento + auditoria, preservando
+	// os campos imutaveis de tempo. ErrPendingNotFound quando nao ha linha pendente.
+	ValidateAutoClose(ctx context.Context, storeID string, entry ServiceHistoryEntry, validatedBy string, validatedAt int64) error
+	// CancelAutoClose marca a pendencia como cancelled (fora da metrica, preservada
+	// para auditoria) com motivo. ErrPendingNotFound quando nao ha linha pendente.
+	CancelAutoClose(ctx context.Context, storeID string, serviceID string, cancelReason string, validatedBy string, validatedAt int64) error
 }
 
 type PublishedEvent struct {

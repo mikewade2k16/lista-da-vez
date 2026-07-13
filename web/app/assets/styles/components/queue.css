@@ -441,3 +441,110 @@
 .service-card__row-actions--parallel {
   grid-template-columns: 42px minmax(0, 1fr) 42px;
 }
+
+/* Auto-encerramento (2h): botao "Pendencias para encerrar" no topo da Lista da vez
+   (acima do "Atender primeiro da fila"). VERMELHO SOLIDO (decisao do dono: a parte
+   de operacao usa vermelho de verdade, nao danger translucido/rosado) + badge de
+   contagem; abre o modal com a lista para a gestao encerrar. */
+.queue-pending-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  border-radius: 12px;
+  border: 0;
+  /* WAVE 11: cor solida (era gradiente saturado) + texto branco fixo (contraste nos 2 temas). */
+  background: rgb(var(--danger-strong));
+  color: rgb(255 255 255);
+  font-weight: 700;
+}
+
+.queue-pending-button:hover {
+  background: rgb(var(--danger));
+}
+
+.queue-pending-button .material-icons-round {
+  font-size: 1.05rem;
+}
+
+.queue-pending-button__count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--admin-header-text);
+  background: rgb(0 0 0 / 0.3);
+}
+
+/* Modal com a lista de pendencias (reusa o esqueleto finish-modal--compact). */
+.pending-list__body {
+  display: grid;
+  gap: 10px;
+  max-height: min(56vh, 480px);
+  overflow-y: auto;
+  padding: 4px 2px;
+}
+
+.pending-list__empty {
+  margin: 8px 0;
+  text-align: center;
+  font-size: 0.82rem;
+  color: rgb(var(--muted));
+}
+
+.pending-list__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  background: rgb(var(--surface-2) / 0.4);
+}
+
+.pending-list__info {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pending-list__name {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: rgb(var(--danger));
+}
+
+.pending-list__store {
+  margin-left: 6px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: rgb(var(--muted));
+  background: rgb(var(--surface-2) / 0.6);
+  vertical-align: middle;
+}
+
+.pending-list__meta {
+  font-size: 0.74rem;
+  color: rgb(var(--muted));
+}
+
+/* Especificidade 0,2,0 para vencer o width:100% do .column-action global
+   (employee.css vem depois de queue.css no barrel). Vermelho solido: e o botao
+   que ENCERRA um atendimento auto-encerrado. */
+.pending-list__item .pending-list__finish {
+  width: auto;
+  min-width: 110px;
+  min-height: 36px;
+  background: rgb(var(--danger-strong));
+  color: rgb(255 255 255);
+}

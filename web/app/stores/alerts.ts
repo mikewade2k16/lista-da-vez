@@ -111,6 +111,11 @@ function normalizeRules(rules: Record<string, unknown> = {}) {
     notifyDashboard: normalizeBoolean(rules.notifyDashboard, true),
     notifyOperationContext: normalizeBoolean(rules.notifyOperationContext, true),
     notifyExternal: normalizeBoolean(rules.notifyExternal, false),
+    // Auto-encerramento de atendimento (2h) — config por tenant.
+    autoCloseEnabled: normalizeBoolean(rules.autoCloseEnabled, false),
+    autoCloseMinutes: Math.max(1, Number(rules.autoCloseMinutes || 120) || 120),
+    autoCloseGraceSeconds: Math.max(5, Number(rules.autoCloseGraceSeconds || 60) || 60),
+    snoozeRepromptMinutes: Math.max(1, Number(rules.snoozeRepromptMinutes || 30) || 30),
     source: normalizeText(rules.source) || 'module-defaults',
     updatedAt: normalizeDate(rules.updatedAt),
   }
@@ -502,6 +507,26 @@ export const useAlertsStore = defineStore('alerts', () => {
             notifyDashboard: normalizeBoolean(payload.notifyDashboard, true),
             notifyOperationContext: normalizeBoolean(payload.notifyOperationContext, true),
             notifyExternal: normalizeBoolean(payload.notifyExternal, false),
+            // Auto-encerramento (2h): fallback no valor ATUAL para nao sobrescrever a
+            // config quando o payload de outra atualizacao omitir estes campos.
+            autoCloseEnabled: normalizeBoolean(
+              payload.autoCloseEnabled ?? rules.value?.autoCloseEnabled,
+              false,
+            ),
+            autoCloseMinutes: Math.max(
+              1,
+              Number(payload.autoCloseMinutes ?? rules.value?.autoCloseMinutes ?? 0) || 120,
+            ),
+            autoCloseGraceSeconds: Math.max(
+              5,
+              Number(payload.autoCloseGraceSeconds ?? rules.value?.autoCloseGraceSeconds ?? 0) ||
+                60,
+            ),
+            snoozeRepromptMinutes: Math.max(
+              1,
+              Number(payload.snoozeRepromptMinutes ?? rules.value?.snoozeRepromptMinutes ?? 0) ||
+                30,
+            ),
           },
         },
       )

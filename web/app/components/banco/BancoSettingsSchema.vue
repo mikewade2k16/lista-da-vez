@@ -539,7 +539,7 @@ function toggleTable(name: string) {
   padding: 0.75rem 1rem;
   border: 1px solid var(--line-soft);
   border-radius: 0.75rem;
-  background: rgba(13, 18, 29, 0.7);
+  background: rgb(var(--surface-2));
   font-size: 0.78rem;
   color: var(--text-muted);
 }
@@ -561,7 +561,7 @@ function toggleTable(name: string) {
   padding: 0.75rem 1rem;
   border: 1px solid var(--line-soft);
   border-radius: 0.75rem;
-  background: rgba(13, 18, 29, 0.7);
+  background: rgb(var(--surface-2));
   font-size: 0.82rem;
 }
 
@@ -587,19 +587,19 @@ function toggleTable(name: string) {
 }
 
 .banco-schema__migration-icon--done {
-  color: #53c6a0;
+  color: rgb(var(--success));
 }
 .banco-schema__migration-icon--pending {
-  color: #888;
+  color: var(--text-muted);
 }
 
 .banco-schema__migration-item--highlight {
-  border-color: rgba(83, 198, 160, 0.35);
-  background: rgba(83, 198, 160, 0.06);
+  border-color: rgb(var(--success) / 0.35);
+  background: rgb(var(--success) / 0.06);
 }
 
 .banco-schema__migration-item--highlight strong {
-  color: #53c6a0;
+  color: rgb(var(--success));
 }
 
 .banco-schema__tables {
@@ -611,23 +611,23 @@ function toggleTable(name: string) {
   border: 1px solid var(--line-soft);
   border-radius: 1rem;
   overflow: hidden;
-  background: rgba(13, 18, 29, 0.9);
+  background: rgb(var(--surface-2));
 }
 
 .banco-schema__table--nova {
-  border-color: rgba(83, 198, 160, 0.3);
+  border-color: rgb(var(--success) / 0.3);
 }
 .banco-schema__table--legacy {
-  border-color: rgba(180, 100, 80, 0.25);
+  border-color: rgb(var(--danger) / 0.25);
 }
 .banco-schema__table--relacional {
-  border-color: rgba(98, 129, 255, 0.25);
+  border-color: rgb(var(--primary) / 0.25);
 }
 .banco-schema__table--catalogo {
   border-color: rgba(200, 170, 60, 0.25);
 }
 .banco-schema__table--estavel {
-  border-color: rgba(120, 160, 255, 0.2);
+  border-color: rgb(var(--primary) / 0.2);
 }
 
 .banco-schema__table-head {
@@ -667,7 +667,7 @@ function toggleTable(name: string) {
 
 .banco-schema__table-name {
   font-size: 0.85rem;
-  color: #b8d0ff;
+  color: rgb(var(--primary));
   word-break: break-all;
 }
 
@@ -734,7 +734,7 @@ function toggleTable(name: string) {
 
 .banco-schema__col-name {
   font-size: 0.78rem;
-  color: #b8d0ff;
+  color: rgb(var(--primary));
   word-break: break-word;
 }
 
@@ -748,7 +748,7 @@ function toggleTable(name: string) {
 
 .banco-schema__col-type code {
   font-size: 0.75rem;
-  color: #a0c4a0;
+  color: rgb(var(--success));
 }
 
 .banco-schema__col-note {
@@ -767,13 +767,13 @@ function toggleTable(name: string) {
 }
 
 .banco-schema__col-tag--null {
-  background: rgba(180, 100, 80, 0.18);
-  color: #e0a090;
+  background: rgb(var(--danger) / 0.18);
+  color: rgb(var(--danger));
 }
 
 .banco-schema__col-tag--default {
-  background: rgba(98, 129, 255, 0.15);
-  color: #c0ccff;
+  background: rgb(var(--primary) / 0.15);
+  color: rgb(var(--primary));
 }
 
 .banco-schema__chip {
@@ -789,28 +789,28 @@ function toggleTable(name: string) {
 }
 
 .banco-schema__chip--nova {
-  background: rgba(83, 198, 160, 0.18);
-  color: #53c6a0;
+  background: rgb(var(--success) / 0.18);
+  color: rgb(var(--success));
 }
 
 .banco-schema__chip--legacy {
-  background: rgba(180, 100, 80, 0.18);
-  color: #e09080;
+  background: rgb(var(--danger) / 0.18);
+  color: rgb(var(--danger));
 }
 
 .banco-schema__chip--estavel {
-  background: rgba(120, 160, 255, 0.18);
-  color: #a0c0ff;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .banco-schema__chip--relacional {
-  background: rgba(98, 129, 255, 0.18);
-  color: #c0ccff;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .banco-schema__chip--catalogo {
   background: rgba(200, 170, 60, 0.18);
-  color: #e0c878;
+  color: #f59e0b;
 }
 
 .banco-schema__relations {

@@ -137,6 +137,9 @@ func (s *Service) PutClientProfile(ctx context.Context, accountID, clientID stri
 	if err != nil {
 		return ProfileView{}, err
 	}
+	// WAVE 10: avisa o realtime que o perfil mudou; a aba Clientes refaz o fetch (sem reload),
+	// para o dono e para quem estiver junto. ResourceID = clientId.
+	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeClientProfileUpdated, AccountID: account, ResourceID: client})
 	return saved.view(), nil
 }
 

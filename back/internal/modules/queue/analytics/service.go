@@ -188,12 +188,26 @@ func (service *Service) loadStoreBundle(ctx context.Context, store stores.StoreV
 	return bundle{
 		storeID:   store.ID,
 		tenantID:  store.TenantID,
-		history:   snapshot.ServiceHistory,
+		history:   excludeCancelledMetrics(snapshot.ServiceHistory),
 		roster:    roster,
 		snapshot:  snapshot,
 		settings:  settings,
 		storeView: store,
 	}, nil
+}
+
+// excludeCancelledMetrics remove do analytics as pendencias de auto-encerramento
+// (2h) que o gerente CANCELOU: a linha fica no historico para auditoria, mas nao
+// entra em nenhuma metrica/ranking. Pendentes/validadas seguem contando.
+func excludeCancelledMetrics(history []operations.ServiceHistoryEntry) []operations.ServiceHistoryEntry {
+	filtered := make([]operations.ServiceHistoryEntry, 0, len(history))
+	for _, entry := range history {
+		if entry.ValidationStatus == "cancelled" {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func combineHistory(bundles []bundle) []operations.ServiceHistoryEntry {

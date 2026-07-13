@@ -209,17 +209,21 @@ type ChatProposalFields struct {
 	// TargetID (WAVE 5.1, preparado p/ CRUD): id do evento/task alvo de update/delete. Vazio
 	// em create. Reservado — o front so usa em create hoje.
 	TargetID string `json:"targetId,omitempty"`
+	// Note (WAVE 7, kind=note): sub-objeto da proposta de anotacao do mes. Ver chat_proposals_crud.go.
+	Note *ChatProposalNote `json:"note,omitempty"`
+	// Profile (WAVE 7, kind=clientProfile): sub-objeto da proposta de perfil do cliente.
+	Profile *ChatProposalProfile `json:"profile,omitempty"`
 }
 
-// sanitizeProposal descarta propostas malformadas (kind fora de event|task, create sem titulo
-// ou update/delete sem targetId):
-// nesse caso a resposta e tratada como texto normal (proposal nil).
+// sanitizeProposal descarta propostas malformadas e normaliza (action/kind/fields). Despacha a
+// validacao por kind: event/task (WAVE 5.1) e note/clientProfile (WAVE 7, ver chat_proposals_crud.go).
+// Proposta invalida => nil (a resposta vira texto normal).
 func sanitizeProposal(p *ChatProposal) *ChatProposal {
 	if p == nil {
 		return nil
 	}
-	kind := strings.ToLower(strings.TrimSpace(p.Kind))
-	if kind != "event" && kind != "task" {
+	kind := canonicalProposalKind(p.Kind)
+	if kind == "" {
 		return nil
 	}
 	// Action (CRUD): create|update|delete; fora disso => create.
@@ -228,15 +232,16 @@ func sanitizeProposal(p *ChatProposal) *ChatProposal {
 		action = "create"
 	}
 	normalizeProposalFields(&p.Fields)
-	// Validacao por acao: update/delete precisam do ALVO (targetId, um id que existe no
-	// contexto); create precisa de titulo. Update pode alterar so prioridade/descricao/etc.
-	if (action == "update" || action == "delete") && strings.TrimSpace(p.Fields.TargetID) == "" {
-		return nil
+	ok := false
+	switch kind {
+	case "event", "task":
+		ok = sanitizeContentProposal(action, p.Fields)
+	case "note":
+		ok = sanitizeNoteProposal(action, p.Fields.Note)
+	case "clientProfile":
+		ok = sanitizeProfileProposal(action, p.Fields.Profile)
 	}
-	if action == "create" && strings.TrimSpace(p.Fields.Title) == "" {
-		return nil
-	}
-	if action == "update" && !proposalHasEditableField(p.Fields) {
+	if !ok {
 		return nil
 	}
 	p.Action = action
@@ -264,6 +269,9 @@ func normalizeProposalFields(f *ChatProposalFields) {
 	f.ClientID = strings.TrimSpace(f.ClientID)
 	f.ClientName = strings.TrimSpace(f.ClientName)
 	f.TargetID = strings.TrimSpace(f.TargetID)
+	// WAVE 7: normaliza os sub-objetos de anotacao/perfil (chat_proposals_crud.go).
+	normalizeNoteField(f.Note)
+	normalizeProfileField(f.Profile)
 	if len(f.InvolvedIDs) == 0 {
 		return
 	}
@@ -320,9 +328,15 @@ func sanitizeProposalList(single *ChatProposal, list []ChatProposal) []ChatPropo
 		src = []ChatProposal{*single}
 	}
 	out := make([]ChatProposal, 0, len(src))
+	seen := map[string]bool{}
 	for i := range src {
 		p := src[i]
 		if clean := sanitizeProposal(&p); clean != nil {
+			key := proposalDedupKey(*clean)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			out = append(out, *clean)
 			if len(out) >= maxChatProposals {
 				break
@@ -330,6 +344,11 @@ func sanitizeProposalList(single *ChatProposal, list []ChatProposal) []ChatPropo
 		}
 	}
 	return out
+}
+
+func proposalDedupKey(p ChatProposal) string {
+	raw, _ := json.Marshal(p.Fields)
+	return p.Action + "|" + p.Kind + "|" + string(raw)
 }
 
 // storedProposalsFrom projeta as propostas sanitizadas em StoredProposal para persistir:

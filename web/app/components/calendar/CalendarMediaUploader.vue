@@ -159,6 +159,45 @@ function remove(id: string): void {
     props.modelValue.filter((m) => m.id !== id),
   )
 }
+
+// Drag-and-drop (WAVE 11): arrastar as miniaturas reordena as midias — a ORDEM define qual
+// e' a 1a (a que aparece no fundo do dia). HTML5 nativo, sem lib; a nova ordem sobe pelo
+// mesmo update:modelValue (persiste no save do evento/dia).
+const dragIndex = ref<number | null>(null)
+const dragOverIndex = ref<number | null>(null)
+const canReorder = computed(() => !props.readonly && props.modelValue.length > 1)
+
+function onDragStart(idx: number, event: DragEvent): void {
+  if (!canReorder.value) return
+  dragIndex.value = idx
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(idx))
+  }
+}
+
+function onDragOver(idx: number, event: DragEvent): void {
+  if (dragIndex.value === null) return
+  event.preventDefault()
+  dragOverIndex.value = idx
+}
+
+function onDrop(idx: number): void {
+  const from = dragIndex.value
+  dragIndex.value = null
+  dragOverIndex.value = null
+  if (from === null || from === idx) return
+  const next = [...props.modelValue]
+  const [moved] = next.splice(from, 1)
+  if (!moved) return
+  next.splice(idx, 0, moved)
+  emit('update:modelValue', next)
+}
+
+function onDragEnd(): void {
+  dragIndex.value = null
+  dragOverIndex.value = null
+}
 </script>
 
 <template>
@@ -181,12 +220,25 @@ function remove(id: string): void {
       class="calendar-media__grid"
       :class="{ 'calendar-media__grid--scrollable': dayLayout && modelValue.length > 6 }"
     >
-      <div v-for="(item, idx) in modelValue" :key="item.id" class="calendar-media__cell">
+      <div
+        v-for="(item, idx) in modelValue"
+        :key="item.id"
+        class="calendar-media__cell"
+        :class="{
+          'is-dragging': dragIndex === idx,
+          'is-drag-over': dragOverIndex === idx && dragIndex !== idx,
+        }"
+        :draggable="canReorder"
+        @dragstart="onDragStart(idx, $event)"
+        @dragover="onDragOver(idx, $event)"
+        @drop.prevent="onDrop(idx)"
+        @dragend="onDragEnd"
+      >
         <div
           class="calendar-media__item calendar-media__item--clickable"
           role="button"
           tabindex="0"
-          :title="`${item.name} · ${formatBytes(item.sizeBytes)}`"
+          :title="`${item.name} · ${formatBytes(item.sizeBytes)}${canReorder ? ' · arraste para reordenar (a 1ª aparece no dia)' : ''}`"
           :aria-label="`Abrir ${item.name}`"
           @click="openViewer(idx)"
           @keydown.enter.prevent="openViewer(idx)"

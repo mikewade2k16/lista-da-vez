@@ -17,12 +17,16 @@ func (repository *PostgresRepository) LoadOperationalRules(ctx context.Context, 
 		       coalesce(r.long_open_service_minutes, $2),
 		       coalesce(r.notify_dashboard, true),
 		       coalesce(r.notify_operation_context, true),
-		       coalesce(r.notify_external, false)
+		       coalesce(r.notify_external, false),
+		       coalesce(r.auto_close_enabled, false),
+		       coalesce(r.auto_close_minutes, $3),
+		       coalesce(r.auto_close_grace_seconds, $4),
+		       coalesce(r.snooze_reprompt_minutes, $5)
 		from queue.stores s
 		left join tenant_operational_alert_rules r on r.tenant_id = s.tenant_id
 		where s.id = $1::uuid
 		limit 1;
-	`, strings.TrimSpace(storeID), defaultLongOpenMinutes)
+	`, strings.TrimSpace(storeID), defaultLongOpenMinutes, defaultAutoCloseMinutes, defaultAutoCloseGraceSeconds, defaultSnoozeRepromptMinutes)
 
 	var rules OperationalRules
 	err := row.Scan(
@@ -31,6 +35,10 @@ func (repository *PostgresRepository) LoadOperationalRules(ctx context.Context, 
 		&rules.NotifyDashboard,
 		&rules.NotifyOperationContext,
 		&rules.NotifyExternal,
+		&rules.AutoCloseEnabled,
+		&rules.AutoCloseMinutes,
+		&rules.AutoCloseGraceSeconds,
+		&rules.SnoozeRepromptMinutes,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -38,6 +46,10 @@ func (repository *PostgresRepository) LoadOperationalRules(ctx context.Context, 
 				LongOpenServiceMinutes: defaultLongOpenMinutes,
 				NotifyDashboard:        true,
 				NotifyOperationContext: true,
+				AutoCloseEnabled:       false,
+				AutoCloseMinutes:       defaultAutoCloseMinutes,
+				AutoCloseGraceSeconds:  defaultAutoCloseGraceSeconds,
+				SnoozeRepromptMinutes:  defaultSnoozeRepromptMinutes,
 			}, nil
 		}
 		return OperationalRules{}, err

@@ -188,61 +188,9 @@ export const DEMO_PAGES = {
     asideTitle: 'Monitores',
     asideItems: ['API', 'Realtime', 'ERP', 'Alertas'],
   },
-  'tools/qr-code': {
-    title: 'QR Code',
-    eyebrow: 'Tools',
-    description:
-      'Gerador de QR Codes para campanhas, check-in de loja e links rapidos de atendimento.',
-    status: 'Templates prontos',
-    statusMeta: '4 modelos',
-    metrics: [
-      { label: 'Gerados hoje', value: '42', tone: 'info' },
-      { label: 'Campanhas', value: '8', tone: 'success' },
-      { label: 'Expirando', value: '2', tone: 'warning' },
-    ],
-    rows: [
-      {
-        title: 'QR para entrada da fila',
-        meta: 'Loja Centro',
-        status: 'Publicado',
-        tone: 'success',
-      },
-      { title: 'QR de campanha primavera', meta: 'Marketing', status: 'Rascunho', tone: 'info' },
-      {
-        title: 'QR antigo aguardando troca',
-        meta: 'Loja Sul',
-        status: 'Expira hoje',
-        tone: 'warning',
-      },
-    ],
-    asideTitle: 'Modelos',
-    asideItems: ['Check-in', 'Campanha', 'Pesquisa', 'Atendimento'],
-  },
-  'tools/encurtador-de-link': {
-    title: 'Encurtador de Link',
-    eyebrow: 'Tools',
-    description:
-      'Links curtos para campanhas, retornos e acompanhamento de origem dos atendimentos.',
-    status: 'Domino ativo',
-    statusMeta: 'fila.link',
-    metrics: [
-      { label: 'Cliques hoje', value: '1.204', tone: 'info' },
-      { label: 'Links ativos', value: '87', tone: 'success' },
-      { label: 'Sem tag', value: '6', tone: 'warning' },
-    ],
-    rows: [
-      { title: 'fila.link/retorno', meta: 'Retorno pos-visita', status: 'Ativo', tone: 'success' },
-      { title: 'fila.link/promo-maio', meta: 'Campanha mensal', status: 'Monitorar', tone: 'info' },
-      {
-        title: 'fila.link/old-catalog',
-        meta: 'Catalogo antigo',
-        status: 'Revisar',
-        tone: 'warning',
-      },
-    ],
-    asideTitle: 'Origens',
-    asideItems: ['WhatsApp', 'Instagram', 'Email', 'Site'],
-  },
+  // 'tools/qr-code' e 'tools/encurtador-de-link' viraram paginas REAIS
+  // (pages/tools/*.vue + modulo Go tools). O mock foi removido daqui.
+  // 'tools/scripts' segue como mock (fase futura).
   'tools/scripts': {
     title: 'Scripts',
     eyebrow: 'Tools',

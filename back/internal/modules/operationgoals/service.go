@@ -223,6 +223,7 @@ func (service *Service) buildGoalForCreate(ctx context.Context, principal auth.P
 		StoreCode:       strings.TrimSpace(storeView.Code),
 		StoreName:       strings.TrimSpace(storeView.Name),
 		TargetMonth:     targetMonth,
+		Week:            normalizeWeek(input.Week),
 		MonthlyGoal:     maxFloat(input.MonthlyGoal, 0),
 		AvgTicketGoal:   maxFloat(input.AvgTicketGoal, 0),
 		ConversionGoal:  clampFloat(input.ConversionGoal, 0, 100),
@@ -333,6 +334,18 @@ func mapStoreAccessError(err error) error {
 	default:
 		return err
 	}
+}
+
+// normalizeWeek limita a semana a 0..4 (0 = meta mensal; 1..4 = semana do mes).
+func normalizeWeek(week int) int {
+	if week < 0 {
+		return 0
+	}
+	if week > 4 {
+		return 4
+	}
+
+	return week
 }
 
 func maxFloat(value float64, minimum float64) float64 {

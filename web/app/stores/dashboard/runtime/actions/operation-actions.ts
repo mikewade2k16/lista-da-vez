@@ -35,6 +35,33 @@ function findActiveServiceAcrossStores(state, serviceId) {
   return null
 }
 
+// Procura uma pendencia de auto-encerramento (2h) pelo serviceId no escopo ativo
+// e em todos os snapshots por loja. Usada para o finish modal abrir tambem para
+// atendimentos que ja sairam de activeServices (encerramento pela gestao).
+function findPendingValidationAcrossStores(state, serviceId) {
+  const targetId = String(serviceId || '').trim()
+  if (!targetId) {
+    return null
+  }
+
+  const inFlat = (state.pendingValidations || []).find((item) => item.serviceId === targetId)
+  if (inFlat) {
+    return inFlat
+  }
+
+  const snapshots = state.storeSnapshots || {}
+  for (const key of Object.keys(snapshots)) {
+    const found = (snapshots[key]?.pendingValidations || []).find(
+      (item) => item.serviceId === targetId,
+    )
+    if (found) {
+      return found
+    }
+  }
+
+  return null
+}
+
 function deriveQueuePositionAtStart(targetService, activeServices = [], serviceHistory = []) {
   if (
     typeof targetService?.queuePositionAtStart === 'number' &&
@@ -320,6 +347,19 @@ export function createOperationActions({ getState, updateState }) {
       const activeService = findActiveServiceAcrossStores(state, serviceId)
 
       if (!activeService) {
+        // Pendencia de auto-encerramento (2h): o servico ja saiu de activeServices,
+        // mas a gestao encerra pelo MESMO modal (o controller resolve o service-like
+        // a partir de pendingValidations). Sem draft aleatorio: o form nasce limpo.
+        const pending = findPendingValidationAcrossStores(state, serviceId)
+        if (!pending) {
+          return
+        }
+
+        updateState({
+          ...state,
+          finishModalServiceId: serviceId,
+          finishModalDraft: null,
+        })
         return
       }
 

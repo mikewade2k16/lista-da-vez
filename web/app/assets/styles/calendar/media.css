@@ -84,6 +84,20 @@
   min-width: 0;
 }
 
+/* Drag-and-drop (WAVE 11): reordenar as midias — a 1a e' a que aparece no fundo do dia. */
+.calendar-media__cell[draggable='true'] {
+  cursor: grab;
+}
+
+.calendar-media__cell.is-dragging {
+  opacity: 0.45;
+}
+
+.calendar-media__cell.is-drag-over .calendar-media__item {
+  outline: 2px dashed rgb(var(--primary) / 0.75);
+  outline-offset: 2px;
+}
+
 .calendar-media__cell .calendar-media__item {
   width: 100%;
   height: auto;

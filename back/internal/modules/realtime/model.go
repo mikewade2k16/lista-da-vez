@@ -42,6 +42,8 @@ const (
 	EventTypeCalendarDayMediaUpdated = "calendar.day_media_updated"
 	EventTypeCalendarConfigUpdated   = "calendar.config_updated"
 	EventTypeCalendarPlanUpdated     = "calendar.plan_updated"
+	// WAVE 10: perfil estrategico do cliente mudou (PutClientProfile); resourceId=clientId.
+	EventTypeCalendarClientProfileUpdated = "calendar.client_profile_updated"
 )
 
 type Event struct {

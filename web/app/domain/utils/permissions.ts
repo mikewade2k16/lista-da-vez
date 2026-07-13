@@ -42,6 +42,17 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: '',
   },
   {
+    id: 'calendar',
+    label: 'Calendario',
+    description: 'Calendario editorial: eventos, anotacoes e planejamento de conteudo.',
+    // Sem viewPermission (igual tasks/automation/finance): segue ROLE_WORKSPACES
+    // (platform_admin/owner por padrao) e e liberavel a papel custom pelo painel
+    // via hasModuleWorkspacePermission — sem migration. Gating por MODULO
+    // ('calendar' em core.account_modules) e feito a parte no module-enabled.global.ts.
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'automation',
     label: 'Automacao',
     description: 'Assistente de WhatsApp/IA (n8n + WAHA). Conectar numero e ligar/desligar.',
@@ -316,6 +327,7 @@ const ROLE_WORKSPACES = {
     'operacao',
     'consultor',
     'tasks',
+    'calendar',
     'ranking',
     'dados',
     'inteligencia',
@@ -355,6 +367,7 @@ const ROLE_WORKSPACES = {
     'operacao',
     'consultor',
     'tasks',
+    'calendar',
     'ranking',
     'dados',
     'inteligencia',
@@ -446,6 +459,9 @@ const SUPERUSER_ROLES = new Set(['platform_admin'])
 const MODULE_WORKSPACE_PERMISSION_PREFIXES: Record<string, string> = {
   tasks: 'tasks.',
   finance: 'finance.',
+  // calendar.view / calendar.manage ja existem em core.permissions: papel custom
+  // que recebe qualquer permissao do calendario no painel passa a ver o workspace.
+  calendar: 'calendar.',
 }
 
 function hasModuleWorkspacePermission(workspaceId, permissionKeys = []) {

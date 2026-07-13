@@ -9,18 +9,40 @@ import (
 )
 
 const (
-	statusAvailable   = "available"
-	statusQueue       = "queue"
-	statusService     = "service"
-	statusPaused      = "paused"
-	actionFinish      = "finish"
-	actionCancel      = "cancel"
-	actionStop        = "stop"
-	startModeQueue    = "queue"
-	startModeJump     = "queue-jump"
-	startModeParallel = "parallel"
-	pauseKindPause    = "pause"
-	pauseKindTask     = "assignment"
+	statusAvailable      = "available"
+	statusQueue          = "queue"
+	statusService        = "service"
+	statusPaused         = "paused"
+	actionFinish         = "finish"
+	actionCancel         = "cancel"
+	actionStop           = "stop"
+	actionAutoClose      = "auto_close"
+	actionAutoCloseGrace = "auto_grace"
+	actionKeepOpen       = "keep_open"
+	actionValidate       = "validate"
+	actionCancelMetric   = "cancel_metric"
+	startModeQueue       = "queue"
+	startModeJump        = "queue-jump"
+	startModeParallel    = "parallel"
+	pauseKindPause       = "pause"
+	pauseKindTask        = "assignment"
+
+	// Auto-encerramento (2h): motivos de fechamento e status de validacao gravados
+	// em queue.operation_service_history.
+	closeReasonManual = "manual"
+	closeReasonAuto   = "auto"
+
+	validationStatusValidated = "validated"
+	validationStatusPending   = "pending"
+	validationStatusCancelled = "cancelled"
+
+	// outcomeAuto e o sentinela de finish_outcome de um atendimento auto-encerrado
+	// (aguardando o gerente gravar o desfecho real na validacao).
+	outcomeAuto = "auto"
+
+	// fallbackSnoozeRepromptMinutes e o adiamento do "Continuar" quando a config do
+	// tenant nao trouxer um valor valido (mesmo default de tenant_operational_alert_rules).
+	fallbackSnoozeRepromptMinutes = 30
 )
 
 var finishOutcomes = map[string]struct{}{
@@ -147,6 +169,7 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 		ActiveServices:       []OperationOverviewPerson{},
 		PausedEmployees:      []OperationOverviewPerson{},
 		AvailableConsultants: []OperationOverviewPerson{},
+		PendingValidations:   []PendingValidation{},
 	}
 
 	for _, storeView := range accessibleStores {
@@ -158,6 +181,26 @@ func (service *Service) Overview(ctx context.Context, access AccessContext) (Ope
 		roster, snapshotState, err := service.loadSnapshotState(ctx, storeID)
 		if err != nil {
 			return OperationOverview{}, err
+		}
+
+		// Auto-encerramento (2h): agrega as pendencias de validacao desta loja para a
+		// caixa de Pendencias funcionar na visao integrada "Todas as lojas".
+		for _, entry := range snapshotState.ServiceHistory {
+			if entry.ValidationStatus != validationStatusPending {
+				continue
+			}
+			overview.PendingValidations = append(overview.PendingValidations, PendingValidation{
+				ServiceID:    entry.ServiceID,
+				StoreID:      storeID,
+				StoreName:    strings.TrimSpace(storeView.Name),
+				PersonID:     entry.PersonID,
+				PersonName:   entry.PersonName,
+				StartedAt:    entry.StartedAt,
+				FinishedAt:   entry.FinishedAt,
+				AutoClosedAt: entry.FinishedAt,
+				DurationMs:   entry.DurationMs,
+				SnoozeCount:  entry.SnoozeCount,
+			})
 		}
 
 		rosterByID := mapRosterByID(roster)

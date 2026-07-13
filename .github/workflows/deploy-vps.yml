@@ -48,6 +48,16 @@ on:
         required: false
         default: false
         type: boolean
+      deploy_automation:
+        description: Subir profile automation e reimportar workflows n8n versionados
+        required: false
+        default: false
+        type: boolean
+      force_automation_workflow_import:
+        description: Forcar reimport dos workflows n8n mesmo sem mudanca de hash
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -109,6 +119,13 @@ jobs:
           ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH'"
           scp -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" docker-compose.prod.yml "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_PATH/docker-compose.prod.yml"
 
+      - name: Copy automation workflows to VPS
+        if: ${{ inputs.deploy_automation }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_PATH/automation/export'"
+          scp -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -P "$DEPLOY_PORT" automation/export/workflow-*.json "$DEPLOY_USER@$DEPLOY_HOST:$REMOTE_PATH/automation/export/"
+
       - name: Set IMAGE_TAG in remote env
         run: |
           set -euo pipefail
@@ -160,6 +177,66 @@ jobs:
           REMOTE_SCRIPT
           ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/deploy.sh
 
+      - name: Deploy automation profile and workflows
+        if: ${{ inputs.deploy_automation }}
+        run: |
+          set -euo pipefail
+          force=""
+          if [[ "${{ inputs.force_recreate }}" == "true" ]]; then
+            force=" --force-recreate"
+          fi
+          force_import="${{ inputs.force_automation_workflow_import }}"
+          cat > /tmp/deploy_automation.sh << REMOTE_SCRIPT
+          set -euo pipefail
+          cd "$REMOTE_PATH"
+          mkdir -p .deploy backups/n8n
+
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation pull redis waha n8n whisper
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation up -d --no-build${force} redis waha n8n whisper
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation ps redis waha n8n whisper
+
+          manifest=\$(find automation/export -maxdepth 1 -type f -name 'workflow-*.json' -print0 | sort -z | xargs -0 sha256sum)
+          marker=.deploy/automation-workflows.sha256
+          changed=1
+          if [ "$force_import" != "true" ] && [ -f "\$marker" ] && printf '%s\n' "\$manifest" | cmp -s "\$marker" -; then
+            changed=0
+          fi
+
+          if [ "\$changed" = "0" ]; then
+            echo "Workflows n8n sem mudanca; import pulado."
+            exit 0
+          fi
+
+          backup_name="backups/n8n/workflows-before-automation-deploy_\$(date +%Y%m%d_%H%M%S).json"
+          active_ids_file=.deploy/n8n-active-workflows-before.txt
+          : > "\$active_ids_file"
+          if docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation exec -T n8n n8n export:workflow --all --output=/tmp/workflows-before-automation-deploy.json; then
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation exec -T n8n node -e "const fs=require('fs'); const raw=JSON.parse(fs.readFileSync('/tmp/workflows-before-automation-deploy.json','utf8')); const list=Array.isArray(raw)?raw:(Array.isArray(raw.data)?raw.data:(Array.isArray(raw.workflows)?raw.workflows:[raw])); for (const w of list) { if (w && w.id && (w.active===true || w.active==='true' || w.isActive===true)) console.log(w.id); }" > "\$active_ids_file" || true
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation cp n8n:/tmp/workflows-before-automation-deploy.json "\$backup_name" || true
+            echo "Backup workflows n8n: $REMOTE_PATH/\$backup_name"
+          else
+            echo "AVISO: nao consegui exportar backup dos workflows n8n; seguindo com import." >&2
+          fi
+
+          for wf in automation/export/workflow-*.json; do
+            base=\$(basename "\$wf")
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation cp "\$wf" "n8n:/tmp/\$base"
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation exec -T n8n n8n import:workflow --input="/tmp/\$base"
+          done
+
+          {
+            printf '%s\n' calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001
+            cat "\$active_ids_file"
+          } | awk 'NF && !seen[\$0]++' | while IFS= read -r workflow_id; do
+            docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation exec -T n8n n8n update:workflow --id="\$workflow_id" --active=true
+          done
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml --profile automation restart n8n
+
+          printf '%s\n' "\$manifest" > "\$marker"
+          echo "Workflows n8n importados e n8n reiniciado."
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/deploy_automation.sh
+
       - name: Smoke tests
         if: ${{ !inputs.skip_smoke_tests }}
         run: |
@@ -185,5 +262,6 @@ jobs:
             echo "- Host: \`$DEPLOY_HOST\`"
             echo "- Remote path: \`$REMOTE_PATH\`"
             echo "- Backup: \`${{ inputs.backup_database }}\`"
+            echo "- Automation: \`${{ inputs.deploy_automation }}\`"
             echo "- A VPS nao buildou nada: pull do GHCR + up --no-build."
           } >> "$GITHUB_STEP_SUMMARY"

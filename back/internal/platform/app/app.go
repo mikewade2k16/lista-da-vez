@@ -38,6 +38,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tasks"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tools"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/users"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/config"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
@@ -406,6 +407,11 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// Nitro — ADR 0002). Painel em /v1/finance (gating abaixo).
 		// Plano: docs/finance/PLANO_MODULO_FINANCE.md.
 		registry.MustRegister(finance.New())
+		// tools: encurtador de link + gerador de QR Code (reconstroi os mocks do
+		// projeto antigo como back real). Painel em /v1/tools (gating abaixo);
+		// redirects publicos /s/{slug} e /q/{slug} fora do gate.
+		// Plano: docs/tools/PLANO_MODULO_TOOLS.md.
+		registry.MustRegister(tools.New())
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -539,6 +545,9 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// finance (planilhas financeiras). platform_admin tem bypass; contas sem o
 		// modulo habilitado levam 403 module_disabled.
 		{Prefix: "/v1/finance", ModuleID: "finance"},
+		// tools (encurtador + QR). So o painel /v1/tools e gateado; os redirects
+		// publicos /s/{slug} e /q/{slug} NAO estao aqui (sao abertos).
+		{Prefix: "/v1/tools", ModuleID: "tools"},
 	}
 }
 

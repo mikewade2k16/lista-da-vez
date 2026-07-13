@@ -440,3 +440,17 @@
   font-size: 15px;
   color: var(--text-muted);
 }
+
+/* Encerramento de pendencia (auto-encerramento 2h): bloco da justificativa
+   obrigatoria de por que o consultor nao encerrou na hora. */
+.finish-form__section--pending {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-warning) 10%, transparent);
+}
+
+.finish-form__section--pending .finish-form__label {
+  color: var(--accent-warning);
+  font-weight: 700;
+}

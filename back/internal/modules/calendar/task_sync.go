@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"html"
+	"regexp"
 	"strings"
 	"time"
 
@@ -175,6 +176,12 @@ func (s *Service) applyTaskSyncToEvent(ctx context.Context, accountID, eventID s
 	if st := statusForColumn(cfg, ptrToStr(snap.ColumnID)); st != "" {
 		in.Status = st // sync de status (task mudou de coluna -> status do evento, E5)
 	}
+	// Descricao: corpo rico da task (content_html) -> descricao (texto simples) do evento. SO
+	// sobrescreve quando a task TEM conteudo (guarda anti-clobber: nao apaga uma descricao manual do
+	// evento quando a task esta sem corpo). Torna simetrico o sentido evento->task (descToHTML).
+	if body := htmlToPlainText(snap.ContentHTML); body != "" {
+		in.Description = body
+	}
 	in, err = validateEvent(accountID, in)
 	if err != nil {
 		return
@@ -287,6 +294,33 @@ func descToHTML(desc string) string {
 		return ""
 	}
 	return "<p>" + strings.ReplaceAll(html.EscapeString(d), "\n", "<br>") + "</p>"
+}
+
+// htmlTagRe remove tags HTML residuais na conversao content_html -> texto simples.
+var htmlTagRe = regexp.MustCompile(`<[^>]*>`)
+
+// htmlToPlainText converte o corpo rico da task (content_html) na descricao SIMPLES do evento:
+// blocos/br viram quebra de linha, tags somem, entidades desescapam e linhas vazias colapsam. E o
+// inverso de descToHTML (o round-trip perde formatacao rica — esperado, a descricao do evento e texto).
+func htmlToPlainText(h string) string {
+	s := strings.TrimSpace(h)
+	if s == "" {
+		return ""
+	}
+	s = strings.NewReplacer(
+		"</p>", "\n", "</div>", "\n", "</li>", "\n",
+		"<br>", "\n", "<br/>", "\n", "<br />", "\n",
+	).Replace(s)
+	s = htmlTagRe.ReplaceAllString(s, "")
+	s = html.UnescapeString(s)
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	for _, ln := range lines {
+		if ln = strings.TrimSpace(ln); ln != "" {
+			out = append(out, ln)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // syncEventMediaToTask espelha SO a midia do evento na task (ui_metadata.calendarMedia), sem

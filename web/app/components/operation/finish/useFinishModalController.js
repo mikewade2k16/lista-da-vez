@@ -395,6 +395,10 @@ export function useFinishModalController(props, operationsStore, ui) {
   // passo 2 cedo demais ao avancar.
   const step1JustificationsRevealed = ref(false)
   const step2JustificationsRevealed = ref(false)
+  // Justificativa OBRIGATORIA do encerramento de pendencia (auto-encerramento 2h):
+  // por que o consultor nao encerrou na hora. Ref proprio (fora do form) para nao
+  // entrar no draft persistido; resetado quando o modal fecha/troca de servico.
+  const validationReason = ref('')
   let isApplyingDraft = false
 
   function createProductCatalogSearchState() {
@@ -486,12 +490,48 @@ export function useFinishModalController(props, operationsStore, ui) {
   )
   const isERPReconciliationFlow = computed(() => finishFlowMode.value === 'erp-reconciliation')
 
-  const service = computed(
+  const activeServiceMatch = computed(
     () =>
       (props.state.activeServices || []).find(
         (item) => item.serviceId === props.state.finishModalServiceId,
       ) || null,
   )
+  // Pendencia de auto-encerramento (2h): o servico ja saiu de activeServices, mas a
+  // gestao encerra pelo MESMO modal. Resolve um service-like a partir da pendencia
+  // (timer congelado via effectiveFinishedAt; startMode queue evita o passo de
+  // motivo fora-da-vez). O submit vai para POST /validate em vez de /finish.
+  const pendingValidationMatch = computed(
+    () =>
+      (props.state.pendingValidations || []).find(
+        (item) => item.serviceId === props.state.finishModalServiceId,
+      ) || null,
+  )
+  const isPendingValidation = computed(
+    () => !activeServiceMatch.value && Boolean(pendingValidationMatch.value),
+  )
+  const service = computed(() => {
+    if (activeServiceMatch.value) {
+      return activeServiceMatch.value
+    }
+
+    const pending = pendingValidationMatch.value
+    if (!pending) {
+      return null
+    }
+
+    return {
+      serviceId: pending.serviceId,
+      id: pending.personId,
+      name: pending.personName,
+      storeId: pending.storeId,
+      storeName: pending.storeName || '',
+      serviceStartedAt: Number(pending.startedAt || 0),
+      stoppedAt: Number(pending.finishedAt || 0),
+      effectiveFinishedAt: Number(pending.finishedAt || 0),
+      startMode: 'queue',
+      skippedPeople: [],
+    }
+  })
   const productCatalogStoreId = computed(() =>
     String(service.value?.storeId || props.state.activeStoreId || '').trim(),
   )
@@ -1729,6 +1769,13 @@ export function useFinishModalController(props, operationsStore, ui) {
       return
     }
 
+    // Encerramento de pendencia (auto-encerramento 2h): a justificativa de por que
+    // o consultor nao encerrou na hora e OBRIGATORIA (base das metricas de cobranca).
+    if (isPendingValidation.value && !validationReason.value.trim()) {
+      await ui.alert('Informe por que este atendimento nao foi encerrado pelo consultor.')
+      return
+    }
+
     const currentService = service.value
     const closedProductsForPayload = shouldUseLegacyClosedProductField.value
       ? form.productsClosed
@@ -1810,6 +1857,10 @@ export function useFinishModalController(props, operationsStore, ui) {
         service: currentService,
         storeId: currentService.storeId,
         storeName: currentService.storeName,
+        // Pendencia: o submit vai para POST /validate (UPDATE da linha pendente no
+        // historico) com a justificativa obrigatoria, em vez do /finish normal.
+        validate: isPendingValidation.value,
+        validationReason: validationReason.value.trim(),
       },
     )
 
@@ -1974,6 +2025,8 @@ export function useFinishModalController(props, operationsStore, ui) {
   watch(
     () => props.state.finishModalServiceId,
     (nextValue) => {
+      validationReason.value = ''
+
       if (String(nextValue || '').trim()) {
         return
       }
@@ -1995,6 +2048,8 @@ export function useFinishModalController(props, operationsStore, ui) {
     PRODUCT_SEARCH_MIN_CHARS,
     modalConfig,
     service,
+    isPendingValidation,
+    validationReason,
     hasRestoredDraft,
     clearCurrentDraft,
     closeModal,

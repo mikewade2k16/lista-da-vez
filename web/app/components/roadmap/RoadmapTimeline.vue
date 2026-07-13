@@ -290,7 +290,7 @@ function scrollToPhase(phaseId: string) {
 .roadmap-group__header {
   margin-bottom: 1.25rem;
   padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  border-bottom: 1px solid rgb(var(--border));
 }
 
 .roadmap-group__title {
@@ -302,7 +302,7 @@ function scrollToPhase(phaseId: string) {
 
 .roadmap-group__description {
   font-size: 0.8rem;
-  color: rgba(148, 163, 184, 0.75);
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -313,8 +313,8 @@ function scrollToPhase(phaseId: string) {
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.55);
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  color: var(--text-muted);
+  border-top: 1px solid rgb(var(--border));
   margin-top: 0.25rem;
 }
 
@@ -329,9 +329,9 @@ function scrollToPhase(phaseId: string) {
   display: grid;
   gap: 0.5rem;
   padding: 0.7rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgb(var(--border));
   border-radius: 16px;
-  background: rgba(15, 23, 42, 0.62);
+  background: rgb(var(--surface-2));
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
 }
 
@@ -356,9 +356,9 @@ function scrollToPhase(phaseId: string) {
   width: 100%;
   min-height: 34px;
   padding: 0.38rem 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid rgb(var(--border));
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.34);
+  background: rgb(var(--surface-2));
   color: var(--text-muted);
   text-align: left;
   cursor: pointer;
@@ -371,8 +371,8 @@ function scrollToPhase(phaseId: string) {
 
 .roadmap-anchor-menu__item:hover,
 .roadmap-anchor-menu__item:focus-visible {
-  border-color: rgba(96, 165, 250, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgb(var(--primary) / 0.45);
+  background: rgb(var(--primary) / 0.12);
   color: var(--text-main);
   outline: none;
   transform: translateX(2px);
@@ -382,23 +382,23 @@ function scrollToPhase(phaseId: string) {
   width: 0.48rem;
   height: 0.48rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.65);
+  background: rgb(var(--surface-2));
   box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.08);
 }
 
 .roadmap-anchor-menu__item--done .roadmap-anchor-menu__dot {
-  background: #4ade80;
+  background: rgb(var(--success));
   box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.12);
 }
 
 .roadmap-anchor-menu__item--in_progress .roadmap-anchor-menu__dot {
-  background: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14);
+  background: rgb(var(--primary));
+  box-shadow: 0 0 0 3px rgb(var(--primary) / 0.14);
 }
 
 .roadmap-anchor-menu__item--blocked .roadmap-anchor-menu__dot {
-  background: #f87171;
-  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.14);
+  background: rgb(var(--danger));
+  box-shadow: 0 0 0 3px rgb(var(--danger) / 0.14);
 }
 
 .roadmap-anchor-menu__body {
@@ -464,8 +464,8 @@ function scrollToPhase(phaseId: string) {
   gap: 0.15rem;
   padding: 0.85rem 1.1rem;
   border-radius: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
   min-width: 110px;
 }
 
@@ -484,32 +484,32 @@ function scrollToPhase(phaseId: string) {
 }
 
 .roadmap-stat--done {
-  border-color: rgba(34, 197, 94, 0.45);
-  background: rgba(34, 197, 94, 0.12);
+  border-color: rgb(var(--success) / 0.45);
+  background: rgb(var(--success) / 0.12);
 }
 .roadmap-stat--done .roadmap-stat__value {
-  color: #4ade80;
+  color: rgb(var(--success));
 }
 
 .roadmap-stat--in-progress {
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgb(var(--primary) / 0.45);
+  background: rgb(var(--primary) / 0.12);
 }
 .roadmap-stat--in-progress .roadmap-stat__value {
-  color: #60a5fa;
+  color: rgb(var(--primary));
 }
 
 .roadmap-stat--pending {
-  border-color: rgba(148, 163, 184, 0.35);
-  background: rgba(148, 163, 184, 0.1);
+  border-color: rgb(var(--border));
+  background: rgb(var(--surface-2));
 }
 
 .roadmap-stat--blocked {
-  border-color: rgba(239, 68, 68, 0.45);
-  background: rgba(239, 68, 68, 0.12);
+  border-color: rgb(var(--danger) / 0.45);
+  background: rgb(var(--danger) / 0.12);
 }
 .roadmap-stat--blocked .roadmap-stat__value {
-  color: #f87171;
+  color: rgb(var(--danger));
 }
 
 .roadmap-progress {
@@ -521,13 +521,13 @@ function scrollToPhase(phaseId: string) {
   width: 100%;
   height: 8px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
   overflow: hidden;
 }
 
 .roadmap-progress__fill {
   height: 100%;
-  background: linear-gradient(90deg, #60a5fa, #4ade80);
+  background: linear-gradient(90deg, rgb(var(--primary)), rgb(var(--success)));
   transition: width 0.3s ease;
 }
 
@@ -552,7 +552,7 @@ function scrollToPhase(phaseId: string) {
   top: 18px;
   bottom: 18px;
   width: 2px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
 }
 
 .roadmap-phase {
@@ -570,8 +570,8 @@ function scrollToPhase(phaseId: string) {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: rgba(15, 23, 42, 0.95);
-  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgb(var(--surface-2));
+  border: 2px solid rgb(var(--border));
   z-index: 1;
 }
 
@@ -581,25 +581,25 @@ function scrollToPhase(phaseId: string) {
 }
 
 .roadmap-phase--done .roadmap-phase__marker {
-  border-color: rgba(34, 197, 94, 0.7);
+  border-color: rgb(var(--success) / 0.7);
 }
 .roadmap-phase--done .roadmap-phase__marker .material-icons-round {
-  color: #4ade80;
+  color: rgb(var(--success));
 }
 
 .roadmap-phase--in_progress .roadmap-phase__marker {
-  border-color: rgba(59, 130, 246, 0.75);
+  border-color: rgb(var(--primary) / 0.75);
 }
 .roadmap-phase--in_progress .roadmap-phase__marker .material-icons-round {
-  color: #60a5fa;
+  color: rgb(var(--primary));
   animation: roadmap-spin 2.4s linear infinite;
 }
 
 .roadmap-phase--blocked .roadmap-phase__marker {
-  border-color: rgba(239, 68, 68, 0.7);
+  border-color: rgb(var(--danger) / 0.7);
 }
 .roadmap-phase--blocked .roadmap-phase__marker .material-icons-round {
-  color: #f87171;
+  color: rgb(var(--danger));
 }
 
 @keyframes roadmap-spin {
@@ -616,21 +616,21 @@ function scrollToPhase(phaseId: string) {
   gap: 0.85rem;
   padding: 1.15rem 1.25rem;
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
 }
 
 .roadmap-phase--done .roadmap-phase__card {
-  border-color: rgba(34, 197, 94, 0.3);
+  border-color: rgb(var(--success) / 0.3);
 }
 
 .roadmap-phase--in_progress .roadmap-phase__card {
-  border-color: rgba(59, 130, 246, 0.35);
+  border-color: rgb(var(--primary) / 0.35);
 }
 
 .roadmap-phase--blocked .roadmap-phase__card {
-  border-color: rgba(239, 68, 68, 0.35);
+  border-color: rgb(var(--danger) / 0.35);
 }
 
 .roadmap-phase__header {
@@ -649,8 +649,8 @@ function scrollToPhase(phaseId: string) {
   display: inline-block;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.18);
-  color: #a5b4fc;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -674,23 +674,23 @@ function scrollToPhase(phaseId: string) {
 }
 
 .roadmap-phase__status--pending {
-  background: rgba(148, 163, 184, 0.18);
-  color: #cbd5f5;
+  background: rgb(var(--surface-2));
+  color: var(--text-main);
 }
 
 .roadmap-phase__status--in_progress {
-  background: rgba(59, 130, 246, 0.18);
-  color: #93c5fd;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .roadmap-phase__status--done {
-  background: rgba(34, 197, 94, 0.18);
-  color: #86efac;
+  background: rgb(var(--success) / 0.18);
+  color: rgb(var(--success));
 }
 
 .roadmap-phase__status--blocked {
-  background: rgba(239, 68, 68, 0.18);
-  color: #fca5a5;
+  background: rgb(var(--danger) / 0.18);
+  color: rgb(var(--danger));
 }
 
 .roadmap-phase__goal {
@@ -730,13 +730,13 @@ function scrollToPhase(phaseId: string) {
   width: 100%;
   height: 6px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
   overflow: hidden;
 }
 
 .roadmap-phase__progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #60a5fa, #4ade80);
+  background: linear-gradient(90deg, rgb(var(--primary)), rgb(var(--success)));
   transition: width 0.3s ease;
 }
 
@@ -754,13 +754,13 @@ function scrollToPhase(phaseId: string) {
   gap: 0.6rem;
   padding: 0.55rem 0.75rem;
   border-radius: 10px;
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgb(var(--surface-2));
+  border: 1px solid rgb(var(--border));
 }
 
 .roadmap-task--done {
-  background: rgba(34, 197, 94, 0.08);
-  border-color: rgba(34, 197, 94, 0.2);
+  background: rgb(var(--success) / 0.08);
+  border-color: rgb(var(--success) / 0.2);
 }
 
 .roadmap-task__check {
@@ -771,7 +771,7 @@ function scrollToPhase(phaseId: string) {
 }
 
 .roadmap-task--done .roadmap-task__check {
-  color: #4ade80;
+  color: rgb(var(--success));
 }
 
 .roadmap-task__body {
@@ -803,16 +803,16 @@ function scrollToPhase(phaseId: string) {
   margin: 0;
   padding: 0.6rem 0.8rem;
   border-radius: 10px;
-  background: rgba(34, 197, 94, 0.06);
-  border: 1px solid rgba(34, 197, 94, 0.18);
-  color: #bbf7d0;
+  background: rgb(var(--success) / 0.06);
+  border: 1px solid rgb(var(--success) / 0.18);
+  color: rgb(var(--success));
   font-size: 0.82rem;
   line-height: 1.5;
 }
 
 .roadmap-phase__verifiable .material-icons-round {
   font-size: 1.05rem;
-  color: #4ade80;
+  color: rgb(var(--success));
   margin-top: 0.05rem;
   flex-shrink: 0;
 }
@@ -820,14 +820,14 @@ function scrollToPhase(phaseId: string) {
 .roadmap-phase__blockers {
   padding: 0.6rem 0.8rem;
   border-radius: 10px;
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
-  color: #fecaca;
+  background: rgb(var(--danger) / 0.08);
+  border: 1px solid rgb(var(--danger) / 0.25);
+  color: rgb(var(--danger));
   font-size: 0.82rem;
 }
 
 .roadmap-phase__blockers strong {
-  color: #f87171;
+  color: rgb(var(--danger));
   display: block;
   margin-bottom: 0.3rem;
 }

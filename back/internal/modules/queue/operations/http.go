@@ -237,6 +237,90 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 
 		httpapi.WriteJSON(w, http.StatusOK, ack)
 	})))
+
+	// Auto-encerramento (2h): "Continuar atendimento" (operador adia o fechamento).
+	mux.Handle("POST /v1/operations/keep-open", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		access := AccessContextFromPrincipal(principal)
+		if !canMutateOperations(access) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", readOnlyOperationsMessage)
+			return
+		}
+
+		var input KeepOpenCommandInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+
+		ack, err := service.KeepOpen(r.Context(), access, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
+
+	// Auto-encerramento (2h): validar pendencia (gerente grava o desfecho real).
+	mux.Handle("POST /v1/operations/validate", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		access := AccessContextFromPrincipal(principal)
+		if !canValidateAutoClose(access) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Apenas a gestao pode validar pendencias de atendimento.")
+			return
+		}
+
+		var input FinishCommandInput
+		if err := readJSONLenient(r, &input); err != nil {
+			httpapi.WriteErrorWithDetails(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.", map[string]string{"cause": err.Error()})
+			return
+		}
+
+		ack, err := service.ValidateAutoClose(r.Context(), access, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
+
+	// Auto-encerramento (2h): cancelar a metrica de uma pendencia (gerente + motivo).
+	mux.Handle("POST /v1/operations/cancel-metric", middleware.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		access := AccessContextFromPrincipal(principal)
+		if !canValidateAutoClose(access) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Apenas a gestao pode cancelar pendencias de atendimento.")
+			return
+		}
+
+		var input CancelMetricCommandInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+
+		ack, err := service.CancelAutoClose(r.Context(), access, input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, ack)
+	})))
 }
 
 func readJSONLenient(r *http.Request, dst any) error {
@@ -279,6 +363,8 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusNotFound, "store_not_found", "Loja nao encontrada.")
 	case errors.Is(err, ErrConsultantNotFound):
 		httpapi.WriteError(w, r, http.StatusNotFound, "consultant_not_found", "Consultor nao encontrado.")
+	case errors.Is(err, ErrPendingNotFound):
+		httpapi.WriteError(w, r, http.StatusNotFound, "pending_not_found", "Pendencia de atendimento nao encontrada ou ja resolvida.")
 	default:
 		httpapi.WriteError(w, r, http.StatusInternalServerError, "internal_error", "Erro ao processar a operacao.")
 	}

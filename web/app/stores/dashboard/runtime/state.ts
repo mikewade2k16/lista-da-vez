@@ -151,6 +151,7 @@ export function createEmptyStoreScopedState(roster = []) {
     consultantCurrentStatus: {},
     pausedEmployees: [],
     serviceHistory: [],
+    pendingValidations: [],
   }
 }
 
@@ -176,6 +177,9 @@ export function extractStoreScopedState(sourceState) {
         : {},
     pausedEmployees: Array.isArray(sourceState.pausedEmployees) ? sourceState.pausedEmployees : [],
     serviceHistory: Array.isArray(sourceState.serviceHistory) ? sourceState.serviceHistory : [],
+    pendingValidations: Array.isArray(sourceState.pendingValidations)
+      ? sourceState.pendingValidations
+      : [],
   }
 }
 
@@ -228,6 +232,9 @@ export function normalizeActiveServicesList(rawActiveServices, timestamp) {
     stoppedAt: Math.max(0, Number(service.stoppedAt || 0) || 0),
     effectiveFinishedAt: Math.max(0, Number(service.effectiveFinishedAt || 0) || 0),
     stopReason: String(service.stopReason || '').trim(),
+    graceDeadline: Math.max(0, Number(service.graceDeadline || 0) || 0),
+    snoozedUntil: Math.max(0, Number(service.snoozedUntil || 0) || 0),
+    snoozeCount: Math.max(0, Number(service.snoozeCount || 0) || 0),
   }))
 }
 
@@ -364,6 +371,9 @@ export function normalizeStoreScopedState(
       storeDescriptor?.name || '',
       now,
     ),
+    pendingValidations: Array.isArray(rawScopedState?.pendingValidations)
+      ? rawScopedState.pendingValidations
+      : [],
   }
   const hasAnyStatus = Object.keys(scopedState.consultantCurrentStatus).length > 0
 
@@ -763,6 +773,26 @@ export function hydrateState(nextState: LooseRecord = {}) {
     )
   })
 
+  // Defesa: preserva snapshots JA carregados de lojas que ficaram de fora da lista
+  // `stores` deste hydrate (ex.: um refresh trouxe `stores` momentaneamente incompleta
+  // ou o fallback de mocks). Sem isso, a loja operavel filtrada em "Todas as lojas"
+  // perderia o snapshot inteiro sob rajada de refreshes e o board zerava.
+  Object.entries(rawSnapshots).forEach(([storeId, rawSnapshot]) => {
+    const normalizedStoreId = String(storeId || '').trim()
+    if (!normalizedStoreId || normalizedStoreSnapshots[normalizedStoreId]) {
+      return
+    }
+    if (Number(rawSnapshot?._operationSnapshotFetchedAt || 0) <= 0) {
+      return
+    }
+    normalizedStoreSnapshots[normalizedStoreId] = normalizeStoreScopedState(
+      rawSnapshot,
+      createEmptyStoreScopedState(cloneValue(normalizedLegacyActiveSnapshot.roster)),
+      null,
+      now,
+    )
+  })
+
   const resolvedActiveSnapshot =
     normalizedStoreSnapshots[activeStoreId] || normalizedLegacyActiveSnapshot
   const sourceFinishModalIdentifier = String(
@@ -779,6 +809,18 @@ export function hydrateState(nextState: LooseRecord = {}) {
       const found =
         services.find((service) => service.serviceId === identifier) ||
         services.find((service) => service.id === identifier)
+      if (found) {
+        return found
+      }
+    }
+    // Pendencia de auto-encerramento (2h): o modal de encerrar tambem abre para
+    // atendimentos que ja sairam de activeServices (encerramento pela gestao) —
+    // sem isso o hydrate zerava o finishModalServiceId e o modal fechava sozinho.
+    for (const snapshot of snapshots) {
+      const pendings = Array.isArray(snapshot?.pendingValidations)
+        ? snapshot.pendingValidations
+        : []
+      const found = pendings.find((item) => item.serviceId === identifier)
       if (found) {
         return found
       }
@@ -882,6 +924,7 @@ export function hydrateState(nextState: LooseRecord = {}) {
       ...sourceState.settings,
     },
     serviceHistory: resolvedActiveSnapshot.serviceHistory,
+    pendingValidations: resolvedActiveSnapshot.pendingValidations || [],
     isReady: true,
     finishModalServiceId,
   }

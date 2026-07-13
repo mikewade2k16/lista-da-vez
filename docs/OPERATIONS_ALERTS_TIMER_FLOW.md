@@ -117,6 +117,42 @@ Quando o atendimento e parado:
 
 Isso evita um bug importante: atendimento parado nao pode continuar sendo reavaliado como se ainda estivesse correndo normalmente no cronometro de alerta.
 
+## Auto-encerramento (2h) — extensao do mesmo timer
+
+Plano canonico: `docs/operacao/AUTO_ENCERRAMENTO_PLAN.md`.
+
+O auto-encerramento reusa exatamente a mesma fronteira deste documento: `operations` e a
+fonte de verdade do timer; a UI so exibe e reage. Ele NAO cria um segundo cronometro nem
+move a decisao para o front.
+
+- `operations` le, alem do threshold de alerta, um segundo limiar configuravel por tenant
+  (`auto_close_enabled`, `auto_close_minutes`, `auto_close_grace_seconds`,
+  `snooze_reprompt_minutes` em `tenant_operational_alert_rules`, via `LoadOperationalRules`).
+- O mesmo sweep periodico (`ProcessTimedAlerts`) que dispara `long_open_service` tambem
+  avalia o auto-encerramento:
+  1. `elapsed >= auto_close_minutes` e sem snooze valido → grava `grace_started_at` (comeca
+     a barra de UI; `graceDeadline = grace_started_at + auto_close_grace_seconds`).
+  2. `now >= graceDeadline` e sem "Continuar" → `operations` executa o fechamento
+     autoritativo (helper `autoCloseService`): remove de `active_services`, devolve o
+     consultor a fila, grava `operation_service_history` com `close_reason='auto'`,
+     `validation_status='pending'`, e emite `long_open_service.resolved`.
+  3. "Continuar atendimento" (POST `/v1/operations/keep-open`) grava `snoozed_until = now +
+     snooze_reprompt_minutes` e limpa `grace_started_at`; ao vencer o snooze, o sweep
+     reabre o grace (re-pergunta).
+- A barra de 1 min no front e apenas display: encolhe de `graceDeadline − adjustedNow`
+  (relogio de servidor), nunca chama a API para fechar, nunca compara `Date.now()`. Quem
+  fecha e o backend; o front descobre pelo refetch do snapshot (`operation.updated`).
+- O que foi auto-fechado vira **pendencia de validacao**: aparece vermelho numa caixa
+  dedicada, com o cronometro PARADO (`durationMs` fixo do historico). O gerente entao
+  **valida** (grava o desfecho real, `validation_status='validated'`) ou **cancela**
+  (`validation_status='cancelled'`, com motivo obrigatorio, fora da metrica mas preservado
+  para auditoria).
+
+Regra de fronteira preservada: `alerts` continua so materializando/resolvendo o
+`long_open_service`; o auto-encerramento e uma decisao 100% de `operations` (dono do timer
+e do estado do atendimento). A resolucao do alerta ao auto-fechar usa o mesmo
+`long_open_service.resolved` do `finish`/`cancel`/`stop`.
+
 ## Responsabilidades por modulo
 
 ### Operations

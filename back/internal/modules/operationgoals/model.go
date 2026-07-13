@@ -24,6 +24,7 @@ type GoalTarget struct {
 	ConsultantID    string
 	ConsultantName  string
 	TargetMonth     time.Time
+	Week            int
 	MonthlyGoal     float64
 	AvgTicketGoal   float64
 	ConversionGoal  float64
@@ -38,6 +39,7 @@ type GoalTargetView struct {
 	ID             string  `json:"id"`
 	TenantID       string  `json:"tenantId"`
 	Month          string  `json:"month"`
+	Week           int     `json:"week"`
 	Scope          string  `json:"scope"`
 	StoreID        string  `json:"storeId"`
 	StoreCode      string  `json:"storeCode"`
@@ -78,6 +80,7 @@ type CreateInput struct {
 	StoreID        string
 	ConsultantID   string
 	Month          string
+	Week           int
 	MonthlyGoal    float64
 	AvgTicketGoal  float64
 	ConversionGoal float64
@@ -131,6 +134,7 @@ func (goal GoalTarget) View() GoalTargetView {
 		ID:             goal.ID,
 		TenantID:       goal.TenantID,
 		Month:          goal.TargetMonth.UTC().Format(monthLayout),
+		Week:           goal.Week,
 		Scope:          goal.Scope(),
 		StoreID:        goal.StoreID,
 		StoreCode:      goal.StoreCode,

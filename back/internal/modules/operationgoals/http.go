@@ -19,6 +19,7 @@ type createRequest struct {
 	StoreID        string  `json:"storeId"`
 	ConsultantID   string  `json:"consultantId"`
 	Month          string  `json:"month"`
+	Week           int     `json:"week"`
 	MonthlyGoal    float64 `json:"monthlyGoal"`
 	AvgTicketGoal  float64 `json:"avgTicketGoal"`
 	ConversionGoal float64 `json:"conversionGoal"`

@@ -174,6 +174,11 @@ func (s *Service) CreateEvent(ctx context.Context, accountID string, in EventInp
 	if err != nil {
 		return EventView{}, err
 	}
+	// Item especial de midia (WAVE 11): o client pede via mediaItem=true e o SERVER seta o
+	// source (nunca aceita 'task' do body — anti-loop do espelho preservado).
+	if in.IsMediaItem && in.Source == "" {
+		in.Source = "media"
+	}
 	var cfg CalendarConfig
 	if in.CreateTask {
 		// Pre-condicao da integracao: sem boardId => 400 tasks_not_configured (a config
@@ -337,6 +342,7 @@ func (s *Service) PutConfig(ctx context.Context, accountID string, cfg CalendarC
 	cfg.AI = sanitizeAI(cfg.AI)
 	cfg.Tasks = sanitizeTasks(cfg.Tasks)
 	cfg.Chat = sanitizeChat(cfg.Chat)
+	cfg.Shortcuts = sanitizeShortcuts(cfg.Shortcuts)
 	account := strings.TrimSpace(accountID)
 	saved, err := s.store.PutConfig(ctx, account, cfg)
 	if err != nil {
@@ -366,6 +372,85 @@ func normalizeWeekStart(v string) string {
 		return "monday"
 	}
 	return "sunday"
+}
+
+// specialShortcutKeys sao os nomes de tecla-base nao-imprimiveis aceitos no mapa de atalhos.
+var specialShortcutKeys = map[string]bool{
+	"enter": true, "escape": true, "space": true,
+	"arrowleft": true, "arrowright": true, "arrowup": true, "arrowdown": true,
+}
+
+// shortcutModifierOrder = ordem canonica dos modificadores num combo (front grava igual).
+var shortcutModifierOrder = []string{"ctrl", "alt", "shift", "meta"}
+
+// validShortcutBase: tecla-base = 1 caractere a-z/0-9 OU um nome especial.
+func validShortcutBase(base string) bool {
+	if specialShortcutKeys[base] {
+		return true
+	}
+	return len(base) == 1 && (base[0] >= 'a' && base[0] <= 'z' || base[0] >= '0' && base[0] <= '9')
+}
+
+// canonicalShortcut valida e normaliza UM combo ('shift+t', 'ctrl+shift+k', 't'): modificadores
+// (subconjunto de ctrl/alt/shift/meta, sem repeticao) reordenados na ordem canonica + a base.
+// ok=false => invalido (o chamador cai no default). Vazio ja foi tratado antes (desligado).
+func canonicalShortcut(value string) (string, bool) {
+	parts := strings.Split(value, "+")
+	base := parts[len(parts)-1]
+	if !validShortcutBase(base) {
+		return "", false
+	}
+	seen := map[string]bool{}
+	for _, mod := range parts[:len(parts)-1] {
+		if !isShortcutModifier(mod) || seen[mod] {
+			return "", false
+		}
+		seen[mod] = true
+	}
+	ordered := make([]string, 0, len(seen)+1)
+	for _, mod := range shortcutModifierOrder {
+		if seen[mod] {
+			ordered = append(ordered, mod)
+		}
+	}
+	ordered = append(ordered, base)
+	return strings.Join(ordered, "+"), true
+}
+
+func isShortcutModifier(v string) bool {
+	for _, mod := range shortcutModifierOrder {
+		if v == mod {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeShortcuts valida o mapa de atalhos (WAVE 11): so ACOES conhecidas (whitelist de
+// shortcutDefaults); cada valor e um COMBO (modificadores + tecla-base) validado/canonicalizado
+// por canonicalShortcut; valor invalido cai no default da acao; vazio explicito = atalho
+// DESLIGADO (preservado). Acao ausente = default.
+func sanitizeShortcuts(raw map[string]string) map[string]string {
+	defaults := shortcutDefaults()
+	out := make(map[string]string, len(defaults))
+	for action, def := range defaults {
+		value, present := raw[action]
+		if !present {
+			out[action] = def
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(value))
+		if key == "" {
+			out[action] = "" // desligado de proposito
+			continue
+		}
+		if canonical, ok := canonicalShortcut(key); ok {
+			out[action] = canonical
+		} else {
+			out[action] = def
+		}
+	}
+	return out
 }
 
 // normalizeColor devolve a cor em minusculas se for #rrggbb ou "none"; senao "".

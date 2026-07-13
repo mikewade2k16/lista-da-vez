@@ -111,7 +111,14 @@ func buildServiceHistoryQuery(storeID string, sinceMillis int64) (string, []any)
 			coalesce(parallel_group_id, '') as parallel_group_id,
 			parallel_start_index,
 			coalesce(sibling_service_ids_json, '[]'::jsonb) as sibling_service_ids_json,
-			coalesce(start_offset_ms, 0) as start_offset_ms
+			coalesce(start_offset_ms, 0) as start_offset_ms,
+			coalesce(close_reason, 'manual') as close_reason,
+			coalesce(validation_status, 'validated') as validation_status,
+			validated_by::text,
+			coalesce(validated_at, 0) as validated_at,
+			coalesce(snooze_count, 0) as snooze_count,
+			coalesce(cancel_reason, '') as cancel_reason,
+			coalesce(validation_reason, '') as validation_reason
 		from operation_service_history
 		where store_id = $1::uuid
 	`)
@@ -150,6 +157,7 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 		var lossReasonDetailsRaw []byte
 		var campaignMatchesRaw []byte
 		var siblingServiceIDsRaw []byte
+		var validatedBy *string
 		if err := rows.Scan(
 			&entry.ServiceID,
 			&entry.StoreID,
@@ -198,10 +206,20 @@ func (repository *PostgresRepository) loadServiceHistory(ctx context.Context, st
 			&entry.ParallelStartIndex,
 			&siblingServiceIDsRaw,
 			&entry.StartOffsetMs,
+			&entry.CloseReason,
+			&entry.ValidationStatus,
+			&validatedBy,
+			&entry.ValidatedAt,
+			&entry.SnoozeCount,
+			&entry.CancelReason,
+			&entry.ValidationReason,
 		); err != nil {
 			return nil, err
 		}
 
+		if validatedBy != nil {
+			entry.ValidatedBy = strings.TrimSpace(*validatedBy)
+		}
 		entry.SkippedPeople = decodeSkippedPeople(skippedRaw)
 		entry.ProductsSeen = decodeProducts(seenProductsRaw)
 		entry.ProductsClosed = decodeProducts(closedProductsRaw)

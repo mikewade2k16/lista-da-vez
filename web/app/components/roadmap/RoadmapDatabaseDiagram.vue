@@ -428,22 +428,22 @@ const totalFKs = computed(() => lines.value.length)
   margin: 0;
   padding: 0.6rem 0.8rem;
   border-radius: 10px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.18);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.08);
+  border: 1px solid rgb(var(--primary) / 0.18);
+  color: var(--text-main);
   font-size: 0.8rem;
   line-height: 1.5;
 }
 
 .diagram-view__hint .material-icons-round {
   font-size: 1.05rem;
-  color: #a5b4fc;
+  color: rgb(var(--primary));
   margin-top: 0.05rem;
   flex-shrink: 0;
 }
 
 .diagram-view__hint-fk {
-  background: rgba(99, 102, 241, 0.25);
+  background: rgb(var(--primary) / 0.25);
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -472,10 +472,10 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .diagram-legend__swatch--identity {
-  background: #3b82f6;
+  background: rgb(var(--primary));
 }
 .diagram-legend__swatch--modules {
-  background: #10b981;
+  background: rgb(var(--success));
 }
 .diagram-legend__swatch--rbac {
   background: #a855f7;
@@ -488,7 +488,7 @@ const totalFKs = computed(() => lines.value.length)
   display: inline-block;
   width: 22px;
   height: 0;
-  border-top: 2px dashed rgba(148, 163, 184, 0.6);
+  border-top: 2px dashed rgb(var(--border));
 }
 
 .diagram-empty {
@@ -496,7 +496,7 @@ const totalFKs = computed(() => lines.value.length)
   place-items: center;
   gap: 0.6rem;
   padding: 3rem 1rem;
-  border: 1px dashed rgba(148, 163, 184, 0.3);
+  border: 1px dashed rgb(var(--border));
   border-radius: 14px;
   color: var(--text-muted);
   text-align: center;
@@ -515,8 +515,8 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .diagram-empty code {
-  background: rgba(99, 102, 241, 0.18);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.18);
+  color: var(--text-main);
   padding: 0.05rem 0.4rem;
   border-radius: 4px;
 }
@@ -525,8 +525,8 @@ const totalFKs = computed(() => lines.value.length)
   position: relative;
   padding: 1rem;
   border-radius: 14px;
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
+  border: 1px solid rgb(var(--border));
   min-height: 500px;
 }
 
@@ -548,7 +548,7 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .diagram-line--active path {
-  stroke: #60a5fa;
+  stroke: rgb(var(--primary));
   stroke-width: 2.5;
 }
 
@@ -575,10 +575,10 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .diagram-group__icon--identity {
-  color: #60a5fa;
+  color: rgb(var(--primary));
 }
 .diagram-group__icon--modules {
-  color: #34d399;
+  color: rgb(var(--success));
 }
 .diagram-group__icon--rbac {
   color: #c084fc;
@@ -601,7 +601,7 @@ const totalFKs = computed(() => lines.value.length)
   margin-left: 0.25rem;
   padding: 0.05rem 0.5rem;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.18);
+  background: rgb(var(--surface-2));
   color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 600;
@@ -618,11 +618,11 @@ const totalFKs = computed(() => lines.value.length)
   gap: 0.55rem;
   padding: 0.85rem;
   border-radius: 12px;
-  border-left: 4px solid rgba(148, 163, 184, 0.5);
-  background: rgba(15, 23, 42, 0.85);
-  border-top: 1px solid rgba(148, 163, 184, 0.18);
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  border-left: 4px solid rgb(var(--border));
+  background: rgb(var(--surface-2));
+  border-top: 1px solid rgb(var(--border));
+  border-right: 1px solid rgb(var(--border));
+  border-bottom: 1px solid rgb(var(--border));
   transition:
     border-color 0.15s ease,
     transform 0.15s ease,
@@ -631,11 +631,11 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .erd-card--identity {
-  border-left-color: #3b82f6;
-  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  border-left-color: rgb(var(--primary));
+  box-shadow: 0 0 0 0 rgb(var(--primary) / 0);
 }
 .erd-card--modules {
-  border-left-color: #10b981;
+  border-left-color: rgb(var(--success));
 }
 .erd-card--rbac {
   border-left-color: #a855f7;
@@ -645,8 +645,8 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .erd-card--connected {
-  border-color: rgba(96, 165, 250, 0.55);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  border-color: rgb(var(--primary) / 0.55);
+  box-shadow: 0 0 0 2px rgb(var(--primary) / 0.25);
 }
 
 .erd-card__head {
@@ -661,10 +661,10 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .erd-card--identity .erd-card__icon {
-  color: #60a5fa;
+  color: rgb(var(--primary));
 }
 .erd-card--modules .erd-card__icon {
-  color: #34d399;
+  color: rgb(var(--success));
 }
 .erd-card--rbac .erd-card__icon {
   color: #c084fc;
@@ -710,14 +710,14 @@ const totalFKs = computed(() => lines.value.length)
 }
 
 .erd-field--fk {
-  color: #93c5fd;
+  color: rgb(var(--primary));
   cursor: help;
 }
 
 .erd-field--fk:hover,
 .erd-field--highlighted {
-  background: rgba(96, 165, 250, 0.18);
-  color: #dbeafe;
+  background: rgb(var(--primary) / 0.18);
+  color: rgb(var(--primary));
 }
 
 .erd-field__name {
@@ -736,7 +736,7 @@ const totalFKs = computed(() => lines.value.length)
   color: #fbbf24;
 }
 .erd-field--fk .erd-field__flag {
-  color: #93c5fd;
+  color: rgb(var(--primary));
 }
 
 .erd-card__footer {
@@ -744,7 +744,7 @@ const totalFKs = computed(() => lines.value.length)
   gap: 0.3rem;
   font-size: 0.7rem;
   color: var(--text-muted);
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  border-top: 1px solid rgb(var(--border));
   padding-top: 0.4rem;
 }
 </style>

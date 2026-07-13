@@ -219,7 +219,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  width: min(92%, 46rem);
+  /* Teto tipografico ALTO (72rem): no modo expandido/fullscreen a mensagem usa a largura da
+     janela (o dono reclamou que quebrava igual ao modo reduzido com o teto antigo de 46rem);
+     nos modos estreitos o min() continua pegando os 94%. */
+  width: min(94%, 72rem);
 }
 
 .calendar-chat__message--user {
@@ -398,6 +401,27 @@
   background: rgb(var(--danger) / 0.08);
 }
 
+/* Guarda anti-mentira: a IA falou como se tivesse feito, mas nada foi aplicado (sem cartao). */
+.calendar-chat__false-claim {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  align-self: flex-start;
+  max-width: 92%;
+  margin: 0.1rem 0 0.15rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 40%, transparent);
+  background: color-mix(in srgb, var(--accent-warning) 12%, transparent);
+  color: var(--accent-warning);
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+
+.calendar-chat__false-claim strong {
+  font-weight: 800;
+}
+
 .calendar-chat__recording {
   display: flex;
   align-items: center;
@@ -529,7 +553,7 @@
 
 .calendar-chat__proposal-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   padding: 0.35rem 0.45rem;
   border-radius: var(--radius-sm);
@@ -596,9 +620,132 @@
 .calendar-chat__proposal-item-meta {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.25rem;
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+.calendar-chat__proposal-diff {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0;
+}
+
+.calendar-chat__proposal-diff > div {
+  display: grid;
+  grid-template-columns: minmax(5.2rem, auto) minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: center;
+  padding: 0.28rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.08);
+}
+
+.calendar-chat__proposal-diff dt {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.calendar-chat__proposal-diff dd {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--text-main);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.calendar-chat__proposal-before {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.calendar-chat__proposal-after {
+  color: rgb(var(--primary));
+}
+
+.calendar-chat__proposal-nochange {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* ----- Edit inline dos campos propostos (WAVE 9) ------------------------ */
+.calendar-chat__proposal-edit {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0.1rem;
+}
+
+.calendar-chat__proposal-edit-field {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.calendar-chat__proposal-edit-label {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.calendar-chat__proposal-edit-input {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-family: inherit;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.calendar-chat__proposal-edit-input:focus {
+  outline: none;
+  border-color: rgb(var(--primary) / 0.6);
+}
+
+.calendar-chat__proposal-edit-modebtn {
+  justify-self: start;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgb(var(--primary) / 0.35);
+  border-radius: 999px;
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.calendar-chat__proposal-edit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  align-self: start;
+  margin-top: 0.15rem;
+  padding: 0.15rem 0.3rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calendar-chat__proposal-edit-toggle:hover:not(:disabled) {
+  color: rgb(var(--primary));
+}
+
+.calendar-chat__proposal-edit-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .calendar-chat__proposal-remove {

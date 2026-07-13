@@ -47,6 +47,9 @@ services:
       # endpoint publico (bio/cardapio). Sem ela, a midia enviada pelo painel sai
       # relativa e quebra no front (que roda em outro dominio). Em prod = dominio da api.
       PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:9091}
+      # Base absoluta dos links curtos/QR do modulo tools (shortUrl = {base}/s/{slug}).
+      # Vazio = usa PUBLIC_API_BASE_URL (localhost:9091 em dev).
+      TOOLS_PUBLIC_BASE_URL: ${TOOLS_PUBLIC_BASE_URL:-}
       DATABASE_URL: postgres://${POSTGRES_USER:-omni}:${POSTGRES_PASSWORD:-omni_dev}@postgres:5432/${POSTGRES_DB:-omni}?sslmode=disable
       # AC-04: URL de RUNTIME da api (role least-privilege omni_app; sem DDL).
       # O binario migrate continua com DATABASE_URL (privilegiada, roda DDL).

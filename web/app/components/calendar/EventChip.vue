@@ -25,6 +25,11 @@ const typeIcon = computed(() => eventTypeMeta(props.event.type).icon)
 // distinto (icone de task + borda tracejada) para diferenciar do evento manual.
 const isMirror = computed(() => props.event.source === 'task')
 
+// WAVE 11: item ESPECIAL de midia (source='media', upload avulso que virou tarefa) NAO mostra
+// o titulo na visao geral do calendario — so um icone de midia (o fundo do dia ja exibe a arte;
+// o titulo = nome do arquivo aparece na task e no drawer).
+const isMediaItem = computed(() => props.event.source === 'media')
+
 const chipStyle = computed(() => {
   // A cor do tipo (config) vence a do cliente quando setada; senao cor do cliente;
   // senao cinza neutro. Cor e DADO -> aplicada via rgba() no ponto de uso.
@@ -45,13 +50,17 @@ const chipStyle = computed(() => {
   <button
     type="button"
     class="calendar-chip"
-    :class="{ 'calendar-chip--mirror': isMirror }"
+    :class="{ 'calendar-chip--mirror': isMirror, 'calendar-chip--media': isMediaItem }"
     :style="chipStyle"
     :title="`${event.time ? event.time + ' · ' : ''}${event.title}${isMirror ? ' (espelho de task)' : ''}`"
     @click.stop="$emit('select', event)"
   >
-    <UIcon :name="typeIcon" class="calendar-chip__icon" aria-hidden="true" />
-    <span class="calendar-chip__title">{{ event.title }}</span>
+    <UIcon
+      :name="isMediaItem ? 'i-lucide-image' : typeIcon"
+      class="calendar-chip__icon"
+      aria-hidden="true"
+    />
+    <span v-if="!isMediaItem" class="calendar-chip__title">{{ event.title }}</span>
     <UIcon
       v-if="isMirror"
       name="i-lucide-square-check-big"

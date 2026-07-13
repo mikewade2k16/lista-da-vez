@@ -130,6 +130,11 @@ type EventInput struct {
 	// (POST /events). So vale no POST; requer tasks.boardId na config C6 (senao 400
 	// tasks_not_configured). Ignorado no PUT.
 	CreateTask bool `json:"createTask"`
+	// IsMediaItem (WAVE 11): marca o evento como ITEM ESPECIAL DE MIDIA (upload avulso do dia
+	// que vira tarefa: titulo = nome do arquivo; o calendario mostra so a midia, sem titulo).
+	// Vira Source='media' server-side no CreateEvent — o client pode pedir 'media', mas NUNCA
+	// 'task' (o source do espelho segue server-controlled).
+	IsMediaItem bool `json:"mediaItem"`
 	// Source e a procedencia do evento (WAVE 5, E1), SERVER-CONTROLLED: `json:"-"` garante
 	// que o body nunca define isso. A borda HTTP deixa vazio (-> 'manual' no store); o
 	// espelho task->evento seta 'task' internamente (guarda anti-loop, E3).
@@ -311,6 +316,31 @@ type CalendarConfig struct {
 	AI                 AIConfig          `json:"ai"`
 	Tasks              TasksConfig       `json:"tasks"` // integracao com tasks (C6)
 	Chat               ChatConfig        `json:"chat"`  // layout da janela de chat (CFG v4)
+	// Shortcuts (WAVE 11) = mapa de atalhos de teclado configuravel pelo painel:
+	// { acao: combo }. Acoes conhecidas em shortcutDefaults(); combo = modificadores
+	// opcionais (ctrl/alt/shift/meta, ordem canonica) + tecla-base (1 caractere a-z/0-9
+	// ou nome especial enter/escape/space/arrow*), ex.: 'shift+t', 'ctrl+shift+k', 't'.
+	// Vazio = atalho DESLIGADO. Chave ausente no jsonb = default (merge no unmarshal).
+	Shortcuts map[string]string `json:"shortcuts"`
+}
+
+// shortcutDefaults sao as acoes de atalho conhecidas + a tecla default de cada uma
+// (WAVE 11). chat* valem com a janela do assistente; cal* valem na pagina do calendario.
+func shortcutDefaults() map[string]string {
+	return map[string]string{
+		"chatOpen":        "c",          // abrir/fechar o assistente
+		"chatRecordStart": "a",          // iniciar gravacao (janela aberta)
+		"chatRecordStop":  "enter",      // parar gravacao (gravando)
+		"chatClose":       "escape",     // fechar a janela da IA (mesmo sem foco)
+		"calToday":        "t",          // botao Hoje
+		"calMonthView":    "m",          // visao mensal
+		"calWeekView":     "w",          // visao semanal
+		"calNewItem":      "n",          // + Novo
+		"calNotesSidebar": "s",          // recolher/mostrar as anotacoes
+		"calSpans":        "b",          // mostrar/ocultar as barras multi-dia
+		"calPrev":         "arrowleft",  // mes/semana anterior
+		"calNext":         "arrowright", // proximo mes/semana
+	}
 }
 
 // defaultConfig e o estado inicial: todos os conjuntos de feriados ligados,
@@ -342,6 +372,8 @@ func defaultConfig() CalendarConfig {
 		// tem efeito quando ha board configurado. StatusColumnMap vazio = sem sync de status.
 		Tasks: TasksConfig{MirrorTasks: true, StatusColumnMap: []StatusColumnMapEntry{}},
 		Chat:  ChatConfig{Position: "center"},
+		// WAVE 11: atalhos de teclado com os defaults do produto (editaveis pelo painel).
+		Shortcuts: shortcutDefaults(),
 	}
 }
 

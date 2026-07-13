@@ -16,6 +16,10 @@ type testOperationsRepository struct {
 	roster                             []ConsultantProfile
 	snapshot                           SnapshotState
 	persisted                          []PersistInput
+	validatedEntries                   []ServiceHistoryEntry
+	cancelledServiceIDs                []string
+	validateErr                        error
+	cancelErr                          error
 }
 
 type testStoreScopeProvider struct {
@@ -102,6 +106,22 @@ func (repository *testOperationsRepository) Persist(_ context.Context, input Per
 		ServiceHistory:             append(cloneHistory(repository.snapshot.ServiceHistory), cloneHistory(input.AppendedHistory)...),
 	}
 
+	return nil
+}
+
+func (repository *testOperationsRepository) ValidateAutoClose(_ context.Context, _ string, entry ServiceHistoryEntry, _ string, _ int64) error {
+	if repository.validateErr != nil {
+		return repository.validateErr
+	}
+	repository.validatedEntries = append(repository.validatedEntries, entry)
+	return nil
+}
+
+func (repository *testOperationsRepository) CancelAutoClose(_ context.Context, _ string, serviceID string, _ string, _ string, _ int64) error {
+	if repository.cancelErr != nil {
+		return repository.cancelErr
+	}
+	repository.cancelledServiceIDs = append(repository.cancelledServiceIDs, serviceID)
 	return nil
 }
 
@@ -606,6 +626,9 @@ func cloneActiveServiceStates(items []ActiveServiceState) []ActiveServiceState {
 			StartOffsetMs:        item.StartOffsetMs,
 			StoppedAt:            item.StoppedAt,
 			StopReason:           item.StopReason,
+			GraceDeadline:        item.GraceDeadline,
+			SnoozedUntil:         item.SnoozedUntil,
+			SnoozeCount:          item.SnoozeCount,
 		})
 	}
 	return cloned

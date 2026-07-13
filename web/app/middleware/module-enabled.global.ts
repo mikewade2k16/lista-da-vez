@@ -16,6 +16,7 @@ const MODULE_GATED_FALLBACK_PATH = '/perfil'
 // aqui — drift gera "menu esconde item mas rota direta ainda abre".
 const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/tasks', moduleId: 'tasks' },
+  { prefix: '/calendario', moduleId: 'calendar' },
   { prefix: '/crm', moduleId: 'crm' },
   { prefix: '/erp', moduleId: 'crm' },
   { prefix: '/site/leads', moduleId: 'site' },
@@ -27,6 +28,7 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/manage/produtos-web', moduleId: 'site' },
   { prefix: '/meta-ads', moduleId: 'meta_ads' },
   { prefix: '/finance', moduleId: 'finance' },
+  { prefix: '/tools', moduleId: 'tools' },
   // queue — paginas de uso da Fila/operacao. Conta sem o modulo queue nao acessa
   // (espelha as tags moduleId:'queue' no nav.config.ts). /operacao cobre tambem
   // /operacao/usuarios e /operacao/clientes (gestao da Fila).

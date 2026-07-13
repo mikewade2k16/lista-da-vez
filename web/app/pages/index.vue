@@ -1,13 +1,23 @@
 <script setup>
 import { useAuthStore } from '~/stores/auth'
 
+// '/' e so um distribuidor: manda pra home do papel (ou login). O redirect vive
+// num MIDDLEWARE (roda ANTES de montar a pagina), nao mais como `await
+// navigateTo` no corpo do setup. O await no setup roda DENTRO do Suspense do
+// NuxtPage e prendia a tela numa transicao vazia (tela preta) ate resolver — o
+// mesmo limbo que aparecia ao abrir o painel com o chunk ainda frio. O
+// auth.global ja rodou ensureSession + hidratou accounts nesta mesma navegacao;
+// aqui so lemos o estado resolvido e roteamos.
 definePageMeta({
   layout: false,
+  middleware() {
+    if (import.meta.server) return
+    const auth = useAuthStore()
+    if (!auth.isAuthenticated) return navigateTo('/auth/login', { replace: true })
+    if (auth.mustChangePassword) return navigateTo('/perfil', { replace: true })
+    return navigateTo(auth.homePath, { replace: true })
+  },
 })
-
-const auth = useAuthStore()
-await auth.ensureSession()
-await navigateTo(auth.isAuthenticated ? auth.homePath : '/auth/login')
 </script>
 
 <template>

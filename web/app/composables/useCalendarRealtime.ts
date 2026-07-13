@@ -37,6 +37,8 @@ interface CalendarRealtimeOptions {
   onConfigUpdated?: () => void
   // Plano de IA mudou de status: notifica o modal de IA (encerra polling se terminou).
   onPlanUpdated?: (planId: string, status: string) => void
+  // Perfil do cliente mudou (WAVE 10): a aba Clientes refaz o fetch do indice/perfil (sem reload).
+  onClientProfileUpdated?: (clientId: string) => void
 }
 
 // Rajada de eventos (ex.: aplicar um plano de IA cria varios eventos) vira UM refetch.
@@ -93,6 +95,10 @@ export function useCalendarRealtime(options: CalendarRealtimeOptions) {
     }
     if (type === 'calendar.config_updated') {
       options.onConfigUpdated?.()
+      return
+    }
+    if (type === 'calendar.client_profile_updated') {
+      options.onClientProfileUpdated?.(normalizeText(payload.resourceId, 80))
       return
     }
     if (type === 'calendar.plan_updated') {

@@ -35,6 +35,7 @@ func (repository *PostgresRepository) List(ctx context.Context, input Repository
 			coalesce(g.consultant_id::text, ''),
 			coalesce(c.name, ''),
 			g.target_month,
+			g.week,
 			g.monthly_goal,
 			g.avg_ticket_goal,
 			g.conversion_goal,
@@ -87,6 +88,7 @@ func (repository *PostgresRepository) FindByID(ctx context.Context, id string) (
 			coalesce(g.consultant_id::text, ''),
 			coalesce(c.name, ''),
 			g.target_month,
+			g.week,
 			g.monthly_goal,
 			g.avg_ticket_goal,
 			g.conversion_goal,
@@ -125,7 +127,8 @@ func (repository *PostgresRepository) Create(ctx context.Context, goal GoalTarge
 			conversion_goal,
 			pa_goal,
 			created_by_user_id,
-			updated_by_user_id
+			updated_by_user_id,
+			week
 		)
 		values (
 			$1::uuid,
@@ -137,7 +140,8 @@ func (repository *PostgresRepository) Create(ctx context.Context, goal GoalTarge
 			$7,
 			$8,
 			$9::uuid,
-			$10::uuid
+			$10::uuid,
+			$11
 		)
 		returning id::text;
 	`,
@@ -151,6 +155,7 @@ func (repository *PostgresRepository) Create(ctx context.Context, goal GoalTarge
 		goal.PAGoal,
 		nullableID(goal.CreatedByUserID),
 		nullableID(goal.UpdatedByUserID),
+		goal.Week,
 	).Scan(&createdID)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -257,6 +262,7 @@ func scanGoalTarget(scanner goalScanner) (GoalTarget, error) {
 		&goal.ConsultantID,
 		&goal.ConsultantName,
 		&targetMonth,
+		&goal.Week,
 		&goal.MonthlyGoal,
 		&goal.AvgTicketGoal,
 		&goal.ConversionGoal,

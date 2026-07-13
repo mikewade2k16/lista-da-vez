@@ -99,8 +99,8 @@ defineProps({
   width: fit-content;
   padding: 0.25rem 0.55rem;
   border-radius: 999px;
-  background: rgba(45, 212, 191, 0.12);
-  color: #99f6e4;
+  background: rgb(var(--success) / 0.12);
+  color: rgb(var(--success));
   font-size: 0.66rem;
   font-weight: 850;
   letter-spacing: 0.08em;
@@ -115,14 +115,14 @@ defineProps({
 }
 
 .demo-page h1 {
-  color: #f8fafc;
+  color: var(--text-main);
   font-size: clamp(1.35rem, 2vw, 1.85rem);
   line-height: 1.1;
 }
 
 .demo-page p {
   max-width: 54rem;
-  color: rgba(203, 213, 225, 0.76);
+  color: var(--text-muted);
   font-size: 0.92rem;
   line-height: 1.55;
 }
@@ -134,9 +134,9 @@ defineProps({
   flex-shrink: 0;
   min-width: 12.5rem;
   padding: 0.78rem 0.86rem;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgb(var(--border));
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.76);
+  background: rgb(var(--surface-2));
 }
 
 .demo-page__status > .material-icons-round {
@@ -145,8 +145,8 @@ defineProps({
   width: 2rem;
   height: 2rem;
   border-radius: 10px;
-  background: rgba(129, 140, 248, 0.14);
-  color: #c7d2fe;
+  background: rgb(var(--primary) / 0.14);
+  color: var(--text-main);
   font-size: 1.05rem;
 }
 
@@ -157,13 +157,13 @@ defineProps({
 }
 
 .demo-page__status strong {
-  color: #f8fafc;
+  color: var(--text-main);
   font-size: 0.86rem;
   line-height: 1.2;
 }
 
 .demo-page__status span {
-  color: rgba(148, 163, 184, 0.82);
+  color: var(--text-muted);
   font-size: 0.72rem;
 }
 
@@ -178,26 +178,26 @@ defineProps({
   gap: 0.45rem;
   min-height: 6.2rem;
   padding: 0.9rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgb(var(--border));
   border-radius: 12px;
-  background: rgba(13, 18, 29, 0.86);
+  background: rgb(var(--surface-2));
 }
 
 .demo-page__metric span {
-  color: rgba(203, 213, 225, 0.74);
+  color: var(--text-muted);
   font-size: 0.76rem;
   font-weight: 700;
 }
 
 .demo-page__metric strong {
   align-self: end;
-  color: #f8fafc;
+  color: var(--text-main);
   font-size: 1.55rem;
   line-height: 1;
 }
 
 .demo-page__metric--info {
-  border-color: rgba(56, 189, 248, 0.22);
+  border-color: rgb(var(--primary) / 0.22);
 }
 
 .demo-page__metric--warning {
@@ -205,7 +205,7 @@ defineProps({
 }
 
 .demo-page__metric--success {
-  border-color: rgba(34, 197, 94, 0.24);
+  border-color: rgb(var(--success) / 0.24);
 }
 
 .demo-page__body {
@@ -222,9 +222,9 @@ defineProps({
   align-content: start;
   gap: 0.85rem;
   padding: 0.95rem;
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  border: 1px solid rgb(var(--border));
   border-radius: 14px;
-  background: rgba(13, 18, 29, 0.82);
+  background: rgb(var(--surface-2));
 }
 
 .demo-page__panel-head {
@@ -235,14 +235,14 @@ defineProps({
 }
 
 .demo-page__panel-head h2 {
-  color: #f8fafc;
+  color: var(--text-main);
   font-size: 0.96rem;
   line-height: 1.2;
 }
 
 .demo-page__panel-head span {
   flex-shrink: 0;
-  color: rgba(148, 163, 184, 0.82);
+  color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 700;
 }
@@ -259,9 +259,9 @@ defineProps({
   gap: 0.8rem;
   min-height: 4.2rem;
   padding: 0.72rem 0.78rem;
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  border: 1px solid rgb(var(--border));
   border-radius: 11px;
-  background: rgba(8, 13, 24, 0.72);
+  background: rgb(var(--surface-2));
 }
 
 .demo-page__row-main {
@@ -272,7 +272,7 @@ defineProps({
 
 .demo-page__row-main strong {
   overflow: hidden;
-  color: #e2e8f0;
+  color: var(--text-main);
   font-size: 0.86rem;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -280,7 +280,7 @@ defineProps({
 }
 
 .demo-page__row-main span {
-  color: rgba(148, 163, 184, 0.82);
+  color: var(--text-muted);
   font-size: 0.75rem;
   line-height: 1.3;
 }
@@ -302,18 +302,18 @@ defineProps({
 }
 
 .demo-page__row-status--info {
-  background: rgba(56, 189, 248, 0.12);
-  color: #bae6fd;
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
 }
 
 .demo-page__row-status--warning {
   background: rgba(251, 191, 36, 0.13);
-  color: #fde68a;
+  color: #f59e0b;
 }
 
 .demo-page__row-status--success {
-  background: rgba(34, 197, 94, 0.13);
-  color: #bbf7d0;
+  background: rgb(var(--success) / 0.13);
+  color: rgb(var(--success));
 }
 
 .demo-page__tags {
@@ -324,9 +324,9 @@ defineProps({
 
 .demo-page__tag {
   padding: 0 0.68rem;
-  border: 1px solid rgba(129, 140, 248, 0.18);
-  background: rgba(129, 140, 248, 0.1);
-  color: #c7d2fe;
+  border: 1px solid rgb(var(--primary) / 0.18);
+  background: rgb(var(--primary) / 0.1);
+  color: var(--text-main);
 }
 
 @media (max-width: 980px) {

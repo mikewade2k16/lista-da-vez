@@ -39,6 +39,43 @@ export type CalendarChatProposalStatus = 'none' | 'pending' | 'accepted' | 'reje
 // action reservado p/ CRUD futuro (create|update|delete); hoje o front so executa 'create'.
 export type CalendarChatProposalAction = 'create' | 'update' | 'delete'
 
+// Kinds de proposta: evento/task (WAVE 5.1) + anotacao/perfil do cliente (WAVE 7).
+export type CalendarChatProposalKind = 'event' | 'task' | 'note' | 'clientProfile'
+
+/** Sub-objeto da proposta de anotacao do mes (kind=note, WAVE 7). */
+export interface CalendarChatProposalNote {
+  month?: string
+  content?: string
+  mode?: 'append' | 'replace'
+}
+
+/** Campos livres do brief no perfil (kind=clientProfile, WAVE 7). */
+export interface CalendarChatProposalProfileExtra {
+  audience?: string
+  offer?: string
+  pillars?: string
+  cadence?: string
+  restrictions?: string
+  performance?: string
+  assets?: string
+}
+
+/** Sub-objeto da proposta de perfil estrategico do cliente (kind=clientProfile, WAVE 7). */
+export interface CalendarChatProposalProfile {
+  segment?: string
+  positioning?: string
+  description?: string
+  history?: string
+  siteUrl?: string
+  instagram?: string
+  address?: string
+  objectives?: string
+  brandVoice?: string
+  extra?: CalendarChatProposalProfileExtra
+  clearFields?: string[]
+  clearAll?: boolean
+}
+
 export interface CalendarChatProposalFields {
   title?: string
   date?: string
@@ -58,13 +95,16 @@ export interface CalendarChatProposalFields {
   clientName?: string
   archived?: boolean
   targetId?: string
+  // note/profile (WAVE 7): sub-objetos dos kinds note e clientProfile.
+  note?: CalendarChatProposalNote
+  profile?: CalendarChatProposalProfile
 }
 
 /** Proposta PERSISTIDA: id estavel (indice na mensagem) + status proprio (aprova/recusa por item). */
 export interface CalendarChatStoredProposal {
   id: string
   action: CalendarChatProposalAction
-  kind: 'event' | 'task'
+  kind: CalendarChatProposalKind
   fields: CalendarChatProposalFields
   status: CalendarChatProposalStatus
 }
@@ -150,13 +190,50 @@ function normalizeProposal(raw: unknown, index: number): CalendarChatStoredPropo
   )
     ? (asString(o.status) as CalendarChatProposalStatus)
     : 'pending'
+  const kind: CalendarChatProposalKind = (
+    ['event', 'task', 'note', 'clientProfile'] as string[]
+  ).includes(asString(o.kind))
+    ? (asString(o.kind) as CalendarChatProposalKind)
+    : 'event'
   return {
     id: asString(o.id) || String(index),
     action,
-    kind: o.kind === 'task' ? 'task' : 'event',
+    kind,
     fields: asRecord(o.fields) as CalendarChatProposalFields,
     status,
   }
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue)
+  const object = asRecord(value)
+  if (!Object.keys(object).length) return value
+  return Object.fromEntries(
+    Object.keys(object)
+      .sort()
+      .map((key) => [key, stableValue(object[key])]),
+  )
+}
+
+function proposalFingerprint(proposal: CalendarChatStoredProposal): string {
+  return JSON.stringify({
+    action: proposal.action,
+    kind: proposal.kind,
+    fields: stableValue(proposal.fields || {}),
+    status: proposal.status === 'pending' ? 'pending' : proposal.id,
+  })
+}
+
+function dedupeProposals(proposals: CalendarChatStoredProposal[]): CalendarChatStoredProposal[] {
+  const seen = new Set<string>()
+  const out: CalendarChatStoredProposal[] = []
+  for (const proposal of proposals) {
+    const key = proposalFingerprint(proposal)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(proposal)
+  }
+  return out
 }
 
 function normalizeStoredMessage(raw: unknown): CalendarChatStoredMessage {
@@ -178,7 +255,7 @@ function normalizeStoredMessage(raw: unknown): CalendarChatStoredMessage {
     id: asString(o.id),
     role: o.role === 'assistant' ? 'assistant' : 'user',
     content: asString(o.content),
-    proposals,
+    proposals: dedupeProposals(proposals),
     calendarItems: Array.isArray(o.calendarItems)
       ? (o.calendarItems as CalendarChatCalendarItem[])
       : [],

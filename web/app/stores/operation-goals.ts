@@ -10,6 +10,8 @@ export type OperationGoalTarget = {
   id: string
   tenantId: string
   month: string
+  // 0 = meta mensal (mes inteiro); 1..4 = semana do mes (S1=1-7 ... S4=22-fim).
+  week: number
   scope: 'store' | 'consultant'
   storeId: string
   storeCode: string
@@ -141,11 +143,19 @@ function buildSummaryFromGoals(
   return summary
 }
 
+function normalizeWeek(value: unknown): number {
+  const parsed = Math.trunc(Number(value) || 0)
+  if (parsed < 0) return 0
+  if (parsed > 4) return 4
+  return parsed
+}
+
 function normalizeGoal(goal: LooseRecord = {}): OperationGoalTarget {
   return {
     id: normalizeText(goal.id),
     tenantId: normalizeText(goal.tenantId),
     month: normalizeMonth(goal.month),
+    week: normalizeWeek(goal.week),
     scope: normalizeText(goal.scope) === 'consultant' ? 'consultant' : 'store',
     storeId: normalizeText(goal.storeId),
     storeCode: normalizeText(goal.storeCode),
@@ -186,6 +196,7 @@ function buildCreatePayload(payload: LooseRecord = {}) {
     storeId: normalizeText(payload.storeId),
     consultantId: normalizeText(payload.consultantId),
     month: normalizeMonth(payload.month),
+    week: normalizeWeek(payload.week),
     monthlyGoal: normalizeNumber(payload.monthlyGoal),
     avgTicketGoal: normalizeNumber(payload.avgTicketGoal),
     conversionGoal: clampPercent(payload.conversionGoal),

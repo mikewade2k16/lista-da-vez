@@ -57,8 +57,35 @@ watch(
   { immediate: true },
 )
 
+// WAVE 11 ("midias sao tarefas especiais"): anexo NOVO subido SEM item vira um ITEM ESPECIAL
+// do calendario — um evento source='media' com titulo = nome do arquivo (a task vinculada nasce
+// com esse titulo; o calendario mostra so a midia, sem titulo). Anexos vinculados a um evento
+// existente e remocoes/edicoes seguem o fluxo normal do day_media.
 async function onDayMedia(next: CalendarMediaItem[]): Promise<void> {
-  if (props.dateKey) await store.saveDayMedia(props.dateKey, next)
+  if (!props.dateKey) return
+  const known = new Set(dayMedia.value.map((m) => m.id))
+  const fresh = next.filter((m) => !known.has(m.id) && !m.eventId)
+  const rest = next.filter((m) => known.has(m.id) || m.eventId)
+  for (const item of fresh) {
+    const ok = await store.createEvent({
+      date: props.dateKey,
+      time: '',
+      clientId: item.clientId || '',
+      type: 'post',
+      title: item.name || 'Mídia',
+      status: 'planejado',
+      priority: 'media',
+      responsibleId: '',
+      involvedIds: [],
+      media: [item],
+      description: '',
+      mediaItem: true,
+      createTask: Boolean(store.config.tasks?.boardId),
+    } as CalendarEventInput)
+    // Falha ao criar o item especial: preserva o anexo no day_media (nada se perde).
+    if (!ok) rest.push(item)
+  }
+  await store.saveDayMedia(props.dateKey, rest)
 }
 
 const activeEvent = computed(

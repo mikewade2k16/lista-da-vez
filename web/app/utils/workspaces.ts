@@ -2,6 +2,7 @@ export const WORKSPACES = [
   { id: 'operacao', label: 'Operacao', icon: 'pending_actions', path: '/operacao' },
   { id: 'consultor', label: 'Consultor', icon: 'person', path: '/consultor' },
   { id: 'tasks', label: 'Tasks', icon: 'task_alt', path: '/tasks' },
+  { id: 'calendar', label: 'Calendario', icon: 'calendar_month', path: '/calendario' },
   { id: 'ranking', label: 'Ranking', icon: 'leaderboard', path: '/ranking' },
   { id: 'dados', label: 'Dados', icon: 'bar_chart', path: '/dados' },
   { id: 'inteligencia', label: 'Inteligencia', icon: 'psychology', path: '/inteligencia' },

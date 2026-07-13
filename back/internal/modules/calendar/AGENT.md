@@ -64,6 +64,13 @@ task — task data-only nasce meia-noite UTC; converter cru para SP rolava para 
 meia-noite UTC = "sem hora" usa a DATA em UTC (dia inteiro) e hora real converte para SP.
 "Evento sem task" (WAVE 6): `POST /v1/calendar/events/{id}/task` (`CreateTaskForEvent`) cria+vincula a
 task de um evento sem task (reusa `createLinkedTask` C10, idempotente) — o botao do badge no DayDrawer.
+`createLinkedTask` cria a task COMPLETA (2026-07-11, paridade com `syncTaskFromEvent`): titulo, corpo
+(descToHTML), prazo, cliente, responsavel (id + `ui_metadata.responsible` com o NOME), `Priority`,
+`ui_metadata.type` e `ui_metadata.calendarMedia` (midia do evento, read-only via `eventMediaForTask`).
+ITEM ESPECIAL DE MIDIA (WAVE 11): `EventInput.IsMediaItem` (json `mediaItem`, client-controlled seguro)
+=> o `CreateEvent` seta `Source='media'` server-side (o body continua SEM poder mandar 'task'). Upload
+avulso do dia no front cria um evento assim (titulo = nome do arquivo, media=[item], createTask) — o
+calendario esconde o titulo do chip (`EventChip` source='media'); a task nasce com o nome do arquivo.
 EXCLUSAO (WAVE 6, "perguntar na hora"): `DELETE /v1/calendar/events/{id}?archiveTask=true` arquiva a
 task vinculada junto (`archiveLinkedTask`); sem o param so remove a relation (task fica). Tolera 404
 quando o archive ja apagou o evento-espelho (source='task') pelo sync.
@@ -75,6 +82,22 @@ Espelho task->evento ligado por padrao (`config.tasks.mirrorTasks=true`). Card n
 escrevendo), aprovando em LOTE. Status por proposta muda em `PATCH /v1/calendar/chat/conversations/{id}/
 messages/{messageId}/proposals/{proposalId}/status` (`SetProposalStatus` idempotente: so item ainda
 `pending`, via `jsonb_agg`+`jsonb_set` preservando a ordem).
+CRUD de ANOTACAO e PERFIL do cliente pelo chat (WAVE 7): os `kind` de proposta ganham `note` e
+`clientProfile` alem de event|task. `chat_proposals_crud.go` (novo) traz `ChatProposalNote`
+(`{month,content,mode(append|replace)}`) e `ChatProposalProfile` (9 estaveis + `extra` +
+`clearFields[]`/`clearAll`), os sub-objetos `ChatProposalFields.Note`/`.Profile`, e os sanitizers por
+kind que `sanitizeProposal` (chat.go) DESPACHA (`canonicalProposalKind`/`sanitizeNoteProposal`/
+`sanitizeProfileProposal`; note: create/update exige `content`, delete limpa; clientProfile: exige >=1
+campo, delete exige clearAll|clearFields, `clientId` opcional). O cliente-alvo do perfil reusa
+`fields.clientId` (a IA resolve por NOME do contexto ou o dono escolhe no cartao). A EXECUCAO e do FRONT
+(`web/app/utils/calendar-chat-crud.ts`) pela API do usuario: anotacao via `PUT /notes/{month}` (ACRESCENTA
+por padrao; mes ativo usa `store.setNotesForActiveMonth`, senao GET+aplica+PUT); perfil via
+GET->merge->`PUT /client-profile` (full-replace preservando os campos nao tocados; clearAll usa o perfil
+default). Insistencia: `runtime_context.go` `missingProfileFields` expoe os campos vazios — `ProfileMissing`
+no `AIContextClientLean` (escopo all) + o no "Montar contexto" calcula de `ctx.client.profile` (escopo
+client) — e o prompt manda a IA avisar o que falta e insistir com moderacao. Sem migration/env nova; so
+re-importar o workflow `calendar-chat` (nos "Montar contexto" + "Extrair resposta" atualizados). Doc
+[docs/CALENDARIO_SPECS6.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/CALENDARIO_SPECS6.md).
 Secrets de IA (WAVE 3, SEC) em `secrets.go` (tipos `KeyStatus{set,last4}`/`KeyStatusView{scope,keys}`/
 `GlobalSecrets` + service: `GetAccountKeyStatus`/`PutAccountKey`/`GetGlobalKeyStatus`/`PutGlobalKey`/
 `resolveAIKey`/`mask`), `store_secrets.go` (interface `secretStore` + CRUD de `calendar.ai_secrets` por
@@ -131,7 +154,8 @@ Realtime + optimistic locking (C11/C12, WAVE 2) em `publisher.go` (interface `Pu
 `RealtimeEvent` + `noopPublisher` default + `WithPublisher` = Option do `New`; o modulo `realtime`
 implementa a interface, direcao realtime->calendar, sem ciclo). O `Service` publica eventos LEAN
 de invalidacao (`s.publishCalendar`) nos pontos de escrita: create/update/delete evento, `PutNotes`,
-`PutDayMedia`, `PutConfig` e `ApplyPlanResult`. O front so recebe a dica e refaz o fetch (nunca
+`PutDayMedia`, `PutConfig`, `ApplyPlanResult` e **`PutClientProfile` (WAVE 10, `calendar.client_profile_updated`,
+resourceId=clientId — a aba Clientes refaz o fetch sem reload)**. O front so recebe a dica e refaz o fetch (nunca
 patch local). Injecao no `app.go`: `calendar.New(storage, ..., calendar.WithPublisher(realtimeService))`.
 Chat com memoria + escopo de clientes (WAVE 4, D1/D2, SPEC-B10) em `chat_store.go` (tipos
 `ChatConversation`/`ChatMessage`/`ChatConversationInput` + interface `chatConversationStore` embutida em
@@ -304,11 +328,13 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
 - `GET /v1/calendar/notes/{month}` — nota do mes (`YYYY-MM`; vazia se nao existe).
 - `PUT /v1/calendar/notes/{month}` — upsert da nota (body `{content}`).
 - `GET/PUT /v1/calendar/config` — config da account (shape completo C2/C6: responsaveis,
-  feriados, weekStartsOn, clientColors, typeColors, whiteLabel, ai, tasks). PUT sanitiza no
-  service (weekStartsOn no enum, cores `#rrggbb`/`none` validadas, provider no enum — inclui
-  `gemini`, temperature clamp 0..1, `tasks.boardId`/`defaultColumnId` UUID-ou-vazio via
-  `sanitizeTasks`, strings trim) e continua full-replace; GET devolve o shape completo mesmo
-  para conta antiga (`tasks:{boardId:"",defaultColumnId:""}`).
+  feriados, weekStartsOn, clientColors, typeColors, whiteLabel, ai, tasks, **shortcuts**). PUT
+  sanitiza no service (weekStartsOn no enum, cores `#rrggbb`/`none` validadas, provider no enum
+  — inclui `gemini`, temperature clamp 0..1, `tasks.boardId`/`defaultColumnId` UUID-ou-vazio via
+  `sanitizeTasks`, strings trim, **shortcuts via `sanitizeShortcuts`: acoes whitelist de
+  `shortcutDefaults()`, tecla 1-char a-z/0-9 ou especial enter/escape/space/arrow*, vazio =
+  desligado, invalido = default — WAVE 11**) e continua full-replace; GET devolve o shape
+  completo mesmo para conta antiga (`tasks:{boardId:"",defaultColumnId:""}`).
 - `GET /v1/calendar/members` — usuarios da account (candidatos a responsavel).
 - `GET /v1/calendar/responsibles` — responsaveis efetivos (subconjunto do config ou todos).
 - `GET /v1/calendar/holidays?from=&to=` — feriados/datas comemorativas da janela
@@ -433,7 +459,8 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   (o front refaz fetch, nunca patch local): `calendar.event_created|updated|deleted`
   (resourceId=eventId, payload.date; +version no updated), `calendar.note_updated`
   (payload.monthKey), `calendar.day_media_updated` (payload.date), `calendar.config_updated`,
-  `calendar.plan_updated` (resourceId=planId, payload.status; publicado no `ApplyPlanResult`).
+  `calendar.plan_updated` (resourceId=planId, payload.status; publicado no `ApplyPlanResult`) e
+  `calendar.client_profile_updated` (WAVE 10, resourceId=clientId; publicado no `PutClientProfile`).
 - Optimistic locking (C12): `EventView` ganha `version`; o PUT compara `If-Match` no service
   (guard `and version = $n` no UPDATE; ausencia de linha desambigua 404 x 409 via GET escopado).
 

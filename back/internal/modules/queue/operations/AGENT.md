@@ -136,6 +136,57 @@ Em ambos: ERRO NUNCA e cacheado (mantem a degradacao graciosa — na proxima cha
 - `POST /v1/operations/assign-task`
 - `POST /v1/operations/start`
 - `POST /v1/operations/finish`
+- `POST /v1/operations/keep-open` (auto-encerramento 2h — "Continuar", operador)
+- `POST /v1/operations/validate` (auto-encerramento 2h — validar pendencia, gerente)
+- `POST /v1/operations/cancel-metric` (auto-encerramento 2h — cancelar metrica, gerente)
+
+## Auto-encerramento de atendimento (2h)
+
+Plano canonico: `docs/operacao/AUTO_ENCERRAMENTO_PLAN.md`; fronteira com `alerts` em
+`docs/OPERATIONS_ALERTS_TIMER_FLOW.md` (§Auto-encerramento).
+
+Encerra automaticamente atendimentos esquecidos (limite CONFIGURAVEL por tenant, default
+2h), preservando a metrica de tempo e mandando o auto-fechado para uma caixa de Pendencias
+onde a gestao valida (desfecho real) ou cancela (fora da metrica, mantido p/ auditoria).
+SERVIDOR AUTORITATIVO: o sweep decide e fecha mesmo com a aba fechada; a barra de 1 min no
+front e' so display.
+
+- **Sweep**: `processAutoClose`/`autoCloseService`/`persistGraceState` em
+  `service_autoclose.go`, dentro do `ProcessTimedAlerts` (mesmo tick de 3s do
+  `long_open_service`). Le `AutoCloseEnabled/AutoCloseMinutes/AutoCloseGraceSeconds/
+  SnoozeRepromptMinutes` via `AlertCoordinator.LoadOperationalRules` (config em
+  `tenant_operational_alert_rules`). Um auto-close por tick (respeita o append de sessao
+  unica do `persistAndAck`; o grace-only e o auto-close-not-last zeram as sessoes p/ nao
+  reinserir a ultima).
+- **Estado corrente** (`operation_active_services`, migration 0196): `grace_deadline`
+  (epoch ms absoluto do vencimento do countdown; 0 = sem), `snoozed_until`, `snooze_count`.
+  ROUND-TRIP obrigatorio em `loadActiveServices` (Scan), `replaceActiveServices` (INSERT)
+  E `normalizeSnapshotState` (senao zeram a cada leitura).
+- **Historico** (`operation_service_history`, migration 0196): `close_reason`
+  ('manual'|'auto'), `validation_status` ('pending'|'validated'|'cancelled'),
+  `validated_by`/`validated_at` (sem FK p/ core.*), `snooze_count`, `cancel_reason`.
+  `finish_outcome` admite o sentinela 'auto' (`normalizeOutcome` preserva). `appendHistory`
+  grava close_reason/validation_status/snooze_count.
+- **Fechamento**: `autoCloseService` grava a linha PENDENTE (duration = fechamento−inicio,
+  NAO capado no limite p/ contar snooze real), devolve o consultor a fila (decisao de
+  produto) e resolve o alerta (`long_open_service.resolved`).
+- **Encerrar pendencia (validate)**: UPDATE no historico (`store_postgres_autoclose.go`),
+  nunca re-INSERT (appendHistory e `on conflict do nothing`). Gate `canValidateAutoClose`
+  (gerente/owner/platform_admin). ErrPendingNotFound → 404. O `/validate` recebe o
+  payload COMPLETO do modal de encerramento (mesmo shape do `/finish`) + campo
+  `validationReason` OBRIGATORIO (migration 0197, coluna `validation_reason`):
+  justificativa de por que o consultor nao encerrou na hora — junto de `validated_by`
+  (quem)/`validated_at` (quando)/`close_reason='auto'`/`snooze_count`, e a base das
+  metricas de cobranca por consultor/gerente/loja. UX: botao "Pendencias para
+  encerrar (N)" no topo da Lista da vez → modal de lista → "Encerrar" abre o MESMO
+  finish modal do fluxo normal (controller resolve o service-like da pendencia; o
+  submit vai para `/validate`). O `/cancel-metric` continua exposto no back (sem UI
+  proeminente; cancelamento de metrica fica para a fase de metricas).
+- **Snapshot**: `ActiveService` ganha `graceDeadline`/`snoozedUntil`/`snoozeCount`; o
+  Snapshot ganha `pendingValidations[]` (derivado do historico pending).
+- **Metrica**: `reports` (via `appendHistoryFilters`) e `analytics` (via
+  `excludeCancelledMetrics`) IGNORAM `validation_status='cancelled'`; pendentes/validadas
+  contam.
 
 Regra de resposta:
 

@@ -4,8 +4,9 @@
 // existentes — cai no calendario com o drawer aberto na aba Responsaveis.
 definePageMeta({
   layout: 'dashboard',
-  // Mesmo criterio da /calendario: tela global, sem gate de workspace.
-  workspaceId: '',
+  // Mesmo criterio da /calendario: gate de papel por workspaceId 'calendar' +
+  // gate de modulo pelo prefixo /calendario no module-enabled.global.ts.
+  workspaceId: 'calendar',
   // Redireciona ANTES de renderizar (middleware de rota inline).
   middleware: [() => navigateTo('/calendario?config=responsaveis', { replace: true })],
 })

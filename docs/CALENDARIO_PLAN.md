@@ -407,6 +407,12 @@ exceto `stores/calendar.ts` — ver "Ordem/Dependências" no SPECS2).
      credential "Redis account" existente.
   5. Realtime não muda infra (hub em memória, api single-instance); proxy da frente precisa
      permitir upgrade de WebSocket em `/v1/realtime/calendar` (mesma regra dos canais atuais).
+- **WAVE 7 (CRUD de anotações + perfil pelo chat)** — **sem migration e sem env nova** (reusa
+  `calendar.notes` e `calendar.client_profiles`, já existentes). Único passo de deploy:
+  **re-importar `automation/export/workflow-calendar-chat.json` no n8n** (os nós Code "Montar
+  contexto" e "Extrair resposta" passam a montar/sanitizar os kinds `note`/`clientProfile`) e
+  reiniciar o n8n para re-registrar o webhook. Detalhe operacional em
+  [CALENDARIO_SPECS6.md](CALENDARIO_SPECS6.md).
 
 ## 6. Legado/mock — ✅ removido
 - `useCalendarData.ts` (`CALENDAR_DATA_IS_MOCK`) **deletado**; responsáveis, feriados, config e

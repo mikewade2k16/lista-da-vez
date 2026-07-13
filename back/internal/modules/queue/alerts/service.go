@@ -282,6 +282,10 @@ func (service *Service) LoadOperationalRules(ctx context.Context, storeID string
 				LongOpenServiceMinutes: 0,
 				NotifyDashboard:        rules.NotifyDashboard,
 				NotifyOperationContext: rules.NotifyOperationContext,
+				AutoCloseEnabled:       rules.AutoCloseEnabled,
+				AutoCloseMinutes:       rules.AutoCloseMinutes,
+				AutoCloseGraceSeconds:  rules.AutoCloseGraceSeconds,
+				SnoozeRepromptMinutes:  rules.SnoozeRepromptMinutes,
 			}, nil
 		}
 		minutes = defaultLongOpenMinutes
@@ -291,6 +295,10 @@ func (service *Service) LoadOperationalRules(ctx context.Context, storeID string
 		LongOpenServiceMinutes: minutes,
 		NotifyDashboard:        rules.NotifyDashboard,
 		NotifyOperationContext: rules.NotifyOperationContext,
+		AutoCloseEnabled:       rules.AutoCloseEnabled,
+		AutoCloseMinutes:       rules.AutoCloseMinutes,
+		AutoCloseGraceSeconds:  rules.AutoCloseGraceSeconds,
+		SnoozeRepromptMinutes:  rules.SnoozeRepromptMinutes,
 	}, nil
 }
 

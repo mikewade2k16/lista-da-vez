@@ -506,6 +506,7 @@ func (service *Service) dispatchTaskSync(ctx context.Context, access AccessConte
 		TaskID:            task.ID,
 		BoardID:           task.BoardID,
 		Title:             task.Title,
+		ContentHTML:       task.ContentHTML,
 		Status:            optionalStringValue(task.Status),
 		Priority:          strings.TrimSpace(task.Priority),
 		Type:              taskMetadataType(task.UIMetadata),

@@ -130,6 +130,9 @@ export interface DayCellModel {
  */
 export type CalendarEventInput = Omit<CalendarEvent, 'id' | 'taskId' | 'version' | 'source'> & {
   createTask?: boolean
+  // WAVE 11: marca o evento como ITEM ESPECIAL DE MIDIA (upload avulso que vira tarefa;
+  // o back seta source='media' server-side; o calendario esconde o titulo do chip).
+  mediaItem?: boolean
 }
 
 /** Usuario da conta (candidato/atual a responsavel). */
@@ -146,8 +149,14 @@ export {
   AI_PROVIDER_LABEL,
   AI_PROVIDERS,
   AI_SECRET_PROVIDERS,
+  CALENDAR_SHORTCUT_ACTIONS,
+  CALENDAR_SHORTCUT_DEFAULTS,
+  CALENDAR_SHORTCUT_MODIFIERS,
+  CALENDAR_SHORTCUT_SPECIAL_KEYS,
   NEUTRAL_COLOR,
   defaultCalendarConfig,
+  shortcutComboFromEvent,
+  shortcutKeyLabel,
   defaultClientAiOverride,
   hexToTriplet,
   isEmptyClientAiOverride,
@@ -281,10 +290,11 @@ function mediaDisplayUrl(item: CalendarMediaItem): string | null {
 }
 
 /**
- * URLs para o fundo do dia (ate 4). Regra: primeiro as midias dos EVENTOS do dia
- * (ja ordenados por horario pelo chamador; imagem -> `url`, video -> `posterUrl`,
- * video sem poster e' pulado); se nenhum evento tem midia, cai nos anexos avulsos
- * do dia. Helper puro (sem estado/fetch).
+ * URLs para o fundo do dia (ate 4). Regra (WAVE 11): cada TAREFA/EVENTO do dia contribui
+ * com APENAS a sua 1a midia exibivel (a ordem das midias do evento define qual e' — o
+ * drag-and-drop reordena; imagem -> `url`, video -> `posterUrl`, video sem poster e'
+ * pulado); se nenhum evento tem midia, cai nos anexos avulsos do dia (cada anexo = 1
+ * item). Helper puro (sem estado/fetch).
  */
 export function dayBackgroundUrls(
   events: CalendarEvent[],
@@ -294,9 +304,12 @@ export function dayBackgroundUrls(
   for (const event of events) {
     for (const item of event.media || []) {
       const url = mediaDisplayUrl(item)
-      if (url) fromEvents.push(url)
-      if (fromEvents.length >= DAY_BG_MAX) return fromEvents
+      if (url) {
+        fromEvents.push(url)
+        break // 1a midia exibivel DESTE evento; o proximo slot e' de outro evento
+      }
     }
+    if (fromEvents.length >= DAY_BG_MAX) return fromEvents
   }
   if (fromEvents.length) return fromEvents
 

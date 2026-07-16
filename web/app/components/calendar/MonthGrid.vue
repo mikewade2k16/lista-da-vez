@@ -10,7 +10,6 @@ import {
   type CalendarClient,
   type CalendarEvent,
   type CalendarHoliday,
-  type CalendarMediaItem,
   type WeekStart,
 } from '~/utils/calendar'
 import {
@@ -25,7 +24,6 @@ const props = defineProps<{
   weekdays: string[]
   eventsByDate: Map<string, CalendarEvent[]>
   holidaysByDate: Map<string, CalendarHoliday[]>
-  dayMediaByDate: Map<string, CalendarMediaItem[]>
   clientsById: Map<string, CalendarClient>
   /** Barras multi-dia (WAVE 11): tasks com inicio->fim atravessando dias. Vazio = nada. */
   taskSpans?: CalendarTaskSpan[]
@@ -87,10 +85,10 @@ function holidaysFor(dateKey: string): CalendarHoliday[] {
   return props.holidaysByDate.get(dateKey) || []
 }
 
-// Fundo do dia: usa os eventos ja filtrados por cliente (eventsByDate) + anexos
-// avulsos. Helper puro em utils/calendar (mesma regra na visao Semana).
+// Fundo do dia (WAVE 13): 1a midia de cada evento do dia (eventsByDate ja filtrado por
+// cliente). Helper puro em utils/calendar (mesma regra na visao Semana).
 function bgUrlsFor(dateKey: string): string[] {
-  return dayBackgroundUrls(eventsFor(dateKey), props.dayMediaByDate.get(dateKey) || [])
+  return dayBackgroundUrls(eventsFor(dateKey))
 }
 </script>
 

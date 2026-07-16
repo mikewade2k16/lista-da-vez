@@ -178,11 +178,13 @@ function openAssistant(): void {
   padding-bottom: 1rem;
 }
 
-/* Crow Assistant (WAVE 11): FAB fixo no canto inferior direito da pagina de tasks. */
+/* Crow Assistant (WAVE 11): FAB fixo no canto inferior direito da pagina de tasks.
+   ACIMA do botao de feedback do dashboard (fixed bottom 2rem/right 2rem, 3rem) — no mesmo
+   canto os dois se sobrepunham e o feedback interceptava o clique do assistant (WAVE 12). */
 .tasks-page__assistant-fab {
   position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
+  right: 2rem;
+  bottom: 5.6rem;
   z-index: 60;
   display: inline-flex;
   align-items: center;
@@ -445,6 +447,35 @@ function openAssistant(): void {
 
 .tasks-page__board-card-description {
   white-space: pre-wrap;
+}
+
+/* Primeira midia da task no card do board (a ordem vem do espelho do calendario). */
+.tasks-page__board-card-media {
+  position: relative;
+  margin: 0 0 0.5rem;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgb(var(--surface-2));
+}
+
+.tasks-page__board-card-media img,
+.tasks-page__board-card-media video {
+  display: block;
+  width: 100%;
+  height: 7rem;
+  object-fit: cover;
+}
+
+.tasks-page__board-card-media-count {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.55);
+  color: rgb(255 255 255);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .tasks-page__board-card-presence {

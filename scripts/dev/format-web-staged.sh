@@ -27,4 +27,6 @@ if [ "${#rel_files[@]}" -eq 0 ]; then
 fi
 
 cd "$web_root"
-exec npx prettier --write "${rel_files[@]}"
+# Evita depender do wrapper em node_modules/.bin, que pode ter sido criado
+# como symlink Linux pelo container e ficar quebrado no host Windows.
+exec node node_modules/prettier/bin/prettier.cjs --write "${rel_files[@]}"

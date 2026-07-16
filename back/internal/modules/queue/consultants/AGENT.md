@@ -103,10 +103,21 @@ seed: `queue.owner`, `queue.director`, `queue.marketing`, `queue.manager`,
   - `must_change_password = true` para forcar senha pessoal no primeiro acesso
 - a conta vinculada usa papel `consultant` no escopo da loja
 - ao arquivar o consultor, a conta vinculada tambem deve ser inativada
-- a criacao administrativa de consultor deve acontecer por este modulo, nao por `users`, para nao nascer conta `consultant` sem roster
+- a criacao administrativa de consultor por papeis nao-`platform_admin` deve acontecer por este modulo, nao por `users`, para nao nascer conta `consultant` sem roster
 - depois de vinculada, a conta de consultor deve ser considerada propriedade deste modulo
-- `users` pode listar e resetar senha do consultor, mas nao deve editar escopo, convite, papel nem ciclo de vida dessa conta
+- `users` pode listar e resetar senha do consultor, mas nao deve editar escopo, convite, papel nem ciclo de vida dessa conta (excecao: override de `platform_admin`, abaixo)
 - ao editar o proprio perfil em `auth`, o nome do consultor deve sincronizar de volta no roster
+
+### `SyncLinkedAccess` (ponte `users` -> roster, o "atalho unificado")
+
+`ProfileSync.SyncLinkedAccess` / `Repository.SyncLinkedAccess(LinkedAccessSyncInput) ([]string, error)` e chamada pelo `users` (Create/Update/Archive) quando `platform_admin` mexe num consultor pela grade de Usuarios. Mantem `queue.consultants` chaveada por `user_id`:
+
+- papel `consultant` + tenant/loja validos e **sem** linha -> **INSERT** de nova linha ativa (`role_label='Atendimento'`, metas 0, cor default); e o unico caminho, alem deste modulo, que cria roster
+- papel `consultant` com linha existente -> UPDATE de tenant/loja/nome/initials/ativo (cobre troca de loja)
+- papel != `consultant` (ou inativo) -> desativa a linha (`is_active=false`); sem linha, no-op
+- consultor inativo sem linha nao gera INSERT (nao ha o que mostrar na fila)
+
+Retorna as **lojas afetadas** (origem + destino numa troca) para o `users` publicar `operation.updated` por loja (Lista da vez ao vivo por WebSocket). Conflito de nome na mesma loja -> `ErrConsultantConflict`.
 
 ## Regras de escopo
 

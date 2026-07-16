@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { inject, ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { computed, inject, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { TASKS_PAGE_CONTEXT_KEY } from '../composables/useTasksPageContext'
 import CoreSkeleton from '../../core/components/CoreSkeleton.vue'
 import OmniSelectMenuInput from './inputs/OmniSelectMenuInput.vue'
 import OmniLazySelectMenuInput from './inputs/OmniLazySelectMenuInput.vue'
 import AppDatePicker from './AppDatePicker.vue'
+import { getApiBase } from '~/utils/api-client'
+import type { TaskCalendarMediaItem, TaskVideoItem } from '../types/tasks'
 
 const ctx = inject(TASKS_PAGE_CONTEXT_KEY)!
 const {
@@ -123,6 +125,58 @@ function visibleColumnTasks(column: BoardColumnView) {
     ? column.tasks
     : column.tasks.slice(0, renderLimit.value)
 }
+
+// --- Primeira midia no card -----------------------------------------------------
+// O card do board mostra SO a primeira midia da task (a ordem vem do espelho do
+// calendario — calendarMedia — e, sem ele, dos videos proprios). Resolvida uma vez
+// por task num Map (o board renderiza centenas de cards; nada de recomputar por hover).
+interface BoardCardMedia {
+  image: string
+  video: string
+  name: string
+  count: number
+}
+
+const runtimeConfig = useRuntimeConfig()
+
+function taskMediaSrc(path: unknown): string {
+  const normalizedPath = String(path || '').trim()
+  if (!normalizedPath) return ''
+  try {
+    return new URL(normalizedPath, getApiBase(runtimeConfig)).toString()
+  } catch {
+    return normalizedPath
+  }
+}
+
+function firstTaskMedia(task: {
+  calendarMedia?: TaskCalendarMediaItem[]
+  videos?: TaskVideoItem[]
+}): BoardCardMedia | null {
+  const count = (task.calendarMedia?.length || 0) + (task.videos?.length || 0)
+  const cal = task.calendarMedia?.[0]
+  if (cal) {
+    if (cal.type === 'image')
+      return { image: taskMediaSrc(cal.url), video: '', name: cal.name, count }
+    if (cal.posterUrl)
+      return { image: taskMediaSrc(cal.posterUrl), video: '', name: cal.name, count }
+    return { image: '', video: taskMediaSrc(cal.url), name: cal.name, count }
+  }
+  const video = task.videos?.[0]
+  if (video) return { image: '', video: taskMediaSrc(video.url), name: video.name, count }
+  return null
+}
+
+const firstMediaByTask = computed(() => {
+  const map = new Map<string, BoardCardMedia>()
+  for (const column of boardColumns.value) {
+    for (const task of column.tasks) {
+      const media = firstTaskMedia(task)
+      if (media) map.set(task.id, media)
+    }
+  }
+  return map
+})
 
 function hiddenCountFor(column: BoardColumnView) {
   return Math.max(0, column.tasks.length - renderLimit.value)
@@ -463,6 +517,32 @@ watch(
               </div>
               <span>{{ boardPresenceSummary(task.id) }}</span>
             </div>
+
+            <!-- Primeira midia da task (ordem = espelho do calendario; +N sinaliza o resto). -->
+            <figure
+              v-if="firstMediaByTask.get(task.id)"
+              class="tasks-page__board-card-media"
+              :title="firstMediaByTask.get(task.id)!.name"
+            >
+              <img
+                v-if="firstMediaByTask.get(task.id)!.image"
+                :src="firstMediaByTask.get(task.id)!.image"
+                :alt="firstMediaByTask.get(task.id)!.name"
+                loading="lazy"
+              />
+              <video
+                v-else
+                :src="firstMediaByTask.get(task.id)!.video"
+                preload="metadata"
+                muted
+              ></video>
+              <span
+                v-if="firstMediaByTask.get(task.id)!.count > 1"
+                class="tasks-page__board-card-media-count"
+              >
+                +{{ firstMediaByTask.get(task.id)!.count - 1 }}
+              </span>
+            </figure>
 
             <p
               v-if="task.description && boardView.visibleFieldKeys.includes('description')"

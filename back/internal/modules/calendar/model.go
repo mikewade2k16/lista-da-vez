@@ -141,9 +141,9 @@ type EventInput struct {
 	Source string `json:"-"`
 }
 
-// MediaItem e um anexo (imagem ou video) de um evento ou dia. url sempre aponta
-// para /uploads/calendar/{accountId}/{arquivo} (nunca URL externa). Persistido
-// como jsonb em calendar.events.media / calendar.day_media.media.
+// MediaItem e um anexo (imagem ou video) de um evento. url sempre aponta para
+// /uploads/calendar/{accountId}/{arquivo} (nunca URL externa). Persistido como jsonb
+// em calendar.events.media (WAVE 13: day_media eliminado — toda midia e de um item).
 // PosterURL e a capa do video (opcional; so faz sentido para type "video"),
 // capturada no FRONT via canvas e enviada como upload de imagem normal. Passa
 // pela MESMA validacao de prefixo interno do url (externo => zerado, ver C1).
@@ -175,17 +175,6 @@ type MediaLimits struct {
 // defaultMediaLimits: imagem 10MB, video 300MB (o "atualmente 300mb").
 func defaultMediaLimits() MediaLimits {
 	return MediaLimits{ImageMaxBytes: 10 * 1024 * 1024, VideoMaxBytes: 300 * 1024 * 1024}
-}
-
-// DayMediaView sao os anexos avulsos de um dia (calendar.day_media).
-type DayMediaView struct {
-	Date  string      `json:"date"`
-	Media []MediaItem `json:"media"`
-}
-
-// DayMediaInput e o body do PUT de anexos do dia (full replace da lista).
-type DayMediaInput struct {
-	Media []MediaItem `json:"media"`
 }
 
 // EventFilter sao os filtros da listagem: janela de datas (inclusive) + cliente.

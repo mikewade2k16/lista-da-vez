@@ -475,36 +475,43 @@ export function useThemeStudio() {
     pageHeaderState.showDescription = description !== 'none'
   }
 
-  function setPageHeaderVisibility(
+  // A visibilidade do cabecalho admin (eyebrow/titulo/descricao) e um controle
+  // GLOBAL do chrome, nao estilo por-tema: o admin quer o header ligado/desligado
+  // independente do tema exibido (dark/light/apple/liquidglass/custom). Por isso
+  // gravamos a MESMA chave em TODOS os temas — senao a config cai so no tema
+  // selecionado no Studio e "some" ao navegar em outro tema (bug real: gravava em
+  // liquidglass mas o painel rodava em dark, header voltava a aparecer).
+  function setPageHeaderVisibilityAllThemes(
     key:
       | 'admin-page-header-eyebrow-display'
       | 'admin-page-header-title-display'
       | 'admin-page-header-description-display',
     visible: boolean,
   ) {
-    setThemeValue(selectedTheme.value, key, visible ? 'block' : 'none')
+    const value = visible ? 'block' : 'none'
+    for (const theme of THEME_ORDER) {
+      setThemeValue(theme, key, value)
+    }
     applyThemeIfNeeded()
     syncPageHeaderControlState()
   }
 
   function onPageHeaderEyebrowVisibilityChange(value: boolean) {
-    setPageHeaderVisibility('admin-page-header-eyebrow-display', value)
+    setPageHeaderVisibilityAllThemes('admin-page-header-eyebrow-display', value)
   }
 
   function onPageHeaderTitleVisibilityChange(value: boolean) {
-    setPageHeaderVisibility('admin-page-header-title-display', value)
+    setPageHeaderVisibilityAllThemes('admin-page-header-title-display', value)
   }
 
   function onPageHeaderDescriptionVisibilityChange(value: boolean) {
-    setPageHeaderVisibility('admin-page-header-description-display', value)
+    setPageHeaderVisibilityAllThemes('admin-page-header-description-display', value)
   }
 
   function onPageHeaderDisableAll() {
-    setThemeValue(selectedTheme.value, 'admin-page-header-eyebrow-display', 'none')
-    setThemeValue(selectedTheme.value, 'admin-page-header-title-display', 'none')
-    setThemeValue(selectedTheme.value, 'admin-page-header-description-display', 'none')
-    applyThemeIfNeeded()
-    syncPageHeaderControlState()
+    setPageHeaderVisibilityAllThemes('admin-page-header-eyebrow-display', false)
+    setPageHeaderVisibilityAllThemes('admin-page-header-title-display', false)
+    setPageHeaderVisibilityAllThemes('admin-page-header-description-display', false)
   }
 
   function normalizePxValue(value: string | number | undefined, fallback = 0, max = 200) {

@@ -3,7 +3,6 @@ package calendar
 import (
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -19,9 +18,10 @@ const multipartMemory = 8 << 20 // 8 MiB
 func RegisterMediaRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
 	wrap := func(h http.HandlerFunc) http.Handler { return middleware.RequireAuth(h) }
 
+	// WAVE 13: a midia pertence a um ITEM (evento). Upload continua (POST /media devolve o
+	// MediaItem); a persistencia e via PUT /events/{id} (campo media). As rotas de day-media
+	// (GET/PUT /day-media) sairam junto com o conceito de "anexo do dia".
 	mux.Handle("POST /v1/calendar/media", wrap(handleUploadMedia(svc)))
-	mux.Handle("GET /v1/calendar/day-media", wrap(handleListDayMedia(svc)))
-	mux.Handle("PUT /v1/calendar/day-media/{date}", wrap(handlePutDayMedia(svc)))
 	mux.Handle("GET /v1/calendar/media-limits", wrap(handleGetMediaLimits(svc)))
 	mux.Handle("PUT /v1/calendar/media-limits", wrap(handlePutMediaLimits(svc)))
 }
@@ -62,45 +62,6 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 			return
 		}
 		httpapi.WriteJSON(w, http.StatusCreated, item)
-	}
-}
-
-func handleListDayMedia(svc *Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, ok := accountScope(r)
-		if !ok {
-			writeNoAccount(w, r)
-			return
-		}
-		q := r.URL.Query()
-		days, err := svc.ListDayMedia(r.Context(), accountID,
-			strings.TrimSpace(q.Get("from")), strings.TrimSpace(q.Get("to")))
-		if err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		httpapi.WriteJSON(w, http.StatusOK, map[string]any{"days": days})
-	}
-}
-
-func handlePutDayMedia(svc *Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, ok := accountScope(r)
-		if !ok {
-			writeNoAccount(w, r)
-			return
-		}
-		var body DayMediaInput
-		if err := decodeJSONBody(w, r, &body); err != nil {
-			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
-			return
-		}
-		day, err := svc.PutDayMedia(r.Context(), accountID, r.PathValue("date"), body.Media)
-		if err != nil {
-			writeServiceError(w, r, err)
-			return
-		}
-		httpapi.WriteJSON(w, http.StatusOK, day)
 	}
 }
 

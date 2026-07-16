@@ -389,6 +389,13 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
           return
         }
 
+        // O roster (queue.consultants) mudou por edicao de usuario/consultor. A faixa
+        // de participantes vem do roster de GESTAO (/v1/consultants), nao do roster
+        // enxuto do snapshot — refreshSnapshot preserva o roster existente e nao
+        // adicionaria/removeria consultor ao vivo. Reidratamos o store completo para
+        // rebuscar /v1/consultants e refletir a entrada/saida na Lista da vez na hora.
+        const isRosterChange = payloadAction === 'roster.updated'
+
         if (mode === 'all') {
           // O board integrado renderiza a partir do overview: colapsamos as rajadas
           // num unico refresh trailing (~300ms apos o ultimo evento).
@@ -401,14 +408,22 @@ export function useOperationsRealtime(options: OperationsRealtimeOptions = {}) {
           // coalescing interno de refreshSnapshot ja protege contra rajadas dessa loja.
           const integratedStoreId = String(operationsStore.integratedStoreId || '').trim()
           if (payloadStoreId && payloadStoreId === integratedStoreId) {
-            await refreshSnapshot(payloadStoreId)
+            if (isRosterChange && payloadStoreId === String(auth.activeStoreId || '').trim()) {
+              await operationsStore.refreshActiveStore()
+            } else {
+              await refreshSnapshot(payloadStoreId)
+            }
           }
 
           return
         }
 
         if (payloadStoreId && payloadStoreId === String(auth.activeStoreId || '').trim()) {
-          await refreshSnapshot(payloadStoreId)
+          if (isRosterChange) {
+            await operationsStore.refreshActiveStore()
+          } else {
+            await refreshSnapshot(payloadStoreId)
+          }
         }
       } catch {
         // ignoramos payloads invalidos do socket

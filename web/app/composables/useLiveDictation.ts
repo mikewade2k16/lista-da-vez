@@ -87,6 +87,61 @@ export function useLiveDictation() {
 
   let recognition: SpeechRecognitionLike | null = null
   let finalText = ''
+  // A Web Speech API ENCERRA a sessao sozinha (silencio ou o limite interno do Chrome, ~60s):
+  // sem isto o ditado "cortava" no meio de uma fala longa. wantListening = a INTENCAO do usuario
+  // (so o stop/cancel dele desliga); enquanto true, o onend RE-INICIA a sessao mantendo o texto
+  // ja transcrito — ditado continuo, sem limite de tempo, ate a pessoa parar.
+  let wantListening = false
+
+  // beginSession cria e inicia UMA sessao de reconhecimento (reutilizada nos reinicios). O
+  // finalText acumula ENTRE sessoes (variavel de fora), entao o texto nunca se perde no restart.
+  function beginSession(): boolean {
+    const Ctor = getRecognitionCtor()
+    if (!Ctor) return false
+    recognition = new Ctor()
+    recognition.lang = 'pt-BR'
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.onresult = (event) => {
+      let interim = ''
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          // separa segmentos de sessoes diferentes com espaco quando o browser nao traz.
+          if (finalText && !/\s$/.test(finalText) && !/^\s/.test(result[0].transcript)) {
+            finalText += ' '
+          }
+          finalText += result[0].transcript
+        } else {
+          interim += result[0].transcript
+        }
+      }
+      transcript.value = `${finalText}${interim}`.trim()
+    }
+    recognition.onerror = (event) => {
+      const code = event?.error || ''
+      // Erros FATAIS: desligam o ditado (nao adianta reiniciar) e avisam.
+      if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+        wantListening = false
+        errorMessage.value =
+          'Permissao de microfone negada. Libere o microfone nas configuracoes do navegador.'
+      }
+      // no-speech / network / aborted: transitorios — o onend reinicia (silencio nao encerra o ditado).
+    }
+    recognition.onend = () => {
+      // A sessao terminou (limite do browser ou silencio). Se o usuario AINDA quer ditar,
+      // reinicia mantendo o texto; senao, encerra de verdade.
+      if (wantListening && beginSession()) return
+      stopMeter()
+      state.value = 'idle'
+    }
+    try {
+      recognition.start()
+    } catch {
+      return false
+    }
+    return true
+  }
 
   // Comeca a ouvir. Retorna false (com errorMessage) quando o navegador nao suporta.
   function start(): boolean {
@@ -100,37 +155,9 @@ export function useLiveDictation() {
     errorMessage.value = ''
     finalText = ''
     transcript.value = ''
-    recognition = new Ctor()
-    recognition.lang = 'pt-BR'
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.onresult = (event) => {
-      let interim = ''
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i]
-        if (result.isFinal) finalText += result[0].transcript
-        else interim += result[0].transcript
-      }
-      transcript.value = `${finalText}${interim}`.trim()
-    }
-    recognition.onerror = (event) => {
-      const code = event?.error || ''
-      if (code === 'not-allowed' || code === 'service-not-allowed') {
-        errorMessage.value =
-          'Permissao de microfone negada. Libere o microfone nas configuracoes do navegador.'
-      } else if (code === 'no-speech') {
-        errorMessage.value = 'Nao ouvi nada. Fale mais perto do microfone e tente de novo.'
-      } else if (code !== 'aborted') {
-        errorMessage.value = 'O ditado ao vivo falhou. Tente de novo ou use o Whisper.'
-      }
-    }
-    recognition.onend = () => {
-      stopMeter()
-      state.value = 'idle'
-    }
-    try {
-      recognition.start()
-    } catch {
+    wantListening = true
+    if (!beginSession()) {
+      wantListening = false
       errorMessage.value = 'Nao foi possivel iniciar o ditado ao vivo.'
       recognition = null
       return false
@@ -142,6 +169,7 @@ export function useLiveDictation() {
 
   // Para de ouvir mantendo o texto ja transcrito.
   function stop(): void {
+    wantListening = false // desliga a intencao ANTES do stop: o onend nao reinicia.
     if (recognition) {
       try {
         recognition.stop()
@@ -155,6 +183,7 @@ export function useLiveDictation() {
 
   // Cancela e descarta (ex.: fechar o chat).
   function cancel(): void {
+    wantListening = false
     stopMeter()
     if (recognition) {
       try {

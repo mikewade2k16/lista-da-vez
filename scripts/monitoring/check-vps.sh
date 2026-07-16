@@ -7,6 +7,9 @@
 #   ALERT_TELEGRAM_CHAT_ID=123456789
 #   DISK_USAGE_MAX=85  MEM_AVAILABLE_MIN_PCT=10  LOAD_PER_CORE_MAX=2
 #   ALERT_COOLDOWN_SECONDS=3600  OMNI_API_PORT=18080
+#   N8N_COMPOSE_DIR=/home/deploy/lista-atendimento         (onde vive o docker-compose.prod.yml + .env.production)
+#   N8N_ENV_FILE=.env.production                            (para `docker compose --env-file`)
+#   N8N_CRITICAL_IDS="calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001"  (default; = deploy-pull.ps1)
 set -u
 
 ENV_FILE="${OMNI_MONITORING_ENV:-/home/deploy/.omni-monitoring.env}"
@@ -89,6 +92,49 @@ api_code=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' \
   "http://127.0.0.1:${OMNI_API_PORT}/healthz" 2>/dev/null || echo 000)
 if [ "$api_code" != "200" ]; then
   send_alert healthz "GET 127.0.0.1:${OMNI_API_PORT}/healthz => ${api_code} (200=ok; 503=banco fora; 000=api fora)."
+fi
+
+# 8) Saude do n8n: container no ar + workflows criticos ATIVOS.
+#    A lista N8N_CRITICAL_IDS e a MESMA de scripts/deploy/deploy-pull.ps1:246
+#    (contrato: mudou uma, muda a outra). Le o estado real via `n8n export:workflow`
+#    (respeita o WAL do SQLite; `docker cp database.sqlite` NAO leva writes recentes).
+#    O 3o arg de send_alert (critical/warning) e a severidade do OBS-01; enquanto
+#    OBS-01 nao entrar, o send_alert atual (2 args) so ignora o 3o, sem quebrar.
+N8N_COMPOSE_DIR="${N8N_COMPOSE_DIR:-/home/deploy/lista-atendimento}"
+N8N_ENV_FILE="${N8N_ENV_FILE:-.env.production}"
+N8N_CRITICAL_IDS="${N8N_CRITICAL_IDS:-calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001}"
+n8n_compose="docker compose --env-file $N8N_ENV_FILE -f docker-compose.prod.yml --profile automation"
+
+if [ -d "$N8N_COMPOSE_DIR" ]; then
+  # 8a) container rodando?
+  n8n_state=$(cd "$N8N_COMPOSE_DIR" && $n8n_compose ps -q n8n 2>/dev/null)
+  if [ -z "$n8n_state" ]; then
+    send_alert n8n "Container n8n NAO esta rodando (profile automation). Calendario/Omni Chat parados. Checar: cd $N8N_COMPOSE_DIR && $n8n_compose ps n8n; logs n8n." critical
+  else
+    n8n_health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$n8n_state" 2>/dev/null || echo unknown)
+    if [ "$n8n_health" = "unhealthy" ]; then
+      send_alert n8n "Container n8n UNHEALTHY. Checar: docker logs $n8n_state --tail=50." critical
+    else
+      # 8b) workflows criticos ativos? (so checa se o container respondeu)
+      #     WANT vai via `exec -e` (env DENTRO do container). NAO colocar WANT=... depois
+      #     da string do sh -lc: viraria $0 do shell interno e nunca chegaria ao node
+      #     (bug: process.env.WANT undefined => .split() TypeError => sempre __EXPORT_FAIL__).
+      inactive=$(cd "$N8N_COMPOSE_DIR" && $n8n_compose exec -T -e "WANT=$N8N_CRITICAL_IDS" n8n sh -lc \
+        "n8n export:workflow --all --output=/tmp/obs7_wf.json >/dev/null 2>&1 && node -e '
+          const fs=require(\"fs\");
+          const want=(process.env.WANT||\"\").split(/\s+/).filter(Boolean);
+          let list=[]; try{const r=JSON.parse(fs.readFileSync(\"/tmp/obs7_wf.json\",\"utf8\"));list=Array.isArray(r)?r:(r.data||[]);}catch(e){process.exit(3);}
+          const byId=Object.fromEntries(list.map(w=>[String(w.id),w]));
+          const bad=want.filter(id=>!byId[id] || byId[id].active!==true);
+          process.stdout.write(bad.join(\" \"));
+        '" 2>/dev/null || echo "__EXPORT_FAIL__")
+      if [ "$inactive" = "__EXPORT_FAIL__" ]; then
+        send_alert n8n "Nao consegui ler os workflows do n8n (export falhou). Container up mas CLI/Node com problema? Checar: $n8n_compose exec n8n n8n export:workflow --all." warning
+      elif [ -n "$inactive" ]; then
+        send_alert n8n "Workflow(s) critico(s) INATIVO(s) no n8n: ${inactive}. Reativar: $n8n_compose exec n8n n8n update:workflow --id=<id> --active=true (ou re-deploy com -DeployAutomation)." warning
+      fi
+    fi
+  fi
 fi
 
 exit 0

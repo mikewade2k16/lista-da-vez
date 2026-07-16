@@ -161,6 +161,21 @@ func (r *Registry) SyncCatalog(ctx context.Context, repo CatalogRepository) erro
 		}
 	}
 
+	// 4) Conta-agencia: habilita TODO modulo do catalogo (inclusive os recem
+	// upsertados acima). Garante que um modulo novo apareca automaticamente para a
+	// agencia — no menu e na matriz de permissoes da edicao de usuario — sem seed
+	// manual por modulo. Idempotente; nao toca contas-cliente.
+	enabled, err := repo.EnableAllModulesOnAgencyAccounts(ctx)
+	if err != nil {
+		return fmt.Errorf("modules: enable modules on agency accounts: %w", err)
+	}
+	if enabled > 0 {
+		r.logger.Info(
+			"agency accounts synced with all catalog modules",
+			slog.Int("rows_affected", enabled),
+		)
+	}
+
 	return nil
 }
 
@@ -253,6 +268,11 @@ type CatalogRepository interface {
 	UpsertModule(ctx context.Context, row ModuleRow) error
 	UpsertPermission(ctx context.Context, row PermissionRow) error
 	MarkDeprecatedPermissions(ctx context.Context, declaredKeys map[string]struct{}) (int, error)
+
+	// EnableAllModulesOnAgencyAccounts habilita todo modulo do catalogo nas contas
+	// is_agency=true. Chamado no fim do SyncCatalog para que um modulo novo apareca
+	// automaticamente para a agencia (menu + matriz de permissoes) sem seed manual.
+	EnableAllModulesOnAgencyAccounts(ctx context.Context) (int, error)
 
 	// UpsertRoleTemplate retorna created=true se o template nao existia antes.
 	// Quem chama usa esse flag para popular role_template_permissions APENAS

@@ -82,6 +82,59 @@ escanear QR, ativar) em [docs/automation/SETUP.md](../docs/automation/SETUP.md).
 > Ativar o workflow faz o bot responder no WhatsApp real conectado na WAHA.
 > Confirmar com o Mike antes de ativar.
 
+### Par `n8n:import` <-> `n8n:export` (o n8n roda do BANCO, nao do arquivo)
+
+O n8n guarda os workflows no PROPRIO banco (SQLite). O repo (`export/workflow-*.json`)
+so reflete o n8n quando alguem sincroniza nos DOIS sentidos:
+
+| comando | sentido | o que faz |
+|---|---|---|
+| `npm run n8n:import` | arquivo -> n8n | `scripts/dev/n8n-import.ps1`: copia -> import -> reativa -> restart. Usar quando MUDOU o `.json` versionado e o dev precisa rodar a versao nova. |
+| `npm run n8n:export` | n8n -> arquivo | `scripts/dev/n8n-export.ps1` (OBS-08): traz o workflow rodando para o `.json` versionado, no shape `[obj]` + `active:false`, 2 espacos + `\n`. Usar quando MUDOU no n8n (editou nos) e o repo precisa acompanhar antes do deploy. |
+
+Variantes do export: `n8n:export:chat` (so calendar-chat), `n8n:export:check`
+(nao escreve; sai !=0 se o repo esta atras do n8n — guard), `n8n:export:sync`
+(auto-exporta se divergir e segue exit 0 — usado pelo deploy).
+
+**Mapa FIXO id -> arquivo (CONTRATO — os 3 devem casar):** `n8n-import.ps1`
+(os 5 `workflow-*.json`), `n8n-export.ps1` (`$map`) e `scripts/deploy/deploy-pull.ps1`
+(lista de ids reativados ~linha 246) listam o MESMO conjunto:
+
+| arquivo | id |
+|---|---|
+| `workflow-calendar-chat.json` | `calendarchat0001` |
+| `workflow-calendar-omni.json` | `calendaromni0001` |
+| `workflow-calendar-transcribe.json` | `calendartrans001` |
+| `workflow-omni-chat.json` | `omnichatmvp00001` |
+| `workflow-whatsapp.json` | `lzhb5JjN5kdcVuRR` |
+
+O nome do arquivo e ESTAVEL (nao derivar do nome do workflow: renomear no n8n nao
+renomeia o arquivo, so evita ruido de diff).
+
+**Garantia anti-credencial:** `n8n export:workflow` NAO exporta credenciais
+decriptadas (os nos trazem `credentials` so como `{id,name}`). O `n8n-export.ps1`
+tem um checador embutido (Node) que ABORTA o arquivo (sem gravar) se algum
+`node.credentials[*]` tiver campo fora de `id`/`name` — segredo nunca vai pro repo.
+
+**DOIS gatilhos automaticos (OBS-08):**
+- **git (pre-commit, `-Check`):** se o container n8n dev estiver up, AVISA (nao
+  bloqueia) que o repo esta atras do n8n. Down/sem docker = no-op. Pular: `git commit --no-verify`.
+- **deploy (`deploy:fast:prod -DeployAutomation`, `-Sync`):** ANTES de buildar/enviar,
+  auto-exporta se o n8n dev estiver a frente e SEGUE (nunca trava). n8n dev down = AVISA e
+  segue com os arquivos versionados atuais (nunca zera). Pular: `-SkipWorkflowExport`.
+  O `-Sync` pode deixar `workflow-*.json` modificados na working tree (NAO commitados) — o
+  deploy os USA mesmo sem commit; o dono commita depois.
+
+**Follow-ups (evolucao, NAO no MVP):**
+- (B) trigger dentro do proprio n8n ("workflow salvo" -> `n8n export:workflow` para um
+  volume mapeado em `export/`) — mais tempo real, mas o n8n OSS nao expoe hook de save
+  trivial (provavel polling) + exige volume/permissao no host.
+- (C) watcher no host (`n8n:watch`) fazendo `-Check` em intervalo e exportando ao detectar
+  diff — mais um daemon para lembrar de rodar.
+- (VPS) exportar o que roda em PRODUCAO de volta pro repo (hoje o fluxo e uma direcao so:
+  dev -> repo -> deploy -> prod). Exige rodar via o tunel/ssh do deploy e decidir a politica
+  de fonte da verdade (dev x prod).
+
 ### Portas (host -> container)
 
 | Servico | Host | Container | Env var |

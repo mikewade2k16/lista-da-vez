@@ -139,6 +139,7 @@ func (s *Service) buildChatContext(ctx context.Context, accountID string, princi
 			return nil, err
 		}
 		block.Tasks = s.chatTasksContext(ctx, accountID, principal, "", access.VisibleClientIDs)
+		block.People = s.chatPeopleContext(ctx, accountID)
 		return block, nil
 	}
 	aic, err := s.BuildAIContext(ctx, accountID, clientID, month)
@@ -147,6 +148,7 @@ func (s *Service) buildChatContext(ctx context.Context, accountID string, princi
 	}
 	block := chatContextFrom(aic)
 	block.Tasks = s.chatTasksContext(ctx, accountID, principal, clientID, []string{clientID})
+	block.People = s.chatPeopleContext(ctx, accountID)
 	// Planos sao metadata da conta INTEIRA (todos os clientes); so a agencia ve. Cliente-side
 	// (ou usuario subset) NAO recebe metadata (mes/status/provider) de planos de clientes que
 	// nao pode ver — WAVE 4, achado da revisao.

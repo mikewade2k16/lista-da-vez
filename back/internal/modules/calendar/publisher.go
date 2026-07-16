@@ -12,13 +12,12 @@ import "context"
 // espelhados como constantes exportadas em realtime/model.go (canal de documentacao) — os
 // dois lados precisam concordar.
 const (
-	realtimeEventCreated    = "calendar.event_created"
-	realtimeEventUpdated    = "calendar.event_updated"
-	realtimeEventDeleted    = "calendar.event_deleted"
-	realtimeNoteUpdated     = "calendar.note_updated"
-	realtimeDayMediaUpdated = "calendar.day_media_updated"
-	realtimeConfigUpdated   = "calendar.config_updated"
-	realtimePlanUpdated     = "calendar.plan_updated"
+	realtimeEventCreated  = "calendar.event_created"
+	realtimeEventUpdated  = "calendar.event_updated"
+	realtimeEventDeleted  = "calendar.event_deleted"
+	realtimeNoteUpdated   = "calendar.note_updated"
+	realtimeConfigUpdated = "calendar.config_updated"
+	realtimePlanUpdated   = "calendar.plan_updated"
 	// WAVE 10: perfil estrategico do cliente mudou (PutClientProfile). ResourceID=clientId.
 	realtimeClientProfileUpdated = "calendar.client_profile_updated"
 )
@@ -27,7 +26,6 @@ const (
 // mapeia ResourceID/Version para o Event e joga Date/MonthKey/Status no Payload map:
 //   - event_created|updated|deleted: ResourceID=eventId, Date=YYYY-MM-DD, Version (updated)
 //   - note_updated:                  MonthKey=YYYY-MM
-//   - day_media_updated:             Date=YYYY-MM-DD
 //   - config_updated:                (sem campos extras)
 //   - plan_updated:                  ResourceID=planId, Status
 type RealtimeEvent struct {

@@ -59,16 +59,47 @@ npm run deploy:promote                     # promove a MESMA imagem do staging p
 ### Automation/n8n no deploy rapido
 
 Desde 2026-07-09, o atalho `deploy:fast:prod` chama `deploy-fast.ps1 -DeployAutomation`.
-Na pratica, alem de `api`/`web`, ele:
+**Desde 2026-07-13 tambem passa `-ForceAutomationWorkflowImport`** (import de n8n SEMPRE, sem
+depender do hash): como sobe muita mudanca de n8n, o marker sha256 pulando o import ja deixou a
+VPS rodando uma versao ANTIGA do workflow por dias (o Calendar Chat da VPS ficou sem a logica de
+anotacao do mes, enquanto o dev/arquivo ja tinham). Na pratica, alem de `api`/`web`, ele:
 
 - envia para a VPS somente `automation/export/workflow-*.json` (NAO envia
   `credentials.decrypted.json`);
 - roda `docker compose --profile automation pull/up -d --no-build redis waha n8n whisper`;
-- compara o hash dos workflows com `.deploy/automation-workflows.sha256`;
-- se mudou, faz backup dos workflows atuais em `backups/n8n/`, importa os JSONs, mantem ativos
+- compara o hash dos workflows com `.deploy/automation-workflows.sha256` (com
+  `-ForceAutomationWorkflowImport`, sempre trata como "mudou");
+- faz backup dos workflows atuais em `backups/n8n/`, importa os JSONs **conferindo
+  "Successfully imported" por arquivo** (import silencioso NAO grava o marker), mantem ativos
   `calendaromni0001`, `calendarchat0001`, `calendartrans001` e `omnichatmvp00001`, preserva
-  qualquer outro workflow que ja estava ativo antes do import, reinicia o n8n e grava o hash novo;
-- se nao mudou, so garante os containers do profile automation e pula import/restart do n8n.
+  qualquer outro workflow que ja estava ativo antes do import, reinicia o n8n;
+- **VERIFICA pos-restart** que cada workflow no banco do n8n (via `export:workflow`, que aplica o
+  WAL) ficou identico aos `nodes` do arquivo versionado; se algum divergir ou algum import falhar,
+  **aborta (exit 1) e NAO grava o marker** — o proximo deploy re-tenta em vez de "marcar como feito".
+  So grava o hash novo quando import E verificacao passam 100%.
+
+O n8n vive no `docker-compose.prod.yml` (`profiles: ["automation"]`); os comandos do deploy usam
+`-f docker-compose.prod.yml`, entao enxergam o servico. Rodar `docker compose ... n8n` SEM esse `-f`
+(so o `docker-compose.yml`) NAO ve o n8n (retorna vazio) — foi o que mascarou o diagnostico.
+
+**Auto-export dos workflows antes do envio (OBS-08, desde 2026-07-13):** como o n8n guarda os
+workflows no PROPRIO banco (dev), `automation/export/*.json` pode estar ATRAS do que voce editou no
+n8n. Por isso, sob `-DeployAutomation`, o `deploy-fast.ps1` roda `n8n-export.ps1 -Sync` **ANTES** de
+buildar/enviar: se o n8n dev estiver a frente, ele **auto-exporta** os workflows divergentes e SEGUE
+(nunca trava), para o deploy levar SEMPRE a versao atual sem passo manual. Detalhes:
+
+- So roda se o container n8n dev (`omni-n8n-1`) estiver up. Se estiver down, imprime
+  `AVISO: n8n dev fora; ... deploy seguira com os arquivos versionados atuais` e segue (nunca zera).
+- O `-Sync` pode deixar `automation/export/*.json` **modificados na working tree** (NAO commitados). O
+  deploy os USA mesmo sem commit (deployar antes de commitar); o **dono commita depois**.
+- Pular o gatilho: `npm run deploy:fast:prod -- -SkipWorkflowExport` (para deployar uma versao
+  versionada especifica em vez do n8n dev atual).
+- Verificacao anti-credencial embutida: se um workflow trouxer campo de credencial alem de `id`/`name`,
+  o export ABORTA aquele arquivo (segredo nunca vai pro repo/deploy).
+
+**Checklist pre-deploy (n8n):** se editou algum workflow no n8n dev, rode `npm run n8n:export` (ou
+confie no gatilho `-Sync` acima) para garantir que os `.json` versionados batem com o n8n antes de
+subir. O guard do pre-commit (`n8n:export:check`) AVISA — nao bloqueia — se o repo ficar atras.
 
 Pre-requisito one-time: o `.env.production` da VPS precisa ter o bloco `AUTOMATION_*`, o n8n ja
 precisa ter as credenciais/community nodes necessarios no volume, e a WAHA precisa estar pareada
@@ -150,11 +181,15 @@ ligar (cria tabela/coluna/indice automaticamente; o que ja rodou e' pulado via
 `APP_DB_ROLE=listaatendimento` e `APP_DB_ROLE_PASSWORD=$POSTGRES_PASSWORD` no `.env.production`
 + `up -d api web`.
 
-**Prevencao planejada** (remove esse passo manual de vez): fazer o `migrate up` **auto-provisionar
-a role** a partir de `DATABASE_APP_URL` (o `migrate` ja roda como superuser e ja tem nome+senha na
-URL) — `CREATE ROLE IF NOT EXISTS` + `ALTER ROLE ... PASSWORD` + `GRANT CONNECT`, todo boot. Com isso
-o `deploy:fast` volta a ser suficiente sozinho. Rastreado no roadmap (`ac-04b-migrate-auto-provision-role`)
-e no `MULTITENANT_COMPLETION_PLAN.md` (AC-04).
+**Prevencao (ac-04b) — CODIGO IMPLEMENTADO 2026-07-13, pendente de validacao+commit:** o `migrate up`
+passa a **auto-provisionar a role** a partir de `DATABASE_APP_URL` (o `migrate` ja roda como superuser
+e ja tem nome+senha na URL) — `EnsureAppRole` faz `CREATE ROLE ... LOGIN` (se ausente) +
+`ALTER ROLE ... PASSWORD` least-privilege + `GRANT CONNECT`, idempotente, todo boot, ANTES dos grants.
+Em production sem senha/URL, o `migrate` falha alto e cedo (`app_role_ensure_failed`, exit 1) em vez do
+crash-loop `28P01`. Com isso o `deploy:fast` volta a ser suficiente sozinho e este passo manual vira
+FALLBACK (imagens antigas + initdb). A partir da imagem que contem o ac-04b, criar a role deixa de ser
+pre-requisito manual. Rastreado no roadmap (`ac-04b-migrate-auto-provision-role`) e no
+`MULTITENANT_COMPLETION_PLAN.md` (AC-04). RESTA: rebuild da api + validar em volume limpo + commit.
 
 ---
 
@@ -214,53 +249,114 @@ Esta stack sobe isolada da outra que ja roda na VPS (`omnichannel-mvp`):
 ### Proxy reverso (Caddy compartilhado)
 
 Esta stack **nao** sobe proxy. O Caddy central da stack `omnichannel-mvp`
-(`/opt/omnichannel/Caddyfile`) roteia o dominio publico **`omni.crowvisuals.com.br`** pros
-aliases `lista-web`/`lista-api` (a stack conecta na rede externa `omnichannel-mvp_default` com
-esses aliases). Bloco do host:
+(`/opt/omnichannel/Caddyfile`, container **`omnichannel-mvp-caddy-1`**) roteia o dominio publico
+**`omni.crowvisuals.com.br`** pros aliases `lista-web`/`lista-api` (a stack conecta na rede externa
+`omnichannel-mvp_default` com esses aliases).
+
+> **Um `npm run deploy:*` NAO apaga estas mudancas.** O Caddyfile pertence a outra stack
+> (`omnichannel-mvp`) e e' editado direto no disco da VPS; os scripts de deploy so mexem na stack
+> `lista-atendimento` (api/web) e nunca tocam nele nem no `.env.production` (so atualizam `IMAGE_TAG`).
+> O `TOOLS_PUBLIC_BASE_URL` tambem persiste. So somem se alguem restaurar um `Caddyfile.bak-*` antigo.
+
+> **O arquivo REAL na VPS diverge do exemplo idealizado que estava aqui.** Bloco real auditado em
+> 2026-07-13 (usa `import secure_headers` em vez de `header {...}` inline, cobre `omni.` **e**
+> `www.omni.`, e ha um segundo host `lista.{$DOMAIN}` servindo o MESMO painel). Sempre confira o
+> arquivo com `ssh ... "awk '/omni.crowvisuals/,/^}/' /opt/omnichannel/Caddyfile"` antes de editar.
 
 ```caddy
-omni.crowvisuals.com.br {
-  header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    X-Content-Type-Options "nosniff"
-    X-Frame-Options "SAMEORIGIN"
-    Referrer-Policy "strict-origin-when-cross-origin"
-    Permissions-Policy "geolocation=(), microphone=(), camera=()"
-    Content-Security-Policy "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' wss://omni.crowvisuals.com.br;"
-  }
+omni.crowvisuals.com.br, www.omni.crowvisuals.com.br {
+    import secure_headers
+    encode zstd gzip
 
-  handle /v1/* { reverse_proxy lista-api:8080 }
-  handle /v2/* { reverse_proxy lista-api:8080 }   # <- necessario p/ o switcher de contas
-  handle /uploads/* { reverse_proxy lista-api:8080 }
-  handle /s/* { reverse_proxy lista-api:8080 }    # <- redirects do encurtador (modulo tools)
-  handle /q/* { reverse_proxy lista-api:8080 }    # <- redirects rastreados dos QR Codes
-  handle /healthz { reverse_proxy lista-api:8080 }
-  handle { reverse_proxy lista-web:3003 }
+    handle /v1/* { reverse_proxy lista-api:8080 }
+    handle /v2/* { reverse_proxy lista-api:8080 }   # <- necessario p/ o switcher de contas
+    handle /uploads/* { reverse_proxy lista-api:8080 }
+    handle /s/* { reverse_proxy lista-api:8080 }    # <- redirects do encurtador (modulo tools)
+    handle /q/* { reverse_proxy lista-api:8080 }    # <- redirects rastreados dos QR Codes
+    handle /healthz { reverse_proxy lista-api:8080 }
+    handle { reverse_proxy lista-web:3003 }         # <- TUDO que nao casar cai no Nuxt
 }
 ```
 
-#### Links curtos na raiz `crowvisuals.com.br` (sem o `omni.`)
+Ha um segundo host equivalente, `lista.{$DOMAIN}`, com os mesmos `handle` apontando pra
+`lista-api`/`lista-web` — **ao adicionar path novo (ex.: `/s/*`), replique nos DOIS blocos**, senao
+o acesso pelo outro dominio nao roteia.
 
-Por padrao o `shortUrl` sai como `https://omni.crowvisuals.com.br/s/{slug}` (segue o
-`PUBLIC_API_BASE_URL`). Para o link ficar mais limpo em `https://crowvisuals.com.br/s/{slug}`:
+> **Incidente do encurtador (`/s/{slug}` dava 404) — RESOLVIDO 2026-07-13.** O modulo `tools` ja
+> estava 100% pronto na API (a rota `GET /s/{slug}` respondia — `curl` interno em `/s/x` devolvia o
+> JSON `{"error":{"code":"not_found",...}}` do handler, nao o `404 page not found` generico do mux),
+> mas o Caddy **nunca teve** os `handle /s/*` e `/q/*` no arquivo real. Sem eles, `/s/lma` casava o
+> `handle { reverse_proxy lista-web:3003 }` final e ia pro **Nuxt** → tela 404 do frontend (e, com
+> sessao, redirect pro `/auth/login`). Sintoma de reconhecimento: 404 e' **HTML do Nuxt**, nao JSON
+> da API. Fix = adicionar os dois `handle` nos blocos `omni.` e `lista.` + recriar o container
+> (ver armadilha do inode abaixo). Validado de fora: `/s/lma` → `302` com `Location` pro destino.
 
-1. Setar `TOOLS_PUBLIC_BASE_URL=https://crowvisuals.com.br` no `.env.production` e recriar a api
-   (`docker compose up -d api`). Isso muda **so** o texto exibido do link; quem resolve o redirect
-   e o host que o Caddy rotear.
-2. Garantir que a raiz `crowvisuals.com.br` exista como host no Caddy central **e** aponte pra este
-   stack. Se hoje a raiz e o site da agencia (outro servidor/stack), so os paths `/s/*` e `/q/*`
-   precisam vir pra ca — adicionar no bloco `crowvisuals.com.br` do Caddy os mesmos
-   `handle /s/* { reverse_proxy lista-api:8080 }` e `/q/*`, deixando o resto no destino atual.
+#### Links curtos na raiz `crowvisuals.com.br` (sem o `omni.`) — ATIVO desde 2026-07-13
 
-> Se a raiz nao estiver disponivel/roteada pra este stack, mantenha o `omni.crowvisuals.com.br/s/{slug}`
-> (nao setar `TOOLS_PUBLIC_BASE_URL`), que ja funciona com o bloco acima.
+O `shortUrl` novo sai limpo em **`https://crowvisuals.com.br/s/{slug}`**. Como foi feito (e como o
+estado atual esta montado):
 
-Aplicar mudanca no Caddy:
+1. `TOOLS_PUBLIC_BASE_URL=https://crowvisuals.com.br` no `.env.production` da stack lista + recriar a
+   api (`docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build
+   --force-recreate api`). Isso muda **so o TEXTO** exibido em links NOVOS; quem resolve o redirect e'
+   o host que o Caddy rotear. (Links ja criados guardam o texto antigo, mas resolvem igual pelos dois
+   dominios — ver abaixo.)
+2. A raiz `crowvisuals.com.br` ja e' servida por este Caddy central (o site da agencia roda no
+   container `crow-web`). O bloco raiz, que era `reverse_proxy crow-web:80` direto, virou blocos
+   `handle`: `/s/*` e `/q/*` vao pra `lista-api:8080` e **TODO o resto** (`handle { ... }`) segue pro
+   `crow-web` — o site da agencia fica intacto. Bloco real:
+
+```caddy
+crowvisuals.com.br, www.crowvisuals.com.br {
+    import secure_headers
+    encode zstd gzip
+
+    handle /s/* { reverse_proxy lista-api:8080 }   # (na VPS escrito em 3 linhas — ver armadilha inline)
+    handle /q/* { reverse_proxy lista-api:8080 }
+
+    handle {                                        # catch-all: site da agencia, inalterado
+        reverse_proxy crow-web:80 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+        }
+    }
+}
+```
+
+**Os dois dominios resolvem** (mantido de proposito): `crowvisuals.com.br/s/{slug}` (novo, limpo) E
+`omni.crowvisuals.com.br/s/{slug}` (links antigos ja compartilhados nao quebram). O que muda com o
+`TOOLS_PUBLIC_BASE_URL` e' so qual texto o painel EXIBE pra links novos.
+
+> Se um dia a raiz sair desta VPS, reverta o `TOOLS_PUBLIC_BASE_URL` (volta pro `omni.`) — o
+> `omni.crowvisuals.com.br/s/{slug}` continua funcionando sozinho.
+
+**Aplicar mudanca no Caddy (procedimento validado 2026-07-13):**
 
 ```bash
-cd /opt/omnichannel
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channels --env-file .env.prod up -d caddy
+# 1. backup preservando permissoes
+cp -a /opt/omnichannel/Caddyfile /opt/omnichannel/Caddyfile.bak-$(date -u +%Y%m%d-%H%M%S)
+
+# 2. editar. NAO use sed -i (troca o inode). Gere o novo em /tmp e sobrescreva o inode do host:
+#    (edite /tmp/Caddyfile.new com o conteudo desejado, ex.: via python que insere os handle)
+cat /tmp/Caddyfile.new > /opt/omnichannel/Caddyfile
+
+# 3. validar a sintaxe ANTES de aplicar (dentro do container, contra o arquivo novo):
+docker cp /tmp/Caddyfile.new omnichannel-mvp-caddy-1:/tmp/Caddyfile.new
+docker exec omnichannel-mvp-caddy-1 caddy validate --config /tmp/Caddyfile.new --adapter caddyfile
+#   -> "Valid configuration" (warnings de header_up/fmt sao pre-existentes, pode ignorar)
+
+# 4. recarregar. Se o `caddy reload` nao pegar (ver armadilha do inode), RESTART o container:
+docker restart omnichannel-mvp-caddy-1
 ```
+
+> **NAO use** `docker compose ... --profile channels ... up -d caddy` (o que estava aqui antes):
+> na VPS o servico `caddy` tem `depends_on: atendimento-online-api` (profile `atendimento`), e sem o
+> env-file/profile certos o compose falha com `depends on undefined service "atendimento-online-api"`.
+> `docker restart <container>` nao passa pelo compose, nao resolve dependencias, e e' o caminho seguro
+> pra so remontar o bind e reler o arquivo.
 
 **Armadilhas do Caddy (ja custaram tempo):**
 - **`/v2/*` separado e' obrigatorio.** A accounts API (`/v2/me/accounts`, `/v2/me/context`) move o
@@ -268,9 +364,22 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile channe
   os itens `agencyOnly` (Clientes Web, Usuarios Admin, Organizations) — mesmo com dado certo no
   banco. `handle /v1/* /v2/* {` (dois paths no mesmo handle) e' INVALIDO; use dois blocos (ou um
   matcher nomeado `@api path /v1/* /v2/*`).
-- O Caddyfile e' **bind-mount por inode**: `sed -i` troca o inode e o container continua lendo o
-  arquivo antigo. Edite preservando o inode (`cat novo > Caddyfile`) + `caddy reload`, ou reinicie
-  o container.
+- **`handle /x/* { reverse_proxy ... }` INLINE (uma linha so) quebra a adaptacao** neste build do
+  Caddy: `Error: adapting config ... Unexpected next token after '{' on same line`. Escreva SEMPRE em
+  3 linhas (`handle /s/* {` / `    reverse_proxy lista-api:8080` / `}`), como os blocos que ja validam.
+  E' o que derrubou o Caddy num restart durante o fix da raiz — por isso o passo 3 (`caddy validate`)
+  e' obrigatorio ANTES de `docker restart`, e o restart so pode rodar SE a validacao imprimiu
+  `Valid configuration` (nao encadeie `edita > restart` sem o gate no meio).
+- **Bind-mount por inode — PIOR do que so o `sed -i`.** O Docker monta `/opt/omnichannel/Caddyfile`
+  resolvendo o **inode** no momento em que o container subiu. Se o arquivo do host tiver trocado de
+  inode DEPOIS (um `cp -a`, `mv`, editor que reescreve, ou um `sed -i` antigo), o container fica preso
+  ao inode ORFAO antigo e **nem `cat > Caddyfile` nem `caddy reload` chegam nele** — o `reload` recarrega
+  o arquivo velho que o container ainda enxerga. Foi exatamente o que aconteceu no fix do encurtador:
+  editei/reloadei e `/s` continuava indo pro Nuxt. Diagnostico: compare o inode host vs container —
+  `ls -li /opt/omnichannel/Caddyfile` e `docker exec omnichannel-mvp-caddy-1 ls -li /etc/caddy/Caddyfile`;
+  se diferirem, o `reload` e' inutil. **Cura confiavel: `docker restart omnichannel-mvp-caddy-1`** (remonta
+  o bind no inode atual do host; ~3s de downtime do proxy). Confirme com o `grep -c "handle /s/"` dentro
+  do container batendo com o host.
 
 ### Variaveis principais do `.env.production`
 
@@ -365,7 +474,8 @@ Ainda manual (pendente): volume `api_uploads` e arquivo `.env.production`.
 Monitoração mínima de produção (AC-16), em 3 camadas complementares:
 
 1. **UptimeRobot** — de fora, vigia a URL pública e avisa se o painel cair.
-2. **`check-vps.sh`** no cron do host — de dentro, alerta disco/RAM/load/containers doentes.
+2. **`check-vps.sh`** no cron do host — de dentro, alerta disco/RAM/load/containers doentes e a
+   **saude do n8n** (container do profile automation no ar + workflows criticos `active`, OBS-07).
 3. **`/healthz` com ping de banco** — a api se auto-reporta: `200` (banco ok) ou `503`
    (`db:"unreachable"`), então o healthcheck do compose e o smoke do deploy enxergam banco morto.
 
@@ -401,7 +511,19 @@ ALERT_NTFY_URL=https://ntfy.sh/omni-<algo-aleatorio-secreto>
 # ALERT_TELEGRAM_BOT_TOKEN=123456:ABC...
 # ALERT_TELEGRAM_CHAT_ID=123456789
 # DISK_USAGE_MAX=85  MEM_AVAILABLE_MIN_PCT=10  LOAD_PER_CORE_MAX=2
+# --- OBS-07 (sonda do n8n): so preencher se path/porta divergirem do default ---
+# N8N_COMPOSE_DIR=/home/deploy/lista-atendimento   (onde vive docker-compose.prod.yml + .env.production)
+# N8N_ENV_FILE=.env.production
+# N8N_CRITICAL_IDS="calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001"  (= deploy-pull.ps1:246)
 ```
+
+A **sonda do n8n** (check #7, OBS-07) roda como o proprio `deploy` — que ja esta no grupo docker,
+entao **nao precisa de token/credencial do n8n** para ler o estado dos workflows. Ela le via
+`docker compose --profile automation exec n8n n8n export:workflow --all` (respeita o WAL do SQLite).
+Se `N8N_COMPOSE_DIR` nao existir no host, o check e NO-OP. A lista `N8N_CRITICAL_IDS` e a MESMA de
+`scripts/deploy/deploy-pull.ps1:246` (contrato: mudou uma, muda a outra). Antes de instalar na VPS,
+conferir a porta e o nome do servico: `grep AUTOMATION_N8N_PORT .env.production` e confirmar que o
+servico compose e `n8n`.
 
 ### 4. Crontab (na VPS, user deploy)
 

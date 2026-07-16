@@ -117,12 +117,13 @@ export function useUsersAccessManager(options = {}) {
   ]
 
   const createRoleOptions = computed(() =>
-    usersStore.assignableRoles
-      .filter((role) => role.id !== 'consultant')
-      .map((role) => ({
-        value: role.id,
-        label: getRoleLabel(role.id),
-      })),
+    (canOverrideConsultantManaged.value
+      ? usersStore.assignableRoles
+      : usersStore.assignableRoles.filter((role) => role.id !== 'consultant')
+    ).map((role) => ({
+      value: role.id,
+      label: getRoleLabel(role.id),
+    })),
   )
   const editableRoleOptions = computed(() =>
     (canOverrideConsultantManaged.value

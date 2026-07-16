@@ -651,6 +651,17 @@ A api passa a conectar com a role `omni_app` (`NOSUPERUSER`, sem DDL); só o `mi
 > (registro de falhas 2026-07-03). Prevenção definitiva proposta: **ac-04b** — auto-provisão
 > idempotente da role no `migrate up` (cria/altera a role e aplica grants quando
 > `APP_DB_ROLE_PASSWORD` estiver definida), eliminando o passo manual.
+>
+> **ac-04b — CÓDIGO IMPLEMENTADO (2026-07-13), pendente de validação+commit:** o `migrate up`
+> passa a auto-provisionar a role — `EnsureAppRole`
+> (`back/internal/platform/database/app_role_ensure.go`) roda ANTES de `SyncAppRoleGrants`
+> e faz `CREATE ROLE ... LOGIN` (se ausente) + `ALTER ROLE ... PASSWORD` least-privilege +
+> `GRANT CONNECT`, idempotente, a partir de `DATABASE_APP_URL`. Em production sem senha/URL,
+> `migrate` falha alto e cedo (`app_role_ensure_failed`, `os.Exit(1)`) em vez do crash-loop
+> `28P01`. Com isso o deploy vira self-healing e **os passos manuais 2–4 abaixo viram fallback**
+> (permanecem como runbook para imagens anteriores ao ac-04b e como caminho do initdb).
+> RESTA: validar com rebuild da api em volume limpo (log `app_role_ensure_ok created=true`, sem
+> `28P01`, senha ausente do log do Postgres) e commitar — só então marcar como LIVE.
 
 - **Migrations novas:** nenhuma. **Env vars novas:** `APP_DB_ROLE` (default `omni_app`), `APP_DB_ROLE_PASSWORD` (senha forte ALFANUMÉRICA — evita urlencode na URL), `DATABASE_APP_URL` (montada no compose a partir das duas). **Rebuild:** `docker compose up -d --build api` (back/ mudou).
 

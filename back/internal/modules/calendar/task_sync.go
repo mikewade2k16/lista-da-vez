@@ -323,31 +323,6 @@ func htmlToPlainText(h string) string {
 	return strings.Join(out, "\n")
 }
 
-// syncEventMediaToTask espelha SO a midia do evento na task (ui_metadata.calendarMedia), sem
-// tocar titulo/status/etc. Usado no gatilho de day_media (taggear anexo a um evento nao deve
-// reverter os campos da task). Terminal (ApplyCalendarSync nao re-dispara). Best-effort.
-func (s *Service) syncEventMediaToTask(ctx context.Context, accountID string, ev CalendarEvent, taskID string) {
-	svc := s.tasksSvc()
-	if svc == nil || strings.TrimSpace(taskID) == "" {
-		return
-	}
-	principal, ok := auth.PrincipalFromContext(ctx)
-	if !ok {
-		return
-	}
-	access, err := svc.ResolveAccessContext(ctx, principal, accountID)
-	if err != nil {
-		return
-	}
-	md := map[string]any{"calendarMedia": s.eventMediaForTask(ctx, accountID, ev)}
-	if _, err := svc.ApplyCalendarSync(ctx, access, tasks.UpdateTaskInput{
-		ID:         strings.TrimSpace(taskID),
-		UIMetadata: &md,
-	}); err != nil {
-		s.logTaskWarn(ctx, "calendar: espelhar midia do dia na task falhou", accountID, ev.ID, err)
-	}
-}
-
 // linkTaskToEvent cria a relation task->evento (mesma do C10) para o espelho nascido de task.
 func (s *Service) linkTaskToEvent(ctx context.Context, accountID, taskID string, e CalendarEvent) {
 	svc := s.tasksSvc()
@@ -455,23 +430,13 @@ func mediaItemsFromSnapshots(snaps []platformmodules.MediaSnapshot) []MediaItem 
 }
 
 // eventMediaForTask coleta a midia que a task vinculada deve EXIBIR (read-only, cruzamento A):
-// a midia do proprio evento (ev.Media) + os anexos do dia apontados a este evento (day_media com
-// eventId == ev.ID). Devolve []map[string]any no shape que o front da task le em
-// ui_metadata.calendarMedia (id/url/name/type/contentType/sizeBytes/posterUrl). Dedup por id.
-// Best-effort: falha ao ler day_media apenas ignora os anexos do dia.
-func (s *Service) eventMediaForTask(ctx context.Context, accountID string, ev CalendarEvent) []map[string]any {
+// a midia do proprio evento (ev.Media). Devolve []map[string]any no shape que o front da task le
+// em ui_metadata.calendarMedia (id/url/name/type/contentType/sizeBytes/posterUrl). Dedup por id.
+// WAVE 13: "anexos do dia" foi eliminado — toda midia mora em events.media, entao a fonte aqui e
+// so ev.Media (nao ha mais day_media com eventId a unir).
+func (s *Service) eventMediaForTask(_ context.Context, _ string, ev CalendarEvent) []map[string]any {
 	var items []MediaItem
 	_ = json.Unmarshal(normalizeArray(ev.Media), &items)
-	if days, err := s.store.ListDayMedia(ctx, accountID, ev.Date, ev.Date); err == nil {
-		id := strings.TrimSpace(ev.ID)
-		for _, d := range days {
-			for _, m := range d.Media {
-				if strings.EqualFold(strings.TrimSpace(m.EventID), id) {
-					items = append(items, m)
-				}
-			}
-		}
-	}
 	out := make([]map[string]any, 0, len(items))
 	seen := map[string]bool{}
 	for _, m := range items {

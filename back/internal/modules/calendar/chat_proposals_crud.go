@@ -62,12 +62,12 @@ func canonicalProposalKind(raw string) string {
 	}
 }
 
-// sanitizeContentProposal aplica as regras de event/task (WAVE 5.1): update/delete exigem targetId;
-// create exige titulo; update exige ao menos um campo editavel.
+// sanitizeContentProposal aplica as regras de event/task (WAVE 5.1): create exige titulo;
+// update exige ao menos um campo editavel. Update/delete SEM targetId passam AQUI de proposito
+// (WAVE 15): a guarda de alvo resolve o targetId pelo titulo/dia citados na pergunta — descartar
+// antes dela matava propostas recuperaveis ("o cliente da X e a Bari" sem targetId). Quem
+// descarta o que sobrar sem alvo e dropTargetlessEditable, DEPOIS da guarda.
 func sanitizeContentProposal(action string, f ChatProposalFields) bool {
-	if (action == "update" || action == "delete") && strings.TrimSpace(f.TargetID) == "" {
-		return false
-	}
 	if action == "create" && strings.TrimSpace(f.Title) == "" {
 		return false
 	}

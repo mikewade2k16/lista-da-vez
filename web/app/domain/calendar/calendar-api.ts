@@ -22,17 +22,10 @@ import {
   type CalendarEvent,
   type CalendarEventInput,
   type CalendarHoliday,
-  type CalendarMediaItem,
   type CalendarMediaLimits,
   type CalendarMember,
   type CalendarPerson,
 } from '~/utils/calendar'
-
-/** Uma entrada de anexos avulsos por dia (`GET /v1/calendar/day-media`). */
-export interface CalendarDayMedia {
-  date: string
-  media: CalendarMediaItem[]
-}
 
 // Tipo exato do apiRequest devolvido por createApiRequest (evita incompatibilidade
 // de contravariancia ao passar apiRequest para estas funcoes).
@@ -135,29 +128,6 @@ export async function fetchHolidaysInRange(
 ): Promise<CalendarHoliday[]> {
   const res = await api(`/v1/calendar/holidays?${rangeQuery(from, to)}`)
   return Array.isArray(res?.holidays) ? (res.holidays as CalendarHoliday[]) : []
-}
-
-export async function fetchDayMediaInRange(
-  api: ApiRequest,
-  from: string,
-  to: string,
-): Promise<CalendarDayMedia[]> {
-  const res = await api(`/v1/calendar/day-media?${rangeQuery(from, to)}`)
-  const days = Array.isArray(res?.days) ? res.days : []
-  return days
-    .filter((entry: { date?: string }) => typeof entry?.date === 'string' && entry.date)
-    .map((entry: { date: string; media?: unknown }) => ({
-      date: entry.date,
-      media: Array.isArray(entry.media) ? (entry.media as CalendarMediaItem[]) : [],
-    }))
-}
-
-export async function putDayMedia(
-  api: ApiRequest,
-  date: string,
-  media: CalendarMediaItem[],
-): Promise<void> {
-  await api(`/v1/calendar/day-media/${date}`, { method: 'PUT', body: { media } })
 }
 
 // createEventTask cria (e vincula) uma task para um evento SEM task (WAVE 6, botão do badge

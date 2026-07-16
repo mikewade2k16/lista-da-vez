@@ -113,6 +113,43 @@ async function onFiles(event: Event): Promise<void> {
   }
 }
 
+// Drop de ARQUIVOS externos (arrastar do PC para o uploader). Distinto do drag de REORDENACAO
+// interno (abaixo): o drop de arquivo carrega dataTransfer com kind 'Files'; o reorder carrega
+// 'text/plain'. `fileDragActive` acende a drop-zone. So habilitado quando editavel (!readonly).
+const fileDragActive = ref(false)
+
+function isExternalFileDrag(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types
+  if (!types) return false
+  return Array.from(types).includes('Files')
+}
+
+function onFileDragOver(event: DragEvent): void {
+  if (props.readonly || !isExternalFileDrag(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  fileDragActive.value = true
+}
+
+function onFileDragLeave(event: DragEvent): void {
+  // So apaga quando sai DE VERDADE do contorno (evita piscar ao passar sobre filhos).
+  if (event.currentTarget instanceof HTMLElement && event.relatedTarget instanceof Node) {
+    if (event.currentTarget.contains(event.relatedTarget)) return
+  }
+  fileDragActive.value = false
+}
+
+async function onFileDrop(event: DragEvent): Promise<void> {
+  if (props.readonly || !isExternalFileDrag(event)) return
+  event.preventDefault()
+  fileDragActive.value = false
+  error.value = ''
+  const files = Array.from(event.dataTransfer?.files || [])
+  for (const file of files) {
+    await handleFile(file)
+  }
+}
+
 async function handleFile(file: File): Promise<void> {
   const kind = kindOf(file)
   if (!kind) {
@@ -201,7 +238,17 @@ function onDragEnd(): void {
 </script>
 
 <template>
-  <div class="calendar-media" :class="{ 'calendar-media--day': dayLayout }">
+  <div
+    class="calendar-media"
+    :class="{ 'calendar-media--day': dayLayout, 'calendar-media--dropping': fileDragActive }"
+    @dragover="onFileDragOver"
+    @dragleave="onFileDragLeave"
+    @drop="onFileDrop"
+  >
+    <div v-if="fileDragActive" class="calendar-media__dropzone" aria-hidden="true">
+      <UIcon name="i-lucide-upload-cloud" />
+      <span>Solte para enviar</span>
+    </div>
     <div v-if="dayLayout" class="calendar-media__head">
       <span v-if="label" class="calendar-media__label">{{ label }}</span>
       <button

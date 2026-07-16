@@ -29,11 +29,14 @@ import (
 // Limites e timeouts do chat/transcricao.
 const (
 	// maxChatQuestion e o teto da pergunta (contrato C7): protege o payload e o
-	// prompt da IA de textos absurdos.
-	maxChatQuestion = 4000
+	// prompt da IA de textos absurdos. 12000 runas (~2000 palavras) cabe um briefing
+	// FALADO longo (ditado continuo de perfil de cliente) sem estourar a janela do LLM.
+	maxChatQuestion = 12000
 	// chatAskTimeout e a janela do POST /chat/ask ao n8n. O AI Agent e sincrono
 	// (LLM headless), entao a janela e larga; timeout vira 504 (DeadlineExceeded).
-	chatAskTimeout = 60 * time.Second
+	// 120s (WAVE 12): resposta LONGA (ex.: listar tasks sem data com contexto de 100
+	// tasks) + retries do n8n (4x2.5s) estouravam os 60s e viravam "IA fora do ar".
+	chatAskTimeout = 120 * time.Second
 	// chatStatusTimeout limita a verificacao leve do n8n feita ao abrir o chat e
 	// antes de enviar. A rota /healthz nao chama modelo e nao consome tokens.
 	chatStatusTimeout = 3 * time.Second
@@ -81,6 +84,9 @@ var (
 	chatISOYearMonthRe = regexp.MustCompile(`\b(20\d{2})-(0[1-9]|1[0-2])\b`)
 	chatNumericDateRe  = regexp.MustCompile(`\b(?:0?[1-9]|[12]\d|3[01])[/-](0?[1-9]|1[0-2])(?:[/-](20\d{2}|\d{2}))?\b`)
 	chatMonthNameRe    = regexp.MustCompile(`\b(janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+de)?\s*(20\d{2})?\b`)
+	// chatDayNumberRe casa "dia 15" / "no dia 15" / "do dia 15" (numero do dia solto, ancorado no
+	// mes em foco pela guarda de alvo). So depois de "dia" para nao pegar numeros quaisquer.
+	chatDayNumberRe    = regexp.MustCompile(`\bdia\s+(\d{1,2})\b`)
 	chatAnswerBulletRe = regexp.MustCompile(`^\s*(?:[-*]|\d+[.)])\s+`)
 	chatAnswerDateRe   = regexp.MustCompile(`^\s*(?:[-*]\s*)?\d{1,2}[/-]\d{1,2}\b`)
 	chatAnswerCountRe  = regexp.MustCompile(`(?i)\b\d+\s+eventos?\s+no\s+total\b`)
@@ -109,6 +115,9 @@ type ChatAskRequest struct {
 	Month          string `json:"month"`
 	ScopeMode      string `json:"scopeMode"`
 	ScopeClientID  string `json:"scopeClientId"`
+	// ViaVoice (WAVE 15): a mensagem veio de TRANSCRICAO DE AUDIO (Whisper/ditado). O prompt
+	// trata erros foneticos como provaveis ("rios" ~ "reels") antes de dizer que nao entendeu.
+	ViaVoice bool `json:"viaVoice"`
 }
 
 // chatWebhookPayload e o corpo Go -> n8n (webhook calendar-chat, contratos C7/D4/D5). O
@@ -124,6 +133,8 @@ type chatWebhookPayload struct {
 	AI         chatPayloadAI        `json:"ai"`
 	Context    any                  `json:"context"`
 	History    []chatHistoryMessage `json:"history"`
+	// ViaVoice (WAVE 15): repassa o sinal de transcricao de audio ao prompt (body.viaVoice).
+	ViaVoice bool `json:"viaVoice"`
 }
 
 // chatHistoryMessage e a projecao {role,content} de uma mensagem persistida para o
@@ -146,6 +157,8 @@ type chatPayloadAI struct {
 
 // calendarChatContext e o bloco context do C7: o agregado C9 SEM o campo account.
 // MESMAS chaves/shapes do AIContext (regra de unificacao C7/C9) — so omite account.
+// People (WAVE 12) = pessoas da equipe (id+nome, mesmos dados do GET /responsibles):
+// a IA resolve "responsavel vai ser a Iasmin" por NOME sem exigir ID do usuario.
 type calendarChatContext struct {
 	Client     *planClient      `json:"client"`
 	Month      string           `json:"month"`
@@ -153,6 +166,7 @@ type calendarChatContext struct {
 	MonthNotes string           `json:"monthNotes"`
 	Events     []AIContextEvent `json:"events"`
 	Tasks      []AIContextTask  `json:"tasks,omitempty"`
+	People     []Member         `json:"people,omitempty"`
 	Plans      []AIContextPlan  `json:"plans"`
 }
 
@@ -566,6 +580,12 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if err != nil {
 		return ChatAskResult{}, err
 	}
+	// WAVE 14: mes alvo primeiro; titulo citado que NAO esta no mes em foco (tela em outro
+	// mes/ano) e buscado em janela ampla e anexado ao contexto ANTES do LLM.
+	contextBlock = s.appendWideTitleMatches(ctx, account, access, target.mode, target.clientID, contextMonth, question, contextBlock)
+	// WAVE 16: no escopo 'all' os clientes vao enxutos; se a pergunta cita UM cliente, hidrata o
+	// perfil COMPLETO dele (ctx.client) para a IA conseguir LER os dados do cliente citado.
+	contextBlock = s.appendNamedClientProfile(ctx, account, question, contextBlock)
 	payload := chatWebhookPayload{
 		Question:   question,
 		SessionKey: calendarChatSessionKey(account, principal.UserID, conv.ID),
@@ -573,6 +593,7 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 		AI:         chatPayloadAI{AIConfig: effAI, APIKey: apiKey},
 		Context:    contextBlock,
 		History:    toHistory(prior),
+		ViaVoice:   req.ViaVoice,
 	}
 	answer, proposals, eventIDs, aiError, err := s.postChatAsk(ctx, payload)
 	if err != nil {
@@ -589,6 +610,53 @@ func (s *Service) ChatAsk(ctx context.Context, accountID string, principal auth.
 	if !aiError {
 		items := selectContextEvents(contextEvents(contextBlock), eventIDs)
 		answer = compactCalendarCardAnswer(answer, len(items))
+		evs := contextEvents(contextBlock)
+		tks := contextTasks(contextBlock)
+		// WAVE 14: GUARDA DE ALVO (roda ANTES do resolve, pois pode REESCREVER o targetId). Quando o
+		// usuario cita um dia/cliente, o BACK resolve o alvo (prioriza o calendario; 1 evento no dia =>
+		// forca o alvo p/ ele; varios => barra e lista; so-em-tasks => avisa). resolvedTitle destaca o
+		// alvo corrigido para o dono confirmar ("Vou alterar: X").
+		// WAVE 14: RESOLVE responsavel/envolvidos e CLIENTE por NOME (o modelo manda ids lixo,
+		// inventa ou esquece campos). Roda antes da guarda de alvo — nada depende do modelo.
+		resolvePeopleInProposals(proposals, question, contextPeople(contextBlock))
+		ctxClients := contextClients(contextBlock)
+		resolveClientsInProposals(proposals, question, ctxClients)
+		// WAVE 15: tipo fora da taxonomia (erro de voz "rios") vira o mais proximo ("reels");
+		// irrecuperavel e limpo — rede de seguranca (o prompt ja manda o modelo corrigir e avisar).
+		snapProposalTypes(proposals)
+		// WAVE 15: a anotacao e SEMPRE do mes em foco DA TELA (req.Month) — NAO do
+		// contextMonth: inferChatMonth muda o contexto quando a pergunta cita um mes
+		// ("reescreve para: Planejamento agosto" => contexto de 2026-08), e ai o modelo
+		// gravava a nota no mes errado "corretamente". Mes-alvo explicito e respeitado.
+		noteMonth := strings.TrimSpace(req.Month)
+		if !monthRe.MatchString(noteMonth) {
+			noteMonth = contextMonth
+		}
+		snapNoteMonths(proposals, noteMonth, question)
+		crit := extractTargetCriteria(question, contextMonth, ctxClients)
+		kept, notice, resolvedTitle := guardProposalTargets(question, proposals, crit, ctxClients, evs, tks)
+		proposals = kept
+		// WAVE 15: update/delete que sobrou SEM targetId (modelo nao mandou e a guarda nao
+		// resolveu pelo titulo/dia) sai aqui — um PATCH sem alvo nao aplica. Aviso deterministico
+		// no lugar do answer do modelo (que costuma mentir "preparei a proposta").
+		var droppedTargetless bool
+		proposals, droppedTargetless = dropTargetlessEditable(proposals)
+		if droppedTargetless && notice == "" {
+			notice = "Nao consegui identificar qual item voce quer alterar. Me diga o titulo (ou o dia) do item do calendario."
+		}
+		if notice != "" {
+			// Barrado (varios/so-tasks/sem-match): o aviso da guarda SUBSTITUI o texto da IA (que
+			// pode estar errado/confuso). O card com a lista de escolha basta.
+			answer = notice
+		} else if resolvedTitle != "" {
+			// Resolvido (1 alvo): frase curta e determinista SUBSTITUI o texto da IA (evita a
+			// duplicacao "Vou alterar X" + "encontrei a tarefa X, vou atualizar").
+			answer = "Vou alterar: " + resolvedTitle + ". Revise e confirme no cartao."
+		}
+		// WAVE 12: resolve os alvos (targetId ja corrigido pela guarda) e anexa o snapshot de cada
+		// alvo aos calendarItems, para o card SEMPRE mostrar o titulo/"antes" do item que sera alterado.
+		targets := resolveProposalTargets(proposals, evs, tks)
+		items = mergeCalendarItems(items, targets)
 		assistant, err = s.store.AppendMessage(ctx, account, conv.ID, ChatMessageInput{
 			Role: chatRoleAssistant, Content: answer,
 			Proposals: storedProposalsFrom(proposals), CalendarItems: items,

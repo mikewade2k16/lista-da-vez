@@ -35,13 +35,12 @@ const (
 	// calendar:account:{id}; o front refaz o fetch (nunca patch local). Os literais sao
 	// espelhados como constantes privadas em calendar/publisher.go (o calendar seta o
 	// Type; o realtime so repassa) — os dois lados precisam concordar.
-	EventTypeCalendarEventCreated    = "calendar.event_created"
-	EventTypeCalendarEventUpdated    = "calendar.event_updated"
-	EventTypeCalendarEventDeleted    = "calendar.event_deleted"
-	EventTypeCalendarNoteUpdated     = "calendar.note_updated"
-	EventTypeCalendarDayMediaUpdated = "calendar.day_media_updated"
-	EventTypeCalendarConfigUpdated   = "calendar.config_updated"
-	EventTypeCalendarPlanUpdated     = "calendar.plan_updated"
+	EventTypeCalendarEventCreated  = "calendar.event_created"
+	EventTypeCalendarEventUpdated  = "calendar.event_updated"
+	EventTypeCalendarEventDeleted  = "calendar.event_deleted"
+	EventTypeCalendarNoteUpdated   = "calendar.note_updated"
+	EventTypeCalendarConfigUpdated = "calendar.config_updated"
+	EventTypeCalendarPlanUpdated   = "calendar.plan_updated"
 	// WAVE 10: perfil estrategico do cliente mudou (PutClientProfile); resourceId=clientId.
 	EventTypeCalendarClientProfileUpdated = "calendar.client_profile_updated"
 )

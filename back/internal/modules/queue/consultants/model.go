@@ -122,7 +122,7 @@ type Repository interface {
 	ListAccessibleStoreIDsForTenant(ctx context.Context, tenantID string) ([]string, error)
 	FindByID(ctx context.Context, consultantID string) (Consultant, error)
 	SyncLinkedIdentity(ctx context.Context, userID string, name string, initials string) error
-	SyncLinkedAccess(ctx context.Context, input LinkedAccessSyncInput) error
+	SyncLinkedAccess(ctx context.Context, input LinkedAccessSyncInput) ([]string, error)
 	Create(ctx context.Context, consultant Consultant, access ConsultantAccessSeed) (Consultant, error)
 	AttachAccess(ctx context.Context, consultant Consultant, access ConsultantAccessSeed) (Consultant, error)
 	Update(ctx context.Context, consultant Consultant) (Consultant, error)

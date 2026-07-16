@@ -244,7 +244,7 @@ export const useUsersStore = defineStore('users', () => {
     const role = normalizeText(payload.role || 'store_terminal')
     const password = normalizeText(payload.password)
     const employeeCode = normalizeText(payload.employeeCode)
-    if (role === 'consultant') {
+    if (role === 'consultant' && normalizeText(auth.role) !== 'platform_admin') {
       return { ok: false, message: 'Consultores devem ser criados na gestao de consultores.' }
     }
     if (

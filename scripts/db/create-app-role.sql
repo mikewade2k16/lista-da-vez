@@ -1,3 +1,7 @@
+-- DESDE O AC-04b o `migrate up` auto-provisiona esta role no boot (cria +
+-- converge senha/atributos + grant connect, a partir de DATABASE_APP_URL).
+-- Este script permanece como FALLBACK MANUAL e como caminho do initdb
+-- (scripts/db/postgres-init/10-app-role.sh) para volumes novos.
 -- scripts/db/create-app-role.sql — AC-04: role de RUNTIME least-privilege da api.
 -- Idempotente. NAO e migration (role e cluster-level; senha vem de env).
 -- Uso: psql -v ON_ERROR_STOP=1 -U <superuser> -d <db> -v role=omni_app -v pw='<senha>' -f scripts/db/create-app-role.sql

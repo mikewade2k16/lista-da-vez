@@ -16,6 +16,7 @@ type Service struct {
 	invites            InvitationIssuer
 	notifier           ContextPublisher
 	consultantProfiles ConsultantProfileSync
+	operations         OperationPublisher
 	principalCache     PrincipalCacheInvalidator
 }
 
@@ -30,7 +31,16 @@ type PrincipalCacheInvalidator interface {
 }
 
 type ConsultantProfileSync interface {
-	SyncLinkedAccess(ctx context.Context, user User) error
+	// SyncLinkedAccess mantem a linha do roster (queue.consultants) em sincronia
+	// com o acesso do usuario e devolve as lojas afetadas para o broadcast de
+	// operation.updated (Lista da vez ao vivo via WebSocket).
+	SyncLinkedAccess(ctx context.Context, user User) ([]string, error)
+}
+
+// OperationPublisher emite operation.updated por loja para o canal realtime da
+// operacao. Injetado via SetOperationPublisher; nil = sem broadcast (no-op).
+type OperationPublisher interface {
+	PublishStoreEvent(ctx context.Context, storeID string, action string, savedAt time.Time)
 }
 
 type InvitationIssuer interface {
@@ -52,6 +62,12 @@ func NewService(repository Repository, password auth.PasswordHasher, invites Inv
 // sessoes cacheadas do usuario. nil = cache desligado (no-op).
 func (service *Service) SetPrincipalCacheInvalidator(cache PrincipalCacheInvalidator) {
 	service.principalCache = cache
+}
+
+// SetOperationPublisher liga o broadcast de operation.updated (Lista da vez ao
+// vivo) quando o roster de consultor muda por edicao de usuario. nil = no-op.
+func (service *Service) SetOperationPublisher(operations OperationPublisher) {
+	service.operations = operations
 }
 
 func (service *Service) ListAccessible(ctx context.Context, principal auth.Principal, input ListInput) ([]UserView, error) {
@@ -90,7 +106,7 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 	if displayName == "" || email == "" || !auth.IsValidRole(role) {
 		return CreateResult{}, ErrValidation
 	}
-	if role == auth.RoleConsultant {
+	if role == auth.RoleConsultant && !canOverrideConsultantManagement(principal.Role) {
 		return CreateResult{}, ErrConsultantManaged
 	}
 	if password != "" && !canManageUserPasswords(principal) {
@@ -163,6 +179,12 @@ func (service *Service) Create(ctx context.Context, principal auth.Principal, in
 		result.User = refreshed.View()
 		result.Invitation = &invitation
 	}
+
+	affectedStoreIDs, err := service.syncConsultantRoster(ctx, created)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	service.publishOperationEvents(ctx, affectedStoreIDs)
 
 	service.publishContextEvent(ctx, created.TenantID, "user", "created", created.ID)
 	return result, nil
@@ -262,11 +284,11 @@ func (service *Service) Update(ctx context.Context, principal auth.Principal, in
 		return UserView{}, err
 	}
 
-	if service.consultantProfiles != nil {
-		if err := service.consultantProfiles.SyncLinkedAccess(ctx, updated); err != nil {
-			return UserView{}, err
-		}
+	affectedStoreIDs, err := service.syncConsultantRoster(ctx, updated)
+	if err != nil {
+		return UserView{}, err
 	}
+	service.publishOperationEvents(ctx, affectedStoreIDs)
 
 	// AC-01: desativacao, troca de papel e troca de tenant/lojas passam por Update —
 	// derruba o Principal cacheado para que a proxima request releia do banco.
@@ -305,11 +327,11 @@ func (service *Service) Archive(ctx context.Context, principal auth.Principal, u
 		return UserView{}, err
 	}
 
-	if service.consultantProfiles != nil {
-		if err := service.consultantProfiles.SyncLinkedAccess(ctx, updated); err != nil {
-			return UserView{}, err
-		}
+	affectedStoreIDs, err := service.syncConsultantRoster(ctx, updated)
+	if err != nil {
+		return UserView{}, err
 	}
+	service.publishOperationEvents(ctx, affectedStoreIDs)
 
 	// AC-01: arquivamento desativa o usuario — derruba as sessoes cacheadas na hora.
 	service.invalidatePrincipal(updated.ID)
@@ -579,6 +601,35 @@ func reconcileJobTitle(current string, role auth.Role) string {
 
 func isConsultantManaged(user User) bool {
 	return user.Role == auth.RoleConsultant || strings.TrimSpace(user.ManagedBy) == "consultants"
+}
+
+// syncConsultantRoster mantem a linha do roster (queue.consultants) em sincronia
+// com o acesso do usuario e devolve as lojas afetadas. Nil-safe: no-op quando o
+// sync de consultores nao esta ligado.
+func (service *Service) syncConsultantRoster(ctx context.Context, user User) ([]string, error) {
+	if service.consultantProfiles == nil {
+		return nil, nil
+	}
+
+	return service.consultantProfiles.SyncLinkedAccess(ctx, user)
+}
+
+// publishOperationEvents emite operation.updated para cada loja afetada pelo
+// sync do roster, entregando a Lista da vez ao vivo via WebSocket. Nil-safe.
+func (service *Service) publishOperationEvents(ctx context.Context, storeIDs []string) {
+	if service.operations == nil || len(storeIDs) == 0 {
+		return
+	}
+
+	savedAt := time.Now().UTC()
+	for _, storeID := range storeIDs {
+		trimmedStoreID := strings.TrimSpace(storeID)
+		if trimmedStoreID == "" {
+			continue
+		}
+
+		service.operations.PublishStoreEvent(ctx, trimmedStoreID, "roster.updated", savedAt)
+	}
 }
 
 func (service *Service) publishContextEvent(ctx context.Context, tenantID string, resource string, action string, resourceID string) {

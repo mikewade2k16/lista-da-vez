@@ -151,11 +151,14 @@ function togglePause(): void {
 }
 
 // Ditado ao vivo: o texto transcrito e' anexado ao prefixo capturado no start.
+// WAVE 15: marca que o rascunho veio de VOZ (vai como viaVoice no /ask — o prompt
+// trata erros foneticos como provaveis).
 watch(
   () => live.transcript.value,
   (text) => {
     if (live.state.value !== 'listening') return
     chat.draft.value = liveBase ? `${liveBase} ${text}`.trim() : text
+    chat.draftFromVoice.value = true
     void nextTick(resizeInput)
   },
 )
@@ -225,6 +228,9 @@ onBeforeUnmount(() => {
 })
 
 function onInput(): void {
+  // Digitacao MANUAL (fora do fluxo de captura) desmarca o sinal de voz: o usuario
+  // reescreveu/ajustou o texto, entao ele deixa de ser "transcricao crua".
+  if (!isCapturing.value) chat.draftFromVoice.value = false
   resizeInput()
 }
 
@@ -278,6 +284,8 @@ async function onMic(): Promise<void> {
     const text = await voice.stopAndTranscribe()
     if (text) {
       chat.draft.value = chat.draft.value ? `${chat.draft.value} ${text}` : text
+      // WAVE 15: rascunho veio de transcricao => viaVoice no /ask (prompt trata fonetica).
+      chat.draftFromVoice.value = true
     }
     void nextTick(() => inputRef.value?.focus())
     return

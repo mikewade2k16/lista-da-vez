@@ -825,6 +825,35 @@
   color: var(--text-main);
 }
 
+/* Cliente ja resolvido no create: rotulo fixo + "Trocar" (o select so abre se pedido). */
+.calendar-chat__proposal-client-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.2rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.calendar-chat__proposal-client-label span {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.calendar-chat__proposal-client-swap {
+  border: none;
+  background: transparent;
+  padding: 0 0.15rem;
+  color: rgb(var(--primary));
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calendar-chat__proposal-client-swap:hover {
+  text-decoration: underline;
+}
+
 .calendar-chat__proposal-ask {
   display: flex;
   flex-wrap: wrap;

@@ -129,32 +129,46 @@ func manageablePermsExists(accountExpr string, actorIdx, permsIdx int) string {
 
 // manageableAccountWhere monta o predicado "o ator ($actorIdx=userID) pode MUTAR a
 // account (alias `a` para core.accounts, $permsIdx=text[] de permissoes-chave de
-// admin)". Vale quando a account esta ativa E QUALQUER caminho:
+// admin)". Vale por QUALQUER caminho:
 //
-//	(a) o ator e platform_admin -> administra todas;
-//	(b) o ator e agency_owner em core.organization_users da org dona da account;
-//	(c) o ator tem alguma das permissoes de $permsIdx RESOLVIDA naquela account (a.id).
+//	(a) o ator e platform_admin -> administra TODAS as accounts, ATIVAS OU INATIVAS;
+//	(b) a account esta ATIVA e o ator e agency_owner da org dona da account; ou
+//	(c) a account esta ATIVA e o ator tem alguma das permissoes de $permsIdx
+//	    RESOLVIDA naquela account (a.id).
 //
-// Espelha accountVisibilityWhere mas (c) e MAIS RESTRITO: la basta membership,
+// platform_admin e o acesso maximo do painel: DEVE sempre poder mutar/remover
+// qualquer account, inclusive inativa. Se o gate exigisse is_active=true para
+// TODOS (como era antes), nem o platform_admin conseguia remover um vinculo
+// apontando para uma conta desativada (ex.: conta de teste inativada):
+// RemoveMembership -> CanManageAccount=false -> 404 "conta destino nao encontrada
+// ou inativa", e o vinculo ficava preso para sempre sem caminho na UI. Por isso o
+// ramo (a) fica FORA do gate is_active. agency_owner e admin-de-cliente (b/c)
+// seguem limitados a contas ativas — nao ha caso de uso para eles mutarem contas
+// desativadas, e o limite evita gestao sobre contas fora do fluxo ativo.
+//
+// Espelha accountVisibilityWhere mas (b/c) e MAIS RESTRITO: la basta membership,
 // aqui exige permissao de gestao (core.users.manage / core.roles.manage). actorIdx/
 // permsIdx sao os indices dos parametros no caller (sem buracos de parametro -> sem 42P18).
 func manageableAccountWhere(actorIdx, permsIdx int) string {
-	return fmt.Sprintf(`
-		a.is_active = true
-		and (
+	return fmt.Sprintf(`(
 		  exists (
 		    select 1 from core.users u
 		    where u.id = $%[1]d::uuid
 		      and u.is_active = true
 		      and u.is_platform_admin = true
 		  )
-		  or exists (
-		    select 1 from core.organization_users ou
-		    where ou.user_id = $%[1]d::uuid
-		      and ou.org_role = 'agency_owner'
-		      and ou.organization_id = a.organization_id
+		  or (
+		    a.is_active = true
+		    and (
+		      exists (
+		        select 1 from core.organization_users ou
+		        where ou.user_id = $%[1]d::uuid
+		          and ou.org_role = 'agency_owner'
+		          and ou.organization_id = a.organization_id
+		      )
+		      or %[2]s
+		    )
 		  )
-		  or %[2]s
 		)`, actorIdx, manageablePermsExists("a.id", actorIdx, permsIdx))
 }
 

@@ -4,6 +4,38 @@
   flex-direction: column;
   gap: 0.4rem;
   min-width: 0;
+  position: relative;
+}
+
+/* Drop-zone de ARQUIVOS externos (arrastar do PC): contorno tracejado + overlay guia.
+   So aparece enquanto um arquivo esta sendo arrastado sobre o uploader editavel. */
+.calendar-media--dropping {
+  outline: 2px dashed rgb(var(--primary));
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.calendar-media__dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.calendar-media__dropzone svg,
+.calendar-media__dropzone .iconify {
+  width: 1.6rem;
+  height: 1.6rem;
 }
 
 .calendar-media__label {

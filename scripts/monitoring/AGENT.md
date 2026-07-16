@@ -8,7 +8,7 @@ estagio 2 (fora de escopo; ver referencia no fim de `docs/DEPLOY_VPS.md → Moni
 
 Roda no host (user `deploy`, ja no grupo docker) via cron a cada 5 min. Quiet por padrao:
 so imprime quando ha alerta/erro (o cron nao gera lixo de log). `exit 0` sempre — nunca
-quebra o cron. 6 checks:
+quebra o cron. 7 checks:
 
 1. **Disco** da particao raiz (`DISK_USAGE_MAX`, default 85%).
 2. **RAM** disponivel `MemAvailable` (`MEM_AVAILABLE_MIN_PCT`, default 10%).
@@ -18,6 +18,20 @@ quebra o cron. 6 checks:
 5. **Containers em `restarting`** (crash-loop).
 6. **`GET 127.0.0.1:18080/healthz`** (porta local, nao depende do Caddy compartilhado):
    200=ok, 503=banco fora, 000=api fora.
+7. **Saude do n8n** (OBS-07): container do profile automation no ar + workflows criticos
+   `active=true`. NO-OP se `N8N_COMPOSE_DIR` (default `/home/deploy/lista-atendimento`) nao
+   existir — nao quebra a sonda em hosts sem automation.
+   - `critical`: container n8n fora (`ps -q n8n` vazio) ou `unhealthy` — Calendario/Omni Chat parados.
+   - `warning`: container no ar mas >=1 workflow critico despausado (degradacao parcial), ou o
+     export falhou (CLI/Node com problema).
+   - Le o estado real via `n8n export:workflow --all` + parse do `active` (respeita o WAL do
+     SQLite; `docker cp database.sqlite` nao leva writes recentes) — MESMO mecanismo do deploy.
+   - **Contrato de IDs:** `N8N_CRITICAL_IDS` (default `calendaromni0001 calendarchat0001
+     calendartrans001 omnichatmvp00001`) e a MESMA lista de `scripts/deploy/deploy-pull.ps1:246`.
+     Mudou uma, muda a outra. Whatsapp fica de fora (nao e core de prod, igual ao deploy).
+   - Roda como `deploy` (ja tem acesso docker) — **sem token/credencial n8n** para so *ler* o estado.
+   - Envs opcionais (so se path/porta divergirem do default): `N8N_COMPOSE_DIR`, `N8N_ENV_FILE`
+     (default `.env.production`), `N8N_CRITICAL_IDS`.
 
 ## Config (na VPS, NUNCA no repo)
 

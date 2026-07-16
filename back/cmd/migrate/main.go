@@ -43,6 +43,24 @@ func main() {
 
 		logger.Info("migration_up_ok")
 
+		ensured, err := database.EnsureAppRole(ctx, pool, cfg.DatabaseAppURL)
+		if err != nil {
+			logger.Error("app_role_ensure_failed", slog.Any("error", err))
+			os.Exit(1)
+		}
+		switch {
+		case ensured.SkipReason == "":
+			logger.Info("app_role_ensure_ok", slog.Bool("created", ensured.Created))
+		case strings.EqualFold(cfg.Env, "production") &&
+			(ensured.SkipReason == "empty_password" || ensured.SkipReason == "empty_url"):
+			// Fail-fast: subir a api sem role utilizável = crash-loop 28P01
+			// (incidente 2026-07-03). Melhor derrubar o migrate com motivo claro.
+			logger.Error("app_role_ensure_failed", slog.String("reason", ensured.SkipReason))
+			os.Exit(1)
+		default:
+			logger.Info("app_role_ensure_skipped", slog.String("reason", ensured.SkipReason))
+		}
+
 		granted, err := database.SyncAppRoleGrants(ctx, pool, cfg.DatabaseAppURL)
 		if err != nil {
 			logger.Error("app_role_grants_failed", slog.Any("error", err))

@@ -210,15 +210,23 @@ func (repository *PostgresRepository) SyncLinkedIdentity(ctx context.Context, us
 	return err
 }
 
-func (repository *PostgresRepository) SyncLinkedAccess(ctx context.Context, input LinkedAccessSyncInput) error {
+// SyncLinkedAccess mantem a linha do roster (queue.consultants) em sincronia com
+// o acesso do usuario editado pela grade de Usuarios (o "atalho unificado"):
+//   - papel != consultor: desativa o roster existente (sai da Lista da vez);
+//   - papel consultor sem roster: CRIA a linha (usuario vira consultor e entra
+//     na fila mesmo sem passar pela aba Consultores);
+//   - papel consultor com roster: atualiza tenant/loja/nome/ativo (troca de loja).
+//
+// Devolve as lojas afetadas para o caller publicar operation.updated (WebSocket).
+func (repository *PostgresRepository) SyncLinkedAccess(ctx context.Context, input LinkedAccessSyncInput) ([]string, error) {
 	trimmedUserID := strings.TrimSpace(input.UserID)
 	if trimmedUserID == "" {
-		return nil
+		return nil, nil
 	}
 
 	tx, err := repository.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer func() {
@@ -226,22 +234,25 @@ func (repository *PostgresRepository) SyncLinkedAccess(ctx context.Context, inpu
 	}()
 
 	var consultantID string
+	var existingStoreID *string
 	err = tx.QueryRow(ctx, `
-		select id::text
+		select id::text, store_id::text
 		from queue.consultants
 		where user_id = $1::uuid
 		order by is_active desc, updated_at desc
 		limit 1;
-	`, trimmedUserID).Scan(&consultantID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-
-		return err
+	`, trimmedUserID).Scan(&consultantID, &existingStoreID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
 	}
 
+	notFound := errors.Is(err, pgx.ErrNoRows)
+
 	if input.Role != auth.RoleConsultant {
+		if notFound {
+			return nil, nil
+		}
+
 		if _, err := tx.Exec(ctx, `
 			update queue.consultants
 			set
@@ -249,17 +260,63 @@ func (repository *PostgresRepository) SyncLinkedAccess(ctx context.Context, inpu
 				updated_at = now()
 			where id = $1::uuid;
 		`, consultantID); err != nil {
-			return err
+			return nil, err
 		}
 
-		return tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+
+		return appendStoreID(nil, existingStoreID), nil
 	}
 
 	trimmedName := strings.TrimSpace(input.DisplayName)
 	trimmedTenantID := strings.TrimSpace(input.TenantID)
 	trimmedStoreID := strings.TrimSpace(input.StoreID)
 	if trimmedName == "" || trimmedTenantID == "" || trimmedStoreID == "" {
-		return ErrValidation
+		return nil, ErrValidation
+	}
+
+	if notFound {
+		// Consultor inativo sem roster nao precisa de linha.
+		if !input.Active {
+			return nil, nil
+		}
+
+		if _, err := tx.Exec(ctx, `
+			insert into queue.consultants (
+				tenant_id,
+				store_id,
+				user_id,
+				name,
+				role_label,
+				initials,
+				color,
+				is_active
+			)
+			values (
+				$1::uuid,
+				$2::uuid,
+				$3::uuid,
+				$4,
+				'Atendimento',
+				$5,
+				$6,
+				true
+			);
+		`, trimmedTenantID, trimmedStoreID, trimmedUserID, trimmedName, buildInitials(trimmedName), normalizeColor("")); err != nil {
+			if isConsultantNameConflict(err) {
+				return nil, ErrConsultantConflict
+			}
+
+			return nil, err
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+
+		return []string{trimmedStoreID}, nil
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -274,13 +331,40 @@ func (repository *PostgresRepository) SyncLinkedAccess(ctx context.Context, inpu
 		where id = $1::uuid;
 	`, consultantID, trimmedTenantID, trimmedStoreID, trimmedName, buildInitials(trimmedName), input.Active); err != nil {
 		if isConsultantNameConflict(err) {
-			return ErrConsultantConflict
+			return nil, ErrConsultantConflict
 		}
 
-		return err
+		return nil, err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	affected := appendStoreID(nil, existingStoreID)
+	affected = appendStoreID(affected, &trimmedStoreID)
+	return affected, nil
+}
+
+// appendStoreID acrescenta um storeID (ignora nil/vazio/duplicado) na lista de
+// lojas afetadas usada para o broadcast de operation.updated.
+func appendStoreID(ids []string, value *string) []string {
+	if value == nil {
+		return ids
+	}
+
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return ids
+	}
+
+	for _, existing := range ids {
+		if existing == trimmed {
+			return ids
+		}
+	}
+
+	return append(ids, trimmed)
 }
 
 func (repository *PostgresRepository) Create(ctx context.Context, consultant Consultant, access ConsultantAccessSeed) (Consultant, error) {

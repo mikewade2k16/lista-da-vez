@@ -13,3 +13,20 @@
 # golangci-lint colidirem com "parallel golangci-lint is running". Forcamos
 # execucao serial para evitar essa race condition.
 npx lint-staged --concurrent 1
+LINT_STATUS=$?
+
+# Guard OBS-08: AVISA (nao bloqueia) se os workflows versionados em automation/export/
+# estao ATRAS do n8n dev rodando. So roda se o container n8n dev estiver up (fonte da
+# verdade local); se estiver down ou sem docker, e no-op. NAO bloqueia o commit (decisao
+# do dono: alertar, nao travar; o gatilho -Sync do deploy garante o export de qualquer jeito).
+# Para pular o commit sem esse aviso: git commit --no-verify.
+N8N_DEV_CONTAINER="omni-n8n-1"
+if command -v docker >/dev/null 2>&1; then
+  if [ -n "$(docker ps -q -f "name=^${N8N_DEV_CONTAINER}$" 2>/dev/null)" ]; then
+    if command -v powershell.exe >/dev/null 2>&1; then
+      powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev/n8n-export.ps1 -Check -Container "$N8N_DEV_CONTAINER" || true
+    fi
+  fi
+fi
+
+exit $LINT_STATUS

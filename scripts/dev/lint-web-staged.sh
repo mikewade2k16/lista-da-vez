@@ -34,4 +34,7 @@ if [ "${#rel_files[@]}" -eq 0 ]; then
 fi
 
 cd "$web_root"
-exec npx eslint --fix --max-warnings=999 "${rel_files[@]}"
+# Nao use `npx eslint` aqui: quando node_modules foi criado no container,
+# web/node_modules/.bin/eslint e um symlink Linux quebrado no host Windows.
+# Chamar o entrypoint com Node funciona nos dois ambientes.
+exec node node_modules/eslint/bin/eslint.js --fix --max-warnings=999 "${rel_files[@]}"

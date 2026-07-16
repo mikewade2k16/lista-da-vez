@@ -141,22 +141,29 @@ Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
   global para objetos futuros) sao **auto-sincronizados** por `SyncAppRoleGrants`
   (`app_role_grants.go`) a cada `migrate up` — cobre schemas/tabelas novos sem
   passo manual. A lista de schemas vem de `pg_namespace` (nada hardcoded).
-- **ARMADILHA (incidente 2026-07-03):** so os GRANTs se auto-curam. A **existencia +
-  senha** da role NAO — se a role `omni_app` nao existe, `SyncAppRoleGrants` retorna
-  `(false, nil)` e loga `app_role_grants_skipped`, e a api entra em crash-loop (`28P01`)
-  ao abrir `OpenAppPool`. Num deploy novo isso significa outage total (api crash-loop →
-  web nao sobe → 502), porque criar a role e um passo manual de runbook (`create-app-role.sql`),
-  nao automatizado. **Fix planejado** (`ac-04b-migrate-auto-provision-role`): o `migrate`
-  (que roda como superuser e ja tem nome+senha em `DATABASE_APP_URL`) passa a criar a role
-  no boot — `CREATE ROLE IF NOT EXISTS` + `ALTER ROLE ... PASSWORD` + `GRANT CONNECT`,
-  idempotente. Runbook e causa raiz em `docs/DEPLOY_VPS.md` e `docs/MULTITENANT_COMPLETION_PLAN.md` (AC-04).
+- **AC-04b — auto-provisao da role (IMPLEMENTADO):** a **existencia + senha** da role
+  agora tambem se auto-curam. O `migrate up` chama `EnsureAppRole` (`app_role_ensure.go`)
+  ANTES de `SyncAppRoleGrants`: extrai nome+senha de `DATABASE_APP_URL` e, como a role
+  privilegiada que ja e, `CREATE ROLE ... LOGIN` (se ausente) + `ALTER ROLE ... PASSWORD`
+  (converge senha/atributos least-privilege sempre — cura rotacao) + `GRANT CONNECT`,
+  tudo idempotente e numa tx com `log_statement=none` para a senha nao vazar no log do
+  Postgres. **Fail-fast:** em `APP_ENV=production`, se a role for pulada por `empty_url`
+  ou `empty_password`, o `migrate` sai com `os.Exit(1)` e loga `app_role_ensure_failed` —
+  em vez do crash-loop opaco `28P01` da api. Em dev sem role dedicada (app e migrate na
+  mesma role), pula com `same_role` e segue. Log de sucesso: `app_role_ensure_ok created=<bool>`.
+  Com isso o deploy AC-04 vira self-healing: nenhum ambiente novo (prod/staging/dev com
+  volume limpo) cai no incidente de 2026-07-03. Contrato de `SyncAppRoleGrants` intacto
+  (segue como defesa em profundidade). Runbook/causa raiz em `docs/DEPLOY_VPS.md` e
+  `docs/MULTITENANT_COMPLETION_PLAN.md` (AC-04).
 - Script canonico de criacao da role: `scripts/db/create-app-role.sql` (idempotente,
   cluster-level, senha via `-v pw`). Dev: `scripts/db/postgres-init/10-app-role.sh`
   roda no init do volume (docker-entrypoint-initdb.d) e e reutilizavel em volume
   existente via `docker compose exec -T postgres sh /docker-entrypoint-initdb.d/10-app-role.sh`.
-- Teste de integracao: `app_role_grants_test.go` (skip sem `TEST_DATABASE_URL`) —
-  prova DML permitido (`select core.users`) e DDL negado (`create table`/`create schema`
-  retornam SQLSTATE 42501).
+- Testes de integracao (skip sem `TEST_DATABASE_URL`): `app_role_grants_test.go` prova
+  DML permitido (`select core.users`) e DDL negado (`create table`/`create schema`
+  retornam SQLSTATE 42501); `app_role_ensure_test.go` cobre criacao, idempotencia,
+  rotacao de senha, os tres skips (`empty_url`/`same_role`/`empty_password`, sem tocar
+  DDL) e a rejeicao de nome de role invalido.
 
 ## Notas recentes de schema
 

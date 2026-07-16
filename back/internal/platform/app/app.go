@@ -219,6 +219,9 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		}()
 	}
 	usersService := users.NewService(usersRepository, hasher, invitationService, realtimeService, consultantProfileSync)
+	// Atalho unificado: editar/criar consultor pela grade de Usuarios sincroniza o
+	// roster (queue.consultants) e transmite operation.updated ao vivo por loja.
+	usersService.SetOperationPublisher(realtimeService)
 	// AC-01: cache de Principals com TTL curto + invalidacao sincrona. nil quando
 	// AUTH_PRINCIPAL_CACHE_TTL=0s (comportamento legado preservado).
 	principalCache := wirePrincipalCache(cfg, logger, authService, accessService, usersService)

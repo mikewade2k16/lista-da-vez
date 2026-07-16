@@ -29,15 +29,15 @@ func (syncer *ProfileSync) SyncLinkedProfile(ctx context.Context, userID string,
 	return syncer.repository.SyncLinkedIdentity(ctx, trimmedUserID, trimmedDisplayName, buildInitials(trimmedDisplayName))
 }
 
-func (syncer *ProfileSync) SyncLinkedAccess(ctx context.Context, user usersmodule.User) error {
+func (syncer *ProfileSync) SyncLinkedAccess(ctx context.Context, user usersmodule.User) ([]string, error) {
 	if syncer == nil || syncer.repository == nil {
-		return nil
+		return nil, nil
 	}
 
 	trimmedUserID := strings.TrimSpace(user.ID)
 	trimmedDisplayName := strings.TrimSpace(user.DisplayName)
 	if trimmedUserID == "" || trimmedDisplayName == "" {
-		return nil
+		return nil, nil
 	}
 
 	trimmedStoreID := ""

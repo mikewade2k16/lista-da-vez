@@ -372,12 +372,12 @@ Interacao-chave:
 > o video, `useCalendarMedia.uploadVideoWithPoster` captura o 1o frame via
 > [utils/calendar-poster.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/utils/calendar-poster.ts)
 > (`<video>`+`<canvas>`, JPEG 640px) e sobe como imagem normal; falha do poster NAO falha o upload.
-> **Fundo do dia (SPEC-F2)**: os anexos avulsos por dia vem do store via
-> [composables/useCalendarDayMedia.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarDayMedia.ts)
-> (estado `dayMediaByDate` + `fetchDayMedia`/`saveDayMedia`, extraido do store na SPEC-F3 p/ manter
-> < 450 linhas; `GET /v1/calendar/day-media?from=&to=` via `calendarApi.fetchDayMediaInRange`, buscado
-> na MESMA janela debounced dos eventos e zerado na troca de conta; PUT via `calendarApi.putDayMedia`).
-> [MonthGrid]/[WeekView] passam `bgUrls` por dia (helper `dayBackgroundUrls`) e [DayCell] pinta o fundo. Rota/nav ainda sem gate proprio no front (preview); o
+> **Fundo do dia (SPEC-F2 / WAVE 13)**: toda midia pertence a um EVENTO (o conceito de "anexo do
+> dia"/`day_media` foi ELIMINADO). `dayBackgroundUrls(events)` deriva a 1a midia exibivel de cada
+> evento do dia; [MonthGrid]/[WeekView] passam `bgUrls` por dia e [DayCell] pinta o fundo. A "Midia
+> do post" do [DayDrawer] e EDITAVEL ([CalendarMediaUploader] sem `readonly`): upload por clique,
+> ARRASTAR arquivo do PC (drop-zone que distingue `Files` do reorder interno), remover, reordenar —
+> grava em `ev.media` via `store.updateEvent` (full-replace + optimistic locking). Rota/nav ainda sem gate proprio no front (preview); o
 > gate de API `/v1/calendar` ja existe (platform_admin bypassa). Fases seguintes (white-label, perfil
 > do cliente + IA, aprovacao WhatsApp) em
 > [docs/CALENDARIO_PLAN.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/docs/CALENDARIO_PLAN.md).
@@ -567,7 +567,7 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
   - [composables/useCalendarRealtime.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/composables/useCalendarRealtime.ts)
     — canal por conta (`/v1/realtime/calendar`, scope=account, topico `calendar:account:{id}`).
     Aplica por INVALIDACAO (o WS so avisa "mudou", o front refaz o fetch, nunca patch local):
-    `calendar.event_*`/`calendar.day_media_updated` -> `store.refetchWindow()` (debounce 250ms,
+    `calendar.event_*` -> `store.refetchWindow()` (debounce 250ms,
     coalesce de rajada); `calendar.note_updated` -> `store.reloadNoteFromRemote(monthKey)` (SO se a
     nota ja carregada e SEM save pendente — o rascunho local vence, principio 1); `calendar.config_updated`
     -> `store.fetchConfig()`; `calendar.plan_updated` -> `lastPlanEvent` repassado ao `CalendarAiPlanModal`
@@ -617,10 +617,11 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
   (TipTap). Preenche a coluna abaixo dos controles.
 - [DayDrawer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/DayDrawer.vue)
   Drawer do dia (`role="dialog"`): detalhe do item (pilulas cliente/tipo, Status/Prioridade/
-  Responsavel/Horario) + **midia do post** (uploader readonly) + **Editar/Excluir** + lista dos itens
-  - **Anexos do dia** (uploader editavel). Fonte unica no store: le `store.selectedDayMedia` (do Map
-    `dayMediaByDate` buscado na janela, sem refetch por dia) e salva por `store.saveDayMedia(date, media)`
-    (PUT + atualiza o Map). Espelha o modal de Tasks (DESIGN_SYSTEM §9).
+  Responsavel/Horario) + **Editar/Excluir** + lista dos itens.
+  - **Mídia do post** (WAVE 13, uploader EDITAVEL): upload clique/drop-de-arquivo, remover, reordenar;
+    grava em `ev.media` via `store.updateEvent` (`onEventMedia`->`updateField`). Os videos espelhados da
+    task (`ev.linkedMedia`) aparecem numa secao read-only separada "Mídia da task". A antiga secao "Anexos
+    do dia" foi REMOVIDA (day_media eliminado). Espelha o modal de Tasks (DESIGN_SYSTEM §9).
   - **Task vinculada (SPEC-F8, contrato C10)**: quando `activeEvent.taskId` != '' mostra o link
     `.calendar-drawer__tasklink` -> `/tasks` (NuxtLink). Ainda SEM deep-link para a task especifica no
     board (o board `/tasks` nao le query `?task=`); leva pra pagina e o usuario acha a task. `EventChip`

@@ -457,7 +457,11 @@ function toOptionalDateTime(value: unknown) {
 }
 
 function looksLikeUUID(value: unknown) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+  // Formato UUID generico (QUALQUER versao/variante). O regex antigo exigia v4 estrito
+  // ([1-5] + [89ab]) e REJEITAVA uuids de seed/importados (ex.: cccccccc-...-c005,
+  // aaaaaaaa-...) — o Postgres aceita qualquer uuid, e a rejeicao silenciosa aqui fazia
+  // responsibleUserId/clientAccountId virarem null no PATCH (campo "nao salvava").
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
     normalizeText(value, 80),
   )
 }
@@ -791,7 +795,14 @@ function mapTaskToStoreItem(
     createdAt: normalizeText(task.createdAt, 80) || new Date().toISOString(),
     updatedAt: normalizeText(task.updatedAt, 80) || new Date().toISOString(),
     videos: normalizeTaskVideos(resolvedTaskUi?.videos),
-    calendarMedia: normalizeCalendarMedia(resolvedTaskUi?.calendarMedia),
+    // calendarMedia e ESPELHO server-populated (WAVE 6 cruzamento A), read-only: vem direto
+    // do ui_metadata do BACK, sem passar pelo pipeline de patch local (normalizeTaskUiMetadata
+    // faz whitelist p/ escrita e descartava a chave — regressao que sumia a midia no card/modal).
+    calendarMedia: normalizeCalendarMedia(
+      hasTaskUiMetadataEnvelope(task.uiMetadata)
+        ? (task.uiMetadata as Record<string, unknown>).calendarMedia
+        : undefined,
+    ),
     columnId: normalizeText(mappedColumn?.id || explicitColumnId, 80),
     version: Number(task.version || 0) || 0,
     responsibleUserId: responsibleUserId || undefined,
@@ -1701,7 +1712,9 @@ export const useTasksStore = defineStore('tasks', () => {
         sortOrder: Number.isFinite(Number(payload.order))
           ? Number(payload.order)
           : nextOrder(project.id, status, undefined, 0),
-        responsibleUserId: resolveResponsibleUserId(undefined, payload.responsible),
+        responsibleUserId:
+          normalizeText((payload as TasksStoreTaskItem).responsibleUserId, 80) ||
+          resolveResponsibleUserId(undefined, payload.responsible),
         clientAccountId: looksLikeUUID(payload.clientId)
           ? payload.clientId
           : looksLikeUUID((payload as TasksStoreTaskItem).clientAccountId)
@@ -1877,9 +1890,13 @@ export const useTasksStore = defineStore('tasks', () => {
       sortOrder: Object.prototype.hasOwnProperty.call(patch, 'order')
         ? Number(patch.order || 0)
         : undefined,
-      responsibleUserId: Object.prototype.hasOwnProperty.call(patch, 'responsible')
-        ? resolveResponsibleUserId(currentTask, patch.responsible)
-        : undefined,
+      // responsibleUserId EXPLICITO no patch (ex.: chat do calendario, que ja resolveu o
+      // UUID) vence; senao deriva do label 'responsible' (fluxo do board).
+      responsibleUserId: Object.prototype.hasOwnProperty.call(patch, 'responsibleUserId')
+        ? normalizeText((patch as TasksStoreTaskItem).responsibleUserId, 80) || null
+        : Object.prototype.hasOwnProperty.call(patch, 'responsible')
+          ? resolveResponsibleUserId(currentTask, patch.responsible)
+          : undefined,
       clientAccountId:
         Object.prototype.hasOwnProperty.call(patch, 'clientName') ||
         Object.prototype.hasOwnProperty.call(patch, 'clientId') ||

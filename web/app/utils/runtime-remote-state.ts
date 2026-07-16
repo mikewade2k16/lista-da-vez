@@ -24,6 +24,28 @@ interface ApplySnapshotOptions {
   resetFinishModal?: boolean
 }
 
+// mergeRosterWithSnapshot reconcilia o roster de gestao (rico, com metas) com a
+// MEMBERSHIP autoritativa do snapshot da operacao (queue.consultants por loja):
+// mantem a entrada rica de quem continua, adiciona a entrada enxuta de quem entrou
+// e remove quem saiu. Snapshot sem roster (papel operador sem dado) preserva o
+// roster existente. Corrige a faixa de participantes ao trocar de loja e no WS.
+function mergeRosterWithSnapshot(existingRoster, snapshotRoster) {
+  const existing = Array.isArray(existingRoster) ? existingRoster : []
+  const snapshot = Array.isArray(snapshotRoster) ? snapshotRoster : []
+
+  if (!snapshot.length) {
+    return existing
+  }
+
+  const existingById = new Map(existing.map((person) => [String(person?.id || '').trim(), person]))
+
+  return snapshot.map((person) => {
+    const id = String(person?.id || '').trim()
+    const rich = id ? existingById.get(id) : null
+    return rich || person
+  })
+}
+
 function resolveSelectedConsultantId(currentState, storeId, roster) {
   const currentSnapshot = currentState.storeSnapshots?.[storeId] || {}
   const preferredId =
@@ -74,11 +96,16 @@ export function applyOperationSnapshotToState(
       : normalizedStoreId === currentState?.activeStoreId
         ? cloneOrFallback(currentState?.roster, [])
         : []
-  // Sem roster de gestao (papel operador sem consultor.view), usa o roster
-  // enxuto que vem dentro do snapshot da operacao para manter a faixa viva.
-  const roster = existingRoster.length
-    ? existingRoster
-    : normalizeConsultants(operationSnapshot?.roster)
+  // O roster DENTRO do snapshot da operacao e autoritativo para a MEMBERSHIP da
+  // loja (mesma queue.consultants). Fazemos merge: mantem a entrada rica de gestao
+  // (com metas) de quem continua no snapshot, ADICIONA consultor novo que entrou e
+  // REMOVE quem saiu — refletindo a Lista da vez ao trocar de loja e no WS sem
+  // perder metas. Sem roster no snapshot (papel operador sem dado), preserva o
+  // roster de gestao existente para manter a faixa viva.
+  const roster = mergeRosterWithSnapshot(
+    existingRoster,
+    normalizeConsultants(operationSnapshot?.roster),
+  )
   const fallbackScopedState = normalizeStoreScopedState(
     {
       ...cloneOrFallback(activeScopedState, {}),

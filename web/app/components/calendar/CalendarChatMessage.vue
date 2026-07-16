@@ -114,6 +114,11 @@ function proposalTitle(p: CalendarChatStoredProposal): string {
     const month = String(p.fields.note?.month || '').trim()
     return month ? `Anotações · ${month}` : 'Anotações do mês'
   }
+  // Update/delete: o cabecalho mostra o item ALVO (titulo atual, resolvido do snapshot
+  // server-side nos calendarItems) — e o que sera alterado; o titulo novo aparece no diff.
+  if (p.action !== 'create') {
+    return targetTitle(p) || String(p.fields.title || '').trim() || '(sem titulo)'
+  }
   return String(p.fields.title || '').trim() || targetTitle(p) || '(sem titulo)'
 }
 function proposalChanges(p: CalendarChatStoredProposal) {
@@ -168,11 +173,25 @@ function needsClient(p: CalendarChatStoredProposal): boolean {
 // showClientPicker: quando exibir o seletor de cliente no cartao (escopo "todos"). Perfil do cliente
 // NAO deixa trocar o cliente (ele e a identidade do perfil): so aparece como RESGATE quando a IA nao
 // resolveu o cliente; resolvido => sem seletor (o titulo ja mostra "Perfil de X"). Evento/task no
-// create mostra o seletor normal (pode atribuir/trocar o cliente do item).
+// create: cliente ja resolvido => rotulo fixo + botao "Trocar" (o select so abre se PEDIDO);
+// sem cliente => select direto. Update/delete herdam o cliente do alvo (sem select).
+const pickerRequested = ref<Set<string>>(new Set())
+function requestPicker(id: string): void {
+  pickerRequested.value = new Set(pickerRequested.value).add(id)
+}
 function showClientPicker(p: CalendarChatStoredProposal): boolean {
   if (!isAll.value || p.status !== 'pending' || !props.clients.length) return false
   if (p.kind === 'clientProfile') return !resolvedClientId(p)
-  return p.action === 'create'
+  if (p.action !== 'create') return false
+  return !resolvedClientId(p) || pickerRequested.value.has(p.id)
+}
+// showClientLabel: create com cliente ja resolvido (e select fechado) => mostra o cliente
+// como rotulo com a opcao de trocar, em vez de abrir o select sem necessidade.
+function showClientLabel(p: CalendarChatStoredProposal): boolean {
+  if (!isAll.value || p.status !== 'pending' || !props.clients.length) return false
+  if (p.kind !== 'event' && p.kind !== 'task') return false
+  if (p.action !== 'create') return false
+  return Boolean(resolvedClientId(p)) && !pickerRequested.value.has(p.id)
 }
 // --- Edit inline (WAVE 9): estado aqui, helpers puros no util calendar-chat-proposal-edit ---
 function isEditing(id: string): boolean {
@@ -528,9 +547,21 @@ function openMedia(items: CalendarMediaItem[], index: number): void {
                 </label>
               </div>
 
-              <!-- Escopo "todos": seletor de cliente por item (editar uma a uma). -->
+              <!-- Escopo "todos": cliente resolvido vira rotulo fixo + "Trocar" (select so se pedido). -->
+              <p v-if="showClientLabel(p)" class="calendar-chat__proposal-client-label">
+                <UIcon name="i-lucide-user-round" aria-hidden="true" />
+                <span>{{ clientName(resolvedClientId(p)) }}</span>
+                <button
+                  type="button"
+                  class="calendar-chat__proposal-client-swap"
+                  :disabled="busy"
+                  @click="requestPicker(p.id)"
+                >
+                  Trocar
+                </button>
+              </p>
               <select
-                v-if="showClientPicker(p)"
+                v-else-if="showClientPicker(p)"
                 class="calendar-chat__proposal-client"
                 :value="resolvedClientId(p)"
                 :disabled="busy"

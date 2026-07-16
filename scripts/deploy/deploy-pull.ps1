@@ -173,11 +173,13 @@ printf '%s\n' "$remotePath/backups/`$latest"
 }
 
 # 5. Pull + up SEM build (a VPS nunca compila).
-# PRE-REQUISITO AC-04 (incidente 2026-07-03): a imagem conecta como a role least-privilege
-# `omni_app`. Se ela nao existir no banco, a api entra em crash-loop (28P01), a web nao sobe
-# e o painel da 502 — este script NAO cria a role. Runbook em docs/DEPLOY_VPS.md
-# (secao "Role de runtime omni_app"). Prevencao planejada: auto-provisao no `migrate up`
-# (roadmap ac-04b-migrate-auto-provision-role).
+# AC-04b (self-healing): a partir da imagem que contem o ac-04b, o `migrate up` auto-provisiona
+# a role least-privilege `omni_app` no boot (cria + converge senha + grant connect a partir de
+# DATABASE_APP_URL) e em production falha alto e cedo se faltar senha — criar a role deixou de
+# ser pre-requisito manual. IMAGENS ANTIGAS (pre-ac-04b): a api conecta como `omni_app` mas NAO
+# a cria; se a role nao existir, entra em crash-loop (28P01), a web nao sobe e o painel da 502 —
+# este script NAO cria a role. Runbook (fallback) em docs/DEPLOY_VPS.md (secao "Role de runtime
+# omni_app").
 $deployCmd = @"
 set -euo pipefail
 cd $remotePathQ
@@ -234,10 +236,15 @@ else
   echo "AVISO: nao consegui exportar backup dos workflows n8n; seguindo com import." >&2
 fi
 
+import_ok=1
 for wf in automation/export/workflow-*.json; do
   base=`$(basename "`$wf")
   docker compose $composeAutomationArgs cp "`$wf" "n8n:/tmp/`$base"
-  docker compose $composeAutomationArgs exec -T n8n n8n import:workflow --input="/tmp/`$base"
+  # O import tem de reportar "Successfully imported"; senao a versao nova NAO entrou
+  # (import silencioso ja deixou a VPS defasada do arquivo por dias). Falhou -> nao
+  # grava o marker (proximo deploy re-tenta em vez de "marcar como feito").
+  import_out=`$(docker compose $composeAutomationArgs exec -T n8n n8n import:workflow --input="/tmp/`$base" 2>&1)
+  printf '%s\n' "`$import_out" | grep -qiE 'Successfully imported' || { echo "ERRO: import de `$base falhou:" >&2; printf '%s\n' "`$import_out" >&2; import_ok=0; }
 done
 
 # Mantem ativos os workflows internos que prod usa hoje e preserva qualquer workflow
@@ -250,8 +257,37 @@ done
 done
 docker compose $composeAutomationArgs restart n8n
 
+# Verificacao pos-import: o n8n so re-le o workflow do banco depois do restart. Confere
+# que cada workflow versionado REALMENTE ficou identico ao que esta no banco do n8n
+# (via export:workflow, que aplica o WAL). Se algum divergir, o import nao pegou de fato
+# (marker enganoso, WAL, id trocado) -> NAO grava o marker, para o proximo deploy re-tentar.
+verify_ok=1
+sleep 8
+for wf in automation/export/workflow-*.json; do
+  wid=`$(docker compose $composeAutomationArgs exec -T n8n node -e "console.log((JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).id)||'')" "/tmp/`$(basename "`$wf")" 2>/dev/null | tr -d '\r')
+  [ -z "`$wid" ] && continue
+  if docker compose $composeAutomationArgs exec -T n8n n8n export:workflow --id="`$wid" --output="/tmp/verify_`$wid.json" >/dev/null 2>&1; then
+    # compara os 'nodes' normalizados (ordem estavel) entre arquivo e banco
+    same=`$(docker compose $composeAutomationArgs exec -T n8n node -e "
+      const fs=require('fs');
+      const norm=o=>JSON.stringify(((Array.isArray(o)?o[0]:o).nodes||[]).map(n=>({name:n.name,type:n.type,parameters:n.parameters})).sort((a,b)=>a.name<b.name?-1:1));
+      const a=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));
+      const b=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+      process.stdout.write(norm(a)===norm(b)?'SAME':'DIFF');
+    " "/tmp/`$(basename "`$wf")" "/tmp/verify_`$wid.json" 2>/dev/null)
+    if [ "`$same" != "SAME" ]; then echo "ERRO: n8n `$wid diverge do arquivo apos import." >&2; verify_ok=0; fi
+  else
+    echo "AVISO: nao consegui verificar `$wid (export falhou)." >&2
+  fi
+done
+
+if [ "`$import_ok" != "1" ] || [ "`$verify_ok" != "1" ]; then
+  echo "ERRO: import/verificacao de workflows n8n NAO concluiu 100%. Marker nao gravado; rode o deploy de novo (ou com -ForceAutomationWorkflowImport)." >&2
+  exit 1
+fi
+
 printf '%s\n' "`$manifest" > "`$marker"
-echo "Workflows n8n importados e n8n reiniciado."
+echo "Workflows n8n importados, reiniciados e VERIFICADOS (banco == arquivo)."
 "@
   Invoke-RemoteCommand -Description "Profile automation + import de workflows n8n no $Environment" -Command $automationCmd
 }

@@ -161,6 +161,11 @@ export function useCalendarChat() {
   const conversationId = useState<string>('calendar-chat:conversation', () => '')
   const conversationTitle = useState<string>('calendar-chat:title', () => '')
 
+  // draftFromVoice (WAVE 15): o rascunho atual veio de TRANSCRICAO DE AUDIO (Whisper/ditado).
+  // Vai como `viaVoice` no /ask — o prompt trata erros foneticos como provaveis. O painel marca
+  // ao preencher por voz e limpa quando o usuario digita manualmente.
+  const draftFromVoice = useState<boolean>('calendar-chat:draft-voice', () => false)
+
   // WAVE 5 (E7): proposta pendente de criacao (evento/task) sugerida pela IA. O painel
   // renderiza um cartao de confirmacao; confirmar cria pela API do proprio usuario.
   const proposalBusyId = useState<string>('calendar-chat:proposal-busy-id', () => '')
@@ -370,6 +375,8 @@ export function useCalendarChat() {
     messages.value = [...messages.value, localMessage('user', trimmed)]
 
     try {
+      const viaVoice = draftFromVoice.value
+      draftFromVoice.value = false
       const response = (await apiRequest('/v1/calendar/chat/ask', {
         method: 'POST',
         body: {
@@ -380,6 +387,8 @@ export function useCalendarChat() {
           scopeMode: scopeMode.value,
           scopeClientId: scopeMode.value === 'client' ? scopeClientId.value : '',
           month: store.focusMonthKey || '',
+          // WAVE 15: veio de transcricao de audio => o prompt considera erros foneticos.
+          viaVoice,
         },
         signal: controller.signal,
       })) as CalendarChatAskResponse
@@ -545,6 +554,24 @@ export function useCalendarChat() {
     }
     const targetId = String(f.targetId || '')
     const proposedResponsibleId = resolveResponsibleId(proposalText(f, 'responsibleId'))
+    // Labels legiveis para a TASK (WAVE 14): a task guarda o NOME no ui (responsible/involved/
+    // clientName) e o UUID nas colunas proprias. Traduz id->nome pela mesma fonte da tela.
+    const personName = (id: string): string =>
+      (store.people || []).find((p) => p.id === id)?.name || id
+    const proposedResponsibleName = proposedResponsibleId ? personName(proposedResponsibleId) : ''
+    const involvedNames = (ids: string[]): string[] => ids.map(personName)
+    const chatClientName = (id: string): string =>
+      chatScope.value.clients.find((c) => c.id === id)?.name || ''
+    // Alguns modelos mandam dueDate como ISO completo ("2026-07-27T16:30:00Z") em vez de
+    // data + time separados. Normaliza para {date, time} (hora de parede, sem fuso): o PATCH
+    // de evento exige data pura e a composicao `${date}T${time}` quebraria com o ISO cru.
+    const splitProposalDate = (
+      raw: string,
+      explicitTime: string,
+    ): { date: string; time: string } => {
+      if (!raw.includes('T')) return { date: raw, time: explicitTime }
+      return { date: raw.slice(0, 10), time: explicitTime || raw.slice(11, 16) }
+    }
 
     async function loadConfiguredTasksBoard(includeArchived = false): Promise<string> {
       const boardId = String(store.config.tasks?.boardId || '')
@@ -563,13 +590,19 @@ export function useCalendarChat() {
       if (!boardId)
         return 'Configure um board na aba Integrações da config para usar tasks pelo chat.'
       const tasksStore = useTasksStore()
-      const eventTaskId = store.getEventById(targetId)?.taskId || ''
-      const taskId = eventTaskId || targetId
+      const targetEvent = store.getEventById(targetId)
+      const taskId = targetEvent?.taskId || targetId
       let existingTask = tasksStore.tasks.find((task) => task.id === taskId)
       if (!existingTask) {
         // Rede de seguranca: a IA manda o NOME da task no targetId em vez do UUID, as vezes parcial.
         // Casa pelo titulo (igual/contido) se UNICO — cobre "Brasil GMS" -> "Brasil GMS Tooop".
         existingTask = matchByTitle(tasksStore.tasks, taskId)
+      }
+      if (!existingTask && targetEvent?.title) {
+        // targetId era o EVENTO ESPELHO sem taskId no payload da janela: casa a task do board
+        // pelo TITULO do evento (mesmo titulo, espelho 1:1) — senao o delete/patch cairia no
+        // caminho de evento e apagaria/editaria SO o espelho.
+        existingTask = matchByTitle(tasksStore.tasks, targetEvent.title)
       }
       if ((action === 'update' || action === 'delete') && !existingTask) {
         return 'Não encontrei essa task no board configurado. Abra/recarregue o board e tente de novo.'
@@ -582,8 +615,13 @@ export function useCalendarChat() {
         const patch: Record<string, unknown> = {}
         const title = proposalText(f, 'title')
         const body = proposalBody(f)
-        const dueDate = firstProposalText(f, ['dueDate', 'date'])
-        const dueTime = proposalText(f, 'time')
+        // MULTI-DIA (WAVE 12): "comeca X termina Y" => inicio da barra = startDate (quando
+        // veio junto de dueEndDate); sem intervalo, segue o prazo normal (dueDate/date).
+        const spanStart = proposalText(f, 'dueEndDate') ? proposalText(f, 'startDate') : ''
+        const { date: dueDate, time: dueTime } = splitProposalDate(
+          spanStart || firstProposalText(f, ['dueDate', 'date']),
+          proposalText(f, 'time'),
+        )
         const involvedIds = proposalArray(f, 'involvedIds')
         if (title) patch.title = title
         if (body) patch.description = body
@@ -598,18 +636,32 @@ export function useCalendarChat() {
         }
         if (proposalText(f, 'dueEndDate')) patch.dueEndDate = proposalText(f, 'dueEndDate')
         if (proposalText(f, 'type')) patch.type = proposalText(f, 'type')
-        if (proposedResponsibleId) patch.responsible = proposedResponsibleId
-        if (involvedIds.length) patch.involved = involvedIds
-        if (clientId || proposalText(f, 'clientId'))
-          patch.clientId = clientId || proposalText(f, 'clientId')
-        if (proposalText(f, 'clientName')) patch.clientName = proposalText(f, 'clientName')
+        // WAVE 14: id REAL vai em responsibleUserId (coluna) e o NOME vai no label
+        // 'responsible' (ui_metadata) — antes o UUID ia pro label e a coluna ficava vazia.
+        if (proposedResponsibleId) {
+          patch.responsibleUserId = proposedResponsibleId
+          patch.responsible = proposedResponsibleName
+        }
+        if (involvedIds.length) patch.involved = involvedNames(involvedIds)
+        const patchClientId = clientId || proposalText(f, 'clientId')
+        if (patchClientId) {
+          patch.clientId = patchClientId
+          patch.clientName = proposalText(f, 'clientName') || chatClientName(patchClientId)
+        } else if (proposalText(f, 'clientName')) {
+          patch.clientName = proposalText(f, 'clientName')
+        }
         if (hasProposalField(f, 'archived')) patch.archived = Boolean(f.archived)
         if (!Object.keys(patch).length) return 'Não encontrei campos para alterar nessa task.'
         const updated = await tasksStore.updateTask(existingTask!.id, patch)
         return updated ? '' : 'Não consegui editar a task.'
       }
-      const createDate = firstProposalText(f, ['dueDate', 'date'])
-      const createTime = proposalText(f, 'time')
+      // MULTI-DIA (WAVE 12): idem update — startDate vira o inicio quando ha dueEndDate.
+      const createSpanStart = proposalText(f, 'dueEndDate') ? proposalText(f, 'startDate') : ''
+      const { date: createDate, time: createTime } = splitProposalDate(
+        createSpanStart || firstProposalText(f, ['dueDate', 'date']),
+        proposalText(f, 'time'),
+      )
+      const createClientId = clientId || proposalText(f, 'clientId')
       const created = await tasksStore.createTask({
         projectId: boardId,
         title: proposalText(f, 'title'),
@@ -619,10 +671,12 @@ export function useCalendarChat() {
         // HORARIO (WAVE 11): data+hora viram datetime local (toOptionalDateTime converte).
         dueDate: createDate && createTime ? `${createDate}T${createTime}` : createDate,
         dueEndDate: proposalText(f, 'dueEndDate'),
-        responsible: proposedResponsibleId,
-        involved: proposalArray(f, 'involvedIds'),
-        clientId: clientId || proposalText(f, 'clientId'),
-        clientName: proposalText(f, 'clientName'),
+        // WAVE 14: id na coluna, NOME no label (ver update acima).
+        responsibleUserId: proposedResponsibleId,
+        responsible: proposedResponsibleName,
+        involved: involvedNames(proposalArray(f, 'involvedIds')),
+        clientId: createClientId,
+        clientName: proposalText(f, 'clientName') || chatClientName(createClientId),
         type: proposalText(f, 'type'),
       })
       return created ? '' : 'Não consegui criar a task.'
@@ -639,6 +693,14 @@ export function useCalendarChat() {
         const allEvents = Object.values(store.eventsByDate || {}).flat()
         existing = matchByTitle(allEvents, targetId) ?? null
       }
+      // kind:'task' cujo alvo e o EVENTO ESPELHO (a guarda do back reescreve o targetId para o
+      // id do evento) segue pelo caminho de TASK: patch PARCIAL na task e o mirror sincroniza o
+      // evento. Pelo caminho de evento seria full-replace — defaults (priority 'media') vazavam
+      // pra task e delete apagava so o espelho. Se a task nao existir no board (evento PURO
+      // rotulado como task), applyTaskTarget avisa e o usuario reformula — nunca mexe no espelho.
+      if (proposal.kind === 'task' && existing) {
+        return applyTaskTarget()
+      }
       if (!existing) {
         return proposal.kind === 'task'
           ? applyTaskTarget()
@@ -649,13 +711,16 @@ export function useCalendarChat() {
         return ok ? '' : 'Não consegui excluir o item.'
       }
       // update = full-replace: campos NAO-VAZIOS da proposta vencem; o resto mantem o existente.
-      const proposedDate = firstProposalText(f, ['date', 'dueDate'])
+      const { date: proposedDate, time: proposedTime } = splitProposalDate(
+        firstProposalText(f, ['date', 'dueDate']),
+        proposalText(f, 'time'),
+      )
       const proposedBody = proposalBody(f)
       const proposedInvolved = proposalArray(f, 'involvedIds')
       const buildPatch = (base: NonNullable<ReturnType<typeof store.getEventById>>) =>
         ({
           date: proposedDate || base.date || '',
-          time: proposalText(f, 'time') || base.time || '',
+          time: proposedTime || base.time || '',
           clientId: clientId || proposalText(f, 'clientId') || base.clientId || '',
           type: proposalText(f, 'type') || base.type || 'post',
           title: proposalText(f, 'title') || base.title || '',
@@ -814,6 +879,7 @@ export function useCalendarChat() {
   return {
     messages,
     draft,
+    draftFromVoice,
     sending,
     errorMessage,
     panelOpen,

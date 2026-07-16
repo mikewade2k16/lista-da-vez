@@ -89,8 +89,6 @@ type calendarStore interface {
 	PutConfig(ctx context.Context, accountID string, cfg CalendarConfig) (CalendarConfig, error)
 	ListMembers(ctx context.Context, accountID string) ([]Member, error)
 	ResolveUserLabel(ctx context.Context, userID string) string
-	ListDayMedia(ctx context.Context, accountID, from, to string) ([]DayMediaView, error)
-	PutDayMedia(ctx context.Context, accountID, date string, media []MediaItem) (DayMediaView, error)
 	GetMediaLimits(ctx context.Context) (MediaLimits, error)
 	PutMediaLimits(ctx context.Context, limits MediaLimits, updatedBy string) error
 	// Perfil estrategico do cliente (Fase 4) — ver profile.go / store_profile.go.
@@ -679,64 +677,12 @@ func (s *Service) SaveMedia(ctx context.Context, accountID, fileName, contentTyp
 	return s.storage.Save(strings.TrimSpace(accountID), fileName, contentType, content, limits)
 }
 
-// ListDayMedia devolve os anexos avulsos por dia na janela [from, to] (inclusive).
-func (s *Service) ListDayMedia(ctx context.Context, accountID, from, to string) ([]DayMediaView, error) {
-	from = strings.TrimSpace(from)
-	to = strings.TrimSpace(to)
-	if !dateRe.MatchString(from) || !dateRe.MatchString(to) {
-		return nil, ErrInvalidDate
-	}
-	return s.store.ListDayMedia(ctx, strings.TrimSpace(accountID), from, to)
-}
-
-// PutDayMedia substitui (full replace) a lista de anexos avulsos de um dia.
-func (s *Service) PutDayMedia(ctx context.Context, accountID, date string, media []MediaItem) (DayMediaView, error) {
-	account := strings.TrimSpace(accountID)
-	date = strings.TrimSpace(date)
-	if !dateRe.MatchString(date) {
-		return DayMediaView{}, ErrInvalidDate
-	}
-	// WAVE 6 (cruzamento A): eventos afetados = os apontados na lista NOVA + os que TINHAM anexo
-	// deste dia antes (para reespelhar quem PERDEU o anexo). Coleta o "antes" antes de substituir.
-	affected := map[string]bool{}
-	for _, m := range media {
-		if e := normalizeUUID(m.EventID); e != "" {
-			affected[e] = true
-		}
-	}
-	if prev, perr := s.store.ListDayMedia(ctx, account, date, date); perr == nil {
-		for _, d := range prev {
-			for _, m := range d.Media {
-				if e := normalizeUUID(m.EventID); e != "" {
-					affected[e] = true
-				}
-			}
-		}
-	}
-	view, err := s.store.PutDayMedia(ctx, account, date, normalizeMedia(account, media))
-	if err != nil {
-		return DayMediaView{}, err
-	}
-	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeDayMediaUpdated, AccountID: account, Date: date})
-	s.pushDayMediaToTasks(ctx, account, affected)
-	return view, nil
-}
-
-// pushDayMediaToTasks reespelha a midia (calendarMedia) nas tasks vinculadas aos eventos afetados
-// por uma mudanca de day_media (cruzamento A). So a midia — nao os demais campos da task. Cada
-// evento sem task ou inexistente e' ignorado. Best-effort.
-func (s *Service) pushDayMediaToTasks(ctx context.Context, accountID string, eventIDs map[string]bool) {
-	if s.tasksSvc() == nil || len(eventIDs) == 0 {
-		return
-	}
-	for eid := range eventIDs {
-		ev, gerr := s.store.GetEvent(ctx, eid, accountID)
-		if gerr != nil || ev.TaskID == nil {
-			continue
-		}
-		s.syncEventMediaToTask(ctx, accountID, ev, strings.TrimSpace(*ev.TaskID))
-	}
-}
+// WAVE 13: "anexos do dia" (calendar.day_media) foi ELIMINADO — toda midia do calendario
+// pertence a um ITEM (evento), em calendar.events.media. O upload/reorder/remove agora e por
+// evento (PUT /events/{id} full-replace do campo media). A migration 0199 consolidou os anexos
+// vinculados no evento e transformou os orfaos em itens source='media'. Sem ListDayMedia/
+// PutDayMedia/pushDayMediaToTasks: o espelho task<-evento (calendarMedia) usa so events.media
+// (eventMediaForTask) e roda no proprio update do evento (syncTaskFromEvent).
 
 // ============================================================================
 // Helpers

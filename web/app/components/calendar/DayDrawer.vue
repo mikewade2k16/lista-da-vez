@@ -41,10 +41,10 @@ const emit = defineEmits<{
 
 const activeEventId = ref('')
 
-// Anexos avulsos do dia: fonte unica no store (buscados na janela, sem refetch por
-// dia). O uploader edita e o store persiste + atualiza o Map local.
+// WAVE 13: "Anexos do dia" foi eliminado — toda midia pertence a um ITEM (evento). A "Midia
+// do post" e agora EDITAVEL (upload por clique, arrastar arquivo do PC, remover, reordenar);
+// grava em ev.media via store.updateEvent (full-replace + optimistic locking).
 const store = useCalendarStore()
-const dayMedia = computed<CalendarMediaItem[]>(() => store.selectedDayMedia)
 
 // Collapses SEMPRE fechados por padrao (so abrem no clique). Reseta ao TROCAR DE DIA apenas — NAO a
 // cada mudanca de props.events: senao o refetch do realtime re-abriria/fecharia sozinho ("abrindo e
@@ -57,37 +57,6 @@ watch(
   { immediate: true },
 )
 
-// WAVE 11 ("midias sao tarefas especiais"): anexo NOVO subido SEM item vira um ITEM ESPECIAL
-// do calendario — um evento source='media' com titulo = nome do arquivo (a task vinculada nasce
-// com esse titulo; o calendario mostra so a midia, sem titulo). Anexos vinculados a um evento
-// existente e remocoes/edicoes seguem o fluxo normal do day_media.
-async function onDayMedia(next: CalendarMediaItem[]): Promise<void> {
-  if (!props.dateKey) return
-  const known = new Set(dayMedia.value.map((m) => m.id))
-  const fresh = next.filter((m) => !known.has(m.id) && !m.eventId)
-  const rest = next.filter((m) => known.has(m.id) || m.eventId)
-  for (const item of fresh) {
-    const ok = await store.createEvent({
-      date: props.dateKey,
-      time: '',
-      clientId: item.clientId || '',
-      type: 'post',
-      title: item.name || 'Mídia',
-      status: 'planejado',
-      priority: 'media',
-      responsibleId: '',
-      involvedIds: [],
-      media: [item],
-      description: '',
-      mediaItem: true,
-      createTask: Boolean(store.config.tasks?.boardId),
-    } as CalendarEventInput)
-    // Falha ao criar o item especial: preserva o anexo no day_media (nada se perde).
-    if (!ok) rest.push(item)
-  }
-  await store.saveDayMedia(props.dateKey, rest)
-}
-
 const activeEvent = computed(
   () => props.events.find((event) => event.id === activeEventId.value) || props.events[0] || null,
 )
@@ -96,24 +65,21 @@ const activeClient = computed(() =>
 )
 const dayTitle = computed(() => (props.dateKey ? formatDayTitle(props.dateKey) : ''))
 
-// WAVE 6 (W6-4, refino): "Mídia do post" do evento = midia do proprio evento (activeEvent.media)
-// UNIDA aos anexos do dia que o usuario vinculou a este evento (dayMedia com eventId == id).
-// Assim o anexo subido no "Anexos do dia" e apontado pro post aparece dentro do post tambem.
-const activeEventMedia = computed<CalendarMediaItem[]>(() => {
-  const ev = activeEvent.value
-  if (!ev) return []
-  const tagged = dayMedia.value.filter((m) => m.eventId === ev.id)
-  // WAVE 6 cruzamento B: linkedMedia = videos da task vinculada, espelhados read-only.
-  return [...ev.media, ...tagged, ...(ev.linkedMedia || [])]
-})
+// "Mídia do post" EDITAVEL (WAVE 13) = a midia do PROPRIO evento (ev.media). Upload/remover/
+// reordenar gravam aqui. A midia ESPELHADA da task (linkedMedia, WAVE 6 cruzamento B) fica numa
+// secao read-only separada (nao se edita daqui — a fonte e a task).
+const activeEventMedia = computed<CalendarMediaItem[]>(() => activeEvent.value?.media || [])
+const activeTaskMedia = computed<CalendarMediaItem[]>(() => activeEvent.value?.linkedMedia || [])
 
-// Qtd de anexos ligados a um evento (midia propria + anexos do dia apontados + midia da task) — indicador.
+// onEventMedia grava a nova lista de midia do evento ativo (upload/remove/reorder). Full-replace
+// do campo media via updateField (mesmo caminho dos demais campos inline; optimistic locking C12).
+async function onEventMedia(next: CalendarMediaItem[]): Promise<void> {
+  await updateField({ media: next })
+}
+
+// Qtd de anexos ligados a um evento (midia propria + midia espelhada da task) — indicador.
 function eventAnexoCount(event: CalendarEvent): number {
-  return (
-    event.media.length +
-    dayMedia.value.filter((m) => m.eventId === event.id).length +
-    (event.linkedMedia?.length || 0)
-  )
+  return event.media.length + (event.linkedMedia?.length || 0)
 }
 
 function toneClass(tone: StatusTone): string {
@@ -177,16 +143,6 @@ const clientOptions = computed(() =>
   Array.from(props.clientsById.values()).map((client) => ({
     value: client.id,
     label: client.name,
-  })),
-)
-
-// WAVE 6 (W6-4): itens (eventos/posts) do dia para vincular cada anexo. Escolher um evento faz
-// o anexo herdar o cliente dele e ficar ligado ao item (e, por tabela, a task vinculada).
-const dayItemOptions = computed(() =>
-  props.events.map((event) => ({
-    value: event.id,
-    label: event.title || 'Item',
-    clientId: event.clientId,
   })),
 )
 
@@ -565,8 +521,19 @@ function addField(key: DrawerField): void {
             </button>
           </div>
 
+          <!-- Mídia do post EDITÁVEL (WAVE 13): upload por clique, arrastar arquivo do PC,
+               remover, reordenar (drag-and-drop). Grava em ev.media via updateField. -->
           <div class="calendar-drawer__media">
-            <CalendarMediaUploader :model-value="activeEventMedia" readonly label="Mídia do post" />
+            <CalendarMediaUploader
+              :model-value="activeEventMedia"
+              label="Mídia do post"
+              @update:model-value="onEventMedia"
+            />
+          </div>
+
+          <!-- Mídia da task vinculada (espelho read-only; a fonte é a task). -->
+          <div v-if="activeTaskMedia.length" class="calendar-drawer__media">
+            <CalendarMediaUploader :model-value="activeTaskMedia" readonly label="Mídia da task" />
           </div>
         </div>
       </div>
@@ -575,16 +542,6 @@ function addField(key: DrawerField): void {
     <div v-else class="calendar-drawer__empty">
       <UIcon name="i-lucide-calendar-x" class="calendar-drawer__empty-icon" aria-hidden="true" />
       <p>Nenhum item agendado neste dia.</p>
-    </div>
-
-    <div class="calendar-drawer__daymedia">
-      <CalendarMediaUploader
-        :model-value="dayMedia"
-        label="Anexos do dia"
-        day-layout
-        :items="dayItemOptions"
-        @update:model-value="onDayMedia"
-      />
     </div>
 
     <footer class="calendar-drawer__footer">

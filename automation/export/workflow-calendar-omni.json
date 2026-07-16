@@ -11,7 +11,10 @@
         },
         "type": "n8n-nodes-base.webhook",
         "typeVersion": 2.1,
-        "position": [0, 0],
+        "position": [
+          0,
+          0
+        ],
         "id": "a1b2c3d4-cal0-4000-8000-webhookcal001",
         "name": "Webhook",
         "webhookId": "c0ffee00-cal0-4000-8000-webhookcal001"
@@ -23,7 +26,10 @@
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [220, 0],
+        "position": [
+          220,
+          0
+        ],
         "id": "b2c3d4e5-cal0-4000-8000-montarprompt01",
         "name": "Montar prompt"
       },
@@ -62,7 +68,10 @@
         },
         "type": "n8n-nodes-base.switch",
         "typeVersion": 3.4,
-        "position": [440, 0],
+        "position": [
+          440,
+          0
+        ],
         "id": "c3d4e5f6-cal0-4000-8000-switchprov001",
         "name": "Switch provider"
       },
@@ -94,7 +103,10 @@
         },
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [700, -140],
+        "position": [
+          700,
+          -140
+        ],
         "id": "d4e5f6a7-cal0-4000-8000-httpclaude001",
         "name": "Claude",
         "onError": "continueRegularOutput"
@@ -123,7 +135,10 @@
         },
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [700, 140],
+        "position": [
+          700,
+          140
+        ],
         "id": "e5f6a7b8-cal0-4000-8000-httpopenai001",
         "name": "OpenAI compat",
         "onError": "continueRegularOutput"
@@ -135,7 +150,10 @@
         },
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [960, 0],
+        "position": [
+          960,
+          0
+        ],
         "id": "f6a7b8c9-cal0-4000-8000-extrairjson01",
         "name": "Extrair JSON"
       },
@@ -163,32 +181,87 @@
         },
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [1200, 0],
+        "position": [
+          1200,
+          0
+        ],
         "id": "a7b8c9d0-cal0-4000-8000-callbackomni1",
         "name": "Callback"
       }
     ],
     "connections": {
       "Webhook": {
-        "main": [[{ "node": "Montar prompt", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "Montar prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       },
       "Montar prompt": {
-        "main": [[{ "node": "Switch provider", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "Switch provider",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       },
       "Switch provider": {
         "main": [
-          [{ "node": "Claude", "type": "main", "index": 0 }],
-          [{ "node": "OpenAI compat", "type": "main", "index": 0 }]
+          [
+            {
+              "node": "Claude",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "OpenAI compat",
+              "type": "main",
+              "index": 0
+            }
+          ]
         ]
       },
       "Claude": {
-        "main": [[{ "node": "Extrair JSON", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "Extrair JSON",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       },
       "OpenAI compat": {
-        "main": [[{ "node": "Extrair JSON", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "Extrair JSON",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       },
       "Extrair JSON": {
-        "main": [[{ "node": "Callback", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "Callback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       }
     },
     "active": false,
@@ -200,6 +273,6 @@
       "templateCredsSetupCompleted": true
     },
     "pinData": {},
-    "versionId": "cal0ffee-0000-4000-8000-calendaromni03"
+    "versionId": "a1e246c6-f0d8-4426-b45b-3e7c19de11c5"
   }
 ]

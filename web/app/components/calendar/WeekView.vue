@@ -9,7 +9,6 @@ import {
   type CalendarClient,
   type CalendarEvent,
   type CalendarHoliday,
-  type CalendarMediaItem,
 } from '~/utils/calendar'
 
 const props = defineProps<{
@@ -17,7 +16,6 @@ const props = defineProps<{
   weekdays: string[]
   eventsByDate: Map<string, CalendarEvent[]>
   holidaysByDate: Map<string, CalendarHoliday[]>
-  dayMediaByDate: Map<string, CalendarMediaItem[]>
   clientsById: Map<string, CalendarClient>
   /** Override de cor por tipo (config). Vazio = cor do cliente. */
   typeColors?: Record<string, string>
@@ -43,9 +41,9 @@ function holidaysFor(dateKey: string): CalendarHoliday[] {
   return props.holidaysByDate.get(dateKey) || []
 }
 
-// Fundo do dia (mesma regra da visao Mes): midias dos eventos filtrados + anexos.
+// Fundo do dia (WAVE 13, mesma regra da visao Mes): 1a midia de cada evento filtrado.
 function bgUrlsFor(dateKey: string): string[] {
-  return dayBackgroundUrls(eventsFor(dateKey), props.dayMediaByDate.get(dateKey) || []).slice(0, 4)
+  return dayBackgroundUrls(eventsFor(dateKey)).slice(0, 4)
 }
 </script>
 

@@ -114,8 +114,8 @@ func (staffStubRepository) FindByID(context.Context, string) (Consultant, error)
 func (staffStubRepository) SyncLinkedIdentity(context.Context, string, string, string) error {
 	return nil
 }
-func (staffStubRepository) SyncLinkedAccess(context.Context, LinkedAccessSyncInput) error {
-	return nil
+func (staffStubRepository) SyncLinkedAccess(context.Context, LinkedAccessSyncInput) ([]string, error) {
+	return nil, nil
 }
 func (staffStubRepository) Create(context.Context, Consultant, ConsultantAccessSeed) (Consultant, error) {
 	return Consultant{}, nil

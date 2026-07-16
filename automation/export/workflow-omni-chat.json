@@ -12,7 +12,10 @@
         },
         "type": "n8n-nodes-base.webhook",
         "typeVersion": 2.1,
-        "position": [0, 0],
+        "position": [
+          0,
+          0
+        ],
         "id": "28ccf36e-00db-4177-a09d-637050331d3f",
         "name": "Webhook",
         "webhookId": "b9fa7b24-f488-4293-bc76-3e603c201cdc"
@@ -28,7 +31,10 @@
         },
         "type": "@n8n/n8n-nodes-langchain.agent",
         "typeVersion": 3.1,
-        "position": [240, 0],
+        "position": [
+          240,
+          0
+        ],
         "id": "5aa9ddf0-e852-47b3-922c-0340ba8e85c0",
         "name": "AI Agent"
       },
@@ -40,7 +46,10 @@
         },
         "type": "n8n-nodes-base.respondToWebhook",
         "typeVersion": 1.1,
-        "position": [480, 0],
+        "position": [
+          480,
+          0
+        ],
         "id": "89b4349a-743d-49a3-857d-08340101fc7a",
         "name": "Respond to Webhook"
       },
@@ -60,7 +69,10 @@
         "name": "OpenAI Chat Model",
         "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
         "typeVersion": 1.3,
-        "position": [240, 220],
+        "position": [
+          240,
+          220
+        ],
         "credentials": {
           "openAiApi": {
             "id": "sCzmqFisO8bdeZ9B",
@@ -78,21 +90,56 @@
         "name": "Memoria",
         "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
         "typeVersion": 1.3,
-        "position": [440, 220]
+        "position": [
+          440,
+          220
+        ]
       }
     ],
     "connections": {
       "Webhook": {
-        "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       },
       "AI Agent": {
-        "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       },
       "OpenAI Chat Model": {
-        "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
       },
       "Memoria": {
-        "ai_memory": [[{ "node": "AI Agent", "type": "ai_memory", "index": 0 }]]
+        "ai_memory": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
       }
     },
     "active": false,
@@ -104,6 +151,6 @@
       "templateCredsSetupCompleted": true
     },
     "pinData": {},
-    "versionId": "a1c0ffee-0000-4000-8000-0d563e1a1990"
+    "versionId": "cb2a36bd-86a8-4e98-948d-deedb0f7e66f"
   }
 ]

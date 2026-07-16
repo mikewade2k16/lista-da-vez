@@ -60,6 +60,9 @@ const clientOptions = computed(() => [
       </span>
     </div>
 
+    <!-- Search do calendario (WAVE 14): a pagina injeta o CalendarSearch aqui. -->
+    <slot name="search"></slot>
+
     <button
       type="button"
       class="calendar-controls__gear"

@@ -27,7 +27,7 @@ type rowScanner interface {
 }
 
 // Colunas do evento na ordem esperada por scanEvent. client_id e event_date saem
-// como text ('' ->; 'YYYY-MM-DD'); os jsonb saem com coalesce para '[]'. version e o
+// como text (” ->; 'YYYY-MM-DD'); os jsonb saem com coalesce para '[]'. version e o
 // contador de optimistic locking (C12), sempre a ultima coluna base.
 const eventCols = `id, account_id, client_id::text, event_date::text, event_time, type, title,
 	status, priority, responsible_id, coalesce(involved_ids, '[]'::jsonb),
@@ -337,47 +337,6 @@ func (s *Store) ResolveUserLabel(ctx context.Context, userID string) string {
 // ============================================================================
 // Anexos / midia (Fase 3)
 // ============================================================================
-
-// ListDayMedia devolve os anexos avulsos por dia na janela [from, to] (inclusive).
-func (s *Store) ListDayMedia(ctx context.Context, accountID, from, to string) ([]DayMediaView, error) {
-	const q = `
-		select event_date::text, coalesce(media, '[]'::jsonb)
-		from calendar.day_media
-		where account_id = $1::uuid and event_date >= $2::date and event_date <= $3::date
-		order by event_date`
-	rows, err := s.pool.Query(ctx, q, accountID, from, to)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]DayMediaView, 0)
-	for rows.Next() {
-		var date string
-		var raw json.RawMessage
-		if err := rows.Scan(&date, &raw); err != nil {
-			return nil, err
-		}
-		out = append(out, DayMediaView{Date: date, Media: decodeMedia(raw)})
-	}
-	return out, rows.Err()
-}
-
-// PutDayMedia faz upsert (full replace) dos anexos de um dia.
-func (s *Store) PutDayMedia(ctx context.Context, accountID, date string, media []MediaItem) (DayMediaView, error) {
-	const q = `
-		insert into calendar.day_media (account_id, event_date, media, updated_at)
-		values ($1::uuid, $2::date, $3::jsonb, now())
-		on conflict (account_id, event_date) do update
-		set media = excluded.media, updated_at = now()`
-	if _, err := s.pool.Exec(ctx, q, accountID, date, jsonMedia(media)); err != nil {
-		return DayMediaView{}, err
-	}
-	if media == nil {
-		media = []MediaItem{}
-	}
-	return DayMediaView{Date: date, Media: media}, nil
-}
 
 // GetMediaLimits le os tetos de upload da config GLOBAL (core.platform_settings,
 // chave 'media_limits'). Sem linha -> defaults; valores <= 0 caem no default.

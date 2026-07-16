@@ -82,11 +82,15 @@ Historicamente havia DUAS tabelas de usuário que divergiam:
 - reset administrativo de senha deve marcar `must_change_password = true`, exceto para papeis de terminal fixo quando essa regra nao se aplicar
 - o CRUD administrativo de usuarios deve viver em area propria do frontend, separado de `multiloja`
 - autoedicao do proprio perfil nao pertence a este modulo; fica em `auth`
-- consultores nao devem nascer por este modulo; o fluxo correto e `consultants`
-- contas com papel `consultant` e vinculo de roster nao devem ser editadas, convidadas nem inativadas por este modulo
-- para contas de consultor, este modulo pode apenas listar e executar reset administrativo de senha
-- `platform_admin` pode usar override administrativo para manutencao/debug de contas `consultant`, inclusive mudanca de papel por PATCH quando isso for explicitamente necessario
-- esse override administrativo nao cria roster; ele apenas altera o acesso do usuario e deixa o sincronismo do consultor vinculado agir quando houver `consultants.user_id`
+- fluxo padrao de consultor continua sendo `consultants` (aba Consultores, com metas/cor/acesso completos)
+- contas com papel `consultant` e vinculo de roster nao devem ser editadas, convidadas nem inativadas por papeis nao-`platform_admin` neste modulo
+- para papeis nao-`platform_admin`, este modulo pode apenas listar contas de consultor e executar reset administrativo de senha
+- **atalho unificado (2026-07-15):** `platform_admin` pode criar/editar consultor por este modulo (grade de Usuarios). Create/Update/Archive chamam `ConsultantProfileSync.SyncLinkedAccess`, que mantem a linha do roster (`queue.consultants`, chaveada por `user_id`):
+  - papel vira `consultant` + loja e ainda **nao** ha linha no roster -> **cria** a linha (o usuario passa a aparecer na Lista da vez sem passar pela aba Consultores), com `role_label='Atendimento'`, metas zeradas e cor default;
+  - papel `consultant` com linha existente -> atualiza tenant/loja/nome/ativo (cobre **troca de loja** = trocar de fila);
+  - papel deixa de ser `consultant`, ou conta inativada/arquivada -> **desativa** a linha do roster (sai da fila).
+- `SyncLinkedAccess` devolve as lojas afetadas; o service publica `operation.updated` por loja via `OperationPublisher` (realtime, injetado por `SetOperationPublisher`) para a Lista da vez atualizar **ao vivo por WebSocket** — inclui a loja de origem e a de destino numa troca de loja
+- entrar/sair da fila e **independente do vinculo ERP** (`queue.consultant_erp_links`): o roster so olha `queue.consultants`. O vinculo ERP e paralelo (atribui vendas/metas) e passa a listar o consultor no select manual assim que ele entra no roster
 
 ## Invalidacao do PrincipalCache (AC-01)
 

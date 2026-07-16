@@ -290,16 +290,13 @@ function mediaDisplayUrl(item: CalendarMediaItem): string | null {
 }
 
 /**
- * URLs para o fundo do dia (ate 4). Regra (WAVE 11): cada TAREFA/EVENTO do dia contribui
- * com APENAS a sua 1a midia exibivel (a ordem das midias do evento define qual e' — o
+ * URLs para o fundo do dia (ate 4). Regra (WAVE 11/13): cada EVENTO do dia contribui com
+ * APENAS a sua 1a midia exibivel (a ordem das midias do evento define qual e' — o
  * drag-and-drop reordena; imagem -> `url`, video -> `posterUrl`, video sem poster e'
- * pulado); se nenhum evento tem midia, cai nos anexos avulsos do dia (cada anexo = 1
- * item). Helper puro (sem estado/fetch).
+ * pulado). WAVE 13: toda midia pertence a um evento (o conceito de "anexo do dia" foi
+ * eliminado), entao o fundo vem 100% dos eventos. Helper puro (sem estado/fetch).
  */
-export function dayBackgroundUrls(
-  events: CalendarEvent[],
-  dayMedia: CalendarMediaItem[],
-): string[] {
+export function dayBackgroundUrls(events: CalendarEvent[]): string[] {
   const fromEvents: string[] = []
   for (const event of events) {
     for (const item of event.media || []) {
@@ -311,15 +308,7 @@ export function dayBackgroundUrls(
     }
     if (fromEvents.length >= DAY_BG_MAX) return fromEvents
   }
-  if (fromEvents.length) return fromEvents
-
-  const fromDay: string[] = []
-  for (const item of dayMedia || []) {
-    const url = mediaDisplayUrl(item)
-    if (url) fromDay.push(url)
-    if (fromDay.length >= DAY_BG_MAX) break
-  }
-  return fromDay
+  return fromEvents
 }
 
 // --- Helpers de data ------------------------------------------------------------

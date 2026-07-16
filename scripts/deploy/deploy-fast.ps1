@@ -21,6 +21,9 @@ param(
   # reimporta automation/export/workflow-*.json quando os arquivos mudarem.
   [switch]$DeployAutomation,
   [switch]$ForceAutomationWorkflowImport,
+  # Pula o auto-export dos workflows n8n (gatilho OBS-08). Use quando quiser deployar uma
+  # versao versionada especifica em vez do que esta rodando no n8n dev agora.
+  [switch]$SkipWorkflowExport,
   # docker login LOCAL no GHCR antes do push (one-time; depois fica no config.json).
   [string]$GhcrUser = "",
   [string]$GhcrToken = ""
@@ -50,6 +53,35 @@ if (-not [string]::IsNullOrWhiteSpace($GhcrToken)) {
   Write-Host "==> docker login ghcr.io (local)"
   $GhcrToken | docker login ghcr.io -u $GhcrUser --password-stdin
   if ($LASTEXITCODE -ne 0) { throw "Falha no docker login local." }
+}
+
+# Gatilho OBS-08 (auto-export dos workflows n8n): ANTES de buildar/empacotar/enviar, garante que
+# automation/export/workflow-*.json refletem o n8n dev que esta rodando, para o deploy levar SEMPRE
+# a versao atual sem passo manual. So sob -DeployAutomation (quem envia os workflows) e pulavel com
+# -SkipWorkflowExport. Guarda-corpo: so roda o -Sync se o container n8n dev estiver up (fonte da
+# verdade local); se estiver down, AVISA e SEGUE com os arquivos versionados atuais (nunca zera nada).
+# Efeito desejado: o -Sync pode deixar workflow-*.json modificados na working tree (NAO commitados);
+# o deploy os USA mesmo sem commit (deployar antes de commitar). O dono commita depois.
+if ($DeployAutomation -and -not $SkipWorkflowExport) {
+  $n8nDevContainer = "omni-n8n-1"
+  $n8nExportScript = Join-Path $scriptDir "..\dev\n8n-export.ps1"
+  if (-not (Test-Path $n8nExportScript)) {
+    Write-Host "AVISO: scripts/dev/n8n-export.ps1 nao encontrado; pulei o auto-export dos workflows n8n."
+  }
+  else {
+    $n8nUp = docker ps -q -f "name=^${n8nDevContainer}$" 2>$null
+    if (-not $n8nUp) {
+      Write-Host "AVISO: n8n dev fora; nao verifiquei se automation/export esta fresco - deploy seguira com os arquivos versionados atuais."
+    }
+    else {
+      Write-Host "==> OBS-08: verificando/exportando workflows n8n do dev antes do deploy (n8n-export.ps1 -Sync)"
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $n8nExportScript -Sync -Container $n8nDevContainer
+      if ($LASTEXITCODE -ne 0) {
+        # -Sync sai 0 de proposito; !=0 aqui seria erro real (ex.: vazamento de credencial abortou).
+        throw "Falha no auto-export dos workflows n8n (n8n-export.ps1 -Sync exit $LASTEXITCODE). Rode 'npm run n8n:export' e verifique."
+      }
+    }
+  }
 }
 
 function Build-And-Push {

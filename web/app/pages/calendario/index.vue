@@ -2,6 +2,7 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import CalendarControls from '~/components/calendar/CalendarControls.vue'
+import CalendarSearch from '~/components/calendar/CalendarSearch.vue'
 import CalendarWeekRail from '~/components/calendar/CalendarWeekRail.vue'
 import MonthNotesPanel from '~/components/calendar/MonthNotesPanel.vue'
 import MonthGrid from '~/components/calendar/MonthGrid.vue'
@@ -18,6 +19,7 @@ import { useUiStore } from '~/stores/ui'
 import { useCalendarLiveSync } from '~/composables/useCalendarLiveSync'
 import {
   formatMonthTitle,
+  monthKeyOf,
   todayKey,
   weekdayLabels,
   type CalendarEvent,
@@ -123,7 +125,6 @@ const {
   currentRailIndex,
   eventsByDate,
   holidaysByDate,
-  dayMediaByDate,
   selectedEvents,
   selectedDate,
   drawerOpen,
@@ -318,6 +319,18 @@ function onEditEvent(event: CalendarEvent): void {
   formOpen.value = true
 }
 
+// SEARCH (WAVE 14): clicar num resultado da busca navega ao mes/dia do item e ABRE o modal de
+// edicao. Foca o mes (para o item entrar na janela renderizada) + seleciona o dia (abre o drawer)
+// + abre o modal do evento. A busca vem de uma janela ampla no back, entao o item pode ser de
+// outro mes que ainda nao estava carregado — setFocusMonth dispara o fetch da janela nova.
+function onSearchOpen(event: CalendarEvent): void {
+  store.setFocusMonth(monthKeyOf(event.date))
+  onSelectDay(event.date)
+  editingEvent.value = event
+  formDate.value = event.date
+  formOpen.value = true
+}
+
 // Engrenagem: abre o drawer de configuracao SEM sair do calendario. SPEC-F6.
 function onConfig(): void {
   configOpen.value = true
@@ -497,7 +510,11 @@ onBeforeUnmount(() => {
             @chat="onChat"
             @minimize="toggleLeftMin"
             @toggle-spans="toggleTaskSpans"
-          />
+          >
+            <template #search>
+              <CalendarSearch @open="onSearchOpen" />
+            </template>
+          </CalendarControls>
           <MonthNotesPanel
             :title="notesTitle"
             :model-value="activeNotes"
@@ -521,7 +538,6 @@ onBeforeUnmount(() => {
             :weekdays="weekdays"
             :events-by-date="eventsByDate"
             :holidays-by-date="holidaysByDate"
-            :day-media-by-date="dayMediaByDate"
             :clients-by-id="clientsById"
             :task-spans="taskSpans"
             :type-colors="typeColors"
@@ -541,7 +557,6 @@ onBeforeUnmount(() => {
             :weekdays="weekdays"
             :events-by-date="eventsByDate"
             :holidays-by-date="holidaysByDate"
-            :day-media-by-date="dayMediaByDate"
             :clients-by-id="clientsById"
             :type-colors="typeColors"
             :is-focus="weekKey === focusWeekKey"

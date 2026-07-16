@@ -7,7 +7,6 @@ import { useUiStore } from '~/stores/ui'
 import { createApiRequest } from '~/utils/api-client'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
 import { useCalendarViewport } from '~/composables/useCalendarViewport'
-import { useCalendarDayMedia } from '~/composables/useCalendarDayMedia'
 import { useCalendarEventCrud } from '~/composables/useCalendarEventCrud'
 import * as calendarApi from '~/domain/calendar/calendar-api'
 import {
@@ -22,7 +21,6 @@ import {
   type CalendarConfig,
   type CalendarEvent,
   type CalendarHoliday,
-  type CalendarMediaItem,
   type CalendarMember,
   type CalendarPerson,
 } from '~/utils/calendar'
@@ -189,19 +187,13 @@ export const useCalendarStore = defineStore('calendar', () => {
     })
   }
 
-  // Anexos avulsos por dia (fundo do dia SPEC-F2 + drawer): estado + I/O em
-  // composables/useCalendarDayMedia.ts (mantem este arquivo < 450 linhas). Busca
-  // na mesma janela dos eventos e alimenta o DayDrawer sem refetch por dia.
-  const dayMedia = useCalendarDayMedia(apiRequest, fetchRange, withSession)
-  const { dayMediaByDate, fetchDayMedia, saveDayMedia } = dayMedia
-  const selectedDayMedia = computed<CalendarMediaItem[]>(() => dayMedia.mediaForDate(selectedDate))
-
+  // WAVE 13: "anexos do dia" eliminado — toda midia pertence a um evento (events.media). O
+  // fundo do dia deriva dos eventos; nao ha mais fetch/estado de day_media.
   function scheduleWindowFetch(): void {
     if (windowFetchTimer) window.clearTimeout(windowFetchTimer)
     windowFetchTimer = window.setTimeout(() => {
       void fetchEvents()
       void fetchHolidays()
-      void fetchDayMedia()
     }, 250)
   }
 
@@ -244,11 +236,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     })
   }
 
-  // Refetch da janela visivel (eventos + midia do dia) disparado por invalidacao do
-  // realtime (C11 event_*/day_media_updated). Feriados nao mudam por evento, ficam de fora.
+  // Refetch da janela visivel (eventos) disparado por invalidacao do realtime (C11
+  // event_*). A midia mora nos eventos (WAVE 13); feriados nao mudam por evento, ficam de fora.
   async function refetchWindow(): Promise<void> {
     await fetchEvents()
-    await fetchDayMedia()
   }
 
   // WAVE 6: cria (e vincula) uma task para um evento SEM task — o botao do badge "evento sem task".
@@ -311,12 +302,10 @@ export const useCalendarStore = defineStore('calendar', () => {
     () => {
       events.value = []
       holidays.value = []
-      dayMedia.reset()
       notesByMonth.value = {}
       notesLoaded.value = new Set()
       void fetchEvents()
       void fetchHolidays()
-      void fetchDayMedia()
       void fetchNotes(activeNotesMonthKey.value)
       void fetchResponsibles()
       void fetchConfig()
@@ -403,7 +392,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     void fetchNotes(activeNotesMonthKey.value)
     void fetchEvents()
     void fetchHolidays()
-    void fetchDayMedia()
     return true
   }
 
@@ -434,9 +422,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     currentRailIndex,
     eventsByDate,
     holidaysByDate,
-    dayMediaByDate,
     selectedEvents,
-    selectedDayMedia,
     periodTitle,
     activeNotesMonthKey,
     activeNotes,
@@ -466,7 +452,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     fetchConfig,
     fetchMembers,
     saveConfig,
-    saveDayMedia,
     // Aplicacao do realtime por invalidacao (SPEC-F9 / C11).
     refetchWindow,
     reloadNoteFromRemote,

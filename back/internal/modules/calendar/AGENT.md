@@ -45,12 +45,15 @@ quando a descricao MUDOU (`UpdateEvent` compara old/new e passa `syncContent`) �
 evento NAO sobrescreve o texto rico que o usuario escreveu direto no editor da task. Sentido unico
 (evento->task); o task->event preserva a descricao propria do evento (`eventToInput`).
 Sync de status (E5) bidi pelo mapa `config.tasks.statusColumnMap` (`statusForColumn`/`columnForStatus`).
-Cruzamento de MIDIA A (WAVE 6, read-only): a midia do evento (ev.Media + anexos do dia apontados via
-`MediaItem.eventId`) e espelhada na task vinculada em `ui_metadata.calendarMedia` (so exibicao — a task
-so guarda video, aqui imagem+video cruzam; MESMA url `/uploads/calendar/{conta}/`, sem duplicar arquivo).
-Coletada por `eventMediaForTask`; empurrada no `syncTaskFromEvent` (update do evento) e por
-`syncEventMediaToTask` (leve, so a midia) no gatilho `PutDayMedia`->`pushDayMediaToTasks` (reespelha os
-eventos que ganharam OU perderam anexo do dia). Cruzamento de MIDIA B (WAVE 6, o outro sentido): os
+Cruzamento de MIDIA A (WAVE 6, read-only): a midia do evento (`ev.Media`) e espelhada na task vinculada
+em `ui_metadata.calendarMedia` (so exibicao — a task so guarda video, aqui imagem+video cruzam; MESMA url
+`/uploads/calendar/{conta}/`, sem duplicar arquivo). Coletada por `eventMediaForTask`; empurrada no
+`syncTaskFromEvent` (update do evento). **WAVE 13: "anexos do dia" (`calendar.day_media`) ELIMINADO** —
+toda midia pertence a um ITEM (evento), em `calendar.events.media`. Upload/reorder/remove sao por evento
+(`PUT /events/{id}` full-replace de `media`); nao ha mais `ListDayMedia`/`PutDayMedia`/`pushDayMediaToTasks`/
+`syncEventMediaToTask`/rotas `day-media`/realtime `day_media_updated`. Migration 0199 consolidou: anexos
+vinculados foram para `events.media` do evento, orfaos viraram itens `source='media'`, e `drop table
+calendar.day_media`. Cruzamento de MIDIA B (WAVE 6, o outro sentido): os
 VIDEOS da task (`ui_metadata.videos`) sao espelhados no evento em `calendar.events.linked_media` (jsonb,
 migration 0193). O `TaskSyncSnapshot.Media` (`MediaSnapshot` neutro) carrega os videos; `applyTaskSyncToEvent`
 e `maybeCreateMirrorEvent` gravam via `store.SetEventLinkedMedia` (NAO passa por normalizeMedia — coluna
@@ -270,6 +273,73 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   lista de 1 (id '0') e o scan tem a mesma rede de seguranca. `calendar_items` guarda o snapshot de eventos
   reais cujos IDs vieram do contexto e foram revalidados pelo Go. Sem soft-delete (some junto com a conversa
   via cascade). Fonte da memória do LLM.
+  **GUARDA DE ALVO POR DIA/CLIENTE (WAVE 14, `chat_target_guard.go`)**: o modelo erra DEMAIS escolhendo o
+  alvo — chega a dizer "nao ha evento no dia 13" tendo um — entao o BACK RESOLVE o alvo, determinista, em
+  vez de so validar a escolha da IA. Roda no `ChatAsk` ANTES de `resolveProposalTargets` (pode reescrever o
+  `targetId`): `extractTargetCriteria` le a pergunta (dia ancorado no mes em foco via `chatDayNumberRe`/
+  `chatNumericDateRe`; cliente por nome contra `contextClients`) e `guardProposalTargets` decide por
+  update/delete com **prioridade-calendario** (`calendarMatches` = eventos do calendario que batem dia+cliente):
+  **1 match** => REESCREVE `targetId` p/ esse evento (mantem os campos que a IA queria mudar) e devolve
+  `resolvedTitle` -> o answer ganha "Vou alterar: X. Confirme no cartao."; **varios** => BARRA + lista SO os
+  eventos do calendario p/ o dono escolher; **0 no calendario mas ha task** => BARRA + avisa "so existe em
+  Tasks: X, quer alterar la?". Assim, com 1 evento no dia, o alvo esta SEMPRE certo, independe do modelo. O
+  prompt do workflow reforca (regra PRIORIDADE DO CALENDARIO). Testes em `chat_target_guard_test.go`. Sem migration/env.
+  **BUSCA AMPLA POR TITULO (WAVE 14, `appendWideTitleMatches` em chat_targets.go)**: o contexto e
+  montado do MES EM FOCO da tela — se a tela esta em outro mes/ano, o item citado nem chega ao modelo
+  ("nao encontrei", caso real: tela em 2025, Postagem Bari em 07/2026). Roda no `ChatAsk` apos o
+  buildChatContext: titulo citado na pergunta que NAO esta nos eventos do mes => busca em ±24 meses
+  (`wideSearchWindow`; mesmas queries scoped `ListEventsLean`/`ForClients`, limit 1000) e ANEXA os
+  matches (max 8, `mergeCalendarItems`) ao contexto ANTES do LLM. Destaque/listas mostram o ANO quando
+  o item e de outro ano que o foco (`titleWithDay`/`dedupCandidates` com `crit.focusYear`).
+  **RESOLUCAO DE PESSOAS (WAVE 14, mesmo arquivo)**: `resolvePeopleInProposals` fecha o mesmo tipo de
+  falha no `responsibleId`/`involvedIds` — o modelo manda lixo ("iasmin-id"), o NOME cru, ou ESQUECE o
+  campo. Roda antes da guarda de alvo: valor que ja e id conhecido de `contextPeople` fica; NOME conhecido
+  vira o id; valor lixo com a PERGUNTA citando 1 pessoa conhecida (e "responsavel") usa essa. Determinista,
+  independe do modelo. O card mostra o NOME (o front resolve pelo id real).
+  **INTELIGENCIA + REDES DE SEGURANCA (WAVE 15, docs/CALENDARIO_SPECS10.md)**: a inteligencia principal
+  e o MODELO (gpt-4o) + systemPrompt do PAINEL + regras de dominio no workflow (typo/fonetica/consultoria/
+  "o cartao e a confirmacao"/"update minimo"); o back so garante que escorregoes nao quebrem: (1) fuzzy de
+  titulo como fallback do `titleMatchedEvents` (`fuzzyTitleMatch`, Levenshtein normalizada, janela de
+  tokens k±1, limiar 0.25 + margem 0.10 — 1 candidato inequivoco ou nada); (2) `snapProposalTypes` — type
+  fora de `eventTypeSet` vira o mais proximo com <=2 edicoes, senao e limpo (fonetico tipo "rios" e
+  trabalho do modelo, nao do snap); (3) `resolveClientsInProposals` — clientId lixo resolve por
+  clientName/cliente-citado ou e limpo, id valido preenche o label; (4) update/delete SEM targetId PASSA
+  na sanitizacao (`sanitizeContentProposal`) para a guarda resolver pelo titulo citado; o que TERMINAR sem
+  alvo cai em `dropTargetlessEditable` (pos-guarda) com aviso deterministico — antes a proposta morria
+  antes da guarda e o answer mentia "preparei a proposta" sem card. (5) `ChatAskRequest.ViaVoice` viaja
+  ate o webhook (`body.viaVoice`) e liga o aviso de "transcricao de audio, erros foneticos provaveis" no
+  prompt. Config 100% do painel (`body.ai`); n8n so liga os nos.
+  ATENCAO — validacao mora numa camada SO: o no "Extrair resposta" do n8n tinha a MESMA validacao
+  (update/delete sem targetId => descarta; hasEditable ignorando clientId/clientName) e continuou matando
+  as propostas DEPOIS que o back foi relaxado ("troca o cliente pra Bari" sumia no workflow). Ao mexer em
+  validacao de proposta, conferir as 3 camadas: extrator do workflow, sanitize do back, apply do front.
+  No front, task espelhada (targetId = id do EVENTO, reescrito pela guarda) roteia para o caminho de TASK
+  (patch parcial) — pelo caminho de evento o full-replace vazava defaults (priority 'media') pra task via
+  mirror e o delete apagava so o espelho.
+  **LER PERFIL DO CLIENTE CITADO NO ESCOPO 'ALL' (WAVE 16, `appendNamedClientProfile` em chat_targets.go)**:
+  no escopo 'all' os clientes vao ENXUTOS (`AIContextClientLean`: nome/segmento/tom + `profileMissing`) para
+  nao estourar o contexto com muitos clientes — entao "traz os dados do cliente X" fazia a IA dizer "nao
+  temos" (o dado EXISTE no banco, so nao viajava). O helper roda no `ChatAsk` apos `appendWideTitleMatches`:
+  se a pergunta nomeia UM cliente visivel (`singleNamedClient`, inequivoco), busca o perfil COMPLETO dele
+  (`GetClientProfile`, scoped por account) e o anexa como `AIContextAll.Client` (`*planClient`, json:"client")
+  — o workflow ja renderiza "Cliente em foco" com todos os campos (MESMO bloco do escopo 'client'), SEM tocar
+  no workflow. No escopo 'client' o perfil completo ja viaja: no-op. `foldChatLabel` ficou tolerante a
+  pontuacao (";", "?", ":" viram espaco; "/" e ":" so sobrevivem ENTRE DIGITOS p/ data/hora "15/07"/"14:30")
+  — senao "da Perola:" nao casava "Perola". `maxChatQuestion` subiu 4000->12000 (briefing falado longo).
+
+  **RESOLUCAO POR NOME + ALVO NO CARD (WAVE 12, `chat_targets.go`)**: fecha o vai-e-volta de "preciso do ID".
+  (1) `People []Member` entra no contexto dos DOIS escopos (`calendarChatContext.People` e `AIContextAll.People`,
+  populados por `chatPeopleContext` = `ListResponsibles`, mesma fonte do GET /responsibles) — a IA resolve
+  "responsavel vai ser a Iasmin" por NOME e devolve o id em `responsibleId`/`involvedIds`; o prompt do workflow
+  proibe exigir ID do usuario (nome fora da lista viaja como NOME e o front `resolveResponsibleId` resolve).
+  (2) `resolveProposalTargets` roda no `ChatAsk` sobre as proposals sanitizadas: `targetId` que veio como
+  TITULO (a IA escorrega) e reescrito para o id REAL cruzando com o contexto autoritativo (match unico por
+  titulo, sem acento, entre `context.events`+`context.tasks`); e cada alvo de update/delete vira um SNAPSHOT
+  anexado aos `calendar_items` da mensagem (task pura vira `AIContextEvent` sintetizado via
+  `aiContextEventFromTask`, `TaskID=ID`, data/hora pela MESMA heuristica de fuso do mirror
+  `mirrorEventDateTime`/`taskDueDateParts`) — o card do front SEMPRE mostra o titulo e o "antes" do item que
+  sera alterado, mesmo task sem evento (o front ja resolvia titulo/antes pelos `calendarItems` e ja esconde
+  esses snapshots da secao "Calendario" pelo filtro de targetId). Testes em `chat_targets_test.go`.
 
 ## Anexos / midia (Fase 3)
 - `MediaItem` = `{id,url,name,type("image"|"video"),contentType,sizeBytes,posterUrl?}`; `url` e

@@ -130,6 +130,38 @@ func (r *PostgresCatalogRepository) MarkDeprecatedPermissions(
 	return int(tag.RowsAffected()), nil
 }
 
+// EnableAllModulesOnAgencyAccounts habilita TODO modulo do catalogo em toda conta
+// is_agency=true (a conta-workspace da agencia, casa dos admins — precisa de tudo).
+//
+// Roda a cada boot como INVARIANTE, nao como seed pontual: quando um modulo novo
+// e adicionado ao catalogo (via SyncCatalog), sua linha em core.account_modules
+// para a conta-agencia passa a existir automaticamente e enabled=true — sem o que
+// o modulo (ex.: calendar) nao aparece na matriz de permissoes da edicao de
+// usuario nem no menu da agencia. Substitui o cross-join pontual da migration 0158
+// (que so via os modulos existentes NAQUELE instante) por uma garantia continua.
+//
+// CROSS JOIN accounts(is_agency) x core.modules. ON CONFLICT DO UPDATE reativa e
+// nao duplica (PK (account_id, module_id)). Idempotente. NAO desabilita nada e nao
+// toca contas-cliente (is_agency=false) — a habilitacao por cliente continua sendo
+// decisao de negocio feita no painel. Retorna as linhas afetadas para log.
+func (r *PostgresCatalogRepository) EnableAllModulesOnAgencyAccounts(ctx context.Context) (int, error) {
+	const query = `
+		insert into core.account_modules (account_id, module_id, enabled)
+		select a.id, m.id, true
+		from core.accounts a
+		cross join core.modules m
+		where a.is_agency = true
+		on conflict (account_id, module_id) do update
+			set enabled = true,
+			    enabled_at = now()
+	`
+	tag, err := r.pool.Exec(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 // UpsertRoleTemplate sincroniza uma linha em core.role_templates.
 // Retorna created=true se a linha era nova (caller decide se popula
 // role_template_permissions).

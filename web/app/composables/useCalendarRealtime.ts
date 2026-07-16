@@ -85,7 +85,7 @@ export function useCalendarRealtime(options: CalendarRealtimeOptions) {
         ? (payload.payload as Record<string, unknown>)
         : {}
 
-    if (type.startsWith('calendar.event_') || type === 'calendar.day_media_updated') {
+    if (type.startsWith('calendar.event_')) {
       scheduleWindowRefresh()
       return
     }

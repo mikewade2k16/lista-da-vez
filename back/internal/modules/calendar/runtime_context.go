@@ -151,9 +151,7 @@ func (s *Service) BuildAIContext(ctx context.Context, accountID, clientID, month
 	for _, c := range pc.Clients {
 		clientNames[c.ID] = c.Name
 	}
-	if err := s.enrichContextEvents(ctx, account, from, to, events, clientNames); err != nil {
-		return AIContext{}, err
-	}
+	setContextClientNames(events, clientNames)
 	plans, err := s.leanPlans(ctx, account)
 	if err != nil {
 		return AIContext{}, err
@@ -214,13 +212,23 @@ func missingProfileFields(p planProfile) []string {
 // SEM o campo account (o chat omite account, regra de unificacao C7). Scope marca 'all'
 // para a IA saber que o contexto e multi-cliente (diferente do bloco client do C7).
 type AIContextAll struct {
-	Scope      string                `json:"scope"` // sempre "all"
-	Month      string                `json:"month"`
-	Clients    []AIContextClientLean `json:"clients"`
-	Holidays   []Holiday             `json:"holidays"`
-	MonthNotes string                `json:"monthNotes"`
-	Events     []AIContextEvent      `json:"events"`
-	Tasks      []AIContextTask       `json:"tasks,omitempty"`
+	Scope   string                `json:"scope"` // sempre "all"
+	Month   string                `json:"month"`
+	Clients []AIContextClientLean `json:"clients"`
+	// Client (WAVE 16): perfil COMPLETO do cliente CITADO na pergunta, hidratado sob demanda
+	// (appendNamedClientProfile). No escopo 'all' os clientes vao ENXUTOS (nome/segmento/tom +
+	// campos vazios) para nao estourar o contexto com muitos clientes — mas "traz os dados do
+	// cliente X" precisa do perfil inteiro. Quando setado, o workflow renderiza "Cliente em
+	// foco" com todos os campos (mesmo bloco do escopo 'client'), sem trocar o escopo nem o
+	// workflow. nil = ninguem citado (contexto segue leve). MESMO json:"client" do escopo single.
+	Client     *planClient      `json:"client,omitempty"`
+	Holidays   []Holiday        `json:"holidays"`
+	MonthNotes string           `json:"monthNotes"`
+	Events     []AIContextEvent `json:"events"`
+	Tasks      []AIContextTask  `json:"tasks,omitempty"`
+	// People (WAVE 12): pessoas da equipe (id+nome) para a IA resolver responsavel/
+	// envolvidos por NOME (mesma fonte do GET /responsibles), sem exigir ID do usuario.
+	People []Member `json:"people,omitempty"`
 }
 
 // BuildAIContextAll monta o agregado LEAN multi-cliente (contrato D4) para o chat em
@@ -274,9 +282,7 @@ func (s *Service) BuildAIContextAll(ctx context.Context, accountID string, visib
 	for _, c := range pc.Clients {
 		clientNames[c.ID] = c.Name
 	}
-	if err := s.enrichContextEvents(ctx, account, from, to, events, clientNames); err != nil {
-		return AIContextAll{}, err
-	}
+	setContextClientNames(events, clientNames)
 	return AIContextAll{
 		Scope:      chatScopeAll,
 		Month:      month,
@@ -287,27 +293,13 @@ func (s *Service) BuildAIContextAll(ctx context.Context, accountID string, visib
 	}, nil
 }
 
-// enrichContextEvents associa nomes e anexos avulsos do dia marcados com eventId. A
-// midia propria/espelhada ja vem da query de eventos; a leitura de day_media e unica
-// para todo o mes (sem N+1). URLs continuam internas e ja foram validadas no upload.
-func (s *Service) enrichContextEvents(ctx context.Context, accountID, from, to string, events []AIContextEvent, clientNames map[string]string) error {
-	byID := make(map[string]*AIContextEvent, len(events))
+// setContextClientNames preenche o nome do cliente em cada evento do contexto da IA.
+// WAVE 13: a midia (propria + espelhada da task) ja vem da query de eventos
+// (scanAIContextEvent une events.media + linked_media); nao ha mais day_media a unir aqui.
+func setContextClientNames(events []AIContextEvent, clientNames map[string]string) {
 	for i := range events {
 		events[i].ClientName = clientNames[events[i].ClientID]
-		byID[events[i].ID] = &events[i]
 	}
-	days, err := s.store.ListDayMedia(ctx, accountID, from, to)
-	if err != nil {
-		return err
-	}
-	for _, day := range days {
-		for _, media := range day.Media {
-			if event := byID[strings.TrimSpace(media.EventID)]; event != nil {
-				event.Media = appendContextMedia(event.Media, media)
-			}
-		}
-	}
-	return nil
 }
 
 func appendContextMedia(items []MediaItem, candidate MediaItem) []MediaItem {

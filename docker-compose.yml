@@ -148,6 +148,31 @@ services:
       PEROLA_BI_REQUEST_TIMEOUT: ${PEROLA_BI_REQUEST_TIMEOUT:-12s}
       PEROLA_BI_PAGE_LIMIT: ${PEROLA_BI_PAGE_LIMIT:-100}
       PEROLA_BI_MAX_PAGES: ${PEROLA_BI_MAX_PAGES:-50}
+      # Modulo omnichannel (Atendimento WhatsApp). Chave AES-256 (32 bytes em base64,
+      # `openssl rand -base64 32`) p/ cifrar credenciais de instancia EM REPOUSO
+      # (platform/secretbox). OBRIGATORIA a partir da F3.5: sem ela a api NAO SOBE
+      # (fail-fast no boot, sem default). Perder a chave = perder os segredos cifrados.
+      OMNI_SECRETS_KEY: ${OMNI_SECRETS_KEY:-}
+      # Cerebro configuravel: `native` (rollback) ou `n8n`. O n8n nunca envia ao canal;
+      # devolve JSON ao Go, que valida e controla estado/outbox.
+      OMNI_AI_EXECUTOR: ${OMNI_AI_EXECUTOR:-native}
+      OMNI_N8N_BRAIN_WEBHOOK_URL: ${OMNI_N8N_BRAIN_WEBHOOK_URL:-}
+      # Provider Evolution (1o adapter real do canal). A api Go fala com a Evolution
+      # pela rede interna do compose. Credencial REAL e por instancia (cifrada); estes
+      # dois sao FALLBACK DE AMBIENTE apenas (canonico §13). Vazios = so o provider
+      # `mock` funciona (destrava F5/F6/F8 sem numero real).
+      EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL:-http://evolution:8080}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      # Provider default do bootstrap quando o front nao envia (o inbox verbatim e
+      # Evolution-only e nao conhece o conceito). Default do codigo = mock; setar
+      # `evolution` (ou o oficial na F11) para testar/produzir com numero real. A escolha
+      # REAL por conta/numero (D-A) mora em whatsapp_instances.provider / F10.
+      OMNI_DEFAULT_WHATSAPP_PROVIDER: ${OMNI_DEFAULT_WHATSAPP_PROVIDER:-}
+      # URL que o provider chama de volta no webhook inbound
+      # (POST /v1/webhooks/omnichannel/{provider}/{accountSlug}). Em dev a Evolution
+      # (container) alcanca a api pela rede interna: http://api:8080. Em prod = dominio
+      # publico da api (por onde o Caddy roteia /v1/webhooks/*).
+      WEBHOOK_RECEIVER_BASE_URL: ${WEBHOOK_RECEIVER_BASE_URL:-http://api:8080}
     depends_on:
       postgres:
         condition: service_healthy
@@ -432,6 +457,93 @@ services:
       retries: 5
       start_period: 20s
 
+  # Provider Evolution API (modulo omnichannel — Atendimento WhatsApp, F4).
+  # 1o adapter real do canal (a decisao D-A do canonico e multi-provider; o `mock`
+  # roda sem este container). Sobe SO com `docker compose --profile omnichannel up -d`
+  # (fica fora do dev normal). Guia de subida/pareamento: docs/omnichannel/EVOLUTION_SETUP.md.
+  #
+  # ATENCAO VERSAO: confirmar a tag da imagem oficial antes de subir em prod
+  # (o projeto publica em atendai/evolution-api e, mais recente, evoapicloud/evolution-api).
+  # Pinado numa v2 estavel; NAO usar `latest` (Evolution v2 mudou envs vs v1).
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7 # v2.3.7 = versao do omni antigo (whats-test) que PAREAVA local; v2.2.3/v2.1.1 davam timeout no handshake WA (validateConnection)
+    profiles: ["omnichannel"]
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      # URL que a propria Evolution usa p/ montar links (QR/midia). Rede interna do compose.
+      SERVER_URL: ${EVOLUTION_BASE_URL:-http://evolution:8080}
+      # Versao do WhatsApp Web que o Baileys ANUNCIA no handshake. SEM ISTO o WhatsApp
+      # rejeita/trava a conexao (o "Timed Out at validateConnection" que impedia o QR local).
+      # Valor herdado do omni antigo (whats-test) que pareava local. ATUALIZAR quando o WA
+      # deprecar a versao (sintoma = QR volta a nao gerar). Ver docs/omnichannel/ESTADO.md.
+      CONFIG_SESSION_PHONE_VERSION: ${EVOLUTION_CONFIG_SESSION_PHONE_VERSION:-2,3000,1025205472}
+      # Chave mestra de autenticacao (header `apikey`). A api Go a envia em toda chamada
+      # de sessao/envio. Gerar valor FORTE no .env; NAO commitar o .env real.
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-change-me-evolution-api-key}
+      # Banco DEDICADO (nao e o postgres do Omni — isolamento por design: o modulo
+      # nao compartilha schema com ninguem). A Evolution roda as proprias migrations
+      # Prisma no boot contra este banco.
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD:-evolution_dev}@evolution-db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_omni
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      # Cache LOCAL (sem Redis): mantem o profile omnichannel autossuficiente, sem
+      # acoplar ao Redis do profile automation.
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      # Webhook GLOBAL desligado de proposito: a URL de callback e setada POR INSTANCIA
+      # pela api Go (setWebhook), apontando p/ /v1/webhooks/omnichannel/evolution/{slug}.
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      # Logs enxutos; nunca logar payload cru (canonico §10).
+      LOG_LEVEL: ${EVOLUTION_LOG_LEVEL:-ERROR}
+      LOG_BAILEYS: error
+    volumes:
+      - evolution_instances:/evolution/instances
+    ports:
+      # Bind so em 127.0.0.1: o painel le o QR PELA api Go, nao direto. A porta no host
+      # e SO p/ troubleshooting local (dashboard/manager da Evolution). Nao expor publico.
+      - "127.0.0.1:${EVOLUTION_PORT:-8085}:8080"
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/ > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+  # Postgres DEDICADO da Evolution (isolado do postgres do Omni). Sem porta no host:
+  # so a Evolution o acessa, pela rede interna do compose. Profile omnichannel.
+  evolution-db:
+    image: postgres:16-alpine
+    profiles: ["omnichannel"]
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:-evolution_dev}
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 volumes:
   postgres_data:
   api_uploads:
@@ -443,3 +555,5 @@ volumes:
   automation_waha_media:
   automation_n8n_data:
   automation_whisper_cache:
+  evolution_instances:
+  evolution_db_data:

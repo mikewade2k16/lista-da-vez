@@ -205,8 +205,62 @@ grudados no nome viram espaço; `/` e `:` só sobrevivem ENTRE DÍGITOS, p/ data
 - **Texto**: a pergunta era capada em 4000 runas no back (`maxChatQuestion`). Um briefing FALADO
   longo batia nisso. Subiu para **12000** (~2000 palavras).
 
+## WAVE 17 (2026-07-17) — 3 ajustes de memória/contexto/UX do chat (feedback do dono no piloto)
+
+Três bugs reais reportados testando o chat de "confirmar os N clientes das propostas":
+
+### 1. Chat só achava alguns clientes (bug 1)
+
+Sintoma: no escopo **Todos**, a IA só citava os clientes com evento/perfil (ex.: "só 4: AM Malls,
+Dr Lucas, Mostarda, Pérola") e dizia "faltou Duby/Bari" — mesmo eles estando na aba Clientes e no
+select de escopo. Causa: `BuildAIContextAll` monta o nome de cada cliente lean por `loadAccountNames`,
+que **só nomeia cliente já referenciado** (evento ou perfil) — por enumeração cross-account. Cliente
+visível SEM evento/perfil viajava com `name: ""` e a IA não conseguia citá-lo.
+
+Fix (`chat_access.go` + `chat_conversations.go` + `runtime_context.go`): `ChatAccess` passou a
+carregar `VisibleClients` (id+**nome**, mesma fonte do select de escopo, já permission-scoped);
+`buildChatContext` chama `fillLeanClientNames` (all) e preenche `block.Client.Name` (cliente único)
+com esses nomes quando vieram vazios. **Não afrouxa a trava**: são os MESMOS nomes já exibidos no
+select. Nome do banco (quando existe) vence; só preenche o vazio.
+
+### 2. A IA não sabia o que mandou nos cards (bug 2)
+
+Sintoma: a IA propunha cards, o dono pedia correção e ela não lembrava o que veio neles. Causa:
+`toHistory` mandava só `{role, content}` ao n8n — as `Proposals` (cards) ficavam salvas na mensagem
+mas **não viajavam** no history; e quando há cards o `content` vira um aviso curto ("Preparei a
+proposta"). Nas rodadas seguintes a IA não tinha nenhum dado dos cards.
+
+Fix (`chat.go`): `toHistory` reanexa ao content das mensagens do **assistente** um resumo compacto de
+cada card (`summarizeStoredProposals`/`describeStoredProposal`): ação, tipo, título/alvo, data,
+cliente e **status** (pendente/aprovado/recusado). Bounded por `maxHistoryCardsPerMsg=20` (excedente
+vira "(+N outros)"). O n8n só repassa `content` — **zero mudança no workflow**.
+
+### 3. Ler a conversa de cima pra baixo (bug 3, UI/UX)
+
+Dois ajustes distintos, com a mesma origem (o dono quer ler "tipo WhatsApp, da 1ª msg pra baixo"):
+
+- **Memória da IA**: `chatHistoryLimit` 12 → **40** (`chat.go`). A IA passa a ler quase a conversa
+  inteira; o teto de 40 é a "limpeza" que evita estourar tokens/custo (mantém as 40 ÚLTIMAS, ordem
+  cronológica — já era asc).
+- **Rolagem do painel** (`useCalendarChat.ts` + `CalendarChatPanel.vue`): dois casos.
+  - **Abrir/carregar** uma conversa → posiciona na **1ª mensagem** (topo). Sinal `pendingTopScroll`
+    (marcado em `openConversation`, consumido pelo painel) + scroll-to-top ao a janela ficar visível.
+  - **Turno novo** (estilo ChatGPT/Claude): ao **enviar** a pergunta rola pro fim (ver o
+    "digitando..."); quando a **resposta chega** ancora a **pergunta no TOPO** do viewport
+    (`pinLastUserMessageToTop`, mira o último `.calendar-chat__message--user`) — a pessoa lê a
+    resposta de cima pra baixo, NÃO cai no fim de uma resposta longa (lista de cards) tendo que
+    rolar pra cima. Correção do 1º approach (que rolava pro fim e caía no fim da resposta).
+
+Estático: `go build`/`vet`/`test` do módulo (novos testes em `chat_history_test.go`); `eslint` dos 2
+arquivos do front (só warnings pré-existentes de `max-lines`). api rebuildada + recreate; web dev por
+compose watch. **SEM migration, SEM env, SEM reimport de n8n.**
+
 ## Notas de Deploy
 
+- **WAVE 17: rebuild api** (`docker compose up -d --build api`; se a mudança não aparecer, `--no-cache`
+  ou `--force-recreate` — quirk do cache/recreate) — nomes de cliente no contexto + resumo de cards no
+  history + `chatHistoryLimit` 40. SEM migration, SEM env, SEM reimport de n8n.
+- **WAVE 17: rebuild web** — rolagem topo-ao-abrir do painel do chat. SEM env.
 - **Rebuild api** (`docker compose build --no-cache api` — armadilha do cache de embed) — guarda
   nova + ViaVoice + hidratação de perfil (WAVE 16) + `maxChatQuestion` 12000. SEM migration. SEM env.
 - **Rebuild web** — ditado contínuo (WAVE 16). SEM env.

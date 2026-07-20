@@ -41,6 +41,7 @@ Ele nao deve cuidar de:
 - `GET /v1/realtime/presence?scope=...&accountId=...&ticket=...` (scope in `board|task|calendar`)
 - `GET /v1/realtime/notifications?userId=...&accountId=...&ticket=...`
 - `GET /v1/realtime/calendar?scope=account&accountId=...&ticket=...` (Wave 2, C11)
+- `GET /v1/realtime/omnichannel?scope=account&accountId=...&ticket=...` (F5)
 
 O ticket WS e efemero, fica apenas em memoria do processo, expira em 30s e e consumido com `LoadAndDelete`
 antes do upgrade WebSocket. Ele e single-use: reconexao precisa pedir um ticket novo.
@@ -220,6 +221,58 @@ calendar.plan_updated       (resourceId=planId, payload.status)
   jogando `date`/`monthKey`/`status` no `Payload map[string]any` (sem inchar o struct). O app
   injeta `calendar.WithPublisher(realtimeService)`. Constantes espelhadas em `model.go`
   (`EventTypeCalendar*`) e em `calendar/publisher.go` (privadas) — os dois lados concordam.
+
+## Canal Omnichannel (F5)
+
+`service_omnichannel.go` adiciona o canal do atendimento WhatsApp sem mexer nos canais existentes:
+
+```
+omnichannel:account:{accountId}   eventos do inbox da conta (message.*/conversation.*)
+```
+
+- `GET /v1/realtime/omnichannel?scope=account&accountId=...` → `HandleOmnichannelSocket` reusa
+  `serveSubscriptionSocket` (buffer 16, rate limit 30 msg/s, close 1008). Ticket efemero como
+  todo canal. Rota FORA do `moduleGatingRules()` (app.go) — `/v1/realtime/*` nunca e gateado por
+  modulo; o sinal de `module_disabled` vem da camada REST, nao do WS.
+- **Autorizacao** (`authorizeOmnichannelAccount`): conta ativa + membership + permissao efetiva
+  `omnichannel.conversations.view`; `platform_admin` bypass apos a conta existir.
+  **DIVERGENCIA DELIBERADA do calendar** (canonico §10, enumeration): NAO membro → **404**
+  (`errRealtimeNotFound`), NUNCA 403. `authorizeCalendarAccount` devolve 403 para nao-membro;
+  copiar cego reintroduz o vazamento. Permissao FALTANDO (membro sem a key) → **403**
+  (`errRealtimeForbidden`) — permissao gateia feature. Conta diferente nunca recebe eventos.
+- **Eventos publicados — exatamente 3, com o payload COMPLETO por CALL-SITE (nao unificar):**
+
+```
+message.created         resourceId=messageId  (webhook: subconjunto do Message; envio HTTP: Message completo — F6)
+message.updated         resourceId=messageId  (3 shapes: worker minimo / webhook subconjunto / rehidratacao completa — F6)
+conversation.updated    resourceId=conversationId  (webhook: sem instanceName; status/contacts: com — F6/F7)
+```
+
+  Na **F5 o unico produtor e o webhook inbound**, que publica **`message.created`** (id interno +
+  conversationId + direction/messageType/content/status/createdAt + mediaUrl sanitizada). O front
+  `message.created` nao ramifica por shape: com conversationId ele faz patch local na thread aberta
+  e, para conversa nova nao-cacheada, dispara refresh REST do sidebar. `message.updated` /
+  `conversation.updated` do webhook ficam para a F6 (onde a view completa da conversa ja e lida) —
+  evita empurrar um card parcial (regressao do `upsertConversation`, que e merge raso).
+
+- **DIVERGENCIA CONSCIENTE do padrao da casa (principio 4):** os demais canais mandam payload
+  **lean de invalidacao** (o front refaz fetch). O omnichannel carrega o **payload completo** em
+  `Event.Payload` porque o front e **verbatim (D-B)** e faz **patch local** (`mergeMessages`,
+  `upsertConversation`). Excecao deliberada, alvo de reavaliacao na F14.
+
+- **Sanitizacao de midia (obrigatoria):** `mediaUrl` que comeca com `data:` vira `null` no WS —
+  NUNCA base64 no socket. Feito no **call-site** (`omnichannel/realtime.go`,
+  `sanitizeMediaURLForRealtime`) e **repetido** no publisher (`PublishOmnichannelEvent` zera
+  `payload["mediaUrl"]` data:) como cinto e suspensorio. O front busca a midia por
+  `GET /v1/omnichannel/conversations/{cid}/messages/{mid}/media` (F6).
+
+- **Publisher (direcao realtime → omnichannel):** o modulo `omnichannel` define a interface
+  `omnichannel.Publisher` + o tipo `omnichannel.RealtimeEvent` (`omnichannel/publisher.go`); o
+  `realtime` a implementa em `PublishOmnichannelEvent`. O app injeta
+  `omnichannel.WithPublisher(realtimeService)`. Constantes espelhadas em `model.go`
+  (`EventTypeOmnichannel*`) e em `omnichannel/publisher.go` (`RealtimeEvent*`) — os dois lados
+  concordam. `noopPublisher` = default (canal desligado; testes de service dispensam o realtime).
+  **Nao publicar dentro da transacao** do webhook: persiste → commita → publica.
 
 ## Evolucao esperada
 

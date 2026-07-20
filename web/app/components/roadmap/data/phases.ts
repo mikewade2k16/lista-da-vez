@@ -8,6 +8,7 @@ import { ROADMAP_PHASES_PART3 } from "./phases-part3";
 import { ROADMAP_PHASES_PART4 } from "./phases-part4";
 import { ROADMAP_PHASES_PART5 } from "./phases-part5";
 import { ROADMAP_PHASES_PART6 } from "./phases-part6";
+import { ROADMAP_PHASES_PART7 } from "./phases-part7";
 
 export const ROADMAP_PHASES: RoadmapPhase[] = [
   ...ROADMAP_PHASES_PART1,
@@ -15,5 +16,6 @@ export const ROADMAP_PHASES: RoadmapPhase[] = [
   ...ROADMAP_PHASES_PART3,
   ...ROADMAP_PHASES_PART4,
   ...ROADMAP_PHASES_PART5,
-  ...ROADMAP_PHASES_PART6
+  ...ROADMAP_PHASES_PART6,
+  ...ROADMAP_PHASES_PART7
 ];

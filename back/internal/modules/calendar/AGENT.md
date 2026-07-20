@@ -179,20 +179,29 @@ visivel => `ErrInvalidClient`, `all` so p/ quem tem select; `authorizeConversati
 principal, req)`) persiste a conversa COM memoria e escopo — (1) `resolveChatAccess`; (2) `resolveChatTarget`
 normaliza o escopo (existente valida dono-ou-agencia + REVALIDA o escopo salvo contra o acesso atual; nova ainda
 NAO materializa); (3) checa IA EFETIVA + KEY CRUA ANTES de materializar/gravar (sem conversa orfa se a IA esta
-off); (4) cria a conversa nova so entao; (5) `history` = ultimas N (`chatHistoryLimit=12`) JA existentes carregadas
-ANTES de gravar a pergunta (a pergunta vai no campo `question`, nao no `history`, p/ nao duplicar quando o n8n
-concatena system+history+question, D5); (6) contexto `client` => `BuildAIContext`, `all` => `BuildAIContextAll`;
+off); (4) cria a conversa nova so entao; (5) `history` = ultimas N (`chatHistoryLimit=40`, WAVE 17: le quase a
+conversa inteira "tipo WhatsApp"; o teto e a limpeza p/ nao estourar tokens) JA existentes carregadas ANTES de
+gravar a pergunta (a pergunta vai no campo `question`, nao no `history`, p/ nao duplicar quando o n8n concatena
+system+history+question, D5); `toHistory` reanexa ao content do ASSISTENTE um resumo compacto dos cards que ele
+propos (`summarizeStoredProposals`/`describeStoredProposal`, WAVE 17: acao/tipo/titulo/data/cliente/status,
+bounded `maxHistoryCardsPerMsg=20`) — as `Proposals` ficavam salvas mas nao viajavam no history, e a IA nao
+lembrava o que mandou nos cards; (6) contexto `client` => `BuildAIContext`, `all` => `BuildAIContextAll`;
 (7) grava a resposta (role=assistant), titula pela 1a pergunta (`deriveChatTitle`, `TouchConversation` bump de
 `updated_at` — `AppendMessage` NAO move) e responde `{answer,conversationId,title}`. `chatWebhookPayload` ganhou
 `History []chatHistoryMessage{role,content}` e `Context any` (client => `calendarChatContext`, all =>
 `AIContextAll`). `runtime_context.go` `BuildAIContextAll(account,visibleClientIDs,month)` = agregado LEAN
 multi-cliente (contrato D4): resumo `{id,name,segment,brandVoice(trunc 280)}` de cada cliente (teto
 `maxContextClients=30`, reusa `planContext` sem N+1) + feriados/nota + eventos lean do mes de TODOS os clientes
-(teto 100); helpers `capClientIDs`/`truncateRunes`. `chat_conversations.go` (novo) = camada service das rotas D3
+(teto 100); helpers `capClientIDs`/`truncateRunes`. WAVE 17: `buildChatContext` nomeia todo cliente VISIVEL do
+contexto (`fillLeanClientNames` no all; `block.Client.Name` no client) a partir de `access.VisibleClients`
+(id+nome do select de escopo) — `loadAccountNames` so nomeia cliente com evento/perfil, entao cliente visivel SEM
+evento/perfil viajava sem nome e a IA nao o citava ("faltou Duby/Bari"); nao afrouxa a trava (mesmos nomes do
+select). `chat_conversations.go` (novo) = camada service das rotas D3
 (`ListChatConversations`/`GetChatConversation`/`CreateChatConversation`/`DeleteChatConversation`/`ChatScope`) +
 views (`ChatConversationSummary`/`ChatConversationDetail`/`ChatMessageView`/`ChatScopeView`/`ChatScopeClient`) +
 helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToStr`). `chat_access.go` ganhou
-`resolveChatContext` (acesso + clientes NOMEADOS numa UNICA ida ao tenants scope) e `visibleClients` (id+name).
+`resolveChatContext` (acesso + clientes NOMEADOS numa UNICA ida ao tenants scope) e `visibleClients` (id+name);
+`ChatAccess.VisibleClients` (id+nome) + `clientNameByID()` alimentam o preenchimento de nome do contexto (WAVE 17).
 
 ## Schema (`calendar`) — migrations 0181/0182/0183/0185/0186/0188/0189/0190/0191
 - `calendar.events` (0181; **+`version` na 0188**): id, **account_id** (dono, FK core.accounts),

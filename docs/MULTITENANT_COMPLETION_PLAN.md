@@ -259,13 +259,19 @@ psql $DATABASE_URL -c "SELECT count(*) FROM core.users WHERE coalesce(nick,'') !
 
 **Testes no browser:**
 
-- [ ] Login real com user de Pérola → `GET /v1/me/accounts` retorna Pérola (UUID `aaaaaaaa-...`) com módulos contratados corretos. Verificar via DevTools > Network.
-- [ ] Login real com user de Duby → idem para Duby (UUID `15209ebe-...`).
-- [ ] Backfill manual das colunas novas de billing para Pérola via `/manage/clientes-web` (Duby fica com defaults).
-- [ ] Smoke: trocar account no `CoreAccountSwitcher` → menu recarrega com módulos da nova account. Verificar que `/crm` some/aparece conforme account.
-- [ ] Smoke: desabilitar módulo `crm` no painel `/manage/clientes-web` para Pérola → item `/crm` some do menu; acessar `/crm` diretamente redireciona para `/`.
-- [ ] Smoke: `/manage/leads-web` e `/manage/produtos-web` — lista carrega sem 403 (X-Account-Id agora enviado automaticamente via `auth.activeTenantId`).
-- [ ] Smoke: revogar sessão de user A em `/manage/users` → próximo request de user A retorna 401 imediatamente (sem esperar TTL do PrincipalCache).
+> **Marcados retroativamente em 2026-07-17** — atestado do dono de que os smokes foram executados
+> e passaram; o checklist é que ficou para trás. Não foram re-executados no ato da marcação.
+> Esta é a evidência que liberou a implementação do módulo de Atendimento WhatsApp
+> (`docs/omnichannel/PLANO_ATENDIMENTO.md`, decisão **D-D**), que estava congelado esperando
+> exatamente estes itens.
+
+- [x] Login real com user de Pérola → `GET /v1/me/accounts` retorna Pérola (UUID `aaaaaaaa-...`) com módulos contratados corretos. Verificar via DevTools > Network.
+- [x] Login real com user de Duby → idem para Duby (UUID `15209ebe-...`).
+- [x] Backfill manual das colunas novas de billing para Pérola via `/manage/clientes-web` (Duby fica com defaults).
+- [x] Smoke: trocar account no `CoreAccountSwitcher` → menu recarrega com módulos da nova account. Verificar que `/crm` some/aparece conforme account.
+- [x] Smoke: desabilitar módulo `crm` no painel `/manage/clientes-web` para Pérola → item `/crm` some do menu; acessar `/crm` diretamente redireciona para `/`.
+- [x] Smoke: `/manage/leads-web` e `/manage/produtos-web` — lista carrega sem 403 (X-Account-Id agora enviado automaticamente via `auth.activeTenantId`).
+- [x] Smoke: revogar sessão de user A em `/manage/users` → próximo request de user A retorna 401 imediatamente (sem esperar TTL do PrincipalCache).
 
 **Nota (atualizada 2026-06-04):** O smoke de "desabilitar módulo retorna 403 module_disabled em < 1s" (critério 3) agora **é executável** — `RequireModuleByPath` foi wired nas rotas de queue/crm/tasks na seção **C20**. Rodar: `PUT /v1/admin/accounts/{id}/modules` desabilitando `crm` → `GET /v1/erp/...` retorna 403 `module_disabled` na hora (Invalidate no evento, sem esperar TTL).
 

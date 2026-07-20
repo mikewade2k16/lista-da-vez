@@ -95,6 +95,14 @@ O fluxo local sem Docker continua existindo apenas como fallback:
 
 ## Regras gerais
 
+- Skills pessoais Codex deste projeto:
+  - `$principios-engenharia`: usar antes de qualquer implementação, refactor, migration,
+    deploy ou revisão de código;
+  - `$omnichannel-hibrido`: usar sempre que a tarefa tocar atendimento, CRM multicanal,
+    canais, IA, n8n, filas ou handoff;
+  - `$revisao-dia`: usar para balanço consultivo; é somente leitura.
+  As fontes Claude originais continuam em `.claude/skills`, mas as versões nativas e
+  implicitamente invocáveis ficam em `~/.codex/skills`.
 - Todo novo trabalho de produto deve considerar `web + back + banco` como stack integrada.
 - `web` fala com a API por `NUXT_PUBLIC_API_BASE` no browser e `NUXT_API_INTERNAL_BASE` no SSR/container.
 - `back` deve continuar modular, com um `AGENT.md` proprio por modulo em `internal/modules/<modulo>`.

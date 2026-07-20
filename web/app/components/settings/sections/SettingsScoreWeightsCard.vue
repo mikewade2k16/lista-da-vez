@@ -34,6 +34,11 @@ const totalClass = computed<string>(() => {
   return 'score-weights-card__total--warn'
 })
 
+const totalMeta = computed<string>(() => {
+  if (totalWeight.value === 100) return `${totalWeight.value}%`
+  return `${totalWeight.value}% — ajuste`
+})
+
 function handleSliderInput(fieldId: string, event: Event) {
   const target = event.target as HTMLInputElement
   props.onChangeWeight(fieldId, target.value)
@@ -42,48 +47,64 @@ function handleSliderInput(fieldId: string, event: Event) {
 
 <template>
   <article class="settings-card score-weights-card">
-    <header class="settings-card__header">
-      <h3 class="settings-card__title">Pesos do Score 360</h3>
-      <p class="settings-card__text">
-        Define a importancia de cada componente no calculo do ranking. Os pesos devem somar 100 para
-        manter a escala padrao.
-      </p>
-    </header>
-
-    <div class="score-weights-card__list">
-      <div v-for="field in WEIGHT_FIELDS" :key="field.id" class="score-weights-card__row">
-        <label :for="`score-weight-${field.id}`" class="score-weights-card__label">
-          {{ field.label }}
-        </label>
-        <div class="score-weights-card__controls">
-          <input
-            :id="`score-weight-${field.id}`"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            class="score-weights-card__slider"
-            :value="getWeight(field.id, field.defaultValue)"
-            :disabled="!canEdit"
-            @change="handleSliderInput(field.id, $event)"
-          />
-          <span class="score-weights-card__value">
-            {{ getWeight(field.id, field.defaultValue) }}
-          </span>
+    <details class="settings-collapse">
+      <summary class="settings-collapse__summary">
+        <div class="settings-collapse__title-wrap">
+          <strong class="settings-collapse__title">Pesos do Score 360</strong>
+          <span class="settings-collapse__text">Importancia de cada componente no ranking</span>
         </div>
-      </div>
-    </div>
+        <span :class="['settings-collapse__meta', totalClass]">{{ totalMeta }}</span>
+        <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
+          expand_more
+        </span>
+      </summary>
 
-    <footer class="score-weights-card__footer">
-      <span :class="['score-weights-card__total', totalClass]">
-        Total: {{ totalWeight }}
-        <template v-if="totalWeight !== 100">— deve ser 100 para salvar corretamente</template>
-      </span>
-    </footer>
+      <div class="settings-collapse__body">
+        <p class="settings-card__text score-weights-card__intro">
+          Define a importancia de cada componente no calculo do ranking. Os pesos devem somar 100
+          para manter a escala padrao.
+        </p>
+
+        <div class="score-weights-card__list">
+          <div v-for="field in WEIGHT_FIELDS" :key="field.id" class="score-weights-card__row">
+            <label :for="`score-weight-${field.id}`" class="score-weights-card__label">
+              {{ field.label }}
+            </label>
+            <div class="score-weights-card__controls">
+              <input
+                :id="`score-weight-${field.id}`"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                class="score-weights-card__slider"
+                :value="getWeight(field.id, field.defaultValue)"
+                :disabled="!canEdit"
+                @change="handleSliderInput(field.id, $event)"
+              />
+              <span class="score-weights-card__value">
+                {{ getWeight(field.id, field.defaultValue) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <footer class="score-weights-card__footer">
+          <span :class="['score-weights-card__total', totalClass]">
+            Total: {{ totalWeight }}
+            <template v-if="totalWeight !== 100">— deve ser 100 para salvar corretamente</template>
+          </span>
+        </footer>
+      </div>
+    </details>
   </article>
 </template>
 
 <style scoped>
+.score-weights-card__intro {
+  margin: 0 0 0.75rem;
+}
+
 .score-weights-card__list {
   display: flex;
   flex-direction: column;

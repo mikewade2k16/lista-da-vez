@@ -739,6 +739,21 @@ erDiagram
   `proposal_status` e `calendar_items` (snapshot de eventos/mídias reais mostrado no chat).
 - Uma proposta nasce `pending` e só passa para `accepted` ou `rejected` por ação explícita do usuário.
 
+## Omnichannel — CRM e identidades de canal
+
+- `messaging.contacts`: entidade CRM única por conta; telefone é opcional para suportar
+  identidades de Instagram, e continua único quando preenchido. Guarda primeira/última
+  interação, lifecycle (`lead|prospect|customer|inactive`), tags e campos customizados.
+- `messaging.contact_identities`: liga o contato a uma identidade externa por
+  `channel + provider + instance_scope_key + external_id`; permite WhatsApp oficial,
+  Evolution e Instagram no mesmo cadastro.
+- `messaging.contact_touchpoints`: trilha de origem por contato/conversa/mensagem, com
+  canal, provider, landing page, campanha e metadados. Evento externo é idempotente por
+  conta + provider.
+- `messaging.contact_notes`: notas humanas persistidas e tenant-scoped.
+- O webhook inbound cria contato, identidade, touchpoint, conversa e mensagem na mesma
+  transação da deduplicação. O n8n nunca escreve diretamente nessas tabelas.
+
 ## Seeds atuais
 
 A migration de seed cria:

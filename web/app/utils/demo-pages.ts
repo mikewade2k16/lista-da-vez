@@ -19,41 +19,8 @@ const fallbackPage = {
 }
 
 export const DEMO_PAGES = {
-  omnichannel: {
-    title: 'Omnichannel',
-    eyebrow: 'Atendimento',
-    description:
-      'Central unificada para conversas vindas de WhatsApp, site, loja e canais internos.',
-    status: '6 canais ativos',
-    statusMeta: 'Atualizado ha 4 min',
-    metrics: [
-      { label: 'Conversas abertas', value: '128', tone: 'info' },
-      { label: 'Sem dono', value: '14', tone: 'warning' },
-      { label: 'SLA dentro', value: '92%', tone: 'success' },
-    ],
-    rows: [
-      {
-        title: 'Lead do showroom aguardando consultor',
-        meta: 'WhatsApp - 2 min',
-        status: 'Novo',
-        tone: 'info',
-      },
-      {
-        title: 'Cliente retornou sobre proposta',
-        meta: 'Site - 8 min',
-        status: 'Prioridade',
-        tone: 'warning',
-      },
-      {
-        title: 'Atendimento transferido para loja',
-        meta: 'Interno - 16 min',
-        status: 'Em rota',
-        tone: 'success',
-      },
-    ],
-    asideTitle: 'Canais',
-    asideItems: ['WhatsApp', 'Chat do site', 'Telefone', 'Presencial'],
-  },
+  // A chave `omnichannel` saiu na F1: /omnichannel deixou de ser demo e virou o
+  // port real do inbox (web/app/pages/omnichannel/index.vue). Precedente: finance.
   tasks: {
     title: 'Tasks',
     eyebrow: 'Produtividade',

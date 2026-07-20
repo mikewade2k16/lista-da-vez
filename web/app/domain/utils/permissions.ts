@@ -53,6 +53,18 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: '',
   },
   {
+    id: 'omnichannel',
+    label: 'Omnichannel',
+    description: 'Inbox de atendimento WhatsApp: conversas, contatos e numeros.',
+    // Sem viewPermission (igual tasks/calendar/automation/finance): segue
+    // ROLE_WORKSPACES (platform_admin/owner por padrao) e e liberavel a papel
+    // custom pelo painel via hasModuleWorkspacePermission — sem migration. O
+    // gating por MODULO ('omnichannel' em core.account_modules) e feito a parte
+    // no module-enabled.global.ts.
+    viewPermission: '',
+    editPermission: '',
+  },
+  {
     id: 'automation',
     label: 'Automacao',
     description: 'Assistente de WhatsApp/IA (n8n + WAHA). Conectar numero e ligar/desligar.',
@@ -328,6 +340,7 @@ const ROLE_WORKSPACES = {
     'consultor',
     'tasks',
     'calendar',
+    'omnichannel',
     'ranking',
     'dados',
     'inteligencia',
@@ -368,6 +381,7 @@ const ROLE_WORKSPACES = {
     'consultor',
     'tasks',
     'calendar',
+    'omnichannel',
     'ranking',
     'dados',
     'inteligencia',
@@ -462,6 +476,10 @@ const MODULE_WORKSPACE_PERMISSION_PREFIXES: Record<string, string> = {
   // calendar.view / calendar.manage ja existem em core.permissions: papel custom
   // que recebe qualquer permissao do calendario no painel passa a ver o workspace.
   calendar: 'calendar.',
+  // omnichannel.* sao seedadas pelo Module Registry quando o modulo Go entrar
+  // (F2). Papel custom que receber qualquer uma delas no painel passa a ver o
+  // workspace, sem migration.
+  omnichannel: 'omnichannel.',
 }
 
 function hasModuleWorkspacePermission(workspaceId, permissionKeys = []) {

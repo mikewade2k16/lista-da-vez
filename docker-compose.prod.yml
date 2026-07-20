@@ -77,6 +77,8 @@ services:
       CALENDAR_AI_CALLBACK_BASE: ${CALENDAR_AI_CALLBACK_BASE:-http://api:8080}
       CALENDAR_CHAT_WEBHOOK_URL: ${CALENDAR_CHAT_WEBHOOK_URL:-}
       CALENDAR_TRANSCRIBE_WEBHOOK_URL: ${CALENDAR_TRANSCRIBE_WEBHOOK_URL:-}
+      OMNI_AI_EXECUTOR: ${OMNI_AI_EXECUTOR:-native}
+      OMNI_N8N_BRAIN_WEBHOOK_URL: ${OMNI_N8N_BRAIN_WEBHOOK_URL:-}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
       # Absolutiza /uploads/* nas respostas publicas (cardapio/bio). Sem isso o

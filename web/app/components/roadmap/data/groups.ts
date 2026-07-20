@@ -67,6 +67,11 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     description: "Correções priorizadas a partir da auditoria de manutenção/segurança/performance registrada em docs/relatorios/2026-07: cache do resolvedor principal, runbooks de VPS/segredos, hardening de banco/backup, paginação de relatórios, recorte do front, limites/healthchecks no compose, Finance na API Go, testes e monitoração mínima. Specs por item em docs/specs/ac-fixes-2026-07/."
   },
   {
+    id: "omnichannel-port",
+    label: "Omnichannel — Módulo de Atendimento WhatsApp",
+    description: "Módulo de atendimento inteiro (F0–F14), não só um port: inbox humano + setores/filas com atribuição + triagem por IA + multi-provider de canal, com o Go como fonte de verdade. Fusão de dois trilhos (2026-07-16): o port do inbox legado vira o caminho do FRONT (73 dos 78 arquivos byte a byte) e a spec externa rege o BACKEND (domínio, filas, triagem, segurança/LGPD) e as telas novas de config. Provider = adapter multi-provider (Meta Cloud + Evolution/WAHA + mock, escolha por conta/número); LLM nativo no Go (n8n fora do caminho crítico). O bot Tony (automation/, em produção) fica intocado — convergência só avaliada na F14. Plano canônico: docs/omnichannel/PLANO_ATENDIMENTO.md; anexo técnico do front: docs/omnichannel/PLANO_PORT_OMNICHANNEL.md."
+  },
+  {
     id: "observabilidade-n8n",
     label: "Observabilidade & Alertas (n8n)",
     description: "Monitoramento ativo do Omni usando o n8n como orquestrador de alertas: check-vps.sh e /healthz disparam webhooks, fan-out para e-mail/Telegram/ntfy, monitor externo de uptime, detecção de anomalia (RAM/CPU/5xx/latência), painel de status interno e alertas de negócio. Nasce do AC-16 do diagnóstico docs/relatorios/2026-07."

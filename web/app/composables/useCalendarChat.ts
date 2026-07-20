@@ -181,6 +181,10 @@ export function useCalendarChat() {
   const conversations = useState<CalendarChatConversation[]>('calendar-chat:list', () => [])
   const loadingConversations = useState<boolean>('calendar-chat:list-loading', () => false)
   const loadingConversation = useState<boolean>('calendar-chat:conv-loading', () => false)
+  // Sinal de rolagem (UX tipo WhatsApp): ao ABRIR/CARREGAR uma conversa o painel posiciona na
+  // 1a mensagem (le de cima pra baixo), em vez de cair na ultima. Mensagem NOVA (enviar/receber)
+  // continua rolando pro fim. openConversation marca true; o painel consome e zera.
+  const pendingTopScroll = useState<boolean>('calendar-chat:scroll-top', () => false)
 
   // Escopo do contexto (D3/D4). scopeMode/scopeClientId viajam no /ask e ficam salvos
   // na conversa; chatScope (do back) diz se o select aparece e trava o cliente unico.
@@ -465,6 +469,9 @@ export function useCalendarChat() {
       conversationTitle.value = detail.title
       scopeMode.value = detail.scopeMode
       scopeClientId.value = detail.scopeClientId
+      // Marca ANTES de trocar as mensagens: o painel posiciona no topo (1a msg) em vez de
+      // rolar pro fim como faz numa mensagem nova.
+      pendingTopScroll.value = true
       messages.value = detail.messages.map(storedMessage)
       draft.value = ''
       sending.value = false
@@ -889,6 +896,7 @@ export function useCalendarChat() {
     conversations,
     loadingConversations,
     loadingConversation,
+    pendingTopScroll,
     chatScope,
     scopeMode,
     scopeClientId,

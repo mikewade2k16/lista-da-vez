@@ -133,11 +133,16 @@ func (s *Service) resolveChatTarget(ctx context.Context, access ChatAccess, acco
 // chat tambem recebe as tasks reais do board configurado para poder propor CRUD por ID.
 // O retorno e `any` porque as duas formas tem shapes diferentes no payload.
 func (s *Service) buildChatContext(ctx context.Context, accountID string, principal auth.Principal, access ChatAccess, mode, clientID, month string) (any, error) {
+	names := access.clientNameByID()
 	if mode == chatScopeAll {
 		block, err := s.BuildAIContextAll(ctx, accountID, access.VisibleClientIDs, month)
 		if err != nil {
 			return nil, err
 		}
+		// Nomeia todo cliente VISIVEL (nao so os com evento/perfil): loadAccountNames deixa o
+		// resto sem nome e a IA nao conseguia cita-lo ("faltou Duby/Bari"). Fonte = select de
+		// escopo (permission-scoped); nenhum nome novo vaza.
+		fillLeanClientNames(block.Clients, names)
 		block.Tasks = s.chatTasksContext(ctx, accountID, principal, "", access.VisibleClientIDs)
 		block.People = s.chatPeopleContext(ctx, accountID)
 		return block, nil
@@ -147,6 +152,12 @@ func (s *Service) buildChatContext(ctx context.Context, accountID string, princi
 		return nil, err
 	}
 	block := chatContextFrom(aic)
+	// Cliente unico em foco: se veio sem nome (sem evento/perfil), usa o nome do select.
+	if block.Client != nil && strings.TrimSpace(block.Client.Name) == "" {
+		if name := strings.TrimSpace(names[block.Client.ID]); name != "" {
+			block.Client.Name = name
+		}
+	}
 	block.Tasks = s.chatTasksContext(ctx, accountID, principal, clientID, []string{clientID})
 	block.People = s.chatPeopleContext(ctx, accountID)
 	// Planos sao metadata da conta INTEIRA (todos os clientes); so a agencia ve. Cliente-side

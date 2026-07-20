@@ -6,11 +6,18 @@ export default {
       label: 'Atendimento',
       items: [
         {
+          // Gateado como os irmaos (tasks/calendario): workspaceId 'omnichannel'
+          // (gate de PAPEL) + moduleId 'omnichannel' (gate de MODULO por conta,
+          // core.account_modules, espelhando o back em /v1/omnichannel).
+          // `icon` aqui e chave do NAV_ICON_MAP ('messages' -> MessagesSquare) —
+          // vocabulario diferente do `icon` do workspaces.ts, que e ligature.
           id: 'omnichannel',
           label: 'Omnichannel',
           icon: 'messages',
           path: '/omnichannel',
-          hidden: true,
+          workspaceId: 'omnichannel',
+          moduleId: 'omnichannel',
+          beta: true,
         },
         {
           id: 'tasks',

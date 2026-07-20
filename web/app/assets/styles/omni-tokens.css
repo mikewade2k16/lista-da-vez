@@ -26,6 +26,14 @@
   --success: 34 197 94;
   --danger: 239 68 68;
   --danger-strong: 220 38 38;
+  /* Aliases herdados pelos 4 temas (var() resolve por tema, no ponto de uso). O inbox
+     portado (F1) usa rgb(var(--warning|error|surface-3)) mas esses nomes NUNCA foram
+     definidos -> a cor nao renderizava e o feedback de erro/aviso sumia (14 pontos).
+     --warning = ambar (=--accent-warning #fbbf24); --error segue o --danger do tema;
+     --surface-3 segue o --surface-2 do tema. Corrige sem tocar no port verbatim. */
+  --warning: 251 191 36;
+  --error: var(--danger);
+  --surface-3: var(--surface-2);
   --ring: 99 102 241;
   --admin-header-brand-bg: linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)));
   --admin-header-panel-bg: linear-gradient(180deg, rgb(var(--surface)), rgb(var(--surface-2)));

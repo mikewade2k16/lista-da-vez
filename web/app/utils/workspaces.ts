@@ -1,5 +1,10 @@
 export const WORKSPACES = [
   { id: 'operacao', label: 'Operacao', icon: 'pending_actions', path: '/operacao' },
+  // ATENCAO: `icon` aqui e ligature do Material Icons Round (o
+  // DashboardWorkspaceNav renderiza <span class="material-icons-round">{{ icon }}</span>),
+  // NAO chave do NAV_ICON_MAP. Usar 'messages' (a chave do nav.config.ts) renderiza
+  // o texto cru. 'forum' e ligature valida — vizinhos: task_alt, calendar_month.
+  { id: 'omnichannel', label: 'Omnichannel', icon: 'forum', path: '/omnichannel' },
   { id: 'consultor', label: 'Consultor', icon: 'person', path: '/consultor' },
   { id: 'tasks', label: 'Tasks', icon: 'task_alt', path: '/tasks' },
   { id: 'calendar', label: 'Calendario', icon: 'calendar_month', path: '/calendario' },

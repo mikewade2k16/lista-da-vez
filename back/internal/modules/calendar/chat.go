@@ -54,7 +54,14 @@ const (
 	// chatHistoryLimit e o N da memoria (contrato D4): ultimas N mensagens JA existentes
 	// da conversa viram history no payload. A pergunta atual vai no campo question (o n8n
 	// concatena system+history+question, D5), entao ela NAO entra no history (sem duplicar).
-	chatHistoryLimit = 12
+	// 40 (decisao do dono): a IA le a conversa QUASE inteira ("tipo WhatsApp, da 1a msg pra
+	// baixo") — a maioria das conversas cabe. O teto de 40 e a "limpeza" que evita estourar
+	// tokens/custo em conversas muito longas (mantem as 40 ULTIMAS, ordem cronologica).
+	chatHistoryLimit = 40
+	// maxHistoryCardsPerMsg limita quantos cards de uma mesma resposta viram resumo no history
+	// (bug: "a IA nao sabe o que mandou nos cards"). Bounded para nao inchar o payload; o
+	// excedente vira "(+N outros)".
+	maxHistoryCardsPerMsg = 20
 	// Papeis das mensagens persistidas (calendar.chat_messages).
 	chatRoleUser      = "user"
 	chatRoleAssistant = "assistant"
@@ -792,13 +799,129 @@ func isCalendarAnswerListLine(line string) bool {
 }
 
 // toHistory projeta as mensagens persistidas em {role,content} para o payload do n8n
-// (contrato D5), preservando a ordem cronologica devolvida pelo store.
+// (contrato D5), preservando a ordem cronologica devolvida pelo store. Para mensagens do
+// ASSISTENTE que trazem cards (propostas), reanexa um resumo compacto deles ao content: o
+// texto salvo vira um aviso curto ("Preparei a proposta") e as propostas nao viajavam no
+// history, entao numa correcao a IA nao lembrava o que propos ("nao sei o que veio nos cards").
 func toHistory(msgs []ChatMessage) []chatHistoryMessage {
 	out := make([]chatHistoryMessage, 0, len(msgs))
 	for _, m := range msgs {
-		out = append(out, chatHistoryMessage{Role: m.Role, Content: m.Content})
+		content := m.Content
+		if m.Role == chatRoleAssistant {
+			if summary := summarizeStoredProposals(m.Proposals); summary != "" {
+				if strings.TrimSpace(content) != "" {
+					content += "\n"
+				}
+				content += summary
+			}
+		}
+		out = append(out, chatHistoryMessage{Role: m.Role, Content: content})
 	}
 	return out
+}
+
+// summarizeStoredProposals monta o resumo COMPACTO dos cards de uma resposta para virar
+// memoria da IA (acao, tipo, titulo/alvo, data, cliente, status). Vazio quando nao ha card.
+// Bounded por maxHistoryCardsPerMsg; o excedente vira "(+N outros)".
+func summarizeStoredProposals(proposals []StoredProposal) string {
+	if len(proposals) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(proposals))
+	for _, p := range proposals {
+		if len(parts) >= maxHistoryCardsPerMsg {
+			break
+		}
+		if line := describeStoredProposal(p); line != "" {
+			parts = append(parts, strconv.Itoa(len(parts)+1)+") "+line)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	suffix := "]"
+	if len(proposals) > len(parts) {
+		suffix = " (+" + strconv.Itoa(len(proposals)-len(parts)) + " outros)]"
+	}
+	return "[Cards que voce propos nesta resposta (o usuario ainda pode confirmar/editar): " +
+		strings.Join(parts, "; ") + suffix
+}
+
+// describeStoredProposal descreve UM card em uma linha curta para o resumo do history.
+func describeStoredProposal(p StoredProposal) string {
+	seg := []string{proposalActionLabel(p.Action), proposalKindLabel(p.Kind)}
+	f := p.Fields
+	switch p.Kind {
+	case "note":
+		if f.Note != nil && strings.TrimSpace(f.Note.Content) != "" {
+			seg = append(seg, `"`+truncateRunes(f.Note.Content, 80)+`"`)
+		}
+		if f.Note != nil && strings.TrimSpace(f.Note.Month) != "" {
+			seg = append(seg, "mes "+strings.TrimSpace(f.Note.Month))
+		}
+	case "clientProfile":
+		if name := strings.TrimSpace(f.ClientName); name != "" {
+			seg = append(seg, "de "+name)
+		}
+	default: // event/task
+		if strings.TrimSpace(f.Title) != "" {
+			seg = append(seg, `"`+truncateRunes(f.Title, 80)+`"`)
+		}
+		when := strings.TrimSpace(f.Date)
+		if when == "" {
+			when = strings.TrimSpace(f.DueDate)
+		}
+		if when != "" {
+			if t := strings.TrimSpace(f.Time); t != "" {
+				when += " " + t
+			}
+			seg = append(seg, when)
+		}
+		if t := strings.TrimSpace(f.Type); t != "" {
+			seg = append(seg, "tipo "+t)
+		}
+		if name := strings.TrimSpace(f.ClientName); name != "" {
+			seg = append(seg, "cliente "+name)
+		}
+	}
+	return strings.Join(seg, " ") + " (" + proposalStatusLabel(p.Status) + ")"
+}
+
+func proposalActionLabel(action string) string {
+	switch action {
+	case "update":
+		return "editar"
+	case "delete":
+		return "excluir"
+	default:
+		return "criar"
+	}
+}
+
+func proposalKindLabel(kind string) string {
+	switch kind {
+	case "event":
+		return "evento"
+	case "task":
+		return "tarefa"
+	case "note":
+		return "anotacao"
+	case "clientProfile":
+		return "perfil do cliente"
+	default:
+		return kind
+	}
+}
+
+func proposalStatusLabel(status string) string {
+	switch status {
+	case "accepted":
+		return "aprovado"
+	case "rejected":
+		return "recusado"
+	default:
+		return "pendente"
+	}
 }
 
 // chatContextFrom converte o agregado C9 (AIContext) no bloco context do C7,

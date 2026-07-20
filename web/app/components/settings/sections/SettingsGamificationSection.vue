@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import SettingsScoreWeightsCard from '~/components/settings/sections/SettingsScoreWeightsCard.vue'
 import type { BadgeRule } from '~/composables/useGamificationConfig'
 
@@ -13,6 +15,12 @@ const ctx = props.ctx as {
   updateNumericSetting: (settingId: string, value: string) => Promise<void>
   state: { settings: Record<string, unknown> }
 }
+
+const badgesMeta = computed<string>(() => {
+  const badges = ctx.gamificationBadges || []
+  const active = badges.filter((badge) => badge.enabled).length
+  return `${active}/${badges.length} ativos`
+})
 </script>
 
 <template>
@@ -24,73 +32,93 @@ const ctx = props.ctx as {
     />
 
     <article class="settings-card">
-      <header class="settings-card__header">
-        <h3 class="settings-card__title">Badges de gamificacao</h3>
-        <p class="settings-card__text">
-          Configure quais conquistas aparecem no perfil do consultor. Desabilitar remove o badge do
-          ranking sem apagar o historico.
-        </p>
-      </header>
+      <details class="settings-collapse">
+        <summary class="settings-collapse__summary">
+          <div class="settings-collapse__title-wrap">
+            <strong class="settings-collapse__title">Badges de gamificacao</strong>
+            <span class="settings-collapse__text">Conquistas exibidas no perfil do consultor</span>
+          </div>
+          <span class="settings-collapse__meta">{{ badgesMeta }}</span>
+          <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
+            expand_more
+          </span>
+        </summary>
 
-      <div class="gamification-badge-list">
-        <div v-for="badge in ctx.gamificationBadges" :key="badge.id" class="gamification-badge-row">
-          <div class="gamification-badge-row__info">
-            <span class="gamification-badge-row__icon">{{ badge.icon }}</span>
-            <div class="gamification-badge-row__meta">
-              <input
-                class="gamification-badge-row__label"
-                type="text"
-                :value="badge.label"
-                :disabled="!ctx.canEditSettings"
-                @change="
-                  ctx.updateGamificationBadge(badge.id, {
-                    label: ($event.target as HTMLInputElement).value,
-                  })
-                "
-              />
-              <span class="gamification-badge-row__desc">{{ badge.description }}</span>
+        <div class="settings-collapse__body">
+          <p class="settings-card__text gamification-badge-list__intro">
+            Configure quais conquistas aparecem no perfil do consultor. Desabilitar remove o badge
+            do ranking sem apagar o historico.
+          </p>
+
+          <div class="gamification-badge-list">
+            <div
+              v-for="badge in ctx.gamificationBadges"
+              :key="badge.id"
+              class="gamification-badge-row"
+            >
+              <div class="gamification-badge-row__info">
+                <span class="gamification-badge-row__icon">{{ badge.icon }}</span>
+                <div class="gamification-badge-row__meta">
+                  <input
+                    class="gamification-badge-row__label"
+                    type="text"
+                    :value="badge.label"
+                    :disabled="!ctx.canEditSettings"
+                    @change="
+                      ctx.updateGamificationBadge(badge.id, {
+                        label: ($event.target as HTMLInputElement).value,
+                      })
+                    "
+                  />
+                  <span class="gamification-badge-row__desc">{{ badge.description }}</span>
+                </div>
+              </div>
+
+              <div class="gamification-badge-row__controls">
+                <label v-if="badge.id === 'top-rank'" class="gamification-badge-row__threshold">
+                  <span class="gamification-badge-row__threshold-label">Top N</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    step="1"
+                    :value="badge.threshold ?? 3"
+                    :disabled="!ctx.canEditSettings"
+                    @change="
+                      ctx.updateGamificationBadge(badge.id, {
+                        threshold: Number(($event.target as HTMLInputElement).value),
+                      })
+                    "
+                  />
+                </label>
+
+                <label class="gamification-badge-row__toggle">
+                  <input
+                    type="checkbox"
+                    :checked="badge.enabled"
+                    :disabled="!ctx.canEditSettings"
+                    @change="
+                      ctx.updateGamificationBadge(badge.id, {
+                        enabled: ($event.target as HTMLInputElement).checked,
+                      })
+                    "
+                  />
+                  <span>{{ badge.enabled ? 'Ativo' : 'Inativo' }}</span>
+                </label>
+              </div>
             </div>
           </div>
-
-          <div class="gamification-badge-row__controls">
-            <label v-if="badge.id === 'top-rank'" class="gamification-badge-row__threshold">
-              <span class="gamification-badge-row__threshold-label">Top N</span>
-              <input
-                type="number"
-                min="1"
-                max="20"
-                step="1"
-                :value="badge.threshold ?? 3"
-                :disabled="!ctx.canEditSettings"
-                @change="
-                  ctx.updateGamificationBadge(badge.id, {
-                    threshold: Number(($event.target as HTMLInputElement).value),
-                  })
-                "
-              />
-            </label>
-
-            <label class="gamification-badge-row__toggle">
-              <input
-                type="checkbox"
-                :checked="badge.enabled"
-                :disabled="!ctx.canEditSettings"
-                @change="
-                  ctx.updateGamificationBadge(badge.id, {
-                    enabled: ($event.target as HTMLInputElement).checked,
-                  })
-                "
-              />
-              <span>{{ badge.enabled ? 'Ativo' : 'Inativo' }}</span>
-            </label>
-          </div>
         </div>
-      </div>
+      </details>
     </article>
   </div>
 </template>
 
 <style scoped>
+.gamification-badge-list__intro {
+  margin: 0 0 0.75rem;
+}
+
 .gamification-badge-list {
   display: flex;
   flex-direction: column;

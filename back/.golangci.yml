@@ -20,11 +20,6 @@ linters:
     - whitespace      # Linhas em branco extras
     # misspell foi removido — gera 41 falsos positivos em pt-BR (clientes, operacional, etc)
   settings:
-    gocritic:
-      disabled-checks:
-        - hugeParam         # nao vale a pena para o nosso porte
-        - rangeValCopy      # idem
-        - paramTypeCombine  # estilo, nao defeito
     gosec:
       excludes:
         - G104  # Errors unhandled — coberto por errcheck

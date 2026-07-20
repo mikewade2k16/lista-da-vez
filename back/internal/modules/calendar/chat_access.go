@@ -42,10 +42,27 @@ func (s *Service) WithClientScope(l clientScopeLister) *Service {
 
 // ChatAccess e o veredito de acesso do usuario ao chat de UMA account (contrato D2).
 // IsAgency = ve TODAS as conversas da conta (senao so as suas). VisibleClientIDs = os
-// clientes que ele PODE ver (o contexto da IA nunca sai desse conjunto).
+// clientes que ele PODE ver (o contexto da IA nunca sai desse conjunto). VisibleClients =
+// os MESMOS clientes com NOME (fonte do select de escopo): usado para nomear os clientes
+// no contexto da IA mesmo quando eles ainda nao tem evento/perfil (loadAccountNames so
+// nomeia cliente ja referenciado; sem isto um cliente visivel viajava sem nome e a IA nao
+// conseguia cita-lo).
 type ChatAccess struct {
 	IsAgency         bool
 	VisibleClientIDs []string
+	VisibleClients   []ChatScopeClient
+}
+
+// clientNameByID indexa os clientes visiveis por id (nome ja trim). Alimenta o preenchimento
+// de nome no contexto da IA sem reconsultar o banco (a lista ja veio permission-scoped).
+func (a ChatAccess) clientNameByID() map[string]string {
+	out := make(map[string]string, len(a.VisibleClients))
+	for _, c := range a.VisibleClients {
+		if id := strings.TrimSpace(c.ID); id != "" {
+			out[id] = strings.TrimSpace(c.Name)
+		}
+	}
+	return out
 }
 
 // canSelectScope: o front so mostra o SELECT de escopo quando o usuario e agencia OU
@@ -121,12 +138,16 @@ func (a ChatAccess) canAccessSavedScope(scopeMode, scopeClientID string) bool {
 }
 
 // resolveChatAccess resolve o acesso do principal ao chat da account (contrato D2),
-// 100% server-side. accountID vem do Principal/middleware (nunca do body). Descarta os
-// NOMES dos clientes (o ask/create so precisa dos ids); o ChatScope usa resolveChatContext
-// para os nomes que alimentam o SELECT.
+// 100% server-side. accountID vem do Principal/middleware (nunca do body). Mantem os NOMES
+// dos clientes visiveis (access.VisibleClients) para o contexto da IA poder nomear todo
+// cliente visivel, nao so os que ja tem evento/perfil.
 func (s *Service) resolveChatAccess(ctx context.Context, principal auth.Principal, accountID string) (ChatAccess, error) {
-	access, _, err := s.resolveChatContext(ctx, principal, accountID)
-	return access, err
+	access, clients, err := s.resolveChatContext(ctx, principal, accountID)
+	if err != nil {
+		return ChatAccess{}, err
+	}
+	access.VisibleClients = clients
+	return access, nil
 }
 
 // resolveChatContext resolve, numa UNICA ida ao tenants scope (evita 2x ListAccessible),

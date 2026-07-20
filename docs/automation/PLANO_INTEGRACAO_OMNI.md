@@ -14,6 +14,16 @@
 > fase nova de modulo satelite avanca antes). Este doc e o desenho para quando liberar.
 > Criado 2026-06-04.
 
+> **Nota (2026-07-16).** Existe um plano para um modulo **`omnichannel`** separado (inbox humano
+> + setores/filas + triagem IA): [../omnichannel/PLANO_ATENDIMENTO.md](../omnichannel/PLANO_ATENDIMENTO.md).
+> Ele e **independente** e **nao toca em nada deste doc** — nem schema `automation.*`, nem rota,
+> nem workflow n8n. O Tony segue exatamente como esta descrito aqui. Se um dia for preciso
+> integrar os dois, isso vira um plano proprio.
+> - **Aviso de operacao — um numero = um cerebro:** nao aponte o mesmo numero de WhatsApp para o
+>   Tony e para outro sistema de atendimento ao mesmo tempo; dois robos respondendo o mesmo
+>   cliente e incidente visivel para o cliente final. **Nenhum dos dois sistemas valida isso
+>   automaticamente** — a responsabilidade e de quem opera.
+
 ---
 
 ## 1. Objetivo
@@ -311,5 +321,6 @@ seu ambiente. Nao se edita o n8n na mao.
 - Arquitetura/roadmap do bot (n8n) -> [WORKFLOW.md](WORKFLOW.md) · [ROADMAP.md](ROADMAP.md)
 - Regras de modelos -> [MODELOS.md](MODELOS.md)
 - Persona ativa / guardrails -> [gpt-tony.md](gpt-tony.md) · [guardrails-resposta.md](guardrails-resposta.md)
+- Modulo `omnichannel` (inbox/filas/triagem, vizinho deste bot) -> [../omnichannel/PLANO_ATENDIMENTO.md](../omnichannel/PLANO_ATENDIMENTO.md)
 - Plano da branch atual (bloqueia A1+) -> [../MULTITENANT_COMPLETION_PLAN.md](../MULTITENANT_COMPLETION_PLAN.md)
 - Principios/regras -> [../ENGINEERING_PRINCIPLES.md](../ENGINEERING_PRINCIPLES.md) · [../../AGENT_RULES.md](../../AGENT_RULES.md)

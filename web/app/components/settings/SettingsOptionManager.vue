@@ -1,6 +1,6 @@
 <script setup>
 import { ArrowDown, ArrowUp } from 'lucide-vue-next'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   title: {
@@ -34,6 +34,11 @@ const drafts = ref({})
 const updateErrors = ref({})
 const newLabel = ref('')
 const addError = ref('')
+
+const itemCountLabel = computed(() => {
+  const count = props.items?.length || 0
+  return `${count} ${count === 1 ? 'opcao' : 'opcoes'}`
+})
 
 watch(
   () => props.items,
@@ -119,94 +124,119 @@ function moveItem(itemId, direction) {
     <header class="settings-card__header">
       <h3 class="settings-card__title">{{ title }}</h3>
       <p class="settings-card__text">{{ description }}</p>
-      <p class="settings-card__text settings-card__text--muted">
-        A ordem abaixo define como o select aparece no sistema.
-      </p>
     </header>
 
-    <div class="option-list">
-      <span v-if="!items.length" class="insight-empty">Sem opcoes cadastradas.</span>
-
-      <form
-        v-for="(item, index) in items"
-        :key="item.id"
-        class="option-row option-row--sortable"
-        @submit.prevent="submitUpdate(item.id)"
-      >
-        <div class="option-row__order">
-          <span class="option-row__index">{{ index + 1 }}</span>
-          <div class="option-row__order-actions">
-            <button
-              class="option-row__move"
-              type="button"
-              :disabled="disabled || index === 0"
-              :aria-label="`Mover ${item.label} para cima`"
-              @click="moveItem(item.id, -1)"
-            >
-              <ArrowUp :size="14" :stroke-width="2.2" />
-            </button>
-            <button
-              class="option-row__move"
-              type="button"
-              :disabled="disabled || index === items.length - 1"
-              :aria-label="`Mover ${item.label} para baixo`"
-              @click="moveItem(item.id, 1)"
-            >
-              <ArrowDown :size="14" :stroke-width="2.2" />
-            </button>
-          </div>
+    <details class="settings-collapse">
+      <summary class="settings-collapse__summary">
+        <div class="settings-collapse__title-wrap">
+          <strong class="settings-collapse__title">Cadastrados</strong>
+          <span class="settings-collapse__text">
+            A ordem abaixo define como o select aparece no sistema.
+          </span>
         </div>
-
-        <input
-          v-model="drafts[item.id]"
-          class="option-row__input"
-          type="text"
-          :disabled="disabled"
-          @input="updateErrors[item.id] = ''"
-        />
-        <button class="option-row__save" type="submit" :disabled="disabled">Salvar</button>
-        <button
-          class="option-row__remove"
-          type="button"
-          :disabled="disabled"
-          @click="$emit('remove', item.id)"
-        >
-          Excluir
-        </button>
-        <span v-if="updateErrors[item.id]" class="option-row__error">
-          {{ updateErrors[item.id] }}
+        <span class="settings-collapse__meta">{{ itemCountLabel }}</span>
+        <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
+          expand_more
         </span>
-      </form>
-    </div>
+      </summary>
 
-    <form class="option-add" @submit.prevent="submitAdd">
-      <input
-        v-model="newLabel"
-        class="option-add__input"
-        type="text"
-        :placeholder="addPlaceholder"
-        :disabled="disabled"
-        :data-testid="testid ? `${testid}-add-input` : undefined"
-        @input="addError = ''"
-      />
-      <button
-        class="option-add__button"
-        type="submit"
-        :disabled="disabled"
-        :data-testid="testid ? `${testid}-add-btn` : undefined"
-      >
-        Adicionar
-      </button>
-    </form>
-    <span v-if="addError" class="option-add__error">{{ addError }}</span>
+      <div class="settings-collapse__body">
+        <div class="option-list">
+          <span v-if="!items.length" class="insight-empty">Sem opcoes cadastradas.</span>
+
+          <form
+            v-for="(item, index) in items"
+            :key="item.id"
+            class="option-row option-row--sortable"
+            @submit.prevent="submitUpdate(item.id)"
+          >
+            <div class="option-row__order">
+              <span class="option-row__index">{{ index + 1 }}</span>
+              <div class="option-row__order-actions">
+                <button
+                  class="option-row__move"
+                  type="button"
+                  :disabled="disabled || index === 0"
+                  :aria-label="`Mover ${item.label} para cima`"
+                  @click="moveItem(item.id, -1)"
+                >
+                  <ArrowUp :size="14" :stroke-width="2.2" />
+                </button>
+                <button
+                  class="option-row__move"
+                  type="button"
+                  :disabled="disabled || index === items.length - 1"
+                  :aria-label="`Mover ${item.label} para baixo`"
+                  @click="moveItem(item.id, 1)"
+                >
+                  <ArrowDown :size="14" :stroke-width="2.2" />
+                </button>
+              </div>
+            </div>
+
+            <input
+              v-model="drafts[item.id]"
+              class="option-row__input"
+              type="text"
+              :disabled="disabled"
+              @input="updateErrors[item.id] = ''"
+            />
+            <button class="option-row__save" type="submit" :disabled="disabled">Salvar</button>
+            <button
+              class="option-row__remove"
+              type="button"
+              :disabled="disabled"
+              @click="$emit('remove', item.id)"
+            >
+              Excluir
+            </button>
+            <span v-if="updateErrors[item.id]" class="option-row__error">
+              {{ updateErrors[item.id] }}
+            </span>
+          </form>
+        </div>
+      </div>
+    </details>
+
+    <details class="settings-collapse">
+      <summary class="settings-collapse__summary">
+        <div class="settings-collapse__title-wrap">
+          <strong class="settings-collapse__title">Adicionar</strong>
+          <span class="settings-collapse__text">Cadastre uma nova opcao para a lista.</span>
+        </div>
+        <span class="settings-collapse__meta">{{ itemCountLabel }}</span>
+        <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
+          expand_more
+        </span>
+      </summary>
+
+      <div class="settings-collapse__body">
+        <form class="option-add" @submit.prevent="submitAdd">
+          <input
+            v-model="newLabel"
+            class="option-add__input"
+            type="text"
+            :placeholder="addPlaceholder"
+            :disabled="disabled"
+            :data-testid="testid ? `${testid}-add-input` : undefined"
+            @input="addError = ''"
+          />
+          <button
+            class="option-add__button"
+            type="submit"
+            :disabled="disabled"
+            :data-testid="testid ? `${testid}-add-btn` : undefined"
+          >
+            Adicionar
+          </button>
+        </form>
+        <span v-if="addError" class="option-add__error">{{ addError }}</span>
+      </div>
+    </details>
   </article>
 </template>
 
 <style scoped>
-.settings-card__text--muted {
-  color: rgb(var(--muted) / 0.82);
-}
-
 .option-row--sortable {
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;

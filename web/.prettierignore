@@ -8,3 +8,11 @@ package-lock.json
 app/components/roadmap/database-schema-data.ts
 app/components/roadmap/roadmap-data.ts
 app/components/roadmap/data/**
+
+# Port verbatim do omnichannel (F1): nao reformatar em massa (destruiria a byte-identidade
+# do port e geraria diff enorme no 1o commit). Alinhamento de UI e feito por edicao pontual.
+# O refactor deliberado e a F14. NAO inclui config/ (que ja e house-standard). Ver docs/LEGADO.md.
+app/composables/omnichannel/**
+app/components/omnichannel/inbox/**
+app/components/omnichannel/OmnichannelInboxModule.vue
+app/pages/omnichannel/**

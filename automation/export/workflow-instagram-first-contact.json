@@ -1,0 +1,154 @@
+[
+  {
+    "id": "instafirst000001",
+    "name": "Instagram First Contact",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "instagram-first-contact",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "af713221-5510-4947-b1ed-85ec22137184",
+        "name": "Webhook",
+        "webhookId": "7c538526-3d2c-4b41-a216-249116576bdf"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const body = ($('Webhook').first().json.body) || {};\nconst ai = body.ai || {};\nconst event = body.event || {};\nconst eventType = String(event.type || '').toLowerCase();\nif (eventType !== 'dm' && eventType !== 'comment') throw new Error('instagram_event_type_invalid');\nconst policy = body.policy || {};\nconst source = { channel: 'INSTAGRAM', eventType, occurredAt: String(event.occurredAt || ''), accountRef: String(event.accountRef || ''), postRef: String(event.postRef || ''), campaignRef: String(event.campaignRef || ''), landingPageRef: String(event.landingPageRef || '') };\nconst history = Array.isArray(body.history) ? body.history.slice(-20) : [];\nconst rules = eventType === 'comment'\n  ? 'Voce esta analisando um comentario publico do Instagram. Nunca prometa publicacao automatica. Se houver risco, dado pessoal, reclamacao ou duvida comercial complexa, marque needs_human=true. A entrega final sera decidida pelo Go.'\n  : 'Voce esta fazendo o primeiro atendimento de uma DM do Instagram. Colete o necessario com naturalidade e marque needs_human=true quando for hora de transferir.';\nconst systemPrompt = [String(ai.systemPrompt || '').trim(), rules].filter(Boolean).join('\\n\\n');\nconst userPrompt = ['Contexto de origem autoritativo: ' + JSON.stringify(source), 'Politica: ' + JSON.stringify({ autoReplyDM: policy.autoReplyDM === true, autoReplyComments: policy.autoReplyComments === true, requireCommentApproval: policy.requireCommentApproval !== false }), 'Historico: ' + JSON.stringify(history), 'Mensagem atual: ' + String(event.text || '')].join('\\n');\nreturn [{ json: { ai: { provider: ai.provider, model: ai.model, baseUrl: ai.baseUrl, apiKey: ai.apiKey, temperature: ai.temperature, systemPrompt, userPrompt, schema: ai.schema }, source } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          260,
+          0
+        ],
+        "id": "f45b141b-bfa8-433a-9d41-31598499c837",
+        "name": "Preparar contexto Instagram"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://n8n:5678/webhook/omnichannel-brain",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ ai: $json.ai }) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          540,
+          0
+        ],
+        "id": "7127cc4e-988c-4d3a-adbb-a43fb05de559",
+        "name": "Executar cerebro comum",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "let r = $input.first().json || {};\nif (Array.isArray(r)) r = r[0] || {};\nif (r.error || r.ok !== true) return [{ json: { ok: false, errorCode: 'brain_unavailable', deliveryPolicy: 'go_outbox_only' } }];\nreturn [{ json: { ok: true, output: r.output || null, model: String(r.model || ''), usage: r.usage || { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, deliveryPolicy: 'go_outbox_only' } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          800,
+          0
+        ],
+        "id": "da44c2df-3c06-4cd4-a250-af0b4cae9914",
+        "name": "Bloquear envio direto"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1060,
+          0
+        ],
+        "id": "eb9d34ed-bd2e-4e7d-9981-a25e0fb4f79e",
+        "name": "Respond to Webhook"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Preparar contexto Instagram",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar contexto Instagram": {
+        "main": [
+          [
+            {
+              "node": "Executar cerebro comum",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Executar cerebro comum": {
+        "main": [
+          [
+            {
+              "node": "Bloquear envio direto",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Bloquear envio direto": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1",
+      "saveDataErrorExecution": "none",
+      "saveDataSuccessExecution": "none",
+      "saveManualExecutions": false,
+      "saveExecutionProgress": false
+    },
+    "staticData": null,
+    "meta": null,
+    "pinData": {},
+    "versionId": "54fbd558-53db-4856-9514-d3a204de61eb"
+  }
+]

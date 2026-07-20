@@ -293,6 +293,26 @@ func (s *Service) BuildAIContextAll(ctx context.Context, accountID string, visib
 	}, nil
 }
 
+// fillLeanClientNames completa o nome dos clientes lean do contexto multi-cliente a partir
+// da lista AUTORIZADA de clientes visiveis (mesma fonte do select de escopo). loadAccountNames
+// so nomeia cliente com evento/perfil; sem isto um cliente visivel SEM evento/perfil viajava
+// com name vazio e a IA nao conseguia cita-lo (bug: "faltou Duby/Bari"). Nao afrouxa a trava de
+// enumeracao: esses nomes ja sao exibidos no select de escopo (permission-scoped). So preenche
+// o que veio vazio (nome do banco, quando existe, vence).
+func fillLeanClientNames(clients []AIContextClientLean, nameByID map[string]string) {
+	if len(clients) == 0 || len(nameByID) == 0 {
+		return
+	}
+	for i := range clients {
+		if strings.TrimSpace(clients[i].Name) != "" {
+			continue
+		}
+		if name := strings.TrimSpace(nameByID[clients[i].ID]); name != "" {
+			clients[i].Name = name
+		}
+	}
+}
+
 // setContextClientNames preenche o nome do cliente em cada evento do contexto da IA.
 // WAVE 13: a midia (propria + espelhada da task) ja vem da query de eventos
 // (scanAIContextEvent une events.media + linked_media); nao ha mais day_media a unir aqui.

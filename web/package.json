@@ -21,6 +21,7 @@
     "typecheck:strict": "vue-tsc --noEmit --strict"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
     "@iconify-json/lucide": "^1.2.107",
     "@nuxt/icon": "^2.2.2",
     "@nuxt/ui": "^4.7.1",
@@ -54,6 +55,7 @@
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-unused-imports": "^4.1.4",
     "prettier": "^3.4.0",
+    "sass-embedded": "^1.100.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.9",
     "vue-tsc": "^2.2.0"

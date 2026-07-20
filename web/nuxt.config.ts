@@ -56,6 +56,7 @@ export default defineNuxtConfig({
     '/multiloja': { ssr: false },
     '/offline': { prerender: true },
     '/omnichannel': { ssr: false },
+    '/omnichannel/**': { ssr: false },
     '/operacao/**': { ssr: false },
     '/perfil': { ssr: false },
     '/performance': { ssr: false },

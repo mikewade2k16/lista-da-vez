@@ -203,6 +203,23 @@ explicito de override por loja.
   Permitir filtros por tipo (sugestao, duvida, problema) e status (aberto, em analise, resolvido, fechado).
   Acessivel apenas para owner, manager e platform_admin.
 
+### `omnichannel`
+
+Inbox de atendimento WhatsApp (rota `/omnichannel`, workspace `omnichannel`,
+modulo `omnichannel` em `core.account_modules`). **PORT VERBATIM** do painel
+legado — copiado byte a byte na F1: **nao reformatar, nao splitar, nao "arrumar"
+estilo**; o refactor e a F14. Estado atual: **SEM BACKEND** (o Go ainda nao tem
+rotas — todo request 404, e um badge avisa isso na pagina).
+
+Detalhe completo (estrutura, costura, os 5 repontados e as dividas conscientes)
+em [omnichannel/AGENT.md](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/omnichannel/AGENT.md).
+
+- [OmnichannelInboxModule.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/omnichannel/OmnichannelInboxModule.vue)
+  Orquestrador do inbox: as 3 colunas (conversas / chat / detalhes) num `UDashboardGroup`.
+- [OmnichannelInboxLoading.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/omnichannel/OmnichannelInboxLoading.vue)
+  Skeleton. Usa `USkeleton` sem bloco `<script>` — auto-import do Nuxt, nao e bug.
+- `inbox/` — 20 componentes do inbox. **Preservar a subpasta**: os imports do legado dependem dela.
+
 ### `performance`
 
 Pagina `/performance` (workspace `performance`, so `platform_admin`). Mostra os

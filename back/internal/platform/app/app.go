@@ -23,6 +23,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/finance"
 	metaads "github.com/mikewade2k16/lista-da-vez/back/internal/modules/meta_ads"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/notifications"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/operationgoals"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/queue/alerts"
@@ -44,6 +45,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
 )
 
 func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool) (http.Handler, error) {
@@ -415,6 +417,23 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		// redirects publicos /s/{slug} e /q/{slug} fora do gate.
 		// Plano: docs/tools/PLANO_MODULO_TOOLS.md.
 		registry.MustRegister(tools.New())
+		// omnichannel: atendimento WhatsApp (inbox + setores/filas + triagem IA),
+		// schema messaging.*. Painel em /v1/omnichannel (gating abaixo); webhook inbound
+		// publico /v1/webhooks/omnichannel/* FORA do gate. Plano: docs/omnichannel/PLANO_ATENDIMENTO.md.
+		//
+		// F3.5 (fail-fast): OMNI_SECRETS_KEY e OBRIGATORIA — a F4 e a 1a consumidora real
+		// de credenciais cifradas. Sem a chave a api NAO sobe (erro nomeia a env). O Box e
+		// injetado no modulo (WithSecretBox). WithPublisher liga o canal realtime da F5:
+		// o realtimeService e o transporte de omnichannel:account:{id} (spec F5 — o webhook
+		// inbound publica message.created; F6/F7 publicam message.updated/conversation.updated).
+		omnichannelSecretBox, err := secretbox.FromEnv()
+		if err != nil {
+			return nil, err
+		}
+		registry.MustRegister(omnichannel.New(
+			omnichannel.WithSecretBox(omnichannelSecretBox),
+			omnichannel.WithPublisher(realtimeService),
+		))
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -551,6 +570,11 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// tools (encurtador + QR). So o painel /v1/tools e gateado; os redirects
 		// publicos /s/{slug} e /q/{slug} NAO estao aqui (sao abertos).
 		{Prefix: "/v1/tools", ModuleID: "tools"},
+		// omnichannel (atendimento WhatsApp). platform_admin tem bypass; contas sem o
+		// modulo habilitado levam 403 module_disabled. So o painel /v1/omnichannel e
+		// gateado: o webhook inbound (/v1/webhooks/*, F4) e o runtime NAO entram aqui —
+		// mesmo precedente de /v1/public/* e /s/{slug}.
+		{Prefix: "/v1/omnichannel", ModuleID: "omnichannel"},
 	}
 }
 

@@ -72,15 +72,26 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
     label: "Omnichannel",
     route: "/omnichannel",
     status: "pending",
-    priority: "P2",
+    priority: "P1",
     category: "atendimento",
     description:
-      "Conversas unificadas WhatsApp/Instagram/Email/Webchat com handoff humano e bot. Page existe mas vazia. Escopo grande: webhook providers + threads + roteamento.",
+      "Modulo de ATENDIMENTO WhatsApp inteiro (F0-F14), nao so um port: inbox humano + setores/filas com atribuicao + triagem por IA + multi-provider de canal, com o Go como fonte de verdade. Fusao de dois trilhos (2026-07-16): o port do inbox legado (78 arquivos / 22.642 linhas de codigo maduro: audio, GIF, stickers, mencoes, reacoes, encaminhar, apagar p/ todos, multiplas instancias) vira o caminho do FRONT — 73 byte a byte, 5 repontados (socket.io e rotas Nitro nao existem aqui), adaptacao inteira em 6 arquivos de costura; e a spec externa rege o BACKEND (dominio messaging.*, filas, triagem, seguranca/LGPD) e as telas NOVAS de config, que nascem no design system da casa. Provider = adapter multi-provider (meta_whatsapp_cloud + evolution/waha + mock, escolha por conta/numero) e LLM nativo no Go com config do painel — o n8n fica FORA do caminho critico. Plano canonico: docs/omnichannel/PLANO_ATENDIMENTO.md; specs por fase: docs/omnichannel/specs/OMNI-F*.md; anexo tecnico do front: docs/omnichannel/PLANO_PORT_OMNICHANNEL.md. IMPLEMENTACAO CONGELADA ate a branch refactor/multi-tenant-complete fechar.",
     scope: [
-      "Conectores WhatsApp Cloud API + Instagram Direct",
-      "Schema messaging.* com threads",
-      "Roteamento por fila + handoff",
-      "Bot simples por palavra-chave"
+      "F0 decisoes (multi-provider, port=front/spec=backend, LLM no Go) + LEGADO + roadmap",
+      "F1 front verbatim + costura (73 arqs byte a byte + 6 adaptadores, badge SEM BACKEND)",
+      "F2 schema messaging.* + leitura em Go (colunas de estado/fila/provider nascem juntas)",
+      "F3 [NOVA] infra transversal em platform/: jobs (outbox FIFO), secretbox (AES-256-GCM), llm",
+      "F4 ChannelProvider + adapters (mock, evolution) + webhook inbound com dedupe no banco",
+      "F5 realtime: socket.io -> WS nativo com ticket (3 eventos, shapes por call-site)",
+      "F6 envio via outbox (idempotency_key) + midia em disco com stream/Range",
+      "F7 acoes (reacao, encaminhar, apagar, status, assign) via maquina de estados",
+      "F8 [NOVA] dominio: setores/filas/queue_members/routing_rules + decisions + state->status",
+      "F9 [NOVA] triagem IA no Go: ai_agents/versions/runs, JSON schema-validado, IA sugere e o motor decide",
+      "F10 [NOVA] telas de config: numeros/providers, setores/filas/regras, editor de agente + simulador",
+      "F11 [NOVA] adapter Meta WhatsApp Cloud: X-Hub-Signature-256, templates + janela 24h, capabilities",
+      "F12 stickers/GIF/avatar substituindo as rotas Nitro",
+      "F13 LGPD + observabilidade: retencao/purge, masking, custo LLM por conta (minimo e P0)",
+      "F14 refactor + convergencia: split >450, virar layer, dropar automation.*, avaliar o Tony"
     ],
     dependsOn: []
   },
@@ -92,12 +103,13 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
     priority: "P1",
     category: "atendimento",
     description:
-      "Assistente proativa de WhatsApp (n8n + WAHA, persona Tony): multimodal (texto/audio/imagem via Whisper+visao), debounce, memoria por segmento + memoria longa, naturalidade (digitando/baloes). Migrada para dentro do Omni como modulo automation/ (containers no profile docker 'automation'). Distinta do Omnichannel (conversas unificadas): aqui o foco e o cerebro de IA proativo.",
+      "Assistente proativa de WhatsApp (n8n + WAHA, persona Tony): multimodal (texto/audio/imagem via Whisper+visao), debounce, memoria por segmento + memoria longa, naturalidade (digitando/baloes). Migrada para dentro do Omni como modulo automation/ (containers no profile docker 'automation'). EM PRODUCAO e INTOCADA no curto prazo — nao migrar, nao refatorar, nao 'aproveitar'. FRONTEIRA COM O OMNICHANNEL (decidida 2026-07-16): sao DOIS modulos separados — automation.* = o cerebro do Tony (gate /v1/automation), messaging.* = o que aconteceu no atendimento (gate /v1/omnichannel). Regra anti-colisao 'UM NUMERO = UM CEREBRO': o mesmo numero de WhatsApp nunca e atendido pelos dois ao mesmo tempo, validado NO CADASTRO da instancia (omnichannel F4), nao no runtime — dois bots respondendo o mesmo cliente e incidente visivel para o cliente final. Manter dois cerebros e band-aid CONSCIENTE, registrado no docs/LEGADO.md; a convergencia (Tony virar um ai_agent sobre o provider waha) e AVALIADA na F14 do omnichannel, sem compromisso. O que nao se admite e o dado duplicar: automation.messages/contacts (vazias na pratica) sao depreciadas na F0 e dropadas na F14.",
     scope: [
       "Mini-CRM no Postgres do Omni (schema automation.*, tenant-aware)",
       "Tools do agente via API Go (catalogo/estoque/preco, registrar lead/pedido)",
       "Motor proativo (follow-up/pos-venda/nurture)",
-      "Painel de config (modelos, personas, liga/desliga, contexto temporario)"
+      "Painel de config (modelos, personas, liga/desliga, contexto temporario)",
+      "Fronteira com o omnichannel: um numero = um cerebro; convergencia so avaliada na F14"
     ],
     dependsOn: []
   },

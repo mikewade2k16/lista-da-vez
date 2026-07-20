@@ -17,6 +17,11 @@ const MODULE_GATED_FALLBACK_PATH = '/perfil'
 const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/tasks', moduleId: 'tasks' },
   { prefix: '/calendario', moduleId: 'calendar' },
+  // omnichannel — inbox de atendimento. DEPENDE do modulo 'omnichannel' existir
+  // no Go: o SyncCatalog do boot e quem cria a linha em core.modules e habilita
+  // nas contas is_agency. Enquanto o shell Go nao existir, NENHUMA conta tem o
+  // modulo em enabledModules e /omnichannel cai em /perfil por este guard.
+  { prefix: '/omnichannel', moduleId: 'omnichannel' },
   { prefix: '/crm', moduleId: 'crm' },
   { prefix: '/erp', moduleId: 'crm' },
   { prefix: '/site/leads', moduleId: 'site' },

@@ -182,6 +182,30 @@ function resizeInput(): void {
 // layout pode ter mudado enquanto fechada/minimizada) e foca o input.
 const windowVisible = computed(() => chat.panelOpen.value && !chat.minimized.value)
 
+// Rola o stream do chat ate a ultima mensagem (ver o "digitando..." / a pergunta recem-enviada).
+function scrollToBottom(): void {
+  void nextTick(() => {
+    const stream = streamRef.value
+    if (stream) stream.scrollTop = stream.scrollHeight
+  })
+}
+
+// Ancora a ULTIMA pergunta do usuario no TOPO do viewport (estilo ChatGPT/Claude): quando a
+// resposta chega, a pessoa le a resposta de cima pra baixo em vez de cair no FIM dela e ter que
+// rolar pra cima. Precisa da resposta ja no DOM (senao nao ha conteudo abaixo para rolar).
+function pinLastUserMessageToTop(): void {
+  const stream = streamRef.value
+  if (!stream) return
+  const users = stream.querySelectorAll<HTMLElement>('.calendar-chat__message--user')
+  const el = users[users.length - 1]
+  if (!el) {
+    stream.scrollTop = stream.scrollHeight
+    return
+  }
+  const top = el.getBoundingClientRect().top - stream.getBoundingClientRect().top + stream.scrollTop
+  stream.scrollTop = Math.max(0, top - 8)
+}
+
 watch(windowVisible, (visible) => {
   if (!visible) {
     return
@@ -190,19 +214,40 @@ watch(windowVisible, (visible) => {
     measureArea()
     resizeInput()
     inputRef.value?.focus()
+    // Abrir/reabrir a janela posiciona na 1a mensagem (leitura de cima pra baixo, tipo
+    // WhatsApp) em vez de cair na ultima.
+    if (streamRef.value) streamRef.value.scrollTop = 0
   })
 })
 
-// Rola a conversa para a ultima mensagem sempre que a lista muda.
+// Conversa ABERTA/carregada (menu de conversas): posiciona na 1a mensagem. Vale mesmo quando
+// a nova conversa tem o mesmo numero de mensagens que a anterior (o length nao muda). Limpa o
+// sinal so no nextTick, para o watch de length abaixo (flush post) ainda ve-lo como pendente.
+watch(
+  () => chat.pendingTopScroll.value,
+  (pending) => {
+    if (!pending) return
+    void nextTick(() => {
+      if (streamRef.value) streamRef.value.scrollTop = 0
+      chat.pendingTopScroll.value = false
+    })
+  },
+)
+
+// Turno novo: ao ENVIAR a pergunta rola pro fim (ver o "digitando..."); quando a RESPOSTA chega
+// ancora a pergunta no TOPO (le a resposta de cima pra baixo, nao caindo no fim dela). Pulado
+// logo apos abrir/carregar uma conversa (o watch acima ja levou ao topo da conversa).
 watch(
   () => chat.messages.value.length,
   () => {
-    void nextTick(() => {
-      const stream = streamRef.value
-      if (stream) {
-        stream.scrollTop = stream.scrollHeight
-      }
-    })
+    if (chat.pendingTopScroll.value) return
+    const msgs = chat.messages.value
+    const last = msgs[msgs.length - 1]
+    if (last?.role === 'assistant') {
+      void nextTick(pinLastUserMessageToTop)
+    } else {
+      scrollToBottom()
+    }
   },
   { flush: 'post' },
 )

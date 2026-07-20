@@ -52,15 +52,16 @@ $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $dir = Join-Path $root "automation/export"
 if (-not (Test-Path $dir)) { throw "Diretorio nao encontrado: $dir" }
 
-# MAPA FIXO id -> arquivo. MESMO conjunto de n8n-import.ps1 (os 5 workflow-*.json) e de
-# deploy-pull.ps1 (linha ~246, lista de ids reativados). Contrato: os tres devem casar.
+# MAPA FIXO id -> arquivo. Import e deploy consomem o glob workflow-*.json; este mapa
+# define quais ids podem voltar do n8n para o repo. Remover workflow exige retirar os dois.
 # NAO derivar o nome do arquivo do nome do workflow (nome muda sem renomear arquivo).
 $map = @(
   @{ id = "calendarchat0001"; file = "workflow-calendar-chat.json" },
   @{ id = "calendaromni0001"; file = "workflow-calendar-omni.json" },
   @{ id = "calendartrans001"; file = "workflow-calendar-transcribe.json" },
-  @{ id = "omnichatmvp00001"; file = "workflow-omni-chat.json" },
-  @{ id = "lzhb5JjN5kdcVuRR"; file = "workflow-whatsapp.json" }
+  @{ id = "instafirst000001"; file = "workflow-instagram-first-contact.json" },
+  @{ id = "omnibrain0000001"; file = "workflow-omnichannel-brain.json" },
+  @{ id = "omnichatmvp00001"; file = "workflow-omni-chat.json" }
 )
 if ($Only) { $map = @($map | Where-Object { $_.file -like "*$Only*" }) }
 if (-not $map -or $map.Count -eq 0) { throw "Nenhum workflow no mapa para o filtro '$Only'." }
@@ -77,6 +78,7 @@ $normJs = @'
 // args: <rawPath> <targetPath> <mode>   mode = write | check
 // stdout: uma linha STATUS:written | STATUS:unchanged | STATUS:drift
 // exit:   0 ok  |  3 vazamento de credencial  |  4 erro de parse/IO  |  5 uso incorreto
+//         6 workflow omnichannel com envio direto de canal
 const fs = require("fs");
 const ALLOWED = ["id", "name"];
 function fail(code, msg) { process.stderr.write(msg + "\n"); process.exit(code); }
@@ -102,6 +104,22 @@ for (const node of (wf.nodes || [])) {
     }
   }
 }
+// Arquitetura omnichannel: estes workflows podem orquestrar IA, mas o envio final e
+// sempre Go/outbox. Bloqueia community node WAHA/Evolution em qualquer workflow e
+// endpoint direto de canal nos dois workflows de atendimento.
+const BRAIN_IDS = new Set(["omnibrain0000001", "instafirst000001"]);
+for (const node of (wf.nodes || [])) {
+  const type = String((node && node.type) || "");
+  if (/waha|evolution/i.test(type)) {
+    fail(6, "ENVIO DIRETO de canal proibido no node '" + (node.name || node.id || "?") + "' (type=" + type + "). Use Go/outbox.");
+  }
+  if (BRAIN_IDS.has(String(wf.id || ""))) {
+    const params = JSON.stringify((node && node.parameters) || {});
+    if (/https?:[^\"']*(?:waha|evolution|graph\.facebook\.com)/i.test(params)) {
+      fail(6, "ENDPOINT DIRETO de canal proibido no workflow '" + wf.id + "', node '" + (node.name || node.id || "?") + "'. Use Go/outbox.");
+    }
+  }
+}
 // Projeta APENAS as 10 chaves do shape versionado, na ordem canonica do baseline
 // (o CLI do n8n exporta ~21 chaves: updatedAt/createdAt/isArchived/shared/... que
 // NAO entram no repo, senao cada export vira ruido gigante de diff). active sempre
@@ -110,9 +128,12 @@ const KEYS = ["id", "name", "nodes", "connections", "active", "settings", "stati
 const projected = {};
 for (const key of KEYS) {
   if (key === "active") { projected.active = false; }
-  else if (key in wf) { projected[key] = wf[key]; }
+  // pinData pode conter payload real do webhook e staticData pode conter memoria/PII.
+  // Os dois sao estado de runtime, nunca definicao portavel do workflow. Zerar SEMPRE,
+  // inclusive quando vierem preenchidos no export do n8n.
   else if (key === "pinData") { projected.pinData = {}; }
   else if (key === "staticData") { projected.staticData = null; }
+  else if (key in wf) { projected[key] = wf[key]; }
   // demais chaves ausentes sao omitidas (nao deveriam faltar num export valido)
 }
 const out = JSON.stringify([projected], null, 2) + "\n"; // 2 espacos + \n final (LF), igual aos arquivos atuais
@@ -162,12 +183,12 @@ try {
       # -Sync: primeiro checa; so escreve se divergir (auto-export).
       $status = & node $normPath $localRaw $target "check"
       $rc = $LASTEXITCODE
-      if ($rc -eq 3) { throw "  $($m.file): $status" }  # vazamento de credencial: aborta tudo
+      if ($rc -in @(3, 6)) { throw "  $($m.file): $status" }  # segredo/sender direto: aborta tudo
       if ($rc -ne 0) { throw "  $($m.file): erro do checador (exit $rc)." }
       if ("$status".Contains("drift")) {
         $wstatus = & node $normPath $localRaw $target "write"
         $wrc = $LASTEXITCODE
-        if ($wrc -eq 3) { throw "  $($m.file): $wstatus" }
+        if ($wrc -in @(3, 6)) { throw "  $($m.file): $wstatus" }
         if ($wrc -ne 0) { throw "  $($m.file): erro ao escrever (exit $wrc)." }
         if ("$wstatus".Contains("written")) { $exported++; Write-Host "   exportado (estava atras): $($m.file)" }
       }
@@ -176,7 +197,7 @@ try {
       # normal (write sempre-se-mudou) ou -Check (nunca escreve).
       $status = & node $normPath $localRaw $target $mode
       $rc = $LASTEXITCODE
-      if ($rc -eq 3) { throw "  $($m.file): $status" }  # vazamento: aborta tudo (nada gravado)
+      if ($rc -in @(3, 6)) { throw "  $($m.file): $status" }  # segredo/sender direto: aborta tudo
       if ($rc -ne 0) { throw "  $($m.file): erro do normalizador (exit $rc)." }
       if ($Check) {
         if ("$status".Contains("drift")) { $drift = $true; Write-Host "   DIVERGE: $($m.file)" }

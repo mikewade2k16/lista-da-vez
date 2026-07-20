@@ -268,29 +268,6 @@ O item `m` sai quando a F4 estender a interface do `channel.Provider` (métodos 
 
 ---
 
-## 10. Bot WhatsApp direto n8n + WAHA — `em remoção` (2026-07-20)
-
-**O que era:** `automation/export/workflow-whatsapp.json` recebia webhook da WAHA,
-mantinha dedupe/memória no n8n e enviava diretamente ao WhatsApp. Isso criava uma segunda
-fonte de contato/mensagem/estado e burlava o outbox/auditoria do módulo `omnichannel`.
-
-**Corte já feito:** o workflow `lzhb5JjN5kdcVuRR` foi desativado no n8n local, removido do
-export versionado e retirado do mapa de `n8n-export.ps1`. Os workflows novos são stateless e
-devolvem a decisão ao Go; nenhum deles possui node de envio de canal.
-
-**O que ainda resta:** WAHA, `n8n-nodes-waha`, o módulo Go `automation` e sua tela ainda
-existem porque QR/status/conexão antigos dependem deles. Não apagar volumes nem o serviço até:
-
-1. migrar essa tela para `omnichannel/channel.Provider` e o painel de números;
-2. provar que nenhum número/sessão depende da WAHA;
-3. aplicar o unpublish do workflow também em produção;
-4. cumprir a janela de rollback e então remover container, envs, código e volumes.
-
-**Alvo:** E0/E10 de
-[`omnichannel/PLANO_TECNICO_EVOLUCAO.md`](omnichannel/PLANO_TECNICO_EVOLUCAO.md).
-
----
-
 ## Infra do princípio
 - [x] **Marcador visível no front (só `platform_admin`)** — `web/app/components/admin/LegacyMarker.vue` (badge "LEGADO"/"MOCK"/"localStorage", visível só p/ platform_admin). Plugado em `/operacao/usuarios` (item 1). **Plugar nas demais telas que dependem de legado/mock conforme forem encontradas.**
 - [x] `core.user_module_settings (user_id, module_id, config jsonb)` criada (migration 0132) — destino da config por módulo (estágio U1 do [USER_MODEL_UNIFICATION_PLAN.md](USER_MODEL_UNIFICATION_PLAN.md)).

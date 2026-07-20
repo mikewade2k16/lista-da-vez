@@ -53,7 +53,8 @@ $dir = Join-Path $root "automation/export"
 if (-not (Test-Path $dir)) { throw "Diretorio nao encontrado: $dir" }
 
 # MAPA FIXO id -> arquivo. Import e deploy consomem o glob workflow-*.json; este mapa
-# define quais ids podem voltar do n8n para o repo. Remover workflow exige retirar os dois.
+# define quais ids podem voltar do n8n para o repo. Cada workflow pertence ao seu modulo;
+# uma tarefa nunca remove, edita, ativa ou desativa workflow de outro modulo.
 # NAO derivar o nome do arquivo do nome do workflow (nome muda sem renomear arquivo).
 $map = @(
   @{ id = "calendarchat0001"; file = "workflow-calendar-chat.json" },
@@ -61,7 +62,8 @@ $map = @(
   @{ id = "calendartrans001"; file = "workflow-calendar-transcribe.json" },
   @{ id = "instafirst000001"; file = "workflow-instagram-first-contact.json" },
   @{ id = "omnibrain0000001"; file = "workflow-omnichannel-brain.json" },
-  @{ id = "omnichatmvp00001"; file = "workflow-omni-chat.json" }
+  @{ id = "omnichatmvp00001"; file = "workflow-omni-chat.json" },
+  @{ id = "lzhb5JjN5kdcVuRR"; file = "workflow-whatsapp.json" }
 )
 if ($Only) { $map = @($map | Where-Object { $_.file -like "*$Only*" }) }
 if (-not $map -or $map.Count -eq 0) { throw "Nenhum workflow no mapa para o filtro '$Only'." }
@@ -104,16 +106,16 @@ for (const node of (wf.nodes || [])) {
     }
   }
 }
-// Arquitetura omnichannel: estes workflows podem orquestrar IA, mas o envio final e
-// sempre Go/outbox. Bloqueia community node WAHA/Evolution em qualquer workflow e
-// endpoint direto de canal nos dois workflows de atendimento.
-const BRAIN_IDS = new Set(["omnibrain0000001", "instafirst000001"]);
+// Regra EXCLUSIVA do modulo omnichannel: estes workflows podem orquestrar IA, mas o
+// envio final e sempre Go/outbox. Nao aplicar esta politica a workflows de outros
+// modulos (por exemplo workflow-whatsapp, que pertence ao modulo automation).
+const OMNICHANNEL_IDS = new Set(["omnibrain0000001", "instafirst000001"]);
 for (const node of (wf.nodes || [])) {
-  const type = String((node && node.type) || "");
-  if (/waha|evolution/i.test(type)) {
-    fail(6, "ENVIO DIRETO de canal proibido no node '" + (node.name || node.id || "?") + "' (type=" + type + "). Use Go/outbox.");
-  }
-  if (BRAIN_IDS.has(String(wf.id || ""))) {
+  if (OMNICHANNEL_IDS.has(String(wf.id || ""))) {
+    const type = String((node && node.type) || "");
+    if (/waha|evolution/i.test(type)) {
+      fail(6, "ENVIO DIRETO de canal proibido no workflow omnichannel, node '" + (node.name || node.id || "?") + "' (type=" + type + "). Use Go/outbox.");
+    }
     const params = JSON.stringify((node && node.parameters) || {});
     if (/https?:[^\"']*(?:waha|evolution|graph\.facebook\.com)/i.test(params)) {
       fail(6, "ENDPOINT DIRETO de canal proibido no workflow '" + wf.id + "', node '" + (node.name || node.id || "?") + "'. Use Go/outbox.");

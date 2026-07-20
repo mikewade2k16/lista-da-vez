@@ -1,31 +1,35 @@
-# AGENT — Runtime n8n e automações
+# AGENT — Modulo `automation` (Assistente WhatsApp/IA)
 
 ## Escopo
 
-Runtime compartilhado de workflows n8n do Omni. Para atendimento omnichannel, o n8n
-e somente o executor configuravel da inteligencia; Go/PostgreSQL sao autoritativos e
-o envio aos canais pertence exclusivamente ao outbox/adapters Go.
+Automacao de atendimento de WhatsApp com IA, originalmente construida em n8n + WAHA
+(projeto "n8n Whatsapp", instalacao separada) e trazida para dentro do Omni em
+2026-06-04. Hoje roda como stack de containers do proprio projeto (profile
+`automation` no `docker-compose.yml` da raiz). O objetivo da migracao e, por fases,
+conectar o bot ao banco/back/front do Omni (CRM, catalogo, ERP) em vez de manter o
+n8n isolado.
 
-## Corte do legado — 2026-07-20
+## Propriedade de workflows — regra obrigatoria
 
-- O workflow `Whatsapp` (`lzhb5JjN5kdcVuRR`) foi desativado no n8n local e removido de
-  `automation/export` e do mapa de export. Ele recebia webhook WAHA e enviava mensagem
-  diretamente, o que viola a arquitetura atual e podia duplicar respostas.
-- Nao reativar, reimportar ou recriar esse workflow. O registro inativo no SQLite local
-  e rollback temporario; producao deve receber o mesmo unpublish antes do proximo deploy.
-- WAHA ainda permanece no compose porque o modulo Go antigo `automation` usa QR/status.
-  Isso nao autoriza n8n a consumir o webhook nem enviar mensagem. Remover WAHA somente
-  depois de migrar a tela antiga para `omnichannel/channel.Provider`.
-- Fonte atual: `docs/omnichannel/PLANO_TECNICO_EVOLUCAO.md` e
-  `docs/omnichannel/ARQUITETURA_HIBRIDA_N8N.md`.
+Cada workflow pertence ao modulo que o criou. Uma tarefa so pode editar, importar,
+exportar, ativar, desativar ou remover workflows do modulo explicitamente em escopo.
+
+- `workflow-whatsapp.json` pertence ao modulo **automation** e usa WAHA legitimamente.
+- `workflow-calendar-*` pertence ao modulo **calendar**.
+- `workflow-omni-chat.json` pertence ao chat interno da Operacao.
+- `workflow-omnichannel-brain.json` e `workflow-instagram-first-contact.json` pertencem
+  ao modulo **omnichannel**.
+
+Trabalhar no omnichannel nunca autoriza tocar no runtime, provider, credenciais ou estado
+ativo dos workflows de automation, calendar ou Operacao. Mudanca em script compartilhado
+de import/export deve preservar todos os owners e aplicar validacoes especificas por id.
 
 Persona ativa: **Tony** (consultor objetivo, estilo WhatsApp real). Persona alternativa
 documentada: **Perola Buyer** (consultor de compras de joalheria).
 
-## Runtime legado (historico, nao reativar)
+## O que e (runtime)
 
-O pipeline abaixo documenta o que foi aposentado e serve apenas para recuperar regras
-de produto durante a reimplementacao no cerebro stateless:
+Assistente proativa (nao um chatbot reativo). Pipeline do workflow n8n:
 
 ```
 Webhook (WAHA) -> normaliza -> dedupe (por id) -> filtro (so conversa 1:1; ignora
@@ -55,6 +59,7 @@ automation/
   .mcp.json                        <- config MCP do n8n (SEGREDO; regerar key no novo n8n)
   docker-compose.reference.yml     <- recipe ORIGINAL standalone (so referencia historica)
   export/
+    workflow-whatsapp.json         <- o workflow completo (36 nos; persona+guardrails embutidos)
     workflow-omni-chat.json        <- chat interno da Operacao (Webhook -> AI Agent -> Respond)
     workflow-omnichannel-brain.json <- cerebro stateless do atendimento; sem envio de canal
     workflow-instagram-first-contact.json <- orquestracao Instagram; sem envio Meta
@@ -91,9 +96,8 @@ docker compose --profile automation down          # derruba (sem -v: preserva vo
 Passo a passo completo (instalar community node, importar credenciais + workflow,
 escanear QR, ativar) em [docs/automation/SETUP.md](../docs/automation/SETUP.md).
 
-> Workflows de canal nao podem existir neste runtime. Ativar um workflow novo so e seguro
-> depois de provar que ele nao possui node Evolution, WAHA ou Meta e que devolve
-> `deliveryPolicy=go_outbox_only` quando aplicavel.
+> Ativar o workflow da automacao faz o bot responder no WhatsApp real conectado na WAHA.
+> Confirmar com o Mike antes de alterar seu estado.
 
 ### Par `n8n:import` <-> `n8n:export` (o n8n roda do BANCO, nao do arquivo)
 
@@ -109,9 +113,9 @@ Variantes do export: `n8n:export:chat` (so calendar-chat), `n8n:export:check`
 (nao escreve; sai !=0 se o repo esta atras do n8n — guard), `n8n:export:sync`
 (auto-exporta se divergir e segue exit 0 — usado pelo deploy).
 
-**Mapa FIXO id -> arquivo:** `n8n-export.ps1` mantém os ids estáveis. O import e o deploy
-consomem o glob `automation/export/workflow-*.json`, portanto remover um workflow exige
-apagar o arquivo e retirar sua entrada do mapa de export:
+**Mapa FIXO id -> arquivo:** `n8n-export.ps1` mantem os ids estaveis. O import e o deploy
+consomem o glob `automation/export/workflow-*.json`. Aplicar sempre a regra de propriedade
+acima: uma tarefa nao altera entradas de outro modulo.
 
 | arquivo | id |
 |---|---|
@@ -121,6 +125,7 @@ apagar o arquivo e retirar sua entrada do mapa de export:
 | `workflow-instagram-first-contact.json` | `instafirst000001` |
 | `workflow-omnichannel-brain.json` | `omnibrain0000001` |
 | `workflow-omni-chat.json` | `omnichatmvp00001` |
+| `workflow-whatsapp.json` | `lzhb5JjN5kdcVuRR` |
 
 O nome do arquivo e ESTAVEL (nao derivar do nome do workflow: renomear no n8n nao
 renomeia o arquivo, so evita ruido de diff).
@@ -141,7 +146,8 @@ WAHA ou Meta e nao possui node de envio. As quatro opcoes `saveData*` ficam desl
 para a chave runtime e o contexto do cliente nao permanecerem no banco do n8n.
 
 Ativacao desse workflow isolado e segura porque ele nao recebe webhook de canal nem envia
-mensagem. O workflow WAHA legado foi aposentado e nao faz mais parte do mapa.
+mensagem. Isso nao autoriza alterar o workflow `workflow-whatsapp.json`, que pertence ao
+modulo automation e tem ciclo operacional proprio.
 
 `workflow-instagram-first-contact.json` (id `instafirst000001`) e a orquestracao separada
 de DM/comentarios. Ela prepara origem/politica/historico e chama o cerebro comum, mas
@@ -407,21 +413,26 @@ ambiente, considerar rotacionar as chaves.
 > [PLATAFORMA_AUTOMACAO.md](../docs/automation/PLATAFORMA_AUTOMACAO.md) §6/§8.
 
 **Ambiente / env**
-- [x] Sender direto WAHA desativado localmente e removido do conjunto versionado.
-- [ ] Aplicar `unpublish:workflow --id=lzhb5JjN5kdcVuRR` no n8n de producao e reiniciar o
-      servico antes do proximo deploy de automacao.
-- [x] `n8n-export.ps1` rejeita community node WAHA/Evolution em qualquer workflow e endpoint
-      direto WAHA/Evolution/Graph nos workflows `Omnichannel Brain`/`Instagram First Contact`.
+- [x] Ajustes 1/2/4 **aplicados no `workflow-whatsapp.json`** (2026-06-08, patch programatico):
+      no Dados +`msgTimestamp`/`isSticker`/`isForwarded`/`isReply`/`quotedText`; Dedupe +boot
+      cutoff 5min; Juntar +prefixo de contexto (figurinha/encaminhada/reply); AI Agent emoji
+      endurecido (re-sync). Mesma mudanca em guardrails-resposta.md (fonte).
+- [ ] **Validar ao vivo** apos importar: 1 figurinha + 1 reply + 1 msg antiga (boot). Os campos
+      `isForwarded`/`isReply` dependem do que o engine **GOWS** entrega no payload (`_data.*`);
+      se nao detectar, ajustar o caminho no no Dados (guards `(obj||{})` ja evitam erro).
+- [ ] Se o n8n ja tiver o workflow importado, **re-importar** para pegar os ajustes acima.
 - [ ] Prod: preencher `AUTOMATION_*` no `.env.production` (gerar `N8N_ENCRYPTION_KEY`, nao mudar depois).
 - [ ] Futuro (BYOK): `AUTOMATION_CRED_ENC_KEY` (master key de cripto das chaves dos clientes).
 
 **VPS / deploy**
-- [ ] Manter o editor n8n protegido; nao e necessario expor dashboard WAHA para o fluxo novo.
-- [ ] Importar somente os workflows presentes em `automation/export`; o sender aposentado nao
-      volta por backup/import glob.
+- [ ] Rotas Caddy `n8n.`/`waha.` (basic auth) no projeto do proxy + DNS dos subdominios.
+- [ ] Subir `--profile automation` na prod, importar workflow/credenciais, escanear QR, ativar (confirmar com o Mike).
+- [ ] **Apos importar (ARMADILHA real 2026-06-19):** as credenciais do n8n vem com **host de DEV**
+      (`host.docker.internal`) — reapontar **Redis** (`redis:6379` + `AUTOMATION_REDIS_PASSWORD`) e
+      **WAHA** (`http://waha:3000`); reimportar o `workflow-whatsapp.json` atual e instalar o
+      community node `n8n-nodes-waha` no volume `~/.n8n/nodes`; `docker restart` do n8n a cada troca.
 - [ ] Backup dos volumes `automation_n8n_data` e `automation_waha_sessions`.
-- [ ] Migrar QR/status do modulo antigo para os providers do omnichannel; depois remover WAHA,
-      community node, envs e volumes seguindo a janela de rollback.
+- [ ] Multi-numero: avaliar **WAHA Plus** (licenca) quando precisar de >1 sessao por account.
 
 **Modulo Go / banco (multitenant-completion fechada — desbloqueado 2026-06-09)**
 - [x] **M1 entregue (2026-06-09):** modulo Go `automation` (Module Registry) + migration

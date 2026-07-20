@@ -1,0 +1,1513 @@
+[
+  {
+    "id": "lzhb5JjN5kdcVuRR",
+    "name": "Whatsapp",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "webhook",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          0
+        ],
+        "id": "c20d627f-990b-466f-80af-02ae3939a419",
+        "name": "Webhook",
+        "webhookId": "2568785b-84c5-4db7-90e4-5e941bf6dcf0"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "8b6a6cc5-0707-49f5-a8b5-b45ded5031a5",
+                "name": "session",
+                "value": "={{ $json.body.session }}",
+                "type": "string"
+              },
+              {
+                "id": "8b17abff-7ee2-43a1-a2f8-bfb20da9a843",
+                "name": "chatId",
+                "value": "={{ $json.body.payload.from }}",
+                "type": "string"
+              },
+              {
+                "id": "792206db-b29a-4f12-96d1-642b43b2cba2",
+                "name": "pushName",
+                "value": "={{ $json.body.payload._data.Info.PushName }}",
+                "type": "string"
+              },
+              {
+                "id": "f3883db5-0f10-45bd-9abf-f5090df2fe0c",
+                "name": "playload_id",
+                "value": "={{ $json.body.payload.id }}",
+                "type": "string"
+              },
+              {
+                "id": "3eac29c9-3484-4256-8118-d1b5e9970dd8",
+                "name": "event",
+                "value": "={{ $json.body.event }}",
+                "type": "string"
+              },
+              {
+                "id": "0f173972-22d8-4b35-ab0b-f4ffb4fa2e9f",
+                "name": "message",
+                "value": "={{ $json.body.payload.body }}",
+                "type": "string"
+              },
+              {
+                "id": "c10564d3-910e-4e82-8924-26bb24116498",
+                "name": "fromMe",
+                "value": "={{ $json.body.payload.fromMe }}",
+                "type": "boolean"
+              },
+              {
+                "id": "2ea0bfef-5f25-4828-8650-9608f8334483",
+                "name": "mimetype",
+                "value": "={{ ($json.body.payload.media || {}).mimetype || '' }}",
+                "type": "string"
+              },
+              {
+                "id": "752fba29-bea3-42a3-8b10-d13018508cf7",
+                "name": "mediaUrl",
+                "value": "={{ (($json.body.payload.media || {}).url || '').replace('localhost:3000','waha:3000') }}",
+                "type": "string"
+              },
+              {
+                "id": "a036919e-672c-4af7-b12f-5dd2bf1120a2",
+                "name": "hasMedia",
+                "value": "={{ $json.body.payload.hasMedia }}",
+                "type": "boolean"
+              },
+              {
+                "id": "5e11fad2-fe5b-40e1-a4a3-f0f5158eb235",
+                "name": "msgTimestamp",
+                "value": "={{ $json.body.payload.timestamp ? $json.body.payload.timestamp * 1000 : 0 }}",
+                "type": "number"
+              },
+              {
+                "id": "d02d001b-0a2d-405d-b67f-d4b4a7956d1b",
+                "name": "isSticker",
+                "value": "={{ ($json.body.payload.media || {}).mimetype === 'image/webp' }}",
+                "type": "boolean"
+              },
+              {
+                "id": "1c607a80-8d62-4b59-a218-469a365d53ee",
+                "name": "isForwarded",
+                "value": "={{ !!($json.body.payload.isForwarded || (($json.body.payload._data || {}).isForwarded)) }}",
+                "type": "boolean"
+              },
+              {
+                "id": "27821550-131a-4487-a164-0fc5ab787b91",
+                "name": "isReply",
+                "value": "={{ !!($json.body.payload.quotedMsg || (($json.body.payload._data || {}).quotedMsg)) }}",
+                "type": "boolean"
+              },
+              {
+                "id": "94a79b6c-b828-4ff4-a06f-f3c2b8d19850",
+                "name": "quotedText",
+                "value": "={{ String(($json.body.payload.quotedMsg || ($json.body.payload._data || {}).quotedMsg || {}).body || '').slice(0, 200) }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          208,
+          0
+        ],
+        "id": "34961188-3d67-4615-99cc-e7eeec74c025",
+        "name": "Dados"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "id": "f130fc10-3bda-4eac-91d8-53a20a4327f7",
+                      "leftValue": "={{ $json.event }}",
+                      "rightValue": "message",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    },
+                    {
+                      "id": "c8c38137-fe49-4c0d-a161-e10cb27634e4",
+                      "leftValue": "={{ $json.fromMe }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "false",
+                        "singleValue": true
+                      }
+                    },
+                    {
+                      "id": "cb41b249-5141-4fcc-9d8a-15a81b89a7a9",
+                      "leftValue": "={{ $json.chatId }}",
+                      "rightValue": "@newsletter",
+                      "operator": {
+                        "type": "string",
+                        "operation": "notContains"
+                      }
+                    },
+                    {
+                      "id": "da303055-71fe-4829-b207-f8d449b460d9",
+                      "leftValue": "={{ $json.chatId }}",
+                      "rightValue": "@g.us",
+                      "operator": {
+                        "type": "string",
+                        "operation": "notContains"
+                      }
+                    },
+                    {
+                      "id": "0d8de027-c080-4d96-99ed-e47150e33b60",
+                      "leftValue": "={{ $json.chatId }}",
+                      "rightValue": "@broadcast",
+                      "operator": {
+                        "type": "string",
+                        "operation": "notContains"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          400,
+          0
+        ],
+        "id": "6a8ad5ac-ed72-4d57-9ecc-85ab74b5057e",
+        "name": "Switch"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ ($json.longMem ? '[Memoria deste cliente — use se relevante (ex.: conteudos/artefatos ja criados, decisoes): ' + $json.longMem + ' ] ' : '') + 'Mensagem atual: ' + ($json.message || $json.text || $json.content || '') }}",
+          "options": {
+            "systemMessage": "={{ $('Montar systemMessage').first().json.systemMessage }}"
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          2000,
+          0
+        ],
+        "id": "feadab1f-c89a-44de-af93-26c642c3877c",
+        "name": "AI Agent"
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $('Dados').item.json.chatId + '_' + $json.seg }}",
+          "sessionTTL": 3600,
+          "contextWindowLength": 10
+        },
+        "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
+        "typeVersion": 1.6,
+        "position": [
+          2080,
+          272
+        ],
+        "id": "6f2381e5-b8c6-42d6-99cb-5551028c5da3",
+        "name": "Redis Chat Memory",
+        "credentials": {
+          "redis": {
+            "id": "pkxksfWdwYDbv6B3",
+            "name": "Redis account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "Chatting",
+          "operation": "Send Seen",
+          "session": "={{ $('Dados').item.json.session }}",
+          "chatId": "={{ $('Dados').item.json.chatId }}",
+          "messageId": "={{ $('Dados').item.json.playload_id }}",
+          "participant": "",
+          "requestOptions": {}
+        },
+        "type": "n8n-nodes-waha.WAHA",
+        "typeVersion": 202411,
+        "position": [
+          2240,
+          0
+        ],
+        "id": "b6051cf8-1f72-4379-a3ef-7f2d64bebcfb",
+        "name": "Send Seen",
+        "credentials": {
+          "wahaApi": {
+            "id": "OeshCwyq7C4bSPAo",
+            "name": "WAHA account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "Chatting",
+          "operation": "Send Text",
+          "session": "={{ $('Dados').item.json.session }}",
+          "chatId": "={{ $('Dados').item.json.chatId }}",
+          "text": "={{ $('Loop').first().json.text }}",
+          "requestOptions": {}
+        },
+        "type": "n8n-nodes-waha.WAHA",
+        "typeVersion": 202411,
+        "position": [
+          2464,
+          0
+        ],
+        "id": "115782b1-ee0c-4e43-947e-d8d7dd274d47",
+        "name": "Send a text message",
+        "credentials": {
+          "wahaApi": {
+            "id": "OeshCwyq7C4bSPAo",
+            "name": "WAHA account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-5.3-chat-latest",
+            "cachedResultName": "gpt-5.3-chat-latest"
+          },
+          "builtInTools": {},
+          "options": {}
+        },
+        "id": "0642d73e-d28a-4f78-b2b5-2779ce13115e",
+        "name": "OpenAI Chat Model",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [
+          1888,
+          272
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "id": "650e0449-865b-4897-ac9b-81b76a1f55f9",
+                      "leftValue": "={{ $json.mimetype }}",
+                      "rightValue": "audio/",
+                      "operator": {
+                        "type": "string",
+                        "operation": "startsWith"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "id": "e4d417f1-fb2e-4161-81d7-d2984814b5ff",
+                      "leftValue": "={{ $json.mimetype }}",
+                      "rightValue": "image/",
+                      "operator": {
+                        "type": "string",
+                        "operation": "startsWith"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 3
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "id": "0dbf1dc6-1740-47f8-8cbb-ab4987eea080",
+                      "leftValue": "={{ $json.mimetype }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "string",
+                        "operation": "empty",
+                        "singleValue": true
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "234133b7-bafd-493e-a805-3fe140b50f80",
+        "name": "Tipo",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          624,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "url": "={{ $('Dados').item.json.mediaUrl }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            }
+          }
+        },
+        "id": "a3ebb39a-beef-47f1-a083-ba0aeab7a00a",
+        "name": "Baixar Audio",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          832,
+          -224
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "audio",
+          "operation": "transcribe",
+          "options": {
+            "language": "pt"
+          }
+        },
+        "id": "8a290469-a613-474d-a13d-b43faf19e201",
+        "name": "Transcrever Audio",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2.3,
+        "position": [
+          1024,
+          -224
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "={{ $('Dados').item.json.mediaUrl }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            }
+          }
+        },
+        "id": "43653c9b-9aa1-4af3-b8dc-524e7a2cc62a",
+        "name": "Baixar Imagem",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          800,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "image",
+          "operation": "analyze",
+          "modelId": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-4o",
+            "cachedResultName": "gpt-4o"
+          },
+          "text": "Voce ajuda num atendimento por WhatsApp. Descreva de forma objetiva e neutra o conteudo visual da imagem que o cliente enviou: objetos, produto (se houver), cenario, cores, vestuario/acessorios e QUALQUER texto visivel (transcreva o texto literalmente). Pode descrever pessoas de forma generica (ex.: \"um bebe dormindo com touca\", \"uma pessoa de camisa azul\") sem tentar identificar quem e. NUNCA recuse: descreva o que da pra ver, em 1 a 3 frases curtas.",
+          "inputType": "base64",
+          "options": {}
+        },
+        "id": "c004d52e-4c6b-44b3-8edf-a2bc7e7ae4ad",
+        "name": "Analisar Imagem",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 2.3,
+        "position": [
+          976,
+          160
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "e6b170d1-7ced-49c4-9da1-1e1b603ded1d",
+                "name": "message",
+                "type": "string",
+                "value": "={{ ($('Dados').item.json.message ? $('Dados').item.json.message + ' ' : '') + '[A pessoa enviou uma imagem. Conteúdo: ' + (($json.find(x => x.type === 'message') || {}).content || []).filter(c => c.type === 'output_text').map(c => c.text).join(' ') + ']' }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "82c9c41c-c51a-4791-b8f4-4a9dcfb5b252",
+        "name": "Texto da imagem",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          896,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "23b9320f-89d1-41aa-8c0b-967bc793d3bc",
+                "name": "message",
+                "type": "string",
+                "value": "={{ 'Áudio transcrito da pessoa (pode conter erros de transcrição; interprete pelo contexto e, se ficar ambíguo, confirme gentilmente): ' + ($json.text || '') }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "3b4e05f8-360e-4839-8876-794670076110",
+        "name": "Texto do audio",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          1184,
+          -208
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const chatId = $('Dados').first().json.chatId;\nconst msg = $('Juntar').first().json.message || '';\nconst mem = $('Ler memoria').first().json || {};\nconst seg = mem.seg || 0;\nconst lastMsg = mem.lastMsg || '';\nconst ts = mem.ts || 0;\nconst longMem = mem.longMem || '';\nconst now = Date.now();\nconst gapMin = ts ? Math.round((now - ts) / 60000) : 99999;\nreturn [{ json: { message: msg, chatId: chatId, prevMsg: lastMsg, seg: seg, gapMin: gapMin, longMem: longMem } }];"
+        },
+        "id": "866f6ccc-4e8c-4304-952d-0efed4d48167",
+        "name": "Ctx: ler",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1392,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=Decida se a nova mensagem CONTINUA a conversa anterior ou e um ASSUNTO NOVO.\n\nMensagem anterior do cliente: \"{{ $json.prevMsg }}\"\nMinutos desde a ultima mensagem: {{ $json.gapMin }}\nNova mensagem: \"{{ $json.message }}\"\n\nResponda SOMENTE com uma palavra, sem pontuacao: CONTINUA (mesmo assunto / conversa em andamento) ou NOVO (assunto diferente, saudacao inicial, ou muito tempo parado parecendo conversa nova). Se a mensagem anterior estiver vazia, responda NOVO.",
+          "batching": {}
+        },
+        "id": "745da838-2978-4c9b-8c8c-300205fade9f",
+        "name": "Ctx: classificar",
+        "type": "@n8n/n8n-nodes-langchain.chainLlm",
+        "typeVersion": 1.9,
+        "position": [
+          1584,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-4o-mini",
+            "cachedResultName": "gpt-4o-mini"
+          },
+          "responsesApiEnabled": false,
+          "options": {
+            "temperature": 0
+          }
+        },
+        "id": "b7467117-52c7-48b9-a8c9-697f95ccd4e0",
+        "name": "Modelo classificador",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [
+          1584,
+          240
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const prev = $('Ctx: ler').first().json;\nconst chatId = prev.chatId;\nconst msg = prev.message;\nconst decision = String($input.first().json.text || '').toUpperCase();\nconst isNew = decision.indexOf('NOVO') !== -1 || (prev.gapMin || 0) > 360;\nlet seg = prev.seg || 0;\nif (isNew) seg = seg + 1;\nreturn [{ json: { message: msg, seg: seg, chatId: chatId, ctxDecision: isNew ? 'NOVO' : 'CONTINUA', longMem: prev.longMem || '' } }];"
+        },
+        "id": "32a7609a-5c77-4946-a21b-3dfedf0b7ea0",
+        "name": "Ctx: aplicar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1792,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=Atualize a memoria de longo prazo deste cliente, de forma concisa (maximo ~600 caracteres). Guarde so o que importa lembrar no futuro: conteudos/artefatos criados (ex.: legendas, textos, roteiros — inclua o conteudo essencial deles), decisoes, preferencias e dados do cliente. Descarte conversa fiada.\n\nMemoria atual:\n{{ $('Ctx: aplicar').first().json.longMem }}\n\nUltima troca:\nCliente: {{ $('Ctx: aplicar').first().json.message }}\nVoce: {{ $('AI Agent').first().json.output }}\n\nDevolva SOMENTE a memoria atualizada (sem comentarios, sem markdown).",
+          "batching": {}
+        },
+        "id": "698a4bd4-7d1b-42a5-b77d-b53648f91610",
+        "name": "Resumir",
+        "type": "@n8n/n8n-nodes-langchain.chainLlm",
+        "typeVersion": 1.9,
+        "position": [
+          2688,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-4o-mini",
+            "cachedResultName": "gpt-4o-mini"
+          },
+          "responsesApiEnabled": false,
+          "options": {
+            "temperature": 0.3
+          }
+        },
+        "id": "3805c0c8-70f5-4a24-8161-2233d0165476",
+        "name": "Modelo resumidor",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [
+          2688,
+          224
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "sCzmqFisO8bdeZ9B",
+            "name": "OpenAI account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const chatId = $('Ctx: aplicar').first().json.chatId;\nconst summary = String($input.first().json.text || '').trim();\nreturn [{ json: { longMem: summary, chatId: chatId } }];"
+        },
+        "id": "6935c3c8-8e28-48e6-874a-6b581caa4056",
+        "name": "Ctx: salvar resumo",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2912,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const data = $getWorkflowStaticData('global');\nif (!data.seen) data.seen = [];\nconst id = $input.first().json.playload_id || '';\nif (id && data.seen.indexOf(id) !== -1) return [];\nif (id) { data.seen.push(id); if (data.seen.length > 300) data.seen = data.seen.slice(-300); }\n// Boot cutoff: rejeita mensagens com mais de 5 minutos de idade.\nconst msgTs = $input.first().json.msgTimestamp || 0;\nif (msgTs && (Date.now() - msgTs) > 5 * 60 * 1000) return [];\nreturn $input.all();"
+        },
+        "id": "b6d180e1-d09e-4dfb-97e7-60878154ac50",
+        "name": "Dedupe",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          384,
+          -176
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://waha:3000/api/startTyping",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ session: $('Dados').item.json.session, chatId: $('Dados').item.json.chatId }) }}",
+          "options": {}
+        },
+        "id": "0c58cb9b-1517-49fc-a774-183c95de796c",
+        "name": "Digitando",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2368,
+          -176
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "amount": "={{ Math.min(5, Math.max(1, ( ($('Loop').first().json.text || '').length ) / 25)) }}"
+        },
+        "id": "61771527-0f95-4023-892b-bd13dd1c97e3",
+        "name": "Wait",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          2368,
+          48
+        ],
+        "webhookId": "3342f41e-2f38-4045-97ae-3f6cbd9dc0e1"
+      },
+      {
+        "parameters": {
+          "jsCode": "const out = String($('AI Agent').first().json.output || '').trim();\nconst NL = String.fromCharCode(10);\nlet parts;\nif (out.indexOf('|||') !== -1) { parts = out.split('|||'); }\nelse { parts = out.split(NL + NL); }\nparts = parts.map(function(s){ return s.trim(); }).filter(function(s){ return s.length; });\nif (parts.length === 0) parts = [out];\nif (parts.length > 5) { parts = parts.slice(0,4).concat([parts.slice(4).join(NL + NL)]); }\nreturn parts.map(function(p){ return { json: { text: p } }; });"
+        },
+        "id": "9fed48cb-cc02-48eb-bc51-246aa7698a8f",
+        "name": "Dividir",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2240,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "id": "0f7d4c1a-6fd2-4064-8ea8-08ad87b2d791",
+        "name": "Loop",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          2384,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{ json: { done: true } }];"
+        },
+        "id": "d53da63e-65b9-4548-9e26-83a566d6969f",
+        "name": "Apos loop",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2912,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "push",
+          "list": "={{ 'buf:' + $('Dados').item.json.chatId }}",
+          "messageData": "={{ $json.message }}",
+          "tail": true
+        },
+        "id": "473a5f2a-402e-43f9-b380-2494b4bfb0e3",
+        "name": "Fila push",
+        "type": "n8n-nodes-base.redis",
+        "typeVersion": 1,
+        "position": [
+          1360,
+          -320
+        ],
+        "credentials": {
+          "redis": {
+            "id": "pkxksfWdwYDbv6B3",
+            "name": "Redis account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "set",
+          "key": "={{ 'tok:' + $('Dados').item.json.chatId }}",
+          "value": "={{ $('Dados').item.json.playload_id }}",
+          "keyType": "string",
+          "expire": true,
+          "ttl": 180
+        },
+        "id": "78d08c1a-534a-434a-b85a-3546029013dc",
+        "name": "Fila token",
+        "type": "n8n-nodes-base.redis",
+        "typeVersion": 1,
+        "position": [
+          1520,
+          -320
+        ],
+        "credentials": {
+          "redis": {
+            "id": "pkxksfWdwYDbv6B3",
+            "name": "Redis account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "amount": 7
+        },
+        "id": "1a80f714-3117-4880-849d-63cb2ac1050b",
+        "name": "Wait debounce",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          1680,
+          -320
+        ],
+        "webhookId": "9c3389d1-3568-4b0a-aee5-f7585baa2019"
+      },
+      {
+        "parameters": {
+          "operation": "get",
+          "propertyName": "latestTok",
+          "key": "={{ 'tok:' + $('Dados').item.json.chatId }}",
+          "keyType": "string",
+          "options": {}
+        },
+        "id": "4cfb8056-5d9c-4d1a-b99d-ab45046138f2",
+        "name": "Fila token atual",
+        "type": "n8n-nodes-base.redis",
+        "typeVersion": 1,
+        "position": [
+          1840,
+          -320
+        ],
+        "credentials": {
+          "redis": {
+            "id": "pkxksfWdwYDbv6B3",
+            "name": "Redis account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const latest = $input.first().json.latestTok;\nconst mine = $('Dados').first().json.playload_id;\nif (String(latest) !== String(mine)) { return []; }\nreturn $input.all();"
+        },
+        "id": "87a3cbd6-d763-40f0-8f43-2004fbcdae0d",
+        "name": "Eh ultima",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2000,
+          -320
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "get",
+          "propertyName": "bufList",
+          "key": "={{ 'buf:' + $('Dados').item.json.chatId }}",
+          "keyType": "list",
+          "options": {}
+        },
+        "id": "c35e1805-5737-4cc7-8748-5f079d36d165",
+        "name": "Fila buffer",
+        "type": "n8n-nodes-base.redis",
+        "typeVersion": 1,
+        "position": [
+          2160,
+          -320
+        ],
+        "credentials": {
+          "redis": {
+            "id": "pkxksfWdwYDbv6B3",
+            "name": "Redis account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "delete",
+          "key": "={{ 'buf:' + $('Dados').item.json.chatId }}"
+        },
+        "id": "3b1836b6-de31-48bc-a9bc-d420f60692f5",
+        "name": "Fila limpar",
+        "type": "n8n-nodes-base.redis",
+        "typeVersion": 1,
+        "position": [
+          2320,
+          -320
+        ],
+        "credentials": {
+          "redis": {
+            "id": "pkxksfWdwYDbv6B3",
+            "name": "Redis account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const buf = $('Fila buffer').first().json.bufList;\nconst list = Array.isArray(buf) ? buf : (buf ? [buf] : []);\nlet message = list.join(' ').trim();\nif (!message) message = String($('Dados').first().json.message || '');\nconst dados = $('Dados').first().json;\nconst ctxParts = [];\nif (dados.isSticker) ctxParts.push('[contexto: figurinha]');\nif (dados.isForwarded) ctxParts.push('[contexto: mensagem encaminhada]');\nif (dados.isReply && dados.quotedText) ctxParts.push('[contexto: respondendo a \"' + dados.quotedText + '\"]');\nelse if (dados.isReply) ctxParts.push('[contexto: mensagem de resposta]');\nconst ctxPrefix = ctxParts.length ? ctxParts.join(' ') + '\\n' : '';\nmessage = ctxPrefix + message;\nreturn [{ json: { message: message } }];"
+        },
+        "id": "65d18ad8-458f-4157-bd29-6358927ec781",
+        "name": "Juntar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2480,
+          -320
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=http://api:8080/v1/runtime/automation/config?session={{ $('Dados').first().json.session }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.AUTOMATION_RUNTIME_TOKEN }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1232,
+          -640
+        ],
+        "id": "38befe62-539b-4771-8977-a8fd756dab26",
+        "name": "Get runtime config"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Gate do liga/desliga (M2): para o fluxo se a automacao estiver desligada.\nconst cfg = $('Get runtime config').first().json;\nif (cfg && cfg.enabled === false) return [];\nreturn $('Ctx: aplicar').all();"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1984,
+          0
+        ],
+        "id": "c5a0ae7b-c762-4ba0-989d-ab656ef84078",
+        "name": "Bot ligado?"
+      },
+      {
+        "parameters": {
+          "jsCode": "const cfg=$('Get runtime config').first().json;const msg=($input.first().json.message||'').toLowerCase();const docs=cfg.docs||[];const persona=cfg.persona||'';const guardrails=cfg.guardrails||'';const kmap=[{title:'Empresa e Contatos',kw:['empresa','crow','contato','equipe','telefone','quem']},{title:'Produtos e Servicos',kw:['produto','servico','video','foto','reels','conteudo','pacote']},{title:'Publico-Alvo',kw:['publico','cliente','nicho','audiencia','perfil']},{title:'Regras',kw:['prazo','entrega','cancelamento','revisao','regra']},{title:'Tom de Voz e FAQ',kw:['como','por que','quando','duvida','faq','pergunta','postura']},{title:'Comercial',kw:['preco','valor','orcamento','investimento','custo','contrato','proposta','tabela','quanto','pagamento']}];const matched=[];const others=[];for(const doc of docs){if(!doc.enabled)continue;const entry=kmap.find(e=>doc.title&&doc.title.toLowerCase().includes(e.title.toLowerCase().split(' ')[0]));const kws=entry?entry.kw:[];if(kws.some(k=>msg.includes(k)))matched.push(doc);else others.push(doc);}const sel=matched.length>0?matched:others;let sm=persona;for(const doc of sel){sm+='\\n\\n---\\n\\n';if(doc.title)sm+='## '+doc.title+'\\n\\n';sm+=doc.body||'';}sm+='\\n\\n'+guardrails;return [{json:{...$input.first().json,systemMessage:sm}}];"
+        },
+        "id": "d4e5f6a7-b8c9-0123-def0-123456789abc",
+        "name": "Montar systemMessage",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2112,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=http://api:8080/v1/runtime/automation/memory?session={{ $('Dados').first().json.session }}&chatId={{ $('Dados').first().json.chatId }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.AUTOMATION_RUNTIME_TOKEN }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "ler-mem-0001-0000-0000-000000000001",
+        "name": "Ler memoria",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2720,
+          -320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "=http://api:8080/v1/runtime/automation/memory?session={{ $('Dados').item.json.session }}&chatId={{ $json.chatId }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.AUTOMATION_RUNTIME_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ seg: $json.seg, lastMsg: $json.message, ts: Date.now(), longMem: $('Ctx: ler').first().json.longMem || '' }) }}",
+          "options": {}
+        },
+        "id": "salvar-estado-0001-0000-000000000001",
+        "name": "Salvar estado",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1984,
+          208
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "=http://api:8080/v1/runtime/automation/memory?session={{ $('Dados').item.json.session }}&chatId={{ $json.chatId }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.AUTOMATION_RUNTIME_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ seg: $('Ctx: aplicar').first().json.seg, lastMsg: $('Ctx: aplicar').first().json.message, ts: Date.now(), longMem: $json.longMem || '' }) }}",
+          "options": {}
+        },
+        "id": "salvar-mem-0001-0000-000000000001",
+        "name": "Salvar memoria",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          3104,
+          0
+        ],
+        "onError": "continueRegularOutput"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Dados",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Dados": {
+        "main": [
+          [
+            {
+              "node": "Dedupe",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch": {
+        "main": [
+          [
+            {
+              "node": "Tipo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tipo": {
+        "main": [
+          [
+            {
+              "node": "Baixar Audio",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Baixar Imagem",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Fila push",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Baixar Audio": {
+        "main": [
+          [
+            {
+              "node": "Transcrever Audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcrever Audio": {
+        "main": [
+          [
+            {
+              "node": "Texto do audio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Texto do audio": {
+        "main": [
+          [
+            {
+              "node": "Fila push",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Baixar Imagem": {
+        "main": [
+          [
+            {
+              "node": "Analisar Imagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analisar Imagem": {
+        "main": [
+          [
+            {
+              "node": "Texto da imagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Texto da imagem": {
+        "main": [
+          [
+            {
+              "node": "Fila push",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ctx: ler": {
+        "main": [
+          [
+            {
+              "node": "Ctx: classificar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ctx: classificar": {
+        "main": [
+          [
+            {
+              "node": "Ctx: aplicar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ctx: aplicar": {
+        "main": [
+          [
+            {
+              "node": "Get runtime config",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Salvar estado",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Modelo classificador": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Ctx: classificar",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI Chat Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Redis Chat Memory": {
+        "ai_memory": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI Agent": {
+        "main": [
+          [
+            {
+              "node": "Send Seen",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Seen": {
+        "main": [
+          [
+            {
+              "node": "Dividir",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send a text message": {
+        "main": [
+          [
+            {
+              "node": "Loop",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resumir": {
+        "main": [
+          [
+            {
+              "node": "Ctx: salvar resumo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Modelo resumidor": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Resumir",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Dedupe": {
+        "main": [
+          [
+            {
+              "node": "Switch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Digitando": {
+        "main": [
+          [
+            {
+              "node": "Wait",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait": {
+        "main": [
+          [
+            {
+              "node": "Send a text message",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Dividir": {
+        "main": [
+          [
+            {
+              "node": "Loop",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Loop": {
+        "main": [
+          [
+            {
+              "node": "Apos loop",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Digitando",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Apos loop": {
+        "main": [
+          [
+            {
+              "node": "Resumir",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fila push": {
+        "main": [
+          [
+            {
+              "node": "Fila token",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fila token": {
+        "main": [
+          [
+            {
+              "node": "Wait debounce",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait debounce": {
+        "main": [
+          [
+            {
+              "node": "Fila token atual",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fila token atual": {
+        "main": [
+          [
+            {
+              "node": "Eh ultima",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Eh ultima": {
+        "main": [
+          [
+            {
+              "node": "Fila buffer",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fila buffer": {
+        "main": [
+          [
+            {
+              "node": "Fila limpar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fila limpar": {
+        "main": [
+          [
+            {
+              "node": "Juntar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Juntar": {
+        "main": [
+          [
+            {
+              "node": "Ler memoria",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Bot ligado?": {
+        "main": [
+          [
+            {
+              "node": "Montar systemMessage",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar systemMessage": {
+        "main": [
+          [
+            {
+              "node": "AI Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ctx: salvar resumo": {
+        "main": [
+          [
+            {
+              "node": "Salvar memoria",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get runtime config": {
+        "main": [
+          [
+            {
+              "node": "Bot ligado?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ler memoria": {
+        "main": [
+          [
+            {
+              "node": "Ctx: ler",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "active": false,
+    "settings": {
+      "executionOrder": "v1",
+      "binaryMode": "separate"
+    },
+    "staticData": null,
+    "meta": {
+      "templateCredsSetupCompleted": true
+    },
+    "pinData": {},
+    "versionId": "33b6dce8-9743-41b8-b076-38ef64c3d074"
+  }
+]

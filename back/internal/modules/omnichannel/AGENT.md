@@ -42,13 +42,13 @@ configuração.
 - Cliente existente vem de regra/CRM/ERP, nunca de inferência livre do modelo.
 - Landing page, campanha, anúncio e UTMs entram como touchpoints persistidos pelo Go.
 
-### Corte do legado
+### Ownership n8n — não cruzar módulos
 
-O workflow n8n `Whatsapp` (`lzhb5JjN5kdcVuRR`) que recebia webhook e enviava pela WAHA foi
-desativado localmente e removido do export versionado em 2026-07-20. Não reativar nem
-recriar nodes de canal no n8n. O runtime WAHA permanece temporariamente porque o módulo
-antigo `/automation` ainda usa QR/status; sua remoção depende de migrar essa tela para os
-adapters deste módulo e deve preservar os volumes até o cutover provar estabilidade.
+Este módulo é dono somente de `workflow-omnichannel-brain.json` (`omnibrain0000001`) e
+`workflow-instagram-first-contact.json` (`instafirst000001`). `workflow-whatsapp.json`,
+WAHA e o módulo Go `automation` pertencem a outro produto e permanecem intactos. Calendar e
+Operação também têm workflows próprios. Nunca editar, importar, exportar, ativar, desativar,
+remover ou aplicar regras do omnichannel a ids de outro módulo.
 
 ### Estado atual resumido
 
@@ -58,7 +58,7 @@ adapters deste módulo e deve preservar os volumes até o cutover provar estabil
 - P0 aberto: mídia inbound real, quote no provider, espelho `fromMe`, job idempotente da IA,
   debounce e contrato estruturado `continue_ai|handoff|no_reply`.
 - P1: CRM 360° no painel, atribuição de landing pages, multimodal, tools e WhatsApp Cloud.
-- P2: Instagram DM/comentários, follow-ups e remoção definitiva de WAHA/automation duplicado.
+- P2: Instagram DM/comentários, follow-ups e remoção dos legados internos do port omnichannel.
 
 ## 🔴 Backlog de funcionalidades + bugs conhecidos (a pedido do dono, 2026-07-18)
 **Prioridade do dono: FUNCIONALIDADES primeiro; aparência + estes bugs DEPOIS.** NÃO polir UI nem

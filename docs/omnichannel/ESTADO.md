@@ -19,8 +19,9 @@
   touchpoints, notas e backfill das conversas existentes.
 - Multi-turno inicial ligado: resposta válida vira mensagem `PENDING` + outbox;
   `needs_human=false` mantém IA e `true` segue para handoff; falha faz fail-open.
-- Workflow legado `Whatsapp`/WAHA desativado no n8n local e retirado do export/import.
-  WAHA permanece apenas como dependência transitória da tela antiga `/automation`.
+- Ownership n8n corrigido: `workflow-whatsapp.json`/WAHA pertencem ao módulo automation e
+  permanecem ativos/intactos. O omnichannel só é dono de `Omnichannel Brain` e
+  `Instagram First Contact`; nenhuma tarefa do módulo pode alterar os demais workflows.
 - Plano executivo posterior ao port: [`PLANO_TECNICO_EVOLUCAO.md`](PLANO_TECNICO_EVOLUCAO.md).
 
 P0 atual: mídia inbound real, quote, espelho `fromMe`, job idempotente da IA, debounce e

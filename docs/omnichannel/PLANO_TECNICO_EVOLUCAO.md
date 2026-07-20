@@ -67,19 +67,21 @@ PostgreSQL do produto e nunca envia para Evolution ou Meta.
 - landing pages ainda não enviam atribuição completa ao CRM;
 - WhatsApp Cloud e Instagram ainda não possuem adapters reais.
 
-### Legado em corte
+### Isolamento entre módulos n8n
 
-- o workflow n8n `Whatsapp`/WAHA de envio direto foi desativado localmente em 2026-07-20
-  e removido do conjunto versionado/importável;
-- o container WAHA e o módulo Go `automation` permanecem temporariamente porque a tela
-  antiga ainda usa QR/status. Eles não podem voltar a responder mensagens;
-- volumes WAHA permanecem intactos para rollback até a migração da tela antiga.
+- este plano só pode alterar `workflow-omnichannel-brain.json` e
+  `workflow-instagram-first-contact.json`;
+- `workflow-whatsapp.json` e WAHA pertencem ao módulo `automation` e não são legado do
+  omnichannel;
+- workflows de calendário, Operação e automação mantêm runtime, credenciais e ciclo de
+  deploy próprios;
+- script compartilhado deve aplicar validações por id/owner, nunca por suposição global.
 
 ## 4. Ordem executiva
 
 | Fase | Resultado | Dependência | Saída obrigatória |
 |---|---|---|---|
-| E0 | corte seguro do sender legado | — | um único dono de envio |
+| E0 | ownership e fronteira dos workflows | — | nenhum efeito cross-module |
 | E1 | piloto WhatsApp funcional | E0 | texto, mídia, quote e fromMe reais |
 | E2 | cérebro n8n v2 | E1 | decisão estruturada, debounce e multi-turno |
 | E3 | multimodal | E2 | áudio, imagem e documento com limites |
@@ -96,23 +98,23 @@ que os contratos de contato e atribuição estiverem congelados.
 
 ## 5. Fases detalhadas
 
-### E0 — cortar o legado sem perder rollback
+### E0 — ownership e fronteira dos workflows
 
 Entregas:
 
-- desativar o workflow `lzhb5JjN5kdcVuRR` no n8n dev/prod;
-- remover `workflow-whatsapp.json` do export/import/deploy;
-- bloquear por teste/checagem qualquer node n8n que envie a canal no conjunto omnichannel;
-- documentar que WAHA é somente dependência transitória da tela `/automation`;
-- mapear consumidores de `back/internal/modules/automation` antes de remover serviço/volume;
-- decidir e executar limpeza do histórico Git dos backups com PII, seguida de rotação de segredos.
+- registrar ownership explícito de cada workflow no AGENT do n8n;
+- limitar toda tarefa aos workflows do módulo em escopo;
+- bloquear por teste qualquer node de envio a canal somente nos workflows do omnichannel;
+- preservar `workflow-whatsapp.json`, WAHA e todos os workflows de outros módulos;
+- manter export/import/deploy compartilhados sem alterar estado ativo de owners não relacionados;
+- remover apenas legado interno do omnichannel, como adapters de costura, quando a fase dona fechar.
 
 Aceite:
 
-- `n8n list:workflow --active=true` não mostra o workflow legado;
-- busca versionada não encontra node WAHA/Meta/Evolution nos workflows novos;
+- lista de workflows ativos permanece igual fora dos ids do omnichannel;
+- busca versionada não encontra node WAHA/Meta/Evolution nos workflows do omnichannel;
 - WhatsApp real recebe no máximo uma resposta por inbound;
-- rollback é reativar explicitamente o registro preservado, nunca reimport automático.
+- alteração do cérebro não gera diff nem mudança de estado em Calendar, Operation ou Automation.
 
 ### E1 — fechar o piloto WhatsApp funcional
 
@@ -304,7 +306,7 @@ Gates de promoção:
 
 ### Agora — P0
 
-1. concluir E0 também em produção;
+1. consolidar E0 nos scripts e runbooks compartilhados sem mudar outros runtimes;
 2. corrigir mídia inbound, quote e `fromMe`;
 3. substituir disparo solto da IA por job idempotente;
 4. fechar contrato versionado do cérebro e debounce;
@@ -323,7 +325,7 @@ Gates de promoção:
 1. Instagram DM;
 2. comentários com aprovação e progressiva automação;
 3. RAG avançado, tools de escrita e follow-ups proativos;
-4. remover definitivamente WAHA, módulo `/automation` duplicado e adapters de costura.
+4. remover os adapters de costura e demais legados internos do próprio omnichannel.
 
 ## 7. Regra de atualização
 

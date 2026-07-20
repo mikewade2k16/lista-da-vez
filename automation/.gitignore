@@ -1,8 +1,6 @@
 # Segredos — NÃO comitar (contêm API keys)
 .mcp.json
 export/credentials.decrypted.json
-# Backups manuais do n8n podem carregar pinData/staticData com PII real.
-export/*.bak-*
 
 # Scripts temporários (uso único, já removidos)
 _*.js

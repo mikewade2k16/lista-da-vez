@@ -103,6 +103,9 @@ O fluxo local sem Docker continua existindo apenas como fallback:
   - `$revisao-dia`: usar para balanço consultivo; é somente leitura.
   As fontes Claude originais continuam em `.claude/skills`, mas as versões nativas e
   implicitamente invocáveis ficam em `~/.codex/skills`.
+- n8n tem ownership por módulo: antes de editar/importar/exportar/ativar/desativar/remover,
+  identificar o owner pelo mapa em `automation/AGENT.md`. A tarefa só pode tocar workflows
+  do módulo explicitamente em escopo; scripts compartilhados preservam os demais ids e estados.
 - Todo novo trabalho de produto deve considerar `web + back + banco` como stack integrada.
 - `web` fala com a API por `NUXT_PUBLIC_API_BASE` no browser e `NUXT_API_INTERNAL_BASE` no SSR/container.
 - `back` deve continuar modular, com um `AGENT.md` proprio por modulo em `internal/modules/<modulo>`.

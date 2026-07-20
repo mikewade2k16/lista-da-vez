@@ -92,10 +92,10 @@ evento, não do relógio do workflow.
 - limpar o arquivo atual não remove dados de commits antigos: eventual limpeza do
   histórico Git exige decisão explícita e rotação dos segredos afetados.
 
-O sender WAHA `Whatsapp` (`lzhb5JjN5kdcVuRR`) foi desativado localmente e removido do
-conjunto versionado em 2026-07-20. O registro inativo e os volumes WAHA ficam somente como
-rollback temporário até a tela `/automation` migrar para os adapters canônicos. Ele não
-pode ser reimportado pelo deploy.
+Esta arquitetura vale somente para os workflows do omnichannel. `workflow-whatsapp.json`
+e WAHA pertencem ao módulo `automation`; Calendar e Operação também possuem workflows
+próprios. Uma tarefa deste módulo nunca edita, importa, exporta, ativa ou desativa workflow
+de outro owner. Validações em scripts compartilhados devem ser escopadas pelos ids do módulo.
 
 ## Próximas entregas
 

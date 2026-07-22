@@ -170,6 +170,13 @@ git commit --no-verify -m "..."
 
 Use com parcimonia — o ponto do hook e evitar regressao silenciosa.
 
+## Pre-push hook
+
+O pre-push continua exigindo o build de producao do web. Como o bundle atual pode ultrapassar
+o heap padrao de aproximadamente 4 GB do Node no Windows, `.husky/pre-push` aplica 8192 MB somente
+ao processo do hook. Para uma maquina com outro limite, use `OMNI_WEB_BUILD_HEAP_MB` sem remover o
+build obrigatorio.
+
 ## Validacao minima
 
 - frontend: `npm --prefix web run build` + `npm --prefix web run lint`

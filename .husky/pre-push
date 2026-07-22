@@ -3,5 +3,11 @@
 #
 # Antes de enviar para o remoto, valida o build de producao do web.
 # Isso pega erros que passam por lint/format mas quebram o deploy.
+# O bundle atual ultrapassa o heap padrao de ~4 GB do Node no Windows. Mantemos
+# o build obrigatorio e ampliamos somente o processo deste hook; o valor pode
+# ser ajustado localmente com OMNI_WEB_BUILD_HEAP_MB.
 
+WEB_BUILD_HEAP_MB="${OMNI_WEB_BUILD_HEAP_MB:-8192}"
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${WEB_BUILD_HEAP_MB}"
+echo "→ build web de pre-push (heap Node: ${WEB_BUILD_HEAP_MB} MB)"
 npm run build

@@ -29,13 +29,24 @@ const (
 //   - config_updated:                (sem campos extras)
 //   - plan_updated:                  ResourceID=planId, Status
 type RealtimeEvent struct {
-	Type       string
-	AccountID  string
+	Type      string
+	AccountID string
+	// ClientIDs recebe os clientes afetados por uma mutacao de evento. O transporte
+	// publica a mesma invalidacao tambem nos topicos das contas-cliente, sem enviar
+	// snapshot/dado de outro cliente. Eventos de nota/config deixam a lista vazia.
+	ClientIDs  []string
 	ResourceID string
 	Date       string
 	MonthKey   string
 	Status     string
 	Version    int
+}
+
+func eventClientID(event CalendarEvent) string {
+	if event.ClientID == nil {
+		return ""
+	}
+	return *event.ClientID
 }
 
 // Publisher entrega os eventos do calendario ao transporte realtime.

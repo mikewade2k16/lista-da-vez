@@ -68,6 +68,7 @@ var chatPositions = map[string]bool{"center": true, "left": true, "right": true,
 
 // calendarStore e a fatia da persistencia que o Service consome.
 type calendarStore interface {
+	ResolveCalendarScope(ctx context.Context, activeAccountID string) (CalendarScope, error)
 	ListEvents(ctx context.Context, accountID string, f EventFilter) ([]EventView, error)
 	// ListEventsLean projeta eventos reais do mes para o agregado das IAs, incluindo
 	// identidade, horario e midia, com teto de linhas (sem N+1).
@@ -76,13 +77,13 @@ type calendarStore interface {
 	// modo 'all'): client_id = ANY(visiveis) OR NULL. Barra vazamento de evento de cliente
 	// fora do escopo do usuario no contexto agregado da IA.
 	ListEventsLeanForClients(ctx context.Context, accountID, from, to string, clientIDs []string, limit int) ([]AIContextEvent, error)
-	GetEvent(ctx context.Context, id, accountID string) (CalendarEvent, error)
+	GetEvent(ctx context.Context, id, accountID, clientScopeID string) (CalendarEvent, error)
 	CreateEvent(ctx context.Context, accountID string, in EventInput) (CalendarEvent, error)
 	// UpdateEvent incrementa version; expectedVersion nao-nil aplica o guard de
 	// optimistic locking (C12) e retorna pgx.ErrNoRows quando a version diverge.
-	UpdateEvent(ctx context.Context, id, accountID string, in EventInput, expectedVersion *int) (CalendarEvent, error)
+	UpdateEvent(ctx context.Context, id, accountID, clientScopeID string, in EventInput, expectedVersion *int) (CalendarEvent, error)
 	SetEventLinkedMedia(ctx context.Context, id, accountID string, media []MediaItem) error
-	DeleteEvent(ctx context.Context, id, accountID string) error
+	DeleteEvent(ctx context.Context, id, accountID, clientScopeID string) error
 	GetNotes(ctx context.Context, accountID, month string) (NoteView, error)
 	PutNotes(ctx context.Context, accountID, month, content, updatedBy string) (NoteView, error)
 	GetConfig(ctx context.Context, accountID string) (CalendarConfig, error)
@@ -103,8 +104,9 @@ type calendarStore interface {
 	chatConversationStore
 }
 
-// Service implementa as regras do modulo calendar. O calendario e SEMPRE escopado
-// pela account do contexto (X-Account-Id / TenantID); nao ha visao cross-account.
+// Service implementa as regras do modulo calendar. A account ativa vem do Principal;
+// quando ela e um cliente, ResolveCalendarScope localiza a agenda da conta-agencia da
+// mesma organization e trava toda operacao de evento no client_id da account ativa.
 type Service struct {
 	store   calendarStore
 	storage MediaStorage
@@ -154,7 +156,7 @@ func (s *Service) ListEvents(ctx context.Context, accountID string, f EventFilte
 
 // GetEvent devolve um evento dentro do escopo da account.
 func (s *Service) GetEvent(ctx context.Context, accountID, id string) (EventView, error) {
-	e, err := s.store.GetEvent(ctx, id, strings.TrimSpace(accountID))
+	e, err := s.store.GetEvent(ctx, id, strings.TrimSpace(accountID), "")
 	if err != nil {
 		return EventView{}, mapNotFound(err)
 	}
@@ -200,7 +202,7 @@ func (s *Service) CreateEvent(ctx context.Context, accountID string, in EventInp
 		view.TaskWarning = warning
 	}
 	s.publishCalendar(ctx, RealtimeEvent{
-		Type: realtimeEventCreated, AccountID: account, ResourceID: e.ID, Date: e.Date, Version: e.Version,
+		Type: realtimeEventCreated, AccountID: account, ClientIDs: []string{eventClientID(e)}, ResourceID: e.ID, Date: e.Date, Version: e.Version,
 	})
 	return view, nil
 }
@@ -210,6 +212,10 @@ func (s *Service) CreateEvent(ctx context.Context, accountID string, in EventInp
 // locking: se a version divergir, o guard nao casa nenhuma linha (pgx.ErrNoRows) e um
 // GET escopado desambigua 404 (nao existe/fora do escopo) de 409 (version divergente).
 func (s *Service) UpdateEvent(ctx context.Context, accountID, id string, in EventInput, expectedVersion *int) (EventView, error) {
+	return s.updateEvent(ctx, accountID, id, "", in, expectedVersion)
+}
+
+func (s *Service) updateEvent(ctx context.Context, accountID, id, clientScopeID string, in EventInput, expectedVersion *int) (EventView, error) {
 	account := strings.TrimSpace(accountID)
 	in, err := validateEvent(account, in)
 	if err != nil {
@@ -218,22 +224,23 @@ func (s *Service) UpdateEvent(ctx context.Context, accountID, id string, in Even
 	// Descricao antiga + taskId ANTES do update: usados no forward sync para (a) achar a task
 	// vinculada e (b) so empurrar a descricao pro corpo da task quando ELA mudou (evita apagar
 	// o texto rico da task numa edicao de outro campo do evento). So consulta com tasks ativo.
-	oldDesc, taskID := "", ""
-	if s.tasksSvc() != nil {
-		if old, gerr := s.store.GetEvent(ctx, id, account); gerr == nil {
+	oldDesc, taskID, oldClientID := "", "", ""
+	if old, gerr := s.store.GetEvent(ctx, id, account, clientScopeID); gerr == nil {
+		oldClientID = eventClientID(old)
+		if s.tasksSvc() != nil {
 			oldDesc = old.Description
 			if old.TaskID != nil {
 				taskID = strings.TrimSpace(*old.TaskID)
 			}
 		}
 	}
-	e, err := s.store.UpdateEvent(ctx, id, account, in, expectedVersion)
+	e, err := s.store.UpdateEvent(ctx, id, account, clientScopeID, in, expectedVersion)
 	if err != nil {
 		if expectedVersion != nil && errors.Is(err, pgx.ErrNoRows) {
 			// Guard nao casou: desambigua 409 (existe, version divergente) de 404 (nao
 			// existe/fora do escopo). Um erro transitorio do GET (conexao/ctx) NAO pode
 			// virar 404 silencioso — propaga cru para mapear em 500.
-			_, getErr := s.store.GetEvent(ctx, id, account)
+			_, getErr := s.store.GetEvent(ctx, id, account, clientScopeID)
 			switch {
 			case getErr == nil:
 				return EventView{}, ErrVersionConflict
@@ -246,7 +253,7 @@ func (s *Service) UpdateEvent(ctx context.Context, accountID, id string, in Even
 		return EventView{}, mapNotFound(err)
 	}
 	s.publishCalendar(ctx, RealtimeEvent{
-		Type: realtimeEventUpdated, AccountID: account, ResourceID: e.ID, Date: e.Date, Version: e.Version,
+		Type: realtimeEventUpdated, AccountID: account, ClientIDs: []string{oldClientID, eventClientID(e)}, ResourceID: e.ID, Date: e.Date, Version: e.Version,
 	})
 	// WAVE 5 (E4/E5): reflete a edicao do evento na task vinculada (forward sync). O
 	// UpdateEvent basico nao traz o taskId; le via join so quando a integracao tasks esta
@@ -263,12 +270,17 @@ func (s *Service) UpdateEvent(ctx context.Context, accountID, id string, in Even
 // tambem (WAVE 6, politica "excluir os dois", escolhida no modal do front). Best-effort no lado da
 // task: falha nao impede a exclusao do evento.
 func (s *Service) DeleteEvent(ctx context.Context, accountID, id string, archiveTask bool) error {
+	return s.deleteEvent(ctx, accountID, id, "", archiveTask)
+}
+
+func (s *Service) deleteEvent(ctx context.Context, accountID, id, clientScopeID string, archiveTask bool) error {
 	account := strings.TrimSpace(accountID)
 	// Le o evento (com taskId via join) so para desvincular/arquivar e capturar a data do payload
 	// realtime; ausencia/erro aqui nao bloqueia a exclusao (o DeleteEvent abaixo aplica o escopo).
-	var date string
-	if ev, err := s.store.GetEvent(ctx, id, account); err == nil {
+	var date, clientID string
+	if ev, err := s.store.GetEvent(ctx, id, account, clientScopeID); err == nil {
 		date = ev.Date
+		clientID = eventClientID(ev)
 		if ev.TaskID != nil && strings.TrimSpace(*ev.TaskID) != "" {
 			taskID := strings.TrimSpace(*ev.TaskID)
 			if archiveTask {
@@ -278,17 +290,17 @@ func (s *Service) DeleteEvent(ctx context.Context, accountID, id string, archive
 			}
 		}
 	}
-	if err := s.store.DeleteEvent(ctx, id, account); err != nil {
+	if err := s.store.DeleteEvent(ctx, id, account, clientScopeID); err != nil {
 		// Com archiveTask, arquivar a task ja pode ter apagado o evento-espelho (source='task')
 		// pelo sync; nesse caso o "nao encontrado" e SUCESSO (o evento sumiu, que era o objetivo).
 		if archiveTask && (errors.Is(err, pgx.ErrNoRows) || errors.Is(err, ErrNotFound)) {
-			s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventDeleted, AccountID: account, ResourceID: strings.TrimSpace(id), Date: date})
+			s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventDeleted, AccountID: account, ClientIDs: []string{clientID}, ResourceID: strings.TrimSpace(id), Date: date})
 			return nil
 		}
 		return mapNotFound(err)
 	}
 	s.publishCalendar(ctx, RealtimeEvent{
-		Type: realtimeEventDeleted, AccountID: account, ResourceID: strings.TrimSpace(id), Date: date,
+		Type: realtimeEventDeleted, AccountID: account, ClientIDs: []string{clientID}, ResourceID: strings.TrimSpace(id), Date: date,
 	})
 	return nil
 }

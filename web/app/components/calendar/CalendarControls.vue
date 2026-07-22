@@ -10,13 +10,14 @@ const props = withDefaults(
     periodTitle: string
     clients: CalendarClient[]
     selectedClientId: string
+    canSelectClient?: boolean
     view: CalendarView
     // Presenca (SPEC-F9): quem mais esta no calendario agora (exclui o proprio usuario).
     participants?: CalendarPresenceUser[]
     // Barras multi-dia (WAVE 11): estado do toggle mostrar/ocultar as tasks com inicio->fim.
     showSpans?: boolean
   }>(),
-  { participants: () => [], showSpans: true },
+  { canSelectClient: false, participants: () => [], showSpans: true },
 )
 
 const emit = defineEmits<{
@@ -120,6 +121,7 @@ const clientOptions = computed(() => [
     </button>
 
     <AppSelectField
+      v-if="canSelectClient"
       class="calendar-controls__client"
       :model-value="selectedClientId"
       :options="clientOptions"

@@ -68,6 +68,76 @@ func scanEventWithTask(row rowScanner) (CalendarEvent, error) {
 	return e, err
 }
 
+// ResolveCalendarScope resolve a conta que armazena a agenda e os clientes que a
+// account ativa pode enxergar. Para conta-cliente, a agenda pertence a conta-agencia
+// ativa da mesma organization e o client_id fica travado na propria account. A query
+// nunca recebe organization/account do browser alem da account ativa ja validada.
+func (s *Store) ResolveCalendarScope(ctx context.Context, activeAccountID string) (CalendarScope, error) {
+	const scopeQuery = `
+		select
+			a.id::text,
+			coalesce(a.name, ''),
+			a.is_agency,
+			coalesce(a.organization_id::text, ''),
+			case
+				when a.is_agency then a.id::text
+				else coalesce((
+					select owner.id::text
+					from core.accounts owner
+					where owner.organization_id = a.organization_id
+					  and owner.is_agency = true
+					  and owner.is_active = true
+					order by owner.created_at asc, owner.id asc
+					limit 1
+				), a.id::text)
+			end
+		from core.accounts a
+		where a.id = $1::uuid and a.is_active = true`
+
+	var activeID, activeName, organizationID, storageAccountID string
+	var isAgency bool
+	if err := s.pool.QueryRow(ctx, scopeQuery, activeAccountID).Scan(
+		&activeID, &activeName, &isAgency, &organizationID, &storageAccountID,
+	); err != nil {
+		return CalendarScope{}, err
+	}
+
+	scope := CalendarScope{
+		StorageAccountID: storageAccountID,
+		CanSelect:        isAgency,
+		Clients:          make([]CalendarScopeClient, 0),
+	}
+	if !isAgency {
+		scope.LockedClientID = activeID
+		scope.Clients = append(scope.Clients, CalendarScopeClient{ID: activeID, Name: activeName})
+		return scope, nil
+	}
+	if organizationID == "" {
+		return scope, nil
+	}
+
+	const clientsQuery = `
+		select c.id::text, coalesce(c.name, '')
+		from core.accounts c
+		where c.organization_id = $1::uuid
+		  and c.is_agency = false
+		  and c.is_active = true
+		order by lower(c.name), c.id`
+	rows, err := s.pool.Query(ctx, clientsQuery, organizationID)
+	if err != nil {
+		return CalendarScope{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var client CalendarScopeClient
+		if err := rows.Scan(&client.ID, &client.Name); err != nil {
+			return CalendarScope{}, err
+		}
+		scope.Clients = append(scope.Clients, client)
+	}
+	return scope, rows.Err()
+}
+
 // ListEvents retorna os eventos da account na janela [from, to] (inclusive),
 // opcionalmente filtrados por cliente. Datas/cliente vazios = sem aquele filtro.
 func (s *Store) ListEvents(ctx context.Context, accountID string, f EventFilter) ([]EventView, error) {
@@ -106,12 +176,16 @@ func (s *Store) ListEvents(ctx context.Context, accountID string, f EventFilter)
 
 // GetEvent retorna um evento. accountID vazio = sem filtro de escopo (admin);
 // preenchido = defesa em profundidade (evento de outra account => ErrNoRows).
-func (s *Store) GetEvent(ctx context.Context, id, accountID string) (CalendarEvent, error) {
+func (s *Store) GetEvent(ctx context.Context, id, accountID, clientScopeID string) (CalendarEvent, error) {
 	query := `select ` + eventCols + eventTaskIDCol + ` from calendar.events e where id = $1::uuid`
 	args := []any{id}
 	if strings.TrimSpace(accountID) != "" {
 		args = append(args, accountID)
-		query += " and account_id = $2::uuid"
+		query += " and account_id = $" + strconv.Itoa(len(args)) + "::uuid"
+	}
+	if strings.TrimSpace(clientScopeID) != "" {
+		args = append(args, clientScopeID)
+		query += " and client_id = $" + strconv.Itoa(len(args)) + "::uuid"
 	}
 	return scanEventWithTask(s.pool.QueryRow(ctx, query, args...))
 }
@@ -137,7 +211,7 @@ func (s *Store) CreateEvent(ctx context.Context, accountID string, in EventInput
 // version (C12). accountID vazio = sem filtro (admin); preenchido = defesa em
 // profundidade. expectedVersion nao-nil adiciona o guard `and version = $n` (optimistic
 // locking): se ninguem casar, retorna pgx.ErrNoRows e o service desambigua 404 x 409.
-func (s *Store) UpdateEvent(ctx context.Context, id, accountID string, in EventInput, expectedVersion *int) (CalendarEvent, error) {
+func (s *Store) UpdateEvent(ctx context.Context, id, accountID, clientScopeID string, in EventInput, expectedVersion *int) (CalendarEvent, error) {
 	query := `
 		update calendar.events set
 			client_id = $2::uuid, event_date = $3::date, event_time = $4, type = $5, title = $6,
@@ -149,6 +223,10 @@ func (s *Store) UpdateEvent(ctx context.Context, id, accountID string, in EventI
 	if strings.TrimSpace(accountID) != "" {
 		args = append(args, accountID)
 		query += " and account_id = $" + strconv.Itoa(len(args)) + "::uuid"
+	}
+	if strings.TrimSpace(clientScopeID) != "" {
+		args = append(args, clientScopeID)
+		query += " and client_id = $" + strconv.Itoa(len(args)) + "::uuid"
 	}
 	if expectedVersion != nil {
 		args = append(args, *expectedVersion)
@@ -173,12 +251,16 @@ func (s *Store) SetEventLinkedMedia(ctx context.Context, id, accountID string, m
 }
 
 // DeleteEvent remove um evento. Retorna pgx.ErrNoRows quando nada foi apagado.
-func (s *Store) DeleteEvent(ctx context.Context, id, accountID string) error {
+func (s *Store) DeleteEvent(ctx context.Context, id, accountID, clientScopeID string) error {
 	query := `delete from calendar.events where id = $1::uuid`
 	args := []any{id}
 	if strings.TrimSpace(accountID) != "" {
 		args = append(args, accountID)
 		query += " and account_id = $2::uuid"
+	}
+	if strings.TrimSpace(clientScopeID) != "" {
+		args = append(args, clientScopeID)
+		query += " and client_id = $" + strconv.Itoa(len(args)) + "::uuid"
 	}
 	tag, err := s.pool.Exec(ctx, query, args...)
 	if err != nil {

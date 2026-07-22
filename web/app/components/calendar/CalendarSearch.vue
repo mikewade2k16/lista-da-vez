@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { useCalendarStore } from '~/stores/calendar'
 import { createApiRequest } from '~/utils/api-client'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 import * as calendarApi from '~/domain/calendar/calendar-api'
 import {
   addMonthsToKey,
@@ -20,6 +21,7 @@ const emit = defineEmits<{ open: [event: CalendarEvent] }>()
 
 const store = useCalendarStore()
 const auth = useAuthStore()
+const accountStore = useCoreAccountStore()
 const runtimeConfig = useRuntimeConfig()
 const apiRequest = createApiRequest(runtimeConfig, () => auth.accessToken)
 
@@ -49,21 +51,31 @@ function positionPanel(): void {
 }
 // Cache dos eventos da janela ampla (buscados 1x por abertura; a janela cobre -6/+12 meses).
 const pool = ref<CalendarEvent[]>([])
-let loadedForMonth = ''
+let loadedForScope = ''
 
 const clientsById = computed(() => store.clientsById)
+const searchScopeKey = computed(() => {
+  const focus = store.focusMonthKey || monthKeyOf(todayKey())
+  const readiness = store.scopeLoaded ? 'ready' : 'pending'
+  return `${accountStore.activeAccountId}|${store.effectiveClientId}|${focus}|${readiness}`
+})
 
 async function loadPool(): Promise<void> {
+  if (!store.scopeLoaded) return
   const focus = store.focusMonthKey || monthKeyOf(todayKey())
-  if (loadedForMonth === focus && pool.value.length) return
+  const requestedScope = searchScopeKey.value
+  if (loadedForScope === requestedScope) return
   loading.value = true
   try {
     const from = `${addMonthsToKey(focus, -6)}-01`
     // fim = ultimo dia de +12 meses (usa dia 28 como piso seguro + o mes seguinte -1 seria ideal,
     // mas a query aceita qualquer 'to'; usamos o 1o dia de +13 como limite exclusivo-1).
     const to = `${addMonthsToKey(focus, 12)}-28`
-    pool.value = await calendarApi.fetchEventsInRange(apiRequest, from, to)
-    loadedForMonth = focus
+    const next = await calendarApi.fetchEventsInRange(apiRequest, from, to, store.effectiveClientId)
+    if (requestedScope === searchScopeKey.value) {
+      pool.value = next
+      loadedForScope = requestedScope
+    }
   } catch {
     // silencioso: mantem o pool anterior
   } finally {
@@ -148,6 +160,11 @@ watch(open, (isOpen) => {
     window.removeEventListener('resize', onReflow)
     window.removeEventListener('scroll', onReflow, true)
   }
+})
+watch(searchScopeKey, () => {
+  pool.value = []
+  loadedForScope = ''
+  if (open.value) void loadPool()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onDocClick)

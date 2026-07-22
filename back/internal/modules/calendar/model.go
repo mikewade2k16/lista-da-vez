@@ -5,6 +5,21 @@ import (
 	"time"
 )
 
+// CalendarScope descreve o recorte autoritativo da agenda para a account ativa.
+// StorageAccountID nunca sai no JSON: e a conta-agencia onde os eventos vivem.
+// Contas-cliente ficam travadas no proprio id; a agencia pode alternar clientes.
+type CalendarScope struct {
+	StorageAccountID string                `json:"-"`
+	CanSelect        bool                  `json:"canSelect"`
+	LockedClientID   string                `json:"lockedClientId"`
+	Clients          []CalendarScopeClient `json:"clients"`
+}
+
+type CalendarScopeClient struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // CalendarEvent e um evento de conteudo do calendario (schema calendar.events).
 type CalendarEvent struct {
 	ID            string

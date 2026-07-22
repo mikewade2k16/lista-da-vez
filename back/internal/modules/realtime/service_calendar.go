@@ -24,8 +24,8 @@ func (service *Service) PublishCalendarEvent(_ context.Context, evt calendarmodu
 	}
 
 	eventType := strings.TrimSpace(evt.Type)
-	accountID := strings.TrimSpace(evt.AccountID)
-	if eventType == "" || accountID == "" {
+	accountIDs := calendarPublishAccountIDs(evt)
+	if eventType == "" || len(accountIDs) == 0 {
 		return
 	}
 
@@ -40,18 +40,38 @@ func (service *Service) PublishCalendarEvent(_ context.Context, evt calendarmodu
 		payload["status"] = status
 	}
 
-	realtimeEvent := Event{
+	baseEvent := Event{
 		Type:       eventType,
-		AccountID:  accountID,
 		ResourceID: strings.TrimSpace(evt.ResourceID),
 		Version:    evt.Version,
 		SavedAt:    time.Now().UTC(),
 	}
 	if len(payload) > 0 {
-		realtimeEvent.Payload = payload
+		baseEvent.Payload = payload
 	}
 
-	service.hub.Publish(calendarAccountTopic(accountID), realtimeEvent)
+	for _, accountID := range accountIDs {
+		realtimeEvent := baseEvent
+		realtimeEvent.AccountID = accountID
+		service.hub.Publish(calendarAccountTopic(accountID), realtimeEvent)
+	}
+}
+
+func calendarPublishAccountIDs(evt calendarmodule.RealtimeEvent) []string {
+	ids := make([]string, 0, 1+len(evt.ClientIDs))
+	seen := make(map[string]struct{}, 1+len(evt.ClientIDs))
+	for _, raw := range append([]string{evt.AccountID}, evt.ClientIDs...) {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 // HandleCalendarSocket serve o canal de eventos do calendario (GET /v1/realtime/calendar

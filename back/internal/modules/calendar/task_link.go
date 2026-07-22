@@ -121,8 +121,12 @@ func (s *Service) createLinkedTask(ctx context.Context, accountID string, cfg Ca
 // o taskId existente. Sem board configurado => ErrTasksNotConfigured (400). accountID = dono do
 // calendario (do Principal, nunca do body). Publica update para o front reler (o badge some sozinho).
 func (s *Service) CreateTaskForEvent(ctx context.Context, accountID, eventID string) (string, error) {
+	return s.createTaskForEvent(ctx, accountID, eventID, "")
+}
+
+func (s *Service) createTaskForEvent(ctx context.Context, accountID, eventID, clientScopeID string) (string, error) {
 	account := strings.TrimSpace(accountID)
-	ev, err := s.store.GetEvent(ctx, strings.TrimSpace(eventID), account)
+	ev, err := s.store.GetEvent(ctx, strings.TrimSpace(eventID), account, clientScopeID)
 	if err != nil {
 		return "", mapNotFound(err)
 	}
@@ -140,7 +144,7 @@ func (s *Service) CreateTaskForEvent(ctx context.Context, accountID, eventID str
 	if taskID == "" {
 		return "", errors.New(warn)
 	}
-	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventUpdated, AccountID: account, ResourceID: ev.ID, Date: ev.Date, Version: ev.Version})
+	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventUpdated, AccountID: account, ClientIDs: []string{eventClientID(ev)}, ResourceID: ev.ID, Date: ev.Date, Version: ev.Version})
 	return taskID, nil
 }
 

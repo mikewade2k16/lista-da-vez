@@ -377,8 +377,11 @@ Interacao-chave:
 
 > **DADOS 100% REAIS (sem mock/legado)**: EVENTOS, NOTAS, RESPONSAVEIS, MEMBROS, CONFIG e
 > FERIADOS vem do back real (`/v1/calendar/*`, modulo Go `back/internal/modules/calendar`) via
-> `createApiRequest` no `stores/calendar.ts` (janela por `from`/`to`; notas por mes com save
-> debounced; CRUD com refetch). CLIENTES reais do `useTenantsStore`. RESPONSAVEIS = usuarios reais
+> `createApiRequest` no `stores/calendar.ts` (janela por `from`/`to` + `clientId` efetivo; notas por
+> mes com save debounced; CRUD com refetch). O escopo de CLIENTES vem do contrato autoritativo
+> `GET /v1/calendar/scope` (`canSelect`, `lockedClientId`, `clients`), sem depender do
+> `useTenantsStore`: cliente-side fica travado no unico cliente e agencia pode filtrar Todos/especifico.
+> RESPONSAVEIS = usuarios reais
 > da conta (`/v1/calendar/responsibles`, subconjunto configuravel); `store.people` = responsaveis.
 > FERIADOS computados no back (`/v1/calendar/holidays?from=&to=`, conjuntos BR nacional / Sergipe /
 > Aracaju / luxo internacional, incl. moveis via Pascoa) e ligados/desligados na config. O composable
@@ -402,7 +405,9 @@ Interacao-chave:
 - [CalendarControls.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarControls.vue)
   Topo da coluna esquerda (uma linha): titulo do mes + **botao chat (`@chat`, message-circle)** +
   **botao IA (`@ai`, sparkles)** + **engrenagem (`@config`)** + **select de cliente** (Todos/especifico,
-  via [AppSelectField]) + toggle Mes/Semana + Hoje + botao "Novo". O `@config` ABRE O DRAWER de config
+  via [AppSelectField], somente quando `scope.canSelect=true`) + toggle Mes/Semana + Hoje + botao
+  "Novo". Cliente travado nao ve select no header, formulario nem edicao inline do drawer; os payloads
+  continuam forçando `lockedClientId`. O `@config` ABRE O DRAWER de config
   no proprio calendario (estado local `configOpen` no index; SPEC-F6, antes navegava pra
   `/calendario/config`); o `@ai` abre o [CalendarAiPlanModal.vue] (SPEC-F5); o `@chat` reabre a janela
   do assistente (`chat.openPanel()`; SPEC-F2, substitui o antigo FAB de canto).

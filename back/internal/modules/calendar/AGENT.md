@@ -383,15 +383,25 @@ lista membros da account; `responsibleUserIds` vazio = todos os membros. (Puxar 
 de contas-cliente cross-account = fast-follow com validacao de org.)
 
 ## Escopo (multi-tenant)
-- O calendario e SEMPRE escopado pela **account do contexto** (`X-Account-Id`, ou
-  `TenantID` do JWT na ausencia). Nao ha visao cross-account (nem admin) — admin
-  opera na account do switcher. `accountScope(r)` resolve; sem account => 403 `no_account`.
+- A account ATIVA continua vindo do Principal validado por `RequireAuthWithAccount`.
+  `GET /v1/calendar/scope` resolve o recorte autoritativo: conta-agencia usa a propria
+  agenda e pode selecionar os clientes ativos da mesma organization; conta-cliente usa
+  a agenda da conta-agencia ativa mais antiga da mesma organization e fica travada em
+  `client_id = account ativa`. `StorageAccountID` e interno e nunca sai no JSON.
+- O CRUD de eventos repete as duas dimensoes: `account_id = agenda resolvida` e, para
+  cliente, `client_id = account ativa`. Filtro/body forjado e sobrescrito; detalhe,
+  update, delete e criacao de task devolvem 404 para evento de outro cliente.
 - Defesa em profundidade: o store filtra por `account_id` em todo GET/UPDATE/DELETE
   (recurso de outra account => `pgx.ErrNoRows` => 404, nunca 403).
+- Rotas principais usam membership validada e as permissoes `calendar.view`/`calendar.manage`
+  quando o Principal ja vem com matriz resolvida; `owner`/`platform_admin` preservam o acesso.
 - Gating por modulo em `app.go` (`{Prefix: "/v1/calendar", ModuleID: "calendar"}`);
   platform_admin tem bypass.
 
 ## Endpoints
+- `GET /v1/calendar/scope` — `{canSelect,lockedClientId,clients[]}`. Cliente recebe
+  somente a propria account e `canSelect=false`; a conta-agencia recebe os clientes
+  ativos da mesma organization. A conta de armazenamento nao e exposta.
 - `GET /v1/calendar/events?from=&to=&clientId=` — eventos da janela (datas inclusive).
 - `POST /v1/calendar/events` — cria (body = EventInput). **C10 (WAVE 2)**: aceita `createTask:true`
   para criar+vincular uma task no board da config C6. Sem `tasks.boardId` => **400 `tasks_not_configured`**

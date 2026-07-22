@@ -159,7 +159,6 @@ async function updateField(patch: Partial<CalendarEventInput>): Promise<void> {
     const input: CalendarEventInput = {
       date: ev.date,
       time: ev.time,
-      clientId: ev.clientId,
       type: ev.type,
       title: ev.title,
       status: ev.status,
@@ -169,6 +168,9 @@ async function updateField(patch: Partial<CalendarEventInput>): Promise<void> {
       media: ev.media,
       description: ev.description,
       ...patch,
+      clientId: store.canSelectClient
+        ? String(patch.clientId ?? ev.clientId)
+        : store.effectiveClientId,
     }
     await store.updateEvent(ev.id, input, ev.version)
   } finally {
@@ -210,10 +212,15 @@ function fieldHasValue(key: DrawerField): boolean {
 }
 
 function isFieldVisible(key: DrawerField): boolean {
+  if (key === 'client' && !store.canSelectClient) return false
   return fieldHasValue(key) || addedFields.value.has(key)
 }
 
-const hiddenFields = computed(() => OPTIONAL_FIELDS.filter((field) => !isFieldVisible(field.key)))
+const hiddenFields = computed(() =>
+  OPTIONAL_FIELDS.filter(
+    (field) => (field.key !== 'client' || store.canSelectClient) && !isFieldVisible(field.key),
+  ),
+)
 
 function addField(key: DrawerField): void {
   addedFields.value = new Set(addedFields.value).add(key)

@@ -85,8 +85,8 @@ const taskSpans = computed<CalendarTaskSpan[]>(() => {
   const boardTasks = tasksStore.tasks.filter((t) => t.projectId === spansBoardId.value)
   const spans = taskSpansFrom(boardTasks)
   // Respeita o filtro de cliente da tela (mesma regra dos eventos).
-  if (!selectedClientId.value) return spans
-  return spans.filter((s) => !s.clientId || s.clientId === selectedClientId.value)
+  if (!effectiveClientId.value) return spans
+  return spans.filter((s) => !s.clientId || s.clientId === effectiveClientId.value)
 })
 // Clique na barra abre o CARD da task no board (deep-link da WAVE 5, item 4).
 function onSelectSpan(span: CalendarTaskSpan): void {
@@ -110,6 +110,8 @@ const {
   view,
   weekStartsOn,
   selectedClientId,
+  canSelectClient,
+  effectiveClientId,
   clients,
   clientsById,
   peopleById,
@@ -498,6 +500,7 @@ onBeforeUnmount(() => {
             :period-title="periodTitle"
             :clients="clients"
             :selected-client-id="selectedClientId"
+            :can-select-client="canSelectClient"
             :view="view"
             :participants="presenceParticipants"
             :show-spans="showTaskSpans"

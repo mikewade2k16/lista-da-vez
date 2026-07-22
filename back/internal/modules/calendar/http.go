@@ -16,26 +16,71 @@ const maxJSONBody = 1 << 20 // 1 MiB
 
 // RegisterRoutes monta os endpoints do painel (/v1/calendar*). O gating por
 // modulo (account_modules) e aplicado globalmente via RequireModuleByPath no
-// Chain; aqui so exigimos autenticacao. O accountID vem do Principal/X-Account-Id,
-// NUNCA do body.
+// Chain; aqui validamos membership e calendar.view/manage. O accountID vem do
+// Principal resolvido pelo middleware, NUNCA do body.
 func RegisterRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
-	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+	wrapView := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireCalendarPermission("calendar.view", h))
+	}
+	wrapManage := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireCalendarPermission("calendar.manage", h))
 	}
 
-	mux.Handle("GET /v1/calendar/events", wrap(handleListEvents(svc)))
-	mux.Handle("POST /v1/calendar/events", wrap(handleCreateEvent(svc)))
-	mux.Handle("GET /v1/calendar/events/{id}", wrap(handleGetEvent(svc)))
-	mux.Handle("PUT /v1/calendar/events/{id}", wrap(handleUpdateEvent(svc)))
-	mux.Handle("DELETE /v1/calendar/events/{id}", wrap(handleDeleteEvent(svc)))
-	mux.Handle("POST /v1/calendar/events/{id}/task", wrap(handleCreateEventTask(svc)))
-	mux.Handle("GET /v1/calendar/notes/{month}", wrap(handleGetNotes(svc)))
-	mux.Handle("PUT /v1/calendar/notes/{month}", wrap(handlePutNotes(svc)))
-	mux.Handle("GET /v1/calendar/config", wrap(handleGetConfig(svc)))
-	mux.Handle("PUT /v1/calendar/config", wrap(handlePutConfig(svc)))
-	mux.Handle("GET /v1/calendar/members", wrap(handleListMembers(svc)))
-	mux.Handle("GET /v1/calendar/responsibles", wrap(handleListResponsibles(svc)))
-	mux.Handle("GET /v1/calendar/holidays", wrap(handleListHolidays(svc)))
+	mux.Handle("GET /v1/calendar/scope", wrapView(handleGetCalendarScope(svc)))
+	mux.Handle("GET /v1/calendar/events", wrapView(handleListEvents(svc)))
+	mux.Handle("POST /v1/calendar/events", wrapManage(handleCreateEvent(svc)))
+	mux.Handle("GET /v1/calendar/events/{id}", wrapView(handleGetEvent(svc)))
+	mux.Handle("PUT /v1/calendar/events/{id}", wrapManage(handleUpdateEvent(svc)))
+	mux.Handle("DELETE /v1/calendar/events/{id}", wrapManage(handleDeleteEvent(svc)))
+	mux.Handle("POST /v1/calendar/events/{id}/task", wrapManage(handleCreateEventTask(svc)))
+	mux.Handle("GET /v1/calendar/notes/{month}", wrapView(handleGetNotes(svc)))
+	mux.Handle("PUT /v1/calendar/notes/{month}", wrapManage(handlePutNotes(svc)))
+	mux.Handle("GET /v1/calendar/config", wrapView(handleGetConfig(svc)))
+	mux.Handle("PUT /v1/calendar/config", wrapManage(handlePutConfig(svc)))
+	mux.Handle("GET /v1/calendar/members", wrapView(handleListMembers(svc)))
+	mux.Handle("GET /v1/calendar/responsibles", wrapView(handleListResponsibles(svc)))
+	mux.Handle("GET /v1/calendar/holidays", wrapView(handleListHolidays(svc)))
+}
+
+func requireCalendarPermission(permission string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			httpapi.WriteError(w, r, http.StatusUnauthorized, "unauthorized", "Autenticacao obrigatoria.")
+			return
+		}
+		if principal.Role != auth.RolePlatformAdmin && principal.Role != auth.RoleOwner &&
+			principal.PermissionsResolved && !containsPermission(principal.Permissions, permission) {
+			httpapi.WriteError(w, r, http.StatusForbidden, "forbidden", "Sem permissao para acessar o calendario.")
+			return
+		}
+		next(w, r)
+	}
+}
+
+func containsPermission(permissions []string, wanted string) bool {
+	for _, permission := range permissions {
+		if strings.TrimSpace(permission) == wanted {
+			return true
+		}
+	}
+	return false
+}
+
+func handleGetCalendarScope(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, ok := accountScope(r)
+		if !ok {
+			writeNoAccount(w, r)
+			return
+		}
+		scope, err := svc.GetCalendarScope(r.Context(), accountID)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, scope)
+	}
 }
 
 func handleListEvents(svc *Service) http.HandlerFunc {
@@ -51,7 +96,7 @@ func handleListEvents(svc *Service) http.HandlerFunc {
 			To:       strings.TrimSpace(q.Get("to")),
 			ClientID: strings.TrimSpace(q.Get("clientId")),
 		}
-		events, err := svc.ListEvents(r.Context(), accountID, f)
+		events, err := svc.ListScopedEvents(r.Context(), accountID, f)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -72,7 +117,7 @@ func handleCreateEvent(svc *Service) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
-		view, err := svc.CreateEvent(r.Context(), accountID, in)
+		view, err := svc.CreateScopedEvent(r.Context(), accountID, in)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -88,7 +133,7 @@ func handleGetEvent(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
-		view, err := svc.GetEvent(r.Context(), accountID, r.PathValue("id"))
+		view, err := svc.GetScopedEvent(r.Context(), accountID, r.PathValue("id"))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -115,7 +160,7 @@ func handleUpdateEvent(svc *Service) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		view, err := svc.UpdateEvent(r.Context(), accountID, r.PathValue("id"), in, expectedVersion)
+		view, err := svc.UpdateScopedEvent(r.Context(), accountID, r.PathValue("id"), in, expectedVersion)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -154,7 +199,7 @@ func handleDeleteEvent(svc *Service) http.HandlerFunc {
 		// archiveTask=true (WAVE 6): a politica "excluir os dois" do modal — arquiva a task
 		// vinculada junto. Ausente/false = so remove a relation (task fica).
 		archiveTask := r.URL.Query().Get("archiveTask") == "true"
-		if err := svc.DeleteEvent(r.Context(), accountID, r.PathValue("id"), archiveTask); err != nil {
+		if err := svc.DeleteScopedEvent(r.Context(), accountID, r.PathValue("id"), archiveTask); err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
@@ -171,7 +216,7 @@ func handleCreateEventTask(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
-		taskID, err := svc.CreateTaskForEvent(r.Context(), accountID, r.PathValue("id"))
+		taskID, err := svc.CreateTaskForScopedEvent(r.Context(), accountID, r.PathValue("id"))
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
@@ -308,15 +353,18 @@ func handleListHolidays(svc *Service) http.HandlerFunc {
 // Helpers
 // ============================================================================
 
-// accountScope resolve o accountID do calendario a partir do Principal. Vem do
-// header X-Account-Id ou, na ausencia, do TenantID do JWT. O calendario e sempre
-// escopado por account (inclusive para admin, que opera na account do switcher).
+// accountScope resolve a account ATIVA ja validada pelo RequireAuthWithAccount.
+// O header bruto so permanece como fallback para rotas legadas ainda em migracao;
+// handlers principais nunca o usam sem a validacao de membership do middleware.
 func accountScope(r *http.Request) (string, bool) {
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
 		return "", false
 	}
-	accountID := strings.TrimSpace(r.Header.Get("X-Account-Id"))
+	accountID := strings.TrimSpace(principal.AccountID)
+	if accountID == "" {
+		accountID = strings.TrimSpace(r.Header.Get("X-Account-Id"))
+	}
 	if accountID == "" {
 		accountID = strings.TrimSpace(principal.TenantID)
 	}

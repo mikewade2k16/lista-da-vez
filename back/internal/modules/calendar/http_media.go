@@ -19,14 +19,19 @@ const multipartMemory = 8 << 20 // 8 MiB
 // account (Principal); os tetos (media-limits) sao GLOBAIS: leitura por qualquer
 // autenticado, escrita so por platform_admin.
 func RegisterMediaRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
-	wrap := func(h http.HandlerFunc) http.Handler { return middleware.RequireAuth(h) }
+	wrapView := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireCalendarPermission("calendar.view", h))
+	}
+	wrapManage := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireCalendarPermission("calendar.manage", h))
+	}
 
 	// WAVE 13: a midia pertence a um ITEM (evento). Upload continua (POST /media devolve o
 	// MediaItem); a persistencia e via PUT /events/{id} (campo media). As rotas de day-media
 	// (GET/PUT /day-media) sairam junto com o conceito de "anexo do dia".
-	mux.Handle("POST /v1/calendar/media", wrap(handleUploadMedia(svc)))
-	mux.Handle("GET /v1/calendar/media-limits", wrap(handleGetMediaLimits(svc)))
-	mux.Handle("PUT /v1/calendar/media-limits", wrap(handlePutMediaLimits(svc)))
+	mux.Handle("POST /v1/calendar/media", wrapManage(handleUploadMedia(svc)))
+	mux.Handle("GET /v1/calendar/media-limits", wrapView(handleGetMediaLimits(svc)))
+	mux.Handle("PUT /v1/calendar/media-limits", wrapManage(handlePutMediaLimits(svc)))
 }
 
 func handleUploadMedia(svc *Service) http.HandlerFunc {
@@ -72,7 +77,7 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 			writeMediaUploadReadError(w, r, err)
 			return
 		}
-		item, err := svc.SaveMedia(r.Context(), accountID, header.Filename, header.Header.Get("Content-Type"), content)
+		item, err := svc.SaveScopedMedia(r.Context(), accountID, header.Filename, header.Header.Get("Content-Type"), content)
 		if err != nil {
 			writeServiceError(w, r, err)
 			return

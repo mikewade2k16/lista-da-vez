@@ -1,4 +1,5 @@
 import { useCoreAccountStore } from '../../layers/core/stores/account'
+import { findEditorModulePathGuard, isAgencyOnlyPath } from '~/utils/account-route-access'
 
 // Destino quando a conta ativa nao contratou o modulo da rota pedida (modo
 // view-as do admin ou cliente real). Precisa ser uma rota SEGURA para TODO
@@ -47,21 +48,15 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/configuracoes', moduleId: 'queue' },
   { prefix: '/alertas', moduleId: 'queue' },
   { prefix: '/feedback', moduleId: 'queue' },
-  // core, notifications, roadmap, manage (admin de account), themes, banco:
-  // sempre acessiveis (nao dependem de modulo contratado pela account).
+  // core, notifications e banco nao dependem de modulo contratado. Superficies
+  // internas como roadmap/themes/manage global sao tratadas separadamente pela
+  // politica agencyOnly abaixo.
 ]
 
 // Paths de admin-global (Manage da plataforma): so acessiveis na conta-agencia
 // (activeAccount.isAgency). Em qualquer conta-cliente (view-as do admin) esses
 // paths redirecionam para o fallback seguro. Espelha os itens agencyOnly do
 // nav.config.ts — se mover/renomear rota la, atualizar aqui.
-const AGENCY_ONLY_PATHS = [
-  '/manage/users',
-  '/manage/organizations',
-  '/manage/role-templates',
-  '/manage/clientes-web',
-]
-
 export default defineNuxtRouteMiddleware((to) => {
   // Rotas /auth/* nao precisam de account.
   if (to.path.startsWith('/auth')) return
@@ -78,13 +73,15 @@ export default defineNuxtRouteMiddleware((to) => {
   // MODULE_PATH_GUARDS). Sem account ativa (hidrate) nao bloqueia — navegacao
   // subsequente respeita a regra. Em conta-cliente (isAgency falsy) → fallback
   // seguro (mesmo destino do gating de modulo).
-  if (AGENCY_ONLY_PATHS.some((p) => to.path === p || to.path.startsWith(`${p}/`))) {
+  if (isAgencyOnlyPath(to.path)) {
     if (account.activeAccount && !account.activeAccount.isAgency) {
       return navigateTo(MODULE_GATED_FALLBACK_PATH, { replace: true })
     }
   }
 
-  const guard = MODULE_PATH_GUARDS.find((g) => to.path.startsWith(g.prefix))
+  const guard =
+    findEditorModulePathGuard(to.path) ||
+    MODULE_PATH_GUARDS.find((g) => to.path.startsWith(g.prefix))
   if (!guard) return
   // Sem account ativa (fail-closed espelhando o useDashboardNav):
   //  - Durante o hidrate inicial (accountsLoaded false) NAO bloqueia — auth.global

@@ -77,7 +77,14 @@ const priorityOptions = Object.entries(PRIORITY_META).map(([value, meta]) => ({
 }))
 
 watch(
-  () => [props.open, props.event, props.defaultDate] as const,
+  () =>
+    [
+      props.open,
+      props.event,
+      props.defaultDate,
+      store.canSelectClient,
+      store.effectiveClientId,
+    ] as const,
   () => {
     if (!props.open) return
     const e = props.event
@@ -85,7 +92,11 @@ watch(
     // Cliente (WAVE 5.2): ao EDITAR usa o do evento; ao CRIAR pre-seleciona o cliente do
     // CONTEXTO (filtro ativo do calendario, store.selectedClientId) — mesma regra do chat:
     // criar com um cliente selecionado ja assinala esse cliente (vazio = "todos" = sem cliente).
-    clientId.value = e ? e.clientId || '' : store.selectedClientId || ''
+    clientId.value = store.canSelectClient
+      ? e
+        ? e.clientId || ''
+        : store.selectedClientId || ''
+      : store.effectiveClientId
     date.value = e?.date || props.defaultDate || ''
     time.value = e?.time || ''
     type.value = e?.type || 'post'
@@ -105,7 +116,7 @@ function submit(): void {
   const payload: CalendarEventInput = {
     date: date.value,
     time: time.value.trim(),
-    clientId: clientId.value,
+    clientId: store.canSelectClient ? clientId.value : store.effectiveClientId,
     type: type.value as CalendarEventType,
     title: title.value.trim(),
     status: status.value as CalendarEventStatus,
@@ -172,7 +183,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           />
         </label>
 
-        <label class="calendar-form__field">
+        <label v-if="store.canSelectClient" class="calendar-form__field">
           <span class="calendar-form__label">Cliente</span>
           <select v-model="clientId" class="calendar-form__input">
             <option value="">Sem cliente</option>

@@ -31,8 +31,45 @@ import {
 // de contravariancia ao passar apiRequest para estas funcoes).
 export type ApiRequest = ReturnType<typeof createApiRequest>
 
-function rangeQuery(from: string, to: string): string {
-  return new URLSearchParams({ from, to }).toString()
+function rangeQuery(from: string, to: string, clientId = ''): string {
+  const query = new URLSearchParams({ from, to })
+  const normalizedClientId = clientId.trim()
+  if (normalizedClientId) query.set('clientId', normalizedClientId)
+  return query.toString()
+}
+
+export interface CalendarScopeClient {
+  id: string
+  name: string
+}
+
+export interface CalendarScope {
+  canSelect: boolean
+  lockedClientId: string
+  clients: CalendarScopeClient[]
+}
+
+export function normalizeCalendarScope(res: unknown): CalendarScope {
+  const raw = (res && typeof res === 'object' ? res : {}) as {
+    canSelect?: unknown
+    lockedClientId?: unknown
+    clients?: unknown
+  }
+  const clients: CalendarScopeClient[] = []
+  const seen = new Set<string>()
+  for (const entry of Array.isArray(raw.clients) ? raw.clients : []) {
+    if (!entry || typeof entry !== 'object') continue
+    const client = entry as { id?: unknown; name?: unknown }
+    const id = typeof client.id === 'string' ? client.id.trim() : ''
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    clients.push({ id, name: typeof client.name === 'string' ? client.name.trim() : '' })
+  }
+  return {
+    canSelect: raw.canSelect === true,
+    lockedClientId: typeof raw.lockedClientId === 'string' ? raw.lockedClientId.trim() : '',
+    clients,
+  }
 }
 
 function asStringMap(value: unknown): Record<string, string> {
@@ -116,9 +153,14 @@ export async function fetchEventsInRange(
   api: ApiRequest,
   from: string,
   to: string,
+  clientId = '',
 ): Promise<CalendarEvent[]> {
-  const res = await api(`/v1/calendar/events?${rangeQuery(from, to)}`)
+  const res = await api(`/v1/calendar/events?${rangeQuery(from, to, clientId)}`)
   return Array.isArray(res?.events) ? (res.events as CalendarEvent[]) : []
+}
+
+export async function fetchScope(api: ApiRequest): Promise<CalendarScope> {
+  return normalizeCalendarScope(await api('/v1/calendar/scope'))
 }
 
 export async function fetchHolidaysInRange(

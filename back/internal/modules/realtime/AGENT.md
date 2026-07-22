@@ -197,6 +197,12 @@ calendar:account:{accountId}     eventos de invalidacao do calendario da conta
 presence:calendar:{accountId}    avatares/presenca no calendario (fieldKeys de C11)
 ```
 
+Eventos de item tambem sao publicados em `calendar:account:{clientId}` para cada
+cliente afetado. Assim a conta-cliente recebe invalidacao da agenda armazenada na
+conta-agencia sem assinar um topico do qual nao e membro. Create/delete publicam para
+o cliente do item; update publica para cliente antigo e novo (reclassificacao). Nota,
+config e plano continuam apenas no topico da conta proprietaria.
+
 - `GET /v1/realtime/calendar?scope=account&accountId=...` → `HandleCalendarSocket` reusa
   `serveSubscriptionSocket`. Presenca em `GET /v1/realtime/presence?scope=calendar` — o ponto de
   extensao e `resolvePresenceSubscription` (novo case `calendar` + prefixo `presence:calendar:`);

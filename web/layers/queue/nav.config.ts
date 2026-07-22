@@ -85,6 +85,7 @@ export default {
               icon: 'page',
               path: '/editor',
               workspaceId: 'tools',
+              moduleId: 'tools',
               beta: true,
             },
             {
@@ -428,6 +429,7 @@ export default {
               icon: 'palette',
               path: '/themes',
               workspaceId: 'themes',
+              agencyOnly: true,
             },
             { id: 'banco', label: 'Banco', icon: 'database', path: '/banco', workspaceId: 'banco' },
             {
@@ -436,6 +438,7 @@ export default {
               icon: 'audit',
               path: '/manage/auditoria',
               workspaceId: 'manage',
+              agencyOnly: true,
             },
             {
               id: 'manage-integracoes',
@@ -443,6 +446,7 @@ export default {
               icon: 'integration',
               path: '/manage/integracoes',
               workspaceId: 'manage',
+              agencyOnly: true,
             },
             {
               id: 'roadmap',
@@ -450,6 +454,7 @@ export default {
               icon: 'indicators',
               path: '/roadmap',
               workspaceId: 'roadmap',
+              agencyOnly: true,
             },
           ],
         },

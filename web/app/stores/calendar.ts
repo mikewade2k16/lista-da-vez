@@ -1,25 +1,24 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 
-import { useTenantsStore } from '~/stores/tenants'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { createApiRequest } from '~/utils/api-client'
 import { useCoreAccountStore } from '../../layers/core/stores/account'
+import { useCalendarClientScope } from '~/composables/useCalendarClientScope'
 import { useCalendarViewport } from '~/composables/useCalendarViewport'
 import { useCalendarEventCrud } from '~/composables/useCalendarEventCrud'
 import * as calendarApi from '~/domain/calendar/calendar-api'
 import {
   addDaysToKey,
   addMonthsToKey,
-  clientColorFor,
   defaultCalendarConfig,
   monthKeyOf,
-  resolveClientColor,
   startOfWeekKey,
   type CalendarClient,
   type CalendarConfig,
   type CalendarEvent,
+  type CalendarEventInput,
   type CalendarHoliday,
   type CalendarMember,
   type CalendarPerson,
@@ -43,7 +42,6 @@ function lastDayOfMonth(monthKey: string): string {
 
 export const useCalendarStore = defineStore('calendar', () => {
   const runtimeConfig = useRuntimeConfig()
-  const tenantsStore = useTenantsStore()
   const auth = useAuthStore()
   const ui = useUiStore()
   const accountStore = useCoreAccountStore()
@@ -67,7 +65,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     currentRailIndex,
   } = viewport
 
-  const selectedClientId = ref('')
   const selectedDate = ref('')
   const drawerOpen = ref(false)
   const notesPanelOpen = ref(true)
@@ -81,20 +78,24 @@ export const useCalendarStore = defineStore('calendar', () => {
   const members = ref<CalendarMember[]>([]) // usuarios da conta (config)
   const config = ref<CalendarConfig>(defaultCalendarConfig())
 
-  // --- Clientes (reais, do banco) -----------------------------------------------
-  // Cor: override da config (`#rrggbb`/`none`) vence a paleta-semente por indice.
-  const clients = computed<CalendarClient[]>(() =>
-    (tenantsStore.tenants || [])
-      .filter((tenant) => tenant.id && tenant.active)
-      .map((tenant, index) => ({
-        id: tenant.id,
-        name: tenant.name || tenant.slug || 'Cliente',
-        color: resolveClientColor(
-          config.value.clientColors?.[tenant.id],
-          clientColorFor(tenant.id, index),
-        ),
-      })),
-  )
+  // --- Escopo de clientes (autoritativo, resolvido pelo backend) -----------------
+  const clientScope = useCalendarClientScope({
+    apiRequest,
+    auth,
+    accountId: () => accountStore.activeAccountId,
+    config,
+  })
+  const {
+    selectedClientId,
+    canSelectClient,
+    lockedClientId,
+    scopeLoaded,
+    clients,
+    effectiveClientId,
+    fetchScope,
+    resetScope,
+    scopeEventInput,
+  } = clientScope
 
   const clientsById = computed<Map<string, CalendarClient>>(
     () => new Map(clients.value.map((client) => [client.id, client])),
@@ -118,8 +119,8 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   const visibleEvents = computed(() =>
-    selectedClientId.value
-      ? events.value.filter((event) => event.clientId === selectedClientId.value)
+    effectiveClientId.value
+      ? events.value.filter((event) => event.clientId === effectiveClientId.value)
       : events.value,
   )
 
@@ -156,6 +157,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   // --- Fetch da janela (eventos + feriados) + notas -----------------------------
   let windowFetchTimer = 0
   let notesSaveTimer = 0
+  let eventsFetchVersion = 0
   // notesSaving marca o PUT da nota EM VOO (o timer ja zerou ao disparar). Guarda o
   // rascunho do usuario contra re-hidratacao remota durante a janela de rede (principio 1).
   let notesSaving = false
@@ -172,10 +174,16 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function fetchEvents(): Promise<void> {
+    if (!scopeLoaded.value) return
     const { from, to } = fetchRange.value
     if (!from || !to) return
+    const fetchVersion = ++eventsFetchVersion
+    const clientId = effectiveClientId.value
     await withSession(async () => {
-      events.value = await calendarApi.fetchEventsInRange(apiRequest, from, to)
+      const next = await calendarApi.fetchEventsInRange(apiRequest, from, to, clientId)
+      if (fetchVersion === eventsFetchVersion && clientId === effectiveClientId.value) {
+        events.value = next
+      }
     })
   }
 
@@ -239,6 +247,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   // Refetch da janela visivel (eventos) disparado por invalidacao do realtime (C11
   // event_*). A midia mora nos eventos (WAVE 13); feriados nao mudam por evento, ficam de fora.
   async function refetchWindow(): Promise<void> {
+    if (!scopeLoaded.value && !(await fetchScope())) return
     await fetchEvents()
   }
 
@@ -300,15 +309,14 @@ export const useCalendarStore = defineStore('calendar', () => {
   watch(
     () => accountStore.activeAccountId,
     () => {
+      if (!initialized.value) return
+      eventsFetchVersion += 1
       events.value = []
       holidays.value = []
       notesByMonth.value = {}
       notesLoaded.value = new Set()
-      void fetchEvents()
-      void fetchHolidays()
-      void fetchNotes(activeNotesMonthKey.value)
-      void fetchResponsibles()
-      void fetchConfig()
+      resetScope()
+      void loadCalendarContext()
     },
   )
 
@@ -317,7 +325,20 @@ export const useCalendarStore = defineStore('calendar', () => {
   // optimistic locking C12). updateEvent(id, input, version) devolve 'ok'|'conflict'|'error';
   // version = a que o form carregou (o chamador passa editingEvent.version).
   const eventCrud = useCalendarEventCrud({ apiRequest, refetch: fetchEvents, ui })
-  const { createEvent, updateEvent, deleteEvent } = eventCrud
+
+  function createEvent(input: CalendarEventInput): Promise<boolean> {
+    return eventCrud.createEvent(scopeEventInput(input))
+  }
+
+  function updateEvent(
+    id: string,
+    input: CalendarEventInput,
+    version?: number,
+  ): ReturnType<typeof eventCrud.updateEvent> {
+    return eventCrud.updateEvent(id, scopeEventInput(input), version)
+  }
+
+  const { deleteEvent } = eventCrud
 
   // Evento carregado por id (para a UI re-hidratar o form apos um 409 version_conflict).
   function getEventById(id: string): CalendarEvent | null {
@@ -342,7 +363,9 @@ export const useCalendarStore = defineStore('calendar', () => {
   } = viewport
 
   function setClientFilter(clientId: string): void {
-    selectedClientId.value = clientId || ''
+    if (!clientScope.setClientFilter(clientId)) return
+    events.value = []
+    void fetchEvents()
   }
 
   // Seleciona o dia (abre drawer) e leva o foco/janela ate ele via viewport.
@@ -369,12 +392,15 @@ export const useCalendarStore = defineStore('calendar', () => {
     writeLocal(NOTES_PANEL_KEY, notesPanelOpen.value ? '1' : '0')
   }
 
-  async function loadClients(): Promise<void> {
-    try {
-      await tenantsStore.ensureLoaded()
-    } catch {
-      // sem sessao/permissao: clientes vazios
-    }
+  async function loadCalendarContext(): Promise<void> {
+    const hasScope = await fetchScope()
+    await Promise.all([
+      fetchResponsibles(),
+      fetchConfig(),
+      fetchNotes(activeNotesMonthKey.value),
+      fetchHolidays(),
+      ...(hasScope ? [fetchEvents()] : []),
+    ])
   }
 
   // init faz a carga inicial UMA vez (guardado). Devolve true no primeiro load e false quando ja
@@ -386,12 +412,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const storedPanel = readLocal(NOTES_PANEL_KEY)
     if (storedPanel) notesPanelOpen.value = storedPanel === '1'
 
-    void loadClients()
-    void fetchResponsibles()
-    void fetchConfig()
-    void fetchNotes(activeNotesMonthKey.value)
-    void fetchEvents()
-    void fetchHolidays()
+    void loadCalendarContext()
     return true
   }
 
@@ -400,6 +421,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     view,
     weekStartsOn,
     selectedClientId,
+    canSelectClient,
+    lockedClientId,
+    scopeLoaded,
     selectedDate,
     drawerOpen,
     notesPanelOpen,
@@ -409,6 +433,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     // derivados
     clients,
     clientsById,
+    effectiveClientId,
     people,
     peopleById,
     focusMonthKey,
@@ -450,6 +475,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     createTaskForEvent,
     getEventById,
     fetchConfig,
+    fetchScope,
     fetchMembers,
     saveConfig,
     // Aplicacao do realtime por invalidacao (SPEC-F9 / C11).

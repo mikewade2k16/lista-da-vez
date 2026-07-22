@@ -139,14 +139,14 @@ func (s *Service) maybeCreateMirrorEvent(ctx context.Context, accountID string, 
 			s.logTaskWarn(ctx, "calendar: espelhar midia da task no evento-espelho falhou", accountID, ev.ID, lerr)
 		}
 	}
-	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventCreated, AccountID: accountID, ResourceID: ev.ID, Date: ev.Date, Version: ev.Version})
+	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventCreated, AccountID: accountID, ClientIDs: []string{eventClientID(ev)}, ResourceID: ev.ID, Date: ev.Date, Version: ev.Version})
 }
 
 // applyTaskSyncToEvent reflete os campos da task no evento vinculado (E4/E5), TERMINAL (usa o
 // store direto, sem re-disparar o forward). Espelho (source='task') sem prazo => apaga (a
 // task perdeu a data). Evento manual vinculado mantem a data se a task zerar o prazo.
 func (s *Service) applyTaskSyncToEvent(ctx context.Context, accountID, eventID string, snap platformmodules.TaskSyncSnapshot) {
-	ev, err := s.store.GetEvent(ctx, eventID, accountID)
+	ev, err := s.store.GetEvent(ctx, eventID, accountID, "")
 	if err != nil {
 		return // evento sumiu; nada a sincronizar
 	}
@@ -186,7 +186,7 @@ func (s *Service) applyTaskSyncToEvent(ctx context.Context, accountID, eventID s
 	if err != nil {
 		return
 	}
-	updated, err := s.store.UpdateEvent(ctx, eventID, accountID, in, nil)
+	updated, err := s.store.UpdateEvent(ctx, eventID, accountID, "", in, nil)
 	if err != nil {
 		s.logTaskWarn(ctx, "calendar: aplicar sync task->evento falhou", accountID, eventID, err)
 		return
@@ -195,24 +195,24 @@ func (s *Service) applyTaskSyncToEvent(ctx context.Context, accountID, eventID s
 	if lerr := s.store.SetEventLinkedMedia(ctx, eventID, accountID, mediaItemsFromSnapshots(snap.Media)); lerr != nil {
 		s.logTaskWarn(ctx, "calendar: espelhar midia da task no evento falhou", accountID, eventID, lerr)
 	}
-	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventUpdated, AccountID: accountID, ResourceID: updated.ID, Date: updated.Date, Version: updated.Version})
+	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventUpdated, AccountID: accountID, ClientIDs: []string{eventClientID(ev), eventClientID(updated)}, ResourceID: updated.ID, Date: updated.Date, Version: updated.Version})
 }
 
 // deleteMirrorEvent apaga o evento-espelho (source='task') ao arquivar a task e desvincula.
 // So toca eventos source='task' (evento manual vinculado a uma task arquivada permanece).
 func (s *Service) deleteMirrorEvent(ctx context.Context, accountID, eventID string) {
-	ev, err := s.store.GetEvent(ctx, eventID, accountID)
+	ev, err := s.store.GetEvent(ctx, eventID, accountID, "")
 	if err != nil {
 		return
 	}
 	if ev.Source != taskSourceMirror {
 		return // evento manual: nao apaga
 	}
-	if err := s.store.DeleteEvent(ctx, eventID, accountID); err != nil {
+	if err := s.store.DeleteEvent(ctx, eventID, accountID, ""); err != nil {
 		s.logTaskWarn(ctx, "calendar: apagar evento-espelho falhou", accountID, eventID, err)
 		return
 	}
-	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventDeleted, AccountID: accountID, ResourceID: eventID, Date: ev.Date})
+	s.publishCalendar(ctx, RealtimeEvent{Type: realtimeEventDeleted, AccountID: accountID, ClientIDs: []string{eventClientID(ev)}, ResourceID: eventID, Date: ev.Date})
 }
 
 // syncTaskFromEvent reflete a edicao do evento na task vinculada (E4/E5) — sentido forward,

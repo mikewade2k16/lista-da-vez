@@ -9,18 +9,21 @@ import (
 )
 
 // RegisterProfileRoutes monta os endpoints do perfil estrategico do cliente
-// (/v1/calendar/client-profile*). Como as demais rotas do painel: RequireAuth +
-// accountScope; o gating por modulo e global (RequireModuleByPath no Chain). O
+// (/v1/calendar/client-profile*). Como as demais rotas do painel: membership +
+// permissao efetiva; o gating por modulo e global (RequireModuleByPath no Chain). O
 // accountID vem SEMPRE do Principal (nunca do body); o clientId vem da query e e
 // validado como UUID. Contrato C3.
 func RegisterProfileRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Middleware) {
-	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(h)
+	wrapView := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireCalendarPermission("calendar.view", h))
+	}
+	wrapManage := func(h http.HandlerFunc) http.Handler {
+		return middleware.RequireAuthWithAccount(requireCalendarPermission("calendar.manage", h))
 	}
 
-	mux.Handle("GET /v1/calendar/client-profile", wrap(handleGetClientProfile(svc)))
-	mux.Handle("PUT /v1/calendar/client-profile", wrap(handlePutClientProfile(svc)))
-	mux.Handle("GET /v1/calendar/client-profiles", wrap(handleListClientProfiles(svc)))
+	mux.Handle("GET /v1/calendar/client-profile", wrapView(handleGetClientProfile(svc)))
+	mux.Handle("PUT /v1/calendar/client-profile", wrapManage(handlePutClientProfile(svc)))
+	mux.Handle("GET /v1/calendar/client-profiles", wrapView(handleListClientProfiles(svc)))
 }
 
 func handleGetClientProfile(svc *Service) http.HandlerFunc {

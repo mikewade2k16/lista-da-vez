@@ -106,7 +106,12 @@ func TestValidateRejectsProductionWithLowBcryptCost(t *testing.T) {
 }
 
 func TestValidateAcceptsProductionWithSecureValues(t *testing.T) {
-	cfg := Config{Env: "production", AuthTokenSecret: "secret-real-aqui", BcryptCost: productionMinBcrypt}
+	cfg := Config{
+		Env:             "production",
+		AuthTokenSecret: "secret-real-aqui",
+		BcryptCost:      productionMinBcrypt,
+		DatabaseAppURL:  "postgres://omni_app:secure-password@postgres:5432/omni",
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected no error with secure production config, got %v", err)
 	}

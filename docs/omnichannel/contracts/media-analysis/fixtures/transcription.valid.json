@@ -1,0 +1,10 @@
+{
+  "text": "Olá, gostaria de saber o horário de atendimento.",
+  "language": "pt-BR",
+  "durationSeconds": 7.4,
+  "segments": [
+    {"start": 0, "end": 2.1, "text": "Olá,"},
+    {"start": 2.1, "end": 7.4, "text": "gostaria de saber o horário de atendimento."}
+  ],
+  "confidence": 0.96
+}

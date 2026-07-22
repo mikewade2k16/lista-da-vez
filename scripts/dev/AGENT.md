@@ -36,9 +36,10 @@ Esse comando deve:
 ## Dev do web no Docker (watch-web.ps1)
 
 `watch-web.ps1` (= `npm run dev:watch`) e o caminho quando a stack ja esta de
-pe: roda `docker compose up -d --build web` (reconcilia edicoes feitas com o
-watch desligado — o watch NAO faz sync inicial) e liga `docker compose watch
---no-up web`. A janela precisa ficar aberta; fechar o watch congela o codigo
+pe: roda `docker compose up -d --build --force-recreate --no-deps web`
+(reconcilia edicoes feitas com o watch desligado e garante que a imagem nova
+substitui o container antigo; o watch NAO faz sync inicial) e liga `docker compose
+watch --no-up web`. A janela precisa ficar aberta; fechar o watch congela o codigo
 do container no ultimo build/sync. O bind mount ./web:/app nao existe mais
 (ponte 9P do WSL2 inviabilizava o dev); `start-web-native.ps1` vira fallback.
 

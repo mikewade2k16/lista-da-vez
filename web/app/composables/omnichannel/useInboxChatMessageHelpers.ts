@@ -13,7 +13,7 @@ export function useInboxChatMessageHelpers(options: {
     value: string | null | undefined,
     options?: { fallbackPhone?: string | null | undefined; fallbackLabel?: string }
   ) => string;
-  requestOlderMessages?: () => void;
+  requestOlderMessages?: () => Promise<void> | void;
   hasMoreMessages?: () => boolean;
   messageRowId: (messageId: string) => string;
   asRecord: (value: unknown) => Record<string, unknown> | null;

@@ -741,6 +741,29 @@ erDiagram
 
 ## Omnichannel — CRM e identidades de canal
 
+- `messaging.conversations`: estado autoritativo do atendimento, instância, fila e responsável.
+  `ai_generation` é um lease monotônico: assumir, atribuir ou encerrar incrementa o valor sob lock;
+  qualquer resultado de IA capturado numa geração anterior é descartado antes de merge,
+  mensagem ou outbox.
+- `messaging.messages`: histórico único inbound/outbound. `origin` distingue
+  `contact|human|ai|provider_device|system`; reply usa FK local
+  `reply_to_message_id` e apenas cai em `reply_to_external_message_id` enquanto a original ainda
+  não foi reconciliada. ACKs usam `PENDING|SENT|DELIVERED|READ|FAILED|DELETED`, com
+  `provider_status_at` para impedir regressão fora de ordem e `provider_error_code` sanitizado.
+  Mídia privada guarda somente storage key/metadados no PostgreSQL e é servida por endpoint
+  autenticado; `metadata_json.mediaState` representa `pending|ready|failed`. A busca textual por
+  conteúdo usa `messaging_messages_content_trgm_idx` sobre `lower(content)`, compatível com o
+  `%LIKE%` do hot path e com a extensão `pg_trgm` já instalada.
+- `messaging.webhook_events`: barreira tenant-scoped de dedupe e fonte durável de ACK antecipado.
+  Eventos de status guardam somente `external_message_id`, `provider_status`,
+  `provider_status_at` e `provider_error_code` sanitizado; eventos sem status mantêm esses campos
+  vazios. A reconciliação filtra conta, provider, instância e mensagem, aplicando os eventos por
+  `(provider_status_at, id)` para desempate determinístico e pela mesma regra monótona do ACK vivo.
+- A unicidade parcial `(account_id, instance_scope_key, external_message_id)` deduplica webhook,
+  eco `fromMe` e confirmação do envio. Cursores de conversa/mensagem incluem timestamp + UUID para
+  permanecerem estáveis em empates.
+- `messaging.audit_events.event_type` inclui, desde 0214, o ciclo de mídia E1:
+  `MESSAGE_MEDIA_READY`, `MESSAGE_MEDIA_FAILED` e `MESSAGE_MEDIA_RETRY`.
 - `messaging.contacts`: entidade CRM única por conta; telefone é opcional para suportar
   identidades de Instagram, e continua único quando preenchido. Guarda primeira/última
   interação, lifecycle (`lead|prospect|customer|inactive`), tags e campos customizados.
@@ -753,6 +776,67 @@ erDiagram
 - `messaging.contact_notes`: notas humanas persistidas e tenant-scoped.
 - O webhook inbound cria contato, identidade, touchpoint, conversa e mensagem na mesma
   transação da deduplicação. O n8n nunca escreve diretamente nessas tabelas.
+
+### Omnichannel MVP — automação por cliente
+
+- `messaging.automation_profiles`: vínculo autoritativo `account + client_account +
+  whatsapp_instance + ai_agent`. Há somente um perfil por cliente e uma instância não pode
+  pertencer a dois clientes na mesma conta.
+- `messaging.ai_close_evaluations`: trilha imutável das propostas de encerramento. Registra
+  policy, confiança, campos ausentes, flags humano/sensível e geração capturada/atual; nunca
+  concede autoridade ao modelo/n8n para alterar o estado.
+- As FKs compostas `(account_id, whatsapp_instance_id)` e `(account_id, ai_agent_id)` impedem
+  referência cross-tenant. O `client_account_id` usa `core.accounts`, mas a API também valida
+  o cliente contra a mesma lista permission-scoped usada pelo Calendário.
+- A tabela guarda a policy configurável de encerramento. `auto_close_enabled` nasce `false`;
+  confiança mínima nasce `0.900`; exigência de campos, bloqueio por pedido humano e bloqueio
+  de sensível nascem `true`.
+- A lease `messaging.conversations.ai_generation` não é configurável e sempre precisa continuar
+  válida. O n8n apenas sugere; somente o Go pode aceitar `closed` e produzir efeitos/outbox.
+- O perfil é provider-neutral: trocar uma instância de Evolution para WhatsApp Cloud preserva
+  cliente, agente e policy. O contexto estratégico continua em `calendar.client_profiles` e
+  chega por adapter explícito, sem SQL cross-module nem cópia em `messaging.*`.
+
+### Omnichannel E3 multimodal
+
+- `messaging.ai_agent_versions.media_config`: política imutável por versão (áudio, visão,
+  documento, limites e retenção); nunca armazena chave ou token.
+- `messaging.media_analyses`: resultado derivado tenant-scoped, com hash SHA-256, kind/status,
+  versão/provider/modelo, texto/JSON limitado, tokens/custo, tentativas e retenção. FKs compostas
+  prendem conta + mensagem/conversa/versão do agente; unique impede cobrança duplicada.
+- Binário permanece no storage privado do Omnichannel. O gateway interno `media-stream.v1` usa
+  token cifrado curto e não expõe storage key ao n8n ou ao browser.
+
+### Omnichannel E5 handoff, SLA e políticas
+
+- `messaging.handoffs`: snapshot auditável da transferência da IA para a fila humana,
+  idempotência por conta, motivo, resumo/campos coletados, estado de origem e responsável que
+  assumiu. `policy_id` referencia a configuração que venceu e `policy_snapshot` preserva a
+  policy avaliada mesmo se ela for editada depois. Os motivos `model_handoff` e
+  `operator_paused` distinguem pedido do modelo e pausa manual de uma regra genérica.
+- `messaging.handoff_policies`: regras administrativas determinísticas, ordenadas por
+  `priority + id`, com condições fechadas (motivo/estado/setor/canal/intenção/lifecycle/tag,
+  confiança e janela UTC), fila destino/fallback e template opcional. A policy é sempre
+  validada no Go e nunca é criada pelo modelo ou pelo n8n.
+- `messaging.queue_sla_policies` e `messaging.sla_events`: meta por fila e trilha idempotente de
+  início, alerta, breach, pausa/retomada e satisfação. O scheduler calcula o SLA no backend;
+  o frontend apenas apresenta a projeção.
+
+### Omnichannel E6 tools e conhecimento
+
+- `messaging.ai_tool_bindings`: vínculo explícito agente↔identificador lógico de ferramenta, com
+  modo (`read|propose_write|approved_write`), operações/schema allowlisted, timeout e limite por
+  dispatch. Não contém credencial nem URL de sistema.
+- `messaging.ai_tool_runs`: trilha tenant-scoped de cada chamada, com `call_id` idempotente,
+  argumentos/resultados mascarados, status, latência e erro limitado. Execução real depende do
+  registry do módulo Tools e de policy Go.
+- `messaging.knowledge_bases`, `messaging.knowledge_documents` e `messaging.knowledge_chunks`:
+  versões de documentos e chunks determinísticos com full-text search `tsvector`/GIN; o conteúdo
+  recuperado é evidência limitada, não instrução. `messaging.ai_knowledge_bindings` vincula bases
+  a agentes dentro da mesma conta. `pgvector` não é requisito desta fase.
+- `messaging.audit_events` aceita os eventos E6 `AI_TOOL_REQUESTED`, `AI_TOOL_COMPLETED`,
+  `AI_TOOL_DENIED`, `AI_TOOL_FAILED` e `AI_TOOL_TIMEOUT` (migration `0223`). O payload contém
+  somente identificadores/código de resultado, nunca argumentos ou credenciais cruas.
 
 ## Seeds atuais
 

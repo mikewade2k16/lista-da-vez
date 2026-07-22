@@ -9,8 +9,12 @@ import {
   USelect,
   UTextarea
 } from "#components";
-import { computed, nextTick, onMounted, onUpdated } from "vue";
+import { computed, nextTick, onMounted, onUpdated, ref } from "vue";
 import type { Conversation, ConversationStatus } from "~/types";
+import type {
+  OmnichannelHandoffView,
+  OmnichannelSLAEventView
+} from "~/composables/omnichannel/useOmnichannelHandoff";
 import type { InboxSelectOption } from "./types";
 import { resolveAvatarSource } from "~/composables/omnichannel/useAvatarProxy";
 
@@ -30,6 +34,14 @@ const props = defineProps<{
   loadingUsers: boolean;
   internalNotes: string;
   canManageConversation: boolean;
+  handoffItems: OmnichannelHandoffView[];
+  slaEvents: OmnichannelSLAEventView[];
+  queueItems: InboxSelectOption[];
+  loadingHandoff: boolean;
+  loadingQueues: boolean;
+  transferringQueue: boolean;
+  handoffError: string;
+  queueError: string;
 }>();
 
 const emit = defineEmits<{
@@ -39,6 +51,7 @@ const emit = defineEmits<{
   (event: "save-contact"): void;
   (event: "update-status", value: ConversationStatus): void;
   (event: "update-assignee", value: string): void;
+  (event: "transfer-queue", value: string): void;
 }>();
 
 const collapsedModel = computed({
@@ -50,6 +63,84 @@ const internalNotesModel = computed({
   get: () => props.internalNotes,
   set: (value: string) => emit("update:internalNotes", value)
 });
+
+const selectedQueueModel = ref("");
+
+const latestHandoff = computed(() => props.handoffItems[0] ?? null);
+
+function onQueueChange(value: string | undefined) {
+  selectedQueueModel.value = value ?? "";
+}
+
+function transferSelectedQueue() {
+  const queueId = selectedQueueModel.value.trim();
+  if (!queueId) {
+    return;
+  }
+
+  emit("transfer-queue", queueId);
+  selectedQueueModel.value = "";
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function handoffReasonLabel(value: string) {
+  const labels: Record<string, string> = {
+    requested: "Solicitado",
+    low_confidence: "Baixa confiança",
+    max_turns: "Limite de turnos",
+    tool_failed: "Falha de ferramenta",
+    policy: "Política",
+    error: "Erro"
+  };
+
+  return labels[value] ?? value;
+}
+
+function handoffStatusLabel(value: string) {
+  const labels: Record<string, string> = {
+    requested: "Solicitado",
+    queued: "Na fila",
+    accepted: "Aceito",
+    cancelled: "Cancelado",
+    closed: "Encerrado"
+  };
+
+  return labels[value] ?? value;
+}
+
+function slaEventLabel(value: string) {
+  const labels: Record<string, string> = {
+    started: "SLA iniciado",
+    warning: "SLA em risco",
+    breached: "SLA violado",
+    paused: "SLA pausado",
+    resumed: "SLA retomado",
+    satisfied: "SLA atendido"
+  };
+
+  return labels[value] ?? value;
+}
+
+function collectedFieldLabels(value: Record<string, unknown>) {
+  return Object.keys(value).filter(Boolean).slice(0, 12);
+}
 
 function getInitials(value: string | null | undefined) {
   if (!value) {
@@ -244,6 +335,85 @@ function toggleDetailsVisibility() {
 
         <UCard>
           <template #header>
+            <h3 class="details-card__title">Handoff e SLA</h3>
+          </template>
+
+          <div v-if="loadingHandoff" class="details-card__muted">Carregando histórico operacional…</div>
+          <div v-else-if="handoffError" class="details-card__error" role="alert">
+            {{ handoffError }}
+          </div>
+          <template v-else>
+            <div v-if="latestHandoff" class="details-card__handoff">
+              <div class="details-card__tags">
+                <UBadge color="primary" variant="soft">
+                  {{ handoffStatusLabel(latestHandoff.status) }}
+                </UBadge>
+                <UBadge color="neutral" variant="soft">
+                  {{ handoffReasonLabel(latestHandoff.reasonCode) }}
+                </UBadge>
+              </div>
+              <p v-if="latestHandoff.summary" class="details-card__summary">
+                {{ latestHandoff.summary }}
+              </p>
+              <div v-if="collectedFieldLabels(latestHandoff.collectedFields).length" class="details-card__field-list">
+                <UBadge
+                  v-for="field in collectedFieldLabels(latestHandoff.collectedFields)"
+                  :key="field"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                >
+                  {{ field }}
+                </UBadge>
+              </div>
+              <p class="details-card__subtext">
+                Atualizado em {{ formatDate(latestHandoff.updatedAt) }}
+              </p>
+            </div>
+            <p v-else class="details-card__muted">Nenhum handoff registrado nesta conversa.</p>
+
+            <div v-if="slaEvents.length" class="details-card__sla-list">
+              <div v-for="event in slaEvents.slice(0, 4)" :key="event.id" class="details-card__sla-item">
+                <span>{{ slaEventLabel(event.eventType) }}</span>
+                <span class="details-card__subtext">{{ formatDate(event.occurredAt) }}</span>
+              </div>
+            </div>
+
+            <div v-if="canManageConversation" class="details-card__transfer">
+              <UFormField label="Transferir para fila" name="handoffQueue">
+                <USelect
+                  :model-value="selectedQueueModel"
+                  :items="queueItems"
+                  value-key="value"
+                  placeholder="Selecione uma fila"
+                  :loading="loadingQueues"
+                  :disabled="loadingQueues || transferringQueue || queueItems.length === 0"
+                  @update:model-value="onQueueChange"
+                />
+              </UFormField>
+              <UButton
+                size="sm"
+                color="warning"
+                variant="soft"
+                icon="i-lucide-arrow-right-left"
+                :loading="transferringQueue"
+                :disabled="!selectedQueueModel || transferringQueue || queueItems.length === 0"
+                @click="transferSelectedQueue"
+              >
+                Transferir
+              </UButton>
+              <p v-if="!loadingQueues && queueItems.length === 0" class="details-card__muted">
+                Nenhuma fila ativa disponível para sua permissão.
+              </p>
+              <p v-if="queueError" class="details-card__error" role="alert">
+                {{ queueError }}
+              </p>
+            </div>
+          </template>
+        </UCard>
+
+        <UCard>
+          <template #header>
             <h3 class="details-card__title">Acoes</h3>
           </template>
 
@@ -376,5 +546,53 @@ function toggleDetailsVisibility() {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.details-card__muted {
+  margin: 0;
+  color: rgb(var(--muted));
+  font-size: 0.8rem;
+}
+
+.details-card__handoff {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.details-card__summary {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.details-card__field-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.details-card__sla-list {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+  border-top: 1px solid rgb(var(--border) / 0.6);
+  padding-top: 0.6rem;
+}
+
+.details-card__sla-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.details-card__transfer {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+  border-top: 1px solid rgb(var(--border) / 0.6);
+  padding-top: 0.7rem;
 }
 </style>

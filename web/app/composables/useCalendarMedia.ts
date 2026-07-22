@@ -16,6 +16,14 @@ import { capturePosterFromVideo } from '~/utils/calendar-poster'
 const mediaLimits = ref<CalendarMediaLimits>(defaultCalendarMediaLimits())
 let limitsLoaded = false
 
+export type CalendarMediaUploadPhase = 'uploading' | 'processing' | 'poster'
+
+export interface CalendarMediaUploadError {
+  code: string
+  status: number
+  message: string
+}
+
 // useCalendarMedia concentra os anexos do calendario: leitura dos tetos de upload
 // (globais), upload (via XHR, com progresso real para videos grandes) e anexos
 // avulsos por dia. Fica fora do store para nao passar de 450 linhas e isolar o I/O
@@ -59,7 +67,8 @@ export function useCalendarMedia() {
   function uploadMedia(
     file: File,
     onProgress?: (pct: number) => void,
-    onError?: (code: string, status: number) => void,
+    onError?: (error: CalendarMediaUploadError) => void,
+    onPhase?: (phase: CalendarMediaUploadPhase) => void,
   ): Promise<CalendarMediaItem | null> {
     return new Promise((resolve) => {
       const form = new FormData()
@@ -82,38 +91,67 @@ export function useCalendarMedia() {
           onProgress(Math.round((event.loaded / event.total) * 100))
         }
       }
+      xhr.upload.onload = () => {
+        if (onPhase) onPhase('processing')
+      }
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             resolve(JSON.parse(xhr.responseText) as CalendarMediaItem)
           } catch {
+            if (onError) {
+              onError({
+                code: 'invalid_response',
+                status: xhr.status,
+                message: 'A API concluiu o envio, mas devolveu uma resposta invalida.',
+              })
+            }
             resolve(null)
           }
           return
         }
         // Extrai o code do payload de erro do back ({error:{code,message}}).
         let code = ''
+        let message = ''
         try {
-          const body = JSON.parse(xhr.responseText) as { error?: { code?: string } }
+          const body = JSON.parse(xhr.responseText) as {
+            error?: { code?: string; message?: string }
+          }
           code = String(body?.error?.code || '')
+          message = String(body?.error?.message || '')
         } catch {
           // corpo nao-JSON: mantem code vazio
         }
-        if (onError) onError(code, xhr.status)
+        if (onError) onError({ code, status: xhr.status, message })
         resolve(null)
       }
       xhr.onerror = () => {
-        if (onError) onError('network', 0)
+        if (onError) {
+          onError({
+            code: 'network',
+            status: 0,
+            message: 'A conexao com a API foi interrompida durante o envio.',
+          })
+        }
         resolve(null)
       }
       xhr.ontimeout = () => {
-        if (onError) onError('timeout', 0)
+        if (onError) {
+          onError({
+            code: 'timeout',
+            status: 0,
+            message: 'A API nao concluiu o upload dentro de 15 minutos.',
+          })
+        }
         resolve(null)
       }
       xhr.onabort = () => {
-        if (onError) onError('network', 0)
+        if (onError) {
+          onError({ code: 'aborted', status: 0, message: 'O upload foi cancelado.' })
+        }
         resolve(null)
       }
+      if (onPhase) onPhase('uploading')
       xhr.send(form)
     })
   }
@@ -125,11 +163,13 @@ export function useCalendarMedia() {
   async function uploadVideoWithPoster(
     file: File,
     onProgress?: (pct: number) => void,
-    onError?: (code: string, status: number) => void,
+    onError?: (error: CalendarMediaUploadError) => void,
+    onPhase?: (phase: CalendarMediaUploadPhase) => void,
   ): Promise<CalendarMediaItem | null> {
-    const item = await uploadMedia(file, onProgress, onError)
+    const item = await uploadMedia(file, onProgress, onError, onPhase)
     if (!item) return null
     try {
+      if (onPhase) onPhase('poster')
       const poster = await capturePosterFromVideo(file)
       if (!poster) return item
       const posterItem = await uploadMedia(poster)

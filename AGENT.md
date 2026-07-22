@@ -8,6 +8,22 @@ Estas instrucoes valem para o repositorio inteiro.
 
 O fluxo padrao do projeto agora e Docker-first.
 
+### Regra critica de preservacao do Docker Desktop
+
+- **Nunca encerrar processos internos do Docker Desktop** (`com.docker.*`, `Docker Desktop`,
+  `dockerd`, `vmmem*` ou equivalentes) para destravar build, daemon ou pipe. Uma falha de um
+  helper pode encerrar o backend inteiro e colocar o disco de dados em risco.
+- Se um build travar, interromper somente o comando/cliente iniciado pelo agente. Antes de qualquer
+  restart, conferir espaco livre, existencia/tamanho do `docker_data.vhdx`, `docker ps -a` e
+  `docker volume ls`; preservar a evidencia e pedir autorizacao explicita ao usuario.
+- Restart deve usar o fluxo oficial do Docker Desktop e somente apos autorizacao. Nunca usar
+  `Stop-Process`/`taskkill` como recuperacao do daemon.
+- Se o Docker iniciar com zero containers/volumes ou criar um VHDX novo, **nao executar Compose**:
+  isso caracteriza incidente de dados. Parar escritas, localizar backup/VHDX anterior e planejar
+  restore antes de criar qualquer recurso.
+- Volumes com PostgreSQL, n8n, WAHA, Evolution, uploads ou midias sao dados de usuario. Nunca
+  presumir que podem ser recriados a partir do codigo.
+
 Suba a stack completa pela raiz com:
 
 ```bash
@@ -22,8 +38,8 @@ levavam minutos. Hot reload continua funcionando (inotify real, sem polling).
 
 REGRA DE OURO: desenvolva sempre com o watch LIGADO (`npm run dev`, ou
 `npm run dev:watch` se a stack ja estiver de pe). O watch NAO faz sync
-inicial: edicao feita com watch desligado so entra com rebuild
-(`docker compose up -d --build web` — e exatamente o que o dev:watch faz
+inicial: edicao feita com watch desligado so entra com rebuild e recriacao do
+container (`docker compose up -d --build --force-recreate --no-deps web` — e exatamente o que o dev:watch faz
 antes de ligar o watch).
 
 NOTA: os scripts `npm run dev*` da raiz sao SO ATALHOS para `docker compose`
@@ -32,7 +48,7 @@ do container). Sem npm, os equivalentes diretos sao:
 
 ```bash
 docker compose up --build --watch                                  # = npm run dev
-docker compose up -d --build web && docker compose watch --no-up web  # = npm run dev:watch
+docker compose up -d --build --force-recreate --no-deps web && docker compose watch --no-up web  # = npm run dev:watch
 ```
 
 Dar "play" no container web pelo Docker Desktop sobe o painel para USO, mas

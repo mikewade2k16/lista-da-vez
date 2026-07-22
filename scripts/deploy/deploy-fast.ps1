@@ -21,6 +21,10 @@ param(
   # reimporta automation/export/workflow-*.json quando os arquivos mudarem.
   [switch]$DeployAutomation,
   [switch]$ForceAutomationWorkflowImport,
+  # Escopo obrigatorio do unico workflow que pode ser consultado/sincronizado no n8n dev.
+  # O deploy-pull continua sendo uma operacao de plataforma sobre todos os workflows.
+  [string]$WorkflowOwner = "",
+  [string]$WorkflowOnly = "",
   # Pula o auto-export dos workflows n8n (gatilho OBS-08). Use quando quiser deployar uma
   # versao versionada especifica em vez do que esta rodando no n8n dev agora.
   [switch]$SkipWorkflowExport,
@@ -34,6 +38,34 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $deployPull = Join-Path $scriptDir "deploy-pull.ps1"
+
+# Ownership preflight must finish before any docker login/ps/build. DeployAutomation is
+# explicit platform scope downstream, but its local runtime sync is always one exact owner/key.
+$workflowSelection = @()
+$n8nExportScript = Join-Path $scriptDir "..\dev\n8n-export.ps1"
+$n8nRegistryScript = Join-Path $scriptDir "..\dev\n8n-workflow-registry.ps1"
+if ($DeployAutomation) {
+  if ([string]::IsNullOrWhiteSpace($WorkflowOwner) -or [string]::IsNullOrWhiteSpace($WorkflowOnly)) {
+    throw "-DeployAutomation exige -WorkflowOwner e -WorkflowOnly explicitos antes de qualquer Docker."
+  }
+  if (-not (Test-Path -LiteralPath $n8nRegistryScript -PathType Leaf)) {
+    throw "Registro de ownership n8n nao encontrado: $n8nRegistryScript"
+  }
+  if (-not (Test-Path -LiteralPath $n8nExportScript -PathType Leaf)) {
+    throw "Script de export owner-scoped nao encontrado: $n8nExportScript"
+  }
+  . $n8nRegistryScript
+  $workflowRegistry = @(Get-N8nWorkflowRegistry)
+  $workflowSelection = @(Resolve-N8nWorkflowSelection -Registry $workflowRegistry -Owner $WorkflowOwner -Only $WorkflowOnly -RequireWritable)
+  Assert-N8nWorkflowLocalInventory -Root $repoDir -Registry $workflowRegistry
+  Write-Warning "DeployAutomation encaminha para deploy-pull, que ainda opera todos os workflows como acao explicita de plataforma. Nao use este caminho em tarefa omnichannel isolada."
+}
+elseif ($ForceAutomationWorkflowImport -or $SkipWorkflowExport -or
+        -not [string]::IsNullOrWhiteSpace($WorkflowOwner) -or
+        -not [string]::IsNullOrWhiteSpace($WorkflowOnly)) {
+  throw "WorkflowOwner/WorkflowOnly/SkipWorkflowExport/ForceAutomationWorkflowImport exigem -DeployAutomation explicito."
+}
+
 if (-not (Test-Path $deployPull)) { throw "deploy-pull.ps1 nao encontrado em $scriptDir" }
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker nao encontrado no PATH (Docker Desktop precisa estar rodando)." }
 
@@ -55,32 +87,20 @@ if (-not [string]::IsNullOrWhiteSpace($GhcrToken)) {
   if ($LASTEXITCODE -ne 0) { throw "Falha no docker login local." }
 }
 
-# Gatilho OBS-08 (auto-export dos workflows n8n): ANTES de buildar/empacotar/enviar, garante que
-# automation/export/workflow-*.json refletem o n8n dev que esta rodando, para o deploy levar SEMPRE
-# a versao atual sem passo manual. So sob -DeployAutomation (quem envia os workflows) e pulavel com
-# -SkipWorkflowExport. Guarda-corpo: so roda o -Sync se o container n8n dev estiver up (fonte da
-# verdade local); se estiver down, AVISA e SEGUE com os arquivos versionados atuais (nunca zera nada).
-# Efeito desejado: o -Sync pode deixar workflow-*.json modificados na working tree (NAO commitados);
-# o deploy os USA mesmo sem commit (deployar antes de commitar). O dono commita depois.
+# Sync local owner-scoped: antes do build, materializa somente WorkflowOwner/WorkflowOnly.
+# Container ausente falha fechado; -SkipWorkflowExport e o opt-in para usar deliberadamente
+# o JSON versionado sem consultar runtime. O deploy-pull downstream ainda e plataforma-global
+# e permanece proibido para uma tarefa isolada de modulo.
 if ($DeployAutomation -and -not $SkipWorkflowExport) {
   $n8nDevContainer = "omni-n8n-1"
-  $n8nExportScript = Join-Path $scriptDir "..\dev\n8n-export.ps1"
-  if (-not (Test-Path $n8nExportScript)) {
-    Write-Host "AVISO: scripts/dev/n8n-export.ps1 nao encontrado; pulei o auto-export dos workflows n8n."
+  $n8nUp = docker ps -q -f "name=^${n8nDevContainer}$" 2>$null
+  if (-not $n8nUp) {
+    throw "n8n dev fora: sync owner-scoped de '$($workflowSelection[0].Key)' nao pode ser provado. Use -SkipWorkflowExport apenas para deployar deliberadamente o JSON versionado."
   }
-  else {
-    $n8nUp = docker ps -q -f "name=^${n8nDevContainer}$" 2>$null
-    if (-not $n8nUp) {
-      Write-Host "AVISO: n8n dev fora; nao verifiquei se automation/export esta fresco - deploy seguira com os arquivos versionados atuais."
-    }
-    else {
-      Write-Host "==> OBS-08: verificando/exportando workflows n8n do dev antes do deploy (n8n-export.ps1 -Sync)"
-      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $n8nExportScript -Sync -Container $n8nDevContainer
-      if ($LASTEXITCODE -ne 0) {
-        # -Sync sai 0 de proposito; !=0 aqui seria erro real (ex.: vazamento de credencial abortou).
-        throw "Falha no auto-export dos workflows n8n (n8n-export.ps1 -Sync exit $LASTEXITCODE). Rode 'npm run n8n:export' e verifique."
-      }
-    }
+  Write-Host "==> E0: sync owner-scoped owner='$WorkflowOwner' key='$WorkflowOnly' antes do deploy"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $n8nExportScript -Sync -Owner $WorkflowOwner -Only $WorkflowOnly -Container $n8nDevContainer
+  if ($LASTEXITCODE -ne 0) {
+    throw "Falha no sync owner-scoped do workflow '$WorkflowOnly' (exit $LASTEXITCODE)."
   }
 }
 
@@ -118,7 +138,9 @@ $forward = @{
 if ($BackupDatabase) { $forward.BackupDatabase = $true }
 if ($ForceRecreate) { $forward.ForceRecreate = $true }
 if ($SkipSmokeTests) { $forward.SkipSmokeTests = $true }
-if ($DeployAutomation) { $forward.DeployAutomation = $true }
+if ($DeployAutomation) {
+  $forward.DeployAutomation = $true
+}
 if ($ForceAutomationWorkflowImport) { $forward.ForceAutomationWorkflowImport = $true }
 
 & $deployPull @forward

@@ -5,7 +5,10 @@ import ConfigNumbers from '~/components/omnichannel/config/ConfigNumbers.vue'
 import ConfigDepartments from '~/components/omnichannel/config/ConfigDepartments.vue'
 import ConfigQueues from '~/components/omnichannel/config/ConfigQueues.vue'
 import ConfigRoutingRules from '~/components/omnichannel/config/ConfigRoutingRules.vue'
+import ConfigHandoffPolicies from '~/components/omnichannel/config/ConfigHandoffPolicies.vue'
 import ConfigAiAgent from '~/components/omnichannel/config/ConfigAiAgent.vue'
+import ConfigAiToolsKnowledge from '~/components/omnichannel/config/ConfigAiToolsKnowledge.vue'
+import ConfigInstagram from '~/components/omnichannel/config/ConfigInstagram.vue'
 import { useAuthStore } from '~/stores/auth'
 
 // Host das telas de config do omnichannel (F10). Abas + deep-link ?config=<aba>, no drawer
@@ -52,10 +55,28 @@ const ALL_TABS = [
     perm: 'omnichannel.settings.manage',
   },
   {
+    key: 'politicas',
+    label: 'Handoff',
+    icon: 'i-lucide-route',
+    perm: 'omnichannel.settings.manage',
+  },
+  {
     key: 'agente',
     label: 'Agente IA',
     icon: 'i-lucide-sparkles',
     perm: 'omnichannel.agents.manage',
+  },
+  {
+    key: 'tools',
+    label: 'Tools e conhecimento',
+    icon: 'i-lucide-database-zap',
+    perm: 'omnichannel.agents.manage',
+  },
+  {
+    key: 'instagram',
+    label: 'Instagram',
+    icon: 'i-lucide-instagram',
+    perm: 'omnichannel.instances.manage',
   },
 ] as const
 type ConfigTab = (typeof ALL_TABS)[number]['key']
@@ -158,8 +179,20 @@ function onDrawerModel(value: boolean): void {
           <div v-if="visited.has('regras')" v-show="activeTab === 'regras'">
             <ConfigRoutingRules :can-manage="can('omnichannel.settings.manage')" />
           </div>
+          <div v-if="visited.has('politicas')" v-show="activeTab === 'politicas'">
+            <ConfigHandoffPolicies :can-manage="can('omnichannel.settings.manage')" />
+          </div>
           <div v-if="visited.has('agente')" v-show="activeTab === 'agente'">
             <ConfigAiAgent :can-manage="can('omnichannel.agents.manage')" />
+          </div>
+          <div v-if="visited.has('tools')" v-show="activeTab === 'tools'">
+            <ConfigAiToolsKnowledge
+              :can-manage="can('omnichannel.agents.manage')"
+              :can-audit="can('omnichannel.audit.view')"
+            />
+          </div>
+          <div v-if="visited.has('instagram')" v-show="activeTab === 'instagram'">
+            <ConfigInstagram :can-manage="can('omnichannel.instances.manage')" />
           </div>
         </template>
       </div>

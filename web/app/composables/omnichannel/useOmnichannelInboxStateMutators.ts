@@ -1,4 +1,4 @@
-import type { ComputedRef, Ref } from "vue";
+import type { ComputedRef, Ref, WritableComputedRef } from "vue";
 import type { Message } from "~/types";
 import type {
   AttachmentSelectionPayload,
@@ -18,7 +18,7 @@ export function useOmnichannelInboxStateMutators(options: {
   rightCollapsed: Ref<boolean>;
   assigneeModel: Ref<string>;
   contactActionError: Ref<string>;
-  internalNotes: ComputedRef<string>;
+  internalNotes: WritableComputedRef<string>;
   setAttachmentFromFile: (
     file: File | null,
     mode: AttachmentSelectionPayload["mode"],

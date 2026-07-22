@@ -24,6 +24,9 @@ import { useOmnichannelInboxMessageActions } from "~/composables/omnichannel/use
 import { useInboxSyncGuard } from "~/composables/omnichannel/useInboxSyncGuard";
 import { useInboxMessageWindow } from "~/composables/omnichannel/useInboxMessageWindow";
 import { usePageBootstrapLoading } from "~/composables/usePageBootstrapLoading";
+import { useAdminSession } from "~/composables/useAdminSession";
+import { useApi } from "~/composables/useApi";
+import { useSessionSimulationStore } from "~/stores/session-simulation";
 import {
   type AttachmentPickerMode,
   asRecord,
@@ -49,6 +52,7 @@ export function useOmnichannelInbox() {
   const { user, token, tenantSlug, logout: performLogout, syncSessionFromToken } = useAdminSession();
   const sessionSimulation = useSessionSimulationStore();
   const { apiFetch } = useApi();
+  let conversationFilterDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   const shellClientId = computed(() => {
     if (!sessionSimulation.canSimulate) {
       return 0;
@@ -85,6 +89,7 @@ export function useOmnichannelInbox() {
     contactActionError,
     updatingStatus,
     updatingAssignee,
+    updatingHandoff,
     hasMoreMessages,
     showLoadOlderMessagesButton,
     showScrollToLatestButton,
@@ -106,6 +111,11 @@ export function useOmnichannelInbox() {
     mentionAlertState,
     chatBodyRef
   } = useOmnichannelInboxState();
+  const loadingMoreConversations = ref(false);
+  const conversationsError = ref("");
+  const messagesError = ref("");
+  const hasMoreConversations = ref(false);
+  const nextConversationsCursor = ref<string | null>(null);
   const {
     pageLoading: pageBootstrapping,
     runPageBootstrap,
@@ -275,7 +285,13 @@ export function useOmnichannelInbox() {
       mediaFileSizeBytes: messageEntry.mediaFileSizeBytes ?? null,
       mediaCaption: messageEntry.mediaCaption ?? null,
       mediaDurationSeconds: messageEntry.mediaDurationSeconds ?? null,
-      metadataJson: messageEntry.metadataJson ?? null
+      metadataJson: messageEntry.metadataJson ?? null,
+      origin: messageEntry.origin ?? (messageEntry.direction === "INBOUND" ? "contact" : "human"),
+      replyTo: messageEntry.replyTo ?? null,
+      providerStatusAt: messageEntry.providerStatusAt ?? null,
+      providerErrorCode: messageEntry.providerErrorCode ?? "",
+      mediaState: messageEntry.mediaState ?? (resolveMessageType(messageEntry) === "TEXT" ? "" : "pending"),
+      canRetryMedia: messageEntry.canRetryMedia ?? false
     };
   }
 
@@ -492,6 +508,12 @@ export function useOmnichannelInbox() {
         : null,
       metadataJson: Object.keys(metadataJson).length > 0 ? metadataJson : null,
       status: "PENDING",
+      origin: "human",
+      replyTo: null,
+      providerStatusAt: null,
+      providerErrorCode: "",
+      mediaState: type === "TEXT" ? "" : "ready",
+      canRetryMedia: false,
       externalMessageId: null,
       createdAt: nowIso,
       updatedAt: nowIso
@@ -591,15 +613,30 @@ export function useOmnichannelInbox() {
 
   function mergeMessages(...chunks: Message[][]) {
     const map = new Map<string, Message>();
+    const idByExternalKey = new Map<string, string>();
 
     for (const chunk of chunks) {
       for (const messageEntry of chunk) {
-        const previous = map.get(messageEntry.id);
         const nextMessage = normalizeMessage(messageEntry);
+        const externalKey = nextMessage.externalMessageId
+          ? `${nextMessage.conversationId}:${nextMessage.externalMessageId}`
+          : null;
+        const previousID = map.has(nextMessage.id)
+          ? nextMessage.id
+          : (externalKey ? idByExternalKey.get(externalKey) : undefined);
+        const previous = previousID ? map.get(previousID) : undefined;
+        const canonicalID = previousID && previousID !== nextMessage.id && nextMessage.id.startsWith("temp-")
+          ? previousID
+          : nextMessage.id;
         const mergedMessage = previous
           ? normalizeMessage({
             ...previous,
             ...nextMessage,
+            id: canonicalID,
+            origin:
+              previous.origin === "human" && nextMessage.origin === "provider_device"
+                ? previous.origin
+                : nextMessage.origin,
             mediaUrl: nextMessage.mediaUrl ?? previous.mediaUrl ?? null,
             mediaMimeType: nextMessage.mediaMimeType ?? previous.mediaMimeType ?? null,
             mediaFileName: nextMessage.mediaFileName ?? previous.mediaFileName ?? null,
@@ -609,9 +646,15 @@ export function useOmnichannelInbox() {
             metadataJson: nextMessage.metadataJson ?? previous.metadataJson ?? null
           })
           : nextMessage;
-        map.set(messageEntry.id, {
+        if (previousID && previousID !== canonicalID) {
+          map.delete(previousID);
+        }
+        map.set(canonicalID, {
           ...mergedMessage
         });
+        if (externalKey) {
+          idByExternalKey.set(externalKey, canonicalID);
+        }
       }
     }
 
@@ -892,6 +935,7 @@ export function useOmnichannelInbox() {
     fetchMessagesPage,
     hydrateRealtimeMediaMessage,
     loadConversations,
+    loadMoreConversations,
     loadConversationMessages,
     refreshConversationMessages,
     syncConversationHistory,
@@ -906,13 +950,21 @@ export function useOmnichannelInbox() {
     visibleMessagesConversationId,
     activeConversationId,
     selectedInstanceId: instanceId,
+    search,
+    channel,
+    status,
     loadingWhatsAppStatus,
     isWhatsAppConfigured,
     isWhatsAppConnected,
     loadingConversations,
+    loadingMoreConversations,
     loadingMessages,
     loadingOlderMessages,
     loadingGroupParticipants,
+    conversationsError,
+    messagesError,
+    hasMoreConversations,
+    nextConversationsCursor,
     hasMoreMessages,
     chatBodyRef,
     mentionAlertState,
@@ -931,6 +983,34 @@ export function useOmnichannelInbox() {
     updateConversationPreviewFromMessage,
     messageNeedsMediaHydration
   });
+
+  async function retryConversations() {
+    if (
+      conversations.value.length > 0 &&
+      hasMoreConversations.value &&
+      nextConversationsCursor.value
+    ) {
+      await loadMoreConversations();
+      return;
+    }
+
+    await loadConversations({ skipOpenSync: true });
+  }
+
+  async function retryActiveConversationMessages() {
+    const conversationId = activeConversationId.value;
+    if (!conversationId) {
+      return;
+    }
+
+    await loadConversationMessages(conversationId, { forceRefresh: true });
+  }
+
+  function reconcileAuthoritativeMessage(messageEntry: Message) {
+    const normalized = normalizeMessage(messageEntry);
+    updateConversationCacheFromMessage(normalized);
+    updateConversationPreviewFromMessage(normalized);
+  }
 
   const { reconcilePendingMessageStatus } = useOmnichannelInboxPendingStatus({
     messages,
@@ -1138,12 +1218,15 @@ export function useOmnichannelInbox() {
     closeConversation,
     updateConversationStatus,
     updateConversationAssignee,
+    takeConversation,
+    releaseConversation,
     openSandboxTestConversation
   } = useOmnichannelInboxConversationActions({
     canManageConversation,
     activeConversationId,
     updatingStatus,
     updatingAssignee,
+    updatingHandoff,
     assigneeModel,
     sendError,
     apiFetch,
@@ -1323,6 +1406,10 @@ export function useOmnichannelInbox() {
     groupParticipantsInFlightByConversation.clear();
     historySyncAttemptAtByConversation.clear();
     historySyncInFlightByConversation.clear();
+    if (conversationFilterDebounceTimer) {
+      clearTimeout(conversationFilterDebounceTimer);
+      conversationFilterDebounceTimer = null;
+    }
     clearAttachment();
     cancelScheduledStickyRefresh();
   });
@@ -1341,6 +1428,19 @@ export function useOmnichannelInbox() {
     }
   );
 
+  watch(
+    () => [search.value, channel.value, status.value],
+    () => {
+      if (conversationFilterDebounceTimer) {
+        clearTimeout(conversationFilterDebounceTimer);
+      }
+      conversationFilterDebounceTimer = setTimeout(() => {
+        conversationFilterDebounceTimer = null;
+        void loadConversations({ skipOpenSync: true });
+      }, 300);
+    }
+  );
+
   return {
     user,
     tenantSlug,
@@ -1349,12 +1449,16 @@ export function useOmnichannelInbox() {
     showFilters,
     sidebarView,
     loadingConversations,
+    loadingMoreConversations,
     loadingContacts,
     loadingUsers,
     loadingWhatsAppStatus,
     loadingMessages,
     loadingOlderMessages,
     loadingGroupParticipants,
+    conversationsError,
+    messagesError,
+    hasMoreConversations,
     pageBootstrapping,
     hasMoreMessages,
     showLoadOlderMessagesButton,
@@ -1377,6 +1481,7 @@ export function useOmnichannelInbox() {
     whatsappBannerMessage,
     updatingStatus,
     updatingAssignee,
+    updatingHandoff,
     stickyDateLabel,
     showStickyDate,
     draft,
@@ -1421,6 +1526,10 @@ export function useOmnichannelInbox() {
     onChatScroll,
     scrollToLatest,
     requestOlderMessages,
+    loadMoreConversations,
+    retryConversations,
+    retryActiveConversationMessages,
+    reconcileAuthoritativeMessage,
     setReplyTarget,
     clearReplyTarget,
     updateDraft,
@@ -1454,6 +1563,8 @@ export function useOmnichannelInbox() {
     reactToMessage,
     updateConversationStatus,
     updateConversationAssignee,
+    takeConversation,
+    releaseConversation,
     refreshAfterConversationHistoryClear,
     loadContacts,
     loadGroupParticipants,

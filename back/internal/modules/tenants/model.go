@@ -25,6 +25,9 @@ type TenantView struct {
 
 type ListInput struct {
 	IncludeInactive bool
+	// ModuleID restringe a lista a contas que contrataram e mantêm o módulo ativo.
+	// É um filtro interno de catálogo; o endpoint público /v1/tenants não o expõe.
+	ModuleID string
 }
 
 type CreateInput struct {

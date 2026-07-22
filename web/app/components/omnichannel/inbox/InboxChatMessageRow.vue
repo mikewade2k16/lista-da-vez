@@ -48,6 +48,10 @@ const {
   requestAudioPreview,
   markImageFailed,
   isMediaActionLoading,
+  resolveMediaState,
+  isMediaFailed,
+  getMediaRetryError,
+  retryMessageMedia,
   openMessageMedia,
   downloadMessageMedia,
   hasVideoPreview,
@@ -112,6 +116,10 @@ const {
   "requestAudioPreview",
   "markImageFailed",
   "isMediaActionLoading",
+  "resolveMediaState",
+  "isMediaFailed",
+  "getMediaRetryError",
+  "retryMessageMedia",
   "openMessageMedia",
   "downloadMessageMedia",
   "hasVideoPreview",
@@ -282,8 +290,28 @@ function getStatusIcon(status: string): string {
     case 'FAILED':    return 'i-lucide-x';
     case 'DELIVERED': return 'i-lucide-check-check';
     case 'READ':      return 'i-lucide-check-check';
+    case 'DELETED':   return 'i-lucide-trash-2';
     default:          return 'i-lucide-clock-3';
   }
+}
+
+function getStatusLabel(status: string): string {
+  switch (status) {
+    case 'PENDING': return 'Aguardando envio';
+    case 'SENT': return 'Enviada ao provedor';
+    case 'DELIVERED': return 'Entregue';
+    case 'READ': return 'Lida';
+    case 'FAILED': return 'Falha no envio';
+    case 'DELETED': return 'Mensagem removida';
+    default: return 'Status pendente';
+  }
+}
+
+function resolveOutboundDisplayLabel(): string {
+  if (item.message.origin === 'provider_device') {
+    return 'Enviado pelo aparelho';
+  }
+  return resolveOutboundOperatorLabel(item.message);
 }
 
 function getStatusClass(status: string): string {
@@ -310,6 +338,7 @@ function getStatusClass(status: string): string {
             (!isGroupConversation &&
               (
                 item.message.direction === 'INBOUND' ||
+                item.message.origin === 'provider_device' ||
                 (showOutboundOperatorLabel && item.message.direction === 'OUTBOUND' && resolveOutboundOperatorLabel(item.message))
               )
             )
@@ -323,7 +352,7 @@ function getStatusClass(status: string): string {
             size="2xs"
           />
           <p class="chat-message__author">
-            {{ item.message.direction === "OUTBOUND" ? resolveOutboundOperatorLabel(item.message) : resolveMessageAuthor(item.message) }}
+            {{ item.message.direction === "OUTBOUND" ? resolveOutboundDisplayLabel() : resolveMessageAuthor(item.message) }}
           </p>
         </div>
 
@@ -371,7 +400,24 @@ function getStatusClass(status: string): string {
           </div>
         </div>
 
-        <div v-if="hasImagePreview(item.message)" class="chat-message__media">
+        <div v-if="isMediaFailed(item.message)" class="chat-message__media-fallback chat-message__media-fallback--failed">
+          <UIcon name="i-lucide-circle-alert" class="chat-message__media-fallback-icon" />
+          <span>Nao foi possivel processar esta midia.</span>
+          <button
+            v-if="item.message.canRetryMedia"
+            type="button"
+            class="chat-message__media-link"
+            :disabled="isMediaActionLoading(item.message.id)"
+            @click="retryMessageMedia(item.message)"
+          >
+            {{ isMediaActionLoading(item.message.id) ? "Agendando..." : "Tentar novamente" }}
+          </button>
+          <span v-if="getMediaRetryError(item.message.id)" class="chat-message__media-error">
+            {{ getMediaRetryError(item.message.id) }}
+          </span>
+        </div>
+
+        <div v-else-if="hasImagePreview(item.message)" class="chat-message__media">
           <div ref="imagePreviewAnchorRef" class="chat-message__media-image-shell" @mouseenter="requestImagePreviewIfNeeded">
             <img
               v-if="!isImageFailed(item.message.id) && imagePreviewSrc"
@@ -480,8 +526,8 @@ function getStatusClass(status: string): string {
           </div>
         </div>
 
-        <div v-else-if="hasPendingMediaPreview(item.message)" class="chat-message__media-fallback">
-          <UIcon name="i-lucide-loader-circle" class="chat-message__media-fallback-icon" />
+        <div v-else-if="hasPendingMediaPreview(item.message) || resolveMediaState(item.message) === 'pending'" class="chat-message__media-fallback">
+          <UIcon name="i-lucide-loader-circle" class="chat-message__media-fallback-icon chat-message__media-fallback-icon--spin" />
           <span>{{ getPendingMediaLabel(item.message) }}</span>
         </div>
 
@@ -550,7 +596,8 @@ function getStatusClass(status: string): string {
             :name="getStatusIcon(item.message.status)"
             class="msg-status-icon"
             :class="getStatusClass(item.message.status)"
-            :title="item.message.status"
+            :title="getStatusLabel(item.message.status)"
+            :aria-label="getStatusLabel(item.message.status)"
           />
           <span v-if="isMentionAlertMessage(item.message)" class="chat-message__mention-indicator">
             <UIcon name="i-lucide-at-sign" />
@@ -786,6 +833,20 @@ function getStatusClass(status: string): string {
     font-size: 0.78rem;
     padding: 0.45rem;
     margin-bottom: 0.4rem;
+
+    &--failed {
+      flex-wrap: wrap;
+      border: 1px solid rgb(var(--error) / 0.45);
+      border-radius: var(--radius-xs);
+      background: rgb(var(--error) / 0.08);
+      color: rgb(var(--text));
+    }
+  }
+
+  &-error {
+    flex-basis: 100%;
+    color: rgb(var(--error));
+    font-size: 0.72rem;
   }
 
   &-fallback-icon {

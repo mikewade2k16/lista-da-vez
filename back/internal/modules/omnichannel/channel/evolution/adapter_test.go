@@ -1,10 +1,12 @@
 package evolution
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -278,6 +280,67 @@ func TestSendMessage_Text(t *testing.T) {
 	}
 }
 
+func TestSendMessage_QuotedContractForTextAndMedia(t *testing.T) {
+	tests := []struct {
+		name        string
+		messageType string
+		mediaURL    string
+		wantPath    string
+	}{
+		{name: "text", messageType: "TEXT", wantPath: "/message/sendText/omni-main"},
+		{name: "image", messageType: "IMAGE", mediaURL: "https://cdn.example.test/image.jpg", wantPath: "/message/sendMedia/omni-main"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var body []byte
+			p := providerWith(nil, func(r *http.Request) (*http.Response, error) {
+				body, _ = io.ReadAll(r.Body)
+				if r.URL.Path != tc.wantPath {
+					t.Errorf("path = %q, want %q", r.URL.Path, tc.wantPath)
+				}
+				return jsonResp(http.StatusCreated, `{"key":{"id":"WAMID-QUOTED"}}`)
+			})
+			_, err := p.SendMessage(context.Background(), channel.Credentials{Token: "k"}, channel.OutboundMessage{
+				InstanceName: "omni-main",
+				ToPhone:      "5511999998888",
+				MessageType:  tc.messageType,
+				Content:      "resposta nova",
+				MediaURL:     tc.mediaURL,
+				MediaMimeType: func() string {
+					if tc.messageType == "IMAGE" {
+						return "image/jpeg"
+					}
+					return ""
+				}(),
+				Reply: &channel.ReplyReference{
+					ExternalMessageID: "WAMID-ORIGINAL",
+					Content:           "mensagem original",
+					MessageType:       "TEXT",
+				},
+			})
+			if err != nil {
+				t.Fatalf("SendMessage: %v", err)
+			}
+			var payload struct {
+				Quoted struct {
+					Key struct {
+						ID string `json:"id"`
+					} `json:"key"`
+					Message struct {
+						Conversation string `json:"conversation"`
+					} `json:"message"`
+				} `json:"quoted"`
+			}
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("body fora do contrato: %v", err)
+			}
+			if payload.Quoted.Key.ID != "WAMID-ORIGINAL" || payload.Quoted.Message.Conversation != "mensagem original" {
+				t.Fatalf("quoted = %+v", payload.Quoted)
+			}
+		})
+	}
+}
+
 func TestSendMessage_ConfigBaseURLOverridesEnv(t *testing.T) {
 	var got *http.Request
 	p := providerWith(&got, func(_ *http.Request) (*http.Response, error) {
@@ -420,6 +483,44 @@ func TestConnect_SetsWebhookWithTokenHeader(t *testing.T) {
 // TestWebhookConfig_HeadersToggle: com token embute headers.apikey; sem token OMITE headers
 // (o VerifyWebhook e fail-closed). E NUNCA envolve em {"webhook":...} (isso e responsabilidade
 // do setWebhook; no create o envelope daria 400).
+func TestConnect_SetWebhookFailureDoesNotLogURLOrToken(t *testing.T) {
+	var logs bytes.Buffer
+	p := providerWith(nil, func(r *http.Request) (*http.Response, error) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/instance/create"):
+			return jsonResp(http.StatusForbidden, `{}`)
+		case strings.Contains(r.URL.Path, "/webhook/set/"):
+			return jsonResp(http.StatusInternalServerError, `{}`)
+		case strings.Contains(r.URL.Path, "/instance/connect/"):
+			return jsonResp(http.StatusOK, `{"base64":"QRDATA"}`)
+		default:
+			return jsonResp(http.StatusNotFound, `{}`)
+		}
+	})
+	p.logger = slog.New(slog.NewTextHandler(&logs, nil))
+
+	const (
+		providerToken = "inst-key-that-must-not-leak"
+		webhookURL    = "https://api.example.test/webhook?token=signed-secret"
+	)
+	cred := channel.Credentials{Token: providerToken, Config: map[string]string{
+		configKeyWebhookURL: webhookURL,
+	}}
+	if _, err := p.Connect(context.Background(), cred, "omni-main"); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	got := logs.String()
+	if !strings.Contains(got, "evolution_set_webhook_failed") {
+		t.Fatalf("log esperado ausente: %q", got)
+	}
+	for _, secret := range []string{webhookURL, providerToken, "signed-secret"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("log vazou dado sensivel %q: %q", secret, got)
+		}
+	}
+}
+
 func TestWebhookConfig_HeadersToggle(t *testing.T) {
 	with := webhookConfig("http://x/y", "tok")
 	if with["url"] != "http://x/y" {

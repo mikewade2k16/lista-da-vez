@@ -153,10 +153,13 @@ services:
       # (platform/secretbox). OBRIGATORIA a partir da F3.5: sem ela a api NAO SOBE
       # (fail-fast no boot, sem default). Perder a chave = perder os segredos cifrados.
       OMNI_SECRETS_KEY: ${OMNI_SECRETS_KEY:-}
+      # Storage privado do inbox. Fica fora de /uploads e so e servido por rota autenticada.
+      OMNICHANNEL_MEDIA_DIR: ${OMNICHANNEL_MEDIA_DIR:-/app/data/media/omnichannel}
       # Cerebro configuravel: `native` (rollback) ou `n8n`. O n8n nunca envia ao canal;
       # devolve JSON ao Go, que valida e controla estado/outbox.
       OMNI_AI_EXECUTOR: ${OMNI_AI_EXECUTOR:-native}
       OMNI_N8N_BRAIN_WEBHOOK_URL: ${OMNI_N8N_BRAIN_WEBHOOK_URL:-}
+      OMNI_N8N_INTERNAL_TOKEN: ${OMNI_N8N_INTERNAL_TOKEN:-}
       # Provider Evolution (1o adapter real do canal). A api Go fala com a Evolution
       # pela rede interna do compose. Credencial REAL e por instancia (cifrada); estes
       # dois sao FALLBACK DE AMBIENTE apenas (canonico §13). Vazios = so o provider
@@ -184,6 +187,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - api_uploads:/app/data/uploads
+      - api_omnichannel_media:/app/data/media/omnichannel
       - "./erp-source-local:/app/data/erp/source:ro"
       - api_erp_storage:/app/data/erp/storage
     healthcheck:
@@ -392,6 +396,10 @@ services:
       # Calendar Chat le $env[keyEnv] conforme o provider escolhido no painel (gemini|glm).
       CALENDAR_GEMINI_API_KEY: ${CALENDAR_GEMINI_API_KEY:-}
       CALENDAR_ZAI_API_KEY: ${CALENDAR_ZAI_API_KEY:-}
+      # Omnichannel Brain: somente token interno e URL do gateway Go; nenhuma chave de provider.
+      OMNI_N8N_INTERNAL_TOKEN: ${OMNI_N8N_INTERNAL_TOKEN:-}
+      OMNI_LLM_GATEWAY_URL: ${OMNI_LLM_GATEWAY_URL:-http://api:8080/v1/runtime/omnichannel/llm-gateway}
+      OMNI_MEDIA_GATEWAY_URL: ${OMNI_MEDIA_GATEWAY_URL:-http://api:8080/v1/runtime/omnichannel/media}
     volumes:
       - automation_n8n_data:/home/node/.n8n
     ports:
@@ -517,7 +525,7 @@ services:
       evolution-db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/ > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -547,6 +555,7 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  api_omnichannel_media:
   api_erp_storage:
   web_node_modules:
   web_nuxt:

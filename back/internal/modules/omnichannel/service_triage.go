@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/llm"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/modules"
@@ -30,20 +31,38 @@ const historyWindow = 20
 // AIService concentra as regras de IA (triagem + management). Dependencias por construtor
 // (sem globais). box cifra/decifra a chave do provider; limits le monthly_ai_runs (F3).
 type AIService struct {
-	store  *Store
-	llm    llm.Client
-	box    *secretbox.Box
-	limits *modules.LimitReader
-	logger *slog.Logger
+	store           *Store
+	llm             llm.Client
+	brain           brainExecutor
+	box             *secretbox.Box
+	limits          *modules.LimitReader
+	logger          *slog.Logger
+	businessContext AutomationBusinessContextProvider
+}
+
+type AIServiceOption func(*AIService)
+
+func WithBrainExecutor(executor brainExecutor) AIServiceOption {
+	return func(s *AIService) { s.brain = executor }
+}
+
+func WithAIBusinessContext(provider AutomationBusinessContextProvider) AIServiceOption {
+	return func(s *AIService) { s.businessContext = provider }
 }
 
 // NewAIService monta o service. Nenhuma dependencia e opcional em producao — o wiring
 // (RegisterAIRoutes) injeta todas. logger nil => slog.Default().
-func NewAIService(store *Store, client llm.Client, box *secretbox.Box, limits *modules.LimitReader, logger *slog.Logger) *AIService {
+func NewAIService(store *Store, client llm.Client, box *secretbox.Box, limits *modules.LimitReader, logger *slog.Logger, opts ...AIServiceOption) *AIService {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &AIService{store: store, llm: client, box: box, limits: limits, logger: logger}
+	svc := &AIService{store: store, llm: client, box: box, limits: limits, logger: logger}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(svc)
+		}
+	}
+	return svc
 }
 
 // triageExec e o resultado interno de uma execucao de triagem (o run ja gravado). Carrega o
@@ -89,7 +108,7 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 	// Resolve o agente ativo antes do gate 1 para que o run `blocked` referencie o agente
 	// quando ele existe. O gate 1 (state) MANTEM a precedencia: human_active bloqueia mesmo
 	// com agente ativo (reconciliacao da ordem C9.6; documentada).
-	agent, hasAgent, err := s.store.ActiveAgent(ctx, in.AccountID)
+	agent, hasAgent, err := s.store.ActiveAgentForInstance(ctx, in.AccountID, deref(conv.InstanceID))
 	if err != nil {
 		return DispatchResult{}, err
 	}
@@ -117,12 +136,16 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 	}
 
 	// Gate 4 — provider/modelo/chave ausentes: nao roda; grava provider_error.
-	if version.Provider == "" || version.Model == "" || agent.ProviderKeyCipher == "" {
+	providerKey, providerKeyErr := s.providerAPIKey(agent, version.Provider)
+	if version.Provider == "" || version.Model == "" || providerKeyErr != nil || providerKey == "" {
 		runID := s.recordGateRun(ctx, in, gateRun{
 			AgentID: &agent.ID, VersionID: &version.ID, Provider: version.Provider,
 			Model: version.Model, SchemaVersion: version.SchemaVersion,
 			Status: runProviderError, Error: "provider/model/key ausente",
 		})
+		if !version.HandoffOnError {
+			return DispatchResult{Outcome: dispatchNoReply, RunID: runID}, nil
+		}
 		return DispatchResult{Outcome: dispatchProviderError, RunID: runID}, nil
 	}
 
@@ -138,47 +161,130 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 				AgentID: &agent.ID, VersionID: &version.ID, Provider: version.Provider,
 				Model: version.Model, SchemaVersion: version.SchemaVersion, Status: runLimitExceeded,
 			})
-			return DispatchResult{Outcome: dispatchLimitExceeded, RunID: runID}, nil
+			if !version.HandoffOnLimit {
+				return DispatchResult{Outcome: dispatchNoReply, RunID: runID, AIGeneration: conv.AIGeneration,
+					ReasonCode: HandoffReasonPolicy}, nil
+			}
+			return DispatchResult{Outcome: dispatchLimitExceeded, RunID: runID, AIGeneration: conv.AIGeneration,
+				ReasonCode: HandoffReasonPolicy}, nil
 		}
 		return DispatchResult{}, err
 	}
 
-	history, err := s.store.RecentMessages(ctx, in.AccountID, in.ConversationID, historyWindow)
+	// Gate de turnos por conversa: respostas já persistidas/enfileiradas contam, mas uma
+	// mensagem FAILED não consome o teto. A policy escolhe handoff ou silêncio; nunca se
+	// cria uma segunda resposta local para “compensar” o limite.
+	aiTurns, err := s.store.CountAIOutboundTurns(ctx, in.AccountID, in.ConversationID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if aiTurnLimitReached(in.ForceReply, version.MaxAITurns, aiTurns) {
+		runID := s.recordGateRun(ctx, in, gateRun{
+			AgentID: &agent.ID, VersionID: &version.ID, Provider: version.Provider,
+			Model: version.Model, SchemaVersion: version.SchemaVersion,
+			Status: runLimitExceeded, Error: "max_ai_turns",
+		})
+		if !version.HandoffOnLimit {
+			return DispatchResult{Outcome: dispatchNoReply, RunID: runID, AIGeneration: conv.AIGeneration,
+				ReasonCode: HandoffReasonMaxTurns}, nil
+		}
+		return DispatchResult{Outcome: dispatchLimitExceeded, RunID: runID, AIGeneration: conv.AIGeneration,
+			ReasonCode: HandoffReasonMaxTurns}, nil
+	}
+
+	window := historyWindow
+	if version.MaxContextMessages > 0 {
+		window = version.MaxContextMessages
+	}
+	history, err := s.store.RecentMessages(ctx, in.AccountID, in.ConversationID, window)
 	if err != nil {
 		return DispatchResult{}, err
 	}
 	contactContext := map[string]any{}
 	_ = json.Unmarshal(conv.ExtractedFields, &contactContext)
+	var businessContext *AutomationBusinessContext
+	if s.businessContext != nil {
+		clientID, configured, lookupErr := s.store.AutomationClientForInstance(ctx, in.AccountID, deref(conv.InstanceID))
+		if lookupErr != nil {
+			return DispatchResult{}, lookupErr
+		}
+		if configured {
+			profile, available, loadErr := s.businessContext.Load(ctx, in.AccountID, clientID)
+			if loadErr != nil {
+				s.logger.Warn("omnichannel_business_context_unavailable", "account_id", in.AccountID)
+			} else if available {
+				businessContext = &profile
+			}
+		}
+	}
 
 	exec, err := s.runTriage(ctx, triageParams{
-		AccountID:      in.AccountID,
-		ConversationID: &in.ConversationID,
-		MessageID:      nilIfEmpty(in.MessageID),
-		Agent:          agent,
-		Version:        version,
-		History:        history,
-		ContactName:    deref(conv.ContactName),
-		ContactContext: contactContext,
-		MergeToConv:    true,
+		AccountID:         in.AccountID,
+		ConversationID:    &in.ConversationID,
+		MessageID:         nilIfEmpty(in.MessageID),
+		Agent:             agent,
+		Version:           version,
+		History:           history,
+		ContactName:       deref(conv.ContactName),
+		ContactContext:    contactContext,
+		ContactID:         deref(conv.ContactID),
+		Channel:           conv.Channel,
+		ConversationState: conv.State,
+		MergeToConv:       true,
+		AIGeneration:      conv.AIGeneration,
+		DispatchID:        in.DispatchID,
+		ForceReply:        in.ForceReply,
+		BusinessContext:   businessContext,
 	})
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	return DispatchResult{Outcome: exec.Outcome, Output: exec.Output, RunID: exec.RunID}, nil
+	if exec.Outcome != dispatchTriaged {
+		if !version.HandoffOnError && (exec.Outcome == dispatchProviderError || exec.Outcome == dispatchSchemaInvalid) {
+			return DispatchResult{Outcome: dispatchNoReply, RunID: exec.RunID, AIGeneration: conv.AIGeneration}, nil
+		}
+		return DispatchResult{Outcome: exec.Outcome, Output: exec.Output, RunID: exec.RunID, AIGeneration: conv.AIGeneration}, nil
+	}
+	if confidenceBelowReplyMinimum(in.ForceReply, exec.Output.Confidence, version.MinConfidence) {
+		if !version.HandoffOnLimit {
+			return DispatchResult{Outcome: dispatchNoReply, RunID: exec.RunID, AIGeneration: conv.AIGeneration,
+				ReasonCode: HandoffReasonLowConfidence}, nil
+		}
+		return DispatchResult{Outcome: dispatchLimitExceeded, RunID: exec.RunID, AIGeneration: conv.AIGeneration,
+			ReasonCode: HandoffReasonLowConfidence}, nil
+	}
+	return DispatchResult{Outcome: exec.Outcome, Output: exec.Output, RunID: exec.RunID, AIGeneration: conv.AIGeneration}, nil
+}
+
+func aiTurnLimitReached(forceReply bool, maximum, current int) bool {
+	return !forceReply && maximum > 0 && current >= maximum
+}
+
+func confidenceBelowReplyMinimum(forceReply bool, actual, minimum float64) bool {
+	return !forceReply && actual < minimum
 }
 
 // triageParams sao os parametros de uma execucao de triagem (inbound OU simulate).
 type triageParams struct {
-	AccountID      string
-	ConversationID *string // nil no simulate (NUNCA cria conversa)
-	MessageID      *string
-	Agent          agentRow
-	Version        versionRow
-	History        []SimMessage
-	ContactName    string
-	ContactContext map[string]any
+	AccountID         string
+	ConversationID    *string // nil no simulate (NUNCA cria conversa)
+	MessageID         *string
+	Agent             agentRow
+	Version           versionRow
+	History           []SimMessage
+	ContactName       string
+	ContactContext    map[string]any
+	ContactID         string
+	Channel           string
+	ConversationState string
 	// MergeToConv=true funde os extracted_fields na conversa (inbound). Falso no simulate.
 	MergeToConv bool
+	// AIGeneration e a lease capturada antes da chamada ao modelo. Zero e valido.
+	AIGeneration int64
+	// DispatchID is present for the durable brain.v2 worker only.
+	DispatchID      string
+	ForceReply      bool
+	BusinessContext *AutomationBusinessContext
 }
 
 // runTriage monta o prompt (8 camadas), chama o LLM com o schema versionado (1 retry no
@@ -198,7 +304,7 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 	maskedInput := maskedTriageInput(fields, len(p.History))
 	empty := json.RawMessage(`{}`)
 
-	apiKey, err := s.box.Decrypt(p.Agent.ProviderKeyCipher)
+	apiKey, err := s.providerAPIKey(p.Agent, p.Version.Provider)
 	if err != nil {
 		// Chave adulterada/chave-mestra errada: nao vaza o ciphertext, so a classe do erro.
 		run := s.persistRun(ctx, p, runProviderError, maskedInput, empty, llm.Usage{}, 0, 0, "decrypt falhou")
@@ -214,10 +320,62 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 		Model:        p.Version.Model,
 		Temperature:  p.Version.Temperature,
 		SystemPrompt: buildSystemPrompt(parseLayers(p.Version.Layers), catalog, fields, p.Version.SchemaVersion),
-		UserPrompt:   buildUserPromptWithContext(p.History, p.ContactName, p.ContactContext),
+		UserPrompt:   buildUserPromptWithBusinessContext(p.History, p.ContactName, p.ContactContext, p.BusinessContext),
 		Schema:       &llm.Schema{Name: "omnichannel_triage", Version: 1, Definition: schemaDef},
 		APIKey:       apiKey,
 		AccountID:    p.AccountID,
+	}
+	if p.ForceReply {
+		req.SystemPrompt = appendOperatorForceReplyInstructions(req.SystemPrompt)
+	}
+
+	if s.brain != nil && strings.TrimSpace(p.DispatchID) != "" {
+		brainRequest := buildBrainRequestV2(p, fields)
+		brainRequest.Capabilities.Tools, err = s.store.ListEnabledAIToolIDs(ctx, p.AccountID, p.Agent.ID)
+		if err != nil {
+			return triageExec{}, err
+		}
+		toolBindings, err := s.store.ListEnabledAIToolBindings(ctx, p.AccountID, p.Agent.ID)
+		if err != nil {
+			return triageExec{}, err
+		}
+		executionSystemPrompt := appendAIToolInstructions(req.SystemPrompt, brainRequest.Capabilities.Tools)
+		executionSchema := schemaDef
+		if len(brainRequest.Capabilities.Tools) > 0 {
+			executionSchema = toolAwareBrainOutputSchema()
+		}
+		execution := BrainExecutionV2{
+			Provider: p.Version.Provider, Model: p.Version.Model, Temperature: p.Version.Temperature,
+			SystemPrompt: executionSystemPrompt, UserPrompt: req.UserPrompt, OutputSchema: executionSchema,
+			ToolBindings: toolBindings, APIKey: apiKey,
+		}
+		result, usage, latency, brainErr := s.brain.CompleteBrain(ctx, brainRequest, execution)
+		if errors.Is(brainErr, ErrBrainSchemaInvalid) {
+			// The workflow/model gets one deterministic retry, matching the native path.
+			result, usage, latency, brainErr = s.brain.CompleteBrain(ctx, brainRequest, execution)
+		}
+		if errors.Is(brainErr, ErrBrainSchemaInvalid) {
+			run := s.persistRun(ctx, p, runSchemaInvalid, maskedInput, empty, usage, latency, 0, "brain.result.v2 invalido")
+			return triageExec{Outcome: dispatchSchemaInvalid, RunID: run, Valid: false, ValidationErrors: []string{ErrBrainSchemaInvalid.Error()}, OutputJSON: empty}, nil
+		}
+		if brainErr != nil {
+			run := s.persistRun(ctx, p, runProviderError, maskedInput, empty, usage, latency, 0, "executor brain indisponivel")
+			return triageExec{Outcome: dispatchProviderError, RunID: run}, nil
+		}
+		out := triageOutputFromBrainResult(result)
+		outputJSON, _ := json.Marshal(out)
+		cost := s.cost(ctx, p.Version.Provider, p.Version.Model, usage)
+		run := s.persistRun(ctx, p, runOK, maskedInput, outputJSON, usage, latency, cost, "")
+		var committed bool
+		run, out, committed, err = s.applyExtracted(ctx, p, run, out)
+		if err != nil {
+			return triageExec{}, err
+		}
+		if !committed {
+			return triageExec{Outcome: dispatchBlocked, RunID: run}, nil
+		}
+		return triageExec{Outcome: dispatchTriaged, Output: out, OutputJSON: outputJSON, Valid: true,
+			Usage: usage, CostUSD: cost, RunID: run}, nil
 	}
 
 	resp, callErr := s.llm.Complete(ctx, req)
@@ -249,9 +407,13 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 	out := parsed.toTriageOutput()
 	cost := s.cost(ctx, p.Version.Provider, p.Version.Model, resp.Usage)
 	run := s.persistRun(ctx, p, runOK, maskedInput, resp.JSON, resp.Usage, resp.LatencyMs, cost, "")
-	run, out, err = s.applyExtracted(ctx, p, run, out)
+	var committed bool
+	run, out, committed, err = s.applyExtracted(ctx, p, run, out)
 	if err != nil {
 		return triageExec{}, err
+	}
+	if !committed {
+		return triageExec{Outcome: dispatchBlocked, RunID: run}, nil
 	}
 	return triageExec{
 		Outcome: dispatchTriaged, Output: out, OutputJSON: resp.JSON, Valid: true,
@@ -261,14 +423,15 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 
 // applyExtracted funde os campos na conversa quando o inbound pede (MergeToConv). O simulate
 // NUNCA toca a conversa (C9.7). Falha de merge nao invalida o run ja gravado.
-func (s *AIService) applyExtracted(ctx context.Context, p triageParams, runID string, out TriageOutput) (string, TriageOutput, error) {
+func (s *AIService) applyExtracted(ctx context.Context, p triageParams, runID string, out TriageOutput) (string, TriageOutput, bool, error) {
 	if !p.MergeToConv || p.ConversationID == nil {
-		return runID, out, nil
+		return runID, out, true, nil
 	}
-	if err := s.store.MergeExtractedFields(ctx, p.AccountID, *p.ConversationID, out.ExtractedFields); err != nil {
-		return runID, out, err
+	committed, err := s.store.CommitAITriage(ctx, p.AccountID, *p.ConversationID, p.AIGeneration, out.ExtractedFields)
+	if err != nil {
+		return runID, out, false, err
 	}
-	return runID, out, nil
+	return runID, out, committed, nil
 }
 
 // gateRun descreve um run que NAO chamou o modelo (tokens 0): blocked/limit/provider_error.

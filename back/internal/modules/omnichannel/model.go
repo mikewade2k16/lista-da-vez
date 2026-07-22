@@ -86,6 +86,25 @@ func projectStatus(state string) ConversationStatus {
 	}
 }
 
+// projectAIStatus e uma projecao somente informativa para o inbox. O estado persistido
+// continua sendo a autoridade; este campo jamais participa de transicao, filtro ou roteamento.
+func projectAIStatus(state string) string {
+	switch ConversationState(state) {
+	case StateAIActive:
+		return "analyzing"
+	case StateRouting, StateQueued:
+		return "transferring"
+	case StatePending:
+		return "awaiting_client"
+	case StateHumanActive:
+		return "human"
+	case StateClosed:
+		return "closed"
+	default:
+		return "idle"
+	}
+}
+
 // ============================================================================
 // Views servidas ao front (JSON camelCase — divergir um campo quebra o front)
 // ============================================================================
@@ -111,9 +130,23 @@ type MessageView struct {
 	MediaDurationSeconds *int            `json:"mediaDurationSeconds"`
 	MetadataJSON         json.RawMessage `json:"metadataJson"`
 	Status               string          `json:"status"`
+	Origin               string          `json:"origin"`
+	ReplyTo              *ReplyToView    `json:"replyTo"`
+	ProviderStatusAt     *time.Time      `json:"providerStatusAt"`
+	ProviderErrorCode    string          `json:"providerErrorCode"`
+	MediaState           string          `json:"mediaState"`
+	CanRetryMedia        bool            `json:"canRetryMedia"`
 	ExternalMessageID    *string         `json:"externalMessageId"`
 	CreatedAt            time.Time       `json:"createdAt"`
 	UpdatedAt            time.Time       `json:"updatedAt"`
+}
+
+type ReplyToView struct {
+	MessageID         *string `json:"messageId"`
+	ExternalMessageID string  `json:"externalMessageId"`
+	SenderName        string  `json:"senderName"`
+	Content           string  `json:"content"`
+	MessageType       string  `json:"messageType"`
 }
 
 // LastMessageView e o preview aninhado em Conversation.lastMessage (types/index.ts:157).
@@ -139,6 +172,7 @@ type ConversationView struct {
 	InstanceDisplayName *string            `json:"instanceDisplayName"`
 	Channel             string             `json:"channel"`
 	Status              ConversationStatus `json:"status"`
+	AIStatus            string             `json:"aiStatus"`
 	ExternalID          string             `json:"externalId"`
 	ContactID           *string            `json:"contactId"`
 	ContactName         *string            `json:"contactName"`
@@ -149,6 +183,12 @@ type ConversationView struct {
 	UpdatedAt           time.Time          `json:"updatedAt"`
 	LastMessageAt       time.Time          `json:"lastMessageAt"`
 	LastMessage         *LastMessageView   `json:"lastMessage"`
+}
+
+type ConversationPageView struct {
+	Conversations []ConversationView `json:"conversations"`
+	HasMore       bool               `json:"hasMore"`
+	NextCursor    string             `json:"nextCursor,omitempty"`
 }
 
 // ContactView espelha `Contact` (types/index.ts:134). TenantID e OBRIGATORIO (:136) —
@@ -223,6 +263,17 @@ type InstanceManagementView struct {
 	Users           []AssignableUserView `json:"users"`
 }
 
+// ChannelLimitInput/ChannelLimitView controlam o teto contratado de numeros da
+// conta ativa. A escrita e exclusiva do platform_admin; numeros inativos nao contam.
+type ChannelLimitInput struct {
+	MaxChannels int `json:"maxChannels"`
+}
+
+type ChannelLimitView struct {
+	MaxChannels     int `json:"maxChannels"`
+	CurrentChannels int `json:"currentChannels"`
+}
+
 // InstanceAccessView espelha `WhatsAppInstanceAccessResponse` (types/index.ts:71).
 type InstanceAccessView struct {
 	HasMultipleActiveInstances bool           `json:"hasMultipleActiveInstances"`
@@ -274,6 +325,7 @@ type MessagePageView struct {
 	ConversationID string        `json:"conversationId"`
 	Messages       []MessageView `json:"messages"`
 	HasMore        bool          `json:"hasMore"`
+	NextCursor     string        `json:"nextCursor,omitempty"`
 }
 
 // ============================================================================
@@ -284,13 +336,27 @@ type MessagePageView struct {
 // (o legado resolve beforeId -> created_at e filtra por data). Replicar exato — divergir
 // quebra o scroll infinito do front.
 type MessagePageFilter struct {
-	Limit    int
-	BeforeID string
+	Limit        int
+	BeforeID     string
+	BeforeCursor string
+}
+
+type ConversationPageFilter struct {
+	Limit         int
+	BeforeCursor  string
+	Search        string
+	Channel       string
+	Status        string
+	InstanceID    string
+	QueueID       string
+	ResponsibleID string
 }
 
 const (
-	defaultMessageLimit = 100
-	maxMessageLimit     = 200
+	defaultMessageLimit      = 100
+	maxMessageLimit          = 100
+	defaultConversationLimit = 50
+	maxConversationLimit     = 100
 )
 
 // ContactInput e o body de POST /contacts (createContactSchema do legado).

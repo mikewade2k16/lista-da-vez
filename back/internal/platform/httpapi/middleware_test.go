@@ -5,7 +5,69 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+type deadlineResponseWriter struct {
+	header        http.Header
+	readDeadline  time.Time
+	writeDeadline time.Time
+	readSet       bool
+	writeSet      bool
+}
+
+func (w *deadlineResponseWriter) Header() http.Header            { return w.header }
+func (w *deadlineResponseWriter) Write(body []byte) (int, error) { return len(body), nil }
+func (w *deadlineResponseWriter) WriteHeader(int)                {}
+func (w *deadlineResponseWriter) SetReadDeadline(deadline time.Time) error {
+	w.readDeadline = deadline
+	w.readSet = true
+	return nil
+}
+func (w *deadlineResponseWriter) SetWriteDeadline(deadline time.Time) error {
+	w.writeDeadline = deadline
+	w.writeSet = true
+	return nil
+}
+
+func TestStatusRecorderUnwrapsForResponseController(t *testing.T) {
+	inner := &deadlineResponseWriter{header: make(http.Header)}
+	recorder := &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+	controller := http.NewResponseController(recorder)
+	readDeadline := time.Now().Add(time.Minute)
+	writeDeadline := time.Now().Add(2 * time.Minute)
+
+	if err := controller.SetReadDeadline(readDeadline); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if err := controller.SetWriteDeadline(writeDeadline); err != nil {
+		t.Fatalf("SetWriteDeadline: %v", err)
+	}
+	if !inner.readDeadline.Equal(readDeadline) {
+		t.Fatalf("read deadline = %v, want %v", inner.readDeadline, readDeadline)
+	}
+	if !inner.writeDeadline.Equal(writeDeadline) {
+		t.Fatalf("write deadline = %v, want %v", inner.writeDeadline, writeDeadline)
+	}
+}
+
+func TestResponseControllerTraversesGzipAndLoggingWriters(t *testing.T) {
+	inner := &deadlineResponseWriter{header: make(http.Header)}
+	recorder := &statusRecorder{ResponseWriter: inner, status: http.StatusOK}
+	gzipWriter := &gzipResponseWriter{ResponseWriter: recorder, compress: true}
+	controller := http.NewResponseController(gzipWriter)
+
+	if err := controller.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatalf("SetReadDeadline: %v", err)
+	}
+	if err := controller.SetWriteDeadline(time.Time{}); err != nil {
+		t.Fatalf("SetWriteDeadline: %v", err)
+	}
+	if !inner.readSet || !inner.writeSet || !inner.readDeadline.IsZero() || !inner.writeDeadline.IsZero() {
+		t.Fatalf("deadlines nao foram zerados: read_set=%v write_set=%v read=%v write=%v",
+			inner.readSet, inner.writeSet, inner.readDeadline, inner.writeDeadline)
+	}
+}
 
 // TestCORS_PublicRouteWildcard: qualquer origem em /v1/public/* ganha
 // Access-Control-Allow-Origin: * e nunca Allow-Credentials.

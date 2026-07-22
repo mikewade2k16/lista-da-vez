@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "brain.result.v2",
+  "dispatchId": "11111111-1111-4111-8111-111111111111",
+  "generation": 4,
+  "decision": "continue_ai",
+  "reply": {"text": "Claro. Qual serviço você procura?", "inReplyToMessageId": "55555555-5555-4555-8555-555555555555"},
+  "classification": {"intent": "service_information", "confidence": 0.91, "sentiment": "neutral"},
+  "extractedFields": {},
+  "suggestedRouting": null,
+  "handoff": {"needed": false, "reasonCode": null, "summary": null},
+  "usage": {"provider": "configured-provider", "model": "configured-model", "promptTokens": 120, "completionTokens": 18, "cost": 0.0012},
+  "trace": {"toolCalls": [], "warnings": []}
+}

@@ -4,11 +4,32 @@
 > o espelho de fases é `web/app/components/roadmap/data/phases-part7.ts`.
 > Este arquivo existe só para **retomar de onde parou** — apagar quando o piloto P0 fechar.
 >
-> Última atualização: **2026-07-20**
+> Última atualização: **2026-07-21**
 
 ---
 
 ## Atualização de direção — 2026-07-20
+
+- **Correção do pareamento em 2026-07-21:** `phone_number` deixou de ser tratado como prova de
+  sessão ativa. `connected` agora vem do estado consultado na Evolution; o teste real confirmou
+  `connecting` com `qrCode` presente, sem ocultar o QR quando o telefone foi digitado no cadastro.
+- O perfil Crow → instância `teste` → agente `Atendente` está habilitado e pronto, com versão
+  publicada, chave configurada, encerramento automático desligado e executor n8n ativo. O smoke
+  do modelo ainda é bloqueado externamente: a geração do Gemini retornou HTTP 429, embora a chave
+  consiga listar modelos. É necessário liberar quota/faturamento ou trocar a chave/provedor antes
+  de esperar uma resposta automática real.
+
+- **Nova prioridade em 2026-07-21:** MVP de automação WhatsApp documentado em
+  `MVP_AUTOMACAO_ATENDIMENTO.md`. E9/E10 e expansão Instagram ficam pausadas.
+- MVP-01 e núcleo MVP-02 implementados localmente: migrations `0228`/`0229` criadas mas
+  **não aplicadas**; contrato cliente↔número↔agente, policy configurável, contexto estratégico,
+  `brain.v3`, takeover `fromMe`, close/handoff autoritativos e read model de intervenções.
+- Primeira versão de `/omnichannel/automacao` implementada: visão geral, configuração por cliente,
+  prompt/modelo/chave via agente existente e cards para entrada humana. O painel não envia mensagem.
+- Encerramento automático nasce desligado. Confiança/campos/pedido humano/sensível são
+  configuráveis; validade de `ai_generation` continua trava obrigatória não desligável.
+- Validação local: testes Go do módulo/app/database verdes e workflow Omnichannel v3 validado
+  offline. Nenhum container, banco ou deploy foi alterado; nenhum workflow alheio foi tocado.
 
 - Arquitetura híbrida aprovada: Go/PostgreSQL seguem autoritativos; n8n executa debounce,
   contexto, modelo, multimodal, tools e decisão estruturada. Envio final continua somente
@@ -22,7 +43,50 @@
 - Ownership n8n corrigido: `workflow-whatsapp.json`/WAHA pertencem ao módulo automation e
   permanecem ativos/intactos. O omnichannel só é dono de `Omnichannel Brain` e
   `Instagram First Contact`; nenhuma tarefa do módulo pode alterar os demais workflows.
+- E0 de evolução concluída em 2026-07-20: registry único, import/export/check/sync owner-scoped,
+  normalizador seguro e callers antigos migrados. QA independente: 89/89 testes offline; hashes de
+  Calendar, Operação e WhatsApp iguais à baseline. Nenhum Docker/runtime/deploy foi executado.
+- E1 ficou `code-complete` e verde localmente em 2026-07-20: migration 0213, mídia durável,
+  reply/quote, espelho `fromMe`, ACK, paginação/busca, takeover CAS e frontend foram implementados.
+  O Chrome confirmou inbox, busca, paginação, estado de mídia e “Enviado pelo aparelho”.
+- Aceite externo ainda pendente: quote outbound e nova mídia inbound com a Evolution saudável.
+  Retomada canônica em `evolucao/E1_PAUSA_2026-07-20.md`; E2 está em execução local, com o
+  dispatch durável/outbox e configuração do painel implementados. Gateway brain.v2, inspeção e QA
+  externo ainda não liberam o rollout.
 - Plano executivo posterior ao port: [`PLANO_TECNICO_EVOLUCAO.md`](PLANO_TECNICO_EVOLUCAO.md).
+
+- E4 avançou localmente em 2026-07-21: migrations `0217` + `0218`, API CRM 360° paginada,
+  perfil/identidades/touchpoints/notas, patch com optimistic concurrency, merge/undo com snapshot
+  e auditoria, e captura segura de landing por token hash/origin/rate-limit. A API foi buildada e
+  somente o container `api` foi recriado; Evolution, WAHA e workflows n8n fora da allowlist não
+  foram tocados. Pendentes: tela de Contatos, QA de integração e publicação controlada na VPS.
+- E2 avançou localmente em 2026-07-21: gateway Go interno com token `secretbox` curto, rota
+  `POST /v1/runtime/omnichannel/llm-gateway`, adaptador n8n `brain.request/result.v2` e guardas de
+  identidade/generation. O executor continua opt-in; o workflow próprio segue inativo e nenhum
+  workflow externo/WAHA foi alterado.
+- E5 avançou localmente em 2026-07-21: migrations `0220`/`0221`, handoff/take/release,
+  cancelamento transacional de dispatch IA, SLA básico idempotente, policies determinísticas com
+  snapshot e teste de corrida no PostgreSQL. O inbox exibe `Assumir`/`Liberar`, resumo/SLA e
+  transferência de fila; o drawer configura policies por prioridade, condições fechadas, target,
+  fallback e template. API e web foram reconstruídos isoladamente; Evolution, WAHA, n8n e demais
+  workflows permaneceram sem restart ou alteração. Ainda faltam calendário comercial, outbox do
+  aviso ao cliente e smoke real.
+- E6 foi fechada localmente em 2026-07-21: migrations `0222`–`0225` aplicadas e validadas;
+  bindings/runs/knowledge e busca FTS são tenant-scoped; o gateway valida token cifrado,
+  assinatura/timestamp, dispatch/generation, schema, limite, timeout, idempotência e masking;
+  o brain n8n possui loop inativo assinado; o painel lista evidências e permite aprovar/rejeitar
+  propostas mutáveis sem executar provider no browser. O registry inicia vazio sem adaptador explícito,
+  portanto binding sem handler falha fechado e auditado. Foram executados testes Go, front e lint
+  específico; não houve smoke Evolution, importação/ativação n8n ou deploy.
+- E7 foi fechada como `CODE-COMPLETE` local em 2026-07-21: migration `0226`, adapter Meta Cloud,
+  HMAC/challenge, templates, janela de 24h, policy de template/outbox e configuração por número.
+  O smoke/cutover com credenciais Meta reais continua pendente.
+- E8 foi fechada como `CODE-COMPLETE` local em 2026-07-21: migration `0227`, adapter Instagram para
+  DM/comentários, CRM/inbox único, moderação account-scoped, outbox de ações, painel e workflow
+  owner-scoped. Comentários/menções só geram rascunho da IA; publicação depende de aprovação humana.
+  Evidências e retomada: `evolucao/E8_QA_2026-07-21.md`.
+- **Pausa solicitada pelo dono:** parar após E8. Próxima retomada começa em E9 (hardening/escala),
+  depois E10 (rollout); nenhum smoke Meta/cutover ou ativação n8n foi executado.
 
 P0 atual: mídia inbound real, quote, espelho `fromMe`, job idempotente da IA, debounce e
 contrato versionado `continue_ai|handoff|no_reply`. Os detalhes históricos abaixo ainda são
@@ -53,9 +117,9 @@ Todas as fases do piloto (F0–F10 + F13-mínimo) estão **em código, compiland
 O real (parear o WhatsApp) não conecta LOCAL (WebSocket do WhatsApp dá timeout desta máquina — rede, não código). Na VPS (egress de datacenter) deve conectar. Para o teste real lá, falta preparar o deploy (nada disto é código do módulo; é infra de prod, o dono aplica/revisa — **não commitar segredo**):
 
 1. **`docker-compose.prod.yml` — adicionar os serviços `evolution` + `evolution-db`** (espelhar do `docker-compose.yml` linhas ~464-540, profile `omnichannel`), MAS prod-safe: **sem default inseguro** no `AUTHENTICATION_API_KEY` (obrigar via env), porta do host **não exposta** (ou só `127.0.0.1`), `EVOLUTION_DB_PASSWORD`/`EVOLUTION_API_KEY` fortes. **CRÍTICO:** manter a imagem **`evolution-api:v2.3.7`** E a env **`CONFIG_SESSION_PHONE_VERSION=2,3000,1025205472`** — sem elas o WhatsApp trava o handshake e o QR nunca gera (ver §Evolution; foi o que travava local).
-2. **Serviço `api` do `compose.prod` — adicionar as envs** (hoje não tem): `OMNI_SECRETS_KEY` (**obrigatória** — a api NÃO sobe sem, fail-fast), `EVOLUTION_BASE_URL=http://evolution:8080`, `EVOLUTION_API_KEY`, `WEBHOOK_RECEIVER_BASE_URL=`**{URL pública da api}** (por onde a Evolution devolve o webhook — em prod é o domínio, não `http://api:8080`), `OMNI_DEFAULT_WHATSAPP_PROVIDER=evolution`.
+2. **Serviço `api` do `compose.prod` — parcialmente resolvido em 2026-07-20:** `OMNI_SECRETS_KEY` já está mapeada e protegida por preflight no deploy. Ainda faltam as envs do provider real: `EVOLUTION_BASE_URL=http://evolution:8080`, `EVOLUTION_API_KEY`, `WEBHOOK_RECEIVER_BASE_URL=`**{URL pública da api}** (por onde a Evolution devolve o webhook — em prod é o domínio, não `http://api:8080`), `OMNI_DEFAULT_WHATSAPP_PROVIDER=evolution`.
 3. **Caddy (VPS)** — adicionar `handle /v1/webhooks/*` roteando pra api (webhook é PÚBLICO, sem JWT). ARMADILHA da casa: `cat >`+reload não pega no inode do bind-mount órfão → `docker restart` do container do Caddy (ver `project_vps_shortlink_caddy_routing`).
-4. **`.env` de prod** — gerar e setar `OMNI_SECRETS_KEY` (`openssl rand -base64 32`), `EVOLUTION_API_KEY` (`openssl rand -hex 24`), `EVOLUTION_DB_PASSWORD`. **Não commitar.**
+4. **`.env` de prod — parcialmente resolvido em 2026-07-20:** `OMNI_SECRETS_KEY` foi gerada na VPS e o site voltou ao ar; não trocar sem re-cifragem. Ainda faltam `EVOLUTION_API_KEY` (`openssl rand -hex 24`) e `EVOLUTION_DB_PASSWORD`. **Não commitar.**
 5. **Migrations** — deploy roda `docker compose build --no-cache api` (as migrations 0200-0209 são embed.FS; cache de camada pode não re-embutir).
 6. **F13** — 1ª subida em prod: rodar o purge em **dry-run** antes do delete real; seed de `platform_settings['ai_model_pricing']` (senão custo=0).
 7. **Subir o Evolution na VPS**: `docker compose --profile omnichannel up -d evolution` → parear o número **42984138129** lendo o QR pelo painel (`docs/omnichannel/EVOLUTION_SETUP.md`).
@@ -121,7 +185,7 @@ empírica de duas contas reais.
 Ambas fecharam. **Reconciliação da costura aplicada por mim:**
 1. `RegisterDomainRoutes` (F8) wireada no `module.go` (a F8 não podia editar o arquivo; a F4 editou pro adapter Evolution) — sem isso o CRUD de setores/filas responde 404.
 2. **Fix de isolamento:** o índice de dedup do webhook (migration 0201) era global `(provider, external_event_id)` — troquei para `(account_id, provider, external_event_id)` + o `ON CONFLICT` do Go casando. Evita colisão cross-tenant (evento da conta B sumir como "duplicado" da A). Migration 0201 ainda **não aplicada** — fix feito antes de aplicar.
-3. **`OMNI_SECRETS_KEY` setada no `.env`** (`openssl rand -base64 32`) — o app.go tem fail-fast (`secretbox.FromEnv`, app.go:427): **sem a env a api NÃO sobe**. Já está no `.env` local; **em prod/staging precisa ser setada também** (não commitar).
+3. **`OMNI_SECRETS_KEY` setada no `.env`** (`openssl rand -base64 32`) — o app.go tem fail-fast (`secretbox.FromEnv`, app.go:427): **sem a env a api NÃO sobe**. Já está no `.env` local e em prod; **staging ainda precisa de uma chave exclusiva** (não commitar).
 4. `go build ./...` + `go vet` + `go test ./internal/modules/omnichannel/...` todos **verdes** com as duas fases juntas.
 5. **Build da api feito, api NO AR.** Boot limpo: `module built module_id=omnichannel schema=messaging`, sem panic (fail-fast do `OMNI_SECRETS_KEY` passou). **Migrations 0201+0205 APLICADAS** — as 6 tabelas novas existem no banco. ✅
 

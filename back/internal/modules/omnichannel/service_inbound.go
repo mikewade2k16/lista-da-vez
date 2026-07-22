@@ -28,10 +28,11 @@ type InboundService struct {
 	qr        *qrCache
 	// ai (F9) e domain (F8) alimentam o auto-disparo da triagem pos-persistencia. nil (ex.:
 	// testes) => auto-triagem desligada; a persistencia/realtime seguem intactas.
-	ai     *AIService
-	domain *Service
-	send   *SendService
-	logger *slog.Logger
+	ai                *AIService
+	domain            *Service
+	send              *SendService
+	logger            *slog.Logger
+	durableAIDispatch bool
 }
 
 // NewInboundService monta o service do webhook. publisher nil vira no-op (realtime e F5). O
@@ -46,6 +47,12 @@ func NewInboundService(store *Store, registry *channel.Registry, box *secretbox.
 		logger = slog.Default()
 	}
 	return &InboundService{store: store, registry: registry, secretBox: box, publisher: publisher, qr: qr, ai: ai, domain: domain, send: send, logger: logger}
+}
+
+// SetDurableAIDispatch enables the E2 PostgreSQL-backed dispatcher after the boot probe.
+// It is deliberately opt-in so an older database keeps the legacy rollback path.
+func (s *InboundService) SetDurableAIDispatch(enabled bool) {
+	s.durableAIDispatch = enabled
 }
 
 // InboundStatus e o resultado agregado do processamento, mapeado a HTTP no handler.
@@ -87,7 +94,7 @@ func (s *InboundService) Verify(ctx context.Context, accountID, providerKey stri
 	if err != nil {
 		return ErrNotFound
 	}
-	cred, err := s.resolveCredentials(ctx, accountID, providerKey)
+	cred, err := s.resolveCredentials(ctx, accountID, providerKey, body)
 	if err != nil {
 		return err
 	}
@@ -96,6 +103,29 @@ func (s *InboundService) Verify(ctx context.Context, accountID, providerKey stri
 		return ErrUnauthorized
 	}
 	return nil
+}
+
+// VerifyChallenge handles provider subscription handshakes without exposing
+// credentials or letting a query parameter select a tenant. Providers that do
+// not implement the optional challenge contract are treated as out of scope.
+func (s *InboundService) VerifyChallenge(ctx context.Context, accountID, providerKey string, query map[string]string) (string, error) {
+	provider, err := s.registry.Get(providerKey)
+	if err != nil {
+		return "", ErrNotFound
+	}
+	verifier, ok := provider.(channel.WebhookChallengeVerifier)
+	if !ok {
+		return "", ErrNotFound
+	}
+	cred, err := s.resolveCredentials(ctx, accountID, providerKey, nil)
+	if err != nil {
+		return "", err
+	}
+	challenge, err := verifier.VerifyWebhookChallenge(query, cred)
+	if err != nil {
+		return "", ErrUnauthorized
+	}
+	return challenge, nil
 }
 
 // Ingest traduz o payload e persiste os eventos. Assume conta ja resolvida e requisicao ja
@@ -162,12 +192,17 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 		return inboundIgnored, nil
 	}
 
-	// So message_received cria dominio nesta fase; status sao F5/F6.
-	if ev.Kind != channel.EventMessageReceived || ev.Message == nil {
+	if ev.Kind != channel.EventMessageReceived && ev.Kind != channel.EventMessageStatus {
+		return inboundIgnored, nil
+	}
+	if ev.Kind == channel.EventMessageReceived && ev.Message == nil {
+		return inboundIgnored, nil
+	}
+	if ev.Kind == channel.EventMessageStatus && ev.Status == nil {
 		return inboundIgnored, nil
 	}
 
-	instanceID, found, err := s.store.FindInstanceIDByName(ctx, accountID, ev.InstanceName)
+	instanceID, found, err := s.store.FindInstanceIDByName(ctx, accountID, providerKey, ev.InstanceName)
 	if err != nil {
 		return inboundIgnored, err
 	}
@@ -186,34 +221,85 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 		InstanceName:    ev.InstanceName,
 		InstanceID:      instanceID,
 		PayloadMasked:   maskEvent(providerKey, ev),
-		Message: &inboundMessageWrite{
-			ExternalMessageID: ev.Message.ExternalMessageID,
-			Channel:           normalizeChannel(ev.Message.Channel),
-			ContactExternalID: firstNonEmpty(ev.Message.ContactExternalID, ev.Message.ContactPhone),
-			ContactPhone:      ev.Message.ContactPhone,
-			ContactName:       ev.Message.ContactName,
-			ContactAvatarURL:  ev.Message.ContactAvatarURL,
-			MessageType:       normalizeMessageType(ev.Message.MessageType),
-			Content:           ev.Message.Content,
-			MediaURL:          ev.Message.MediaURL,
-			MediaMimeType:     ev.Message.MediaMimeType,
-			MediaFileName:     ev.Message.MediaFileName,
-			MediaCaption:      ev.Message.MediaCaption,
+	}
+	if ev.Message != nil {
+		write.Message = &inboundMessageWrite{
+			ExternalMessageID:    ev.Message.ExternalMessageID,
+			Channel:              normalizeChannel(ev.Message.Channel),
+			ContactExternalID:    firstNonEmpty(ev.Message.ContactExternalID, ev.Message.ContactPhone),
+			ContactPhone:         ev.Message.ContactPhone,
+			ContactName:          ev.Message.ContactName,
+			ContactAvatarURL:     ev.Message.ContactAvatarURL,
+			MessageType:          normalizeMessageType(ev.Message.MessageType),
+			Content:              ev.Message.Content,
+			MediaURL:             ev.Message.MediaURL,
+			MediaMimeType:        ev.Message.MediaMimeType,
+			MediaFileName:        ev.Message.MediaFileName,
+			MediaCaption:         ev.Message.MediaCaption,
+			OccurredAt:           ev.OccurredAt,
+			FromMe:               ev.Message.FromMe,
+			Reply:                ev.Message.Reply,
+			SocialEventKind:      ev.Message.SocialEventKind,
+			SocialContentID:      ev.Message.SocialContentID,
+			SocialMediaID:        ev.Message.SocialMediaID,
+			SocialParentID:       ev.Message.SocialParentID,
+			SocialIsLive:         ev.Message.SocialIsLive,
+			SocialReplyExpiresAt: ev.Message.SocialReplyExpiresAt,
+		}
+	}
+	if ev.Status != nil {
+		write.Status = &inboundStatusWrite{
+			ExternalMessageID: ev.Status.ExternalMessageID,
+			Status:            ev.Status.Status,
+			ErrorCode:         ev.Status.ErrorCode,
 			OccurredAt:        ev.OccurredAt,
-			FromMe:            ev.Message.FromMe,
-		},
+		}
 	}
 
-	res, err := s.store.PersistInbound(ctx, write)
+	var res inboundResult
+	if write.Message != nil && write.Message.FromMe && s.domain != nil {
+		res, err = s.store.PersistInboundWithTransition(ctx, write, func(snap convSnapshot) (stateUpdate, *decisionRecord, error) {
+			return s.domain.decideTransition(ctx, accountID, EventMsgOutboundHuman, TransitionPayload{}, snap)
+		})
+	} else {
+		res, err = s.store.PersistInbound(ctx, write)
+	}
 	if err != nil {
 		return inboundIgnored, err
 	}
 	if res.Duplicate {
 		return inboundDuplicate, nil
 	}
+	if write.Status != nil {
+		if res.StatusChanged && res.MessageID != "" {
+			payload := minimalUpdatePayload(res.MessageID, res.ProviderStatus, "", res.MessageID)
+			payload["updatedAt"] = res.ProviderStatusAt.UTC().Format(time.RFC3339)
+			if res.ProviderErrorCode != "" {
+				payload["providerErrorCode"] = res.ProviderErrorCode
+			}
+			s.publisher.PublishOmnichannelEvent(ctx, RealtimeEvent{
+				Type:       RealtimeEventMessageUpdated,
+				AccountID:  accountID,
+				ResourceID: res.MessageID,
+				Payload:    payload,
+			})
+		}
+		return inboundAccepted, nil
+	}
+	if !res.MessageCreated && res.StatusChanged && res.MessageID != "" {
+		payload := minimalUpdatePayload(res.MessageID, res.ProviderStatus, "", res.MessageID)
+		payload["updatedAt"] = res.ProviderStatusAt.UTC().Format(time.RFC3339)
+		if res.ProviderErrorCode != "" {
+			payload["providerErrorCode"] = res.ProviderErrorCode
+		}
+		s.publisher.PublishOmnichannelEvent(ctx, RealtimeEvent{
+			Type: RealtimeEventMessageUpdated, AccountID: accountID,
+			ResourceID: res.MessageID, Payload: payload,
+		})
+	}
 	// fromMe deduplicado devolve MessageID vazio (a plataforma ja registrou esse envio, ou
 	// re-entrega): nao republica nem dispara IA.
-	if res.MessageID == "" {
+	if !res.MessageCreated {
 		return inboundDuplicate, nil
 	}
 	// Realtime (F5): fora da transacao (persiste -> commita -> publica). O call-site monta o
@@ -243,7 +329,56 @@ func (s *InboundService) maybeAutoTriage(accountID, convID, messageID string) {
 		strings.TrimSpace(convID) == "" || strings.TrimSpace(messageID) == "" {
 		return
 	}
+	if s.durableAIDispatch && s.store != nil && s.store.AIDispatchV2Enabled() {
+		go s.scheduleAIDispatch(accountID, convID, messageID)
+		return
+	}
 	go s.runAutoTriage(accountID, convID, messageID)
+}
+
+func (s *InboundService) scheduleAIDispatch(accountID, convID, messageID string) {
+	defer func() {
+		if recover() != nil {
+			s.logger.Error("omnichannel_ai_dispatch_schedule_panic", "account_id", accountID, "conversation_id", convID)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), autoTriageTimeout)
+	defer cancel()
+
+	state, err := s.domain.SystemTransition(ctx, accountID, convID, EventMsgInbound, TransitionPayload{})
+	if err != nil {
+		s.logger.Error("omnichannel_ai_dispatch_transition_failed", "account_id", accountID, "conversation_id", convID)
+		return
+	}
+	if state != StateAIActive {
+		if state == StateRouting {
+			if _, err := s.domain.SystemRoute(ctx, accountID, convID); err != nil {
+				s.logger.Error("omnichannel_ai_dispatch_route_failed", "account_id", accountID, "conversation_id", convID)
+			}
+		}
+		return
+	}
+	agent, ok, err := s.store.ActiveAgent(ctx, accountID)
+	if err != nil {
+		s.logger.Error("omnichannel_ai_dispatch_agent_failed", "account_id", accountID)
+		return
+	}
+	if !ok || agent.ActiveVersionID == nil || strings.TrimSpace(*agent.ActiveVersionID) == "" {
+		if _, err := s.domain.SystemTransition(ctx, accountID, convID, EventAITriageFailed, TransitionPayload{}); err == nil {
+			_, _ = s.domain.SystemRoute(ctx, accountID, convID)
+		}
+		return
+	}
+	debounce := 2500
+	if cfg, cfgErr := s.store.AIDispatchConfig(ctx, accountID, *agent.ActiveVersionID); cfgErr == nil && cfg.DebounceMS > 0 {
+		debounce = cfg.DebounceMS
+	}
+	runAfter := time.Now().UTC().Add(time.Duration(debounce) * time.Millisecond)
+	if _, err := s.store.UpsertAIDispatch(ctx, accountID, convID, *agent.ActiveVersionID, messageID, runAfter); err != nil {
+		if !errors.Is(err, ErrAILeaseInvalid) && !errors.Is(err, ErrNotFound) {
+			s.logger.Error("omnichannel_ai_dispatch_enqueue_failed", "account_id", accountID, "conversation_id", convID)
+		}
+	}
 }
 
 // runAutoTriage conduz o ciclo de vida canonico (F8) convidando a IA (F9):
@@ -290,8 +425,27 @@ func (s *InboundService) runAutoTriage(accountID, convID, messageID string) {
 		// Saida multi-turno: a IA responde PELO OUTBOX DO GO e permanece em ai_active para
 		// ouvir a proxima mensagem. needs_human encerra a etapa da IA e segue ao roteamento;
 		// falha de envio tambem faz fail-open para um humano, nunca deixa o cliente no limbo.
+		if outcome == dispatchBlocked {
+			return
+		}
+		if outcome == dispatchNoReply {
+			return
+		}
 		if outcome == dispatchTriaged && strings.TrimSpace(dispatch.Output.ReplyDraft) != "" && s.send != nil {
-			if sendErr := s.send.SendAIMessage(ctx, accountID, convID, dispatch.Output.ReplyDraft, dispatch.RunID, messageID); sendErr != nil {
+			moderated, moderationErr := s.store.IsInstagramModeratedMessage(ctx, accountID, messageID)
+			if moderationErr != nil && !errors.Is(moderationErr, ErrNotFound) {
+				s.logger.Error("omnichannel_instagram_moderation_lookup_failed", "account_id", accountID)
+			}
+			if moderated {
+				// Instagram comments/mentions are suggestions only. The human
+				// moderation action is the sole path that can publish a reply.
+				if err := s.store.SaveInstagramAIDraft(ctx, accountID, messageID, dispatch.Output.ReplyDraft); err != nil {
+					s.logger.Error("omnichannel_instagram_draft_save_failed", "account_id", accountID)
+				}
+			} else if sendErr := s.send.SendAIMessage(ctx, accountID, convID, dispatch.Output.ReplyDraft, dispatch.RunID, messageID, dispatch.AIGeneration); sendErr != nil {
+				if errors.Is(sendErr, ErrAILeaseInvalid) {
+					return
+				}
 				outcome = dispatchProviderError
 				s.logger.Error("omnichannel_auto_reply_enqueue_failed", "account_id", accountID, "conversation_id", convID)
 			} else if !dispatch.Output.NeedsHuman {
@@ -328,8 +482,14 @@ func triageEventFor(outcome DispatchOutcome) Event {
 // resolveCredentials monta as Credentials de (conta, provider): pega a instancia da conta
 // com credentials_ciphertext preenchido e decifra pelo secretbox. Sem ciphertext (ex.:
 // mock) => Credentials vazio. A chave crua NUNCA vai a log nem volta ao front.
-func (s *InboundService) resolveCredentials(ctx context.Context, accountID, providerKey string) (channel.Credentials, error) {
-	cipherText, config, found, err := s.store.FindProviderCredential(ctx, accountID, providerKey)
+func (s *InboundService) resolveCredentials(ctx context.Context, accountID, providerKey string, body []byte) (channel.Credentials, error) {
+	instanceKey := ""
+	if provider, err := s.registry.Get(providerKey); err == nil {
+		if resolver, ok := provider.(channel.WebhookInstanceResolver); ok && len(body) > 0 {
+			instanceKey = resolver.WebhookInstanceKey(body)
+		}
+	}
+	cipherText, config, found, err := s.store.FindProviderCredentialForKey(ctx, accountID, providerKey, instanceKey)
 	if err != nil {
 		return channel.Credentials{}, err
 	}

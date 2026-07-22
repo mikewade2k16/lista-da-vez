@@ -285,7 +285,7 @@ mount) sempre foram rápidos.
 **Correção:** bind mount removido; o código é copiado no build da imagem (target dev, overlayfs nativo)
 e `docker compose watch` (develop.watch, action sync) sincroniza as edições host→container; inotify real
 dentro do container, polling desligado. Fluxo: `npm run dev` (= `up --build --watch`) ou
-`npm run dev:watch` (= scripts/dev/watch-web.ps1: `up -d --build web` + `watch --no-up web`). Medido:
+`npm run dev:watch` (= scripts/dev/watch-web.ps1: `up -d --build --force-recreate --no-deps web` + `watch --no-up web`). Medido:
 boot 5+min-sem-terminar → ~60s; GET / em 0.04s; edição chega em ~2s. Detalhe completo em
 [OPERATION_DOCKER_BUG_LOG.md](OPERATION_DOCKER_BUG_LOG.md) §7.
 
@@ -321,6 +321,24 @@ exige env var/role/script na VPS (env var nova NUNCA viaja na imagem). Mudança 
 (role, extensão, grant) deve preferir auto-provisão idempotente no migrate (proposta `ac-04b`) a
 passo manual. E crash-loop com `28P01` logo após deploy = checar PRIMEIRO se role/env do banco
 existem no ambiente, antes de suspeitar do código.
+
+### [2026-07-22] Upload grande do calendário congelava em percentual variável
+
+**O que aconteceu:** anexos do calendário avançavam até um percentual e pareciam congelar, sem
+resposta acionável. Vídeos eram aceitos pela configuração até 300 MB.
+
+**Causa raiz:** `http.Server.ReadTimeout=15s` cobre o corpo inteiro da requisição. O endpoint de
+upload herdava esse prazo global e ainda precisava responder sob `WriteTimeout=30s`; qualquer conexão
+que não concluísse rapidamente parava no percentual atingido. O XHR só desistia após 15 minutos.
+
+**Correção:** `POST /v1/calendar/media` limpa os deadlines de leitura/escrita somente para a rota,
+atravessando Logging/Gzip via `Unwrap`; `ReadHeaderTimeout`, autenticação, escopo, MIME e
+`MaxBytesReader` permanecem. A UI mostra envio, lentidão, processamento e poster, além do motivo real
+de 400/401/403/408/413/5xx, rede, cancelamento, timeout e resposta inválida.
+
+**Regra criada:** todo endpoint de upload grande deve reconciliar três camadas antes de ser dado como
+pronto: limite de bytes, deadlines efetivos do servidor/proxy e timeout/estado visual do cliente.
+Wrapper de `ResponseWriter` deve implementar `Unwrap` quando a rota usa `http.ResponseController`.
 
 ## Referência cruzada
 

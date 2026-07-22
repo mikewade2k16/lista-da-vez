@@ -15,8 +15,9 @@ import (
 //
 // reaction/delete-for-all sao SINCRONAS ao provider (o legado chama o Evolution na hora — 502
 // na falha), NAO vao pelo outbox. forward e a EXCECAO: reusa o caminho de envio da F6
-// (SendService -> outbox -> FIFO por conversa) — e o que os campos queued/failedToQueue da
-// resposta significam. Nunca um segundo caminho de envio (risco 5 do canonico).
+// (SendService -> transacao mensagem+outbox -> FIFO por conversa). Os campos legados de resultado
+// continuam no shape, mas uma falha atomica conta como failed sem deixar mensagem parcial. Nunca um
+// segundo caminho de envio (risco 5 do canonico).
 
 // maxReactionEmojiLen e o teto do contrato do legado ({ emoji?: string(max 32) | null }).
 const maxReactionEmojiLen = 32
@@ -109,9 +110,6 @@ func (a *ActionsService) Forward(ctx context.Context, accountID string, p auth.P
 	if _, err := a.resolveConversation(ctx, accountID, p, targetConvID); err != nil {
 		return ForwardResult{}, err
 	}
-	caller := Caller{UserID: p.UserID, IsAdmin: isAdminPrincipal(p)}
-	canReply := legacyRole(p.Role) != legacyRoleViewer
-
 	res := ForwardResult{
 		SourceConversationID: sourceConvID,
 		TargetConversationID: targetConvID,
@@ -125,7 +123,7 @@ func (a *ActionsService) Forward(ctx context.Context, accountID string, p auth.P
 			res.FailedToQueueIDs = append(res.FailedToQueueIDs, mid)
 			continue
 		}
-		view, outcome, err := a.send.SendMessage(ctx, accountID, caller, canReply, targetConvID, forwardInput(src, targetConvID, mid))
+		view, _, err := a.send.SendMessage(ctx, accountID, p, targetConvID, forwardInput(src, targetConvID, mid))
 		if err != nil {
 			res.FailedToQueueCount++
 			res.FailedToQueueIDs = append(res.FailedToQueueIDs, mid)
@@ -133,12 +131,7 @@ func (a *ActionsService) Forward(ctx context.Context, accountID string, p auth.P
 		}
 		res.CreatedCount++
 		res.Messages = append(res.Messages, view)
-		if outcome == outcomeQueued {
-			res.QueuedCount++
-		} else {
-			res.FailedToQueueCount++
-			res.FailedToQueueIDs = append(res.FailedToQueueIDs, mid)
-		}
+		res.QueuedCount++
 	}
 	a.auditForward(ctx, accountID, p.UserID, sourceConvID, targetConvID, res.CreatedCount)
 	return res, nil

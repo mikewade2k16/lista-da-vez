@@ -31,6 +31,9 @@ func RegisterActionRoutes(mux *http.ServeMux, actions *ActionsService, middlewar
 	// Conversas — via maquina de estados (F8).
 	mux.Handle("PATCH /v1/omnichannel/conversations/{id}/status", wrap(handleSetStatus(actions)))
 	mux.Handle("PATCH /v1/omnichannel/conversations/{id}/assign", wrap(handleAssign(actions)))
+	mux.Handle("POST /v1/omnichannel/conversations/{id}/take", wrap(handleTake(actions)))
+	mux.Handle("POST /v1/omnichannel/conversations/{id}/handoff", wrap(handleRequestHandoff(actions)))
+	mux.Handle("POST /v1/omnichannel/conversations/{id}/release", wrap(handleRelease(actions)))
 
 	// Mensagens.
 	mux.Handle("POST /v1/omnichannel/conversations/{id}/messages/{mid}/reaction", wrap(handleReaction(actions)))
@@ -111,6 +114,61 @@ func handleAssign(a *ActionsService) http.HandlerFunc {
 			return
 		}
 		view, err := a.Assign(r.Context(), accountID, p, r.PathValue("id"), body.AssignedToID)
+		if err != nil {
+			writeActionError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+func handleTake(a *ActionsService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, p, ok := actionScope(w, r)
+		if !ok {
+			return
+		}
+		var body TakeConversationRequest
+		if err := decodeJSONBody(w, r, &body); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := a.TakeConversation(r.Context(), accountID, p, r.PathValue("id"), body.IdempotencyKey)
+		if err != nil {
+			writeActionError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
+}
+
+func handleRequestHandoff(a *ActionsService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, p, ok := actionScope(w, r)
+		if !ok {
+			return
+		}
+		var body HandoffRequest
+		if err := decodeJSONBody(w, r, &body); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := a.RequestHandoff(r.Context(), accountID, p, r.PathValue("id"), body)
+		if err != nil {
+			writeActionError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, view)
+	}
+}
+
+func handleRelease(a *ActionsService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, p, ok := actionScope(w, r)
+		if !ok {
+			return
+		}
+		view, err := a.ReleaseConversation(r.Context(), accountID, p, r.PathValue("id"))
 		if err != nil {
 			writeActionError(w, r, err)
 			return

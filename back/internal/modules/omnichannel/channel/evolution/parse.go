@@ -87,6 +87,7 @@ func (p *Provider) parseUpsert(instance string, data json.RawMessage) []channel.
 		}
 		body := decodeMessageBody(m.Message)
 		msgType, content, media := interpretBody(body)
+		reply := replyReferenceFromBody(body)
 		// fromMe = enviada PELO celular pareado (ou eco do proprio envio da plataforma).
 		// NAO descartamos mais: o ingest grava como OUTBOUND e dedupa pelo external_message_id
 		// (o eco de um envio da plataforma cai no dedup). O pushName do fromMe e o NOSSO nome —
@@ -113,6 +114,7 @@ func (p *Provider) parseUpsert(instance string, data json.RawMessage) []channel.
 				MediaMimeType:     media.MimeType,
 				MediaFileName:     media.FileName,
 				MediaCaption:      media.Caption,
+				Reply:             reply,
 			},
 		})
 	}
@@ -145,7 +147,11 @@ func (p *Provider) parseUpdate(instance string, data json.RawMessage) []channel.
 			ExternalEventID: instance + ":upd:" + id + ":" + status,
 			InstanceName:    instance,
 			OccurredAt:      occurredAt(m.MessageTimestamp),
-			Status:          &channel.StatusUpdate{ExternalMessageID: id, Status: status},
+			Status: &channel.StatusUpdate{
+				ExternalMessageID: id,
+				Status:            status,
+				ErrorCode:         safeProviderErrorCode(m.ErrorCode, m.StatusReason),
+			},
 		})
 	}
 	if len(out) == 0 {
@@ -233,6 +239,8 @@ type messageData struct {
 	MessageType      string          `json:"messageType"`
 	MessageTimestamp flexInt         `json:"messageTimestamp"`
 	Status           string          `json:"status"`
+	ErrorCode        json.RawMessage `json:"errorCode"`
+	StatusReason     json.RawMessage `json:"statusReason"`
 }
 
 // decodeMessages aceita `data` como objeto unico OU array (batch) OU {messages:[...]}.
@@ -264,7 +272,8 @@ func decodeMessages(data json.RawMessage) []messageData {
 type messageBody struct {
 	Conversation string `json:"conversation"`
 	ExtendedText *struct {
-		Text string `json:"text"`
+		Text        string       `json:"text"`
+		ContextInfo *contextInfo `json:"contextInfo"`
 	} `json:"extendedTextMessage"`
 	ImageMessage    *mediaContent `json:"imageMessage"`
 	VideoMessage    *mediaContent `json:"videoMessage"`
@@ -277,10 +286,20 @@ type messageBody struct {
 }
 
 type mediaContent struct {
-	Caption  string `json:"caption"`
-	MimeType string `json:"mimetype"`
-	FileName string `json:"fileName"`
-	URL      string `json:"url"`
+	Caption     string       `json:"caption"`
+	MimeType    string       `json:"mimetype"`
+	FileName    string       `json:"fileName"`
+	URL         string       `json:"url"`
+	ContextInfo *contextInfo `json:"contextInfo"`
+}
+
+// contextInfo e o shape de quote do Baileys/Evolution. quotedMessage usa o mesmo
+// envelope de conteudo de uma mensagem comum; manter RawMessage evita acoplamento a
+// campos do provider que nao pertencem ao dominio.
+type contextInfo struct {
+	StanzaID      string          `json:"stanzaId"`
+	Participant   string          `json:"participant"`
+	QuotedMessage json.RawMessage `json:"quotedMessage"`
 }
 
 func decodeMessageBody(raw json.RawMessage) messageBody {
@@ -315,6 +334,45 @@ func interpretBody(b messageBody) (msgType, content string, media mediaContent) 
 	}
 }
 
+// replyReferenceFromBody extrai a referencia de quote sem aplicar regra de tenant ou
+// persistencia. Um contextInfo sem stanzaId nao e navegavel e por isso nao vira reply.
+func replyReferenceFromBody(b messageBody) *channel.ReplyReference {
+	ctx := contextInfoFromBody(b)
+	if ctx == nil || strings.TrimSpace(ctx.StanzaID) == "" {
+		return nil
+	}
+	quoted := decodeMessageBody(ctx.QuotedMessage)
+	messageType, content, media := interpretBody(quoted)
+	if strings.TrimSpace(content) == "" {
+		content = strings.TrimSpace(media.Caption)
+	}
+	return &channel.ReplyReference{
+		ExternalMessageID: strings.TrimSpace(ctx.StanzaID),
+		ParticipantID:     strings.TrimSpace(ctx.Participant),
+		Content:           strings.TrimSpace(content),
+		MessageType:       messageType,
+	}
+}
+
+func contextInfoFromBody(b messageBody) *contextInfo {
+	switch {
+	case b.ExtendedText != nil && b.ExtendedText.ContextInfo != nil:
+		return b.ExtendedText.ContextInfo
+	case b.ImageMessage != nil && b.ImageMessage.ContextInfo != nil:
+		return b.ImageMessage.ContextInfo
+	case b.VideoMessage != nil && b.VideoMessage.ContextInfo != nil:
+		return b.VideoMessage.ContextInfo
+	case b.AudioMessage != nil && b.AudioMessage.ContextInfo != nil:
+		return b.AudioMessage.ContextInfo
+	case b.DocumentMessage != nil && b.DocumentMessage.ContextInfo != nil:
+		return b.DocumentMessage.ContextInfo
+	case b.StickerMessage != nil && b.StickerMessage.ContextInfo != nil:
+		return b.StickerMessage.ContextInfo
+	default:
+		return nil
+	}
+}
+
 // ============================================================================
 // Helpers de parse
 // ============================================================================
@@ -342,17 +400,57 @@ func occurredAt(ts flexInt) time.Time {
 	return time.Now().UTC()
 }
 
-// mapAckStatus traduz o status de ACK da Evolution para o vocabulario canonico (SENT|FAILED).
+// mapAckStatus traduz o status de ACK da Evolution para o vocabulario canonico E1.
 // Vazio => nao reconhecido (o chamador ignora).
 func mapAckStatus(raw string) string {
 	switch strings.ToUpper(strings.TrimSpace(raw)) {
-	case "SERVER_ACK", "DELIVERY_ACK", "READ", "PLAYED", "SENT", "DELIVERED":
+	case "SERVER_ACK", "SENT":
 		return "SENT"
+	case "DELIVERY_ACK", "DELIVERED":
+		return "DELIVERED"
+	case "READ", "PLAYED", "READ_ACK", "PLAYED_ACK":
+		return "READ"
 	case "ERROR", "FAILED":
 		return "FAILED"
+	case "DELETED", "REVOKED":
+		return "DELETED"
 	default:
 		return ""
 	}
+}
+
+// safeProviderErrorCode aceita apenas um token curto do provider. Objetos, mensagens e
+// qualquer valor potencialmente contendo PII sao descartados.
+func safeProviderErrorCode(values ...json.RawMessage) string {
+	for _, raw := range values {
+		trimmed := strings.TrimSpace(string(raw))
+		if trimmed == "" || trimmed == "null" {
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			// Numeros simples sao codigos aceitaveis; objetos/arrays nao sao.
+			if _, err := strconv.ParseInt(strings.Trim(trimmed, `"`), 10, 64); err != nil {
+				continue
+			}
+			text = strings.Trim(trimmed, `"`)
+		}
+		text = strings.ToUpper(strings.TrimSpace(text))
+		if text == "" || len(text) > 64 {
+			continue
+		}
+		valid := true
+		for _, r := range text {
+			if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return text
+		}
+	}
+	return ""
 }
 
 // normalizeEvent aplica [^a-zA-Z0-9]+ -> _ e uppercase (ex.: "messages.upsert" ->

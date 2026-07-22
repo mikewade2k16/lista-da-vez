@@ -48,29 +48,52 @@ func (s *Service) applyTransition(ctx context.Context, accountID, convID string,
 		return conversationRow{}, ErrForbidden
 	}
 	return s.store.ApplyTransition(ctx, accountID, convID, func(snap convSnapshot) (stateUpdate, *decisionRecord, error) {
-		tc, err := s.transitionContextFor(ctx, accountID, ev, snap)
-		if err != nil {
-			return stateUpdate{}, nil, err
-		}
-		out, err := Apply(snap.State, ev, tc)
-		if err != nil {
-			return stateUpdate{}, nil, err
-		}
-		if out.NoOp {
-			return stateUpdate{NoChange: true}, nil, nil
-		}
-		upd := stateUpdate{
-			State:          out.To,
-			QueueID:        snap.QueueID,
-			DepartmentID:   snap.DepartmentID,
-			AssignedUserID: snap.AssignedUserID,
-		}
-		dec, err := s.applyEventEffects(ctx, accountID, ev, payload, snap, &upd)
-		if err != nil {
-			return stateUpdate{}, nil, err
-		}
-		return upd, dec, nil
+		return s.decideTransition(ctx, accountID, ev, payload, snap)
 	})
+}
+
+// decideTransition concentra a regra da maquina para que fluxos compostos possam persistir a
+// mesma decisao dentro de sua propria transacao. O envio humano usa isso para tornar takeover,
+// mensagem e outbox atomicos, sem mover regra de dominio para o Store.
+func (s *Service) decideTransition(ctx context.Context, accountID string, ev Event,
+	payload TransitionPayload, snap convSnapshot) (stateUpdate, *decisionRecord, error) {
+	tc, err := s.transitionContextFor(ctx, accountID, ev, snap)
+	if err != nil {
+		return stateUpdate{}, nil, err
+	}
+	out, err := Apply(snap.State, ev, tc)
+	if err != nil {
+		return stateUpdate{}, nil, err
+	}
+	if out.NoOp {
+		return stateUpdate{
+			NoChange:      true,
+			InvalidateAI:  eventInvalidatesAI(ev),
+			CloseHandoffs: ev == EventConvClose,
+		}, nil, nil
+	}
+	upd := stateUpdate{
+		State:          out.To,
+		QueueID:        snap.QueueID,
+		DepartmentID:   snap.DepartmentID,
+		AssignedUserID: snap.AssignedUserID,
+		InvalidateAI:   eventInvalidatesAI(ev),
+	}
+	dec, err := s.applyEventEffects(ctx, accountID, ev, payload, snap, &upd)
+	if err != nil {
+		return stateUpdate{}, nil, err
+	}
+	return upd, dec, nil
+}
+
+func eventInvalidatesAI(ev Event) bool {
+	switch ev {
+	case EventMsgOutboundHuman, EventHumanAssign, EventHumanUnassign, EventHumanPending,
+		EventQueueTransfer, EventConvClose, EventConvReopen:
+		return true
+	default:
+		return false
+	}
 }
 
 // RouteConversation e o MOTOR (Contrato 4): decide deterministicamente para qual fila a
@@ -150,7 +173,7 @@ func (s *Service) routeConversation(ctx context.Context, accountID, convID strin
 func (s *Service) transitionContextFor(ctx context.Context, accountID string, ev Event, snap convSnapshot) (TransitionContext, error) {
 	tc := TransitionContext{HasQueue: snap.QueueID != nil}
 	if ev == EventMsgInbound {
-		_, hasAgent, err := s.store.ActiveAgent(ctx, accountID)
+		_, hasAgent, err := s.store.ActiveAgentForInstance(ctx, accountID, deref(snap.InstanceID))
 		if err != nil {
 			return TransitionContext{}, err
 		}
@@ -190,6 +213,10 @@ func (s *Service) applyEventEffects(ctx context.Context, accountID string, ev Ev
 		}
 	case EventHumanPending:
 		// nota 10: preserva assigned_user_id E queue_id (ortogonal ao roteamento) — nao mexe.
+	case EventConvClose:
+		// Encerrar o atendimento tambem resolve qualquer handoff aberto no mesmo commit.
+		// A proxima msg.inbound parte de closed e pode convidar novamente a IA.
+		upd.CloseHandoffs = true
 	case EventQueueTransfer:
 		return s.applyQueueTransfer(ctx, accountID, payload, upd)
 	case EventConvReopen:

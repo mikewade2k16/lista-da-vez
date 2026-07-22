@@ -1,12 +1,14 @@
 import type { ComputedRef, Ref } from "vue";
 import type { Conversation, ConversationStatus } from "~/types";
 import { UNASSIGNED_VALUE } from "~/composables/omnichannel/useOmnichannelInboxShared";
+import { getApiErrorMessage } from "~/utils/api-client";
 
 export function useOmnichannelInboxConversationActions(options: {
   canManageConversation: ComputedRef<boolean>;
   activeConversationId: Ref<string | null>;
   updatingStatus: Ref<boolean>;
   updatingAssignee: Ref<boolean>;
+  updatingHandoff: Ref<boolean>;
   assigneeModel: Ref<string>;
   sendError: Ref<string>;
   apiFetch: <T = unknown>(path: string, init?: Record<string, unknown>) => Promise<T>;
@@ -64,6 +66,69 @@ export function useOmnichannelInboxConversationActions(options: {
     }
   }
 
+  function createActionIdempotencyKey(action: string, conversationId: string) {
+    if (import.meta.client && typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return `${action}:${crypto.randomUUID()}`;
+    }
+
+    return `${action}:${conversationId}:${Date.now()}`;
+  }
+
+  async function takeConversation() {
+    if (!options.canManageConversation.value) {
+      options.sendError.value = "Seu perfil e somente leitura nesta inbox.";
+      return;
+    }
+
+    const conversationId = options.activeConversationId.value;
+    if (!conversationId) {
+      return;
+    }
+
+    options.updatingHandoff.value = true;
+    try {
+      const updated = await options.apiFetch<Conversation>(`/conversations/${conversationId}/take`, {
+        method: "POST",
+        body: {
+          idempotencyKey: createActionIdempotencyKey("take", conversationId)
+        }
+      });
+
+      options.upsertConversation(updated);
+      options.assigneeModel.value = updated.assignedToId ?? UNASSIGNED_VALUE;
+    } catch (error) {
+      options.sendError.value = getApiErrorMessage(error, "Nao foi possivel assumir esta conversa.");
+    } finally {
+      options.updatingHandoff.value = false;
+    }
+  }
+
+  async function releaseConversation() {
+    if (!options.canManageConversation.value) {
+      options.sendError.value = "Seu perfil e somente leitura nesta inbox.";
+      return;
+    }
+
+    const conversationId = options.activeConversationId.value;
+    if (!conversationId) {
+      return;
+    }
+
+    options.updatingHandoff.value = true;
+    try {
+      const updated = await options.apiFetch<Conversation>(`/conversations/${conversationId}/release`, {
+        method: "POST"
+      });
+
+      options.upsertConversation(updated);
+      options.assigneeModel.value = updated.assignedToId ?? UNASSIGNED_VALUE;
+    } catch (error) {
+      options.sendError.value = getApiErrorMessage(error, "Nao foi possivel liberar esta conversa.");
+    } finally {
+      options.updatingHandoff.value = false;
+    }
+  }
+
   function closeConversation() {
     void updateConversationStatus("CLOSED");
   }
@@ -84,6 +149,8 @@ export function useOmnichannelInboxConversationActions(options: {
     closeConversation,
     updateConversationStatus,
     updateConversationAssignee,
+    takeConversation,
+    releaseConversation,
     openSandboxTestConversation
   };
 }

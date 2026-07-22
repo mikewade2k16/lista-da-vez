@@ -1,0 +1,7 @@
+{
+  "summary": "Fotografia de uma etiqueta de produto sobre uma bancada.",
+  "visibleText": "SKU 1234",
+  "objects": ["etiqueta", "produto", "bancada"],
+  "safetyFlags": [],
+  "confidence": 0.91
+}

@@ -11,6 +11,13 @@ export interface MessagesPageResponse {
   conversationId: string;
   messages: Message[];
   hasMore: boolean;
+  nextCursor?: string;
+}
+
+export interface ConversationsPageResponse {
+  conversations: Conversation[];
+  hasMore: boolean;
+  nextCursor?: string;
 }
 
 export interface SyncConversationHistoryResponse {

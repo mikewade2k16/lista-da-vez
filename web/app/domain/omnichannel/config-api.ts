@@ -12,8 +12,11 @@ import type {
   OmniAgent,
   OmniAgentInput,
   OmniAgentVersion,
-  OmniAgentVersionInput,
-  OmniCapabilities,
+  OmniAiKnowledgeBinding,
+  OmniAiToolBinding,
+  OmniAiToolBindingInput,
+  OmniAiToolApproval,
+  OmniAiToolRun,
   OmniCollectField,
   OmniCredentialStatus,
   OmniDepartment,
@@ -21,9 +24,16 @@ import type {
   OmniInstance,
   OmniInstanceManagement,
   OmniInstanceWriteInput,
+  OmniHandoffPolicy,
+  OmniHandoffPolicyInput,
+  OmniMediaAnalysis,
+  OmniKnowledgeBase,
+  OmniKnowledgeChunkInput,
+  OmniKnowledgeDocument,
   OmniQueue,
   OmniQueueInput,
   OmniQueueMember,
+  OmniProviderKeyStatusView,
   OmniRoutingRule,
   OmniRoutingRuleInput,
   OmniSession,
@@ -35,7 +45,6 @@ export type ApiRequest = ReturnType<typeof createApiRequest>
 
 const BASE = '/v1/omnichannel'
 const WA = `${BASE}/tenant/whatsapp`
-
 // ============================================================================
 // Numeros / instancias / providers (perm omnichannel.instances.manage)
 // ============================================================================
@@ -107,19 +116,6 @@ export function connectSession(api: ApiRequest, instanceName: string): Promise<O
 
 export function logoutSession(api: ApiRequest, instanceName: string): Promise<OmniSession> {
   return api(`${WA}/logout`, { method: 'POST', body: { instanceName } }) as Promise<OmniSession>
-}
-
-// Capabilities por numero. GAP conhecido: o back ainda NAO expoe este endpoint
-// (needsWiring). Ate existir, a tela DEGRADA: capability desconhecida = ausente. Por
-// isso qualquer falha (404 incluso) devolve null, e a UI nao oferece o que nao confirma.
-export function fetchCapabilities(api: ApiRequest, id: string): Promise<OmniCapabilities | null> {
-  return (
-    api(`${WA}/instances/${encodeURIComponent(id)}/capabilities`, {
-      dedupe: false,
-    }) as Promise<OmniCapabilities>
-  )
-    .then((caps) => caps)
-    .catch(() => null)
 }
 
 // ============================================================================
@@ -244,11 +240,53 @@ export function reorderRoutingRules(
   }) as Promise<OmniRoutingRule[]>
 }
 
+export function fetchHandoffPolicies(api: ApiRequest): Promise<OmniHandoffPolicy[]> {
+  return api(`${SETTINGS}/handoff-policies`) as Promise<OmniHandoffPolicy[]>
+}
+
+export function createHandoffPolicy(
+  api: ApiRequest,
+  input: OmniHandoffPolicyInput,
+): Promise<OmniHandoffPolicy> {
+  return api(`${SETTINGS}/handoff-policies`, {
+    method: 'POST',
+    body: input,
+  }) as Promise<OmniHandoffPolicy>
+}
+
+export function updateHandoffPolicy(
+  api: ApiRequest,
+  id: string,
+  patch: Partial<OmniHandoffPolicyInput>,
+): Promise<OmniHandoffPolicy> {
+  return api(`${SETTINGS}/handoff-policies/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: patch,
+  }) as Promise<OmniHandoffPolicy>
+}
+
+export function deleteHandoffPolicy(api: ApiRequest, id: string): Promise<void> {
+  return api(`${SETTINGS}/handoff-policies/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  }) as Promise<void>
+}
+
 // ============================================================================
 // Agente de IA (perm omnichannel.agents.manage)
 // ============================================================================
 
 const AGENTS = `${BASE}/agents`
+
+export function fetchMediaAnalyses(
+  api: ApiRequest,
+  conversationId: string,
+  messageId: string,
+): Promise<OmniMediaAnalysis[]> {
+  return api(
+    `${BASE}/conversations/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/media/analyses`,
+    { dedupe: false },
+  ) as Promise<OmniMediaAnalysis[]>
+}
 
 export function fetchAgents(api: ApiRequest): Promise<OmniAgent[]> {
   return api(AGENTS) as Promise<OmniAgent[]>
@@ -275,42 +313,264 @@ export function updateAgent(
   }) as Promise<OmniAgent>
 }
 
+export function fetchAgentProviderKeys(
+  api: ApiRequest,
+  id: string,
+): Promise<OmniProviderKeyStatusView> {
+  return api(`${AGENTS}/${encodeURIComponent(id)}/provider-keys`, {
+    dedupe: false,
+  }) as Promise<OmniProviderKeyStatusView>
+}
+
+export function putAgentProviderKey(
+  api: ApiRequest,
+  id: string,
+  provider: string,
+  apiKey: string,
+): Promise<OmniProviderKeyStatusView> {
+  return api(`${AGENTS}/${encodeURIComponent(id)}/provider-keys/${encodeURIComponent(provider)}`, {
+    method: 'PUT',
+    body: { apiKey },
+  }) as Promise<OmniProviderKeyStatusView>
+}
+
+export function clearAgentProviderKey(
+  api: ApiRequest,
+  id: string,
+  provider: string,
+): Promise<OmniProviderKeyStatusView> {
+  return api(`${AGENTS}/${encodeURIComponent(id)}/provider-keys/${encodeURIComponent(provider)}`, {
+    method: 'DELETE',
+  }) as Promise<OmniProviderKeyStatusView>
+}
+
 export function fetchAgentVersions(api: ApiRequest, id: string): Promise<OmniAgentVersion[]> {
   return api(`${AGENTS}/${encodeURIComponent(id)}/versions`) as Promise<OmniAgentVersion[]>
 }
 
-export function createAgentVersion(
-  api: ApiRequest,
-  id: string,
-  input: OmniAgentVersionInput,
-): Promise<OmniAgentVersion> {
-  return api(`${AGENTS}/${encodeURIComponent(id)}/versions`, {
-    method: 'POST',
-    body: input,
-  }) as Promise<OmniAgentVersion>
-}
-
-// Publish: versao no path (POST /versions/{v}/publish). Torna a versao ativa e imutavel.
-export function publishAgentVersion(
-  api: ApiRequest,
-  id: string,
-  version: number,
-): Promise<OmniAgent> {
-  return api(`${AGENTS}/${encodeURIComponent(id)}/versions/${version}/publish`, {
-    method: 'POST',
-  }) as Promise<OmniAgent>
-}
-
-// Rollback: repointa active_version_id para uma versao ja publicada.
-export function rollbackAgent(api: ApiRequest, id: string, versionId: string): Promise<OmniAgent> {
-  return api(`${AGENTS}/${encodeURIComponent(id)}/rollback`, {
-    method: 'POST',
-    body: { versionId },
-  }) as Promise<OmniAgent>
-}
-
 export function fetchCollectFields(api: ApiRequest, id: string): Promise<OmniCollectField[]> {
   return api(`${AGENTS}/${encodeURIComponent(id)}/collect-fields`) as Promise<OmniCollectField[]>
+}
+
+export function fetchAiToolBindings(
+  api: ApiRequest,
+  agentId: string,
+): Promise<OmniAiToolBinding[]> {
+  return api(`${AGENTS}/${encodeURIComponent(agentId)}/tool-bindings`) as Promise<
+    OmniAiToolBinding[]
+  >
+}
+
+export function createAiToolBinding(
+  api: ApiRequest,
+  agentId: string,
+  input: OmniAiToolBindingInput,
+): Promise<OmniAiToolBinding> {
+  return api(`${AGENTS}/${encodeURIComponent(agentId)}/tool-bindings`, {
+    method: 'POST',
+    body: input,
+  }) as Promise<OmniAiToolBinding>
+}
+
+export function updateAiToolBinding(
+  api: ApiRequest,
+  agentId: string,
+  bindingId: string,
+  patch: Partial<OmniAiToolBindingInput>,
+): Promise<OmniAiToolBinding> {
+  return api(
+    `${AGENTS}/${encodeURIComponent(agentId)}/tool-bindings/${encodeURIComponent(bindingId)}`,
+    {
+      method: 'PATCH',
+      body: patch,
+    },
+  ) as Promise<OmniAiToolBinding>
+}
+
+export function disableAiToolBinding(
+  api: ApiRequest,
+  agentId: string,
+  bindingId: string,
+): Promise<void> {
+  return api(
+    `${AGENTS}/${encodeURIComponent(agentId)}/tool-bindings/${encodeURIComponent(bindingId)}`,
+    {
+      method: 'DELETE',
+    },
+  ) as Promise<void>
+}
+
+export function fetchAiToolRuns(
+  api: ApiRequest,
+  agentId: string,
+  options: { status?: OmniAiToolRun['status']; limit?: number } = {},
+): Promise<OmniAiToolRun[]> {
+  const query = new URLSearchParams()
+  if (options.status) query.set('status', options.status)
+  if (options.limit) query.set('limit', String(options.limit))
+  const suffix = query.toString() ? `?${query.toString()}` : ''
+  return api(`${AGENTS}/${encodeURIComponent(agentId)}/tool-runs${suffix}`, {
+    dedupe: false,
+  }) as Promise<OmniAiToolRun[]>
+}
+
+export function fetchAiToolApprovals(
+  api: ApiRequest,
+  agentId: string,
+  limit = 30,
+): Promise<OmniAiToolApproval[]> {
+  const query = new URLSearchParams({ limit: String(limit) }).toString()
+  return api(`${AGENTS}/${encodeURIComponent(agentId)}/tool-approvals?${query}`, {
+    dedupe: false,
+  }) as Promise<OmniAiToolApproval[]>
+}
+
+export function approveAiToolApproval(
+  api: ApiRequest,
+  agentId: string,
+  approvalId: string,
+): Promise<OmniAiToolApproval> {
+  return api(
+    `${AGENTS}/${encodeURIComponent(agentId)}/tool-approvals/${encodeURIComponent(approvalId)}/approve`,
+    { method: 'POST' },
+  ) as Promise<OmniAiToolApproval>
+}
+
+export function rejectAiToolApproval(
+  api: ApiRequest,
+  agentId: string,
+  approvalId: string,
+): Promise<OmniAiToolApproval> {
+  return api(
+    `${AGENTS}/${encodeURIComponent(agentId)}/tool-approvals/${encodeURIComponent(approvalId)}/reject`,
+    { method: 'POST' },
+  ) as Promise<OmniAiToolApproval>
+}
+
+export function fetchKnowledgeBases(api: ApiRequest): Promise<OmniKnowledgeBase[]> {
+  return api(`${BASE}/knowledge-bases`) as Promise<OmniKnowledgeBase[]>
+}
+
+export function createKnowledgeBase(
+  api: ApiRequest,
+  input: { name: string; isEnabled?: boolean; searchConfig?: Record<string, unknown> },
+): Promise<OmniKnowledgeBase> {
+  return api(`${BASE}/knowledge-bases`, {
+    method: 'POST',
+    body: input,
+  }) as Promise<OmniKnowledgeBase>
+}
+
+export function updateKnowledgeBase(
+  api: ApiRequest,
+  id: string,
+  patch: Partial<{ name: string; isEnabled: boolean; searchConfig: Record<string, unknown> }>,
+): Promise<OmniKnowledgeBase> {
+  return api(`${BASE}/knowledge-bases/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: patch,
+  }) as Promise<OmniKnowledgeBase>
+}
+
+export function fetchKnowledgeDocuments(
+  api: ApiRequest,
+  baseId: string,
+): Promise<OmniKnowledgeDocument[]> {
+  return api(`${BASE}/knowledge-bases/${encodeURIComponent(baseId)}/documents`) as Promise<
+    OmniKnowledgeDocument[]
+  >
+}
+
+export function createKnowledgeDocument(
+  api: ApiRequest,
+  baseId: string,
+  input: {
+    sourceRef: string
+    title?: string
+    checksum: string
+    version?: number
+    metadata?: Record<string, unknown>
+  },
+): Promise<OmniKnowledgeDocument> {
+  return api(`${BASE}/knowledge-bases/${encodeURIComponent(baseId)}/documents`, {
+    method: 'POST',
+    body: input,
+  }) as Promise<OmniKnowledgeDocument>
+}
+
+export function updateKnowledgeDocument(
+  api: ApiRequest,
+  baseId: string,
+  documentId: string,
+  patch: Partial<{
+    title: string
+    status: OmniKnowledgeDocument['status']
+    metadata: Record<string, unknown>
+    error: string
+  }>,
+): Promise<OmniKnowledgeDocument> {
+  return api(
+    `${BASE}/knowledge-bases/${encodeURIComponent(baseId)}/documents/${encodeURIComponent(documentId)}`,
+    { method: 'PATCH', body: patch },
+  ) as Promise<OmniKnowledgeDocument>
+}
+
+export function replaceKnowledgeDocumentChunks(
+  api: ApiRequest,
+  baseId: string,
+  documentId: string,
+  chunks: OmniKnowledgeChunkInput[],
+): Promise<void> {
+  return api(
+    `${BASE}/knowledge-bases/${encodeURIComponent(baseId)}/documents/${encodeURIComponent(documentId)}/chunks`,
+    {
+      method: 'POST',
+      body: { chunks },
+    },
+  ) as Promise<void>
+}
+
+export function fetchAiKnowledgeBindings(
+  api: ApiRequest,
+  agentId: string,
+): Promise<OmniAiKnowledgeBinding[]> {
+  return api(`${AGENTS}/${encodeURIComponent(agentId)}/knowledge-bindings`) as Promise<
+    OmniAiKnowledgeBinding[]
+  >
+}
+
+export function createAiKnowledgeBinding(
+  api: ApiRequest,
+  agentId: string,
+  input: { knowledgeBaseId: string; isEnabled?: boolean; topK?: number; minScore?: number },
+): Promise<OmniAiKnowledgeBinding> {
+  return api(`${AGENTS}/${encodeURIComponent(agentId)}/knowledge-bindings`, {
+    method: 'POST',
+    body: input,
+  }) as Promise<OmniAiKnowledgeBinding>
+}
+
+export function updateAiKnowledgeBinding(
+  api: ApiRequest,
+  agentId: string,
+  bindingId: string,
+  patch: Partial<{ isEnabled: boolean; topK: number; minScore: number }>,
+): Promise<OmniAiKnowledgeBinding> {
+  return api(
+    `${AGENTS}/${encodeURIComponent(agentId)}/knowledge-bindings/${encodeURIComponent(bindingId)}`,
+    { method: 'PATCH', body: patch },
+  ) as Promise<OmniAiKnowledgeBinding>
+}
+
+export function disableAiKnowledgeBinding(
+  api: ApiRequest,
+  agentId: string,
+  bindingId: string,
+): Promise<void> {
+  return api(
+    `${AGENTS}/${encodeURIComponent(agentId)}/knowledge-bindings/${encodeURIComponent(bindingId)}`,
+    { method: 'DELETE' },
+  ) as Promise<void>
 }
 
 // Simulador (C9.7). Grava ai_runs e consome o limite mensal — chama o modelo de verdade

@@ -62,6 +62,10 @@ const {
   requestAudioPreview,
   markImageFailed,
   isMediaActionLoading,
+  resolveMediaState,
+  isMediaFailed,
+  getMediaRetryError,
+  retryMessageMedia,
   openMessageMedia,
   downloadMessageMedia,
   hasVideoPreview,
@@ -147,6 +151,10 @@ const {
   "requestAudioPreview",
   "markImageFailed",
   "isMediaActionLoading",
+  "resolveMediaState",
+  "isMediaFailed",
+  "getMediaRetryError",
+  "retryMessageMedia",
   "openMessageMedia",
   "downloadMessageMedia",
   "hasVideoPreview",
@@ -256,6 +264,10 @@ const {
           :request-audio-preview="requestAudioPreview"
           :mark-image-failed="markImageFailed"
           :is-media-action-loading="isMediaActionLoading"
+          :resolve-media-state="resolveMediaState"
+          :is-media-failed="isMediaFailed"
+          :get-media-retry-error="getMediaRetryError"
+          :retry-message-media="retryMessageMedia"
           :open-message-media="openMessageMedia"
           :download-message-media="downloadMessageMedia"
           :has-video-preview="hasVideoPreview"

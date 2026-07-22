@@ -124,24 +124,52 @@ if ($DeployAutomation) {
   Write-Host "Automation:   redis/waha/n8n/whisper + $($automationWorkflowFiles.Count) workflow(s)"
 }
 
-# 1. Garante o diretorio remoto e envia o compose (a VPS so precisa do compose +
-#    .env; o codigo vive nas imagens). NAO sobrescreve o .env remoto.
-Invoke-RemoteCommand -Description "Garantindo diretorio remoto" -Command "mkdir -p $remotePathQ"
+# 1. Falha ANTES de copiar compose/trocar tag se o segredo obrigatorio do boot
+#    estiver ausente ou malformado. Nunca imprime o valor da chave.
+$preflightCmd = @"
+set -euo pipefail
+mkdir -p $remotePathQ
+cd $remotePathQ
+if [ ! -f $envFileQ ]; then
+  echo "ERRO: $envFile nao existe em $remotePath. Crie-o a partir do .example antes do deploy." >&2
+  exit 1
+fi
+omni_key=`$(sed -n 's/^OMNI_SECRETS_KEY=//p' $envFileQ | tail -n 1)
+if [ -z "`$omni_key" ]; then
+  echo "ERRO: OMNI_SECRETS_KEY ausente/vazia em $envFile. Gere uma vez com: openssl rand -base64 32" >&2
+  exit 1
+fi
+if ! printf '%s' "`$omni_key" | grep -Eq '^[A-Za-z0-9+/]{43}=$'; then
+  echo "ERRO: OMNI_SECRETS_KEY nao e base64 canonico de 32 bytes em $envFile." >&2
+  exit 1
+fi
+if ! decoded_bytes=`$(printf '%s' "`$omni_key" | openssl base64 -d -A 2>/dev/null | wc -c | tr -d ' '); then
+  echo "ERRO: OMNI_SECRETS_KEY nao e base64 valido em $envFile." >&2
+  exit 1
+fi
+unset omni_key
+if [ "`$decoded_bytes" != "32" ]; then
+  echo "ERRO: OMNI_SECRETS_KEY deve decodificar exatamente 32 bytes; encontrado(s): `$decoded_bytes." >&2
+  exit 1
+fi
+echo "Preflight de segredos obrigatorios: OK"
+"@
+Invoke-RemoteCommand -Description "Validando ambiente remoto antes do deploy" -Command $preflightCmd
+
+# 2. Envia o compose (a VPS so precisa do compose + .env; o codigo vive nas
+#    imagens). O preflight acima garante que um erro de env nao altere nem o compose remoto.
 
 Write-Host "==> Enviando docker-compose.prod.yml"
 $scpArgs = $scpBaseArgs + @($composeLocal, "${remoteTarget}:${remotePath}/docker-compose.prod.yml")
 & $ScpExe @scpArgs
 if ($LASTEXITCODE -ne 0) { throw "Falha ao enviar o docker-compose.prod.yml (scp)." }
 
-# 2. Confirma que o .env do ambiente existe e grava o IMAGE_TAG escolhido.
+# 3. Valida o compose novo contra o env real e so entao grava o IMAGE_TAG escolhido.
 $tagQ = Convert-ToBashSingleQuoted $Tag
 $setTagCmd = @"
 set -euo pipefail
 cd $remotePathQ
-if [ ! -f $envFileQ ]; then
-  echo "ERRO: $envFile nao existe em $remotePath. Crie-o a partir do .example antes do deploy." >&2
-  exit 1
-fi
+docker compose $composeArgs config --quiet
 if grep -q '^IMAGE_TAG=' $envFileQ; then
   sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$Tag|" $envFileQ
 else
@@ -151,14 +179,14 @@ grep '^IMAGE_TAG=' $envFileQ
 "@
 Invoke-RemoteCommand -Description "Gravando IMAGE_TAG=$Tag em $envFile" -Command $setTagCmd
 
-# 3. Login opcional no GHCR (imagens privadas).
+# 4. Login opcional no GHCR (imagens privadas).
 if (-not [string]::IsNullOrWhiteSpace($GhcrToken)) {
   if ([string]::IsNullOrWhiteSpace($GhcrUser)) { throw "-GhcrToken informado sem -GhcrUser." }
   $loginCmd = "printf '%s' " + (Convert-ToBashSingleQuoted $GhcrToken) + " | docker login ghcr.io -u " + (Convert-ToBashSingleQuoted $GhcrUser) + " --password-stdin"
   Invoke-RemoteCommand -Description "docker login ghcr.io" -Command $loginCmd
 }
 
-# 4. Backup opcional do Postgres (antes de mexer nos containers).
+# 5. Backup opcional do Postgres (antes de mexer nos containers).
 if ($BackupDatabase) {
   $backupCmd = @"
 set -euo pipefail
@@ -172,7 +200,7 @@ printf '%s\n' "$remotePath/backups/`$latest"
   if ($backupFile) { Write-Host "Backup remoto: $backupFile" }
 }
 
-# 5. Pull + up SEM build (a VPS nunca compila).
+# 6. Pull + up SEM build (a VPS nunca compila).
 # AC-04b (self-healing): a partir da imagem que contem o ac-04b, o `migrate up` auto-provisiona
 # a role least-privilege `omni_app` no boot (cria + converge senha + grant connect a partir de
 # DATABASE_APP_URL) e em production falha alto e cedo se faltar senha — criar a role deixou de
@@ -189,7 +217,7 @@ docker compose $composeArgs ps api web
 "@
 Invoke-RemoteCommand -Description "Pull + up --no-build (api web) no $Environment" -Command $deployCmd
 
-# 6. Automation opcional: sobe profile automation e reimporta workflows versionados se mudaram.
+# 7. Automation opcional: sobe profile automation e reimporta workflows versionados se mudaram.
 if ($DeployAutomation) {
   $remoteWorkflowDir = "$remotePath/automation/export"
   $remoteWorkflowDirQ = Convert-ToBashSingleQuoted $remoteWorkflowDir
@@ -292,7 +320,7 @@ echo "Workflows n8n importados, reiniciados e VERIFICADOS (banco == arquivo)."
   Invoke-RemoteCommand -Description "Profile automation + import de workflows n8n no $Environment" -Command $automationCmd
 }
 
-# 7. Smoke tests publicos.
+# 8. Smoke tests publicos.
 if (-not $SkipSmokeTests) {
   $smokeCmd = @"
 set -euo pipefail

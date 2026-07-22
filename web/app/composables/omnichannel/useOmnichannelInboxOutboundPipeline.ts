@@ -307,6 +307,9 @@ export function useOmnichannelInboxOutboundPipeline(options: {
         attachment: currentAttachment,
         metadataJson
       });
+      if (currentReply) {
+        body.replyToMessageId = currentReply.id;
+      }
       const directTimeoutMs = resolveDirectTimeoutMs(currentAttachment);
 
       const created = await sendConversationMessage(

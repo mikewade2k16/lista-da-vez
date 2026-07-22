@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import {
+  UButton,
   UDashboardPanel
 } from "#components";
 import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from "vue";
+import { useAdminSession } from "~/composables/useAdminSession";
+import { useApi } from "~/composables/useApi";
 import { useInboxChatSelection } from "~/composables/omnichannel/useInboxChatSelection";
 import { useInboxChatComposerDom } from "~/composables/omnichannel/useInboxChatComposerDom";
 import { useInboxChatComposerControls } from "~/composables/omnichannel/useInboxChatComposerControls";
@@ -53,7 +56,9 @@ const props = defineProps<{
   showOutboundOperatorLabel: boolean;
   userRole: "ADMIN" | "SUPERVISOR" | "AGENT" | "VIEWER" | null | undefined;
   canManageConversation: boolean;
+  updatingHandoff: boolean;
   loadingMessages: boolean;
+  messagesError: string;
   loadingOlderMessages: boolean;
   hasMoreMessages: boolean;
   showLoadOlderMessagesButton: boolean;
@@ -75,6 +80,9 @@ const props = defineProps<{
   sendingMessage: boolean;
   sendError: string;
   replyTarget: Message | null;
+  loadOlderMessagesAction: () => Promise<void>;
+  retryMessagesAction: () => Promise<void>;
+  reconcileMessageAction: (messageEntry: Message) => void;
   deleteMessagesForMeAction: (messageIds: string[]) => Promise<{ deletedIds: string[] }>;
   deleteMessagesForAllAction: (messageIds: string[]) => Promise<{
     updatedIds: string[];
@@ -99,6 +107,8 @@ const emit = defineEmits<{
   (event: "send", payload?: MentionSendPayload): void;
   (event: "open-mention", payload: MentionOpenPayload): void;
   (event: "close-conversation"): void;
+  (event: "take-conversation"): void;
+  (event: "release-conversation"): void;
   (event: "open-whatsapp-session"): void;
   (event: "set-reply", messageEntry: Message): void;
   (event: "clear-reply"): void;
@@ -573,6 +583,11 @@ const {
   requestImagePreview,
   requestAudioPreview,
   isMediaActionLoading,
+  resolveMediaState,
+  isMediaFailed,
+  getMediaRetryError,
+  reconcileMediaRetryState,
+  retryMessageMedia: requestMessageMediaRetry,
   openMessageMedia,
   downloadMessageMedia,
   resolveMessageFileName,
@@ -585,7 +600,7 @@ const {
   resolveMessageAuthor,
   resolveOutboundOperatorLabel,
   sanitizeHumanLabel,
-  requestOlderMessages: () => emit("load-older-messages"),
+  requestOlderMessages: () => props.loadOlderMessagesAction(),
   hasMoreMessages: () => props.hasMoreMessages,
   messageRowId,
   asRecord,
@@ -607,6 +622,35 @@ const {
       phone: target.phone ?? null
     };
   }
+});
+
+async function retryMessageMedia(messageEntry: Message) {
+  const updated = await requestMessageMediaRetry(messageEntry);
+  if (updated) {
+    props.reconcileMessageAction(updated);
+  }
+}
+
+watch(
+  () => props.messageRenderItems
+    .filter((item) => item.kind === "message")
+    .map((item) => `${item.message.id}:${item.message.mediaState}:${item.message.updatedAt}`)
+    .join("|"),
+  () => {
+    for (const item of props.messageRenderItems) {
+      if (item.kind === "message") {
+        reconcileMediaRetryState(item.message);
+      }
+    }
+  },
+  { immediate: true }
+);
+
+const isMessageHistoryEmpty = computed(() => {
+  return Boolean(props.activeConversation) &&
+    !props.loadingMessages &&
+    !props.messagesError &&
+    !props.messageRenderItems.some((item) => item.kind === "message");
 });
 const { shouldShowReplyTypeMeta, getReplyPreviewText, getReplyTypeIcon } = useInboxChatReplyMeta({
   getMediaTypeLabel,
@@ -852,16 +896,20 @@ async function onFileChange(event: Event) {
 const headerBindings = computed(() => ({
   activeConversation: props.activeConversation,
   activeConversationLabel: props.activeConversationLabel,
+  currentUserId: props.currentUserId,
   userRole: props.userRole,
   showOutboundOperatorLabel: props.showOutboundOperatorLabel,
   canManageConversation: props.canManageConversation,
+  updatingHandoff: props.updatingHandoff,
   getInitials,
   getChannelLabel,
   getStatusColor,
   getStatusLabel,
   onOpenWhatsAppSession: () => emit("open-whatsapp-session"),
   onToggleShowOutboundOperatorLabel: (value: boolean) => emit("update:show-outbound-operator-label", value),
-  onCloseConversation: () => emit("close-conversation")
+  onCloseConversation: () => emit("close-conversation"),
+  onTakeConversation: () => emit("take-conversation"),
+  onReleaseConversation: () => emit("release-conversation")
 }));
 
 const bodyBindings = computed(() => ({
@@ -924,6 +972,10 @@ const bodyBindings = computed(() => ({
   requestAudioPreview,
   markImageFailed,
   isMediaActionLoading,
+  resolveMediaState,
+  isMediaFailed,
+  getMediaRetryError,
+  retryMessageMedia,
   openMessageMedia,
   downloadMessageMedia,
   hasVideoPreview,
@@ -1059,6 +1111,23 @@ const footerBindings = computed(() => ({
     </template>
 
     <template #body>
+      <div v-if="messagesError" class="chat-page__history-state chat-page__history-state--error" role="alert">
+        <p>{{ messagesError }}</p>
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="loadingMessages"
+          :disabled="loadingMessages"
+          @click="retryMessagesAction"
+        >
+          Tentar novamente
+        </UButton>
+      </div>
+      <div v-else-if="isMessageHistoryEmpty" class="chat-page__history-state">
+        Nenhuma mensagem nesta conversa.
+      </div>
       <InboxChatBody v-bind="bodyBindings" />
     </template>
 
@@ -1099,6 +1168,29 @@ const footerBindings = computed(() => ({
   flex: 1;
   min-height: 0;
   padding: 8px 4px !important;
+}
+
+.chat-page__history-state {
+  flex: 0 0 auto;
+  color: rgb(var(--muted));
+  font-size: 0.85rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.chat-page__history-state--error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid rgb(var(--error) / 0.35);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--error) / 0.08);
+  color: rgb(var(--error));
+  margin-bottom: 0.45rem;
+}
+
+.chat-page__history-state--error p {
+  margin: 0;
 }
 
 .chat-page__chat-panel-body {

@@ -25,10 +25,31 @@ func registerInstanceRoutes(mux *http.ServeMux, svc *SessionService, middleware 
 	mux.Handle("POST /v1/omnichannel/tenant/whatsapp/instances", wrap(handleCreateInstance(svc)))
 	mux.Handle("PATCH /v1/omnichannel/tenant/whatsapp/instances/{id}", wrap(handleUpdateInstance(svc)))
 	mux.Handle("DELETE /v1/omnichannel/tenant/whatsapp/instances/{id}", wrap(handleDeleteInstance(svc)))
+	mux.Handle("PUT /v1/omnichannel/tenant/whatsapp/limits", wrap(handleUpdateChannelLimit(svc)))
 	mux.Handle("GET /v1/omnichannel/tenant/whatsapp/instances/{id}/capabilities", wrap(handleInstanceCapabilities(svc)))
 	mux.Handle("PUT /v1/omnichannel/tenant/whatsapp/instances/{id}/users", wrap(handleSetInstanceUsers(svc)))
 	mux.Handle("POST /v1/omnichannel/tenant/whatsapp/validate-endpoints", wrap(handleValidateEndpoints(svc)))
 	mux.Handle("POST /v1/omnichannel/tenant/whatsapp/conversations/clear", wrap(handleClearConversations(svc)))
+}
+
+func handleUpdateChannelLimit(svc *SessionService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, caller, ok := scope(w, r)
+		if !ok {
+			return
+		}
+		var in ChannelLimitInput
+		if err := decodeJSONBody(w, r, &in); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
+			return
+		}
+		view, err := svc.UpdateChannelLimit(r.Context(), accountID, caller, in)
+		if err != nil {
+			writeSessionError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, view)
+	}
 }
 
 func handleCreateInstance(svc *SessionService) http.HandlerFunc {

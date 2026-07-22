@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
+import AppToggleSwitch from '~/components/ui/AppToggleSwitch.vue'
 import ConfigAiAgentCard from '~/components/omnichannel/config/ConfigAiAgentCard.vue'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
-import { createAgent, fetchAgents } from '~/domain/omnichannel/config-api'
+import { createAgent, fetchAgents, updateAgent } from '~/domain/omnichannel/config-api'
+import type { AutomationProfile } from '~/domain/omnichannel/automation-api'
 import type { OmniAgent } from '~/domain/omnichannel/config-types'
 
-// Aba do agente de IA (perm omnichannel.agents.manage). Editor + publish/rollback + simulador.
-defineProps<{ canManage: boolean }>()
+const props = defineProps<{ canManage: boolean; profiles?: AutomationProfile[] }>()
+const emit = defineEmits<{ changed: [] }>()
 
 const auth = useAuthStore()
 const ui = useUiStore()
@@ -19,6 +21,7 @@ const api = createApiRequest(runtimeConfig, () => auth.accessToken)
 const agents = ref<OmniAgent[]>([])
 const loading = ref(true)
 const busy = ref(false)
+const togglingId = ref('')
 const newName = ref('')
 
 async function load(): Promise<void> {
@@ -32,6 +35,26 @@ async function load(): Promise<void> {
   }
 }
 
+async function toggleAgent(agent: OmniAgent, enabled: boolean): Promise<void> {
+  if (!props.canManage || togglingId.value) return
+  togglingId.value = agent.id
+  try {
+    await updateAgent(api, agent.id, { enabled })
+    ui.success(enabled ? 'Agente ativado.' : 'Agente desativado.')
+    await load()
+    emit('changed')
+  } catch (error) {
+    ui.error(getApiErrorMessage(error, 'Não foi possível alterar o estado do agente.'))
+  } finally {
+    togglingId.value = ''
+  }
+}
+
+async function onCardChanged(): Promise<void> {
+  await load()
+  emit('changed')
+}
+
 async function create(): Promise<void> {
   const name = newName.value.trim()
   if (!name || busy.value) return
@@ -39,8 +62,9 @@ async function create(): Promise<void> {
   try {
     await createAgent(api, { name, enabled: false })
     newName.value = ''
-    ui.success('Agente criado (desabilitado). Crie e publique uma versão para ativar.')
+    ui.success('Agente criado. Configure chave, modelo e prompt antes de ativar.')
     await load()
+    emit('changed')
   } catch (error) {
     ui.error(getApiErrorMessage(error, 'Não foi possível criar o agente.'))
   } finally {
@@ -54,19 +78,51 @@ onMounted(() => void load())
 <template>
   <div class="cfg-tab">
     <p class="cfg-tab__lead">
-      O agente sugere; o motor de roteamento decide. Edite versões e publique quando validar no
-      simulador. Só a versão publicada vale em runtime.
+      Cada agente mantém seu próprio prompt, modelo, escopo de clientes e chave de API.
     </p>
     <p v-if="loading" class="cfg-tab__loading">Carregando agentes…</p>
 
     <template v-else>
+      <p v-if="agents.length === 0" class="cfg-empty">
+        Nenhum agente cadastrado. Crie o primeiro agente abaixo.
+      </p>
+
+      <details v-for="agent in agents" :key="agent.id" class="settings-collapse">
+        <summary class="settings-collapse__summary">
+          <div class="settings-collapse__title-wrap">
+            <strong class="settings-collapse__title">{{ agent.name }}</strong>
+            <span class="settings-collapse__text">
+              {{ agent.activeVersionId ? 'versão publicada' : 'sem versão publicada' }}
+            </span>
+          </div>
+          <span class="cfg-agent-toggle" @click.stop @keydown.stop>
+            <AppToggleSwitch
+              :model-value="agent.enabled"
+              :disabled="!canManage || togglingId === agent.id"
+              :label="agent.enabled ? 'Ativo' : 'Inativo'"
+              compact
+              @update:model-value="toggleAgent(agent, $event)"
+            />
+          </span>
+          <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
+            expand_more
+          </span>
+        </summary>
+        <div class="settings-collapse__body">
+          <ConfigAiAgentCard
+            :agent="agent"
+            :profiles="profiles || []"
+            :disabled="!canManage"
+            @changed="onCardChanged"
+          />
+        </div>
+      </details>
+
       <details class="settings-collapse">
         <summary class="settings-collapse__summary">
           <div class="settings-collapse__title-wrap">
             <strong class="settings-collapse__title">Adicionar agente</strong>
-            <span class="settings-collapse__text">
-              Novo agente de triagem (nasce desabilitado).
-            </span>
+            <span class="settings-collapse__text">Crie outro perfil de atendimento.</span>
           </div>
           <span class="settings-collapse__meta">novo</span>
           <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
@@ -74,12 +130,16 @@ onMounted(() => void load())
           </span>
         </summary>
         <div class="settings-collapse__body">
-          <label class="cfg-field">
-            <span class="cfg-field__label">Nome do agente *</span>
-            <input v-model="newName" class="cfg-input" type="text" :disabled="!canManage" />
+          <label class="calendar-config__field">
+            <span class="calendar-config__field-label">Nome do agente</span>
+            <input
+              v-model="newName"
+              class="calendar-config__input"
+              type="text"
+              :disabled="!canManage"
+            />
           </label>
-          <div class="cfg-tab__form-foot">
-            <span v-if="!newName.trim()" class="cfg-tab__hint">Informe o nome do agente.</span>
+          <div class="calendar-config__section-actions">
             <AppPanelButton
               variant="primary"
               :disabled="!canManage || busy || !newName.trim()"
@@ -88,26 +148,6 @@ onMounted(() => void load())
               Criar agente
             </AppPanelButton>
           </div>
-        </div>
-      </details>
-
-      <p v-if="agents.length === 0" class="cfg-empty">Nenhum agente cadastrado ainda.</p>
-
-      <details v-for="agent in agents" :key="agent.id" class="settings-collapse">
-        <summary class="settings-collapse__summary">
-          <div class="settings-collapse__title-wrap">
-            <strong class="settings-collapse__title">{{ agent.name }}</strong>
-            <span class="settings-collapse__text">{{ agent.slug }}</span>
-          </div>
-          <span class="settings-collapse__meta">
-            {{ agent.enabled ? 'habilitado' : 'desabilitado' }}
-          </span>
-          <span class="material-icons-round settings-collapse__icon" aria-hidden="true">
-            expand_more
-          </span>
-        </summary>
-        <div class="settings-collapse__body">
-          <ConfigAiAgentCard :agent="agent" :disabled="!canManage" @changed="load" />
         </div>
       </details>
     </template>
@@ -129,50 +169,9 @@ onMounted(() => void load())
   line-height: 1.4;
 }
 
-.cfg-field {
-  display: grid;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.cfg-field__label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: rgb(var(--muted));
-}
-
-.cfg-input {
-  min-height: 36px;
-  padding: 0 0.75rem;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface));
-  color: rgb(var(--text));
-  font-size: 0.82rem;
-}
-
-.cfg-input:focus {
-  outline: none;
-  border-color: rgb(var(--primary) / 0.6);
-}
-
-.cfg-input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.cfg-tab__form-foot {
-  display: flex;
+.cfg-agent-toggle {
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-.cfg-tab__hint {
-  color: rgb(var(--muted));
-  font-size: 0.76rem;
+  margin-left: auto;
 }
 </style>

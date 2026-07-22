@@ -4,6 +4,27 @@ Decisão vigente desde 2026-07-20. Este documento organiza a evolução posterio
 piloto F0–F14 de `PLANO_ATENDIMENTO.md`. O plano antigo continua como histórico do port;
 este é o roteiro executivo para tornar o atendimento funcional, multicanal e operável.
 
+As especificações executáveis, contratos para agentes, matriz de dependências, migrations
+propostas, APIs, componentes, testes, proibições e critérios de aceite ficam em
+[`docs/omnichannel/evolucao/README.md`](evolucao/README.md). O plano continua sendo a visão
+executiva; um agente só pode implementar uma fase quando receber também o contrato comum e um
+pacote atômico daquela pasta.
+
+## Prioridade vigente — MVP de automação WhatsApp (2026-07-21)
+
+Antes de retomar E9/E10, executar e validar o recorte
+[`MVP_AUTOMACAO_ATENDIMENTO.md`](MVP_AUTOMACAO_ATENDIMENTO.md). O MVP não substitui os
+contratos já implementados; organiza um caminho curto para provar em tela e em um número real:
+
+1. perfil cliente↔número↔agente e policy configurável;
+2. iniciar, sugerir encerramento e transferir com decisão final no Go;
+3. página `/omnichannel/automacao` sem resposta pelo painel;
+4. cards de intervenção;
+5. piloto Evolution e, depois, cutover controlado para WhatsApp Cloud.
+
+Durante esse recorte, não iniciar E9/E10, Instagram ou automação de comentários. Não tocar em
+WAHA, workflow WhatsApp do módulo Automation, Calendar n8n ou workflows de outros módulos.
+
 ## 1. Objetivo final
 
 Entregar um inbox único de WhatsApp e Instagram no qual:
@@ -65,7 +86,8 @@ PostgreSQL do produto e nunca envia para Evolution ou Meta.
 - debounce, agrupamento, transcrição, visão e tools ainda não estão no cérebro novo;
 - UI de CRM ainda não expõe identidades, origem, lifecycle, tags, notas e histórico;
 - landing pages ainda não enviam atribuição completa ao CRM;
-- WhatsApp Cloud e Instagram ainda não possuem adapters reais.
+- adapters Meta WhatsApp Cloud e Instagram foram implementados localmente; permanecem pendentes
+  apenas smoke/cutover controlados com credenciais reais e ativação gradual.
 
 ### Isolamento entre módulos n8n
 
@@ -100,6 +122,11 @@ que os contratos de contato e atribuição estiverem congelados.
 
 ### E0 — ownership e fronteira dos workflows
 
+Spec executável: [`E0_OWNERSHIP_WORKFLOWS.md`](evolucao/E0_OWNERSHIP_WORKFLOWS.md).
+
+**Execução:** `DONE` em 2026-07-20, com 89 testes offline e hashes dos workflows externos
+preservados. Nenhum runtime/deploy foi executado.
+
 Entregas:
 
 - registrar ownership explícito de cada workflow no AGENT do n8n;
@@ -118,6 +145,13 @@ Aceite:
 
 ### E1 — fechar o piloto WhatsApp funcional
 
+Spec executável: [`E1_PILOTO_WHATSAPP.md`](evolucao/E1_PILOTO_WHATSAPP.md).
+
+**Execução:** código e validação local concluídos em 2026-07-20. O aceite final permanece
+pendente do smoke controlado de quote outbound e mídia inbound com a Evolution saudável. Ponto de
+retomada: [`E1_PAUSA_2026-07-20.md`](evolucao/E1_PAUSA_2026-07-20.md). A preparação E2 já está em
+execução local; o rollout externo continua bloqueado até o gateway seguro e o smoke controlado.
+
 Entregas:
 
 - baixar/persistir mídia inbound imediatamente e servir preview autenticado;
@@ -135,6 +169,13 @@ Aceite:
 - assumir manualmente bloqueia a IA imediatamente.
 
 ### E2 — cérebro n8n v2
+
+Spec executável: [`E2_CEREBRO_N8N_V2.md`](evolucao/E2_CEREBRO_N8N_V2.md).
+
+**Execução atual:** `IN_PROGRESS`. Contrato, migrations `0216`, dispatch durável/outbox, worker,
+policy strict (incluindo limite de turnos/confiança e fallback de silêncio) e parâmetros do painel estão implementados e testados localmente. Permanecem
+pendentes a importação/ativação controlada do workflow, a timeline/badge de inspeção e o QA/shadow.
+O executor n8n segue opt-in no boot: sem `OMNI_N8N_INTERNAL_TOKEN` ele usa o caminho nativo como rollback seguro; com o token e o webhook configurados, ativa o gateway cifrado `brain.result.v2`.
 
 Entregas:
 
@@ -159,6 +200,14 @@ Aceite:
 
 ### E3 — áudio, visão e documentos
 
+Spec executável: [`E3_MULTIMODAL.md`](evolucao/E3_MULTIMODAL.md).
+
+**Execução atual:** `IN_PROGRESS`. Contratos/fixtures, `media_config` versionado e migration
+`0219_messaging_media_analyses` foram entregues e aplicados no Postgres local; a persistência
+idempotente, consulta autorizada e stream interno `media-stream.v1` também estão codificados.
+O policy/job que agenda análises, branches n8n, render no inbox e QA Evolution continuam
+pendentes; nenhuma chamada multimodal é ativada por esta fatia.
+
 Entregas:
 
 - normalização de anexos no Go com MIME/tamanho/hash/tenant;
@@ -175,6 +224,14 @@ Aceite:
 - chave, URL privada e base64 não aparecem em execution data ou export.
 
 ### E4 — CRM e atribuição 360°
+
+Spec executável: [`E4_CRM_ATRIBUICAO.md`](evolucao/E4_CRM_ATRIBUICAO.md).
+
+**Execução atual:** `IN_PROGRESS`. DB-02, API/BE-03/04, merge/undo BE-05, captura LP-06 e FE-07
+(lista cursorizada, filtros, drawer 360°, edição inline, notas e merge assistido) estão implementados
+localmente; migrations `0217/0218` foram aplicadas no Postgres do Compose. Ficam para a sequência
+segmentos, export/consentimento, confirmação CRM/ERP, ingestão de identidade inbound e QA-08.
+Nenhuma rota pública foi publicada na VPS.
 
 Entregas:
 
@@ -196,6 +253,8 @@ Aceite:
 
 ### E5 — handoff e operação humana
 
+Spec executável: [`E5_HANDOFF_OPERACIONAL.md`](evolucao/E5_HANDOFF_OPERACIONAL.md).
+
 Entregas:
 
 - políticas configuráveis por setor, horário, confiança, intenção, cliente e SLA;
@@ -213,6 +272,22 @@ Aceite:
 
 ### E6 — tools, automações e conhecimento
 
+Spec executável: [`E6_TOOLS_CONHECIMENTO.md`](evolucao/E6_TOOLS_CONHECIMENTO.md).
+
+**Fechamento local 2026-07-21:** `DONE` para a plataforma de tools e conhecimento. Aprovações e
+evidências mascaradas foram integradas no Go e no painel, com `0225_messaging_ai_tool_approvals.sql`,
+rotas tenant-scoped e retry assinado. A validação local passou; E7–E10 continuam pausadas e não
+foram iniciadas.
+
+Adapters corporativos sem contrato estável não foram inventados: bindings sem handler Go falham
+fechado e auditado. Importação/ativação do workflow no runtime n8n, smoke Evolution e deploy não
+fazem parte deste fechamento.
+
+**Execução:** `DONE (local)`. Inventário, migrations `0222`–`0225`, CRUD de bindings/configuração,
+gateway interno idempotente/auditado, ingestão manual com busca FTS/evidências, loop n8n assinado,
+aprovações humanas e a aba de configuração de tools/conhecimento foram implementados e validados
+localmente.
+
 Entregas:
 
 - registry Go de tools com schema, permissão, timeout, rate limit e auditoria;
@@ -229,6 +304,12 @@ Aceite:
 - falha de tool não produz informação inventada e pode transferir para humano.
 
 ### E7 — WhatsApp Cloud API oficial
+
+Spec executável: [`E7_WHATSAPP_CLOUD_API.md`](evolucao/E7_WHATSAPP_CLOUD_API.md).
+
+**Execução:** `CODE-COMPLETE` local em 2026-07-21. Migration `0226`, adapter Meta, HMAC/challenge,
+templates, janela de 24h, policy de template/outbox e configuração segura por número estão
+implementados e testados. Falta somente o smoke/cutover com credenciais Meta reais.
 
 Entregas:
 
@@ -249,6 +330,13 @@ Aceite:
 
 ### E8 — Instagram DM e comentários
 
+Spec executável: [`E8_INSTAGRAM.md`](evolucao/E8_INSTAGRAM.md).
+
+**Execução:** `CODE-COMPLETE` local em 2026-07-21. Migration `0227`, adapter Instagram, DM/comentário,
+CRM/inbox único, moderação, outbox de ações, rotas account-scoped, painel e workflow owner-scoped
+foram implementados. Comentário/menção nunca publica automaticamente: a IA só grava rascunho e a
+aprovação humana dispara o job Go. Falta smoke Meta controlado e validação de capabilities/App Review.
+
 Entregas:
 
 - adapter Meta Instagram e webhooks validados no Go;
@@ -267,6 +355,8 @@ Aceite:
 
 ### E9 — segurança, LGPD, observabilidade e escala
 
+Spec executável: [`E9_HARDENING_ESCALA.md`](evolucao/E9_HARDENING_ESCALA.md).
+
 Entregas:
 
 - métricas por etapa: webhook, dedupe, job, n8n, modelo, tool, routing e outbox;
@@ -284,6 +374,8 @@ Aceite:
 - RPO/RTO, SLO e alertas estão documentados e provados.
 
 ### E10 — rollout e operação
+
+Spec executável: [`E10_ROLLOUT.md`](evolucao/E10_ROLLOUT.md).
 
 Ondas:
 
@@ -322,7 +414,7 @@ Gates de promoção:
 
 ### Depois — P2
 
-1. Instagram DM;
+1. smoke e cutover controlado dos adapters Meta já implementados;
 2. comentários com aprovação e progressiva automação;
 3. RAG avançado, tools de escrita e follow-ups proativos;
 4. remover os adapters de costura e demais legados internos do próprio omnichannel.
@@ -336,5 +428,7 @@ Ao fechar uma fase, atualizar juntos:
 - `back/internal/modules/omnichannel/AGENT.md` e o AGENT do front quando aplicável;
 - roadmap do painel;
 - `docs/LEGADO.md` quando um vestígio for removido ou descoberto.
+- a spec `docs/omnichannel/evolucao/E<n>_*.md` e sua matriz de dependências, quando o contrato ou
+  a ordem tiverem mudado.
 
 Código sem prova e documentação sincronizada não encerra a fase.

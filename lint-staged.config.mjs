@@ -7,9 +7,8 @@
 // Wrappers:
 //   - scripts/dev/lint-web-staged.sh    → eslint --fix com cwd em web/
 //   - scripts/dev/format-web-staged.sh  → prettier --write com cwd em web/
-//   - scripts/dev/lint-go-staged.sh     → golangci-lint em escopo de PACOTE
-//                                          (não arquivo isolado, --new-from-rev=HEAD
-//                                          para só reportar issues novas)
+// O golangci-lint roda uma única vez no pre-commit, depois deste arquivo. Assim,
+// o chunking interno do lint-staged não abre vários runners concorrentes.
 //
 // Por que os wrappers em vez de bash -c inline?
 //   - lint-staged passa paths absolutos do Windows ("C:/...") como args.
@@ -28,8 +27,8 @@ export default {
   // Web — apenas Prettier (configs, docs, estilos)
   'web/**/*.{json,md,css,scss}': ['scripts/dev/format-web-staged.sh'],
 
-  // Back — gofmt file-level (seguro) + golangci-lint em escopo de pacote (via wrapper)
-  'back/**/*.go': ['gofmt -w', 'scripts/dev/lint-go-staged.sh'],
+  // Back — gofmt file-level. O lint de pacote roda uma vez no pre-commit.
+  'back/**/*.go': ['gofmt -w'],
 
   // Migrations — DDL deve usar schema qualificado (ex: queue.consultants, não consultants)
   'back/internal/platform/database/migrations/*.sql': ['scripts/dev/lint-migrations-staged.sh'],

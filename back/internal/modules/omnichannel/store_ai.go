@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -30,12 +31,16 @@ func scanAgent(row rowScanner) (agentRow, error) {
 }
 
 const versionCols = `id::text, agent_id::text, version, status, provider, model,
-	temperature::float8, layers, output_schema, schema_version, published_at, published_by, created_at`
+	temperature::float8, layers, output_schema, media_config, schema_version, debounce_ms, max_context_messages,
+	max_ai_turns, min_confidence::float8, handoff_on_error, handoff_on_limit, workflow_contract_version,
+	published_at, published_by, created_at`
 
 func scanVersion(row rowScanner) (versionRow, error) {
 	var v versionRow
 	err := row.Scan(&v.ID, &v.AgentID, &v.Version, &v.Status, &v.Provider, &v.Model,
-		&v.Temperature, &v.Layers, &v.OutputSchema, &v.SchemaVersion,
+		&v.Temperature, &v.Layers, &v.OutputSchema, &v.MediaConfig, &v.SchemaVersion,
+		&v.DebounceMS, &v.MaxContextMessages, &v.MaxAITurns, &v.MinConfidence,
+		&v.HandoffOnError, &v.HandoffOnLimit, &v.WorkflowContract,
 		&v.PublishedAt, &v.PublishedBy, &v.CreatedAt)
 	return v, err
 }
@@ -112,16 +117,152 @@ func (s *Store) UpdateAgent(ctx context.Context, accountID, id string, p agentPa
 func (s *Store) CreateVersion(ctx context.Context, accountID, agentID string, in AIVersionInput, schema, layers json.RawMessage) (versionRow, error) {
 	query := `insert into messaging.ai_agent_versions
 		(account_id, agent_id, version, status, provider, model, temperature,
-		 layers, output_schema, schema_version)
+		 layers, output_schema, media_config, schema_version, debounce_ms, max_context_messages, max_ai_turns,
+		 min_confidence, handoff_on_error, handoff_on_limit, workflow_contract_version)
 		select $1::uuid, a.id, coalesce(max(v.version), 0) + 1, 'draft', $3, $4, $5,
-		       $6::jsonb, $7::jsonb, $8
+		       $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16
 		from messaging.ai_agents a
 		left join messaging.ai_agent_versions v on v.agent_id = a.id
 		where a.account_id = $1::uuid and a.id = $2::uuid
 		group by a.id
-		returning ` + versionCols
+	returning ` + versionCols
 	return scanVersion(s.pool.QueryRow(ctx, query, accountID, agentID,
-		in.Provider, in.Model, in.Temperature, layers, schema, in.SchemaVersion))
+		in.Provider, in.Model, in.Temperature, layers, schema, in.MediaConfig, in.SchemaVersion,
+		in.DebounceMS, in.MaxContextMessages, in.MaxAITurns, *in.MinConfidence,
+		boolValue(in.HandoffOnError, true), boolValue(in.HandoffOnLimit, true), in.WorkflowContract))
+}
+
+// SavePublishedVersion salva a configuracao que passa a valer no atendimento. O lock do agente
+// serializa o numero da versao e o ponteiro ativo; configuracao identica e idempotente. Um draft
+// identico e promovido, e drafts antigos sao arquivados no mesmo commit.
+func (s *Store) SavePublishedVersion(ctx context.Context, accountID, agentID string, in AIVersionInput,
+	schema, layers json.RawMessage, publishedBy string) (versionRow, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return versionRow{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var activeVersionID *string
+	if err := tx.QueryRow(ctx, `select active_version_id::text from messaging.ai_agents
+		where account_id=$1::uuid and id=$2::uuid for update`, accountID, agentID).Scan(&activeVersionID); err != nil {
+		return versionRow{}, err
+	}
+
+	var active *versionRow
+	if activeVersionID != nil {
+		row, rowErr := scanVersion(tx.QueryRow(ctx, `select `+versionCols+` from messaging.ai_agent_versions
+			where account_id=$1::uuid and agent_id=$2::uuid and id=$3::uuid`, accountID, agentID, *activeVersionID))
+		if rowErr != nil {
+			return versionRow{}, rowErr
+		}
+		active = &row
+	}
+
+	drafts, err := listDraftVersionsTx(ctx, tx, accountID, agentID)
+	if err != nil {
+		return versionRow{}, err
+	}
+	if active != nil && versionMatchesInput(*active, in, schema, layers) {
+		if _, err := tx.Exec(ctx, `update messaging.ai_agent_versions set status='archived'
+			where account_id=$1::uuid and agent_id=$2::uuid and status='draft'`, accountID, agentID); err != nil {
+			return versionRow{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return versionRow{}, err
+		}
+		return *active, nil
+	}
+
+	var saved versionRow
+	var matchingDraft *versionRow
+	for index := range drafts {
+		if versionMatchesInput(drafts[index], in, schema, layers) {
+			matchingDraft = &drafts[index]
+			break
+		}
+	}
+	if matchingDraft != nil {
+		if _, err := tx.Exec(ctx, `update messaging.ai_agent_versions set status='archived'
+			where account_id=$1::uuid and agent_id=$2::uuid and status='draft' and id<>$3::uuid`,
+			accountID, agentID, matchingDraft.ID); err != nil {
+			return versionRow{}, err
+		}
+		saved, err = scanVersion(tx.QueryRow(ctx, `update messaging.ai_agent_versions set
+			status='published', published_at=now(), published_by=$4
+			where account_id=$1::uuid and agent_id=$2::uuid and id=$3::uuid
+			returning `+versionCols, accountID, agentID, matchingDraft.ID, publishedBy))
+	} else {
+		if _, err := tx.Exec(ctx, `update messaging.ai_agent_versions set status='archived'
+			where account_id=$1::uuid and agent_id=$2::uuid and status='draft'`, accountID, agentID); err != nil {
+			return versionRow{}, err
+		}
+		saved, err = scanVersion(tx.QueryRow(ctx, `insert into messaging.ai_agent_versions
+			(account_id,agent_id,version,status,provider,model,temperature,layers,output_schema,
+			 media_config,schema_version,debounce_ms,max_context_messages,max_ai_turns,min_confidence,
+			 handoff_on_error,handoff_on_limit,workflow_contract_version,published_at,published_by)
+			select $1::uuid,$2::uuid,coalesce(max(version),0)+1,'published',$3,$4,$5,$6::jsonb,$7::jsonb,
+			       $8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17
+			from messaging.ai_agent_versions where account_id=$1::uuid and agent_id=$2::uuid
+			returning `+versionCols, accountID, agentID, in.Provider, in.Model, in.Temperature,
+			layers, schema, in.MediaConfig, in.SchemaVersion, in.DebounceMS, in.MaxContextMessages,
+			in.MaxAITurns, *in.MinConfidence, boolValue(in.HandoffOnError, true),
+			boolValue(in.HandoffOnLimit, true), in.WorkflowContract, publishedBy))
+	}
+	if err != nil {
+		return versionRow{}, err
+	}
+	if _, err := tx.Exec(ctx, `update messaging.ai_agents set active_version_id=$3::uuid, updated_at=now()
+		where account_id=$1::uuid and id=$2::uuid`, accountID, agentID, saved.ID); err != nil {
+		return versionRow{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return versionRow{}, err
+	}
+	return saved, nil
+}
+
+func listDraftVersionsTx(ctx context.Context, tx pgx.Tx, accountID, agentID string) ([]versionRow, error) {
+	rows, err := tx.Query(ctx, `select `+versionCols+` from messaging.ai_agent_versions
+		where account_id=$1::uuid and agent_id=$2::uuid and status='draft' order by version desc`,
+		accountID, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]versionRow, 0)
+	for rows.Next() {
+		row, scanErr := scanVersion(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
+func versionMatchesInput(version versionRow, in AIVersionInput, schema, layers json.RawMessage) bool {
+	return version.Provider == in.Provider && version.Model == in.Model &&
+		version.Temperature == in.Temperature && jsonValuesEqual(version.Layers, layers) &&
+		jsonValuesEqual(version.OutputSchema, schema) && jsonValuesEqual(version.MediaConfig, in.MediaConfig) &&
+		version.SchemaVersion == in.SchemaVersion && version.DebounceMS == in.DebounceMS &&
+		version.MaxContextMessages == in.MaxContextMessages && version.MaxAITurns == in.MaxAITurns &&
+		version.MinConfidence == *in.MinConfidence && version.HandoffOnError == boolValue(in.HandoffOnError, true) &&
+		version.HandoffOnLimit == boolValue(in.HandoffOnLimit, true) && version.WorkflowContract == in.WorkflowContract
+}
+
+func jsonValuesEqual(left, right json.RawMessage) bool {
+	var leftValue, rightValue interface{}
+	if json.Unmarshal(left, &leftValue) != nil || json.Unmarshal(right, &rightValue) != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
+func boolValue(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
 }
 
 // ListVersions devolve as versoes do agente, mais nova primeiro.

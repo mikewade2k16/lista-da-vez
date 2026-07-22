@@ -42,6 +42,9 @@ func (e *apiError) Error() string {
 	return fmt.Sprintf("evolution: resposta http %d", e.StatusCode)
 }
 
+// HTTPStatusCode permite classificacao de retry sem expor o body da Evolution.
+func (e *apiError) HTTPStatusCode() int { return e.StatusCode }
+
 // client fala com UMA Evolution API (baseURL + apiKey resolvidos por instancia). Stateless:
 // criado por chamada a partir das Credentials; compartilha o *http.Client (timeout 30s) do
 // adapter singleton. A apiKey NUNCA vai a log nem volta ao cliente.
@@ -157,9 +160,10 @@ func (c *client) setWebhook(ctx context.Context, instanceName, webhookURL string
 // ============================================================================
 
 // sendText envia texto: POST /message/sendText/{i}.
-func (c *client) sendText(ctx context.Context, instanceName, number, text string) (sendResponse, error) {
+func (c *client) sendText(ctx context.Context, instanceName, number, message string, quoted *quotedSend) (sendResponse, error) {
 	var out sendResponse
-	body := map[string]any{"number": number, "text": text}
+	body := map[string]any{"number": number, "text": message}
+	applyQuote(body, quoted)
 	err := c.do(ctx, http.MethodPost, "/message/sendText/"+urlSegment(instanceName), body, &out, maxResponseBytes)
 	return out, err
 }
@@ -182,6 +186,7 @@ func (c *client) sendMedia(ctx context.Context, instanceName string, m mediaSend
 	if m.Caption != "" {
 		body["caption"] = m.Caption
 	}
+	applyQuote(body, m.Quoted)
 	err := c.do(ctx, http.MethodPost, "/message/sendMedia/"+urlSegment(instanceName), body, &out, maxResponseBytes)
 	return out, err
 }
@@ -297,6 +302,22 @@ type mediaSend struct {
 	MimeType  string
 	FileName  string
 	Caption   string
+	Quoted    *quotedSend
+}
+
+type quotedSend struct {
+	ExternalMessageID string
+	Content           string
+}
+
+func applyQuote(body map[string]any, quoted *quotedSend) {
+	if quoted == nil || strings.TrimSpace(quoted.ExternalMessageID) == "" {
+		return
+	}
+	body["quoted"] = map[string]any{
+		"key":     map[string]any{"id": strings.TrimSpace(quoted.ExternalMessageID)},
+		"message": map[string]any{"conversation": strings.TrimSpace(quoted.Content)},
+	}
 }
 
 // reactionSend e o input tipado do sendReaction (KEY da mensagem alvo + emoji).

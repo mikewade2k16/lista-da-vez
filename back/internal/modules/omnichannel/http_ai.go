@@ -32,9 +32,14 @@ func RegisterAIRoutes(mux *http.ServeMux, svc *AIService, middleware *auth.Middl
 	mux.Handle("POST /v1/omnichannel/agents", wrap(handleCreateAgent(svc)))
 	mux.Handle("GET /v1/omnichannel/agents/{id}", wrap(handleGetAgent(svc)))
 	mux.Handle("PATCH /v1/omnichannel/agents/{id}", wrap(handleUpdateAgent(svc)))
+	mux.Handle("GET /v1/omnichannel/agents/{id}/models", wrap(handleListAgentModels(svc)))
+	mux.Handle("GET /v1/omnichannel/agents/{id}/provider-keys", wrap(handleListProviderKeys(svc)))
+	mux.Handle("PUT /v1/omnichannel/agents/{id}/provider-keys/{provider}", wrap(handlePutProviderKey(svc)))
+	mux.Handle("DELETE /v1/omnichannel/agents/{id}/provider-keys/{provider}", wrap(handleDeleteProviderKey(svc)))
 
 	mux.Handle("GET /v1/omnichannel/agents/{id}/versions", wrap(handleListVersions(svc)))
 	mux.Handle("POST /v1/omnichannel/agents/{id}/versions", wrap(handleCreateVersion(svc)))
+	mux.Handle("PUT /v1/omnichannel/agents/{id}/configuration", wrap(handleSaveConfiguration(svc)))
 	mux.Handle("POST /v1/omnichannel/agents/{id}/versions/{v}/publish", wrap(handlePublishVersion(svc)))
 	mux.Handle("POST /v1/omnichannel/agents/{id}/rollback", wrap(handleRollback(svc)))
 
@@ -43,8 +48,72 @@ func RegisterAIRoutes(mux *http.ServeMux, svc *AIService, middleware *auth.Middl
 	mux.Handle("PATCH /v1/omnichannel/agents/{id}/collect-fields/{fieldId}", wrap(handleUpdateCollectField(svc)))
 	mux.Handle("DELETE /v1/omnichannel/agents/{id}/collect-fields/{fieldId}", wrap(handleDeleteCollectField(svc)))
 
+	mux.Handle("GET /v1/omnichannel/agents/{id}/tool-bindings", wrap(handleListAIToolBindings(svc)))
+	mux.Handle("POST /v1/omnichannel/agents/{id}/tool-bindings", wrap(handleCreateAIToolBinding(svc)))
+	mux.Handle("PATCH /v1/omnichannel/agents/{id}/tool-bindings/{bindingId}", wrap(handleUpdateAIToolBinding(svc)))
+	mux.Handle("DELETE /v1/omnichannel/agents/{id}/tool-bindings/{bindingId}", wrap(handleDeleteAIToolBinding(svc)))
+
 	mux.Handle("POST /v1/omnichannel/agents/{id}/simulate", wrap(handleSimulate(svc)))
 	mux.Handle("GET /v1/omnichannel/agents/{id}/runs", wrap(handleListRuns(svc)))
+	mux.Handle("GET /v1/omnichannel/agents/{id}/tool-runs", wrap(handleListAIToolRuns(svc)))
+	mux.Handle("GET /v1/omnichannel/agents/{id}/tool-approvals", wrap(handleListAIToolApprovals(svc)))
+	mux.Handle("POST /v1/omnichannel/agents/{id}/tool-approvals/{approvalId}/approve", wrap(handleApproveAIToolApproval(svc)))
+	mux.Handle("POST /v1/omnichannel/agents/{id}/tool-approvals/{approvalId}/reject", wrap(handleRejectAIToolApproval(svc)))
+}
+
+func handleListProviderKeys(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.ListProviderKeys(r.Context(), p.AccountID, p, r.PathValue("id"))
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handlePutProviderKey(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var in AIProviderKeyInput
+		if err := decodeJSONBody(w, r, &in); err != nil || strings.TrimSpace(in.APIKey) == "" {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.PutProviderKey(r.Context(), p.AccountID, p, r.PathValue("id"), r.PathValue("provider"), in.APIKey)
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleDeleteProviderKey(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.PutProviderKey(r.Context(), p.AccountID, p, r.PathValue("id"), r.PathValue("provider"), "")
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleListAgentModels(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		models, err := svc.ListAgentModels(
+			r.Context(),
+			p.AccountID,
+			p,
+			r.PathValue("id"),
+			r.URL.Query().Get("provider"),
+		)
+		writeAIResult(w, r, http.StatusOK, map[string]any{"models": models}, err)
+	}
 }
 
 // ============================================================================
@@ -133,6 +202,22 @@ func handleCreateVersion(svc *AIService) http.HandlerFunc {
 		}
 		out, err := svc.CreateVersion(r.Context(), p.AccountID, p, r.PathValue("id"), in)
 		writeAIResult(w, r, http.StatusCreated, out, err)
+	}
+}
+
+func handleSaveConfiguration(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var in AIVersionInput
+		if err := decodeJSONBody(w, r, &in); err != nil {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.SaveConfiguration(r.Context(), p.AccountID, p, r.PathValue("id"), in)
+		writeAIResult(w, r, http.StatusOK, out, err)
 	}
 }
 
@@ -231,6 +316,67 @@ func handleDeleteCollectField(svc *AIService) http.HandlerFunc {
 }
 
 // ============================================================================
+// Vinculos de tools autorizadas
+// ============================================================================
+
+func handleListAIToolBindings(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.ListAIToolBindings(r.Context(), p.AccountID, p, r.PathValue("id"))
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleCreateAIToolBinding(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var in AIToolBindingInput
+		if err := decodeJSONBody(w, r, &in); err != nil {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.CreateAIToolBinding(r.Context(), p.AccountID, p, r.PathValue("id"), in)
+		writeAIResult(w, r, http.StatusCreated, out, err)
+	}
+}
+
+func handleUpdateAIToolBinding(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var patch AIToolBindingPatch
+		if err := decodeJSONBody(w, r, &patch); err != nil {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.UpdateAIToolBinding(r.Context(), p.AccountID, p, r.PathValue("id"), r.PathValue("bindingId"), patch)
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleDeleteAIToolBinding(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		if err := svc.DeleteAIToolBinding(r.Context(), p.AccountID, p, r.PathValue("id"), r.PathValue("bindingId")); err != nil {
+			writeAIError(w, r, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// ============================================================================
 // Simulate e runs
 // ============================================================================
 
@@ -263,6 +409,54 @@ func handleListRuns(svc *AIService) http.HandlerFunc {
 	}
 }
 
+func handleListAIToolRuns(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		q := r.URL.Query()
+		out, err := svc.ListAIToolRuns(r.Context(), p.AccountID, p, r.PathValue("id"),
+			q.Get("status"), strings.TrimSpace(q.Get("beforeId")), parseLimit(q.Get("limit")))
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleListAIToolApprovals(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		q := r.URL.Query()
+		out, err := svc.ListAIToolApprovals(r.Context(), p.AccountID, p, r.PathValue("id"),
+			strings.TrimSpace(q.Get("beforeId")), parseLimit(q.Get("limit")))
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleApproveAIToolApproval(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.DecideAIToolApproval(r.Context(), p.AccountID, p, r.PathValue("id"), r.PathValue("approvalId"), true, "")
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleRejectAIToolApproval(svc *AIService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.DecideAIToolApproval(r.Context(), p.AccountID, p, r.PathValue("id"), r.PathValue("approvalId"), false, "")
+		writeAIResult(w, r, http.StatusOK, out, err)
+	}
+}
+
 // ============================================================================
 // Mapeamento de erro
 // ============================================================================
@@ -283,6 +477,15 @@ func writeAIError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, ErrAIProviderNotConfigured):
 		httpapi.WriteError(w, r, http.StatusConflict, "ai_provider_not_configured",
 			"Configure o provider, o modelo e a chave do agente antes de simular.")
+	case errors.Is(err, ErrAIProviderKeyMissing):
+		httpapi.WriteError(w, r, http.StatusConflict, "ai_key_missing",
+			"Salve a chave da API deste agente para listar os modelos disponíveis.")
+	case errors.Is(err, ErrAIProviderUnsupported):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_provider",
+			"Selecione um provedor de IA válido.")
+	case errors.Is(err, ErrAIModelsUnavailable):
+		httpapi.WriteError(w, r, http.StatusBadGateway, "models_unavailable",
+			"Não foi possível listar os modelos. Verifique a chave e tente novamente.")
 	case errors.Is(err, ErrVersionImmutable):
 		httpapi.WriteError(w, r, http.StatusConflict, "version_immutable",
 			"Versao publicada e imutavel. Crie uma nova versao para editar.")

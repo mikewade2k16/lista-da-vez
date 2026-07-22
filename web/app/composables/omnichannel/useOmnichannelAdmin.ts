@@ -29,6 +29,8 @@ import { useOmnichannelAdminClientOps } from "~/composables/omnichannel/useOmnic
 import { useOmnichannelAdminOperationalOps } from "~/composables/omnichannel/useOmnichannelAdminOperationalOps";
 import { useOmnichannelAdminQrPolling } from "~/composables/omnichannel/useOmnichannelAdminQrPolling";
 import { useOmnichannelAdminTenantOps } from "~/composables/omnichannel/useOmnichannelAdminTenantOps";
+import { useAdminSession } from "~/composables/useAdminSession";
+import { useApi } from "~/composables/useApi";
 
 export function useOmnichannelAdmin() {
   const { user, coreUser, legacyRole, tenantSlug, syncSessionFromToken } = useAdminSession();

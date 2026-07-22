@@ -1,8 +1,11 @@
 package calendar
 
 import (
+	"errors"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/httpapi"
@@ -33,6 +36,14 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 			writeNoAccount(w, r)
 			return
 		}
+		// Uploads grandes nao podem herdar os deadlines globais da API (15s de
+		// leitura / 30s de escrita). O tamanho continua limitado por MaxBytesReader;
+		// somente esta rota pode levar o tempo necessario da conexao do usuario.
+		if err := clearMediaUploadDeadlines(w); err != nil {
+			httpapi.WriteError(w, r, http.StatusServiceUnavailable, "upload_unavailable",
+				"O servidor nao conseguiu preparar este upload. Tente novamente.")
+			return
+		}
 		// Teto do corpo = maior anexo permitido (video) + folga para headers do form.
 		limits, err := svc.GetMediaLimits(r.Context())
 		if err != nil {
@@ -41,19 +52,24 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limits.VideoMaxBytes+(1<<20))
 		if err := r.ParseMultipartForm(multipartMemory); err != nil { //nolint:gosec // G120: corpo ja limitado pelo MaxBytesReader acima
-			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Upload invalido.")
+			writeMediaUploadReadError(w, r, err)
 			return
 		}
+		defer func() {
+			if r.MultipartForm != nil {
+				_ = r.MultipartForm.RemoveAll()
+			}
+		}()
 		file, header, err := r.FormFile("file")
 		if err != nil {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Arquivo ausente.")
 			return
 		}
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 
 		content, err := io.ReadAll(io.LimitReader(file, limits.VideoMaxBytes+1))
 		if err != nil {
-			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media", "Falha ao ler o arquivo.")
+			writeMediaUploadReadError(w, r, err)
 			return
 		}
 		item, err := svc.SaveMedia(r.Context(), accountID, header.Filename, header.Header.Get("Content-Type"), content)
@@ -63,6 +79,36 @@ func handleUploadMedia(svc *Service) http.HandlerFunc {
 		}
 		httpapi.WriteJSON(w, http.StatusCreated, item)
 	}
+}
+
+// clearMediaUploadDeadlines remove os prazos globais apenas do upload de midia.
+// ReadHeaderTimeout continua protegendo o recebimento dos headers e MaxBytesReader
+// limita o corpo; as demais rotas preservam os deadlines padrao do servidor.
+func clearMediaUploadDeadlines(w http.ResponseWriter) error {
+	controller := http.NewResponseController(w)
+	if err := controller.SetReadDeadline(time.Time{}); err != nil {
+		return err
+	}
+	return controller.SetWriteDeadline(time.Time{})
+}
+
+// writeMediaUploadReadError traduz tamanho, timeout e multipart invalido em
+// respostas distintas para o frontend explicar a causa real ao usuario.
+func writeMediaUploadReadError(w http.ResponseWriter, r *http.Request, err error) {
+	var maxErr *http.MaxBytesError
+	if errors.As(err, &maxErr) || strings.Contains(err.Error(), "request body too large") {
+		httpapi.WriteError(w, r, http.StatusRequestEntityTooLarge, "media_too_large",
+			"Arquivo acima do limite permitido pelo servidor.")
+		return
+	}
+	var timeoutErr interface{ Timeout() bool }
+	if errors.As(err, &timeoutErr) && timeoutErr.Timeout() {
+		httpapi.WriteError(w, r, http.StatusRequestTimeout, "upload_timeout",
+			"A conexao demorou demais ou parou de enviar dados.")
+		return
+	}
+	httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_media",
+		"O arquivo nao chegou completo ou o upload esta invalido.")
 }
 
 func handleGetMediaLimits(svc *Service) http.HandlerFunc {

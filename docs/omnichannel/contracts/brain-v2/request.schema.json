@@ -1,0 +1,169 @@
+{
+  "$id": "https://omni.local/contracts/brain-v2/request.schema.json",
+  "title": "Omnichannel brain request v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "dispatchId",
+    "generation",
+    "tenant",
+    "conversation",
+    "contact",
+    "messages",
+    "collectedFields",
+    "requiredFields",
+    "pendingFields",
+    "localTime",
+    "agent",
+    "capabilities"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["brain.request.v2"]
+    },
+    "dispatchId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "tenant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountId", "timezone"],
+      "properties": {
+        "accountId": {"type": "string", "minLength": 1, "maxLength": 64},
+        "timezone": {"type": "string", "minLength": 1, "maxLength": 64}
+      }
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "channel"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "state": {
+          "type": "string",
+          "enum": ["ai_active", "ai_waiting", "human", "queued", "closed"]
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["WHATSAPP", "INSTAGRAM"]
+        }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "relationshipStatus", "tags", "origin", "summary"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "relationshipStatus": {
+          "type": "string",
+          "enum": ["new_lead", "known_lead", "customer", "inactive", "unknown"]
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {"type": "string", "minLength": 1, "maxLength": 80}
+        },
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["channel", "source", "landingPageSlug", "campaign", "referrer", "firstTouchAt", "lastTouchAt"],
+          "properties": {
+            "channel": {"type": ["string", "null"], "maxLength": 40},
+            "source": {"type": ["string", "null"], "maxLength": 160},
+            "landingPageSlug": {"type": ["string", "null"], "maxLength": 160},
+            "campaign": {"type": ["string", "null"], "maxLength": 160},
+            "referrer": {"type": ["string", "null"], "maxLength": 500},
+            "firstTouchAt": {"type": ["string", "null"], "maxLength": 64},
+            "lastTouchAt": {"type": ["string", "null"], "maxLength": 64}
+          }
+        },
+        "summary": {"type": ["string", "null"], "maxLength": 4000}
+      }
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role", "type", "text", "media"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "role": {"type": "string", "enum": ["contact", "assistant", "human", "system"]},
+          "type": {"type": "string", "enum": ["TEXT", "IMAGE", "AUDIO", "VIDEO", "DOCUMENT"]},
+          "text": {"type": ["string", "null"], "maxLength": 4000},
+          "media": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["mimeType", "fileName", "sizeBytes", "analysisText"],
+            "properties": {
+              "mimeType": {"type": ["string", "null"], "maxLength": 160},
+              "fileName": {"type": ["string", "null"], "maxLength": 240},
+              "sizeBytes": {"type": ["integer", "null"], "minimum": 0, "maximum": 52428800},
+              "analysisText": {"type": ["string", "null"], "maxLength": 4000}
+            }
+          }
+        }
+      }
+    },
+    "collectedFields": {
+      "type": "object",
+      "additionalProperties": true,
+      "maxProperties": 100
+    },
+    "requiredFields": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "minLength": 1, "maxLength": 120}
+    },
+    "pendingFields": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {"type": "string", "minLength": 1, "maxLength": 120}
+    },
+    "localTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["now", "insideBusinessHours"],
+      "properties": {
+        "now": {"type": "string", "minLength": 1, "maxLength": 64},
+        "insideBusinessHours": {"type": "boolean"}
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "versionId", "model", "layers"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "versionId": {"type": "string", "minLength": 1, "maxLength": 64},
+        "model": {"type": "string", "minLength": 1, "maxLength": 160},
+        "layers": {"type": "object", "additionalProperties": true, "maxProperties": 50}
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tools", "multimodal"],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {"type": "string", "minLength": 1, "maxLength": 120}
+        },
+        "multimodal": {"type": "boolean"}
+      }
+    }
+  }
+}

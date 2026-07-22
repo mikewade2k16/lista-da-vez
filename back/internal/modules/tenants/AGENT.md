@@ -34,6 +34,10 @@ Ele nao deve cuidar de:
 
 `GET /v1/tenants` aceita `includeInactive=true` para leitura administrativa.
 
+O catálogo interno aceita `ListInput.ModuleID` para restringir contas às que possuem
+`core.account_modules.enabled=true`; esse filtro não é exposto como query pública. O Omnichannel
+usa `ModuleID: "omnichannel"` no seletor de clientes da automação de atendimento.
+
 ## Regras de escopo
 
 - `platform_admin` pode listar todos os tenants ativos

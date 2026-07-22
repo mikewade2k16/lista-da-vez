@@ -24,6 +24,12 @@ type statusRecorder struct {
 	status int
 }
 
+// Unwrap permite que http.ResponseController alcance o writer real e preserve
+// controles opcionais como deadlines por rota, sem furar o logging de status.
+func (recorder *statusRecorder) Unwrap() http.ResponseWriter {
+	return recorder.ResponseWriter
+}
+
 func (recorder *statusRecorder) WriteHeader(status int) {
 	recorder.status = status
 	recorder.ResponseWriter.WriteHeader(status)

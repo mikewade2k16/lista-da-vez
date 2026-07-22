@@ -10,6 +10,7 @@ import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
 import { setInstanceUsers, updateInstance } from '~/domain/omnichannel/config-api'
+import { deleteInstance } from '~/domain/omnichannel/instance-admin-api'
 import { OMNI_PROVIDER_LABEL } from '~/domain/omnichannel/config-types'
 import type {
   OmniAssignableUser,
@@ -17,9 +18,8 @@ import type {
   OmniProvider,
 } from '~/domain/omnichannel/config-types'
 
-// Editor de UM número. O provider é fixado na criação (o PATCH do back não o altera) e
-// aparece read-only, resolvido pela sessão. Campos editáveis: nome de exibição, telefone,
-// fila, responsável, ativo/padrão e usuários atribuídos (o escopo de quem vê as conversas).
+// Editor de um número. O pareamento é a ação principal; edição, acesso e integração
+// ficam recolhidos para não repetir os dados já presentes no resumo do card.
 const props = defineProps<{
   instance: OmniInstance
   users: OmniAssignableUser[]
@@ -37,33 +37,42 @@ const draft = reactive({
   phoneNumber: '',
   queueLabel: '',
   responsibleUserId: '',
-  isActive: true,
   isDefault: false,
 })
 const assigned = ref<Set<string>>(new Set())
 const saving = ref(false)
-const resolvedProvider = ref('')
+const resolvedProvider = ref(props.instance.provider || '')
 
 function hydrate(): void {
   draft.displayName = props.instance.displayName || ''
   draft.phoneNumber = props.instance.phoneNumber || ''
   draft.queueLabel = props.instance.queueLabel || ''
   draft.responsibleUserId = props.instance.responsibleUserId || ''
-  draft.isActive = props.instance.isActive
   draft.isDefault = props.instance.isDefault
+  resolvedProvider.value = props.instance.provider || ''
   assigned.value = new Set(props.instance.assignedUserIds || [])
 }
 
 watch(() => props.instance, hydrate, { immediate: true })
 
 const providerLabel = computed(() => {
-  const p = (resolvedProvider.value || '') as OmniProvider
-  return OMNI_PROVIDER_LABEL[p] || resolvedProvider.value || 'não resolvido'
+  const provider = (resolvedProvider.value || '') as OmniProvider
+  return OMNI_PROVIDER_LABEL[provider] || resolvedProvider.value || 'provider não resolvido'
 })
+
+const credentialLabel = computed(() =>
+  props.instance.hasEvolutionApiKey ? 'credencial configurada' : 'sem credencial própria',
+)
+
+const assignedCount = computed(() => assigned.value.size)
 
 const responsibleOptions = computed(() => [
   { value: '', label: 'Sem responsável' },
-  ...props.users.map((u) => ({ value: u.id, label: u.name || u.email, meta: u.email })),
+  ...props.users.map((user) => ({
+    value: user.id,
+    label: user.name || user.email,
+    meta: user.email,
+  })),
 ])
 
 function toggleAssigned(userId: string): void {
@@ -82,11 +91,10 @@ async function save(): Promise<void> {
       queueLabel: draft.queueLabel.trim(),
       responsibleUserId: draft.responsibleUserId,
       userScopePolicy: props.instance.userScopePolicy,
-      isActive: draft.isActive,
       isDefault: draft.isDefault,
     })
     await setInstanceUsers(api, props.instance.id, [...assigned.value])
-    ui.success('Número atualizado.')
+    ui.success('Configurações do número salvas.')
     emit('changed')
   } catch (error) {
     ui.error(getApiErrorMessage(error, 'Não foi possível salvar o número.'))
@@ -95,25 +103,24 @@ async function save(): Promise<void> {
   }
 }
 
-async function deactivate(): Promise<void> {
-  const { confirmed } = await ui.confirm({
-    title: 'Desativar número?',
+async function remove(): Promise<void> {
+  const confirmation = (await ui.confirm({
+    title: 'Excluir número?',
     message:
-      'O número fica inativo e libera um canal da conta. As conversas já recebidas continuam visíveis no inbox. Pode reativar depois.',
-    confirmLabel: 'Desativar',
+      'O cadastro será removido. Se houver conversas vinculadas, a exclusão será bloqueada para preservar o histórico.',
+    confirmLabel: 'Excluir',
     cancelLabel: 'Cancelar',
-  })
-  if (!confirmed) return
+    danger: true,
+  })) as { confirmed?: boolean }
+  if (!confirmation.confirmed) return
+
   saving.value = true
   try {
-    await updateInstance(api, props.instance.id, {
-      userScopePolicy: props.instance.userScopePolicy,
-      isActive: false,
-    })
-    ui.success('Número desativado.')
+    await deleteInstance(api, props.instance.id)
+    ui.success('Cadastro do número excluído.')
     emit('changed')
   } catch (error) {
-    ui.error(getApiErrorMessage(error, 'Não foi possível desativar o número.'))
+    ui.error(getApiErrorMessage(error, 'Não foi possível excluir o número.'))
   } finally {
     saving.value = false
   }
@@ -122,57 +129,13 @@ async function deactivate(): Promise<void> {
 
 <template>
   <div class="cfg-card">
-    <div class="cfg-card__meta">
-      <span class="cfg-field__label">Provider</span>
-      <span class="cfg-card__provider">{{ providerLabel }}</span>
-      <span class="cfg-card__note">Definido na criação — não pode ser trocado depois.</span>
-    </div>
-
-    <div class="cfg-grid">
-      <label class="cfg-field">
-        <span class="cfg-field__label">Nome de exibição</span>
-        <input v-model="draft.displayName" class="cfg-input" type="text" :disabled="disabled" />
-      </label>
-      <label class="cfg-field">
-        <span class="cfg-field__label">Telefone (só dígitos, com DDD)</span>
-        <input v-model="draft.phoneNumber" class="cfg-input" type="text" :disabled="disabled" />
-      </label>
-      <label class="cfg-field">
-        <span class="cfg-field__label">Rótulo da fila (opcional)</span>
-        <input v-model="draft.queueLabel" class="cfg-input" type="text" :disabled="disabled" />
-      </label>
-      <AppSelectField
-        class="cfg-field"
-        label="Responsável"
-        :model-value="draft.responsibleUserId"
-        :options="responsibleOptions"
-        :disabled="disabled"
-        @update:model-value="draft.responsibleUserId = $event"
-      />
-    </div>
-
-    <div class="cfg-toggles">
-      <AppToggleSwitch v-model="draft.isActive" :disabled="disabled" label="Ativo" />
-      <AppToggleSwitch v-model="draft.isDefault" :disabled="disabled" label="Número padrão" />
-    </div>
-
-    <section class="cfg-block">
-      <span class="cfg-field__label">Atendentes com acesso a este número</span>
-      <p v-if="users.length === 0" class="cfg-empty">Nenhum atendente elegível na conta.</p>
-      <div v-else class="cfg-users">
-        <label v-for="u in users" :key="u.id" class="cfg-user">
-          <input
-            type="checkbox"
-            :checked="assigned.has(u.id)"
-            :disabled="disabled"
-            @change="toggleAssigned(u.id)"
-          />
-          <span>{{ u.name || u.email }}</span>
-        </label>
+    <section class="cfg-card__connection">
+      <div class="cfg-card__section-head">
+        <div>
+          <strong>Conexão do WhatsApp</strong>
+          <span>Use o celular para parear ou conferir a sessão.</span>
+        </div>
       </div>
-    </section>
-
-    <section class="cfg-block">
       <ConfigNumberConnection
         :instance-name="instance.instanceName"
         :disabled="disabled"
@@ -180,56 +143,162 @@ async function deactivate(): Promise<void> {
       />
     </section>
 
-    <section class="cfg-block">
-      <ConfigNumberCredentials
-        :instance-name="instance.instanceName"
-        :initial-set="instance.hasEvolutionApiKey"
-        :disabled="disabled"
-        @saved="emit('changed')"
-      />
-    </section>
+    <details class="cfg-card__details">
+      <summary>
+        <span>
+          <strong>Configurações do número</strong>
+          <small>{{ providerLabel }} · {{ credentialLabel }}</small>
+        </span>
+        <span class="material-icons-round" aria-hidden="true">expand_more</span>
+      </summary>
 
-    <section class="cfg-block">
-      <span class="cfg-field__label">Capacidades do número</span>
-      <ConfigNumberCapabilities :instance-id="instance.id" />
-    </section>
+      <div class="cfg-card__details-body">
+        <div class="cfg-grid">
+          <label class="cfg-field">
+            <span class="cfg-field__label">Nome de exibição</span>
+            <input v-model="draft.displayName" class="cfg-input" type="text" :disabled="disabled" />
+          </label>
+          <label class="cfg-field">
+            <span class="cfg-field__label">Telefone</span>
+            <input
+              v-model="draft.phoneNumber"
+              class="cfg-input"
+              type="text"
+              placeholder="Somente dígitos com DDD"
+              :disabled="disabled"
+            />
+          </label>
+          <label class="cfg-field">
+            <span class="cfg-field__label">Rótulo da fila</span>
+            <input v-model="draft.queueLabel" class="cfg-input" type="text" :disabled="disabled" />
+          </label>
+          <AppSelectField
+            class="cfg-field"
+            label="Responsável principal"
+            :model-value="draft.responsibleUserId"
+            :options="responsibleOptions"
+            :disabled="disabled"
+            @update:model-value="draft.responsibleUserId = $event"
+          />
+        </div>
 
-    <div class="cfg-card__actions">
-      <AppPanelButton
-        v-if="instance.isActive"
-        variant="ghost"
-        :disabled="disabled || saving"
-        @click="deactivate"
-      >
-        Desativar número
-      </AppPanelButton>
-      <AppPanelButton variant="primary" :disabled="disabled || saving" @click="save">
-        Salvar número
-      </AppPanelButton>
-    </div>
+        <AppToggleSwitch
+          v-model="draft.isDefault"
+          :disabled="disabled"
+          label="Usar como número padrão"
+        />
+
+        <details class="cfg-card__subdetails">
+          <summary>
+            <span>Acesso dos atendentes</span>
+            <small>{{ assignedCount }} selecionado(s)</small>
+          </summary>
+          <div class="cfg-card__subdetails-body">
+            <p v-if="users.length === 0" class="cfg-empty">Nenhum atendente elegível na conta.</p>
+            <div v-else class="cfg-users">
+              <label v-for="user in users" :key="user.id" class="cfg-user">
+                <input
+                  type="checkbox"
+                  :checked="assigned.has(user.id)"
+                  :disabled="disabled"
+                  @change="toggleAssigned(user.id)"
+                />
+                <span>{{ user.name || user.email }}</span>
+              </label>
+            </div>
+          </div>
+        </details>
+
+        <details class="cfg-card__subdetails">
+          <summary>
+            <span>Credencial e capacidades</span>
+            <small>detalhes técnicos</small>
+          </summary>
+          <div class="cfg-card__subdetails-body cfg-card__technical">
+            <ConfigNumberCredentials
+              :instance-name="instance.instanceName"
+              :initial-set="instance.hasEvolutionApiKey"
+              :disabled="disabled"
+              @saved="emit('changed')"
+            />
+            <div class="cfg-card__capabilities">
+              <span class="cfg-field__label">Capacidades confirmadas</span>
+              <ConfigNumberCapabilities :instance-id="instance.id" />
+            </div>
+          </div>
+        </details>
+
+        <div class="cfg-card__actions">
+          <AppPanelButton variant="danger" :disabled="disabled || saving" @click="remove">
+            Excluir número
+          </AppPanelButton>
+          <AppPanelButton variant="primary" :disabled="disabled || saving" @click="save">
+            {{ saving ? 'Salvando…' : 'Salvar alterações' }}
+          </AppPanelButton>
+        </div>
+      </div>
+    </details>
   </div>
 </template>
 
 <style scoped>
 .cfg-card {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
-.cfg-card__meta {
+.cfg-card__connection,
+.cfg-card__details-body {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.75rem;
 }
 
-.cfg-card__provider {
-  font-size: 0.85rem;
-  font-weight: 700;
+.cfg-card__section-head > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.cfg-card__section-head strong {
   color: rgb(var(--text));
+  font-size: 0.84rem;
 }
 
-.cfg-card__note {
-  font-size: 0.72rem;
+.cfg-card__section-head span {
   color: rgb(var(--muted));
+  font-size: 0.74rem;
+}
+
+.cfg-card__details,
+.cfg-card__subdetails {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.cfg-card__details > summary,
+.cfg-card__subdetails > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  color: rgb(var(--text));
+  cursor: pointer;
+}
+
+.cfg-card__details > summary > span:first-child {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.cfg-card__details summary small,
+.cfg-card__subdetails summary small {
+  color: rgb(var(--muted));
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.cfg-card__details-body {
+  padding: 0 0.75rem 0.75rem;
 }
 
 .cfg-grid {
@@ -245,11 +314,11 @@ async function deactivate(): Promise<void> {
 }
 
 .cfg-field__label {
+  color: rgb(var(--muted));
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: rgb(var(--muted));
 }
 
 .cfg-input {
@@ -272,17 +341,8 @@ async function deactivate(): Promise<void> {
   cursor: not-allowed;
 }
 
-.cfg-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.25rem;
-}
-
-.cfg-block {
-  display: grid;
-  gap: 0.5rem;
-  padding-top: 0.65rem;
-  border-top: 1px solid rgb(var(--border) / 0.6);
+.cfg-card__subdetails-body {
+  padding: 0 0.75rem 0.75rem;
 }
 
 .cfg-users {
@@ -295,8 +355,8 @@ async function deactivate(): Promise<void> {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  font-size: 0.8rem;
   color: rgb(var(--text));
+  font-size: 0.8rem;
 }
 
 .cfg-empty {
@@ -305,9 +365,31 @@ async function deactivate(): Promise<void> {
   font-size: 0.8rem;
 }
 
+.cfg-card__technical {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.cfg-card__capabilities {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line-soft);
+}
+
 .cfg-card__actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .cfg-card__actions {
+    justify-content: stretch;
+  }
+
+  .cfg-card__actions > * {
+    flex: 1;
+  }
 }
 </style>

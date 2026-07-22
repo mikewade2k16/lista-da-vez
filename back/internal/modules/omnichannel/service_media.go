@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/secretbox"
 )
@@ -69,12 +70,7 @@ func (s *MediaService) OpenMedia(ctx context.Context, accountID string, caller C
 	}
 
 	if mediaNeedsRehydration(d) {
-		if rehErr := s.rehydrate(ctx, accountID, conversationID, messageID, d); rehErr != nil {
-			return openedMedia{}, ErrNotFound
-		}
-		if d, err = s.store.GetMediaDescriptor(ctx, accountID, caller.UserID, conversationID, messageID); err != nil {
-			return openedMedia{}, translate(err)
-		}
+		return openedMedia{}, ErrNotFound
 	}
 	if strings.TrimSpace(deref(d.StorageKey)) == "" {
 		return openedMedia{}, ErrNotFound
@@ -89,6 +85,56 @@ func (s *MediaService) OpenMedia(ctx context.Context, accountID string, caller C
 		mime = "application/octet-stream"
 	}
 	return openedMedia{File: file, MimeType: mime, FileName: deref(d.FileName), ModTime: info.ModTime(), Size: info.Size()}, nil
+}
+
+// RetryMedia rearma exclusivamente o job de midia desta mensagem. Escopo e permissao sao
+// checados antes; o Store repete account_id+conversation_id no lock e no update.
+func (s *MediaService) RetryMedia(ctx context.Context, accountID string, principal auth.Principal, conversationID, messageID string) (MessageView, error) {
+	caller := Caller{UserID: principal.UserID, IsAdmin: isAdminPrincipal(principal)}
+	if err := s.scope.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
+		return MessageView{}, err
+	}
+	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.reply"); err != nil {
+		return MessageView{}, err
+	}
+	view, err := s.store.RetryMediaFetch(ctx, accountID, conversationID, messageID)
+	if err != nil {
+		return MessageView{}, translate(err)
+	}
+	s.publisher.PublishOmnichannelEvent(ctx, RealtimeEvent{
+		Type:       RealtimeEventMessageUpdated,
+		AccountID:  accountID,
+		ResourceID: messageID,
+		Payload:    messageViewPayload(view),
+	})
+	if err := s.store.InsertAudit(ctx, accountID, principal.UserID, conversationID, messageID, "MESSAGE_MEDIA_RETRY", nil); err != nil {
+		s.logger.Error("omnichannel_media_audit", "account_id", accountID, "event", "MESSAGE_MEDIA_RETRY")
+	}
+	return view, nil
+}
+
+// ListAnalyses returns only derived metadata for a message in the caller's
+// conversation scope. It never returns the signed stream token or storage path.
+func (s *MediaService) ListAnalyses(ctx context.Context, accountID string, principal auth.Principal, conversationID, messageID string) ([]MediaAnalysisView, error) {
+	caller := Caller{UserID: principal.UserID, IsAdmin: isAdminPrincipal(principal)}
+	if err := s.scope.assertConversationScope(ctx, accountID, caller, conversationID); err != nil {
+		return nil, err
+	}
+	if err := s.scope.requirePermission(ctx, accountID, principal, "omnichannel.conversations.view"); err != nil {
+		return nil, err
+	}
+	if _, err := s.store.GetMediaDescriptor(ctx, accountID, principal.UserID, conversationID, messageID); err != nil {
+		return nil, translate(err)
+	}
+	rows, err := s.store.ListMediaAnalyses(ctx, accountID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]MediaAnalysisView, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, mediaAnalysisView(row))
+	}
+	return out, nil
 }
 
 // rehydrate baixa a midia pelo provider, grava em disco, persiste as colunas e emite

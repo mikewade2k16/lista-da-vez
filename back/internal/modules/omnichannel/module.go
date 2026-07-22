@@ -9,6 +9,8 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/auth"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel/evolution"
+	instagram "github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel/instagram"
+	meta_whatsapp "github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel/meta_whatsapp"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/omnichannel/channel/mock"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/events"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/platform/jobs"
@@ -35,6 +37,13 @@ type Module struct {
 	secretBox *secretbox.Box
 	// publisher e o seam de realtime (F5). nil = no-op (F4 nao emite realtime).
 	publisher Publisher
+	// toolRegistry recebe adaptadores corporativos explícitos. Sem injeção, tools não são
+	// descobertas nem executadas por fallback: chamadas ficam negadas e auditadas.
+	toolRegistry *AIToolRegistry
+	// clientCatalog reutiliza a lista permission-scoped de clientes da plataforma.
+	// businessContext projeta o perfil estrategico do Calendario por interface explicita.
+	clientCatalog   AutomationClientCatalog
+	businessContext AutomationBusinessContextProvider
 }
 
 // Option configura o Module na composicao (padrao calendar.New).
@@ -48,6 +57,20 @@ func WithSecretBox(box *secretbox.Box) Option {
 // WithPublisher injeta o transporte de realtime (F5). nil = canal desligado.
 func WithPublisher(p Publisher) Option {
 	return func(m *Module) { m.publisher = p }
+}
+
+// WithAIToolRegistry injeta o catálogo de execução aprovado pelo compositor. O módulo não
+// cria handlers para endpoints/SQL de terceiros por conta própria.
+func WithAIToolRegistry(registry *AIToolRegistry) Option {
+	return func(m *Module) { m.toolRegistry = registry }
+}
+
+func WithAutomationClientCatalog(catalog AutomationClientCatalog) Option {
+	return func(m *Module) { m.clientCatalog = catalog }
+}
+
+func WithAutomationBusinessContext(provider AutomationBusinessContextProvider) Option {
+	return func(m *Module) { m.businessContext = provider }
 }
 
 // New cria um Module pronto para registrar no Registry.
@@ -148,6 +171,11 @@ func (m *Module) RoleTemplates() []modules.RoleTemplateDef {
 
 func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	store := NewStore(deps.Pool)
+	toolRegistry := m.toolRegistry
+	if toolRegistry == nil {
+		toolRegistry = NewAIToolRegistry()
+		registerBuiltinAITools(toolRegistry, store)
+	}
 
 	// Registry de providers (spec C2). O `mock` roda sem rede; o `evolution` e o 1o adapter
 	// REAL (D-A). A credencial e POR INSTANCIA (provider_config + credentials_ciphertext);
@@ -157,7 +185,11 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		// evolution: F4 adapter — registrado pela MESMA interface; env so como fallback.
 		// deps.Logger p/ o adapter logar falha de setWebhook (sem vazar token).
 		evolution.New(os.Getenv("EVOLUTION_BASE_URL"), os.Getenv("EVOLUTION_API_KEY"), deps.Logger),
+		meta_whatsapp.New(os.Getenv("META_GRAPH_BASE_URL")),
+		instagram.New(os.Getenv("META_GRAPH_BASE_URL")),
 	)
+	cloudService := NewWhatsAppCloudService(store, registry, m.secretBox)
+	instagramService := NewInstagramService(store, registry, m.secretBox)
 
 	limitReader := modules.NewLimitReader(deps.Pool)
 
@@ -170,20 +202,39 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	// pode ser nativo (rollback) ou n8n (cerebro configuravel); em ambos os casos o Go
 	// valida o schema e continua sendo o unico dono de estado, roteamento e envio.
 	llmClient := llm.New(deps.Logger)
+	var brainExec brainExecutor
+	var brainGateway *BrainGateway
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("OMNI_AI_EXECUTOR")), "n8n") {
-		llmClient = llm.NewN8N(os.Getenv("OMNI_N8N_BRAIN_WEBHOOK_URL"), deps.Logger)
+		webhookURL := strings.TrimSpace(os.Getenv("OMNI_N8N_BRAIN_WEBHOOK_URL"))
+		internalToken := strings.TrimSpace(os.Getenv("OMNI_N8N_INTERNAL_TOKEN"))
+		if m.secretBox != nil && webhookURL != "" && internalToken != "" {
+			brainExec = newN8NBrainExecutor(webhookURL, internalToken, m.secretBox, deps.Logger)
+			brainGateway = newBrainGateway(m.secretBox, llmClient)
+		} else if deps.Logger != nil {
+			deps.Logger.Warn("omnichannel_n8n_executor_blocked_until_brain_v2_gateway_configured")
+		}
 	}
-	aiSvc := NewAIService(store, llmClient, m.secretBox, limitReader, deps.Logger)
+	var aiOpts []AIServiceOption
+	if brainExec != nil {
+		aiOpts = append(aiOpts, WithBrainExecutor(brainExec))
+	}
+	if m.businessContext != nil {
+		aiOpts = append(aiOpts, WithAIBusinessContext(m.businessContext))
+	}
+	aiSvc := NewAIService(store, llmClient, m.secretBox, limitReader, deps.Logger, aiOpts...)
 
 	// Envio (F6): outbox durável (platform/jobs, F3) + mídia em disco. O worker DESPACHA o envio
 	// pelo provider — sem ele a mensagem enfileira e nunca sai. FIFO por conversa (ordering_key).
 	media := NewDiskMediaStorage(MediaDirFromEnv())
+	mediaAnalysisGateway := newMediaAnalysisGateway(m.secretBox, store, media)
 	outboxStore, err := jobs.NewPostgresStore(deps.Pool, jobs.DefaultTable)
 	if err != nil {
 		return nil, err
 	}
 	worker := jobs.New(outboxStore, jobs.Config{WorkerID: "omnichannel", Logger: deps.Logger})
 	worker.Register(OutboundJobKind, NewOutboundHandler(store, registry, m.secretBox, m.publisher, deps.Logger))
+	worker.Register(MediaFetchJobKind, NewMediaFetchHandler(store, media, registry, m.secretBox, m.publisher, deps.Logger))
+	worker.Register(InstagramActionJobKind, NewInstagramActionHandler(store, registry, m.secretBox))
 	// Poda LGPD (F13): o mesmo worker despacha o purge. Registrar ANTES do Start — kind sem
 	// handler vira ErrNoHandler → dead-letter. Roda em batches com teto de tempo (não segura envio).
 	retStore := NewRetentionStore(deps.Pool)
@@ -192,21 +243,40 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	worker.Register(PurgeMediaOrphanJobKind, purgeHandler)
 	// Contexto de vida do worker: cancelado no Handle.Close (shutdown limpo).
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
-	worker.Start(workerCtx)
-	// Scheduler da poda (F13): enfileira o purge diário/semanal por conta (ticker 24h/7d, 1º
-	// disparo ~5min pós-boot). Idempotência diária evita duplicar. Cancela com o workerCtx.
-	StartRetentionScheduler(workerCtx, retStore, outboxStore, deps.Logger)
 
 	// service e send em locais: o ActionsService (F7) depende dos dois (forward reusa o send;
 	// status/assign passam pela FSM via o Service).
 	svc := NewService(store)
-	sendSvc := NewSendService(store, outboxStore, media, m.publisher, deps.Logger)
+	automationSvc := NewAutomationService(store, svc, m.clientCatalog, m.businessContext, svc)
+	sendSvc := NewSendService(store, media, m.publisher, deps.Logger)
+	durableAIDispatch, probeErr := store.AIDispatchSchemaAvailable(context.Background())
+	if probeErr != nil {
+		if deps.Logger != nil {
+			deps.Logger.Warn("omnichannel_ai_dispatch_schema_probe_failed", "error", probeErr.Error())
+		}
+		durableAIDispatch = false
+	}
+	store.SetAIDispatchV2Enabled(durableAIDispatch)
+	if deps.Logger != nil {
+		requestedExecutor := strings.TrimSpace(os.Getenv("OMNI_AI_EXECUTOR"))
+		if strings.EqualFold(requestedExecutor, "n8n") && brainExec == nil {
+			requestedExecutor = "native (n8n aguardando gateway brain.v2)"
+		}
+		deps.Logger.Info("omnichannel_ai_dispatch_runtime", "durable_dispatch", durableAIDispatch, "executor", requestedExecutor)
+	}
+	worker.Register(AIDispatchJobKind, newAIDispatchHandler(store, aiSvc, svc, sendSvc, deps.Logger))
+	worker.Start(workerCtx)
+	StartRetentionScheduler(workerCtx, retStore, outboxStore, deps.Logger)
+	StartSLAScheduler(workerCtx, store, deps.Logger)
+	inbound := NewInboundService(store, registry, m.secretBox, m.publisher, qr, aiSvc, svc, sendSvc, deps.Logger)
+	inbound.SetDurableAIDispatch(durableAIDispatch)
 
 	m.handle = &handle{
-		service: svc,
+		service:    svc,
+		automation: automationSvc,
 		// Auto-disparo da IA no inbound (F5->F9->F8): o InboundService recebe o aiSvc (triagem) e o
 		// svc (maquina de estados/motor). Ambos ja construidos acima. Fire-and-forget pos-persistencia.
-		inbound: NewInboundService(store, registry, m.secretBox, m.publisher, qr, aiSvc, svc, sendSvc, deps.Logger),
+		inbound: inbound,
 		session: NewSessionService(store, registry, m.secretBox, limitReader, qr, deps.Logger),
 		ai:      aiSvc,
 		send:    sendSvc,
@@ -223,6 +293,11 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		cancelWorker:   cancelWorker,
 		webhookLimiter: newRateLimiter(),
 		authMiddleware: deps.AuthMiddleware,
+		brainGateway:   brainGateway,
+		toolGateway:    newAIToolCallGateway(m.secretBox, store, toolRegistry),
+		mediaGateway:   mediaAnalysisGateway,
+		cloud:          cloudService,
+		instagram:      instagramService,
 	}
 	return m.handle, nil
 }
@@ -242,6 +317,7 @@ func (m *Module) Service() *Service {
 
 type handle struct {
 	service        *Service
+	automation     *AutomationService
 	inbound        *InboundService
 	session        *SessionService
 	ai             *AIService
@@ -255,18 +331,29 @@ type handle struct {
 	cancelWorker   context.CancelFunc
 	webhookLimiter *rateLimiter
 	authMiddleware *auth.Middleware
+	brainGateway   *BrainGateway
+	toolGateway    *aiToolCallGateway
+	mediaGateway   *MediaAnalysisGateway
+	cloud          *WhatsAppCloudService
+	instagram      *InstagramService
 }
 
 func (h *handle) ID() string { return "omnichannel" }
 
 func (h *handle) RegisterRoutes(mux *http.ServeMux) {
+	registerBrainGatewayRoutes(mux, h.brainGateway)
+	registerAIToolCallRoutes(mux, h.toolGateway)
+	registerMediaAnalysisRoutes(mux, h.mediaGateway)
 	// Rotas de leitura do inbox e do ciclo de sessao /v1/omnichannel/* (RequireAuthWithAccount
 	// + gate de modulo no Chain via moduleGatingRules).
 	RegisterRoutes(mux, h.service, h.authMiddleware)
+	RegisterCRMContactRoutes(mux, h.service, h.authMiddleware)
 	registerSessionRoutes(mux, h.session, h.authMiddleware)
 	// Gestao de instancia (escrita): criar/atualizar/atribuir usuarios + validate-endpoints +
 	// conversations/clear. No SessionService (secretBox/limits/registry). Ver http_instances.go.
 	registerInstanceRoutes(mux, h.session, h.authMiddleware)
+	registerWhatsAppCloudRoutes(mux, h.cloud, h.authMiddleware)
+	registerInstagramRoutes(mux, h.instagram, h.authMiddleware)
 	// Dominio de atendimento (F8): setores/filas/membros/regras + PATCH .../queue +
 	// GET .../routing-decisions, sob /v1/omnichannel/* (RequireAuthWithAccount + gate).
 	// Costurado aqui (a F8 rodou em paralelo e nao pode editar este arquivo).
@@ -275,6 +362,9 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	// simulate, sob /v1/omnichannel/* (RequireAuthWithAccount + gate). Costurado aqui (a F9 rodou
 	// em paralelo e nao pode editar este arquivo).
 	RegisterAIRoutes(mux, h.ai, h.authMiddleware)
+	RegisterKnowledgeRoutes(mux, h.ai, h.authMiddleware)
+	// MVP de automacao: cliente -> numero -> agente + policy configuravel de encerramento.
+	RegisterAutomationRoutes(mux, h.automation, h.authMiddleware)
 	// Envio + mídia (F6): POST conversations/{id}/messages (outbox) + GET .../media (stream+Range).
 	RegisterSendRoutes(mux, h.send, h.media, h.authMiddleware)
 	// Ações do inbox (F7): reaction/forward/delete/status/assign + group/sync/contatos.
@@ -288,6 +378,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	// Webhook inbound PUBLICO /v1/webhooks/omnichannel/{provider}/{accountSlug}: FORA do gate
 	// de modulo por design (nao esta sob /v1/omnichannel; precedente /v1/public/*, /s/{slug}).
 	registerWebhookRoutes(mux, h.inbound, h.webhookLimiter)
+	registerLeadCaptureRoutes(mux, h.service.store, h.webhookLimiter)
 	// Avatar PUBLICO (F12 C4): GET /v1/public/omnichannel/avatar — o front poe a URL no <img src>
 	// (sem token), entao vai FORA do gate, com allowlist dos 4 hosts do WhatsApp + rate-limit por
 	// IP + anti-SSRF da F6. Reusa o limiter do webhook. Ver http_avatar.go.

@@ -10,6 +10,8 @@ import type {
 import { extractAdminError } from "~/composables/omnichannel/useOmnichannelAdminShared";
 import { useOmnichannelAdminConnectionState } from "~/composables/omnichannel/useOmnichannelAdminConnectionState";
 import { useOmnichannelAdminQrPolling } from "~/composables/omnichannel/useOmnichannelAdminQrPolling";
+import { useAdminSession } from "~/composables/useAdminSession";
+import { useApi } from "~/composables/useApi";
 
 export const NEW_WHATSAPP_INSTANCE_VALUE = "__new__";
 

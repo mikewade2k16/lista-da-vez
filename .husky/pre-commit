@@ -3,30 +3,42 @@
 #
 # Roda lint-staged que despacha:
 #   - ESLint + Prettier nos arquivos .vue/.ts/.js/.mjs/.json/.md/.css/.scss do web/
-#   - gofmt + golangci-lint (em escopo de PACOTE, via wrapper) nos .go do back/
+#   - gofmt nos .go do back/
+# Depois roda golangci-lint uma unica vez, em escopo de pacote, para evitar que
+# os chunks do lint-staged abram varios runners concorrentes.
 #
 # Para pular em emergencia: git commit --no-verify  (use com parcimonia)
 #
-# --concurrent 1: golangci-lint nao permite multiplas instancias rodando ao
-# mesmo tempo (lock por module cache). Em commits grandes, lint-staged divide
-# os arquivos em chunks e roda em paralelo, o que faz instancias paralelas de
-# golangci-lint colidirem com "parallel golangci-lint is running". Forcamos
-# execucao serial para evitar essa race condition.
+# Mantem os formatadores/lints web seriais para limitar consumo em commits grandes.
 npx lint-staged --concurrent 1
 LINT_STATUS=$?
 
-# Guard OBS-08: AVISA (nao bloqueia) se os workflows versionados em automation/export/
-# estao ATRAS do n8n dev rodando. So roda se o container n8n dev estiver up (fonte da
-# verdade local); se estiver down ou sem docker, e no-op. NAO bloqueia o commit (decisao
-# do dono: alertar, nao travar; o gatilho -Sync do deploy garante o export de qualquer jeito).
-# Para pular o commit sem esse aviso: git commit --no-verify.
-N8N_DEV_CONTAINER="omni-n8n-1"
-if command -v docker >/dev/null 2>&1; then
-  if [ -n "$(docker ps -q -f "name=^${N8N_DEV_CONTAINER}$" 2>/dev/null)" ]; then
-    if command -v powershell.exe >/dev/null 2>&1; then
-      powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev/n8n-export.ps1 -Check -Container "$N8N_DEV_CONTAINER" || true
-    fi
+GO_LINT_STATUS=0
+if [ "$LINT_STATUS" -eq 0 ]; then
+  GO_FILES=()
+  while IFS= read -r -d '' file; do
+    GO_FILES+=("$file")
+  done < <(git diff --cached --name-only --diff-filter=ACMR -z -- ':(glob)back/**/*.go')
+
+  if [ "${#GO_FILES[@]}" -gt 0 ]; then
+    scripts/dev/lint-go-staged.sh "${GO_FILES[@]}"
+    GO_LINT_STATUS=$?
   fi
 fi
 
-exit $LINT_STATUS
+# Guard E0: check GLOBAL e estritamente LOCAL do registro, IDs e hashes canonicos.
+# Nao consulta Docker/runtime, nao exporta e nao cria temporario. Drift de runtime so
+# pode ser consultado por alias owner-scoped explicito.
+N8N_STATUS=0
+if command -v powershell.exe >/dev/null 2>&1; then
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev/n8n-export.ps1 -Check
+  N8N_STATUS=$?
+fi
+
+if [ "$LINT_STATUS" -ne 0 ]; then
+  exit "$LINT_STATUS"
+fi
+if [ "$GO_LINT_STATUS" -ne 0 ]; then
+  exit "$GO_LINT_STATUS"
+fi
+exit "$N8N_STATUS"

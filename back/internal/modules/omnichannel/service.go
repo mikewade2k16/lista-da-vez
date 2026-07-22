@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -28,6 +30,9 @@ type Caller struct {
 	// IsAdmin = papel administrativo (platform_admin/owner/director). Resolvido do
 	// Principal em http.go (callerFrom), nunca do body.
 	IsAdmin bool
+	// IsPlatformAdmin separa operacoes de plataforma (como teto contratado) das
+	// configuracoes que um administrador comum da conta pode alterar.
+	IsPlatformAdmin bool
 }
 
 // translate mapeia o erro do banco para o erro do dominio. pgx.ErrNoRows vira SEMPRE
@@ -50,28 +55,80 @@ func translate(err error) error {
 // O escopo de instancia por usuario e o A2 CORRIGIDO: o legado tem um ternario que
 // devolve a mesma coisa nos dois ramos (whatsapp-instances.ts:681-683), ou seja, todo
 // usuario ve tudo. Aqui o nao-admin so ve as conversas das instancias que ele alcanca.
-func (s *Service) ListConversations(ctx context.Context, accountID string, caller Caller, instanceID string) ([]ConversationView, error) {
-	f := ConversationFilter{InstanceID: instanceID}
+func (s *Service) ListConversations(ctx context.Context, accountID string, caller Caller, pageFilter ConversationPageFilter) (ConversationPageView, error) {
+	normalized, err := normalizeConversationFilter(pageFilter)
+	if err != nil {
+		return ConversationPageView{}, err
+	}
+	f := ConversationFilter{ConversationPageFilter: normalized}
 	if !caller.IsAdmin {
 		scopeKeys, err := s.accessibleScopeKeys(ctx, accountID, caller)
 		if err != nil {
-			return nil, err
+			return ConversationPageView{}, err
 		}
 		f.ScopeKeys = scopeKeys
 	}
+	f.Limit = normalized.Limit + 1
 	rows, err := s.store.ListConversations(ctx, accountID, f)
 	if err != nil {
-		return nil, err
+		return ConversationPageView{}, err
+	}
+	hasMore := len(rows) > normalized.Limit
+	if hasMore {
+		rows = rows[:normalized.Limit]
 	}
 	out := make([]ConversationView, 0, len(rows))
 	for _, row := range rows {
 		view, err := conversationView(row)
 		if err != nil {
-			return nil, err
+			return ConversationPageView{}, err
 		}
 		out = append(out, view)
 	}
-	return out, nil
+	nextCursor := ""
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = encodeConversationCursor(last.LastMessageAt, last.ID)
+	}
+	return ConversationPageView{Conversations: out, HasMore: hasMore, NextCursor: nextCursor}, nil
+}
+
+var omnichannelUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func normalizeConversationFilter(f ConversationPageFilter) (ConversationPageFilter, error) {
+	f.Search = strings.Join(strings.Fields(strings.TrimSpace(f.Search)), " ")
+	if len([]rune(f.Search)) > 120 {
+		return ConversationPageFilter{}, ErrInvalidBody
+	}
+	f.Channel = strings.ToUpper(strings.TrimSpace(f.Channel))
+	if f.Channel == "ALL" {
+		f.Channel = ""
+	}
+	if f.Channel != "" && f.Channel != "WHATSAPP" && f.Channel != "INSTAGRAM" {
+		return ConversationPageFilter{}, ErrInvalidBody
+	}
+	f.Status = strings.ToUpper(strings.TrimSpace(f.Status))
+	if f.Status == "ALL" {
+		f.Status = ""
+	}
+	if f.Status != "" && f.Status != "OPEN" && f.Status != "PENDING" && f.Status != "CLOSED" {
+		return ConversationPageFilter{}, ErrInvalidBody
+	}
+	for _, id := range []string{f.InstanceID, f.QueueID, f.ResponsibleID} {
+		if strings.TrimSpace(id) != "" && !omnichannelUUIDPattern.MatchString(strings.TrimSpace(id)) {
+			return ConversationPageFilter{}, ErrInvalidBody
+		}
+	}
+	f.InstanceID = strings.TrimSpace(f.InstanceID)
+	f.QueueID = strings.TrimSpace(f.QueueID)
+	f.ResponsibleID = strings.TrimSpace(f.ResponsibleID)
+	switch {
+	case f.Limit <= 0:
+		f.Limit = defaultConversationLimit
+	case f.Limit > maxConversationLimit:
+		f.Limit = maxConversationLimit
+	}
+	return f, nil
 }
 
 // accessibleScopeKeys devolve os instance_scope_key que o usuario alcanca (A2). Lista
@@ -124,6 +181,7 @@ func conversationView(row conversationRow) (ConversationView, error) {
 		InstanceDisplayName: row.InstanceDisplayName,
 		Channel:             row.Channel,
 		Status:              projectStatus(row.State),
+		AIStatus:            projectAIStatus(row.State),
 		ExternalID:          row.ExternalID,
 		ContactID:           row.ContactID,
 		ContactName:         row.ContactName,
@@ -158,12 +216,16 @@ func (s *Service) ListMessages(ctx context.Context, accountID string, caller Cal
 	// em ASC, entao a primeira e a mais antiga). Pagina vazia = nao ha mais nada atras.
 	hasMore := false
 	if len(messages) > 0 {
-		hasMore, err = s.store.HasOlderMessage(ctx, accountID, caller.UserID, conversationID, messages[0].CreatedAt)
+		hasMore, err = s.store.HasOlderMessage(ctx, accountID, caller.UserID, conversationID, messages[0].CreatedAt, messages[0].ID)
 		if err != nil {
 			return MessagePageView{}, err
 		}
 	}
-	return MessagePageView{ConversationID: conversationID, Messages: messages, HasMore: hasMore}, nil
+	nextCursor := ""
+	if hasMore && len(messages) > 0 {
+		nextCursor = encodeMessageCursor(messages[0].CreatedAt, messages[0].ID)
+	}
+	return MessagePageView{ConversationID: conversationID, Messages: messages, HasMore: hasMore, NextCursor: nextCursor}, nil
 }
 
 // GetMessage devolve uma mensagem da conversa (escopo validado antes; a query do Store

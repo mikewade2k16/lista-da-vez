@@ -12,6 +12,7 @@ import {
 import { computed, nextTick, onMounted, onUpdated, ref } from "vue";
 import type { Contact, Conversation, MessageType, WhatsAppInstanceRecord } from "~/types";
 import type { InboxSelectOption } from "./types";
+import type { CRMContact } from "~/composables/omnichannel/useOmnichannelCRM";
 import { resolveAvatarSource } from "~/composables/omnichannel/useAvatarProxy";
 import type {
   WhatsAppContactImportAction,
@@ -23,12 +24,15 @@ const props = defineProps<{
   showFilters: boolean;
   sidebarView: "conversations" | "contacts";
   loadingConversations: boolean;
+  loadingMoreConversations: boolean;
   loadingContacts: boolean;
   loadingWhatsAppStatus: boolean;
   whatsappBannerMessage: string;
   isWhatsAppConnected: boolean;
   currentUserName: string | null;
   conversations: Conversation[];
+  conversationsError: string;
+  hasMoreConversations: boolean;
   contacts: Contact[];
   activeConversationId: string | null;
   creatingContact: boolean;
@@ -51,6 +55,11 @@ const props = defineProps<{
   switchingTenant: boolean;
   activeTenantId: string;
   tenantSwitchItems: InboxSelectOption[];
+  crmContacts?: CRMContact[] | null;
+  loadingCRMContacts?: boolean;
+  loadingMoreCRMContacts?: boolean;
+  hasMoreCRMContacts?: boolean;
+  crmError?: string;
 }>();
 
 const emit = defineEmits<{
@@ -64,10 +73,16 @@ const emit = defineEmits<{
   (event: "switch-tenant", value: string): void;
   (event: "selectConversation", conversationId: string): void;
   (event: "openContact", contactId: string): void;
+  (event: "inspectContact", contactId: string): void;
+  (event: "loadMoreCRMContacts"): void;
   (event: "createContact", payload: { name: string; phone: string; countryCode?: string | null }): void;
-  (event: "previewContactImport"): void;
-  (event: "applyContactImport"): void;
-  (event: "clearContactImport"): void;
+  (event:
+    | "retryConversations"
+    | "loadMoreConversations"
+    | "previewContactImport"
+    | "applyContactImport"
+    | "clearContactImport"
+  ): void;
 }>();
 
 const collapsedModel = computed({
@@ -114,6 +129,7 @@ const unreadSet = computed(() => new Set(props.unreadConversationIds));
 const mentionSet = computed(() => new Set(props.mentionConversationIds));
 const mentionCountMap = computed(() => props.mentionConversationCounts ?? {});
 const isContactsView = computed(() => sidebarViewModel.value === "contacts");
+const hasCRMContacts = computed(() => Array.isArray(props.crmContacts));
 const MEDIA_PLACEHOLDER_VALUES = new Set(["[imagem]", "[audio]", "[video]", "[documento]", "."]);
 const newContactName = ref("");
 const newContactPhone = ref("");
@@ -461,6 +477,43 @@ function getContactStatusColor(contactEntry: Contact) {
   return "neutral";
 }
 
+function getAIStatusLabel(statusValue: Conversation["aiStatus"]) {
+  switch (statusValue) {
+    case "analyzing":
+      return "IA analisando";
+    case "transferring":
+      return "Transferindo";
+    case "awaiting_client":
+      return "Aguardando cliente";
+    case "human":
+      return "Atendimento humano";
+    default:
+      return "";
+  }
+}
+
+function getAIStatusColor(statusValue: Conversation["aiStatus"]) {
+  if (statusValue === "analyzing") return "primary";
+  if (statusValue === "transferring") return "warning";
+  if (statusValue === "awaiting_client") return "neutral";
+  return "success";
+}
+
+function getCRMStatusLabel(value: string) {
+  return ({ new_lead: "Novo lead", known_lead: "Lead conhecido", customer: "Cliente", inactive: "Inativo" } as Record<string, string>)[value] ?? value;
+}
+
+function getCRMStatusColor(value: string) {
+  if (value === "customer") return "success";
+  if (value === "inactive") return "neutral";
+  if (value === "known_lead") return "primary";
+  return "warning";
+}
+
+function getCRMContactName(entry: CRMContact) {
+  return entry.name?.trim() || entry.phone || entry.primaryEmail || "Contato sem nome";
+}
+
 function getImportActionLabel(action: WhatsAppContactImportAction) {
   if (action === "create") {
     return "Novo";
@@ -734,9 +787,30 @@ onUpdated(() => {
 
       <div class="chat-page__panel-body">
         <template v-if="!isContactsView">
-          <div v-if="loadingConversations" class="chat-page__empty">Carregando conversas...</div>
+          <div v-if="loadingConversations && !conversations.length" class="chat-page__empty">
+            Carregando conversas...
+          </div>
 
           <template v-else>
+            <div v-if="loadingConversations && conversations.length" class="chat-page__empty">
+              Atualizando conversas...
+            </div>
+
+            <div v-if="conversationsError" class="chat-page__load-error" role="alert">
+              <p>{{ conversationsError }}</p>
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-refresh-cw"
+                :loading="loadingConversations"
+                :disabled="loadingConversations"
+                @click="emit('retryConversations')"
+              >
+                Tentar novamente
+              </UButton>
+            </div>
+
             <button
               v-for="conversationEntry in conversations"
               :key="conversationEntry.id"
@@ -771,6 +845,14 @@ onUpdated(() => {
                     <UBadge :color="getStatusColor(conversationEntry.status)" variant="soft" size="sm">
                       {{ getStatusLabel(conversationEntry.status) }}
                     </UBadge>
+                    <UBadge
+                      v-if="conversationEntry.aiStatus && conversationEntry.aiStatus !== 'idle' && conversationEntry.aiStatus !== 'closed'"
+                      :color="getAIStatusColor(conversationEntry.aiStatus)"
+                      variant="soft"
+                      size="sm"
+                    >
+                      {{ getAIStatusLabel(conversationEntry.aiStatus) }}
+                    </UBadge>
                     <UBadge v-if="isConversationUnread(conversationEntry.id)" color="warning" variant="soft" size="sm">
                       Novo
                     </UBadge>
@@ -786,11 +868,72 @@ onUpdated(() => {
               <p class="conversation-card__preview">{{ getConversationPreview(conversationEntry) }}</p>
             </button>
 
-            <div v-if="!conversations.length" class="chat-page__empty">Nenhuma conversa encontrada.</div>
+            <div v-if="!conversations.length && !conversationsError" class="chat-page__empty">
+              Nenhuma conversa encontrada.
+            </div>
+
+            <div v-if="hasMoreConversations && !conversationsError" class="chat-page__load-more">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-history"
+                :loading="loadingMoreConversations"
+                :disabled="loadingMoreConversations"
+                @click="emit('loadMoreConversations')"
+              >
+                Carregar mais conversas
+              </UButton>
+            </div>
           </template>
         </template>
 
         <template v-else>
+          <template v-if="hasCRMContacts">
+            <div v-if="loadingCRMContacts" class="chat-page__empty">Atualizando CRM...</div>
+            <div v-else-if="crmError" class="chat-page__load-error" role="alert">
+              <p>{{ crmError }}</p>
+            </div>
+            <template v-else>
+              <button
+                v-for="contactEntry in crmContacts"
+                :key="contactEntry.id"
+                type="button"
+                class="conversation-card conversation-card--contact"
+                @click="emit('inspectContact', contactEntry.id)"
+              >
+                <div class="conversation-card__top">
+                  <UAvatar :alt="getCRMContactName(contactEntry)" :text="getInitials(getCRMContactName(contactEntry))" class="conversation-card__avatar" />
+                  <div class="conversation-card__content">
+                    <p class="conversation-card__name">{{ getCRMContactName(contactEntry) }}</p>
+                    <div class="conversation-card__tags">
+                      <UBadge color="neutral" variant="soft" size="sm">{{ contactEntry.lastChannel || contactEntry.firstChannel || 'CRM' }}</UBadge>
+                      <UBadge :color="getCRMStatusColor(contactEntry.relationshipStatus)" variant="soft" size="sm">{{ getCRMStatusLabel(contactEntry.relationshipStatus) }}</UBadge>
+                      <UBadge v-for="tag in contactEntry.tags.slice(0, 2)" :key="tag" color="primary" variant="soft" size="sm">#{{ tag }}</UBadge>
+                    </div>
+                  </div>
+                  <time v-if="contactEntry.lastSeenAt" class="conversation-card__time">{{ formatTime(contactEntry.lastSeenAt) }}</time>
+                </div>
+                <p class="conversation-card__preview">{{ contactEntry.phone || contactEntry.primaryEmail || contactEntry.source }}</p>
+                <UButton size="xs" color="neutral" variant="ghost" @click.stop="emit('openContact', contactEntry.id)">Abrir conversa</UButton>
+              </button>
+              <div v-if="!crmContacts?.length" class="chat-page__empty">Nenhum contato no CRM.</div>
+              <div v-if="hasMoreCRMContacts && !crmError" class="chat-page__load-more">
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-history"
+                  :loading="loadingMoreCRMContacts"
+                  :disabled="loadingMoreCRMContacts"
+                  @click="emit('loadMoreCRMContacts')"
+                >
+                  Carregar mais contatos
+                </UButton>
+              </div>
+            </template>
+          </template>
+          <template v-else>
           <div v-if="loadingContacts" class="chat-page__empty">Carregando contatos...</div>
 
           <template v-else>
@@ -831,6 +974,7 @@ onUpdated(() => {
             </button>
 
             <div v-if="!contacts.length" class="chat-page__empty">Nenhum contato salvo ainda.</div>
+          </template>
           </template>
         </template>
       </div>
@@ -1041,6 +1185,28 @@ onUpdated(() => {
 .chat-page__empty {
   color: rgb(var(--muted));
   font-size: 0.85rem;
+}
+
+.chat-page__load-error {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  border: 1px solid rgb(var(--error) / 0.35);
+  border-radius: var(--radius-sm);
+  background: rgb(var(--error) / 0.08);
+  color: rgb(var(--error));
+  padding: 0.65rem;
+  font-size: 0.82rem;
+}
+
+.chat-page__load-error p {
+  margin: 0;
+}
+
+.chat-page__load-more {
+  display: flex;
+  justify-content: center;
+  padding: 0.35rem 0;
 }
 
 .conversation-card {

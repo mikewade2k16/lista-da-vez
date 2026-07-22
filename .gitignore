@@ -9,6 +9,8 @@ web/dist/
 back/bin/
 back/api
 back/api.exe
+.tmp-gocache/
+back/.gocache/
 *.exe
 qa-bot/.venv/
 qa-bot/artifacts/

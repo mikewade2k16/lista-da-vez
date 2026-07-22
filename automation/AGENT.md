@@ -102,20 +102,26 @@ escanear QR, ativar) em [docs/automation/SETUP.md](../docs/automation/SETUP.md).
 ### Par `n8n:import` <-> `n8n:export` (o n8n roda do BANCO, nao do arquivo)
 
 O n8n guarda os workflows no PROPRIO banco (SQLite). O repo (`export/workflow-*.json`)
-so reflete o n8n quando alguem sincroniza nos DOIS sentidos:
+so reflete o n8n quando alguem sincroniza nos DOIS sentidos. Import, export, check de runtime e
+sync exigem sempre owner e key exatos; operacao global implicita foi removida:
 
 | comando | sentido | o que faz |
 |---|---|---|
-| `npm run n8n:import` | arquivo -> n8n | `scripts/dev/n8n-import.ps1`: copia -> import -> reativa -> restart. Usar quando MUDOU o `.json` versionado e o dev precisa rodar a versao nova. |
-| `npm run n8n:export` | n8n -> arquivo | `scripts/dev/n8n-export.ps1` (OBS-08): traz o workflow rodando para o `.json` versionado, no shape `[obj]` + `active:false`, 2 espacos + `\n`. Usar quando MUDOU no n8n (editou nos) e o repo precisa acompanhar antes do deploy. |
+| `npm run n8n:import:<key>` | arquivo -> n8n | `scripts/dev/n8n-import.ps1 -Owner <owner> -Only <key>`: valida ownership/IDs, copia um arquivo, importa, reativa e reinicia. |
+| `npm run n8n:export:<key>` | n8n -> arquivo | `scripts/dev/n8n-export.ps1 -Owner <owner> -Only <key>`: traz um workflow no shape canônico. |
+| `npm run n8n:export:<key>:check` | runtime -> comparação | consulta somente o alvo owner-scoped e retorna `10` se divergir. |
+| `npm run n8n:export:<key>:sync` | runtime -> arquivo | sincroniza somente o alvo owner-scoped; nunca usar alias de outro owner numa tarefa de módulo. |
+| `npm run n8n:export:check` | somente local | valida registro, IDs e hashes dos sete arquivos; não chama Docker, não consulta runtime e não cria temporário. |
 
-Variantes do export: `n8n:export:chat` (so calendar-chat), `n8n:export:check`
-(nao escreve; sai !=0 se o repo esta atras do n8n — guard), `n8n:export:sync`
-(auto-exporta se divergir e segue exit 0 — usado pelo deploy).
+Aliases canônicos ficam em `package.json`. Omnichannel usa somente
+`n8n:{import,export}:omnichannel-brain` e
+`n8n:{import,export}:instagram-first-contact` (mais os sufixos `:check`/`:sync` existentes).
+Calendar, Operação e Automação usam seus próprios aliases/owners.
 
-**Mapa FIXO id -> arquivo:** `n8n-export.ps1` mantem os ids estaveis. O import e o deploy
-consomem o glob `automation/export/workflow-*.json`. Aplicar sempre a regra de propriedade
-acima: uma tarefa nao altera entradas de outro modulo.
+**Mapa FIXO id -> arquivo:** `n8n-workflow-registry.ps1` e a fonte única de key, owner, ID e
+caminho. Import/export nunca derivam arquivo por glob para escrever. O `deploy-pull.ps1` antigo
+ainda consome o glob como operação explícita de plataforma; ele não pode ser usado por tarefa
+isolada do Omnichannel, Calendar, Operação ou Automação.
 
 | arquivo | id |
 |---|---|
@@ -131,8 +137,8 @@ O nome do arquivo e ESTAVEL (nao derivar do nome do workflow: renomear no n8n na
 renomeia o arquivo, so evita ruido de diff).
 
 **Garantia anti-credencial e anti-dado de runtime:** `n8n export:workflow` NAO exporta credenciais
-decriptadas (os nos trazem `credentials` so como `{id,name}`). O `n8n-export.ps1`
-tem um checador embutido (Node) que ABORTA o arquivo (sem gravar) se algum
+decriptadas (os nos trazem `credentials` so como `{id,name}`). O
+`n8n-workflow-normalize.js`, chamado por `n8n-export.ps1`, ABORTA o arquivo (sem gravar) se algum
 `node.credentials[*]` tiver campo fora de `id`/`name`. O normalizador tambem FORCA
 `pinData={}` e `staticData=null`, mesmo quando o n8n exporta payload de webhook ou memoria
 preenchidos. Definicao portavel vai ao repo; credencial, amostra e memoria de conversa nao.
@@ -140,28 +146,34 @@ preenchidos. Definicao portavel vai ao repo; credencial, amostra e memoria de co
 ## Workflow "Omnichannel Brain"
 
 `export/workflow-omnichannel-brain.json` (id `omnibrain0000001`) e o executor stateless
-da triagem. O Go resolve provider/modelo/temperatura/prompt/schema/chave no banco, chama
-o webhook sincrono e revalida o JSON Schema. O workflow nao acessa Postgres, Evolution,
-WAHA ou Meta e nao possui node de envio. As quatro opcoes `saveData*` ficam desligadas
-para a chave runtime e o contexto do cliente nao permanecerem no banco do n8n.
+da triagem. O Go resolve provider/modelo/temperatura/prompt/schema no banco e chama o endpoint
+interno com `brain.request.v2` ou `brain.request.v3`, conforme a versão publicada do agente;
+credencial persistente nunca entra no request, export ou log.
+O workflow exige `X-Omni-Internal-Token` validado contra `OMNI_N8N_INTERNAL_TOKEN`, chama
+somente o gateway interno em `OMNI_LLM_GATEWAY_URL` e revalida `brain.result.v2/v3` no Go.
+No v3, `close` continua sendo apenas proposta: os gates configuráveis e a lease obrigatória são
+avaliados sob lock no Go. Ele nao acessa Postgres, Evolution, WAHA ou Meta e nao possui node de envio. As quatro opcoes
+`saveData*` ficam desligadas para o token efemero e o contexto do cliente nao permanecerem no
+banco do n8n. O arquivo local esta preparado/inativo; importacao e ativacao dependem do aceite
+externo do E1 e da implementacao do gateway.
 
-Ativacao desse workflow isolado e segura porque ele nao recebe webhook de canal nem envia
-mensagem. Isso nao autoriza alterar o workflow `workflow-whatsapp.json`, que pertence ao
-modulo automation e tem ciclo operacional proprio.
+Quando o gateway e o aceite E1 estiverem prontos, a ativacao desse workflow isolado e segura
+porque ele nao recebe webhook de canal nem envia mensagem. Isso nao autoriza alterar o workflow
+`workflow-whatsapp.json`, que pertence ao modulo automation e tem ciclo operacional proprio.
 
 `workflow-instagram-first-contact.json` (id `instafirst000001`) e a orquestracao separada
 de DM/comentarios. Ela prepara origem/politica/historico e chama o cerebro comum, mas
 responde sempre com `deliveryPolicy=go_outbox_only`: nao possui token Meta nem node de
 publicacao. O adapter Meta no Go e pre-requisito para qualquer entrega real.
 
-**DOIS gatilhos automaticos (OBS-08):**
-- **git (pre-commit, `-Check`):** se o container n8n dev estiver up, AVISA (nao
-  bloqueia) que o repo esta atras do n8n. Down/sem docker = no-op. Pular: `git commit --no-verify`.
-- **deploy (`deploy:fast:prod -DeployAutomation`, `-Sync`):** ANTES de buildar/enviar,
-  auto-exporta se o n8n dev estiver a frente e SEGUE (nunca trava). n8n dev down = AVISA e
-  segue com os arquivos versionados atuais (nunca zera). Pular: `-SkipWorkflowExport`.
-  O `-Sync` pode deixar `workflow-*.json` modificados na working tree (NAO commitados) — o
-  deploy os USA mesmo sem commit; o dono commita depois.
+**Guardas automáticos atuais:**
+- **git (pre-commit, `-Check`):** valida somente o inventário local e bloqueia registro/ID inválido;
+  não consulta Docker e não afirma se o runtime está alinhado.
+- **deploy rápido normal:** `deploy:fast:prod` sobe API/web e não aciona Automação implicitamente.
+- **deploy de Automação:** `-DeployAutomation` exige `-WorkflowOwner` e `-WorkflowOnly` para o sync
+  local, mas o `deploy-pull.ps1` downstream ainda importa o conjunto global. Portanto esse caminho
+  é operação de plataforma, exige autorização explícita do dono e é proibido numa tarefa isolada
+  do Omnichannel até existir deploy owner-scoped de ponta a ponta.
 
 **Follow-ups (evolucao, NAO no MVP):**
 - (B) trigger dentro do proprio n8n ("workflow salvo" -> `n8n export:workflow` para um

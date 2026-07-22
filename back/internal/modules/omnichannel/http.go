@@ -67,14 +67,23 @@ func handleListConversations(svc *Service) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		instanceID := strings.TrimSpace(r.URL.Query().Get("instanceId"))
-		conversations, err := svc.ListConversations(r.Context(), accountID, caller, instanceID)
+		q := r.URL.Query()
+		search := q.Get("search")
+		if strings.TrimSpace(search) == "" {
+			search = q.Get("q")
+		}
+		page, err := svc.ListConversations(r.Context(), accountID, caller, ConversationPageFilter{
+			Limit: parseLimit(q.Get("limit")), BeforeCursor: strings.TrimSpace(q.Get("before")),
+			Search: search, Channel: q.Get("channel"), Status: q.Get("status"),
+			InstanceID: strings.TrimSpace(q.Get("instanceId")), QueueID: strings.TrimSpace(q.Get("queueId")),
+			ResponsibleID: strings.TrimSpace(firstNonEmpty(q.Get("responsibleId"), q.Get("assignedToId"))),
+		})
 		if err != nil {
 			writeServiceError(w, r, err)
 			return
 		}
 		// Array DIRETO (nao envelopado): e o que o front verbatim espera do legado.
-		httpapi.WriteJSON(w, http.StatusOK, conversations)
+		httpapi.WriteJSON(w, http.StatusOK, page)
 	}
 }
 
@@ -86,8 +95,9 @@ func handleListMessages(svc *Service) http.HandlerFunc {
 		}
 		q := r.URL.Query()
 		f := MessagePageFilter{
-			Limit:    parseLimit(q.Get("limit")),
-			BeforeID: strings.TrimSpace(q.Get("beforeId")),
+			Limit:        parseLimit(q.Get("limit")),
+			BeforeID:     strings.TrimSpace(q.Get("beforeId")),
+			BeforeCursor: strings.TrimSpace(q.Get("before")),
 		}
 		page, err := svc.ListMessages(r.Context(), accountID, caller, r.PathValue("id"), f)
 		if err != nil {
@@ -313,8 +323,9 @@ func callerFrom(r *http.Request) Caller {
 		return Caller{}
 	}
 	return Caller{
-		UserID:  principal.UserID,
-		IsAdmin: legacyRole(principal.Role) == legacyRoleAdmin,
+		UserID:          principal.UserID,
+		IsAdmin:         legacyRole(principal.Role) == legacyRoleAdmin,
+		IsPlatformAdmin: principal.Role == auth.RolePlatformAdmin,
 	}
 }
 

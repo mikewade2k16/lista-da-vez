@@ -133,7 +133,7 @@ func (s *SessionService) Bootstrap(ctx context.Context, accountID string, caller
 	existing, err := s.store.GetSessionInstance(ctx, accountID, name)
 	switch {
 	case err == nil:
-		return s.viewFor(ctx, accountID, existing), nil
+		return s.viewFor(ctx, accountID, existing, nil), nil
 	case !errors.Is(err, pgx.ErrNoRows):
 		return SessionView{}, err
 	}
@@ -155,7 +155,7 @@ func (s *SessionService) Bootstrap(ctx context.Context, accountID string, caller
 		if isUniqueViolation(err) {
 			// Corrida com outro cadastro do mesmo nome: recupera o existente.
 			if again, gErr := s.store.GetSessionInstance(ctx, accountID, name); gErr == nil {
-				return s.viewFor(ctx, accountID, again), nil
+				return s.viewFor(ctx, accountID, again, nil), nil
 			}
 		}
 		return SessionView{}, err
@@ -170,7 +170,7 @@ func (s *SessionService) Bootstrap(ctx context.Context, accountID string, caller
 	if err != nil {
 		return SessionView{}, err
 	}
-	return s.viewFor(ctx, accountID, inst), nil
+	return s.viewFor(ctx, accountID, inst, nil), nil
 }
 
 // Connect inicia a sessao no provider. QR -> cache + devolve para o painel. Conectado com
@@ -188,7 +188,7 @@ func (s *SessionService) Connect(ctx context.Context, accountID string, caller C
 	if err := s.applyState(ctx, accountID, inst, state); err != nil {
 		return SessionView{}, err
 	}
-	return s.viewFromState(ctx, accountID, inst.InstanceName)
+	return s.viewFromState(ctx, accountID, inst.InstanceName, state)
 }
 
 // Status consulta o estado da sessao no provider (sem forcar reconexao) e concilia o
@@ -205,18 +205,29 @@ func (s *SessionService) Status(ctx context.Context, accountID string, caller Ca
 	if err := s.applyState(ctx, accountID, inst, state); err != nil {
 		return SessionView{}, err
 	}
-	return s.viewFromState(ctx, accountID, inst.InstanceName)
+	return s.viewFromState(ctx, accountID, inst.InstanceName, state)
 }
 
 // QRCode devolve o QR vigente do cache (memoria, TTL 120s). Vazio => sem QR ativo.
 func (s *SessionService) QRCode(ctx context.Context, accountID string, caller Caller, instanceID, instanceName string) (SessionView, error) {
-	inst, err := s.assertInstance(ctx, accountID, caller, instanceID, instanceName)
+	inst, sm, cred, err := s.resolveForSession(ctx, accountID, caller, instanceID, instanceName)
 	if err != nil {
 		return SessionView{}, err
 	}
-	view := s.viewFor(ctx, accountID, inst)
+	state, err := sm.Status(ctx, cred, inst.InstanceName)
+	if err != nil {
+		return SessionView{}, err
+	}
+	if err := s.applyState(ctx, accountID, inst, state); err != nil {
+		return SessionView{}, err
+	}
+	view, err := s.viewFromState(ctx, accountID, inst.InstanceName, state)
+	if err != nil {
+		return SessionView{}, err
+	}
 	if qr := s.qr.get(accountID, inst.InstanceName); qr != "" {
 		view.QRCode = &qr
+		view.ConnectionState = connectionStateFor(view.Connected, view.QRCode)
 	}
 	return view, nil
 }
@@ -235,7 +246,7 @@ func (s *SessionService) Logout(ctx context.Context, accountID string, caller Ca
 	if err := s.store.ClearInstancePhone(ctx, accountID, inst.ID); err != nil {
 		return SessionView{}, err
 	}
-	return s.viewFromState(ctx, accountID, inst.InstanceName)
+	return s.viewFromState(ctx, accountID, inst.InstanceName, channel.SessionState{Connected: false})
 }
 
 // SetCredentials cifra e grava a credencial da instancia (item 7). A chave crua NUNCA volta
@@ -305,6 +316,31 @@ func (s *SessionService) DeleteInstance(ctx context.Context, accountID string, c
 		return ErrInstanceHasConversations
 	}
 	return s.store.DeleteInstance(ctx, accountID, inst.ID)
+}
+
+// UpdateChannelLimit altera o teto de numeros ativos da conta. E configuracao
+// comercial de plataforma, portanto owner/director da conta nao podem modifica-la.
+func (s *SessionService) UpdateChannelLimit(ctx context.Context, accountID string, caller Caller, in ChannelLimitInput) (ChannelLimitView, error) {
+	if !caller.IsPlatformAdmin {
+		return ChannelLimitView{}, ErrForbidden
+	}
+	if in.MaxChannels < 1 || in.MaxChannels > 100 {
+		return ChannelLimitView{}, ErrInvalidBody
+	}
+	current, err := s.store.CountActiveInstances(ctx, accountID)
+	if err != nil {
+		return ChannelLimitView{}, err
+	}
+	if in.MaxChannels < current {
+		return ChannelLimitView{}, ErrInvalidBody
+	}
+	if err := s.store.SetModuleMaxChannels(ctx, accountID, in.MaxChannels); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ChannelLimitView{}, ErrSessionUnavailable
+		}
+		return ChannelLimitView{}, err
+	}
+	return ChannelLimitView{MaxChannels: in.MaxChannels, CurrentChannels: current}, nil
 }
 
 // ============================================================================
@@ -417,23 +453,27 @@ func (s *SessionService) credentialsFor(ctx context.Context, accountID string, i
 	return cred, nil
 }
 
-// viewFromState re-le a instancia e monta a view com o QR do cache.
-func (s *SessionService) viewFromState(ctx context.Context, accountID, instanceName string) (SessionView, error) {
+// viewFromState re-le a instancia e monta a view com o estado AUTORITATIVO devolvido pelo
+// provider. phone_number e dado cadastral/identificador e nunca prova que existe uma sessao.
+func (s *SessionService) viewFromState(ctx context.Context, accountID, instanceName string, state channel.SessionState) (SessionView, error) {
 	inst, err := s.store.GetSessionInstance(ctx, accountID, instanceName)
 	if err != nil {
 		return SessionView{}, err
 	}
-	return s.viewFor(ctx, accountID, inst), nil
+	return s.viewFor(ctx, accountID, inst, &state), nil
 }
 
-// viewFor monta a SessionView: connected deriva de phone_number preenchido; QR vem do cache.
-func (s *SessionService) viewFor(_ context.Context, accountID string, inst sessionInstance) SessionView {
+// viewFor monta a SessionView. connected so pode vir de SessionState consultado no provider;
+// telefone preenchido manualmente continua disponivel para exibicao, mas nao abre a sessao.
+// state=nil (ex.: bootstrap) e deliberadamente "nao conectado" ate o proximo /status.
+func (s *SessionService) viewFor(_ context.Context, accountID string, inst sessionInstance, state *channel.SessionState) SessionView {
+	connected := state != nil && state.Connected
 	v := SessionView{
 		InstanceName:   inst.InstanceName,
 		Provider:       inst.Provider,
 		IsDefault:      inst.IsDefault,
 		IsActive:       inst.IsActive,
-		Connected:      inst.PhoneNumber != nil && strings.TrimSpace(*inst.PhoneNumber) != "",
+		Connected:      connected,
 		PhoneNumber:    inst.PhoneNumber,
 		CredentialsSet: inst.CredentialsSet,
 		Configured:     true,

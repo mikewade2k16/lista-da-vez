@@ -94,6 +94,10 @@ docker compose --profile omnichannel logs --tail=30 evolution-db
 Causa mais comum no 1º boot: o `evolution-db` ainda não terminou de migrar. Aguarde o
 healthcheck do banco e a Evolution reconecta sozinha.
 
+Na imagem v2.3.7 o healthcheck deve usar `wget`; ela não contém `curl`. Se a raiz em
+`127.0.0.1:8085` responder 200, mas o Docker registrar `curl: not found`, o provider está vivo e o
+healthcheck do compose está incorreto.
+
 ---
 
 ## 3. Rebuild da api (se a F3.5/F4 já estiverem no código)
@@ -169,6 +173,8 @@ docker volume rm omni_evolution_instances omni_evolution_db_data
 - **`WEBHOOK_RECEIVER_BASE_URL`** em prod = domínio público da api (o que a Evolution chama
   de volta).
 - **Backup:** incluir o volume `evolution_instances` (sessão pareada) e o `evolution_db_data`.
+- **Mídia do inbox:** incluir também `api_omnichannel_media`; ele é privado e separado de
+  `api_uploads`.
 - **Credencial real é por instância, cifrada** (`platform/secretbox`). `EVOLUTION_API_KEY` do
   env é só **fallback de ambiente** — a fonte é a config da instância no banco (canônico §13).
 

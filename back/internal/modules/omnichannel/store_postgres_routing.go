@@ -16,9 +16,13 @@ import (
 // canonico). O service computa o estado destino a partir dele.
 type convSnapshot struct {
 	State            State
+	InstanceID       *string
+	AIGeneration     int64
 	QueueID          *string
 	DepartmentID     *string
 	AssignedUserID   *string
+	ContactID        *string
+	Channel          string
 	ExtractedFields  json.RawMessage
 	ContactPhone     *string
 	InstanceScopeKey string
@@ -36,6 +40,11 @@ type stateUpdate struct {
 	AssignedUserID  *string
 	BumpLastMessage bool
 	NoChange        bool
+	InvalidateAI    bool
+	CloseHandoffs   bool
+	// PreserveAIMessageID keeps one already-created final AI reply queued while
+	// close invalidates every other pending AI action for the conversation.
+	PreserveAIMessageID string
 }
 
 // decisionRecord e a linha de auditoria a inserir (nil = transicao sem decisao de roteamento).
@@ -46,6 +55,96 @@ type decisionRecord struct {
 	Input              map[string]any
 	TargetDepartmentID *string
 	TargetQueueID      *string
+}
+
+func lockConversationSnapshotTx(ctx context.Context, tx pgx.Tx, accountID, convID string) (convSnapshot, error) {
+	var snap convSnapshot
+	err := tx.QueryRow(ctx, `select state, instance_id::text, ai_generation, queue_id::text, department_id::text,
+		assigned_user_id::text, contact_id::text, channel, extracted_fields, contact_phone, instance_scope_key, external_id
+		from messaging.conversations
+		where id = $1::uuid and account_id = $2::uuid
+		for update`, convID, accountID).Scan(&snap.State, &snap.InstanceID, &snap.AIGeneration, &snap.QueueID, &snap.DepartmentID,
+		&snap.AssignedUserID, &snap.ContactID, &snap.Channel, &snap.ExtractedFields, &snap.ContactPhone,
+		&snap.InstanceScopeKey, &snap.ExternalID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return convSnapshot{}, ErrNotFound
+	}
+	return snap, err
+}
+
+func applyStateUpdateTx(ctx context.Context, tx pgx.Tx, accountID, convID string, upd stateUpdate, dispatchV2 bool) error {
+	if !upd.NoChange {
+		if _, err := tx.Exec(ctx, `update messaging.conversations set
+			state = $3,
+			queue_id = $4::uuid,
+			department_id = $5::uuid,
+			assigned_user_id = $6::uuid,
+			last_message_at = case when $7 then now() else last_message_at end,
+			ai_generation = case when $8 then ai_generation + 1 else ai_generation end,
+			updated_at = now()
+			where id = $1::uuid and account_id = $2::uuid`,
+			convID, accountID, string(upd.State), upd.QueueID, upd.DepartmentID,
+			upd.AssignedUserID, upd.BumpLastMessage, upd.InvalidateAI); err != nil {
+			return err
+		}
+	}
+	if upd.CloseHandoffs {
+		if _, err := tx.Exec(ctx, `update messaging.handoffs
+			set status='closed', closed_at=coalesce(closed_at,now()), updated_at=now()
+			where account_id=$1::uuid and conversation_id=$2::uuid
+			  and status in ('requested','queued','accepted')`, accountID, convID); err != nil {
+			return err
+		}
+	}
+
+	if !upd.InvalidateAI {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `update messaging.outbox o
+		set status = 'dead', last_error = 'ai_invalidated_by_handoff',
+			locked_at = null, locked_by = '', updated_at = now()
+		from messaging.messages m
+		where o.account_id = $1::uuid and o.kind = $3 and o.status in ('pending','processing')
+		  and m.account_id = $1::uuid and m.conversation_id = $2::uuid
+		  and m.origin = 'ai' and m.status = 'PENDING'
+		  and ($4 = '' or m.id <> $4::uuid)
+		  and o.payload->>'messageId' = m.id::text`, accountID, convID, OutboundJobKind, upd.PreserveAIMessageID); err != nil {
+		return err
+	}
+	_, err := tx.Exec(ctx, `update messaging.messages
+		set status = 'FAILED', provider_error_code = 'ai_handoff_canceled', updated_at = now()
+		where account_id = $1::uuid and conversation_id = $2::uuid
+		  and origin = 'ai' and status = 'PENDING'
+		  and ($3 = '' or id <> $3::uuid)`, accountID, convID, upd.PreserveAIMessageID)
+	if err != nil {
+		return err
+	}
+	if dispatchV2 {
+		query := "update messaging.ai_dispatches " +
+			"set status = 'cancelled', last_error = 'ai_invalidated_by_handoff', " +
+			"locked_at = null, updated_at = now() " +
+			"where account_id = $1::uuid and conversation_id = $2::uuid " +
+			"and status in ('buffering','queued','processing')"
+		_, err = tx.Exec(ctx, query, accountID, convID)
+	}
+	return err
+}
+
+func insertDecisionTx(ctx context.Context, tx pgx.Tx, accountID, convID string, dec *decisionRecord) error {
+	if dec == nil {
+		return nil
+	}
+	input, err := json.Marshal(dec.Input)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `insert into messaging.routing_decisions
+		(account_id, conversation_id, rule_id, outcome, reason, input,
+		 target_department_id, target_queue_id)
+		values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6::jsonb, $7::uuid, $8::uuid)`,
+		accountID, convID, dec.RuleID, dec.Outcome, dec.Reason, input,
+		dec.TargetDepartmentID, dec.TargetQueueID)
+	return err
 }
 
 // ApplyTransition roda a transicao numa UNICA transacao com `select ... for update`
@@ -60,18 +159,8 @@ func (s *Store) ApplyTransition(ctx context.Context, accountID, convID string,
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	var snap convSnapshot
-	err = tx.QueryRow(ctx, `select state, queue_id::text, department_id::text,
-		assigned_user_id::text, extracted_fields, contact_phone, instance_scope_key, external_id
-		from messaging.conversations
-		where id = $1::uuid and account_id = $2::uuid
-		for update`, convID, accountID).Scan(&snap.State, &snap.QueueID, &snap.DepartmentID,
-		&snap.AssignedUserID, &snap.ExtractedFields, &snap.ContactPhone,
-		&snap.InstanceScopeKey, &snap.ExternalID)
+	snap, err := lockConversationSnapshotTx(ctx, tx, accountID, convID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return conversationRow{}, ErrNotFound
-		}
 		return conversationRow{}, err
 	}
 
@@ -80,34 +169,12 @@ func (s *Store) ApplyTransition(ctx context.Context, accountID, convID string,
 		return conversationRow{}, err
 	}
 
-	if !upd.NoChange {
-		if _, err := tx.Exec(ctx, `update messaging.conversations set
-			state = $3,
-			queue_id = $4::uuid,
-			department_id = $5::uuid,
-			assigned_user_id = $6::uuid,
-			last_message_at = case when $7 then now() else last_message_at end,
-			updated_at = now()
-			where id = $1::uuid and account_id = $2::uuid`,
-			convID, accountID, string(upd.State), upd.QueueID, upd.DepartmentID,
-			upd.AssignedUserID, upd.BumpLastMessage); err != nil {
-			return conversationRow{}, err
-		}
+	if err := applyStateUpdateTx(ctx, tx, accountID, convID, upd, s.AIDispatchV2Enabled()); err != nil {
+		return conversationRow{}, err
 	}
 
-	if dec != nil {
-		input, mErr := json.Marshal(dec.Input)
-		if mErr != nil {
-			return conversationRow{}, mErr
-		}
-		if _, err := tx.Exec(ctx, `insert into messaging.routing_decisions
-			(account_id, conversation_id, rule_id, outcome, reason, input,
-			 target_department_id, target_queue_id)
-			values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6::jsonb, $7::uuid, $8::uuid)`,
-			accountID, convID, dec.RuleID, dec.Outcome, dec.Reason, input,
-			dec.TargetDepartmentID, dec.TargetQueueID); err != nil {
-			return conversationRow{}, err
-		}
+	if err := insertDecisionTx(ctx, tx, accountID, convID, dec); err != nil {
+		return conversationRow{}, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

@@ -26,6 +26,7 @@ var (
 	// ErrVersionImmutable: tentativa de editar uma version ja publicada. Publicada e
 	// imutavel: editar = criar version nova; rollback = repontar active_version_id.
 	ErrVersionImmutable = errors.New("omnichannel: published version is immutable")
+	ErrAILeaseInvalid   = errors.New("omnichannel: ai dispatch invalidated by conversation takeover")
 )
 
 // Status de run gravado em ai_runs.status (CHECK textual da migration 0206). Uma linha por
@@ -69,19 +70,27 @@ type agentRow struct {
 
 // versionRow e a linha crua de messaging.ai_agent_versions.
 type versionRow struct {
-	ID            string
-	AgentID       string
-	Version       int
-	Status        string
-	Provider      string
-	Model         string
-	Temperature   float64
-	Layers        json.RawMessage
-	OutputSchema  json.RawMessage
-	SchemaVersion string
-	PublishedAt   *time.Time
-	PublishedBy   string
-	CreatedAt     time.Time
+	ID                 string
+	AgentID            string
+	Version            int
+	Status             string
+	Provider           string
+	Model              string
+	Temperature        float64
+	Layers             json.RawMessage
+	OutputSchema       json.RawMessage
+	MediaConfig        json.RawMessage
+	SchemaVersion      string
+	DebounceMS         int
+	MaxContextMessages int
+	MaxAITurns         int
+	MinConfidence      float64
+	HandoffOnError     bool
+	HandoffOnLimit     bool
+	WorkflowContract   string
+	PublishedAt        *time.Time
+	PublishedBy        string
+	CreatedAt          time.Time
 }
 
 // ============================================================================
@@ -103,18 +112,26 @@ type AIAgentView struct {
 // AIAgentVersionView e a version servida a F10. layers/outputSchema saem como jsonb cru (o
 // editor da F10 os manipula). A chave do provider NAO esta aqui (vive no agente, mascarada).
 type AIAgentVersionView struct {
-	ID            string          `json:"id"`
-	AgentID       string          `json:"agentId"`
-	Version       int             `json:"version"`
-	Status        string          `json:"status"`
-	Provider      string          `json:"provider"`
-	Model         string          `json:"model"`
-	Temperature   float64         `json:"temperature"`
-	Layers        json.RawMessage `json:"layers"`
-	OutputSchema  json.RawMessage `json:"outputSchema"`
-	SchemaVersion string          `json:"schemaVersion"`
-	PublishedAt   *time.Time      `json:"publishedAt"`
-	CreatedAt     time.Time       `json:"createdAt"`
+	ID                 string          `json:"id"`
+	AgentID            string          `json:"agentId"`
+	Version            int             `json:"version"`
+	Status             string          `json:"status"`
+	Provider           string          `json:"provider"`
+	Model              string          `json:"model"`
+	Temperature        float64         `json:"temperature"`
+	Layers             json.RawMessage `json:"layers"`
+	OutputSchema       json.RawMessage `json:"outputSchema"`
+	MediaConfig        json.RawMessage `json:"mediaConfig"`
+	SchemaVersion      string          `json:"schemaVersion"`
+	DebounceMS         int             `json:"debounceMs"`
+	MaxContextMessages int             `json:"maxContextMessages"`
+	MaxAITurns         int             `json:"maxAiTurns"`
+	MinConfidence      float64         `json:"minConfidence"`
+	HandoffOnError     bool            `json:"handoffOnError"`
+	HandoffOnLimit     bool            `json:"handoffOnLimit"`
+	WorkflowContract   string          `json:"workflowContractVersion"`
+	PublishedAt        *time.Time      `json:"publishedAt"`
+	CreatedAt          time.Time       `json:"createdAt"`
 }
 
 // CollectFieldView e o campo-a-coletar servido a F10.
@@ -173,12 +190,20 @@ type AIAgentPatch struct {
 // AIVersionInput e o POST /agents/{id}/versions: cria sempre um DRAFT. provider/model vem do
 // painel (NUNCA supostos). outputSchema vazio => default C9.3 aplicado no service.
 type AIVersionInput struct {
-	Provider      string          `json:"provider"`
-	Model         string          `json:"model"`
-	Temperature   float64         `json:"temperature"`
-	Layers        json.RawMessage `json:"layers"`
-	OutputSchema  json.RawMessage `json:"outputSchema"`
-	SchemaVersion string          `json:"schemaVersion"`
+	Provider           string          `json:"provider"`
+	Model              string          `json:"model"`
+	Temperature        float64         `json:"temperature"`
+	Layers             json.RawMessage `json:"layers"`
+	OutputSchema       json.RawMessage `json:"outputSchema"`
+	MediaConfig        json.RawMessage `json:"mediaConfig"`
+	SchemaVersion      string          `json:"schemaVersion"`
+	DebounceMS         int             `json:"debounceMs"`
+	MaxContextMessages int             `json:"maxContextMessages"`
+	MaxAITurns         int             `json:"maxAiTurns"`
+	MinConfidence      *float64        `json:"minConfidence"`
+	HandoffOnError     *bool           `json:"handoffOnError"`
+	HandoffOnLimit     *bool           `json:"handoffOnLimit"`
+	WorkflowContract   string          `json:"workflowContractVersion"`
 }
 
 // CollectFieldInput e o POST /agents/{id}/collect-fields.
@@ -207,6 +232,7 @@ type RollbackInput struct {
 
 // SimMessage e uma mensagem do historico simulado (C9.7). role: contact|agent.
 type SimMessage struct {
+	ID   string `json:"id,omitempty"`
 	Role string `json:"role"`
 	Text string `json:"text"`
 }
@@ -263,6 +289,12 @@ type TriageInput struct {
 	AccountID      string
 	ConversationID string
 	MessageID      string
+	// DispatchID is populated only by the durable E2 worker. Legacy/manual
+	// triage keeps it empty and therefore remains on the native rollback path.
+	DispatchID string
+	// ForceReply is set only by the authenticated operator action. It bypasses
+	// configurable conversational limits for one reply, never technical gates.
+	ForceReply bool
 }
 
 // TriageOutput e a SUGESTAO da IA (entrada do motor deterministico da F8). Nenhum caminho
@@ -274,6 +306,12 @@ type TriageOutput struct {
 	SuggestedDepartment string
 	SuggestedQueue      string
 	NeedsHuman          bool
+	HumanRequested      bool
+	SensitiveTopic      bool
+	CloseRequested      bool
+	CloseReason         string
+	HandoffReason       string
+	HandoffSummary      string
 	ReplyDraft          string
 }
 
@@ -286,6 +324,10 @@ type triageOutputJSON struct {
 	SuggestedDepartment *string        `json:"suggested_department"`
 	SuggestedQueue      *string        `json:"suggested_queue"`
 	NeedsHuman          bool           `json:"needs_human"`
+	HumanRequested      bool           `json:"human_requested"`
+	SensitiveTopic      bool           `json:"sensitive_topic"`
+	CloseRequested      bool           `json:"close_requested"`
+	CloseReason         *string        `json:"close_reason"`
 	ReplyDraft          *string        `json:"reply_draft"`
 }
 
@@ -296,6 +338,9 @@ func (j triageOutputJSON) toTriageOutput() TriageOutput {
 		Confidence:      j.Confidence,
 		ExtractedFields: j.ExtractedFields,
 		NeedsHuman:      j.NeedsHuman,
+		HumanRequested:  j.HumanRequested,
+		SensitiveTopic:  j.SensitiveTopic,
+		CloseRequested:  j.CloseRequested,
 	}
 	if out.ExtractedFields == nil {
 		out.ExtractedFields = map[string]any{}
@@ -308,6 +353,9 @@ func (j triageOutputJSON) toTriageOutput() TriageOutput {
 	}
 	if j.ReplyDraft != nil {
 		out.ReplyDraft = *j.ReplyDraft
+	}
+	if j.CloseReason != nil {
+		out.CloseReason = *j.CloseReason
 	}
 	return out
 }
@@ -323,14 +371,17 @@ const (
 	dispatchLimitExceeded DispatchOutcome = "limit_exceeded" // teto mensal estourado
 	dispatchProviderError DispatchOutcome = "provider_error" // provider/modelo/chave ausente/falho
 	dispatchSchemaInvalid DispatchOutcome = "schema_invalid" // saida nao validou (apos 1 retry)
+	dispatchNoReply       DispatchOutcome = "no_reply"       // policy silencia e aguarda novo inbound
 )
 
 // DispatchResult e o resultado do dispatch. Output so e valido quando Outcome==triaged. RunID
 // vazio quando nenhum run foi gravado (no_agent). Nunca carrega a chave nem prompt bruto.
 type DispatchResult struct {
-	Outcome DispatchOutcome
-	Output  TriageOutput
-	RunID   string
+	Outcome      DispatchOutcome
+	Output       TriageOutput
+	RunID        string
+	AIGeneration int64
+	ReasonCode   string
 }
 
 // defaultOutputSchema e o JSON Schema canonico da saida (C9.3), aplicado quando a version e
@@ -345,9 +396,13 @@ func defaultOutputSchema() json.RawMessage {
     "suggested_department": {"type": ["string", "null"]},
     "suggested_queue": {"type": ["string", "null"]},
     "needs_human": {"type": "boolean"},
+	"human_requested": {"type": "boolean"},
+	"sensitive_topic": {"type": "boolean"},
+	"close_requested": {"type": "boolean"},
+	"close_reason": {"type": ["string", "null"]},
     "reply_draft": {"type": ["string", "null"]}
   },
-  "required": ["intent", "confidence", "extracted_fields", "needs_human"],
+	"required": ["intent", "confidence", "extracted_fields", "needs_human", "human_requested", "sensitive_topic", "close_requested"],
   "additionalProperties": false
 }`)
 }

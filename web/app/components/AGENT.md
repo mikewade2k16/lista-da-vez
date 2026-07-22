@@ -646,7 +646,9 @@ com mensagem acionavel. A pill (minimizada) mostra um badge quando ha `errorMess
 - [CalendarMediaUploader.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/calendar/CalendarMediaUploader.vue)
   Widget reutilizavel de anexos (`v-model` = `CalendarMediaItem[]`): grade de previews (img/`video`)
   - remover, tile de adicionar (input file oculto), barra de progresso por upload e validacao de
-    tipo/tamanho no cliente (contra `useCalendarMedia().mediaLimits`). `readonly` = so preview (midia do
+    tipo/tamanho no cliente (contra `useCalendarMedia().mediaLimits`). O card pendente mostra as fases
+    `Enviando arquivo`, `Conexão lenta · ainda tentando` (10s sem progresso), `Upload concluído · processando`
+    e `Gerando miniatura do vídeo`; falhas exibem o motivo do backend/rede e usam `role=alert`. `readonly` = so preview (midia do
     post no drawer). Nos **Anexos do dia**, usa 3 colunas, ocupa no maximo 35% da altura do drawer e
     ativa a rolagem interna somente acima de 6 midias; o botao de upload fica no cabecalho para nao
     contar como uma celula extra. Usado no [CalendarEventForm.vue] e no [DayDrawer.vue]. Clicar num item abre o

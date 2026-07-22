@@ -2,10 +2,12 @@ package omnichannel
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -18,7 +20,8 @@ import (
 // recebem um id ja validado no service (defesa em profundidade, principio 2). IDs sao
 // string + cast no SQL ($1::uuid); nao importamos pacote de uuid (padrao da casa).
 type Store struct {
-	pool *pgxpool.Pool
+	pool         *pgxpool.Pool
+	aiDispatchV2 atomic.Bool
 }
 
 // NewStore cria o Store.
@@ -91,8 +94,7 @@ func scanConversation(row rowScanner) (conversationRow, error) {
 
 // ConversationFilter filtra a listagem do inbox.
 type ConversationFilter struct {
-	// InstanceID e o query param instanceId (opcional).
-	InstanceID string
+	ConversationPageFilter
 	// ScopeKeys restringe as conversas as instancias que o usuario pode ver (A2:
 	// filtro por responsible_user_id). nil = sem restricao (admin).
 	ScopeKeys []string
@@ -100,6 +102,36 @@ type ConversationFilter struct {
 
 // ListConversations devolve as conversas da account ordenadas por last_message_at DESC.
 // SEM paginacao — o contrato do legado (e do front) e a lista inteira.
+type conversationCursor struct {
+	LastMessageAt time.Time
+	ID            string
+}
+
+func encodeConversationCursor(lastMessageAt time.Time, id string) string {
+	raw := lastMessageAt.UTC().Format(time.RFC3339Nano) + "|" + id
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeConversationCursor(raw string) (conversationCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return conversationCursor{}, ErrInvalidBody
+	}
+	parts := strings.SplitN(string(decoded), "|", 2)
+	if len(parts) != 2 || !omnichannelUUIDPattern.MatchString(parts[1]) {
+		return conversationCursor{}, ErrInvalidBody
+	}
+	lastMessageAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return conversationCursor{}, ErrInvalidBody
+	}
+	return conversationCursor{LastMessageAt: lastMessageAt, ID: parts[1]}, nil
+}
+
+func escapeLike(value string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
+}
+
 func (s *Store) ListConversations(ctx context.Context, accountID string, f ConversationFilter) ([]conversationRow, error) {
 	query := `select ` + conversationCols + lastMessageCol + `
 		from messaging.conversations c
@@ -116,7 +148,45 @@ func (s *Store) ListConversations(ctx context.Context, accountID string, f Conve
 		args = append(args, f.ScopeKeys)
 		query += " and c.instance_scope_key = any($" + strconv.Itoa(len(args)) + "::text[])"
 	}
-	query += " order by c.last_message_at desc"
+	if f.Channel != "" {
+		args = append(args, f.Channel)
+		query += " and c.channel = $" + strconv.Itoa(len(args))
+	}
+	if f.Status != "" {
+		args = append(args, f.Status)
+		query += ` and case
+			when c.state = 'closed' then 'CLOSED'
+			when c.state = 'pending' then 'PENDING'
+			else 'OPEN' end = $` + strconv.Itoa(len(args))
+	}
+	if f.QueueID != "" {
+		args = append(args, f.QueueID)
+		query += " and c.queue_id = $" + strconv.Itoa(len(args)) + "::uuid"
+	}
+	if f.ResponsibleID != "" {
+		args = append(args, f.ResponsibleID)
+		query += " and coalesce(c.assigned_user_id::text, c.assigned_to_id) = $" + strconv.Itoa(len(args))
+	}
+	if f.Search != "" {
+		args = append(args, "%"+escapeLike(strings.ToLower(f.Search))+"%")
+		position := strconv.Itoa(len(args))
+		query += ` and (lower(coalesce(c.contact_name, '')) like $` + position + ` escape '\'
+			or lower(coalesce(c.contact_phone, '')) like $` + position + ` escape '\'
+			or lower(c.external_id) like $` + position + ` escape '\'
+			or exists (select 1 from messaging.messages sm
+				where sm.account_id = c.account_id and sm.conversation_id = c.id
+				  and lower(sm.content) like $` + position + ` escape '\'))`
+	}
+	if f.BeforeCursor != "" {
+		cursor, err := decodeConversationCursor(f.BeforeCursor)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, cursor.LastMessageAt, cursor.ID)
+		query += " and (c.last_message_at, c.id) < ($" + strconv.Itoa(len(args)-1) + ", $" + strconv.Itoa(len(args)) + "::uuid)"
+	}
+	args = append(args, f.Limit)
+	query += " order by c.last_message_at desc, c.id desc limit $" + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -154,16 +224,66 @@ const messageCols = `m.id::text, m.account_id::text, m.conversation_id::text,
 	m.sender_user_id::text, m.direction, m.message_type, m.sender_name, m.sender_avatar_url,
 	m.content, m.media_url, m.media_mime_type, m.media_file_name, m.media_file_size_bytes,
 	m.media_caption, m.media_duration_seconds, m.metadata_json, m.status,
+	m.origin, m.reply_to_message_id::text, m.reply_to_external_message_id,
+	(select r.sender_name from messaging.messages r where r.id = m.reply_to_message_id
+	  and r.account_id = m.account_id and r.conversation_id = m.conversation_id),
+	(select r.content from messaging.messages r where r.id = m.reply_to_message_id
+	  and r.account_id = m.account_id and r.conversation_id = m.conversation_id),
+	(select r.message_type from messaging.messages r where r.id = m.reply_to_message_id
+	  and r.account_id = m.account_id and r.conversation_id = m.conversation_id),
+	m.provider_status_at, m.provider_error_code,
+	case when m.message_type = 'TEXT' then ''
+	  when m.media_storage_key is not null and m.media_source_kind = 'disk' then 'ready'
+	  else coalesce(m.metadata_json->>'mediaState', 'pending') end,
 	m.external_message_id, m.created_at, m.updated_at`
 
 func scanMessage(row rowScanner) (MessageView, error) {
 	var m MessageView
+	var replyMessageID, replyExternalID, replySender, replyContent, replyType *string
 	err := row.Scan(&m.ID, &m.TenantID, &m.ConversationID, &m.SenderUserID, &m.Direction,
 		&m.MessageType, &m.SenderName, &m.SenderAvatarURL, &m.Content, &m.MediaURL,
 		&m.MediaMimeType, &m.MediaFileName, &m.MediaFileSizeBytes, &m.MediaCaption,
-		&m.MediaDurationSeconds, &m.MetadataJSON, &m.Status, &m.ExternalMessageID,
+		&m.MediaDurationSeconds, &m.MetadataJSON, &m.Status, &m.Origin, &replyMessageID,
+		&replyExternalID, &replySender, &replyContent, &replyType,
+		&m.ProviderStatusAt, &m.ProviderErrorCode, &m.MediaState, &m.ExternalMessageID,
 		&m.CreatedAt, &m.UpdatedAt)
+	if err == nil && (replyMessageID != nil || replyExternalID != nil) {
+		m.ReplyTo = &ReplyToView{
+			MessageID:         replyMessageID,
+			ExternalMessageID: deref(replyExternalID),
+			SenderName:        deref(replySender),
+			Content:           deref(replyContent),
+			MessageType:       deref(replyType),
+		}
+		fillReplySnapshot(&m)
+	}
+	m.CanRetryMedia = m.MediaState == "failed"
 	return m, err
+}
+
+func fillReplySnapshot(m *MessageView) {
+	if m == nil || m.ReplyTo == nil || len(m.MetadataJSON) == 0 {
+		return
+	}
+	var metadata struct {
+		ReplySnapshot struct {
+			Content     string `json:"content"`
+			MessageType string `json:"messageType"`
+			Participant string `json:"participant"`
+		} `json:"replySnapshot"`
+	}
+	if json.Unmarshal(m.MetadataJSON, &metadata) != nil {
+		return
+	}
+	if m.ReplyTo.Content == "" {
+		m.ReplyTo.Content = metadata.ReplySnapshot.Content
+	}
+	if m.ReplyTo.MessageType == "" {
+		m.ReplyTo.MessageType = metadata.ReplySnapshot.MessageType
+	}
+	if m.ReplyTo.SenderName == "" {
+		m.ReplyTo.SenderName = metadata.ReplySnapshot.Participant
+	}
 }
 
 // hiddenFilter exclui as mensagens que o usuario apagou "para mim"
@@ -172,14 +292,39 @@ const hiddenFilter = ` and not exists (
 	select 1 from messaging.hidden_messages h
 	where h.message_id = m.id and h.user_id = $3::uuid)`
 
-// resolveBeforeCreatedAt traduz beforeId -> created_at (a paginacao filtra por DATA,
-// nao por id). Amarrado a account E a conversa: um beforeId de outra conta nao resolve
-// e a pagina volta como se nao houvesse cursor. NULL = sem filtro de data.
-func (s *Store) resolveBeforeCreatedAt(ctx context.Context, accountID, conversationID, beforeID string) (*time.Time, error) {
-	var createdAt time.Time
-	err := s.pool.QueryRow(ctx, `select m.created_at from messaging.messages m
+type messageCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+func encodeMessageCursor(createdAt time.Time, id string) string {
+	raw := createdAt.UTC().Format(time.RFC3339Nano) + "|" + id
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeMessageCursor(raw string) (messageCursor, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil {
+		return messageCursor{}, ErrInvalidBody
+	}
+	parts := strings.SplitN(string(decoded), "|", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		return messageCursor{}, ErrInvalidBody
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return messageCursor{}, ErrInvalidBody
+	}
+	return messageCursor{CreatedAt: createdAt, ID: parts[1]}, nil
+}
+
+// resolveBeforeMessage traduz o beforeId legado para o cursor estavel (created_at,id).
+// O id permanece preso a account+conversa, logo um id de outro tenant nunca e cursor valido.
+func (s *Store) resolveBeforeMessage(ctx context.Context, accountID, conversationID, beforeID string) (*messageCursor, error) {
+	var cursor messageCursor
+	err := s.pool.QueryRow(ctx, `select m.created_at, m.id::text from messaging.messages m
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid and m.id = $3::uuid`,
-		accountID, conversationID, beforeID).Scan(&createdAt)
+		accountID, conversationID, beforeID).Scan(&cursor.CreatedAt, &cursor.ID)
 	switch {
 	// beforeId inexistente (ou de outra conta/conversa) => sem filtro de data: a pagina
 	// volta como se nao houvesse cursor. E o comportamento do legado (beforeMessage null).
@@ -188,7 +333,7 @@ func (s *Store) resolveBeforeCreatedAt(ctx context.Context, accountID, conversat
 	case err != nil:
 		return nil, err
 	default:
-		return &createdAt, nil
+		return &cursor, nil
 	}
 }
 
@@ -202,18 +347,26 @@ func (s *Store) ListMessages(ctx context.Context, accountID, userID, conversatio
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid` + hiddenFilter
 	args := []any{accountID, conversationID, userID}
 
-	if strings.TrimSpace(f.BeforeID) != "" {
-		before, err := s.resolveBeforeCreatedAt(ctx, accountID, conversationID, f.BeforeID)
+	var before *messageCursor
+	if strings.TrimSpace(f.BeforeCursor) != "" {
+		decoded, err := decodeMessageCursor(f.BeforeCursor)
 		if err != nil {
 			return nil, err
 		}
-		if before != nil {
-			args = append(args, *before)
-			query += " and m.created_at < $" + strconv.Itoa(len(args))
+		before = &decoded
+	} else if strings.TrimSpace(f.BeforeID) != "" {
+		resolved, err := s.resolveBeforeMessage(ctx, accountID, conversationID, f.BeforeID)
+		if err != nil {
+			return nil, err
 		}
+		before = resolved
+	}
+	if before != nil {
+		args = append(args, before.CreatedAt, before.ID)
+		query += " and (m.created_at, m.id) < ($" + strconv.Itoa(len(args)-1) + ", $" + strconv.Itoa(len(args)) + "::uuid)"
 	}
 	args = append(args, f.Limit)
-	query += " order by m.created_at desc limit $" + strconv.Itoa(len(args))
+	query += " order by m.created_at desc, m.id desc limit $" + strconv.Itoa(len(args))
 
 	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -244,15 +397,15 @@ func (s *Store) ListMessages(ctx context.Context, accountID, userID, conversatio
 // HasOlderMessage responde o `hasMore`: existe mensagem MAIS ANTIGA que a primeira da
 // pagina? Nao conta as escondidas do usuario — senao o front pediria uma pagina que
 // voltaria vazia e o scroll infinito travaria.
-func (s *Store) HasOlderMessage(ctx context.Context, accountID, userID, conversationID string, oldest time.Time) (bool, error) {
+func (s *Store) HasOlderMessage(ctx context.Context, accountID, userID, conversationID string, oldest time.Time, oldestID string) (bool, error) {
 	var exists bool
 	err := s.pool.QueryRow(ctx, `select exists (
 		select 1 from messaging.messages m
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid
-		  and m.created_at < $4
+		  and (m.created_at, m.id) < ($4, $5::uuid)
 		  and not exists (select 1 from messaging.hidden_messages h
 			where h.message_id = m.id and h.user_id = $3::uuid))`,
-		accountID, conversationID, userID, oldest).Scan(&exists)
+		accountID, conversationID, userID, oldest, oldestID).Scan(&exists)
 	return exists, err
 }
 

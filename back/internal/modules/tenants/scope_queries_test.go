@@ -34,6 +34,35 @@ func TestBuildListAccessibleQueryReadsStoreScopedTenantsFromCoreSettings(t *test
 	assertStringSliceArgContains(t, args, 1, "queue.manager")
 }
 
+func TestBuildListAccessibleQueryFiltersEnabledModuleForEveryScope(t *testing.T) {
+	tests := []struct {
+		name        string
+		role        auth.Role
+		placeholder string
+		argIndex    int
+	}{
+		{name: "platform", role: auth.RolePlatformAdmin, placeholder: "$1", argIndex: 0},
+		{name: "tenant", role: auth.RoleDirector, placeholder: "$3", argIndex: 2},
+		{name: "store", role: auth.RoleManager, placeholder: "$3", argIndex: 2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			query, args := buildListAccessibleQuery(auth.Principal{
+				UserID: "user-1",
+				Role:   test.role,
+			}, ListInput{ModuleID: " omnichannel "})
+
+			assertQueryContains(t, query, "core.account_modules")
+			assertQueryContains(t, query, "am.module_id = "+test.placeholder)
+			assertQueryContains(t, query, "am.enabled = true")
+			if len(args) <= test.argIndex || args[test.argIndex] != "omnichannel" {
+				t.Fatalf("expected module argument at %d, got %#v", test.argIndex, args)
+			}
+		})
+	}
+}
+
 func TestBuildFindAccessibleQueryReadsStoreScopedTenantFromCoreSettings(t *testing.T) {
 	query, args := buildFindAccessibleQuery(auth.Principal{
 		UserID: "user-1",

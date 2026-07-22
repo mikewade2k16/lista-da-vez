@@ -155,7 +155,7 @@ Resolucao:
 - bind mount REMOVIDO; o codigo e copiado no build da imagem (target dev) e vive no overlayfs nativo do container
 - `docker compose watch` (develop.watch, action sync) sincroniza edicoes host -> container; inotify real dentro do container, polling desligado por padrao
 - package.json/package-lock.json usam `sync+restart` (ensure-node-modules faz `npm ci` no volume)
-- ATENCAO: o watch NAO faz sync inicial (verificado empiricamente no Compose v2.38) — por isso o fluxo oficial roda `docker compose up -d --build web` antes de ligar o watch (`npm run dev:watch` / scripts/dev/watch-web.ps1); `npm run dev` = `up --build --watch`
+- ATENCAO: o watch NAO faz sync inicial (verificado empiricamente no Compose v2.38) — por isso o fluxo oficial roda `docker compose up -d --build --force-recreate --no-deps web` antes de ligar o watch (`npm run dev:watch` / scripts/dev/watch-web.ps1). O `--force-recreate` e necessario porque o Compose pode manter um container com o bundle antigo mesmo apos build; `npm run dev` = `up --build --watch`
 - resultado medido: boot completo do nuxt dev em ~60s, GET / em ~0.04s, sync de edicao chega em ~2s
 
 Arquivos:

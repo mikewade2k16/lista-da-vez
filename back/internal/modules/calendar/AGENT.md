@@ -365,6 +365,11 @@ helpers do ask (`resolveChatTarget`/`buildChatContext`/`deriveChatTitle`/`ptrToS
   injetado via `calendar.New(storage, ...opts)` no `app.go` (igual `tasks`). Servido em `/uploads/...`.
 - Upload stateless: `POST /v1/calendar/media` valida mime (jpg/png/webp/gif/avif, mp4/webm/mov) +
   tamanho e devolve o `MediaItem`; o front anexa ao evento/dia e salva (full replace).
+  A rota limpa, via `http.ResponseController`, os deadlines globais de leitura (15s) e escrita
+  (30s), inclusive através dos wrappers Logging/Gzip; `ReadHeaderTimeout` e `MaxBytesReader`
+  continuam ativos. Erros de transporte são distintos: 408 `upload_timeout`, 413
+  `media_too_large`, 400 `invalid_media` e 503 `upload_unavailable` se o writer não aceitar
+  controle de deadline.
   OBS: avif nao e sniffado pelo http.DetectContentType — passa pelo fallback do contentType
   declarado (normalizeImageMime). No FRONT, `/uploads/*` e SEMPRE absolutizado com
   `resolveMediaUrl(url, apiBase)` (utils/media.ts) — em dev web (:3003) e api (:9091) sao
@@ -423,7 +428,7 @@ de contas-cliente cross-account = fast-follow com validacao de org.)
   Cyber Monday) calculadas em `holidays.go` — sem tabela/migration.
 - `POST /v1/calendar/media` — upload multipart (campo `file`) → grava e devolve `MediaItem`.
   Corpo limitado a `videoMaxBytes`+folga; > limite => 413 `media_too_large`; tipo invalido
-  => 400 `invalid_media`.
+  => 400 `invalid_media`; conexão interrompida/timeout de leitura => 408 `upload_timeout`.
 - `GET /v1/calendar/day-media?from=&to=` — anexos avulsos por dia da janela (`{days:[{date,media}]}`).
 - `PUT /v1/calendar/day-media/{date}` — full replace da lista do dia (body `{media:[MediaItem]}`).
 - `GET /v1/calendar/media-limits` — tetos de upload (qualquer autenticado; o front mostra/valida).

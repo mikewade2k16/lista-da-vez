@@ -204,6 +204,65 @@ func (a *ActionsService) Assign(ctx context.Context, accountID string, p auth.Pr
 	return after, nil
 }
 
+// TakeConversation é a operação explícita de handoff do E5. Diferente do PATCH
+// de atribuição (que permite reatribuir), take aceita somente a primeira pessoa
+// concorrente; o Store mantém o lock da conversa até cancelar a IA e gravar o
+// aceite do handoff.
+func (a *ActionsService) TakeConversation(ctx context.Context, accountID string, p auth.Principal, convID, idempotencyKey string) (ConversationView, error) {
+	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.conversations.assign"); err != nil {
+		return ConversationView{}, err
+	}
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" || len([]rune(idempotencyKey)) > 128 {
+		return ConversationView{}, ErrInvalidBody
+	}
+	if _, err := a.resolveConversation(ctx, accountID, p, convID); err != nil {
+		return ConversationView{}, err
+	}
+	allowUnscoped, err := a.svc.hasPermission(ctx, accountID, p, "omnichannel.settings.manage")
+	if err != nil {
+		return ConversationView{}, err
+	}
+	row, err := a.store.TakeConversation(ctx, accountID, convID, p.UserID, allowUnscoped)
+	if err != nil {
+		return ConversationView{}, translate(err)
+	}
+	if err := a.store.SyncAssignedToID(ctx, accountID, convID); err != nil {
+		return ConversationView{}, err
+	}
+	view, err := conversationView(row)
+	if err != nil {
+		return ConversationView{}, err
+	}
+	a.publishConversationUpdated(ctx, accountID, view)
+	return view, nil
+}
+
+func (a *ActionsService) RequestHandoff(ctx context.Context, accountID string, p auth.Principal, convID string, in HandoffRequest) (HandoffView, error) {
+	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.conversations.assign"); err != nil {
+		return HandoffView{}, err
+	}
+	if err := normalizeHandoffRequest(&in); err != nil {
+		return HandoffView{}, err
+	}
+	if _, err := a.resolveConversation(ctx, accountID, p, convID); err != nil {
+		return HandoffView{}, err
+	}
+	if in.TargetQueueID != nil {
+		if err := a.svc.assertActiveQueue(ctx, accountID, *in.TargetQueueID); err != nil {
+			return HandoffView{}, translate(err)
+		}
+	}
+	return a.store.CreateHandoff(ctx, accountID, convID, p.UserID, in)
+}
+
+func (a *ActionsService) ReleaseConversation(ctx context.Context, accountID string, p auth.Principal, convID string) (ConversationView, error) {
+	if err := a.svc.requirePermission(ctx, accountID, p, "omnichannel.conversations.assign"); err != nil {
+		return ConversationView{}, err
+	}
+	return a.Assign(ctx, accountID, p, convID, nil)
+}
+
 // ============================================================================
 // Contatos: abrir conversa (POST .../contacts/{id}/open-conversation)
 // ============================================================================

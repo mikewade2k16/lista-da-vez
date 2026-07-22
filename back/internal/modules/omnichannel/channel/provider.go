@@ -11,10 +11,28 @@ package channel
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
 )
+
+// HTTPStatusCoder permite que adapters exponham apenas o status HTTP seguro de uma falha.
+// O corpo do provider nunca atravessa esta fronteira.
+type HTTPStatusCoder interface {
+	HTTPStatusCode() int
+}
+
+// ErrorHTTPStatus extrai o status de um erro de provider, inclusive quando embrulhado.
+func ErrorHTTPStatus(err error) (int, bool) {
+	var statusErr HTTPStatusCoder
+	if !errors.As(err, &statusErr) {
+		return 0, false
+	}
+	status := statusErr.HTTPStatusCode()
+	return status, status > 0
+}
 
 // Provider e a interface do canonico §5.4: a traducao entre o mundo do provedor e o
 // shape canonico. Os 5 metodos sao os da spec OMNI-F4 C1. NUNCA embutir o body cru em
@@ -52,6 +70,47 @@ type Provider interface {
 	// Capabilities sustenta o multi-provider na UI: a tela degrada POR NUMERO em vez de
 	// mentir que todo numero faz tudo (canonico §12 risco 2).
 	Capabilities() Capabilities
+}
+
+// WebhookChallengeVerifier is implemented by providers that use a GET
+// subscription handshake (Meta Graph). It is optional so Evolution/WAHA keep
+// their existing POST-only contract.
+type WebhookChallengeVerifier interface {
+	VerifyWebhookChallenge(query map[string]string, cred Credentials) (string, error)
+}
+
+// WebhookInstanceResolver lets the inbound service select the matching
+// per-instance credential before verifying a signed webhook. The returned value
+// is public provider metadata only (never a tenant/account id).
+type WebhookInstanceResolver interface {
+	WebhookInstanceKey(body []byte) string
+}
+
+// TemplateProvider is an optional read-only capability used by the Meta
+// template synchronizer. Status comes from the provider and cannot be marked
+// approved through the panel.
+type TemplateProvider interface {
+	ListTemplates(ctx context.Context, cred Credentials) ([]Template, error)
+}
+
+type Template struct {
+	ExternalID string
+	Name       string
+	Language   string
+	Category   string
+	Status     string
+	Components json.RawMessage
+	Quality    string
+}
+
+type SocialAction struct {
+	Kind      string
+	ContentID string
+	Text      string
+}
+
+type SocialActionProvider interface {
+	SendSocialAction(ctx context.Context, cred Credentials, action SocialAction) (SendResult, error)
 }
 
 // SessionManager e o ciclo de sessao/QR — SEPARADO do Provider de proposito: gerir
@@ -133,12 +192,32 @@ type InboundMessage struct {
 	MediaMimeType string
 	MediaFileName string
 	MediaCaption  string
+	Reply         *ReplyReference
+	// Social metadata is optional and ignored by WhatsApp adapters. Instagram
+	// comments/mentions use it to persist moderation context in the same inbox.
+	SocialEventKind      string
+	SocialContentID      string
+	SocialMediaID        string
+	SocialParentID       string
+	SocialIsLive         bool
+	SocialReplyExpiresAt *time.Time
 }
 
-// StatusUpdate e a mudanca de status de uma mensagem JA enviada (ACK). F6/F5 consomem.
+// ReplyReference e a referencia canonica de uma resposta/quote. ExternalMessageID e a
+// chave do provider; Content/MessageType sao somente um snapshot seguro para renderizacao
+// e para o payload de quote. A resolucao do id interno e responsabilidade do dominio.
+type ReplyReference struct {
+	ExternalMessageID string
+	ParticipantID     string
+	Content           string
+	MessageType       string
+}
+
+// StatusUpdate e a mudanca de status de uma mensagem JA enviada (ACK).
 type StatusUpdate struct {
 	ExternalMessageID string
-	Status            string // SENT | FAILED (o legado nao tem DELIVERED/READ)
+	Status            string // SENT | DELIVERED | READ | FAILED | DELETED
+	ErrorCode         string // codigo curto e seguro; nunca body do provider
 }
 
 // SessionState e o estado da sessao (QR/conexao). QRCode e data URL normalizada (vazio
@@ -157,6 +236,7 @@ type SessionState struct {
 type OutboundMessage struct {
 	InstanceName      string
 	ToPhone           string
+	ToExternalID      string
 	MessageType       string
 	Content           string
 	MediaURL          string
@@ -165,6 +245,16 @@ type OutboundMessage struct {
 	MediaCaption      string
 	IdempotencyKey    string
 	ConversationExtID string
+	Reply             *ReplyReference
+	// Template fields are consumed only by providers with SupportsTemplates.
+	// Evolution and other adapters ignore them, preserving the canonical shape.
+	TemplateName       string
+	TemplateLanguage   string
+	TemplateParameters []string
+	// Social action metadata is used by the Instagram moderation sender.
+	// Other providers ignore these optional fields.
+	SocialActionKind string
+	SocialContentID  string
 }
 
 // SendResult e o retorno do envio: o id que o provider atribuiu.

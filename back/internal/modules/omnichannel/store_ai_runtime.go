@@ -75,6 +75,18 @@ func (s *Store) CountRunsThisMonth(ctx context.Context, accountID string) (int64
 	return n, err
 }
 
+// CountAIOutboundTurns conta respostas da IA já persistidas nesta conversa. Mensagens FAILED
+// não consomem um turno; PENDING/SENT/ACK contam porque o texto já foi autorizado e enfileirado.
+// A consulta é tenant-scoped e serve somente à policy, nunca ao front.
+func (s *Store) CountAIOutboundTurns(ctx context.Context, accountID, conversationID string) (int, error) {
+	var n int
+	err := s.pool.QueryRow(ctx, `select count(*) from messaging.messages
+		where account_id = $1::uuid and conversation_id = $2::uuid
+		  and direction = 'OUTBOUND' and origin = 'ai' and status <> 'FAILED'`,
+		accountID, conversationID).Scan(&n)
+	return n, err
+}
+
 // ActiveAgent devolve o agente HABILITADO da conta com active_version_id apontado (gate 2 e a
 // resolucao de HasActiveAgent da F8). Sem agente ativo => (_, false, nil): a conversa roteia
 // direto (nota 1 da maquina). Se houver mais de um, o mais antigo vence (determinismo).
@@ -97,8 +109,12 @@ func (s *Store) ActiveAgent(ctx context.Context, accountID string) (agentRow, bo
 // alimentam o RoutingContext do motor (contact_phone, instance_scope_key).
 type convTriage struct {
 	State            string
+	AIGeneration     int64
+	InstanceID       *string
+	ContactID        *string
 	ContactPhone     *string
 	ContactName      *string
+	Channel          string
 	InstanceScopeKey string
 	ExtractedFields  json.RawMessage
 	Found            bool
@@ -107,11 +123,12 @@ type convTriage struct {
 // ConvTriageContext le o contexto da conversa para o dispatch. Fora de escopo => Found=false.
 func (s *Store) ConvTriageContext(ctx context.Context, accountID, convID string) (convTriage, error) {
 	var c convTriage
-	err := s.pool.QueryRow(ctx, `select state, contact_phone, contact_name, instance_scope_key,
-		coalesce(extracted_fields, '{}'::jsonb)
+	err := s.pool.QueryRow(ctx, `select state, ai_generation, instance_id::text, contact_id::text, contact_phone, contact_name,
+		channel, instance_scope_key, coalesce(extracted_fields, '{}'::jsonb)
 		from messaging.conversations
 		where account_id = $1::uuid and id = $2::uuid`, accountID, convID).
-		Scan(&c.State, &c.ContactPhone, &c.ContactName, &c.InstanceScopeKey, &c.ExtractedFields)
+		Scan(&c.State, &c.AIGeneration, &c.InstanceID, &c.ContactID, &c.ContactPhone, &c.ContactName,
+			&c.Channel, &c.InstanceScopeKey, &c.ExtractedFields)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return convTriage{Found: false}, nil
@@ -126,8 +143,8 @@ func (s *Store) ConvTriageContext(ctx context.Context, accountID, convID string)
 // RecentMessages devolve as ultimas `limit` mensagens da conversa em ordem cronologica (a
 // janela da camada 7 do prompt). role: contact (INBOUND) | agent (OUTBOUND). Filtra por account.
 func (s *Store) RecentMessages(ctx context.Context, accountID, convID string, limit int) ([]SimMessage, error) {
-	rows, err := s.pool.Query(ctx, `select direction, content from (
-		select direction, content, created_at, id from messaging.messages
+	rows, err := s.pool.Query(ctx, `select id::text, direction, content from (
+		select id, direction, content, created_at from messaging.messages
 		where account_id = $1::uuid and conversation_id = $2::uuid
 		order by created_at desc, id desc limit $3
 	) recent order by created_at asc, id asc`, accountID, convID, limit)
@@ -138,15 +155,15 @@ func (s *Store) RecentMessages(ctx context.Context, accountID, convID string, li
 
 	out := make([]SimMessage, 0, limit)
 	for rows.Next() {
-		var direction, content string
-		if err := rows.Scan(&direction, &content); err != nil {
+		var id, direction, content string
+		if err := rows.Scan(&id, &direction, &content); err != nil {
 			return nil, err
 		}
 		role := "agent"
 		if direction == "INBOUND" {
 			role = "contact"
 		}
-		out = append(out, SimMessage{Role: role, Text: content})
+		out = append(out, SimMessage{ID: id, Role: role, Text: content})
 	}
 	return out, rows.Err()
 }
@@ -186,19 +203,20 @@ func (s *Store) RoutingCatalog(ctx context.Context, accountID string) ([]catalog
 // MergeExtractedFields funde os campos extraidos pela IA em conversation.extracted_fields
 // (jsonb || jsonb: preserva os anteriores e sobrescreve as chaves novas). Filtra por account.
 // NAO muda state/queue — o motor da F8 e quem roteia lendo estes campos.
-func (s *Store) MergeExtractedFields(ctx context.Context, accountID, convID string, fields map[string]any) error {
-	if len(fields) == 0 {
-		return nil
-	}
+func (s *Store) CommitAITriage(ctx context.Context, accountID, convID string, generation int64, fields map[string]any) (bool, error) {
 	raw, err := json.Marshal(fields)
 	if err != nil {
-		return err
+		return false, err
 	}
-	_, err = s.pool.Exec(ctx, `update messaging.conversations
+	result, err := s.pool.Exec(ctx, `update messaging.conversations
 		set extracted_fields = coalesce(extracted_fields, '{}'::jsonb) || $3::jsonb,
 		    updated_at = now()
-		where account_id = $1::uuid and id = $2::uuid`, accountID, convID, raw)
-	return err
+		where account_id = $1::uuid and id = $2::uuid
+		  and state = 'ai_active' and ai_generation = $4`, accountID, convID, raw, generation)
+	if err != nil {
+		return false, err
+	}
+	return result.RowsAffected() == 1, nil
 }
 
 // RuleSummary devolve nome/prioridade de uma regra (para o traco do simulate: matchedRule).

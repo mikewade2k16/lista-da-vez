@@ -11,15 +11,28 @@ func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string
 	if input.IncludeInactive {
 		activeClause = ""
 	}
+	moduleID := strings.TrimSpace(input.ModuleID)
 
 	switch principal.Role {
 	case auth.RolePlatformAdmin:
+		args := []any{}
+		moduleClause := ""
+		if moduleID != "" {
+			args = append(args, moduleID)
+			moduleClause = listModuleScopeClause("$1")
+		}
 		return tenantSelectSQL() + `
 			from core.accounts t
-			where 1 = 1` + activeClause + `
+			where 1 = 1` + activeClause + moduleClause + `
 			order by t.name asc;
-		`, nil
+		`, args
 	case auth.RoleOwner, auth.RoleDirector, auth.RoleMarketing:
+		args := []any{principal.UserID, tenantScopedCoreRoleCodes()}
+		moduleClause := ""
+		if moduleID != "" {
+			args = append(args, moduleID)
+			moduleClause = listModuleScopeClause("$3")
+		}
 		return tenantSelectDistinctSQL() + `
 			from core.accounts t
 			join core.account_users au
@@ -33,10 +46,16 @@ func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string
 				on r.id = ura.role_id
 				and r.account_id = au.account_id
 			where lower(r.code) = any($2::text[])
-			` + activeClause + `
+			` + activeClause + moduleClause + `
 			order by t.name asc;
-		`, []any{principal.UserID, tenantScopedCoreRoleCodes()}
+		`, args
 	default:
+		args := []any{principal.UserID, storeScopedCoreRoleCodes()}
+		moduleClause := ""
+		if moduleID != "" {
+			args = append(args, moduleID)
+			moduleClause = listModuleScopeClause("$3")
+		}
 		return tenantSelectDistinctSQL() + `
 			from core.accounts t
 			join core.account_users au
@@ -63,10 +82,21 @@ func buildListAccessibleQuery(principal auth.Principal, input ListInput) (string
 				and s.id::text = configured.store_id
 			where lower(r.code) = any($2::text[])
 				and s.is_active = true
-				` + activeClause + `
+				` + activeClause + moduleClause + `
 			order by t.name asc;
-		`, []any{principal.UserID, storeScopedCoreRoleCodes()}
+		`, args
 	}
+}
+
+func listModuleScopeClause(placeholder string) string {
+	return `
+			and exists (
+				select 1
+				from core.account_modules am
+				where am.account_id = t.id
+					and am.module_id = ` + placeholder + `
+					and am.enabled = true
+			)`
 }
 
 func buildFindAccessibleQuery(principal auth.Principal, tenantID string) (string, []any) {

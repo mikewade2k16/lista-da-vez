@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "brain.result.v2",
+  "dispatchId": "11111111-1111-4111-8111-111111111111",
+  "generation": 4,
+  "decision": "handoff",
+  "reply": null,
+  "classification": {"intent": "human_request", "confidence": 0.99, "sentiment": "neutral"},
+  "extractedFields": {},
+  "suggestedRouting": {"departmentSlug": "comercial", "queueSlug": "vendas"},
+  "handoff": {"needed": true, "reasonCode": "requested_human", "summary": "Contato pediu atendimento humano."},
+  "usage": {"provider": "configured-provider", "model": "configured-model", "promptTokens": 100, "completionTokens": 10, "cost": 0.0009},
+  "trace": {"toolCalls": [], "warnings": []}
+}

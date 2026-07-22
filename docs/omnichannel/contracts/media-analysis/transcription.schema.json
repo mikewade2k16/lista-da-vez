@@ -1,0 +1,53 @@
+{
+  "$id": "https://omni.local/contracts/media-analysis/transcription.schema.json",
+  "title": "Omnichannel transcription analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["text", "language", "durationSeconds"],
+  "properties": {
+    "text": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "language": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "durationSeconds": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 600
+    },
+    "segments": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["start", "end", "text"],
+        "properties": {
+          "start": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 600
+          },
+          "end": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 600
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

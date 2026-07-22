@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { UAlert, UButton, UDashboardGroup } from "#components";
-import { computed, nextTick, onMounted, onUpdated, ref } from "vue";
+import { computed, nextTick, onMounted, onUpdated, ref, watch } from "vue";
 import OmnichannelInboxLoading from "./OmnichannelInboxLoading.vue";
+import OmnichannelCRMProfilePanel from "./OmnichannelCRMProfilePanel.vue";
 import InboxChatPanel from "./inbox/InboxChatPanel.vue";
 import InboxConversationsSidebar from "./inbox/InboxConversationsSidebar.vue";
 import InboxDetailsSidebar from "./inbox/InboxDetailsSidebar.vue";
@@ -12,6 +13,10 @@ import {
   buildCanonicalContactPhone,
   normalizePhoneDigits
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
+import { useOmnichannelCRM, type CRMContactMergeResult, type CRMContactPatch } from "~/composables/omnichannel/useOmnichannelCRM";
+import { useOmnichannelHandoff } from "~/composables/omnichannel/useOmnichannelHandoff";
+import { useSessionSimulationStore } from "~/stores/session-simulation";
+import { getApiErrorMessage } from "~/utils/api-client";
 
 const sessionSimulation = useSessionSimulationStore();
 const canSwitchTenant = computed(() => sessionSimulation.canSimulate && sessionSimulation.clientOptions.length > 1);
@@ -54,6 +59,7 @@ const {
   showFilters,
   sidebarView,
   loadingConversations,
+  loadingMoreConversations,
   loadingContacts,
   loadingUsers,
   loadingWhatsAppStatus,
@@ -63,6 +69,9 @@ const {
   loadingMessages,
   loadingOlderMessages,
   loadingGroupParticipants,
+  conversationsError,
+  messagesError,
+  hasMoreConversations,
   hasMoreMessages,
   showLoadOlderMessagesButton,
   showScrollToLatestButton,
@@ -79,6 +88,7 @@ const {
   isWhatsAppConnected,
   updatingStatus,
   updatingAssignee,
+  updatingHandoff,
   stickyDateLabel,
   showStickyDate,
   draft,
@@ -122,6 +132,10 @@ const {
   onChatScroll,
   scrollToLatest,
   requestOlderMessages,
+  loadMoreConversations,
+  retryConversations,
+  retryActiveConversationMessages,
+  reconcileAuthoritativeMessage,
   setReplyTarget,
   clearReplyTarget,
   updateDraft,
@@ -155,12 +169,174 @@ const {
   reactToMessage,
   updateConversationStatus,
   updateConversationAssignee,
+  takeConversation,
+  releaseConversation,
   refreshAfterConversationHistoryClear,
   openMentionConversation,
   switchTenant,
   switchingTenant,
   switchTenantError
 } = useOmnichannelInbox();
+
+const {
+  contacts: crmContacts,
+  loading: loadingCRMContacts,
+  loadingMore: loadingMoreCRMContacts,
+  ready: crmContactsReady,
+  error: crmError,
+  hasMore: hasMoreCRMContacts,
+  nextCursor: nextCRMContactCursor,
+  loadContacts: loadCRMContacts,
+  profile: crmProfile,
+  loadingProfile: loadingCRMProfile,
+  loadProfile: loadCRMProfile,
+  clearProfile: clearCRMProfile,
+  updateContact: updateCRMContact,
+  createNote: createCRMNote,
+  mergeContacts: mergeCRMContacts,
+  undoMerge: undoCRMContactMerge
+} = useOmnichannelCRM();
+
+const crmProfileOpen = computed(() => Boolean(crmProfile.value));
+const crmActionError = ref("");
+const crmSaving = ref(false);
+const crmLastMerge = ref<CRMContactMergeResult | null>(null);
+const crmMergeCandidates = computed(() =>
+  crmContacts.value.filter((entry) => entry.id !== crmProfile.value?.contact.id && !entry.mergedIntoContactId)
+);
+
+const {
+  queues: handoffQueues,
+  handoffs,
+  slaEvents,
+  loadingQueues,
+  loadingConversationOps,
+  transferringQueue,
+  handoffError,
+  queueError,
+  loadQueues,
+  loadConversationOperations,
+  transferConversation
+} = useOmnichannelHandoff();
+
+const handoffQueueItems = computed(() =>
+  handoffQueues.value.map((queue) => ({
+    label: queue.name,
+    value: queue.id
+  }))
+);
+
+watch(
+  activeConversationId,
+  (conversationId) => {
+    void loadConversationOperations(conversationId);
+  },
+  { immediate: true }
+);
+
+watch(
+  canManageConversation,
+  (canManage) => {
+    if (canManage) {
+      void loadQueues();
+    }
+  },
+  { immediate: true }
+);
+
+async function handleTransferQueue(queueId: string) {
+  if (!activeConversationId.value || !queueId) {
+    return;
+  }
+
+  const updated = await transferConversation(activeConversationId.value, queueId);
+  if (!updated) {
+    return;
+  }
+
+  const current = conversations.value.find((entry) => entry.id === updated.id);
+  if (current) {
+    Object.assign(current, updated);
+  }
+}
+
+async function handleInspectCRMContact(contactId: string) {
+  crmActionError.value = "";
+  await loadCRMProfile(contactId);
+}
+
+function getCRMActionError(error: unknown, fallback: string) {
+  return getApiErrorMessage(error, fallback);
+}
+
+async function handleSaveCRMContact(patch: CRMContactPatch) {
+  const contactId = crmProfile.value?.contact.id;
+  if (!contactId) return;
+  crmActionError.value = "";
+  crmSaving.value = true;
+  try {
+    await updateCRMContact(contactId, patch);
+    await loadCRMProfile(contactId);
+    await loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
+  } catch (error) {
+    crmActionError.value = getCRMActionError(error, "Não foi possível salvar o contato.");
+  } finally {
+    crmSaving.value = false;
+  }
+}
+
+async function handleCreateCRMNote(content: string) {
+  const contactId = crmProfile.value?.contact.id;
+  if (!contactId) return;
+  crmActionError.value = "";
+  crmSaving.value = true;
+  try {
+    await createCRMNote(contactId, content);
+    await loadCRMProfile(contactId);
+  } catch (error) {
+    crmActionError.value = getCRMActionError(error, "Não foi possível adicionar a nota.");
+  } finally {
+    crmSaving.value = false;
+  }
+}
+
+async function handleMergeCRMContact(payload: { targetId: string; reason: string }) {
+  const sourceId = crmProfile.value?.contact.id;
+  if (!sourceId) return;
+  crmActionError.value = "";
+  crmSaving.value = true;
+  try {
+    const result = await mergeCRMContacts(
+      sourceId,
+      payload.targetId,
+      payload.reason,
+      `crm-merge:${sourceId}:${payload.targetId}:${Date.now()}`
+    );
+    crmLastMerge.value = result;
+    clearCRMProfile();
+    await loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
+  } catch (error) {
+    crmActionError.value = getCRMActionError(error, "Não foi possível mesclar os contatos.");
+  } finally {
+    crmSaving.value = false;
+  }
+}
+
+async function handleUndoCRMContactMerge() {
+  const eventId = crmLastMerge.value?.eventId;
+  if (!eventId) return;
+  crmActionError.value = "";
+  crmSaving.value = true;
+  try {
+    await undoCRMContactMerge(eventId);
+    crmLastMerge.value = null;
+    await loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
+  } catch (error) {
+    crmActionError.value = getCRMActionError(error, "NÃ£o foi possÃ­vel desfazer a mesclagem.");
+  } finally {
+    crmSaving.value = false;
+  }
+}
 
 type SaveContactDraft = {
   name: string;
@@ -251,7 +427,27 @@ onMounted(() => {
   void nextTick(() => {
     stripMinHeightUtilityClass();
   });
+  void loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
 });
+
+watch([sidebarView, search, channel, status], ([view]) => {
+  if (import.meta.client && view === "contacts") {
+    void loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
+  }
+});
+
+async function handleLoadMoreCRMContacts() {
+  if (!hasMoreCRMContacts.value || loadingMoreCRMContacts.value || !nextCRMContactCursor.value) {
+    return;
+  }
+  await loadCRMContacts({
+    search: search.value,
+    channel: channel.value,
+    status: status.value,
+    before: nextCRMContactCursor.value,
+    append: true
+  });
+}
 
 onUpdated(() => {
   stripMinHeightUtilityClass();
@@ -339,6 +535,8 @@ async function handleSwitchTenant(clientId: number) {
     return;
   }
 
+  crmLastMerge.value = null;
+  clearCRMProfile();
   sessionSimulation.setClientId(clientId);
   await switchTenant(clientId);
 }
@@ -378,6 +576,35 @@ async function handleConversationHistoryCleared() {
       @save="handleSaveContactModal"
       @open-existing="handleOpenExistingContact"
     />
+
+    <OmnichannelCRMProfilePanel
+      v-if="crmProfileOpen"
+      :profile="crmProfile"
+      :loading="loadingCRMProfile"
+      :saving="crmSaving"
+      :action-error="crmActionError"
+      :merge-candidates="crmMergeCandidates"
+      @close="clearCRMProfile"
+      @open-conversation="openContactConversation"
+      @save-contact="handleSaveCRMContact"
+      @create-note="handleCreateCRMNote"
+      @merge-contact="handleMergeCRMContact"
+    />
+
+    <UAlert
+      v-if="crmLastMerge"
+      class="chat-page__status-alert"
+      color="warning"
+      variant="soft"
+      title="Contatos mesclados e auditados"
+      description="A operação pode ser desfeita enquanto o snapshot continuar reversível."
+    >
+      <template #actions>
+        <UButton size="xs" color="warning" :loading="crmSaving" @click="handleUndoCRMContactMerge">
+          Desfazer mesclagem
+        </UButton>
+      </template>
+    </UAlert>
 
     <UAlert
       v-if="switchTenantError"
@@ -434,12 +661,15 @@ async function handleConversationHistoryCleared() {
         :show-filters="showFilters"
         :sidebar-view="sidebarView"
         :loading-conversations="loadingConversations"
+        :loading-more-conversations="loadingMoreConversations"
         :loading-contacts="loadingContacts"
         :loading-whats-app-status="loadingWhatsAppStatus"
         :whatsapp-banner-message="sidebarWhatsappBannerMessage"
         :is-whats-app-connected="isWhatsAppConnected"
         :current-user-name="user?.name ?? null"
         :conversations="filteredConversations"
+        :conversations-error="conversationsError"
+        :has-more-conversations="hasMoreConversations"
         :contacts="filteredContacts"
         :active-conversation-id="activeConversationId"
         :creating-contact="creatingContact"
@@ -462,6 +692,11 @@ async function handleConversationHistoryCleared() {
         :switching-tenant="switchingTenant"
         :active-tenant-id="String(sessionSimulation.effectiveClientId)"
         :tenant-switch-items="tenantSwitchItems"
+        :crm-contacts="crmContactsReady ? crmContacts : null"
+        :loading-crm-contacts="loadingCRMContacts"
+        :crm-error="crmContactsReady ? crmError : ''"
+        :loading-more-crm-contacts="loadingMoreCRMContacts"
+        :has-more-crm-contacts="hasMoreCRMContacts"
         @update:collapsed="updateLeftCollapsed"
         @update:show-filters="updateShowFilters"
         @update:sidebar-view="updateSidebarView"
@@ -470,7 +705,11 @@ async function handleConversationHistoryCleared() {
         @update:status="updateStatus"
         @update:instance-id="updateInstanceId"
         @select-conversation="selectConversation"
+        @retry-conversations="retryConversations"
+        @load-more-conversations="loadMoreConversations"
         @open-contact="openContactConversation"
+        @inspect-contact="handleInspectCRMContact"
+        @load-more-crm-contacts="handleLoadMoreCRMContacts"
         @create-contact="createContactAndOpenConversation"
         @preview-contact-import="previewWhatsAppContactsImport"
         @apply-contact-import="applyWhatsAppContactsImport"
@@ -487,7 +726,9 @@ async function handleConversationHistoryCleared() {
         :current-user-name="user?.name ?? null"
         :show-outbound-operator-label="showOutboundOperatorLabel"
         :user-role="user?.role"
+        :updating-handoff="updatingHandoff"
         :loading-messages="loadingMessages"
+        :messages-error="messagesError"
         :loading-older-messages="loadingOlderMessages"
         :has-more-messages="hasMoreMessages"
         :show-load-older-messages-button="showLoadOlderMessagesButton"
@@ -509,6 +750,9 @@ async function handleConversationHistoryCleared() {
         :sending-message="sendingMessage"
         :send-error="sendError"
         :reply-target="replyTarget"
+        :load-older-messages-action="requestOlderMessages"
+        :retry-messages-action="retryActiveConversationMessages"
+        :reconcile-message-action="reconcileAuthoritativeMessage"
         :can-manage-conversation="canManageConversation"
         :delete-messages-for-me-action="deleteMessagesForMe"
         :delete-messages-for-all-action="deleteMessagesForAll"
@@ -523,6 +767,8 @@ async function handleConversationHistoryCleared() {
         @open-contact-card="handleOpenContactFromCard"
         @open-mention="openMentionConversation"
         @close-conversation="closeConversation"
+        @take-conversation="takeConversation"
+        @release-conversation="releaseConversation"
         @open-whatsapp-session="handleOpenWhatsAppSessionModal"
         @set-reply="setReplyTarget"
         @clear-reply="clearReplyTarget"
@@ -549,12 +795,21 @@ async function handleConversationHistoryCleared() {
         :loading-users="loadingUsers"
         :internal-notes="internalNotes"
         :can-manage-conversation="canManageConversation"
+        :handoff-items="handoffs"
+        :sla-events="slaEvents"
+        :queue-items="handoffQueueItems"
+        :loading-handoff="loadingConversationOps"
+        :loading-queues="loadingQueues"
+        :transferring-queue="transferringQueue"
+        :handoff-error="handoffError"
+        :queue-error="queueError"
         @update:collapsed="updateRightCollapsed"
         @update:internal-notes="updateInternalNotes"
         @update:assignee-model="updateAssigneeModel"
         @save-contact="saveActiveConversationContact"
         @update-status="updateConversationStatus"
         @update-assignee="updateConversationAssignee"
+        @transfer-queue="handleTransferQueue"
       />
     </UDashboardGroup>
   </div>

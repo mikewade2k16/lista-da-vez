@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useCalendarMedia } from '~/composables/useCalendarMedia'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import {
+  useCalendarMedia,
+  type CalendarMediaUploadError,
+  type CalendarMediaUploadPhase,
+} from '~/composables/useCalendarMedia'
 import CalendarMediaViewer from '~/components/calendar/CalendarMediaViewer.vue'
 import { getApiBase } from '~/utils/api-client'
 import { resolveMediaUrl } from '~/utils/media'
@@ -59,11 +63,13 @@ interface Pending {
   name: string
   kind: 'image' | 'video'
   pct: number
+  phase: CalendarMediaUploadPhase | 'slow'
 }
 const pending = ref<Pending[]>([])
 const error = ref('')
 const input = ref<HTMLInputElement | null>(null)
 let pendingSeq = 0
+const slowTimers = new Map<number, ReturnType<typeof setTimeout>>()
 
 const videoLimitLabel = computed(() => formatBytes(mediaLimits.value.videoMaxBytes))
 const imageLimitLabel = computed(() => formatBytes(mediaLimits.value.imageMaxBytes))
@@ -76,22 +82,72 @@ function srcOf(url: string): string {
 }
 
 // Mensagem acionavel por code do back (principio: nunca um "falhou" seco).
-function uploadFailMessage(name: string, code: string, status: number): string {
-  switch (code) {
+function uploadFailMessage(name: string, failure: CalendarMediaUploadError): string {
+  switch (failure.code) {
     case 'invalid_media':
-      return `${name}: formato não aceito. Imagens: jpg, png, webp, gif, avif · vídeos: mp4, webm, mov.`
+      return `${name}: ${failure.message || 'arquivo incompleto ou formato não aceito.'}`
     case 'media_too_large':
       return `${name}: acima do limite do servidor (imagem ${imageLimitLabel.value} · vídeo ${videoLimitLabel.value}).`
+    case 'upload_timeout':
+      return `${name}: a conexão parou de enviar dados antes de concluir o arquivo.`
+    case 'upload_unavailable':
+      return `${name}: o servidor não conseguiu iniciar o upload. Tente novamente em instantes.`
     case 'network':
-      return `${name}: falha de rede ao enviar — a api não respondeu.`
+      return `${name}: a conexão com a API foi interrompida durante o envio.`
     case 'timeout':
-      return `${name}: o envio travou e estourou o tempo limite. Tente de novo; se repetir, recrie o container da api.`
+      return `${name}: a API não concluiu o upload dentro de 15 minutos.`
+    case 'aborted':
+      return `${name}: o upload foi cancelado.`
+    case 'invalid_response':
+      return `${name}: o servidor recebeu o arquivo, mas devolveu uma resposta inválida.`
     default:
-      return `Falha ao enviar ${name}${status ? ` (HTTP ${status})` : ''}.`
+      if (failure.status === 401)
+        return `${name}: sua sessão expirou. Entre novamente e repita o envio.`
+      if (failure.status === 403) return `${name}: sua conta não tem permissão para este upload.`
+      if (failure.message) return `${name}: ${failure.message}`
+      if (failure.status >= 500)
+        return `${name}: a API encontrou um erro interno (HTTP ${failure.status}).`
+      return `Falha ao enviar ${name}${failure.status ? ` (HTTP ${failure.status})` : ''}.`
   }
 }
 
 onMounted(() => void fetchMediaLimits())
+onUnmounted(() => {
+  for (const timer of slowTimers.values()) clearTimeout(timer)
+  slowTimers.clear()
+})
+
+function clearSlowTimer(key: number): void {
+  const timer = slowTimers.get(key)
+  if (timer) clearTimeout(timer)
+  slowTimers.delete(key)
+}
+
+function armSlowTimer(key: number): void {
+  clearSlowTimer(key)
+  slowTimers.set(
+    key,
+    setTimeout(() => {
+      pending.value = pending.value.map((item) =>
+        item.key === key && item.phase === 'uploading' ? { ...item, phase: 'slow' } : item,
+      )
+      slowTimers.delete(key)
+    }, 10_000),
+  )
+}
+
+function pendingLabel(item: Pending): string {
+  switch (item.phase) {
+    case 'slow':
+      return 'Conexão lenta · ainda tentando'
+    case 'processing':
+      return 'Upload concluído · processando'
+    case 'poster':
+      return 'Gerando miniatura do vídeo'
+    default:
+      return 'Enviando arquivo'
+  }
+}
 
 function pick(): void {
   error.value = ''
@@ -151,6 +207,7 @@ async function onFileDrop(event: DragEvent): Promise<void> {
 }
 
 async function handleFile(file: File): Promise<void> {
+  error.value = ''
   const kind = kindOf(file)
   if (!kind) {
     error.value = 'Tipo não suportado. Use imagem ou vídeo.'
@@ -163,27 +220,35 @@ async function handleFile(file: File): Promise<void> {
   }
 
   const key = ++pendingSeq
-  pending.value = [...pending.value, { key, name: file.name, kind, pct: 0 }]
+  pending.value = [...pending.value, { key, name: file.name, kind, pct: 0, phase: 'uploading' }]
+  armSlowTimer(key)
 
   const onPct = (pct: number): void => {
-    pending.value = pending.value.map((p) => (p.key === key ? { ...p, pct } : p))
+    pending.value = pending.value.map((p) =>
+      p.key === key ? { ...p, pct, phase: 'uploading' } : p,
+    )
+    armSlowTimer(key)
   }
-  let failCode = ''
-  let failStatus = 0
-  const onErr = (code: string, status: number): void => {
-    failCode = code
-    failStatus = status
+  const onPhase = (phase: CalendarMediaUploadPhase): void => {
+    if (phase === 'uploading') armSlowTimer(key)
+    else clearSlowTimer(key)
+    pending.value = pending.value.map((p) => (p.key === key ? { ...p, phase } : p))
+  }
+  let failure: CalendarMediaUploadError = { code: '', status: 0, message: '' }
+  const onErr = (nextFailure: CalendarMediaUploadError): void => {
+    failure = nextFailure
   }
   // Video sobe pelo fluxo que tambem gera+sobe o poster (falha do poster nao
   // falha o upload); imagem segue no upload simples.
   const item =
     kind === 'video'
-      ? await uploadVideoWithPoster(file, onPct, onErr)
-      : await uploadMedia(file, onPct, onErr)
+      ? await uploadVideoWithPoster(file, onPct, onErr, onPhase)
+      : await uploadMedia(file, onPct, onErr, onPhase)
+  clearSlowTimer(key)
   pending.value = pending.value.filter((p) => p.key !== key)
 
   if (!item) {
-    error.value = uploadFailMessage(file.name, failCode, failStatus)
+    error.value = uploadFailMessage(file.name, failure)
     return
   }
   // O anexo entra sem item; o usuario escolhe o evento na barrinha da miniatura (W6-4).
@@ -354,6 +419,8 @@ function onDragEnd(): void {
         v-for="p in pending"
         :key="p.key"
         class="calendar-media__item calendar-media__item--loading"
+        :class="{ 'is-slow': p.phase === 'slow' }"
+        aria-live="polite"
       >
         <UIcon
           :name="p.kind === 'video' ? 'i-lucide-film' : 'i-lucide-image'"
@@ -361,6 +428,7 @@ function onDragEnd(): void {
           aria-hidden="true"
         />
         <span class="calendar-media__pct">{{ p.pct }}%</span>
+        <span class="calendar-media__status">{{ pendingLabel(p) }}</span>
         <span class="calendar-media__bar">
           <span class="calendar-media__bar-fill" :style="{ width: `${p.pct}%` }"></span>
         </span>
@@ -382,7 +450,7 @@ function onDragEnd(): void {
       ></div>
     </div>
 
-    <p v-if="error" class="calendar-media__error">{{ error }}</p>
+    <p v-if="error" class="calendar-media__error" role="alert">{{ error }}</p>
     <p v-else-if="!readonly && dayLayout" class="calendar-media__hint">
       Imagem até {{ imageLimitLabel }} · vídeo até {{ videoLimitLabel }}
     </p>

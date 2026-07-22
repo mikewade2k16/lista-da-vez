@@ -45,6 +45,7 @@ export function useOmnichannelInboxState() {
   const contactActionError = ref("");
   const updatingStatus = ref(false);
   const updatingAssignee = ref(false);
+  const updatingHandoff = ref(false);
 
   const hasMoreMessages = ref(false);
   const showLoadOlderMessagesButton = ref(false);
@@ -97,6 +98,7 @@ export function useOmnichannelInboxState() {
     contactActionError,
     updatingStatus,
     updatingAssignee,
+    updatingHandoff,
     hasMoreMessages,
     showLoadOlderMessagesButton,
     showScrollToLatestButton,

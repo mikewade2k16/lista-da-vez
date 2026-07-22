@@ -51,18 +51,15 @@ Atalhos uteis:
 
 ```bash
 npm run deploy:fast:prod -- -Service api   # so a API (1a vez por tag use -Service both)
-npm run deploy:fast:prod -- -ForceAutomationWorkflowImport  # reimporta n8n mesmo sem hash novo
 npm run deploy:staging -- -Tag sha-<40hex> # sobe um SHA em staging
 npm run deploy:promote                     # promove a MESMA imagem do staging pra prod
 ```
 
 ### Automation/n8n no deploy rapido
 
-Desde 2026-07-09, o atalho `deploy:fast:prod` chama `deploy-fast.ps1 -DeployAutomation`.
-**Desde 2026-07-13 tambem passa `-ForceAutomationWorkflowImport`** (import de n8n SEMPRE, sem
-depender do hash): como sobe muita mudanca de n8n, o marker sha256 pulando o import ja deixou a
-VPS rodando uma versao ANTIGA do workflow por dias (o Calendar Chat da VPS ficou sem a logica de
-anotacao do mes, enquanto o dev/arquivo ja tinham). Na pratica, alem de `api`/`web`, ele:
+Desde o fechamento E0 de ownership, `deploy:fast:prod` sobe API/web e **não** passa
+`-DeployAutomation` nem `-ForceAutomationWorkflowImport` implicitamente. O caminho de Automação
+abaixo continua existindo como operação explícita de plataforma, não como deploy de um módulo:
 
 - envia para a VPS somente `automation/export/workflow-*.json` (NAO envia
   `credentials.decrypted.json`);
@@ -82,24 +79,27 @@ O n8n vive no `docker-compose.prod.yml` (`profiles: ["automation"]`); os comando
 `-f docker-compose.prod.yml`, entao enxergam o servico. Rodar `docker compose ... n8n` SEM esse `-f`
 (so o `docker-compose.yml`) NAO ve o n8n (retorna vazio) — foi o que mascarou o diagnostico.
 
-**Auto-export dos workflows antes do envio (OBS-08, desde 2026-07-13):** como o n8n guarda os
-workflows no PROPRIO banco (dev), `automation/export/*.json` pode estar ATRAS do que voce editou no
-n8n. Por isso, sob `-DeployAutomation`, o `deploy-fast.ps1` roda `n8n-export.ps1 -Sync` **ANTES** de
-buildar/enviar: se o n8n dev estiver a frente, ele **auto-exporta** os workflows divergentes e SEGUE
-(nunca trava), para o deploy levar SEMPRE a versao atual sem passo manual. Detalhes:
+**Sync local antes de uma operação de plataforma:** `-DeployAutomation` exige
+`-WorkflowOwner <owner> -WorkflowOnly <key>`. O `deploy-fast.ps1` valida o registro/owner antes de
+qualquer Docker e sincroniza somente esse alvo local. Detalhes:
 
-- So roda se o container n8n dev (`omni-n8n-1`) estiver up. Se estiver down, imprime
-  `AVISO: n8n dev fora; ... deploy seguira com os arquivos versionados atuais` e segue (nunca zera).
-- O `-Sync` pode deixar `automation/export/*.json` **modificados na working tree** (NAO commitados). O
-  deploy os USA mesmo sem commit (deployar antes de commitar); o **dono commita depois**.
-- Pular o gatilho: `npm run deploy:fast:prod -- -SkipWorkflowExport` (para deployar uma versao
-  versionada especifica em vez do n8n dev atual).
+- Container n8n dev (`omni-n8n-1`) indisponível faz o comando falhar fechado. A opção
+  `-SkipWorkflowExport` só é aceita junto de `-DeployAutomation` e significa usar deliberadamente o
+  JSON versionado.
+- O sync pode modificar somente o JSON selecionado; o dono revisa o diff antes de qualquer deploy.
 - Verificacao anti-credencial embutida: se um workflow trouxer campo de credencial alem de `id`/`name`,
   o export ABORTA aquele arquivo (segredo nunca vai pro repo/deploy).
 
-**Checklist pre-deploy (n8n):** se editou algum workflow no n8n dev, rode `npm run n8n:export` (ou
-confie no gatilho `-Sync` acima) para garantir que os `.json` versionados batem com o n8n antes de
-subir. O guard do pre-commit (`n8n:export:check`) AVISA — nao bloqueia — se o repo ficar atras.
+**Limite atual obrigatório:** depois do sync local, `deploy-pull.ps1 -DeployAutomation` ainda envia,
+importa, reativa e verifica o conjunto global `workflow-*.json`. Isso pode tocar Calendar, Operação,
+Automação/WAHA e Omnichannel na mesma execução. Logo, tarefas isoladas do Omnichannel **não podem**
+usar `-DeployAutomation`, `-ForceAutomationWorkflowImport` nem o bloco global do `deploy-pull`.
+Esse deploy só ocorre com autorização explícita de plataforma até existir escopo por owner de ponta
+a ponta.
+
+**Checklist pre-deploy (n8n):** rode o alias `n8n:export:<key>:check` do owner correto e, se houver
+drift, o `:sync` correspondente. `n8n:export:check` sem owner valida apenas registro/IDs/hashes
+locais; o pre-commit usa esse modo, não consulta runtime e bloqueia inventário inválido.
 
 Pre-requisito one-time: o `.env.production` da VPS precisa ter o bloco `AUTOMATION_*`, o n8n ja
 precisa ter as credenciais/community nodes necessarios no volume, e a WAHA precisa estar pareada
@@ -138,6 +138,31 @@ ligar (cria tabela/coluna/indice automaticamente; o que ja rodou e' pulado via
   e' o seguro pra restaurar. Teste local antes.
 - Env var nova NAO viaja na imagem: adicione no `.env.production` **na VPS, manualmente**.
 - O migrator roda o `.sql` INTEIRO, sem `goose Down` — escreva SQL plano e idempotente.
+
+---
+
+## Chave de segredos `OMNI_SECRETS_KEY` — PRE-REQUISITO de deploy
+
+O `platform/secretbox` cifra credenciais do omnichannel em repouso com AES-256-GCM. A API faz
+fail-fast se `OMNI_SECRETS_KEY` nao chegar ao container. Sem a chave, a API entra em restart loop,
+o `web` fica em `Created` por depender do healthcheck da API e o Caddy responde 502.
+
+Setup one-time por ambiente (use uma chave diferente em staging):
+
+```bash
+cd /home/deploy/lista-atendimento
+grep -q '^OMNI_SECRETS_KEY=.' .env.production || \
+  printf 'OMNI_SECRETS_KEY=%s\n' "$(openssl rand -base64 32 | tr -d '\n')" >> .env.production
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --no-build api web
+```
+
+Nunca exiba, commite ou troque essa chave depois que houver credenciais cifradas. Perder ou trocar
+a chave exige re-cifrar os dados com a chave anterior; simplesmente gerar outra impede a leitura.
+
+Prevenção automática: tanto `deploy-pull.ps1` quanto `.github/workflows/deploy-vps.yml` validam,
+antes de copiar o compose ou trocar `IMAGE_TAG`, que a chave existe, é base64 válida e decodifica
+exatamente 32 bytes. Depois do envio, o compose novo é validado contra o `.env` real antes da tag
+ser alterada. O valor da chave nunca é impresso.
 
 ---
 
@@ -390,6 +415,7 @@ POSTGRES_USER=omni
 POSTGRES_PASSWORD=<senha-forte>
 APP_DB_ROLE=omni_app                 # AC-04: role least-privilege de runtime da api
 APP_DB_ROLE_PASSWORD=<senha-alfanumerica>   # obrigatorio em prod; role tem que existir no banco (ver secao AC-04)
+OMNI_SECRETS_KEY=<openssl-rand-base64-32>   # obrigatoria; gerar uma vez e nunca trocar sem re-cifragem
 PROXY_NETWORK_NAME=omnichannel-mvp_default
 PROXY_API_ALIAS=lista-api
 PROXY_WEB_ALIAS=lista-web

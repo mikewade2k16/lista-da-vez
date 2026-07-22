@@ -5,13 +5,75 @@ PostgreSQL como fontes de verdade.
 Schema `messaging.*`. Plano canônico: `docs/omnichannel/PLANO_ATENDIMENTO.md`.
 Specs por fase: `docs/omnichannel/specs/OMNI-F*.md`.
 
-## Direção vigente — 2026-07-20
+## Direção vigente — MVP de automação (2026-07-21)
+
+O recorte prioritário atual é
+`docs/omnichannel/MVP_AUTOMACAO_ATENDIMENTO.md`: somente WhatsApp, sem resposta pelo painel,
+com IA iniciando o primeiro atendimento, sugerindo encerramento e transferindo para humano.
+A primeira versão da página `/omnichannel/automacao` e sua API base estão implementadas em
+`automation_model.go`, `automation_store.go`, `automation_service.go` e
+`http_automation.go`, com migration `0228_messaging_automation_profiles.sql`.
+
+Contrato do MVP-01:
+
+- um perfil por cliente e um número por cliente;
+- cliente vem do mesmo catálogo permission-scoped de `/v1/tenants` usado pelo Calendário, mas o
+  adapter solicita `ListInput.ModuleID="omnichannel"`; somente contas com
+  `core.account_modules.enabled=true` para o módulo aparecem e um `clientId` fora desse catálogo
+  continua retornando 404;
+- perfil estratégico continua autoritativo em `calendar.client_profiles` e chega somente pelo
+  adapter de composição `platform/app/omnichannel_calendar_adapter.go`; é proibido SQL direto;
+- profile aponta para a instância lógica, portanto Evolution e WhatsApp Cloud reutilizam o vínculo;
+- contas sem nenhum profile usam temporariamente o agente global legado; após o primeiro profile,
+  número não configurado falha fechado e não executa IA;
+- encerramento automático nasce desligado. Threshold e gates são configuráveis, mas
+  `conversations.ai_generation` válida é uma invariante obrigatória e não pode virar toggle;
+- `PUT /v1/omnichannel/agents/{id}/configuration` é o salvamento simples do MVP: normaliza,
+  persiste e ativa a configuração no mesmo commit. O banco mantém versões para auditoria e
+  rollback, promove um draft idêntico quando existir, arquiva drafts antigos e não cria nova
+  versão quando o conteúdo já é o ativo. As rotas draft/publish permanecem apenas compatíveis;
+- nenhuma migration é aplicada, container reiniciado ou workflow importado por consequência
+  desta fase. Essas ações precisam de autorização e alvo explícitos.
+
+Contrato do MVP-02:
+
+- `brain.request/result.v3` acrescenta `close` e metadados de handoff; `brain.v2` permanece
+  aceito por versões antigas e nunca pode encerrar conversa;
+- a IA apenas propõe `close`; somente `SystemTryAutoClose` pode persistir `closed`;
+- o fechamento final, a mensagem de despedida e sua outbox são atômicos sob lock da conversa;
+- fechamento automático habilitado, confiança, campos obrigatórios, pedido humano e assunto
+  sensível são gates configuráveis por perfil; `ai_generation` válida é sempre obrigatória;
+- cada tentativa de close é auditada em `messaging.ai_close_evaluations` (migration `0229`),
+  sem prompt, chave ou conteúdo da conversa;
+- `fromMe` novo faz takeover no mesmo commit da mensagem; duplicata/eco nunca incrementa de novo;
+- `handoff` usa `messaging.handoffs`; o n8n não escolhe fila, não muda estado e não envia canal;
+- cards operacionais consultam `/v1/omnichannel/automation/attendances` e projetam do PostgreSQL
+  tanto conversas `ai_active` quanto handoffs parados, com contagem/preview limitado das mensagens
+  inbound posteriores à última resposta. `pause-ai` cria handoff auditado e invalida a lease;
+  `reply-with-ai` fecha o handoff, volta para `ai_active` e cria dispatch/outbox para as mensagens
+  já persistidas no mesmo commit. Nenhuma dessas ações chama n8n ou Evolution diretamente;
+- `Retomar nas próximas` continua usando `PATCH /conversations/{id}/status` com `CLOSED` somente
+  quando não há mensagem pendente. O inbound seguinte reabre pelo fluxo canônico.
+- `reply-with-ai` é uma ordem manual autenticada para uma resposta: o dispatch marca `ForceReply`,
+  ignora `min_confidence`, `max_ai_turns`, `needs_human`/`close` sugeridos pelo modelo e reforça no
+  prompt que `reply_draft` deve ser preenchido. Não ignora configuração ausente, falha do provider,
+  limite mensal, schema inválido, resposta vazia, escopo tenant nem lease de `ai_generation`;
+- motivos de parada permanecem específicos de ponta a ponta. `max_ai_turns` gera handoff
+  `max_turns`, confiança abaixo do mínimo gera `low_confidence` e limite mensal cai em `policy`.
+  A projeção dos cards recupera handoffs antigos rotulados incorretamente consultando o último
+  `ai_run`, e expõe confiança/mínimo/máximo sem prompt ou conteúdo adicional.
+- `AIVersionInput.minConfidence` distingue campo ausente de `0`: ausente aplica o default `0.65`;
+  zero é configuração explícita válida e significa não interromper resposta automática por confiança.
+
+### Roteiro técnico anterior
 
 O roteiro executivo atual é
 `docs/omnichannel/PLANO_TECNICO_EVOLUCAO.md`. O plano F0–F14 acima continua como histórico
 do port e dos contratos já entregues. Para qualquer tarefa neste módulo, o Codex deve usar
 as skills pessoais `$principios-engenharia` e `$omnichannel-hibrido` e ler este AGENT antes
-de alterar código.
+de alterar código. A execução E0–E10 é detalhada em
+`docs/omnichannel/evolucao/README.md`: um agente executor recebe o contrato comum e somente o
+pacote atômico autorizado; ler uma fase inteira não concede permissão para implementá-la inteira.
 
 ### Fronteira Go/PostgreSQL x n8n
 
@@ -35,7 +97,7 @@ configuração.
 
 - Evolution é a ponte do piloto; WhatsApp Cloud API é o destino oficial.
 - Um número só pode ter um provider ativo. Nunca Evolution e Cloud API simultâneas.
-- Instagram terá adapter e workflow próprios para DM/comentários, compartilhando inbox,
+- Instagram possui adapter e workflow próprios para DM/comentários, compartilhando inbox,
   contatos, identidade, touchpoints, cérebro e regras de handoff.
 - `messaging.contacts` é a entidade CRM; telefone não é identidade universal.
 - `contact_identities`, `contact_touchpoints` e `contact_notes` são autoritativos.
@@ -55,10 +117,10 @@ remover ou aplicar regras do omnichannel a ids de outro módulo.
 - Entregue: schema, inbox, contatos/identidades/touchpoints, mídia privada, realtime,
   outbox/FIFO, FSM, filas/routing, adapter mock/Evolution, agente versionado, auditoria de
   custo, executor n8n e multi-turno inicial.
-- P0 aberto: mídia inbound real, quote no provider, espelho `fromMe`, job idempotente da IA,
-  debounce e contrato estruturado `continue_ai|handoff|no_reply`.
-- P1: CRM 360° no painel, atribuição de landing pages, multimodal, tools e WhatsApp Cloud.
-- P2: Instagram DM/comentários, follow-ups e remoção dos legados internos do port omnichannel.
+- E7/E8 code-complete local: adapters Meta Cloud/Instagram, templates/janela, moderação e painel;
+  smoke/cutover com credenciais reais ainda pendente.
+- E9/E10 ficam pausadas enquanto o MVP de automação WhatsApp é validado. Comentários/menções
+  nunca publicam sem aprovação humana e todas as ações continuam na outbox Go.
 
 ## 🔴 Backlog de funcionalidades + bugs conhecidos (a pedido do dono, 2026-07-18)
 **Prioridade do dono: FUNCIONALIDADES primeiro; aparência + estes bugs DEPOIS.** NÃO polir UI nem
@@ -113,6 +175,61 @@ corrigir isto antes de fechar as funcionalidades pendentes. Descobertos com What
 > `io.ReadAll`), exclui `hidden_messages` (→404) e rehidrata mídia inbound sob demanda. **Não
 > reimplementa fila** (claim/retry/dead-letter/monitor são da F3). **Wiring pendente** (o
 > orquestrador liga no `module.go`/`app.go`): ver §Wiring pendente (F6).
+
+### E3 multimodal (migration 0219)
+
+- `ai_agent_versions.media_config` é versionado e validado pelo service; aceita somente as
+  seções audio/image/document, limites e provider/model. Chave, token, senha e credencial são
+  rejeitados e continuam exclusivamente no segredo server-side do agente.
+- `messaging.media_analyses` é a fonte autoritativa de status, resultado limitado, tentativas,
+  tokens/custo e retenção. O unique tenant-scoped impede cobrança duplicada; FKs compostas
+  impedem associar mensagem/conversa/versão de outra conta.
+- `GET /conversations/{cid}/messages/{mid}/media/analyses` retorna somente metadados derivados
+  ao operador autorizado. O gateway interno `GET /v1/runtime/omnichannel/media/{messageId}`
+  exige token cifrado curto `media-stream.v1`, valida account+analysis+message e nunca expõe
+  storage key. O job/branches multimodais só serão ativados depois do shadow QA do workflow
+  próprio; nenhum outro workflow, WAHA ou canal recebe bytes.
+
+### E6 tools e conhecimento (migrations 0222–0225)
+
+- `messaging.ai_tool_bindings` é configuração por agente/conta; nasce desabilitado, sem credencial,
+  e aceita apenas `read`, `propose_write` ou `approved_write`. As rotas de configuração são
+  `/agents/{id}/tool-bindings` e exigem `omnichannel.agents.manage`.
+- `POST /v1/internal/omnichannel/ai/tool-calls` é server-to-server: só aceita o token cifrado curto
+  do brain, timestamp/HMAC, `dispatch_id`/`generation` correspondentes e binding do agente da
+  versão despachada. Não usa JWT nem account vindo do body. `call_id` é único por dispatch; retry
+  devolve o mesmo resultado e nunca repete um handler.
+- `POST /v1/internal/omnichannel/ai/tool-call-signatures` é a única rota que assina chamadas do
+  orquestrador n8n. Ela valida o binding habilitado, operação e schema sob o dispatch antes de
+  devolver a assinatura HMAC; nunca devolve a chave do provider. O workflow próprio usa essa rota
+  e depois chama `tool-calls`, sem credencial estática n8n.
+- O registry é explícito e injetável (`WithAIToolRegistry`). Sem adaptador registrado, a chamada é
+  negada/auditada; não existe fallback para SQL, HTTP, credencial ou URL escolhida pelo modelo.
+  Modo de escrita sempre retorna `approvalRequired` até haver aprovação humana persistida.
+- Argumentos/output passam por limites, schema estrutural, masking e timeout; auditoria usa somente
+  IDs, operação, status e código. Eventos `AI_TOOL_REQUESTED|COMPLETED|DENIED|FAILED|TIMEOUT` e a
+  trilha `AI_TOOL_APPROVAL_REQUESTED|AI_TOOL_APPROVED|AI_TOOL_REJECTED` são aceitos pelas migrations 0223/0224/0225.
+  Propostas mutáveis ficam em `messaging.ai_tool_approvals`, com argumentos cifrados no Go; o painel
+  recebe somente a projeção mascarada. As rotas de evidência são `/agents/{id}/tool-runs` e
+  `/agents/{id}/tool-approvals`; aprovar/rejeitar exige `omnichannel.agents.manage` e nunca executa
+  provider diretamente.
+- Knowledge bases, documents, chunks e `ai_knowledge_bindings` vivem em `messaging.*`. Publicar
+  documento exige chunks; FTS retorna somente evidências de documentos publicados e bases/bindings
+  habilitados, com `topK`/`minScore` escopados por agente/conta. A base manual e o loop n8n assinado
+  estão fechados localmente na E6; importação/ativação no runtime continua uma operação de rollout
+  separada. O registry default possui apenas `knowledge.search`, que consulta o PostgreSQL no
+  escopo account+agent e devolve evidências limitadas; integrações corporativas sem contrato estável
+  precisam ser registradas explicitamente e binding sem handler falha fechado.
+- As credenciais de IA do agente usam um keyring cifrado e versionado
+  (`ai-provider-keys.v1`) dentro de `ai_agents.provider_key_ciphertext`, com slots independentes
+  para `gemini`, `glm` e `openai`. O backend aceita o formato legado de chave única somente para
+  leitura/migração transparente; nenhuma chave crua sai da API.
+- `GET /agents/{id}/provider-keys` devolve somente `{set,last4}` por provider. `PUT` e `DELETE`
+  em `/agents/{id}/provider-keys/{provider}` trocam ou limpam exclusivamente o slot solicitado,
+  preservando as outras chaves e respeitando a allowlist fechada de providers.
+- `GET /agents/{id}/models?provider=` alimenta o select do painel com a chave do slot solicitado.
+  A chave é decifrada somente durante a chamada server-side, o provider usa uma allowlist de
+  endpoints canônicos e a resposta contém apenas IDs de modelos de chat.
 
 ## Fronteira — o módulo é independente
 
@@ -171,9 +288,12 @@ na anterior, **sem erro**).
   Upsert por telefone precisa repetir o predicado do índice parcial no `ON CONFLICT`.
 - `contact_notes` é a persistência canônica das notas humanas; o front não deve manter nota
   somente em estado reativo.
-- `OMNI_AI_EXECUTOR=native|n8n`: provider/modelo/chave continuam no banco/painel. No modo
-  n8n, `platform/llm.NewN8N` envia a chamada ao workflow stateless e valida novamente o
-  schema no Go. O workflow nunca toca canal, estado, fila ou outbox.
+- `OMNI_AI_EXECUTOR=native|n8n`: provider/modelo/chave continuam no banco/painel. O modo `n8n`
+  usa o contrato versionado brain.v2/brain.v3 e a rota Go `POST /v1/runtime/omnichannel/llm-gateway`,
+  que aceita somente `brain.request.v2` e `brain.request.v3`; a chave é
+  selada em token curto pelo `secretbox` e nunca aparece no payload/export do n8n. Sem
+  `OMNI_N8N_INTERNAL_TOKEN` o boot permanece native. O workflow nunca toca canal, estado, fila ou
+  outbox.
 - `reply_draft` sai somente por `SendService.SendAIMessage` (mensagem PENDING + outbox).
   `needs_human=false` mantém `ai_active` para o próximo turno; `true` envia a transição e
   segue para routing. Falha de enqueue faz fail-open para humano.
@@ -217,6 +337,7 @@ do Principal, nunca do body. Erros por `writeSessionError` (409 `number_in_use` 
 |---|---|
 | `POST /tenant/whatsapp/instances` | cria; body = formulário do front (`instanceName`, `displayName?`, `phoneNumber?`, `evolutionApiKey?`, `queueLabel?`, `userScopePolicy`, `responsibleUserId?`, `isDefault`, `isActive`). Provider default `evolution`. Devolve `WhatsAppInstanceRecord`. **201** |
 | `PATCH /tenant/whatsapp/instances/{id}` | atualiza; full-replace do formulário. `evolutionApiKey` é **só-se-presente** (ausente = mantém a credencial). `isDefault=true` → `PromoteDefault`. **200** |
+| `PUT /tenant/whatsapp/limits` | body `{ maxChannels }`, faixa 1–100. **Somente `platform_admin`**; grava `core.account_modules.config.max_whatsapp_numbers`, preserva as outras chaves e rejeita teto abaixo do total ativo. **200** |
 | `GET /tenant/whatsapp/instances/{id}/capabilities` | resolve o provider da instância por id → `registry.Get(provider).Capabilities()`. Devolve `OmniCapabilities` (camelCase: `supportsTemplates`/`requires24hWindow`/`supportsReaction`/`supportsSticker`/`supportsGroups`/`maxMediaBytes`). Metadado do provider (não exige admin). Sem esta rota o front mostra "capacidades DEGRADADAS" por número. **200** |
 | `DELETE /tenant/whatsapp/instances/{id}` | remove a instância. **BLOQUEIA com 409 `instance_has_conversations`** se houver conversas atreladas (o front usa "Desativar"=PATCH `isActive:false` no caso comum; delete duro só sem histórico). Só admin; fora de escopo → 404. **204** |
 | `PUT /tenant/whatsapp/instances/{id}/users` | body = `{ userIds: string[] }` (o front manda `userIds`, não `assignedUserIds`). Filtra p/ membros ativos da conta. **200** |
@@ -226,7 +347,8 @@ do Principal, nunca do body. Erros por `writeSessionError` (409 `number_in_use` 
 Semânticas duras: `phoneNumber` passa pelo `number_guard` (um número, uma instância);
 `instance_name` colide no índice único → 409 `instance_name_conflict`; `responsibleUserId`
 e `assignedUserIds` são validados contra `core.account_users` (isolamento — usuário de
-outra conta nunca entra).
+outra conta nunca entra). Reativar uma instância também consulta o `LimitReader`; não é possível
+contornar `max_whatsapp_numbers` criando inativa e ativando depois.
 
 **Sessão/QR aceitam `instanceId` (2026-07-18):** `GET /tenant/whatsapp/status` e `.../qrcode`
 resolvem por `instanceId` (o id que o inbox verbatim manda no query) OU `instanceName`, senão a
@@ -403,6 +525,9 @@ Registrados também em `docs/LEGADO.md`.
   `closed`→`conv.reopen`, `OPEN` já aberta→**no-op 200**. `Assign` mapeia `assignedToId` com
   valor→`human.assign` (⇒ `human_active` ⇒ hard-block da IA), `null`→`human.unassign`. Destino
   não-atribuível/fora da conta → **404** (guarda da nota 8 na F8).
+- `conv.close` também fecha qualquer handoff aberto no mesmo `ApplyTransition`; isso evita card
+  de intervenção órfão e faz o reset operacional ser atômico. Fechar uma conversa já fechada é
+  idempotente e ainda reconcilia handoffs antigos que tenham ficado abertos.
 - **Reconciliação `assigned_to_id`** após assign/unassign (a FSM só grava `assigned_user_id`;
   ver gap #6). **`conversation.updated` COM `instanceName`** (a `ConversationView` já o carrega);
   `mediaUrl` `data:` do preview → `null`. Auditoria **só quando muda** (`before != after`):
@@ -483,6 +608,9 @@ Registrados também em `docs/LEGADO.md`.
 - **Sessão** (`/v1/omnichannel/whatsapp/session/*`, `RequireAuthWithAccount`, só admin):
   `bootstrap` (limite de canais via `platform/modules.LimitReader` → 409; cria instância; promove
   default), `connect`, `status`, `qrcode`, `logout`. QR em cache de **memória** (sem Redis).
+- **Estado de conexão autoritativo**: `connected` e `connectionState.instance.state` vêm
+  exclusivamente do `SessionState` consultado no provider. `phone_number` é cadastro/identificador
+  e nunca prova pareamento; preencher telefone manualmente não pode esconder o botão ou o QR.
 - **QR via webhook**: a Evolution empurra o QR async por `QRCODE_UPDATED` (o `/instance/connect` nem
   sempre traz base64). O `qrCache` é **compartilhado** (criado no `module.go`, injetado no `SessionService`
   E no `InboundService`): o `SessionService` grava o QR síncrono do connect e lê no `/qrcode`; o
@@ -565,3 +693,39 @@ scan em `*string`, nunca no tipo puro. `jsonb` → `json.RawMessage`, nunca scan
 
 `docker compose up -d --build api`. **Migration nova → `docker compose build --no-cache api`**
 e depois `up -d api`. Portas são fixas (api=9091) — não alterar.
+
+## E1 — entrega, reply, midia inbound e takeover
+
+- `fromMe=true` e sempre `OUTBOUND/provider_device`; nunca dispara triagem IA. Dedupe e eco de
+  envio convergem pela unique `(account_id, instance_scope_key, external_message_id)`.
+- ACK do provider so avanca `PENDING -> SENT -> DELIVERED -> READ`; erro/delecao sao estados
+  explicitos e `provider_error_code` aceita apenas codigo seguro.
+- Reply outbound resolve a mensagem na mesma conta+conversa e envia a referencia externa pelo
+  adapter. Reply inbound pode guardar external fallback e deve reconciliar a FK local depois.
+- Midia inbound e job `omnichannel.media.fetch` com payload contendo apenas `messageId`. O handler
+  rele instancia/credencial/limite no PostgreSQL, publica o arquivo por temp+fsync+rename, persiste
+  hash/estado e emite realtime. `GET /media` apenas serve arquivo privado `ready`; nunca baixa do
+  provider no request. Retry rearma exclusivamente esse kind/idempotency key. O diretorio
+  `/app/data/media/omnichannel` usa o volume exclusivo `api_omnichannel_media`; nunca montar sob
+  `/app/data/uploads`. A migration 0214 autoriza somente os eventos de auditoria
+  `MESSAGE_MEDIA_READY|FAILED|RETRY` adicionados pela E1.
+- `ai_generation` e capturada antes da chamada ao modelo. Merge e criacao atomica de mensagem IA
+  + outbox exigem conversa `ai_active` e a mesma geracao. Evento humano incrementa a geracao e
+  cancela saidas IA pendentes dentro da transacao.
+
+## E5 — handoff, SLA e policies determinísticas
+
+- `messaging.handoffs` é o snapshot autoritativo da transferência: sempre criado sob lock da
+  conversa, com idempotência por conta, resumo/campos sanitizados e invalidação de dispatch/outbox
+  de IA na mesma transação. `policy_id` e `policy_snapshot` preservam a decisão mesmo quando a
+  configuração muda depois.
+- `messaging.handoff_policies` é CRUD administrativo sob `omnichannel.settings.manage`. Conditions
+  aceitam somente chaves fechadas (`reasonCode`, `sourceState`, `departmentId`, `channel`,
+  `intent`, `relationshipStatus`, `lifecycle`, `tag`, `slaRisk`, `confidenceMin/Max`, `hourUtc`);
+  o backend rejeita chaves desconhecidas, segredos, regex e expressões livres.
+- A avaliação é ordenada por `priority asc, id asc`, usa estado/contato/extracted_fields sob lock e
+  escolhe target ativo, depois fallback ativo, depois o alvo sugerido/default. Nem n8n nem o modelo
+  escolhem fila, escrevem `messaging.*` ou enviam aviso; qualquer aviso futuro deve passar pela
+  outbox e capability do adapter.
+- A aba `Handoff` em `OmnichannelConfigDrawer` apenas configura as policies; o inbox lê handoff/SLA
+  pela API autoritativa. Não criar estado booleano paralelo (`ai_active`, `assigned`) no frontend.

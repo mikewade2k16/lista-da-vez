@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '~/stores/auth'
 import { createApiRequest } from '~/utils/api-client'
-import { fetchCapabilities } from '~/domain/omnichannel/config-api'
+import { fetchCapabilities } from '~/domain/omnichannel/instance-admin-api'
 import type { OmniCapabilities } from '~/domain/omnichannel/config-types'
 
 // Readout das capacidades DAQUELE numero (a UI degrada por numero — canonico §12 risco 2).

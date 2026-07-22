@@ -262,6 +262,27 @@ func (s *Store) GetModuleLimits(ctx context.Context, accountID string) (maxChann
 	return maxChannels, maxUsers, err
 }
 
+// SetModuleMaxChannels atualiza somente a chave do teto de WhatsApp, preservando
+// qualquer outra configuracao JSON do modulo. A account deve ter o modulo habilitado.
+func (s *Store) SetModuleMaxChannels(ctx context.Context, accountID string, maxChannels int) error {
+	tag, err := s.pool.Exec(ctx, `
+		update core.account_modules
+		set config = jsonb_set(
+			coalesce(config, '{}'::jsonb),
+			'{max_whatsapp_numbers}',
+			to_jsonb($2::int),
+			true)
+		where account_id = $1::uuid and module_id = 'omnichannel'`,
+		accountID, maxChannels)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // CountAccountUsers conta os membros ativos da conta (currentUsers do TenantSettings).
 func (s *Store) CountAccountUsers(ctx context.Context, accountID string) (int, error) {
 	var total int

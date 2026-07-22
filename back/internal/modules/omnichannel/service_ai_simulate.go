@@ -27,7 +27,8 @@ func (s *AIService) Simulate(ctx context.Context, accountID string, p auth.Princ
 		return SimulateView{}, err
 	}
 	// Gate 4 (provider/model/key) — no simulate e erro ACIONAVEL (o operador esta testando).
-	if version.Provider == "" || version.Model == "" || agent.ProviderKeyCipher == "" {
+	apiKey, keyErr := s.providerAPIKey(agent, version.Provider)
+	if version.Provider == "" || version.Model == "" || keyErr != nil || apiKey == "" {
 		return SimulateView{}, ErrAIProviderNotConfigured
 	}
 	// Gate 3 (limite) — simulate responde 409 acionavel (C9.6/C9.7).

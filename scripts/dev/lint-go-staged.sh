@@ -56,6 +56,12 @@ if [ "${#packages[@]}" -eq 0 ]; then
   exit 0
 fi
 
+if ! command -v golangci-lint >/dev/null 2>&1; then
+  echo "✖ golangci-lint não encontrado no PATH; o lint do backend não pôde ser executado." >&2
+  echo "  Instale a ferramenta ou adicione \$(go env GOPATH)/bin ao PATH e tente novamente." >&2
+  exit 127
+fi
+
 echo "→ golangci-lint nos pacotes alterados: ${packages[*]}"
 
 cd "$repo_root/back"
@@ -63,4 +69,10 @@ cd "$repo_root/back"
 # Isso evita bloquear commits em pacotes que já tinham dívida documentada
 # (baseline de 94 issues registrada em 2026-05-18). A dívida vai ser
 # reduzida gradualmente nas Fases 7 e 8 do PLANO_REFATORACAO.
-golangci-lint run --new-from-rev=HEAD "${packages[@]}"
+if golangci-lint run --new-from-rev=HEAD "${packages[@]}"; then
+  echo "✓ golangci-lint concluído sem novos problemas."
+else
+  status=$?
+  echo "✖ golangci-lint encontrou problemas nos pacotes alterados (código $status)." >&2
+  exit "$status"
+fi

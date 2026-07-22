@@ -150,6 +150,18 @@ func (s *SessionService) UpdateInstance(ctx context.Context, accountID string, c
 	}
 	isActive := derefBool(in.IsActive, existing.IsActive)
 	isDefault := derefBool(in.IsDefault, existing.IsDefault)
+	if isActive && !existing.IsActive {
+		current, countErr := s.store.CountActiveInstances(ctx, accountID)
+		if countErr != nil {
+			return InstanceView{}, countErr
+		}
+		if limitErr := s.limits.Check(ctx, accountID, moduleID, limitKeyChannels, int64(current)); limitErr != nil {
+			if modules.IsLimitExceeded(limitErr) {
+				return InstanceView{}, ErrChannelLimit
+			}
+			return InstanceView{}, limitErr
+		}
+	}
 
 	phone := optTrim(in.PhoneNumber)
 	if phone != nil {

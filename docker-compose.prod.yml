@@ -77,8 +77,14 @@ services:
       CALENDAR_AI_CALLBACK_BASE: ${CALENDAR_AI_CALLBACK_BASE:-http://api:8080}
       CALENDAR_CHAT_WEBHOOK_URL: ${CALENDAR_CHAT_WEBHOOK_URL:-}
       CALENDAR_TRANSCRIBE_WEBHOOK_URL: ${CALENDAR_TRANSCRIBE_WEBHOOK_URL:-}
+      # AES-256-GCM para credenciais do omnichannel em repouso. Obrigatoria e sem
+      # default: perder/trocar a chave invalida os ciphertexts ja persistidos.
+      OMNI_SECRETS_KEY: ${OMNI_SECRETS_KEY:-}
+      # Storage privado do inbox. Nao compartilhar com /uploads (servido publicamente).
+      OMNICHANNEL_MEDIA_DIR: ${OMNICHANNEL_MEDIA_DIR:-/app/data/media/omnichannel}
       OMNI_AI_EXECUTOR: ${OMNI_AI_EXECUTOR:-native}
       OMNI_N8N_BRAIN_WEBHOOK_URL: ${OMNI_N8N_BRAIN_WEBHOOK_URL:-}
+      OMNI_N8N_INTERNAL_TOKEN: ${OMNI_N8N_INTERNAL_TOKEN:-}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
       # Absolutiza /uploads/* nas respostas publicas (cardapio/bio). Sem isso o
@@ -152,6 +158,7 @@ services:
       - "127.0.0.1:${API_PORT:-18080}:8080"
     volumes:
       - api_uploads:/app/data/uploads
+      - api_omnichannel_media:/app/data/media/omnichannel
       - ${ERP_SOURCE_HOST_DIR:-./erp-source}:/app/data/erp/source:ro
       - api_erp_storage:/app/data/erp/storage
     healthcheck:
@@ -310,6 +317,10 @@ services:
       # Sem isso o n8n bloqueia e da "access to env vars denied". Espelha o dev.
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       AUTOMATION_RUNTIME_TOKEN: ${AUTOMATION_RUNTIME_TOKEN}
+      # Omnichannel Brain: token interno e endpoint do gateway Go; nenhuma chave de provider.
+      OMNI_N8N_INTERNAL_TOKEN: ${OMNI_N8N_INTERNAL_TOKEN:-}
+      OMNI_LLM_GATEWAY_URL: ${OMNI_LLM_GATEWAY_URL:-http://api:8080/v1/runtime/omnichannel/llm-gateway}
+      OMNI_MEDIA_GATEWAY_URL: ${OMNI_MEDIA_GATEWAY_URL:-http://api:8080/v1/runtime/omnichannel/media}
     volumes:
       - automation_n8n_data:/home/node/.n8n
     ports:
@@ -354,6 +365,7 @@ services:
 volumes:
   postgres_data:
   api_uploads:
+  api_omnichannel_media:
   api_erp_storage:
   automation_redis:
   automation_waha_sessions:

@@ -100,8 +100,15 @@ func (p *Provider) SendMessage(ctx context.Context, cred channel.Credentials, ou
 	}
 
 	msgType := strings.ToUpper(strings.TrimSpace(out.MessageType))
+	var quoted *quotedSend
+	if out.Reply != nil && strings.TrimSpace(out.Reply.ExternalMessageID) != "" {
+		quoted = &quotedSend{
+			ExternalMessageID: out.Reply.ExternalMessageID,
+			Content:           out.Reply.Content,
+		}
+	}
 	if msgType == "" || msgType == "TEXT" {
-		res, err := c.sendText(ctx, out.InstanceName, number, out.Content)
+		res, err := c.sendText(ctx, out.InstanceName, number, out.Content, quoted)
 		if err != nil {
 			return channel.SendResult{Status: "FAILED"}, err
 		}
@@ -115,6 +122,7 @@ func (p *Provider) SendMessage(ctx context.Context, cred channel.Credentials, ou
 		MimeType:  out.MediaMimeType,
 		FileName:  out.MediaFileName,
 		Caption:   firstNonEmpty(out.MediaCaption, out.Content),
+		Quoted:    quoted,
 	})
 	if err != nil {
 		return channel.SendResult{Status: "FAILED"}, err
@@ -229,12 +237,11 @@ func (p *Provider) Connect(ctx context.Context, cred channel.Credentials, instan
 	}
 	// Auto-reparo do webhook (best-effort: erro nao aborta o connect). Idempotente: cobre a
 	// instancia preexistente (o create so leva o webhook quando ela e nova). Erro so LOGADO
-	// em Warn (nao aborta) — a webhook_url NAO e secreta (pode logar); o token NUNCA (o err
-	// do client so carrega status/generico, nunca a apiKey).
+	// em Warn (nao aborta), sem URL, token ou corpo do provider.
 	if webhookURL != "" {
 		if err := c.setWebhook(ctx, instanceName, webhookURL); err != nil {
-			p.logger.Warn("evolution_set_webhook_failed",
-				"instance", instanceName, "webhook_url", webhookURL, "err", err)
+			// Nao registre a URL: configuracoes podem conter query assinada ou token.
+			p.logger.Warn("evolution_set_webhook_failed", "instance", instanceName, "err", err)
 		}
 	}
 

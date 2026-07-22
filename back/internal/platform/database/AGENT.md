@@ -167,6 +167,21 @@ Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
 
 ## Notas recentes de schema
 
+- `0228_messaging_automation_profiles.sql` cria o vínculo tenant-safe cliente↔número↔agente
+  do MVP de automação. Um número não pode atender dois clientes; a policy de encerramento nasce
+  conservadora e a lease `conversations.ai_generation` continua obrigatória no Go. O arquivo é
+  apenas DDL local até aplicação explícita no banco correto; não aplicar automaticamente.
+- `0229_messaging_ai_close_evaluations.sql` registra toda proposta de fechamento da IA, aceita
+  ou bloqueada, incluindo snapshot dos gates e da geração. Não contém prompt ou mensagem; o
+  fechamento continua sendo aplicado pelo Go sob lock da conversa.
+- `0215_messaging_delivery_reconciliation.sql` adiciona metadados canonicos de ACK a
+  `messaging.webhook_events`, com constraint de completude/vocabulario seguro e indice de replay
+  por conta+provider+instancia+mensagem ordenado por timestamp+UUID. Tambem adiciona o GIN
+  `pg_trgm` que corresponde a `lower(messaging.messages.content) LIKE '%...%'`; a extensao ja
+  existe desde 0034. A migration e aditiva e nao deve ser renumerada nem incorporada a 0213/0214.
+- `0213_messaging_message_delivery.sql` amplia o E1 omnichannel com lease `ai_generation`,
+  reply local/externo, origem fechada, ACKs monotonicos e indices de dedupe/cursor. E aditiva;
+  nunca editar depois de aplicada e nunca guardar arquivo de midia ou segredo nas novas colunas.
 - `0129_site_tracking_events.sql` adiciona `site.tracking_events` e amplia
   `site.webhook_sources.entity_type` para `tracking`. O receptor usa HMAC
   com timestamp e idempotencia por `source_id + source_event_id`.

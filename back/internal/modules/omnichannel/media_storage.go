@@ -3,6 +3,7 @@ package omnichannel
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -85,6 +86,7 @@ type StoredMedia struct {
 	MimeType   string
 	FileName   string
 	SizeBytes  int64
+	SHA256     string
 }
 
 // DiskMediaStorage grava sob rootDir/{accountId}/{conversationId}/{random}.{ext}.
@@ -128,7 +130,7 @@ func (s *DiskMediaStorage) Save(ctx context.Context, accountID, conversationID, 
 	}
 	defer func() { _ = src.Close() }()
 
-	return s.writeMedia(account, conversation, categoryForType(msgType), mime, fileName, src, maxBytes)
+	return s.writeMedia(account, conversation, categoryForType(msgType), mime, fileName, src, maxBytes, "")
 }
 
 // SaveReader grava bytes JA decodificados (usado na rehidratacao one-shot da midia inbound: o
@@ -139,12 +141,24 @@ func (s *DiskMediaStorage) SaveReader(accountID, conversationID, mimeType, fileN
 	if account == "" || conversation == "" {
 		return StoredMedia{}, ErrMediaInvalid
 	}
-	return s.writeMedia(account, conversation, "", normalizeMime(mimeType), fileName, src, maxBytes)
+	return s.writeMedia(account, conversation, "", normalizeMime(mimeType), fileName, src, maxBytes, "")
+}
+
+// SaveInboundReader grava uma midia recebida sob uma chave deterministica por mensagem.
+// Reexecutar o mesmo job substitui o mesmo arquivo e nao acumula copias orfas.
+func (s *DiskMediaStorage) SaveInboundReader(accountID, conversationID, messageID, mimeType, fileName string, src io.Reader, maxBytes int64) (StoredMedia, error) {
+	account := sanitizeSegment(accountID)
+	conversation := sanitizeSegment(conversationID)
+	message := sanitizeSegment(messageID)
+	if account == "" || conversation == "" || message == "" {
+		return StoredMedia{}, ErrMediaInvalid
+	}
+	return s.writeMedia(account, conversation, "", normalizeMime(mimeType), fileName, src, maxBytes, message)
 }
 
 // writeMedia valida o mime (e a categoria, quando informada), grava streaming com teto e
 // devolve o descriptor. account/conversation ja sanitizados; nome de arquivo aleatorio.
-func (s *DiskMediaStorage) writeMedia(account, conversation string, wantCat mediaCategory, mime, fileName string, src io.Reader, maxBytes int64) (StoredMedia, error) {
+func (s *DiskMediaStorage) writeMedia(account, conversation string, wantCat mediaCategory, mime, fileName string, src io.Reader, maxBytes int64, stableName string) (StoredMedia, error) {
 	if maxBytes <= 0 {
 		maxBytes = defaultMaxMediaBytes
 	}
@@ -158,17 +172,33 @@ func (s *DiskMediaStorage) writeMedia(account, conversation string, wantCat medi
 		return StoredMedia{}, err
 	}
 	name := randomSuffix() + spec.ext
+	if stableName != "" {
+		name = stableName + spec.ext
+	}
 	fullPath := filepath.Join(dir, name)
-	file, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec // path = raiz + segmentos sanitizados + nome aleatorio
+	file, err := os.CreateTemp(dir, ".media-*") //nolint:gosec // dir = raiz + segmentos sanitizados
 	if err != nil {
 		return StoredMedia{}, err
 	}
+	tempPath := file.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tempPath) //nolint:gosec // path devolvido por os.CreateTemp no diretorio privado validado.
+		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return StoredMedia{}, err
+	}
 
-	size, copyErr := copyCapped(file, src, maxBytes)
+	digest := sha256.New()
+	size, copyErr := copyCapped(io.MultiWriter(file, digest), src, maxBytes)
+	if copyErr == nil && size > 0 {
+		copyErr = file.Sync()
+	}
 	closeErr := file.Close()
 	if copyErr != nil || closeErr != nil || size == 0 {
-		_ = os.Remove(fullPath) //nolint:gosec // G703: fullPath = raiz + segmentos sanitizados + nome aleatorio
-
 		switch {
 		case errors.Is(copyErr, ErrMediaTooLarge):
 			return StoredMedia{}, ErrMediaTooLarge
@@ -181,11 +211,27 @@ func (s *DiskMediaStorage) writeMedia(account, conversation string, wantCat medi
 		}
 	}
 
+	// Unix substitui o destino atomicamente. No Windows, os.Rename pode recusar um
+	// destino existente; removemos apenas o arquivo deterministico ja validado dentro
+	// da raiz e repetimos a publicacao do temporario.
+	if err := os.Rename(tempPath, fullPath); err != nil { //nolint:gosec // ambos os paths estao no mesmo diretorio validado
+		if _, statErr := os.Stat(fullPath); statErr == nil { //nolint:gosec // path composto apenas por segmentos sanitizados.
+			if removeErr := os.Remove(fullPath); removeErr == nil { //nolint:gosec // path contido na raiz privada
+				err = os.Rename(tempPath, fullPath) //nolint:gosec // mesmo diretorio validado
+			}
+		}
+		if err != nil {
+			return StoredMedia{}, err
+		}
+	}
+	removeTemp = false
+
 	return StoredMedia{
 		StorageKey: account + "/" + conversation + "/" + name,
 		MimeType:   mime,
 		FileName:   mediaDisplayName(fileName, name),
 		SizeBytes:  size,
+		SHA256:     hex.EncodeToString(digest.Sum(nil)),
 	}, nil
 }
 
@@ -258,6 +304,28 @@ func (s *DiskMediaStorage) Open(storageKey string) (*os.File, os.FileInfo, error
 		return nil, nil, err
 	}
 	return file, info, nil
+}
+
+// Remove apaga somente uma chave que passe pela mesma guarda de containment do Open. E usado para
+// compensar arquivo preparado quando a transacao mensagem+outbox sofre rollback. Ausencia ja conta
+// como removida; nunca recebe path absoluto nem URL.
+func (s *DiskMediaStorage) Remove(storageKey string) error {
+	file, _, err := s.Open(storageKey)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	path := file.Name()
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(path); errors.Is(err, os.ErrNotExist) { //nolint:gosec // path validado por Open
+		return nil
+	} else {
+		return err
+	}
 }
 
 // copyCapped copia ate maxBytes; um byte a mais => ErrMediaTooLarge (413). Nao materializa

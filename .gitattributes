@@ -1,0 +1,3 @@
+# Scripts executados pelo Git Bash precisam permanecer em LF, inclusive no Windows.
+*.sh text eol=lf
+.husky/* text eol=lf

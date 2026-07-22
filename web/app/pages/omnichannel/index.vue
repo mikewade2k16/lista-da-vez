@@ -54,6 +54,11 @@ const canConfigure = computed(
     isPlatformAdmin.value ||
     CONFIG_PERMS.some((key) => auth.effectivePermissionKeys.includes(key))
 );
+const canManageAutomation = computed(
+  () =>
+    isPlatformAdmin.value ||
+    auth.effectivePermissionKeys.includes("omnichannel.settings.manage"),
+);
 
 // Deep-link ?config=<aba> abre o drawer direto (compartilhavel).
 watch(
@@ -68,6 +73,14 @@ watch(
 <template>
   <section class="omnichannel-inbox-page">
     <div v-if="canConfigure" class="omnichannel-inbox-page__toolbar">
+      <NuxtLink
+        v-if="canManageAutomation"
+        to="/omnichannel/automacao"
+        class="omnichannel-inbox-page__automation-link"
+      >
+        <UIcon name="i-lucide-bot" aria-hidden="true" />
+        Automação IA
+      </NuxtLink>
       <AppPanelButton variant="secondary" @click="configOpen = true">
         Configurar atendimento
       </AppPanelButton>
@@ -111,7 +124,22 @@ watch(
 .omnichannel-inbox-page__toolbar {
   display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+.omnichannel-inbox-page__automation-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 36px;
+  padding: 0 0.85rem;
+  border-radius: 14px;
+  background: rgb(var(--primary) / 0.14);
+  color: rgb(var(--primary));
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 /* Tokens semanticos da casa (tokens.css) — nada de cor cravada, senao o aviso

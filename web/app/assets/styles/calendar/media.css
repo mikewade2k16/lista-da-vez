@@ -238,10 +238,25 @@
   font-size: 1.1rem;
 }
 
+.calendar-media__item--loading.is-slow .calendar-media__loading-icon,
+.calendar-media__item--loading.is-slow .calendar-media__status {
+  color: var(--accent-warning);
+}
+
 .calendar-media__pct {
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--text-main);
+}
+
+.calendar-media__status {
+  max-width: calc(100% - 0.5rem);
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  line-height: 1.2;
+  text-align: center;
+  text-overflow: ellipsis;
 }
 
 .calendar-media__bar {

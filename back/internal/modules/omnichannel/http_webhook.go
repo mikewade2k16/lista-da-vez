@@ -34,7 +34,38 @@ const (
 // registerWebhookRoutes monta a rota publica do webhook. Chamada de dentro do modulo
 // (handle.RegisterRoutes) — precedente cardapio/module.go.
 func registerWebhookRoutes(mux *http.ServeMux, svc *InboundService, limiter *rateLimiter) {
+	mux.HandleFunc("GET /v1/webhooks/omnichannel/{provider}/{accountSlug}", handleWebhookChallenge(svc, limiter))
 	mux.HandleFunc("POST /v1/webhooks/omnichannel/{provider}/{accountSlug}", handleWebhook(svc, limiter))
+}
+
+func handleWebhookChallenge(svc *InboundService, limiter *rateLimiter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provider := strings.TrimSpace(r.PathValue("provider"))
+		slug := strings.TrimSpace(r.PathValue("accountSlug"))
+		if !limiter.allow(provider+":"+slug, clientIP(r), webhookRateLimit, webhookRateWindow) {
+			httpapi.WriteError(w, r, http.StatusTooManyRequests, "rate_limited", "Muitas requisicoes. Tente novamente em instantes.")
+			return
+		}
+		accountID, err := svc.ResolveAccount(r.Context(), provider, slug)
+		if err != nil {
+			writeWebhookError(w, r, err)
+			return
+		}
+		query := map[string]string{}
+		for key, values := range r.URL.Query() {
+			if len(values) > 0 {
+				query[key] = values[0]
+			}
+		}
+		challenge, err := svc.VerifyChallenge(r.Context(), accountID, provider, query)
+		if err != nil {
+			writeWebhookError(w, r, err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(challenge))
+	}
 }
 
 func handleWebhook(svc *InboundService, limiter *rateLimiter) http.HandlerFunc {

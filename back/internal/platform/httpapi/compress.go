@@ -19,7 +19,8 @@ var gzipWriterPool = sync.Pool{
 //   - respostas ja codificadas, de tipo nao-comprimivel (imagens/binarios) ou
 //     sem corpo (204/304/1xx) — decidido no WriteHeader pelo Content-Type.
 //
-// O writer preserva Flush (SSE) e Hijack (WebSocket) por seguranca.
+// O writer preserva Flush (SSE), Hijack (WebSocket) e Unwrap
+// (http.ResponseController/deadlines por rota) por seguranca.
 func Gzip() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +52,12 @@ type gzipResponseWriter struct {
 	gz          *gzip.Writer
 	wroteHeader bool
 	compress    bool
+}
+
+// Unwrap mantem controles de conexao por rota acessiveis via
+// http.ResponseController mesmo quando a resposta aceita gzip.
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 func (w *gzipResponseWriter) WriteHeader(status int) {

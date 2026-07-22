@@ -29,7 +29,7 @@ export function useInboxChatMessageRendering(options: {
     value: string | null | undefined,
     options?: { fallbackPhone?: string | null | undefined; fallbackLabel?: string }
   ) => string;
-  requestOlderMessages?: () => void;
+  requestOlderMessages?: () => Promise<void> | void;
   hasMoreMessages?: () => boolean;
   messageRowId: (messageId: string) => string;
   asRecord: (value: unknown) => Record<string, unknown> | null;
@@ -176,6 +176,22 @@ export function useInboxChatMessageRendering(options: {
   }
 
   function getReplyPreview(messageEntry: Message): ReplyPreview | null {
+    const replyTo = messageEntry.replyTo;
+    if (replyTo) {
+      const messageType = replyTo.messageType || "TEXT";
+      const content = replyTo.content.trim();
+      const author = replyTo.senderName.trim();
+      const messageId = replyTo.messageId || replyTo.externalMessageId.trim() || null;
+      return {
+        content: content || getMediaTypeLabel(messageType),
+        author: options.sanitizeHumanLabel(author || "Mensagem anterior", {
+          fallbackLabel: "Mensagem anterior"
+        }),
+        messageType,
+        messageId
+      };
+    }
+
     const metadata = options.asRecord(messageEntry.metadataJson);
     const reply = metadata ? options.asRecord(metadata.reply) : null;
 
@@ -363,6 +379,10 @@ export function useInboxChatMessageRendering(options: {
       return false;
     }
 
+    if (messageEntry.mediaState === "failed") {
+      return false;
+    }
+
     if (
       hasImagePreview(messageEntry) ||
       hasVideoPreview(messageEntry) ||
@@ -378,7 +398,7 @@ export function useInboxChatMessageRendering(options: {
   function getPendingMediaLabel(messageEntry: Message) {
     const label = getMediaTypeLabel(resolveMessageType(messageEntry), messageEntry);
     const directionLabel = messageEntry.direction === "OUTBOUND" ? "enviado" : "recebido";
-    return `${label} ${directionLabel}. Carregando preview...`;
+    return `${label} ${directionLabel}. Processando midia...`;
   }
 
   function normalizeNameForComparison(value: string | null | undefined) {
@@ -577,7 +597,7 @@ export function useInboxChatMessageRendering(options: {
     return false;
   }
 
-  function onReplyPreviewClick(messageEntry: Message) {
+  async function onReplyPreviewClick(messageEntry: Message) {
     const preview = getReplyPreview(messageEntry);
     if (!preview?.messageId) {
       return;
@@ -595,17 +615,21 @@ export function useInboxChatMessageRendering(options: {
       return;
     }
 
-    if (options.requestOlderMessages && options.hasMoreMessages?.()) {
-      options.requestOlderMessages();
-      window.setTimeout(() => {
+    if (options.requestOlderMessages) {
+      let attempts = 0;
+      while (options.hasMoreMessages?.() && attempts < 20) {
+        await options.requestOlderMessages();
+        attempts += 1;
         if (focusMessageRowById(preview.messageId)) {
           return;
         }
         if (focusMessageRowByExternalId(preview.messageId)) {
           return;
         }
-        focusMessageRowByLooseMatch(preview.messageId);
-      }, 320);
+        if (focusMessageRowByLooseMatch(preview.messageId)) {
+          return;
+        }
+      }
     }
   }
 

@@ -12,10 +12,58 @@
 // Providers do enum canonico (§7.2). O back valida; o front so oferece estes.
 export type OmniProvider = 'meta_whatsapp_cloud' | 'evolution' | 'waha' | 'mock'
 
+export interface OmniInstagramAccount {
+  id: string
+  igUserId: string
+  username: string | null
+  displayName: string | null
+  pageId: string | null
+  isActive: boolean
+  webhookStatus: string
+  credentialsSet: boolean
+  updatedAt: string
+}
+
+export interface OmniInstagramComment {
+  id: string
+  instagramAccountId: string
+  externalCommentId: string
+  externalMediaId: string | null
+  parentCommentId: string | null
+  contactId: string | null
+  authorScopedId: string
+  username: string | null
+  text: string
+  eventKind: 'comment' | 'mention'
+  status: string
+  isLive: boolean
+  occurredAt: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmniInstagramAction {
+  id: string
+  commentId: string
+  actionKind: 'public_reply' | 'private_reply' | 'hide' | 'ignore'
+  status: string
+  proposedText: string | null
+  approvedText: string | null
+  approvedByUserId: string | null
+  externalMessageId: string | null
+  idempotencyKey: string
+  privateReplyExpiresAt: string | null
+  lastError: string
+  createdAt: string
+  executedAt: string | null
+}
+
 export interface OmniInstance {
   id: string
   tenantId: string
   instanceName: string
+  provider: OmniProvider
   displayName: string | null
   phoneNumber: string | null
   queueLabel: string | null
@@ -45,6 +93,11 @@ export interface OmniInstanceManagement {
   currentChannels: number
   instances: OmniInstance[]
   users: OmniAssignableUser[]
+}
+
+export interface OmniChannelLimit {
+  maxChannels: number
+  currentChannels: number
 }
 
 // Estado da sessao/QR (SessionView) — traz `provider` e `connected` que a view de
@@ -166,6 +219,31 @@ export interface OmniRoutingRuleInput {
   targetQueueId: string
 }
 
+export type OmniHandoffPolicyConditions = Record<string, unknown>
+
+export interface OmniHandoffPolicy {
+  id: string
+  name: string
+  priority: number
+  isActive: boolean
+  conditions: OmniHandoffPolicyConditions
+  targetQueueId: string | null
+  fallbackQueueId: string | null
+  customerNoticeTemplate: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmniHandoffPolicyInput {
+  name: string
+  priority: number
+  isActive?: boolean
+  conditions: OmniHandoffPolicyConditions
+  targetQueueId?: string | null
+  fallbackQueueId?: string | null
+  customerNoticeTemplate?: string
+}
+
 // ============================================================================
 // Agente de IA (F9, /agents/*)
 // ============================================================================
@@ -181,6 +259,10 @@ export interface OmniAgent {
   updatedAt: string
 }
 
+export interface OmniProviderKeyStatusView {
+  keys: Partial<Record<'gemini' | 'glm' | 'openai', OmniCredentialStatus>>
+}
+
 export interface OmniAgentVersion {
   id: string
   agentId: string
@@ -191,9 +273,57 @@ export interface OmniAgentVersion {
   temperature: number
   layers: unknown
   outputSchema: unknown
+  mediaConfig: OmniMediaConfig
   schemaVersion: string
+  debounceMs: number
+  maxContextMessages: number
+  maxAiTurns: number
+  minConfidence: number
+  handoffOnError: boolean
+  handoffOnLimit: boolean
+  workflowContractVersion: string
   publishedAt: string | null
   createdAt: string
+}
+
+export interface OmniMediaSectionConfig {
+  enabled?: boolean
+  provider?: string
+  model?: string
+  maxSeconds?: number
+  maxBytes?: number
+  allowedMime?: string[]
+  maxPages?: number
+}
+
+export interface OmniMediaConfig {
+  audio?: OmniMediaSectionConfig
+  image?: OmniMediaSectionConfig
+  document?: OmniMediaSectionConfig
+  retentionDays?: number
+  includeInReply?: boolean
+}
+
+export interface OmniMediaAnalysis {
+  id: string
+  messageId: string
+  conversationId: string
+  analysisKind: 'transcription' | 'vision' | 'document_text'
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'blocked'
+  provider: string
+  model: string
+  agentVersionId: string
+  resultText: string | null
+  resultJson: unknown
+  promptTokens: number
+  completionTokens: number
+  costUsd: number
+  latencyMs: number
+  attempts: number
+  lastError: string
+  createdAt: string
+  completedAt: string | null
+  expiresAt: string | null
 }
 
 export interface OmniCollectField {
@@ -205,6 +335,117 @@ export interface OmniCollectField {
   enumOptions: unknown
   required: boolean
   sortOrder: number
+}
+
+// Tools e conhecimento (E6). Credenciais nunca aparecem nestes contratos; toolId é
+// apenas o identificador lógico de um registry Go explicitamente injetado.
+export interface OmniAiToolBinding {
+  id: string
+  agentId: string
+  toolId: string
+  isEnabled: boolean
+  mode: 'read' | 'propose_write' | 'approved_write'
+  allowedOperations: string[]
+  inputSchema: unknown
+  outputSchema: unknown
+  timeoutMs: number
+  maxCallsPerDispatch: number
+  config: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmniAiToolBindingInput {
+  toolId: string
+  isEnabled?: boolean
+  mode?: OmniAiToolBinding['mode']
+  allowedOperations?: string[]
+  inputSchema?: unknown
+  outputSchema?: unknown
+  timeoutMs?: number
+  maxCallsPerDispatch?: number
+  config?: Record<string, unknown>
+}
+
+export interface OmniAiToolRun {
+  id: string
+  conversationId: string | null
+  dispatchId: string | null
+  agentId: string
+  bindingId: string
+  toolId: string
+  callId: string
+  status: 'requested' | 'approved' | 'denied' | 'running' | 'completed' | 'failed' | 'timeout'
+  operation: string
+  inputMasked: Record<string, unknown>
+  outputMasked: Record<string, unknown>
+  latencyMs: number
+  error: string
+  createdAt: string
+  completedAt: string | null
+}
+
+export interface OmniAiToolApproval {
+  id: string
+  runId: string
+  agentId: string
+  toolId: string
+  bindingId: string
+  conversationId: string | null
+  dispatchId: string | null
+  callId: string
+  operation: string
+  status: 'pending' | 'approved' | 'rejected' | 'expired'
+  inputMasked: Record<string, unknown>
+  reason: string
+  error: string
+  latencyMs: number
+  requestedAt: string
+  decidedAt: string | null
+  decidedBy: string | null
+  expiresAt: string
+}
+
+export interface OmniKnowledgeBase {
+  id: string
+  name: string
+  isEnabled: boolean
+  searchConfig: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmniKnowledgeDocument {
+  id: string
+  knowledgeBaseId: string
+  sourceRef: string
+  title: string
+  checksum: string
+  status: 'draft' | 'processing' | 'published' | 'failed' | 'archived'
+  version: number
+  chunkCount: number
+  metadata: Record<string, unknown>
+  error: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmniKnowledgeChunkInput {
+  ordinal: number
+  bodyText: string
+  tokenCount?: number
+}
+
+export interface OmniAiKnowledgeBinding {
+  id: string
+  agentId: string
+  knowledgeBaseId: string
+  baseName: string
+  isEnabled: boolean
+  topK: number
+  minScore: number
+  createdAt: string
+  updatedAt: string
 }
 
 export interface OmniAgentInput {
@@ -219,7 +460,15 @@ export interface OmniAgentVersionInput {
   temperature: number
   layers: unknown
   outputSchema?: unknown
+  mediaConfig?: OmniMediaConfig
   schemaVersion?: string
+  debounceMs?: number
+  maxContextMessages?: number
+  maxAiTurns?: number
+  minConfidence?: number
+  handoffOnError?: boolean
+  handoffOnLimit?: boolean
+  workflowContractVersion?: string
 }
 
 // ============================================================================

@@ -433,6 +433,10 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 		registry.MustRegister(omnichannel.New(
 			omnichannel.WithSecretBox(omnichannelSecretBox),
 			omnichannel.WithPublisher(realtimeService),
+			omnichannel.WithAutomationClientCatalog(omnichannelClientCatalogAdapter{service: tenantService}),
+			omnichannel.WithAutomationBusinessContext(omnichannelCalendarContextAdapter{
+				service: func() *calendar.Service { return calendarModule.Service() },
+			}),
 		))
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)

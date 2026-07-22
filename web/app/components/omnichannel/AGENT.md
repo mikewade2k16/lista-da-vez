@@ -52,6 +52,67 @@ descrever apenas a condicao real do ambiente (por exemplo piloto Evolution/mock)
 
 **Preservar a subpasta `inbox/`**: os imports do legado dependem dela.
 
+### MVP de automação — `/omnichannel/automacao`
+
+`automation/` é código novo da casa e não faz parte do port verbatim. A rota é administrativa,
+usa `workspaceId: 'omnichannel'` e o link no inbox só aparece para `platform_admin` ou
+`omnichannel.settings.manage`, igual ao gate real da API.
+
+- `OmnichannelAutomationMvp.vue` mantém na tela somente Visão geral e Intervenções; toda
+  configuração fica no drawer para preservar espaço operacional;
+- o cabeçalho próprio foi removido: a rota usa o wrapper padrão `page-workspace`; cliente é um
+  `AppSelectField` e recebe exclusivamente o catálogo filtrado pelo módulo `omnichannel` no Go;
+- `AutomationProfileConfig.vue` vincula cliente, número e agente e edita os gates configuráveis;
+- `AutomationAiConfigDrawer.vue` reutiliza o mesmo shell `OmniEntityDrawer` e as classes de
+  configuração do Calendário, com tabs Atendimento, WhatsApp e IA. A tab WhatsApp reutiliza
+  `ConfigNumbers` e o fluxo real de conexão/QR; prompt, provider, modelo e chave continuam
+  persistindo nas entidades do agente Omnichannel — nunca em `calendar.*`; o select consulta
+  `/agents/{id}/models` sem expor a chave;
+- cada agente é um `settings-collapse`, com switch de ativação no próprio cabeçalho. Dentro dele,
+  a ordem e as classes são as mesmas de `calendar/config/ConfigAi.vue`: Prompt, Provedor e modelo,
+  Escopo por cliente e Chaves de API; todos iniciam fechados. `ConfigAiAgentProviderKeys.vue`
+  apresenta os slots Gemini, GLM e OpenAI com status mascarado, e salvar/limpar um provider nunca
+  sobrescreve os demais. No MVP existe apenas `Salvar configurações`: o Go persiste e ativa no
+  mesmo commit, enquanto o versionamento fica interno para auditoria/rollback. Se houver um draft
+  legado, o editor o recupera uma vez e o salvamento o promove; depois reidrata sempre a versão
+  ativa. Transcrição de voz não aparece no MVP;
+- cada número também tem switch no cabeçalho. Desativar libera o teto imediatamente; excluir usa
+  `DELETE .../instances/{id}` e o Go bloqueia quando existe histórico. Ao criar, o card da conexão
+  abre para tornar o botão de QR evidente. Somente `platform_admin` vê/edita o teto da conta;
+- `AutomationInterventionList.vue` apresenta duas projeções do backend: `IA atendendo`, com
+  `Parar IA`, e `IA parada`, com preview/contagem do inbound sem resposta e `IA responder agora`.
+  A resposta imediata agenda o dispatch autoritativo no Go; o card nunca possui composer nem envia
+  diretamente pelo provider. Sem mensagem pendente, `Retomar nas próximas` conserva o fluxo de
+  reabertura no próximo inbound;
+- o comando manual aparece como `Forçar IA a responder`: ele solicita uma resposta mesmo após
+  baixa confiança, máximo de respostas ou handoff sugerido. O card mostra o motivo específico e,
+  quando disponível, confiança obtida/mínima ou máximo de respostas. A UI não promete contornar
+  configuração ausente, falha técnica, limite mensal ou lease inválida;
+- `ConfigAiAgentAdvancedSettings.vue` diferencia a confiança mínima para **responder** da confiança
+  mínima para **encerrar**, explica debounce, janela de contexto, máximo de respostas e os dois
+  toggles de handoff. `AutomationProfileConfig.vue` rotula a confiança de encerramento explicitamente;
+- `~/composables/omnichannel/useOmnichannelAutomationMvp.ts` concentra carregamento, save e polling;
+- `~/domain/omnichannel/automation-api.ts` é o contrato tipado, sempre via `createApiRequest`.
+
+O painel nunca oferece toggle para `validGenerationRequired`: a lease de `ai_generation` é uma
+invariante do Go. O contexto estratégico é somente leitura da fonte do Calendário; não duplicar
+formulário nem persistência. Realtime futuro deve apenas invalidar a leitura e refazer o GET.
+
+### E5 — handoff humano no inbox
+
+`InboxChatHeader.vue` expõe somente as ações autorizadas pelo backend: `Assumir` quando a
+conversa está sem responsável e `Liberar` quando o usuário atual é o responsável. Os botões
+chamam `POST /conversations/{id}/take` (com chave de idempotência) e
+`POST /conversations/{id}/release` através de `useApi`; não escrevem estado de conversa no
+browser nem enviam mensagens diretamente ao provider. O Go continua responsável pela FSM,
+permissões, lock, cancelamento de dispatch da IA e reconciliação da resposta.
+
+`InboxDetailsSidebar.vue` lê `GET /conversations/{id}/handoffs` e `/sla` ao trocar a conversa,
+mostra apenas o snapshot sanitizado (motivo, resumo, nomes dos campos coletados e eventos SLA)
+e oferece `PATCH /conversations/{id}/queue` para transferência quando o backend autoriza a
+leitura das filas. Falha de permissão para listar filas não esconde o histórico do handoff nem
+fabrica uma opção de transferência.
+
 ## `config/` — telas de config (F10) — CODIGO DA CASA, NAO VERBATIM
 
 A pasta `config/` **nao** e port verbatim: nasceu no design system da casa (spec
@@ -69,14 +130,31 @@ entrada = botao "Configurar atendimento" em `~/pages/omnichannel/index.vue` (gat
 | `config/ConfigNumbers.vue` + `ConfigNumberCard/Credentials/Capabilities/Connection.vue` | Numeros/providers/credencial `{set,last4}`/QR; UI degrada por numero via `Capabilities()` |
 | `config/ConfigDepartments.vue` · `ConfigQueues.vue` · `ConfigQueueMembers.vue`          | Setores, filas e membros (diff incremental add/remove)                                    |
 | `config/ConfigRoutingRules.vue`                                                         | Regras + reordenacao de prioridade (`PUT /routing-rules/order`)                           |
-| `config/ConfigAiAgent.vue` + `ConfigAiAgentCard/Versions/Simulator.vue`                 | Editor do agente, publish/rollback e simulador (traco IA sugere / motor decide)           |
-| `~/domain/omnichannel/config-api.ts` + `config-types.ts`                                | Client tipado (sem `any`) das rotas F2/F4/F8/F9                                           |
+| `config/ConfigAiAgent.vue` + `ConfigAiAgentCard/Versions/Simulator.vue`                 | Editor do agente com salvamento ativo único, histórico interno e simulador                |
+| `~/domain/omnichannel/config-api.ts` + `config-types.ts` + `instagram-api.ts`           | Client tipado (sem `any`) das rotas F2/F4/F8/F9/E8                                        |
 
 Consome rotas **ja existentes**: instancias/sessao/credencial sob `/v1/omnichannel/tenant/whatsapp/*`,
 setores/filas/regras sob `/v1/omnichannel/settings/*`, agente sob `/v1/omnichannel/agents/*`.
-Credencial de numero e keyed por **`instanceName`** (nao id). **needsWiring**: nao existe
-`GET .../instances/{id}/capabilities` nem `provider` na view de gestao — a tela degrada
-(capability desconhecida = ausente) ate o endpoint nascer na fase dona (F4).
+Credencial de numero e keyed por **`instanceName`** (nao id). A view de gestão inclui `provider`;
+`GET .../instances/{id}/capabilities` existe e a tela degrada para ausente somente se a consulta falhar.
+
+### E7/E8 — canais Meta no painel
+
+`ConfigInstagram.vue` e `instagram-api.ts` usam somente rotas account-scoped do Go. Tokens são
+write-only e nunca aparecem no estado do navegador. A aba lista comentários/menções, mostra o
+rascunho da IA e só chama `decide` para aprovar/ignorar; não há envio Graph pelo frontend. O provider
+Cloud usa a configuração por número existente e segue a mesma regra: template/janela são decididos
+no Go, não pelo n8n ou pela UI.
+
+### E6 — tools, conhecimento, evidências e aprovações
+
+`config/ConfigAiToolsKnowledge.vue` usa `useOmnichannelToolsKnowledge` e o client tipado de
+`~/domain/omnichannel/config-api.ts`. Binding, base, documento, chunks e vínculo de conhecimento
+continuam escritos somente pelo Go. `ConfigAiToolRuns.vue` exibe apenas `inputMasked`/
+`outputMasked` e metadados de execução para `omnichannel.audit.view`; propostas mutáveis ficam
+separadas e só podem ser aprovadas/rejeitadas por `omnichannel.agents.manage`. O navegador nunca
+recebe argumentos cifrados, credenciais nem executa provider. Aprovar somente muda o estado no Go;
+o retry assinado do brain é o caminho de execução.
 
 ## Por que fica em `web/app/` e nao em layer
 

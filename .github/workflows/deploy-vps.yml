@@ -113,6 +113,39 @@ jobs:
           chmod 600 ~/.ssh/deploy_vps
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
+      - name: Validate required remote environment
+        run: |
+          set -euo pipefail
+          cat > /tmp/preflight_env.sh << REMOTE_SCRIPT
+          set -euo pipefail
+          mkdir -p "$REMOTE_PATH"
+          cd "$REMOTE_PATH"
+          if [ ! -f "$ENV_FILE" ]; then
+            echo "ERRO: $ENV_FILE nao existe em $REMOTE_PATH. Crie-o a partir do .example antes do deploy." >&2
+            exit 1
+          fi
+          omni_key=\$(sed -n 's/^OMNI_SECRETS_KEY=//p' "$ENV_FILE" | tail -n 1)
+          if [ -z "\$omni_key" ]; then
+            echo "ERRO: OMNI_SECRETS_KEY ausente/vazia em $ENV_FILE. Gere uma vez com: openssl rand -base64 32" >&2
+            exit 1
+          fi
+          if ! printf '%s' "\$omni_key" | grep -Eq '^[A-Za-z0-9+/]{43}=$'; then
+            echo "ERRO: OMNI_SECRETS_KEY nao e base64 canonico de 32 bytes em $ENV_FILE." >&2
+            exit 1
+          fi
+          if ! decoded_bytes=\$(printf '%s' "\$omni_key" | openssl base64 -d -A 2>/dev/null | wc -c | tr -d ' '); then
+            echo "ERRO: OMNI_SECRETS_KEY nao e base64 valido em $ENV_FILE." >&2
+            exit 1
+          fi
+          unset omni_key
+          if [ "\$decoded_bytes" != "32" ]; then
+            echo "ERRO: OMNI_SECRETS_KEY deve decodificar exatamente 32 bytes; encontrado(s): \$decoded_bytes." >&2
+            exit 1
+          fi
+          echo "Preflight de segredos obrigatorios: OK"
+          REMOTE_SCRIPT
+          ssh -i ~/.ssh/deploy_vps -o StrictHostKeyChecking=yes -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' < /tmp/preflight_env.sh
+
       - name: Copy docker-compose.prod.yml to VPS
         run: |
           set -euo pipefail
@@ -136,6 +169,7 @@ jobs:
             echo "ERRO: $ENV_FILE nao existe em $REMOTE_PATH. Crie-o a partir do .example." >&2
             exit 1
           fi
+          docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml config --quiet
           if grep -q '^IMAGE_TAG=' "$ENV_FILE"; then
             sed -i "s|^IMAGE_TAG=.*|IMAGE_TAG=$IMAGE_TAG|" "$ENV_FILE"
           else

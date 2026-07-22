@@ -1,243 +1,174 @@
 <#
 .SYNOPSIS
-  Exporta os workflows do n8n do dev para automation/export/workflow-*.json (par do n8n-import.ps1).
+  Checks local n8n workflow ownership or exports one exact owner-scoped workflow.
 
 .DESCRIPTION
-  POR QUE existe: o n8n guarda os workflows no PROPRIO banco (SQLite, nao le do arquivo). O repo so
-  reflete o n8n se alguem EXPORTAR. Ninguem lembra, entao o deploy leva versao velha ou trava ate
-  exportar na mao. Este script e o INVERSO do n8n-import.ps1: traz o n8n rodando -> arquivo versionado,
-  pelo mapa FIXO id->arquivo (nomes estaveis; NAO derivar do nome do workflow para nao poluir o diff).
+  -Check without Owner/Only is LOCAL ONLY: validates registry, canonical IDs and
+  SHA-256 hashes. It never calls Docker, reads runtime or creates a temp file.
 
-  Materializa cada workflow no SHAPE versionado (array com 1 objeto, "active": false), fazendo
-  pretty-print de 2 espacos com \n final (LF), byte a byte igual aos arquivos atuais, para minimizar
-  ruido de diff. Rodar 2x sem mudar nada no n8n produz ZERO diff na 2a (idempotente).
+  Every runtime check, export or sync requires both -Owner and -Only. The exact
+  registry entry controls module, canonical ID and export path. Non-selected
+  canonical workflows are protected by before/after hashes.
 
-  Modos de gatilho:
-    (sem flag) exporta sempre           -> uso manual: npm run n8n:export
-    -Check     nao escreve; sai !=0 se algum arquivo divergir  -> guard do git/pre-commit (AVISA)
-    -Sync      verifica e, se divergir, ESCREVE e segue exit 0  -> gatilho do deploy (AUTO-EXPORTA)
-  -Only <slug> filtra pelo nome do arquivo (ex.: -Only calendar-chat).
+  Exit codes: 0=ok, 10=target drift, 20=registry/integrity/policy error,
+  30=runtime/container operational error.
 
-  Anti-vazamento de credencial: o export do n8n traz nos com credentials so como {id,name}. O script
-  ABORTA aquele arquivo (exit 3 do checador) se algum node.credentials[*] tiver chave fora de id/name,
-  para nunca gravar segredo no repo.
-
-  Gotchas embutidos (herdados do n8n-import.ps1, ja custaram tempo):
-    - Rodar o n8n CLI via: docker exec <c> sh -lc "... /tmp/...". Passar /tmp/x direto como argumento
-      faz o Git Bash/MSYS converter para caminho Windows (ENOENT no container).
-    - O SQLite do n8n usa WAL: NUNCA docker cp database.sqlite para ler estado (nao leva as escritas
-      recentes). Sempre n8n export:workflow (le com o WAL aplicado). Aqui o docker cp e do /tmp/exp.json
-      JA exportado pelo CLI (byte-exato), nao do banco.
-    - Este arquivo e SO ASCII de proposito (Windows PowerShell 5.1 le .ps1 sem BOM como ANSI e quebra o
-      parser em acentos/travessao). Sem &&, ternario ou ?? (nao existem no 5.1).
+  Keep this file ASCII and PowerShell 5.1 compatible.
 
 .EXAMPLE
-  npm run n8n:export          # todos os workflow-*.json (uso manual)
-  npm run n8n:export:chat     # so o calendar-chat
-  npm run n8n:export:check    # sai 1 se o repo esta atras do n8n (guard)
-  npm run n8n:export:sync     # auto-exporta se divergir e segue (deploy)
+  npm run n8n:export:check
+  npm run n8n:export:chat
+  npm run n8n:export:omnichannel-brain:check
+  npm run n8n:export:omnichannel-brain:sync
 #>
 param(
   [string]$Container = "omni-n8n-1",
   [string]$Only = "",
-  [switch]$Check,     # nao escreve; sai !=0 se algum arquivo divergir (guard do pre-commit: AVISA)
-  [switch]$Sync       # verifica e, se divergir, ESCREVE e segue exit 0 (gatilho do deploy: AUTO-EXPORTA)
+  [string]$Owner = "",
+  [switch]$Check,
+  [switch]$Sync
 )
 
 $ErrorActionPreference = "Stop"
-
+try {
 if ($Check -and $Sync) { throw "-Check e -Sync sao mutuamente exclusivos." }
 
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$dir = Join-Path $root "automation/export"
-if (-not (Test-Path $dir)) { throw "Diretorio nao encontrado: $dir" }
+$registryPath = Join-Path $PSScriptRoot "n8n-workflow-registry.ps1"
+$normalizerPath = Join-Path $PSScriptRoot "n8n-workflow-normalize.js"
+if (-not (Test-Path -LiteralPath $registryPath -PathType Leaf)) {
+  throw "Registro compartilhado n8n ausente: $registryPath"
+}
+. $registryPath
 
-# MAPA FIXO id -> arquivo. Import e deploy consomem o glob workflow-*.json; este mapa
-# define quais ids podem voltar do n8n para o repo. Cada workflow pertence ao seu modulo;
-# uma tarefa nunca remove, edita, ativa ou desativa workflow de outro modulo.
-# NAO derivar o nome do arquivo do nome do workflow (nome muda sem renomear arquivo).
-$map = @(
-  @{ id = "calendarchat0001"; file = "workflow-calendar-chat.json" },
-  @{ id = "calendaromni0001"; file = "workflow-calendar-omni.json" },
-  @{ id = "calendartrans001"; file = "workflow-calendar-transcribe.json" },
-  @{ id = "instafirst000001"; file = "workflow-instagram-first-contact.json" },
-  @{ id = "omnibrain0000001"; file = "workflow-omnichannel-brain.json" },
-  @{ id = "omnichatmvp00001"; file = "workflow-omni-chat.json" },
-  @{ id = "lzhb5JjN5kdcVuRR"; file = "workflow-whatsapp.json" }
-)
-if ($Only) { $map = @($map | Where-Object { $_.file -like "*$Only*" }) }
-if (-not $map -or $map.Count -eq 0) { throw "Nenhum workflow no mapa para o filtro '$Only'." }
+$registry = @(Get-N8nWorkflowRegistry)
 
-# Confirma que o container esta up (fonte da verdade local). Se estiver fora, nao ha o que exportar.
+# The only unscoped mode is a deterministic local inventory check. Return before
+# resolving a target, checking Docker or allocating a temporary directory.
+if ($Check -and [string]::IsNullOrWhiteSpace($Owner) -and [string]::IsNullOrWhiteSpace($Only)) {
+  $inventory = @(Get-N8nWorkflowInventoryHashes -Root $root -Registry $registry)
+  foreach ($row in $inventory) {
+    Write-Host "LOCAL key=$($row.Key) owner=$($row.Module) id=$($row.WorkflowId) sha256=$($row.Sha256)"
+  }
+  Write-Host "n8n-export: inventario local valido ($($inventory.Count) workflows canonicos); runtime nao consultado."
+  exit 0
+}
+
+if ([string]::IsNullOrWhiteSpace($Owner) -or [string]::IsNullOrWhiteSpace($Only)) {
+  throw "Operacao de runtime/export exige -Owner e -Only explicitos. Use -Check sozinho apenas para inventario local."
+}
+if (-not (Test-Path -LiteralPath $normalizerPath -PathType Leaf)) {
+  throw "Normalizador n8n ausente: $normalizerPath"
+}
+
+$selection = @(Resolve-N8nWorkflowSelection -Registry $registry -Only $Only -Owner $Owner -RequireWritable)
+Assert-N8nWorkflowLocalInventory -Root $root -Registry $registry
+$protectedHashes = Get-N8nProtectedWorkflowHashes -Root $root -Registry $registry -Selected $selection
+Write-Host "n8n-export: owner-scoped owner='$Owner', alvo='$($selection[0].Key)'."
+
+# Ownership, exact selection and local IDs are validated before the first Docker call.
 $psId = docker ps -q -f "name=^${Container}$" 2>$null
-if (-not $psId) { throw "Container n8n '$Container' nao esta rodando. Suba com: docker compose --profile automation up -d n8n" }
-
-# Normalizador + checador de credencial em JS (o container e o host tem Node). Vai para um arquivo
-# .js TEMPORARIO (nao versionado): a spec dos gotchas do n8n manda usar arquivo .js em vez de node -e
-# inline (o shell/PowerShell comeria o $). Aqui e here-string SINGLE-QUOTE (literal), $ fica intacto.
-$normJs = @'
-"use strict";
-// args: <rawPath> <targetPath> <mode>   mode = write | check
-// stdout: uma linha STATUS:written | STATUS:unchanged | STATUS:drift
-// exit:   0 ok  |  3 vazamento de credencial  |  4 erro de parse/IO  |  5 uso incorreto
-//         6 workflow omnichannel com envio direto de canal
-const fs = require("fs");
-const ALLOWED = ["id", "name"];
-function fail(code, msg) { process.stderr.write(msg + "\n"); process.exit(code); }
-const raw = process.argv[2], target = process.argv[3], mode = process.argv[4];
-if (!raw || !target || (mode !== "write" && mode !== "check")) fail(5, "uso: node norm.js <raw> <target> <write|check>");
-let parsed;
-try { parsed = JSON.parse(fs.readFileSync(raw, "utf8")); }
-catch (e) { fail(4, "erro ao ler/parsear export do n8n: " + e.message); }
-const wf = Array.isArray(parsed) ? parsed[0] : parsed;
-if (!wf || typeof wf !== "object") fail(4, "export do n8n vazio ou invalido");
-// Anti-vazamento: cada node.credentials[k] so pode ter id/name.
-for (const node of (wf.nodes || [])) {
-  const creds = node && node.credentials;
-  if (!creds || typeof creds !== "object") continue;
-  for (const k of Object.keys(creds)) {
-    const c = creds[k];
-    if (c && typeof c === "object") {
-      for (const field of Object.keys(c)) {
-        if (!ALLOWED.includes(field)) {
-          fail(3, "VAZAMENTO de credencial em '" + (node.name || node.id || "?") + "' credential '" + k + "': campo '" + field + "' fora de id/name. Export ABORTADO (nada gravado).");
-        }
-      }
-    }
-  }
+if (-not $psId) {
+  throw "Container n8n '$Container' nao esta rodando. Suba com: docker compose --profile automation up -d n8n"
 }
-// Regra EXCLUSIVA do modulo omnichannel: estes workflows podem orquestrar IA, mas o
-// envio final e sempre Go/outbox. Nao aplicar esta politica a workflows de outros
-// modulos (por exemplo workflow-whatsapp, que pertence ao modulo automation).
-const OMNICHANNEL_IDS = new Set(["omnibrain0000001", "instafirst000001"]);
-for (const node of (wf.nodes || [])) {
-  if (OMNICHANNEL_IDS.has(String(wf.id || ""))) {
-    const type = String((node && node.type) || "");
-    if (/waha|evolution/i.test(type)) {
-      fail(6, "ENVIO DIRETO de canal proibido no workflow omnichannel, node '" + (node.name || node.id || "?") + "' (type=" + type + "). Use Go/outbox.");
-    }
-    const params = JSON.stringify((node && node.parameters) || {});
-    if (/https?:[^\"']*(?:waha|evolution|graph\.facebook\.com)/i.test(params)) {
-      fail(6, "ENDPOINT DIRETO de canal proibido no workflow '" + wf.id + "', node '" + (node.name || node.id || "?") + "'. Use Go/outbox.");
-    }
-  }
-}
-// Projeta APENAS as 10 chaves do shape versionado, na ordem canonica do baseline
-// (o CLI do n8n exporta ~21 chaves: updatedAt/createdAt/isArchived/shared/... que
-// NAO entram no repo, senao cada export vira ruido gigante de diff). active sempre
-// false (o import desativa e o deploy reativa; manter false evita flip-flop no diff).
-const KEYS = ["id", "name", "nodes", "connections", "active", "settings", "staticData", "meta", "pinData", "versionId"];
-const projected = {};
-for (const key of KEYS) {
-  if (key === "active") { projected.active = false; }
-  // pinData pode conter payload real do webhook e staticData pode conter memoria/PII.
-  // Os dois sao estado de runtime, nunca definicao portavel do workflow. Zerar SEMPRE,
-  // inclusive quando vierem preenchidos no export do n8n.
-  else if (key === "pinData") { projected.pinData = {}; }
-  else if (key === "staticData") { projected.staticData = null; }
-  else if (key in wf) { projected[key] = wf[key]; }
-  // demais chaves ausentes sao omitidas (nao deveriam faltar num export valido)
-}
-const out = JSON.stringify([projected], null, 2) + "\n"; // 2 espacos + \n final (LF), igual aos arquivos atuais
-let current = null;
-if (fs.existsSync(target)) { try { current = fs.readFileSync(target, "utf8"); } catch (e) { current = null; } }
-const same = current !== null && current === out;
-if (mode === "check") { process.stdout.write(same ? "STATUS:unchanged\n" : "STATUS:drift\n"); process.exit(0); }
-// mode write: so escreve se mudou (evita mexer no mtime a toa); fs.writeFileSync grava UTF-8 sem BOM e LF.
-if (same) { process.stdout.write("STATUS:unchanged\n"); process.exit(0); }
-fs.writeFileSync(target, out); process.stdout.write("STATUS:written\n"); process.exit(0);
-'@
 
 $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("n8n-export-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-$normPath = Join-Path $tmpDir "norm.js"
-# WriteAllText: UTF-8 sem BOM, sem traducao CRLF (o JS e ASCII, mas garante bytes limpos).
-[System.IO.File]::WriteAllText($normPath, $normJs, (New-Object System.Text.UTF8Encoding($false)))
-
-$mode = if ($Check) { "check" } else { "write" }  # -Sync faz check primeiro, depois write so no que divergir
+$mode = if ($Check) { "check" } else { "write" }
 $drift = $false
 $exported = 0
-$missing = @()
+$remoteCleanup = @()
 
 try {
-  foreach ($m in $map) {
-    $id = $m.id
-    $target = Join-Path $dir $m.file
-    $remoteExp = "/tmp/exp_$id.json"
+  foreach ($entry in $selection) {
+    $id = "$($entry.WorkflowId)"
+    $target = Join-Path $root "$($entry.ExportPath)"
+    $fileName = [System.IO.Path]::GetFileName($target)
+    $remoteExport = "/tmp/exp_$id.json"
     $localRaw = Join-Path $tmpDir "$id.json"
+    $remoteCleanup += $remoteExport
 
-    # 1) Exporta o workflow do container para /tmp (via sh -lc: evita conversao de path do MSYS).
-    docker exec $Container sh -lc "n8n export:workflow --id=$id --output=$remoteExp >/dev/null 2>&1" | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warning "  $($m.file): id '$id' nao existe no n8n (export falhou). Pulando."
-      $missing += $m.file
-      continue
+    $runtimeRc = Invoke-N8nCommandSilently { & docker exec $Container sh -lc "n8n export:workflow --id=$id --output=$remoteExport >/dev/null 2>&1" }
+    if ($runtimeRc -ne 0) {
+      throw "Workflow runtime '$($entry.Key)' com ID '$id' ausente ou inacessivel (docker exit $runtimeRc)."
     }
-    # 2) Traz o /tmp/exp.json JA exportado para o host, byte-exato (docker cp, nao cat via pipe do PS).
-    docker cp "${Container}:${remoteExp}" "$localRaw" | Out-Null
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $localRaw)) {
-      Write-Warning "  $($m.file): falha ao trazer o export do container (docker cp). Pulando."
-      $missing += $m.file
-      continue
+
+    $copyRc = Invoke-N8nCommandSilently { & docker cp "${Container}:${remoteExport}" "$localRaw" }
+    if ($copyRc -ne 0 -or -not (Test-Path -LiteralPath $localRaw -PathType Leaf)) {
+      throw "Falha ao ler runtime de '$($entry.Key)' (docker cp exit $copyRc)."
     }
+    Assert-N8nWorkflowDocumentId -Path $localRaw -ExpectedId $id -Label "workflow runtime '$($entry.Key)'"
 
     if ($Sync) {
-      # -Sync: primeiro checa; so escreve se divergir (auto-export).
-      $status = & node $normPath $localRaw $target "check"
-      $rc = $LASTEXITCODE
-      if ($rc -in @(3, 6)) { throw "  $($m.file): $status" }  # segredo/sender direto: aborta tudo
-      if ($rc -ne 0) { throw "  $($m.file): erro do checador (exit $rc)." }
+      $status = & node $normalizerPath $localRaw $target "check" $id "$($entry.Module)"
+      $checkRc = $LASTEXITCODE
+      if ($checkRc -ne 0) { throw "Normalizacao segura de '$fileName' falhou (exit $checkRc)." }
       if ("$status".Contains("drift")) {
-        $wstatus = & node $normPath $localRaw $target "write"
-        $wrc = $LASTEXITCODE
-        if ($wrc -in @(3, 6)) { throw "  $($m.file): $wstatus" }
-        if ($wrc -ne 0) { throw "  $($m.file): erro ao escrever (exit $wrc)." }
-        if ("$wstatus".Contains("written")) { $exported++; Write-Host "   exportado (estava atras): $($m.file)" }
+        $writeStatus = & node $normalizerPath $localRaw $target "write" $id "$($entry.Module)"
+        $writeRc = $LASTEXITCODE
+        if ($writeRc -ne 0) { throw "Escrita normalizada de '$fileName' falhou (exit $writeRc)." }
+        if ("$writeStatus".Contains("written")) {
+          $exported++
+          Write-Host "   exportado: $fileName"
+        }
       }
     }
     else {
-      # normal (write sempre-se-mudou) ou -Check (nunca escreve).
-      $status = & node $normPath $localRaw $target $mode
-      $rc = $LASTEXITCODE
-      if ($rc -in @(3, 6)) { throw "  $($m.file): $status" }  # segredo/sender direto: aborta tudo
-      if ($rc -ne 0) { throw "  $($m.file): erro do normalizador (exit $rc)." }
+      $status = & node $normalizerPath $localRaw $target $mode $id "$($entry.Module)"
+      $normalizerRc = $LASTEXITCODE
+      if ($normalizerRc -ne 0) { throw "Normalizacao segura de '$fileName' falhou (exit $normalizerRc)." }
       if ($Check) {
-        if ("$status".Contains("drift")) { $drift = $true; Write-Host "   DIVERGE: $($m.file)" }
+        if ("$status".Contains("drift")) {
+          $drift = $true
+          Write-Host "   DIVERGE: $fileName (owner=$($entry.Module))"
+        }
+      }
+      elseif ("$status".Contains("written")) {
+        Write-Host "   exportado: $fileName"
       }
       else {
-        if ("$status".Contains("written")) { Write-Host "   exportado: $($m.file)" }
-        else { Write-Host "   ja atual: $($m.file)" }
+        Write-Host "   ja atual: $fileName"
       }
     }
   }
 }
 finally {
-  Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
-}
-
-if ($missing.Count -gt 0) {
-  Write-Warning "n8n-export: $($missing.Count) workflow(s) do mapa nao encontrados no n8n: $($missing -join ', ')"
+  $cleanupFailed = $false
+  foreach ($remotePath in @($remoteCleanup | Select-Object -Unique)) {
+    $cleanupRc = Invoke-N8nCommandSilently { & docker exec $Container sh -lc "rm -f -- '$remotePath'" }
+    if ($cleanupRc -ne 0) { $cleanupFailed = $true }
+  }
+  Remove-Item -LiteralPath $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+  Assert-N8nProtectedWorkflowHashes -Before $protectedHashes
+  if ($cleanupFailed) { throw "Falha ao remover artefato temporario sensivel do container n8n." }
 }
 
 if ($Check) {
   if ($drift) {
-    Write-Host "n8n-export: os arquivos versionados estao ATRAS do n8n rodando. Rode: npm run n8n:export"
-    exit 1   # guard do git: AVISA (pre-commit decide se bloqueia ou so alerta; ver AGENT.md / spec 4.3-A).
+    Write-Host "n8n-export: alvo diverge do runtime. Execute o alias :sync owner-scoped correspondente."
+    exit 10
   }
-  Write-Host "n8n-export: repo alinhado com o n8n (nenhuma divergencia)."
+  Write-Host "n8n-export: alvo alinhado com o runtime."
   exit 0
 }
 
 if ($Sync) {
   if ($exported -gt 0) {
-    Write-Host "n8n-export: n8n estava a frente; $exported arquivo(s) exportado(s) automaticamente. Deploy seguira com a versao atual (NAO commitado; o dono commita depois)."
+    Write-Host "n8n-export: alvo owner-scoped sincronizado; arquivo modificado deve ser revisado e commitado pelo dono."
   }
   else {
-    Write-Host "n8n-export: repo ja estava alinhado com o n8n (nada a exportar)."
+    Write-Host "n8n-export: alvo owner-scoped ja estava alinhado."
   }
-  # exit 0 de proposito: no deploy queremos SEGUIR com o export fresco, nunca travar.
   exit 0
 }
 
-Write-Host "OK: export concluido."
+Write-Host "OK: export owner-scoped concluido."
 exit 0
+}
+catch {
+  $safeMessage = "$($_.Exception.Message)"
+  Write-Host "n8n-export ERRO: $safeMessage"
+  if ($safeMessage -match '(?i)ID divergente|invalido|shape|registro|ownership|normaliza|proibido|exige -Owner|exige -Only|mutuamente') { exit 20 }
+  if ($safeMessage -match '(?i)runtime|container n8n|docker') { exit 30 }
+  exit 20
+}

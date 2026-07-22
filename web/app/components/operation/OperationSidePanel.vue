@@ -13,9 +13,9 @@ const communications = [
   {
     id: 'campaign-progressiva',
     label: 'Campanha Progressiva',
-    hint: '📅 Vigência: até 14/07',
+    hint: '📅 Vigência: até 26/07',
     modalTitle: 'Campanha Progressiva',
-    modalSubtitle: '📅 Vigência: até 14/07',
+    modalSubtitle: '📅 Vigência: até 26/07',
     modalBody: `Desconto progressivo válido para joias e relógios, conforme a quantidade de itens comprados dentro do mesmo segmento.
 
 Segmentos válidos:

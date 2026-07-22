@@ -77,7 +77,12 @@ func versionView(v versionRow) AIAgentVersionView {
 		ID: v.ID, AgentID: v.AgentID, Version: v.Version, Status: v.Status,
 		Provider: v.Provider, Model: v.Model, Temperature: v.Temperature,
 		Layers: jsonOrEmpty(v.Layers), OutputSchema: jsonOrEmpty(v.OutputSchema),
-		SchemaVersion: v.SchemaVersion, PublishedAt: v.PublishedAt, CreatedAt: v.CreatedAt,
+		MediaConfig:   jsonOrEmpty(v.MediaConfig),
+		SchemaVersion: v.SchemaVersion, DebounceMS: v.DebounceMS,
+		MaxContextMessages: v.MaxContextMessages, MaxAITurns: v.MaxAITurns,
+		MinConfidence: v.MinConfidence, HandoffOnError: v.HandoffOnError,
+		HandoffOnLimit: v.HandoffOnLimit, WorkflowContract: v.WorkflowContract,
+		PublishedAt: v.PublishedAt, CreatedAt: v.CreatedAt,
 	}
 }
 
@@ -146,12 +151,31 @@ func (s *AIService) UpdateAgent(ctx context.Context, accountID string, p auth.Pr
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return AIAgentView{}, err
 	}
-	if _, err := s.assertAgentScope(ctx, accountID, id); err != nil {
+	agent, err := s.assertAgentScope(ctx, accountID, id)
+	if err != nil {
 		return AIAgentView{}, err
 	}
 	sp := agentPatch{Name: patch.Name, Enabled: patch.Enabled}
 	if patch.ProviderKey != nil {
-		cipher, last4, err := s.encryptProviderKey(*patch.ProviderKey)
+		activeProvider, err := s.store.AgentActiveProvider(ctx, accountID, id)
+		if err != nil {
+			return AIAgentView{}, err
+		}
+		keys, err := s.decodeProviderKeyring(agent.ProviderKeyCipher, activeProvider)
+		if err != nil {
+			return AIAgentView{}, err
+		}
+		value := strings.TrimSpace(*patch.ProviderKey)
+		if provider := normalizeAIProviderKeyID(activeProvider); provider != "" {
+			if value == "" {
+				delete(keys, provider)
+			} else {
+				keys[provider] = value
+			}
+		} else if value != "" {
+			return AIAgentView{}, ErrAIProviderUnsupported
+		}
+		cipher, last4, err := s.encryptProviderKeyring(keys)
 		if err != nil {
 			return AIAgentView{}, err
 		}
@@ -163,20 +187,6 @@ func (s *AIService) UpdateAgent(ctx context.Context, accountID string, p auth.Pr
 		return AIAgentView{}, translate(err)
 	}
 	return agentView(row), nil
-}
-
-// encryptProviderKey cifra a chave (vazio => limpa: cipher e last4 vazios). box nil e um bug
-// de wiring (a chave sempre e injetada) — falha explicita, nao grava chave crua.
-func (s *AIService) encryptProviderKey(raw string) (cipher, last4 string, err error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", "", nil
-	}
-	cipher, err = s.box.Encrypt(raw)
-	if err != nil {
-		return "", "", err
-	}
-	return cipher, secretbox.Mask(raw).Last4, nil
 }
 
 // ============================================================================
@@ -206,22 +216,73 @@ func (s *AIService) CreateVersion(ctx context.Context, accountID string, p auth.
 	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
 		return AIAgentVersionView{}, err
 	}
+	normalized, schema, layers, err := normalizeVersionInput(in)
+	if err != nil {
+		return AIAgentVersionView{}, err
+	}
+	row, err := s.store.CreateVersion(ctx, accountID, agentID, normalized, schema, layers)
+	if err != nil {
+		return AIAgentVersionView{}, translate(err) // agente fora de escopo => ErrNoRows -> 404
+	}
+	return versionView(row), nil
+}
+
+// SaveConfiguration e o caminho simples do MVP: persiste e ativa a configuracao no mesmo
+// commit. O versionamento continua interno para auditoria/rollback, sem etapa de rascunho na UI.
+func (s *AIService) SaveConfiguration(ctx context.Context, accountID string, p auth.Principal, agentID string, in AIVersionInput) (AIAgentVersionView, error) {
+	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
+		return AIAgentVersionView{}, err
+	}
+	normalized, schema, layers, err := normalizeVersionInput(in)
+	if err != nil {
+		return AIAgentVersionView{}, err
+	}
+	row, err := s.store.SavePublishedVersion(ctx, accountID, agentID, normalized, schema, layers, p.UserID)
+	if err != nil {
+		return AIAgentVersionView{}, translate(err)
+	}
+	return versionView(row), nil
+}
+
+func normalizeVersionInput(in AIVersionInput) (AIVersionInput, json.RawMessage, json.RawMessage, error) {
 	if strings.TrimSpace(in.Provider) == "" || strings.TrimSpace(in.Model) == "" {
-		return AIAgentVersionView{}, ErrValidation
+		return AIVersionInput{}, nil, nil, ErrValidation
 	}
 	schema := in.OutputSchema
 	if len(schema) == 0 || string(schema) == "null" || string(schema) == "{}" {
 		schema = defaultOutputSchema()
 	}
 	layers := jsonOrEmpty(in.Layers)
+	mediaConfig, err := normalizeMediaConfig(in.MediaConfig)
+	if err != nil {
+		return AIVersionInput{}, nil, nil, err
+	}
+	in.MediaConfig = mediaConfig
 	if strings.TrimSpace(in.SchemaVersion) == "" {
 		in.SchemaVersion = "v1"
 	}
-	row, err := s.store.CreateVersion(ctx, accountID, agentID, in, schema, layers)
-	if err != nil {
-		return AIAgentVersionView{}, translate(err) // agente fora de escopo => ErrNoRows -> 404
+	if in.DebounceMS == 0 {
+		in.DebounceMS = 2500
 	}
-	return versionView(row), nil
+	if in.MaxContextMessages == 0 {
+		in.MaxContextMessages = 30
+	}
+	if in.MaxAITurns == 0 {
+		in.MaxAITurns = 6
+	}
+	if in.MinConfidence == nil {
+		value := 0.650
+		in.MinConfidence = &value
+	}
+	if in.WorkflowContract == "" {
+		in.WorkflowContract = "brain.v2"
+	}
+	if in.DebounceMS < 500 || in.DebounceMS > 15000 || in.MaxContextMessages < 1 || in.MaxContextMessages > 100 ||
+		in.MaxAITurns < 1 || in.MaxAITurns > 20 || *in.MinConfidence < 0 || *in.MinConfidence > 1 ||
+		(in.WorkflowContract != "brain.v2" && in.WorkflowContract != "brain.v3") {
+		return AIVersionInput{}, nil, nil, ErrValidation
+	}
+	return in, schema, layers, nil
 }
 
 func (s *AIService) PublishVersion(ctx context.Context, accountID string, p auth.Principal, agentID string, version int) (AIAgentView, error) {

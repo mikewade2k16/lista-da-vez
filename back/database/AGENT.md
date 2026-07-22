@@ -176,3 +176,25 @@ Ambiente esperado:
 - sessoes persistidas de auth
 - auditoria/eventos para realtime e resiliencia offline
 - estrategia futura de backup automatizado, restore testado e redundancia do banco
+
+## Omnichannel E1 (migrations 0213-0215)
+
+- `messaging.conversations.ai_generation` e o lease autoritativo de takeover humano; nao criar
+  flag paralela em JSON ou no n8n.
+- Reply de mensagem usa `reply_to_message_id` quando a original local existe e
+  `reply_to_external_message_id` somente como fallback reconciliavel.
+- `messaging.messages.origin` e os estados de ACK possuem vocabulario fechado pela migration;
+  transicao de ACK deve permanecer monotonica no store.
+- A unique parcial de external ID e a barreira de idempotencia do canal por conta+instancia.
+- Midia nunca vira blob no PostgreSQL nem URL temporaria autoritativa; arquivo fica em storage
+  privado e o banco guarda metadados/chave.
+- A migration `0214_messaging_media_audit_events.sql` amplia o vocabulario fechado de
+  `messaging.audit_events.event_type` somente com `MESSAGE_MEDIA_READY`,
+  `MESSAGE_MEDIA_FAILED` e `MESSAGE_MEDIA_RETRY`.
+- A migration `0215_messaging_delivery_reconciliation.sql` persiste o ACK canonico e
+  sanitizado em `messaging.webhook_events` mesmo quando a mensagem ainda nao existe. O replay
+  sempre filtra `account_id + provider + instance_name + external_message_id` e ordena por
+  `provider_status_at + id`; nunca usa payload cru, memoria ou Redis como fonte de verdade.
+- `messaging_messages_content_trgm_idx` e o indice GIN da busca existente por
+  `lower(messages.content) LIKE '%...%'`. Ele reutiliza `pg_trgm`, instalado pela migration
+  `0034_erp_ftp_foundation.sql`; nao criar mecanismo de busca ou copia de conteudo paralela.

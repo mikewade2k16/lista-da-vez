@@ -18,6 +18,7 @@ import (
 type stubProvider struct {
 	result  channel.SendResult
 	sendErr error
+	calls   int
 }
 
 func (p *stubProvider) ID() string { return "stub" }
@@ -28,6 +29,7 @@ func (p *stubProvider) ParseWebhook(context.Context, http.Header, []byte) ([]cha
 	return nil, nil
 }
 func (p *stubProvider) SendMessage(_ context.Context, _ channel.Credentials, out channel.OutboundMessage) (channel.SendResult, error) {
+	p.calls++
 	if p.sendErr != nil {
 		return channel.SendResult{}, p.sendErr
 	}
@@ -51,23 +53,41 @@ func (p *stubProvider) Capabilities() channel.Capabilities { return channel.Capa
 // ---- fake store ----
 
 type fakeOutboundStore struct {
-	data      outboundSendData
-	getErr    error
-	sentID    string
-	sentExt   string
-	failedID  string
-	auditKind []string
+	data           outboundSendData
+	getErr         error
+	sentID         string
+	sentExt        string
+	failedID       string
+	auditKind      []string
+	dispatchStatus string
 }
 
-func (f *fakeOutboundStore) GetOutboundSendData(context.Context, string, string) (outboundSendData, error) {
-	return f.data, f.getErr
-}
-func (f *fakeOutboundStore) FindProviderCredential(context.Context, string, string) (string, map[string]string, bool, error) {
-	return "", nil, false, nil
-}
-func (f *fakeOutboundStore) MarkMessageSent(_ context.Context, _, messageID, ext string) (time.Time, error) {
-	f.sentID, f.sentExt = messageID, ext
-	return time.Now(), nil
+func (f *fakeOutboundStore) DispatchOutbound(_ context.Context, _, _ string,
+	send func(outboundSendData) (string, error)) (outboundDispatchResult, error) {
+	result := outboundDispatchResult{
+		MessageID: f.data.MessageID, ConversationID: f.data.ConversationID,
+		Status: f.data.Status,
+	}
+	if f.getErr != nil {
+		return result, f.getErr
+	}
+	if f.data.Origin == "ai" && (f.data.ConversationState != StateAIActive ||
+		f.data.MessageAIGeneration == nil || *f.data.MessageAIGeneration != f.data.ConversationAIGeneration) {
+		return result, ErrAILeaseInvalid
+	}
+	if f.data.Status != "PENDING" {
+		return result, nil
+	}
+	ext, err := send(f.data)
+	if err != nil {
+		return result, err
+	}
+	f.sentID, f.sentExt = f.data.MessageID, ext
+	result.Status = firstNonEmpty(f.dispatchStatus, "SENT")
+	result.ExternalMessageID = ext
+	result.UpdatedAt = time.Now()
+	result.Dispatched = true
+	return result, nil
 }
 func (f *fakeOutboundStore) MarkMessageFailed(_ context.Context, _, messageID string) (time.Time, error) {
 	f.failedID = messageID
@@ -98,6 +118,7 @@ func baseSendData() outboundSendData {
 		ConversationExt:  "ext-conv",
 		InstanceScopeKey: "inst-a",
 		Provider:         "stub",
+		Origin:           "human",
 	}
 }
 
@@ -139,6 +160,52 @@ func TestOutboundHandlerAlreadySentIsNoop(t *testing.T) {
 	}
 	if store.sentID != "" {
 		t.Errorf("MarkMessageSent nao deveria ter sido chamado (id=%q)", store.sentID)
+	}
+}
+
+func TestOutboundHandlerPublishesPersistedDeliveryState(t *testing.T) {
+	for _, tc := range []struct {
+		status string
+		audit  string
+	}{
+		{status: "READ", audit: "MESSAGE_OUTBOUND_SENT"},
+		{status: "FAILED", audit: "MESSAGE_OUTBOUND_FAILED"},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
+			store := &fakeOutboundStore{data: baseSendData(), dispatchStatus: tc.status}
+			pub := &capturePublisher{}
+			h := NewOutboundHandler(store, channel.NewRegistry(&stubProvider{}), nil, pub, nil)
+
+			if err := h.Handle(context.Background(), newJob(t, 1)); err != nil {
+				t.Fatalf("Handle: %v", err)
+			}
+			if len(pub.events) != 1 || pub.events[0].Payload["status"] != tc.status {
+				t.Fatalf("publish=%+v, want persisted %s", pub.events, tc.status)
+			}
+			if len(store.auditKind) != 1 || store.auditKind[0] != tc.audit {
+				t.Fatalf("audit=%v, want %s", store.auditKind, tc.audit)
+			}
+		})
+	}
+}
+
+func TestOutboundHandlerInvalidAILeaseNeverCallsProviderOrDuplicatesAudit(t *testing.T) {
+	generation := int64(3)
+	data := baseSendData()
+	data.Origin = "ai"
+	data.ConversationState = StateHumanActive
+	data.ConversationAIGeneration = generation + 1
+	data.MessageAIGeneration = &generation
+	store := &fakeOutboundStore{data: data}
+	provider := &stubProvider{}
+	h := NewOutboundHandler(store, channel.NewRegistry(provider), nil, &capturePublisher{}, nil)
+
+	err := h.Handle(context.Background(), newJob(t, 1))
+	if err == nil || !jobs.Classify(err).Unrecoverable {
+		t.Fatalf("Handle err=%v, want unrecoverable", err)
+	}
+	if provider.calls != 0 || store.failedID != "" || len(store.auditKind) != 0 {
+		t.Fatalf("calls=%d failed=%q audit=%v", provider.calls, store.failedID, store.auditKind)
 	}
 }
 

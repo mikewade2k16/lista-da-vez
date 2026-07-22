@@ -38,14 +38,21 @@ func (s *InboundService) publishInboundMessage(ctx context.Context, accountID st
 	if m.FromMe {
 		direction = "OUTBOUND"
 	}
+	status := "SENT"
+	if strings.TrimSpace(res.ProviderStatus) != "" {
+		status = res.ProviderStatus
+	}
 	payload := map[string]any{
 		"id":             res.MessageID,
 		"conversationId": res.ConversationID,
 		"direction":      direction,
 		"messageType":    m.MessageType,
 		"content":        m.Content,
-		"status":         "SENT",
+		"status":         status,
 		"createdAt":      m.OccurredAt.UTC().Format(time.RFC3339),
+	}
+	if res.ProviderErrorCode != "" {
+		payload["providerErrorCode"] = res.ProviderErrorCode
 	}
 	if mediaURL := sanitizeMediaURLForRealtime(m.MediaURL); mediaURL != "" {
 		payload["mediaUrl"] = mediaURL

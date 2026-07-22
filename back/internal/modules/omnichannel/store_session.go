@@ -147,13 +147,37 @@ func (s *Store) FindInstanceUsingPhone(ctx context.Context, accountID, phone, ex
 // provider_config (nao secreto). found=false => sem credencial (ex.: mock). O ciphertext
 // so e DECIFRADO no service (secretbox), nunca aqui.
 func (s *Store) FindProviderCredential(ctx context.Context, accountID, provider string) (ciphertext string, config map[string]string, found bool, err error) {
+	return s.FindProviderCredentialForKey(ctx, accountID, provider, "")
+}
+
+// FindProviderCredentialForKey narrows a provider credential by its public
+// callback key when the adapter can extract one before signature verification
+// (Meta phone_number_id). Empty key preserves the legacy first-active behavior.
+func (s *Store) FindProviderCredentialForKey(ctx context.Context, accountID, provider, instanceKey string) (ciphertext string, config map[string]string, found bool, err error) {
 	var cipher *string
 	var rawConfig []byte
+	if provider == "instagram" {
+		queryErr := s.pool.QueryRow(ctx, `select credentials_ciphertext, provider_config
+			from messaging.instagram_accounts where account_id=$1::uuid and ($2='' or ig_user_id=$2) and is_active=true
+			order by ig_user_id limit 1`, accountID, strings.TrimSpace(instanceKey)).Scan(&cipher, &rawConfig)
+		switch {
+		case errors.Is(queryErr, pgx.ErrNoRows):
+			return "", nil, false, nil
+		case queryErr != nil:
+			return "", nil, false, queryErr
+		}
+		config = decodeStringMap(rawConfig)
+		if cipher == nil {
+			return "", config, false, nil
+		}
+		return *cipher, config, true, nil
+	}
 	queryErr := s.pool.QueryRow(ctx, `select credentials_ciphertext, provider_config
 		from messaging.whatsapp_instances
 		where account_id = $1::uuid and provider = $2 and is_active = true
+		  and ($3 = '' or instance_name = $3 or provider_config->>'phoneNumberId' = $3)
 		order by (credentials_ciphertext is not null) desc, is_default desc, instance_name
-		limit 1`, accountID, provider).Scan(&cipher, &rawConfig)
+		limit 1`, accountID, provider, strings.TrimSpace(instanceKey)).Scan(&cipher, &rawConfig)
 	switch {
 	case errors.Is(queryErr, pgx.ErrNoRows):
 		return "", nil, false, nil

@@ -2,6 +2,7 @@ import { nextTick, type Ref, watch } from "vue";
 import type { Conversation, GroupParticipant, Message } from "~/types";
 import { ApiClientError } from "~/composables/useApi";
 import type {
+  ConversationsPageResponse,
   GroupParticipantsResponse,
   MessagesPageResponse,
   SyncConversationHistoryResponse,
@@ -19,13 +20,21 @@ export function useOmnichannelInboxHistory(options: {
   visibleMessagesConversationId: Ref<string | null>;
   activeConversationId: Ref<string | null>;
   selectedInstanceId: Ref<string>;
+  search: Ref<string>;
+  channel: Ref<string>;
+  status: Ref<string>;
   loadingWhatsAppStatus: Ref<boolean>;
   isWhatsAppConfigured: Ref<boolean>;
   isWhatsAppConnected: Ref<boolean>;
   loadingConversations: Ref<boolean>;
+  loadingMoreConversations: Ref<boolean>;
   loadingMessages: Ref<boolean>;
   loadingOlderMessages: Ref<boolean>;
   loadingGroupParticipants: Ref<boolean>;
+  conversationsError: Ref<string>;
+  messagesError: Ref<string>;
+  hasMoreConversations: Ref<boolean>;
+  nextConversationsCursor: Ref<string | null>;
   hasMoreMessages: Ref<boolean>;
   chatBodyRef: Ref<HTMLElement | null>;
   mentionAlertState: Ref<Record<string, number>>;
@@ -48,6 +57,8 @@ export function useOmnichannelInboxHistory(options: {
   const OPEN_CONVERSATIONS_SYNC_COOLDOWN_MS = 90_000;
   const CONVERSATION_CACHE_STALE_MS = 45_000;
   let conversationsRequestInFlight: Promise<void> | null = null;
+  let conversationsRequestKey = "";
+  let conversationsRequestController: AbortController | null = null;
   let openConversationsSyncRequestInFlight: Promise<SyncOpenConversationsResponse | null> | null = null;
   let openConversationsLastAttemptAt = 0;
   let openConversationsBootstrapCompleted = false;
@@ -158,6 +169,29 @@ export function useOmnichannelInboxHistory(options: {
     });
   }
 
+  function formatLoadError(error: unknown, fallback: string) {
+    if (error instanceof ApiClientError && error.message.trim()) {
+      return error.message;
+    }
+
+    return fallback;
+  }
+
+  function mergeConversationsById(...chunks: Conversation[][]) {
+    const byId = new Map<string, Conversation>();
+
+    for (const chunk of chunks) {
+      for (const conversationEntry of chunk) {
+        const previous = byId.get(conversationEntry.id);
+        byId.set(conversationEntry.id, previous
+          ? { ...previous, ...conversationEntry }
+          : conversationEntry);
+      }
+    }
+
+    return [...byId.values()];
+  }
+
   watch(
     () => ({
       conversationId: options.visibleMessagesConversationId.value,
@@ -200,6 +234,8 @@ export function useOmnichannelInboxHistory(options: {
       options.messages.value = [];
       options.visibleMessagesConversationId.value = null;
       options.hasMoreMessages.value = false;
+      options.loadingMessages.value = false;
+      options.messagesError.value = "";
     }
 
     options.conversations.value = options.conversations.value.filter((entry) => entry.id !== conversationId);
@@ -224,11 +260,16 @@ export function useOmnichannelInboxHistory(options: {
     } = {}
   ) {
     const cached = getConversationCache(conversationId);
-    const isActiveConversation = options.activeConversationId.value === conversationId;
-    const shouldShowLoader = isActiveConversation && refreshOptions.silent !== true && !cached;
+    const shouldShowLoader =
+      options.activeConversationId.value === conversationId &&
+      refreshOptions.silent !== true &&
+      !cached;
 
     if (shouldShowLoader) {
       options.loadingMessages.value = true;
+    }
+    if (options.activeConversationId.value === conversationId) {
+      options.messagesError.value = "";
     }
 
     try {
@@ -249,7 +290,7 @@ export function useOmnichannelInboxHistory(options: {
         ) ||
         false;
 
-      if (isActiveConversation) {
+      if (options.activeConversationId.value === conversationId) {
         options.visibleMessagesConversationId.value = conversationId;
         options.messages.value = nextMessages;
         options.hasMoreMessages.value = nextHasMore;
@@ -272,9 +313,15 @@ export function useOmnichannelInboxHistory(options: {
         return;
       }
 
+      if (options.activeConversationId.value === conversationId) {
+        options.messagesError.value = formatLoadError(
+          error,
+          "Nao foi possivel atualizar o historico desta conversa."
+        );
+      }
       throw error;
     } finally {
-      if (shouldShowLoader) {
+      if (shouldShowLoader && options.activeConversationId.value === conversationId) {
         options.loadingMessages.value = false;
       }
     }
@@ -324,7 +371,7 @@ export function useOmnichannelInboxHistory(options: {
 
         try {
           const messageEntry = options.normalizeMessage(await fetchMessageById(conversationId, messageId));
-          options.messages.value = options.mergeMessages(options.messages.value, [messageEntry]);
+          updateConversationCacheFromMessage(messageEntry);
           options.updateConversationPreviewFromMessage(messageEntry);
 
           if (!options.messageNeedsMediaHydration(messageEntry)) {
@@ -406,30 +453,76 @@ export function useOmnichannelInboxHistory(options: {
     await loadConversations({ skipOpenSync: true });
   }
 
-  async function loadConversations(loadOptions: { skipOpenSync?: boolean } = {}) {
-    if (conversationsRequestInFlight) {
+  async function loadConversations(loadOptions: { skipOpenSync?: boolean; append?: boolean } = {}) {
+    const append = loadOptions.append === true;
+    const cursor = append ? options.nextConversationsCursor.value : null;
+    if (append && (!options.hasMoreConversations.value || !cursor)) {
+      return;
+    }
+
+    const query = new URLSearchParams({ limit: "100" });
+    const normalizedSearch = options.search.value.trim();
+    if (normalizedSearch) {
+      query.set("search", normalizedSearch);
+    }
+    if (options.channel.value !== "all") {
+      query.set("channel", options.channel.value);
+    }
+    if (options.status.value !== "all") {
+      query.set("status", options.status.value);
+    }
+    if (options.selectedInstanceId.value !== "all") {
+      query.set("instanceId", options.selectedInstanceId.value);
+    }
+    if (cursor) {
+      query.set("before", cursor);
+    }
+    const requestKey = query.toString();
+
+    if (conversationsRequestInFlight && conversationsRequestKey === requestKey) {
       await conversationsRequestInFlight;
       return;
     }
 
-    const request = (async () => {
+    conversationsRequestController?.abort();
+    const requestController = new AbortController();
+    conversationsRequestController = requestController;
+    conversationsRequestKey = requestKey;
+    options.loadingConversations.value = false;
+    options.loadingMoreConversations.value = false;
+    if (append) {
+      options.loadingMoreConversations.value = true;
+    } else {
       options.loadingConversations.value = true;
+      options.hasMoreConversations.value = false;
+      options.nextConversationsCursor.value = null;
+    }
+    options.conversationsError.value = "";
+
+    const request = (async () => {
+      let requestSucceeded = false;
       try {
         let response: unknown = null;
         let lastError: unknown = null;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
+          if (
+            requestController.signal.aborted ||
+            conversationsRequestController !== requestController
+          ) {
+            return;
+          }
           try {
-            const query = new URLSearchParams();
-            if (options.selectedInstanceId.value && options.selectedInstanceId.value !== "all") {
-              query.set("instanceId", options.selectedInstanceId.value);
-            }
-            response = await options.apiFetch<unknown>(`/conversations${query.size ? `?${query.toString()}` : ""}`, {
-              timeout: 30_000
+            response = await options.apiFetch<ConversationsPageResponse>(`/conversations?${requestKey}`, {
+              timeout: 30_000,
+              signal: requestController.signal
             });
             break;
           } catch (error) {
             lastError = error;
+            if (requestController.signal.aborted) {
+              return;
+            }
             if (attempt < 2) {
               await wait(600 * (attempt + 1));
             }
@@ -440,37 +533,83 @@ export function useOmnichannelInboxHistory(options: {
           throw lastError ?? new Error("Falha ao carregar conversas.");
         }
 
-        options.conversations.value = toArrayOrEmpty<Conversation>(response);
-        const conversationIds = new Set(options.conversations.value.map((entry) => entry.id));
-        options.mentionAlertState.value = Object.fromEntries(
-          Object.entries(options.mentionAlertState.value).filter(([conversationId, count]) => {
-            return Number(count) > 0 && conversationIds.has(conversationId);
-          })
-        );
+        if (
+          requestController.signal.aborted ||
+          conversationsRequestController !== requestController
+        ) {
+          return;
+        }
+
+        const page = response as ConversationsPageResponse;
+        if (!Array.isArray(page.conversations) || typeof page.hasMore !== "boolean") {
+          throw new Error("Resposta invalida ao carregar conversas.");
+        }
+        const nextCursor = page.nextCursor?.trim() || null;
+        if (page.hasMore && !nextCursor) {
+          throw new Error("Resposta invalida de paginacao das conversas.");
+        }
+
+        const receivedConversations = toArrayOrEmpty<Conversation>(page.conversations);
+        if (append) {
+          options.conversations.value = mergeConversationsById(
+            options.conversations.value,
+            receivedConversations
+          );
+        } else {
+          const activeConversation = options.conversations.value.find((entry) => {
+            return entry.id === options.activeConversationId.value;
+          });
+          options.conversations.value = mergeConversationsById(
+            activeConversation ? [activeConversation] : [],
+            receivedConversations
+          );
+        }
+        options.hasMoreConversations.value = Boolean(page.hasMore);
+        options.nextConversationsCursor.value = nextCursor;
+
+        if (!page.hasMore) {
+          const conversationIds = new Set(options.conversations.value.map((entry) => entry.id));
+          options.mentionAlertState.value = Object.fromEntries(
+            Object.entries(options.mentionAlertState.value).filter(([conversationId, count]) => {
+              return Number(count) > 0 && conversationIds.has(conversationId);
+            })
+          );
+        }
         options.sortConversations();
         options.bootstrapReadState();
 
-        if (
-          options.activeConversationId.value &&
-          !options.conversations.value.some((entry) => entry.id === options.activeConversationId.value)
-        ) {
-          options.activeConversationId.value = null;
-          options.messages.value = [];
-          options.visibleMessagesConversationId.value = null;
-        }
-
-        if (!options.activeConversationId.value && options.conversations.value.length > 0) {
+        if (!append && !options.activeConversationId.value && options.conversations.value.length > 0) {
           const firstConversation = options.conversations.value[0];
           const selectConversation = options.getSelectConversation();
           if (firstConversation && selectConversation) {
             await selectConversation(firstConversation.id);
           }
         }
+        requestSucceeded = true;
       } catch (error) {
-        console.error("Nao foi possivel carregar conversas no momento.", error);
+        if (!requestController.signal.aborted) {
+          console.error("Nao foi possivel carregar conversas no momento.", error);
+          if (conversationsRequestController === requestController) {
+            options.conversationsError.value = formatLoadError(
+              error,
+              append
+                ? "Nao foi possivel carregar mais conversas."
+                : "Nao foi possivel carregar as conversas."
+            );
+          }
+        }
       } finally {
-        options.loadingConversations.value = false;
-        if (!loadOptions.skipOpenSync && !openConversationsBootstrapCompleted) {
+        if (conversationsRequestController === requestController) {
+          options.loadingConversations.value = false;
+          options.loadingMoreConversations.value = false;
+        }
+        if (
+          requestSucceeded &&
+          !append &&
+          !requestController.signal.aborted &&
+          !loadOptions.skipOpenSync &&
+          !openConversationsBootstrapCompleted
+        ) {
           void syncOpenConversationsInBackground();
         }
       }
@@ -482,8 +621,14 @@ export function useOmnichannelInboxHistory(options: {
     } finally {
       if (conversationsRequestInFlight === request) {
         conversationsRequestInFlight = null;
+        conversationsRequestController = null;
+        conversationsRequestKey = "";
       }
     }
+  }
+
+  async function loadMoreConversations() {
+    await loadConversations({ skipOpenSync: true, append: true });
   }
 
   async function ensureUnreadBoundaryLoaded(conversationId: string) {
@@ -495,6 +640,7 @@ export function useOmnichannelInboxHistory(options: {
     let guard = 0;
 
     while (
+      options.activeConversationId.value === conversationId &&
       options.hasMoreMessages.value &&
       options.messages.value.length > 0 &&
       Number(new Date(options.messages.value[0]?.createdAt ?? 0)) > readAt &&
@@ -507,6 +653,9 @@ export function useOmnichannelInboxHistory(options: {
 
       const oldestId = oldestMessage.id;
       const response = await fetchMessagesPage(conversationId, oldestId);
+      if (options.activeConversationId.value !== conversationId) {
+        return;
+      }
       options.messages.value = options.mergeMessages(response.messages, options.messages.value);
       options.hasMoreMessages.value = response.hasMore;
       guard += 1;
@@ -528,6 +677,10 @@ export function useOmnichannelInboxHistory(options: {
     const request = (async () => {
       const cached = getConversationCache(conversationId);
       const canUseCache = !loadOptions.forceRefresh && cached && cached.messages.length > 0;
+      if (options.activeConversationId.value === conversationId) {
+        options.messagesError.value = "";
+        options.loadingMessages.value = false;
+      }
 
       if (canUseCache) {
         applyConversationSnapshot(conversationId, cached);
@@ -554,6 +707,12 @@ export function useOmnichannelInboxHistory(options: {
           }
         } catch (error) {
           console.error("Nao foi possivel atualizar mensagens da conversa em background.", error);
+          if (options.activeConversationId.value === conversationId) {
+            options.messagesError.value = formatLoadError(
+              error,
+              "Nao foi possivel atualizar o historico desta conversa."
+            );
+          }
         }
 
         return;
@@ -562,8 +721,14 @@ export function useOmnichannelInboxHistory(options: {
       options.loadingMessages.value = true;
       try {
         const response = await fetchMessagesPage(conversationId);
+        const nextMessages = options.mergeMessages(response.messages);
+        if (options.activeConversationId.value !== conversationId) {
+          persistConversationCache(conversationId, nextMessages, response.hasMore);
+          return;
+        }
+
         options.visibleMessagesConversationId.value = conversationId;
-        options.messages.value = options.mergeMessages(response.messages);
+        options.messages.value = nextMessages;
         options.hasMoreMessages.value = response.hasMore;
 
         await ensureUnreadBoundaryLoaded(conversationId);
@@ -576,8 +741,16 @@ export function useOmnichannelInboxHistory(options: {
         }
 
         console.error("Nao foi possivel carregar mensagens da conversa.", error);
+        if (options.activeConversationId.value === conversationId) {
+          options.messagesError.value = formatLoadError(
+            error,
+            "Nao foi possivel carregar o historico desta conversa."
+          );
+        }
       } finally {
-        options.loadingMessages.value = false;
+        if (options.activeConversationId.value === conversationId) {
+          options.loadingMessages.value = false;
+        }
       }
     })();
 
@@ -728,12 +901,14 @@ export function useOmnichannelInboxHistory(options: {
       return;
     }
 
+    const conversationId = options.activeConversationId.value;
     const container = options.chatBodyRef.value;
     if (!container) {
       return;
     }
 
     options.loadingOlderMessages.value = true;
+    options.messagesError.value = "";
 
     try {
       const previousHeight = container.scrollHeight;
@@ -745,7 +920,10 @@ export function useOmnichannelInboxHistory(options: {
 
       const oldestMessageId = oldestMessage.id;
 
-      const response = await fetchMessagesPage(options.activeConversationId.value, oldestMessageId);
+      const response = await fetchMessagesPage(conversationId, oldestMessageId);
+      if (options.activeConversationId.value !== conversationId) {
+        return;
+      }
       options.messages.value = options.mergeMessages(response.messages, options.messages.value);
       options.hasMoreMessages.value = response.hasMore;
 
@@ -754,6 +932,13 @@ export function useOmnichannelInboxHistory(options: {
       const nextHeight = container.scrollHeight;
       const diff = nextHeight - previousHeight;
       container.scrollTop = previousTop + diff;
+    } catch (error) {
+      if (options.activeConversationId.value === conversationId) {
+        options.messagesError.value = formatLoadError(
+          error,
+          "Nao foi possivel carregar mensagens anteriores."
+        );
+      }
     } finally {
       options.loadingOlderMessages.value = false;
     }
@@ -763,6 +948,7 @@ export function useOmnichannelInboxHistory(options: {
     fetchMessagesPage,
     hydrateRealtimeMediaMessage,
     loadConversations,
+    loadMoreConversations,
     loadConversationMessages,
     refreshConversationMessages,
     syncConversationHistory,

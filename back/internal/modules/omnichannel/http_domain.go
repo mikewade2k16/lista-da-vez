@@ -46,6 +46,14 @@ func RegisterDomainRoutes(mux *http.ServeMux, svc *Service, middleware *auth.Mid
 
 	mux.Handle("PATCH /v1/omnichannel/conversations/{id}/queue", wrap(handleTransferQueue(svc)))
 	mux.Handle("GET /v1/omnichannel/conversations/{id}/routing-decisions", wrap(handleListRoutingDecisions(svc)))
+	mux.Handle("GET /v1/omnichannel/conversations/{id}/handoffs", wrap(handleListHandoffs(svc)))
+	mux.Handle("GET /v1/omnichannel/conversations/{id}/sla", wrap(handleListSLAEvents(svc)))
+	mux.Handle("GET /v1/omnichannel/settings/queues/{id}/sla", wrap(handleGetQueueSLAPolicy(svc)))
+	mux.Handle("PUT /v1/omnichannel/settings/queues/{id}/sla", wrap(handleUpsertQueueSLAPolicy(svc)))
+	mux.Handle("GET /v1/omnichannel/settings/handoff-policies", wrap(handleListHandoffPolicies(svc)))
+	mux.Handle("POST /v1/omnichannel/settings/handoff-policies", wrap(handleCreateHandoffPolicy(svc)))
+	mux.Handle("PATCH /v1/omnichannel/settings/handoff-policies/{id}", wrap(handleUpdateHandoffPolicy(svc)))
+	mux.Handle("DELETE /v1/omnichannel/settings/handoff-policies/{id}", wrap(handleDeleteHandoffPolicy(svc)))
 }
 
 // domainScope resolve o Principal com AccountID ja validado pelo middleware. Sem conta =>
@@ -326,6 +334,109 @@ func handleListRoutingDecisions(svc *Service) http.HandlerFunc {
 		}
 		out, err := svc.ListRoutingDecisions(r.Context(), p, r.PathValue("id"))
 		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleListHandoffs(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.ListHandoffs(r.Context(), p.AccountID, p, r.PathValue("id"))
+		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleListSLAEvents(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.ListSLAEvents(r.Context(), p.AccountID, p, r.PathValue("id"))
+		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleGetQueueSLAPolicy(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.GetQueueSLAPolicy(r.Context(), p.AccountID, p, r.PathValue("id"))
+		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleUpsertQueueSLAPolicy(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var in QueueSLAPolicyInput
+		if err := decodeJSONBody(w, r, &in); err != nil {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.UpsertQueueSLAPolicy(r.Context(), p.AccountID, p, r.PathValue("id"), in)
+		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleListHandoffPolicies(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.ListHandoffPolicies(r.Context(), p.AccountID, p)
+		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleCreateHandoffPolicy(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var in HandoffPolicyInput
+		if err := decodeJSONBody(w, r, &in); err != nil {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.CreateHandoffPolicy(r.Context(), p.AccountID, p, in)
+		writeDomainResult(w, r, http.StatusCreated, out, err)
+	}
+}
+
+func handleUpdateHandoffPolicy(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		var patch HandoffPolicyPatch
+		if err := decodeJSONBody(w, r, &patch); err != nil {
+			writeInvalidBody(w, r)
+			return
+		}
+		out, err := svc.UpdateHandoffPolicy(r.Context(), p.AccountID, p, r.PathValue("id"), patch)
+		writeDomainResult(w, r, http.StatusOK, out, err)
+	}
+}
+
+func handleDeleteHandoffPolicy(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := domainScope(w, r)
+		if !ok {
+			return
+		}
+		err := svc.DeleteHandoffPolicy(r.Context(), p.AccountID, p, r.PathValue("id"))
+		writeDomainNoContent(w, r, err)
 	}
 }
 

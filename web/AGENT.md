@@ -49,9 +49,10 @@ npm run dev:watch     # = scripts/dev/watch-web.ps1
 IMPORTANTE:
 
 - O watch NAO faz sync inicial (verificado no Compose v2.38): edicao feita com
-  o watch DESLIGADO so chega ao container com rebuild — e por isso que o
-  dev:watch roda `docker compose up -d --build web` antes (BuildKit reenvia so
-  o que mudou; custa segundos).
+  o watch DESLIGADO so chega ao container com rebuild e recriacao — e por isso
+  que o dev:watch roda `docker compose up -d --build --force-recreate --no-deps web`
+  antes (BuildKit reenvia so o que mudou; custa segundos). Sem `--force-recreate`,
+  o Compose pode manter o container antigo mesmo com uma imagem nova.
 - `docker compose up -d web` sozinho sobe o servidor mas NAO sincroniza
   edicoes — a pagina "congela" no codigo do ultimo build.
 - Mudanca em package.json/package-lock.json: o watch faz sync+restart do

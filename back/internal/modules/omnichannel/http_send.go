@@ -30,13 +30,46 @@ func RegisterSendRoutes(mux *http.ServeMux, send *SendService, media *MediaServi
 	}
 	mux.Handle("POST /v1/omnichannel/conversations/{id}/messages", wrap(handleSendMessage(send)))
 	mux.Handle("GET /v1/omnichannel/conversations/{cid}/messages/{mid}/media", wrap(handleGetMedia(media)))
+	mux.Handle("GET /v1/omnichannel/conversations/{cid}/messages/{mid}/media/analyses", wrap(handleListMediaAnalyses(media)))
+	mux.Handle("POST /v1/omnichannel/conversations/{cid}/messages/{mid}/media/retry", wrap(handleRetryMedia(media)))
 }
 
-// handleSendMessage recebe o body do legado, resolve escopo + permissao de reply e devolve a
-// mensagem criada. 200 = enfileirado; 202 = falhou ao enfileirar (mensagem FAILED).
+func handleListMediaAnalyses(svc *MediaService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := sendPrincipalScope(w, r)
+		if !ok {
+			return
+		}
+		out, err := svc.ListAnalyses(r.Context(), accountID, principal, r.PathValue("cid"), r.PathValue("mid"))
+		if err != nil {
+			writeSendError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, out)
+	}
+}
+
+func handleRetryMedia(svc *MediaService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		accountID, principal, ok := sendPrincipalScope(w, r)
+		if !ok {
+			return
+		}
+		view, err := svc.RetryMedia(r.Context(), accountID, principal,
+			r.PathValue("cid"), r.PathValue("mid"))
+		if err != nil {
+			writeSendError(w, r, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusAccepted, view)
+	}
+}
+
+// handleSendMessage recebe o body, resolve escopo + permissao de reply e devolve a mensagem
+// somente depois que takeover, mensagem e outbox commitam atomicamente.
 func handleSendMessage(svc *SendService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		accountID, caller, ok := scope(w, r)
+		accountID, principal, ok := sendPrincipalScope(w, r)
 		if !ok {
 			return
 		}
@@ -45,17 +78,30 @@ func handleSendMessage(svc *SendService) http.HandlerFunc {
 			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_body", "Body invalido.")
 			return
 		}
-		view, outcome, err := svc.SendMessage(r.Context(), accountID, caller, callerCanReply(r), r.PathValue("id"), in)
+		view, _, err := svc.SendMessage(r.Context(), accountID, principal, r.PathValue("id"), in)
 		if err != nil {
 			writeSendError(w, r, err)
 			return
 		}
-		status := http.StatusOK
-		if outcome == outcomeFailedToQueue {
-			status = http.StatusAccepted
-		}
-		httpapi.WriteJSON(w, status, view)
+		httpapi.WriteJSON(w, http.StatusOK, view)
 	}
+}
+
+// sendPrincipalScope devolve o Principal autenticado cuja membership na conta ja foi
+// validada por RequireAuthWithAccount. O service usa esse Principal para consultar o RBAC
+// canonico; papel legado nao autoriza envio nem retry de midia.
+func sendPrincipalScope(w http.ResponseWriter, r *http.Request) (string, auth.Principal, bool) {
+	accountID, ok := accountScope(r)
+	if !ok {
+		writeNoAccount(w, r)
+		return "", auth.Principal{}, false
+	}
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		writeNoAccount(w, r)
+		return "", auth.Principal{}, false
+	}
+	return accountID, principal, true
 }
 
 // handleGetMedia faz stream do arquivo com Range (http.ServeContent). Content-Type explicito
@@ -88,8 +134,8 @@ func decodeSendBody(w http.ResponseWriter, r *http.Request, dst *SendMessageInpu
 	return json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSendBody)).Decode(dst)
 }
 
-// callerCanReply gateia a feature de RESPONDER: VIEWER nao pode (403 — permissao, nao escopo).
-// O enforcement por key ainda nao existe no Go (module.go §GAP); o papel legado e a autoridade.
+// callerCanReply permanece apenas para as rotas legadas de stickers, cujo pacote nao faz
+// parte desta correcao. Envio de mensagem e retry de midia nao usam este gate por papel.
 func callerCanReply(r *http.Request) bool {
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {

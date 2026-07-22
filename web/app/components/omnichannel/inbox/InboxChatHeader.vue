@@ -11,9 +11,11 @@ import { resolveAvatarSource } from "~/composables/omnichannel/useAvatarProxy";
 const {
   activeConversation,
   activeConversationLabel,
+  currentUserId,
   userRole,
   showOutboundOperatorLabel,
   canManageConversation,
+  updatingHandoff,
   getInitials,
   getChannelLabel,
   getStatusColor,
@@ -23,15 +25,19 @@ const {
 } = defineProps([
   "activeConversation",
   "activeConversationLabel",
+  "currentUserId",
   "userRole",
   "showOutboundOperatorLabel",
   "canManageConversation",
+  "updatingHandoff",
   "getInitials",
   "getChannelLabel",
   "getStatusColor",
   "getStatusLabel",
   "onOpenWhatsAppSession",
   "onToggleShowOutboundOperatorLabel",
+  "onTakeConversation",
+  "onReleaseConversation",
   "onCloseConversation"
 ]);
 </script>
@@ -88,6 +94,38 @@ const {
       >
         {{ showOutboundOperatorLabel ? "Operador visivel" : "Operador oculto" }}
       </UButton>
+      <UButton
+        v-if="activeConversation && canManageConversation && !activeConversation.assignedToId && activeConversation.status !== 'CLOSED'"
+        size="sm"
+        color="primary"
+        variant="soft"
+        icon="i-lucide-hand"
+        :loading="updatingHandoff"
+        :disabled="updatingHandoff"
+        @click="onTakeConversation()"
+      >
+        Assumir
+      </UButton>
+      <UButton
+        v-else-if="activeConversation && canManageConversation && activeConversation.assignedToId === currentUserId"
+        size="sm"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-hand-off"
+        :loading="updatingHandoff"
+        :disabled="updatingHandoff"
+        @click="onReleaseConversation()"
+      >
+        Liberar
+      </UButton>
+      <UBadge
+        v-else-if="activeConversation?.assignedToId"
+        color="neutral"
+        variant="soft"
+        size="sm"
+      >
+        Em atendimento
+      </UBadge>
       <UButton
         size="sm"
         color="neutral"

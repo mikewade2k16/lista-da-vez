@@ -17,6 +17,8 @@ export function useInboxChatMediaActions(options: {
   const imagePreviewLoadingByMessageId = ref<Record<string, true>>({});
   const audioPreviewUrlByMessageId = ref<Record<string, string>>({});
   const audioPreviewLoadingByMessageId = ref<Record<string, true>>({});
+  const mediaRetryPendingByMessageId = ref<Record<string, true>>({});
+  const mediaRetryErrorByMessageId = ref<Record<string, string>>({});
 
   function markImageFailed(messageId: string) {
     failedImageMessageIds.value = {
@@ -383,6 +385,96 @@ export function useInboxChatMediaActions(options: {
     return Boolean(mediaActionLoadingByMessageId.value[messageId]);
   }
 
+  function setMediaRetryPending(messageId: string, pending: boolean) {
+    if (pending) {
+      mediaRetryPendingByMessageId.value = {
+        ...mediaRetryPendingByMessageId.value,
+        [messageId]: true
+      };
+      return;
+    }
+
+    if (!mediaRetryPendingByMessageId.value[messageId]) {
+      return;
+    }
+
+    const next = { ...mediaRetryPendingByMessageId.value };
+    delete next[messageId];
+    mediaRetryPendingByMessageId.value = next;
+  }
+
+  function clearMediaRetryError(messageId: string) {
+    if (!mediaRetryErrorByMessageId.value[messageId]) {
+      return;
+    }
+
+    const next = { ...mediaRetryErrorByMessageId.value };
+    delete next[messageId];
+    mediaRetryErrorByMessageId.value = next;
+  }
+
+  function reconcileMediaRetryState(messageEntry: Message) {
+    if (messageEntry.mediaState !== "ready" && messageEntry.mediaState !== "failed") {
+      return;
+    }
+
+    setMediaRetryPending(messageEntry.id, false);
+    clearMediaRetryError(messageEntry.id);
+  }
+
+  function resolveMediaState(messageEntry: Message) {
+    if (messageEntry.mediaState === "ready" || messageEntry.mediaState === "failed") {
+      return messageEntry.mediaState;
+    }
+    if (mediaRetryPendingByMessageId.value[messageEntry.id]) {
+      return "pending";
+    }
+    return messageEntry.mediaState;
+  }
+
+  function isMediaFailed(messageEntry: Message) {
+    return resolveMediaState(messageEntry) === "failed";
+  }
+
+  function getMediaRetryError(messageId: string) {
+    return mediaRetryErrorByMessageId.value[messageId] ?? "";
+  }
+
+  async function retryMessageMedia(messageEntry: Message) {
+    if (!messageEntry.canRetryMedia || isMediaActionLoading(messageEntry.id)) {
+      return null;
+    }
+
+    setMediaActionLoading(messageEntry.id, true);
+    setMediaRetryPending(messageEntry.id, true);
+    clearMediaRetryError(messageEntry.id);
+
+    try {
+      const conversationId = encodeURIComponent(messageEntry.conversationId);
+      const messageId = encodeURIComponent(messageEntry.id);
+      const updated = await apiFetch<Message>(
+        `/conversations/${conversationId}/messages/${messageId}/media/retry`,
+        { method: "POST" }
+      );
+      if (!updated || updated.id !== messageEntry.id || updated.conversationId !== messageEntry.conversationId) {
+        throw new Error("Resposta invalida ao tentar novamente a midia.");
+      }
+      clearImageFailed(messageEntry.id);
+      releaseImagePreviewUrl(messageEntry.id);
+      releaseAudioPreviewUrl(messageEntry.id);
+      return updated;
+    } catch {
+      mediaRetryErrorByMessageId.value = {
+        ...mediaRetryErrorByMessageId.value,
+        [messageEntry.id]: "Nao foi possivel agendar a nova tentativa."
+      };
+      return null;
+    } finally {
+      setMediaRetryPending(messageEntry.id, false);
+      setMediaActionLoading(messageEntry.id, false);
+    }
+  }
+
   // F1 — REPONTADO (nao verbatim). O legado montava a URL literal do BFF
   // (`/api/bff/conversations/.../media`) e disparava um fetch cru com
   // Authorization / x-selected-tenant-slug / headers de simulacao montados na mao.
@@ -646,6 +738,8 @@ export function useInboxChatMediaActions(options: {
     imagePreviewLoadingByMessageId.value = {};
     audioPreviewLoadingByMessageId.value = {};
     mediaActionLoadingByMessageId.value = {};
+    mediaRetryPendingByMessageId.value = {};
+    mediaRetryErrorByMessageId.value = {};
   }
 
   return {
@@ -659,6 +753,11 @@ export function useInboxChatMediaActions(options: {
     requestImagePreview,
     requestAudioPreview,
     isMediaActionLoading,
+    resolveMediaState,
+    isMediaFailed,
+    getMediaRetryError,
+    reconcileMediaRetryState,
+    retryMessageMedia,
     openMessageMedia,
     downloadMessageMedia,
     resolveMessageFileName,

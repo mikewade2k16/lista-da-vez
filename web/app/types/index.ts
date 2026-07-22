@@ -89,9 +89,26 @@ export interface TenantUser {
 }
 
 export type MessageDirection = 'INBOUND' | 'OUTBOUND'
-export type MessageStatus = 'PENDING' | 'SENT' | 'FAILED'
+export type MessageStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'DELETED'
 export type MessageType = 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'DOCUMENT'
+export type MessageOrigin = 'contact' | 'human' | 'ai' | 'provider_device' | 'system'
+export type MessageMediaState = '' | 'pending' | 'ready' | 'failed'
 export type ConversationStatus = 'OPEN' | 'PENDING' | 'CLOSED'
+export type ConversationAIStatus =
+  | 'idle'
+  | 'analyzing'
+  | 'transferring'
+  | 'awaiting_client'
+  | 'human'
+  | 'closed'
+
+export interface MessageReplyTo {
+  messageId: string | null
+  externalMessageId: string
+  senderName: string
+  content: string
+  messageType: MessageType | ''
+}
 
 export interface Message {
   id: string
@@ -111,6 +128,12 @@ export interface Message {
   mediaDurationSeconds?: number | null
   metadataJson?: Record<string, unknown> | null
   status: MessageStatus
+  origin: MessageOrigin
+  replyTo: MessageReplyTo | null
+  providerStatusAt: string | null
+  providerErrorCode: string
+  mediaState: MessageMediaState
+  canRetryMedia: boolean
   externalMessageId: string | null
   createdAt: string
   updatedAt: string
@@ -157,6 +180,7 @@ export interface Conversation {
   instanceDisplayName?: string | null
   channel: 'WHATSAPP' | 'INSTAGRAM'
   status: ConversationStatus
+  aiStatus?: ConversationAIStatus
   externalId: string
   contactId?: string | null
   contactName: string | null

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "brain.request.v2",
+  "dispatchId": "11111111-1111-4111-8111-111111111111",
+  "generation": 4,
+  "tenant": {"accountId": "22222222-2222-4222-8222-222222222222", "timezone": "America/Sao_Paulo"},
+  "conversation": {"id": "33333333-3333-4333-8333-333333333333", "state": "ai_active", "channel": "WHATSAPP"},
+  "contact": {
+    "id": "44444444-4444-4444-8444-444444444444",
+    "relationshipStatus": "known_lead",
+    "tags": ["origem-site"],
+    "origin": {
+      "channel": "landing_page",
+      "source": "site",
+      "landingPageSlug": "servicos",
+      "campaign": null,
+      "referrer": null,
+      "firstTouchAt": "2026-07-20T13:00:00-03:00",
+      "lastTouchAt": "2026-07-20T14:00:00-03:00"
+    },
+    "summary": null
+  },
+  "messages": [
+    {"id": "55555555-5555-4555-8555-555555555555", "role": "contact", "type": "TEXT", "text": "Olá, gostaria de conhecer os serviços.", "media": null}
+  ],
+  "collectedFields": {},
+  "requiredFields": ["service"],
+  "pendingFields": ["service"],
+  "localTime": {"now": "2026-07-20T14:00:00-03:00", "insideBusinessHours": true},
+  "agent": {"id": "66666666-6666-4666-8666-666666666666", "versionId": "77777777-7777-4777-8777-777777777777", "model": "configured-model", "layers": {}},
+  "capabilities": {"tools": [], "multimodal": false}
+}

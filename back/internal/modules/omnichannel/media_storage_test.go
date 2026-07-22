@@ -2,10 +2,14 @@ package omnichannel
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +33,10 @@ func TestDiskMediaStorageSaveAndOpen(t *testing.T) {
 	if stored.StorageKey == "" {
 		t.Fatal("StorageKey vazio")
 	}
+	wantDigest := sha256.Sum256([]byte(body))
+	if stored.SHA256 != hex.EncodeToString(wantDigest[:]) {
+		t.Errorf("sha256 = %q, want %q", stored.SHA256, hex.EncodeToString(wantDigest[:]))
+	}
 
 	file, info, err := store.Open(stored.StorageKey)
 	if err != nil {
@@ -41,6 +49,38 @@ func TestDiskMediaStorageSaveAndOpen(t *testing.T) {
 	got, _ := io.ReadAll(file)
 	if string(got) != body {
 		t.Errorf("conteudo = %q, want %q", got, body)
+	}
+}
+
+func TestDiskMediaStorageSaveInboundIsDeterministicAndAtomic(t *testing.T) {
+	root := t.TempDir()
+	store := NewDiskMediaStorage(root)
+	first, err := store.SaveInboundReader("acc-1", "conv-1", "msg-1", "image/png", "foto.png", strings.NewReader("first"), 1<<20)
+	if err != nil {
+		t.Fatalf("SaveInboundReader(first): %v", err)
+	}
+	second, err := store.SaveInboundReader("acc-1", "conv-1", "msg-1", "image/png", "foto.png", strings.NewReader("second"), 1<<20)
+	if err != nil {
+		t.Fatalf("SaveInboundReader(second): %v", err)
+	}
+	if first.StorageKey != second.StorageKey {
+		t.Fatalf("storage key mudou no retry: %q != %q", first.StorageKey, second.StorageKey)
+	}
+	file, _, err := store.Open(second.StorageKey)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	got, _ := io.ReadAll(file)
+	_ = file.Close()
+	if string(got) != "second" {
+		t.Fatalf("conteudo final = %q, want second", got)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, "acc-1", "conv-1"))
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || strings.HasPrefix(entries[0].Name(), ".media-") {
+		t.Fatalf("arquivos residuais: %#v", entries)
 	}
 }
 

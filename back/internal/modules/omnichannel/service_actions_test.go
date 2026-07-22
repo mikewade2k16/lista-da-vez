@@ -1,6 +1,7 @@
 package omnichannel
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -42,6 +43,41 @@ func TestStatusEvent(t *testing.T) {
 				t.Errorf("noOp = %v, want %v", noOp, c.wantNo)
 			}
 		})
+	}
+}
+
+func TestHumanTakeoverEventsInvalidateAI(t *testing.T) {
+	for _, event := range []Event{EventHumanAssign, EventMsgOutboundHuman, EventHumanPending,
+		EventHumanUnassign, EventQueueTransfer, EventConvClose} {
+		if !eventInvalidatesAI(event) {
+			t.Errorf("event %s deveria invalidar lease da IA", event)
+		}
+	}
+	for _, event := range []Event{EventMsgInbound, EventAITriageDone, EventAITriageFailed,
+		EventRouteMatched, EventRouteUnmatched} {
+		if eventInvalidatesAI(event) {
+			t.Errorf("event %s nao deveria invalidar lease da IA", event)
+		}
+	}
+}
+
+func TestConvCloseResolvesHandoffAndPreparesNextInbound(t *testing.T) {
+	service := &Service{}
+	for _, state := range []State{StateQueued, StateClosed} {
+		update, _, err := service.decideTransition(context.Background(), "account", EventConvClose,
+			TransitionPayload{}, convSnapshot{State: state})
+		if err != nil {
+			t.Fatalf("state %s: %v", state, err)
+		}
+		if !update.CloseHandoffs || !update.InvalidateAI {
+			t.Fatalf("state %s: close precisa resolver handoff e invalidar IA: %+v", state, update)
+		}
+		if state == StateQueued && update.State != StateClosed {
+			t.Fatalf("queued deveria ir para closed, veio %s", update.State)
+		}
+		if state == StateClosed && !update.NoChange {
+			t.Fatal("closed + conv.close deveria manter no-op idempotente")
+		}
 	}
 }
 

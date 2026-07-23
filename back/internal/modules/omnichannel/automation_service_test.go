@@ -243,6 +243,8 @@ func TestAutomationAttendancesExposeActiveAndStoppedModes(t *testing.T) {
 	repo := &automationRepositoryFake{attendances: []automationAttendanceRow{
 		{ConversationID: "active", ClientAccountID: automationTestClient,
 			ConversationState: string(StateAIActive), UnansweredCount: 1, ActivitySince: now},
+		{ConversationID: "human", ClientAccountID: automationTestClient,
+			ConversationState: string(StateHumanActive), UnansweredCount: 1, ActivitySince: now},
 		{ConversationID: "stopped", ClientAccountID: automationTestClient,
 			ConversationState: string(StateQueued), ReasonCode: HandoffReasonModel, ActivitySince: now},
 		{ConversationID: "hidden", ClientAccountID: automationOtherClient, ActivitySince: now},
@@ -254,7 +256,9 @@ func TestAutomationAttendancesExposeActiveAndStoppedModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 2 || out[0].Mode != automationAttendanceAIActive || out[1].Mode != automationAttendanceAIStopped {
+	if len(out) != 3 || out[0].Mode != automationAttendanceAIActive ||
+		out[1].Mode != automationAttendanceHuman || out[1].ReasonCode != "human_active" ||
+		out[2].Mode != automationAttendanceAIStopped {
 		t.Fatalf("attendances=%#v", out)
 	}
 }

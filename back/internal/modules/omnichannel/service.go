@@ -15,12 +15,17 @@ import (
 //
 // Toda operacao recebe o accountID resolvido do Principal — nunca do body (principio 2).
 type Service struct {
-	store *Store
+	store                 *Store
+	groupMetadataResolver *groupMetadataResolver
 }
 
 // NewService cria o Service.
 func NewService(store *Store) *Service {
 	return &Service{store: store}
+}
+
+func (s *Service) setGroupMetadataResolver(resolver *groupMetadataResolver) {
+	s.groupMetadataResolver = resolver
 }
 
 // Caller e o contexto do chamador que as regras desta fase precisam: quem e (userID) e
@@ -76,6 +81,17 @@ func (s *Service) ListConversations(ctx context.Context, accountID string, calle
 	hasMore := len(rows) > normalized.Limit
 	if hasMore {
 		rows = rows[:normalized.Limit]
+	}
+	if s.groupMetadataResolver != nil {
+		for i := range rows {
+			if !isWhatsAppGroupExternalID(rows[i].ExternalID) {
+				continue
+			}
+			if name, resolveErr := s.groupMetadataResolver.resolve(ctx, accountID, rows[i].InstanceScopeKey, rows[i].ExternalID); resolveErr == nil && name != "" {
+				rows[i].ContactName = &name
+				_ = s.store.UpdateConversationGroupName(ctx, accountID, rows[i].InstanceScopeKey, rows[i].ExternalID, name)
+			}
+		}
 	}
 	out := make([]ConversationView, 0, len(rows))
 	for _, row := range rows {
@@ -245,6 +261,13 @@ func (s *Service) GetMessage(ctx context.Context, accountID string, caller Calle
 // alcanca (A2). Qualquer falha vira ErrNotFound -> 404: nunca 403, que confirmaria a
 // existencia do recurso (enumeration).
 func (s *Service) assertConversationScope(ctx context.Context, accountID string, caller Caller, conversationID string) error {
+	hidden, err := s.store.IsConversationHidden(ctx, accountID, conversationID)
+	if err != nil {
+		return err
+	}
+	if hidden {
+		return ErrNotFound
+	}
 	row, err := s.store.GetConversation(ctx, accountID, conversationID)
 	if err != nil {
 		return translate(err)

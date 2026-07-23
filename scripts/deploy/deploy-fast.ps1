@@ -38,6 +38,13 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $deployPull = Join-Path $scriptDir "deploy-pull.ps1"
+$composeLocal = Join-Path $repoDir "docker-compose.prod.yml"
+$composeEnvGuard = Join-Path $scriptDir "assert-compose-api-env.ps1"
+
+if (-not (Test-Path -LiteralPath $composeEnvGuard -PathType Leaf)) {
+  throw "Preflight de env do Compose nao encontrado: $composeEnvGuard"
+}
+& $composeEnvGuard -ComposePath $composeLocal
 
 # Ownership preflight must finish before any docker login/ps/build. DeployAutomation is
 # explicit platform scope downstream, but its local runtime sync is always one exact owner/key.

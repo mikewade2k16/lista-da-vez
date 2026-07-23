@@ -39,9 +39,21 @@ func TestApplyBrainPolicyConfidenceAndTurnLimits(t *testing.T) {
 		t.Fatalf("low confidence outcome=%+v err=%v", out, err)
 	}
 	cfg.MinConfidence = 0.5
+	cfg.MaxAITurns = 6
 	out, err = ApplyBrainPolicy(result, cfg, cfg.MaxAITurns)
 	if err != nil || out.ShouldSend || out.Decision != BrainHandoff || out.ReasonCode != "max_ai_turns" {
 		t.Fatalf("turn limit outcome=%+v err=%v", out, err)
+	}
+}
+
+func TestApplyBrainPolicyUnlimitedTurns(t *testing.T) {
+	reply := "resposta"
+	result := brainResultFixture(t, string(BrainContinueAI), &reply)
+	cfg := DefaultBrainPolicyConfig()
+	cfg.MinConfidence = 0.5
+	out, err := ApplyBrainPolicy(result, cfg, 10_000)
+	if err != nil || !out.ShouldSend || out.ShouldHandoff || out.ReasonCode == "max_ai_turns" {
+		t.Fatalf("unlimited outcome=%+v err=%v", out, err)
 	}
 }
 

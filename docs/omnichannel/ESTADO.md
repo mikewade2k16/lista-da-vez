@@ -4,11 +4,18 @@
 > o espelho de fases é `web/app/components/roadmap/data/phases-part7.ts`.
 > Este arquivo existe só para **retomar de onde parou** — apagar quando o piloto P0 fechar.
 >
-> Última atualização: **2026-07-21**
+> Última atualização: **2026-07-23**
 
 ---
 
 ## Atualização de direção — 2026-07-20
+
+- Em 2026-07-23 entrou localmente a migration `0236` e o cadastro CRM passou a alimentar memória
+  estruturada por contato. O cérebro recebe somente nome pessoal validado (por exemplo, `Tamara`);
+  frases de perfil como `Deus é fiel` geram saudação sem nome. Fatos/preferências/intenções e
+  métricas voltam aos próximos atendimentos, com sanitização no Go e lease `ai_generation`.
+- O Perfil 360° mostra nome seguro, memória aprendida, última intenção e contadores de resposta/
+  apoio. API reconstruída localmente, migration aplicada no PostgreSQL Docker e módulo Go verde.
 
 - **Correção do pareamento em 2026-07-21:** `phone_number` deixou de ser tratado como prova de
   sessão ativa. `connected` agora vem do estado consultado na Evolution; o teste real confirmou

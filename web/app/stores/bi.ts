@@ -186,10 +186,6 @@ export const useBiStore = defineStore('bi', () => {
     return `/v1/bi/perola/overview${query ? `?${query}` : ''}`
   }
 
-  function shouldLoadInventory(snapshot: BiOverview | null) {
-    return Boolean(snapshot?.sources?.find((source) => source.key === 'inventario')?.pending)
-  }
-
   function applyInventoryFailure(message: string) {
     if (!overview.value) {
       return
@@ -203,9 +199,7 @@ export const useBiStore = defineStore('bi', () => {
           : source,
       ),
       tables: overview.value.tables.map((table) =>
-        table.key === 'inventario'
-          ? { ...table, pending: false }
-          : table,
+        table.key === 'inventario' ? { ...table, pending: false } : table,
       ),
     }
   }
@@ -231,6 +225,7 @@ export const useBiStore = defineStore('bi', () => {
         method: 'POST',
         body: {
           companyKey: normalizeText(manualConfig.companyKey),
+          cnpjEmpresa: normalizeText(manualConfig.cnpjEmpresa),
           login: normalizeText(manualConfig.login),
           pass: manualConfig.pass,
         },
@@ -254,7 +249,9 @@ export const useBiStore = defineStore('bi', () => {
     }
   }
 
-  async function refreshOverview(options: { includeInventory?: boolean; background?: boolean } = {}) {
+  async function refreshOverview(
+    options: { includeInventory?: boolean; background?: boolean } = {},
+  ) {
     const includeInventory = options.includeInventory === true
     const background = options.background === true
 

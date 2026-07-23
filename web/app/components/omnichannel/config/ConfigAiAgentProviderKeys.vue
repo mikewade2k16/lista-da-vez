@@ -4,7 +4,7 @@ import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import { useAuthStore } from '~/stores/auth'
 import { useUiStore } from '~/stores/ui'
 import { createApiRequest, getApiErrorMessage } from '~/utils/api-client'
-import { AI_PROVIDER_LABEL, AI_PROVIDERS, type CalendarAiProvider } from '~/utils/calendar'
+import { AI_PROVIDER_LABEL } from '~/utils/calendar'
 import {
   clearAgentProviderKey,
   fetchAgentProviderKeys,
@@ -15,12 +15,15 @@ import type { OmniCredentialStatus } from '~/domain/omnichannel/config-types'
 const props = defineProps<{ agentId: string; disabled?: boolean }>()
 const emit = defineEmits<{ changed: [] }>()
 
+type OmniAIProvider = 'gemini' | 'glm' | 'openai'
+const providers: OmniAIProvider[] = ['gemini', 'glm', 'openai']
+
 const auth = useAuthStore()
 const ui = useUiStore()
 const runtimeConfig = useRuntimeConfig()
 const api = createApiRequest(runtimeConfig, () => auth.accessToken)
-const drafts = reactive<Record<CalendarAiProvider, string>>({ gemini: '', glm: '', openai: '' })
-const statuses = reactive<Record<CalendarAiProvider, OmniCredentialStatus>>({
+const drafts = reactive<Record<OmniAIProvider, string>>({ gemini: '', glm: '', openai: '' })
+const statuses = reactive<Record<OmniAIProvider, OmniCredentialStatus>>({
   gemini: { set: false, last4: '' },
   glm: { set: false, last4: '' },
   openai: { set: false, last4: '' },
@@ -28,8 +31,8 @@ const statuses = reactive<Record<CalendarAiProvider, OmniCredentialStatus>>({
 const loading = ref(false)
 const savingProvider = ref('')
 
-function hydrate(keys: Partial<Record<CalendarAiProvider, OmniCredentialStatus>>): void {
-  for (const provider of AI_PROVIDERS) {
+function hydrate(keys: Partial<Record<OmniAIProvider, OmniCredentialStatus>>): void {
+  for (const provider of providers) {
     statuses[provider] = keys[provider] || { set: false, last4: '' }
     drafts[provider] = ''
   }
@@ -47,7 +50,7 @@ async function load(): Promise<void> {
   }
 }
 
-async function save(provider: CalendarAiProvider): Promise<void> {
+async function save(provider: OmniAIProvider): Promise<void> {
   const apiKey = drafts[provider].trim()
   if (!apiKey) return
   savingProvider.value = provider
@@ -63,7 +66,7 @@ async function save(provider: CalendarAiProvider): Promise<void> {
   }
 }
 
-async function clear(provider: CalendarAiProvider): Promise<void> {
+async function clear(provider: OmniAIProvider): Promise<void> {
   savingProvider.value = provider
   try {
     const result = await clearAgentProviderKey(api, props.agentId, provider)
@@ -90,7 +93,7 @@ onMounted(() => void load())
       Cadastre uma chave por provedor. Elas ficam cifradas no servidor e nunca retornam ao navegador
       ou ao n8n.
     </p>
-    <div v-for="provider in AI_PROVIDERS" :key="provider" class="cfg-provider-keys__item">
+    <div v-for="provider in providers" :key="provider" class="cfg-provider-keys__item">
       <div class="cfg-provider-keys__status">
         <span class="calendar-config__field-label">{{ AI_PROVIDER_LABEL[provider] }}</span>
         <strong :class="statuses[provider].set ? 'is-set' : 'is-unset'">

@@ -3,13 +3,14 @@ import {
   UAvatar,
   UBadge,
   UButton,
-  UCard,
   UDashboardSidebar,
   UFormField,
+  UInput,
   USelect,
+  USwitch,
   UTextarea
 } from "#components";
-import { computed, nextTick, onMounted, onUpdated, ref } from "vue";
+import { computed, nextTick, onMounted, onUpdated, ref, watch } from "vue";
 import type { Conversation, ConversationStatus } from "~/types";
 import type {
   OmnichannelHandoffView,
@@ -17,6 +18,11 @@ import type {
 } from "~/composables/omnichannel/useOmnichannelHandoff";
 import type { InboxSelectOption } from "./types";
 import { resolveAvatarSource } from "~/composables/omnichannel/useAvatarProxy";
+import InboxDetailsSection from "./InboxDetailsSection.vue";
+import type {
+  ContactAIRestriction,
+  ContactAIRestrictionInput
+} from "~/domain/omnichannel/privacy-api";
 
 const props = defineProps<{
   collapsed: boolean;
@@ -42,6 +48,12 @@ const props = defineProps<{
   transferringQueue: boolean;
   handoffError: string;
   queueError: string;
+  canManagePrivacy: boolean;
+  hidingContact: boolean;
+  aiRestriction: ContactAIRestriction | null;
+  loadingAiRestriction: boolean;
+  updatingAiRestriction: boolean;
+  aiRestrictionError: string;
 }>();
 
 const emit = defineEmits<{
@@ -52,6 +64,8 @@ const emit = defineEmits<{
   (event: "update-status", value: ConversationStatus): void;
   (event: "update-assignee", value: string): void;
   (event: "transfer-queue", value: string): void;
+  (event: "hide-contact"): void;
+  (event: "update-ai-restriction", value: ContactAIRestrictionInput): void;
 }>();
 
 const collapsedModel = computed({
@@ -65,8 +79,109 @@ const internalNotesModel = computed({
 });
 
 const selectedQueueModel = ref("");
+const aiRestrictionPreset = ref("allow");
+const aiRestrictionCustomUntil = ref("");
+const aiRestrictionItems: InboxSelectOption[] = [
+  { label: "Permitir atendimento pela IA", value: "allow" },
+  { label: "Bloquear por 24 horas", value: "24h" },
+  { label: "Bloquear por 7 dias", value: "7d" },
+  { label: "Bloquear por 30 dias", value: "30d" },
+  { label: "Bloquear até uma data", value: "custom" },
+  { label: "Bloquear por tempo indeterminado", value: "indefinite" }
+];
+
+function toLocalDateTime(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const shifted = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return shifted.toISOString().slice(0, 16);
+}
+
+watch(
+  () => props.aiRestriction,
+  (restriction) => {
+    if (!restriction || !restriction.blocked) {
+      aiRestrictionPreset.value = "allow";
+      aiRestrictionCustomUntil.value = "";
+      return;
+    }
+    if (restriction.mode === "indefinite") {
+      aiRestrictionPreset.value = "indefinite";
+      aiRestrictionCustomUntil.value = "";
+      return;
+    }
+    aiRestrictionPreset.value = "custom";
+    aiRestrictionCustomUntil.value = toLocalDateTime(restriction.blockedUntil);
+  },
+  { immediate: true }
+);
+
+function saveAIRestriction() {
+  const preset = aiRestrictionPreset.value;
+  if (preset === "allow" || preset === "indefinite") {
+    emit("update-ai-restriction", { mode: preset });
+    return;
+  }
+  let blockedUntil: Date;
+  if (preset === "custom") {
+    blockedUntil = new Date(aiRestrictionCustomUntil.value);
+  } else {
+    const durations: Record<string, number> = {
+      "24h": 24 * 60 * 60 * 1000,
+      "7d": 7 * 24 * 60 * 60 * 1000,
+      "30d": 30 * 24 * 60 * 60 * 1000
+    };
+    blockedUntil = new Date(Date.now() + (durations[preset] ?? 0));
+  }
+  if (Number.isNaN(blockedUntil.getTime()) || blockedUntil.getTime() <= Date.now()) {
+    return;
+  }
+  emit("update-ai-restriction", { mode: "until", blockedUntil: blockedUntil.toISOString() });
+}
+
+const savedAIRestrictionPreset = computed(() => {
+  if (!props.aiRestriction?.blocked) return "allow";
+  return props.aiRestriction.mode === "indefinite" ? "indefinite" : "custom";
+});
+
+const savedAIRestrictionCustomUntil = computed(() =>
+  savedAIRestrictionPreset.value === "custom"
+    ? toLocalDateTime(props.aiRestriction?.blockedUntil)
+    : ""
+);
+
+const isAIRestrictionDirty = computed(() => {
+  if (aiRestrictionPreset.value !== savedAIRestrictionPreset.value) return true;
+  if (aiRestrictionPreset.value !== "custom") return false;
+  return aiRestrictionCustomUntil.value !== savedAIRestrictionCustomUntil.value;
+});
+
+const canSaveAIRestriction = computed(() => {
+  const validUntil =
+    aiRestrictionPreset.value !== "custom" ||
+    (Boolean(aiRestrictionCustomUntil.value) && new Date(aiRestrictionCustomUntil.value).getTime() > Date.now());
+  return validUntil && isAIRestrictionDirty.value;
+});
 
 const latestHandoff = computed(() => props.handoffItems[0] ?? null);
+
+const aiIndividualEnabled = computed(
+  () => Boolean(props.aiRestriction && !props.aiRestriction.blocked),
+);
+const aiIndividualReady = computed(
+  () =>
+    Boolean(props.activeConversation) &&
+    !props.isGroupConversation &&
+    props.canManagePrivacy &&
+    !props.loadingAiRestriction &&
+    Boolean(props.aiRestriction),
+);
+
+function toggleIndividualAI(enabled: boolean) {
+  if (!aiIndividualReady.value || props.updatingAiRestriction) return;
+  emit("update-ai-restriction", { mode: enabled ? "allow" : "indefinite" });
+}
 
 function onQueueChange(value: string | undefined) {
   selectedQueueModel.value = value ?? "";
@@ -238,9 +353,6 @@ onUpdated(() => {
   stripSidebarMinHeightClass();
 });
 
-function toggleDetailsVisibility() {
-  collapsedModel.value = !collapsedModel.value;
-}
 </script>
 
 <template>
@@ -260,13 +372,6 @@ function toggleDetailsVisibility() {
     <template #header>
       <div class="chat-page__details-head">
         <h2 class="chat-page__details-title">Detalhes</h2>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          :icon="collapsedModel ? 'i-lucide-panel-right-open' : 'i-lucide-panel-right-close'"
-          :aria-label="collapsedModel ? 'Expandir detalhes' : 'Minimizar detalhes'"
-          @click="toggleDetailsVisibility"
-        />
       </div>
     </template>
 
@@ -276,10 +381,29 @@ function toggleDetailsVisibility() {
       </div>
 
       <div v-else-if="activeConversation" class="chat-page__panel-body chat-page__details-body">
-        <UCard>
-          <template #header>
-            <h3 class="details-card__title">Contato</h3>
-          </template>
+        <div
+          v-if="canManagePrivacy"
+          class="details-card__ai-quick-control"
+          :class="{ 'details-card__ai-quick-control--group': isGroupConversation }"
+        >
+          <div class="details-card__ai-quick-copy">
+            <p class="details-card__control-label">Atendimento por IA</p>
+            <p class="details-card__muted">
+              {{ isGroupConversation ? 'Desativado para grupos.' : aiIndividualEnabled ? 'Ativo nesta pessoa.' : 'Parado nesta pessoa.' }}
+            </p>
+          </div>
+          <USwitch
+            v-if="!isGroupConversation"
+            :model-value="aiIndividualEnabled"
+            :loading="loadingAiRestriction"
+            :disabled="!aiIndividualReady || updatingAiRestriction"
+            aria-label="Ativar ou parar a IA nesta pessoa"
+            @update:model-value="toggleIndividualAI"
+          />
+          <UBadge v-else color="neutral" variant="soft">Grupo · IA desativada</UBadge>
+        </div>
+
+        <InboxDetailsSection title="Contato">
 
           <div class="details-card__contact">
             <UAvatar
@@ -297,7 +421,7 @@ function toggleDetailsVisibility() {
           </div>
 
           <div v-if="activeConversation.instanceId" class="details-card__contact-actions">
-            <UBadge color="primary" variant="soft">
+            <UBadge color="neutral" variant="soft">
               {{ activeConversation.instanceDisplayName || activeConversation.instanceName }}
             </UBadge>
           </div>
@@ -318,12 +442,76 @@ function toggleDetailsVisibility() {
           <p v-if="contactActionError" class="details-card__error">
             {{ contactActionError }}
           </p>
-        </UCard>
+        </InboxDetailsSection>
 
-        <UCard>
-          <template #header>
-            <h3 class="details-card__title">Canal e status</h3>
-          </template>
+        <InboxDetailsSection
+          v-if="canManagePrivacy && !isGroupConversation"
+          title="Visibilidade e IA"
+          default-open
+        >
+
+          <div class="details-card__ai-control">
+            <UFormField label="Atendimento por IA" name="aiRestriction">
+              <USelect
+                v-model="aiRestrictionPreset"
+                :items="aiRestrictionItems"
+                value-key="value"
+                :loading="loadingAiRestriction"
+                :disabled="loadingAiRestriction || updatingAiRestriction"
+              />
+            </UFormField>
+            <UFormField
+              v-if="aiRestrictionPreset === 'custom'"
+              label="Bloquear até"
+              name="aiRestrictionUntil"
+            >
+              <UInput
+                v-model="aiRestrictionCustomUntil"
+                type="datetime-local"
+                :disabled="updatingAiRestriction"
+              />
+            </UFormField>
+            <UButton
+              v-if="isAIRestrictionDirty"
+              class="details-card__save-rule"
+              size="sm"
+              color="primary"
+              variant="solid"
+              icon="i-lucide-check"
+              :loading="updatingAiRestriction"
+              :disabled="loadingAiRestriction || updatingAiRestriction || !canSaveAIRestriction"
+              @click="saveAIRestriction"
+            >
+              Salvar alteração
+            </UButton>
+            <p v-if="aiRestrictionError" class="details-card__error" role="alert">
+              {{ aiRestrictionError }}
+            </p>
+          </div>
+
+          <div class="details-card__visibility-control">
+            <div class="details-card__visibility-copy">
+              <p class="details-card__control-label">Ocultar das conversas</p>
+              <p class="details-card__muted">
+                Remove a pessoa do Omnichannel e da Automação até que você a restaure.
+              </p>
+            </div>
+            <UButton
+              class="details-card__privacy-action"
+              size="sm"
+              color="warning"
+              variant="ghost"
+              icon="i-lucide-eye-off"
+              :loading="hidingContact"
+              :disabled="hidingContact || !activeConversation.contactId"
+              @click="emit('hide-contact')"
+            >
+              Ocultar
+            </UButton>
+          </div>
+        </InboxDetailsSection>
+
+        <InboxDetailsSection title="Canal e status">
 
           <div class="details-card__tags">
             <UBadge color="neutral" variant="soft">{{ getChannelLabel(activeConversation.channel) }}</UBadge>
@@ -331,12 +519,9 @@ function toggleDetailsVisibility() {
               {{ getStatusLabel(activeConversation.status) }}
             </UBadge>
           </div>
-        </UCard>
+        </InboxDetailsSection>
 
-        <UCard>
-          <template #header>
-            <h3 class="details-card__title">Handoff e SLA</h3>
-          </template>
+        <InboxDetailsSection title="Handoff e SLA">
 
           <div v-if="loadingHandoff" class="details-card__muted">Carregando histórico operacional…</div>
           <div v-else-if="handoffError" class="details-card__error" role="alert">
@@ -410,12 +595,9 @@ function toggleDetailsVisibility() {
               </p>
             </div>
           </template>
-        </UCard>
+        </InboxDetailsSection>
 
-        <UCard>
-          <template #header>
-            <h3 class="details-card__title">Acoes</h3>
-          </template>
+        <InboxDetailsSection title="Ações">
 
           <UFormField label="Status" name="conversationStatus">
             <USelect
@@ -436,12 +618,9 @@ function toggleDetailsVisibility() {
               @update:model-value="onAssigneeChange"
             />
           </UFormField>
-        </UCard>
+        </InboxDetailsSection>
 
-        <UCard>
-          <template #header>
-            <h3 class="details-card__title">Notas internas</h3>
-          </template>
+        <InboxDetailsSection title="Notas internas">
 
           <UTextarea
             v-model="internalNotesModel"
@@ -449,7 +628,7 @@ function toggleDetailsVisibility() {
             autoresize
             placeholder="Adicione observacoes sobre esse contato"
           />
-        </UCard>
+        </InboxDetailsSection>
       </div>
 
       <div v-else class="chat-page__empty">Selecione uma conversa para visualizar os detalhes.</div>
@@ -468,7 +647,9 @@ function toggleDetailsVisibility() {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: 100%;
+  height: auto;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .chat-page__panel-header,
@@ -482,7 +663,7 @@ function toggleDetailsVisibility() {
 .chat-page__details-title,
 .details-card__title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 600;
 }
 
@@ -501,9 +682,16 @@ function toggleDetailsVisibility() {
 }
 
 .chat-page__details-body {
-  display: grid;
-  align-content: start;
-  gap: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 0;
+  padding-bottom: 0.75rem;
+  overscroll-behavior: contain;
+}
+
+.chat-page__details-body > * {
+  flex: 0 0 auto;
 }
 
 .chat-page__empty {
@@ -594,5 +782,73 @@ function toggleDetailsVisibility() {
   margin-top: 0.8rem;
   border-top: 1px solid rgb(var(--border) / 0.6);
   padding-top: 0.7rem;
+}
+
+.details-card__ai-quick-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgb(var(--success) / 0.2);
+  border-radius: 0.75rem;
+  background: rgb(var(--success) / 0.07);
+}
+
+.details-card__ai-quick-control--group {
+  border-color: rgb(var(--muted) / 0.24);
+  background: rgb(var(--surface-2) / 0.55);
+}
+
+.details-card__ai-quick-copy {
+  min-width: 0;
+}
+
+.details-card__privacy-action {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.details-card__ai-control,
+.details-card__visibility-control {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.details-card__visibility-control {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.55rem;
+  border-top: 1px solid rgb(var(--border) / 0.6);
+  padding-top: 0.65rem;
+}
+
+.details-card__visibility-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.details-card__save-rule {
+  justify-self: end;
+}
+
+.details-card__control-label {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (max-width: 1120px) {
+  .details-card__visibility-control {
+    display: grid;
+  }
+
+  .details-card__privacy-action {
+    justify-self: start;
+  }
 }
 </style>

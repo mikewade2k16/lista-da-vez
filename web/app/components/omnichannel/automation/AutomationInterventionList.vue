@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AutomationHumanAttendanceGroup from './AutomationHumanAttendanceGroup.vue'
 import type { AutomationAttendance } from '~/domain/omnichannel/automation-api'
 
 const props = defineProps<{
@@ -8,6 +9,7 @@ const props = defineProps<{
   resumingIds?: string[]
   pausingIds?: string[]
   replyingIds?: string[]
+  closingIds?: string[]
 }>()
 
 defineEmits<{
@@ -15,10 +17,12 @@ defineEmits<{
   resumeAi: [item: AutomationAttendance]
   pauseAi: [item: AutomationAttendance]
   replyAi: [item: AutomationAttendance]
+  closeConversation: [item: AutomationAttendance]
 }>()
 
 const activeItems = computed(() => props.items.filter((item) => item.mode === 'ai_active'))
 const stoppedItems = computed(() => props.items.filter((item) => item.mode === 'ai_stopped'))
+const humanItems = computed(() => props.items.filter((item) => item.mode === 'human_active'))
 
 const REASON_LABELS: Record<string, string> = {
   requested: 'Cliente pediu atendente',
@@ -160,6 +164,16 @@ function whatsappURL(phone: string): string {
         </div>
       </section>
 
+      <AutomationHumanAttendanceGroup
+        :items="humanItems"
+        :resuming-ids="resumingIds"
+        :replying-ids="replyingIds"
+        :closing-ids="closingIds"
+        @resume-ai="$emit('resumeAi', $event)"
+        @reply-ai="$emit('replyAi', $event)"
+        @close-conversation="$emit('closeConversation', $event)"
+      />
+
       <section v-if="stoppedItems.length" class="attendance-group">
         <header class="attendance-group__header">
           <div>
@@ -209,7 +223,8 @@ function whatsappURL(phone: string): string {
               <button
                 v-if="item.unansweredCount > 0"
                 type="button"
-                class="card-action card-action--reply"
+                class="card-action card-action--reply card-action--icon-only"
+                aria-label="Forçar a IA a responder"
                 :disabled="replyingIds?.includes(item.id)"
                 title="Ordem manual: gera uma resposta mesmo após confiança baixa, máximo de respostas ou sugestão de transferência."
                 @click="$emit('replyAi', item)"
@@ -224,7 +239,8 @@ function whatsappURL(phone: string): string {
               <button
                 v-else
                 type="button"
-                class="card-action card-action--reply"
+                class="card-action card-action--reply card-action--icon-only"
+                aria-label="Retomar atendimento da IA nas próximas mensagens"
                 :disabled="resumingIds?.includes(item.id)"
                 title="A IA volta a atender quando o contato enviar uma nova mensagem."
                 @click="$emit('resumeAi', item)"
@@ -238,8 +254,25 @@ function whatsappURL(phone: string): string {
                 />
                 {{ resumingIds?.includes(item.id) ? 'Retomando…' : 'Retomar nas próximas' }}
               </button>
+              <button
+                type="button"
+                class="card-action card-action--close card-action--icon-only"
+                aria-label="Encerrar conversa"
+                title="Encerra esta conversa sem pedir uma resposta da IA."
+                :disabled="closingIds?.includes(item.id)"
+                @click="$emit('closeConversation', item)"
+              >
+                <UIcon
+                  :name="
+                    closingIds?.includes(item.id) ? 'i-lucide-loader-circle' : 'i-lucide-circle-x'
+                  "
+                />
+                Encerrar conversa
+              </button>
               <a
-                class="card-action"
+                class="card-action card-action--icon-only"
+                aria-label="Abrir conversa no WhatsApp"
+                title="Abrir conversa no WhatsApp"
                 :href="whatsappURL(item.contactPhone)"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -254,7 +287,7 @@ function whatsappURL(phone: string): string {
     </template>
 
     <p v-else class="attendances__empty">
-      Nenhum atendimento da IA ativo ou aguardando intervenção para este cliente.
+      Nenhum atendimento ativo ou aguardando intervenção para este cliente.
     </p>
   </section>
 </template>
@@ -412,8 +445,8 @@ function whatsappURL(phone: string): string {
 }
 
 .attendance-card__actions {
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 0.45rem;
 }
 
@@ -443,6 +476,28 @@ function whatsappURL(phone: string): string {
   border-color: rgb(var(--primary) / 0.45);
   background: rgb(var(--primary) / 0.12);
   color: rgb(var(--primary));
+}
+
+.card-action--close {
+  border-color: rgb(var(--danger) / 0.4);
+  color: rgb(var(--danger));
+}
+
+.card-action--icon-only {
+  min-width: 0;
+  padding-inline: 0.5rem;
+  font-size: 0;
+}
+
+.card-action--icon-only :deep(svg),
+.card-action--icon-only :deep(.iconify),
+.card-action--icon-only :deep([class*='i-lucide-']) {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  font-size: 1rem !important;
+  line-height: 1;
 }
 
 .card-action--pause {

@@ -18,6 +18,11 @@ type WAHAClient struct {
 	http    *http.Client
 }
 
+const (
+	wahaConnectWait         = 8 * time.Second
+	wahaConnectPollInterval = 250 * time.Millisecond
+)
+
 // NewWAHAClient cria o cliente. baseURL ex.: "http://waha:3000".
 func NewWAHAClient(baseURL string) *WAHAClient {
 	return &WAHAClient{
@@ -84,6 +89,71 @@ func (c *WAHAClient) Start(ctx context.Context, session string) error {
 		return fmt.Errorf("waha start: http %d", code)
 	}
 	return nil
+}
+
+// PrepareConnection inicia (ou reinicia) a sessao e espera a WAHA decidir entre
+// restaurar as credenciais existentes (WORKING) e pedir um novo pareamento
+// (SCAN_QR_CODE). Consultar o QR imediatamente apos Start causa um falso timeout
+// quando a sessao ja esta pareada e ainda passa por STARTING.
+func (c *WAHAClient) PrepareConnection(ctx context.Context, session, currentStatus string) (status, phone, qr string, err error) {
+	return c.prepareConnection(ctx, session, currentStatus, wahaConnectWait, wahaConnectPollInterval)
+}
+
+func (c *WAHAClient) prepareConnection(ctx context.Context, session, currentStatus string, wait, pollInterval time.Duration) (status, phone, qr string, err error) {
+	if currentStatus == statusFailed {
+		if err := c.Restart(ctx, session); err != nil {
+			return "", "", "", err
+		}
+	} else if err := c.Start(ctx, session); err != nil {
+		return "", "", "", err
+	}
+
+	status, phone, err = c.waitForConnectionState(ctx, session, wait, pollInterval)
+	if err != nil {
+		return "", "", "", err
+	}
+	switch status {
+	case statusWorking:
+		return status, phone, "", nil
+	case statusScanQRCode:
+		qr, err = c.QR(ctx, session)
+		return status, "", qr, err
+	case statusFailed:
+		return status, "", "", fmt.Errorf("waha session %q remained FAILED after restart", session)
+	default:
+		// STARTING/STOPPED ainda e' um estado valido: o front continua consultando
+		// /connect e recebe o QR ou WORKING assim que a engine terminar de iniciar.
+		return status, phone, "", nil
+	}
+}
+
+// waitForConnectionState faz polling curto sem transformar STARTING em erro. FAILED
+// so e' devolvido no fim da janela, porque logo apos Restart a WAHA pode expor o
+// estado antigo por alguns milissegundos antes de transicionar.
+func (c *WAHAClient) waitForConnectionState(ctx context.Context, session string, wait, pollInterval time.Duration) (status, phone string, err error) {
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
+
+	for {
+		status, phone, err = c.Status(ctx, session)
+		if err != nil {
+			return "", "", err
+		}
+		if status == statusWorking || status == statusScanQRCode {
+			return status, phone, nil
+		}
+
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", "", ctx.Err()
+		case <-deadline.C:
+			timer.Stop()
+			return status, phone, nil
+		case <-timer.C:
+		}
+	}
 }
 
 // startSession dispara POST /api/sessions/{session}/start e devolve o status code.

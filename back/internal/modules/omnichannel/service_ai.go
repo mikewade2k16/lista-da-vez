@@ -76,7 +76,8 @@ func versionView(v versionRow) AIAgentVersionView {
 	return AIAgentVersionView{
 		ID: v.ID, AgentID: v.AgentID, Version: v.Version, Status: v.Status,
 		Provider: v.Provider, Model: v.Model, Temperature: v.Temperature,
-		Layers: jsonOrEmpty(v.Layers), OutputSchema: jsonOrEmpty(v.OutputSchema),
+		ResponseCredentialID: v.ResponseCredentialID,
+		Layers:               jsonOrEmpty(v.Layers), OutputSchema: jsonOrEmpty(v.OutputSchema),
 		MediaConfig:   jsonOrEmpty(v.MediaConfig),
 		SchemaVersion: v.SchemaVersion, DebounceMS: v.DebounceMS,
 		MaxContextMessages: v.MaxContextMessages, MaxAITurns: v.MaxAITurns,
@@ -220,6 +221,9 @@ func (s *AIService) CreateVersion(ctx context.Context, accountID string, p auth.
 	if err != nil {
 		return AIAgentVersionView{}, err
 	}
+	if err := s.validateVersionCredentials(ctx, accountID, normalized); err != nil {
+		return AIAgentVersionView{}, err
+	}
 	row, err := s.store.CreateVersion(ctx, accountID, agentID, normalized, schema, layers)
 	if err != nil {
 		return AIAgentVersionView{}, translate(err) // agente fora de escopo => ErrNoRows -> 404
@@ -237,6 +241,9 @@ func (s *AIService) SaveConfiguration(ctx context.Context, accountID string, p a
 	if err != nil {
 		return AIAgentVersionView{}, err
 	}
+	if err := s.validateVersionCredentials(ctx, accountID, normalized); err != nil {
+		return AIAgentVersionView{}, err
+	}
 	row, err := s.store.SavePublishedVersion(ctx, accountID, agentID, normalized, schema, layers, p.UserID)
 	if err != nil {
 		return AIAgentVersionView{}, translate(err)
@@ -247,6 +254,15 @@ func (s *AIService) SaveConfiguration(ctx context.Context, accountID string, p a
 func normalizeVersionInput(in AIVersionInput) (AIVersionInput, json.RawMessage, json.RawMessage, error) {
 	if strings.TrimSpace(in.Provider) == "" || strings.TrimSpace(in.Model) == "" {
 		return AIVersionInput{}, nil, nil, ErrValidation
+	}
+	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
+	in.Model = strings.TrimSpace(in.Model)
+	if in.ResponseCredentialID != nil {
+		credentialID := strings.TrimSpace(*in.ResponseCredentialID)
+		if !omnichannelUUIDPattern.MatchString(credentialID) {
+			return AIVersionInput{}, nil, nil, ErrValidation
+		}
+		in.ResponseCredentialID = &credentialID
 	}
 	schema := in.OutputSchema
 	if len(schema) == 0 || string(schema) == "null" || string(schema) == "{}" {
@@ -267,9 +283,6 @@ func normalizeVersionInput(in AIVersionInput) (AIVersionInput, json.RawMessage, 
 	if in.MaxContextMessages == 0 {
 		in.MaxContextMessages = 30
 	}
-	if in.MaxAITurns == 0 {
-		in.MaxAITurns = 6
-	}
 	if in.MinConfidence == nil {
 		value := 0.650
 		in.MinConfidence = &value
@@ -278,11 +291,37 @@ func normalizeVersionInput(in AIVersionInput) (AIVersionInput, json.RawMessage, 
 		in.WorkflowContract = "brain.v2"
 	}
 	if in.DebounceMS < 500 || in.DebounceMS > 15000 || in.MaxContextMessages < 1 || in.MaxContextMessages > 100 ||
-		in.MaxAITurns < 1 || in.MaxAITurns > 20 || *in.MinConfidence < 0 || *in.MinConfidence > 1 ||
+		in.MaxAITurns < 0 || in.MaxAITurns > 100 || *in.MinConfidence < 0 || *in.MinConfidence > 1 ||
 		(in.WorkflowContract != "brain.v2" && in.WorkflowContract != "brain.v3") {
 		return AIVersionInput{}, nil, nil, ErrValidation
 	}
 	return in, schema, layers, nil
+}
+
+func (s *AIService) validateVersionCredentials(ctx context.Context, accountID string, in AIVersionInput) error {
+	if in.ResponseCredentialID != nil {
+		credential, err := s.store.GetAICredential(ctx, accountID, *in.ResponseCredentialID)
+		if err != nil {
+			return err
+		}
+		if credential.Provider != in.Provider {
+			return ErrValidation
+		}
+	}
+	bindings, err := mediaCredentialBindings(in.MediaConfig)
+	if err != nil {
+		return err
+	}
+	for _, binding := range bindings {
+		credential, getErr := s.store.GetAICredential(ctx, accountID, binding.CredentialID)
+		if getErr != nil {
+			return getErr
+		}
+		if credential.Provider != binding.Provider {
+			return ErrValidation
+		}
+	}
+	return nil
 }
 
 func (s *AIService) PublishVersion(ctx context.Context, accountID string, p auth.Principal, agentID string, version int) (AIAgentView, error) {

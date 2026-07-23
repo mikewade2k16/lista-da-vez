@@ -1,4 +1,4 @@
-# Evolution API — guia de subida local (módulo omnichannel / F4)
+# Evolution API — guia de subida local e produção (módulo omnichannel / F4)
 
 Guia operacional para subir o provider **Evolution** local, gerar a API key e parear um
 número de WhatsApp de teste. É infra da **F4** do canônico
@@ -134,6 +134,25 @@ manda a Evolution conectar, normaliza o QR e o painel exibe.
 > 2ª instância da mesma conta retorna **409** acionável, nomeando a instância que já o usa
 > (garantido pelo índice único `(account_id, phone_number)` — C6 da OMNI-F4).
 
+> **Um número, um ambiente ativo.** Não mantenha o mesmo WhatsApp conectado simultaneamente
+> nas Evolutions local e de produção. São bancos e instâncias independentes, portanto a proteção
+> tenant-scoped não detecta a duplicidade entre ambientes. Antes do teste em produção, pare a
+> Evolution local preservando os volumes: `docker compose --profile omnichannel stop evolution
+> evolution-db`.
+
+### Pré-requisitos para a IA responder
+
+Conectar o número não liga sozinho a automação. Antes da primeira mensagem inbound, confirme:
+
+1. o agente possui chave, modelo/prompt e versão publicada;
+2. existe um perfil habilitado vinculando cliente, número e agente;
+3. a visão geral mostra o cliente em **Clientes configurados** e a automação em **ligada**;
+4. a conversa não está em `human_active`.
+
+Mensagem enviada pelo próprio aparelho é `provider_device` e faz takeover humano de propósito.
+Os inbounds seguintes dessa conversa não disparam IA até o operador encerrá-la; o próximo inbound
+reabre pelo fluxo canônico.
+
 ### Verificar que a mensagem chegou
 
 ```bash
@@ -166,6 +185,10 @@ docker volume rm omni_evolution_instances omni_evolution_db_data
 
 ## 6. Produção (nota, não passo-a-passo)
 
+- O `docker-compose.prod.yml` declara `evolution` e `evolution-db` no profile
+  `omnichannel`. Suba com `docker compose --env-file .env.production -f
+  docker-compose.prod.yml --profile omnichannel up -d --no-build evolution-db evolution`.
+  A porta de troubleshooting é vinculada somente em `127.0.0.1` (default `18085`).
 - **Rota pública é do webhook, não da Evolution.** O Caddy precisa rotear
   `/v1/webhooks/*` até a **api**. Armadilha já registrada: `cat >` no Caddyfile **não pega**
   no inode do bind-mount — depois de editar, `docker restart` do container do Caddy (reload

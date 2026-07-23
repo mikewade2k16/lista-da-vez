@@ -105,6 +105,68 @@ Pre-requisito one-time: o `.env.production` da VPS precisa ter o bloco `AUTOMATI
 precisa ter as credenciais/community nodes necessarios no volume, e a WAHA precisa estar pareada
 quando o workflow de WhatsApp estiver em uso. Credenciais continuam manuais por seguranca.
 
+### Incidente 2026-07-22 — WAHA `Up (unhealthy)` e painel retorna 502
+
+**Sintoma:** o painel `/automation` mostra `WhatsApp desconectado` e o botao Conectar devolve
+`Nao foi possivel falar com o WhatsApp (WAHA)`. O container pode continuar aparecendo como `Up`,
+mas `/ping` falha e a API registra `connect: connection refused` para `waha:3000`.
+
+**Causa provada em producao:** ao retomar a sessao persistida `default`, o GOWS sincronizou uma
+rajada de mensagens, grupos e midias. Em seguida houve `Stream error` e `GOWS stopped, exiting`.
+O cgroup do container registrou `oom_kill=1`: pico de `1076183040` bytes para limite de
+`1073741824` bytes (1 GiB). O subprocesso GOWS morreu, mas o processo Node principal permaneceu
+vivo; por isso `restart: unless-stopped` nao reiniciou o container e o healthcheck ficou vermelho.
+
+**Diagnostico seguro (nao imprimir env nem remover volumes):**
+
+```bash
+cd /home/deploy/lista-atendimento
+docker compose --env-file .env.production -f docker-compose.prod.yml --profile automation ps waha
+curl -fsS --max-time 5 http://127.0.0.1:13010/ping
+docker logs --tail=300 listaatendimento-waha-1 | grep -Ei 'stream error|GOWS stopped|oom|memory|failed'
+docker exec listaatendimento-waha-1 cat /sys/fs/cgroup/memory.events
+docker exec listaatendimento-waha-1 cat /sys/fs/cgroup/memory.peak
+docker exec listaatendimento-waha-1 cat /sys/fs/cgroup/memory.max
+docker logs --tail=200 listaatendimento-api-1 | grep -Ei 'automation: whatsapp connect failed|waha:3000'
+```
+
+**Recuperacao operacional:** confirme os volumes `automation_waha_sessions` e
+`automation_waha_media`, faca backup de `/app/.sessions` e reinicie **somente** o servico `waha`.
+Depois, consulte `GET /api/sessions/default`; se estiver `STOPPED`, use o endpoint idempotente
+`POST /api/sessions/default/start` e aguarde `WORKING`. Nao use `down -v`, nao recrie volumes, nao
+reimporte workflows e nao reinicie o n8n para este incidente. A validacao termina com WAHA
+`healthy`, `/ping` respondendo e sessao `default` em `WORKING`, sem enviar mensagem de teste.
+
+**Recuperacao executada em 2026-07-22 (17:05 BRT):** a automacao dona de `default` foi pausada
+temporariamente para impedir respostas a eventos ressincronizados; `/app/.sessions` foi salvo em
+`backups/waha/sessions-before-recovery-20260722_200511.tar.gz`; somente `waha` foi reiniciado; a
+sessao persistida voltou de `STOPPED` para `WORKING` sem novo QR; apos mais de tres minutos estavel,
+com `memory.peak=466681856`, `oom_kill=0` e health verde, o robo foi restaurado para `active`.
+n8n, Redis, API, web, banco, workflows e volumes nao foram reiniciados ou recriados.
+
+**Prevencao implementada em 2026-07-22:** WAHA fixado em `gows-2026.7.1` (corrige a parada
+silenciosa apos `<stream:error>`), teto configuravel elevado de 1 para 2 GiB, autostart da sessao
+persistida e filtro de stories/status que o bot nao consome. O healthcheck guarda o starttime do
+PID 1 e, somente depois de um boot que ja esteve saudavel, encerra o processo apos tres falhas de
+`/ping`; `restart: unless-stopped` entao recria o runtime e a sessao volta sem QR. A API tambem
+passou a aguardar `WORKING` ou `SCAN_QR_CODE` depois de Start/Restart, em vez de pedir QR
+imediatamente. O cron alerta WAHA fora/unhealthy, sessao diferente de `WORKING` e incremento de
+`RestartCount`.
+
+**Hardening aplicado em producao em 2026-07-22 (17:40 BRT):** antes da troca, a automacao foi
+pausada e `/app/.sessions` foi salvo em
+`backups/waha/sessions-before-hardening-20260722_203956.tar.gz` (SHA-256
+`5422cba7d7efac4be3251b0c44bf083aab34796d7da8fb693afd7b5481f49cb6`). Compose e monitor
+anteriores ficaram em `backups/deploy/*-pre-waha-hardening-20260722_203956.*`. Somente `waha` foi
+recriado; a sessao voltou sozinha para `WORKING` sem QR. Apos tres minutos: health verde,
+`grpc.client=READY`, `grpc.stream=READY`, `RestartCount=0`, `memory.peak=433139712`,
+`oom_kill=0`; o robo voltou a `active` e o monitor executou quiet/exit 0. API, web, Postgres, n8n,
+Redis, Whisper, workflows e volumes nao foram recriados.
+
+**Limite de escopo:** deploy normal continua subindo apenas API/web. O bloco de Automation so roda
+com `-DeployAutomation`; portanto um WAHA antigo em `unhealthy` nao prova que o deploy atual tocou
+o modulo.
+
 ---
 
 ## Rollback (voltar pra imagem anterior)
@@ -163,6 +225,26 @@ Prevenção automática: tanto `deploy-pull.ps1` quanto `.github/workflows/deplo
 antes de copiar o compose ou trocar `IMAGE_TAG`, que a chave existe, é base64 válida e decodifica
 exatamente 32 bytes. Depois do envio, o compose novo é validado contra o `.env` real antes da tag
 ser alterada. O valor da chave nunca é impresso.
+
+---
+
+## Evolution na API — wiring obrigatório no Compose
+
+As variáveis `EVOLUTION_BASE_URL`, `EVOLUTION_API_KEY` e `WEBHOOK_RECEIVER_BASE_URL` precisam
+existir no `.env.production` **e** estar declaradas em `api.environment` no
+`docker-compose.prod.yml`. Estarem apenas no arquivo `.env` ou no serviço `evolution` não as
+injeta no container da API.
+
+Incidente de 2026-07-22: um deploy enviou um Compose antigo que ainda iniciava API/web, mas não
+repassava essas três variáveis à API. A Evolution e seu banco permaneceram saudáveis e com os
+volumes intactos, porém `/tenant/whatsapp/status` e `/connect` retornaram 500 com
+`evolution: baseURL nao configurada`, enquanto os webhooks retornaram 401. O hotfix restaurou o
+wiring e recriou somente a API.
+
+Prevenção automática: `scripts/deploy/assert-compose-api-env.ps1` inspeciona especificamente o
+bloco `api.environment`. `deploy:fast`, `deploy-pull`/promoção e o workflow manual do GitHub
+abortam antes de build, cópia do Compose, troca de `IMAGE_TAG` ou recriação de containers se
+qualquer variável crítica estiver ausente. Não contorne essa trava para publicar hotfix.
 
 ---
 
@@ -500,8 +582,9 @@ Ainda manual (pendente): volume `api_uploads` e arquivo `.env.production`.
 Monitoração mínima de produção (AC-16), em 3 camadas complementares:
 
 1. **UptimeRobot** — de fora, vigia a URL pública e avisa se o painel cair.
-2. **`check-vps.sh`** no cron do host — de dentro, alerta disco/RAM/load/containers doentes e a
-   **saude do n8n** (container do profile automation no ar + workflows criticos `active`, OBS-07).
+2. **`check-vps.sh`** no cron do host — de dentro, alerta disco/RAM/load/containers doentes,
+   **WAHA** (health, sessao e auto-restarts) e **n8n** (container no ar + workflows criticos
+   `active`, OBS-07).
 3. **`/healthz` com ping de banco** — a api se auto-reporta: `200` (banco ok) ou `503`
    (`db:"unreachable"`), então o healthcheck do compose e o smoke do deploy enxergam banco morto.
 
@@ -541,9 +624,14 @@ ALERT_NTFY_URL=https://ntfy.sh/omni-<algo-aleatorio-secreto>
 # N8N_COMPOSE_DIR=/home/deploy/lista-atendimento   (onde vive docker-compose.prod.yml + .env.production)
 # N8N_ENV_FILE=.env.production
 # N8N_CRITICAL_IDS="calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001"  (= deploy-pull.ps1:246)
+# WAHA_SESSION=default  WAHA_PORT=13010  WAHA_EXPECT_WORKING=1
 ```
 
-A **sonda do n8n** (check #7, OBS-07) roda como o proprio `deploy` — que ja esta no grupo docker,
+A **sonda da WAHA** (check #7) alerta quando a sessao esperada deixa de estar `WORKING` e quando o
+container auto-reinicia. `WAHA_EXPECT_WORKING=0` desativa apenas essa expectativa em manutencao ou
+ambiente sem numero pareado; health e restart continuam monitorados.
+
+A **sonda do n8n** (check #8, OBS-07) roda como o proprio `deploy` — que ja esta no grupo docker,
 entao **nao precisa de token/credencial do n8n** para ler o estado dos workflows. Ela le via
 `docker compose --profile automation exec n8n n8n export:workflow --all` (respeita o WAL do SQLite).
 Se `N8N_COMPOSE_DIR` nao existir no host, o check e NO-OP. A lista `N8N_CRITICAL_IDS` e a MESMA de

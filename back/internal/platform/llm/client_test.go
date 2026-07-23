@@ -129,6 +129,38 @@ func TestComplete_StatusErrorCarriesCode(t *testing.T) {
 	}
 }
 
+func TestComplete_SchemaFallsBackWhenJSONModeIsUnsupported(t *testing.T) {
+	schema := &Schema{Name: "triage", Version: 1, Definition: json.RawMessage(`{
+		"type":"object","properties":{"intent":{"type":"string"}},"required":["intent"]
+	}`)}
+	calls := 0
+	hc := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		body, _ := io.ReadAll(r.Body)
+		if calls == 1 {
+			if !strings.Contains(string(body), `"response_format"`) {
+				t.Fatal("primeira chamada deveria pedir JSON mode")
+			}
+			return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error"}}`)), Header: make(http.Header)}, nil
+		}
+		if strings.Contains(string(body), `"response_format"`) {
+			t.Fatal("fallback nao deve repetir response_format")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"{\"intent\":\"compra\"}"}}]}`)), Header: make(http.Header)}, nil
+	})}
+	c := NewWithHTTPClient(hc, nil)
+	req := baseReq()
+	req.Model = "gpt-4"
+	req.Schema = schema
+	resp, err := c.Complete(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if calls != 2 || string(resp.JSON) != `{"intent":"compra"}` {
+		t.Fatalf("calls=%d json=%s", calls, resp.JSON)
+	}
+}
+
 func TestComplete_PrechecksSemRede(t *testing.T) {
 	// Estes erros tem que sair ANTES de qualquer chamada de rede — transporte que
 	// explode prova que nao houve request.

@@ -29,9 +29,14 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoDir = (Resolve-Path (Join-Path $scriptDir "..\..")).Path
 $composeLocal = Join-Path $repoDir "docker-compose.prod.yml"
 $workflowLocalDir = Join-Path $repoDir "automation\export"
+$composeEnvGuard = Join-Path $scriptDir "assert-compose-api-env.ps1"
 
 if (-not (Test-Path $KeyPath)) { throw "Chave SSH nao encontrada em $KeyPath" }
 if (-not (Test-Path $composeLocal)) { throw "docker-compose.prod.yml nao encontrado em $composeLocal" }
+if (-not (Test-Path -LiteralPath $composeEnvGuard -PathType Leaf)) {
+  throw "Preflight de env do Compose nao encontrado: $composeEnvGuard"
+}
+& $composeEnvGuard -ComposePath $composeLocal
 
 $automationWorkflowFiles = @()
 if ($DeployAutomation) {

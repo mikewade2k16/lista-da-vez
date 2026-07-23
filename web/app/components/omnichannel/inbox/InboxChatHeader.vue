@@ -1,11 +1,12 @@
 ﻿<script setup lang="ts">
 import {
   UAvatar,
-  UBadge,
   UButton,
   UDashboardSidebarCollapse,
-  UDashboardSidebarToggle
+  UDashboardSidebarToggle,
+  UDropdownMenu
 } from "#components";
+import { computed } from "vue";
 import { resolveAvatarSource } from "~/composables/omnichannel/useAvatarProxy";
 
 const {
@@ -18,9 +19,11 @@ const {
   updatingHandoff,
   getInitials,
   getChannelLabel,
-  getStatusColor,
   getStatusLabel,
+  onOpenWhatsAppSession,
   onToggleShowOutboundOperatorLabel,
+  onTakeConversation,
+  onReleaseConversation,
   onCloseConversation
 } = defineProps([
   "activeConversation",
@@ -32,7 +35,6 @@ const {
   "updatingHandoff",
   "getInitials",
   "getChannelLabel",
-  "getStatusColor",
   "getStatusLabel",
   "onOpenWhatsAppSession",
   "onToggleShowOutboundOperatorLabel",
@@ -40,6 +42,25 @@ const {
   "onReleaseConversation",
   "onCloseConversation"
 ]);
+
+const adminMenuItems = computed(() => [
+  [
+    {
+      label: "Configurar canal WhatsApp",
+      icon: "i-lucide-message-circle-cog",
+      onSelect: () => onOpenWhatsAppSession()
+    },
+    {
+      label: showOutboundOperatorLabel ? "Ocultar nome do operador" : "Exibir nome do operador",
+      icon: showOutboundOperatorLabel ? "i-lucide-eye-off" : "i-lucide-eye",
+      onSelect: () => onToggleShowOutboundOperatorLabel(!showOutboundOperatorLabel)
+    }
+  ]
+]);
+
+const activeConversationIsGroup = computed(() =>
+  Boolean(activeConversation?.externalId?.toLowerCase().endsWith("@g.us"))
+);
 </script>
 
 <template>
@@ -57,21 +78,15 @@ const {
         />
         <div class="chat-page__contact-meta">
           <p class="chat-page__contact-name">{{ activeConversationLabel }}</p>
-          <div class="chat-page__contact-tags">
-            <UBadge color="neutral" variant="soft" size="sm">
-              {{ getChannelLabel(activeConversation.channel) }}
-            </UBadge>
-            <UBadge
-              v-if="activeConversation.instanceId"
-              color="primary"
-              variant="soft"
-              size="sm"
-            >
+          <div class="chat-page__contact-context">
+			<span v-if="activeConversationIsGroup" class="chat-page__contact-kind">Grupo</span>
+            <span>{{ getChannelLabel(activeConversation.channel) }}</span>
+            <span v-if="activeConversation.instanceId">
               {{ activeConversation.instanceDisplayName || activeConversation.instanceName }}
-            </UBadge>
-            <UBadge :color="getStatusColor(activeConversation.status)" variant="soft" size="sm">
+            </span>
+            <span v-if="activeConversation.status !== 'OPEN'" class="chat-page__contact-status">
               {{ getStatusLabel(activeConversation.status) }}
-            </UBadge>
+            </span>
           </div>
         </div>
       </template>
@@ -82,23 +97,11 @@ const {
     <div class="chat-page__chat-actions">
       <UDashboardSidebarToggle side="right" color="neutral" variant="ghost" class="lg:hidden" />
       <UDashboardSidebarCollapse side="right" color="neutral" variant="ghost" class="hidden lg:inline-flex" />
-      <UButton v-if="userRole === 'ADMIN'" size="sm" color="primary" variant="outline" @click="onOpenWhatsAppSession()">
-        Canal WhatsApp
-      </UButton>
-      <UButton
-        v-if="userRole === 'ADMIN'"
-        size="sm"
-        color="neutral"
-        :variant="showOutboundOperatorLabel ? 'soft' : 'ghost'"
-        @click="onToggleShowOutboundOperatorLabel(!showOutboundOperatorLabel)"
-      >
-        {{ showOutboundOperatorLabel ? "Operador visivel" : "Operador oculto" }}
-      </UButton>
       <UButton
         v-if="activeConversation && canManageConversation && !activeConversation.assignedToId && activeConversation.status !== 'CLOSED'"
         size="sm"
         color="primary"
-        variant="soft"
+        variant="solid"
         icon="i-lucide-hand"
         :loading="updatingHandoff"
         :disabled="updatingHandoff"
@@ -118,18 +121,31 @@ const {
       >
         Liberar
       </UButton>
-      <UBadge
+      <span
         v-else-if="activeConversation?.assignedToId"
-        color="neutral"
-        variant="soft"
-        size="sm"
+        class="chat-page__assignment-label"
       >
         Em atendimento
-      </UBadge>
+      </span>
+      <UDropdownMenu
+        v-if="userRole === 'ADMIN'"
+        :items="adminMenuItems"
+        :content="{ side: 'bottom', align: 'end', sideOffset: 8 }"
+      >
+        <UButton
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-ellipsis"
+          aria-label="Mais opções do atendimento"
+          title="Mais opções"
+        />
+      </UDropdownMenu>
       <UButton
         size="sm"
         color="neutral"
         variant="ghost"
+        icon="i-lucide-circle-x"
         :disabled="!activeConversation || !canManageConversation"
         @click="onCloseConversation()"
       >
@@ -168,11 +184,43 @@ const {
   font-weight: 600;
 }
 
-.chat-page__contact-tags,
+.chat-page__contact-context,
 .chat-page__chat-actions {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.chat-page__contact-context {
+  margin-top: 0.12rem;
+  color: rgb(var(--muted));
+  font-size: 0.7rem;
+}
+
+.chat-page__contact-context > span + span::before {
+  margin-right: 0.35rem;
+  color: rgb(var(--muted) / 0.6);
+  content: "·";
+}
+
+.chat-page__contact-status {
+  color: rgb(var(--text));
+}
+
+.chat-page__contact-kind {
+	color: rgb(var(--primary));
+	font-weight: 700;
+}
+
+.chat-page__assignment-label {
+  color: rgb(var(--muted));
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+  .chat-page__chat-actions :deep(.ui-button-label) {
+    display: none;
+  }
 }
 </style>
 

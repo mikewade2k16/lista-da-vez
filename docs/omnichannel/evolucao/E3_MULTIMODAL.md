@@ -1,18 +1,17 @@
 # E3 — áudio, visão e documentos
 
-**Status:** `IN_PROGRESS` — contrato, configuração versionada, persistência base e gate de policy determinístico entregues; pipeline ainda não está ativado
+**Status:** `READY_FOR_ROLLOUT` — pipeline Go+n8n, cofre de credenciais e configuração por função implementados; migração, importação e ativação continuam operações explícitas por ambiente
 
 **Resultado:** áudio, imagem e documento viram contexto estruturado auditável para a triagem, com
 limites, consentimento/política, custo e fallback; a mídia original continua privada no Go.
 
 ## 1. Escopo fechado
 
-Entrega atual: contratos JSON e fixtures por tipo, `ai_agent_versions.media_config`, persistência
-idempotente em `messaging.media_analyses`, consulta autorizada, gateway interno de stream
-`media-stream.v1` e o planner de policy sem efeitos colaterais estão aplicados na migration `0219`
-e no backend. Ainda faltam o writer/job durável que agenda a análise, branches do workflow próprio,
-projeção no inbox e QA multimodal real. Nenhuma análise é criada automaticamente enquanto esses
-gates não estiverem fechados.
+Entrega atual: contratos por tipo, configuração versionada, persistência idempotente, gateway
+privado `media-stream.v1`, policy determinística e o ramo `omnichannel-brain-media` do workflow
+próprio. O job de mídia chama o n8n; o n8n interpreta; o Go valida e persiste o resultado antes de
+entregá-lo ao modelo de resposta. A ativação real exige aplicar a migration `0234`, importar e
+ativar o workflow, configurar os endpoints internos e salvar as versões com credenciais nomeadas.
 
 - áudio: transcrição; imagem: descrição/OCR orientado ao atendimento; documento: extração de texto
   em formatos permitidos e dentro de limites;
@@ -29,16 +28,18 @@ confirmar que `layers` não possui contrato equivalente. Shape fechado na API:
 
 ```json
 {
-  "audio": {"enabled": true, "provider": "openai", "model": "...", "maxSeconds": 600},
-  "image": {"enabled": true, "provider": "openai", "model": "...", "maxBytes": 5242880},
-  "document": {"enabled": false, "allowedMime": ["application/pdf"], "maxPages": 20},
+  "audio": {"enabled": true, "credentialId": "uuid", "provider": "openai", "model": "...", "maxSeconds": 600},
+  "image": {"enabled": true, "credentialId": "uuid", "provider": "openai", "model": "...", "maxBytes": 5242880},
+  "video": {"enabled": true, "credentialId": "uuid", "provider": "gemini", "model": "...", "maxBytes": 62914560},
+  "document": {"enabled": false, "credentialId": "uuid", "provider": "gemini", "model": "...", "maxPages": 20},
   "retentionDays": 90,
   "includeInReply": true
 }
 ```
 
-Chave não entra neste JSON. Ela usa o segredo tenant-scoped do agente/provider já cifrado. Versão
-publicada é imutável.
+Chave não entra neste JSON. `credentialId` referencia `messaging.ai_credentials`, cofre cifrado e
+account-scoped. A versão também fixa `response_credential_id` para o modelo que redige a resposta.
+Uma mesma credencial nomeada pode ser reutilizada por vários agentes sem duplicar o segredo.
 
 ## 3. Banco
 
@@ -47,10 +48,10 @@ Criar `messaging.media_analyses`:
 | Campo | Regra |
 |---|---|
 | `id`, `account_id`, `message_id`, `conversation_id` | FKs e escopo explícito |
-| `analysis_kind` | `transcription`, `vision`, `document_text` |
+| `analysis_kind` | `transcription`, `vision`, `video_summary`, `document_text` |
 | `content_hash` | SHA-256 dos bytes; dedupe com kind/model/version |
 | `status` | `queued`, `processing`, `completed`, `failed`, `blocked` |
-| `provider`, `model`, `agent_version_id` | reprodutibilidade |
+| `provider`, `model`, `credential_id`, `agent_version_id` | reprodutibilidade e vínculo com o cofre |
 | `result_text` | resultado limitado; PII operacional, sujeito à retenção |
 | `result_json` | idioma, confiança, páginas/timestamps, sem bytes |
 | `prompt_tokens`, `completion_tokens`, `cost_usd`, `latency_ms` | custo congelado |
@@ -81,6 +82,7 @@ ZIP/PDF decompression bomb; o MIME declarado nunca basta sem sniffing seguro.
 
 - transcrição: `{text, language, durationSeconds, segments?[start,end,text], confidence?}`;
 - visão: `{summary, visibleText, objects[], safetyFlags[], confidence?}`;
+- vídeo: `{summary, visibleText, scenes[], safetyFlags[], durationSeconds?, confidence?}`;
 - documento: `{summary, extractedText, pageCount, truncated, warnings[]}`.
 
 O texto máximo por análise e o total inserido no prompt são limitados. Documento truncado declara

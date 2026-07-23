@@ -111,6 +111,7 @@ type ContactConversationRefView struct {
 
 type CRMContactProfileView struct {
 	Contact               CRMContactView               `json:"contact"`
+	Intelligence          ContactIntelligenceView      `json:"intelligence"`
 	Identities            []ContactIdentityView        `json:"identities"`
 	Touchpoints           []ContactTouchpointView      `json:"touchpoints"`
 	Notes                 []ContactNoteView            `json:"notes"`
@@ -119,6 +120,29 @@ type CRMContactProfileView struct {
 	TouchpointsNextCursor string                       `json:"touchpointsNextCursor,omitempty"`
 	NotesHasMore          bool                         `json:"notesHasMore"`
 	NotesNextCursor       string                       `json:"notesNextCursor,omitempty"`
+}
+
+// ContactIntelligenceView is the compact, contact-scoped memory used by the
+// brain and exposed in the 360 profile. It contains derived facts and counters,
+// never raw conversation history or provider credentials.
+type ContactIntelligenceView struct {
+	PreferredName      *string         `json:"preferredName"`
+	NameSource         string          `json:"nameSource"`
+	RelationshipStatus string          `json:"relationshipStatus"`
+	Tags               json.RawMessage `json:"tags"`
+	Summary            string          `json:"summary"`
+	Facts              json.RawMessage `json:"facts"`
+	Preferences        json.RawMessage `json:"preferences"`
+	InteractionCount   int             `json:"interactionCount"`
+	AIReplyCount       int             `json:"aiReplyCount"`
+	HandoffCount       int             `json:"handoffCount"`
+	LastIntent         string          `json:"lastIntent"`
+	LastSentiment      string          `json:"lastSentiment"`
+	LastConfidence     *float64        `json:"lastConfidence"`
+	LastOutcome        string          `json:"lastOutcome"`
+	LastConversationID *string         `json:"lastConversationId"`
+	LastLearnedAt      *time.Time      `json:"lastLearnedAt"`
+	UpdatedAt          *time.Time      `json:"updatedAt"`
 }
 
 type CRMContactPatch struct {

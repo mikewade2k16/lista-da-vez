@@ -68,6 +68,9 @@ func (s *Store) ListContacts(ctx context.Context, accountID string) ([]contactRo
 	query := `select ` + contactCols + lastConversationCols + `
 		from messaging.contacts ct` + lastConversationJoin + `
 		where ct.account_id = $1::uuid
+		  and not exists (select 1 from messaging.contact_suppressions suppression
+		      where suppression.account_id=ct.account_id and suppression.contact_id=ct.id
+		        and suppression.is_hidden=true)
 		order by ct.updated_at desc, ct.created_at desc`
 
 	rows, err := s.pool.Query(ctx, query, accountID)

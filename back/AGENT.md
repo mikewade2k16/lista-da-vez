@@ -18,15 +18,15 @@ Sem precisar redesenhar a base quando o produto virar multi-tenant de verdade.
 ## Matriz de versoes
 
 - Docker Compose oficial: `v2`
-- Go do modulo: `1.24.0`
-- Toolchain Go: `1.24.3`
+- Go do modulo: `1.26.5`
+- Toolchain Go: `1.26.5`
 - Nuxt do frontend integrado: `4.4.2`
 - Pinia do frontend integrado: `3.0.4`
 - Node do frontend containerizado: `24.11.1`
 - Driver PostgreSQL no backend: `pgx/v5 5.7.6`
 - PostgreSQL alvo do backend: `16`
 - Imagem oficial do banco: `postgres:16-alpine`
-- Imagem oficial do backend: `golang:1.24.0-bookworm`
+- Imagem oficial do backend: `golang:1.26.5-bookworm`
 
 ## Workflow
 

@@ -53,14 +53,15 @@ function getConversationDisplayName(conversationEntry: Conversation) {
 
   const displayPhone = getConversationDisplayPhone(conversationEntry);
   if (displayPhone) {
-    if (conversationEntry.externalId.endsWith("@g.us")) {
-      return `Grupo ${displayPhone.slice(-4)}`;
+    if (conversationEntry.externalId.trim().toLowerCase().endsWith("@g.us")) {
+      return "Grupo sem nome";
     }
-
     return displayPhone;
   }
 
-  return conversationEntry.externalId.endsWith("@g.us") ? "Grupo" : "Contato";
+  return conversationEntry.externalId.trim().toLowerCase().endsWith("@g.us")
+    ? "Grupo sem nome"
+    : "Contato";
 }
 
 const filteredConversations = computed(() => {

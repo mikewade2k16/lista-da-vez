@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -80,9 +81,15 @@ func (s *Store) CountRunsThisMonth(ctx context.Context, accountID string) (int64
 // A consulta é tenant-scoped e serve somente à policy, nunca ao front.
 func (s *Store) CountAIOutboundTurns(ctx context.Context, accountID, conversationID string) (int, error) {
 	var n int
-	err := s.pool.QueryRow(ctx, `select count(*) from messaging.messages
+	err := s.pool.QueryRow(ctx, `select count(*) from messaging.messages message
 		where account_id = $1::uuid and conversation_id = $2::uuid
-		  and direction = 'OUTBOUND' and origin = 'ai' and status <> 'FAILED'`,
+		  and direction = 'OUTBOUND' and origin = 'ai' and status <> 'FAILED'
+		  and message.created_at > coalesce((select suppression.history_cleared_at
+		      from messaging.conversations conversation
+		      join messaging.contact_suppressions suppression
+		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
+		      where conversation.account_id=message.account_id and conversation.id=message.conversation_id),
+		      '-infinity'::timestamptz)`,
 		accountID, conversationID).Scan(&n)
 	return n, err
 }
@@ -115,6 +122,7 @@ type convTriage struct {
 	ContactPhone     *string
 	ContactName      *string
 	Channel          string
+	ExternalID       string
 	InstanceScopeKey string
 	ExtractedFields  json.RawMessage
 	Found            bool
@@ -124,11 +132,11 @@ type convTriage struct {
 func (s *Store) ConvTriageContext(ctx context.Context, accountID, convID string) (convTriage, error) {
 	var c convTriage
 	err := s.pool.QueryRow(ctx, `select state, ai_generation, instance_id::text, contact_id::text, contact_phone, contact_name,
-		channel, instance_scope_key, coalesce(extracted_fields, '{}'::jsonb)
+		channel, external_id, instance_scope_key, coalesce(extracted_fields, '{}'::jsonb)
 		from messaging.conversations
 		where account_id = $1::uuid and id = $2::uuid`, accountID, convID).
 		Scan(&c.State, &c.AIGeneration, &c.InstanceID, &c.ContactID, &c.ContactPhone, &c.ContactName,
-			&c.Channel, &c.InstanceScopeKey, &c.ExtractedFields)
+			&c.Channel, &c.ExternalID, &c.InstanceScopeKey, &c.ExtractedFields)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return convTriage{Found: false}, nil
@@ -143,9 +151,33 @@ func (s *Store) ConvTriageContext(ctx context.Context, accountID, convID string)
 // RecentMessages devolve as ultimas `limit` mensagens da conversa em ordem cronologica (a
 // janela da camada 7 do prompt). role: contact (INBOUND) | agent (OUTBOUND). Filtra por account.
 func (s *Store) RecentMessages(ctx context.Context, accountID, convID string, limit int) ([]SimMessage, error) {
-	rows, err := s.pool.Query(ctx, `select id::text, direction, content from (
-		select id, direction, content, created_at from messaging.messages
-		where account_id = $1::uuid and conversation_id = $2::uuid
+	rows, err := s.pool.Query(ctx, `select id::text, direction,
+		case when media_context='' then content
+			when content='' then media_context
+			else content || E'\n' || media_context end as content
+		from (
+		select message.id, message.direction, message.content, message.created_at,
+			coalesce((select string_agg(
+				case analysis.analysis_kind
+					when 'transcription' then '[Áudio transcrito]: ' || coalesce(analysis.result_text,'')
+					when 'vision' then '[Imagem interpretada]: ' || coalesce(analysis.result_text,'')
+					when 'video_summary' then '[Vídeo interpretado]: ' || coalesce(analysis.result_text,'')
+					when 'document_text' then '[Documento interpretado]: ' || coalesce(analysis.result_text,'')
+				end, E'\n' order by analysis.created_at)
+			from messaging.media_analyses analysis
+			join messaging.ai_agent_versions version
+			  on version.account_id=analysis.account_id and version.id=analysis.agent_version_id
+			where analysis.account_id=message.account_id and analysis.message_id=message.id
+			  and analysis.status='completed'
+			  and coalesce((version.media_config->>'includeInReply')::boolean,true)), '') as media_context
+		from messaging.messages message
+		where message.account_id = $1::uuid and message.conversation_id = $2::uuid
+		  and message.created_at > coalesce((select suppression.history_cleared_at
+		      from messaging.conversations conversation
+		      join messaging.contact_suppressions suppression
+		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
+		      where conversation.account_id=message.account_id and conversation.id=message.conversation_id),
+		      '-infinity'::timestamptz)
 		order by created_at desc, id desc limit $3
 	) recent order by created_at asc, id asc`, accountID, convID, limit)
 	if err != nil {
@@ -217,6 +249,133 @@ func (s *Store) CommitAITriage(ctx context.Context, accountID, convID string, ge
 		return false, err
 	}
 	return result.RowsAffected() == 1, nil
+}
+
+func (s *Store) CommitAITriageWithIntelligence(ctx context.Context, accountID, convID string, generation int64, runID string, out TriageOutput) (bool, error) {
+	raw, err := json.Marshal(out.ExtractedFields)
+	if err != nil {
+		return false, err
+	}
+	memory := normalizeContactMemory(out.ContactMemory)
+	facts := contactMemoryJSON(memory.Facts)
+	preferences := contactMemoryJSON(memory.Preferences)
+	summary := ""
+	if memory.Summary != nil {
+		summary = *memory.Summary
+	}
+	learned := summary != "" || len(memory.Facts) > 0 || len(memory.Preferences) > 0
+	var committed bool
+	err = s.pool.QueryRow(ctx, `with updated as (
+			update messaging.conversations
+			set extracted_fields = coalesce(extracted_fields, '{}'::jsonb) || $3::jsonb,
+			    updated_at = now()
+			where account_id = $1::uuid and id = $2::uuid
+			  and state = 'ai_active' and ai_generation = $4
+			returning contact_id
+		), intelligence as (
+			insert into messaging.contact_intelligence (
+				account_id, contact_id, summary, facts, preferences, interaction_count,
+				ai_reply_count, handoff_count, last_intent, last_sentiment, last_confidence,
+				last_outcome, last_conversation_id, last_ai_run_id, last_learned_at
+			)
+			select $1::uuid, contact_id, $5, $6::jsonb, $7::jsonb, 1,
+				case when $8 then 1 else 0 end, case when $9 then 1 else 0 end,
+				$10, $11, $12, $13, $2::uuid, nullif($14,'')::uuid,
+				case when $15 then now() else null end
+			from updated where contact_id is not null
+			on conflict (account_id, contact_id) do update set
+				summary = case when excluded.summary <> '' then excluded.summary else contact_intelligence.summary end,
+				facts = contact_intelligence.facts || excluded.facts,
+				preferences = contact_intelligence.preferences || excluded.preferences,
+				interaction_count = contact_intelligence.interaction_count + 1,
+				ai_reply_count = contact_intelligence.ai_reply_count + excluded.ai_reply_count,
+				handoff_count = contact_intelligence.handoff_count + excluded.handoff_count,
+				last_intent = excluded.last_intent,
+				last_sentiment = excluded.last_sentiment,
+				last_confidence = excluded.last_confidence,
+				last_outcome = excluded.last_outcome,
+				last_conversation_id = excluded.last_conversation_id,
+				last_ai_run_id = excluded.last_ai_run_id,
+				last_learned_at = case when $15 then now() else contact_intelligence.last_learned_at end,
+				updated_at = now()
+			returning contact_id
+		)
+		select exists(select 1 from updated)`,
+		accountID, convID, raw, generation, summary, facts, preferences,
+		strings.TrimSpace(out.ReplyDraft) != "", out.NeedsHuman, strings.TrimSpace(out.Intent),
+		normalizeContactSentiment(out.Sentiment), out.Confidence, triageOutcomeLabel(out), runID, learned,
+	).Scan(&committed)
+	return committed, err
+}
+
+func triageOutcomeLabel(out TriageOutput) string {
+	switch {
+	case out.NeedsHuman:
+		return "handoff"
+	case out.CloseRequested:
+		return "close_requested"
+	case strings.TrimSpace(out.ReplyDraft) != "":
+		return "replied"
+	default:
+		return "no_reply"
+	}
+}
+
+// GetContactIntelligence returns both the conservative personal name and the
+// accumulated structured memory. The contact and every joined row are scoped
+// again by account_id as defense in depth.
+func (s *Store) GetContactIntelligence(ctx context.Context, accountID, contactID string) (ContactIntelligenceView, error) {
+	var out ContactIntelligenceView
+	var contactName, phone string
+	var identityName *string
+	err := s.pool.QueryRow(ctx, `select contact.name, coalesce(contact.phone,''), contact.relationship_status,
+			contact.tags, identity.display_name,
+			coalesce(intelligence.summary,''), coalesce(intelligence.facts,'{}'::jsonb),
+			coalesce(intelligence.preferences,'{}'::jsonb),
+			coalesce(intelligence.interaction_count,0), coalesce(intelligence.ai_reply_count,0),
+			coalesce(intelligence.handoff_count,0), coalesce(intelligence.last_intent,''),
+			coalesce(intelligence.last_sentiment,'unknown'), intelligence.last_confidence::float8,
+			coalesce(intelligence.last_outcome,''), intelligence.last_conversation_id::text,
+			intelligence.last_learned_at, intelligence.updated_at
+		from messaging.contacts contact
+		left join messaging.contact_intelligence intelligence
+		  on intelligence.account_id=contact.account_id and intelligence.contact_id=contact.id
+		left join lateral (
+			select display_name from messaging.contact_identities
+			where account_id=contact.account_id and contact_id=contact.id and display_name is not null
+			order by last_seen_at desc, id desc limit 1
+		) identity on true
+		where contact.account_id=$1::uuid and contact.id=$2::uuid and contact.archived_at is null`,
+		accountID, contactID).Scan(
+		&contactName, &phone, &out.RelationshipStatus, &out.Tags, &identityName,
+		&out.Summary, &out.Facts, &out.Preferences, &out.InteractionCount,
+		&out.AIReplyCount, &out.HandoffCount, &out.LastIntent, &out.LastSentiment,
+		&out.LastConfidence, &out.LastOutcome, &out.LastConversationID,
+		&out.LastLearnedAt, &out.UpdatedAt,
+	)
+	if err != nil {
+		return ContactIntelligenceView{}, err
+	}
+	identity := ""
+	if identityName != nil {
+		identity = *identityName
+	}
+	name, source := safePreferredPersonalName(contactName, identity)
+	if name != "" && name != phone {
+		out.PreferredName = &name
+	}
+	out.NameSource = source
+	if out.Facts == nil {
+		out.Facts = json.RawMessage(`{}`)
+	}
+	if out.Preferences == nil {
+		out.Preferences = json.RawMessage(`{}`)
+	}
+	if out.Tags == nil {
+		out.Tags = json.RawMessage(`[]`)
+	}
+	out.RelationshipStatus = crmStatus(out.RelationshipStatus)
+	return out, nil
 }
 
 // RuleSummary devolve nome/prioridade de uma regra (para o traco do simulate: matchedRule).

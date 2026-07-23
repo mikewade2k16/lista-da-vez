@@ -31,6 +31,8 @@ func mediaAnalysisPolicyFor(messageType, mime string, raw json.RawMessage) (medi
 		kind, sectionName = MediaAnalysisKindTranscription, "audio"
 	case "IMAGE":
 		kind, sectionName = MediaAnalysisKindVision, "image"
+	case "VIDEO":
+		kind, sectionName = MediaAnalysisKindVideo, "video"
 	case "DOCUMENT":
 		kind, sectionName = MediaAnalysisKindDocument, "document"
 	default:
@@ -64,6 +66,11 @@ func mediaAnalysisPolicyFor(messageType, mime string, raw json.RawMessage) (medi
 		_ = json.Unmarshal(section["maxSeconds"], &policy.MaxSeconds)
 	case MediaAnalysisKindVision:
 		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mime)), "image/") {
+			return mediaAnalysisPolicy{}, false, ErrMediaAnalysisInvalid
+		}
+		_ = json.Unmarshal(section["maxBytes"], &policy.MaxBytes)
+	case MediaAnalysisKindVideo:
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(mime)), "video/") {
 			return mediaAnalysisPolicy{}, false, ErrMediaAnalysisInvalid
 		}
 		_ = json.Unmarshal(section["maxBytes"], &policy.MaxBytes)

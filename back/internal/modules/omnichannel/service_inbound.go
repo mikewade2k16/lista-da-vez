@@ -144,7 +144,7 @@ func (s *InboundService) Ingest(ctx context.Context, accountID, providerKey stri
 
 	anyAccepted, anyDuplicate := false, false
 	for i := range events {
-		status, err := s.ingestOne(ctx, accountID, providerKey, events[i])
+		status, err := s.ingestOne(ctx, accountID, providerKey, body, events[i])
 		if err != nil {
 			return inboundIgnored, err
 		}
@@ -168,7 +168,7 @@ func (s *InboundService) Ingest(ctx context.Context, accountID, providerKey stri
 
 // ingestOne processa um evento canonico. Eventos sem instancia conhecida ou nao-de-dominio
 // sao IGNORADOS (nunca auto-criam instancia — armadilha 1).
-func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey string, ev channel.Event) (InboundStatus, error) {
+func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey string, body []byte, ev channel.Event) (InboundStatus, error) {
 	if ev.Kind == channel.EventIgnored || ev.ExternalEventID == "" {
 		return inboundIgnored, nil
 	}
@@ -211,6 +211,24 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 		s.logger.Warn("omnichannel_webhook_unknown_instance",
 			"account_id", accountID, "provider", providerKey, "instance", ev.InstanceName)
 		return inboundIgnored, nil
+	}
+
+	if ev.Message != nil && isWhatsAppGroupExternalID(ev.Message.ContactExternalID) {
+		if groupProvider, ok := providerForGroupMetadata(s.registry, providerKey); ok {
+			metadataCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			cred, credErr := s.resolveCredentials(metadataCtx, accountID, providerKey, body)
+			if credErr == nil {
+				metadata, metadataErr := groupProvider.FetchGroupMetadata(
+					metadataCtx, cred, ev.InstanceName, ev.Message.ContactExternalID,
+				)
+				if metadataErr == nil && strings.TrimSpace(metadata.Name) != "" {
+					ev.Message.ContactName = strings.TrimSpace(metadata.Name)
+				} else if metadataErr != nil {
+					s.logger.Debug("omnichannel_group_metadata_unavailable", "account_id", accountID, "provider", providerKey, "instance", ev.InstanceName)
+				}
+			}
+			cancel()
+		}
 	}
 
 	write := inboundWrite{
@@ -317,6 +335,15 @@ func (s *InboundService) ingestOne(ctx context.Context, accountID, providerKey s
 	return inboundAccepted, nil
 }
 
+func providerForGroupMetadata(registry *channel.Registry, providerKey string) (channel.GroupMetadataProvider, bool) {
+	provider, err := registry.Get(providerKey)
+	if err != nil {
+		return nil, false
+	}
+	groupProvider, ok := provider.(channel.GroupMetadataProvider)
+	return groupProvider, ok
+}
+
 // autoTriageTimeout limita a triagem em background: o LLM pode demorar, mas nao pode segurar
 // recursos indefinidamente. A mensagem JA foi persistida/emitida — isto e best-effort por cima.
 const autoTriageTimeout = 90 * time.Second
@@ -344,6 +371,13 @@ func (s *InboundService) scheduleAIDispatch(accountID, convID, messageID string)
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), autoTriageTimeout)
 	defer cancel()
+	conv, err := s.store.ConvTriageContext(ctx, accountID, convID)
+	if err != nil || !conv.Found {
+		if err != nil {
+			s.logger.Error("omnichannel_ai_dispatch_context_failed", "account_id", accountID, "conversation_id", convID)
+		}
+		return
+	}
 
 	state, err := s.domain.SystemTransition(ctx, accountID, convID, EventMsgInbound, TransitionPayload{})
 	if err != nil {
@@ -358,7 +392,13 @@ func (s *InboundService) scheduleAIDispatch(accountID, convID, messageID string)
 		}
 		return
 	}
-	agent, ok, err := s.store.ActiveAgent(ctx, accountID)
+	if isWhatsAppGroupExternalID(conv.ExternalID) {
+		if _, err := s.domain.SystemTransition(ctx, accountID, convID, EventAITriageFailed, TransitionPayload{}); err == nil {
+			_, _ = s.domain.SystemRoute(ctx, accountID, convID)
+		}
+		return
+	}
+	agent, ok, err := s.store.ActiveAgentForInstance(ctx, accountID, deref(conv.InstanceID))
 	if err != nil {
 		s.logger.Error("omnichannel_ai_dispatch_agent_failed", "account_id", accountID)
 		return

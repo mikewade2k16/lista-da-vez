@@ -138,10 +138,27 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 			return HandoffView{}, err
 		}
 	}
-	if err := applyStateUpdateTx(ctx, tx, accountID, conversationID, stateUpdate{
+	update := stateUpdate{
 		State: StateQueued, QueueID: queueID, DepartmentID: departmentID,
 		AssignedUserID: nil, InvalidateAI: true,
-	}, s.AIDispatchV2Enabled()); err != nil {
+	}
+	var customerNoticeMessage *MessageView
+	customerNoticeCreated := false
+	if notice := strings.TrimSpace(in.CustomerNotice); notice != "" {
+		if snap.State != StateAIActive || snap.AIGeneration != in.CapturedGeneration {
+			return HandoffView{}, ErrAILeaseInvalid
+		}
+		message, created, createErr := createAIOutboundMessageLockedTx(ctx, tx, accountID, conversationID,
+			snap.InstanceID, snap.InstanceScopeKey, notice, in.AIRunID,
+			in.NoticeIdempotencyKey, in.CapturedGeneration)
+		if createErr != nil {
+			return HandoffView{}, createErr
+		}
+		update.PreserveAIMessageID = message.ID
+		customerNoticeMessage = &message
+		customerNoticeCreated = created
+	}
+	if err := applyStateUpdateTx(ctx, tx, accountID, conversationID, update, s.AIDispatchV2Enabled()); err != nil {
 		return HandoffView{}, err
 	}
 	row, err := scanHandoff(tx.QueryRow(ctx, `insert into messaging.handoffs
@@ -164,6 +181,12 @@ func (s *Store) CreateHandoff(ctx context.Context, accountID, conversationID, ac
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return HandoffView{}, err
+	}
+	if customerNoticeMessage != nil {
+		messageID := customerNoticeMessage.ID
+		row.CustomerNoticeMessageID = &messageID
+		row.customerNoticeMessage = customerNoticeMessage
+		row.customerNoticeCreated = customerNoticeCreated
 	}
 	return row, nil
 }

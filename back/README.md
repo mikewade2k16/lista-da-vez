@@ -231,11 +231,11 @@ Observacao sobre entrega de email:
 
 ## Matriz de versoes
 
-- Go do modulo: `1.24.0`
-- toolchain Go: `1.24.3`
+- Go do modulo: `1.26.5`
+- toolchain Go: `1.26.5`
 - PostgreSQL alvo: `16`
 - imagem Docker do banco: `postgres:16-alpine`
-- imagem Docker do backend: `golang:1.24.0-bookworm`
+- imagem Docker do backend: `golang:1.26.5-bookworm`
 
 ## Fluxo oficial com Docker
 

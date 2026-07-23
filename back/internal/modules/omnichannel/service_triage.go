@@ -104,6 +104,20 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 		// Conversa inexistente/fora de escopo: sem agente a que atribuir, sem run.
 		return DispatchResult{Outcome: dispatchNoAgent}, nil
 	}
+	// Grupos WhatsApp nunca sao atendidos pela IA. Este gate e deterministico e precede
+	// provider, prompt, ferramentas e ForceReply.
+	if isWhatsAppGroupExternalID(conv.ExternalID) {
+		return DispatchResult{Outcome: dispatchNoAgent, AIGeneration: conv.AIGeneration}, nil
+	}
+	contactBlocked, err := s.store.IsConversationAIBlocked(ctx, in.AccountID, in.ConversationID)
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	if contactBlocked {
+		runID := s.recordGateRun(ctx, in, gateRun{Status: runBlocked, Error: "contact_ai_blocked"})
+		return DispatchResult{Outcome: dispatchContactBlocked, RunID: runID, AIGeneration: conv.AIGeneration,
+			ReasonCode: HandoffReasonPolicy}, nil
+	}
 
 	// Resolve o agente ativo antes do gate 1 para que o run `blocked` referencie o agente
 	// quando ele existe. O gate 1 (state) MANTEM a precedencia: human_active bloqueia mesmo
@@ -136,7 +150,7 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 	}
 
 	// Gate 4 — provider/modelo/chave ausentes: nao roda; grava provider_error.
-	providerKey, providerKeyErr := s.providerAPIKey(agent, version.Provider)
+	providerKey, providerKeyErr := s.versionAPIKey(ctx, in.AccountID, agent, version)
 	if version.Provider == "" || version.Model == "" || providerKeyErr != nil || providerKey == "" {
 		runID := s.recordGateRun(ctx, in, gateRun{
 			AgentID: &agent.ID, VersionID: &version.ID, Provider: version.Provider,
@@ -202,6 +216,18 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 	}
 	contactContext := map[string]any{}
 	_ = json.Unmarshal(conv.ExtractedFields, &contactContext)
+	var contactIntelligence *ContactIntelligenceView
+	safeContactName := ""
+	if conv.ContactID != nil {
+		loaded, loadErr := s.store.GetContactIntelligence(ctx, in.AccountID, *conv.ContactID)
+		if loadErr != nil {
+			return DispatchResult{}, loadErr
+		}
+		contactIntelligence = &loaded
+		if loaded.PreferredName != nil {
+			safeContactName = *loaded.PreferredName
+		}
+	}
 	var businessContext *AutomationBusinessContext
 	if s.businessContext != nil {
 		clientID, configured, lookupErr := s.store.AutomationClientForInstance(ctx, in.AccountID, deref(conv.InstanceID))
@@ -219,22 +245,23 @@ func (s *AIService) Dispatch(ctx context.Context, in TriageInput) (DispatchResul
 	}
 
 	exec, err := s.runTriage(ctx, triageParams{
-		AccountID:         in.AccountID,
-		ConversationID:    &in.ConversationID,
-		MessageID:         nilIfEmpty(in.MessageID),
-		Agent:             agent,
-		Version:           version,
-		History:           history,
-		ContactName:       deref(conv.ContactName),
-		ContactContext:    contactContext,
-		ContactID:         deref(conv.ContactID),
-		Channel:           conv.Channel,
-		ConversationState: conv.State,
-		MergeToConv:       true,
-		AIGeneration:      conv.AIGeneration,
-		DispatchID:        in.DispatchID,
-		ForceReply:        in.ForceReply,
-		BusinessContext:   businessContext,
+		AccountID:           in.AccountID,
+		ConversationID:      &in.ConversationID,
+		MessageID:           nilIfEmpty(in.MessageID),
+		Agent:               agent,
+		Version:             version,
+		History:             history,
+		ContactName:         safeContactName,
+		ContactContext:      contactContext,
+		ContactIntelligence: contactIntelligence,
+		ContactID:           deref(conv.ContactID),
+		Channel:             conv.Channel,
+		ConversationState:   conv.State,
+		MergeToConv:         true,
+		AIGeneration:        conv.AIGeneration,
+		DispatchID:          in.DispatchID,
+		ForceReply:          in.ForceReply,
+		BusinessContext:     businessContext,
 	})
 	if err != nil {
 		return DispatchResult{}, err
@@ -266,17 +293,18 @@ func confidenceBelowReplyMinimum(forceReply bool, actual, minimum float64) bool 
 
 // triageParams sao os parametros de uma execucao de triagem (inbound OU simulate).
 type triageParams struct {
-	AccountID         string
-	ConversationID    *string // nil no simulate (NUNCA cria conversa)
-	MessageID         *string
-	Agent             agentRow
-	Version           versionRow
-	History           []SimMessage
-	ContactName       string
-	ContactContext    map[string]any
-	ContactID         string
-	Channel           string
-	ConversationState string
+	AccountID           string
+	ConversationID      *string // nil no simulate (NUNCA cria conversa)
+	MessageID           *string
+	Agent               agentRow
+	Version             versionRow
+	History             []SimMessage
+	ContactName         string
+	ContactContext      map[string]any
+	ContactIntelligence *ContactIntelligenceView
+	ContactID           string
+	Channel             string
+	ConversationState   string
 	// MergeToConv=true funde os extracted_fields na conversa (inbound). Falso no simulate.
 	MergeToConv bool
 	// AIGeneration e a lease capturada antes da chamada ao modelo. Zero e valido.
@@ -291,6 +319,7 @@ type triageParams struct {
 // schema_invalid), grava o ai_runs e — se MergeToConv — funde os campos na conversa. Devolve
 // o resultado rico. Erro devolvido = falha de infra (banco); o resto vira Outcome + run.
 func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, error) {
+	p.ContactName, _ = safePreferredPersonalName(p.ContactName)
 	catalog, err := s.store.RoutingCatalog(ctx, p.AccountID)
 	if err != nil {
 		return triageExec{}, err
@@ -304,7 +333,7 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 	maskedInput := maskedTriageInput(fields, len(p.History))
 	empty := json.RawMessage(`{}`)
 
-	apiKey, err := s.providerAPIKey(p.Agent, p.Version.Provider)
+	apiKey, err := s.versionAPIKey(ctx, p.AccountID, p.Agent, p.Version)
 	if err != nil {
 		// Chave adulterada/chave-mestra errada: nao vaza o ciphertext, so a classe do erro.
 		run := s.persistRun(ctx, p, runProviderError, maskedInput, empty, llm.Usage{}, 0, 0, "decrypt falhou")
@@ -315,12 +344,13 @@ func (s *AIService) runTriage(ctx context.Context, p triageParams) (triageExec, 
 	if len(schemaDef) == 0 || string(schemaDef) == "{}" || string(schemaDef) == "null" {
 		schemaDef = defaultOutputSchema()
 	}
+	schemaDef = withContactMemoryOutputSchema(schemaDef)
 	req := llm.Request{
 		Provider:     p.Version.Provider,
 		Model:        p.Version.Model,
 		Temperature:  p.Version.Temperature,
 		SystemPrompt: buildSystemPrompt(parseLayers(p.Version.Layers), catalog, fields, p.Version.SchemaVersion),
-		UserPrompt:   buildUserPromptWithBusinessContext(p.History, p.ContactName, p.ContactContext, p.BusinessContext),
+		UserPrompt:   buildUserPromptWithContactIntelligence(p.History, p.ContactName, p.ContactContext, p.BusinessContext, p.ContactIntelligence),
 		Schema:       &llm.Schema{Name: "omnichannel_triage", Version: 1, Definition: schemaDef},
 		APIKey:       apiKey,
 		AccountID:    p.AccountID,
@@ -427,7 +457,7 @@ func (s *AIService) applyExtracted(ctx context.Context, p triageParams, runID st
 	if !p.MergeToConv || p.ConversationID == nil {
 		return runID, out, true, nil
 	}
-	committed, err := s.store.CommitAITriage(ctx, p.AccountID, *p.ConversationID, p.AIGeneration, out.ExtractedFields)
+	committed, err := s.store.CommitAITriageWithIntelligence(ctx, p.AccountID, *p.ConversationID, p.AIGeneration, runID, out)
 	if err != nil {
 		return runID, out, false, err
 	}

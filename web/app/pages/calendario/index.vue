@@ -9,7 +9,6 @@ import MonthGrid from '~/components/calendar/MonthGrid.vue'
 import WeekView from '~/components/calendar/WeekView.vue'
 import DayDrawer from '~/components/calendar/DayDrawer.vue'
 import CalendarEventForm from '~/components/calendar/CalendarEventForm.vue'
-import CalendarAiPlanModal from '~/components/calendar/CalendarAiPlanModal.vue'
 import CalendarChatPanel from '~/components/calendar/CalendarChatPanel.vue'
 import CalendarConfigDrawer from '~/components/calendar/config/CalendarConfigDrawer.vue'
 import { useCalendarChat } from '~/composables/useCalendarChat'
@@ -26,10 +25,15 @@ import {
   type CalendarEventInput,
   type CalendarView,
 } from '~/utils/calendar'
-import { taskSpansFrom, type CalendarTaskSpan } from '~/utils/calendar-task-spans'
+import {
+  hasTaskSpanInMonth,
+  taskSpansFrom,
+  type CalendarTaskSpan,
+} from '~/utils/calendar-task-spans'
 // Store de tasks (layer): fonte das BARRAS multi-dia (precedente de import cross-layer:
 // useCalendarChat). So carrega o board configurado; sem board = sem barras.
 import { useTasksStore } from '../../../layers/tasks/stores/tasks'
+import { useCoreAccountStore } from '../../../layers/core/stores/account'
 
 definePageMeta({
   layout: 'dashboard',
@@ -44,7 +48,9 @@ definePageMeta({
 
 const store = useCalendarStore()
 const ui = useUiStore()
-// Chat singleton: o gatilho dos controles reabre a MESMA conversa (igual a aba IA).
+const accountStore = useCoreAccountStore()
+const canConfigureCalendar = computed(() => Boolean(accountStore.activeAccount?.isAgency))
+// Chat singleton: permanece disponivel pelos gatilhos dedicados fora da barra compacta.
 const chat = useCalendarChat()
 
 // Coluna esquerda (anotacoes) minimizavel -> vira um sidebar SLIM (mes vertical + setas + clicar
@@ -70,24 +76,30 @@ function toggleTaskSpans(): void {
 }
 const tasksStore = useTasksStore()
 const spansBoardId = computed(() => String(store.config.tasks?.boardId || ''))
-// Carrega as tasks do board configurado quando ha board + barras visiveis (lazy; silencioso).
+// Carrega as tasks do board configurado para decidir se o toggle deve aparecer no mes.
 watch(
-  [spansBoardId, showTaskSpans],
-  async ([boardId, show]) => {
-    if (!boardId || !show) return
+  spansBoardId,
+  async (boardId) => {
+    if (!boardId) return
     await tasksStore.initialize({ allowAutoCreate: false }).catch(() => undefined)
     await tasksStore.ensureBoardTasksLoaded(boardId).catch(() => undefined)
   },
   { immediate: true },
 )
-const taskSpans = computed<CalendarTaskSpan[]>(() => {
-  if (!showTaskSpans.value || !spansBoardId.value) return []
+const availableTaskSpans = computed<CalendarTaskSpan[]>(() => {
+  if (!spansBoardId.value) return []
   const boardTasks = tasksStore.tasks.filter((t) => t.projectId === spansBoardId.value)
   const spans = taskSpansFrom(boardTasks)
   // Respeita o filtro de cliente da tela (mesma regra dos eventos).
   if (!effectiveClientId.value) return spans
   return spans.filter((s) => !s.clientId || s.clientId === effectiveClientId.value)
 })
+const hasTaskSpansInFocusedMonth = computed(() => {
+  return hasTaskSpanInMonth(availableTaskSpans.value, focusMonthKey.value)
+})
+const taskSpans = computed<CalendarTaskSpan[]>(() =>
+  showTaskSpans.value ? availableTaskSpans.value : [],
+)
 // Clique na barra abre o CARD da task no board (deep-link da WAVE 5, item 4).
 function onSelectSpan(span: CalendarTaskSpan): void {
   void navigateTo({ path: '/tasks', query: { board: spansBoardId.value, task: span.id } })
@@ -156,9 +168,6 @@ const formOpen = ref(false)
 const editingEvent = ref<CalendarEvent | null>(null)
 const formDate = ref('')
 
-// Modal "IA do mes" (SPEC-F5): plano de conteudo gerado por IA para o mes em foco.
-const aiModalOpen = ref(false)
-
 // Drawer de configuracao (SPEC-F6): abre SEM sair do calendario (estado local).
 // Deep-link ?config=<aba> abre direto na aba (o drawer le/escreve a query).
 const configOpen = ref(false)
@@ -169,9 +178,10 @@ const route = useRoute()
 // -> ?config=ia). Nunca FECHA por aqui (fechar e acao do usuario no drawer, que
 // tira o ?config da URL); a aba certa e resolvida pelo proprio drawer via query.
 watch(
-  () => route.query.config,
-  (value) => {
-    if (typeof value === 'string' && value) configOpen.value = true
+  [() => route.query.config, canConfigureCalendar],
+  ([value, canConfigure]) => {
+    if (typeof value === 'string' && value && canConfigure) configOpen.value = true
+    if (!canConfigure) configOpen.value = false
   },
   { immediate: true },
 )
@@ -183,7 +193,6 @@ const {
   presenceParticipants,
   notesPresenceLabel,
   eventPresenceLabel,
-  lastPlanEvent,
   onNotesFocus,
   onNotesBlur,
   handleEventConflict,
@@ -335,17 +344,8 @@ function onSearchOpen(event: CalendarEvent): void {
 
 // Engrenagem: abre o drawer de configuracao SEM sair do calendario. SPEC-F6.
 function onConfig(): void {
+  if (!canConfigureCalendar.value) return
   configOpen.value = true
-}
-
-// Botao sparkles: abre o modal de plano de IA do mes em foco. SPEC-F5.
-function onAi(): void {
-  aiModalOpen.value = true
-}
-
-// Botao chat: abre/reabre a janela do assistente (SPEC-F2; some com o FAB de canto).
-function onChat(): void {
-  chat.openPanel()
 }
 
 async function onSubmitForm(input: CalendarEventInput): Promise<void> {
@@ -501,16 +501,16 @@ onBeforeUnmount(() => {
             :clients="clients"
             :selected-client-id="selectedClientId"
             :can-select-client="canSelectClient"
+            :can-configure="canConfigureCalendar"
             :view="view"
             :participants="presenceParticipants"
             :show-spans="showTaskSpans"
+            :has-spans="hasTaskSpansInFocusedMonth"
             @today="onToday"
             @update:client="store.setClientFilter"
             @update:view="onSetView"
             @new-item="onNew"
             @config="onConfig"
-            @ai="onAi"
-            @chat="onChat"
             @minimize="toggleLeftMin"
             @toggle-spans="toggleTaskSpans"
           >
@@ -597,19 +597,10 @@ onBeforeUnmount(() => {
       @remove="onRemoveEvent"
     />
 
-    <CalendarAiPlanModal
-      :open="aiModalOpen"
-      :month="focusMonthKey"
-      :plan-event="lastPlanEvent"
-      @close="aiModalOpen = false"
-    />
-
     <CalendarConfigDrawer v-model:open="configOpen" />
 
-    <!-- Janela de chat + voz (SPEC-F2): sem FAB de canto; abre centralizada sobre a
-         area do calendario (Teleport body), com minimizar/fechar e posicao/tamanho
-         em config.chat. Estado singleton (useCalendarChat): o botao chat dos controles
-         e o "Abrir chat" da aba IA mexem no MESMO chat. -->
+    <!-- Janela de chat + voz (SPEC-F2): aberta pelos gatilhos dedicados fora da barra
+         compacta do calendario. -->
     <CalendarChatPanel />
   </div>
 </template>

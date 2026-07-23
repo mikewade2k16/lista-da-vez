@@ -23,25 +23,28 @@ const (
 )
 
 type HandoffView struct {
-	ID                string          `json:"id"`
-	ConversationID    string          `json:"conversationId"`
-	AIRunID           *string         `json:"aiRunId"`
-	RoutingDecisionID *string         `json:"routingDecisionId"`
-	PolicyID          *string         `json:"policyId"`
-	PolicySnapshot    json.RawMessage `json:"policySnapshot"`
-	ReasonCode        string          `json:"reasonCode"`
-	Summary           string          `json:"summary"`
-	CollectedFields   json.RawMessage `json:"collectedFields"`
-	SourceState       string          `json:"sourceState"`
-	TargetQueueID     *string         `json:"targetQueueId"`
-	Status            string          `json:"status"`
-	AcceptedByUserID  *string         `json:"acceptedByUserId"`
-	RequestedAt       time.Time       `json:"requestedAt"`
-	QueuedAt          *time.Time      `json:"queuedAt"`
-	AcceptedAt        *time.Time      `json:"acceptedAt"`
-	ClosedAt          *time.Time      `json:"closedAt"`
-	CreatedAt         time.Time       `json:"createdAt"`
-	UpdatedAt         time.Time       `json:"updatedAt"`
+	ID                      string          `json:"id"`
+	ConversationID          string          `json:"conversationId"`
+	AIRunID                 *string         `json:"aiRunId"`
+	RoutingDecisionID       *string         `json:"routingDecisionId"`
+	PolicyID                *string         `json:"policyId"`
+	PolicySnapshot          json.RawMessage `json:"policySnapshot"`
+	ReasonCode              string          `json:"reasonCode"`
+	Summary                 string          `json:"summary"`
+	CollectedFields         json.RawMessage `json:"collectedFields"`
+	SourceState             string          `json:"sourceState"`
+	TargetQueueID           *string         `json:"targetQueueId"`
+	Status                  string          `json:"status"`
+	AcceptedByUserID        *string         `json:"acceptedByUserId"`
+	RequestedAt             time.Time       `json:"requestedAt"`
+	QueuedAt                *time.Time      `json:"queuedAt"`
+	AcceptedAt              *time.Time      `json:"acceptedAt"`
+	ClosedAt                *time.Time      `json:"closedAt"`
+	CreatedAt               time.Time       `json:"createdAt"`
+	UpdatedAt               time.Time       `json:"updatedAt"`
+	CustomerNoticeMessageID *string         `json:"customerNoticeMessageId,omitempty"`
+	customerNoticeMessage   *MessageView
+	customerNoticeCreated   bool
 }
 
 // HandoffPolicyView é a configuração determinística que pode selecionar a fila
@@ -81,11 +84,15 @@ type HandoffPolicyPatch struct {
 }
 
 type HandoffRequest struct {
-	ReasonCode      string          `json:"reasonCode"`
-	Summary         string          `json:"summary"`
-	CollectedFields json.RawMessage `json:"collectedFields"`
-	TargetQueueID   *string         `json:"targetQueueId"`
-	IdempotencyKey  string          `json:"idempotencyKey"`
+	ReasonCode           string          `json:"reasonCode"`
+	Summary              string          `json:"summary"`
+	CollectedFields      json.RawMessage `json:"collectedFields"`
+	TargetQueueID        *string         `json:"targetQueueId"`
+	IdempotencyKey       string          `json:"idempotencyKey"`
+	CustomerNotice       string          `json:"-"`
+	AIRunID              string          `json:"-"`
+	CapturedGeneration   int64           `json:"-"`
+	NoticeIdempotencyKey string          `json:"-"`
 }
 
 type TakeConversationRequest struct {

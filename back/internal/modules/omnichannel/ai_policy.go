@@ -81,6 +81,7 @@ type BrainResultV2 struct {
 	Reply            *BrainReplyV2             `json:"reply"`
 	Classification   BrainClassificationV2     `json:"classification"`
 	ExtractedFields  map[string]any            `json:"extractedFields"`
+	ContactMemory    *ContactMemorySuggestion  `json:"contactMemory,omitempty"`
 	SuggestedRouting *BrainRoutingSuggestionV2 `json:"suggestedRouting"`
 	Handoff          BrainHandoffV2            `json:"handoff"`
 	Closure          *BrainClosureV3           `json:"closure,omitempty"`
@@ -88,8 +89,8 @@ type BrainResultV2 struct {
 	Trace            BrainTraceV2              `json:"trace"`
 }
 
-// BrainPolicyConfig vem da versão publicada do agente. Zero não é usado como default implícito:
-// o service deve materializar DefaultBrainPolicyConfig ou os valores persistidos no painel.
+// BrainPolicyConfig vem da versão publicada do agente. MaxAITurns=0 desliga apenas o teto
+// por conversa; confiança, falhas, quotas e os demais gates continuam ativos.
 type BrainPolicyConfig struct {
 	MinConfidence  float64
 	MaxAITurns     int
@@ -98,7 +99,7 @@ type BrainPolicyConfig struct {
 }
 
 func DefaultBrainPolicyConfig() BrainPolicyConfig {
-	return BrainPolicyConfig{MinConfidence: 0.65, MaxAITurns: 6, HandoffOnError: true, HandoffOnLimit: true}
+	return BrainPolicyConfig{MinConfidence: 0.65, MaxAITurns: 0, HandoffOnError: true, HandoffOnLimit: true}
 }
 
 type BrainPolicyOutcome struct {
@@ -163,6 +164,16 @@ func validateBrainResultV2(out BrainResultV2) error {
 	}
 	if len(out.ExtractedFields) > 100 {
 		return invalid("extractedFields")
+	}
+	if out.ContactMemory != nil {
+		normalized := normalizeContactMemory(*out.ContactMemory)
+		if len(normalized.Facts) != len(out.ContactMemory.Facts) ||
+			len(normalized.Preferences) != len(out.ContactMemory.Preferences) {
+			return invalid("contactMemory")
+		}
+		if out.ContactMemory.Summary != nil && len([]rune(*out.ContactMemory.Summary)) > 1000 {
+			return invalid("contactMemory.summary")
+		}
 	}
 	if out.Reply != nil {
 		if out.Reply.Text != nil && len([]rune(*out.Reply.Text)) > 4000 {
@@ -236,7 +247,7 @@ func ApplyBrainPolicy(result BrainResultV2, cfg BrainPolicyConfig, aiTurns int) 
 	if err := validateBrainResultV2(result); err != nil {
 		return BrainPolicyOutcome{}, err
 	}
-	if cfg.MinConfidence < 0 || cfg.MinConfidence > 1 || cfg.MaxAITurns <= 0 || aiTurns < 0 {
+	if cfg.MinConfidence < 0 || cfg.MinConfidence > 1 || cfg.MaxAITurns < 0 || aiTurns < 0 {
 		return BrainPolicyOutcome{}, fmt.Errorf("%w: policy config", ErrBrainSchemaInvalid)
 	}
 	out := BrainPolicyOutcome{
@@ -271,7 +282,7 @@ func ApplyBrainPolicy(result BrainResultV2, cfg BrainPolicyConfig, aiTurns int) 
 		if result.Classification.Confidence < cfg.MinConfidence {
 			return limitOutcome(out, cfg.HandoffOnLimit, "low_confidence"), nil
 		}
-		if aiTurns >= cfg.MaxAITurns {
+		if cfg.MaxAITurns > 0 && aiTurns >= cfg.MaxAITurns {
 			return limitOutcome(out, cfg.HandoffOnLimit, "max_ai_turns"), nil
 		}
 		if result.Reply == nil || result.Reply.Text == nil || strings.TrimSpace(*result.Reply.Text) == "" {

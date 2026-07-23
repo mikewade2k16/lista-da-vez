@@ -50,6 +50,26 @@ func RegisterRoutes(mux *http.ServeMux, service *Service, middleware *auth.Middl
 		httpapi.WriteJSON(w, http.StatusOK, response)
 	}), allowedRoles...))
 
+	mux.Handle("GET /v1/bi/perola/datasets", middleware.RequireRoles(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		httpapi.WriteJSON(w, http.StatusOK, service.PerolaDatasetCatalog())
+	}), allowedRoles...))
+
+	mux.Handle("POST /v1/bi/perola/datasets/{dataset}/query", middleware.RequireRoles(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input PerolaDatasetQueryInput
+		if err := httpapi.ReadJSON(r, &input); err != nil {
+			httpapi.WriteError(w, r, http.StatusBadRequest, "invalid_json", "Payload invalido.")
+			return
+		}
+
+		response, err := service.QueryPerolaDataset(r.Context(), r.PathValue("dataset"), input)
+		if err != nil {
+			writeServiceError(w, r, err)
+			return
+		}
+
+		httpapi.WriteJSON(w, http.StatusOK, response)
+	}), allowedRoles...))
+
 	mux.Handle("GET /v1/bi/perola/overview", middleware.RequireRoles(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response, err := service.PerolaOverview(r.Context(), PerolaOverviewInput{
 			CompanyKey:       r.Header.Get("X-Perola-Company-Key"),
@@ -74,6 +94,10 @@ func writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 		httpapi.WriteError(w, r, http.StatusBadRequest, "validation_error", "Verifique os dados enviados para a Perola BI.")
 	case errors.Is(err, ErrUnsupportedEndpoint):
 		httpapi.WriteError(w, r, http.StatusBadRequest, "unsupported_endpoint", "Endpoint da Perola BI nao permitido.")
+	case errors.Is(err, ErrUnsupportedDataset):
+		httpapi.WriteError(w, r, http.StatusNotFound, "dataset_not_found", "Dataset da Perola BI nao encontrado.")
+	case errors.Is(err, ErrFilterRequired):
+		httpapi.WriteError(w, r, http.StatusBadRequest, "filter_required", "A consulta exige um filtro seletivo.")
 	case errors.Is(err, ErrUpstream):
 		httpapi.WriteError(w, r, http.StatusBadGateway, "upstream_error", "Nao foi possivel conectar na Perola BI.")
 	default:

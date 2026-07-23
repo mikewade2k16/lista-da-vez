@@ -93,11 +93,22 @@ function submit(): void {
         </label>
       </div>
 
-      <label class="profile-toggle profile-toggle--main">
+      <label
+        class="profile-toggle profile-toggle--main"
+        :class="draft.enabled ? 'profile-toggle--enabled' : 'profile-toggle--disabled'"
+      >
         <input v-model="draft.enabled" type="checkbox" />
         <span>
-          <strong>Ativar primeiro atendimento por IA</strong>
-          <small>O atendimento humano continua no celular ou WhatsApp Web.</small>
+          <strong>
+            {{ draft.enabled ? 'Automação de IA ligada' : 'Automação de IA desligada' }}
+          </strong>
+          <small v-if="draft.enabled">
+            A IA pode responder somente conversas individuais deste número.
+          </small>
+          <small v-else>
+            Nenhuma resposta de IA será enviada. Trabalhos pendentes também serão cancelados ao
+            salvar.
+          </small>
         </span>
       </label>
 
@@ -270,6 +281,16 @@ function submit(): void {
   border: 1px solid rgb(var(--primary) / 0.32);
   border-radius: var(--radius-card);
   background: rgb(var(--primary) / 0.08);
+}
+
+.profile-toggle--enabled {
+  border-color: rgb(var(--success) / 0.4);
+  background: linear-gradient(135deg, rgb(var(--success) / 0.12), rgb(var(--surface) / 0.56));
+}
+
+.profile-toggle--disabled {
+  border-color: rgb(var(--error) / 0.42);
+  background: linear-gradient(135deg, rgb(var(--error) / 0.12), rgb(var(--surface) / 0.56));
 }
 
 .profile-toggle span {

@@ -56,8 +56,17 @@ const lastMessageCol = `,
 		'createdAt', m.created_at)
 	 from messaging.messages m
 	 where m.conversation_id = c.id and m.account_id = c.account_id
+	   and m.created_at > coalesce((select suppression.history_cleared_at
+	       from messaging.contact_suppressions suppression
+	       where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id),
+	       '-infinity'::timestamptz)
 	 order by m.created_at desc, m.id desc
 	 limit 1)`
+
+const visibleConversationFilter = ` and not exists (
+	select 1 from messaging.contact_suppressions suppression
+	where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
+	  and suppression.is_hidden=true)`
 
 // conversationRow e a linha crua da conversa (colunas do banco, antes da projecao).
 type conversationRow struct {
@@ -137,7 +146,7 @@ func (s *Store) ListConversations(ctx context.Context, accountID string, f Conve
 		from messaging.conversations c
 		left join messaging.whatsapp_instances i
 			on i.id = c.instance_id and i.account_id = c.account_id
-		where c.account_id = $1::uuid`
+		where c.account_id = $1::uuid` + visibleConversationFilter
 	args := []any{accountID}
 
 	if strings.TrimSpace(f.InstanceID) != "" {
@@ -175,6 +184,10 @@ func (s *Store) ListConversations(ctx context.Context, accountID string, f Conve
 			or lower(c.external_id) like $` + position + ` escape '\'
 			or exists (select 1 from messaging.messages sm
 				where sm.account_id = c.account_id and sm.conversation_id = c.id
+				  and sm.created_at > coalesce((select suppression.history_cleared_at
+				      from messaging.contact_suppressions suppression
+				      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id),
+				      '-infinity'::timestamptz)
 				  and lower(sm.content) like $` + position + ` escape '\'))`
 	}
 	if f.BeforeCursor != "" {
@@ -203,6 +216,15 @@ func (s *Store) ListConversations(ctx context.Context, accountID string, f Conve
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) UpdateConversationGroupName(ctx context.Context, accountID, instanceName, externalID, name string) error {
+	_, err := s.pool.Exec(ctx, `update messaging.conversations
+		set contact_name=$4, updated_at=now()
+		where account_id=$1::uuid and instance_scope_key=$2 and external_id=$3
+		  and channel='WHATSAPP' and lower(trim(external_id)) like '%@g.us'`,
+		accountID, strings.TrimSpace(instanceName), strings.TrimSpace(externalID), strings.TrimSpace(name))
+	return err
 }
 
 // GetConversation devolve uma conversa da account. Conversa de OUTRA account cai no
@@ -292,6 +314,16 @@ const hiddenFilter = ` and not exists (
 	select 1 from messaging.hidden_messages h
 	where h.message_id = m.id and h.user_id = $3::uuid)`
 
+const clearedHistoryFilter = ` and m.created_at > coalesce((
+	select suppression.history_cleared_at
+	from messaging.conversations privacy_conversation
+	join messaging.contact_suppressions suppression
+	  on suppression.account_id=privacy_conversation.account_id
+	 and suppression.contact_id=privacy_conversation.contact_id
+	where privacy_conversation.account_id=m.account_id
+	  and privacy_conversation.id=m.conversation_id
+),'-infinity'::timestamptz)`
+
 type messageCursor struct {
 	CreatedAt time.Time
 	ID        string
@@ -344,7 +376,7 @@ func (s *Store) resolveBeforeMessage(ctx context.Context, accountID, conversatio
 // INVERTE o array. Ver routes-message-read-list.ts:97-170.
 func (s *Store) ListMessages(ctx context.Context, accountID, userID, conversationID string, f MessagePageFilter) ([]MessageView, error) {
 	query := `select ` + messageCols + ` from messaging.messages m
-		where m.account_id = $1::uuid and m.conversation_id = $2::uuid` + hiddenFilter
+		where m.account_id = $1::uuid and m.conversation_id = $2::uuid` + hiddenFilter + clearedHistoryFilter
 	args := []any{accountID, conversationID, userID}
 
 	var before *messageCursor
@@ -404,7 +436,7 @@ func (s *Store) HasOlderMessage(ctx context.Context, accountID, userID, conversa
 		where m.account_id = $1::uuid and m.conversation_id = $2::uuid
 		  and (m.created_at, m.id) < ($4, $5::uuid)
 		  and not exists (select 1 from messaging.hidden_messages h
-			where h.message_id = m.id and h.user_id = $3::uuid))`,
+			where h.message_id = m.id and h.user_id = $3::uuid)`+clearedHistoryFilter+`)`,
 		accountID, conversationID, userID, oldest, oldestID).Scan(&exists)
 	return exists, err
 }
@@ -413,7 +445,7 @@ func (s *Store) HasOlderMessage(ctx context.Context, accountID, userID, conversa
 // outra conta (ou de outra conversa) volta pgx.ErrNoRows -> 404.
 func (s *Store) GetMessage(ctx context.Context, accountID, userID, conversationID, messageID string) (MessageView, error) {
 	query := `select ` + messageCols + ` from messaging.messages m
-		where m.account_id = $1::uuid and m.conversation_id = $2::uuid` + hiddenFilter +
+		where m.account_id = $1::uuid and m.conversation_id = $2::uuid` + hiddenFilter + clearedHistoryFilter +
 		` and m.id = $4::uuid`
 	return scanMessage(s.pool.QueryRow(ctx, query, accountID, conversationID, userID, messageID))
 }

@@ -28,6 +28,10 @@ func normalizeMediaConfig(raw json.RawMessage) (json.RawMessage, error) {
 			if err := validateMediaSection(value, "image"); err != nil {
 				return nil, err
 			}
+		case "video":
+			if err := validateMediaSection(value, "video"); err != nil {
+				return nil, err
+			}
 		case "document":
 			if err := validateMediaSection(value, "document"); err != nil {
 				return nil, err
@@ -80,12 +84,21 @@ func validateMediaSection(raw json.RawMessage, kind string) error {
 			} else {
 				model = strings.TrimSpace(text)
 			}
+		case "credentialId":
+			var credentialID string
+			if json.Unmarshal(value, &credentialID) != nil || !omnichannelUUIDPattern.MatchString(strings.TrimSpace(credentialID)) {
+				return ErrValidation
+			}
 		case "maxSeconds":
 			if kind != "audio" || !validMediaInt(value, 1, 600) {
 				return ErrValidation
 			}
 		case "maxBytes":
-			if kind != "image" || !validMediaInt(value, 1, 60<<20) {
+			maxBytes := 60 << 20
+			if kind == "video" {
+				maxBytes = 100 << 20
+			}
+			if (kind != "image" && kind != "video" && kind != "document") || !validMediaInt(value, 1, maxBytes) {
 				return ErrValidation
 			}
 		case "allowedMime":
@@ -127,10 +140,52 @@ func validMediaMimeList(raw json.RawMessage) bool {
 
 func forbiddenMediaConfigKey(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "credentialid" {
+		return false
+	}
 	for _, marker := range []string{"key", "token", "secret", "password", "credential"} {
 		if strings.Contains(key, marker) {
 			return true
 		}
 	}
 	return false
+}
+
+type mediaCredentialBinding struct {
+	Role         string
+	Provider     string
+	CredentialID string
+}
+
+func mediaCredentialBindings(raw json.RawMessage) ([]mediaCredentialBinding, error) {
+	normalized, err := normalizeMediaConfig(raw)
+	if err != nil {
+		return nil, err
+	}
+	var root map[string]json.RawMessage
+	if json.Unmarshal(normalized, &root) != nil {
+		return nil, ErrValidation
+	}
+	out := make([]mediaCredentialBinding, 0, 4)
+	for _, role := range []string{"audio", "image", "video", "document"} {
+		sectionRaw, ok := root[role]
+		if !ok {
+			continue
+		}
+		var section struct {
+			Enabled      bool   `json:"enabled"`
+			Provider     string `json:"provider"`
+			CredentialID string `json:"credentialId"`
+		}
+		if json.Unmarshal(sectionRaw, &section) != nil {
+			return nil, ErrValidation
+		}
+		if section.Enabled {
+			if !omnichannelUUIDPattern.MatchString(strings.TrimSpace(section.CredentialID)) {
+				return nil, ErrValidation
+			}
+			out = append(out, mediaCredentialBinding{Role: role, Provider: strings.ToLower(strings.TrimSpace(section.Provider)), CredentialID: strings.TrimSpace(section.CredentialID)})
+		}
+	}
+	return out, nil
 }

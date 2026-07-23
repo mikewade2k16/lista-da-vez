@@ -39,7 +39,7 @@ func TestNormalizeVersionInputAppliesRuntimeDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if in.DebounceMS != 2500 || in.MaxContextMessages != 30 || in.MaxAITurns != 6 ||
+	if in.DebounceMS != 2500 || in.MaxContextMessages != 30 || in.MaxAITurns != 0 ||
 		in.MinConfidence == nil || *in.MinConfidence != 0.65 || in.WorkflowContract != "brain.v2" {
 		t.Fatalf("unexpected defaults: %+v", in)
 	}
@@ -57,6 +57,15 @@ func TestNormalizeVersionInputPreservesZeroConfidence(t *testing.T) {
 	}
 	if in.MinConfidence == nil || *in.MinConfidence != 0 {
 		t.Fatalf("min confidence=%v", in.MinConfidence)
+	}
+}
+
+func TestAITurnLimitZeroMeansUnlimited(t *testing.T) {
+	if aiTurnLimitReached(false, 0, 10_000) {
+		t.Fatal("zero max turns must keep automatic replies unlimited")
+	}
+	if !aiTurnLimitReached(false, 3, 3) {
+		t.Fatal("positive max turns must still enforce the configured limit")
 	}
 }
 

@@ -62,7 +62,7 @@ async function create(): Promise<void> {
   try {
     await createAgent(api, { name, enabled: false })
     newName.value = ''
-    ui.success('Agente criado. Configure chave, modelo e prompt antes de ativar.')
+    ui.success('Agente criado. Selecione as credenciais, os modelos e o prompt antes de ativar.')
     await load()
     emit('changed')
   } catch (error) {
@@ -78,7 +78,8 @@ onMounted(() => void load())
 <template>
   <div class="cfg-tab">
     <p class="cfg-tab__lead">
-      Cada agente mantém seu próprio prompt, modelo, escopo de clientes e chave de API.
+      Cada agente mantém seu próprio prompt, modelos e escopo. As chaves reutilizáveis ficam na aba
+      “Chaves de IA”.
     </p>
     <p v-if="loading" class="cfg-tab__loading">Carregando agentes…</p>
 

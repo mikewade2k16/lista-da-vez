@@ -93,6 +93,19 @@ type TemplateProvider interface {
 	ListTemplates(ctx context.Context, cred Credentials) ([]Template, error)
 }
 
+// GroupMetadataProvider e uma capacidade opcional para canais que conseguem consultar o
+// nome oficial de um grupo. O dominio nunca deve usar pushName do participante como nome
+// do grupo; quando a capacidade nao existir, a UI mostra explicitamente que o nome nao foi
+// informado pelo provedor.
+type GroupMetadataProvider interface {
+	FetchGroupMetadata(ctx context.Context, cred Credentials, instanceName, groupJID string) (GroupMetadata, error)
+}
+
+type GroupMetadata struct {
+	JID  string
+	Name string
+}
+
 type Template struct {
 	ExternalID string
 	Name       string

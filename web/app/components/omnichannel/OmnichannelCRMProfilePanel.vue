@@ -50,6 +50,17 @@ const canAddNote = computed(() => noteDraft.value.trim().length > 0 && !props.sa
 const canMerge = computed(
   () => Boolean(mergeTargetId.value && mergeReason.value.trim()) && !props.saving,
 )
+const learnedFacts = computed(() =>
+  Object.entries(props.profile?.intelligence.facts ?? {}).slice(0, 8),
+)
+const learnedPreferences = computed(() =>
+  Object.entries(props.profile?.intelligence.preferences ?? {}).slice(0, 8),
+)
+
+function intelligenceValue(value: unknown) {
+  if (typeof value === 'boolean') return value ? 'Sim' : 'Não'
+  return String(value ?? '—')
+}
 
 function statusLabel(value: string) {
   return statusOptions.find((option) => option.value === value)?.label ?? value
@@ -181,6 +192,49 @@ function merge() {
           <dd>{{ profile.contact.ownerUserId || 'Não atribuído' }}</dd>
         </div>
       </dl>
+
+      <section class="crm-profile-panel__section crm-profile-panel__intelligence">
+        <div class="crm-profile-panel__section-heading">
+          <h3>Inteligência do contato</h3>
+          <UBadge color="neutral" variant="soft">
+            {{ profile.intelligence.interactionCount }} interações
+          </UBadge>
+        </div>
+        <p class="crm-profile-panel__muted">
+          Memória estruturada das conversas, usada pela IA nos próximos atendimentos.
+        </p>
+        <dl class="crm-profile-panel__facts">
+          <div>
+            <dt>Nome seguro para saudação</dt>
+            <dd>{{ profile.intelligence.preferredName || 'Usar saudação sem nome' }}</dd>
+          </div>
+          <div>
+            <dt>Última intenção</dt>
+            <dd>{{ profile.intelligence.lastIntent || '—' }}</dd>
+          </div>
+          <div>
+            <dt>Respostas da IA / apoios</dt>
+            <dd>
+              {{ profile.intelligence.aiReplyCount }} / {{ profile.intelligence.handoffCount }}
+            </dd>
+          </div>
+        </dl>
+        <p v-if="profile.intelligence.summary" class="crm-profile-panel__memory-summary">
+          {{ profile.intelligence.summary }}
+        </p>
+        <div v-if="learnedFacts.length" class="crm-profile-panel__memory-grid">
+          <span v-for="[key, value] in learnedFacts" :key="`fact-${key}`">
+            <small>{{ key }}</small>
+            {{ intelligenceValue(value) }}
+          </span>
+        </div>
+        <div v-if="learnedPreferences.length" class="crm-profile-panel__memory-grid">
+          <span v-for="[key, value] in learnedPreferences" :key="`preference-${key}`">
+            <small>Preferência · {{ key }}</small>
+            {{ intelligenceValue(value) }}
+          </span>
+        </div>
+      </section>
 
       <section class="crm-profile-panel__section">
         <h3>Identidades</h3>
@@ -357,6 +411,37 @@ function merge() {
 }
 .crm-profile-panel__note-button {
   justify-self: start;
+}
+.crm-profile-panel__intelligence {
+  padding: 0.75rem;
+  border: 1px solid rgb(99 102 241 / 22%);
+  border-radius: 0.75rem;
+  background: rgb(99 102 241 / 7%);
+}
+.crm-profile-panel__memory-summary {
+  margin: 0;
+  color: rgb(203 213 225);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.crm-profile-panel__memory-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+.crm-profile-panel__memory-grid span {
+  min-width: 0;
+  padding: 0.5rem;
+  border-radius: 0.55rem;
+  background: rgb(15 23 42 / 65%);
+  color: rgb(226 232 240);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.crm-profile-panel__memory-grid small {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: rgb(148 163 184);
 }
 .crm-profile-panel__empty {
   display: grid;

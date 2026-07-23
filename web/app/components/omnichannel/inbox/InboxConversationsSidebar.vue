@@ -4,7 +4,6 @@ import {
   UBadge,
   UButton,
   UDashboardSidebar,
-  UDashboardSidebarCollapse,
   UFormField,
   UInput,
   USelect
@@ -16,13 +15,15 @@ import type { CRMContact } from "~/composables/omnichannel/useOmnichannelCRM";
 import { resolveAvatarSource } from "~/composables/omnichannel/useAvatarProxy";
 import type {
   WhatsAppContactImportAction,
-  WhatsAppContactImportResponse
+  WhatsAppContactImportResponse,
+  InboxSidebarView
 } from "~/composables/omnichannel/useOmnichannelInboxShared";
+import type { HiddenOmnichannelContact } from "~/domain/omnichannel/privacy-api";
 
 const props = defineProps<{
   collapsed: boolean;
   showFilters: boolean;
-  sidebarView: "conversations" | "contacts";
+  sidebarView: InboxSidebarView;
   loadingConversations: boolean;
   loadingMoreConversations: boolean;
   loadingContacts: boolean;
@@ -60,12 +61,17 @@ const props = defineProps<{
   loadingMoreCRMContacts?: boolean;
   hasMoreCRMContacts?: boolean;
   crmError?: string;
+  canManagePrivacy: boolean;
+  hiddenContacts: HiddenOmnichannelContact[];
+  loadingHiddenContacts: boolean;
+  hiddenContactsError: string;
+  restoringHiddenContactIds: string[];
 }>();
 
 const emit = defineEmits<{
   (event: "update:collapsed", value: boolean): void;
   (event: "update:showFilters", value: boolean): void;
-  (event: "update:sidebarView", value: "conversations" | "contacts"): void;
+  (event: "update:sidebarView", value: InboxSidebarView): void;
   (event: "update:search", value: string): void;
   (event: "update:channel", value: string): void;
   (event: "update:status", value: string): void;
@@ -82,7 +88,9 @@ const emit = defineEmits<{
     | "previewContactImport"
     | "applyContactImport"
     | "clearContactImport"
+    | "refreshHiddenContacts"
   ): void;
+  (event: "restoreHiddenContact", value: HiddenOmnichannelContact): void;
 }>();
 
 const collapsedModel = computed({
@@ -97,7 +105,7 @@ const showFiltersModel = computed({
 
 const sidebarViewModel = computed({
   get: () => props.sidebarView,
-  set: (value: "conversations" | "contacts") => emit("update:sidebarView", value)
+  set: (value: InboxSidebarView) => emit("update:sidebarView", value)
 });
 
 const searchModel = computed({
@@ -129,12 +137,32 @@ const unreadSet = computed(() => new Set(props.unreadConversationIds));
 const mentionSet = computed(() => new Set(props.mentionConversationIds));
 const mentionCountMap = computed(() => props.mentionConversationCounts ?? {});
 const isContactsView = computed(() => sidebarViewModel.value === "contacts");
+const isHiddenView = computed(() => sidebarViewModel.value === "hidden");
+const isConversationsView = computed(() => sidebarViewModel.value === "conversations");
 const hasCRMContacts = computed(() => Array.isArray(props.crmContacts));
+const activeFilterCount = computed(() =>
+  [props.channel, props.status, props.instanceId].filter((value) => value && value !== "all").length
+);
 const MEDIA_PLACEHOLDER_VALUES = new Set(["[imagem]", "[audio]", "[video]", "[documento]", "."]);
 const newContactName = ref("");
 const newContactPhone = ref("");
 const newContactInternational = ref(false);
 const newContactCountryCode = ref("");
+const conversationAudience = ref<"people" | "groups">("people");
+
+const visibleConversations = computed(() =>
+  props.conversations.filter((conversationEntry) =>
+    conversationAudience.value === "groups"
+      ? isGroupConversation(conversationEntry)
+      : !isGroupConversation(conversationEntry)
+  )
+);
+const peopleConversationCount = computed(
+  () => props.conversations.filter((conversationEntry) => !isGroupConversation(conversationEntry)).length
+);
+const groupConversationCount = computed(
+  () => props.conversations.filter((conversationEntry) => isGroupConversation(conversationEntry)).length
+);
 
 function normalizeNameForComparison(value: string | null | undefined) {
   return (
@@ -179,7 +207,12 @@ function isLikelyOperatorName(value: string | null | undefined) {
 }
 
 function isGroupConversation(conversationEntry: Conversation) {
-  return conversationEntry.externalId.endsWith("@g.us");
+  return conversationEntry.externalId.trim().toLowerCase().endsWith("@g.us");
+}
+
+function formatHiddenDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Agora" : date.toLocaleString("pt-BR");
 }
 
 function extractExternalPhone(conversationEntry: Conversation) {
@@ -210,27 +243,13 @@ function sanitizeConversationDisplayName(
   return fallbackLabel;
 }
 
-function buildFallbackGroupName(conversationEntry: Conversation) {
-  const digits = conversationEntry.externalId.replace(/\D/g, "");
-  if (!digits) {
-    return "Grupo";
-  }
-
-  return `Grupo ${digits.slice(-4)}`;
-}
-
 function getConversationName(conversationEntry: Conversation) {
   const contactName = conversationEntry.contactName?.trim() ?? "";
   const fallbackPhone = extractExternalPhone(conversationEntry);
   if (isGroupConversation(conversationEntry)) {
-    if (contactName && !isWeakDisplayName(contactName)) {
-      return sanitizeConversationDisplayName(contactName, {
-        fallbackPhone,
-        fallbackLabel: "Grupo"
-      });
-    }
-
-    return buildFallbackGroupName(conversationEntry);
+    // O backend persiste apenas o nome confirmado pelo provedor. Nunca derive um
+    // rótulo a partir do JID: isso mascara a ausência do nome real e polui a lista.
+    return contactName && !isWeakDisplayName(contactName) ? contactName : "Grupo sem nome";
   }
 
   if (contactName && !isLikelyOperatorName(contactName)) {
@@ -334,18 +353,6 @@ function getStatusLabel(statusValue: Conversation["status"]) {
   }
 
   return "Encerrado";
-}
-
-function getStatusColor(statusValue: Conversation["status"]) {
-  if (statusValue === "OPEN") {
-    return "success";
-  }
-
-  if (statusValue === "PENDING") {
-    return "warning";
-  }
-
-  return "neutral";
 }
 
 function isConversationUnread(conversationId: string) {
@@ -492,13 +499,6 @@ function getAIStatusLabel(statusValue: Conversation["aiStatus"]) {
   }
 }
 
-function getAIStatusColor(statusValue: Conversation["aiStatus"]) {
-  if (statusValue === "analyzing") return "primary";
-  if (statusValue === "transferring") return "warning";
-  if (statusValue === "awaiting_client") return "neutral";
-  return "success";
-}
-
 function getCRMStatusLabel(value: string) {
   return ({ new_lead: "Novo lead", known_lead: "Lead conhecido", customer: "Cliente", inactive: "Inativo" } as Record<string, string>)[value] ?? value;
 }
@@ -595,26 +595,52 @@ onUpdated(() => {
       <div class="chat-page__header-row">
         <div v-if="!collapsedModel" class="chat-page__header-tabs">
           <UButton
-            size="sm"
+            size="xs"
             color="neutral"
-            :variant="!isContactsView ? 'soft' : 'ghost'"
+            variant="ghost"
+            class="chat-page__view-tab"
+            :class="{ 'chat-page__view-tab--active': isConversationsView }"
             @click="sidebarViewModel = 'conversations'"
           >
             Conversas
           </UButton>
           <UButton
-            size="sm"
+            size="xs"
             color="neutral"
-            :variant="isContactsView ? 'soft' : 'ghost'"
+            variant="ghost"
+            class="chat-page__view-tab"
+            :class="{ 'chat-page__view-tab--active': isContactsView }"
             @click="sidebarViewModel = 'contacts'"
           >
             Contatos
           </UButton>
-            <UButton v-if="!collapsedModel && !isContactsView" size="sm" color="neutral" variant="ghost" @click="showFiltersModel = !showFiltersModel">
-            Filtros
+          <UButton
+            v-if="canManagePrivacy"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            class="chat-page__view-tab"
+            :class="{ 'chat-page__view-tab--active': isHiddenView }"
+            @click="sidebarViewModel = 'hidden'"
+          >
+            Ocultos
+            <span v-if="hiddenContacts.length" class="chat-page__tab-count">{{ hiddenContacts.length }}</span>
+          </UButton>
+          <UButton
+            v-if="!collapsedModel && isConversationsView"
+            size="xs"
+            color="neutral"
+            :variant="showFiltersModel ? 'soft' : 'ghost'"
+            icon="i-lucide-list-filter"
+            title="Mostrar ou ocultar filtros"
+            aria-label="Mostrar ou ocultar filtros"
+            @click="showFiltersModel = !showFiltersModel"
+          >
+            <span class="chat-page__filter-label">Filtros</span>
+            <span v-if="activeFilterCount" class="chat-page__filter-count">{{ activeFilterCount }}</span>
           </UButton>
           <div
-            v-if="!collapsedModel && !isContactsView && canSwitchTenant"
+            v-if="!collapsedModel && isConversationsView && canSwitchTenant"
             class="chat-page__tenant-switch-control"
           >
             <USelect
@@ -639,7 +665,6 @@ onUpdated(() => {
           >
             Importar WA
           </UButton>
-          <UDashboardSidebarCollapse side="left" color="neutral" variant="ghost" />
         </div>
         <div class="chat-page__header-actions">
         
@@ -659,12 +684,35 @@ onUpdated(() => {
         {{ whatsappBannerMessage }}
       </div>
 
-      <div v-if="!collapsedModel" class="chat-page__filters">
+      <div v-if="!collapsedModel && !isHiddenView" class="chat-page__filters">
         <UInput
           v-model="searchModel"
           icon="i-lucide-search"
           placeholder="Buscar por nome, telefone ou mensagem"
         />
+
+		<div v-if="isConversationsView" class="chat-page__audience-switch" role="tablist" aria-label="Tipo de conversa">
+			<button
+				type="button"
+				role="tab"
+				class="chat-page__audience-option"
+				:class="{ 'chat-page__audience-option--active': conversationAudience === 'people' }"
+				:aria-selected="conversationAudience === 'people'"
+				@click="conversationAudience = 'people'"
+			>
+				Pessoas <span>{{ peopleConversationCount }}</span>
+			</button>
+			<button
+				type="button"
+				role="tab"
+				class="chat-page__audience-option"
+				:class="{ 'chat-page__audience-option--active': conversationAudience === 'groups' }"
+				:aria-selected="conversationAudience === 'groups'"
+				@click="conversationAudience = 'groups'"
+			>
+				Grupos <span>{{ groupConversationCount }}</span>
+			</button>
+		</div>
 
         <div v-if="!isContactsView && showFiltersModel" class="chat-page__filters-grid">
           <USelect
@@ -786,7 +834,73 @@ onUpdated(() => {
       </div>
 
       <div class="chat-page__panel-body">
-        <template v-if="!isContactsView">
+        <template v-if="isHiddenView">
+          <div class="chat-page__hidden-heading">
+            <div>
+              <strong>Pessoas ocultas</strong>
+              <p>Não aparecem nas conversas até você restaurar.</p>
+            </div>
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-refresh-cw"
+              :loading="loadingHiddenContacts"
+              @click="emit('refreshHiddenContacts')"
+            >
+              Atualizar
+            </UButton>
+          </div>
+
+          <div v-if="loadingHiddenContacts && !hiddenContacts.length" class="chat-page__empty">
+            Carregando pessoas ocultas...
+          </div>
+          <div v-else-if="hiddenContactsError" class="chat-page__load-error" role="alert">
+            <p>{{ hiddenContactsError }}</p>
+            <UButton size="xs" color="neutral" variant="outline" @click="emit('refreshHiddenContacts')">
+              Tentar novamente
+            </UButton>
+          </div>
+          <template v-else>
+            <article
+              v-for="item in hiddenContacts"
+              :key="item.contactId"
+              class="conversation-card conversation-card--hidden"
+            >
+              <div class="conversation-card__top">
+                <UAvatar
+                  :alt="item.contactName || 'Contato oculto'"
+                  :text="getInitials(item.contactName || item.contactPhone || 'Contato')"
+                  class="conversation-card__avatar"
+                />
+                <div class="conversation-card__content">
+                  <p class="conversation-card__name">{{ item.contactName || 'Contato sem nome' }}</p>
+                  <p class="conversation-card__preview">{{ item.contactPhone || 'Sem telefone' }}</p>
+                </div>
+              </div>
+              <div class="chat-page__hidden-meta">
+                <span>Oculto em {{ formatHiddenDate(item.hiddenAt) }}</span>
+                <span>{{ item.historyClearedAt ? 'Histórico anterior limpo' : 'Histórico preservado' }}</span>
+              </div>
+              <UButton
+                size="xs"
+                color="primary"
+                variant="soft"
+                icon="i-lucide-eye"
+                :loading="restoringHiddenContactIds.includes(item.contactId)"
+                :disabled="restoringHiddenContactIds.includes(item.contactId)"
+                @click="emit('restoreHiddenContact', item)"
+              >
+                Voltar a exibir
+              </UButton>
+            </article>
+            <div v-if="!hiddenContacts.length" class="chat-page__empty">
+              Nenhuma pessoa oculta nesta conta.
+            </div>
+          </template>
+        </template>
+
+        <template v-else-if="isConversationsView">
           <div v-if="loadingConversations && !conversations.length" class="chat-page__empty">
             Carregando conversas...
           </div>
@@ -812,7 +926,7 @@ onUpdated(() => {
             </div>
 
             <button
-              v-for="conversationEntry in conversations"
+              v-for="conversationEntry in visibleConversations"
               :key="conversationEntry.id"
               type="button"
               class="conversation-card"
@@ -828,48 +942,49 @@ onUpdated(() => {
                 />
 
                 <div class="conversation-card__content">
-                  <p class="conversation-card__name">{{ getConversationName(conversationEntry) }}</p>
+                  <div class="conversation-card__headline">
+                    <p class="conversation-card__name">{{ getConversationName(conversationEntry) }}</p>
+                    <time class="conversation-card__time">{{ formatTime(conversationEntry.lastMessageAt) }}</time>
+                  </div>
 
-                  <div class="conversation-card__tags">
-                    <UBadge color="neutral" variant="soft" size="sm">
-                      {{ getChannelLabel(conversationEntry.channel) }}
-                    </UBadge>
-                    <UBadge
-                      v-if="conversationEntry.instanceId"
-                      color="primary"
-                      variant="soft"
-                      size="sm"
-                    >
+                  <div class="conversation-card__meta">
+					<span
+					  class="conversation-card__audience-kind"
+					  :class="{ 'conversation-card__audience-kind--group': isGroupConversation(conversationEntry) }"
+					>
+					  {{ isGroupConversation(conversationEntry) ? 'Grupo' : 'Pessoa' }}
+					</span>
+					<span>{{ getChannelLabel(conversationEntry.channel) }}</span>
+                    <span v-if="conversationEntry.instanceId" class="conversation-card__instance">
                       {{ getConversationInstanceLabel(conversationEntry) }}
-                    </UBadge>
-                    <UBadge :color="getStatusColor(conversationEntry.status)" variant="soft" size="sm">
+                    </span>
+                    <span v-if="conversationEntry.status !== 'OPEN'" class="conversation-card__state">
                       {{ getStatusLabel(conversationEntry.status) }}
-                    </UBadge>
-                    <UBadge
+                    </span>
+                    <span
                       v-if="conversationEntry.aiStatus && conversationEntry.aiStatus !== 'idle' && conversationEntry.aiStatus !== 'closed'"
-                      :color="getAIStatusColor(conversationEntry.aiStatus)"
-                      variant="soft"
-                      size="sm"
+                      class="conversation-card__state"
                     >
                       {{ getAIStatusLabel(conversationEntry.aiStatus) }}
-                    </UBadge>
-                    <UBadge v-if="isConversationUnread(conversationEntry.id)" color="warning" variant="soft" size="sm">
-                      Novo
-                    </UBadge>
-                    <UBadge v-if="hasMentionAlert(conversationEntry.id)" color="error" variant="soft" size="sm">
-                      @{{ getMentionCount(conversationEntry.id) || 1 }} Mencao
-                    </UBadge>
+                    </span>
+                    <span
+                      v-if="isConversationUnread(conversationEntry.id)"
+                      class="conversation-card__unread-dot"
+                      title="Nova mensagem"
+                      aria-label="Nova mensagem"
+                    ></span>
+                    <span v-if="hasMentionAlert(conversationEntry.id)" class="conversation-card__mention">
+                      @{{ getMentionCount(conversationEntry.id) || 1 }}
+                    </span>
                   </div>
                 </div>
-
-                <time class="conversation-card__time">{{ formatTime(conversationEntry.lastMessageAt) }}</time>
               </div>
 
               <p class="conversation-card__preview">{{ getConversationPreview(conversationEntry) }}</p>
             </button>
 
-            <div v-if="!conversations.length && !conversationsError" class="chat-page__empty">
-              Nenhuma conversa encontrada.
+            <div v-if="!visibleConversations.length && !conversationsError" class="chat-page__empty">
+              {{ conversationAudience === 'groups' ? 'Nenhum grupo encontrado.' : 'Nenhuma conversa com pessoa encontrada.' }}
             </div>
 
             <div v-if="hasMoreConversations && !conversationsError" class="chat-page__load-more">
@@ -1010,7 +1125,48 @@ onUpdated(() => {
 .chat-page__header-tabs {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.chat-page__view-tab {
+  position: relative;
+  color: rgb(var(--muted));
+}
+
+.chat-page__view-tab--active {
+  color: rgb(var(--text));
+}
+
+.chat-page__view-tab--active::after {
+  position: absolute;
+  right: 0.55rem;
+  bottom: -0.35rem;
+  left: 0.55rem;
+  height: 2px;
+  border-radius: 999px;
+  background: rgb(var(--primary));
+  content: "";
+}
+
+.chat-page__tab-count,
+.chat-page__filter-count {
+  display: inline-flex;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--muted));
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+@media (max-width: 1500px) {
+  .chat-page__filter-label {
+    display: none;
+  }
 }
 
 .chat-page__header-actions {
@@ -1029,8 +1185,8 @@ onUpdated(() => {
 
 .chat-page__filters {
   display: grid;
-  gap: 0.75rem;
-  padding: 0 0 0.75rem;
+  gap: 0.55rem;
+  padding: 0 0.5rem 0.45rem;
 }
 
 .chat-page__contact-form {
@@ -1178,8 +1334,8 @@ onUpdated(() => {
   overflow-y: auto;
   display: grid;
   align-content: start;
-  gap: 0.5rem;
-  padding: 0.5rem;
+  gap: 0.2rem;
+  padding: 0.25rem 0.4rem 0.5rem;
 }
 
 .chat-page__empty {
@@ -1209,33 +1365,120 @@ onUpdated(() => {
   padding: 0.35rem 0;
 }
 
+.chat-page__audience-switch {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.2rem;
+	padding: 0.2rem;
+	border: 1px solid rgb(var(--border) / 0.55);
+	border-radius: 0.8rem;
+	background: rgb(var(--surface) / 0.44);
+	backdrop-filter: blur(16px) saturate(130%);
+}
+
+.chat-page__audience-option {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.35rem;
+	min-height: 2rem;
+	border: 0;
+	border-radius: 0.62rem;
+	background: transparent;
+	color: rgb(var(--muted));
+	font-size: 0.75rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.chat-page__audience-option span {
+	color: rgb(var(--muted) / 0.8);
+	font-size: 0.66rem;
+}
+
+.chat-page__audience-option--active {
+	background: linear-gradient(135deg, rgb(var(--surface-2) / 0.86), rgb(var(--primary) / 0.11));
+	box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 4px 14px rgb(0 0 0 / 0.12);
+	color: rgb(var(--text));
+}
+
+.chat-page__hidden-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0.15rem 0.35rem;
+}
+
+.chat-page__hidden-heading strong,
+.chat-page__hidden-heading p,
+.chat-page__hidden-meta {
+  margin: 0;
+}
+
+.chat-page__hidden-heading p,
+.chat-page__hidden-meta {
+  color: rgb(var(--muted));
+  font-size: 0.74rem;
+}
+
+.chat-page__hidden-heading p {
+  margin-top: 0.2rem;
+}
+
+.chat-page__hidden-meta {
+  display: grid;
+  gap: 0.15rem;
+}
+
 .conversation-card {
+  position: relative;
   width: 100%;
-  border: 1px solid rgb(var(--border));
-  border-radius: var(--radius-sm);
-  background: rgb(var(--surface));
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
   color: rgb(var(--text));
   text-align: left;
-  padding: 0.65rem;
+  padding: 0.7rem 0.65rem;
   display: grid;
-  gap: 0.45rem;
+  gap: 0.35rem;
   cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.conversation-card:hover {
+  background: rgb(var(--surface-2) / 0.55);
 }
 
 .conversation-card--active {
-  border-color: rgb(var(--primary));
-  box-shadow: 0 0 0 1px rgb(var(--primary) / 0.35);
+  background: rgb(var(--primary) / 0.08);
+}
+
+.conversation-card--active::before {
+  position: absolute;
+  top: 0.65rem;
+  bottom: 0.65rem;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: rgb(var(--primary));
+  content: "";
+}
+
+.conversation-card--hidden {
+  cursor: default;
 }
 
 .conversation-card--contact {
-  border-style: dashed;
+  border-bottom: 1px solid rgb(var(--border) / 0.45);
+  border-radius: 0;
 }
 
 .conversation-card__top {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.55rem;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.65rem;
+  align-items: start;
 }
 
 .conversation-card__content {
@@ -1245,30 +1488,95 @@ onUpdated(() => {
 .conversation-card__name {
   margin: 0;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.conversation-card__tags {
+.conversation-card__tags,
+.conversation-card__meta,
+.conversation-card__headline {
   display: flex;
   align-items: center;
+  min-width: 0;
+}
+
+.conversation-card__headline {
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.conversation-card__meta {
   gap: 0.35rem;
+  margin-top: 0.18rem;
+  color: rgb(var(--muted));
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.conversation-card__instance::before {
+  margin-right: 0.35rem;
+  color: rgb(var(--muted) / 0.55);
+  content: "·";
+}
+
+.conversation-card__state {
+  overflow: hidden;
+  padding: 0.08rem 0.32rem;
+  border-radius: 999px;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--muted));
+  text-overflow: ellipsis;
+}
+
+.conversation-card__audience-kind {
+  flex: 0 0 auto;
+  padding: 0.08rem 0.32rem;
+  border-radius: 999px;
+  background: rgb(var(--surface-2));
+  color: rgb(var(--muted));
+  font-weight: 700;
+}
+
+.conversation-card__audience-kind--group {
+  background: rgb(var(--primary) / 0.12);
+  color: rgb(var(--primary));
+}
+
+.conversation-card__unread-dot {
+  flex: 0 0 auto;
+  width: 0.42rem;
+  height: 0.42rem;
+  margin-left: auto;
+  border-radius: 999px;
+  background: rgb(var(--primary));
+}
+
+.conversation-card__mention {
+  flex: 0 0 auto;
+  color: rgb(var(--error));
+  font-weight: 700;
 }
 
 .conversation-card__time {
+  flex: 0 0 auto;
   font-size: 0.74rem;
   color: rgb(var(--muted));
 }
 
 .conversation-card__preview {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   color: rgb(var(--muted));
   line-height: 1.3;
   max-height: 2.6em;
   overflow: hidden;
+}
+
+.conversation-card > .conversation-card__preview {
+  padding-left: 2.9rem;
 }
 
 @media (max-width: 1280px) {

@@ -23,6 +23,10 @@ type mediaFetchStore interface {
 	InsertAudit(ctx context.Context, accountID, actorUserID, conversationID, messageID, eventType string, payload json.RawMessage) error
 }
 
+type mediaMessageAnalyzer interface {
+	AnalyzeMessage(context.Context, string, string) error
+}
+
 // MediaFetchHandler baixa midia inbound fora do webhook. O job carrega somente messageId;
 // instancia, credencial, limites e referencias sao sempre relidos do PostgreSQL.
 type MediaFetchHandler struct {
@@ -32,16 +36,21 @@ type MediaFetchHandler struct {
 	secretBox *secretbox.Box
 	publisher Publisher
 	logger    *slog.Logger
+	analyzer  mediaMessageAnalyzer
 }
 
-func NewMediaFetchHandler(store mediaFetchStore, media *DiskMediaStorage, registry *channel.Registry, box *secretbox.Box, publisher Publisher, logger *slog.Logger) *MediaFetchHandler {
+func NewMediaFetchHandler(store mediaFetchStore, media *DiskMediaStorage, registry *channel.Registry, box *secretbox.Box, publisher Publisher, logger *slog.Logger, analyzers ...mediaMessageAnalyzer) *MediaFetchHandler {
 	if publisher == nil {
 		publisher = noopPublisher{}
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &MediaFetchHandler{store: store, media: media, registry: registry, secretBox: box, publisher: publisher, logger: logger}
+	var analyzer mediaMessageAnalyzer
+	if len(analyzers) > 0 {
+		analyzer = analyzers[0]
+	}
+	return &MediaFetchHandler{store: store, media: media, registry: registry, secretBox: box, publisher: publisher, logger: logger, analyzer: analyzer}
 }
 
 func (h *MediaFetchHandler) Handle(ctx context.Context, job jobs.Job) error {
@@ -58,6 +67,9 @@ func (h *MediaFetchHandler) Handle(ctx context.Context, job jobs.Job) error {
 		return err
 	}
 	if data.StorageKey != "" && data.SourceKind == "disk" {
+		if h.analyzer != nil {
+			return h.analyzer.AnalyzeMessage(ctx, job.AccountID, data.MessageID)
+		}
 		return nil
 	}
 	if strings.EqualFold(data.MessageType, "TEXT") {
@@ -104,6 +116,9 @@ func (h *MediaFetchHandler) Handle(ctx context.Context, job jobs.Job) error {
 	h.publish(ctx, job.AccountID, view)
 	if err := h.store.InsertAudit(ctx, job.AccountID, "", data.ConversationID, data.MessageID, "MESSAGE_MEDIA_READY", nil); err != nil {
 		h.logger.Error("omnichannel_media_audit", "account_id", job.AccountID, "event", "MESSAGE_MEDIA_READY")
+	}
+	if h.analyzer != nil {
+		return h.analyzer.AnalyzeMessage(ctx, job.AccountID, data.MessageID)
 	}
 	return nil
 }

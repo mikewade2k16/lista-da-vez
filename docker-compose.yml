@@ -159,7 +159,9 @@ services:
       # devolve JSON ao Go, que valida e controla estado/outbox.
       OMNI_AI_EXECUTOR: ${OMNI_AI_EXECUTOR:-native}
       OMNI_N8N_BRAIN_WEBHOOK_URL: ${OMNI_N8N_BRAIN_WEBHOOK_URL:-}
+      OMNI_N8N_MEDIA_WEBHOOK_URL: ${OMNI_N8N_MEDIA_WEBHOOK_URL:-}
       OMNI_N8N_INTERNAL_TOKEN: ${OMNI_N8N_INTERNAL_TOKEN:-}
+      OMNI_INTERNAL_API_BASE_URL: ${OMNI_INTERNAL_API_BASE_URL:-http://api:8080}
       # Provider Evolution (1o adapter real do canal). A api Go fala com a Evolution
       # pela rede interna do compose. Credencial REAL e por instancia (cifrada); estes
       # dois sao FALLBACK DE AMBIENTE apenas (canonico §13). Vazios = so o provider
@@ -344,15 +346,18 @@ services:
       start_period: 10s
 
   waha:
-    image: devlikeapro/waha:gows-2026.5.1
+    image: devlikeapro/waha:gows-2026.7.1
     profiles: ["automation"]
     restart: unless-stopped
-    mem_limit: 1g
+    mem_limit: ${AUTOMATION_WAHA_MEMORY_LIMIT:-2g}
     mem_reservation: 256m
     environment:
       WHATSAPP_HOOK_URL: http://n8n:5678/webhook/webhook
       WHATSAPP_DEFAULT_ENGINE: GOWS
       WHATSAPP_HOOK_EVENTS: message
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WAHA_AUTO_START_DELAY_SECONDS: "1"
+      WAHA_SESSION_CONFIG_IGNORE_STATUS: ${AUTOMATION_WAHA_IGNORE_STATUS:-true}
       WAHA_NO_API_KEY: "true"
       WAHA_DASHBOARD_NO_PASSWORD: "true"
       WHATSAPP_SWAGGER_NO_PASSWORD: "true"
@@ -362,11 +367,26 @@ services:
     ports:
       - "${AUTOMATION_WAHA_PORT:-3010}:3000"
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:3000/ping > /dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      test:
+        - CMD-SHELL
+        - >-
+          boot=$$(awk '{print $$22}' /proc/1/stat);
+          if curl --fail --silent --max-time 5 http://127.0.0.1:3000/ping > /dev/null; then
+            echo "$$boot" > /tmp/waha-health-ready;
+            rm -f /tmp/waha-health-failures;
+            exit 0;
+          fi;
+          ready=$$(cat /tmp/waha-health-ready 2>/dev/null || true);
+          [ "$$ready" = "$$boot" ] || exit 1;
+          failures=$$(cat /tmp/waha-health-failures 2>/dev/null || echo 0);
+          failures=$$((failures + 1));
+          echo "$$failures" > /tmp/waha-health-failures;
+          if [ "$$failures" -ge 3 ]; then kill -TERM 1; fi;
+          exit 1
+      interval: 20s
+      timeout: 8s
+      retries: 3
+      start_period: 90s
     # Ordena so o boot (WAHA posta webhooks no n8n). service_started, nao _healthy:
     # a WAHA (QR/dashboard) precisa subir mesmo se o n8n estiver quebrado.
     depends_on:

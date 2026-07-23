@@ -337,5 +337,10 @@ const {
   border-radius: var(--radius-md);
   background: rgb(var(--surface));
   width: 100%;
+  transition: border-color 140ms ease;
+}
+
+.chat-composer:focus-within {
+  border-color: rgb(var(--muted) / 0.7);
 }
 </style>

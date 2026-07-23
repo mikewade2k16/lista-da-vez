@@ -41,6 +41,9 @@ Fonte de verdade: `docs/deploy/REGISTRY_STAGING_DEPLOY_PLAN.md`.
 - os scripts nunca sobrescrevem o `.env.<ambiente>` remoto (so atualizam a linha `IMAGE_TAG`)
 - antes de copiar compose ou trocar `IMAGE_TAG`, o deploy valida segredos obrigatorios no
   `.env.<ambiente>` sem imprimir valores; `OMNI_SECRETS_KEY` deve ser base64 de exatamente 32 bytes
+- antes de qualquer build/pull, `assert-compose-api-env.ps1` valida que o bloco `api.environment`
+  do Compose repassa `OMNI_SECRETS_KEY`, `EVOLUTION_BASE_URL`, `EVOLUTION_API_KEY` e
+  `WEBHOOK_RECEIVER_BASE_URL`; existir apenas no `.env` ou no servico `evolution` nao basta
 - os scripts nunca apagam volumes Docker de producao
 - `staging-down.ps1` so remove volumes com `-RemoveVolumes` explicito
 - smoke tests publicos continuam sendo a validacao padrao depois do deploy
@@ -68,6 +71,8 @@ Fluxo RAPIDO (build local, sem git — recomendado pro dia a dia):
 
 Fluxo registry via CI (opcao completa/rastreavel):
 
+- `assert-compose-api-env.ps1` — guarda fail-closed compartilhada por `deploy-fast.ps1`,
+  `deploy-pull.ps1` e o workflow manual; impede recriar a API sem o wiring critico da Evolution.
 - `deploy-pull.ps1` — nucleo: `-Environment staging|prod`, `-Tag <sha>`, faz preflight remoto,
   envia/valida o compose, grava `IMAGE_TAG`, pull + `up --no-build`, smoke. Switches: `-BackupDatabase`,
   `-ForceRecreate`, `-SkipSmokeTests`, `-GhcrUser`/`-GhcrToken` (login opcional).

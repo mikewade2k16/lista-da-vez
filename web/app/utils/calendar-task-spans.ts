@@ -57,6 +57,13 @@ export function taskSpansFrom(tasks: TaskItem[]): CalendarTaskSpan[] {
   )
 }
 
+export function hasTaskSpanInMonth(spans: CalendarTaskSpan[], monthKey: string): boolean {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return false
+  const monthStart = `${monthKey}-01`
+  const monthEnd = `${monthKey}-31`
+  return spans.some((span) => span.endKey >= monthStart && span.startKey <= monthEnd)
+}
+
 /**
  * Segmentos de uma SEMANA (7 dateKeys em ordem): para cada span que intersecta a semana,
  * a coluna inicial/final + a lane (greedy: primeira lane livre; acima de MAX_SPAN_LANES

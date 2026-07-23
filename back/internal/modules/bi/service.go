@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"mime"
 	"net/http"
@@ -19,7 +18,6 @@ import (
 
 const (
 	perolaAPIBase          = "https://api.perola.c10.srv.br/api/v1"
-	perolaLoginURL         = perolaAPIBase + "/sessoes"
 	defaultPerolaPageLimit = 100
 	// teto de seguranca do fallback; datasets do overview fixam MaxPages:1
 	defaultPerolaMaxPages       = 5
@@ -29,21 +27,19 @@ const (
 )
 
 var perolaAllowedFindEndpoints = map[string]string{
-	"/item/find":       "/item/find",
-	"/nota/find":       "/nota/find",
-	"/notaItem/find":   "/notaItem/find",
-	"/inventario/find": "/inventario/find",
+	"/item/find":                 "/item/find",
+	"/imagemItem/find":           "/imagemItem/find",
+	"/itemSaldoPrecoCompra/find": "/itemSaldoPrecoCompra/find",
+	"/nota/find":                 "/nota/find",
+	"/notaItem/find":             "/notaItem/find",
+	"/inventario/find":           "/inventario/find",
 }
 
 type Service struct {
-	client *http.Client
-
+	perola         *PerolaClient
 	options        Options
 	tokenTTL       time.Duration
 	requestTimeout time.Duration
-	tokenMu        sync.Mutex
-	cachedToken    string
-	tokenExpiresAt time.Time
 }
 
 type perolaDatasetDefinition struct {
@@ -115,50 +111,32 @@ func NewService(options ...Options) *Service {
 		requestTimeout = parsed
 	}
 
-	return &Service{
-		client: &http.Client{
-			Timeout: 0,
-		},
+	service := &Service{
 		options:        resolvedOptions,
 		tokenTTL:       tokenTTL,
 		requestTimeout: requestTimeout,
 	}
+	service.perola = newPerolaClient(perolaClientOptions{
+		Credentials: perolaCredentials{
+			CompanyKey:  resolvedOptions.CompanyKey,
+			CNPJEmpresa: resolvedOptions.DefaultCNPJEmpresa,
+			Login:       resolvedOptions.Login,
+			Pass:        resolvedOptions.Pass,
+			StaticToken: resolvedOptions.StaticToken,
+		},
+		TokenTTL:       tokenTTL,
+		RequestTimeout: requestTimeout,
+	})
+	return service
 }
 
 func (service *Service) PerolaLogin(ctx context.Context, input PerolaLoginInput) (PerolaProxyResponse, error) {
-	companyKey := fallbackString(input.CompanyKey, service.options.CompanyKey)
-	login := fallbackString(input.Login, service.options.Login)
-	pass := input.Pass
-	if strings.TrimSpace(pass) == "" {
-		pass = service.options.Pass
-	}
-	if companyKey == "" || login == "" || pass == "" {
-		return PerolaProxyResponse{}, ErrConfiguration
-	}
-
-	body, err := json.Marshal(map[string]string{
-		"login": login,
-		"pass":  pass,
+	return service.perola.Login(ctx, perolaCredentials{
+		CompanyKey:  fallbackString(input.CompanyKey, service.options.CompanyKey),
+		CNPJEmpresa: onlyDigits(fallbackString(input.CNPJEmpresa, service.options.DefaultCNPJEmpresa)),
+		Login:       fallbackString(input.Login, service.options.Login),
+		Pass:        fallbackString(input.Pass, service.options.Pass),
 	})
-	if err != nil {
-		return PerolaProxyResponse{}, fmt.Errorf("%w: %v", ErrValidation, err)
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, perolaLoginURL, bytes.NewReader(body))
-	if err != nil {
-		return PerolaProxyResponse{}, fmt.Errorf("%w: %v", ErrUpstream, err)
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("dsCompanyKey", companyKey)
-
-	response, err := service.do(request)
-	if err != nil {
-		return PerolaProxyResponse{}, err
-	}
-	response.Token = extractBearerToken(response.Body)
-
-	return response, nil
 }
 
 func (service *Service) PerolaFind(ctx context.Context, input PerolaFindInput) (PerolaProxyResponse, error) {
@@ -169,18 +147,6 @@ func (service *Service) PerolaFind(ctx context.Context, input PerolaFindInput) (
 
 	companyKey := fallbackString(input.CompanyKey, service.options.CompanyKey)
 	cnpjEmpresa := onlyDigits(fallbackString(input.CNPJEmpresa, service.options.DefaultCNPJEmpresa))
-	token := normalizeBearerToken(input.Token)
-	if token == "" {
-		resolvedToken, err := service.resolvePerolaToken(ctx, false)
-		if err != nil {
-			return PerolaProxyResponse{}, err
-		}
-		token = resolvedToken
-	}
-	if companyKey == "" || cnpjEmpresa == "" || token == "" {
-		return PerolaProxyResponse{}, ErrConfiguration
-	}
-
 	body := bytes.TrimSpace(input.Body)
 	if len(body) == 0 {
 		body = []byte(defaultFindBody())
@@ -189,6 +155,17 @@ func (service *Service) PerolaFind(ctx context.Context, input PerolaFindInput) (
 		return PerolaProxyResponse{}, ErrValidation
 	}
 
+	token := normalizeBearerToken(input.Token)
+	if token == "" && strings.TrimSpace(input.CompanyKey) == "" && strings.TrimSpace(input.CNPJEmpresa) == "" {
+		return service.perola.Find(ctx, endpoint, body)
+	}
+	if token == "" {
+		resolvedToken, err := service.resolvePerolaToken(ctx, false)
+		if err != nil {
+			return PerolaProxyResponse{}, err
+		}
+		token = resolvedToken
+	}
 	return service.perolaFind(ctx, endpoint, companyKey, cnpjEmpresa, token, body)
 }
 
@@ -213,8 +190,7 @@ func (service *Service) PerolaOverview(ctx context.Context, input PerolaOverview
 	results := service.fetchPerolaOverviewDatasets(ctx, activeDefinitions, companyKey, cnpjEmpresa, token, limiter)
 
 	if input.Token == "" && service.hasLoginCredentials() && overviewHasUnauthorizedSource(results) {
-		service.invalidatePerolaToken()
-		if refreshedToken, tokenErr := service.resolvePerolaToken(ctx, true); tokenErr == nil {
+		if refreshedToken, tokenErr := service.perola.RefreshAfterUnauthorized(ctx, token); tokenErr == nil {
 			token = refreshedToken
 			results = service.refetchUnauthorizedOverviewDatasets(ctx, results, companyKey, cnpjEmpresa, token, limiter)
 		}
@@ -296,13 +272,9 @@ func (service *Service) fetchPerolaOverviewDatasets(
 }
 
 func overviewDatasetDefinitions(definitions []perolaDatasetDefinition, includeInventory bool) []perolaDatasetDefinition {
-	if includeInventory {
-		return definitions
-	}
-
 	active := make([]perolaDatasetDefinition, 0, len(definitions))
 	for _, definition := range definitions {
-		if definition.IncludeInOverview {
+		if definition.IncludeInOverview || (includeInventory && definition.Key == "inventario") {
 			active = append(active, definition)
 		}
 	}
@@ -601,89 +573,18 @@ func releasePerolaSlot(limiter chan struct{}) {
 }
 
 func (service *Service) perolaFind(ctx context.Context, endpoint string, companyKey string, cnpjEmpresa string, token string, body []byte) (PerolaProxyResponse, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, perolaAPIBase+endpoint, bytes.NewReader(body))
-	if err != nil {
-		return PerolaProxyResponse{}, fmt.Errorf("%w: %v", ErrUpstream, err)
-	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("dsCompanyKey", companyKey)
-	request.Header.Set("dsCnpjEmpresa", cnpjEmpresa)
-	request.Header.Set("Authorization", "Bearer "+token)
-
-	return service.do(request)
+	return service.perola.FindWithToken(ctx, endpoint, body, perolaCredentials{
+		CompanyKey:  companyKey,
+		CNPJEmpresa: cnpjEmpresa,
+	}, token)
 }
 
 func (service *Service) resolvePerolaToken(ctx context.Context, forceRefresh bool) (string, error) {
-	service.tokenMu.Lock()
-	if !forceRefresh && service.cachedToken != "" && time.Now().Before(service.tokenExpiresAt) {
-		token := service.cachedToken
-		service.tokenMu.Unlock()
-		return token, nil
-	}
-	service.tokenMu.Unlock()
-
-	if !service.hasLoginCredentials() {
-		token := normalizeBearerToken(service.options.StaticToken)
-		if token != "" {
-			return token, nil
-		}
-		return "", ErrConfiguration
-	}
-
-	response, err := service.PerolaLogin(ctx, PerolaLoginInput{})
-	if err != nil {
-		return "", err
-	}
-	token := normalizeBearerToken(response.Token)
-	if !response.OK || token == "" {
-		return "", ErrUpstream
-	}
-
-	service.tokenMu.Lock()
-	service.cachedToken = token
-	service.tokenExpiresAt = time.Now().Add(service.tokenTTL)
-	service.tokenMu.Unlock()
-
-	return token, nil
-}
-
-func (service *Service) invalidatePerolaToken() {
-	service.tokenMu.Lock()
-	defer service.tokenMu.Unlock()
-	service.cachedToken = ""
-	service.tokenExpiresAt = time.Time{}
+	return service.perola.EnsureToken(ctx, forceRefresh)
 }
 
 func (service *Service) hasLoginCredentials() bool {
-	return strings.TrimSpace(service.options.Login) != "" && strings.TrimSpace(service.options.Pass) != ""
-}
-
-func (service *Service) do(request *http.Request) (PerolaProxyResponse, error) {
-	startedAt := time.Now()
-	response, err := service.client.Do(request)
-	if err != nil {
-		return PerolaProxyResponse{}, fmt.Errorf("%w: %v", ErrUpstream, err)
-	}
-	defer response.Body.Close()
-
-	rawBody, err := io.ReadAll(io.LimitReader(response.Body, 5<<20))
-	if err != nil {
-		return PerolaProxyResponse{}, fmt.Errorf("%w: %v", ErrUpstream, err)
-	}
-
-	body, rawText := parseUpstreamBody(response.Header.Get("Content-Type"), rawBody)
-
-	return PerolaProxyResponse{
-		OK:                 response.StatusCode >= 200 && response.StatusCode < 300,
-		UpstreamStatus:     response.StatusCode,
-		UpstreamStatusText: response.Status,
-		UpstreamURL:        request.URL.String(),
-		DurationMs:         time.Since(startedAt).Milliseconds(),
-		Headers:            selectedHeaders(response.Header),
-		Body:               body,
-		RawBody:            rawText,
-	}, nil
+	return service.perola.hasLoginCredentials()
 }
 
 func perolaDatasetDefinitions() []perolaDatasetDefinition {
@@ -712,6 +613,43 @@ func perolaDatasetDefinitions() []perolaDatasetDefinition {
 				{Key: "estilo", Label: "Estilo", Width: "130px", DefaultVisible: false},
 			},
 			FilterKeys: []string{"departamento", "tipo", "subtipo", "classe", "marca", "colecao", "material", "cor", "tamanho"},
+		},
+		{
+			Key:               "itemImages",
+			Label:             "Imagens dos itens",
+			Endpoint:          "/imagemItem/find",
+			Description:       "Metadados de imagens associados ao cadastro de Item.",
+			IncludeInOverview: false,
+			OrderByField:      "id",
+			PageLimit:         25,
+			MaxPages:          1,
+			PreferredColumns: []perolaColumnDefinition{
+				{Key: "id", Label: "ID", Width: "92px", Align: "center", DefaultVisible: true},
+				{Key: "itemId", Label: "Item", Width: "110px", Align: "center", DefaultVisible: true},
+				{Key: "filename", Label: "Arquivo", Width: "minmax(220px, 1fr)", DefaultVisible: true},
+				{Key: "ordem", Label: "Ordem", Width: "90px", Align: "center", DefaultVisible: true},
+			},
+			FilterKeys: []string{"itemId", "filename"},
+		},
+		{
+			Key:               "itemPurchasePrices",
+			Label:             "Saldo e preco de compra",
+			Endpoint:          "/itemSaldoPrecoCompra/find",
+			Description:       "Historico de custo, entrada e preco medio por saldo do item.",
+			IncludeInOverview: false,
+			OrderByField:      "data",
+			PageLimit:         25,
+			MaxPages:          1,
+			PreferredColumns: []perolaColumnDefinition{
+				{Key: "id", Label: "ID", Width: "92px", Align: "center", DefaultVisible: true},
+				{Key: "itemSaldoId", Label: "Item saldo", Width: "110px", Align: "center", DefaultVisible: true},
+				{Key: "empresaId", Label: "Empresa", Width: "100px", Align: "center", DefaultVisible: true},
+				{Key: "data", Label: "Data", Width: "150px", DefaultVisible: true},
+				{Key: "precoCusto", Label: "Custo", Width: "120px", Align: "right", DefaultVisible: true},
+				{Key: "precoEntrada", Label: "Entrada", Width: "120px", Align: "right", DefaultVisible: true},
+				{Key: "precoMedio", Label: "Preco medio", Width: "120px", Align: "right", DefaultVisible: true},
+			},
+			FilterKeys: []string{"itemSaldoId", "empresaId"},
 		},
 		{
 			Key:               "notas",
@@ -765,7 +703,7 @@ func perolaDatasetDefinitions() []perolaDatasetDefinition {
 			Key:               "inventario",
 			Label:             "Inventario",
 			Endpoint:          "/inventario/find",
-			Description:       "Movimentos e correcoes de inventario. Pela latencia alta da Perola, esta leitura entra em segundo plano.",
+			Description:       "Movimentos e correcoes de inventario, consultados somente sob demanda por itemSaldoId.",
 			IncludeInOverview: false,
 			OrderByField:      "data",
 			RequestTimeout:    30 * time.Second,
@@ -1034,10 +972,8 @@ func buildPerolaInsights(tables []PerolaDataTable, sources []PerolaSource) []Per
 		},
 		{
 			Title: "Imagem e amarracao do produto",
-			Body: fmt.Sprintf(
-				"A API atual nao traz foto real do produto e tambem nao entrega um vinculo claro entre itemSaldoId e o cadastro do item na mesma resposta. Por isso ja mostramos mix, ranking e estoque operacional, mas nao um catalogo visual fiel do mais vendido.",
-			),
-			Tone: "warning",
+			Body:  "A API atual nao traz foto real do produto e tambem nao entrega um vinculo claro entre itemSaldoId e o cadastro do item na mesma resposta. Por isso ja mostramos mix, ranking e estoque operacional, mas nao um catalogo visual fiel do mais vendido.",
+			Tone:  "warning",
 		},
 		{
 			Title: "Estoque inteligente",
@@ -1903,13 +1839,6 @@ func sourcesMetricTone(okSources int, pendingSources int, totalSources int) stri
 	}
 	if pendingSources > 0 {
 		return "info"
-	}
-	return "warning"
-}
-
-func metricTone(ok bool) string {
-	if ok {
-		return "success"
 	}
 	return "warning"
 }

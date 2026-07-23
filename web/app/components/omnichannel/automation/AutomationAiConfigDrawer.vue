@@ -3,6 +3,13 @@ import { computed, ref, watch } from 'vue'
 import OmniEntityDrawer from '~/components/ui/OmniEntityDrawer.vue'
 import ConfigNumbers from '~/components/omnichannel/config/ConfigNumbers.vue'
 import ConfigAiAgent from '~/components/omnichannel/config/ConfigAiAgent.vue'
+import ConfigAiCredentials from '~/components/omnichannel/config/ConfigAiCredentials.vue'
+import ConfigDepartments from '~/components/omnichannel/config/ConfigDepartments.vue'
+import ConfigQueues from '~/components/omnichannel/config/ConfigQueues.vue'
+import ConfigRoutingRules from '~/components/omnichannel/config/ConfigRoutingRules.vue'
+import ConfigHandoffPolicies from '~/components/omnichannel/config/ConfigHandoffPolicies.vue'
+import ConfigAiToolsKnowledge from '~/components/omnichannel/config/ConfigAiToolsKnowledge.vue'
+import ConfigInstagram from '~/components/omnichannel/config/ConfigInstagram.vue'
 import AutomationProfileConfig from './AutomationProfileConfig.vue'
 import type { AutomationProfile, AutomationProfileInput } from '~/domain/omnichannel/automation-api'
 import type { OmniAgent, OmniInstance } from '~/domain/omnichannel/config-types'
@@ -18,6 +25,7 @@ const props = defineProps<{
   canManageSettings: boolean
   canManageInstances: boolean
   canManageAgents: boolean
+  canAudit?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,14 +35,31 @@ const emit = defineEmits<{
 }>()
 
 type DrawerMode = 'side' | 'center' | 'fullscreen'
-type ConfigTab = 'atendimento' | 'whatsapp' | 'ia'
+type ConfigTab =
+  | 'atendimento'
+  | 'whatsapp'
+  | 'credenciais'
+  | 'ia'
+  | 'setores'
+  | 'filas'
+  | 'regras'
+  | 'politicas'
+  | 'tools'
+  | 'instagram'
 
 const mode = ref<DrawerMode>('side')
 const activeTab = ref<ConfigTab>('atendimento')
 const visited = ref<Set<ConfigTab>>(new Set())
+const credentialRevision = ref(0)
 
 const tabs = computed(() =>
   [
+    {
+      key: 'credenciais' as const,
+      label: 'Chaves de IA',
+      icon: 'i-lucide-key-round',
+      allowed: props.canManageAgents,
+    },
     {
       key: 'atendimento' as const,
       label: 'Atendimento',
@@ -53,12 +78,53 @@ const tabs = computed(() =>
       icon: 'i-lucide-sparkles',
       allowed: props.canManageAgents,
     },
+    {
+      key: 'setores' as const,
+      label: 'Setores',
+      icon: 'i-lucide-layers',
+      allowed: props.canManageSettings,
+    },
+    {
+      key: 'filas' as const,
+      label: 'Filas',
+      icon: 'i-lucide-users',
+      allowed: props.canManageSettings,
+    },
+    {
+      key: 'regras' as const,
+      label: 'Regras',
+      icon: 'i-lucide-git-branch',
+      allowed: props.canManageSettings,
+    },
+    {
+      key: 'politicas' as const,
+      label: 'Handoff',
+      icon: 'i-lucide-route',
+      allowed: props.canManageSettings,
+    },
+    {
+      key: 'tools' as const,
+      label: 'Tools e conhecimento',
+      icon: 'i-lucide-database-zap',
+      allowed: props.canManageAgents,
+    },
+    {
+      key: 'instagram' as const,
+      label: 'Instagram',
+      icon: 'i-lucide-instagram',
+      allowed: props.canManageInstances,
+    },
   ].filter((tab) => tab.allowed),
 )
 
 function setTab(tab: ConfigTab): void {
   activeTab.value = tab
   visited.value = new Set([...visited.value, tab])
+}
+
+function onCredentialsChanged(): void {
+  credentialRevision.value += 1
+  emit('optionsChanged')
 }
 
 watch(
@@ -119,10 +185,39 @@ watch(
 
           <div v-if="visited.has('ia')" v-show="activeTab === 'ia'">
             <ConfigAiAgent
+              :key="`agents-${credentialRevision}`"
               :can-manage="canManageAgents"
               :profiles="profiles"
               @changed="emit('optionsChanged')"
             />
+          </div>
+
+          <div v-if="visited.has('credenciais')" v-show="activeTab === 'credenciais'">
+            <ConfigAiCredentials :disabled="!canManageAgents" @changed="onCredentialsChanged" />
+          </div>
+
+          <div v-if="visited.has('setores')" v-show="activeTab === 'setores'">
+            <ConfigDepartments :can-manage="canManageSettings" />
+          </div>
+
+          <div v-if="visited.has('filas')" v-show="activeTab === 'filas'">
+            <ConfigQueues :can-manage="canManageSettings" />
+          </div>
+
+          <div v-if="visited.has('regras')" v-show="activeTab === 'regras'">
+            <ConfigRoutingRules :can-manage="canManageSettings" />
+          </div>
+
+          <div v-if="visited.has('politicas')" v-show="activeTab === 'politicas'">
+            <ConfigHandoffPolicies :can-manage="canManageSettings" />
+          </div>
+
+          <div v-if="visited.has('tools')" v-show="activeTab === 'tools'">
+            <ConfigAiToolsKnowledge :can-manage="canManageAgents" :can-audit="Boolean(canAudit)" />
+          </div>
+
+          <div v-if="visited.has('instagram')" v-show="activeTab === 'instagram'">
+            <ConfigInstagram :can-manage="canManageInstances" />
           </div>
         </template>
       </div>

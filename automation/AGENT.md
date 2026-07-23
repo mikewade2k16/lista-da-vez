@@ -151,6 +151,10 @@ interno com `brain.request.v2` ou `brain.request.v3`, conforme a versão publica
 credencial persistente nunca entra no request, export ou log.
 O workflow exige `X-Omni-Internal-Token` validado contra `OMNI_N8N_INTERNAL_TOKEN`, chama
 somente o gateway interno em `OMNI_LLM_GATEWAY_URL` e revalida `brain.result.v2/v3` no Go.
+O mesmo arquivo possui o webhook `omnichannel-brain-media`: ele recebe uma chave descriptografada
+somente durante a execução, baixa a mídia privada com token curto e chama OpenAI/Gemini conforme
+o papel versionado. O resultado volta estruturado ao Go; o workflow não grava estado nem envia
+mensagem ao canal. O workflow `workflow-whatsapp.json` da Automação não participa desse fluxo.
 No v3, `close` continua sendo apenas proposta: os gates configuráveis e a lease obrigatória são
 avaliados sob lock no Go. Ele nao acessa Postgres, Evolution, WAHA ou Meta e nao possui node de envio. As quatro opcoes
 `saveData*` ficam desligadas para o token efemero e o contexto do cliente nao permanecerem no
@@ -220,14 +224,17 @@ Runbook: docs/automation/SETUP.md secao 8.
 
 ### Limites e healthchecks (AC-11, 2026-07)
 
-Os dois compose agora limitam memoria por servico do stack: `redis` 256m, `waha` 1g,
-`n8n` 768m (`mem_reservation` proporcional; no prod tambem `cpus`). Healthchecks:
-`waha` = `GET /ping` (`/health` e WAHA Plus → 422); `n8n` = `GET /healthz`;
+Os dois compose agora limitam memoria por servico do stack: `redis` 256m, `waha` 2g
+(`AUTOMATION_WAHA_MEMORY_LIMIT`, elevado apos OOM em 2026-07-22) e `n8n` 768m
+(`mem_reservation` proporcional; no prod tambem `cpus`). WAHA esta fixado em
+`gows-2026.7.1`, restaura sessoes persistidas no boot e ignora stories/status por default.
+Healthchecks: `waha` = `GET /ping` (`/health` e WAHA Plus → 422); `n8n` = `GET /healthz`;
 `redis` = `redis-cli ping` autenticado (`$$REDIS_PASSWORD`, dois cifroes = env do
 container). `depends_on`: `n8n→redis service_healthy`, `waha→n8n service_started`
-(so ordena o boot; a WAHA sobe mesmo com n8n quebrado). **Unhealthy NAO reinicia
-sozinho** (Docker sem swarm nao auto-restarta por health); `restart: unless-stopped`
-so ressuscita em OOM/crash. Log rotation (prod, AC-16): json-file 10m×3 por servico.
+(so ordena o boot; a WAHA sobe mesmo com n8n quebrado). Como Docker nao reinicia apenas por
+`unhealthy`, o healthcheck da WAHA encerra PID 1 apos tres falhas consecutivas de `/ping`, mas so
+depois de aquele boot ja ter ficado saudavel; `restart: unless-stopped` entao recupera a sessao.
+Log rotation (prod, AC-16): json-file 10m×3 por servico.
 
 ## Fases futuras (resumo)
 
@@ -412,6 +419,9 @@ ambiente, considerar rotacionar as chaves.
   docs/automation/SETUP.md secao 8.
 - Decisao de prod (2026-06-08): exposicao via **Caddy + basic auth** (subdominios `n8n.`/
   `waha.`); **Redis so disponivel** na rede `app` (sem mexer na API Go ainda).
+- Hardening WAHA aplicado em prod (2026-07-22): `gows-2026.7.1`, 2 GiB, autostart, filtro de
+  status e auto-restart por falha de `/ping`; sessao persistida voltou `WORKING` sem QR e ficou
+  estavel, sem OOM. Backup/rollback e evidencias estao em `docs/DEPLOY_VPS.md`.
 - Sem migration Go nesta etapa (so infra + docs). A Etapa 2/A1 (schema `automation.*`)
   tera migration propria quando for implementada — **bloqueada pela multitenant-completion**.
 - Vars novas: local em `.env.docker.example` (`AUTOMATION_N8N_PORT`, `AUTOMATION_WAHA_PORT`,

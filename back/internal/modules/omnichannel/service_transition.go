@@ -173,6 +173,11 @@ func (s *Service) routeConversation(ctx context.Context, accountID, convID strin
 func (s *Service) transitionContextFor(ctx context.Context, accountID string, ev Event, snap convSnapshot) (TransitionContext, error) {
 	tc := TransitionContext{HasQueue: snap.QueueID != nil}
 	if ev == EventMsgInbound {
+		if isWhatsAppGroupExternalID(snap.ExternalID) {
+			// Grupos existem no inbox, mas nunca entram no atendimento automatico.
+			tc.HasActiveAgent = false
+			return tc, nil
+		}
 		_, hasAgent, err := s.store.ActiveAgentForInstance(ctx, accountID, deref(snap.InstanceID))
 		if err != nil {
 			return TransitionContext{}, err

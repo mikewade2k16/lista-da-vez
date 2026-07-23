@@ -33,7 +33,7 @@ func scanAgent(row rowScanner) (agentRow, error) {
 const versionCols = `id::text, agent_id::text, version, status, provider, model,
 	temperature::float8, layers, output_schema, media_config, schema_version, debounce_ms, max_context_messages,
 	max_ai_turns, min_confidence::float8, handoff_on_error, handoff_on_limit, workflow_contract_version,
-	published_at, published_by, created_at`
+	response_credential_id::text, published_at, published_by, created_at`
 
 func scanVersion(row rowScanner) (versionRow, error) {
 	var v versionRow
@@ -41,7 +41,7 @@ func scanVersion(row rowScanner) (versionRow, error) {
 		&v.Temperature, &v.Layers, &v.OutputSchema, &v.MediaConfig, &v.SchemaVersion,
 		&v.DebounceMS, &v.MaxContextMessages, &v.MaxAITurns, &v.MinConfidence,
 		&v.HandoffOnError, &v.HandoffOnLimit, &v.WorkflowContract,
-		&v.PublishedAt, &v.PublishedBy, &v.CreatedAt)
+		&v.ResponseCredentialID, &v.PublishedAt, &v.PublishedBy, &v.CreatedAt)
 	return v, err
 }
 
@@ -118,18 +118,18 @@ func (s *Store) CreateVersion(ctx context.Context, accountID, agentID string, in
 	query := `insert into messaging.ai_agent_versions
 		(account_id, agent_id, version, status, provider, model, temperature,
 		 layers, output_schema, media_config, schema_version, debounce_ms, max_context_messages, max_ai_turns,
-		 min_confidence, handoff_on_error, handoff_on_limit, workflow_contract_version)
+		 min_confidence, handoff_on_error, handoff_on_limit, workflow_contract_version,response_credential_id)
 		select $1::uuid, a.id, coalesce(max(v.version), 0) + 1, 'draft', $3, $4, $5,
-		       $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16
+		       $6::jsonb, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16,$17::uuid
 		from messaging.ai_agents a
-		left join messaging.ai_agent_versions v on v.agent_id = a.id
+		left join messaging.ai_agent_versions v on v.account_id = a.account_id and v.agent_id = a.id
 		where a.account_id = $1::uuid and a.id = $2::uuid
 		group by a.id
 	returning ` + versionCols
 	return scanVersion(s.pool.QueryRow(ctx, query, accountID, agentID,
 		in.Provider, in.Model, in.Temperature, layers, schema, in.MediaConfig, in.SchemaVersion,
 		in.DebounceMS, in.MaxContextMessages, in.MaxAITurns, *in.MinConfidence,
-		boolValue(in.HandoffOnError, true), boolValue(in.HandoffOnLimit, true), in.WorkflowContract))
+		boolValue(in.HandoffOnError, true), boolValue(in.HandoffOnLimit, true), in.WorkflowContract, in.ResponseCredentialID))
 }
 
 // SavePublishedVersion salva a configuracao que passa a valer no atendimento. O lock do agente
@@ -200,14 +200,14 @@ func (s *Store) SavePublishedVersion(ctx context.Context, accountID, agentID str
 		saved, err = scanVersion(tx.QueryRow(ctx, `insert into messaging.ai_agent_versions
 			(account_id,agent_id,version,status,provider,model,temperature,layers,output_schema,
 			 media_config,schema_version,debounce_ms,max_context_messages,max_ai_turns,min_confidence,
-			 handoff_on_error,handoff_on_limit,workflow_contract_version,published_at,published_by)
+			 handoff_on_error,handoff_on_limit,workflow_contract_version,response_credential_id,published_at,published_by)
 			select $1::uuid,$2::uuid,coalesce(max(version),0)+1,'published',$3,$4,$5,$6::jsonb,$7::jsonb,
-			       $8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,now(),$17
+			       $8::jsonb,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid,now(),$18
 			from messaging.ai_agent_versions where account_id=$1::uuid and agent_id=$2::uuid
 			returning `+versionCols, accountID, agentID, in.Provider, in.Model, in.Temperature,
 			layers, schema, in.MediaConfig, in.SchemaVersion, in.DebounceMS, in.MaxContextMessages,
 			in.MaxAITurns, *in.MinConfidence, boolValue(in.HandoffOnError, true),
-			boolValue(in.HandoffOnLimit, true), in.WorkflowContract, publishedBy))
+			boolValue(in.HandoffOnLimit, true), in.WorkflowContract, in.ResponseCredentialID, publishedBy))
 	}
 	if err != nil {
 		return versionRow{}, err
@@ -243,12 +243,20 @@ func listDraftVersionsTx(ctx context.Context, tx pgx.Tx, accountID, agentID stri
 
 func versionMatchesInput(version versionRow, in AIVersionInput, schema, layers json.RawMessage) bool {
 	return version.Provider == in.Provider && version.Model == in.Model &&
+		equalOptionalString(version.ResponseCredentialID, in.ResponseCredentialID) &&
 		version.Temperature == in.Temperature && jsonValuesEqual(version.Layers, layers) &&
 		jsonValuesEqual(version.OutputSchema, schema) && jsonValuesEqual(version.MediaConfig, in.MediaConfig) &&
 		version.SchemaVersion == in.SchemaVersion && version.DebounceMS == in.DebounceMS &&
 		version.MaxContextMessages == in.MaxContextMessages && version.MaxAITurns == in.MaxAITurns &&
 		version.MinConfidence == *in.MinConfidence && version.HandoffOnError == boolValue(in.HandoffOnError, true) &&
 		version.HandoffOnLimit == boolValue(in.HandoffOnLimit, true) && version.WorkflowContract == in.WorkflowContract
+}
+
+func equalOptionalString(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func jsonValuesEqual(left, right json.RawMessage) bool {

@@ -79,8 +79,12 @@ usa `workspaceId: 'omnichannel'` e o link no inbox só aparece para `platform_ad
 - cada número também tem switch no cabeçalho. Desativar libera o teto imediatamente; excluir usa
   `DELETE .../instances/{id}` e o Go bloqueia quando existe histórico. Ao criar, o card da conexão
   abre para tornar o botão de QR evidente. Somente `platform_admin` vê/edita o teto da conta;
-- `AutomationInterventionList.vue` apresenta duas projeções do backend: `IA atendendo`, com
-  `Parar IA`, e `IA parada`, com preview/contagem do inbound sem resposta e `IA responder agora`.
+- `AutomationInterventionList.vue` apresenta três projeções do backend: `IA atendendo`, com
+  `Parar IA`; `Atendimento humano`, com `Passar para IA agora/nas próximas`; e `IA parada`, com
+  preview/contagem do inbound sem resposta e `IA responder agora`.
+  O grupo humano é importado explicitamente para não depender do nome gerado pelo auto-import do
+  Nuxt e oferece `Encerrar conversa`, que usa o mesmo `PATCH .../status` autoritativo do inbox sem
+  solicitar resposta da IA. Enquanto o estado for `human_active`, a FSM mantém a IA bloqueada.
   A resposta imediata agenda o dispatch autoritativo no Go; o card nunca possui composer nem envia
   diretamente pelo provider. Sem mensagem pendente, `Retomar nas próximas` conserva o fluxo de
   reabertura no próximo inbound;
@@ -90,7 +94,15 @@ usa `workspaceId: 'omnichannel'` e o link no inbox só aparece para `platform_ad
   configuração ausente, falha técnica, limite mensal ou lease inválida;
 - `ConfigAiAgentAdvancedSettings.vue` diferencia a confiança mínima para **responder** da confiança
   mínima para **encerrar**, explica debounce, janela de contexto, máximo de respostas e os dois
-  toggles de handoff. `AutomationProfileConfig.vue` rotula a confiança de encerramento explicitamente;
+  toggles de handoff. Em máximo de respostas, `0` é exibido e persistido como `sem limite`;
+  conversões com fallback truthy (`Number(valor) || 6`) são proibidas porque corrompem esse estado.
+  `AutomationProfileConfig.vue` rotula a confiança de encerramento explicitamente;
+- `AutomationHiddenContacts.vue` fica na aba `Pessoas ocultas`, visível somente com a permissão
+  explícita `omnichannel.conversations.privacy.manage`. A ação de ocultar parte do detalhe da
+  conversa e pergunta separadamente se o histórico anterior deve permanecer oculto; restaurar
+  nunca fabrica mensagens no browser. Inbox e automação consomem a mesma supressão do Go;
+- o inbox também expõe `Ocultos` ao lado de `Conversas`/`Contatos`, com leitura e restauração pela
+  mesma API account-scoped. A recuperação não pode ficar descoberta somente dentro da Automação;
 - `~/composables/omnichannel/useOmnichannelAutomationMvp.ts` concentra carregamento, save e polling;
 - `~/domain/omnichannel/automation-api.ts` é o contrato tipado, sempre via `createApiRequest`.
 
@@ -113,6 +125,10 @@ e oferece `PATCH /conversations/{id}/queue` para transferência quando o backend
 leitura das filas. Falha de permissão para listar filas não esconde o histórico do handoff nem
 fabrica uma opção de transferência.
 
+As áreas de `InboxDetailsSidebar.vue` usam `InboxDetailsSection.vue` com seções nativas
+expansíveis. Somente `Visibilidade e IA` nasce aberta; o conteúdo dos demais blocos mantém altura
+intrínseca e scroll no corpo da sidebar, sem flex-shrink que corte selects, botões ou textos.
+
 ## `config/` — telas de config (F10) — CODIGO DA CASA, NAO VERBATIM
 
 A pasta `config/` **nao** e port verbatim: nasceu no design system da casa (spec
@@ -124,17 +140,18 @@ Aberta por um drawer (precedente do calendario), com deep-link `?config=<aba>`. 
 entrada = botao "Configurar atendimento" em `~/pages/omnichannel/index.vue` (gate
 `isPlatformAdmin || <perm>.manage`).
 
-| Caminho                                                                                 | Papel                                                                                     |
-| --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `config/OmnichannelConfigDrawer.vue`                                                    | Host: abas + `?config=<aba>` + gate por permissao (platform_admin incluso)                |
-| `config/ConfigNumbers.vue` + `ConfigNumberCard/Credentials/Capabilities/Connection.vue` | Numeros/providers/credencial `{set,last4}`/QR; UI degrada por numero via `Capabilities()` |
-| `config/ConfigDepartments.vue` · `ConfigQueues.vue` · `ConfigQueueMembers.vue`          | Setores, filas e membros (diff incremental add/remove)                                    |
-| `config/ConfigRoutingRules.vue`                                                         | Regras + reordenacao de prioridade (`PUT /routing-rules/order`)                           |
-| `config/ConfigAiAgent.vue` + `ConfigAiAgentCard/Versions/Simulator.vue`                 | Editor do agente com salvamento ativo único, histórico interno e simulador                |
-| `~/domain/omnichannel/config-api.ts` + `config-types.ts` + `instagram-api.ts`           | Client tipado (sem `any`) das rotas F2/F4/F8/F9/E8                                        |
+| Caminho                                                                                 | Papel                                                                                         |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `config/OmnichannelConfigDrawer.vue`                                                    | Host: abas + `?config=<aba>` + gate por permissao (platform_admin incluso)                    |
+| `config/ConfigNumbers.vue` + `ConfigNumberCard/Credentials/Capabilities/Connection.vue` | Numeros/providers/credencial `{set,last4}`/QR; UI degrada por numero via `Capabilities()`     |
+| `config/ConfigDepartments.vue` · `ConfigQueues.vue` · `ConfigQueueMembers.vue`          | Setores, filas e membros (diff incremental add/remove)                                        |
+| `config/ConfigRoutingRules.vue`                                                         | Regras + reordenacao de prioridade (`PUT /routing-rules/order`)                               |
+| `config/ConfigAiCredentials.vue`                                                        | Cofre account-scoped: cria, nomeia, rotaciona e importa chaves legadas sem leitura do segredo |
+| `config/ConfigAiAgent.vue` + `ConfigAiAgentCard/Versions/Simulator/MediaSettings.vue`   | Editor versionado com chave/modelo por resposta, áudio, imagem, vídeo e documento             |
+| `~/domain/omnichannel/config-api.ts` + `config-types.ts` + `instagram-api.ts`           | Client tipado (sem `any`) das rotas F2/F4/F8/F9/E8                                            |
 
 Consome rotas **ja existentes**: instancias/sessao/credencial sob `/v1/omnichannel/tenant/whatsapp/*`,
-setores/filas/regras sob `/v1/omnichannel/settings/*`, agente sob `/v1/omnichannel/agents/*`.
+setores/filas/regras e cofre sob `/v1/omnichannel/settings/*`, agente sob `/v1/omnichannel/agents/*`.
 Credencial de numero e keyed por **`instanceName`** (nao id). A view de gestão inclui `provider`;
 `GET .../instances/{id}/capabilities` existe e a tela degrada para ausente somente se a consulta falhar.
 

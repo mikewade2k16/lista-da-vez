@@ -28,6 +28,25 @@ export type CRMContact = {
 
 export type CRMContactProfile = {
   contact: CRMContact;
+  intelligence: {
+    preferredName?: string | null;
+    nameSource: "crm" | "channel" | "unknown" | string;
+    relationshipStatus: string;
+    tags: string[];
+    summary: string;
+    facts: Record<string, unknown>;
+    preferences: Record<string, unknown>;
+    interactionCount: number;
+    aiReplyCount: number;
+    handoffCount: number;
+    lastIntent: string;
+    lastSentiment: string;
+    lastConfidence?: number | null;
+    lastOutcome: string;
+    lastConversationId?: string | null;
+    lastLearnedAt?: string | null;
+    updatedAt?: string | null;
+  };
   identities: Array<{ id: string; channel: string; provider: string; externalId: string; lastSeenAt: string }>;
   touchpoints: Array<{ id: string; channel: string; sourceKind: string; occurredAt: string }>;
   notes: Array<{ id: string; content: string; createdAt: string; authorUserId?: string | null }>;
@@ -84,6 +103,30 @@ function normalizeContact(value: CRMContact): CRMContact {
   return { ...value, tags: asArray(value.tags) };
 }
 
+function normalizeProfile(value: CRMContactProfile): CRMContactProfile {
+  const intelligence = value.intelligence;
+  return {
+    ...value,
+    contact: normalizeContact(value.contact),
+    intelligence: {
+      preferredName: null,
+      nameSource: "unknown",
+      relationshipStatus: value.contact.relationshipStatus,
+      summary: "",
+      interactionCount: 0,
+      aiReplyCount: 0,
+      handoffCount: 0,
+      lastIntent: "",
+      lastSentiment: "unknown",
+      lastOutcome: "",
+      ...intelligence,
+      tags: asArray(intelligence.tags),
+      facts: intelligence.facts ?? {},
+      preferences: intelligence.preferences ?? {},
+    },
+  };
+}
+
 export function useOmnichannelCRM() {
   const { apiFetch } = useApi();
   const contacts = ref<CRMContact[]>([]);
@@ -135,7 +178,8 @@ export function useOmnichannelCRM() {
   async function loadProfile(contactId: string) {
     loadingProfile.value = true;
     try {
-      profile.value = await apiFetch<CRMContactProfile>(`/contacts/${encodeURIComponent(contactId)}/profile?limit=25`);
+      const response = await apiFetch<CRMContactProfile>(`/contacts/${encodeURIComponent(contactId)}/profile?limit=25`);
+      profile.value = normalizeProfile(response);
       return profile.value;
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : "Não foi possível carregar o perfil.";

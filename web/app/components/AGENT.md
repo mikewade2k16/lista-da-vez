@@ -193,6 +193,38 @@ explicito de override por loja.
 - [SettingsProductManager.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/settings/SettingsProductManager.vue)
   CRUD do catalogo de produtos.
 
+### `bi`
+
+- [BiWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiWorkspace.vue)
+  Mantem `Entidades` como aba inicial e nao consulta a API ao montar essa documentacao. As abas de
+  visao, datasets e inteligencia continuam responsaveis pelas leituras operacionais. A autenticacao
+  padrao e automatica no backend; o formulario manual fica recolhido no botao secundario
+  `Diagnostico de conexao`.
+- [BiApiCatalog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiCatalog.vue) +
+  [BiApiEntityDetail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiEntityDetail.vue)
+  Catalogo visual estatico das seis entidades confirmadas da API Perola BI. Exibe endpoint,
+  informacoes disponiveis, relacionamentos, regra de consulta, performance observada e campos/tipos
+  encontrados em uma amostra controlada de um registro, sem mostrar valores reais.
+- [BiManualConnection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiManualConnection.vue)
+  Diagnostico excepcional por credenciais ou Bearer Token. Nao deve virar caminho principal nem ser
+  aberto automaticamente.
+- [BiIntelligencePanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiIntelligencePanel.vue)
+  Mapa de inteligencia por fonte, sem fingir que possibilidades sao indicadores ao vivo. Permite
+  filtrar leituras por Perola, ERP, Fila ou cruzamentos e preserva os indicadores limitados do
+  overview apenas como amostra explicitamente carregada.
+- [BiIntelligenceOpportunityCard.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiIntelligenceOpportunityCard.vue) +
+  [BiIntelligenceSourceMatrix.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiIntelligenceSourceMatrix.vue) +
+  [BiLiveIntelligenceSnapshot.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiLiveIntelligenceSnapshot.vue)
+  Componentes especializados para oportunidade, comparacao BI x ERP x Fila e leitura da amostra
+  atual. O status de prontidao diferencia ingrediente interno, consulta BI controlada e chave de
+  ligacao pendente.
+- [api-catalog.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/domain/bi/api-catalog.ts)
+  Fonte tipada do catalogo visual. Deve permanecer alinhada ao contrato observado e documentado em
+  `back/internal/modules/bi/AGENT.md`; nao contem valores de amostra, PII, tokens ou credenciais.
+- [intelligence-catalog.ts](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/domain/bi/intelligence-catalog.ts)
+  Fonte tipada das leituras possiveis e da matriz entre Perola, ERP e Fila. Registra tambem os gaps
+  de join para impedir que a UI atribua estoque, margem ou nota ao registro errado.
+
 ### `feedback`
 
 - [FeedbackFormModal.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/feedback/FeedbackFormModal.vue)

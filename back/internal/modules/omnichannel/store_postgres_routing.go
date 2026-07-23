@@ -346,8 +346,14 @@ func (s *Store) queueDepartment(ctx context.Context, accountID, queueID string) 
 // account (defesa em profundidade).
 func (s *Store) LatestMessageText(ctx context.Context, accountID, convID string) (string, error) {
 	var text string
-	err := s.pool.QueryRow(ctx, `select content from messaging.messages
-		where account_id = $1::uuid and conversation_id = $2::uuid
+	err := s.pool.QueryRow(ctx, `select message.content from messaging.messages message
+		where message.account_id = $1::uuid and message.conversation_id = $2::uuid
+		  and message.created_at > coalesce((select suppression.history_cleared_at
+		      from messaging.conversations conversation
+		      join messaging.contact_suppressions suppression
+		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
+		      where conversation.account_id=message.account_id and conversation.id=message.conversation_id),
+		      '-infinity'::timestamptz)
 		order by created_at desc, id desc limit 1`, accountID, convID).Scan(&text)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil

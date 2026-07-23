@@ -93,37 +93,27 @@ func (c *client) Complete(ctx context.Context, req Request) (Response, error) {
 		body.ResponseFormat = &responseFmt{Type: "json_object"}
 	}
 
-	payload, err := json.Marshal(body)
-	if err != nil {
-		return Response{}, fmt.Errorf("%w: marshal request: %v", ErrProviderUnavailable, err)
-	}
-
 	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return Response{}, fmt.Errorf("%w: build request: %v", ErrProviderUnavailable, err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
-
 	start := time.Now()
-	resp, err := c.hc.Do(httpReq)
+	raw, statusCode, err := c.doChatRequest(ctx, endpoint, req.APIKey, body)
 	if err != nil {
-		// Rede/timeout/ctx cancelado: o corpo do erro do net/http nao carrega a chave.
-		return Response{}, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
+		return Response{}, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Le com teto: resposta gigante nao pode estourar a memoria do worker.
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20)) // 4 MiB
-	if err != nil {
-		return Response{}, fmt.Errorf("%w: ler resposta: %v", ErrProviderUnavailable, err)
+	// Alguns modelos OpenAI-compatible legados aparecem em /models e aceitam chat,
+	// mas rejeitam response_format=json_object com 400. A validacao autoritativa
+	// continua no Go; por isso uma unica repeticao sem a dica do provider e segura.
+	if statusCode == http.StatusBadRequest && body.ResponseFormat != nil {
+		body.ResponseFormat = nil
+		raw, statusCode, err = c.doChatRequest(ctx, endpoint, req.APIKey, body)
+		if err != nil {
+			return Response{}, err
+		}
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if statusCode < 200 || statusCode >= 300 {
 		// StatusError expoe o codigo para o caller/jobs.Classify decidir retry.
 		// NUNCA anexa o corpo cru (pode ecoar prompt/echo da chave em alguns provedores).
-		return Response{}, &StatusError{StatusCode: resp.StatusCode, Err: ErrProviderUnavailable}
+		return Response{}, &StatusError{StatusCode: statusCode, Err: ErrProviderUnavailable}
 	}
 
 	var parsed chatResponse
@@ -157,6 +147,30 @@ func (c *client) Complete(ctx context.Context, req Request) (Response, error) {
 
 	c.logCall(provider, out)
 	return out, nil
+}
+
+func (c *client) doChatRequest(ctx context.Context, endpoint, apiKey string, body chatRequest) ([]byte, int, error) {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: marshal request: %v", ErrProviderUnavailable, err)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: build request: %v", ErrProviderUnavailable, err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := c.hc.Do(httpReq)
+	if err != nil {
+		// Rede/timeout/ctx cancelado: o corpo do erro do net/http nao carrega a chave.
+		return nil, 0, fmt.Errorf("%w: %v", ErrProviderUnavailable, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20)) // 4 MiB
+	if err != nil {
+		return nil, 0, fmt.Errorf("%w: ler resposta: %v", ErrProviderUnavailable, err)
+	}
+	return raw, resp.StatusCode, nil
 }
 
 // messagesFor monta a lista de mensagens; system opcional, user sempre.

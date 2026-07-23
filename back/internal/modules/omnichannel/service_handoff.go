@@ -71,6 +71,15 @@ func normalizeHandoffRequest(in *HandoffRequest) error {
 		}
 		in.TargetQueueID = &queueID
 	}
+	in.CustomerNotice = strings.TrimSpace(in.CustomerNotice)
+	in.AIRunID = strings.TrimSpace(in.AIRunID)
+	in.NoticeIdempotencyKey = strings.TrimSpace(in.NoticeIdempotencyKey)
+	if len([]rune(in.CustomerNotice)) > maxContentRunes || len([]rune(in.NoticeIdempotencyKey)) > 128 {
+		return ErrInvalidBody
+	}
+	if in.CustomerNotice != "" && (in.NoticeIdempotencyKey == "" || in.CapturedGeneration < 0) {
+		return ErrInvalidBody
+	}
 	if len(in.CollectedFields) == 0 || string(in.CollectedFields) == "null" {
 		in.CollectedFields = json.RawMessage(`{}`)
 	}

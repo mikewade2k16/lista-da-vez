@@ -113,6 +113,7 @@ func (m *Module) Permissions() []modules.PermissionDef {
 		{Key: "omnichannel.settings.manage", Label: "Gerenciar setores, filas e regras de roteamento", Scope: "account"},
 		{Key: "omnichannel.agents.manage", Label: "Editar agente de IA (publish/rollback)", Scope: "account"},
 		{Key: "omnichannel.audit.view", Label: "Ver a trilha de auditoria", Scope: "account"},
+		{Key: conversationPrivacyManagePermission, Label: "Gerenciar contatos ocultos", Scope: "account"},
 	}
 }
 
@@ -233,7 +234,6 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	}
 	worker := jobs.New(outboxStore, jobs.Config{WorkerID: "omnichannel", Logger: deps.Logger})
 	worker.Register(OutboundJobKind, NewOutboundHandler(store, registry, m.secretBox, m.publisher, deps.Logger))
-	worker.Register(MediaFetchJobKind, NewMediaFetchHandler(store, media, registry, m.secretBox, m.publisher, deps.Logger))
 	worker.Register(InstagramActionJobKind, NewInstagramActionHandler(store, registry, m.secretBox))
 	// Poda LGPD (F13): o mesmo worker despacha o purge. Registrar ANTES do Start — kind sem
 	// handler vira ErrNoHandler → dead-letter. Roda em batches com teto de tempo (não segura envio).
@@ -247,6 +247,7 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 	// service e send em locais: o ActionsService (F7) depende dos dois (forward reusa o send;
 	// status/assign passam pela FSM via o Service).
 	svc := NewService(store)
+	svc.setGroupMetadataResolver(newGroupMetadataResolver(store, registry, m.secretBox, deps.Logger))
 	automationSvc := NewAutomationService(store, svc, m.clientCatalog, m.businessContext, svc)
 	sendSvc := NewSendService(store, media, m.publisher, deps.Logger)
 	durableAIDispatch, probeErr := store.AIDispatchSchemaAvailable(context.Background())
@@ -265,6 +266,20 @@ func (m *Module) Build(deps modules.Dependencies) (modules.Handle, error) {
 		deps.Logger.Info("omnichannel_ai_dispatch_runtime", "durable_dispatch", durableAIDispatch, "executor", requestedExecutor)
 	}
 	worker.Register(AIDispatchJobKind, newAIDispatchHandler(store, aiSvc, svc, sendSvc, deps.Logger))
+	mediaBaseURL := strings.TrimSpace(os.Getenv("OMNI_INTERNAL_API_BASE_URL"))
+	if mediaBaseURL == "" {
+		mediaBaseURL = "http://api:8080"
+	}
+	mediaAnalyzer := newN8NMediaAnalyzer(store, m.secretBox, aiSvc,
+		os.Getenv("OMNI_N8N_MEDIA_WEBHOOK_URL"), mediaBaseURL, os.Getenv("OMNI_N8N_INTERNAL_TOKEN"))
+	if mediaAnalyzer != nil {
+		worker.Register(MediaFetchJobKind, NewMediaFetchHandler(store, media, registry, m.secretBox, m.publisher, deps.Logger, mediaAnalyzer))
+	} else {
+		worker.Register(MediaFetchJobKind, NewMediaFetchHandler(store, media, registry, m.secretBox, m.publisher, deps.Logger))
+		if deps.Logger != nil {
+			deps.Logger.Warn("omnichannel_n8n_media_analyzer_not_configured")
+		}
+	}
 	worker.Start(workerCtx)
 	StartRetentionScheduler(workerCtx, retStore, outboxStore, deps.Logger)
 	StartSLAScheduler(workerCtx, store, deps.Logger)
@@ -347,6 +362,7 @@ func (h *handle) RegisterRoutes(mux *http.ServeMux) {
 	// Rotas de leitura do inbox e do ciclo de sessao /v1/omnichannel/* (RequireAuthWithAccount
 	// + gate de modulo no Chain via moduleGatingRules).
 	RegisterRoutes(mux, h.service, h.authMiddleware)
+	RegisterContactPrivacyRoutes(mux, h.service, h.authMiddleware)
 	RegisterCRMContactRoutes(mux, h.service, h.authMiddleware)
 	registerSessionRoutes(mux, h.session, h.authMiddleware)
 	// Gestao de instancia (escrita): criar/atualizar/atribuir usuarios + validate-endpoints +

@@ -58,6 +58,7 @@ type BrainConversationV2 struct {
 
 type BrainContactV2 struct {
 	ID                 string        `json:"id"`
+	Name               *string       `json:"name"`
 	RelationshipStatus string        `json:"relationshipStatus"`
 	Tags               []string      `json:"tags"`
 	Origin             BrainOriginV2 `json:"origin"`

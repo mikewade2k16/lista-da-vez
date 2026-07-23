@@ -11,13 +11,21 @@ const props = withDefaults(
     clients: CalendarClient[]
     selectedClientId: string
     canSelectClient?: boolean
+    canConfigure?: boolean
     view: CalendarView
     // Presenca (SPEC-F9): quem mais esta no calendario agora (exclui o proprio usuario).
     participants?: CalendarPresenceUser[]
     // Barras multi-dia (WAVE 11): estado do toggle mostrar/ocultar as tasks com inicio->fim.
     showSpans?: boolean
+    hasSpans?: boolean
   }>(),
-  { canSelectClient: false, participants: () => [], showSpans: true },
+  {
+    canSelectClient: false,
+    canConfigure: false,
+    participants: () => [],
+    showSpans: true,
+    hasSpans: false,
+  },
 )
 
 const emit = defineEmits<{
@@ -26,8 +34,6 @@ const emit = defineEmits<{
   'update:view': [view: CalendarView]
   'new-item': []
   config: []
-  ai: []
-  chat: []
   minimize: []
   'toggle-spans': []
 }>()
@@ -67,28 +73,13 @@ const clientOptions = computed(() => [
     <button
       type="button"
       class="calendar-controls__gear"
-      aria-label="Assistente (chat)"
-      title="Abrir o assistente (chat)"
-      @click="emit('chat')"
-    >
-      <UIcon name="i-lucide-message-circle" aria-hidden="true" />
-    </button>
-
-    <button
-      type="button"
-      class="calendar-controls__gear"
-      aria-label="IA do mês"
-      title="Gerar plano de conteúdo com IA"
-      @click="emit('ai')"
-    >
-      <UIcon name="i-lucide-sparkles" aria-hidden="true" />
-    </button>
-
-    <button
-      type="button"
-      class="calendar-controls__gear"
+      :disabled="!canConfigure"
       aria-label="Configurações do calendário"
-      title="Configurações (responsáveis, feriados)"
+      :title="
+        canConfigure
+          ? 'Configurações (responsáveis, feriados)'
+          : 'Configurações disponíveis apenas para a agência'
+      "
       @click="emit('config')"
     >
       <UIcon name="i-lucide-settings" aria-hidden="true" />
@@ -96,6 +87,7 @@ const clientOptions = computed(() => [
 
     <!-- WAVE 11: mostrar/ocultar as BARRAS multi-dia (tasks com inicio->fim). -->
     <button
+      v-if="hasSpans"
       type="button"
       class="calendar-controls__gear"
       :class="{ 'is-active': showSpans }"
@@ -112,7 +104,7 @@ const clientOptions = computed(() => [
 
     <button
       type="button"
-      class="calendar-controls__gear"
+      class="calendar-controls__gear calendar-controls__collapse"
       aria-label="Minimizar coluna de anotações"
       title="Minimizar as anotações (vira uma barra lateral)"
       @click="emit('minimize')"

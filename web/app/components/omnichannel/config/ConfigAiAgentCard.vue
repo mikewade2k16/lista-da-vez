@@ -2,7 +2,6 @@
 import { onMounted, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import ConfigAiAgentClientScope from '~/components/omnichannel/config/ConfigAiAgentClientScope.vue'
-import ConfigAiAgentProviderKeys from '~/components/omnichannel/config/ConfigAiAgentProviderKeys.vue'
 import ConfigAiAgentVersions from '~/components/omnichannel/config/ConfigAiAgentVersions.vue'
 import ConfigAiAgentSimulator from '~/components/omnichannel/config/ConfigAiAgentSimulator.vue'
 import { useAuthStore } from '~/stores/auth'
@@ -34,7 +33,6 @@ const versions = ref<OmniAgentVersion[]>([])
 const nameDraft = ref('')
 const saving = ref(false)
 const savingConfiguration = ref(false)
-const providerKeysRevision = ref(0)
 
 function hydrate(): void {
   local.value = props.agent
@@ -98,7 +96,7 @@ onMounted(() => void loadVersions())
 
 <template>
   <ConfigAiAgentVersions
-    :key="`${agent.id}-${local.providerKey.set}-${local.providerKey.last4}-${providerKeysRevision}`"
+    :key="`${agent.id}-${local.activeVersionId || 'new'}`"
     :agent-id="agent.id"
     :versions="versions"
     :active-version-id="local.activeVersionId"
@@ -111,14 +109,6 @@ onMounted(() => void loadVersions())
         :profiles="profiles"
         :disabled="disabled"
         @changed="emit('changed')"
-      />
-    </template>
-
-    <template #api-key>
-      <ConfigAiAgentProviderKeys
-        :agent-id="agent.id"
-        :disabled="disabled"
-        @changed="providerKeysRevision++"
       />
     </template>
 

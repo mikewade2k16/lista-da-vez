@@ -27,7 +27,7 @@ func (s *AIService) Simulate(ctx context.Context, accountID string, p auth.Princ
 		return SimulateView{}, err
 	}
 	// Gate 4 (provider/model/key) — no simulate e erro ACIONAVEL (o operador esta testando).
-	apiKey, keyErr := s.providerAPIKey(agent, version.Provider)
+	apiKey, keyErr := s.versionAPIKey(ctx, accountID, agent, version)
 	if version.Provider == "" || version.Model == "" || keyErr != nil || apiKey == "" {
 		return SimulateView{}, ErrAIProviderNotConfigured
 	}

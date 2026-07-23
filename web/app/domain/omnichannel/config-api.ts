@@ -12,6 +12,8 @@ import type {
   OmniAgent,
   OmniAgentInput,
   OmniAgentVersion,
+  OmniAICredential,
+  OmniAICredentialInput,
   OmniAiKnowledgeBinding,
   OmniAiToolBinding,
   OmniAiToolBindingInput,
@@ -276,6 +278,55 @@ export function deleteHandoffPolicy(api: ApiRequest, id: string): Promise<void> 
 // ============================================================================
 
 const AGENTS = `${BASE}/agents`
+const AI_CREDENTIALS = `${BASE}/settings/ai-credentials`
+
+export function fetchAICredentials(api: ApiRequest): Promise<OmniAICredential[]> {
+  return api(AI_CREDENTIALS, { dedupe: false }) as Promise<OmniAICredential[]>
+}
+
+export function createAICredential(
+  api: ApiRequest,
+  input: OmniAICredentialInput,
+): Promise<OmniAICredential> {
+  return api(AI_CREDENTIALS, { method: 'POST', body: input }) as Promise<OmniAICredential>
+}
+
+export function updateAICredential(
+  api: ApiRequest,
+  credentialId: string,
+  patch: { name?: string; apiKey?: string },
+): Promise<OmniAICredential> {
+  return api(`${AI_CREDENTIALS}/${encodeURIComponent(credentialId)}`, {
+    method: 'PATCH',
+    body: patch,
+  }) as Promise<OmniAICredential>
+}
+
+export function deleteAICredential(api: ApiRequest, credentialId: string): Promise<void> {
+  return api(`${AI_CREDENTIALS}/${encodeURIComponent(credentialId)}`, {
+    method: 'DELETE',
+  }) as Promise<void>
+}
+
+export function importLegacyAICredentials(
+  api: ApiRequest,
+): Promise<{ imported: number; existing: number }> {
+  return api(`${AI_CREDENTIALS}/import-legacy`, { method: 'POST' }) as Promise<{
+    imported: number
+    existing: number
+  }>
+}
+
+export function fetchAICredentialModels(
+  api: ApiRequest,
+  credentialId: string,
+  capability: 'response' | 'audio' | 'image' | 'video' | 'document',
+): Promise<string[]> {
+  return api(
+    `${AI_CREDENTIALS}/${encodeURIComponent(credentialId)}/models?capability=${encodeURIComponent(capability)}`,
+    { dedupe: false },
+  ) as Promise<string[]>
+}
 
 export function fetchMediaAnalyses(
   api: ApiRequest,

@@ -89,9 +89,9 @@ O fluxo local sem Docker continua existindo apenas como fallback:
 - Docker Compose: `v2`
 - PostgreSQL: `16`
 - imagem PostgreSQL: `postgres:16-alpine`
-- Go do backend: `1.24.0`
-- toolchain Go: `1.24.3`
-- imagem base do backend: `golang:1.24.0-bookworm`
+- Go do backend: `1.26.5`
+- toolchain Go: `1.26.5`
+- imagem base do backend: `golang:1.26.5-bookworm`
 - Nuxt: `4.4.2`
 - Vue: `3.5.30`
 - Pinia: `3.0.4`

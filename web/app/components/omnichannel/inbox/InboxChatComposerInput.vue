@@ -137,4 +137,10 @@ const draftModel = computed({
   min-height: 1.75rem;
   max-height: 10rem;
 }
+
+:deep(.chat-composer__input textarea:focus),
+:deep(.chat-composer__input textarea:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
 </style>

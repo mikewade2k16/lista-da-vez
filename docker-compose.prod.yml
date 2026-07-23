@@ -1,8 +1,8 @@
 name: ${COMPOSE_PROJECT_NAME:-omni}
 
-# AC-11: mem_limit por servico soma ~4,25 GiB de TETO (nao alocacao) numa VPS de
-# ~6 GB compartilhada. Se um servico estoura o limit, o kernel OOM-killa (exit 137)
-# e o `restart: unless-stopped` ressuscita — auto-recuperacao em vez de derrubar a VPS.
+# AC-11: com o profile automation, mem_limit soma ~5,25 GiB de TETO (nao alocacao).
+# Se um servico estoura o limit, o kernel OOM-killa e o `restart: unless-stopped`
+# ressuscita — auto-recuperacao em vez de derrubar a VPS.
 
 # AC-16: Log rotation. Sem isso o json-file default cresce sem limite e enche o disco
 # da VPS (~6GB compartilhada). Mudanca de logging so aplica ao RECRIAR o container
@@ -84,7 +84,15 @@ services:
       OMNICHANNEL_MEDIA_DIR: ${OMNICHANNEL_MEDIA_DIR:-/app/data/media/omnichannel}
       OMNI_AI_EXECUTOR: ${OMNI_AI_EXECUTOR:-native}
       OMNI_N8N_BRAIN_WEBHOOK_URL: ${OMNI_N8N_BRAIN_WEBHOOK_URL:-}
+      OMNI_N8N_MEDIA_WEBHOOK_URL: ${OMNI_N8N_MEDIA_WEBHOOK_URL:-}
       OMNI_N8N_INTERNAL_TOKEN: ${OMNI_N8N_INTERNAL_TOKEN:-}
+      OMNI_INTERNAL_API_BASE_URL: ${OMNI_INTERNAL_API_BASE_URL:-http://api:8080}
+      # Evolution do atendimento omnichannel. A credencial por instancia cifrada
+      # no PostgreSQL vence este fallback de ambiente.
+      EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL:-http://evolution:8080}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      OMNI_DEFAULT_WHATSAPP_PROVIDER: ${OMNI_DEFAULT_WHATSAPP_PROVIDER:-evolution}
+      WEBHOOK_RECEIVER_BASE_URL: ${WEBHOOK_RECEIVER_BASE_URL:-https://omni.crowvisuals.com.br}
       WEB_APP_URL: ${WEB_APP_URL}
       UPLOADS_DIR: /app/data/uploads
       # Absolutiza /uploads/* nas respostas publicas (cardapio/bio). Sem isso o
@@ -254,10 +262,13 @@ services:
       - app
 
   waha:
-    image: devlikeapro/waha:gows-2026.5.1
+    # 2026.7.1 corrige GOWS silenciosamente parado apos <stream:error> de media ack.
+    image: devlikeapro/waha:gows-2026.7.1
     profiles: ["automation"]
     restart: unless-stopped
-    mem_limit: 1g
+    # O incidente de 2026-07-22 atingiu exatamente o antigo teto de 1 GiB durante
+    # sincronizacao. 2 GiB absorve o pico sem deixar o processo Node vivo e o GOWS morto.
+    mem_limit: ${AUTOMATION_WAHA_MEMORY_LIMIT:-2g}
     mem_reservation: 256m
     cpus: 1.5
     logging: *default-logging
@@ -265,6 +276,11 @@ services:
       WHATSAPP_HOOK_URL: http://n8n:5678/webhook/webhook
       WHATSAPP_DEFAULT_ENGINE: GOWS
       WHATSAPP_HOOK_EVENTS: message
+      # Reabre a sessao persistida depois de restart/OOM sem exigir clique ou novo QR.
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WAHA_AUTO_START_DELAY_SECONDS: "1"
+      # O bot nao consome stories/status; filtrar na origem reduz webhooks e storage.
+      WAHA_SESSION_CONFIG_IGNORE_STATUS: ${AUTOMATION_WAHA_IGNORE_STATUS:-true}
       WAHA_NO_API_KEY: "true"
       WAHA_DASHBOARD_USERNAME: ${AUTOMATION_WAHA_DASHBOARD_USER:-admin}
       WAHA_DASHBOARD_PASSWORD: ${AUTOMATION_WAHA_DASHBOARD_PASSWORD}
@@ -275,11 +291,30 @@ services:
     ports:
       - "127.0.0.1:${AUTOMATION_WAHA_PORT:-13010}:3000"
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:3000/ping > /dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      # restart_policy so reage quando PID 1 sai. Se o HTTP morrer depois de ja ter
+      # ficado pronto (caso real: GOWS parou e o Node ficou vivo), tres falhas encerram
+      # PID 1; Docker reinicia e o autostart acima restaura a sessao persistida.
+      # O marcador inclui o starttime de PID 1 para nao matar um boot ainda iniciando.
+      test:
+        - CMD-SHELL
+        - >-
+          boot=$$(awk '{print $$22}' /proc/1/stat);
+          if curl --fail --silent --max-time 5 http://127.0.0.1:3000/ping > /dev/null; then
+            echo "$$boot" > /tmp/waha-health-ready;
+            rm -f /tmp/waha-health-failures;
+            exit 0;
+          fi;
+          ready=$$(cat /tmp/waha-health-ready 2>/dev/null || true);
+          [ "$$ready" = "$$boot" ] || exit 1;
+          failures=$$(cat /tmp/waha-health-failures 2>/dev/null || echo 0);
+          failures=$$((failures + 1));
+          echo "$$failures" > /tmp/waha-health-failures;
+          if [ "$$failures" -ge 3 ]; then kill -TERM 1; fi;
+          exit 1
+      interval: 20s
+      timeout: 8s
+      retries: 3
+      start_period: 90s
     # Ordena so o boot (service_started, nao _healthy): a WAHA precisa subir mesmo
     # se o n8n estiver quebrado, p/ nao travar QR/dashboard.
     depends_on:
@@ -362,6 +397,76 @@ services:
     networks:
       - app
 
+  # Provider Evolution do atendimento omnichannel. Banco e volume sao exclusivos;
+  # nao compartilha estado com o PostgreSQL autoritativo do Omni nem com a WAHA.
+  evolution-db:
+    image: postgres:16-alpine
+    profiles: ["omnichannel"]
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 0.75
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD}
+    volumes:
+      - evolution_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - app
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    profiles: ["omnichannel"]
+    restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
+    cpus: 1.5
+    logging: *default-logging
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: "8080"
+      SERVER_URL: ${EVOLUTION_BASE_URL:-http://evolution:8080}
+      CONFIG_SESSION_PHONE_VERSION: ${EVOLUTION_CONFIG_SESSION_PHONE_VERSION:-2,3000,1025205472}
+      AUTHENTICATION_TYPE: apikey
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD}@evolution-db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_omni
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      LOG_LEVEL: ${EVOLUTION_LOG_LEVEL:-ERROR}
+      LOG_BAILEYS: error
+    volumes:
+      - evolution_instances:/evolution/instances
+    ports:
+      - "127.0.0.1:${EVOLUTION_PORT:-18085}:8080"
+    depends_on:
+      evolution-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - app
+
 volumes:
   postgres_data:
   api_uploads:
@@ -372,6 +477,8 @@ volumes:
   automation_waha_media:
   automation_n8n_data:
   automation_whisper_cache:
+  evolution_db_data:
+  evolution_instances:
 
 networks:
   app:

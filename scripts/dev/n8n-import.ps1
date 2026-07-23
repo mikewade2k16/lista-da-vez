@@ -132,7 +132,9 @@ try {
 finally {
   $cleanupFailed = $false
   foreach ($remotePath in @($remoteCleanup | Select-Object -Unique)) {
-    $cleanupRc = Invoke-N8nCommandSilently { & docker exec $Container sh -lc "rm -f -- '$remotePath'" }
+    # docker cp materializa o arquivo como root; o container roda n8n como node.
+    # Limpar com o usuario default falha com EPERM depois do import bem-sucedido.
+    $cleanupRc = Invoke-N8nCommandSilently { & docker exec -u root $Container sh -lc "rm -f -- '$remotePath'" }
     if ($cleanupRc -ne 0) { $cleanupFailed = $true }
   }
   Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue

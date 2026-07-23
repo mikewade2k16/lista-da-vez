@@ -56,6 +56,10 @@ func (s *Service) GetCRMContactProfile(ctx context.Context, accountID string, p 
 	if err != nil {
 		return CRMContactProfileView{}, translate(err)
 	}
+	intelligence, err := s.store.GetContactIntelligence(ctx, accountID, contactID)
+	if err != nil {
+		return CRMContactProfileView{}, translate(err)
+	}
 	limit = ensureCRMLimit(limit)
 	identities, err := s.store.ListContactIdentities(ctx, accountID, contactID)
 	if err != nil {
@@ -74,7 +78,7 @@ func (s *Service) GetCRMContactProfile(ctx context.Context, accountID string, p 
 		return CRMContactProfileView{}, err
 	}
 	return CRMContactProfileView{
-		Contact: crmContactView(contact), Identities: identities, Touchpoints: touchpoints,
+		Contact: crmContactView(contact), Intelligence: intelligence, Identities: identities, Touchpoints: touchpoints,
 		Notes: notes, Conversations: conversations, TouchpointsHasMore: touchMore,
 		TouchpointsNextCursor: touchNext, NotesHasMore: notesMore, NotesNextCursor: notesNext,
 	}, nil

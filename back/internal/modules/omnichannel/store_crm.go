@@ -99,7 +99,10 @@ func decodeCRMContactCursor(raw string) (crmContactCursor, error) {
 
 func (s *Store) ListCRMContacts(ctx context.Context, accountID string, f CRMContactFilter) ([]crmContactRow, error) {
 	query := `select ` + crmContactColumns + ` from messaging.contacts ct` + crmContactJoin +
-		` where ct.account_id = $1::uuid and ct.archived_at is null`
+		` where ct.account_id = $1::uuid and ct.archived_at is null
+		  and not exists (select 1 from messaging.contact_suppressions suppression
+		      where suppression.account_id=ct.account_id and suppression.contact_id=ct.id
+		        and suppression.is_hidden=true)`
 	args := []any{accountID}
 	if f.Search != "" {
 		args = append(args, "%"+escapeLike(strings.ToLower(f.Search))+"%")

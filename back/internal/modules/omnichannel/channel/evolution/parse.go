@@ -93,8 +93,10 @@ func (p *Provider) parseUpsert(instance string, data json.RawMessage) []channel.
 		// (o eco de um envio da plataforma cai no dedup). O pushName do fromMe e o NOSSO nome —
 		// nao usar como nome do contato (o contato e o RemoteJid, que nao muda).
 		contactName := strings.TrimSpace(m.PushName)
-		if m.Key.FromMe {
+		contactPhone := numberFromJid(m.Key.RemoteJid)
+		if m.Key.FromMe || strings.HasSuffix(strings.ToLower(strings.TrimSpace(m.Key.RemoteJid)), "@g.us") {
 			contactName = ""
+			contactPhone = ""
 		}
 		out = append(out, channel.Event{
 			Kind: channel.EventMessageReceived,
@@ -106,7 +108,7 @@ func (p *Provider) parseUpsert(instance string, data json.RawMessage) []channel.
 				ExternalMessageID: id,
 				Channel:           "WHATSAPP",
 				ContactExternalID: strings.TrimSpace(m.Key.RemoteJid),
-				ContactPhone:      numberFromJid(m.Key.RemoteJid),
+				ContactPhone:      contactPhone,
 				ContactName:       contactName,
 				FromMe:            m.Key.FromMe,
 				MessageType:       msgType,

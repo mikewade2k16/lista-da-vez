@@ -345,6 +345,365 @@
         ],
         "id": "e1f5e1a2-2a61-4e91-b4d1-c7b6c9a2d003",
         "name": "Responder erro brain.v2"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "omnichannel-brain-media",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          0,
+          600
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a01",
+        "name": "Webhook multimodal",
+        "webhookId": "f93de692-c591-4bc2-83b0-9e826ba74a01"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const webhook = $input.first().json || {};\nconst body = (webhook.body && typeof webhook.body === 'object') ? webhook.body : {};\nconst headers = (webhook.headers && typeof webhook.headers === 'object') ? webhook.headers : {};\nconst providedToken = String(headers['x-omni-internal-token'] || headers['X-Omni-Internal-Token'] || '').trim();\nconst expectedToken = String($env.OMNI_N8N_INTERNAL_TOKEN || '').trim();\nconst fail = (errorCode) => [{json:{valid:false,ok:false,errorCode}}];\nif (!expectedToken || !providedToken || providedToken !== expectedToken) return fail('internal_auth_invalid');\nif (String(body.schemaVersion || '') !== 'media.request.v1') return fail('request_schema_invalid');\nconst analysis = (body.analysis && typeof body.analysis === 'object') ? body.analysis : {};\nconst execution = (body.execution && typeof body.execution === 'object') ? body.execution : {};\nconst id = String(analysis.id || '').trim();\nconst messageId = String(analysis.messageId || '').trim();\nconst kind = String(analysis.kind || '').trim();\nconst mimeType = String(analysis.mimeType || '').trim().toLowerCase();\nconst mediaUrl = String(analysis.mediaUrl || '').trim();\nconst mediaToken = String(analysis.mediaToken || '').trim();\nconst provider = String(execution.provider || '').trim().toLowerCase();\nconst model = String(execution.model || '').trim();\nconst apiKey = String(execution.apiKey || '').trim();\nconst uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nif (!uuid.test(id) || !uuid.test(messageId)) return fail('request_identity_invalid');\nif (!['transcription','vision','video_summary','document_text'].includes(kind)) return fail('unsupported_media');\nif (!mimeType || !mediaUrl || !mediaToken || !provider || !model || !apiKey) return fail('execution_config_missing');\nconst mediaURLMatch = /^(https?):\\/\\/([^\\/:?#]+)(?::\\d+)?(?:[\\/?#]|$)/i.exec(mediaUrl);\nif (!mediaURLMatch) return fail('media_url_invalid');\nconst protocol = mediaURLMatch[1].toLowerCase();\nconst hostname = mediaURLMatch[2].toLowerCase();\nconst internalHost = ['api','localhost','127.0.0.1','::1'].includes(hostname);\nif (protocol !== 'https' && !(protocol === 'http' && internalHost)) return fail('media_url_invalid');\nif (provider === 'openai' && !['transcription','vision'].includes(kind)) return fail('provider_capability_unsupported');\nif (provider !== 'openai' && provider !== 'gemini') return fail('provider_capability_unsupported');\nreturn [{json:{valid:true,analysis:{id,messageId,kind,mimeType,fileName:String(analysis.fileName || ''),sizeBytes:Number(analysis.sizeBytes || 0),mediaUrl,mediaToken},execution:{provider,model,apiKey}}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          240,
+          600
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a02",
+        "name": "Validar multimodal"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "media-valid-condition",
+                "leftValue": "={{ $json.valid }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          500,
+          600
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a03",
+        "name": "Multimodal valido?"
+      },
+      {
+        "parameters": {
+          "url": "={{ $json.analysis.mediaUrl }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + $json.analysis.mediaToken }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file",
+                "outputPropertyName": "data"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          760,
+          500
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a04",
+        "name": "Baixar midia privada",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const downloaded = $input.first();\nconst state = $('Validar multimodal').first().json || {};\nif (!downloaded.binary || !downloaded.binary.data || downloaded.json.error) return [{json:{...state,valid:false,ok:false,errorCode:'content_unavailable'}}];\nconst buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nif (!buffer || !buffer.length) return [{json:{...state,valid:false,ok:false,errorCode:'content_unavailable'}}];\nconst base64 = buffer.toString('base64');\nconst isOpenAIAudio = state.execution.provider === 'openai' && state.analysis.kind === 'transcription';\nconst isOpenAIImage = state.execution.provider === 'openai' && state.analysis.kind === 'vision';\nconst isGemini = state.execution.provider === 'gemini';\nlet providerBody = null;\nif (isOpenAIImage) providerBody = {model:state.execution.model,messages:[{role:'user',content:[{type:'text',text:'Voce ajuda num atendimento por WhatsApp. Descreva de forma objetiva e neutra o conteudo visual da imagem que o cliente enviou: objetos, produto (se houver), cenario, cores, vestuario/acessorios e QUALQUER texto visivel (transcreva o texto literalmente). Pode descrever pessoas de forma generica sem tentar identificar quem e. NUNCA recuse: descreva o que da pra ver, em 1 a 3 frases curtas.'},{type:'image_url',image_url:{url:'data:'+state.analysis.mimeType+';base64,'+base64}}]}],max_tokens:1200};\nif (isGemini) {\n  const prompt = state.analysis.kind === 'transcription' ? 'Transcreva fielmente este áudio em português. Retorne apenas a transcrição.' : (state.analysis.kind === 'document_text' ? 'Extraia o texto e faça um resumo objetivo deste documento em português.' : (state.analysis.kind === 'video_summary' ? 'Analise este vídeo. Resuma cenas, falas e textos visíveis em português, sem inventar informações.' : 'Descreva objetivamente a imagem e transcreva todo texto visível em português.'));\n  providerBody = {contents:[{parts:[{text:prompt},{inline_data:{mime_type:state.analysis.mimeType,data:base64}}]}],generationConfig:{temperature:0.1,maxOutputTokens:2048}};\n}\nreturn [{json:{...state,isOpenAIAudio,isOpenAIImage,isGemini,providerBody},binary:downloaded.binary}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1020,
+          500
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a05",
+        "name": "Preparar midia para IA"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "openai-audio-condition",
+                "leftValue": "={{ $json.isOpenAIAudio }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1260,
+          500
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a06",
+        "name": "Audio OpenAI?"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.openai.com/v1/audio/transcriptions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + $('Preparar midia para IA').item.json.execution.apiKey }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "file",
+                "inputDataFieldName": "data"
+              },
+              {
+                "name": "model",
+                "value": "={{ $('Preparar midia para IA').item.json.execution.model }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1520,
+          360
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a07",
+        "name": "Transcrever audio OpenAI",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "openai-image-condition",
+                "leftValue": "={{ $json.isOpenAIImage }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1520,
+          560
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a08",
+        "name": "Imagem OpenAI?"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.openai.com/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + $json.execution.apiKey }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.providerBody) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1780,
+          500
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a09",
+        "name": "Analisar imagem OpenAI",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "gemini-media-condition",
+                "leftValue": "={{ $json.isGemini }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1780,
+          680
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a10",
+        "name": "Midia Gemini?"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent($json.execution.model) + ':generateContent' }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "x-goog-api-key",
+                "value": "={{ $json.execution.apiKey }}"
+              },
+              {
+                "name": "content-type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.providerBody) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2040,
+          640
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a11",
+        "name": "Analisar midia Gemini",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "let response = $input.first().json || {};\nif (response.body && typeof response.body === 'object') response = response.body;\nconst state = $('Preparar midia para IA').first().json || {};\nconst fail = (errorCode) => [{json:{ok:false,errorCode}}];\nif (!state.analysis || response.error || Number(response.statusCode || 0) >= 400) return fail('provider_error');\nlet text = '';\nif (state.execution.provider === 'openai' && state.analysis.kind === 'transcription') text = String(response.text || '').trim();\nelse if (state.execution.provider === 'openai') text = String(response.choices?.[0]?.message?.content || '').trim();\nelse text = (response.candidates?.[0]?.content?.parts || []).map(part => String(part.text || '')).join('\\n').trim();\nif (!text) return fail('schema_invalid');\ntext = text.slice(0, 20000);\nlet result;\nswitch (state.analysis.kind) {\n  case 'transcription': result = {text,language:String(response.language || 'pt'),durationSeconds:Math.max(0,Math.min(600,Number(response.duration || 0)))}; break;\n  case 'vision': result = {summary:text,visibleText:'',objects:[],safetyFlags:[]}; break;\n  case 'video_summary': result = {summary:text,visibleText:'',scenes:[],safetyFlags:[]}; break;\n  case 'document_text': result = {summary:text.slice(0,4000),extractedText:text,pageCount:0,truncated:false,warnings:[]}; break;\n  default: return fail('unsupported_media');\n}\nconst usage = response.usage || response.usageMetadata || {};\nreturn [{json:{ok:true,result,resultText:text,usage:{promptTokens:Number(usage.prompt_tokens || usage.promptTokenCount || 0),completionTokens:Number(usage.completion_tokens || usage.candidatesTokenCount || 0),costUsd:0}}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2300,
+          500
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a12",
+        "name": "Normalizar resultado multimodal"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const input = $input.first().json || {}; return [{json:{ok:false,errorCode:String(input.errorCode || 'provider_capability_unsupported')}}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2040,
+          820
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a13",
+        "name": "Normalizar erro multimodal"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          2560,
+          580
+        ],
+        "id": "80ebf886-11bf-461d-aec1-7a6f33481a14",
+        "name": "Responder multimodal"
       }
     ],
     "connections": {
@@ -522,6 +881,177 @@
             }
           ]
         ]
+      },
+      "Webhook multimodal": {
+        "main": [
+          [
+            {
+              "node": "Validar multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validar multimodal": {
+        "main": [
+          [
+            {
+              "node": "Multimodal valido?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Multimodal valido?": {
+        "main": [
+          [
+            {
+              "node": "Baixar midia privada",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Normalizar erro multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Baixar midia privada": {
+        "main": [
+          [
+            {
+              "node": "Preparar midia para IA",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar midia para IA": {
+        "main": [
+          [
+            {
+              "node": "Audio OpenAI?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Audio OpenAI?": {
+        "main": [
+          [
+            {
+              "node": "Transcrever audio OpenAI",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Imagem OpenAI?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcrever audio OpenAI": {
+        "main": [
+          [
+            {
+              "node": "Normalizar resultado multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Imagem OpenAI?": {
+        "main": [
+          [
+            {
+              "node": "Analisar imagem OpenAI",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Midia Gemini?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analisar imagem OpenAI": {
+        "main": [
+          [
+            {
+              "node": "Normalizar resultado multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Midia Gemini?": {
+        "main": [
+          [
+            {
+              "node": "Analisar midia Gemini",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Normalizar erro multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analisar midia Gemini": {
+        "main": [
+          [
+            {
+              "node": "Normalizar resultado multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalizar resultado multimodal": {
+        "main": [
+          [
+            {
+              "node": "Responder multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalizar erro multimodal": {
+        "main": [
+          [
+            {
+              "node": "Responder multimodal",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       }
     },
     "active": false,
@@ -535,6 +1065,6 @@
     "staticData": null,
     "meta": null,
     "pinData": {},
-    "versionId": "d76e94a1-1f17-4fd3-a98a-27e64a18b903"
+    "versionId": "4ca139a8-b4c4-4462-bfe3-09646f165395"
   }
 ]

@@ -84,7 +84,26 @@ func (s *Store) AutomationBindingReadiness(ctx context.Context, accountID, insta
 }
 
 func (s *Store) UpsertAutomationProfile(ctx context.Context, accountID, clientID, userID string, in automationProfileWrite) (automationProfileRow, error) {
-	cmd, err := s.pool.Exec(ctx, `insert into messaging.automation_profiles
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return automationProfileRow{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var previousInstanceID, previousAgentID string
+	var previousEnabled bool
+	previousFound := true
+	err = tx.QueryRow(ctx, `select whatsapp_instance_id::text, ai_agent_id::text, enabled
+		from messaging.automation_profiles
+		where account_id=$1::uuid and client_account_id=$2::uuid for update`, accountID, clientID).
+		Scan(&previousInstanceID, &previousAgentID, &previousEnabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		previousFound = false
+	} else if err != nil {
+		return automationProfileRow{}, err
+	}
+
+	cmd, err := tx.Exec(ctx, `insert into messaging.automation_profiles
 		(account_id, client_account_id, whatsapp_instance_id, ai_agent_id, enabled,
 		 auto_close_enabled, auto_close_min_confidence, auto_close_require_all_fields,
 		 auto_close_block_human_request, auto_close_block_sensitive,
@@ -116,19 +135,42 @@ func (s *Store) UpsertAutomationProfile(ctx context.Context, accountID, clientID
 	if cmd.RowsAffected() == 0 {
 		return automationProfileRow{}, pgx.ErrNoRows
 	}
+
+	bindingChanged := previousFound && (previousInstanceID != in.WhatsAppInstanceID || previousAgentID != in.AIAgentID)
+	if !in.Enabled || bindingChanged {
+		if err := invalidateAutomationInstanceTx(ctx, tx, accountID, in.WhatsAppInstanceID, "automation_disabled", s.AIDispatchV2Enabled()); err != nil {
+			return automationProfileRow{}, err
+		}
+	}
+	if bindingChanged && previousInstanceID != in.WhatsAppInstanceID {
+		if err := invalidateAutomationInstanceTx(ctx, tx, accountID, previousInstanceID, "automation_binding_changed", s.AIDispatchV2Enabled()); err != nil {
+			return automationProfileRow{}, err
+		}
+	}
+	if previousFound && previousEnabled && !in.Enabled && previousInstanceID != in.WhatsAppInstanceID {
+		if err := invalidateAutomationInstanceTx(ctx, tx, accountID, previousInstanceID, "automation_disabled", s.AIDispatchV2Enabled()); err != nil {
+			return automationProfileRow{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return automationProfileRow{}, err
+	}
 	return s.GetAutomationProfile(ctx, accountID, clientID)
 }
 
-// ActiveAgentForInstance aplica o vinculo cliente-numero-agente. Enquanto a conta ainda
-// nao possui nenhum perfil, preserva temporariamente o resolvedor global para o rollout nao
-// interromper o atendimento existente. Depois do primeiro perfil, numero sem configuracao
-// falha fechado e nao executa IA.
+// ActiveAgentForInstance aplica o vinculo cliente-numero-agente. O perfil habilitado e a
+// instancia ativa sao obrigatorios: nao existe fallback global. O switch da automacao e o
+// master kill switch e qualquer ausencia/desativacao falha fechada.
 func (s *Store) ActiveAgentForInstance(ctx context.Context, accountID, instanceID string) (agentRow, bool, error) {
+	if strings.TrimSpace(instanceID) == "" {
+		return agentRow{}, false, nil
+	}
 	var profileEnabled bool
 	agent, err := scanAgentWithPrefix(s.pool.QueryRow(ctx, `select p.enabled, `+automationAgentCols+`
 		from messaging.automation_profiles p
+		join messaging.whatsapp_instances wi on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
 		join messaging.ai_agents aa on aa.account_id = p.account_id and aa.id = p.ai_agent_id
-		where p.account_id = $1::uuid and p.whatsapp_instance_id = nullif($2, '')::uuid`,
+		where p.account_id = $1::uuid and p.whatsapp_instance_id = $2::uuid and wi.is_active`,
 		accountID, instanceID), &profileEnabled)
 	if err == nil {
 		if !profileEnabled || !agent.Enabled || agent.ActiveVersionID == nil {
@@ -140,15 +182,7 @@ func (s *Store) ActiveAgentForInstance(ctx context.Context, accountID, instanceI
 		return agentRow{}, false, err
 	}
 
-	var managed bool
-	if err := s.pool.QueryRow(ctx, `select exists(select 1 from messaging.automation_profiles
-		where account_id = $1::uuid)`, accountID).Scan(&managed); err != nil {
-		return agentRow{}, false, err
-	}
-	if managed {
-		return agentRow{}, false, nil
-	}
-	return s.ActiveAgent(ctx, accountID)
+	return agentRow{}, false, nil
 }
 
 func (s *Store) AutomationClientForInstance(ctx context.Context, accountID, instanceID string) (string, bool, error) {

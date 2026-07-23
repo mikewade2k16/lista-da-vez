@@ -8,6 +8,7 @@ import InboxConversationsSidebar from "./inbox/InboxConversationsSidebar.vue";
 import InboxDetailsSidebar from "./inbox/InboxDetailsSidebar.vue";
 import InboxSaveContactModal from "./inbox/InboxSaveContactModal.vue";
 import OmnichannelWhatsAppSessionModal from "./inbox/OmnichannelWhatsAppSessionModal.vue";
+import OmnichannelWorkspaceHeader from "./OmnichannelWorkspaceHeader.vue";
 import { useOmnichannelInbox } from "~/composables/omnichannel/useOmnichannelInbox";
 import {
   buildCanonicalContactPhone,
@@ -16,9 +17,84 @@ import {
 import { useOmnichannelCRM, type CRMContactMergeResult, type CRMContactPatch } from "~/composables/omnichannel/useOmnichannelCRM";
 import { useOmnichannelHandoff } from "~/composables/omnichannel/useOmnichannelHandoff";
 import { useSessionSimulationStore } from "~/stores/session-simulation";
-import { getApiErrorMessage } from "~/utils/api-client";
+import { createApiRequest, getApiErrorMessage } from "~/utils/api-client";
+import { useAuthStore } from "~/stores/auth";
+import { useUiStore } from "~/stores/ui";
+import {
+  CONVERSATION_PRIVACY_PERMISSION,
+  fetchContactAIRestriction,
+  fetchHiddenOmnichannelContacts,
+  hideOmnichannelContact,
+  restoreOmnichannelContact,
+  updateContactAIRestriction,
+  type ContactAIRestriction,
+  type ContactAIRestrictionInput,
+  type HiddenOmnichannelContact
+} from "~/domain/omnichannel/privacy-api";
+
+const emit = defineEmits<{
+  (event: "configure"): void;
+}>();
 
 const sessionSimulation = useSessionSimulationStore();
+const auth = useAuthStore();
+const ui = useUiStore();
+const runtimeConfig = useRuntimeConfig();
+const privacyApi = createApiRequest(runtimeConfig, () => auth.accessToken);
+const hidingContact = ref(false);
+const aiRestriction = ref<ContactAIRestriction | null>(null);
+const loadingAIRestriction = ref(false);
+const updatingAIRestriction = ref(false);
+const aiRestrictionError = ref("");
+const hiddenContacts = ref<HiddenOmnichannelContact[]>([]);
+const loadingHiddenContacts = ref(false);
+const hiddenContactsError = ref("");
+const restoringHiddenContactIds = ref<string[]>([]);
+const canManagePrivacy = computed(() =>
+  auth.effectivePermissionKeys.includes(CONVERSATION_PRIVACY_PERMISSION)
+);
+
+async function loadHiddenContacts() {
+  if (!canManagePrivacy.value || loadingHiddenContacts.value) {
+    return;
+  }
+  loadingHiddenContacts.value = true;
+  hiddenContactsError.value = "";
+  try {
+    hiddenContacts.value = await fetchHiddenOmnichannelContacts(privacyApi);
+  } catch (cause) {
+    hiddenContactsError.value = getApiErrorMessage(
+      cause,
+      "Não foi possível carregar as pessoas ocultas."
+    );
+  } finally {
+    loadingHiddenContacts.value = false;
+  }
+}
+
+async function handleRestoreHiddenContact(item: HiddenOmnichannelContact) {
+  if (restoringHiddenContactIds.value.includes(item.contactId)) {
+    return;
+  }
+  restoringHiddenContactIds.value = [...restoringHiddenContactIds.value, item.contactId];
+  try {
+    await restoreOmnichannelContact(privacyApi, item.contactId);
+    hiddenContacts.value = hiddenContacts.value.filter(
+      (entry) => entry.contactId !== item.contactId
+    );
+    await retryConversations();
+    ui.success(`${item.contactName || "Contato"} voltou a aparecer nas conversas.`);
+  } catch (cause) {
+    hiddenContactsError.value = getApiErrorMessage(
+      cause,
+      "Não foi possível restaurar esta pessoa."
+    );
+  } finally {
+    restoringHiddenContactIds.value = restoringHiddenContactIds.value.filter(
+      (contactId) => contactId !== item.contactId
+    );
+  }
+}
 const canSwitchTenant = computed(() => sessionSimulation.canSimulate && sessionSimulation.clientOptions.length > 1);
 
 function normalizeModuleCode(value: unknown) {
@@ -235,6 +311,38 @@ watch(
 );
 
 watch(
+  [activeConversationId, canManagePrivacy, isGroupConversation],
+  async ([conversationId, canManage, isGroup]) => {
+    aiRestriction.value = null;
+    aiRestrictionError.value = "";
+    loadingAIRestriction.value = false;
+    if (!conversationId || !canManage || isGroup) {
+      return;
+    }
+    const requestedConversationId = conversationId;
+    loadingAIRestriction.value = true;
+    try {
+      const result = await fetchContactAIRestriction(privacyApi, conversationId);
+      if (activeConversationId.value === requestedConversationId) {
+        aiRestriction.value = result;
+      }
+    } catch (cause) {
+      if (activeConversationId.value === requestedConversationId) {
+        aiRestrictionError.value = getApiErrorMessage(
+          cause,
+          "Não foi possível consultar o bloqueio da IA."
+        );
+      }
+    } finally {
+      if (activeConversationId.value === requestedConversationId) {
+        loadingAIRestriction.value = false;
+      }
+    }
+  },
+  { immediate: true }
+);
+
+watch(
   canManageConversation,
   (canManage) => {
     if (canManage) {
@@ -350,19 +458,15 @@ const saveContactDraft = ref<SaveContactDraft | null>(null);
 const saveContactModalError = ref("");
 const whatsappSessionModalOpen = ref(false);
 
-const showWhatsAppConnectionAlert = computed(() => {
-  if (pageBootstrapping.value) {
-    return false;
-  }
-
-  if (loadingWhatsAppStatus.value) {
-    return false;
-  }
-
-  return !isWhatsAppConnected.value;
-});
+const showWhatsAppConnectionAlert = computed(
+  () => !pageBootstrapping.value && !loadingWhatsAppStatus.value
+);
 
 const whatsappConnectionAlertTitle = computed(() => {
+  if (isWhatsAppConnected.value) {
+    return "WhatsApp conectado";
+  }
+
   if (!isWhatsAppConfigured.value) {
     return "Nenhum WhatsApp configurado para este cliente";
   }
@@ -375,6 +479,10 @@ const whatsappConnectionAlertTitle = computed(() => {
 });
 
 const whatsappConnectionAlertColor = computed(() => {
+  if (isWhatsAppConnected.value) {
+    return "success";
+  }
+
   if (!isWhatsAppConfigured.value) {
     return "error";
   }
@@ -428,11 +536,17 @@ onMounted(() => {
     stripMinHeightUtilityClass();
   });
   void loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
+  if (canManagePrivacy.value) {
+    void loadHiddenContacts();
+  }
 });
 
-watch([sidebarView, search, channel, status], ([view]) => {
+watch([sidebarView, search, channel, status, canManagePrivacy], ([view]) => {
   if (import.meta.client && view === "contacts") {
     void loadCRMContacts({ search: search.value, channel: channel.value, status: status.value });
+  }
+  if (import.meta.client && view === "hidden") {
+    void loadHiddenContacts();
   }
 });
 
@@ -557,6 +671,61 @@ async function handleSidebarTenantSwitch(clientId: string) {
 async function handleConversationHistoryCleared() {
   await refreshAfterConversationHistoryClear();
 }
+
+async function handleHideActiveContact() {
+  const conversation = activeConversation.value;
+  if (!conversation?.id || !conversation.contactId || hidingContact.value) {
+    return;
+  }
+  if (!window.confirm(`Ocultar ${activeConversationLabel.value || "esta pessoa"} do atendimento?`)) {
+    return;
+  }
+  const clearHistory = window.confirm(
+    "Também limpar o histórico anterior? OK limpa o histórico; Cancelar preserva as mensagens para uma futura restauração."
+  );
+  hidingContact.value = true;
+  try {
+    await hideOmnichannelContact(privacyApi, conversation.id, clearHistory);
+    activeConversationId.value = null;
+    await Promise.all([retryConversations(), loadHiddenContacts()]);
+    ui.success(
+      clearHistory
+        ? "Pessoa ocultada e histórico anterior limpo."
+        : "Pessoa ocultada com o histórico preservado."
+    );
+  } catch (cause) {
+    ui.error(getApiErrorMessage(cause, "Não foi possível ocultar esta pessoa."));
+  } finally {
+    hidingContact.value = false;
+  }
+}
+
+async function handleUpdateAIRestriction(input: ContactAIRestrictionInput) {
+  const conversationId = activeConversationId.value;
+  if (!conversationId || updatingAIRestriction.value) {
+    return;
+  }
+  updatingAIRestriction.value = true;
+  aiRestrictionError.value = "";
+  try {
+    aiRestriction.value = await updateContactAIRestriction(privacyApi, conversationId, input);
+    ui.success(
+      input.mode === "allow"
+        ? "Atendimento por IA liberado para este contato."
+        : input.mode === "indefinite"
+          ? "Contato bloqueado para atendimento por IA por tempo indeterminado."
+          : "Bloqueio temporário da IA atualizado."
+    );
+  } catch (cause) {
+    aiRestrictionError.value = getApiErrorMessage(
+      cause,
+      "Não foi possível atualizar o bloqueio da IA."
+    );
+  } finally {
+    updatingAIRestriction.value = false;
+  }
+}
+
 </script>
 <template>
   <div class="chat-page">
@@ -623,20 +792,24 @@ async function handleConversationHistoryCleared() {
       description="Seu usuario nao tem acesso ao modulo de atendimento no plataforma-api. Mensagens serao atualizadas por polling. Solicite ao admin para vincular o modulo."
     />
 
-    <UAlert
-      v-if="showWhatsAppConnectionAlert"
-      class="chat-page__status-alert"
-      :color="whatsappConnectionAlertColor"
-      variant="soft"
+    <OmnichannelWorkspaceHeader
+      mode="inbox"
+      :visible="true"
       :title="whatsappConnectionAlertTitle"
-      :description="isWhatsAppConfigured ? 'Clique ao lado para gerar o QR Code e parear o WhatsApp.' : 'Clique ao lado para criar a primeira conexao deste cliente.'"
-    >
-      <template v-if="user?.role === 'ADMIN'" #actions>
-        <UButton size="xs" color="primary" @click="handleOpenWhatsAppSessionModal">
-          {{ isWhatsAppConfigured ? 'Conectar WhatsApp' : 'Configurar WhatsApp' }}
-        </UButton>
-      </template>
-    </UAlert>
+      :description="
+        isWhatsAppConnected
+          ? 'Canal pronto para atendimento.'
+          : isWhatsAppConfigured
+            ? 'Gere o QR Code e pareie o WhatsApp.'
+            : 'Crie a primeira conexão deste cliente.'
+      "
+      :color="whatsappConnectionAlertColor"
+      :connected="isWhatsAppConnected"
+      :configured="isWhatsAppConfigured"
+      :can-connect="user?.role === 'ADMIN'"
+      @connect="handleOpenWhatsAppSessionModal"
+      @configure="emit('configure')"
+    />
 
     <div v-if="!activeClientHasAtendimento" class="chat-page__no-module">
       <UAlert
@@ -697,6 +870,11 @@ async function handleConversationHistoryCleared() {
         :crm-error="crmContactsReady ? crmError : ''"
         :loading-more-crm-contacts="loadingMoreCRMContacts"
         :has-more-crm-contacts="hasMoreCRMContacts"
+        :can-manage-privacy="canManagePrivacy"
+        :hidden-contacts="hiddenContacts"
+        :loading-hidden-contacts="loadingHiddenContacts"
+        :hidden-contacts-error="hiddenContactsError"
+        :restoring-hidden-contact-ids="restoringHiddenContactIds"
         @update:collapsed="updateLeftCollapsed"
         @update:show-filters="updateShowFilters"
         @update:sidebar-view="updateSidebarView"
@@ -715,6 +893,8 @@ async function handleConversationHistoryCleared() {
         @apply-contact-import="applyWhatsAppContactsImport"
         @clear-contact-import="clearWhatsAppContactsImportPreview"
         @switch-tenant="handleSidebarTenantSwitch"
+        @refresh-hidden-contacts="loadHiddenContacts"
+        @restore-hidden-contact="handleRestoreHiddenContact"
       />
 
       <InboxChatPanel
@@ -803,6 +983,12 @@ async function handleConversationHistoryCleared() {
         :transferring-queue="transferringQueue"
         :handoff-error="handoffError"
         :queue-error="queueError"
+        :can-manage-privacy="canManagePrivacy"
+        :hiding-contact="hidingContact"
+        :ai-restriction="aiRestriction"
+        :loading-ai-restriction="loadingAIRestriction"
+        :updating-ai-restriction="updatingAIRestriction"
+        :ai-restriction-error="aiRestrictionError"
         @update:collapsed="updateRightCollapsed"
         @update:internal-notes="updateInternalNotes"
         @update:assignee-model="updateAssigneeModel"
@@ -810,6 +996,8 @@ async function handleConversationHistoryCleared() {
         @update-status="updateConversationStatus"
         @update-assignee="updateConversationAssignee"
         @transfer-queue="handleTransferQueue"
+        @hide-contact="handleHideActiveContact"
+        @update-ai-restriction="handleUpdateAIRestriction"
       />
     </UDashboardGroup>
   </div>

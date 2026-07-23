@@ -167,6 +167,18 @@ Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
 
 ## Notas recentes de schema
 
+- `0236_messaging_contact_intelligence.sql` cria a memória estruturada tenant-safe por contato.
+  A tabela guarda somente resumo/fatos/preferências derivados e métricas operacionais; não guarda
+  histórico bruto, prompt ou segredo. O upsert deve permanecer condicionado à lease válida da
+  conversa no mesmo statement.
+
+- `0232_messaging_ai_unlimited_turns.sql` define `max_ai_turns=0` como sem limite, amplia o check
+  para `0..100` e altera somente o default para novas versões. Versões publicadas permanecem
+  imutáveis e devem ser atualizadas pelo endpoint de configuração, que cria nova versão.
+- `0231_messaging_contact_suppressions.sql` cria a supressão lógica tenant-safe de contatos e o
+  cutoff opcional de histórico. Também cria `omnichannel.conversations.privacy.manage` e concede
+  override explícito apenas ao usuário autorizado; não ampliar esse grant por papel ou por bypass
+  de `platform_admin` sem decisão de produto.
 - `0228_messaging_automation_profiles.sql` cria o vínculo tenant-safe cliente↔número↔agente
   do MVP de automação. Um número não pode atender dois clientes; a policy de encerramento nasce
   conservadora e a lease `conversations.ai_generation` continua obrigatória no Go. O arquivo é
@@ -174,6 +186,9 @@ Dois pools, duas roles (defesa em profundidade + pre-requisito do RLS):
 - `0229_messaging_ai_close_evaluations.sql` registra toda proposta de fechamento da IA, aceita
   ou bloqueada, incluindo snapshot dos gates e da geração. Não contém prompt ou mensagem; o
   fechamento continua sendo aplicado pelo Go sob lock da conversa.
+- `0234_messaging_ai_credentials_and_roles.sql` cria o cofre nomeado account-scoped de IA,
+  vincula a credencial de resposta/analise às versões e análises e adiciona `video_summary`.
+  A importação de keyrings legados é feita pelo service após a migration, nunca pelo SQL.
 - `0215_messaging_delivery_reconciliation.sql` adiciona metadados canonicos de ACK a
   `messaging.webhook_events`, com constraint de completude/vocabulario seguro e indice de replay
   por conta+provider+instancia+mensagem ordenado por timestamp+UUID. Tambem adiciona o GIN

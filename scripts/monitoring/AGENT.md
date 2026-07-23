@@ -8,7 +8,7 @@ estagio 2 (fora de escopo; ver referencia no fim de `docs/DEPLOY_VPS.md → Moni
 
 Roda no host (user `deploy`, ja no grupo docker) via cron a cada 5 min. Quiet por padrao:
 so imprime quando ha alerta/erro (o cron nao gera lixo de log). `exit 0` sempre — nunca
-quebra o cron. 7 checks:
+quebra o cron. 8 checks:
 
 1. **Disco** da particao raiz (`DISK_USAGE_MAX`, default 85%).
 2. **RAM** disponivel `MemAvailable` (`MEM_AVAILABLE_MIN_PCT`, default 10%).
@@ -18,7 +18,11 @@ quebra o cron. 7 checks:
 5. **Containers em `restarting`** (crash-loop).
 6. **`GET 127.0.0.1:18080/healthz`** (porta local, nao depende do Caddy compartilhado):
    200=ok, 503=banco fora, 000=api fora.
-7. **Saude do n8n** (OBS-07): container do profile automation no ar + workflows criticos
+7. **Saude da WAHA**: container/health, sessao `default=WORKING` e incremento de
+   `RestartCount`. O healthcheck do compose executa a recuperacao; esta sonda somente alerta.
+   `WAHA_SESSION`, `WAHA_PORT` e `WAHA_EXPECT_WORKING=0|1` permitem ajustar/desativar a
+   expectativa de sessao conectada sem editar o script.
+8. **Saude do n8n** (OBS-07): container do profile automation no ar + workflows criticos
    `active=true`. NO-OP se `N8N_COMPOSE_DIR` (default `/home/deploy/lista-atendimento`) nao
    existir — nao quebra a sonda em hosts sem automation.
    - `critical`: container n8n fora (`ps -q n8n` vazio) ou `unhealthy` — Calendario/Omni Chat parados.

@@ -732,3 +732,51 @@ zera `long_memory` de todos os contatos da automacao — sem reimport de workflo
   nativo, hoje pre-Fase-2 na VPS); ate la, o no `Montar systemMessage` (VPS+repo) ja nao anexa
   guardrails, entao o **prompt do painel e a unica regra** — idioma/formato/baloes precisam estar
   DENTRO do proprio prompt.
+
+### 2026-07-22 — WAHA fica `Up (unhealthy)`, GOWS morre e Conectar retorna 502
+
+- **Sintoma:** o painel mostra `WhatsApp desconectado`; a primeira tentativa de Conectar termina
+  em timeout ao buscar `/api/default/auth/qr`, e as seguintes retornam 502. Na API, o erro real vira
+  `dial tcp ... waha:3000: connect: connection refused`. O container ainda aparece como `Up`.
+- **Sequencia provada:** `GET /api/sessions/default` respondeu 200 e
+  `POST /api/sessions/default/start` respondeu 201. A sessao persistida retomou a autenticacao e
+  passou a sincronizar mensagens, grupos e midias, inclusive entregando webhooks 200 ao n8n. Depois
+  surgiram `Stream error`, `Connection dropped` e `GOWS stopped, exiting`; o servidor HTTP deixou de
+  responder, embora o processo Node principal permanecesse vivo.
+- **Causa de infraestrutura:** o container tinha limite de 1 GiB. O cgroup registrou
+  `oom=1`, `oom_kill=1`, `memory.peak=1076183040` e `memory.max=1073741824`. A queda do subprocesso
+  GOWS coincide com esse unico OOM kill. Como healthcheck vermelho nao aciona
+  `restart: unless-stopped`, o container ficou zumbi: `Up`, mas sem WAHA funcional.
+- **Nao foi deploy do modulo:** no incidente, API/web foram recriados separadamente; o container
+  WAHA era anterior e nao foi recriado. `AUTOMATION_WAHA_INTERNAL_URL=http://waha:3000` e
+  `AUTOMATION_WAHA_SESSION=default` estavam corretos; n8n e Redis continuaram `healthy`; os volumes
+  `automation_waha_sessions` e `automation_waha_media` permaneceram montados.
+- **Armadilha adicional no Go atual:** depois de `Start`, `Service.Connect` pede o QR imediatamente,
+  sem aguardar a sessao persistida transicionar para `WORKING`. Uma sessao ja pareada nao produz QR;
+  portanto o request pode expirar e mostrar 502 mesmo enquanto o WAHA esta retomando a conexao.
+- **Diagnostico:** combinar `docker compose ... ps waha`, `/ping`, logs WAHA/API e os arquivos
+  `/sys/fs/cgroup/memory.{events,peak,max}`. Nao concluir saude apenas por `Up` e nunca apagar/recriar
+  os volumes para tentar corrigir.
+- **Recuperacao operacional autorizada:** backup de `/app/.sessions`, restart exclusivo do `waha`,
+  `POST /api/sessions/default/start` apenas se a sessao voltar `STOPPED`, e polling ate `WORKING` +
+  healthcheck verde. Nao reimportar workflows, nao reiniciar n8n e nao enviar mensagem real como smoke.
+- **Resultado em prod (17:05 BRT):** o robo foi pausado temporariamente; backup de 19 MiB criado em
+  `backups/waha/sessions-before-recovery-20260722_200511.tar.gz` (SHA-256
+  `c982020d98998ba5b9921910573af2258f9d72a523f030d34b9b404f4278b0ad`); restart somente de `waha`;
+  sessao `default` voltou `STOPPED -> STARTING -> WORKING` sem QR. Apos mais de tres minutos,
+  `ping=ok`, health `healthy`, `oom_kill=0`, pico `466681856` bytes e nenhum novo `Stream error`.
+  O robo voltou para `active`; n8n/Redis/API/web/banco/workflows/volumes ficaram intactos.
+- **Prevencao implementada (2026-07-22):** imagem `gows-2026.7.1` (fix oficial da parada apos
+  `<stream:error>`), limite configuravel com default 2 GiB, autostart de sessoes persistidas,
+  `WAHA_SESSION_CONFIG_IGNORE_STATUS=true` e healthcheck que encerra PID 1 apos tres falhas de
+  `/ping` somente se aquele boot ja ficou pronto. O restart policy passa a recuperar o caso zumbi.
+  `Service.Connect` agora usa polling curto apos Start/Restart: devolve `WORKING` sem QR para sessao
+  pareada, busca QR apenas em `SCAN_QR_CODE` e deixa `STARTING` ser repollado pelo front. Testes
+  cobrem restauracao sem chamar QR e pareamento com QR. O monitor do host alerta health, status da
+  sessao e incremento de `RestartCount`.
+- **Aplicado em prod (17:40 BRT):** backup preventivo
+  `sessions-before-hardening-20260722_203956.tar.gz` (SHA-256
+  `5422cba7d7efac4be3251b0c44bf083aab34796d7da8fb693afd7b5481f49cb6`), recreate exclusivo do
+  WAHA, retorno automatico a `WORKING` sem QR e robo restaurado para `active`. Em tres minutos:
+  health verde, GOWS READY/READY, `RestartCount=0`, pico 433139712 bytes e `oom_kill=0`. O script
+  de monitoramento atualizado passou quiet; os demais containers/workflows/volumes ficaram intactos.

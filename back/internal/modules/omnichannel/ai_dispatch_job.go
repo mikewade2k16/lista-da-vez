@@ -55,6 +55,22 @@ func (h aiDispatchHandler) Handle(ctx context.Context, job jobs.Job) error {
 		// A newer inbound message superseded this generation. The newer job owns execution.
 		return nil
 	}
+	conv, err := h.store.ConvTriageContext(ctx, job.AccountID, dispatch.ConversationID)
+	if err != nil {
+		return err
+	}
+	if !conv.Found || isWhatsAppGroupExternalID(conv.ExternalID) {
+		_, _ = h.store.CancelAIDispatch(ctx, job.AccountID, p.DispatchID, "group_or_missing_conversation")
+		return nil
+	}
+	agent, enabled, err := h.store.ActiveAgentForInstance(ctx, job.AccountID, deref(conv.InstanceID))
+	if err != nil {
+		return err
+	}
+	if !enabled || agent.ActiveVersionID == nil || *agent.ActiveVersionID != dispatch.AgentVersionID {
+		_, _ = h.store.CancelAIDispatch(ctx, job.AccountID, p.DispatchID, "automation_disabled")
+		return nil
+	}
 	started, err := h.store.StartAIDispatch(ctx, job.AccountID, p.DispatchID, p.Generation)
 	if err != nil {
 		return err
@@ -191,11 +207,20 @@ func (h aiDispatchHandler) handoff(ctx context.Context, accountID string, dispat
 	if summary == "" {
 		summary = defaultAIHandoffSummary(reason)
 	}
-	_, err = h.domain.SystemRequestHandoff(ctx, accountID, dispatch.ConversationID, HandoffRequest{
+	notice := strings.TrimSpace(result.Output.ReplyDraft)
+	if notice == "" {
+		notice = defaultAIHandoffCustomerNotice(reason)
+	}
+	handoff, err := h.domain.SystemRequestHandoff(ctx, accountID, dispatch.ConversationID, HandoffRequest{
 		ReasonCode: reason, Summary: summary, CollectedFields: fields,
 		IdempotencyKey: "ai-handoff:" + p.DispatchID + ":" + fmt.Sprint(p.Generation),
+		CustomerNotice: notice, AIRunID: result.RunID, CapturedGeneration: p.Generation,
+		NoticeIdempotencyKey: "ai-handoff-notice:" + p.DispatchID + ":" + fmt.Sprint(p.Generation),
 	})
 	if err == nil {
+		if h.send != nil {
+			h.send.PublishAIHandoffResult(ctx, accountID, dispatch.ConversationID, handoff)
+		}
 		return nil
 	}
 	if errors.Is(err, ErrConflict) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrAILeaseInvalid) {
@@ -204,6 +229,13 @@ func (h aiDispatchHandler) handoff(ctx context.Context, accountID string, dispat
 	}
 	_, _ = h.store.RequeueAIDispatch(ctx, accountID, p.DispatchID, "handoff_error")
 	return err
+}
+
+func defaultAIHandoffCustomerNotice(reason string) string {
+	if reason == HandoffReasonError || reason == HandoffReasonToolFailed {
+		return "Tive uma dificuldade técnica e não consegui concluir isso agora. Vou chamar um atendente para continuar com você."
+	}
+	return "Não consegui concluir isso com segurança. Vou chamar um atendente para continuar com você."
 }
 
 func defaultAIHandoffSummary(reason string) string {

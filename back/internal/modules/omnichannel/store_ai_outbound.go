@@ -35,6 +35,13 @@ func (s *Store) CreateAIOutboundMessage(ctx context.Context, accountID, conversa
 	if state != string(StateAIActive) || currentGeneration != generation {
 		return MessageView{}, false, ErrAILeaseInvalid
 	}
+	allowed, err := aiOutboundAllowedTx(ctx, tx, accountID, conversationID)
+	if err != nil {
+		return MessageView{}, false, err
+	}
+	if !allowed {
+		return MessageView{}, false, ErrAILeaseInvalid
+	}
 	view, created, err := createAIOutboundMessageLockedTx(ctx, tx, accountID, conversationID,
 		instanceID, instanceScopeKey, content, runID, idempotencyKey, generation)
 	if err != nil {

@@ -767,6 +767,14 @@ erDiagram
 - `messaging.contacts`: entidade CRM única por conta; telefone é opcional para suportar
   identidades de Instagram, e continua único quando preenchido. Guarda primeira/última
   interação, lifecycle (`lead|prospect|customer|inactive`), tags e campos customizados.
+- `messaging.contact_intelligence`: extensão 1:1 tenant-scoped do contato com memória derivada
+  limitada (`summary`, `facts`, `preferences`), última intenção/sentimento/confiança e contadores
+  de respostas/handoffs. Não replica mensagens; o histórico continua exclusivamente em
+  `messaging.messages`. O upsert ocorre apenas quando `ai_generation` ainda é válida.
+- `messaging.contact_suppressions`: supressão lógica única por conta+contato. Enquanto ativa,
+  remove o contato e suas conversas das projeções de CRM, inbox e automação sem apagar mensagens
+  ou auditoria. `history_cleared_at` é o cutoff opcional: após restaurar, mensagens anteriores
+  continuam invisíveis e novas mensagens voltam a aparecer normalmente.
 - `messaging.contact_identities`: liga o contato a uma identidade externa por
   `channel + provider + instance_scope_key + external_id`; permite WhatsApp oficial,
   Evolution e Instagram no mesmo cadastro.
@@ -793,14 +801,21 @@ erDiagram
   de sensível nascem `true`.
 - A lease `messaging.conversations.ai_generation` não é configurável e sempre precisa continuar
   válida. O n8n apenas sugere; somente o Go pode aceitar `closed` e produzir efeitos/outbox.
+- `messaging.ai_agent_versions.max_ai_turns=0` significa sem limite de respostas automáticas;
+  valores positivos aplicam o gate de parada e a faixa válida é `0..100`. O default de novas
+  versões é zero, sem reescrever versões publicadas já imutáveis.
 - O perfil é provider-neutral: trocar uma instância de Evolution para WhatsApp Cloud preserva
   cliente, agente e policy. O contexto estratégico continua em `calendar.client_profiles` e
   chega por adapter explícito, sem SQL cross-module nem cópia em `messaging.*`.
 
 ### Omnichannel E3 multimodal
 
-- `messaging.ai_agent_versions.media_config`: política imutável por versão (áudio, visão,
-  documento, limites e retenção); nunca armazena chave ou token.
+- `messaging.ai_credentials` (migration `0234`): cofre de chaves nomeadas por conta. Guarda
+  provider, ciphertext e últimos quatro caracteres; nunca expõe o segredo cru à UI.
+- `messaging.ai_agent_versions.response_credential_id` e `media_config.*.credentialId` fixam a
+  credencial usada por função sem duplicar segredo entre agentes.
+- `messaging.ai_agent_versions.media_config`: política imutável por versão (áudio, imagem,
+  vídeo, documento, limites e retenção); nunca armazena chave ou token.
 - `messaging.media_analyses`: resultado derivado tenant-scoped, com hash SHA-256, kind/status,
   versão/provider/modelo, texto/JSON limitado, tokens/custo, tentativas e retenção. FKs compostas
   prendem conta + mensagem/conversa/versão do agente; unique impede cobrança duplicada.

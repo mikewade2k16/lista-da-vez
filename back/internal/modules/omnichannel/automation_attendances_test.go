@@ -42,6 +42,15 @@ func TestNormalizedAutomationAttendanceReasonRecoversMaxTurns(t *testing.T) {
 	}
 }
 
+func TestAutomationReplyStateAllowsHumanTakeoverReturn(t *testing.T) {
+	if !automationReplyStateAllowed(StateHumanActive) {
+		t.Fatal("human_active must be eligible for an explicit operator transfer back to AI")
+	}
+	if automationReplyStateAllowed(StateAIActive) || automationReplyStateAllowed(StateClosed) {
+		t.Fatal("ai_active and closed must remain ineligible for immediate replay")
+	}
+}
+
 func TestHandoffReasonForResultPreservesSpecificLimit(t *testing.T) {
 	result := DispatchResult{Outcome: dispatchLimitExceeded, ReasonCode: HandoffReasonMaxTurns}
 	if got := handoffReasonForResult(result); got != HandoffReasonMaxTurns {

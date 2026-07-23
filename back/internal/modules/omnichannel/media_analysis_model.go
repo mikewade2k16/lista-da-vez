@@ -11,6 +11,7 @@ import (
 const (
 	MediaAnalysisKindTranscription = "transcription"
 	MediaAnalysisKindVision        = "vision"
+	MediaAnalysisKindVideo         = "video_summary"
 	MediaAnalysisKindDocument      = "document_text"
 	MediaAnalysisStatusQueued      = "queued"
 	MediaAnalysisStatusProcessing  = "processing"
@@ -32,6 +33,7 @@ type mediaAnalysisRow struct {
 	Provider         string
 	Model            string
 	AgentVersionID   string
+	CredentialID     *string
 	ResultText       *string
 	ResultJSON       json.RawMessage
 	PromptTokens     int
@@ -53,6 +55,7 @@ type mediaAnalysisCreate struct {
 	Provider       string
 	Model          string
 	AgentVersionID string
+	CredentialID   *string
 	ExpiresAt      *time.Time
 }
 
@@ -105,14 +108,15 @@ func mediaAnalysisView(row mediaAnalysisRow) MediaAnalysisView {
 const mediaAnalysisColumns = `id::text, account_id::text, message_id::text, conversation_id::text,
 	analysis_kind, content_hash, status, provider, model, agent_version_id::text, result_text,
 	result_json, prompt_tokens, completion_tokens, cost_usd::float8, latency_ms, attempts,
-	last_error, created_at, completed_at, expires_at`
+	last_error, created_at, completed_at, expires_at, credential_id::text`
 
 func scanMediaAnalysis(row rowScanner) (mediaAnalysisRow, error) {
 	var out mediaAnalysisRow
 	err := row.Scan(&out.ID, &out.AccountID, &out.MessageID, &out.ConversationID, &out.Kind,
 		&out.ContentHash, &out.Status, &out.Provider, &out.Model, &out.AgentVersionID,
 		&out.ResultText, &out.ResultJSON, &out.PromptTokens, &out.CompletionTokens, &out.CostUSD,
-		&out.LatencyMS, &out.Attempts, &out.LastError, &out.CreatedAt, &out.CompletedAt, &out.ExpiresAt)
+		&out.LatencyMS, &out.Attempts, &out.LastError, &out.CreatedAt, &out.CompletedAt, &out.ExpiresAt,
+		&out.CredentialID)
 	return out, err
 }
 
@@ -123,7 +127,7 @@ func validateMediaAnalysisCreate(in mediaAnalysisCreate) error {
 		return ErrMediaAnalysisInvalid
 	}
 	switch in.Kind {
-	case MediaAnalysisKindTranscription, MediaAnalysisKindVision, MediaAnalysisKindDocument:
+	case MediaAnalysisKindTranscription, MediaAnalysisKindVision, MediaAnalysisKindVideo, MediaAnalysisKindDocument:
 	default:
 		return ErrMediaAnalysisInvalid
 	}
@@ -166,6 +170,9 @@ func validateMediaAnalysisShape(kind string, raw json.RawMessage) error {
 	case MediaAnalysisKindVision:
 		allowed = map[string]struct{}{"summary": {}, "visibleText": {}, "objects": {}, "safetyFlags": {}, "confidence": {}}
 		required = map[string]struct{}{"summary": {}, "visibleText": {}, "objects": {}, "safetyFlags": {}}
+	case MediaAnalysisKindVideo:
+		allowed = map[string]struct{}{"summary": {}, "visibleText": {}, "scenes": {}, "safetyFlags": {}, "durationSeconds": {}, "confidence": {}}
+		required = map[string]struct{}{"summary": {}, "visibleText": {}, "scenes": {}, "safetyFlags": {}}
 	case MediaAnalysisKindDocument:
 		allowed = map[string]struct{}{"summary": {}, "extractedText": {}, "pageCount": {}, "truncated": {}, "warnings": {}}
 		required = map[string]struct{}{"summary": {}, "extractedText": {}, "pageCount": {}, "truncated": {}, "warnings": {}}
@@ -206,6 +213,9 @@ func validateMediaAnalysisShape(kind string, raw json.RawMessage) error {
 		}
 	}
 	if value, ok := object["objects"]; ok && !validAnalysisStringArray(value, 200, 160) {
+		return ErrMediaAnalysisInvalid
+	}
+	if value, ok := object["scenes"]; ok && !validAnalysisStringArray(value, 200, 500) {
 		return ErrMediaAnalysisInvalid
 	}
 	if value, ok := object["safetyFlags"]; ok && !validAnalysisStringArray(value, 100, 160) {

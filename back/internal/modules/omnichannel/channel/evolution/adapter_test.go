@@ -171,6 +171,54 @@ func TestParseWebhook_FromMeAsOutbound(t *testing.T) {
 	}
 }
 
+func TestParseWebhook_GroupIsNotPersonContact(t *testing.T) {
+	p := New("", "")
+	body := `{"event":"messages.upsert","instance":"i","data":{"key":{"fromMe":false,"id":"G1","remoteJid":"120363012345678@g.us"},"pushName":"Participante","message":{"conversation":"oi grupo"}}}`
+	events, err := p.ParseWebhook(context.Background(), nil, []byte(body))
+	if err != nil {
+		t.Fatalf("ParseWebhook: %v", err)
+	}
+	if len(events) != 1 || events[0].Message == nil {
+		t.Fatalf("evento de grupo invalido: %+v", events)
+	}
+	message := events[0].Message
+	if message.ContactExternalID != "120363012345678@g.us" {
+		t.Fatalf("ContactExternalID = %q", message.ContactExternalID)
+	}
+	if message.ContactPhone != "" {
+		t.Errorf("ContactPhone = %q (grupo nao e telefone de pessoa)", message.ContactPhone)
+	}
+	if message.ContactName != "" {
+		t.Errorf("ContactName = %q (pushName e participante, nao nome do grupo)", message.ContactName)
+	}
+}
+
+func TestFetchGroupMetadata(t *testing.T) {
+	var captured *http.Request
+	p := providerWith(&captured, func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("method = %s", r.Method)
+		}
+		if r.URL.Path != "/group/findGroupInfos/omni-main" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("groupJid") != "120363012345678@g.us" {
+			t.Fatalf("groupJid = %s", r.URL.Query().Get("groupJid"))
+		}
+		return jsonResp(http.StatusOK, `{"success":true,"group":{"subject":"Clientes Omni"}}`)
+	})
+	metadata, err := p.FetchGroupMetadata(context.Background(), channel.Credentials{}, "omni-main", "120363012345678@g.us")
+	if err != nil {
+		t.Fatalf("FetchGroupMetadata: %v", err)
+	}
+	if metadata.Name != "Clientes Omni" {
+		t.Fatalf("name = %q", metadata.Name)
+	}
+	if captured == nil {
+		t.Fatal("request nao capturado")
+	}
+}
+
 func TestParseWebhook_MediaTypes(t *testing.T) {
 	p := New("", "")
 	cases := []struct {

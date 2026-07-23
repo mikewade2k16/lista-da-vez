@@ -8,6 +8,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func (s *Store) GetMediaAnalysisSource(ctx context.Context, accountID, messageID string) (mediaAnalysisSource, error) {
+	var out mediaAnalysisSource
+	err := s.pool.QueryRow(ctx, `select m.id::text,m.conversation_id::text,coalesce(m.instance_id::text,''),
+		c.external_id,m.message_type,coalesce(m.media_mime_type,''),coalesce(m.media_file_name,''),
+		coalesce(m.media_file_size_bytes,0),coalesce(m.metadata_json->>'mediaSha256','')
+		from messaging.messages m
+		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
+		where m.account_id=$1::uuid and m.id=$2::uuid and m.media_source_kind='disk'`, accountID, messageID).
+		Scan(&out.MessageID, &out.ConversationID, &out.InstanceID, &out.ExternalID, &out.MessageType,
+			&out.MIMEType, &out.FileName, &out.SizeBytes, &out.ContentHash)
+	return out, err
+}
+
 // CreateMediaAnalysis is idempotent by the database dedupe key. The message and
 // conversation are selected together under the same account, so cross-tenant IDs
 // cannot create an analysis row.
@@ -17,8 +30,8 @@ func (s *Store) CreateMediaAnalysis(ctx context.Context, accountID string, in me
 	}
 	row := s.pool.QueryRow(ctx, `insert into messaging.media_analyses
 		(account_id, message_id, conversation_id, analysis_kind, content_hash, provider, model,
-		 agent_version_id, expires_at)
-		select $1::uuid, m.id, c.id, $4, $5, $6, $7, $8::uuid, $9
+		 agent_version_id, expires_at, credential_id)
+		select $1::uuid, m.id, c.id, $4, $5, $6, $7, $8::uuid, $9, $10::uuid
 		from messaging.messages m
 		join messaging.conversations c on c.account_id=m.account_id and c.id=m.conversation_id
 		where m.account_id=$1::uuid and m.id=$2::uuid and c.id=$3::uuid
@@ -26,7 +39,7 @@ func (s *Store) CreateMediaAnalysis(ctx context.Context, accountID string, in me
 		do nothing
 		returning `+mediaAnalysisColumns,
 		accountID, in.MessageID, in.ConversationID, in.Kind, strings.ToLower(in.ContentHash),
-		strings.TrimSpace(in.Provider), strings.TrimSpace(in.Model), in.AgentVersionID, in.ExpiresAt)
+		strings.TrimSpace(in.Provider), strings.TrimSpace(in.Model), in.AgentVersionID, in.ExpiresAt, in.CredentialID)
 	created, err := scanMediaAnalysis(row)
 	if err == nil {
 		return created, true, nil

@@ -27,6 +27,7 @@ func RegisterAIRoutes(mux *http.ServeMux, svc *AIService, middleware *auth.Middl
 	wrap := func(h http.HandlerFunc) http.Handler {
 		return middleware.RequireAuthWithAccount(h)
 	}
+	registerAICredentialRoutes(mux, svc, wrap)
 
 	mux.Handle("GET /v1/omnichannel/agents", wrap(handleListAgents(svc)))
 	mux.Handle("POST /v1/omnichannel/agents", wrap(handleCreateAgent(svc)))

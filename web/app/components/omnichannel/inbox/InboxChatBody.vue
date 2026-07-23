@@ -299,8 +299,8 @@ const {
       <div v-if="showScrollToLatestButton" class="chat-page__scroll-latest">
         <UButton
           size="sm"
-          color="primary"
-          variant="solid"
+          color="neutral"
+          variant="soft"
           icon="i-lucide-chevron-down"
           class="chat-page__scroll-latest-btn"
           @click.stop="onScrollToLatest()"
@@ -360,8 +360,10 @@ const {
 
 .chat-page__scroll-latest-btn {
   pointer-events: auto;
+  border: 1px solid rgb(var(--border) / 0.75);
+  background: rgb(var(--surface) / 0.92);
   box-shadow: var(--shadow-sm);
-
+  backdrop-filter: blur(8px);
 }
 
 .chat-date-separator,

@@ -10,6 +10,7 @@
 #   N8N_COMPOSE_DIR=/home/deploy/lista-atendimento         (onde vive o docker-compose.prod.yml + .env.production)
 #   N8N_ENV_FILE=.env.production                            (para `docker compose --env-file`)
 #   N8N_CRITICAL_IDS="calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001"  (default; = deploy-pull.ps1)
+#   WAHA_SESSION=default  WAHA_PORT=13010  WAHA_EXPECT_WORKING=1
 set -u
 
 ENV_FILE="${OMNI_MONITORING_ENV:-/home/deploy/.omni-monitoring.env}"
@@ -94,16 +95,53 @@ if [ "$api_code" != "200" ]; then
   send_alert healthz "GET 127.0.0.1:${OMNI_API_PORT}/healthz => ${api_code} (200=ok; 503=banco fora; 000=api fora)."
 fi
 
+# Config comum do profile automation (WAHA + n8n).
+N8N_COMPOSE_DIR="${N8N_COMPOSE_DIR:-/home/deploy/lista-atendimento}"
+N8N_ENV_FILE="${N8N_ENV_FILE:-.env.production}"
+automation_compose="docker compose --env-file $N8N_ENV_FILE -f docker-compose.prod.yml --profile automation"
+
+# 7) WAHA: processo/container, sessao esperada e qualquer auto-restart desde o ultimo
+#    ciclo. O healthcheck do compose faz a recuperacao local; esta sonda apenas alerta.
+WAHA_SESSION="${WAHA_SESSION:-default}"
+WAHA_PORT="${WAHA_PORT:-13010}"
+WAHA_EXPECT_WORKING="${WAHA_EXPECT_WORKING:-1}"
+if [ -d "$N8N_COMPOSE_DIR" ]; then
+  waha_id=$(cd "$N8N_COMPOSE_DIR" && $automation_compose ps -q waha 2>/dev/null)
+  if [ -z "$waha_id" ]; then
+    send_alert waha "Container WAHA NAO esta rodando (profile automation). WhatsApp da automacao parado." critical
+  else
+    waha_health=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$waha_id" 2>/dev/null || echo unknown)
+    if [ "$waha_health" = "unhealthy" ]; then
+      send_alert waha "Container WAHA UNHEALTHY. O healthcheck deve auto-reiniciar apos 3 falhas; checar: docker logs $waha_id --tail=100." critical
+    fi
+
+    waha_restarts=$(docker inspect -f '{{.RestartCount}}' "$waha_id" 2>/dev/null || echo 0)
+    waha_restart_file="$STATE_DIR/waha.restart-count"
+    previous_restarts=$(cat "$waha_restart_file" 2>/dev/null || echo "$waha_restarts")
+    if [ "$waha_restarts" -gt "$previous_restarts" ] 2>/dev/null; then
+      send_alert waha_restart "WAHA auto-reiniciou: restart count ${previous_restarts} -> ${waha_restarts}. Revisar OOM/stream error: docker logs $waha_id --since=15m." warning
+    fi
+    echo "$waha_restarts" > "$waha_restart_file"
+
+    if [ "$WAHA_EXPECT_WORKING" = "1" ]; then
+      waha_status=$(curl -sS -m 10 "http://127.0.0.1:${WAHA_PORT}/api/sessions/${WAHA_SESSION}" 2>/dev/null \
+        | sed -n 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+      if [ "$waha_status" != "WORKING" ]; then
+        [ -n "$waha_status" ] || waha_status="indisponivel"
+        send_alert waha_session "Sessao WAHA '${WAHA_SESSION}' em ${waha_status}, esperado WORKING. Checar status/logs antes de pedir novo QR." critical
+      fi
+    fi
+  fi
+fi
+
 # 8) Saude do n8n: container no ar + workflows criticos ATIVOS.
 #    A lista N8N_CRITICAL_IDS e a MESMA de scripts/deploy/deploy-pull.ps1:246
 #    (contrato: mudou uma, muda a outra). Le o estado real via `n8n export:workflow`
 #    (respeita o WAL do SQLite; `docker cp database.sqlite` NAO leva writes recentes).
 #    O 3o arg de send_alert (critical/warning) e a severidade do OBS-01; enquanto
 #    OBS-01 nao entrar, o send_alert atual (2 args) so ignora o 3o, sem quebrar.
-N8N_COMPOSE_DIR="${N8N_COMPOSE_DIR:-/home/deploy/lista-atendimento}"
-N8N_ENV_FILE="${N8N_ENV_FILE:-.env.production}"
 N8N_CRITICAL_IDS="${N8N_CRITICAL_IDS:-calendaromni0001 calendarchat0001 calendartrans001 omnichatmvp00001}"
-n8n_compose="docker compose --env-file $N8N_ENV_FILE -f docker-compose.prod.yml --profile automation"
+n8n_compose="$automation_compose"
 
 if [ -d "$N8N_COMPOSE_DIR" ]; then
   # 8a) container rodando?

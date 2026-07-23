@@ -27,7 +27,7 @@ export function useOmnichannelInboxState() {
   const activeConversationId = ref<string | null>(null);
   const leftCollapsed = ref(false);
   const rightCollapsed = ref(false);
-  const showFilters = ref(true);
+  const showFilters = ref(false);
   const sidebarView = ref<InboxSidebarView>("conversations");
 
   const loadingConversations = ref(false);

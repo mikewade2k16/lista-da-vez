@@ -28,6 +28,9 @@ func (s *Store) ListAutomationInterventions(ctx context.Context, accountID, clie
 		join messaging.whatsapp_instances wi
 		  on wi.account_id=p.account_id and wi.id=p.whatsapp_instance_id
 		where h.account_id=$1::uuid and h.status in ('requested','queued')
+		  and not exists (select 1 from messaging.contact_suppressions suppression
+		      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
+		        and suppression.is_hidden=true)
 		  and ($2='' or p.client_account_id=nullif($2,'')::uuid)
 		order by h.requested_at desc,h.id desc limit $3`, accountID, strings.TrimSpace(clientID), limit)
 	if err != nil {

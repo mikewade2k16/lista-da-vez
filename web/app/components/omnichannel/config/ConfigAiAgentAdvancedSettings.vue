@@ -59,18 +59,20 @@ function percentage(value: number): string {
         </label>
 
         <label class="calendar-config__field">
-          <span class="calendar-config__field-label">Máximo de respostas automáticas</span>
+          <span class="calendar-config__field-label">
+            Máximo de respostas automáticas: {{ maxAiTurns === 0 ? 'sem limite' : maxAiTurns }}
+          </span>
           <input
             v-model.number="maxAiTurns"
             class="calendar-config__input"
             type="number"
-            min="1"
-            max="20"
+            min="0"
+            max="100"
             :disabled="disabled"
           />
           <small class="calendar-config__hint">
-            Ao atingir este total na conversa, a automação para ou transfere conforme a opção
-            abaixo.
+            Use 0 para manter sem limite. De 1 a 100, a automação para ou transfere ao atingir o
+            total.
           </small>
         </label>
 

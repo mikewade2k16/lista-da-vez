@@ -140,6 +140,17 @@ func (c *client) fetchInstance(ctx context.Context, instanceName string) (json.R
 	return out, err
 }
 
+// fetchGroupInfo consulta o nome oficial de um grupo. A Evolution mudou o envelope dessa
+// resposta entre versoes; mantemos o JSON bruto apenas dentro do adapter e extraimos somente
+// campos de nome conhecidos, sem deixar o payload atravessar a fronteira do dominio.
+func (c *client) fetchGroupInfo(ctx context.Context, instanceName, groupJID string) (json.RawMessage, error) {
+	var out json.RawMessage
+	err := c.do(ctx, http.MethodGet,
+		"/group/findGroupInfos/"+urlSegment(instanceName)+"?groupJid="+urlSegment(groupJID),
+		nil, &out, maxResponseBytes)
+	return out, err
+}
+
 // logout desconecta a instancia: DELETE /instance/logout/{i}.
 func (c *client) logout(ctx context.Context, instanceName string) error {
 	return c.do(ctx, http.MethodDelete, "/instance/logout/"+urlSegment(instanceName), nil, nil, maxResponseBytes)

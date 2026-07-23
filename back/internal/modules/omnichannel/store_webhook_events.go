@@ -184,6 +184,7 @@ func (s *Store) persistInbound(ctx context.Context, w inboundWrite,
 // Devolve os ids INTERNOS (conversa + mensagem) para o realtime do webhook (F5).
 func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWrite) (string, string, error) {
 	m := w.Message
+	isGroup := m.Channel == "WHATSAPP" && isWhatsAppGroupExternalID(m.ContactExternalID)
 	contactID, knownContact, err := s.upsertInboundContact(ctx, tx, w)
 	if err != nil {
 		return "", "", err
@@ -192,6 +193,11 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 	if knownContact {
 		contactStatus = "known_contact"
 	}
+	sourceKind := "direct_message"
+	if isGroup {
+		contactStatus = "group"
+		sourceKind = "group_message"
+	}
 
 	var conversationID string
 	err = tx.QueryRow(ctx, `insert into messaging.conversations
@@ -199,18 +205,20 @@ func (s *Store) writeInboundMessage(ctx context.Context, tx pgx.Tx, w inboundWri
 		 contact_name, contact_phone, contact_avatar_url, state, extracted_fields, last_message_at)
 		values ($1::uuid, nullif($2,'')::uuid, $3, nullif($4,'')::uuid, $5, $6, $7, $8, $9,
 		        'new', jsonb_build_object('crm_contact_status', $10::text, 'source_channel', lower($5::text),
-		        'source_provider', $11::text, 'source_kind', 'direct_message'), $12)
+		        'source_provider', $11::text, 'source_kind', $12::text), $13)
 		on conflict (account_id, external_id, channel, instance_scope_key) do update
 			set last_message_at = greatest(conversations.last_message_at, excluded.last_message_at),
-				contact_id = coalesce(excluded.contact_id, conversations.contact_id),
+				contact_id = case when excluded.extracted_fields->>'source_kind'='group_message'
+					then null else coalesce(excluded.contact_id, conversations.contact_id) end,
 				contact_name = coalesce(nullif(excluded.contact_name, ''), conversations.contact_name),
-				contact_phone = coalesce(nullif(excluded.contact_phone, ''), conversations.contact_phone),
+				contact_phone = case when excluded.extracted_fields->>'source_kind'='group_message'
+					then null else coalesce(nullif(excluded.contact_phone, ''), conversations.contact_phone) end,
 				contact_avatar_url = coalesce(nullif(excluded.contact_avatar_url, ''), conversations.contact_avatar_url),
 				updated_at = now()
 		returning id::text`,
 		w.AccountID, w.InstanceID, w.InstanceName, contactID, m.Channel, m.ContactExternalID,
 		m.ContactName, normalizePhoneDigits(m.ContactPhone), m.ContactAvatarURL, contactStatus,
-		w.Provider, m.OccurredAt,
+		w.Provider, sourceKind, m.OccurredAt,
 	).Scan(&conversationID)
 	if err != nil {
 		return "", "", err
@@ -477,7 +485,7 @@ func (s *Store) applyProviderStatus(ctx context.Context, tx pgx.Tx, accountID, i
 // mesmo CRM receba identidades do Instagram sem exigir telefone.
 func (s *Store) upsertInboundContact(ctx context.Context, tx pgx.Tx, w inboundWrite) (string, bool, error) {
 	m := w.Message
-	if m == nil || m.FromMe {
+	if m == nil || m.FromMe || (m.Channel == "WHATSAPP" && isWhatsAppGroupExternalID(m.ContactExternalID)) {
 		return "", false, nil
 	}
 	externalID := strings.TrimSpace(m.ContactExternalID)

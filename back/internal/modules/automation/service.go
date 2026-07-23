@@ -69,23 +69,12 @@ func (s *Service) Connect(ctx context.Context, accountID string) (ConnectView, e
 		return ConnectView{Status: statusWorking, ConnectedPhone: phone}, nil
 	}
 
-	session := s.sessionName(ch)
-	// Sessao em FAILED nao gera QR (o GET de QR fica em long-poll ate estourar o timeout
-	// = 502). Restart re-arma o engine e leva a sessao de volta a SCAN_QR_CODE, de onde o
-	// QR sai; nos demais estados (STOPPED/SCAN_QR_CODE) basta o Start idempotente.
-	if status == statusFailed {
-		if err := s.waha.Restart(ctx, session); err != nil {
-			return ConnectView{}, err
-		}
-	} else if err := s.waha.Start(ctx, session); err != nil {
-		return ConnectView{}, err
-	}
-	qr, err := s.waha.QR(ctx, session)
+	status, phone, qr, err := s.waha.PrepareConnection(ctx, s.sessionName(ch), status)
 	if err != nil {
 		return ConnectView{}, err
 	}
-	_ = s.store.UpdateChannelStatus(ctx, ch.ID, "SCAN_QR_CODE", "")
-	return ConnectView{Status: "SCAN_QR_CODE", QR: qr}, nil
+	_ = s.store.UpdateChannelStatus(ctx, ch.ID, status, phone)
+	return ConnectView{Status: status, QR: qr, ConnectedPhone: phone}, nil
 }
 
 // Disconnect faz logout da sessao do WhatsApp, liberando o numero pareado. Com a
@@ -377,6 +366,8 @@ func buildWhatsAppView(ch Channel, status, phone string) WhatsAppView {
 }
 
 const statusWorking = "WORKING"
+
+const statusScanQRCode = "SCAN_QR_CODE"
 
 // statusFailed e o estado de uma sessao WAHA que falhou ao iniciar (gows nao
 // conectou). Nesse estado a WAHA nao gera QR; o Connect faz Restart para recuperar.

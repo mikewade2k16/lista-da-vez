@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AppPanelButton from '~/components/ui/AppPanelButton.vue'
 import ConfigAiAgentAdvancedSettings from '~/components/omnichannel/config/ConfigAiAgentAdvancedSettings.vue'
-import ConfigAiAgentModelSelect from '~/components/omnichannel/config/ConfigAiAgentModelSelect.vue'
+import ConfigAiRoleModelSelect from '~/components/omnichannel/config/ConfigAiRoleModelSelect.vue'
+import ConfigAiAgentMediaSettings from '~/components/omnichannel/config/ConfigAiAgentMediaSettings.vue'
 import { AI_PROVIDER_LABEL, AI_PROVIDERS, type CalendarAiProvider } from '~/utils/calendar'
 import type {
+  OmniAICredential,
   OmniAgentVersion,
   OmniAgentVersionInput,
   OmniMediaConfig,
 } from '~/domain/omnichannel/config-types'
+import { fetchAICredentials } from '~/domain/omnichannel/config-api'
+import { useAuthStore } from '~/stores/auth'
+import { createApiRequest } from '~/utils/api-client'
 
 const props = defineProps<{
   agentId: string
@@ -23,22 +28,47 @@ const emit = defineEmits<{
 const form = reactive({
   provider: 'gemini' as CalendarAiProvider,
   model: '',
+  responseCredentialId: '',
   temperature: 0.2,
   systemPrompt: '',
   debounceMs: 2500,
   maxContextMessages: 30,
-  maxAiTurns: 6,
+  maxAiTurns: 0,
   minConfidence: 0.65,
   handoffOnError: true,
   handoffOnLimit: true,
-  mediaConfig: {} as OmniMediaConfig,
+  mediaConfig: {
+    audio: { enabled: true, provider: 'openai', model: 'whisper-1', maxSeconds: 600 },
+    image: { enabled: true, provider: 'openai', model: 'gpt-4o', maxBytes: 20 * 1024 * 1024 },
+    video: {
+      enabled: false,
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      maxBytes: 60 * 1024 * 1024,
+    },
+    document: {
+      enabled: false,
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+      maxBytes: 20 * 1024 * 1024,
+      maxPages: 20,
+    },
+    includeInReply: true,
+    retentionDays: 90,
+  } as OmniMediaConfig,
 })
 const hydratedVersionId = ref('')
+const credentials = ref<OmniAICredential[]>([])
+const auth = useAuthStore()
+const runtimeConfig = useRuntimeConfig()
+const api = createApiRequest(runtimeConfig, () => auth.accessToken)
 
-const providerOptions = AI_PROVIDERS.map((value) => ({
-  value,
-  label: AI_PROVIDER_LABEL[value],
-}))
+const credentialOptions = computed(() =>
+  credentials.value.map((credential) => ({
+    value: credential.id,
+    label: `${credential.name} · ${AI_PROVIDER_LABEL[credential.provider]} ····${credential.last4}`,
+  })),
+)
 const activeVersion = computed(
   () => props.versions.find((version) => version.id === props.activeVersionId) || null,
 )
@@ -67,8 +97,15 @@ const versionContext = computed(() => {
   return `Configuração recuperada da v${editing.version}. Salve para aplicar no atendimento.`
 })
 const createBlockedReason = computed(() => {
+  if (!form.responseCredentialId) return 'Selecione a chave usada para responder.'
   if (!form.model.trim()) return 'Selecione o modelo.'
   if (!form.systemPrompt.trim()) return 'Informe o prompt principal da IA.'
+  for (const role of ['audio', 'image', 'video', 'document'] as const) {
+    const config = form.mediaConfig[role]
+    if (config?.enabled && (!config.credentialId || !config.model?.trim())) {
+      return `Selecione a chave e o modelo para ${role}.`
+    }
+  }
   return ''
 })
 
@@ -92,6 +129,7 @@ function hydrateFromCurrentVersion(): void {
   hydratedVersionId.value = base.id
   form.provider = supportedProvider(base.provider)
   form.model = base.model
+  form.responseCredentialId = base.responseCredentialId || ''
   form.temperature = base.temperature
   form.systemPrompt = promptFromLayers(base.layers)
   form.debounceMs = base.debounceMs
@@ -100,23 +138,60 @@ function hydrateFromCurrentVersion(): void {
   form.minConfidence = base.minConfidence
   form.handoffOnError = base.handoffOnError
   form.handoffOnLimit = base.handoffOnLimit
-  form.mediaConfig = base.mediaConfig || {}
+  form.mediaConfig = Object.keys(base.mediaConfig || {}).length
+    ? base.mediaConfig
+    : {
+        audio: { enabled: true, provider: 'openai', model: 'whisper-1', maxSeconds: 600 },
+        image: { enabled: true, provider: 'openai', model: 'gpt-4o', maxBytes: 20 * 1024 * 1024 },
+        video: {
+          enabled: false,
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+          maxBytes: 60 * 1024 * 1024,
+        },
+        document: {
+          enabled: false,
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+          maxBytes: 20 * 1024 * 1024,
+          maxPages: 20,
+        },
+        includeInReply: true,
+        retentionDays: 90,
+      }
+}
+
+function onResponseCredentialChange(value: string): void {
+  form.responseCredentialId = value
+  const selected = credentials.value.find((credential) => credential.id === value)
+  if (selected) form.provider = selected.provider
+  form.model = ''
+}
+
+async function loadCredentials(): Promise<void> {
+  try {
+    credentials.value = await fetchAICredentials(api)
+  } catch {
+    credentials.value = []
+  }
 }
 
 watch([() => props.activeVersionId, () => props.versions], hydrateFromCurrentVersion, {
   immediate: true,
 })
+onMounted(() => void loadCredentials())
 
 function submitConfiguration(): void {
   if (createBlockedReason.value) return
   emit('save', {
     provider: form.provider,
     model: form.model.trim(),
+    responseCredentialId: form.responseCredentialId || null,
     temperature: Number(form.temperature) || 0,
     layers: { identity: form.systemPrompt.trim() },
     debounceMs: Number(form.debounceMs) || 2500,
     maxContextMessages: Number(form.maxContextMessages) || 30,
-    maxAiTurns: Number(form.maxAiTurns) || 6,
+    maxAiTurns: Number.isFinite(Number(form.maxAiTurns)) ? Number(form.maxAiTurns) : 0,
     minConfidence: Number.isFinite(Number(form.minConfidence)) ? Number(form.minConfidence) : 0.65,
     handoffOnError: form.handoffOnError,
     handoffOnLimit: form.handoffOnLimit,
@@ -154,19 +229,33 @@ function submitConfiguration(): void {
       <div class="calendar-config__collapse-body">
         <div class="calendar-config__grid2">
           <label class="calendar-config__field">
-            <span class="calendar-config__field-label">Provedor</span>
-            <select v-model="form.provider" class="calendar-config__input" :disabled="disabled">
-              <option v-for="option in providerOptions" :key="option.value" :value="option.value">
+            <span class="calendar-config__field-label">Chave para responder</span>
+            <select
+              :value="form.responseCredentialId"
+              class="calendar-config__input"
+              :disabled="disabled"
+              @change="onResponseCredentialChange(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="" disabled>Selecione uma credencial</option>
+              <option v-for="option in credentialOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
               </option>
             </select>
           </label>
-          <ConfigAiAgentModelSelect
+          <ConfigAiRoleModelSelect
             v-model="form.model"
-            :agent-id="agentId"
-            :provider="form.provider"
+            :credential-id="form.responseCredentialId"
+            capability="response"
             :disabled="disabled"
           />
+          <label class="calendar-config__field">
+            <span class="calendar-config__field-label">Provedor</span>
+            <input
+              class="calendar-config__input"
+              :value="AI_PROVIDER_LABEL[form.provider]"
+              disabled
+            />
+          </label>
           <label class="calendar-config__field">
             <span class="calendar-config__field-label">Temperatura (0 a 1)</span>
             <input
@@ -190,13 +279,6 @@ function submitConfiguration(): void {
       </div>
     </details>
 
-    <details class="calendar-config__collapse">
-      <summary class="calendar-config__collapse-head">Chaves de API</summary>
-      <div class="calendar-config__collapse-body">
-        <slot name="api-key"></slot>
-      </div>
-    </details>
-
     <ConfigAiAgentAdvancedSettings
       v-model:debounce-ms="form.debounceMs"
       v-model:max-context-messages="form.maxContextMessages"
@@ -204,6 +286,12 @@ function submitConfiguration(): void {
       v-model:min-confidence="form.minConfidence"
       v-model:handoff-on-error="form.handoffOnError"
       v-model:handoff-on-limit="form.handoffOnLimit"
+      :disabled="disabled"
+    />
+
+    <ConfigAiAgentMediaSettings
+      v-model="form.mediaConfig"
+      :credentials="credentials"
       :disabled="disabled"
     />
 

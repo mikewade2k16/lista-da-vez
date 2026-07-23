@@ -59,6 +59,14 @@ func (s *AIService) ListAgentModels(ctx context.Context, accountID string, p aut
 }
 
 func fetchAgentProviderModels(ctx context.Context, baseURL, apiKey, provider string) ([]string, error) {
+	ids, err := fetchProviderModelIDs(ctx, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	return filterAgentModels(provider, "response", ids), nil
+}
+
+func fetchProviderModelIDs(ctx context.Context, baseURL, apiKey string) ([]string, error) {
 	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(callCtx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
@@ -89,16 +97,16 @@ func fetchAgentProviderModels(ctx context.Context, baseURL, apiKey, provider str
 	for _, model := range payload.Data {
 		ids = append(ids, model.ID)
 	}
-	return filterAgentChatModels(provider, ids), nil
+	return ids, nil
 }
 
-func filterAgentChatModels(provider string, ids []string) []string {
+func filterAgentModels(provider, capability string, ids []string) []string {
 	seen := make(map[string]struct{}, len(ids))
 	out := make([]string, 0, len(ids))
 	for _, raw := range ids {
 		id := strings.TrimPrefix(strings.TrimSpace(raw), "models/")
 		lower := strings.ToLower(id)
-		if id == "" || !isAgentChatModel(provider, lower) {
+		if id == "" || !isAgentCapabilityModel(provider, capability, lower) {
 			continue
 		}
 		if _, exists := seen[id]; exists {
@@ -109,6 +117,60 @@ func filterAgentChatModels(provider string, ids []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func filterAgentChatModels(provider string, ids []string) []string {
+	return filterAgentModels(provider, "response", ids)
+}
+
+func isAgentCapabilityModel(provider, capability, id string) bool {
+	switch capability {
+	case "audio":
+		if provider == "openai" {
+			return strings.Contains(id, "whisper") || strings.Contains(id, "transcri")
+		}
+		return provider == "gemini" && strings.Contains(id, "gemini") && !strings.Contains(id, "embedding")
+	case "video":
+		return provider == "gemini" && strings.Contains(id, "gemini") && !strings.Contains(id, "embedding")
+	case "image":
+		if provider == "openai" {
+			return hasAgentModelPrefix(id, "gpt", "chatgpt") && isAgentChatModel(provider, id)
+		}
+		return provider == "gemini" && isAgentChatModel(provider, id)
+	case "document":
+		return provider == "gemini" && isAgentChatModel(provider, id)
+	default:
+		return isAgentChatModel(provider, id)
+	}
+}
+
+func (s *AIService) ListCredentialModels(ctx context.Context, accountID string, p auth.Principal, credentialID, capability string) ([]string, error) {
+	if err := s.requireAgentPerm(ctx, accountID, p, "omnichannel.agents.manage"); err != nil {
+		return nil, err
+	}
+	row, err := s.store.GetAICredential(ctx, accountID, credentialID)
+	if err != nil {
+		return nil, err
+	}
+	capability = strings.ToLower(strings.TrimSpace(capability))
+	switch capability {
+	case "response", "audio", "image", "video", "document":
+	default:
+		return nil, ErrValidation
+	}
+	baseURL, ok := aiProviderModelsBaseURL[row.Provider]
+	if !ok {
+		return nil, ErrAIProviderUnsupported
+	}
+	apiKey, err := s.credentialAPIKey(ctx, accountID, credentialID, row.Provider)
+	if err != nil {
+		return nil, err
+	}
+	ids, err := fetchProviderModelIDs(ctx, baseURL, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	return filterAgentModels(row.Provider, capability, ids), nil
 }
 
 func isAgentChatModel(provider, id string) bool {

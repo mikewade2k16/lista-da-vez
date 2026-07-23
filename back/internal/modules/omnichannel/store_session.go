@@ -191,6 +191,20 @@ func (s *Store) FindProviderCredentialForKey(ctx context.Context, accountID, pro
 	return *cipher, config, true, nil
 }
 
+func (s *Store) FindInstanceProviderByName(ctx context.Context, accountID, instanceName string) (string, bool, error) {
+	var provider string
+	err := s.pool.QueryRow(ctx, `select provider from messaging.whatsapp_instances
+		where account_id=$1::uuid and instance_name=$2 and is_active=true limit 1`, accountID, strings.TrimSpace(instanceName)).Scan(&provider)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return "", false, nil
+	case err != nil:
+		return "", false, err
+	default:
+		return strings.TrimSpace(provider), true, nil
+	}
+}
+
 // decodeStringMap le um jsonb de config e mantem so os pares com valor string (o resto do
 // provider_config nao interessa as Credentials). Config invalido => mapa vazio.
 func decodeStringMap(raw []byte) map[string]string {

@@ -423,6 +423,15 @@ func (s *Store) DispatchOutbound(ctx context.Context, accountID, messageID strin
 		*data.MessageAIGeneration != data.ConversationAIGeneration) {
 		return outboundDispatchResult{}, ErrAILeaseInvalid
 	}
+	if data.Origin == "ai" {
+		allowed, eligibilityErr := aiOutboundAllowedTx(ctx, tx, accountID, data.ConversationID)
+		if eligibilityErr != nil {
+			return outboundDispatchResult{}, eligibilityErr
+		}
+		if !allowed {
+			return outboundDispatchResult{}, ErrAILeaseInvalid
+		}
+	}
 	if data.Status == "SENT" || data.Status == "DELIVERED" || data.Status == "READ" ||
 		data.Status == "FAILED" || data.Status == "DELETED" {
 		return result, nil

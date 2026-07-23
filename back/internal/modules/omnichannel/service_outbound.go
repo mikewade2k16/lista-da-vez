@@ -231,6 +231,16 @@ func (s *SendService) PublishAIAutoCloseResult(ctx context.Context, accountID, c
 	s.audit(ctx, accountID, "", conversationID, decision.finalMessage.ID, "MESSAGE_OUTBOUND_QUEUED")
 }
 
+// PublishAIHandoffResult emits the customer notice created atomically with the
+// AI handoff. Idempotent replays do not publish the same message twice.
+func (s *SendService) PublishAIHandoffResult(ctx context.Context, accountID, conversationID string, handoff HandoffView) {
+	if handoff.customerNoticeMessage == nil || !handoff.customerNoticeCreated {
+		return
+	}
+	s.publishMessageCreated(ctx, accountID, *handoff.customerNoticeMessage)
+	s.audit(ctx, accountID, "", conversationID, handoff.customerNoticeMessage.ID, "MESSAGE_OUTBOUND_QUEUED")
+}
+
 // resolveConversationForSend valida escopo (A2) e devolve a linha da conversa (instancia +
 // scope key para gravar a mensagem). Fora de escopo => ErrNotFound (404, nunca 403).
 func (s *SendService) resolveConversationForSend(ctx context.Context, accountID string, caller Caller, conversationID string) (conversationRow, error) {

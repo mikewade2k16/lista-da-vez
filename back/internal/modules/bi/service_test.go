@@ -6,8 +6,18 @@ import (
 )
 
 func TestNormalizeFindEndpointAllowlist(t *testing.T) {
-	if endpoint, ok := normalizeFindEndpoint("item/find"); !ok || endpoint != "/item/find" {
-		t.Fatalf("expected /item/find, got %q ok=%v", endpoint, ok)
+	allowed := map[string]string{
+		"item/find":                 "/item/find",
+		"/imagemItem/find":          "/imagemItem/find",
+		"itemSaldoPrecoCompra/find": "/itemSaldoPrecoCompra/find",
+		"/nota/find":                "/nota/find",
+		"notaItem/find":             "/notaItem/find",
+		"/inventario/find":          "/inventario/find",
+	}
+	for input, expected := range allowed {
+		if endpoint, ok := normalizeFindEndpoint(input); !ok || endpoint != expected {
+			t.Fatalf("expected %s for %s, got %q ok=%v", expected, input, endpoint, ok)
+		}
 	}
 
 	if _, ok := normalizeFindEndpoint("https://example.com/api"); ok {

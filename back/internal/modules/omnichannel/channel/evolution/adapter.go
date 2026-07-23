@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -33,8 +34,9 @@ const (
 // compilacao se a interface da Fundacao mudar (o SessionManager e resolvido por type-assert
 // no Registry — sem esta linha, uma quebra so apareceria em runtime).
 var (
-	_ channel.Provider       = (*Provider)(nil)
-	_ channel.SessionManager = (*Provider)(nil)
+	_ channel.Provider              = (*Provider)(nil)
+	_ channel.SessionManager        = (*Provider)(nil)
+	_ channel.GroupMetadataProvider = (*Provider)(nil)
 )
 
 // Provider e o adapter Evolution. E um SINGLETON stateless no Registry: o estado (baseURL/
@@ -80,6 +82,67 @@ func (p *Provider) Capabilities() channel.Capabilities {
 		SupportsGroups:    true,
 		MaxMediaBytes:     60 << 20, // 60 MiB
 	}
+}
+
+// FetchGroupMetadata resolve o nome oficial do grupo no endpoint da Evolution. Falhas sao
+// devolvidas sem corpo do provedor; o ingest trata a consulta como best-effort para nao
+// transformar uma indisponibilidade de metadata em falha de webhook.
+func (p *Provider) FetchGroupMetadata(ctx context.Context, cred channel.Credentials, instanceName, groupJID string) (channel.GroupMetadata, error) {
+	jid := strings.TrimSpace(groupJID)
+	if !strings.HasSuffix(strings.ToLower(jid), "@g.us") {
+		return channel.GroupMetadata{}, errors.New("evolution: jid de grupo invalido")
+	}
+	c, err := p.clientFor(cred)
+	if err != nil {
+		return channel.GroupMetadata{}, err
+	}
+	raw, err := c.fetchGroupInfo(ctx, instanceName, jid)
+	if err != nil {
+		return channel.GroupMetadata{}, err
+	}
+	name := groupNameFromResponse(raw)
+	if name == "" {
+		return channel.GroupMetadata{}, errors.New("evolution: resposta sem nome de grupo")
+	}
+	return channel.GroupMetadata{JID: jid, Name: name}, nil
+}
+
+func groupNameFromResponse(raw json.RawMessage) string {
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return ""
+	}
+	return strings.TrimSpace(findGroupName(value))
+}
+
+func findGroupName(value any) string {
+	object, ok := value.(map[string]any)
+	if !ok {
+		if items, ok := value.([]any); ok {
+			for _, item := range items {
+				if name := findGroupName(item); name != "" {
+					return name
+				}
+			}
+		}
+		return ""
+	}
+
+	// `subject` e o campo canonico do WhatsApp; os demais cobrem envelopes de versoes
+	// conhecidas da Evolution. Priorizamos estes campos no mesmo objeto antes de descer.
+	for _, key := range []string{"subject", "groupSubject", "groupName", "name"} {
+		if text, ok := object[key].(string); ok && strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	for _, key := range []string{"data", "groupMetadata", "group", "response"} {
+		if nested, ok := object[key]; ok {
+			if name := findGroupName(nested); name != "" {
+				return name
+			}
+		}
+	}
+	return ""
 }
 
 // ============================================================================

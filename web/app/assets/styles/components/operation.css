@@ -315,7 +315,10 @@
 .ui-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  /* O confirm global pode ser aberto sobre drawers/modais do Nuxt UI (ex.: QR
+     do WhatsApp). Ele é teleportado para o body, então precisa vencer qualquer
+     stacking context da superfície que o disparou e também capturar o clique. */
+  z-index: 11000;
   display: grid;
   place-items: center;
   padding: 20px;

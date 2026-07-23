@@ -45,7 +45,7 @@ func (s *Store) ReplayAutomationWithAI(ctx context.Context, accountID, conversat
 	if err != nil {
 		return AIDispatchRecord{}, err
 	}
-	if snap.State == StateAIActive || snap.State == StateHumanActive || snap.State == StateClosed {
+	if !automationReplyStateAllowed(snap.State) {
 		return AIDispatchRecord{}, ErrConflict
 	}
 
@@ -73,6 +73,12 @@ func (s *Store) ReplayAutomationWithAI(ctx context.Context, accountID, conversat
 	err = tx.QueryRow(ctx, `select coalesce(array_agg(m.id order by m.created_at,m.id),'{}'::uuid[])::text[]
 		from messaging.messages m
 		where m.account_id=$1::uuid and m.conversation_id=$2::uuid and m.direction='INBOUND'
+		  and m.created_at > coalesce((select suppression.history_cleared_at
+		      from messaging.conversations conversation
+		      join messaging.contact_suppressions suppression
+		        on suppression.account_id=conversation.account_id and suppression.contact_id=conversation.contact_id
+		      where conversation.account_id=m.account_id and conversation.id=m.conversation_id),
+		      '-infinity'::timestamptz)
 		  and m.created_at > coalesce((
 			select max(answer.created_at) from messaging.messages answer
 			where answer.account_id=$1::uuid and answer.conversation_id=$2::uuid
@@ -115,6 +121,10 @@ func (s *Store) ReplayAutomationWithAI(ctx context.Context, accountID, conversat
 		return AIDispatchRecord{}, err
 	}
 	return created, nil
+}
+
+func automationReplyStateAllowed(state ConversationState) bool {
+	return state != StateAIActive && state != StateClosed
 }
 
 func isOperatorReplyDispatch(dispatch AIDispatchRecord) bool {

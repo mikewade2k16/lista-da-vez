@@ -26,3 +26,17 @@ func TestFilterAgentChatModelsNormalizesGeminiPrefix(t *testing.T) {
 		t.Fatalf("unexpected models: got %#v want %#v", got, want)
 	}
 }
+
+func TestFilterAgentModelsByMediaCapability(t *testing.T) {
+	openAI := []string{"gpt-4o", "whisper-1", "gpt-4o-transcribe"}
+	if got := filterAgentModels("openai", "audio", openAI); !reflect.DeepEqual(got, []string{"gpt-4o-transcribe", "whisper-1"}) {
+		t.Fatalf("unexpected OpenAI audio models: %#v", got)
+	}
+	if got := filterAgentModels("openai", "document", openAI); len(got) != 0 {
+		t.Fatalf("OpenAI document models should be hidden until the workflow supports them: %#v", got)
+	}
+	gemini := []string{"models/gemini-2.5-flash", "models/text-embedding-004"}
+	if got := filterAgentModels("gemini", "video", gemini); !reflect.DeepEqual(got, []string{"gemini-2.5-flash"}) {
+		t.Fatalf("unexpected Gemini video models: %#v", got)
+	}
+}

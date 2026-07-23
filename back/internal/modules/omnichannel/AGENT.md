@@ -24,8 +24,13 @@ Contrato do MVP-01:
 - perfil estratégico continua autoritativo em `calendar.client_profiles` e chega somente pelo
   adapter de composição `platform/app/omnichannel_calendar_adapter.go`; é proibido SQL direto;
 - profile aponta para a instância lógica, portanto Evolution e WhatsApp Cloud reutilizam o vínculo;
-- contas sem nenhum profile usam temporariamente o agente global legado; após o primeiro profile,
-  número não configurado falha fechado e não executa IA;
+- o perfil habilitado é obrigatório para cada número; não existe fallback para agente global.
+  Perfil ausente/desabilitado ou instância inativa falha fechado antes do modelo, antes da outbox e
+  imediatamente antes do provider;
+- desligar o perfil é o kill switch autoritativo: incrementa a lease, cancela dispatches e saídas
+  pendentes e tira conversas de `ai_active` no mesmo commit;
+- JID WhatsApp `@g.us` é grupo, não contato: permanece visível no inbox separado de pessoas, não
+  cria identidade de CRM e nunca chama triagem, análise multimodal ou envio por IA;
 - encerramento automático nasce desligado. Threshold e gates são configuráveis, mas
   `conversations.ai_generation` válida é uma invariante obrigatória e não pode virar toggle;
 - `PUT /v1/omnichannel/agents/{id}/configuration` é o salvamento simples do MVP: normaliza,
@@ -34,6 +39,22 @@ Contrato do MVP-01:
   versão quando o conteúdo já é o ativo. As rotas draft/publish permanecem apenas compatíveis;
 - nenhuma migration é aplicada, container reiniciado ou workflow importado por consequência
   desta fase. Essas ações precisam de autorização e alvo explícitos.
+
+### Incidente de rollout — sessão duplicada e perfil ausente (2026-07-22)
+
+- Sintoma: webhook e mensagens inbound chegavam em produção, mas não existiam `ai_dispatches` ou
+  `ai_runs`; a visão geral mostrava zero clientes configurados e a conversa estava
+  `human_active`.
+- Causa provada: o agente só foi publicado depois das mensagens de teste, nenhum
+  `messaging.automation_profiles` vinculava cliente+número+agente e mensagens anteriores enviadas
+  pelo aparelho (`origin=provider_device`) fizeram takeover humano. O mesmo número também estava
+  conectado em Evolutions independentes local e produção.
+- Correção operacional: criar/habilitar o perfil somente após número e agente estarem prontos;
+  manter um único ambiente consumidor por número; parar o outro ambiente preservando volumes;
+  encerrar a conversa de teste antes de validar um novo inbound.
+- Diagnóstico preventivo: correlacionar nesta ordem `webhook_events/messages → conversations.state
+  → automation_profiles → ai_dispatches → ai_runs → outbox`. Webhook 202 sozinho não prova que a
+  automação estava elegível, e ausência de dispatch significa gate anterior ao n8n.
 
 Contrato do MVP-02:
 
@@ -48,20 +69,32 @@ Contrato do MVP-02:
 - `fromMe` novo faz takeover no mesmo commit da mensagem; duplicata/eco nunca incrementa de novo;
 - `handoff` usa `messaging.handoffs`; o n8n não escolhe fila, não muda estado e não envia canal;
 - cards operacionais consultam `/v1/omnichannel/automation/attendances` e projetam do PostgreSQL
-  tanto conversas `ai_active` quanto handoffs parados, com contagem/preview limitado das mensagens
+  conversas `ai_active`, `human_active` e handoffs parados, com contagem/preview limitado das mensagens
   inbound posteriores à última resposta. `pause-ai` cria handoff auditado e invalida a lease;
   `reply-with-ai` fecha o handoff, volta para `ai_active` e cria dispatch/outbox para as mensagens
-  já persistidas no mesmo commit. Nenhuma dessas ações chama n8n ou Evolution diretamente;
+  já persistidas no mesmo commit. Em `human_active`, a mesma ação autenticada permite ao operador
+  devolver a conversa à IA quando há inbound pendente. Nenhuma dessas ações chama n8n ou Evolution diretamente;
 - `Retomar nas próximas` continua usando `PATCH /conversations/{id}/status` com `CLOSED` somente
   quando não há mensagem pendente. O inbound seguinte reabre pelo fluxo canônico.
 - `reply-with-ai` é uma ordem manual autenticada para uma resposta: o dispatch marca `ForceReply`,
   ignora `min_confidence`, `max_ai_turns`, `needs_human`/`close` sugeridos pelo modelo e reforça no
   prompt que `reply_draft` deve ser preenchido. Não ignora configuração ausente, falha do provider,
   limite mensal, schema inválido, resposta vazia, escopo tenant nem lease de `ai_generation`;
+- modelos OpenAI-compatible legados podem aceitar chat e aparecer em `/models`, mas rejeitar
+  `response_format=json_object` com HTTP 400. O client tenta uma única vez sem essa dica e mantém a
+  validação do JSON Schema no Go; outros status não repetem a chamada e nenhum corpo de erro é logado;
 - motivos de parada permanecem específicos de ponta a ponta. `max_ai_turns` gera handoff
   `max_turns`, confiança abaixo do mínimo gera `low_confidence` e limite mensal cai em `policy`.
   A projeção dos cards recupera handoffs antigos rotulados incorretamente consultando o último
   `ai_run`, e expõe confiança/mínimo/máximo sem prompt ou conteúdo adicional.
+- `max_ai_turns=0` significa **sem limite de respostas automáticas** de ponta a ponta. O default
+  do schema, a normalização da policy e a UI devem preservar zero; somente valores positivos
+  aplicam o gate `max_turns`.
+- ocultação de contato é uma supressão lógica account-scoped em
+  `messaging.contact_suppressions`: remove o contato e suas conversas das projeções do inbox,
+  CRM e automação sem apagar auditoria. `clearHistory=true` avança o cutoff; depois de restaurar,
+  apenas mensagens posteriores ao cutoff reaparecem. A gestão exige o grant explícito
+  `omnichannel.conversations.privacy.manage`; nem `platform_admin` ignora esse gate.
 - `AIVersionInput.minConfidence` distingue campo ausente de `0`: ausente aplica o default `0.65`;
   zero é configuração explícita válida e significa não interromper resposta automática por confiança.
 
@@ -176,19 +209,46 @@ corrigir isto antes de fechar as funcionalidades pendentes. Descobertos com What
 > reimplementa fila** (claim/retry/dead-letter/monitor são da F3). **Wiring pendente** (o
 > orquestrador liga no `module.go`/`app.go`): ver §Wiring pendente (F6).
 
-### E3 multimodal (migration 0219)
+### E3 multimodal (migrations 0219 e 0234)
 
 - `ai_agent_versions.media_config` é versionado e validado pelo service; aceita somente as
-  seções audio/image/document, limites e provider/model. Chave, token, senha e credencial são
-  rejeitados e continuam exclusivamente no segredo server-side do agente.
+  seções audio/image/video/document, limites, provider/model e `credentialId`. Segredo cru,
+  token e senha são rejeitados. `response_credential_id` fixa a chave usada para responder.
+- `messaging.ai_credentials` é o cofre nomeado account-scoped. Segredos são cifrados pelo Go,
+  nunca retornam ao navegador e podem ser reutilizados por múltiplos agentes. O keyring legado
+  por agente permanece apenas para rollback e para a importação explícita/idempotente.
 - `messaging.media_analyses` é a fonte autoritativa de status, resultado limitado, tentativas,
   tokens/custo e retenção. O unique tenant-scoped impede cobrança duplicada; FKs compostas
   impedem associar mensagem/conversa/versão de outra conta.
 - `GET /conversations/{cid}/messages/{mid}/media/analyses` retorna somente metadados derivados
   ao operador autorizado. O gateway interno `GET /v1/runtime/omnichannel/media/{messageId}`
   exige token cifrado curto `media-stream.v1`, valida account+analysis+message e nunca expõe
-  storage key. O job/branches multimodais só serão ativados depois do shadow QA do workflow
-  próprio; nenhum outro workflow, WAHA ou canal recebe bytes.
+  storage key. O `media.fetch` chama somente o webhook `omnichannel-brain-media`; o workflow
+  interpreta áudio/imagem/vídeo/documento e devolve JSON, mas somente o Go valida/persiste e
+  continua o dispatch/outbox. Nenhum workflow da Automação foi alterado.
+- No workflow multimodal, o sandbox do Code node não oferece o construtor global `URL`: a
+  validação do `mediaUrl` usa parser restrito e aceita HTTP somente para hosts internos. Os
+  payloads OpenAI/Gemini são montados em `Preparar midia para IA`; os HTTP nodes recebem apenas
+  `JSON.stringify($json.providerBody)`. Não remontar objetos multimodais complexos na expressão
+  `jsonBody`, pois o parser do n8n rejeita a sintaxe antes de chamar o provider.
+
+O bloqueio de IA por contato (`PUT /v1/omnichannel/conversations/{id}/ai-restriction`) é
+account-scoped e fail-closed: ao bloquear, incrementa a geração e cancela mensagens/outbox/
+dispatches AI pendentes no mesmo commit; `allow` apenas remove a restrição persistida.
+
+### Memória e nome confiável do contato (migration 0236)
+
+- O nome exibido pelo canal continua preservado para o operador, mas somente
+  `safePreferredPersonalName` pode liberar um nome à IA para saudação. Frases como
+  `Deus é fiel`, empresas, handles e telefones resultam em saudação sem nome.
+- `messaging.contact_intelligence` é a memória estruturada account-scoped do CRM: resumo,
+  fatos, preferências, intenção/sentimento/confiança e contadores operacionais.
+- O resultado do modelo é não confiável. O Go remove chaves sensíveis, objetos aninhados e
+  excesso de tamanho antes do upsert; histórico bruto, prompt e segredo nunca entram na tabela.
+- A atualização da conversa e da inteligência compartilha a mesma validação de
+  `state='ai_active' + ai_generation`; resultado atrasado não aprende nem responde.
+- A memória volta ao próximo prompt como contexto não confiável. Ela nunca prevalece sobre
+  prompt administrativo, regras, CRM manual ou contexto estratégico do cliente atendido.
 
 ### E6 tools e conhecimento (migrations 0222–0225)
 
@@ -568,6 +628,13 @@ Registrados também em `docs/LEGADO.md`.
    `NewActionsService` para as ações síncronas decifrarem a credencial **por instância** (sem isso,
    caem em `provider_config` + fallback de ambiente `EVOLUTION_*` do adapter). As demais sync ops
    (group/sync/import) seguem 409 até a F4 expor os métodos.
+
+- **Nomes de grupos**: a UI identifica grupos exclusivamente pelo JID `@g.us` e nunca deriva
+  rótulos a partir dos últimos dígitos. O adapter Evolution implementa a capacidade opcional
+  `channel.GroupMetadataProvider`, consulta o `subject` oficial em `group/findGroupInfos` e o
+  ingest persiste esse nome em `conversations.contact_name` de forma best-effort. Falha de
+  metadata não interrompe o webhook; o front exibe `Grupo sem nome` até o provedor informar o
+  nome real. `pushName` de participante nunca é usado como nome de grupo.
 4. **Migration `0208`** exige `docker compose build --no-cache api` (embed.FS não re-embute com cache).
 
 ## F4 — canal, webhook e sessão
@@ -581,6 +648,8 @@ Registrados também em `docs/LEGADO.md`.
   integração WHATSAPP-BAILEYS, header `apikey`, timeout 30s. Implementa `channel.Provider` +
   `channel.SessionManager`. `baseURL`/`apiKey` vêm da **instância** (`provider_config.baseURL` +
   `credentials_ciphertext`); `EVOLUTION_BASE_URL`/`EVOLUTION_API_KEY` são só **fallback de ambiente**.
+  Em produção, `docker-compose.prod.yml` mantém `evolution` + `evolution-db` isolados no profile
+  `omnichannel`, com volumes próprios e bind de troubleshooting apenas em `127.0.0.1`.
   `VerifyWebhook` compara `x-webhook-token` (fallback `apikey`) constant-time (`hmac.Equal`), fail-closed.
   `ParseWebhook` é defensivo: event de `event ?? type ?? data.event` normalizado; `MESSAGES_UPSERT`→
   message_received (pula `fromMe`), `MESSAGES_UPDATE`(ack)→message_status, `QRCODE_UPDATED`→qr_updated

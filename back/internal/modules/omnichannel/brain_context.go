@@ -20,16 +20,20 @@ func buildBrainRequestV2(p triageParams, fields []CollectFieldView) BrainRequest
 	if contactID == "" {
 		contactID = "unknown"
 	}
-	relationship := stringValue(p.ContactContext, "relationshipStatus", "relationship_status")
+	relationship := "unknown"
+	tags := []string{}
+	var summary *string
+	if p.ContactIntelligence != nil {
+		relationship = p.ContactIntelligence.RelationshipStatus
+		_ = json.Unmarshal(p.ContactIntelligence.Tags, &tags)
+		if value := strings.TrimSpace(p.ContactIntelligence.Summary); value != "" {
+			summary = &value
+		}
+	}
 	switch relationship {
 	case "new_lead", "known_lead", "customer", "inactive", "unknown":
 	default:
 		relationship = "unknown"
-	}
-	tags := stringSliceValue(p.ContactContext, "tags")
-	var summary *string
-	if value := stringValue(p.ContactContext, "summary"); value != "" {
-		summary = &value
 	}
 	requestSchema := "brain.request.v2"
 	if strings.EqualFold(strings.TrimSpace(p.Version.WorkflowContract), "brain.v3") {
@@ -39,7 +43,7 @@ func buildBrainRequestV2(p triageParams, fields []CollectFieldView) BrainRequest
 		SchemaVersion: requestSchema, DispatchID: p.DispatchID, Generation: p.AIGeneration,
 		Tenant:       BrainTenantV2{AccountID: p.AccountID, Timezone: "America/Sao_Paulo"},
 		Conversation: BrainConversationV2{ID: derefStringPtr(p.ConversationID), State: state, Channel: channel},
-		Contact: BrainContactV2{ID: contactID, RelationshipStatus: relationship, Tags: tags,
+		Contact: BrainContactV2{ID: contactID, Name: nilIfEmpty(p.ContactName), RelationshipStatus: relationship, Tags: tags,
 			Origin: brainOriginFromContext(p.ContactContext), Summary: summary},
 		CollectedFields: p.ContactContext,
 		RequiredFields:  requiredFieldKeys(fields),
@@ -70,7 +74,14 @@ func buildBrainRequestV2(p triageParams, fields []CollectFieldView) BrainRequest
 
 func triageOutputFromBrainResult(result BrainResultV2) TriageOutput {
 	out := TriageOutput{Intent: result.Classification.Intent, Confidence: result.Classification.Confidence,
+		Sentiment:       normalizeContactSentiment(result.Classification.Sentiment),
 		ExtractedFields: result.ExtractedFields, NeedsHuman: result.Decision == BrainHandoff || result.Handoff.Needed}
+	if result.ContactMemory != nil {
+		out.ContactMemory = normalizeContactMemory(*result.ContactMemory)
+	}
+	if len(out.ContactMemory.Facts) == 0 && len(result.ExtractedFields) > 0 {
+		out.ContactMemory.Facts = normalizeContactMemoryMap(result.ExtractedFields)
+	}
 	if result.Handoff.ReasonCode != nil {
 		out.HandoffReason = *result.Handoff.ReasonCode
 	}

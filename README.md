@@ -19,7 +19,7 @@ Repositorio principal do Omni, com frontend em Nuxt 4 dentro de `web/` e backend
 - Vue `3.5.30`
 - Pinia `3.0.4`
 - Node `24.11.1`
-- Go `1.24.0`
+- Go `1.26.5`
 - PostgreSQL `16`
 
 ## Fluxo oficial

@@ -89,7 +89,7 @@ export interface AutomationIntervention {
   waitingSince: string
 }
 
-export type AutomationAttendanceMode = 'ai_active' | 'ai_stopped'
+export type AutomationAttendanceMode = 'ai_active' | 'ai_stopped' | 'human_active'
 
 export interface AutomationAttendance {
   id: string
@@ -182,7 +182,7 @@ export function replyAutomationWithAI(
   })
 }
 
-export function resumeAutomationOnNextInbound(
+export function closeAutomationConversation(
   api: ApiRequest,
   conversationId: string,
 ): Promise<unknown> {

@@ -150,7 +150,7 @@ export interface CreateContactPayload {
   countryCode?: string | null;
 }
 
-export type InboxSidebarView = "conversations" | "contacts";
+export type InboxSidebarView = "conversations" | "contacts" | "hidden";
 
 export const UNASSIGNED_VALUE = "__unassigned__";
 export const MESSAGE_PAGE_SIZE = 50;

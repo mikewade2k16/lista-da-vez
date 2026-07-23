@@ -79,6 +79,10 @@ jobs:
         with:
           ref: ${{ inputs.git_ref }}
 
+      - name: Validate API environment wiring in Compose
+        shell: pwsh
+        run: ./scripts/deploy/assert-compose-api-env.ps1 -ComposePath ./docker-compose.prod.yml
+
       - name: Resolve environment + image tag
         run: |
           set -euo pipefail

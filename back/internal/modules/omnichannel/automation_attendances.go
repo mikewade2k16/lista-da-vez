@@ -11,6 +11,7 @@ import (
 const (
 	automationAttendanceAIActive  = "ai_active"
 	automationAttendanceAIStopped = "ai_stopped"
+	automationAttendanceHuman     = "human_active"
 )
 
 // ListAutomationAttendances projects the operational cards from authoritative
@@ -65,6 +66,10 @@ func (s *Store) ListAutomationAttendances(ctx context.Context, accountID, client
 			       min(m.created_at) as pending_since
 			from messaging.messages m
 			where m.account_id=c.account_id and m.conversation_id=c.id and m.direction='INBOUND'
+			  and m.created_at > coalesce((select suppression.history_cleared_at
+			      from messaging.contact_suppressions suppression
+			      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id),
+			      '-infinity'::timestamptz)
 			  and m.created_at > coalesce((
 				select max(answer.created_at) from messaging.messages answer
 				where answer.account_id=c.account_id and answer.conversation_id=c.id
@@ -72,7 +77,10 @@ func (s *Store) ListAutomationAttendances(ctx context.Context, accountID, client
 			  ),'-infinity'::timestamptz)
 		) pending on true
 		where c.account_id=$1::uuid
-		  and (c.state='ai_active' or handoff.id is not null)
+		  and not exists (select 1 from messaging.contact_suppressions suppression
+		      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
+		        and suppression.is_hidden=true)
+		  and (c.state in ('ai_active','human_active') or handoff.id is not null)
 		  and ($2='' or p.client_account_id=nullif($2,'')::uuid)
 		order by (case when c.state='ai_active' then c.updated_at else coalesce(handoff.requested_at,c.updated_at) end) desc,c.id desc
 		limit $3`, accountID, strings.TrimSpace(clientID), limit)
@@ -102,7 +110,10 @@ func (s *Store) AutomationConversationScope(ctx context.Context, accountID, conv
 		from messaging.conversations c
 		join messaging.automation_profiles p
 		  on p.account_id=c.account_id and p.whatsapp_instance_id=c.instance_id
-		where c.account_id=$1::uuid and c.id=$2::uuid`, accountID, conversationID).
+		where c.account_id=$1::uuid and c.id=$2::uuid
+		  and not exists (select 1 from messaging.contact_suppressions suppression
+		      where suppression.account_id=c.account_id and suppression.contact_id=c.contact_id
+		        and suppression.is_hidden=true)`, accountID, conversationID).
 		Scan(&out.ClientAccountID, &out.ConversationState)
 	return out, translate(err)
 }
@@ -141,6 +152,8 @@ func (s *AutomationService) ListAttendances(ctx context.Context, accountID strin
 		mode := automationAttendanceAIStopped
 		if row.ConversationState == string(StateAIActive) {
 			mode = automationAttendanceAIActive
+		} else if row.ConversationState == string(StateHumanActive) {
+			mode = automationAttendanceHuman
 		}
 		reasonCode, summary := normalizedAutomationAttendanceReason(row)
 		out = append(out, AutomationAttendanceView{
@@ -160,6 +173,9 @@ func (s *AutomationService) ListAttendances(ctx context.Context, accountID strin
 
 func normalizedAutomationAttendanceReason(row automationAttendanceRow) (string, string) {
 	reasonCode, summary := row.ReasonCode, row.Summary
+	if row.ConversationState == string(StateHumanActive) && reasonCode == "" {
+		return "human_active", "O atendimento está sob controle humano. Você pode transferi-lo novamente para a IA."
+	}
 	// Older dispatches collapsed every limit into low_confidence. Recover the
 	// truthful reason from the authoritative run so existing cards are corrected.
 	if row.AIRunStatus == runLimitExceeded && row.AIRunError == "max_ai_turns" {

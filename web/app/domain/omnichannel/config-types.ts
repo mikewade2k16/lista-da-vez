@@ -270,6 +270,7 @@ export interface OmniAgentVersion {
   status: string
   provider: string
   model: string
+  responseCredentialId: string | null
   temperature: number
   layers: unknown
   outputSchema: unknown
@@ -290,6 +291,7 @@ export interface OmniMediaSectionConfig {
   enabled?: boolean
   provider?: string
   model?: string
+  credentialId?: string
   maxSeconds?: number
   maxBytes?: number
   allowedMime?: string[]
@@ -299,6 +301,7 @@ export interface OmniMediaSectionConfig {
 export interface OmniMediaConfig {
   audio?: OmniMediaSectionConfig
   image?: OmniMediaSectionConfig
+  video?: OmniMediaSectionConfig
   document?: OmniMediaSectionConfig
   retentionDays?: number
   includeInReply?: boolean
@@ -308,7 +311,7 @@ export interface OmniMediaAnalysis {
   id: string
   messageId: string
   conversationId: string
-  analysisKind: 'transcription' | 'vision' | 'document_text'
+  analysisKind: 'transcription' | 'vision' | 'video_summary' | 'document_text'
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'blocked'
   provider: string
   model: string
@@ -457,6 +460,7 @@ export interface OmniAgentInput {
 export interface OmniAgentVersionInput {
   provider: string
   model: string
+  responseCredentialId?: string | null
   temperature: number
   layers: unknown
   outputSchema?: unknown
@@ -469,6 +473,21 @@ export interface OmniAgentVersionInput {
   handoffOnError?: boolean
   handoffOnLimit?: boolean
   workflowContractVersion?: string
+}
+
+export interface OmniAICredential {
+  id: string
+  name: string
+  provider: 'gemini' | 'glm' | 'openai'
+  last4: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OmniAICredentialInput {
+  name: string
+  provider: OmniAICredential['provider']
+  apiKey: string
 }
 
 // ============================================================================

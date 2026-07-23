@@ -15,9 +15,10 @@ type Options struct {
 }
 
 type PerolaLoginInput struct {
-	CompanyKey string `json:"companyKey"`
-	Login      string `json:"login"`
-	Pass       string `json:"pass"`
+	CompanyKey  string `json:"companyKey"`
+	CNPJEmpresa string `json:"cnpjEmpresa"`
+	Login       string `json:"login"`
+	Pass        string `json:"pass"`
 }
 
 type PerolaFindInput struct {

@@ -198,3 +198,12 @@ Ambiente esperado:
 - `messaging_messages_content_trgm_idx` e o indice GIN da busca existente por
   `lower(messages.content) LIKE '%...%'`. Ele reutiliza `pg_trgm`, instalado pela migration
   `0034_erp_ftp_foundation.sql`; nao criar mecanismo de busca ou copia de conteudo paralela.
+
+## Omnichannel CRM intelligence (migration 0236)
+
+- `messaging.contact_intelligence` e uma extensao 1:1 de `messaging.contacts`, sempre com
+  `account_id + contact_id` e FKs compostas tenant-safe.
+- A tabela guarda somente memoria derivada limitada e metricas. Historico bruto permanece em
+  `messaging.messages`; prompt, credencial, documento e dado de pagamento nao podem ser gravados.
+- Atualizacao de memoria precisa compartilhar o gate de `state + ai_generation` da conversa para
+  impedir aprendizado vindo de uma resposta atrasada ou cancelada.

@@ -203,6 +203,15 @@
   font-weight: 700;
 }
 
+.calendar-controls__gear:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.calendar-controls__collapse {
+  margin-left: auto;
+}
+
 .calendar-controls__client {
   flex: 1 1 8rem;
   min-width: 0;

@@ -53,6 +53,13 @@ export const WORKSPACE_ACCESS_DEFINITIONS = [
     editPermission: '',
   },
   {
+    id: 'social_publishing',
+    label: 'Agendamento de postagens',
+    description: 'Conexao Instagram, fila de publicacao, agendamentos e analytics organicos.',
+    viewPermission: 'social_publishing.view',
+    editPermission: 'social_publishing.manage',
+  },
+  {
     id: 'omnichannel',
     label: 'Omnichannel',
     description: 'Inbox de atendimento WhatsApp: conversas, contatos e numeros.',
@@ -332,6 +339,16 @@ export const ADVANCED_ACCESS_DEFINITIONS = [
     label: 'Executar acoes de alertas',
     description: 'Permite acknowledge e resolucao manual de alertas operacionais.',
   },
+  {
+    key: 'social_publishing.connect',
+    label: 'Conectar Instagram',
+    description: 'Permite cadastrar, validar, substituir ou revogar a credencial Instagram.',
+  },
+  {
+    key: 'social_publishing.analytics',
+    label: 'Sincronizar analytics de postagens',
+    description: 'Permite consultar e atualizar metricas organicas das publicacoes.',
+  },
 ]
 
 const ROLE_WORKSPACES = {
@@ -340,6 +357,7 @@ const ROLE_WORKSPACES = {
     'consultor',
     'tasks',
     'calendar',
+    'social_publishing',
     'omnichannel',
     'ranking',
     'dados',
@@ -381,6 +399,7 @@ const ROLE_WORKSPACES = {
     'consultor',
     'tasks',
     'calendar',
+    'social_publishing',
     'omnichannel',
     'ranking',
     'dados',
@@ -411,6 +430,7 @@ const ROLE_WORKSPACES = {
   marketing: [
     'operacao',
     'campanhas',
+    'social_publishing',
     'site',
     'site_produtos_web',
     'site_leads_web',

@@ -199,6 +199,17 @@ Ambiente esperado:
   `lower(messages.content) LIKE '%...%'`. Ele reutiliza `pg_trgm`, instalado pela migration
   `0034_erp_ftp_foundation.sql`; nao criar mecanismo de busca ou copia de conteudo paralela.
 
+## Social publishing (migration 0237)
+
+- `social_publishing.connections` guarda uma conexao Instagram por conta; token cru nunca e
+  persistido, e disconnect faz soft revoke para preservar posts e auditoria.
+- `social_publishing.posts` e a fonte unica do agendamento/publicacao. Integracoes futuras usam
+  `source_type + source_ref`; nao existe FK nem SQL direto para `calendar.*`.
+- Analytics corrente vive em `post_analytics`; o historico append-only fica em
+  `analytics_snapshots`. O external media id continua somente em `posts`, evitando drift.
+- `social_publishing.outbox` implementa exatamente o contrato de `platform/jobs` em tabela propria;
+  nunca reutiliza `messaging.outbox`.
+
 ## Omnichannel CRM intelligence (migration 0236)
 
 - `messaging.contact_intelligence` e uma extensao 1:1 de `messaging.contacts`, sempre com

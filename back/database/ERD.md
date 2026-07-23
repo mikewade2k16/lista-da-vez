@@ -853,6 +853,23 @@ erDiagram
   `AI_TOOL_DENIED`, `AI_TOOL_FAILED` e `AI_TOOL_TIMEOUT` (migration `0223`). O payload contém
   somente identificadores/código de resultado, nunca argumentos ou credenciais cruas.
 
+## Social publishing - agendamento e analytics
+
+- `social_publishing.connections`: uma conexao Instagram por `account_id`. Guarda identidade
+  profissional, status e somente o ciphertext `v1:` do `platform/secretbox`; revogacao e soft e
+  zera o ciphertext sem apagar o historico.
+- `social_publishing.posts`: agregado autoritativo do conteudo e do envio. A FK composta
+  `(account_id, connection_id)` impede vinculo cross-tenant; `source_type + source_ref` fornece
+  idempotencia para futuros consumidores sem criar FK para Calendar ou Crow Assistant.
+- `schedule_revision` invalida jobs de uma revisao antiga e `version` sustenta optimistic locking.
+  Os estados persistidos sao `draft|scheduled|publishing|published|failed|cancelled`.
+- `social_publishing.post_analytics`: projecao corrente 1:1 por post com `views`, `reach`,
+  `total_interactions`, `likes`, `comments`, `saved`, `shares` e instante de captura.
+- `social_publishing.analytics_snapshots`: historico append-only das mesmas metricas, com FK
+  composta para o post e dedupe por instante de captura.
+- `social_publishing.outbox`: tabela propria, coluna-a-coluna compativel com `platform/jobs`;
+  possui idempotencia por conta, FIFO por `ordering_key`, `run_after`, retry e dead letter.
+
 ## Seeds atuais
 
 A migration de seed cria:

@@ -75,5 +75,10 @@ export const ROADMAP_GROUPS: RoadmapGroup[] = [
     id: "observabilidade-n8n",
     label: "Observabilidade & Alertas (n8n)",
     description: "Monitoramento ativo do Omni usando o n8n como orquestrador de alertas: check-vps.sh e /healthz disparam webhooks, fan-out para e-mail/Telegram/ntfy, monitor externo de uptime, detecção de anomalia (RAM/CPU/5xx/latência), painel de status interno e alertas de negócio. Nasce do AC-16 do diagnóstico docs/relatorios/2026-07."
+  },
+  {
+    id: "social-publishing",
+    label: "Agendamento de Postagens",
+    description: "Módulo isolado, semelhante ao Buffer, para conectar Instagram profissional, agendar/publicar conteúdo e acompanhar analytics. O Calendário e o Crow Assistant só serão integrados após a homologação e um novo comando. Plano: docs/social-publishing/PLANO_MODULO_AGENDAMENTO_POSTAGENS.md."
   }
 ];

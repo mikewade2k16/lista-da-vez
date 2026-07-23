@@ -196,10 +196,26 @@ explicito de override por loja.
 ### `bi`
 
 - [BiWorkspace.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiWorkspace.vue)
-  Mantem `Entidades` como aba inicial e nao consulta a API ao montar essa documentacao. As abas de
-  visao, datasets e inteligencia continuam responsaveis pelas leituras operacionais. A autenticacao
-  padrao e automatica no backend; o formulario manual fica recolhido no botao secundario
+  Mantem `Entidades` como aba inicial e nao consulta a API ao montar essa documentacao. As abas
+  `Lacunas ERP × API` e `Consultas` separam auditoria de cobertura e pesquisa real. As abas de visao,
+  datasets e inteligencia continuam responsaveis pelo overview legado. A autenticacao padrao e
+  automatica no backend; o formulario manual fica recolhido no botao secundario
   `Diagnostico de conexao`.
+- [BiApiSchemaGrid.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiSchemaGrid.vue)
+  Grade local das colunas observadas nas seis entidades. Reusa `AppEntityGrid`
+  e `AppSelectField`, com busca, filtros por entidade/grupo/tipo, seletor de
+  colunas e paginacao local; nunca chama API.
+- [BiGapAnalysis.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiGapAnalysis.vue)
+  Lista filtravel das 18 lacunas auditadas entre o ERP atual e a API Perola, com prioridades
+  P0/P1/P2, evidencia observada e texto objetivo para solicitar a fornecedora. A fonte tipada e
+  `domain/bi/gap-catalog.ts`; nao representa resposta dinamica da API.
+- [BiPerolaQueryExplorer.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiPerolaQueryExplorer.vue) +
+  [BiPerolaQueryFilters.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiPerolaQueryFilters.vue) +
+  [BiPerolaQueryResults.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiPerolaQueryResults.vue)
+  Consulta real das seis entidades pela rota tipada da Fase 3. A aba nasce passiva e ate o catalogo
+  exige clique explicito; filtros obrigatorios, operadores, periodo, limite e ordenacao sao
+  validados no front e novamente no backend. Cada acao busca uma pagina e Anterior/Proxima
+  preservam o ultimo payload submetido.
 - [BiApiCatalog.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiCatalog.vue) +
   [BiApiEntityDetail.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiApiEntityDetail.vue)
   Catalogo visual estatico das seis entidades confirmadas da API Perola BI. Exibe endpoint,
@@ -208,6 +224,9 @@ explicito de override por loja.
 - [BiManualConnection.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiManualConnection.vue)
   Diagnostico excepcional por credenciais ou Bearer Token. Nao deve virar caminho principal nem ser
   aberto automaticamente.
+- `BiWorkspace` usa `AppToggleSwitch` no cabecalho para o bloqueio absoluto do
+  BI. O switch nasce ativo, desabilita todas as acoes remotas e delega a
+  autoridade ao `stores/bi.ts`, que tambem aborta requests em voo.
 - [BiIntelligencePanel.vue](/c:/Users/Mike/Documents/Projects/fila-atendimento/web/app/components/bi/BiIntelligencePanel.vue)
   Mapa de inteligencia por fonte, sem fingir que possibilidades sao indicadores ao vivo. Permite
   filtrar leituras por Perola, ERP, Fila ou cruzamentos e preserva os indicadores limitados do

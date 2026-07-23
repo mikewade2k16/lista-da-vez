@@ -38,19 +38,31 @@ type PerolaDatasetCatalogResponse struct {
 }
 
 type PerolaDatasetCatalogItem struct {
-	ID                 string                       `json:"id"`
-	Label              string                       `json:"label"`
-	Description        string                       `json:"description"`
-	DefaultLimit       int                          `json:"defaultLimit"`
-	MaxLimit           int                          `json:"maxLimit"`
-	DefaultOrderBy     PerolaDatasetOrderInput      `json:"defaultOrderBy"`
-	AllowedOrderFields []string                     `json:"allowedOrderFields"`
-	Filters            []PerolaDatasetFilterCatalog `json:"filters"`
-	RequiredFilterRule string                       `json:"requiredFilterRule"`
+	ID                         string                                 `json:"id"`
+	Label                      string                                 `json:"label"`
+	Description                string                                 `json:"description"`
+	DefaultLimit               int                                    `json:"defaultLimit"`
+	MaxLimit                   int                                    `json:"maxLimit"`
+	DefaultOrderBy             PerolaDatasetOrderInput                `json:"defaultOrderBy"`
+	AllowedOrderFields         []string                               `json:"allowedOrderFields"`
+	Filters                    []PerolaDatasetFilterCatalog           `json:"filters"`
+	RequiredFilterRule         string                                 `json:"requiredFilterRule"`
+	RequiredFilterAlternatives [][]PerolaDatasetFilterSelectorCatalog `json:"requiredFilterAlternatives"`
+	DateRange                  *PerolaDatasetDateRangeCatalog         `json:"dateRange,omitempty"`
 }
 
 type PerolaDatasetFilterCatalog struct {
 	Field     string   `json:"field"`
 	ValueType string   `json:"valueType"`
 	Operators []string `json:"operators"`
+}
+
+type PerolaDatasetFilterSelectorCatalog struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+}
+
+type PerolaDatasetDateRangeCatalog struct {
+	Field   string `json:"field"`
+	MaxDays int    `json:"maxDays"`
 }

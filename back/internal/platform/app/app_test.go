@@ -48,3 +48,17 @@ func TestMissedERPScheduledRunIgnoresShortIntervals(t *testing.T) {
 		t.Fatalf("expected no missed run for short interval, got %v", missedFor)
 	}
 }
+
+func TestModuleGatingRulesIncludeSocialPublishing(t *testing.T) {
+	t.Parallel()
+
+	for _, rule := range moduleGatingRules() {
+		if rule.Prefix == "/v1/social-publishing" {
+			if rule.ModuleID != "social_publishing" {
+				t.Fatalf("unexpected module id %q", rule.ModuleID)
+			}
+			return
+		}
+	}
+	t.Fatal("social publishing API must be protected by the module gate")
+}

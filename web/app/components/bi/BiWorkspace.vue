@@ -5,10 +5,13 @@ import { Activity, BrainCircuit, KeyRound, RefreshCw, ShieldCheck, X } from 'luc
 
 import BiApiCatalog from '~/components/bi/BiApiCatalog.vue'
 import BiDatasetTable from '~/components/bi/BiDatasetTable.vue'
+import BiGapAnalysis from '~/components/bi/BiGapAnalysis.vue'
 import BiIntelligencePanel from '~/components/bi/BiIntelligencePanel.vue'
 import BiManualConnection from '~/components/bi/BiManualConnection.vue'
+import BiPerolaQueryExplorer from '~/components/bi/BiPerolaQueryExplorer.vue'
 import AdminPageHeader from '../../../layers/core/components/admin/AdminPageHeader.vue'
 import SettingsTabs from '~/components/settings/SettingsTabs.vue'
+import AppToggleSwitch from '~/components/ui/AppToggleSwitch.vue'
 import { useBiStore } from '~/stores/bi'
 import { useUiStore } from '~/stores/ui'
 
@@ -25,6 +28,7 @@ const {
   sections,
   tables,
   hasManualToken,
+  apiBlocked,
 } = storeToRefs(biStore)
 
 const activeTab = ref('entidades')
@@ -32,6 +36,8 @@ const diagnosticsOpen = ref(false)
 
 const tabs = computed(() => [
   { id: 'entidades', label: 'Entidades', icon: 'database' },
+  { id: 'lacunas', label: 'Lacunas ERP × API', icon: 'difference' },
+  { id: 'consultas', label: 'Consultas', icon: 'search' },
   { id: 'visao', label: 'Visão', icon: 'dashboard' },
   ...tables.value.map((table) => ({
     id: table.key,
@@ -55,7 +61,10 @@ const activeSource = computed(
 const activeTableLoading = computed(
   () => loading.value || (activeTable.value?.key === 'inventario' && inventoryLoading.value),
 )
-const isDataView = computed(() => activeTab.value !== 'entidades')
+const usesOverview = computed(
+  () =>
+    activeTab.value === 'visao' || activeTab.value === 'inteligencia' || Boolean(activeTable.value),
+)
 
 const generatedAtLabel = computed(() => {
   const raw = overview.value?.generatedAt
@@ -70,6 +79,7 @@ const generatedAtLabel = computed(() => {
 async function refresh() {
   const response = await biStore.refreshOverview()
   if (!response.ok) {
+    if (response.blocked) return
     ui.error(response.message || 'Não foi possível carregar o BI.')
     return
   }
@@ -87,7 +97,8 @@ async function refresh() {
 watch(
   tables,
   () => {
-    if (['entidades', 'visao', 'inteligencia'].includes(activeTab.value)) return
+    if (['entidades', 'lacunas', 'consultas', 'visao', 'inteligencia'].includes(activeTab.value))
+      return
     if (!activeTable.value) activeTab.value = 'entidades'
   },
   { deep: true },
@@ -100,13 +111,32 @@ watch(
       <AdminPageHeader
         eyebrow="BI"
         title="Business Intelligence"
-        description="Consulte entidades e indicadores com dados carregados pela integração protegida no backend."
+        description="A página abre sem consultar o BI. Catálogo e registros só são carregados por uma ação explícita."
       />
 
       <div class="bi-panel__actions">
+        <div class="bi-panel__api-switch" :data-blocked="apiBlocked">
+          <div>
+            <strong>{{ apiBlocked ? 'API bloqueada' : 'API liberada' }}</strong>
+            <span>
+              {{
+                apiBlocked
+                  ? 'Nenhuma rota do BI pode ser chamada'
+                  : 'Somente ações explícitas podem consultar'
+              }}
+            </span>
+          </div>
+          <AppToggleSwitch
+            :model-value="apiBlocked"
+            label="Bloquear chamadas"
+            compact
+            @update:model-value="biStore.setApiBlocked"
+          />
+        </div>
+
         <span class="bi-panel__auth" :data-manual="hasManualToken">
           <ShieldCheck :size="14" aria-hidden="true" />
-          {{ hasManualToken ? 'Sessão manual ativa' : 'Autenticação automática' }}
+          {{ hasManualToken ? 'Sessão manual ativa' : 'BI em modo passivo' }}
         </span>
 
         <button
@@ -121,10 +151,10 @@ watch(
         </button>
 
         <button
-          v-if="isDataView"
+          v-if="usesOverview"
           class="bi-panel__button bi-panel__button--primary"
           type="button"
-          :disabled="loading"
+          :disabled="loading || apiBlocked"
           @click="refresh"
         >
           <RefreshCw :size="15" aria-hidden="true" />
@@ -133,15 +163,25 @@ watch(
       </div>
     </header>
 
+    <div v-if="apiBlocked" class="bi-panel__api-blocked" data-testid="bi-api-blocked">
+      <ShieldCheck :size="17" aria-hidden="true" />
+      <span>
+        <strong>Bloqueio absoluto ativo.</strong>
+        Login, catálogo, overview, consultas e requisições em andamento do BI estão interrompidos.
+      </span>
+    </div>
+
     <div v-if="diagnosticsOpen" id="bi-connection-diagnostics">
       <BiManualConnection />
     </div>
 
-    <p v-if="error && isDataView" class="bi-panel__error">{{ error }}</p>
+    <p v-if="error && usesOverview" class="bi-panel__error">{{ error }}</p>
 
     <SettingsTabs :tabs="tabs" :active-tab="activeTab" @update:active-tab="activeTab = $event" />
 
     <BiApiCatalog v-if="activeTab === 'entidades'" />
+    <BiGapAnalysis v-else-if="activeTab === 'lacunas'" />
+    <BiPerolaQueryExplorer v-else-if="activeTab === 'consultas'" />
 
     <template v-else>
       <section v-if="metrics.length" class="bi-panel__metrics" aria-label="Resumo Pérola BI">
@@ -243,6 +283,7 @@ watch(
 }
 
 .bi-panel__auth,
+.bi-panel__api-switch,
 .bi-panel__button {
   display: inline-flex;
   gap: 7px;
@@ -250,6 +291,33 @@ watch(
   justify-content: center;
   min-height: 38px;
   border-radius: var(--radius-sm);
+}
+
+.bi-panel__api-switch {
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 36%, var(--line-soft));
+  background: color-mix(in srgb, var(--accent-warning) 7%, var(--bg-panel));
+}
+
+.bi-panel__api-switch[data-blocked='false'] {
+  border-color: color-mix(in srgb, var(--accent-success) 36%, var(--line-soft));
+  background: color-mix(in srgb, var(--accent-success) 7%, var(--bg-panel));
+}
+
+.bi-panel__api-switch > div {
+  display: grid;
+  gap: 1px;
+}
+
+.bi-panel__api-switch strong {
+  color: var(--text-main);
+  font-size: 0.75rem;
+}
+
+.bi-panel__api-switch span {
+  color: var(--text-muted);
+  font-size: 0.67rem;
 }
 
 .bi-panel__auth {
@@ -298,6 +366,27 @@ watch(
   border: 1px solid color-mix(in srgb, rgb(var(--danger)) 30%, var(--line-soft));
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, rgb(var(--danger)) 7%, var(--bg-panel));
+}
+
+.bi-panel__api-blocked {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  color: var(--accent-warning);
+  border: 1px solid color-mix(in srgb, var(--accent-warning) 34%, var(--line-soft));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-warning) 7%, var(--bg-panel));
+}
+
+.bi-panel__api-blocked span {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.bi-panel__api-blocked strong {
+  color: var(--text-main);
 }
 
 .bi-panel__metrics {

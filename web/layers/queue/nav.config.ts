@@ -195,6 +195,15 @@ export default {
           beta: true,
         },
         {
+          id: 'postagens',
+          label: 'Agendamento de postagens',
+          icon: 'megaphone',
+          path: '/postagens',
+          workspaceId: 'social_publishing',
+          moduleId: 'social_publishing',
+          beta: true,
+        },
+        {
           id: 'cardapio',
           label: 'Cardápio Online',
           icon: 'boxes',

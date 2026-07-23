@@ -36,6 +36,7 @@ import (
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/realtime"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/roadmap"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/site"
+	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/socialpublishing"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/stores"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tasks"
 	"github.com/mikewade2k16/lista-da-vez/back/internal/modules/tenants"
@@ -438,6 +439,12 @@ func BuildHTTPHandler(cfg config.Config, logger *slog.Logger, pool *pgxpool.Pool
 				service: func() *calendar.Service { return calendarModule.Service() },
 			}),
 		))
+		// social_publishing: agendamento e analytics de publicacoes organicas.
+		// O piloto e isolado do Calendar/Crow Assistant; a credencial Instagram usa
+		// o mesmo secretbox canonico da plataforma e nunca retorna ao frontend.
+		registry.MustRegister(socialpublishing.New(
+			socialpublishing.WithSecretBox(omnichannelSecretBox),
+		))
 
 		catalogRepo := modules.NewPostgresCatalogRepository(pool)
 		if err := registry.SyncCatalog(ctx, catalogRepo); err != nil {
@@ -561,6 +568,9 @@ func moduleGatingRules() []httpapi.ModulePathRule {
 		// meta_ads (painel Meta/Facebook Ads). Mesmo padrao: bypass admin; contas
 		// sem o modulo habilitado levam 403 module_disabled.
 		{Prefix: "/v1/meta-ads", ModuleID: "meta_ads"},
+		// social_publishing (agendamento organico). A integracao futura com o
+		// Calendar nao passa por este prefixo enquanto o piloto estiver isolado.
+		{Prefix: "/v1/social-publishing", ModuleID: "social_publishing"},
 		// bio (paginas de link-in-bio). Rota publica /v1/public/bio fica fora.
 		{Prefix: "/v1/bio", ModuleID: "bio"},
 		// calendar (agenda de conteudo). platform_admin tem bypass; contas sem o

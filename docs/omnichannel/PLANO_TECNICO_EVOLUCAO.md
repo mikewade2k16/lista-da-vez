@@ -10,6 +10,14 @@ propostas, APIs, componentes, testes, proibições e critérios de aceite ficam 
 executiva; um agente só pode implementar uma fase quando receber também o contrato comum e um
 pacote atômico daquela pasta.
 
+## Proposta em validação — Customer Intelligence
+
+A separação futura entre Omnichannel, dados determinísticos do cliente e runtime inteligente está
+registrada em [`../customer-intelligence/GOVERNANCA.md`](../customer-intelligence/GOVERNANCA.md),
+com blueprint em [`../customer-intelligence/SPECS_GERAIS.md`](../customer-intelligence/SPECS_GERAIS.md).
+Enquanto esses documentos estiverem em `DRAFT`, eles não substituem as specs executáveis atuais
+nem autorizam migration, cutover, workflow ou exclusão.
+
 ## Prioridade vigente — MVP de automação WhatsApp (2026-07-21)
 
 Antes de retomar E9/E10, executar e validar o recorte

@@ -60,6 +60,7 @@ export default defineNuxtConfig({
     '/operacao/**': { ssr: false },
     '/perfil': { ssr: false },
     '/performance': { ssr: false },
+    '/postagens': { ssr: false },
     '/ranking': { ssr: false },
     '/relatorios': { ssr: false },
     '/roadmap': { ssr: false },

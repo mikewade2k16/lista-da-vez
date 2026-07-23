@@ -306,9 +306,8 @@ aparecer depois de agregacao backend, filtro de periodo e consulta intencional.
 - A experiencia manual ja foi recolhida como diagnostico secundario no front,
   mas as rotas ainda dependem de roles hardcoded e serao separadas por
   permissao na Fase 5.
-- A Fase 4 ainda precisa consumir a consulta tipada no painel, sempre por acao
-  intencional do usuario. A Fase 5 precisa impor autorizacao por
-  permissao/account antes da liberacao definitiva.
+- A Fase 5 ainda precisa impor autorizacao por permissao/account antes da
+  liberacao definitiva.
 
 ## Plano incremental do redesenho
 
@@ -354,16 +353,32 @@ aparecer depois de agregacao backend, filtro de periodo e consulta intencional.
   rejeicao de campo/ordenacao desconhecidos, payload enviado a origem e
   sanitizacao da resposta.
 
-### Fase 4 — experiencia do painel
+### Fase 4 — experiencia do painel (concluida em 2026-07-23)
 
-- A pagina nasce sem carregar colecoes grandes.
-- Exibir as seis entidades como superficies de consulta; cada uma carrega
-  somente apos busca/filtro/paginacao do usuario.
-- Autenticacao e transparente. Falha de configuracao vira aviso acionavel,
-  nao formulario de login como primeira acao.
-- Mover "Conexao manual" para uma acao secundaria de diagnostico, recolhida,
-  com permissao administrativa e sem persistencia.
-- Nao iniciar Inventario em background e nao disparar fan-out ao montar.
+- `/bi` continua nascendo em `Entidades`, sem carregar colecoes externas.
+- `Entidades` usa o catalogo local para mostrar uma grade paginada e filtravel
+  com todos os campos observados das seis entidades; essa grade nao consulta
+  nenhuma API.
+- `Lacunas ERP × API` materializa as 18 solicitacoes auditadas, com prioridade
+  P0/P1/P2, dominio, evidencia do ERP, lacuna e texto para a fornecedora.
+- `Consultas` nasce totalmente passiva. Ate o catalogo seguro exige clique
+  explicito; depois disso, cada entidade exige filtro intencional e cada
+  consulta busca uma unica pagina.
+- O catalogo publico informa tambem alternativas de filtro obrigatorio e
+  periodo maximo em formato estruturado, permitindo validacao previa da UI sem
+  expor endpoint externo.
+- A paginacao Anterior/Proxima repete no backend o ultimo conjunto submetido
+  de filtros, limite e ordenacao; edicao ainda nao submetida nao altera a
+  consulta em curso.
+- Falha de configuracao ou da origem vira aviso acionavel. Autenticacao
+  automatica continua sendo o caminho principal e o diagnostico manual
+  permanece recolhido.
+- Inventario continua exigindo `itemSaldoId`; nenhuma aba dispara fan-out das
+  seis entidades ou busca aberta.
+- O switch `Bloquear chamadas` nasce ativo no cabecalho e e autoritativo no
+  store: recusa login, catalogo, overview e query antes do transporte e aborta
+  requisicoes do BI que ja estejam em andamento. Desbloquear nao dispara
+  nenhuma leitura automaticamente.
 
 ### Fase 5 — autorizacao, observabilidade e validacao
 
@@ -399,7 +414,7 @@ aparecer depois de agregacao backend, filtro de periodo e consulta intencional.
   capturado em `token`. Campos vazios usam a configuracao do backend.
 - `GET /v1/bi/perola/datasets` — catalogo publico para a UI montar consultas
   permitidas sem conhecer endpoints externos. Informa limites, ordenacoes,
-  filtros, operadores e regras obrigatorias.
+  filtros, operadores, alternativas obrigatorias e regra de periodo.
 - `POST /v1/bi/perola/datasets/{dataset}/query` — consulta tipada de produto
   para `item`, `imagem-item`, `item-saldo-preco-compra`, `nota`, `nota-item`
   ou `inventario`. Autenticacao, endpoint e payload externo ficam no backend.
@@ -414,6 +429,12 @@ aparecer depois de agregacao backend, filtro de periodo e consulta intencional.
 ## Carregamento no front (web/app/components/bi/BiWorkspace.vue)
 
 - O painel NAO dispara nenhuma chamada automatica ao montar.
+- O switch `Bloquear chamadas` inicia ativo. Enquanto estiver ativo, todas as
+  actions HTTP do store BI retornam bloqueio sem chamar nem a sessao nem uma
+  rota `/v1/bi/*`; ativar o switch durante uma leitura aborta o request.
+- Abrir `Consultas` nao chama nenhuma rota do BI. O catalogo interno exige
+  clique em `Carregar catalogo de consultas`; registros externos so sao lidos
+  depois do clique em `Consultar`.
 - O carregamento so ocorre quando o usuario clica em "Atualizar BI" ou
   "Carregar com token". Login manual nao encadeia overview automaticamente.
 - O store `web/app/stores/bi.ts` tambem nao faz fallback recursivo para

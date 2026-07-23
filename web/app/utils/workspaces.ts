@@ -8,6 +8,12 @@ export const WORKSPACES = [
   { id: 'consultor', label: 'Consultor', icon: 'person', path: '/consultor' },
   { id: 'tasks', label: 'Tasks', icon: 'task_alt', path: '/tasks' },
   { id: 'calendar', label: 'Calendario', icon: 'calendar_month', path: '/calendario' },
+  {
+    id: 'social_publishing',
+    label: 'Agendamento de postagens',
+    icon: 'schedule_send',
+    path: '/postagens',
+  },
   { id: 'ranking', label: 'Ranking', icon: 'leaderboard', path: '/ranking' },
   { id: 'dados', label: 'Dados', icon: 'bar_chart', path: '/dados' },
   { id: 'inteligencia', label: 'Inteligencia', icon: 'psychology', path: '/inteligencia' },

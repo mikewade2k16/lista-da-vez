@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { BI_API_ENTITIES, biApiEntityFieldCount } from './api-catalog'
+import {
+  BI_API_ENTITIES,
+  biApiEntityFieldCount,
+  biApiSchemaRows,
+  filterBiApiSchemaRows,
+} from './api-catalog'
 
 describe('Pérola BI API catalog', () => {
   it('documents the six confirmed entities and endpoints', () => {
@@ -31,5 +36,34 @@ describe('Pérola BI API catalog', () => {
     expect(inventory?.tone).toBe('attention')
     expect(inventory?.queryRule).toContain('obrigatório')
     expect(inventory?.performance).toContain('35 s')
+  })
+
+  it('flattens every observed column into the six-entity schema table', () => {
+    const rows = biApiSchemaRows()
+    const expected = BI_API_ENTITIES.reduce(
+      (total, entity) => total + biApiEntityFieldCount(entity),
+      0,
+    )
+
+    expect(rows).toHaveLength(expected)
+    expect(new Set(rows.map((row) => row.id)).size).toBe(expected)
+    expect(new Set(rows.map((row) => row.entityId))).toEqual(
+      new Set(BI_API_ENTITIES.map((entity) => entity.id)),
+    )
+  })
+
+  it('filters the complete schema by entity, type and normalized text', () => {
+    const rows = biApiSchemaRows()
+    const inventoryNumbers = filterBiApiSchemaRows(rows, {
+      entityId: 'inventory',
+      type: 'number',
+    })
+    const customerDocument = filterBiApiSchemaRows(rows, {
+      search: 'inscricao estadual',
+    })
+
+    expect(inventoryNumbers.every((row) => row.entityId === 'inventory')).toBe(true)
+    expect(inventoryNumbers.every((row) => row.type === 'number')).toBe(true)
+    expect(customerDocument.map((row) => row.field)).toContain('pessoaRgIe')
   })
 })

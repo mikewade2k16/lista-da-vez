@@ -32,6 +32,9 @@ func TestPerolaDatasetRegistryContainsSixSafeDatasets(t *testing.T) {
 		if dataset.MaxLimit <= 0 || dataset.DefaultLimit > dataset.MaxLimit {
 			t.Errorf("invalid limits for dataset %q", dataset.ID)
 		}
+		if len(dataset.RequiredFilterAlternatives) == 0 || dataset.RequiredFilterRule == "" {
+			t.Errorf("dataset %q does not expose its safe query rule", dataset.ID)
+		}
 		delete(expected, dataset.ID)
 	}
 	if len(expected) != 0 {
@@ -45,6 +48,23 @@ func TestPerolaDatasetRegistryContainsSixSafeDatasets(t *testing.T) {
 	if strings.Contains(string(encoded), "/find") || strings.Contains(string(encoded), `"endpoint"`) {
 		t.Fatalf("public catalog leaked upstream endpoint: %s", encoded)
 	}
+
+	invoice, ok := findCatalogDataset(catalog.Datasets, perolaDatasetInvoiceID)
+	if !ok || invoice.DateRange == nil || invoice.DateRange.Field != "dataEmissao" || invoice.DateRange.MaxDays != 31 {
+		t.Fatalf("invoice date range not exposed safely: %+v", invoice.DateRange)
+	}
+}
+
+func findCatalogDataset(
+	datasets []PerolaDatasetCatalogItem,
+	datasetID string,
+) (PerolaDatasetCatalogItem, bool) {
+	for _, dataset := range datasets {
+		if dataset.ID == datasetID {
+			return dataset, true
+		}
+	}
+	return PerolaDatasetCatalogItem{}, false
 }
 
 func TestNormalizePerolaDatasetQueryClampsLimitAndBuildsAllowlistedPayload(t *testing.T) {

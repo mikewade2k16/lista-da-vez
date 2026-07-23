@@ -273,5 +273,22 @@ export const ROADMAP_MODULES: RoadmapModule[] = [
       "Scripts (snippets de mensagens): fase futura, ainda mock"
     ],
     dependsOn: []
+  },
+  {
+    id: "social_publishing",
+    label: "Agendamento de postagens",
+    route: "/postagens",
+    status: "in_progress",
+    priority: "P1",
+    category: "operacao-comercial",
+    description:
+      "Workspace isolado para conectar uma conta profissional do Instagram, preparar/agendar publicações de imagem e consultar analytics. A integração com Calendário e Crow Assistant está desenhada, mas bloqueada até a homologação e um novo comando.",
+    scope: [
+      "MVP: conexão técnica cifrada + rascunho/agendamento/publicação de imagem",
+      "Fila PostgreSQL durável com idempotência, retry e dead letter",
+      "Analytics por publicação e visão geral do cliente",
+      "Contrato futuro por source_ref para Calendário e Crow Assistant"
+    ],
+    dependsOn: []
   }
 ];

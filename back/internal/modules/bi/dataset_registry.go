@@ -85,9 +85,9 @@ func perolaDatasetSpecs() []perolaDatasetSpec {
 				"modified":       dateFilter("gte", "lte"),
 			},
 			RequiredAlternatives: [][]perolaFilterSelector{
-				selectorSet("id", "eq"),
-				selectorSet("itemId", "eq"),
 				selectorSet("referencia", "eq"),
+				selectorSet("itemId", "eq"),
+				selectorSet("id", "eq"),
 				selectorSet("marcaId", "eq"),
 				selectorSet("departamentoId", "eq"),
 				selectorSet("tipoId", "eq"),
@@ -110,8 +110,8 @@ func perolaDatasetSpecs() []perolaDatasetSpec {
 				"itemId": integerFilter("eq"),
 			},
 			RequiredAlternatives: [][]perolaFilterSelector{
-				selectorSet("id", "eq"),
 				selectorSet("itemId", "eq"),
+				selectorSet("id", "eq"),
 			},
 			RequiredFilterRule: "Informe id ou itemId.",
 		},
@@ -132,8 +132,8 @@ func perolaDatasetSpecs() []perolaDatasetSpec {
 				"data":        dateFilter("gte", "lte"),
 			},
 			RequiredAlternatives: [][]perolaFilterSelector{
-				selectorSet("id", "eq"),
 				selectorSet("itemSaldoId", "eq"),
+				selectorSet("id", "eq"),
 				selectorSet("empresaId", "eq", "data", "gte", "data", "lte"),
 			},
 			RequiredFilterRule: "Informe id, itemSaldoId ou empresaId com periodo fechado de data.",
@@ -159,9 +159,9 @@ func perolaDatasetSpecs() []perolaDatasetSpec {
 				"excluido":      booleanFilter("eq"),
 			},
 			RequiredAlternatives: [][]perolaFilterSelector{
+				selectorSet("dataEmissao", "gte", "dataEmissao", "lte"),
 				selectorSet("id", "eq"),
 				selectorSet("numDocumento", "eq"),
-				selectorSet("dataEmissao", "gte", "dataEmissao", "lte"),
 			},
 			RequiredFilterRule: "Informe id, numDocumento ou periodo fechado de dataEmissao (maximo 31 dias).",
 			DateRange:          &perolaDateRangeRule{Field: "dataEmissao", MaxDays: 31},
@@ -185,9 +185,9 @@ func perolaDatasetSpecs() []perolaDatasetSpec {
 				"excluido":      booleanFilter("eq"),
 			},
 			RequiredAlternatives: [][]perolaFilterSelector{
-				selectorSet("id", "eq"),
 				selectorSet("notaId", "eq"),
 				selectorSet("itemSaldoId", "eq"),
+				selectorSet("id", "eq"),
 			},
 			RequiredFilterRule: "Informe id, notaId ou itemSaldoId.",
 		},
@@ -248,16 +248,35 @@ func perolaDatasetCatalog() PerolaDatasetCatalogResponse {
 			})
 		}
 
+		requiredAlternatives := make([][]PerolaDatasetFilterSelectorCatalog, 0, len(spec.RequiredAlternatives))
+		for _, alternative := range spec.RequiredAlternatives {
+			selectors := make([]PerolaDatasetFilterSelectorCatalog, 0, len(alternative))
+			for _, selector := range alternative {
+				selectors = append(selectors, PerolaDatasetFilterSelectorCatalog(selector))
+			}
+			requiredAlternatives = append(requiredAlternatives, selectors)
+		}
+
+		var dateRange *PerolaDatasetDateRangeCatalog
+		if spec.DateRange != nil {
+			dateRange = &PerolaDatasetDateRangeCatalog{
+				Field:   spec.DateRange.Field,
+				MaxDays: spec.DateRange.MaxDays,
+			}
+		}
+
 		items = append(items, PerolaDatasetCatalogItem{
-			ID:                 spec.ID,
-			Label:              spec.Label,
-			Description:        spec.Description,
-			DefaultLimit:       spec.DefaultLimit,
-			MaxLimit:           spec.MaxLimit,
-			DefaultOrderBy:     PerolaDatasetOrderInput{Field: spec.DefaultOrderField, Direction: spec.DefaultOrderDirection},
-			AllowedOrderFields: slices.Clone(spec.AllowedOrderFields),
-			Filters:            filters,
-			RequiredFilterRule: spec.RequiredFilterRule,
+			ID:                         spec.ID,
+			Label:                      spec.Label,
+			Description:                spec.Description,
+			DefaultLimit:               spec.DefaultLimit,
+			MaxLimit:                   spec.MaxLimit,
+			DefaultOrderBy:             PerolaDatasetOrderInput{Field: spec.DefaultOrderField, Direction: spec.DefaultOrderDirection},
+			AllowedOrderFields:         slices.Clone(spec.AllowedOrderFields),
+			Filters:                    filters,
+			RequiredFilterRule:         spec.RequiredFilterRule,
+			RequiredFilterAlternatives: requiredAlternatives,
+			DateRange:                  dateRange,
 		})
 	}
 	return PerolaDatasetCatalogResponse{Datasets: items}

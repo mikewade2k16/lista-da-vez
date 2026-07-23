@@ -33,6 +33,7 @@ const MODULE_PATH_GUARDS: Array<{ prefix: string; moduleId: string }> = [
   { prefix: '/manage/leads-web', moduleId: 'site' },
   { prefix: '/manage/produtos-web', moduleId: 'site' },
   { prefix: '/meta-ads', moduleId: 'meta_ads' },
+  { prefix: '/postagens', moduleId: 'social_publishing' },
   { prefix: '/finance', moduleId: 'finance' },
   { prefix: '/tools', moduleId: 'tools' },
   // queue — paginas de uso da Fila/operacao. Conta sem o modulo queue nao acessa

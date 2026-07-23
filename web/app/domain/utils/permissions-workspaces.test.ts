@@ -64,3 +64,18 @@ describe('getAllowedWorkspaces — role aliases and defaults', () => {
     expect(getAllowedWorkspaces('manager', [], true)).not.toContain('cardapio_web')
   })
 })
+
+describe('getAllowedWorkspaces - social publishing', () => {
+  it('includes the workspace in the platform_admin, owner and marketing role defaults', () => {
+    expect(getAllowedWorkspaces('platform_admin')).toContain('social_publishing')
+    expect(getAllowedWorkspaces('owner')).toContain('social_publishing')
+    expect(getAllowedWorkspaces('marketing')).toContain('social_publishing')
+  })
+
+  it('fails closed until the resolved view permission is present', () => {
+    expect(getAllowedWorkspaces('marketing', [], true)).not.toContain('social_publishing')
+    expect(getAllowedWorkspaces('marketing', ['social_publishing.view'], true)).toContain(
+      'social_publishing',
+    )
+  })
+})

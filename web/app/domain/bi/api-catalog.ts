@@ -25,6 +25,26 @@ export interface BiApiEntity {
   tone: 'default' | 'attention' | 'sensitive'
 }
 
+export interface BiApiSchemaRow {
+  id: string
+  entityId: string
+  entity: string
+  endpoint: string
+  groupId: string
+  group: string
+  field: string
+  fieldLabel: string
+  type: BiApiFieldType
+  typeLabel: string
+}
+
+export interface BiApiSchemaFilters {
+  search?: string
+  entityId?: string
+  groupId?: string
+  type?: string
+}
+
 const field = (key: string, type: BiApiFieldType): BiApiField => ({ key, type })
 
 const group = (id: string, label: string, fields: BiApiField[]): BiApiFieldGroup => ({
@@ -413,4 +433,52 @@ export function biApiFieldTypeLabel(type: BiApiFieldType) {
 
 export function biApiEntityFieldCount(entity: BiApiEntity) {
   return entity.fieldGroups.reduce((total, current) => total + current.fields.length, 0)
+}
+
+export function biApiSchemaRows(entities: BiApiEntity[] = BI_API_ENTITIES): BiApiSchemaRow[] {
+  return entities.flatMap((entity) =>
+    entity.fieldGroups.flatMap((fieldGroup) =>
+      fieldGroup.fields.map((item) => ({
+        id: `${entity.id}:${fieldGroup.id}:${item.key}`,
+        entityId: entity.id,
+        entity: entity.label,
+        endpoint: entity.endpoint,
+        groupId: fieldGroup.id,
+        group: fieldGroup.label,
+        field: item.key,
+        fieldLabel: biApiFieldLabel(item.key),
+        type: item.type,
+        typeLabel: biApiFieldTypeLabel(item.type),
+      })),
+    ),
+  )
+}
+
+function normalizeSchemaSearch(value: unknown) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLocaleLowerCase('pt-BR')
+    .trim()
+}
+
+export function filterBiApiSchemaRows(
+  rows: BiApiSchemaRow[],
+  filters: BiApiSchemaFilters,
+): BiApiSchemaRow[] {
+  const search = normalizeSchemaSearch(filters.search)
+  const entityId = String(filters.entityId || '').trim()
+  const groupId = String(filters.groupId || '').trim()
+  const type = String(filters.type || '').trim()
+
+  return rows.filter((row) => {
+    if (entityId && entityId !== 'all' && row.entityId !== entityId) return false
+    if (groupId && groupId !== 'all' && row.groupId !== groupId) return false
+    if (type && type !== 'all' && row.type !== type) return false
+    if (!search) return true
+
+    return normalizeSchemaSearch(
+      [row.entity, row.endpoint, row.group, row.field, row.fieldLabel, row.typeLabel].join(' '),
+    ).includes(search)
+  })
 }

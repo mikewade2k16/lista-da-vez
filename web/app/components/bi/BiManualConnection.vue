@@ -8,7 +8,7 @@ import { useUiStore } from '~/stores/ui'
 
 const biStore = useBiStore()
 const ui = useUiStore()
-const { loading, loggingIn, loginError, manualConfig, manualToken, hasManualToken } =
+const { loading, loggingIn, loginError, manualConfig, manualToken, hasManualToken, apiBlocked } =
   storeToRefs(biStore)
 
 const showSecrets = ref(false)
@@ -20,6 +20,7 @@ function inputValue(event: Event) {
 async function generateToken() {
   const response = await biStore.loginPerola()
   if (!response.ok) {
+    if (response.blocked) return
     ui.error(response.message || 'Falha ao gerar token Pérola.')
     return
   }
@@ -30,6 +31,7 @@ async function generateToken() {
 async function loadWithToken() {
   const response = await biStore.refreshOverview()
   if (!response.ok) {
+    if (response.blocked) return
     ui.error(response.message || 'Não foi possível carregar o BI com o token manual.')
     return
   }
@@ -124,12 +126,15 @@ function clearSession() {
     </div>
 
     <p v-if="loginError" class="bi-manual__error">{{ loginError }}</p>
+    <p v-if="apiBlocked" class="bi-manual__error">
+      O bloqueio absoluto do cabeçalho está ativo. Nenhuma ação deste diagnóstico pode chamar a API.
+    </p>
 
     <footer>
       <button
         class="bi-manual__button bi-manual__button--primary"
         type="button"
-        :disabled="loggingIn"
+        :disabled="loggingIn || apiBlocked"
         @click="generateToken"
       >
         <LogIn :size="14" aria-hidden="true" />
@@ -138,7 +143,7 @@ function clearSession() {
       <button
         class="bi-manual__button"
         type="button"
-        :disabled="!hasManualToken || loading"
+        :disabled="!hasManualToken || loading || apiBlocked"
         @click="loadWithToken"
       >
         <RefreshCw :size="14" aria-hidden="true" />

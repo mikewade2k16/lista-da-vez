@@ -245,25 +245,25 @@ func normalizePerolaFilterValue(valueType perolaFilterValueType, value any) (any
 func normalizePerolaInteger(value any) (int64, error) {
 	switch typed := value.(type) {
 	case int:
-		if typed >= 0 {
+		if typed > 0 {
 			return int64(typed), nil
 		}
 	case int64:
-		if typed >= 0 {
+		if typed > 0 {
 			return typed, nil
 		}
 	case float64:
-		if math.Trunc(typed) == typed && typed >= 0 && typed <= math.MaxInt64 {
+		if math.Trunc(typed) == typed && typed > 0 && typed <= math.MaxInt64 {
 			return int64(typed), nil
 		}
 	case json.Number:
 		resolved, err := typed.Int64()
-		if err == nil && resolved >= 0 {
+		if err == nil && resolved > 0 {
 			return resolved, nil
 		}
 	case string:
 		resolved, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
-		if err == nil && resolved >= 0 {
+		if err == nil && resolved > 0 {
 			return resolved, nil
 		}
 	}

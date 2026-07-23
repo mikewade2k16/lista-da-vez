@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,17 +17,17 @@ func TestPerolaDatasetRegistryContainsSixSafeDatasets(t *testing.T) {
 		t.Fatalf("expected six datasets, got %d", len(catalog.Datasets))
 	}
 
-	expected := map[string]string{
-		perolaDatasetItemID:          "/item/find",
-		perolaDatasetItemImageID:     "/imagemItem/find",
-		perolaDatasetPurchasePriceID: "/itemSaldoPrecoCompra/find",
-		perolaDatasetInvoiceID:       "/nota/find",
-		perolaDatasetInvoiceItemID:   "/notaItem/find",
-		perolaDatasetInventoryID:     "/inventario/find",
+	expected := map[string]bool{
+		perolaDatasetItemID:          true,
+		perolaDatasetItemImageID:     true,
+		perolaDatasetPurchasePriceID: true,
+		perolaDatasetInvoiceID:       true,
+		perolaDatasetInvoiceItemID:   true,
+		perolaDatasetInventoryID:     true,
 	}
 	for _, dataset := range catalog.Datasets {
-		if endpoint := expected[dataset.ID]; endpoint == "" || endpoint != dataset.Endpoint {
-			t.Errorf("unexpected dataset %q endpoint %q", dataset.ID, dataset.Endpoint)
+		if !expected[dataset.ID] {
+			t.Errorf("unexpected dataset %q", dataset.ID)
 		}
 		if dataset.MaxLimit <= 0 || dataset.DefaultLimit > dataset.MaxLimit {
 			t.Errorf("invalid limits for dataset %q", dataset.ID)
@@ -35,6 +36,14 @@ func TestPerolaDatasetRegistryContainsSixSafeDatasets(t *testing.T) {
 	}
 	if len(expected) != 0 {
 		t.Fatalf("missing datasets: %v", expected)
+	}
+
+	encoded, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "/find") || strings.Contains(string(encoded), `"endpoint"`) {
+		t.Fatalf("public catalog leaked upstream endpoint: %s", encoded)
 	}
 }
 
@@ -101,6 +110,13 @@ func TestNormalizePerolaDatasetQueryRequiresSelectiveInventoryFilter(t *testing.
 	}
 	if query.Limit != 10 {
 		t.Fatalf("expected inventory default limit 10, got %d", query.Limit)
+	}
+
+	_, err = normalizePerolaDatasetQuery(spec, PerolaDatasetQueryInput{
+		Filters: []PerolaDatasetFilterInput{{Field: "itemSaldoId", Operator: "eq", Value: 0}},
+	})
+	if !errors.Is(err, ErrValidation) {
+		t.Fatalf("expected zero itemSaldoId to be rejected, got %v", err)
 	}
 }
 

@@ -41,7 +41,6 @@ type PerolaDatasetCatalogItem struct {
 	ID                 string                       `json:"id"`
 	Label              string                       `json:"label"`
 	Description        string                       `json:"description"`
-	Endpoint           string                       `json:"endpoint"`
 	DefaultLimit       int                          `json:"defaultLimit"`
 	MaxLimit           int                          `json:"maxLimit"`
 	DefaultOrderBy     PerolaDatasetOrderInput      `json:"defaultOrderBy"`

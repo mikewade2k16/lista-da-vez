@@ -252,7 +252,6 @@ func perolaDatasetCatalog() PerolaDatasetCatalogResponse {
 			ID:                 spec.ID,
 			Label:              spec.Label,
 			Description:        spec.Description,
-			Endpoint:           spec.Endpoint,
 			DefaultLimit:       spec.DefaultLimit,
 			MaxLimit:           spec.MaxLimit,
 			DefaultOrderBy:     PerolaDatasetOrderInput{Field: spec.DefaultOrderField, Direction: spec.DefaultOrderDirection},

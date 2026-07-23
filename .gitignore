@@ -43,6 +43,7 @@ web/.codex-devserver.*.log
 # Local working area (logs, throwaway scripts, tokens, payloads)
 tmp/
 scripts/dev/token-helpers/
+.local-backups/
 
 # Modulo automation (n8n/WAHA) — segredos. Já há .gitignore dentro de automation/;
 # aqui é defesa em profundidade caso o arquivo seja referenciado da raiz.
